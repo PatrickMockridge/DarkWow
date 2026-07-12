@@ -405,6 +405,9 @@ impl WalletDb {
                     let capability_name: Option<String> = row.get(23).ok().flatten();
                     let resource: Option<String> = row.get(24).ok().flatten();
                     let action: Option<String> = row.get(25).ok().flatten();
+                    // A corrupt/unknown CSV degrades to an empty vec: typed
+                    // composition metadata is non-load-bearing (display/typing
+                    // only), so it is not surfaced as a read error.
                     let primitives = row.get::<_, Option<String>>(26).ok().flatten()
                         .and_then(|s| primitives_from_csv(&s)).unwrap_or_default();
                     let barbs = row.get::<_, Option<String>>(27).ok().flatten()
@@ -606,6 +609,9 @@ impl WalletDb {
                     let capability_name: Option<String> = row.get(23).ok().flatten();
                     let resource: Option<String> = row.get(24).ok().flatten();
                     let action: Option<String> = row.get(25).ok().flatten();
+                    // A corrupt/unknown CSV degrades to an empty vec: typed
+                    // composition metadata is non-load-bearing (display/typing
+                    // only), so it is not surfaced as a read error.
                     let primitives = row.get::<_, Option<String>>(26).ok().flatten()
                         .and_then(|s| primitives_from_csv(&s)).unwrap_or_default();
                     let barbs = row.get::<_, Option<String>>(27).ok().flatten()

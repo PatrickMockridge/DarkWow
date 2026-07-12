@@ -28,8 +28,9 @@
 
 use crate::wallet_error::{Error, Result};
 use crate::walletdb::CapRecord;
+use crate::contract_imports::NATIVE_TOKEN_CONTRACT_ID;
 use dwow_chain::CoinCommitment;
-use dwow_sdk::crypto::{BaseBlind, Blind, ContractId, TokenId};
+use dwow_sdk::crypto::{BaseBlind, Blind, TokenId};
 use dwow_sdk::pasta::pallas;
 
 /// Minimum value for a change output. Outputs below this are dust
@@ -70,7 +71,7 @@ pub fn select_coins(
     // Filter to matching token
     let matching: Vec<&CapRecord> = available
         .iter()
-        .filter(|c| &c.token_id == token_id && !c.revoked)
+        .filter(|c| &c.token_id == token_id && !c.revoked && c.contract_id == *NATIVE_TOKEN_CONTRACT_ID)
         .collect();
 
     if matching.is_empty() {
@@ -146,6 +147,7 @@ pub fn select_fee_coin(
         .filter(|c| {
             &c.token_id == fee_token_id
                 && !c.revoked
+                && c.contract_id == *NATIVE_TOKEN_CONTRACT_ID
                 && !exclude_cap_ids.contains(&c.cap_id)
         })
         .collect();
@@ -187,7 +189,7 @@ mod tests {
             user_data: None,
             leaf_position: 0,
             commitment: CoinCommitment::from_bytes([0u8; 32]).unwrap(),
-            contract_id: ContractId::ZERO,
+            contract_id: *NATIVE_TOKEN_CONTRACT_ID,
             func_id: None,
             cap_blind: BaseBlind::from(0u64),
             value_blind: Blind(pallas::Scalar::from(0u64)),

@@ -13,6 +13,7 @@ use dwow_sdk::crypto::keypair::{Network, PublicKey};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use crate::wallet_error::{Error, Result};
 use crate::walletdb::WalletDb;
+use crate::contract_imports::NATIVE_TOKEN_CONTRACT_ID;
 
 pub struct LocalWallet {
     pub wallet: Arc<WalletDb>,
@@ -87,6 +88,14 @@ impl LocalWallet {
         let caps = self.capabilities()?;
         let mut balances = std::collections::HashMap::new();
         for cap in caps {
+            // Inflation guard (mirrors Dww::capability_balance): only the native
+            // token contract carries spendable value. Foreign/composed capabilities
+            // are non-fungible metadata and must never inflate the displayed
+            // balance. This is the default CLI `balance` path, so the gate must
+            // live here too, not only on the RPC/daemon twin.
+            if cap.contract_id != *NATIVE_TOKEN_CONTRACT_ID {
+                continue
+            }
             // token_id is now [u8; 32] — encode as bs58 for HashMap key (display boundary)
             let token_key = bs58::encode(&cap.token_id.to_bytes()).into_string();
             *balances.entry(token_key).or_insert(0) += cap.value;
