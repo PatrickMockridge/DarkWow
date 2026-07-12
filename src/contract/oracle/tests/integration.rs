@@ -25,8 +25,9 @@
 
 use dwow_serial::{deserialize, serialize};
 use dwow_sdk::pasta::pallas;
+use dwow_sdk::crypto::{PublicKey, SecretKey};
 use dwow_oracle_contract::{
-    model::{AttestValueParamsV1, Oracle, PushValueParamsV1, RegisterOracleParamsV1},
+    model::{AttestationId, AttestValueParamsV1, Oracle, OracleId, PushValueParamsV1, RegisterOracleParamsV1},
     OracleFunction,
     // Constants
     ORACLE_CONTRACT_ORACLES_TREE, ORACLE_CONTRACT_ATTESTATIONS_TREE, ORACLE_CONTRACT_INFO_TREE,
@@ -50,9 +51,8 @@ fn test_oracle_function_enum_invalid() {
 fn test_oracle_encoding() {
     let oracle = Oracle {
         version: 0,
-        id: dwow_sdk::pasta::pallas::Base::from(1),
-        oracle_pub_x: dwow_sdk::pasta::pallas::Base::from(2),
-        oracle_pub_y: dwow_sdk::pasta::pallas::Base::from(3),
+        id: OracleId(dwow_sdk::pasta::pallas::Base::from(1)),
+        oracle_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(2))),
         name: "BTC/USD Price Feed".to_string(),
         data_type: "price".to_string(),
         value: dwow_sdk::pasta::pallas::Base::from(50000),
@@ -73,9 +73,8 @@ fn test_oracle_encoding() {
 fn test_register_oracle_params_encoding() {
     let params = RegisterOracleParamsV1 {
         proof: vec![1, 2, 3],
-        oracle_id: pallas::Base::from(1),
-        oracle_pub_x: pallas::Base::from(2),
-        oracle_pub_y: pallas::Base::from(3),
+        oracle_id: OracleId(pallas::Base::from(1)),
+        oracle_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(2))),
         name: "BTC/USD Price Feed".to_string(),
         data_type: "price".to_string(),
     };
@@ -92,7 +91,7 @@ fn test_register_oracle_params_encoding() {
 fn test_push_value_params_encoding() {
     let params = PushValueParamsV1 {
         proof: vec![1, 2, 3],
-        oracle_id: pallas::Base::from(1),
+        oracle_id: OracleId(pallas::Base::from(1)),
         value: pallas::Base::from(50000),
     };
 
@@ -107,8 +106,8 @@ fn test_push_value_params_encoding() {
 fn test_attest_value_params_encoding() {
     let params = AttestValueParamsV1 {
         proof: vec![1, 2, 3],
-        oracle_id: pallas::Base::from(1),
-        attestation_id: pallas::Base::from(2),
+        oracle_id: OracleId(pallas::Base::from(1)),
+        attestation_id: AttestationId(pallas::Base::from(2)),
         predicate: 0, // Matches
         threshold: pallas::Base::from(50000),
     };

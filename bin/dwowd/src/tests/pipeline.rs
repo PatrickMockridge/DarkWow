@@ -263,11 +263,14 @@ impl ContractTestingPipeline {
                         action: DeadManAction::DisableMinting,
                         last_action_block: 0,
                     },
-                    token_authority_pub: [0u8; 32],
+                    token_authority_pub: dwow_sdk::crypto::PublicKey::from_secret(
+                        dwow_sdk::pasta::pallas::Base::from(1u64).into(),
+                    ),
                     create_token: false,
                     token_symbol: [0u8; 32],
                     deployer_auth: dwow_sdk::pasta::pallas::Base::zero(),
-                    promissory_note_contract_id: [0u8; 32],
+                    promissory_note_contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32])
+                        .unwrap(),
                 };
                 dwow_serial::serialize(&params)
             }

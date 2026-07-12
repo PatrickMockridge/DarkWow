@@ -147,9 +147,8 @@ impl OracleHarness {
         // Build RegisterOracleParamsV1 for call_data
         let params = RegisterOracleParamsV1 {
             proof: vec![],
-            oracle_id,
-            oracle_pub_x: public_inputs.oracle_pub_x,
-            oracle_pub_y: public_inputs.oracle_pub_y,
+            oracle_id: dwow_oracle_contract::model::OracleId(oracle_id),
+            oracle_pub: oracle_public,
             name,
             data_type,
         };

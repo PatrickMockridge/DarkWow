@@ -564,7 +564,7 @@ mod tests {
     #[test]
     fn test_fee_extraction() {
         let tx = make_tx(vec![], Some(42_000_000));
-        assert_eq!(extract_fee(&tx), 42_000_000);
+        assert_eq!(TestFeeExtractor.extract_fee(&tx), 42_000_000);
     }
 
     #[test]
@@ -581,8 +581,8 @@ mod tests {
             // Fee-descending: higher fee first
             let selected = mempool.select_for_block(&MinerConfig { max_gas: u64::MAX, max_txs: 100, ..Default::default() }).await;
             assert_eq!(selected.len(), 2);
-            assert_eq!(extract_fee(&selected[0]), 100_000_000); // higher fee first
-            assert_eq!(extract_fee(&selected[1]), 50_000_000);
+            assert_eq!(TestFeeExtractor.extract_fee(&selected[0]), 100_000_000); // higher fee first
+            assert_eq!(TestFeeExtractor.extract_fee(&selected[1]), 50_000_000);
 
             // Still in mempool after select
             assert_eq!(mempool.len().await, 2);

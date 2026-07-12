@@ -182,7 +182,7 @@ impl SubscriptionHarness {
             dao_path,
             plan_leaf_pos,
             plan_path,
-            subscription_id: SubscriptionId(subscription_id),
+            subscription_id,
             subscriber_public,
             plan_id,
             deposit,
@@ -258,7 +258,7 @@ impl SubscriptionHarness {
             subscription_state,
             subscription_spent_nullifier,
             expected_capability,
-            subscription_id: SubscriptionId(subscription_id),
+            subscription_id,
             current_block,
             subscriber_pub_x,
             subscriber_pub_y,
@@ -304,7 +304,7 @@ impl SubscriptionHarness {
         merkle_proof: Vec<pallas::Base>,
     ) -> Result<UpdateUsageResult, Box<dyn std::error::Error>> {
         let input = UpdateUsageCallData::new(
-            subscription_id: SubscriptionId(subscription_id),
+            subscription_id,
             subscriber_pub_x,
             subscriber_pub_y,
             usage_timestamp,

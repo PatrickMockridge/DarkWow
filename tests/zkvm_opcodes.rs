@@ -87,7 +87,8 @@ fn zkvm_opcodes() -> Result<()> {
     let ephem_secret = SecretKey::random(&mut OsRng);
     let pubkey = PublicKey::from_secret(ephem_secret).inner();
     let (ephem_x, ephem_y) =
-        PublicKey::try_from(pubkey * fp_mod_fv(ephem_secret.inner())).unwrap().xy();
+        PublicKey::try_from(pubkey * fp_mod_fv(ephem_secret.inner())).unwrap().xy()
+            .expect("non-identity ephem key");
 
     let prover_witnesses = vec![
         Witness::Base(Value::known(pallas::Base::from(value))),
@@ -110,7 +111,7 @@ fn zkvm_opcodes() -> Result<()> {
     let d = poseidon::Hash::<_, P128Pow5T3, ConstantLength<4>, 3, 2>::init().hash(d_m);
 
     let public = PublicKey::from_secret(SecretKey::from(secret));
-    let (pub_x, pub_y) = public.xy();
+    let (pub_x, pub_y) = public.xy().expect("non-identity test key");
 
     let public_inputs = vec![
         *value_coords.x(),
@@ -132,12 +133,12 @@ fn zkvm_opcodes() -> Result<()> {
     let mockprover = MockProver::run(zkbin.k, &circuit, vec![public_inputs.clone()])?;
     mockprover.assert_satisfied();
 
-    let proving_key = ProvingKey::build(zkbin.k, &circuit);
+    let proving_key = ProvingKey::build(zkbin.k, &circuit).unwrap();
     let proof = Proof::create(&proving_key, &[circuit], &public_inputs, &mut OsRng)?;
 
     let verifier_witnesses = empty_witnesses(&zkbin)?;
     let circuit = ZkCircuit::new(verifier_witnesses, &zkbin);
-    let verifying_key = VerifyingKey::build(zkbin.k, &circuit);
+    let verifying_key = VerifyingKey::build(zkbin.k, &circuit).unwrap();
     proof.verify(&verifying_key, &public_inputs)?;
 
     Ok(())

@@ -74,12 +74,12 @@ fn zkvm_smt() -> Result<()> {
     let mockprover = MockProver::run(zkbin.k, &circuit, vec![public_inputs.clone()])?;
     mockprover.assert_satisfied();
 
-    let proving_key = ProvingKey::build(zkbin.k, &circuit);
+    let proving_key = ProvingKey::build(zkbin.k, &circuit).unwrap();
     let proof = Proof::create(&proving_key, &[circuit], &public_inputs, &mut OsRng)?;
 
     let verifier_witnesses = empty_witnesses(&zkbin)?;
     let circuit = ZkCircuit::new(verifier_witnesses, &zkbin);
-    let verifying_key = VerifyingKey::build(zkbin.k, &circuit);
+    let verifying_key = VerifyingKey::build(zkbin.k, &circuit).unwrap();
     proof.verify(&verifying_key, &public_inputs)?;
 
     Ok(())

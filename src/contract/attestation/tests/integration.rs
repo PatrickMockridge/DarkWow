@@ -25,9 +25,10 @@
 
 use dwow_serial::{deserialize, serialize};
 use dwow_sdk::pasta::pallas;
+use dwow_sdk::crypto::{PublicKey, SecretKey};
 use dwow_attestation_contract::{
     model::{
-        Attestation, AttestationState, Claim, ClaimId, ClaimState, CreateAttestationParamsV1,
+        Attestation, AttestationId, AttestationState, Claim, ClaimId, ClaimState, CreateAttestationParamsV1,
         CreateAttestationUpdateV1, CreateClaimParamsV1, CreateClaimUpdateV1,
         ExpireAttestationParamsV1, ExpireAttestationUpdateV1, Predicate, RevokeAttestationParamsV1,
         RevokeAttestationUpdateV1, ValidateClaimParamsV1, ValidateClaimUpdateV1,
@@ -89,17 +90,16 @@ fn test_predicate_from_u8() {
 
 #[test]
 fn test_attestation_derive_id() {
-    let attestor_pub_x = pallas::Base::from(1);
-    let attestor_pub_y = pallas::Base::from(2);
+    let attestor_pub = PublicKey::from_secret(SecretKey::from(pallas::Base::from(1)));
     let claim_type = Predicate::Matches;
     let claim_data = vec![pallas::Base::from(1), pallas::Base::from(2)];
     let attestor_secret = pallas::Base::from(42);
 
     // derive_id is a placeholder - just verify it doesn't panic and returns consistent results
-    let id = Attestation::derive_id(attestor_pub_x, attestor_pub_y, claim_type, &claim_data, attestor_secret);
+    let id = Attestation::derive_id(attestor_pub, claim_type, &claim_data, attestor_secret);
 
     // Should be deterministic (same input = same output)
-    let id2 = Attestation::derive_id(attestor_pub_x, attestor_pub_y, claim_type, &claim_data, attestor_secret);
+    let id2 = Attestation::derive_id(attestor_pub, claim_type, &claim_data, attestor_secret);
     assert_eq!(id, id2);
 
     // Note: Since derive_id is a placeholder returning Base::zero(),
@@ -110,9 +110,8 @@ fn test_attestation_derive_id() {
 fn test_attestation_encoding() {
     let attestation = Attestation {
 
-        version: 0,        id: pallas::Base::from(1),
-        attestor_pub_x: pallas::Base::from(2),
-        attestor_pub_y: pallas::Base::from(3),
+        version: 0,        id: AttestationId(pallas::Base::from(1)),
+        attestor_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(2))),
         attestor_secret: pallas::Base::from(4),
         claim_type: Predicate::Matches,
         claim_data: vec![pallas::Base::from(1), pallas::Base::from(2)],
@@ -136,10 +135,9 @@ fn test_attestation_encoding() {
 fn test_claim_encoding() {
     let claim = Claim {
 
-        version: 0,        id: pallas::Base::from(1),
-        attestation_id: pallas::Base::from(2),
-        claimant_pub_x: pallas::Base::from(3),
-        claimant_pub_y: pallas::Base::from(4),
+        version: 0,        id: ClaimId(pallas::Base::from(1)),
+        attestation_id: AttestationId(pallas::Base::from(2)),
+        claimant_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(3))),
         claimant_secret: pallas::Base::from(5),
         predicate: Predicate::GreaterOrEqual,
         evidence_commitment: vec![1, 2, 3],
@@ -164,9 +162,8 @@ fn test_claim_encoding() {
 fn test_create_attestation_params_encoding() {
     let params = CreateAttestationParamsV1 {
         proof: vec![1, 2, 3],
-        attestation_id: pallas::Base::from(1),
-        attestor_pub_x: pallas::Base::from(2),
-        attestor_pub_y: pallas::Base::from(3),
+        attestation_id: AttestationId(pallas::Base::from(1)),
+        attestor_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(2))),
         claim_type: Predicate::Matches,
         claim_data: vec![pallas::Base::from(4)],
         metadata: vec![5, 6],
@@ -183,7 +180,7 @@ fn test_create_attestation_params_encoding() {
 #[test]
 fn test_create_attestation_update_encoding() {
     let update = CreateAttestationUpdateV1 {
-        attestation_id: pallas::Base::from(1),
+        attestation_id: AttestationId(pallas::Base::from(1)),
     };
 
     let encoded = serialize(&update);
@@ -195,9 +192,8 @@ fn test_create_attestation_update_encoding() {
 #[test]
 fn test_revoke_attestation_params_encoding() {
     let params = RevokeAttestationParamsV1 {
-        attestation_id: pallas::Base::from(1),
-        attestor_pub_x: pallas::Base::from(2),
-        attestor_pub_y: pallas::Base::from(3),
+        attestation_id: AttestationId(pallas::Base::from(1)),
+        attestor_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(2))),
     };
 
     let encoded = serialize(&params);
@@ -209,7 +205,7 @@ fn test_revoke_attestation_params_encoding() {
 #[test]
 fn test_revoke_attestation_update_encoding() {
     let update = RevokeAttestationUpdateV1 {
-        attestation_id: pallas::Base::from(1),
+        attestation_id: AttestationId(pallas::Base::from(1)),
     };
 
     let encoded = serialize(&update);
@@ -221,7 +217,7 @@ fn test_revoke_attestation_update_encoding() {
 #[test]
 fn test_expire_attestation_params_encoding() {
     let params = ExpireAttestationParamsV1 {
-        attestation_id: pallas::Base::from(1),
+        attestation_id: AttestationId(pallas::Base::from(1)),
     };
 
     let encoded = serialize(&params);
@@ -233,7 +229,7 @@ fn test_expire_attestation_params_encoding() {
 #[test]
 fn test_expire_attestation_update_encoding() {
     let update = ExpireAttestationUpdateV1 {
-        attestation_id: pallas::Base::from(1),
+        attestation_id: AttestationId(pallas::Base::from(1)),
     };
 
     let encoded = serialize(&update);
@@ -246,10 +242,9 @@ fn test_expire_attestation_update_encoding() {
 fn test_create_claim_params_encoding() {
     let params = CreateClaimParamsV1 {
         proof: vec![1, 2, 3],
-        claim_id: pallas::Base::from(1),
-        attestation_id: pallas::Base::from(2),
-        claimant_pub_x: pallas::Base::from(3),
-        claimant_pub_y: pallas::Base::from(4),
+        claim_id: ClaimId(pallas::Base::from(1)),
+        attestation_id: AttestationId(pallas::Base::from(2)),
+        claimant_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(3))),
         predicate: Predicate::LessOrEqual,
         evidence_commitment: vec![5, 6, 7],
         revealed_result: vec![8, 9],
@@ -265,7 +260,7 @@ fn test_create_claim_params_encoding() {
 #[test]
 fn test_create_claim_update_encoding() {
     let update = CreateClaimUpdateV1 {
-        claim_id: pallas::Base::from(1),
+        claim_id: ClaimId(pallas::Base::from(1)),
     };
 
     let encoded = serialize(&update);
@@ -277,8 +272,8 @@ fn test_create_claim_update_encoding() {
 #[test]
 fn test_verify_claim_params_encoding() {
     let params = VerifyClaimParamsV1 {
-        claim_id: pallas::Base::from(1),
-        attestation_id: pallas::Base::from(2),
+        claim_id: ClaimId(pallas::Base::from(1)),
+        attestation_id: AttestationId(pallas::Base::from(2)),
         evidence_commitment: pallas::Base::from(3),
         revealed_result: pallas::Base::from(4),
         revocation_root: pallas::Base::from(5),
@@ -299,7 +294,7 @@ fn test_verify_claim_params_encoding() {
 #[test]
 fn test_verify_claim_update_encoding() {
     let update = VerifyClaimUpdateV1 {
-        claim_id: pallas::Base::from(1),
+        claim_id: ClaimId(pallas::Base::from(1)),
         verified: true,
     };
 
@@ -313,10 +308,9 @@ fn test_verify_claim_update_encoding() {
 #[test]
 fn test_consume_claim_params_encoding() {
     let params = ConsumeClaimParamsV1 {
-        claim_id: pallas::Base::from(1),
-        attestation_id: pallas::Base::from(2),
-        claimant_pub_x: pallas::Base::from(3),
-        claimant_pub_y: pallas::Base::from(4),
+        claim_id: ClaimId(pallas::Base::from(1)),
+        attestation_id: AttestationId(pallas::Base::from(2)),
+        claimant_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(3))),
         nullifier: pallas::Base::from(5),
     };
 
@@ -330,7 +324,7 @@ fn test_consume_claim_params_encoding() {
 #[test]
 fn test_consume_claim_update_encoding() {
     let update = ConsumeClaimUpdateV1 {
-        claim_id: pallas::Base::from(1),
+        claim_id: ClaimId(pallas::Base::from(1)),
     };
 
     let encoded = serialize(&update);
@@ -342,8 +336,8 @@ fn test_consume_claim_update_encoding() {
 #[test]
 fn test_validate_claim_params_encoding() {
     let params = ValidateClaimParamsV1 {
-        claim_id: pallas::Base::from(1),
-        attestation_id: pallas::Base::from(2),
+        claim_id: ClaimId(pallas::Base::from(1)),
+        attestation_id: AttestationId(pallas::Base::from(2)),
         evidence: vec![pallas::Base::from(3), pallas::Base::from(4)],
     };
 
@@ -357,7 +351,7 @@ fn test_validate_claim_params_encoding() {
 #[test]
 fn test_validate_claim_update_encoding() {
     let update = ValidateClaimUpdateV1 {
-        claim_id: pallas::Base::from(1),
+        claim_id: ClaimId(pallas::Base::from(1)),
         valid: true,
     };
 

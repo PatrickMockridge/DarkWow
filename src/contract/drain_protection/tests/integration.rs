@@ -28,8 +28,7 @@ use dwow_drain_protection_contract::{
         DrainConfig, ExitParamsV1, ExitQueueEntry, ExitRequest, ExitUpdateV1, LockParamsV1,
         LockState, LockUpdateV1, MemberWeight, ProposeParamsV1, ProposeUpdateV1, ProtectedFund,
         RateLimit, TransferParamsV1, TransferRecord, TransferUpdateV1, UnlockParamsV1,
-        UnlockUpdateV1, UpdateConfigParamsV1, UpdateConfigUpdateV1, VoteAction, VoteParamsV1,
-        VoteProposal, VoteThresholds, VoteUpdateV1,
+        UnlockUpdateV1, UpdateConfigParamsV1, UpdateConfigUpdateV1, VoteParamsV1, VoteUpdateV1,
     },
     DrainProtectionFunction,
     // Constants
@@ -94,15 +93,6 @@ fn test_rate_limit_default() {
 }
 
 #[test]
-fn test_vote_thresholds_default() {
-    let thresholds = VoteThresholds::default();
-    assert_eq!(thresholds.large_withdrawal_thresh, 667);
-    assert_eq!(thresholds.lock_unlock_thresh, 667);
-    assert_eq!(thresholds.authority_change_thresh, 667);
-    assert_eq!(thresholds.quorum_min_bps, 500);
-}
-
-#[test]
 fn test_member_weight_effective_weight() {
     let weight = MemberWeight {
         contribution: 1000,
@@ -124,10 +114,11 @@ fn test_member_weight_effective_weight() {
 #[test]
 fn test_drain_config_default() {
     let config = DrainConfig::default();
-    assert!(config.graduated_tiers.is_none());
+    // graduated_tiers + guardian_pause were replaced by multisig governance
+    // (guardian_multisig_group_id), which defaults to zero.
+    assert_eq!(config.guardian_multisig_group_id, pallas::Base::zero());
     assert!(config.exit_queue.is_some());
     assert!(config.circuit_breaker.is_some());
-    assert!(config.guardian_pause.is_none());
     assert!(config.observation_period.is_none());
     assert!(config.split_proposals.is_none());
     assert!(config.no_loss_reserve.is_none());
@@ -147,22 +138,6 @@ fn test_rate_limit_encoding() {
 
     assert_eq!(decoded.base_rate_bps, rate_limit.base_rate_bps);
     assert_eq!(decoded.averaging_window_blocks, rate_limit.averaging_window_blocks);
-}
-
-#[test]
-fn test_vote_thresholds_encoding() {
-    let thresholds = VoteThresholds {
-        large_withdrawal_thresh: 667,
-        lock_unlock_thresh: 667,
-        authority_change_thresh: 667,
-        quorum_min_bps: 500,
-    };
-
-    let encoded = serialize(&thresholds);
-    let decoded: VoteThresholds = deserialize(&encoded).unwrap();
-
-    assert_eq!(decoded.large_withdrawal_thresh, thresholds.large_withdrawal_thresh);
-    assert_eq!(decoded.quorum_min_bps, thresholds.quorum_min_bps);
 }
 
 #[test]
@@ -200,28 +175,6 @@ fn test_exit_request_encoding() {
     assert_eq!(decoded.requested_value, request.requested_value);
     assert_eq!(decoded.haircut_bps, request.haircut_bps);
     assert_eq!(decoded.processed, request.processed);
-}
-
-#[test]
-fn test_vote_proposal_encoding() {
-    let proposal = VoteProposal {
-        version: 0,
-        id: pallas::Base::from(1),
-        action: VoteAction::LockFunds,
-        started_at: 50000,
-        ends_at: 50600,
-        yes_votes: 700,
-        no_votes: 100,
-        concluded: false,
-    };
-
-    let encoded = serialize(&proposal);
-    let decoded: VoteProposal = deserialize(&encoded).unwrap();
-
-    assert_eq!(decoded.id, proposal.id);
-    assert_eq!(decoded.yes_votes, proposal.yes_votes);
-    assert_eq!(decoded.no_votes, proposal.no_votes);
-    assert_eq!(decoded.concluded, proposal.concluded);
 }
 
 #[test]
@@ -368,7 +321,7 @@ fn test_update_config_params_encoding() {
     let params = UpdateConfigParamsV1 {
         fund_id: pallas::Base::from(1),
         rate_limit: Some(RateLimit::default()),
-        thresholds: Some(VoteThresholds::default()),
+        multisig_group_id: Some(pallas::Base::from(7)),
         new_spend_authority: Some(make_pubkey(1)),
     };
 
@@ -376,7 +329,7 @@ fn test_update_config_params_encoding() {
     let decoded: UpdateConfigParamsV1 = deserialize(&encoded).unwrap();
 
     assert!(decoded.rate_limit.is_some());
-    assert!(decoded.thresholds.is_some());
+    assert!(decoded.multisig_group_id.is_some());
     assert!(decoded.new_spend_authority.is_some());
 }
 

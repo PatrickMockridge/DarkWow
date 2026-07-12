@@ -112,6 +112,39 @@ pub struct OtcSwap {
 }
 
 impl OtcSwap {
+    /// Derive the swap ID from swap parameters
+    #[allow(dead_code)]
+    pub fn derive_id(
+        alice_pubkey: &PublicKey,
+        bob_pubkey: &PublicKey,
+        send_value: u64,
+        send_token_id: pallas::Base,
+        recv_value: u64,
+        recv_token_id: pallas::Base,
+        timeout: u64,
+        alice_secret: pallas::Base,
+    ) -> SwapId {
+        let (ax, ay) = alice_pubkey.xy().expect("pk not identity");
+        let (bx, by) = bob_pubkey.xy().expect("pk not identity");
+        poseidon_hash([
+            ax,
+            ay,
+            bx,
+            by,
+            pallas::Base::from(send_value),
+            send_token_id,
+            pallas::Base::from(recv_value),
+            recv_token_id,
+            pallas::Base::from(timeout),
+            alice_secret,
+        ])
+    }
+
+    /// Compute the nullifier that prevents double-execute or double-cancel
+    #[allow(dead_code)]
+    pub fn compute_nullifier(&self, secret: pallas::Base) -> pallas::Base {
+        poseidon_hash([self.id, secret])
+    }
 }
 
 /// Parameters for `OtcSwap::CreateSwapV1`

@@ -60,11 +60,11 @@ fn halo2_vk_ser() -> Result<()> {
 
     println!("Building vk1");
     let circuit = ZkCircuit::new(verifier_witnesses.clone(), &zkbin);
-    let vk1 = VerifyingKey::build(zkbin.k, &circuit);
+    let vk1 = VerifyingKey::build(zkbin.k, &circuit).unwrap();
 
     println!("Building vk2");
     let circuit = ZkCircuit::new(verifier_witnesses.clone(), &zkbin);
-    let vk2 = VerifyingKey::build(zkbin.k, &circuit);
+    let vk2 = VerifyingKey::build(zkbin.k, &circuit).unwrap();
 
     let mut buf1 = vec![];
     let mut buf2 = vec![];
@@ -93,7 +93,7 @@ fn halo2_vk_ser() -> Result<()> {
     // Now let's see if we can verify a proof with all four keys.
     println!("Creating pk");
     let circuit = ZkCircuit::new(verifier_witnesses.clone(), &zkbin);
-    let pk = ProvingKey::build(zkbin.k, &circuit);
+    let pk = ProvingKey::build(zkbin.k, &circuit).unwrap();
 
     let value = 666_u64;
     let value_blind = Blind::random(&mut OsRng);
@@ -126,7 +126,8 @@ fn halo2_vk_ser() -> Result<()> {
     let ephem_secret = SecretKey::random(&mut OsRng);
     let pubkey = PublicKey::from_secret(ephem_secret).inner();
     let (ephem_x, ephem_y) =
-        PublicKey::try_from(pubkey * fp_mod_fv(ephem_secret.inner())).unwrap().xy();
+        PublicKey::try_from(pubkey * fp_mod_fv(ephem_secret.inner())).unwrap().xy()
+            .expect("non-identity ephem key");
     let prover_witnesses = vec![
         Witness::Base(Value::known(pallas::Base::from(value))),
         Witness::Scalar(Value::known(value_blind.inner())),
@@ -148,7 +149,7 @@ fn halo2_vk_ser() -> Result<()> {
     let d = poseidon::Hash::<_, P128Pow5T3, ConstantLength<4>, 3, 2>::init().hash(d_m);
 
     let public = PublicKey::from_secret(SecretKey::from(secret));
-    let (pub_x, pub_y) = public.xy();
+    let (pub_x, pub_y) = public.xy().expect("non-identity test key");
 
     let public_inputs = vec![
         *value_coords.x(),

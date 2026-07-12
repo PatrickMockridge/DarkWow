@@ -32,6 +32,8 @@ pub mod push_value_commitment_v1;
 pub mod aggregate_v1;
 
 use dwow_sdk::pasta::pallas;
+use dwow_sdk::crypto::PublicKey;
+
 use crate::model::SetOracleActiveParamsV1;
 
 /// Builder for setting oracle active state

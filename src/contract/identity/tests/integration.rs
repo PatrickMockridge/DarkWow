@@ -36,6 +36,8 @@ use dwow_identity_contract::{
     IdentityFunction,
 };
 use dwow_serial::{deserialize, serialize};
+use dwow_sdk::crypto::{PublicKey, SecretKey};
+use dwow_sdk::pasta::pallas;
 
 /// Helper to create IntentNullifier from bytes
 fn make_nullifier(bytes: [u8; 32]) -> dwow_sdk::crypto::IntentNullifier {
@@ -132,8 +134,8 @@ fn test_attribute_types() {
 #[test]
 fn test_issue_credential_params_encoding() {
     let params = IssueCredentialParams {
-        issuer_pub: [1u8; 32],
-        holder_pub: [2u8; 32],
+        issuer_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(1))),
+        holder_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(2))),
         schema_hash: [3u8; 32],
         encrypted_attributes: vec![4u8; 64],
         commitment: make_commitment([5u8; 32]),
@@ -196,8 +198,8 @@ fn test_create_claim_params_l1_encoding() {
 fn test_credential_encoding() {
     let credential = Credential {
         nullifier: make_nullifier([1u8; 32]),
-        issuer_pub: [2u8; 32],
-        holder_pub: [3u8; 32],
+        issuer_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(2))),
+        holder_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(3))),
         schema_hash: [4u8; 32],
         commitment: make_commitment([5u8; 32]),
         revoked: false,
@@ -216,7 +218,7 @@ fn test_credential_encoding() {
 #[test]
 fn test_issuer_encoding() {
     let issuer = Issuer {
-        pub_key: [1u8; 32],
+        pub_key: PublicKey::from_secret(SecretKey::from(pallas::Base::from(1))),
         name: b"Government DMV".to_vec(),
         authorized_schemas: vec![[2u8; 32], [3u8; 32]],
         trusted: true,
@@ -235,7 +237,7 @@ fn test_issuer_encoding() {
 fn test_claim_encoding() {
     let claim = Claim {
         nullifier: make_nullifier([1u8; 32]),
-        issuer_pub: [2u8; 32],
+        issuer_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(2))),
         claim_type: [3u8; 32],
         predicate_result: vec![1], // "true"
         revealed_attributes: vec![b"age".to_vec()],
@@ -256,8 +258,8 @@ fn test_claim_encoding() {
 fn test_credential_not_revoked() {
     let credential = Credential {
         nullifier: make_nullifier([1u8; 32]),
-        issuer_pub: [2u8; 32],
-        holder_pub: [3u8; 32],
+        issuer_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(2))),
+        holder_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(3))),
         schema_hash: [4u8; 32],
         commitment: make_commitment([5u8; 32]),
         revoked: false,
@@ -274,8 +276,8 @@ fn test_credential_expired() {
     let current_time: u64 = 3000;
     let credential = Credential {
         nullifier: make_nullifier([1u8; 32]),
-        issuer_pub: [2u8; 32],
-        holder_pub: [3u8; 32],
+        issuer_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(2))),
+        holder_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(3))),
         schema_hash: [4u8; 32],
         commitment: make_commitment([5u8; 32]),
         revoked: false,
@@ -292,8 +294,8 @@ fn test_credential_expired() {
 fn test_credential_revoked() {
     let credential = Credential {
         nullifier: make_nullifier([1u8; 32]),
-        issuer_pub: [2u8; 32],
-        holder_pub: [3u8; 32],
+        issuer_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(2))),
+        holder_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(3))),
         schema_hash: [4u8; 32],
         commitment: make_commitment([5u8; 32]),
         revoked: true,

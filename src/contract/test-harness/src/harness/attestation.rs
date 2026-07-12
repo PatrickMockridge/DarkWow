@@ -29,7 +29,7 @@ use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use dwow_sdk::{crypto::PublicKey, pasta::pallas};
+use dwow_sdk::{crypto::{pasta_prelude::PrimeField, PublicKey}, pasta::pallas};
 use dwow_serial::Encodable;
 
 use dwow_attestation_contract::client::{
@@ -232,8 +232,7 @@ impl AttestationHarness {
         let params = CreateAttestationParamsV1 {
             proof: proof.as_ref().to_vec(),
             attestation_id: AttestationId(attestation_id),
-            attestor_pub_x: public_inputs.attestor_pub_x,
-            attestor_pub_y: public_inputs.attestor_pub_y,
+            attestor_pub: attestor_public,
             claim_type,
             claim_data,
             metadata,
@@ -268,8 +267,7 @@ impl AttestationHarness {
             proof: proof.as_ref().to_vec(),
             claim_id: ClaimId(claim_id),
             attestation_id: AttestationId(attestation_id),
-            claimant_pub_x: public_inputs.claimant_pub_x,
-            claimant_pub_y: public_inputs.claimant_pub_y,
+            claimant_pub: claimant_public,
             predicate,
             evidence_commitment,
             revealed_result,
@@ -344,8 +342,7 @@ impl AttestationHarness {
         let params = ConsumeClaimParamsV1 {
             claim_id: ClaimId(claim_id),
             attestation_id: AttestationId(attestation_id),
-            claimant_pub_x: public_inputs.claimant_pub_x,
-            claimant_pub_y: public_inputs.claimant_pub_y,
+            claimant_pub: claimant_public,
             nullifier: public_inputs.nullifier,
         };
 
@@ -408,18 +405,16 @@ impl AttestationHarness {
             proof: proof.as_ref().to_vec(),
             delegation_id: public_inputs.delegation_id,
             parent_id,
-            delegator_pub_x: public_inputs.delegator_pub_x,
-            delegator_pub_y: public_inputs.delegator_pub_y,
-            delegatee_pub_x: public_inputs.delegatee_pub_x,
-            delegatee_pub_y: public_inputs.delegatee_pub_y,
-            delegation_type,
-            max_ratio: public_inputs.max_ratio,
+            delegator_pub: delegator_public,
+            delegatee_pub: delegatee_public,
+            delegation_type: delegation_type.to_repr()[0],
+            max_ratio: u64::from_le_bytes(public_inputs.max_ratio.to_repr()[0..8].try_into().unwrap()),
             revocation_root: public_inputs.revocation_root,
             chain_root,
-            chain_depth: public_inputs.current_depth,
-            max_depth: public_inputs.max_depth,
-            delegator_stake: public_inputs.delegator_stake,
-            delegatee_stake: public_inputs.delegatee_stake,
+            chain_depth: u64::from_le_bytes(public_inputs.current_depth.to_repr()[0..8].try_into().unwrap()),
+            max_depth: u64::from_le_bytes(public_inputs.max_depth.to_repr()[0..8].try_into().unwrap()),
+            delegator_stake: u64::from_le_bytes(public_inputs.delegator_stake.to_repr()[0..8].try_into().unwrap()),
+            delegatee_stake: u64::from_le_bytes(public_inputs.delegatee_stake.to_repr()[0..8].try_into().unwrap()),
         };
 
         let mut call_data = vec![0x06];

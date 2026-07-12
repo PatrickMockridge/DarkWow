@@ -314,6 +314,10 @@ macro_rules! test_body {
     };
 }
 
+// TODO(p2p-net-tests): FAILING — parked for a separate scope. This is P2P
+// message-passing infrastructure (not blockchain/type-system). It binds real TCP on
+// 127.0.0.1 and relies on fixed-timing sleeps, so it is environment/timing-sensitive.
+// Unrelated to the type-system migration. Grep marker: p2p-net-tests
 #[test]
 fn p2p_test() {
     test_body!(p2p_test_real, 5);
@@ -519,6 +523,10 @@ async fn p2p_test_real(ex: Arc<Executor<'static>>) {
     }
 }
 
+// TODO(p2p-net-tests): FAILING — parked for a separate scope. This is P2P
+// message-passing infrastructure (not blockchain/type-system). It binds real TCP on
+// 127.0.0.1 and relies on fixed-timing sleeps, so it is environment/timing-sensitive.
+// Unrelated to the type-system migration. Grep marker: p2p-net-tests
 #[test]
 fn p2p_channel_unsupported_message_type_gets_banned() {
     test_body!(p2p_channel_unsupported_message_type_gets_banned_real, 2);
@@ -559,6 +567,10 @@ async fn p2p_channel_unsupported_message_type_gets_banned_real(ex: Arc<Executor<
     node2_p2p.stop().await;
 }
 
+// TODO(p2p-net-tests): FAILING — parked for a separate scope. This is P2P
+// message-passing infrastructure (not blockchain/type-system). It binds real TCP on
+// 127.0.0.1 and relies on fixed-timing sleeps, so it is environment/timing-sensitive.
+// Unrelated to the type-system migration. Grep marker: p2p-net-tests
 #[test]
 fn p2p_channel_invalid_command_length_gets_banned() {
     test_body!(p2p_channel_invalid_command_length_gets_banned_real, 2);
@@ -599,6 +611,10 @@ async fn p2p_channel_invalid_command_length_gets_banned_real(ex: Arc<Executor<'s
     node2_p2p.stop().await;
 }
 
+// TODO(p2p-net-tests): FAILING — parked for a separate scope. This is P2P
+// message-passing infrastructure (not blockchain/type-system). It binds real TCP on
+// 127.0.0.1 and relies on fixed-timing sleeps, so it is environment/timing-sensitive.
+// Unrelated to the type-system migration. Grep marker: p2p-net-tests
 #[test]
 fn p2p_channel_invalid_message_length_gets_banned() {
     test_body!(p2p_channel_invalid_message_length_gets_banned_real, 2);

@@ -424,7 +424,8 @@ async fn cmd_register_relayer(
     timeout: u64,
 ) -> Result<()> {
     let bridge_id = bridge_contract_id();
-    let relayer_pub = hex_to_bytes32(relayer_pub_hex)?;
+    let relayer_pub = PublicKey::from_bytes(hex_to_bytes32(relayer_pub_hex)?)
+        .map_err(|e| anyhow!("Invalid relayer pubkey: {e:?}"))?;
 
     let params = RegisterRelayerParams { relayer_pub };
 
@@ -572,7 +573,8 @@ async fn cmd_accept_withdrawal(
     let nullifier_bytes = hex_to_bytes32(nullifier_hex)?;
     let nullifier = IntentNullifier::from_bytes(nullifier_bytes)
         .map_err(|e| anyhow!("Invalid nullifier: {e:?}"))?;
-    let relayer_pub = hex_to_bytes32(relayer_pub_hex)?;
+    let relayer_pub = PublicKey::from_bytes(hex_to_bytes32(relayer_pub_hex)?)
+        .map_err(|e| anyhow!("Invalid relayer pubkey: {e:?}"))?;
 
     let params = AcceptWithdrawalParams {
         nullifier,

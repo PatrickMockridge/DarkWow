@@ -24,6 +24,7 @@
 //! Stablecoin contract integration tests
 
 use dwow_serial::{deserialize, serialize};
+use dwow_sdk::crypto::PublicKey;
 use dwow_sdk::pasta::pallas;
 use dwow_stablecoin_contract::{
     model::{

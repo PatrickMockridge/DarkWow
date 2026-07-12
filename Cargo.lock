@@ -2467,6 +2467,7 @@ dependencies = [
 name = "dwow-system"
 version = "0.5.0"
 dependencies = [
+ "futures",
  "libc",
  "parking_lot 0.12.5",
  "pin-project-lite",
@@ -2930,6 +2931,7 @@ name = "dwow_mempool"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "dwow-sdk",
  "dwow_chain",
  "dwow_core",
  "serde_json",

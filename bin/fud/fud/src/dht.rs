@@ -215,7 +215,7 @@ impl DhtHandler for Fud {
             if let Err(e) = timeout(ping_timeout, self.dht.wait_fully_pinged(channel.info.id)).await
             {
                 self.dht.cleanup_channel(channel).await;
-                return Err(e.into())
+                return Err(Error::Timeout(e.to_string()))
             }
 
             let mut host_cache = self.dht.host_cache.write().await;

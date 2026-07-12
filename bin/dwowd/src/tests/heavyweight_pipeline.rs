@@ -543,11 +543,11 @@ fn test_heavyweight_auction() -> std::result::Result<(), Box<dyn std::error::Err
 
         let harness = &pipeline.harness;
         let seller_secret = pallas::Base::from(10u64);
-        let seller_pub = PublicKey::from_secret(seller_secret);
+        let seller_pub = PublicKey::from_secret(seller_secret.into());
         let bidder_secret = pallas::Base::from(20u64);
-        let bidder_pub = PublicKey::from_secret(bidder_secret);
+        let bidder_pub = PublicKey::from_secret(bidder_secret.into());
         let winner_secret = pallas::Base::from(30u64);
-        let winner_pub = PublicKey::from_secret(winner_secret);
+        let winner_pub = PublicKey::from_secret(winner_secret.into());
 
         // --- create_auction ---
         println!("  Test: create_auction");
@@ -629,10 +629,10 @@ fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Erro
         };
 
         // Derive instance-scoped keys — same wallet, different instance = different key
-        let buyer_instance_sk = buyer_wallet_sk.derive_instance(&contract_id, &instance_seed);
+        let buyer_instance_sk = buyer_wallet_sk.derive_instance(&contract_id, &instance_seed).unwrap();
         let buyer_pub = PublicKey::from_secret(buyer_instance_sk);
         let buyer_secret = buyer_instance_sk.inner();
-        let seller_instance_sk = seller_wallet_sk.derive_instance(&contract_id, &instance_seed);
+        let seller_instance_sk = seller_wallet_sk.derive_instance(&contract_id, &instance_seed).unwrap();
         let seller_pub = PublicKey::from_secret(seller_instance_sk);
         let seller_secret = seller_instance_sk.inner();
 
@@ -656,7 +656,7 @@ fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Erro
 
         // --- refund_escrow ---
         println!("  Test: refund_escrow");
-        let refund = pipeline.harness.refund_escrow(create.public_inputs.commitment, 1000, 1001, buyer_secret, buyer_pub, buyer_pub.x(), buyer_pub.y(), buyer_pub)?;
+        let refund = pipeline.harness.refund_escrow(create.public_inputs.commitment, 1000, 1001, buyer_secret, buyer_pub, buyer_pub.x().expect("pk not identity"), buyer_pub.y().expect("pk not identity"), buyer_pub)?;
         assert!(!refund.call_data.is_empty());
         println!("    call_data={}B", refund.call_data.len());
 
@@ -733,10 +733,10 @@ fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Er
             seed
         };
 
-        let buyer_instance_sk = buyer_wallet_sk.derive_instance(&contract_id, &instance_seed);
+        let buyer_instance_sk = buyer_wallet_sk.derive_instance(&contract_id, &instance_seed).unwrap();
         let buyer_pub = PublicKey::from_secret(buyer_instance_sk);
         let buyer_secret = buyer_instance_sk.inner();
-        let seller_instance_sk = seller_wallet_sk.derive_instance(&contract_id, &instance_seed);
+        let seller_instance_sk = seller_wallet_sk.derive_instance(&contract_id, &instance_seed).unwrap();
         let seller_pub = PublicKey::from_secret(seller_instance_sk);
         let seller_secret = seller_instance_sk.inner();
 
@@ -971,9 +971,9 @@ fn test_heavyweight_labor_market() -> std::result::Result<(), Box<dyn std::error
 
         let harness = &pipeline.harness;
         let employer_secret = pallas::Base::from(10u64);
-        let employer_pub = PublicKey::from_secret(employer_secret);
+        let employer_pub = PublicKey::from_secret(employer_secret.into());
         let worker_secret = pallas::Base::from(20u64);
-        let worker_pub = PublicKey::from_secret(worker_secret);
+        let worker_pub = PublicKey::from_secret(worker_secret.into());
         let job_id = pallas::Base::from(100u64);
         let claim_id = pallas::Base::from(200u64);
 
@@ -1053,9 +1053,9 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
 
         let harness = &pipeline.harness;
         let attestor_secret = pallas::Base::from(10u64);
-        let attestor_pub = PublicKey::from_secret(attestor_secret);
+        let attestor_pub = PublicKey::from_secret(attestor_secret.into());
         let claimant_secret = pallas::Base::from(20u64);
-        let claimant_pub = PublicKey::from_secret(claimant_secret);
+        let claimant_pub = PublicKey::from_secret(claimant_secret.into());
         let attestation_id = pallas::Base::from(100u64);
         let claim_id = pallas::Base::from(200u64);
 
@@ -1122,9 +1122,9 @@ fn test_heavyweight_tender() -> std::result::Result<(), Box<dyn std::error::Erro
 
         let harness = &pipeline.harness;
         let requester_secret = pallas::Base::from(10u64);
-        let requester_pub = PublicKey::from_secret(requester_secret);
+        let requester_pub = PublicKey::from_secret(requester_secret.into());
         let bidder_secret = pallas::Base::from(20u64);
-        let bidder_pub = PublicKey::from_secret(bidder_secret);
+        let bidder_pub = PublicKey::from_secret(bidder_secret.into());
 
         // --- create_tender ---
         println!("  Test: create_tender");
@@ -1183,7 +1183,7 @@ fn test_heavyweight_subscription() -> std::result::Result<(), Box<dyn std::error
 
         let harness = &pipeline.harness;
         let subscriber_secret = pallas::Base::from(10u64);
-        let subscriber_pub = PublicKey::from_secret(subscriber_secret);
+        let subscriber_pub = PublicKey::from_secret(subscriber_secret.into());
         let empty_path = vec![MerkleNode::new(pallas::Base::from(0u64))];
 
         // --- subscribe ---
@@ -1194,13 +1194,13 @@ fn test_heavyweight_subscription() -> std::result::Result<(), Box<dyn std::error
 
         // --- verify_access ---
         println!("  Test: verify_access");
-        let verify = harness.verify_access(subscriber_secret, pallas::Base::from(1u64), 1, 0, empty_path.clone(), pallas::Base::from(2u64), pallas::Base::from(3u64), pallas::Base::from(4u64), pallas::Base::from(5u64), 100, subscriber_pub.x(), subscriber_pub.y(), 1, 500, 10, 3600, 5, 100, 5, pallas::Base::from(6u64))?;
+        let verify = harness.verify_access(subscriber_secret, pallas::Base::from(1u64), 1, 0, empty_path.clone(), pallas::Base::from(2u64), pallas::Base::from(3u64), pallas::Base::from(4u64), pallas::Base::from(5u64), 100, subscriber_pub.x().expect("pk not identity"), subscriber_pub.y().expect("pk not identity"), 1, 500, 10, 3600, 5, 100, 5, pallas::Base::from(6u64))?;
         assert!(!verify.call_data.is_empty());
         println!("    call_data={}B", verify.call_data.len());
 
         // --- update_usage ---
         println!("  Test: update_usage");
-        let usage = harness.update_usage(pallas::Base::from(1u64), subscriber_pub.x(), subscriber_pub.y(), pallas::Base::from(2u64), pallas::Base::from(3u64), subscriber_secret, 100, pallas::Base::from(4u64), vec![pallas::Base::from(0u64)])?;
+        let usage = harness.update_usage(pallas::Base::from(1u64), subscriber_pub.x().expect("pk not identity"), subscriber_pub.y().expect("pk not identity"), pallas::Base::from(2u64), pallas::Base::from(3u64), subscriber_secret, 100, pallas::Base::from(4u64), vec![pallas::Base::from(0u64)])?;
         assert!(!usage.call_data.is_empty());
         println!("    call_data={}B", usage.call_data.len());
 
@@ -1237,7 +1237,7 @@ fn test_heavyweight_oracle() -> std::result::Result<(), Box<dyn std::error::Erro
 
         let harness = &pipeline.harness;
         let oracle_secret = pallas::Base::from(10u64);
-        let oracle_pub = PublicKey::from_secret(oracle_secret);
+        let oracle_pub = PublicKey::from_secret(oracle_secret.into());
 
         // --- register_oracle ---
         println!("  Test: register_oracle");
@@ -1278,9 +1278,9 @@ fn test_heavyweight_pool_stake() -> std::result::Result<(), Box<dyn std::error::
 
         let harness = &pipeline.harness;
         let owner_secret = pallas::Base::from(10u64);
-        let owner_pub = PublicKey::from_secret(owner_secret);
+        let owner_pub = PublicKey::from_secret(owner_secret.into());
         let member_secret = pallas::Base::from(20u64);
-        let member_pub = PublicKey::from_secret(member_secret);
+        let member_pub = PublicKey::from_secret(member_secret.into());
 
         // --- create_pool ---
         println!("  Test: create_pool");
@@ -1345,9 +1345,9 @@ fn test_heavyweight_relayer_endowment() -> std::result::Result<(), Box<dyn std::
 
         let harness = &pipeline.harness;
         let relayer_secret = pallas::Base::from(10u64);
-        let relayer_pub = PublicKey::from_secret(relayer_secret);
+        let relayer_pub = PublicKey::from_secret(relayer_secret.into());
         let backer_secret = pallas::Base::from(20u64);
-        let backer_pub = PublicKey::from_secret(backer_secret);
+        let backer_pub = PublicKey::from_secret(backer_secret.into());
 
         // --- initialize ---
         println!("  Test: initialize");
@@ -1401,7 +1401,7 @@ fn test_heavyweight_slot() -> std::result::Result<(), Box<dyn std::error::Error>
 
         let harness = &pipeline.harness;
         let player_secret = pallas::Base::from(10u64);
-        let player_pub = PublicKey::from_secret(player_secret);
+        let player_pub = PublicKey::from_secret(player_secret.into());
 
         // --- initialize ---
         println!("  Test: initialize");
@@ -1655,7 +1655,7 @@ fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Er
 
         let harness = &pipeline.harness;
         let player_secret = pallas::Base::from(10u64);
-        let player_pub = PublicKey::from_secret(player_secret);
+        let player_pub = PublicKey::from_secret(player_secret.into());
         let house_secret = SecretKey::from_bytes([11u8; 32]).unwrap();
         let house_pub = PublicKey::from_secret(house_secret);
 
@@ -1679,7 +1679,7 @@ fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- house_close ---
         println!("  Test: house_close");
-        let close = harness.house_close(commit.bet_id, house_secret.inner(), house_pub.x(), house_pub.y(), pallas::Base::from(500u64), pallas::Base::from(501u64))?;
+        let close = harness.house_close(commit.bet_id, house_secret.inner(), house_pub.x().expect("pk not identity"), house_pub.y().expect("pk not identity"), pallas::Base::from(500u64), pallas::Base::from(501u64))?;
         assert!(!close.call_data.is_empty());
         println!("    call_data={}B", close.call_data.len());
 
@@ -1821,7 +1821,7 @@ fn test_heavyweight_darktoshi_dice() -> std::result::Result<(), Box<dyn std::err
 
         let harness = &pipeline.harness;
         let player_secret = pallas::Base::from(10u64);
-        let player_pub = PublicKey::from_secret(player_secret);
+        let player_pub = PublicKey::from_secret(player_secret.into());
 
         // --- commit_bet ---
         println!("  Test: commit_bet");
@@ -1837,7 +1837,7 @@ fn test_heavyweight_darktoshi_dice() -> std::result::Result<(), Box<dyn std::err
 
         // --- settle_bet ---
         println!("  Test: settle_bet");
-        let settle = harness.settle_bet(pallas::Base::from(100u64), pallas::Base::from(1u64), player_pub.x(), player_pub.y(), pallas::Base::from(100u64), pallas::Base::from(50u64), pallas::Base::from(3u64), pallas::Base::from(2u64))?;
+        let settle = harness.settle_bet(pallas::Base::from(100u64), pallas::Base::from(1u64), player_pub.x().expect("pk not identity"), player_pub.y().expect("pk not identity"), pallas::Base::from(100u64), pallas::Base::from(50u64), pallas::Base::from(3u64), pallas::Base::from(2u64))?;
         assert!(!settle.call_data.is_empty());
         println!("    call_data={}B", settle.call_data.len());
 
@@ -1867,7 +1867,7 @@ fn test_heavyweight_lottery() -> std::result::Result<(), Box<dyn std::error::Err
 
         let harness = &pipeline.harness;
         let player_secret = pallas::Base::from(10u64);
-        let player_pub = PublicKey::from_secret(player_secret);
+        let player_pub = PublicKey::from_secret(player_secret.into());
         let numbers = vec![3, 7, 15, 22, 31, 42];
 
         // --- commit_ticket ---
@@ -1908,9 +1908,9 @@ fn test_heavyweight_roulette() -> std::result::Result<(), Box<dyn std::error::Er
 
         let harness = &pipeline.harness;
         let house_secret = pallas::Base::from(10u64);
-        let house_pub = PublicKey::from_secret(house_secret);
+        let house_pub = PublicKey::from_secret(house_secret.into());
         let player_secret = pallas::Base::from(20u64);
-        let player_pub = PublicKey::from_secret(player_secret);
+        let player_pub = PublicKey::from_secret(player_secret.into());
         let table_id = pallas::Base::from(100u64);
 
         // --- initialize ---
@@ -1974,7 +1974,7 @@ fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::
         let harness = &pipeline.harness;
         let nullifier_k = pallas::Scalar::from(1u64);
         let owner_secret = pallas::Base::from(12345u64);
-        let owner_pub = PublicKey::from_secret(owner_secret);
+        let owner_pub = PublicKey::from_secret(owner_secret.into());
         let dao_bulla = pallas::Base::from(1u64);
         let endowment_token_id = pallas::Base::from(42u64);
         let bulla_blind = pallas::Base::from(9999u64);
@@ -2042,7 +2042,7 @@ fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::
         let vote_commit_random = pallas::Point::identity();
         let voter_secret = pallas::Base::from(333u64);
         let vote_blind = pallas::Scalar::from(222u64);
-        let voter_pub = PublicKey::from_secret(voter_secret);
+        let voter_pub = PublicKey::from_secret(voter_secret.into());
 
         let vote_cap_proof = dwow_dao_escrow_contract::model::CapabilityProof {
             capability_id: capability_id.to_repr(),
@@ -2074,7 +2074,7 @@ fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::
         // --- 0x0b: VerifyMemberCapabilityV1 (ZK) ---
         println!("  Test 0x0b: VerifyMemberCapabilityV1");
         let holder_secret = pallas::Base::from(111u64);
-        let holder_pub = PublicKey::from_secret(holder_secret);
+        let holder_pub = PublicKey::from_secret(holder_secret.into());
 
         let vm_cap_proof = dwow_dao_escrow_contract::model::CapabilityProof {
             capability_id: capability_id.to_repr(),
@@ -2144,7 +2144,7 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
 
         let harness = &pipeline.harness;
         let issuer_secret = pallas::Base::from(10u64);
-        let issuer_pub = PublicKey::from_secret(issuer_secret);
+        let issuer_pub = PublicKey::from_secret(issuer_secret.into());
         let credential_secret = pallas::Base::from(20u64);
         let schema_hash = pallas::Base::from(30u64);
         let commitment = pallas::Base::from(40u64);
@@ -2212,7 +2212,7 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
         println!("  Test: RegisterCapability");
         let cred_req = dwow_identity_contract::model::CredentialRequirement {
             schema_hash: [0u8; 32],
-            issuer_pub: [0u8; 32],
+            issuer_pub: PublicKey::from_secret(issuer_secret.into()),
             min_threshold: 1,
             attribute_name: b"role".to_vec(),
         };
@@ -2222,13 +2222,13 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- IssueCapability ---
         println!("  Test: IssueCapability");
-        let issue_cap_result = harness.issue_capability([0u8; 32], [0u8; 32], dwow_sdk::crypto::IntentNullifier::from_bytes([0u8; 32]).unwrap())?;
+        let issue_cap_result = harness.issue_capability(dwow_identity_contract::model::CapabilityId(capability_id), issuer_pub, dwow_sdk::crypto::IntentNullifier::from_bytes([0u8; 32]).unwrap())?;
         assert!(!issue_cap_result.call_data.is_empty());
         println!("    call_data={}B", issue_cap_result.call_data.len());
 
         // --- RevokeCapability ---
         println!("  Test: RevokeCapability");
-        let revoke_result = harness.revoke_capability([0u8; 32], [0u8; 32], [0u8; 32], b"no longer needed".to_vec())?;
+        let revoke_result = harness.revoke_capability(dwow_identity_contract::model::CapabilityId(capability_id), issuer_pub, dwow_identity_contract::model::CapabilitySecret(capability_secret), b"no longer needed".to_vec())?;
         assert!(!revoke_result.call_data.is_empty());
         println!("    call_data={}B", revoke_result.call_data.len());
 
@@ -2356,7 +2356,7 @@ fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn st
         let _capability_id = [42u8; 32];
         let cred_req = dwow_identity_contract::model::CredentialRequirement {
             schema_hash: [0u8; 32],
-            issuer_pub: [0u8; 32],
+            issuer_pub: PublicKey::from_secret(issuer_secret.into()),
             min_threshold: 1,
             attribute_name: b"role".to_vec(),
         };
@@ -2375,7 +2375,7 @@ fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn st
         let lm_harness = &lm_pipeline.harness;
         let employer_secret = pallas::Base::from(10u64);
         let employer_pub = PublicKey::from_secret(
-            employer_secret,
+            employer_secret.into(),
         );
         let job_id = pallas::Base::from(100u64);
 
@@ -2399,7 +2399,7 @@ fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn st
         // ------------------------------------------------------------------
         println!("\n--- Step 6: Worker accepts job ---");
         let worker_pub = PublicKey::from_secret(
-            worker_secret,
+            worker_secret.into(),
         );
         let accept = lm_harness.accept_job(worker_secret, worker_pub, job_id)?;
         assert!(!accept.call_data.is_empty());
@@ -2470,7 +2470,7 @@ fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn st
         let capability_secret = pallas::Base::from(42u64);
         let holder_secret = pallas::Base::from(20u64);
         let holder_pubkey = PublicKey::from_secret(
-            holder_secret,
+            holder_secret.into(),
         );
         let cap_proof = dwow_dao_escrow_contract::model::CapabilityProof {
             capability_id: [1u8; 32],
@@ -2941,11 +2941,11 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         println!("\n--- Block 4: RelayerEndowment initialize + deploy_capital ---");
         let relayer_secret = pallas::Base::from(10u64);
         let relayer_pub = PublicKey::from_secret(
-            relayer_secret,
+            relayer_secret.into(),
         );
         let backer_secret = pallas::Base::from(20u64);
         let backer_pub = PublicKey::from_secret(
-            backer_secret,
+            backer_secret.into(),
         );
 
         let init = relayer_harness.initialize(relayer_pub, 500, 42)?;

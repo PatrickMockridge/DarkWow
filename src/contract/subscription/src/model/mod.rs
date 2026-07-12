@@ -138,6 +138,30 @@ pub struct Subscription {
 }
 
 impl Subscription {
+    /// Derive the subscription ID from subscriber, plan, deposit, token, and lock
+    #[allow(dead_code)]
+    pub fn derive_id(
+        subscriber_pubkey: &PublicKey,
+        plan_id: u32,
+        deposit: u64,
+        token_id: pallas::Base,
+        lock_until_block: u64,
+        subscriber_secret: pallas::Base,
+        plan_nonce: pallas::Base,
+    ) -> SubscriptionId {
+        let (bx, by) = subscriber_pubkey.xy().expect("pk not identity");
+        SubscriptionId(poseidon_hash([
+            bx,
+            by,
+            pallas::Base::from(plan_id as u64),
+            pallas::Base::from(deposit),
+            token_id,
+            pallas::Base::from(lock_until_block),
+            subscriber_secret,
+            plan_nonce,
+        ]))
+    }
+
     /// Compute the nullifier that prevents double-cancel or double-renew
     pub fn compute_nullifier(&self, secret: pallas::Base) -> pallas::Base {
         poseidon_hash([self.id.inner(), secret])

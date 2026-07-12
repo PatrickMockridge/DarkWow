@@ -35,6 +35,7 @@ use std::io::{self, Write};
 use std::process;
 
 use dwow_serial::Encodable;
+use dwow_sdk::crypto::{ContractId, PublicKey};
 use dwow_stablecoin_contract::model::{
     CollateralParams, CollateralType, DeadManAction, DeadManSwitchConfig, InitializeParams,
     StablecoinModel,
@@ -73,13 +74,21 @@ fn main() {
         process::exit(1);
     }
 
-    let pn_contract_id = parse_hex_32(&args[1]).unwrap_or_else(|e| {
+    let pn_contract_id_bytes = parse_hex_32(&args[1]).unwrap_or_else(|e| {
         eprintln!("Error parsing pn_contract_id: {e}");
         process::exit(1);
     });
+    let pn_contract_id = ContractId::from_bytes(pn_contract_id_bytes).unwrap_or_else(|e| {
+        eprintln!("Error decoding pn_contract_id: {e:?}");
+        process::exit(1);
+    });
 
-    let token_authority_pub = parse_hex_32(&args[2]).unwrap_or_else(|e| {
+    let token_authority_pub_bytes = parse_hex_32(&args[2]).unwrap_or_else(|e| {
         eprintln!("Error parsing token_authority_pub: {e}");
+        process::exit(1);
+    });
+    let token_authority_pub = PublicKey::from_bytes(token_authority_pub_bytes).unwrap_or_else(|e| {
+        eprintln!("Error decoding token_authority_pub: {e:?}");
         process::exit(1);
     });
 

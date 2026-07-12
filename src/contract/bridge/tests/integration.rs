@@ -37,7 +37,7 @@ use dwow_bridge_contract::{
     BRIDGE_CONTRACT_ZEC_CONFIRMATIONS,
 };
 use dwow_serial::{deserialize, serialize};
-use dwow_sdk::crypto::{IntentCommitment, IntentNullifier};
+use dwow_sdk::crypto::{IntentCommitment, IntentNullifier, PublicKey, SecretKey};
 use dwow_sdk::pasta::pallas;
 
 /// Helper to create an IntentCommitment from bytes
@@ -68,8 +68,7 @@ fn test_external_chain_encoding() {
 fn test_deposit_params_encoding() {
     let params = DepositParams {
         commitment: make_commitment(1),
-        recipient_pub_x: [1u8; 32],
-        recipient_pub_y: [2u8; 32],
+        recipient_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(1))),
         bridge_nonce: 5,
         chain: ExternalChain::Monero,
         external_block_hash: [3u8; 32],
@@ -84,8 +83,7 @@ fn test_deposit_params_encoding() {
     let decoded: DepositParams = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.commitment, params.commitment);
-    assert_eq!(decoded.recipient_pub_x, [1u8; 32]);
-    assert_eq!(decoded.recipient_pub_y, [2u8; 32]);
+    assert_eq!(decoded.recipient_pub, params.recipient_pub);
     assert_eq!(decoded.bridge_nonce, 5);
     assert_eq!(decoded.external_block_hash, [3u8; 32]);
     assert_eq!(decoded.merkle_proof.len(), 3);
@@ -100,8 +98,7 @@ fn test_deposit_params_empty_merkle_proof() {
     // Verify serialization handles empty merkle proof
     let params = DepositParams {
         commitment: make_commitment(1),
-        recipient_pub_x: [0u8; 32],
-        recipient_pub_y: [0u8; 32],
+        recipient_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(1))),
         bridge_nonce: 0,
         chain: ExternalChain::Ethereum,
         external_block_hash: [0u8; 32],

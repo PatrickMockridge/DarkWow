@@ -133,7 +133,8 @@ impl BitcoinHashCache {
 
     async fn create_rpc_client(&self, addr: &Url) -> Result<RpcClient> {
         let btc_timeout = Duration::from_secs(self.settings.read().await.btc_timeout);
-        let client = timeout(btc_timeout, RpcClient::new(addr.clone(), self.ex.clone())).await??;
+        let client = timeout(btc_timeout, RpcClient::new(addr.clone(), self.ex.clone())).await
+            .map_err(|e| Error::Timeout(e.to_string()))??;
         Ok(client)
     }
 
@@ -141,7 +142,8 @@ impl BitcoinHashCache {
     async fn fetch_current_height(&self, client: &RpcClient) -> Result<u64> {
         let btc_timeout = Duration::from_secs(self.settings.read().await.btc_timeout);
         let req = JsonRequest::new("blockchain.headers.subscribe", vec![].into());
-        let rep = timeout(btc_timeout, client.request(req)).await??;
+        let rep = timeout(btc_timeout, client.request(req)).await
+            .map_err(|e| Error::Timeout(e.to_string()))??;
 
         rep.get::<HashMap<String, JsonValue>>()
             .and_then(|res| res.get("height"))
@@ -166,7 +168,8 @@ impl BitcoinHashCache {
             ]
             .into(),
         );
-        let rep = timeout(btc_timeout, client.request(req)).await??;
+        let rep = timeout(btc_timeout, client.request(req)).await
+            .map_err(|e| Error::Timeout(e.to_string()))??;
 
         let hex: &String = rep
             .get::<HashMap<String, JsonValue>>()

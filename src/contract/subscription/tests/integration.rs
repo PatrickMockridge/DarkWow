@@ -134,7 +134,7 @@ fn test_subscription_derive_id() {
 
 #[test]
 fn test_subscription_compute_nullifier() {
-    let subscription = create_dummy_subscription(pallas::Base::from(1));
+    let subscription = create_dummy_subscription(SubscriptionId(pallas::Base::from(1)));
     let secret = pallas::Base::from(99);
     let nullifier = subscription.compute_nullifier(secret);
 
@@ -147,7 +147,7 @@ fn test_subscription_compute_nullifier() {
 fn test_subscription_capability_derive() {
     let subscriber = make_pubkey(42);
     let plan_id: u32 = 1;
-    let subscription_id = pallas::Base::from(1);
+    let subscription_id = SubscriptionId(pallas::Base::from(1));
     let permissions: u8 = permissions::READ | permissions::WRITE;
     let expires_at: u64 = 100000;
     let nonce = pallas::Base::from(42);
@@ -186,7 +186,7 @@ fn test_permission_constants() {
 fn test_subscription_encoding() {
     let subscription = Subscription {
         version: 0,
-        id: pallas::Base::from(1),
+        id: SubscriptionId(pallas::Base::from(1)),
         subscriber_pubkey: make_pubkey(1),
         plan_id: 1,
         lock_until_block: 100000,
@@ -245,7 +245,7 @@ fn test_subscribe_params_encoding() {
     let params = SubscribeParamsV1 {
         plan_id: 1,
         subscriber_pubkey: make_pubkey(1),
-        commitment: pallas::Base::from(1),
+        commitment: SubscriptionId(pallas::Base::from(1)),
         value_commit: Group::identity(),
         merkle_proof: vec![pallas::Base::from(1)],
         merkle_root: pallas::Base::from(2),
@@ -266,7 +266,7 @@ fn test_subscribe_params_encoding() {
 
 #[test]
 fn test_subscribe_update_encoding() {
-    let subscription = create_dummy_subscription(pallas::Base::zero());
+    let subscription = create_dummy_subscription(SubscriptionId(pallas::Base::zero()));
     let update = SubscribeUpdateV1 { subscription: subscription.clone() };
 
     let encoded = serialize(&update);
@@ -279,7 +279,7 @@ fn test_subscribe_update_encoding() {
 fn test_cancel_params_encoding() {
     let recipient_pubkey = make_pubkey(1);
     let params = CancelParamsV1 {
-        subscription_id: pallas::Base::zero(),
+        subscription_id: SubscriptionId(pallas::Base::zero()),
         subscriber_secret: pallas::Base::zero(),
         spent_nullifier: pallas::Base::zero(),
         current_block: 50000,
@@ -295,7 +295,7 @@ fn test_cancel_params_encoding() {
 
 #[test]
 fn test_cancel_update_encoding() {
-    let subscription = create_dummy_subscription(pallas::Base::zero());
+    let subscription = create_dummy_subscription(SubscriptionId(pallas::Base::zero()));
     let update = CancelUpdateV1 {
         subscription_id: subscription.id,
         spent_nullifier: pallas::Base::zero(),
@@ -313,7 +313,7 @@ fn test_cancel_update_encoding() {
 #[test]
 fn test_renew_params_encoding() {
     let params = RenewParamsV1 {
-        subscription_id: pallas::Base::from(1),
+        subscription_id: SubscriptionId(pallas::Base::from(1)),
         subscriber_secret: pallas::Base::from(2),
         new_lock_until_block: 110000,
         spent_nullifier: pallas::Base::from(3),
@@ -330,7 +330,7 @@ fn test_renew_params_encoding() {
 
 #[test]
 fn test_renew_update_encoding() {
-    let subscription = create_dummy_subscription(pallas::Base::zero());
+    let subscription = create_dummy_subscription(SubscriptionId(pallas::Base::zero()));
     let update = RenewUpdateV1 {
         subscription_id: subscription.id,
         spent_nullifier: pallas::Base::zero(),
@@ -348,7 +348,7 @@ fn test_renew_update_encoding() {
 #[test]
 fn test_verify_access_params_encoding() {
     let params = VerifyAccessParamsV1 {
-        subscription_id: pallas::Base::from(1),
+        subscription_id: SubscriptionId(pallas::Base::from(1)),
         capability: pallas::Base::from(2),
         nonce: pallas::Base::from(3),
     };
@@ -386,7 +386,7 @@ fn test_constants() {
 #[test]
 fn test_update_usage_params_encoding() {
     let params = UpdateUsageParamsV1 {
-        subscription_id: pallas::Base::from(1),
+        subscription_id: SubscriptionId(pallas::Base::from(1)),
         subscriber_pub_x: pallas::Base::from(2),
         subscriber_pub_y: pallas::Base::from(3),
         subscriber_secret: pallas::Base::from(4),
@@ -406,7 +406,7 @@ fn test_update_usage_params_encoding() {
 #[test]
 fn test_update_usage_update_encoding() {
     let update = UpdateUsageUpdateV1 {
-        subscription_id: pallas::Base::from(1),
+        subscription_id: SubscriptionId(pallas::Base::from(1)),
         period_uses: 5,
         last_access_block: 50010,
         uses_remaining: 95,
@@ -426,7 +426,7 @@ fn test_update_usage_update_encoding() {
 #[test]
 fn test_update_usage_new_period_encoding() {
     let update = UpdateUsageUpdateV1 {
-        subscription_id: pallas::Base::from(1),
+        subscription_id: SubscriptionId(pallas::Base::from(1)),
         period_uses: 0,
         last_access_block: 100000,
         uses_remaining: 100,
@@ -445,7 +445,7 @@ fn test_update_usage_new_period_encoding() {
 fn test_subscription_with_rate_limits() {
     let subscription = Subscription {
         version: 0,
-        id: pallas::Base::from(1),
+        id: SubscriptionId(pallas::Base::from(1)),
         subscriber_pubkey: make_pubkey(1),
         plan_id: 1,
         lock_until_block: 100000,
@@ -477,7 +477,7 @@ fn test_subscription_with_rate_limits() {
 fn test_subscription_encoding_with_rate_limits() {
     let subscription = Subscription {
         version: 0,
-        id: pallas::Base::from(1),
+        id: SubscriptionId(pallas::Base::from(1)),
         subscriber_pubkey: make_pubkey(1),
         plan_id: 1,
         lock_until_block: 100000,

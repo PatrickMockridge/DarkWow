@@ -59,7 +59,7 @@ fn test_mint() -> Result<(), Box<dyn std::error::Error>> {
     let coin = Coin::from_attributes(
         &keypair.public,
         1000,
-        pallas::Base::zero(),
+        dwow_sdk::crypto::TokenId(pallas::Base::zero()),
         FuncId::none(),
         pallas::Base::zero(),
         BaseBlind::random(&mut OsRng),
