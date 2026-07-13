@@ -129,6 +129,8 @@ pub mod sync_task;
 pub mod walletdb;
 /// Startup integrity checks for the wallet database
 pub mod integrity;
+/// C-compatible FFI exports — linkable from any language
+pub mod ffi;
 use walletdb::{WalletDb, WalletPtr};
 
 
