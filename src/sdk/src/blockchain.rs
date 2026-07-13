@@ -215,7 +215,7 @@ pub fn coinbase_blind(prev_coin: &[u8; 32], height: u32) -> pallas::Scalar {
 /// production does not halt if the chain diverges — nodes detect the
 /// divergence and can choose to fork.
 ///
-/// Activating WASM contract execution at block time (see `bin/dwowd/src/execution.rs`)
+/// Activating WASM contract execution at block time (see `src/linear/src/execution.rs`)
 /// would make this validation an **active** consensus rule — blocks with
 /// invalid cumulative commitments would be rejected at execution time.
 ///

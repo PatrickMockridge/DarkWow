@@ -222,7 +222,18 @@ pub fn execute_block(
 
         let mut success = true;
         if runtime.metadata(&job.call_data).is_err() { success = false; }
-        if success && runtime.exec(&job.call_data).is_err() { success = false; }
+
+        // exec() computes the state update and returns it as `[selector | update]`.
+        // The host MUST thread those bytes into apply() below (see spend-hook path
+        // in execute_spend_hook: `apply(&ret)`). Dropping them and calling apply(&[])
+        // makes the contract's __update deserialize an empty slice and panic.
+        let mut update = Vec::new();
+        if success {
+            match runtime.exec(&job.call_data) {
+                Ok(u) => update = u,
+                Err(_) => success = false,
+            }
+        }
 
         // Spend hook callback dispatch
         if success {
@@ -235,7 +246,7 @@ pub fn execute_block(
             }
         }
 
-        if success && runtime.apply(&[]).is_err() { success = false; }
+        if success && runtime.apply(&update).is_err() { success = false; }
 
         if !success {
             backend.overlay.lock().unwrap().revert_to_checkpoint();

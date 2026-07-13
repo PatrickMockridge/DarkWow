@@ -37,6 +37,9 @@ use tracing::{error, info, warn};
 use crate::proto::linear_sync::{Blocks, GetBlocks, GetTip, Tip, LINEAR_SYNC_BATCH};
 use crate::{DwowNodePtr, Result, SYNC_CAUGHT_UP, SYNC_BEHIND};
 
+use crate::block_acceptor::accept_block;
+use dwow_chain::Miner;
+
 /// Genesis hash validation strictness.
 ///
 /// Controls how strictly a node validates peer genesis hashes during sync.
@@ -417,23 +420,38 @@ pub async fn consensus_linear_init_task(
                                     continue;
                                 }
                             }
-                            match blockchain.apply_block_with_uncles(block, &[]).await {
+                            // Defect 3: sync must run WASM execution (same path as
+                            // mining), not bypass it. Upstream validates this —
+                            // their sync routes through verify_transaction, which
+                            // always runs exec+apply. Build a light VM from the
+                            // pooled RandomXCache (2 MB scratchpad, 256 MB cached).
+                            let rx_flags = randomx::RandomXFlags::get_recommended_flags()
+                                & !randomx::RandomXFlags::JIT;
+                            let rx_cache = blockchain.get_cache(block.header.randomx_key);
+                            let vm = Arc::new(
+                                randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
+                                    .expect("Failed to create RandomX VM for sync"),
+                            );
+                            let current_height = block.header.height - 1;
+                            let target = block.header.target;
+                            match accept_block(
+                                &blockchain,
+                                block,
+                                &[],
+                                &vm,
+                                current_height,
+                                target,
+                            ) {
                                 Ok(()) => {
                                     next_height = block.header.height + 1;
-                                    channel_failures.remove(&ch_id); // reset on success
+                                    channel_failures.remove(&ch_id);
                                 }
                                 Err(e) => {
                                     error!(target: "dwowd::task::consensus_linear_init_task",
                                         "Failed to apply synced block at height {}: {}",
                                         block.header.height, e);
-                                    // M3 fix: on block rejection, do NOT advance
-                                    // next_height past the failed block. This prevents
-                                    // a single malicious block response from wasting an
-                                    // entire 30s sync cycle (sync gap poisoning).
-                                    // Instead, record the failure and retry from the
-                                    // same height with a different peer.
                                     *channel_failures.entry(ch_id).or_default() += 1;
-                                    break; // exit inner block loop, retry sync from same height
+                                    break;
                                 }
                             }
                         }

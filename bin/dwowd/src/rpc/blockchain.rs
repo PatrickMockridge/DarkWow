@@ -436,7 +436,7 @@ impl DwowNode {
         }
 
         // Tx-by-hash lookup requires a chain-state index (future work).
-        // Internal code exists at execution.rs:553 but operates on execution overlay.
+        // Internal code exists at src/linear/src/execution.rs (execute_block).
         JsonResponse::new(JsonValue::Null, id).into()
     }
 }

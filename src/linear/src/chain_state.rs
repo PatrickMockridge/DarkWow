@@ -766,6 +766,23 @@ impl CChainState {
             consensus_batch.insert("accumulated_work", &accumulated.to_le_bytes());
             drop(consensus);
 
+            // --- Defect 3 guard: non-genesis blocks MUST carry contract + supply state ---
+            // connect_block is the single atomic commit. By the time we reach this point,
+            // the caller MUST have executed WASM (via execute_block / accept_block) and
+            // produced the contracts and supply_chain batches. Accepting None here silently
+            // diverges from mining nodes (Defect 3 regression). Genesis (height 1) is
+            // exempt — its cumulative supply starts at identity.
+            if block.header.height > 1 && (contracts_batch.is_none() || supply_chain_batch.is_none()) {
+                return Err(LinearError::StorageError(format!(
+                    "connect_block: block {} rejected — {} batch is None (contracts={}, supply={}). \
+                     WASM execution MUST precede connect_block for non-genesis blocks.",
+                    block.header.height,
+                    if contracts_batch.is_none() { "contracts" } else { "supply_chain" },
+                    contracts_batch.is_some(),
+                    supply_chain_batch.is_some(),
+                )));
+            }
+
             // --- Atomic commit (sled cross-tree transaction) ---
             let contracts = contracts_batch.unwrap_or_default();
             let sc_batch = supply_chain_batch.unwrap_or_default();
@@ -903,13 +920,6 @@ impl CChainState {
         info!(target: "chain_state", "Block {} at height {} committed",
             block.header.height, height);
         Ok(())
-    }
-
-    /// Convenience: apply a single block without uncles or contracts overlay.
-    /// Async for caller compatibility (dwowd callers use .await). Delegates to
-    /// the synchronous `connect_block`.
-    pub async fn apply_block(&self, block: &Block) -> Result<()> {
-        self.connect_block(block, &[], None, None)
     }
 
     /// Convenience: apply a block with uncles but no contracts overlay.

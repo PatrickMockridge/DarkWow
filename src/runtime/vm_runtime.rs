@@ -641,12 +641,13 @@ impl Runtime {
         Ok(ret)
     }
 
-    /// This function runs after successful execution of `exec` and tries to
-    /// apply the state change to the overlay databases.
+    /// This function runs after successful execution of `exec` and applies the
+    /// state change to the overlay databases.
     ///
-    /// The runtime will lok for an `__update` symbol in the wasm code, and execute
-    /// it if found. The function does not take an arbitrary payload, but just takes
-    /// a state update from `env` and passes it into the wasm runtime.
+    /// The runtime looks for an `__update` symbol in the wasm code and executes
+    /// it if found. The caller passes the state update returned by `exec` as
+    /// `update`; it is copied into wasm memory as the entrypoint payload (the
+    /// wasm side reads it there — there is no `env` side-channel).
     pub fn apply(&mut self, update: &[u8]) -> Result<()> {
         let cid = self.ctx.as_ref(&self.store).contract_id;
         info!(target: "runtime::vm_runtime", "[WASM] Running apply() for ContractID: {cid}");

@@ -30,7 +30,7 @@ mod tests {
     use dwow_native_token_contract::{
         model::{
             BurnParamsV1, BurnUpdateV1, ClearInput, Coin, CoinAttributes, DRKW_TOKEN_ID,
-            FeeParamsV1, FeeUpdateV1, GenesisMintParamsV1, Input, Nullifier, Output,
+            FeeParamsV1, FeeUpdateV1, Input, Nullifier, Output,
             PoWRewardParamsV1, PoWRewardUpdateV1, SpendParamsV1, SpendUpdateV1,
             TransferParamsV1, TransferUpdateV1,
             MAX_COIN_VALUE,
@@ -393,46 +393,6 @@ mod tests {
     }
 
     // ================================================================
-    // GenesisMintParamsV1 tests
-    // ================================================================
-
-    #[test]
-    fn test_genesis_mint_params_v1_empty_outputs() {
-        let keypair = Keypair::random(&mut rand::rngs::OsRng);
-
-        let params = GenesisMintParamsV1 {
-            input: ClearInput {
-                value: 1000,
-                token_id: DRKW_TOKEN_ID.inner(),
-                value_blind: Blind(pallas::Scalar::zero()),
-                token_blind: BaseBlind::ZERO,
-                signature_public: keypair.public,
-            },
-            outputs: vec![],
-        };
-
-        assert_eq!(params.outputs.len(), 0);
-    }
-
-    #[test]
-    fn test_genesis_mint_params_v1_with_outputs() {
-        let keypair = Keypair::random(&mut rand::rngs::OsRng);
-
-        let params = GenesisMintParamsV1 {
-            input: ClearInput {
-                value: 2000,
-                token_id: DRKW_TOKEN_ID.inner(),
-                value_blind: Blind(pallas::Scalar::zero()),
-                token_blind: BaseBlind::ZERO,
-                signature_public: keypair.public,
-            },
-            outputs: vec![create_test_output()],
-        };
-
-        assert_eq!(params.outputs.len(), 1);
-    }
-
-    // ================================================================
     // PoWRewardParamsV1 tests
     // ================================================================
 
@@ -536,23 +496,6 @@ mod tests {
     // ================================================================
     // Update structures tests
     // ================================================================
-
-    #[test]
-    fn test_genesis_mint_update_v1_structure() {
-        let keypair = Keypair::random(&mut rand::rngs::OsRng);
-        let coin = Coin::from_attributes(
-            &keypair.public,
-            1000,
-            DRKW_TOKEN_ID,
-            FuncId::none(),
-            pallas::Base::zero(),
-            Blind(pallas::Base::zero()),
-        );
-
-        let update = dwow_native_token_contract::model::GenesisMintUpdateV1 { coins: vec![coin] };
-
-        assert_eq!(update.coins.len(), 1);
-    }
 
     #[test]
     fn test_pow_reward_update_v1_structure() {

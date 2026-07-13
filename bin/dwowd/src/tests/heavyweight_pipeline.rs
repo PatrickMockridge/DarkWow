@@ -35,7 +35,7 @@
 //! | Deployment | Deployooor-based (real production path) | Direct `deploy_contract()` (setup only) |
 //! | Contract functions | Not tested | Every endpoint exercised |
 //! | ZK proofs | None | Required for all calls |
-//! | State transitions | Not tested | Verified via `apply_block_with_uncles()` |
+//! | State transitions | Not tested | Applied via `apply_block_with_uncles()` (WASM-bypass convenience for unit tests) |
 //! | Uncle-merkle blocks | Not tested | Multi-uncle, depth, mixed exec |
 //! | Block gas limits | Not tested | Cumulative gas tracking |
 //!
@@ -45,7 +45,9 @@
 //! 1. Creates a HeavyweightPipeline with the contract's harness (ZK circuits + proving keys)
 //! 2. Deploys the contract WASM via direct path (setup convenience — not testing deployment)
 //! 3. Exercises every endpoint via harness methods, verifying proofs + call_data
-//! 4. Executes on-chain through `apply_block_with_uncles()` (the production code path)
+//! 4. Applies blocks via `apply_block_with_uncles()` — a convenience path for
+//!    contract-unit testing that bypasses WASM execution. Production block
+//!    acceptance (mining, sync) routes through `accept_block` → `execute_block`.
 //!
 //! ## Running
 //!

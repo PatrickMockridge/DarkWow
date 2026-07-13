@@ -107,7 +107,6 @@ impl FeeExtractor for NativeTokenFeeExtractor {
 }
 
 /// ZK verification for linear blockchain
-mod zk;
 
 /// Block-level Pedersen mass balance — proof of token balance
 // proof_of_token_balance → dwow_chain::proof_of_token_balance

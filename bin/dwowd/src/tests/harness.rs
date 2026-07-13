@@ -41,20 +41,6 @@ use dwow_chain::{
 use dwow_core::Result;
 use dwow_sdk::blockchain;
 
-use super::genesis::GenesisHarness;
-
-/// Two independent linear blockchain nodes for sync testing.
-pub struct Harness {
-    pub alice: GenesisHarness,
-    pub bob: GenesisHarness,
-}
-
-impl Harness {
-    pub fn new() -> Result<Self> {
-        Ok(Self { alice: GenesisHarness::new()?, bob: GenesisHarness::new()? })
-    }
-}
-
 /// Synthetic timestamp for test blocks, spaced 120s per height so the
 /// consensus target stays at `u32::MAX` (no difficulty drift when blocks
 /// are built in a rapid test loop).

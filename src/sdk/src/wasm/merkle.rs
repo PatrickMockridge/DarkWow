@@ -69,12 +69,15 @@ pub fn merkle_add(
     len += tree_key.to_vec().encode(&mut buf)?;
     len += elements.to_vec().encode(&mut buf)?;
 
-    match unsafe { merkle_add_(buf.as_ptr(), len as u32) } {
-        0 => Ok(()),
-        -1 => Err(ContractError::CallerAccessDenied),
-        -2 => Err(ContractError::DbSetFailed),
-        _ => unreachable!(),
+    // The host returns SUCCESS (0) or a `to_builtin!` error code (i64::MIN + n),
+    // never -1/-2. Decode it the same way as db.rs (`ContractError::from(ret)`);
+    // trapping on any other code turned every recoverable host error into an
+    // `unreachable!()` WASM trap.
+    let ret = unsafe { merkle_add_(buf.as_ptr(), len as u32) };
+    if ret < 0 {
+        return Err(ContractError::from(ret))
     }
+    Ok(())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -125,12 +128,13 @@ pub fn sparse_merkle_insert_batch(
     len += root_key.to_vec().encode(&mut buf)?;
     len += elements.to_vec().encode(&mut buf)?;
 
-    match unsafe { sparse_merkle_insert_batch_(buf.as_ptr(), len as u32) } {
-        0 => Ok(()),
-        -1 => Err(ContractError::CallerAccessDenied),
-        -2 => Err(ContractError::DbSetFailed),
-        _ => unreachable!(),
+    // Same as merkle_add above: decode the host return code like db.rs instead
+    // of trapping on any code that isn't 0/-1/-2.
+    let ret = unsafe { sparse_merkle_insert_batch_(buf.as_ptr(), len as u32) };
+    if ret < 0 {
+        return Err(ContractError::from(ret))
     }
+    Ok(())
 }
 
 #[cfg(not(target_arch = "wasm32"))]

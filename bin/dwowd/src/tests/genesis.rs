@@ -29,7 +29,10 @@
 //!
 //! Updated for CChainState (commit 597691582 refactor — replaces LinearBlockchain).
 
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc,
+};
 
 use dwow_chain::{CChainState, FinalityConfig, PoWConfig};
 use dwow_core::Result;
@@ -52,10 +55,15 @@ impl GenesisHarness {
     /// Deploys NativeToken and Deployooor WASM so the chain is ready
     /// for contract deployment.
     pub fn new() -> Result<Self> {
+        static GEN_COUNTER: AtomicU32 = AtomicU32::new(0);
+        let n = GEN_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let db_dir = std::env::temp_dir()
+            .join(format!("dwow_gen_test_{}_{}", std::process::id(), n));
+        let _ = std::fs::remove_dir_all(&db_dir);
         let db = sled::Config::new()
-            .temporary(true)
+            .path(&db_dir)
             .open()
-            .map_err(|e| dwow_core::Error::Custom(format!("Failed to create temp sled DB: {}", e)))?;
+            .map_err(|e| dwow_core::Error::Custom(format!("Failed to create sled DB: {}", e)))?;
         let db = Arc::new(db);
 
         let pow_config = PoWConfig {

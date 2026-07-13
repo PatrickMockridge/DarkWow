@@ -64,22 +64,6 @@ use rand::rngs::OsRng;
 use super::genesis::GenesisHarness;
 use super::harness::{build_coinbase_tx, build_contract_tx, build_test_block};
 
-/// Build status for a pipeline component.
-#[derive(Debug, Clone, PartialEq)]
-pub enum BinaryStatus {
-    Ready,
-    Missing,
-    Error(String),
-}
-
-/// Pipeline component status report.
-#[derive(Debug, Clone)]
-pub struct StatusReport {
-    pub wasm_status: BinaryStatus,
-    pub genesis_status: BinaryStatus,
-    pub deploy_status: BinaryStatus,
-}
-
 /// Lightweight deployment pipeline — handles build chain and deployment
 /// without generating ZK proofs.
 pub struct ContractTestingPipeline {
@@ -100,28 +84,6 @@ impl ContractTestingPipeline {
     pub async fn ensure_ready_and_deploy(&mut self) -> Result<ContractId> {
         self.ensure_genesis().await?;
         self.deploy().await
-    }
-
-    /// Check status of all pipeline components.
-    pub async fn status_report(&self) -> StatusReport {
-        StatusReport {
-            wasm_status: BinaryStatus::Ready,
-            genesis_status: if self.genesis.block_height() > 0 {
-                BinaryStatus::Ready
-            } else {
-                BinaryStatus::Missing
-            },
-            deploy_status: BinaryStatus::Missing,
-        }
-    }
-
-    /// Build ZK circuits and WASM for this contract.
-    pub async fn build_contract(&self) -> Result<()> {
-        // ZK binaries and WASM are pre-built and checked into the repo.
-        // This method exists for the documented API and could trigger
-        // rebuilds in CI environments.
-        let _ = &self.contract_name;
-        Ok(())
     }
 
     /// Ensure genesis is ready (NativeToken + Deployooor deployed at construction).
@@ -176,8 +138,9 @@ impl ContractTestingPipeline {
             vec![contract_tx, coinbase],
         );
 
-        // Submit via apply_block_with_uncles — this is the same production code
-        // path that miners and the stratum protocol use.
+        // Submit via apply_block_with_uncles — a convenience path for contract
+        // testing that bypasses full WASM execution. Production (mining, sync)
+        // routes through accept_block → execute_block.
         self.genesis.chain_state.apply_block_with_uncles(&block, &[]).await.map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
 
         Ok(contract_id)

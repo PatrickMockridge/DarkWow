@@ -233,21 +233,6 @@ pub struct FeeUpdateV1 {
     pub fee: u64,
 }
 
-/// Parameters for GenesisMintV1 - create initial supply (CONSENSUS CRITICAL)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct GenesisMintParamsV1 {
-    /// Clear input (no privacy needed for genesis)
-    pub input: ClearInput,
-    /// Anonymous outputs
-    pub outputs: Vec<Output>,
-}
-
-/// State update for GenesisMintV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct GenesisMintUpdateV1 {
-    pub coins: Vec<Coin>,
-}
-
 /// Parameters for PoWRewardV1 - distribute block rewards (CONSENSUS CRITICAL)
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct PoWRewardParamsV1 {

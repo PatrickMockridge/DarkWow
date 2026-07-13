@@ -30,7 +30,7 @@ use smol::lock::Mutex;
 /// Minimum fee per call — never goes below this.
 pub const MIN_FEE: u64 = 42_000_000;
 
-/// Block gas limit — re-exported from execution.rs.
+/// Block gas limit — re-exported from `src/linear/src/execution.rs`.
 pub use crate::execution::BLOCK_GAS_LIMIT;
 
 /// Rolling-window fee estimator.
