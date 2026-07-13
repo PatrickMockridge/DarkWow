@@ -165,7 +165,9 @@
   - [Local Devnet Setup](localnet-dev.md)
 
 ## Contract Implementation
-  - [Contract Safety (Formal Verification)](dev/contracts/safety.md) ← Start here
+  - [Contract Developer Journey](dev/contracts/journey.md) ← Start here
+  - [Contract Safety Checklist](dev/contracts/checklist.md)
+  - [Contract Safety (Formal Verification)](dev/contracts/safety.md)
   - [Contract Standards](dev/contracts/standards.md)
   - [AuthMint Security Analysis](dev/contracts/auth_mint_security_analysis.md) [HISTORICAL]
   - [Bridge Contract](dev/contracts/bridge.md)
