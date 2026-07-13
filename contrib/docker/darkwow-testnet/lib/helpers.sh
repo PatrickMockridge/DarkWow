@@ -271,7 +271,7 @@ _join_lilith_run() {
 jsonrpc_get_block() {
     local container="$1" port="$2" block_num="$3"
     docker exec "$container" bash -c \
-        "exec 3<>/dev/tcp/127.0.0.1/$port; echo '{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[$block_num],\"id\":1}' >&3; timeout 5 cat <&3" 2>&1
+        "exec 3<>/dev/tcp/127.0.0.1/$port; echo '{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[$block_num],\"id\":1}' >&3; timeout 15 cat <&3" 2>/dev/null
 }
 
 # Get the current block height from a node via JSON-RPC.
@@ -279,9 +279,10 @@ jsonrpc_get_block() {
 # Uses jq for structured JSON parsing — immune to formatting changes.
 jsonrpc_get_height() {
     local container="$1" port="$2"
-    docker exec "$container" bash -c \
-        "exec 3<>/dev/tcp/127.0.0.1/$port; echo '{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_height\",\"params\":[],\"id\":1}' >&3; timeout 5 cat <&3" 2>&1 \
-        | jq -r '.result.height // 0' 2>/dev/null || echo 0
+    local raw
+    raw=$(docker exec "$container" bash -c \
+        "exec 3<>/dev/tcp/127.0.0.1/$port; echo '{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_height\",\"params\":[],\"id\":1}' >&3; timeout 5 cat <&3" 2>/dev/null)
+    echo "$raw" | jq -r '.result.height // 0' 2>/dev/null | head -1 | tr -d '[:space:]' || echo 0
 }
 
 poll_until() {

@@ -150,7 +150,10 @@ _verify_genesis_ceremony() {
     local n0_height
     for attempt in $(seq 1 15); do
         n0_height=$(jsonrpc_get_height "dwow-node0" 31345 2>/dev/null || echo 0)
-        [ "${n0_height:-0}" -ge 1 ] && break
+        # Sanitize: strip all non-digits (defense against multiline RPC output)
+        n0_height=$(echo "$n0_height" | tr -dc '0-9')
+        n0_height="${n0_height:-0}"
+        [ "$n0_height" -ge 1 ] 2>/dev/null && break
         sleep 2
     done
     if [ "${n0_height:-0}" -lt 1 ]; then
@@ -224,6 +227,10 @@ phase_blocks() {
         while true; do
             if [ $((SECONDS - START_TIME)) -ge 600 ]; then
                 warn "$NODE_NAME block production timed out after 600s — mining may be slow"
+                # Diagnostic: query node state at timeout
+                local diag_h
+                diag_h=$(jsonrpc_get_height "$NODE_NAME" "$NODE_PORT" 2>/dev/null || echo "RPC-failed")
+                warn "  $NODE_NAME current height at timeout: $diag_h"
                 break
             fi
             sleep 16
@@ -379,10 +386,8 @@ phase_blocks() {
         for snap in 1 2 3; do
             sleep 60
 
-            N0_BLOCK=$(jsonrpc_get_block "$NODE0_NAME" "$NODE0_PORT" 2)
-            N0_TIP=$(echo "$N0_BLOCK" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*' || echo "?")
-            N1_BLOCK=$(jsonrpc_get_block "$NODE1_NAME" "$NODE1_PORT" 2)
-            N1_TIP=$(echo "$N1_BLOCK" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*' || echo "?")
+            N0_TIP=$(jsonrpc_get_height "$NODE0_NAME" "$NODE0_PORT")
+            N1_TIP=$(jsonrpc_get_height "$NODE1_NAME" "$NODE1_PORT")
 
             info "  snapshot $snap: node0=$N0_TIP node1=$N1_TIP"
 
