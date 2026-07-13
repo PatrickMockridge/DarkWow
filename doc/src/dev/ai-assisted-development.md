@@ -1,10 +1,11 @@
 # AI-Assisted Development
 
-DarkWow's architecture is intentionally AI-friendly. Three architectural
-properties make it safe to "vibe-code" complex smart contracts with AI
-assistance: O-Cap containment, deterministic consensus, and manifest-first
-wallet integration. Combined with the test pipeline, AI-generated contract
-code reaches audit quality before it touches mainnet.
+DarkWow's architecture provides safety boundaries that constrain what
+AI-generated code can do. Three architectural properties — O-Cap containment,
+deterministic consensus, and manifest-first wallet integration — create a
+safety net that catches errors before they reach mainnet. Combined with the
+test pipeline, AI-assisted development can accelerate iteration while the
+architecture prevents the worst failure modes.
 
 ## Why DarkWow is AI-Friendly
 
@@ -22,7 +23,7 @@ state, or operations it wasn't explicitly granted.
 
 **Contained blast radius.** A bug in one contract cannot leak into another.
 Contracts compose naturally through the capabilities they receive — the
-runtime enforces the boundary, not programmer discipline.
+runtime enforces the boundary.
 
 ### Deterministic Consensus
 
@@ -112,7 +113,7 @@ The architecture is the safety net, but **you must use it**:
 The pipeline is the gate. Feed every AI-generated change through all four
 levels before it ships.
 
-## Practical Vibe-Coding Workflow
+## AI-Assisted Development Workflow
 
 Here is the concrete loop for AI-assisted contract development:
 
@@ -258,4 +259,4 @@ flakiness or timing.
 - [Uncle Merkle Consensus](../arch/consensus/consensus.md) — Deterministic consensus
 - [Wallet Architecture](../arch/wallet.md) — Manifest-first, full node design
 - [Key Management](../arch/key-management.md) — AccountManager specification
-- [Ideology](../philosophy/ideology.md) — Core design principles
+- [Philosophy](../philosophy/philosophy.md) — Design commitments and architectural principles

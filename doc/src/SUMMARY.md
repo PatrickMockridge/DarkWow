@@ -264,7 +264,6 @@
   - [Books](philosophy/books.md)
   - [Study Guide](philosophy/learn.md)
 - [FAQ](misc/faq.md)
-- [Glossary](glossary/glossary.md)
 - [UI](ui/ui.md)
 - [vanityaddr](misc/vanityaddr.md)
 - [darkIRC Specification](misc/darkirc/specification.md)
