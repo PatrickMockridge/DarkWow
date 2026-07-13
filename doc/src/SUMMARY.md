@@ -1,41 +1,82 @@
 # Summary
 
-# About
+# Start Here
 
-- [Development Fork Info](intro.md)
-- [DarkWow](README.md)
-- [What's Different from Upstream](about/differences_from_upstream.md)
-- [DarkWow for Dummies](about/for-dummies.md)
-- [Start Here](start-here.md)
-- [Philosophy](philosophy/philosophy.md)
-  - [Ideology](philosophy/ideology.md)
-  - [Books](philosophy/books.md)
-  - [Learn](philosophy/learn.md)
+- [DarkWow](intro.md)
+- [Formal Specification](arch/formal-specification.md) ← One page to read
 
-# User Guide
+## Persona Paths
 
-- [Testnet Bootstrapping Plan](testnet/bootstrapping.md)
-- [Running a Node](testnet/node.md)
-- [Tokens](testnet/token.md)
-- [Payments](testnet/payment.md)
-- [DAO [DEPRECATED]](testnet/dao.md)
-- [Contracts](testnet/contract.md)
-- [Merge Mining](testnet/merge-mining.md)
-- [Bridge, Wrapping & Stablecoins](arch/monero.md)
-- [Mining on Testnet](testnet/testnet-mining.md)
-- [Block Explorer](testnet/block-explorer.md)
-- [DarkIRC](misc/darkirc/darkirc.md)
-  - [Private Message](misc/darkirc/private_message.md)
-- [Node Configurations](misc/nodes/node-configurations.md)
-  - [Public Node Configurations](misc/nodes/public-guide.md)
-  - [Tor Nodes](misc/nodes/tor-guide.md)
-  - [I2p Nodes](misc/nodes/i2p-guide.md)
-  - [Nym Nodes](misc/nodes/nym-guide.md)
-- [Network Troubleshooting](misc/network-troubleshooting.md)
+- [Contract Developers](for-contract-developers.md)
+- [Node Operators & Miners](for-node-operators.md)
+- [Privacy Researchers](for-researchers.md)
+
+# Architecture
+
+- [Architecture Index](arch/README.md)
+  - [Overview](arch/overview.md)
+  - [Genesis](arch/genesis.md)
+  - [DarkWow Daemon](dwowd.md)
+
+## Core Architecture
+  - [Wallet Architecture](arch/wallet.md)
+  - [Wallet vs Daemon Architecture](arch/wallet-vs-daemon.md)
+  - [Key & Account Management](arch/key-management.md)
+  - [Contract Manifest](arch/manifest.md)
+  - [Contract Trust Model](arch/contract-trust-model.md)
+  - [Contract Deployment Pipeline](arch/dwowd_contract_pipeline.md)
+  - [Contract Invocation API](arch/contract_invoke_api.md)
+  - [Contract Metadata](arch/contract-metadata.md)
+  - [Identity Contract (O-Cap)](arch/identity.md)
+  - [Observer (Relay Node)](arch/observer.md)
+  - [O-Cap & Composable Privacy](arch/ocap.md)
+  - [Type System](arch/type-system.md) ← ρ-calculus + Authorization Inversion Theorem
+  - [Capability Composition](arch/composition.md)
+  - [Anonymous Assets](arch/anonymous_assets.md)
+  - [Quantum-OS & Promissory Note Bridge](arch/quantum-os.md)
+
+## Consensus
+  - [Consensus](arch/consensus/consensus.md)
+  - [Uncle Merkle](arch/consensus/uncle_merkle.md)
+  - [Stratum Protocol](arch/consensus/stratum.md)
+  - [Scaling & Sharding](arch/consensus/scaling.md)
+  - [Linear Blockchain (theory)](arch/consensus/linear_blockchain.md)
+  - [Chain Architecture (implementation)](arch/consensus/chain_architecture.md)
+  - [Linear zkVM](arch/consensus/linear_zkvm.md)
+  - [Caribina Finality](arch/caribina.md)
+
+## ZK Primitives
+  - [Spend Hooks](arch/zk/spend_hook.md)
+  - [Field Arithmetic](arch/zk/field_arithmetic.md)
+  - [zkVM Primitive Layer](arch/zk/zkvm_primitives.md)
+  - [Opcodes](arch/zk/opcodes.md)
+  - [Opcode Status](arch/zk/opcodes-status.md)
+  - [Opcode Universe](arch/zk/opcode_universe.md)
+  - [ZK Verification](arch/zk/zk_verification.md)
+  - [MerkleRoot Depth](arch/zk/merkle_depth.md)
+  - [Quantum Threat](arch/quantum-threat.md)
+
+## Smart Contracts
+  - [Smart Contracts](arch/sc/sc.md)
+    - [Transaction lifetime](arch/sc/tx-lifetime.md)
+
+## Economics & Security
+  - [Consensus & Coinbase](arch/consensus-coinbase.md)
+  - [Merge Mining](arch/merge-mining.md)
+  - [Monero Merge Mining](arch/monero-merge-mining.md)
+  - [Slashing & Economic Security](arch/slashing.md)
+  - [Caveat Emptor: Pricing, Coverage & Adversarial Analysis](arch/economics-caveat-emptor.md)
+  - [Security Analysis](arch/security-analysis.md)
+
+## Network & Services
+  - [P2P Network](arch/net/p2p-network.md)
+  - [Network Types](arch/network-types.md)
+  - [Services](arch/services.md)
+  - [Sync Module](arch/sync.md)
 
 # Contracts
 
-- [Contracts](contracts.md) ← Canonical catalog (all 32)
+- [Contract Catalog](contracts.md) ← Canonical catalog (all 32)
 - [Security Audit](contract/audit.md)
 
 ## Genesis
@@ -80,7 +121,6 @@
 ## DAO & Governance
 
 - [DAO Escrow](contract/dao_escrow.md)
-- [DAO](contract/dao.md) [DEPRECATED]
 - [Drain Protection](contract/drain_protection.md)
 
 ## Identity & Reputation
@@ -102,72 +142,14 @@
 - [Transaction Commitment](contract/tx-commitment.md)
 - [Tau Task Delegation](contract/tau.md)
 
-# Relayer Operations
-
-- [Universal Relayer](relayer/relayer.md)
-  - [Pool Stake Contract](relayer/pool_stake.md)
-  - [Relayer Endowment Contract](relayer/endowment.md)
-  - [Relayer Economics](relayer/relayer_economics.md)
-
-# Developer Doc
+# Developer Resources
 
 - [Developer Quick Start](dev/quickstart.md)
 - [Contributing & Developer Guide](dev/contrib/contrib.md)
-  - [Contract Overview](dev/contracts.md)
-  - [ZK Circuit Troubleshooting](dev/zk-circuit-troubleshooting.md)
-- [AI-Assisted Development](dev/ai-assisted-development.md)
-- [Architecture](arch/README.md)
-  - [Formal Specification](arch/formal-specification.md) ← Start here
-  - [Type System](arch/type-system.md) ← ρ-calculus + Authorization Inversion Theorem
-  - [Capability Composition](arch/composition.md) ← how §8.1 primitives compose into capabilities
-  - [DarkWow Daemon](dwowd.md)
-  - [Overview](arch/overview.md)
+- [Contract Development](dev/contracts.md)
 
-## Core Architecture
-  - [Wallet Architecture](arch/wallet.md)
-  - [Wallet vs Daemon Architecture](arch/wallet-vs-daemon.md)
-  - [Observer (Relay Node)](arch/observer.md)
-  - [Key & Account Management](arch/key-management.md)
-  - [Contract Manifest](arch/manifest.md)
-  - [Contract Trust Model](arch/contract-trust-model.md)
-  - [Contract Deployment Pipeline](arch/dwowd_contract_pipeline.md)
-  - [ZK Engineering Posture](arch/zk-engineering-posture.md)
-  - [O-Cap & Composable Privacy](arch/ocap.md)
-  - [Quantum-OS & Promissory Note Bridge](arch/quantum-os.md)
-  - [Anonymous Assets](arch/anonymous_assets.md)
-
-## Consensus
-  - [Consensus](arch/consensus/consensus.md)
-  - [Stratum Protocol](arch/consensus/stratum.md)
-  - [Uncle Merkle](arch/consensus/uncle_merkle.md)
-  - [Scaling & Sharding](arch/consensus/scaling.md)
-  - [Linear Blockchain (theory)](arch/consensus/linear_blockchain.md)
-  - [Chain Architecture (implementation)](arch/consensus/chain_architecture.md)
-  - [Linear zkVM](arch/consensus/linear_zkvm.md)
-  - [Caribina Finality](arch/caribina.md)
-
-## ZK Primitives
-  - [Spend Hooks](arch/zk/spend_hook.md)
-  - [Field Arithmetic](arch/zk/field_arithmetic.md)
-  - [zkVM Primitive Layer](arch/zk/zkvm_primitives.md)
-  - [Opcodes](arch/zk/opcodes.md)
-  - [Opcode Status](arch/zk/opcodes-status.md)
-  - [Opcode Universe](arch/zk/opcode_universe.md)
-  - [ZK Verification](arch/zk/zk_verification.md)
-  - [MerkleRoot Depth](arch/zk/merkle_depth.md)
-  - [Quantum Threat](arch/quantum-threat.md)
-
-## Smart Contracts
-  - [Smart Contracts](arch/sc/sc.md)
-    - [Transaction lifetime](arch/sc/tx-lifetime.md)
-  - [Contract Invocation API](arch/contract_invoke_api.md)
-  - [Contract Metadata](arch/contract-metadata.md)
-  - [Identity Contract (O-Cap)](arch/identity.md)
-
-## Developer Tooling
-  - [Security Analysis](arch/security-analysis.md)
-  - [Debugging FAQ](arch/debugging_faq.md)
-  - [Testing Overview](dev/testing/overview.md)
+## Testing
+  - [Testing Overview](dev/testing/overview.md) ← Start here
     - [Level 1: Lightweight Tests](dev/testing/level-1-lightweight.md)
     - [Python Contract Simulations](dev/testing/python-simulations.md)
     - [Level 2: Heavyweight Tests](dev/testing/level-2-heavyweight.md)
@@ -176,31 +158,13 @@
     - [Build Resource Tuning](dev/testing/build-resource-tuning.md)
     - [Build Resource HAZOP](dev/testing/build-resource-hazop.md)
   - [Wallet Testing](dev/testing/wallet-testing.md)
-  - [Contract Testing Guide](dev/contracts_testing.md)
   - [Genesis Harness](arch/genesis_harness.md)
   - [Contract Testing Pipeline](arch/pipeline.md)
   - [Test Harness Guide](arch/test_harness_guide.md)
   - [Localnet Contract Testing](arch/localnet_contract_testing.md)
   - [Local Devnet Setup](localnet-dev.md)
-- [Native Mining Workflow](dev/native-workflow.md)
-- [Bridge Node (Docker)](dev/bridge-node.md)
-  - [Public Key Constraint Hook](arch/pubkey-constraint-hook.md)
-  - [Tooling](arch/tooling.md)
 
-## Network & Services
-  - [P2P Network](arch/net/p2p-network.md)
-  - [Network Types](arch/network-types.md)
-  - [Services](arch/services.md)
-  - [Sync Module](arch/sync.md)
-  - [Slashing & Economic Security](arch/slashing.md)
-
-## Economics
-  - [Merge Mining](arch/merge-mining.md)
-  - [Monero Merge Mining](arch/monero-merge-mining.md)
-  - [Consensus & Coinbase](arch/consensus-coinbase.md)
-  - [Caveat Emptor: Pricing, Coverage & Adversarial Analysis](arch/economics-caveat-emptor.md)
-
-## Contract Implementations
+## Contract Implementation
   - [Contract Safety (Formal Verification)](dev/contracts/safety.md) ← Start here
   - [Contract Standards](dev/contracts/standards.md)
   - [AuthMint Security Analysis](dev/contracts/auth_mint_security_analysis.md) [HISTORICAL]
@@ -211,19 +175,58 @@
   - [NativeToken Contract](dev/contracts/native_token.md)
   - [Rust-WASM Interaction](dev/rust-wasm-interaction.md)
   - [Building SDKs and Apps](dev/building_sdks_apps.md)
-- [zkas](zkas/index.md)
+
+## Tools
+  - [AI-Assisted Development](dev/ai-assisted-development.md)
+  - [Native Mining Workflow](dev/native-workflow.md)
+  - [Bridge Node (Docker)](dev/bridge-node.md)
+  - [Public Key Constraint Hook](arch/pubkey-constraint-hook.md)
+  - [ZK Circuit Troubleshooting](dev/zk-circuit-troubleshooting.md)
+  - [Debugging FAQ](arch/debugging_faq.md)
+  - [Start Here (Directory Tour)](start-here.md)
+
+## zkas
+  - [zkas](zkas/zkas.md)
   - [Writing ZK Proofs](zkas/writing-zk-proofs.md)
   - [Bincode](zkas/bincode.md)
   - [zkVM](zkas/zkvm.md)
   - [Examples](zkas/examples.md)
     - [Anonymous voting](zkas/examples/voting.md)
     - [Anonymous payments](zkas/examples/sapling.md)
+
 ## JSON-RPC API Reference
   - [dwowd JSON-RPC API](clients/dwowd_jsonrpc.md)
-  - [dwowd JSON-RPC API (Legacy)](clients/dwowd_jsonrpc.md) [LEGACY]
 
-# Crypto
+# Operations
 
+- [Running a Node](testnet/node.md)
+- [Testnet Bootstrapping Plan](testnet/bootstrapping.md)
+- [Tokens](testnet/token.md)
+- [Payments](testnet/payment.md)
+- [Contracts on Testnet](testnet/contract.md)
+- [Mining on Testnet](testnet/testnet-mining.md)
+- [Merge Mining](testnet/merge-mining.md)
+- [Bridge, Wrapping & Stablecoins](arch/monero.md)
+- [Block Explorer](testnet/block-explorer.md)
+- [DarkIRC](misc/darkirc/darkirc.md)
+  - [Private Message](misc/darkirc/private_message.md)
+- [Node Configurations](misc/nodes/node-configurations.md)
+  - [Public Node Configurations](misc/nodes/public-guide.md)
+  - [Tor Nodes](misc/nodes/tor-guide.md)
+  - [I2p Nodes](misc/nodes/i2p-guide.md)
+  - [Nym Nodes](misc/nodes/nym-guide.md)
+- [Network Troubleshooting](misc/network-troubleshooting.md)
+
+# Relayer Operations
+
+- [Universal Relayer](relayer/relayer.md)
+  - [Pool Stake Contract](relayer/pool_stake.md)
+  - [Relayer Endowment Contract](relayer/endowment.md)
+  - [Relayer Economics](relayer/relayer_economics.md)
+
+# Reference
+
+## Crypto
 - [FFT](crypto/fft.md)
 - [ZK explainer](crypto/zk_explainer.md)
 - [Research](crypto/research.md)
@@ -231,22 +234,7 @@
 - [Key Recovery Scheme](crypto/key-recovery.md)
 - [Reading maths books](crypto/reading-maths-books.md)
 
-# User Interface
-
-- [UI](ui/ui.md)
-
-# DEP
-
-- [DEP 0001: Version Message Info (accepted)](dep/0001.md)
-- [DEP 0002: Smart Contract Composability (deprecated)](dep/0002.md)
-- [DEP 0003: Token Mint Authorization (accepted)](dep/0003.md)
-- [DEP 0004: Client wallet WASM modules (draft)](dep/0004.md)
-- [DEP 0006: App Identifier for Version and Verack Messages (draft)](dep/0006.md)
-- [DEP 0007: Network profiles (accepted)](dep/0007.md)
-- [DEP 0008: Transaction-local State (draft)](dep/0008.md)
-
-# Specs
-
+## Specs
 - [Notation](spec/notation.md)
 - [Concepts](spec/concepts.md)
 - [Cryptographic Schemes](spec/crypto-schemes.md)
@@ -259,9 +247,35 @@
     - [Model](spec/contract/vesting/model.md)
     - [Scheme](spec/contract/vesting/scheme.md)
 
+## DEP
+- [DEP 0001: Version Message Info (accepted)](dep/0001.md)
+- [DEP 0002: Smart Contract Composability (deprecated)](dep/0002.md)
+- [DEP 0003: Token Mint Authorization (accepted)](dep/0003.md)
+- [DEP 0004: Client wallet WASM modules (draft)](dep/0004.md)
+- [DEP 0006: App Identifier for Version and Verack Messages (draft)](dep/0006.md)
+- [DEP 0007: Network profiles (accepted)](dep/0007.md)
+- [DEP 0008: Transaction-local State (draft)](dep/0008.md)
+
+# Appendix
+
+- [What's Different from Upstream](about/differences_from_upstream.md)
+- [DarkWow for Dummies](about/for-dummies.md)
+- [Philosophy](philosophy/philosophy.md)
+  - [Books](philosophy/books.md)
+  - [Study Guide](philosophy/learn.md)
+- [FAQ](misc/faq.md)
+- [Glossary](glossary/glossary.md)
+- [UI](ui/ui.md)
+- [vanityaddr](misc/vanityaddr.md)
+- [darkIRC Specification](misc/darkirc/specification.md)
+- [tau](misc/tau.md)
+
 # P2P API Tutorial
 
-- [Learn](learn/learn.md)
+> **Note**: This tutorial teaches the event_graph P2P messaging stack used
+> by darkirc — not the libp2p-based blockchain P2P layer used by dwowd.
+> The tutorial and example code remain valuable for darkirc developers.
+
 - [P2P API Tutorial](learn/dchat/dchat.md)
   - [Async Rust Fundamentals](learn/dchat/async-rust-fundamentals.md)
   - [Deployment](learn/dchat/deployment/part-1.md)
@@ -291,15 +305,6 @@
     - [get_info](learn/dchat/network-tools/get-info.md)
     - [Attaching dchat](learn/dchat/network-tools/attaching-dnet.md)
     - [Using dnet](learn/dchat/network-tools/using-dnet.md)
-
-# Misc
-
-- [vanityaddr](misc/vanityaddr.md)
-- [darkIRC Specification](misc/darkirc/specification.md)
-- [tau](misc/tau.md)
-- [dnetview](misc/dnetview.md)
-- [FAQ](misc/faq.md)
-- [Glossary](glossary/glossary.md)
 
 # Legacy Architecture
 

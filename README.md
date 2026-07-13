@@ -31,11 +31,11 @@ A privacy-preserving blockchain rebuilt around **six design commitments**:
    chain verifiable without ZK proofs. Enforced at every block acceptance path.
    [Read more →](doc/src/arch/consensus/consensus.md#supply-audit-capability)
 
-Zero vendor lock-in. 34+ contracts. Hard forks are a feature, not a threat.
+Zero vendor lock-in. 32 contracts. Hard forks are a feature, not a threat.
 
 See [What's Different from Upstream](doc/src/about/differences_from_upstream.md)
 for the full comparison table, and [Philosophy](doc/src/philosophy/philosophy.md)
-for the political-economic basis of the fork.
+for the design rationale behind the fork.
 
 Development occurs on the **`linear-master`** branch.
 
@@ -81,11 +81,15 @@ architecture: contracts carry their own interfaces on-chain. Auto-configures —
 zero wallet code changes for new contracts.
 [Read more →](doc/src/arch/wallet.md)
 
+### I want to...
+
+- **Build contracts** → [Contract Developer Guide](doc/src/for-contract-developers.md) — dao_escrow case study, O-Cap primitives, testing pipeline
+- **Run a node or mine** → [Node Operator Guide](doc/src/for-node-operators.md) — Uncle Merkle consensus, merge mining, monetary policy
+- **Research the cryptography** → [Researcher Guide](doc/src/for-researchers.md) — ZK circuits, ρ-calculus type system, Lean4 verification
+
 ---
 
-## Contracts
-
-34+ contracts covering identity, finance, labour, gaming, and infrastructure.
+32 contracts covering identity, finance, labour, gaming, and infrastructure.
 All self-contained with their own ZK circuits, tests, and harnesses.
 
 | Category | Contracts |
@@ -186,7 +190,3 @@ Minimum Rust: **1.87.0**.
 ## License
 
 AGPL-3.0-only. See [LICENSE.md](LICENSE.md).
-
-DarkWow is a tool for people and nations to establish sovereignty according to human rights law. See the [UN Declaration on the Rights of Indigenous Peoples](https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf).
-
-**Go Dark.**

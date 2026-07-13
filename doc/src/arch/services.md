@@ -6,7 +6,7 @@ running components that may communicate with each other.
 The standard signature for a service is of the form:
 
 ```rust
-use dwow_system::ExecutorPtr;
+use dwow_core::concurrency::ExecutorPtr;
 
 pub struct Service {
     // ...

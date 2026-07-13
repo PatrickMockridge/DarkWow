@@ -182,13 +182,13 @@ src/contract/<name>/
 
 ```bash
 # Build WASM contract
-cargo build -p darkfi_<name>_contract
+cargo build -p dwow_<name>_contract
 
 # Run integration tests
-cargo test -p darkfi_<name>_contract --test integration
+cargo test -p dwow_<name>_contract --test integration
 
 # Run all contract tests
-cargo test -p darkfi_<name>_contract
+cargo test -p dwow_<name>_contract
 ```
 
 ## Debugging Contracts

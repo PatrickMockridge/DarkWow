@@ -1,6 +1,9 @@
 # What's Different from Upstream DarkFi
 
-This project is a fork of [DarkFi](https://codeberg.org/PatrickM123/darkwow). It inherits the core zkVM, ZKAS circuit language, P2P networking stack, and WASM contract runtime. Both projects trace their intellectual lineage to the Cybernetic Culture Research Unit (CCRU) at Warwick University, but they represent the two divergent trajectories that emerged from it. See the [Philosophy](../philosophy/philosophy.md) page for the full articulation.
+DarkWow began as a fork of DarkFi. Both projects share the core zkVM, ZKAS
+circuit language, P2P networking stack, and WASM contract runtime. They
+diverge on architecture. See the [Philosophy](../philosophy/philosophy.md)
+page for the intellectual context behind the divergence.
 
 ## Comparison Table
 
@@ -15,63 +18,46 @@ This project is a fork of [DarkFi](https://codeberg.org/PatrickM123/darkwow). It
 | Key model | Daemon-held (RPC delegation) | Sovereign (AccountManager — never delegated, wallet is pure function) |
 | State model | Speculative (overlay/diff) | Deterministic (final at commit) |
 
-## Philosophical Dimension
+## Genesis Contracts
 
-Each design divergence maps to a concept from Mark Fisher's critique of
-capitalism. These are not merely engineering choices — they represent two
-incompatible trajectories from the same intellectual source.
+Upstream deploys 3 contracts at genesis: `MONEY_CONTRACT_ID`,
+`DAO_CONTRACT_ID`, and `DEPLOYOOOR_CONTRACT_ID`. The Money contract
+handles 8 functions (FeeV1 through BurnV1) in a single enum across 7
+database trees and 6 ZK circuits. The DAO contract encodes 5 functions
+(Mint, Propose, Vote, Exec, AuthMoneyTransfer) with 18 parameters fused
+into a single `DaoBulla` commitment, 6 ACL keypairs embedded, and
+token-weighted voting enforced at the ZK circuit level:
+`proposer_limit <= total_funds`, `quorum <= all_vote_value`.
 
-| Design Choice | Fisher Concept | What It Rejects |
-|---------------|----------------|-----------------|
-| Composable O-Cap governance primitives instead of monolithic DAO | Capitalist Realism | "There is no alternative" to plutocratic governance — but there is: modular self-governance from composable primitives |
-| Deterministic consensus | Slow Cancellation of the Future | Speculative time; blocks as provisional, futures as cancelled |
-| New ZK opcodes (Lean-verified) | Left-accelerationism | Inheriting tech without advancing it; acceleration as extraction |
-| No premine | Cyberspacetime reclamation | VC/SAFT colonization of digital time through unlock schedules |
+DarkWow deploys 9 contracts at genesis. The single Money contract is
+split into [NativeToken](../contract/native_token.md) (consensus-critical:
+block rewards, fees, supply audit) and [PromissoryNote](../contract/promissory_note.md)
+(DeFi token operations: transfer, mint, burn, freeze). The monolithic
+DAO is decomposed into 6 composable O-Cap primitives:
 
-The CCRU produced two trajectories. Nick Land moved toward the Dark
-Enlightenment / NRx — acceleration without political critique, which
-naturalizes governance-DAO plutocracy, premines, and SAFT financialization.
-Mark Fisher moved toward left-accelerationism — acceleration through
-disintermediation and collective liberation. DarkFi is the Land fork.
-DarkWow is the Fisher fork. Same technical base; opposite political
-conclusion. Both must be read — the [Warwick CCRU Collection](https://app.ardrive.io/#/drives/1c3b923e-eba9-402f-862a-e532c1df53fd?name=Warwick+CCRU)
-on ArDrive contains both Fisher and Land texts.
+| Upstream DAO Concern | DarkWow O-Cap Primitive |
+|---|---|
+| Identity (`notes_public_key`) | [Identity](../contract/identity.md) |
+| Data feeds and reporting | [Oracle](../contract/oracle.md) |
+| Proposal commitment verification | [Attestation](../contract/attestation.md) |
+| Treasury with spend_hook | [Purse](../contract/purse.md) |
+| Spend restrictions | [Box](../contract/box.md) |
+| Exec key authorization | [MultiSig](../contract/multisig.md) |
 
-## Political Distance
+Upstream has zero composable governance primitives — no identity, oracle,
+attestation, purse, box, or multisig contract exists. DarkWow's primitives
+compose into arbitrary governance structures, opt-in rather than inherited.
 
-DarkWow explicitly distances itself from upstream DarkFi's founders' direct
+DarkWow explicitly distances itself from upstream founders' direct
 political affiliations, including links to the YPG. DarkWow's interest in
-Abdullah Ocalan's thought is limited to the formal/mathematical isomorphism
-between his five structural principles (distributed sovereignty, subsidiarity,
-voluntary association, truth-defense coupling, anti-monopoly) and cryptographic
-protocol architecture — see the [Ocalan-DarkWeave Isomorphism](https://technologytruth.substack.com/p/the-ocalan-darkweave-isomorphism).
-DarkWow does not endorse any specific political movement, militia, or party.
-
-Rather than a monolithic centralised governance DAO, DarkWow provides all the
-necessary composable, modular O-Cap primitives for self-governance, treasury
-management, dispute resolution, and trust — Box, Purse, Identity, Oracle,
-Attestation, and MultiSig — such that every user can build their own
-organisations, form their own connections, and the chain can self-govern and
-fork in a way that evolves. A Cambrian explosion of governance from bits of
-DNA, as opposed to an ACL-based monolith.
-
-The project's political content begins and ends with six design commitments
-encoded in its architecture: composable governance primitives instead of a
-monolithic DAO, no premine, deterministic forward-only consensus, formally
-verified opcodes, sovereign user keys, and wallet state as a pure
-mathematical function of identity and chain data.
-These are code, not a platform. The architecture removes the affordances for
-extraction and creates the affordances for coordination. What people build with
-those affordances is their own affair. See the [Philosophy](../philosophy/philosophy.md) page
-for the full articulation of exo-punk — DarkWow's constructive framework
-of thermodynamic infrastructure, social reproduction, and cyberspacetime
-as nurture medium.
+Ocalan's thought is limited to a formal structural mapping between his five
+principles and cryptographic protocol architecture. DarkWow does not endorse
+any specific political movement, militia, or party.
 
 ## Material Type System
 
-The philosophical differences enumerated above are not merely design
-choices — they are encoded materially in the type system. DarkWow
-implements a ρ-calculus-derived type system where every primitive
+The architectural differences are encoded materially in the type system.
+DarkWow implements a ρ-calculus-derived type system where every primitive
 type is a newtype wrapper around a Pallas base field element. This
 is not cosmetic — it is the material encoding of capability semantics.
 
@@ -159,164 +145,70 @@ the codebase.
 | **ZKAS** | Circuit language and compiler |
 | **P2P stack** | Peer discovery, session management, protocol negotiation (daemon only; wallet has its own lightweight P2P client — see [Wallet vs Daemon](../arch/wallet-vs-daemon.md)) |
 | **WASM runtime** | In-node WASM execution for smart contracts |
-| **Halo2** | Proof system backend (Poseidon/Pallas) |
+| **Halo2** | Proof system backend (Poseidon/Pallas) — vendored and pinned at a fixed revision |
 
 ## Design Changes (This Fork)
 
 ### 1. Governance — Composable O-Cap Primitives Instead of a Monolithic DAO
 
-Upstream's architecture has a single, monolithic governance DAO. Token holders
-vote on operations including native token minting — the same token that pays
-block rewards and fees. This concentrates power: token-weighted voting, single
-point of failure, and no privacy for voters.
+Upstream's architecture has a single monolithic governance DAO. Token
+holders vote on operations including native token minting — the same
+token that pays block rewards and fees.
 
-DarkWow replaces the monolithic DAO with a set of composable, genesis-deployed
-O-Cap primitives, each doing one thing:
-
-| Primitive | Role | Counter |
-|-----------|------|---------|
-| **Box** | Capability delegation — hold, transfer, consume any capability | 9 |
-| **Purse** | Fungible asset container — hidden balances via Pedersen commitments | 8 |
-| **Identity** | Credential issuance, selective disclosure, capability proofs | 5 |
-| **Oracle** | External data feeds — price, randomness, attestation data | 6 |
-| **Attestation** | Trust verification — on-chain attestations from trusted issuers | 7 |
-| **MultiSig** | Private threshold voting — N-of-M groups, zero-knowledge ballots | 10 |
-
-These primitives compose. A DAO treasury is a Purse secured by a MultiSig group.
-A membership credential is an Identity capability stored in a Box. A dispute is
-resolved by an Oracle attested by an Attestation. Governance is not a contract —
-it is the *interaction* between primitives, configured by each user for their
-own context.
-
-This is qualitatively different from "no governance." It is *self*-governance:
-every collective — from a trade union to a nation state — builds its own
-governance structure from the same audited primitives. There is no central DAO
-to capture, no ACL to gatekeep, no plutocracy to entrench. Just composable
-primitives and the people who use them.
+DarkWow replaces the monolithic DAO with six composable, genesis-deployed
+O-Cap primitives: Box (capability delegation), Purse (fungible container),
+Identity (credentials), Oracle (data feeds), Attestation (trust verification),
+MultiSig (private threshold voting). These compose — a DAO treasury is a
+Purse secured by MultiSig. A membership credential is an Identity stored
+in a Box. Governance is not a contract; it is the interaction between
+primitives, configured per-user.
 
 ### 2. Privacy — ZK Predicates Instead of ACLs
 
-Upstream uses ACL-based voting where participants reveal their public key and token balance to prove eligibility. This exposes voter identity and wealth.
-
-This fork uses ZK predicates: a voter proves they meet a condition (e.g., "holds >= 1000 tokens") without revealing their public key, exact balance, or any other identifying information. The verifier learns only the boolean result. This trades implementation simplicity for stronger privacy guarantees.
-
-```
-ZK Predicate (this fork):
-  - Prove: "I am a verified contractor"
-  - Verifier learns: ✓ Boolean (yes/no)
-  - Verifier DOES NOT learn: Public key, balance, identity
-
-ACL (upstream approach):
-  - Prove: "I have 1000 tokens"
-  - Verifier learns: Public key AND token balance
-  - Simpler to implement and audit, but reveals identity
-```
+Upstream uses ACL-based voting where participants reveal their public key
+and token balance to prove eligibility. DarkWow uses ZK predicates: a voter
+proves they meet a condition without revealing their public key, exact
+balance, or any identifying information. The verifier learns only the
+boolean result.
 
 ### 3. Token Distribution — Pure PoW, No Premine
 
-Upstream's launch included token distributions to early contributors, investors, and SAFT participants.
-
-This fork has zero premine. Every token in circulation was mined. This is the Bitcoin model: the only way to acquire the native token is to contribute proof-of-work. It trades early funding certainty for distribution fairness.
+Upstream's launch included token distributions to early contributors,
+investors, and SAFT participants. DarkWow has zero premine. Every token
+in circulation was mined. The chain starts when the first miner finds
+a block, not when insiders unlock.
 
 ### 4. Consensus — Uncle Merkle Instead of Overlay/DAG
 
-Upstream uses an overlay-diff architecture: a DAG of events where blocks are verified speculatively against an in-memory overlay that can be committed or rolled back.
+Upstream uses an overlay-diff architecture: a DAG of events where blocks
+are verified speculatively against an in-memory overlay. DarkWow uses
+Uncle Merkle consensus: deterministic, stateless verification with no
+overlays, no diffs, no rollbacks. Competing blocks earn partial rewards
+via uncle inclusion. State is final at commit.
 
-This fork uses Uncle Merkle consensus: the canonical chain (most accumulated work) is obligated to offer competing uncle chains a one-time pin reward — a share of the block reward rather than zero. No overlay, no speculative state, no rollback — every state change is final. Both approaches prevent wasted miner work; this fork trades fork-arbitration flexibility for deterministic, testable state.
+### 5. Sovereign Keys, Deterministic Wallet
 
-### 5. Sovereign Keys, Deterministic Wallet — Your Keys, Never Delegated
-
-Upstream's wallet architecture delegates key material to the `darkfid` daemon.
-The daemon holds the keys internally. Wallet commands are RPC requests to a
-running daemon — the daemon decrypts the chain, discovers coins, and builds
-transactions on behalf of the wallet. The user's keys belong to the daemon.
-
-DarkWow inverts this. **The user owns their keys.** The `AccountManager`
-(`crates/dwow-accounts`) is the single key authority — every key operation
-(generation, import, BIP39 seed phrases, per-contract derivation) is a method
-on this module. The wallet derives its identity on boot from the owner's
-declared secret. No key store. No daemon delegation.
-
-This, combined with Uncle Merkle forward-only consensus (section 4), means
-the wallet is a **pure mathematical function** of identity and chain data:
-`WalletState = f(AccountManager, ChainBlocks)`. Same keys + same chain =
-identical wallet state, every time. Every scan step is deterministic
-(Poseidon hashes, ordered Merkle trees, idempotent inserts). The only async
-operation is P2P chain sync. Non-determinism is a catastrophic P0 failure.
-
-| Aspect | Upstream | DarkWow |
-|--------|----------|---------|
-| Key storage | Daemon holds keys internally | AccountManager resolves on boot; no key store |
-| Wallet operation | RPC client to running daemon | Standalone full node; only sync is async |
-| Daemon dependency | Required | None |
-| State determinism | Depends on daemon, RPC timing | Pure function of identity + chain |
-| Consensus | Overlay/DAG — speculative, rollback-capable | Uncle Merkle — forward-only, final at commit |
-| Testability | Requires running daemon + network | Offline-testable; Python model (93 tests) matches Rust |
-
-See [Wallet Architecture](../arch/wallet.md) and
-[Key Management](../arch/key-management.md) for the full design.
+Upstream's wallet delegates key material to the `darkfid` daemon via RPC.
+DarkWow's wallet holds keys in the `AccountManager` — the daemon never
+sees them. Combined with Uncle Merkle forward-only consensus, the wallet
+is a pure mathematical function: `WalletState = f(AccountManager, ChainBlocks)`.
+Same keys + same chain = identical wallet state, every time.
 
 ### 6. ZK Opcodes — Built and Formally Verified
 
-Upstream's zkVM has no `LessThanOrEqual`, `IsNotEqual`, or `BaseDiv` opcodes. These were built on this fork:
+Upstream's zkVM has no `LessThanOrEqual`, `IsNotEqual`, or `BaseDiv`
+opcodes. These were built on this fork and formally proven sound in
+Lean4 with machine-checkable proofs in `proofs/lean/`.
 
-- **LessThanOrEqual** (0x55) — enables conditional logic and O-Cap predicate evaluation in circuits
-- **IsNotEqual** (0x62) — the first fully constrained pure Boolean operator in the zkVM (all witness values fully constrained in all cases)
-- **BaseDiv** (0x58) — enables precise field division for cold-circuit governance operations (stablecoin interest accrual, governance ratio checks)
+### 7. P2P Networking — Three-Tier Feature Gate
 
-All three have been formally proven sound using the Lean4 proof assistant, with machine-checkable proofs of correctness in `proofs/lean/`.
+Upstream has a monolithic P2P stack with hard seed dependency. DarkWow
+uses a three-tier feature gate (`net-wallet ⊂ net-node ⊂ net-full`) that
+separates essential blockchain infrastructure from optional protocol
+extensions. Blockchain nodes operate without seed dependency —
+bootstrap via configured peers and PEX gossip.
 
-See [Opcodes and Formal Verification](../arch/zk/opcodes.md) for the full verification analysis.
-
-### 7. P2P Networking — Three-Tier Feature Gate, No Seed Dependency
-
-Upstream DarkFi has a monolithic P2P stack: every binary compiles the full
-protocol suite (ProtocolSeed, SeedSyncSession, BanPolicy, SESSION_SEED,
-Multi-Network Lilith). This creates a hard dependency on seed nodes for
-bootstrap, a censorship vector (shut down the seeds, kill the network), and
-protocol-level fragility (MissingDispatcher kills any channel between nodes
-with different protocol stacks).
-
-DarkWow replaces this with a three-tier feature gate that cleanly separates
-essential blockchain infrastructure from optional P2P protocol extensions:
-
-```
-net-wallet ⊂ net-node ⊂ net-full
-```
-
-**net-wallet** (wallets): Minimal P2P. ProtocolAddress handles all address
-exchange (PEX gossip). No ProtocolSeed, no SeedSyncSession, no BanPolicy.
-MissingDispatcher never kills a channel — unknown messages are logged and
-ignored. Bootstrap via configured peers + PEX gossip — no seed dependency.
-Peers are just regular full nodes that happen to be well-known.
-
-**net-node** (mining/observer nodes): Everything in net-wallet plus
-RefineSession for long-running address verification.
-
-**net-full** (darkirc, tau, lilith): Full upstream P2P stack. ProtocolSeed,
-SeedSyncSession, BanPolicy, SESSION_SEED. Used only by non-blockchain
-P2P services.
-
-| Feature | Upstream | DarkWow |
-|---------|----------|---------|
-| Address exchange | Two protocols (ProtocolSeed + ProtocolAddress) | One protocol (ProtocolAddress) |
-| Bootstrap | Seed dependency (lilith) | Peers config + PEX gossip |
-| Ban mechanism | BanPolicy::Strict defaults to banning | Removed. Unknown messages logged, never banned |
-| Session types | 6 (INBOUND, OUTBOUND, MANUAL, SEED, REFINE, DIRECT) | 5 (SEED gated out for blockchain tier) |
-| Message handling | MissingDispatcher kills channel | MissingDispatcher logs and continues |
-| Feature model | Monolithic (net-wallet, net-full) | Three-tier (net-wallet ⊂ net-node ⊂ net-full) |
-| app_name in handshake | Validated as gate | Informational only |
-
-The blockchain track operates entirely on net-wallet and net-node. No inherent
-dependence upon seed nodes. No potential for censorship. Clear separation
-between essential infrastructure (the blockchain) and optional infrastructure
-(P2P protocols for services). This continues the theme of opt-in governance
-and uncensorable native token: the network that carries the currency has no
-central points of control.
-
-See [Wallet vs Daemon](../arch/wallet-vs-daemon.md) and
-[Observer Model Specification](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/contrib/model/observer_model.py)
-for the full architecture.
+See [Wallet vs Daemon](../arch/wallet-vs-daemon.md) for the full architecture.
 
 ## See Also
 

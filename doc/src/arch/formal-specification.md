@@ -7,8 +7,8 @@ For experienced contributors, it's the reference you check when in doubt.
 
 DarkWow is a privacy-preserving smart contract platform built on a zkVM
 (zero-knowledge virtual machine) with Halo2 proving, WASM contract runtime,
-and uncle-Merkle consensus. It is a hard fork of DarkFi that makes four
-fundamental architectural refutations:
+and uncle-Merkle consensus. It began as a fork of DarkFi and makes six
+architectural commitments:
 
 1. **No DAO governance** — OCap (object capability) model instead of token-weighted voting
 2. **No premine** — every coin mined via PoW
@@ -51,7 +51,7 @@ Three independent layers:
 
 See [Contract Trust Model](contract-trust-model.md) for the full specification.
 
-## Contract Ecosystem — 29 Contracts with Manifests
+## Contract Ecosystem — 32 Contracts with Manifests
 
 Every contract has an on-chain **manifest** — a TOML document describing its
 functions, capability types, actions, state trees, and ZK circuits. The manifest
