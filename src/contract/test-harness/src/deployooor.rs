@@ -23,7 +23,7 @@
 
 #![allow(dead_code)]
 
-use dwow_sdk::{crypto::{Keypair, SecretKey}, pasta::pallas};
+use dwow_sdk::{crypto::{Keypair, SecretKey}, deploy::DeployParamsV1, pasta::pallas};
 use dwow_serial::Encodable;
 use tracing::info;
 
@@ -71,11 +71,24 @@ fn test_deploy_call_builder() -> Result<(), Box<dyn std::error::Error>> {
     info!(target: "test_harness::deployooor", "  WASM bincode size: {} bytes", debris.params.wasm_bincode.len());
     info!(target: "test_harness::deployooor", "  Instruction size: {} bytes", debris.params.ix.len());
 
-    // Verify the call data can be serialized/deserialized correctly
-    let mut data = vec![DeployFunction::DeployV1 as u8];
-    debris.params.encode(&mut data)?;
+    // Verify call data via encapsulated build_call_data()
+    let call_data = DeployCallBuilder {
+        deploy_keypair,
+        wasm_bincode: wasm_bincode.clone(),
+        deploy_ix: deploy_ix.clone(),
+        singleton: false,
+        singleton_name: String::new(),
+    }
+    .build_call_data()?;
 
-    info!(target: "test_harness::deployooor", "DeployCallBuilder test PASSED");
+    // Verify function code byte is DeployV1
+    assert_eq!(call_data[0], DeployFunction::DeployV1 as u8,
+        "call_data must start with DeployV1 function code 0x00");
+
+    // Verify params deserialize round-trip from call_data[1..]
+    let decoded: DeployParamsV1 = dwow_serial::deserialize(&call_data[1..])?;
+    assert_eq!(decoded.wasm_bincode.len(), wasm_bincode.len());
+    assert_eq!(decoded.ix.len(), deploy_ix.len());
     Ok(())
 }
 

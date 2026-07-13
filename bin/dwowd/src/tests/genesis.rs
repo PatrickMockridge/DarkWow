@@ -260,6 +260,181 @@ mod tests {
             // AC9: target == u32::MAX
             assert_eq!(block1.header.target, u32::MAX, "AC9: target");
             assert_eq!(block2.header.target, u32::MAX, "AC9: target");
+
+            // AC2: cumulative supply at height 1 (MoC gap fill)
+            let sc1 = har1.chain_state.supply_chain.get(1)
+                .expect("supply_chain at height 1");
+            assert_eq!(sc1.total_supply, expected,
+                "AC2: cumulative supply at genesis");
+        });
+    }
+
+    /// Block creation: genesis → build height-2 block with PoWRewardV1 coinbase
+    /// → submit through `accept_block` (production path, WASM executes).
+    ///
+    /// Pre-devnet ceiling: tests ONE block on top of genesis through the full
+    /// accept_block pipeline. Multi-block chain growth, competing blocks, and
+    /// uncle resolution belong in the docker pipeline (`test_pipeline.sh`).
+    ///
+    /// Assertions (MoC acceptance criteria):
+    ///   AC2 — Cumulative supply at height 1 (bridge was exercised by genesis)
+    ///   AC3 — Height-2 block through accept_block
+    ///   AC4 — Hash chain continuity (block2.previous == hash(genesis))
+    ///   AC5 — Cumulative supply bridge (S_2 == S_1 + C_2)
+    ///   — Reward correctness, block retrievability, coinbase tx presence
+    #[test]
+    fn test_block_creation() {
+        dwow_native_token_contract::enable_deterministic_zk();
+
+        smol::block_on(async {
+            // ---- Setup ----
+            let har = GenesisHarness::new().expect("GenesisHarness");
+
+            crate::init_genesis_contracts(&har.chain_state)
+                .expect("init_genesis_contracts");
+
+            let keys_toml = "[node0]\nwallet_secret = \
+                \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+            let path = std::env::temp_dir()
+                .join(format!("dwow_block_cr_{}.toml", std::process::id()));
+            std::fs::write(&path, keys_toml).expect("write test keys");
+
+            let mgr = crate::accounts::AccountManager::open(
+                &path,
+                dwow_sdk::crypto::keypair::Network::Testnet,
+                "node0",
+            )
+            .expect("open test AccountManager");
+            let recipient =
+                crate::accounts::MiningRecipient::from_account(&mgr, 1)
+                    .expect("MiningRecipient");
+            let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
+
+            // ---- Height 1: Genesis ----
+            crate::init_genesis(&har.chain_state, recipient.clone(), magic_bytes)
+                .await
+                .expect("init_genesis");
+            assert_eq!(har.block_height(), 1);
+
+            // AC2: cumulative supply at height 1
+            let sc1 = har.chain_state.supply_chain.get(1)
+                .expect("supply_chain at height 1");
+            assert_eq!(
+                sc1.total_supply,
+                dwow_sdk::blockchain::expected_reward(1),
+                "AC2: S_1 == INITIAL_REWARD"
+            );
+
+            let gen_block = har.chain_state.get_block(1).expect("block 1");
+            let gen_hash = har.chain_state.hash_block_with_cached_vm(&gen_block);
+
+            // ---- Height 2: coinbase-only block via accept_block ----
+            let height = 2u64;
+            let reward = dwow_sdk::blockchain::expected_reward(height as u32);
+
+            let linear_zk =
+                crate::registry::model::LinearPowRewardZk::new(har.chain_state.clone())
+                    .await
+                    .expect("LinearPowRewardZk");
+            let (_coinbase, _public_inputs, pow_reward_call) =
+                crate::registry::model::build_linear_coinbase(
+                    recipient,
+                    reward,
+                    &linear_zk,
+                    height as u32,
+                )
+                .await
+                .expect("coinbase for height 2");
+
+            let tx = dwow_chain::Transaction {
+                version: 1,
+                inputs: vec![],
+                outputs: vec![],
+                contract_calls: vec![pow_reward_call],
+                lock_time: 0,
+                nullifiers: vec![],
+            };
+            let merkle_root = tx.hash();
+
+            let header = dwow_chain::BlockHeader {
+                version: 1,
+                previous: gen_hash,
+                merkle_root,
+                timestamp: 120, // TARGET_BLOCK_TIME after genesis
+                target: u32::MAX,
+                nonce: 0,
+                height,
+                uncle_merkle_root: [0u8; 32],
+                total_reward: reward,
+                randomx_key: dwow_chain::Miner::derive_key_from_height(height),
+                coin_merkle_root: [0u8; 32],
+                nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32],
+                anchor_monero_height: 0,
+                anchor_monero_hash: [0u8; 32],
+                finality_flags: 0,
+                pow_source: dwow_chain::PowSource::Native,
+            };
+
+            let block = dwow_chain::Block { header, transactions: vec![tx] };
+
+            // RandomX VM — same construction as init_genesis
+            let rx_flags = randomx::RandomXFlags::get_recommended_flags()
+                & !randomx::RandomXFlags::JIT;
+            let rx_cache = randomx::RandomXCache::new(
+                rx_flags,
+                &block.header.randomx_key,
+            )
+            .expect("RandomX cache");
+            let vm = std::sync::Arc::new(
+                randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
+                    .expect("RandomX VM"),
+            );
+
+            // Submit through accept_block — production path, WASM executes
+            crate::block_acceptor::accept_block(
+                &har.chain_state,
+                &block,
+                &[],          // no uncles
+                &vm,
+                1,            // current_height = block.height - 1
+                u32::MAX,     // target
+            )
+            .expect("AC3: accept_block height 2");
+
+            // ---- Assertions ----
+            assert_eq!(har.block_height(), 2, "height advanced to 2");
+
+            let b2 = har.chain_state.get_block(2).expect("block 2 retrievable");
+            assert_eq!(
+                b2.header.previous.as_bytes(),
+                gen_hash.as_bytes(),
+                "AC4: hash chain — block2.previous == hash(genesis)"
+            );
+            assert_eq!(b2.header.total_reward, reward, "reward correctness");
+            assert_eq!(b2.transactions.len(), 1, "one tx in block");
+            assert_eq!(
+                b2.transactions[0].contract_calls.len(),
+                1,
+                "one contract call"
+            );
+            assert!(
+                b2.transactions[0].contract_calls[0].contract_id
+                    == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+                "coinbase targets native_token"
+            );
+
+            let sc2 = har.chain_state.supply_chain.get(2)
+                .expect("supply_chain at height 2");
+            let expected_supply = dwow_sdk::blockchain::expected_reward(1)
+                + dwow_sdk::blockchain::expected_reward(2);
+            assert_eq!(
+                sc2.total_supply, expected_supply,
+                "AC5: supply bridge — S_2 = S_1 + C_2"
+            );
+
+            drop(mgr);
+            let _ = std::fs::remove_file(&path);
         });
     }
 }

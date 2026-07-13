@@ -69,15 +69,11 @@ impl Dww {
             singleton_name: String::new(),
         };
 
-        let debris = builder.build()
-            .map_err(|e| Error::Custom(format!("Failed to build deploy call: {:?}", e)))?;
+        let call_data = builder.build_call_data()
+            .map_err(|e| Error::Custom(format!("Failed to build deploy call data: {:?}", e)))?;
 
         // Create Deployooor contract call
-        // Function code 0x00 = DeployV1
-        let mut call_data = vec![0x00u8];
-        debris.params.encode(&mut call_data)
-            .map_err(|e| Error::Custom(format!("Failed to encode deploy params: {:?}", e)))?;
-
+        // Function code 0x00 = DeployV1 is encapsulated in build_call_data()
         let deployooor_id = *DEPLOYOOOR_CONTRACT_ID;
         let deploy_call = ContractCall {
             contract_id: deployooor_id,

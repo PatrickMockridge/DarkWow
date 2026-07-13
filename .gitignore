@@ -50,4 +50,5 @@ witness.json
 *.rusty-tags.emacs
 /tags
 .claude/
+scripts/sync.log
 doc/book/

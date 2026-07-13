@@ -23,9 +23,11 @@
 
 use dwow_core::{ClientFailed, Result};
 use dwow_sdk::{crypto::Keypair, deploy::DeployParamsV1};
+use dwow_serial::Encodable;
 use tracing::{debug, error};
 
 use crate::error::DeployError;
+use crate::DeployFunction;
 
 pub struct DeployCallDebris {
     pub params: DeployParamsV1,
@@ -64,5 +66,21 @@ impl DeployCallBuilder {
         let debris = DeployCallDebris { params };
 
         Ok(debris)
+    }
+
+    /// Build the complete call data including the DeployV1 function code byte.
+    ///
+    /// This produces the byte sequence that goes into `ContractCall.data` for
+    /// the Deployooor contract. The DeployV1 function code (`0x00`) is
+    /// encapsulated here — callers do not need to prepend it manually.
+    ///
+    /// Returns `[0x00][serialized_DeployParamsV1]`.
+    pub fn build_call_data(&self) -> Result<Vec<u8>> {
+        let debris = self.build()?;
+        let mut data = vec![DeployFunction::DeployV1 as u8];
+        debris.params.encode(&mut data)
+            .map_err(|e| dwow_core::Error::Custom(
+                format!("encode DeployParamsV1: {}", e)))?;
+        Ok(data)
     }
 }
