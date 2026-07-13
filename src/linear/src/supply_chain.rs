@@ -131,22 +131,32 @@ impl CumulativeSupplyEntry {
     }
 
     /// Deserialize from bytes read from sled.
+    ///
+    /// Point serialization can be either 32 bytes (compressed / identity) or
+    /// 64 bytes (full affine coordinates). Both are valid dwow_serial formats.
     pub fn from_bytes(data: &[u8]) -> Result<Self, LinearError> {
-        // Point: 64 bytes (x || y as Fp elements — 32 bytes each from dwow_serial)
-        // Scalar: 32 bytes (Fq element)
-        // u64: 8 bytes
-        let min_len = 64 + 32 + 8;
-        if data.len() < min_len {
-            return Err(LinearError::SerializationError(format!(
-                "CumulativeSupplyEntry: expected {} bytes, got {}",
-                min_len, data.len()
-            )));
+        let point_len: usize;
+        let scalar_offset: usize;
+        let supply_offset: usize;
+        match data.len() {
+            72 => { point_len = 32; scalar_offset = 32; supply_offset = 64; }
+            104 => { point_len = 64; scalar_offset = 64; supply_offset = 96; }
+            _ => {
+                return Err(LinearError::SerializationError(format!(
+                    "CumulativeSupplyEntry: expected 72 or 104 bytes, got {}",
+                    data.len()
+                )));
+            }
         }
         let value_commit: pallas::Point =
-            deserialize(&data[..64]).map_err(|e| LinearError::SerializationError(e.to_string()))?;
+            deserialize(&data[..point_len])
+                .map_err(|e| LinearError::SerializationError(e.to_string()))?;
         let blind: pallas::Scalar =
-            deserialize(&data[64..96]).map_err(|e| LinearError::SerializationError(e.to_string()))?;
-        let total_supply = u64::from_le_bytes(data[96..104].try_into().unwrap());
+            deserialize(&data[scalar_offset..supply_offset])
+                .map_err(|e| LinearError::SerializationError(e.to_string()))?;
+        let total_supply = u64::from_le_bytes(
+            data[supply_offset..supply_offset + 8].try_into().unwrap(),
+        );
         Ok(Self { value_commit, blind, total_supply })
     }
 }
