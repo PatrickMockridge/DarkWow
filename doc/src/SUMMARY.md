@@ -15,7 +15,6 @@
 
 - [Architecture Index](arch/README.md)
   - [Overview](arch/overview.md)
-  - [Genesis](arch/genesis.md)
   - [DarkWow Daemon](dwowd.md)
 
 ## Core Architecture
