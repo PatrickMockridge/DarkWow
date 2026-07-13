@@ -117,16 +117,18 @@ For each transaction call:
 2. Call `verify_zkp(proof, zkbin_bytes, instances)`
 3. If verification fails, return error
 
-### apply_block
+### accept_block / connect_block
 
-```rust
-pub async fn apply_block(block: &BlockInfo) -> Result<()>
-```
+Block application uses two functions:
 
-Persists the block. Currently a placeholder - actual implementation would:
-1. Execute contract calls
-2. Update state monotree
-3. Append block to chain
+- `accept_block(chain_state, block, uncles, vm, current_height, target)` in
+  `bin/dwowd/src/block_acceptor.rs` — full block acceptance with WASM execution,
+  PoW validation, and atomic commit. Used by the production path (miner RPC,
+  stratum, sync).
+- `connect_block(block)` in `src/linear/src/chain_state.rs` — inserts an
+  already-validated block into the chain state (height, coin/nullifier sets,
+  uncle linking). Called internally by `accept_block` after WASM execution
+  completes.
 
 ## Types
 
@@ -298,7 +300,7 @@ Blocks must now be accompanied by circuit data during synchronization via `Exten
 - [x] `verify_block` - Verifies header + ZK proofs
 - [x] `ExtendedProposalMessage` - P2P message with zkbin_data
 - [x] `handle_receive_proposal` - Calls verify_block before append
-- [ ] `apply_block` - Currently a placeholder
+- [x] `accept_block` + `connect_block` — production block application path
 
 ## Files
 
@@ -310,7 +312,7 @@ src/validator/sync/
 ├── mod.rs               # Module exports
 ├── types.rs             # ZkBinEntry, SyncBlock, VerifyResult, SyncState
 ├── verify.rs            # verify_header, verify_block
-└── apply.rs             # apply_block (placeholder)
+└── apply.rs             # accept_block — full block acceptance with WASM execution
 
 bin/dwowd/src/proto/
 └── protocol_proposal.rs  # ExtendedProposalMessage, handle_receive_proposal

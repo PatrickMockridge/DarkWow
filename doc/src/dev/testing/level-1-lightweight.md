@@ -182,9 +182,9 @@ use dwow_<name>_contract::{
 
 ## GenesisHarness
 
-GenesisHarness provides a reusable baseline chain with the two mandatory
-native contracts: NativeToken and Deployooor. Creates a temp sled database,
-LinearStore, and LinearBlockchain with instant-PoW target (`u32::MAX`).
+GenesisHarness provides a reusable baseline chain with all 9 genesis
+contracts pre-deployed. Creates a temp sled database and CChainState
+with instant-PoW target (`u32::MAX`).
 
 **Location:** `bin/dwowd/src/tests/genesis.rs`
 
@@ -202,7 +202,7 @@ let genesis = GenesisHarness::new()?;
 
 | Method | Purpose |
 |--------|---------|
-| `GenesisHarness::new()` | Create temp sled DB, LinearStore, LinearBlockchain; deploy NativeToken + Deployooor |
+| `GenesisHarness::new()` | Create temp sled DB, CChainState; deploy 9 genesis contracts via `set_contract_data()` |
 | `deploy_contract(wasm, contract_id, ix)` | Deploy WASM directly (bypasses Deployooor — used by heavyweight tests) |
 | `block_height()` | Get current block height |
 
@@ -211,12 +211,10 @@ let genesis = GenesisHarness::new()?;
 ```
 GenesisHarness
   ├── db: Arc<sled::Db>             — temp sled database
-  ├── store: Arc<LinearStore>       — WASM + block + uncle storage
-  └── blockchain: LinearBlockchain  — PoW consensus + WASM runtime
+  └── chain_state: Arc<CChainState> — single authoritative chain state (sled, consensus, VMs)
 
-Native Contracts (pre-deployed at construction):
-  DEPLOYOOOR_CONTRACT_ID    — hardcoded ContractId, zero x-coordinate
-  NATIVE_TOKEN_CONTRACT_ID  — hardcoded ContractId, zero x-coordinate
+All 9 genesis contracts are stored via `set_contract_data()` at construction.
+See [Genesis Contracts](../../arch/genesis.md) for the contract list.
 ```
 
 ## ContractTestingPipeline (Lightweight)
@@ -278,6 +276,34 @@ cargo test -p dwowd test_all_contracts_deploy
 
 # Contract metadata: deploy through Deployooor with metadata in ix
 cargo test -p dwowd test_metadata_deploy_lightweight
+```
+
+### WASM Staleness Warning
+
+`GenesisHarness::new()` and `ContractTestingPipeline` embed contract WASM
+binaries at compile time via `include_bytes!()`. If contract WASM files
+are not rebuilt before running `cargo test`, tests execute against stale
+binaries.
+
+**Failure mode:** A contract source change updates the WASM `__initialize`
+logic, but the pre-built `.wasm` file is not regenerated. The test compiles
+and runs successfully, but the stale WASM binary produces a different state
+root hash. This manifests as a spurious test failure — the correct fix is
+to rebuild WASM, not to update the test's expected hash.
+
+**Prevention:**
+```bash
+# Before running pipeline tests, rebuild all contract WASMs:
+cd src/contract
+for contract in */; do
+    (cd "$contract" && cargo build --release --target wasm32-unknown-unknown)
+done
+
+# Or, for a single contract:
+cargo build -p dwow_native_token_contract --release --target wasm32-unknown-unknown
+
+# Then run tests:
+cargo test -p dwowd test_pipeline
 ```
 
 ### Available Contracts

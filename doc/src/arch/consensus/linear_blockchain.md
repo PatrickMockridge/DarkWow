@@ -1,10 +1,10 @@
 # Linear Blockchain Architecture
 
-> **Note:** Some types described here (`LinearBlockAdapter`, `LinearHeaderAdapter`,
-> `LinearTransactionAdapter`) are design artifacts and do not exist as Rust source
-> files. The actual implementation uses `dwow_chain::LinearBlockchain` (in
-> `src/linear/src/blockchain.rs`) and the dwowd wrapper in
-> `bin/dwowd/src/blockchain.rs`.
+> **Note:** This document describes the Uncle Merkle architecture which has been
+> refactored (commit `597691582`). The dual-LinearBlockchain no longer exists;
+> its replacement is a single `CChainState` (`src/linear/src/chain_state.rs`).
+> The conceptual architecture described here (TxBackend, overlay, uncle-merkle)
+> remains correct; only the type and file layout changed.
 
 The linear blockchain is DarkWow's consensus architecture using **Uncle Merkle consensus** with **RandomX proof-of-work**. It replaces upstream's overlay/diff architecture with a deterministic design where the canonical chain with the most accumulated work obligates offering uncle chains a one-time option to form a side chain and share the PoW reward.
 
@@ -174,7 +174,7 @@ TxBackend (per-transaction state access)
 ├── overlay: SledTreeOverlay     ← in-memory buffer, no sled writes during execution
 └── store: Arc<LinearStore>      ← read-only contract data lookups
 
-LinearBlockchain (pure coordinator — never enters execution path)
+CChainState (pure coordinator — never enters execution path)
 ├── Validates PoW, merkle roots, uncle proofs
 ├── Dispatches transactions sequentially through TxBackend
 ├── Merges per-tx diffs deterministically (sort by tx hash, canonical-first)
@@ -186,7 +186,7 @@ LinearBlockchain (pure coordinator — never enters execution path)
 1. **Transaction is the fundamental primitive.** Each contract call executes with
    its own `TxBackend` — a minimal struct containing only a `SledTreeOverlay`
    (in-memory state buffer) and an `Arc<LinearStore>` (read-only contract data).
-   The `LinearBlockchain` coordinator never enters the WASM execution path.
+   The `CChainState` coordinator never enters the WASM execution path.
 
 2. **`sled_overlay` is an atomicity device, not a parallelism mechanism.**
    `SledTreeOverlay::checkpoint()` and `revert_to_checkpoint()` ensure per-call

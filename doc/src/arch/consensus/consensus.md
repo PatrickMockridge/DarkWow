@@ -235,7 +235,7 @@ doesn't need this because:
 3. Anchored finality (Caribina) makes reorgs impossible for finalized blocks
 
 Source: [`src/linear/src/consensus.rs`](../../../src/linear/src/consensus.rs),
-[`bin/dwowd/src/blockchain.rs`](../../../bin/dwowd/src/blockchain.rs).
+[`bin/dwowd/src/block_acceptor.rs`](../../../bin/dwowd/src/block_acceptor.rs).
 
 ## Target Adjustment Algorithm
 

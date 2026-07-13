@@ -117,7 +117,7 @@ mm_submit_solution
   → MerkleProof::calculate_root()            # Receipt 2
   → is_coinbase_valid_merkle_root()          # Receipt 3
   → Construct Block with PowSource::Monero(MoneroPowData)
-  → apply_block() → skip native PoW for Monero source
+  → accept_block() → skip native PoW for Monero source
 ```
 
 The Monero block's PoW is verified by monerod — dwowd only needs to prove the
@@ -131,7 +131,7 @@ When a valid solution arrives:
 2. A `BlockHeader` is assembled from the current template (height, target, timestamp, etc.)
 3. A coinbase transaction is created with the block reward
 4. The merkle root is recomputed from all transactions (template txs + coinbase)
-5. The block is submitted via `apply_block()`
+5. The block is submitted via `accept_block()`
 
 The merkle root **must be recomputed** because the template's merkle root only covers
 mempool transactions — the coinbase is added at submission time.
@@ -183,8 +183,8 @@ When the test fails, check in order:
 | `src/linear/src/monero/mod.rs` | MoneroPowData, extract_aux_merkle_root, is_coinbase_valid_merkle_root |
 | `src/linear/src/monero/merkle_proof.rs` | MerkleProof (Kecak-based, Monero-compatible) |
 | `src/linear/src/block.rs` | BlockHeader, PowSource, verify_merkle_root |
-| `src/linear/src/blockchain.rs` | apply_block — skips native PoW for PowSource::Monero |
-| `bin/dwowd/src/blockchain.rs` | apply_block_with_uncles — same skip for full node |
+| `src/linear/src/chain_state.rs` | CChainState::apply_block_with_uncles() — delegates to accept_block, skips native PoW for PowSource::Monero |
+| `bin/dwowd/src/block_acceptor.rs` | accept_block() — full block acceptance, native PoW skip for Monero source |
 | `bin/dwowd/src/registry/model.rs` | LinearBlockTemplate, generate_linear_block_template |
 | `contrib/docker/darkwow-testnet/test_merge_mining_p2pool.sh` | E2E test script |
 

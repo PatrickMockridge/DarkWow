@@ -105,7 +105,7 @@ A block with `anchor_tx_id != [0u8; 32]` is considered anchored. Once the Arweav
 block containing it settles (default: 1 DarkWow block), the block is **final** and
 cannot be replaced by any competing fork — even one with superior PoW rank.
 
-The finality check in `insert_block()`:
+The finality check in `connect_block()`:
 ```rust
 // Don't replace an anchored block at the same height
 if existing.header.anchor_tx_id != [0u8; 32] {
@@ -120,7 +120,7 @@ if existing.header.anchor_tx_id != [0u8; 32] {
 | **Miner** (`bin/dwowd/src/rpc/miner.rs`) | Anchors after PoW, before broadcast |
 | **Stratum** (`bin/dwowd/src/rpc/stratum.rs`) | Anchors after PoW verification, before insert |
 | **P2P Handler** (`bin/dwowd/src/proto/linear_broadcast.rs`) | Verifies anchors on received blocks, rejects invalid |
-| **Blockchain** (`src/linear/src/blockchain.rs`) | Rejects insertion of blocks replacing anchored ones |
+| **Blockchain** (`src/linear/src/chain_state.rs`) | Rejects insertion of blocks replacing anchored ones |
 | **BlockHeader** (`src/linear/src/block.rs`) | Carries `anchor_tx_id: [u8; 32]` (zero = no anchor) |
 
 The `anchor_tx_id` field is **excluded from the mining blob** — it is set after
@@ -147,7 +147,7 @@ sequenceDiagram
     Arweave-->>Peer: DataItem + signature
     Peer->>Peer: Verify deepHash signature
     Peer->>Peer: Verify payload matches block
-    Peer->>Peer: insert_block() — enforce if mode=Always
+    Peer->>Peer: connect_block() — enforce if mode=Always
 ```
 
 ## Fork Choice with Finality Filter
@@ -249,7 +249,7 @@ By default, nodes run in **always** mode with **Caribina enabled**. This means:
 
 - Every mined block is anchored to Arweave
 - Every received block with a non-zero `anchor_tx_id` is verified
-- Anchored blocks cannot be replaced (enforced at `insert_block()`)
+- Anchored blocks cannot be replaced (enforced at `connect_block()`)
 - No configuration required — maximum resilience out of the box
 
 To disable finality entirely (e.g. for local testing where Arweave HTTP calls
@@ -304,7 +304,7 @@ blocks are protected from the first confirmation onward.
 | `src/linear/src/caribina/anchor.rs` | ArDrive Turbo HTTP POST |
 | `src/linear/src/caribina/verify.rs` | Arweave gateway verification |
 | `src/linear/src/block.rs` | `anchor_tx_id` field in BlockHeader |
-| `src/linear/src/blockchain.rs` | Finality constraint in `insert_block()` |
+| `src/linear/src/chain_state.rs` | Finality constraint in `connect_block()` |
 | `src/linear/src/consensus.rs` | PoW consensus (unchanged — Caribina is a constraint overlay) |
 | `bin/dwowd/src/rpc/miner.rs` | Mining integration |
 | `bin/dwowd/src/rpc/stratum.rs` | Stratum integration |

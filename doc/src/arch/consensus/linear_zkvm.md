@@ -108,8 +108,8 @@ impl SimpleDbAccess for Arc<LinearStore> {
     // ... get, remove, contains_key
 }
 
-// Arc<LinearBlockchain> implements BlockchainAccess for state queries
-impl BlockchainAccess for Arc<LinearBlockchain> {
+// Arc<CChainState> implements BlockchainAccess for state queries
+impl BlockchainAccess for Arc<CChainState> {
     fn last_block_height(&self) -> Result<u32> {
         Ok(self.height as u32)
     }
@@ -157,10 +157,10 @@ impl ZkVerifier {
 }
 ```
 
-Used in `LinearBlockchain`:
+Used in `CChainState`:
 
 ```rust
-pub struct LinearBlockchain {
+pub struct CChainState {
     pub store: Arc<LinearStore>,
     contract_store: Arc<dyn ContractStoreAccess>,
     state_db: Arc<dyn SimpleDbAccess>,
@@ -169,7 +169,7 @@ pub struct LinearBlockchain {
     height: AtomicU64,
 }
 
-impl LinearBlockchain {
+impl CChainState {
     pub fn new(store: Arc<LinearStore>) -> Self {
         let zk_verifier = ZkVerifier;
         // Create adapters for WASM runtime
@@ -195,7 +195,7 @@ impl LinearBlockchain {
 | File | Purpose |
 |------|---------|
 | `bin/dwowd/src/zk.rs` | ZkVerifier wrapper |
-| `bin/dwowd/src/blockchain.rs` | LinearBlockchain with zk_verifier |
+| `bin/dwowd/src/block_acceptor.rs` | CChainState with zk_verifier |
 | `src/validator/verification.rs` | derive_vk(), verify_producer_transaction() |
 | `src/runtime/vm_runtime.rs` | Runtime::new(), WASM execution |
 | `src/linear_wasm_adapter.rs` | Trait implementations for linear storage |

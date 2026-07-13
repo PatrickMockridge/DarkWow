@@ -118,7 +118,7 @@ All other contracts are deployed post-genesis via the Deployooor contract:
 After genesis bootstrap, the node switches to linear Uncle Merkle consensus:
 
 - **Block production**: Miners submit solved headers via stratum → `dwowd` assembles blocks
-- **Block application**: `LinearBlockchain::apply_block()` validates PoW, processes transactions
+- **Block application**: `CChainState::apply_block_with_uncles()` validates PoW, processes transactions
 - **State storage**: Plain sled trees (no overlay/diff rollback — state changes are final)
 - **Fork handling**: Uncle blocks earn pin rewards rather than being orphaned
 - **Sync**: Full P2P block sync via `LinearSyncHandler` (headers backward, blocks forward)
@@ -132,7 +132,7 @@ The NativeToken contract handles all consensus-critical token operations:
 | ID | Function | Purpose |
 |----|----------|---------|
 | 0x00 | FeeV1 | Pay network fees |
-| 0x01 | MintV1 | Create new coins |
+| 0x01 | MintV1 | DISABLED — walled off behind PoWRewardV1 (consensus-locked coinbase) |
 | 0x02 | BurnV1 | Destroy coins with nullifier |
 | 0x03 | TransferV1 | Private transfers |
 | 0x04 | SpendV1 | Spend with change output |

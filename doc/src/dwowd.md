@@ -22,13 +22,13 @@ and the same source of truth for blockchain data.
 
 ```
 DwowNode (top-level node state)
-├── LinearBlockchain (sled-backed, height-indexed, pure coordinator)
-│   ├── LinearStore (sled tree)
-│   ├── PoWConsensus (target adjustment, proof verification)
+├── CChainState (sled-backed, height-indexed, pure coordinator)
+│   ├── store: Arc<LinearStore> (sled trees: blocks, txs, contracts, uncles)
+│   ├── consensus: Mutex<PoWConsensus> (target adjustment, proof verification)
 │   ├── FinalityConfig (anchoring mode + Caribina)
 │   ├── coin_set / nullifier_set (double-mint / double-spend protection)
 │   └── RandomX VM cache (keyed per-block)
-├── TxBackend (per-transaction state access — overlay + store, never LinearBlockchain)
+├── TxBackend (per-transaction state access — overlay + store, never CChainState)
 ├── Mempool (Vec<Transaction> behind Arc<Mutex>)
 ├── DwowMinersRegistry (stratum server + mm_rpc server)
 ├── P2P handler (linear_sync + linear_broadcast)
@@ -42,20 +42,22 @@ DwowNode (top-level node state)
 `Dwowd` wraps `DwowNode` with four `StoppableTask` handles: `dnet_task`,
 `rpc_task`, `management_rpc_task`, and `consensus_task`.
 
-### Two-Layer LinearBlockchain
+### CChainState — Single Authoritative State
 
-The daemon uses **two** LinearBlockchain instances:
+The daemon uses a **single** CChainState instance, replacing the previous
+dual-LinearBlockchain pattern (removed in commit `597691582`). This follows
+Bitcoin Core's CChainState pattern and gETH's single-state design.
 
-| Layer | Type | Purpose |
-|-------|------|---------|
-| P2P layer | `dwow_chain::LinearBlockchain` | Block storage, serialization, P2P sync (pure library, no WASM) |
-| Daemon layer | `crate::LinearBlockchain` | Wraps the P2P store. Adds PoW consensus, WASM runtime, ZK verification, coin/nullifier tracking |
+| Property | Previous (deleted) | Current |
+|----------|-------------------|---------|
+| Architecture | Two `LinearBlockchain` instances (P2P layer + daemon wrapper), shared sled store | Single `CChainState` (strongly-typed, all state self-contained) |
+| Height tracking | Independent (diverged caches) | Single `AtomicU64` — always consistent |
+| WASM execution | `blockchain.rs` wrapper (766 lines) | `execution.rs` TxBackend + `CChainState::apply_block_with_uncles()` |
+| Block insertion | `apply_block()` (dead code) | `connect_block()` — single insertion path |
 
-The P2P layer is initialized first (`init_linear` at [lib.rs:212](../bin/dwowd/src/lib.rs#L212)).
-Its sled `LinearStore` is then shared with the daemon-layer wrapper. The daemon
-layer adds consensus (`PoWConsensus` with `Mutex`), RandomX VM management,
-contract execution via the WASM runtime, and state rehydration from stored
-blocks.
+The CChainState owns all chain data: sled trees, PoW consensus, VM caches,
+coin/nullifier sets, and peer state. There are no wrappers, no duplicated
+caches, and no independent height counters.
 
 ### State Atomicity
 
@@ -74,7 +76,7 @@ consensus.
 
 2. **`TxBackend`** implements `RuntimeBackend` and routes state operations
    through the overlay. It holds only `Arc<LinearStore>` (for read-only
-   contract data lookups) — the `LinearBlockchain` coordinator is never in
+   contract data lookups) — the `CChainState` coordinator is never in
    the execution path. Chain queries (`last_block_height`, `get_tx`, etc.)
    go through the store.
 
@@ -155,8 +157,7 @@ main()
  ├── Open/create sled database
  ├── Build P2P settings from config
  └── Dwowd::init_linear(network, sled_db, db_path, net_settings, ex, finality_config)
-      ├── Create dwow_chain::LinearBlockchain (P2P layer) with FinalityConfig
-      ├── Create daemon LinearBlockchain wrapper with PoWConfig
+      ├── Create CChainState with sled DB, PoWConfig, and FinalityConfig
       ├── Deploy 9 genesis contracts from embedded WASM (see Genesis Contracts)
       ├── Mine genesis block at height 1 (target=u32::MAX, instant pass)
       ├── Auto-generate mining keypair if none exists (persisted to disk)
@@ -404,7 +405,8 @@ When unset or matching the mining address, coinbase goes to the miner's own key.
 |------|---------|
 | `bin/dwowd/src/main.rs` | CLI parsing, config, entrypoint |
 | `bin/dwowd/src/lib.rs` | DwowNode, Dwowd, init_linear, start, stop |
-| `bin/dwowd/src/blockchain.rs` | Daemon LinearBlockchain wrapper, TxBackend, atomic apply |
+| `bin/dwowd/src/block_acceptor.rs` | block_acceptor — accept_block(), single block acceptance path |
+| `bin/dwowd/src/execution.rs` | TxBackend, BLOCK_GAS_LIMIT, execute_block() WASM execution |
 | `bin/dwowd/src/mempool.rs` | Mempool (`Vec<Transaction>`) |
 | `bin/dwowd/src/rpc/stratum.rs` | Stratum protocol (login, submit) |
 | `bin/dwowd/src/rpc/miner.rs` | Dev mining RPC (mine_linear) |
@@ -417,8 +419,8 @@ When unset or matching the mining address, coinbase goes to the miner's own key.
 | `src/linear/src/block.rs` | BlockHeader, Block, UncleBlock, mining blob |
 | `src/linear/src/consensus.rs` | PoWConsensus (target adjustment, proof check) |
 | `src/linear/src/finality.rs` | FinalityConfig, three modes |
-| `src/linear/src/blockchain.rs` | Core LinearBlockchain (sled-backed) |
-| `src/linear/src/store.rs` | LinearStore (sled trees: blocks, txs, contracts, uncles) |
+| `src/linear/src/chain_state.rs` | CChainState — single authoritative chain state |
+| `src/linear/src/store.rs` | LinearStore (sled trees: blocks, txs, contracts, uncles) — shared by CChainState |
 | `src/sdk/src/blockchain.rs` | Emission schedule, expected_reward() |
 
 ## Related Documentation

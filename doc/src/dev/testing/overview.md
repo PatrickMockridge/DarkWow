@@ -265,6 +265,78 @@ cover.
 See [AI-Assisted Development](../ai-assisted-development.md) for the full
 philosophy and workflow.
 
+## MoC Test Boundaries
+
+The Management of Change (MoC) review established two distinct test regimes,
+separated by what can be tested in Rust unit tests vs. what requires the full
+Docker pipeline.
+
+### Pre-Devnet Ceiling (`cargo test`)
+
+Pre-devnet tests operate at the **single-block, single-process** level.
+They validate correctness of the consensus-critical code path (genesis,
+block creation, and WASM execution) without multi-node networking.
+
+| Ceiling | What's Tested | What's NOT Tested |
+|---------|--------------|-------------------|
+| **Height 2** | Genesis determinism (AC2-AC9), single block via `accept_block`, cumulative supply bridge (S_2 = S_1 + C_2), hash chain continuity | Multi-block chain growth, competing blocks, uncle resolution |
+| **Single node** | `GenesisHarness::new()`, `init_genesis_contracts()`, `init_genesis()`, `accept_block()` | P2P networking, multi-node block propagation, sync |
+| **No real PoW** | `u32::MAX` target (instant blocks), deterministic ZK (`DWOW_DETERMINISTIC_ZK=1`) | Real RandomX mining, xmrig integration, target adjustment |
+
+**Key tests:** `test_genesis_determinism` and `test_block_creation` in
+[`bin/dwowd/src/tests/genesis.rs`](../../../bin/dwowd/src/tests/genesis.rs).
+
+**Pre-devnet tests enforce the MoC gate:** A contract that fails
+`test_block_creation` (height-2 block with PoWRewardV1 coinbase through
+`accept_block`) must not proceed to the Docker pipeline. The pre-devnet
+tests are the last deterministic, single-process checkpoint before real
+networking and real PoW are introduced.
+
+### Docker Pipeline (Multi-Block / Multi-Node)
+
+Everything beyond height 2 belongs in the containerized pipeline
+(`contrib/docker/darkwow-testnet/test_pipeline.sh`):
+
+| Capability | Tested By |
+|-----------|----------|
+| Multi-block chain growth (heights 3+) | `test_pipeline.sh --mode native` |
+| Competing block / uncle resolution | `test_pipeline.sh --nodes 5` |
+| P2P block propagation and sync | `test_pipeline.sh --mode native` |
+| Real RandomX mining (xmrig) | All pipeline modes |
+| Bridge lifecycle (8 phases, cross-chain) | `test_pipeline.sh --mode bridge` |
+| Merge mining (Monero + p2pool) | `test_pipeline.sh --mode merge` |
+| Wallet E2E (scan/balance/transfer) | `test_pipeline.sh --mode wallet` |
+
+**Rationale:** The Docker pipeline is production test infrastructure
+(Level 3), operating at a 1/8 scale model of the production network.
+It is slow by design (20-40 minutes minimum) and uses no mocked components.
+A failure in the Docker pipeline is a real consensus bug, not a test
+environment artifact.
+
+### GenesisHarness Tests
+
+Two test functions validate the pre-devnet ceiling and enforce the MoC gate:
+
+**`test_genesis_determinism`** — Two independent GenesisHarness setups MUST
+produce identical genesis blocks. Acceptance criteria: AC2 (cumulative supply
+at height 1 == `INITIAL_REWARD`), AC4 (identical hash), AC5 (total_reward),
+AC6 (previous == `[0u8; 32]`), AC7 (timestamp == 0), AC8 (nonce == 0),
+AC9 (target == `u32::MAX`).
+
+**`test_block_creation`** — Genesis → build height-2 coinbase-only block
+→ submit through `accept_block` (production path, WASM executes).
+Acceptance criteria: AC2 (S_1 == INITIAL_REWARD), AC3 (height-2 accepted),
+AC4 (hash chain continuous), AC5 (S_2 == S_1 + C_2), reward correctness,
+block retrievability.
+
+**`init_genesis_contracts()`** — Two-phase genesis setup:
+1. `GenesisHarness::new()` stores all 9 genesis contract WASM binaries via
+   `set_contract_data()` (Phase 1 — WASM deployed, not initialized).
+2. `init_genesis_contracts()` calls `__initialize` on each contract (Phase 2 —
+   seeds ZK circuits, Merkle trees, nullifier roots, contract state).
+Must run after Phase 1 and before `init_genesis()` (which creates the genesis
+block with PoWRewardV1 coinbase).
+
 ## File Map
 
 | Component | Path |
@@ -288,3 +360,19 @@ philosophy and workflow.
 | Docker devnet node (single-container) | `contrib/docker/darkwow-devnet/` |
 | Manual localnet scripts | `contrib/localnet/` |
 | Public testnet management scripts | `contrib/testnet/` |
+
+### Memory Rules (AI-Assisted Development)
+
+The [AI-Assisted Development](../ai-assisted-development.md) workflow
+references several "memory rules" that guide safe tool usage:
+
+| Rule | Summary |
+|------|---------|
+| GenesisHarness is test-only | Never use GenesisHarness in production code. It uses `u32::MAX` target and temp sled DBs. |
+| Pre-devnet ceiling at height 2 | Unit tests stop at `test_block_creation`. Multi-block, multi-node tests belong in the Docker pipeline. |
+| Stale contract WASM | Rebuild WASM before `cargo test` when contracts change. `include_bytes!` embeds at compile time. |
+| Pipeline is step 7 of 7 | "Code compiles" does not mean "run the pipeline." Verify locally first. |
+| Never poll a running pipeline | Start in background; wait for harness notification. |
+| AccountManager is the key authority | No shell-level key manipulation. Use `import_base58`/`export_base58` for key sharing. |
+| `init_genesis_contracts()` then `init_genesis()` | Two-phase genesis setup — WASM stored, then initialized, then genesis block. |
+| Single `accept_block` path | All 5 mining entry points route through `accept_block()` in `block_acceptor.rs`. No dual paths. |

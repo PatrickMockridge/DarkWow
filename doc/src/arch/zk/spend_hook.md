@@ -231,7 +231,7 @@ src/contract/stablecoin/
 ├── src/model/mod.rs     # SpendHookCallbackUpdateV1
 └── src/entrypoint.rs    # process_spend_hook(), apply_spend_hook_callback()
 
-bin/dwowd/src/blockchain.rs  # Pipeline: read spend_hook_request, dispatch callback
+bin/dwowd/src/execution.rs  # Pipeline: read spend_hook_request, dispatch callback
 
 src/contract/deployooor/src/entrypoint/deploy_v1.rs  # __spend_hook optional export
 ```
