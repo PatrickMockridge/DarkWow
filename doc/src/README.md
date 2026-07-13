@@ -1,6 +1,6 @@
 # DarkWow
 
-A DarkFi fork rebuilt around [four core design changes](about/differences_from_upstream.md): no governance DAO, deterministic Uncle Merkle consensus, formally verified ZK opcodes, and zero premine. Hard forks are a feature, not a threat.
+A DarkFi fork rebuilt around [six design commitments](about/differences_from_upstream.md): composable O-Cap governance primitives, Uncle Merkle consensus, sovereign keys, Lean4-verified ZK opcodes, zero premine, and per-block Pedersen mass balance.
 
 ## Quick Navigation
 
@@ -10,7 +10,7 @@ A DarkFi fork rebuilt around [four core design changes](about/differences_from_u
 - [O-Cap Authorization](arch/ocap.md) — The central paradigm
 - [Smart Contracts](contract/README.md) — Complete contract catalog
 - [Developer Guide](dev/contrib/contrib.md) — Contributing and building
-- [ZK Proofs](zkas/index.md) — Zero-knowledge proof system
+- [ZK Proofs](zkas/zkas.md) — Zero-knowledge proof system
 - [Testnet Guide](testnet/node.md) — Running a node
 
 ## Build
