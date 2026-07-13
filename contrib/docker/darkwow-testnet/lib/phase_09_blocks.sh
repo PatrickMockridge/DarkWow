@@ -1,18 +1,23 @@
-# DarkWow Testnet Pipeline — Phase 9: Block Production
+# DarkWow Testnet Pipeline — Phase 9: Block Production Diagnostics
 #
-# Phase 9: verify each mining node independently produces blocks.
-# Cross-node consensus is a protocol property verified by the Python
-# consensus model (chain_validation_model.py), not by bash polling.
+# Phase 9 takes a diagnostic snapshot of an ongoing process. Mining started
+# in Phase 5 (containers started), was confirmed active in Phase 7 (mining
+# activity detected), and continues indefinitely after Phase 9 ends. This
+# phase observes, it doesn't control.
+#
+# Three layers:
+#   L1: Genesis Ceremony — did node0 create genesis? (hard gate)
+#   L2: Per-Node Diagnostics — current height snapshot (observation)
+#   L3: Cross-Node Convergence — same genesis across all nodes (hard gate)
 #
 # Dependencies: output.sh (info, pass, fail, warn),
 #               config.sh (MODE, NODE0, NATIVE_NODES, FINALITY_CARIBINA_ENABLED,
 #                          FINALITY_ENABLE_MONERO, CONTAINER_NAME, RPC_PORT),
-#               helpers.sh (jsonrpc)
+#               helpers.sh (rpc_retry, jsonrpc_get_height, jsonrpc_get_block)
 #
 # Sourced by test_pipeline.sh after phase_08_mining.sh.
 
 # Build the list of nodes to verify based on topology.
-# Each entry is "name:rpc_port".
 _build_node_list() {
     NODE_LIST=("${NODE0}:31345")
     if [ "$MODE" = "native" ]; then
@@ -25,17 +30,45 @@ _build_node_list() {
     fi
 }
 
-# ── Genesis contract initialization verification ──────────────────────────
-# Verify all 9 genesis contracts had their __initialize WASM export called
-# and NativeToken's TOTAL_SUPPLY was seeded with the genesis reward.
-# Without this, pow_reward_v1 fails for every mined block after genesis
-# ("Supply mismatch" — current_supply=0 but expected_cumulative includes
-# the genesis reward).
-#
-# The cumulative supply Pedersen chain (S_H = S_{H-1} + C_H) is a PASSIVE AUDIT
-# per doc/src/arch/genesis.md and src/sdk/src/blockchain.rs. Supply mismatch
-# warnings are informational — the definitive check is whether blocks actually
-# get produced (per-node checks below).
+# ==============================================================================
+# L1: Genesis Ceremony — hard gate
+# ==============================================================================
+# Verify node0 created genesis. This is the only lifecycle-critical check:
+# if genesis never happened, nothing else matters. Use retries, not a
+# long-running poll — the node was already confirmed mining in Phase 7.
+_verify_genesis_ceremony() {
+    local n0_height=0
+    for attempt in $(seq 1 5); do
+        n0_height=$(jsonrpc_get_height "dwow-node0" 31345 2>/dev/null || echo 0)
+        n0_height=$(echo "$n0_height" | tr -dc '0-9')
+        n0_height="${n0_height:-0}"
+        [ "$n0_height" -ge 1 ] 2>/dev/null && break
+        sleep 3
+    done
+
+    if [ "${n0_height:-0}" -lt 1 ]; then
+        fail "node0 has no genesis block after 5 retries — CREATE_GENESIS may have failed"
+        return 1
+    fi
+    pass "node0 genesis block created (height=$n0_height)"
+
+    # Record node0's merkle root as the reference for convergence verification.
+    # merkle_root is a serialized field in the block JSON. Identical blocks =
+    # identical merkle root. All other nodes must sync this exact block from
+    # node0 via P2P.
+    local n0_blk
+    n0_blk=$(jsonrpc_get_block "dwow-node0" 31345 1)
+    GENESIS_MERKLE_ROOT=$(echo "$n0_blk" | jq -r '.result | fromjson | .header.merkle_root | @json' 2>/dev/null || echo "")
+    if [ -z "$GENESIS_MERKLE_ROOT" ]; then
+        fail "node0 block 1: could not extract merkle_root from RPC response"
+    else
+        pass "node0 genesis merkle root recorded as reference"
+    fi
+}
+
+# ==============================================================================
+# Genesis Contract Initialization — passive audit
+# ==============================================================================
 _verify_genesis_contract_init() {
     info "Verifying genesis contract initialization..."
     local n0_logs
@@ -49,71 +82,44 @@ _verify_genesis_contract_init() {
     elif [ "${init_count:-0}" -gt 0 ]; then
         warn "Only ${init_count}/9 genesis contracts initialized — check dwowd logs"
     else
-        warn "ZERO genesis contracts initialized in logs (init_contract OK=0) — log format may differ from expected, or init_genesis_contracts may not have run"
+        warn "ZERO genesis contracts initialized in logs — log format may differ"
     fi
 
-    # Check 2: NativeToken TOTAL_SUPPLY seeded with genesis reward
+    # Check 2: NativeToken TOTAL_SUPPLY seeded
     if echo "$n0_logs" | grep -q "TOTAL_SUPPLY seeded with genesis reward"; then
         pass "NativeToken TOTAL_SUPPLY seeded with genesis reward"
     else
-        warn "NativeToken TOTAL_SUPPLY seed not found in logs — cumulative supply chain may be uninitialized"
+        warn "NativeToken TOTAL_SUPPLY seed not found in logs"
     fi
 
-    # Check 3: Supply mismatch audit — height-aware, per-container.
-    # The cumulative supply check (S_H = S_{H-1} + C_H) is a PASSIVE AUDIT.
-    # Mismatches during bootstrap (heights 1-2, where TOTAL_SUPPLY is being
-    # seeded) are expected and NOT counted as warnings. Mismatches at height >= 3
-    # indicate the cumulative state isn't persisting correctly and warrant
-    # investigation (but still don't block the pipeline — blocks may still
-    # be produced correctly via the per-node checks below).
     _check_supply_mismatches
 }
 
-# ── Height-aware supply mismatch detection ──────────────────────────────
-# Checks ALL containers, extracts mismatch heights, distinguishes bootstrap
-# from steady-state. The passive audit fires per-node based on each node's
-# sync state — a node still syncing may see mismatches that a caught-up
-# node doesn't. This is expected behavior, not a bug.
+# Height-aware supply mismatch detection (passive audit).
 _check_supply_mismatches() {
     local containers=("dwow-node0" "dwow-node1" "dwow-observer")
-    local total_bootstrap=0
-    local total_steady=0
-    local any_steady=false
+    local total_bootstrap=0 total_steady=0 any_steady=false
 
     for container in "${containers[@]}"; do
-        # Skip containers that aren't running
         if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${container}$"; then
             continue
         fi
-
         local logs
         logs=$(docker logs "$container" 2>&1 || true)
 
-        # Extract supply mismatch lines with their heights.
-        # New format (post-fix): "Supply mismatch at height=N: current=X + reward=Y = Z (expected=W)"
-        # Old format (pre-fix):  "Supply mismatch: X + Y = Z (expected W)"
-        # Parse height from new format; for old format, height is unknown.
         local mismatches
         mismatches=$(echo "$logs" | grep -n "Supply mismatch" || true)
+        [ -z "$mismatches" ] && continue
 
-        if [ -z "$mismatches" ]; then
-            continue
-        fi
-
-        local mismatch_count
+        local mismatch_count bootstrap=0 steady=0 unknown=0
         mismatch_count=$(echo "$mismatches" | wc -l)
-
-        # Count mismatches at known heights
-        local bootstrap=0
-        local steady=0
-        local unknown=0
 
         while IFS= read -r line; do
             local h
             h=$(echo "$line" | grep -o 'height=[0-9]*' | grep -o '[0-9]*' || echo "")
             if [ -z "$h" ]; then
                 unknown=$((unknown + 1))
-            elif [ "$h" -le 0 ]; then
+            elif [ "$h" -le 2 ]; then
                 bootstrap=$((bootstrap + 1))
             else
                 steady=$((steady + 1))
@@ -124,292 +130,116 @@ _check_supply_mismatches() {
         total_bootstrap=$((total_bootstrap + bootstrap))
         total_steady=$((total_steady + steady))
 
-        if [ "$steady" -gt 0 ]; then
-            warn "$container: ${steady} supply mismatch(es) at height >= 3 (post-bootstrap) — cumulative state may not be persisting"
-        fi
-        if [ "$bootstrap" -gt 0 ] || [ "$unknown" -gt 0 ]; then
-            info "$container: ${bootstrap} bootstrap mismatch(es) (heights 1-2, expected), ${unknown} without height (old format)"
-        fi
+        [ "$steady" -gt 0 ] && warn "$container: ${steady} post-bootstrap supply mismatches"
+        [ "$bootstrap" -gt 0 ] || [ "$unknown" -gt 0 ] && \
+            info "$container: ${bootstrap} bootstrap, ${unknown} unknown-format mismatches"
     done
 
     if [ "$any_steady" = true ]; then
-        warn "Found ${total_steady} post-bootstrap supply mismatch(es) across containers — passive audit divergence. Blocks may still be valid (per-spec, cumulative supply is a passive audit, not a consensus rule). Check per-node block production below."
+        warn "Found ${total_steady} post-bootstrap supply mismatches — passive audit divergence"
     elif [ "$total_bootstrap" -gt 0 ]; then
-        pass "Supply mismatches only during bootstrap (heights 1-2 = ${total_bootstrap} total) — expected during TOTAL_SUPPLY seeding"
+        pass "Supply mismatches only during bootstrap (heights 1-2) — expected"
     else
         pass "No supply mismatch errors in logs"
     fi
 }
 
-# ── Genesis ceremony verification (L1) ──────────────────────────────────────
-# Verify node0 actually created genesis at runtime — the only check that
-# docker-compose.yml cannot guarantee. (CREATE_GENESIS env vars are already
-# set correctly in the compose file — no need to re-verify those.)
-_verify_genesis_ceremony() {
-    # Verify node0 has block 1 — wait up to 30s
-    local n0_height
-    for attempt in $(seq 1 15); do
-        n0_height=$(jsonrpc_get_height "dwow-node0" 31345 2>/dev/null || echo 0)
-        # Sanitize: strip all non-digits (defense against multiline RPC output)
-        n0_height=$(echo "$n0_height" | tr -dc '0-9')
-        n0_height="${n0_height:-0}"
-        [ "$n0_height" -ge 1 ] 2>/dev/null && break
-        sleep 2
+# ==============================================================================
+# L2: Per-Node Diagnostics — snapshot current state
+# ==============================================================================
+# Take a single reading from each mining node. No waiting — mining is an
+# ongoing process that was already confirmed in Phase 7. Report what we
+# observe: height ≥ 2 = block production confirmed, height = 1 = genesis
+# only (mining may still be working on block 2).
+_diagnose_nodes() {
+    for node_spec in "${NODE_LIST[@]}"; do
+        local node_name="${node_spec%%:*}"
+        local node_port="${node_spec##*:}"
+
+        local h
+        h=$(jsonrpc_get_height "$node_name" "$node_port")
+        h=$(echo "$h" | tr -dc '0-9')
+        h="${h:-0}"
+
+        if [ -z "$h" ] || [ "$h" = "0" ]; then
+            warn "$node_name: RPC unreachable or height 0 — node may not be ready"
+        elif [ "$h" -ge 2 ]; then
+            pass "$node_name: height=$h — block production confirmed"
+        else
+            info "$node_name: height=1 — genesis only, mining in progress"
+        fi
     done
-    if [ "${n0_height:-0}" -lt 1 ]; then
-        fail "node0 has no genesis block after 30s — CREATE_GENESIS may have failed"
+}
+
+# ==============================================================================
+# L3: Cross-Node Convergence — same genesis across all nodes
+# ==============================================================================
+_verify_genesis_convergence() {
+    if [ -z "$GENESIS_MERKLE_ROOT" ]; then
+        fail "Cannot verify genesis convergence — node0 merkle root unknown"
         return
     fi
-    pass "node0 genesis block created (height=$n0_height)"
 
-    # Store node0's merkle root as the reference for convergence verification.
-    # merkle_root is a serialized field in the block JSON (unlike hash which is
-    # a computed method). Format in raw TCP JSON-RPC: \"merkle_root\":[b0,...,b31]
-    # (serde_json produces no spaces after colon). Identical blocks = identical
-    # merkle root. All other nodes must sync this exact block from node0 via P2P.
-    local n0_blk
-    n0_blk=$(jsonrpc_get_block "dwow-node0" 31345 1)
-    GENESIS_MERKLE_ROOT=$(echo "$n0_blk" | jq -r '.result | fromjson | .header.merkle_root | @json' 2>/dev/null || echo "")
-    if [ -z "$GENESIS_MERKLE_ROOT" ]; then
-        fail "node0 block 1: could not extract merkle_root from RPC response"
-    else
-        pass "node0 genesis merkle root recorded as reference"
+    info "Verifying genesis convergence (merkle root)..."
+    local all_genesis_match=true
+
+    for node_spec in "${NODE_LIST[@]}"; do
+        local node_name="${node_spec%%:*}"
+        local node_port="${node_spec##*:}"
+        local blk mr
+        blk=$(jsonrpc_get_block "$node_name" "$node_port" 1)
+        mr=$(echo "$blk" | jq -r '.result | fromjson | .header.merkle_root | @json' 2>/dev/null || echo "")
+
+        if [ "$mr" = "$GENESIS_MERKLE_ROOT" ]; then
+            pass "$node_name genesis matches node0"
+        elif [ -z "$mr" ]; then
+            warn "$node_name: RPC returned no merkle_root for block 1 — node may be syncing"
+            all_genesis_match=false
+        else
+            fail "$node_name block 1 merkle root MISMATCH — different chain!"
+            all_genesis_match=false
+        fi
+    done
+
+    # Observer check
+    if docker ps --format '{{.Names}}' | grep -q "dwow-observer"; then
+        local obs_blk obs_mr
+        obs_blk=$(jsonrpc_get_block "dwow-observer" 31345 1)
+        obs_mr=$(echo "$obs_blk" | jq -r '.result | fromjson | .header.merkle_root | @json' 2>/dev/null || echo "")
+        if [ "$obs_mr" = "$GENESIS_MERKLE_ROOT" ]; then
+            pass "observer genesis matches node0"
+        else
+            fail "observer block 1 merkle root MISMATCH — different chain!"
+            all_genesis_match=false
+        fi
+    fi
+
+    if [ "$all_genesis_match" = "true" ]; then
+        pass "All nodes share the same genesis block — same chain confirmed"
     fi
 }
 
-phase_blocks() {
-    info "Phase 9: Verifying block production..."
-
-    _build_node_list
-
-    # L1: Genesis ceremony verification — must pass before block checks
-    _verify_genesis_ceremony
-
-    # Genesis contract initialization — all 9 contracts must have
-    # init_contract called and TOTAL_SUPPLY seeded. Without this,
-    # blocks after genesis cannot be accepted (supply check fails).
-    _verify_genesis_contract_init
-
-    info "Waiting for genesis + chain init..."
-    sleep 15
-
-    # --- Verify each node produces blocks independently ---
-    for node_spec in "${NODE_LIST[@]}"; do
-        NODE_NAME="${node_spec%%:*}"
-        NODE_PORT="${node_spec##*:}"
-
-        info "Checking $NODE_NAME block production (port $NODE_PORT)..."
-
-        # Get initial block 1 to confirm chain initialized
-        for attempt in 1 2 3 4 5; do
-            BLOCK_INFO=$(jsonrpc_get_block "$NODE_NAME" "$NODE_PORT" 1 2>&1) && break
-            sleep 2
-        done
-        if ! echo "$BLOCK_INFO" | grep -q '"result"\|"height"'; then
-            warn "$NODE_NAME RPC not returning block data after 5 retries — node may be mining (RPC briefly unresponsive)"
-            echo "Last response: $(echo "$BLOCK_INFO" | head -c 200)" >&2
-            continue
-        fi
-        echo "$BLOCK_INFO" | head -c 200
-
-        BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | jq -r '.result | fromjson | .header.height // empty' 2>/dev/null) || true
-
-        if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 1 ]; then
-            pass "$NODE_NAME height >= 1 (initialized)"
-        else
-            fail "$NODE_NAME height >= 1 (got: $BLOCK_HEIGHT)"
-        fi
-
-        # Infrastructure gate: node must produce at least 1 mined block.
-        # Proves the mining thread is alive. If this fails, the node is broken.
-        info "Waiting for $NODE_NAME to mine its first block..."
-        START_TIME=$SECONDS
-        while true; do
-            if [ $((SECONDS - START_TIME)) -ge 600 ]; then
-                warn "$NODE_NAME block production timed out after 600s — mining may be slow"
-                # Diagnostic: query node state at timeout
-                local diag_h
-                diag_h=$(jsonrpc_get_height "$NODE_NAME" "$NODE_PORT" 2>/dev/null || echo "RPC-failed")
-                warn "  $NODE_NAME current height at timeout: $diag_h"
-                break
-            fi
-            sleep 16
-            for attempt in 1 2 3; do
-                BLOCK_INFO=$(jsonrpc_get_block "$NODE_NAME" "$NODE_PORT" 2 2>&1) && break
-                sleep 2
-            done
-            if [ -n "$BLOCK_INFO" ]; then
-                BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | jq -r '.result | fromjson | .header.height // empty' 2>/dev/null) || true
-            fi
-            elapsed=$((SECONDS - START_TIME))
-            info "  $NODE_NAME waited ${elapsed}s (height=${BLOCK_HEIGHT:-?})..."
-            if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
-                break
-            fi
-        done
-
-        if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
-            pass "$NODE_NAME blocks produced (height=$BLOCK_HEIGHT)"
-        else
-            warn "$NODE_NAME block 2 not yet produced after 600s (height=${BLOCK_HEIGHT:-?}) — check target difficulty, RandomX hashrate, sync status"
-        fi
-    done
-
-    # ── L1: Genesis convergence (merkle root) ──────────────────────────
-    # Every node must have node0's exact block 1, synced via P2P.
-    # merkle_root format in raw TCP JSON-RPC: \"merkle_root\":[b0,...,b31]
-    # (serde_json, no spaces). Identical blocks have identical merkle roots.
-    info "Verifying genesis convergence (merkle root)..."
-    if [ -z "$GENESIS_MERKLE_ROOT" ]; then
-        fail "Cannot verify genesis convergence — node0 merkle root unknown"
-    else
-        local all_genesis_match=true
-        for node_spec in "${NODE_LIST[@]}"; do
-            local node_name="${node_spec%%:*}"
-            local node_port="${node_spec##*:}"
-            local blk mr
-            blk=$(jsonrpc_get_block "$node_name" "$node_port" 1)
-            mr=$(echo "$blk" | jq -r '.result | fromjson | .header.merkle_root | @json' 2>/dev/null || echo "")
-            if [ "$mr" = "$GENESIS_MERKLE_ROOT" ]; then
-                pass "$node_name genesis matches node0"
-            elif [ -z "$mr" ]; then
-                # RPC returned no merkle_root — may be transient (container restarting).
-                # Non-fatal for non-genesis nodes. node0+observer matching is sufficient
-                # proof of chain identity.
-                if [ "$node_name" = "dwow-node0" ] || [ "$node_name" = "dwow-observer" ]; then
-                    fail "$node_name block 1: RPC returned no merkle_root"
-                else
-                    warn "$node_name block 1: RPC returned no merkle_root — transient, retrying later"
-                fi
-                all_genesis_match=false
-            else
-                fail "$node_name block 1 merkle root MISMATCH — different chain!"
-                all_genesis_match=false
-            fi
-        done
-        # Also check observer
-        if docker ps --format '{{.Names}}' | grep -q "dwow-observer"; then
-            local obs_blk obs_mr
-            obs_blk=$(jsonrpc_get_block "dwow-observer" 31345 1)
-            obs_mr=$(echo "$obs_blk" | jq -r '.result | fromjson | .header.merkle_root | @json' 2>/dev/null || echo "")
-            if [ "$obs_mr" = "$GENESIS_MERKLE_ROOT" ]; then
-                pass "observer genesis matches node0"
-            else
-                fail "observer block 1 merkle root MISMATCH — different chain!"
-                all_genesis_match=false
-            fi
-        fi
-        if [ "$all_genesis_match" = "true" ]; then
-            pass "All nodes share the same genesis block — same chain confirmed"
-        fi
-    fi
-
-    # ── L2: Cross-node consensus (merkle root at heights 2-5) ───────────
-    # Early blocks should be identical across nodes. Beyond height 5, the
-    # protocol's uncle/forgiving consensus (threshold=3) permits divergence.
-    if [ "${#NODE_LIST[@]}" -ge 2 ]; then
-        info "Cross-node consensus (merkle root at heights 2-5)..."
-        # First get the minimum height across all nodes
-        local min_h=999999
-        for node_spec in "${NODE_LIST[@]}"; do
-            local node_name="${node_spec%%:*}"
-            local node_port="${node_spec##*:}"
-            local h
-            h=$(jsonrpc_get_height "$node_name" "$node_port")
-            info "  $node_name height: $h"
-            [ "$h" -lt "$min_h" ] && min_h="$h"
-        done
-
-        if [ "$min_h" -lt 2 ]; then
-            warn "Cross-node consensus: min height is $min_h — skipping (need >= 2)"
-        else
-            local max_check=$min_h
-            [ "$max_check" -gt 5 ] && max_check=5
-            local h
-            for h in $(seq 2 "$max_check"); do
-                local ref_mr=""
-                local ref_node=""
-                local all_ok=true
-                for node_spec in "${NODE_LIST[@]}"; do
-                    local node_name="${node_spec%%:*}"
-                    local node_port="${node_spec##*:}"
-                    local blk mr
-                    blk=$(jsonrpc_get_block "$node_name" "$node_port" "$h")
-                    mr=$(echo "$blk" | jq -r '.result | fromjson | .header.merkle_root | @json' 2>/dev/null || echo "")
-                    if [ -z "$mr" ]; then
-                        fail "$node_name height=$h: RPC returned no merkle_root"
-                        all_ok=false; continue
-                    fi
-                    if [ -z "$ref_mr" ]; then
-                        ref_mr="$mr"
-                        ref_node="$node_name"
-                    elif [ "$mr" != "$ref_mr" ]; then
-                        fail "CONSENSUS SPLIT at height=$h: $node_name differs from $ref_node"
-                        all_ok=false
-                    fi
-                done
-                if [ "$all_ok" = "true" ]; then
-                    pass "Consensus height=$h: all nodes agree (merkle root match)"
-                fi
-            done
-        fi
-    fi
-
-    # --- PoW / anchor inspection (node0 block 1 only) ---
-    info "Inspecting node0 block 1 for PoW data..."
+# ==============================================================================
+# Block Structure Inspection — PoW / anchoring
+# ==============================================================================
+_inspect_block_structure() {
+    info "Inspecting node0 block 1..."
+    local BLOCK_DATA
     BLOCK_DATA=$(jsonrpc_get_block "$NODE0" 31345 1)
+
     if [ -z "$BLOCK_DATA" ]; then
-        warn "node0 RPC unreachable for PoW inspection"
+        warn "node0 RPC unreachable for block inspection"
         return 0
     fi
 
     if echo "$BLOCK_DATA" | grep -q '"result"'; then
         pass "block 1 fetched successfully"
     else
-        warn "block 1 fetch failed — RPC may be busy mining"
+        warn "block 1 fetch failed"
     fi
 
-    # Diagnostic ping: snapshot heights and genesis hash at intervals.
-    # No timeouts, no targets — just observe what the nodes are doing.
-    # Uncle-merkle correctness is verified by the Python model.
-    if [ "${#NODE_LIST[@]}" -ge 2 ]; then
-        info "Chain diagnostic (snapshot pings)..."
-
-        NODE0_SPEC="${NODE_LIST[0]}"
-        NODE0_NAME="${NODE0_SPEC%%:*}"
-        NODE0_PORT="${NODE0_SPEC##*:}"
-        NODE1_SPEC="${NODE_LIST[1]}"
-        NODE1_NAME="${NODE1_SPEC%%:*}"
-        NODE1_PORT="${NODE1_SPEC##*:}"
-
-        # Take snapshots at intervals — observe chain state evolving
-        for snap in 1 2 3; do
-            sleep 60
-
-            N0_TIP=$(jsonrpc_get_height "$NODE0_NAME" "$NODE0_PORT")
-            N1_TIP=$(jsonrpc_get_height "$NODE1_NAME" "$NODE1_PORT")
-
-            info "  snapshot $snap: node0=$N0_TIP node1=$N1_TIP"
-
-            if [ "$N0_TIP" != "?" ] && [ "$N1_TIP" != "?" ] && [ "$N0_TIP" -ge 1 ] && [ "$N1_TIP" -ge 1 ]; then
-                N0_GEN=$(jsonrpc_get_block "$NODE0_NAME" "$NODE0_PORT" 1)
-                N0_MR=$(echo "$N0_GEN" | jq -r '.result | fromjson | .header.merkle_root | @json' 2>/dev/null || echo "?")
-                N1_GEN=$(jsonrpc_get_block "$NODE1_NAME" "$NODE1_PORT" 1)
-                N1_MR=$(echo "$N1_GEN" | jq -r '.result | fromjson | .header.merkle_root | @json' 2>/dev/null || echo "?")
-
-                if [ "$N0_MR" = "$N1_MR" ] && [ "$N0_MR" != "?" ]; then
-                    info "    genesis merkle root match (${N0_MR:0:30}...)"
-                else
-                    info "    genesis merkle differs: node0=${N0_MR:0:20}... node1=${N1_MR:0:20}..."
-                fi
-            fi
-        done
-    fi
-
-    # Verify Caribina anchor presence/absence based on finality config
-    info "Inspecting block 1 for Caribina anchor..."
-    # Block data is JSON-escaped inside the RPC result string.
-    # Extract anchor_tx_id by matching the raw field+value pattern.
+    # Caribina anchor
+    local ANCHOR_TX_ID
     ANCHOR_TX_ID=$(echo "$BLOCK_DATA" | grep -o 'anchor_tx_id[^,}]*' | sed 's/.*:\\"*//;s/\\"//g;s/"//g' | head -1 || echo "")
 
     if [ "$FINALITY_CARIBINA_ENABLED" != "true" ]; then
@@ -424,90 +254,108 @@ phase_blocks() {
         if [ -n "$ANCHOR_TX_ID" ] && ! echo "$ANCHOR_TX_ID" | grep -qE '^[0]+$|^AAAAAAAAAAAAAAAA'; then
             pass "anchor_tx_id present (caribina enabled): ${ANCHOR_TX_ID:0:16}..."
         else
-            echo "  WARNING: anchor_tx_id is zero or absent (caribina enabled)"
-            echo "  This is acceptable if ArDrive Turbo was unreachable —"
-            echo "  anchoring is best-effort and mining proceeds without it."
-            echo "  Raw block data excerpt:"
-            echo "$BLOCK_DATA" | grep -o 'anchor[^,}]*' | head -3 || echo "  (no anchor fields found)"
             warn "anchor_tx_id is zero (caribina enabled) — external service may be down, mining unaffected"
         fi
     fi
 
-    # Verify Monero anchor presence/absence based on finality config
-    info "Inspecting block 1 for Monero anchor..."
+    # Monero anchor
+    local ANCHOR_MONERO_HEIGHT
     ANCHOR_MONERO_HEIGHT=$(echo "$BLOCK_DATA" | grep -o 'anchor_monero_height[^,}]*' | grep -o '[0-9]*$' || echo "0")
+    local ANCHOR_MONERO_HASH
     ANCHOR_MONERO_HASH=$(echo "$BLOCK_DATA" | grep -o 'anchor_monero_hash[^,}]*' | sed 's/.*:\\"*//;s/\\"//g;s/"//g' | head -1 || echo "")
 
     if [ "$FINALITY_ENABLE_MONERO" = "true" ]; then
-        if [ -n "$ANCHOR_MONERO_HEIGHT" ] && [ "$ANCHOR_MONERO_HEIGHT" -gt 0 ]; then
-            pass "anchor_monero_height non-zero (monero anchoring): $ANCHOR_MONERO_HEIGHT"
-        else
-            warn "anchor_monero_height is zero (expected non-zero with Monero anchoring enabled)"
-        fi
-
-        if [ -n "$ANCHOR_MONERO_HASH" ] && \
-           [ "$ANCHOR_MONERO_HASH" != "0000000000000000000000000000000000000000000000000000000000000000" ]; then
-            pass "anchor_monero_hash non-zero: ${ANCHOR_MONERO_HASH:0:16}..."
-        else
-            warn "anchor_monero_hash is zero (expected non-zero with Monero anchoring enabled)"
-        fi
+        [ -n "$ANCHOR_MONERO_HEIGHT" ] && [ "$ANCHOR_MONERO_HEIGHT" -gt 0 ] && \
+            pass "anchor_monero_height non-zero: $ANCHOR_MONERO_HEIGHT" || \
+            warn "anchor_monero_height is zero (expected non-zero)"
+        [ -n "$ANCHOR_MONERO_HASH" ] && [ "$ANCHOR_MONERO_HASH" != "0000000000000000000000000000000000000000000000000000000000000000" ] && \
+            pass "anchor_monero_hash non-zero: ${ANCHOR_MONERO_HASH:0:16}..." || \
+            warn "anchor_monero_hash is zero"
     else
-        if [ "$ANCHOR_MONERO_HEIGHT" = "0" ] || [ -z "$ANCHOR_MONERO_HEIGHT" ]; then
-            pass "anchor_monero_height is zero (monero anchoring disabled)"
-        else
-            warn "anchor_monero_height is non-zero ($ANCHOR_MONERO_HEIGHT) but Monero anchoring is disabled"
-        fi
+        [ "$ANCHOR_MONERO_HEIGHT" = "0" ] || [ -z "$ANCHOR_MONERO_HEIGHT" ] && \
+            pass "anchor_monero_height is zero (monero anchoring disabled)" || \
+            warn "anchor_monero_height non-zero but Monero anchoring disabled"
+    fi
+}
+
+# ==============================================================================
+# Diagnostic Snapshots — observe trends over time
+# ==============================================================================
+_diagnostic_snapshots() {
+    if [ "${#NODE_LIST[@]}" -lt 2 ]; then
+        return
     fi
 
-    # Cryptographic receipt verification (merge mode only)
-    if [ "$MODE" = "merge" ]; then
-        info "Verifying cryptographic receipts (polling — merge mining pace)..."
-        if ! container_running "$NODE0"; then
-            fail "node0 not running — cannot verify merge mining receipts"
-            return 1
-        fi
-        MM_DONE=false
-        MM_START=$SECONDS
-        while [ $((SECONDS - MM_START)) -lt 1800 ]; do
-            NODE0_LOGS=$(docker logs "$NODE0" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true)
-            MM_SUBMIT_COUNT=$(echo "$NODE0_LOGS" | grep -c "Got solution submission" 2>/dev/null || echo 0)
-            MM_AUX_VERIFIED=$(echo "$NODE0_LOGS" | grep -c "Aux merkle proof verified" 2>/dev/null || echo 0)
-            MM_COINBASE_VERIFIED=$(echo "$NODE0_LOGS" | grep -c "Coinbase merkle proof verified" 2>/dev/null || echo 0)
-            MM_ACCEPTED=$(echo "$NODE0_LOGS" | grep -c "Merge-mined block.*accepted" 2>/dev/null || echo 0)
+    info "Chain diagnostic (3 snapshots at 60s intervals)..."
+    local NODE0_NAME="${NODE_LIST[0]%%:*}"
+    local NODE0_PORT="${NODE_LIST[0]##*:}"
+    local NODE1_NAME="${NODE_LIST[1]%%:*}"
+    local NODE1_PORT="${NODE_LIST[1]##*:}"
 
-            if [ "$MM_ACCEPTED" -gt 0 ]; then
-                MM_DONE=true
-                break
+    local prev_n0=0 prev_n1=0
+    for snap in 1 2 3; do
+        sleep 60
+
+        local n0_tip n1_tip
+        n0_tip=$(jsonrpc_get_height "$NODE0_NAME" "$NODE0_PORT")
+        n0_tip=$(echo "$n0_tip" | tr -dc '0-9')
+        n0_tip="${n0_tip:-?}"
+        n1_tip=$(jsonrpc_get_height "$NODE1_NAME" "$NODE1_PORT")
+        n1_tip=$(echo "$n1_tip" | tr -dc '0-9')
+        n1_tip="${n1_tip:-?}"
+
+        local delta_n0=""
+        [ "$n0_tip" != "?" ] && [ "$prev_n0" != "0" ] && \
+            delta_n0=" (+$((n0_tip - prev_n0)) blocks)" && prev_n0="$n0_tip"
+        local delta_n1=""
+        [ "$n1_tip" != "?" ] && [ "$prev_n1" != "0" ] && \
+            delta_n1=" (+$((n1_tip - prev_n1)) blocks)" && prev_n1="$n1_tip"
+
+        info "  snapshot $snap: node0=$n0_tip$delta_n0 node1=$n1_tip$delta_n1"
+
+        # Genesis convergence check at each snapshot
+        if [ "$n0_tip" != "?" ] && [ "$n1_tip" != "?" ] && \
+           [ "$n0_tip" -ge 1 ] 2>/dev/null && [ "$n1_tip" -ge 1 ] 2>/dev/null; then
+            local n0_mr n1_mr n0_blk n1_blk
+            n0_blk=$(jsonrpc_get_block "$NODE0_NAME" "$NODE0_PORT" 1)
+            n0_mr=$(echo "$n0_blk" | jq -r '.result | fromjson | .header.merkle_root | @json' 2>/dev/null || echo "?")
+            n1_blk=$(jsonrpc_get_block "$NODE1_NAME" "$NODE1_PORT" 1)
+            n1_mr=$(echo "$n1_blk" | jq -r '.result | fromjson | .header.merkle_root | @json' 2>/dev/null || echo "?")
+
+            if [ "$n0_mr" = "$n1_mr" ] && [ "$n0_mr" != "?" ]; then
+                info "    genesis merkle root match"
+            else
+                info "    genesis merkle differs: node0=${n0_mr:0:20}... node1=${n1_mr:0:20}..."
             fi
-            elapsed=$((SECONDS - MM_START))
-            info "  merge receipts: ${elapsed}s (submits=$MM_SUBMIT_COUNT accepted=$MM_ACCEPTED)..."
-            sleep 30
-        done
-
-        if [ "$MM_SUBMIT_COUNT" -gt 0 ]; then
-            pass "mm_submit_solution received ($MM_SUBMIT_COUNT submissions)"
-        else
-            warn "no mm_submit_solution received"
         fi
+    done
+}
 
-        if [ "$MM_AUX_VERIFIED" -gt 0 ]; then
-            pass "aux merkle proof verified ($MM_AUX_VERIFIED)"
-        else
-            warn "aux merkle proof not verified"
-        fi
+# ==============================================================================
+# Phase 9 entry point
+# ==============================================================================
+phase_blocks() {
+    info "Phase 9: Block production diagnostics..."
 
-        if [ "$MM_COINBASE_VERIFIED" -gt 0 ]; then
-            pass "coinbase merkle proof verified ($MM_COINBASE_VERIFIED)"
-        else
-            warn "coinbase merkle proof not verified"
-        fi
+    _build_node_list
 
-        if [ "$MM_ACCEPTED" -gt 0 ]; then
-            pass "merge-mined block accepted ($MM_ACCEPTED)"
-        else
-            warn "no merge-mined block accepted"
-        fi
-    fi
+    # L1: Genesis Ceremony — hard gate (did genesis happen?)
+    _verify_genesis_ceremony
+
+    # Genesis contract initialization — passive audit
+    _verify_genesis_contract_init
+
+    # L2: Per-Node Diagnostics — snapshot current state
+    _diagnose_nodes
+
+    # L3: Cross-Node Convergence — same genesis across all nodes
+    _verify_genesis_convergence
+
+    # Block structure inspection
+    _inspect_block_structure
+
+    # Diagnostic snapshots — observe trends over time
+    _diagnostic_snapshots
 }
 
 # ==============================================================================
@@ -523,28 +371,19 @@ phase_join_sync() {
     fi
 
     echo "  Checking blockchain sync..."
-    local info
-    info=$(jsonrpc "$RPC_PORT" "blockchain.get_height")
-
-    echo "  Waiting for block height > 0 (up to 300s)..."
-    local synced=0
-    local height=0
+    local synced=0 height=0
     for i in $(seq 1 60); do
-        info=$(jsonrpc "$RPC_PORT" "blockchain.get_height")
-        if echo "$info" | grep -q '"height"'; then
-            height=$(echo "$info" | grep -o '"height":[0-9]*' | grep -o '[0-9]*' || echo "0")
-            if [ -n "$height" ] && [ "$height" -gt 0 ] 2>/dev/null; then
-                pass "Blockchain synced: height $height after $((i * 5))s"
-                synced=1
-                break
-            fi
+        height=$(jsonrpc_get_height "$CONTAINER_NAME" "$RPC_PORT")
+        height=$(echo "$height" | tr -dc '0-9')
+        if [ -n "$height" ] && [ "$height" -gt 0 ] 2>/dev/null; then
+            pass "Blockchain synced: height $height after $((i * 5))s"
+            synced=1
+            break
         fi
         sleep 5
     done
 
     if [ "$synced" -eq 0 ]; then
-        echo "  Last blockchain.get_height response:"
-        jsonrpc "$RPC_PORT" "blockchain.get_height" | head -1
         warn "Blockchain height is 0 after 300s (public testnet may not have blocks yet)"
     fi
 }

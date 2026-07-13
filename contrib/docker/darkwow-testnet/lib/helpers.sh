@@ -268,21 +268,42 @@ _join_lilith_run() {
 # Shared helpers — RPC
 # ==============================================================================
 
+# Retry an RPC call up to N times. No timeout — the cat reads whatever the
+# server sends when it sends it. A busy mining node is a healthy node; the
+# retry handles transient unavailability.
+rpc_retry() {
+    local container="$1" port="$2" method="$3" params="$4" max_attempts="${5:-5}"
+    local attempt=0
+    while [ "$attempt" -lt "$max_attempts" ]; do
+        attempt=$((attempt + 1))
+        local result
+        result=$(docker exec "$container" bash -c \
+            "exec 3<>/dev/tcp/127.0.0.1/$port 2>/dev/null || exit 1; echo '{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":$params,\"id\":1}' >&3; cat <&3" 2>/dev/null)
+        if [ -n "$result" ] && echo "$result" | grep -q '"result"'; then
+            echo "$result"
+            return 0
+        fi
+        [ "$attempt" -lt "$max_attempts" ] && sleep 2
+    done
+    return 1
+}
+
 jsonrpc_get_block() {
     local container="$1" port="$2" block_num="$3"
-    docker exec "$container" bash -c \
-        "exec 3<>/dev/tcp/127.0.0.1/$port; echo '{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[$block_num],\"id\":1}' >&3; timeout 15 cat <&3" 2>/dev/null
+    rpc_retry "$container" "$port" "blockchain.get_block_linear" "[$block_num]" 5 2>/dev/null
 }
 
 # Get the current block height from a node via JSON-RPC.
 # Returns the height as a bare integer, or 0 on failure.
-# Uses jq for structured JSON parsing — immune to formatting changes.
 jsonrpc_get_height() {
     local container="$1" port="$2"
     local raw
-    raw=$(docker exec "$container" bash -c \
-        "exec 3<>/dev/tcp/127.0.0.1/$port; echo '{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_height\",\"params\":[],\"id\":1}' >&3; timeout 5 cat <&3" 2>/dev/null)
-    echo "$raw" | jq -r '.result.height // 0' 2>/dev/null | head -1 | tr -d '[:space:]' || echo 0
+    raw=$(rpc_retry "$container" "$port" "blockchain.get_height" "[]" 5 2>/dev/null || echo "")
+    if [ -n "$raw" ]; then
+        echo "$raw" | jq -r '.result.height // 0' 2>/dev/null | head -1 | tr -d '[:space:]' || echo 0
+    else
+        echo 0
+    fi
 }
 
 poll_until() {
