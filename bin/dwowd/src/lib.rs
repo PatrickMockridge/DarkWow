@@ -363,28 +363,31 @@ fn init_genesis_contracts(
             .map_err(|e| Error::Custom(format!("RandomX VM for genesis: {e}")))?,
     );
 
-    // Contracts are initialized sequentially. Order does not matter for
-    // correctness — each contract's init_contract only touches its own
-    // trees (keyed by blake3(cid || tree_name)). Cross-contract references
-    // (e.g. Identity storing BOX_CONTRACT_ID) use compile-time constants,
-    // not WASM calls. The `contracts` vec is defined above (used for both
-    // the build-fingerprinted marker and the deployment loop).
+    // Contracts are deployed sequentially through a SINGLE shared overlay
+    // (matching upstream's pattern: one BlockchainOverlay for all native
+    // contracts, one apply() at the end).  Each contract's __initialize
+    // writes into the shared overlay; after all 9 contracts deploy, a
+    // single aggregate() + apply_batch() atomically commits everything.
+    //
+    // This replaces the previous per-contract overlay-create/aggregate/
+    // apply_batch loop, which was 9 separate sled writes with unnecessary
+    // overlay disposal/recreation overhead.
+    let shared_overlay = std::sync::Arc::new(std::sync::Mutex::new(
+        SledTreeOverlay::new(&contracts_tree),
+    ));
 
     for (contract_id, wasm_bytes, name) in &contracts {
         let wasm = wasm_bytes.to_vec();
-        let mut overlay = SledTreeOverlay::new(&contracts_tree);
 
-        // Store WASM bytes in the overlay before it's moved into TxBackend
-        overlay.state.cache.insert(
+        // Pre-fill WASM bytes into the shared overlay cache so they are
+        // visible to contract_lookup during deployment.
+        shared_overlay.lock().unwrap().state.cache.insert(
             sled::IVec::from(contract_id.to_bytes().as_slice()),
             sled::IVec::from(wasm.as_slice()),
         );
 
-        // Move overlay into TxBackend (not cloned — single owner).
-        // After Runtime is dropped, the only Arc reference to the backend
-        // is ours, so into_inner recovers the overlay cleanly.
         let backend = std::sync::Arc::new(TxBackend {
-            overlay: std::sync::Mutex::new(overlay),
+            overlay: std::sync::Arc::clone(&shared_overlay),
             store: chain_state.store.clone(),
             height: 0,
             vm: genesis_vm.clone(),
@@ -406,26 +409,23 @@ fn init_genesis_contracts(
         )))?;
         drop(runtime);
 
-        // Recover overlay from backend. Runtime held the only other Arc ref.
-        let overlay = std::sync::Arc::into_inner(backend)
-            .ok_or_else(|| Error::Custom(format!(
-                "init_contract for {name}: backend still referenced after deploy"
-            )))?
-            .overlay.into_inner().unwrap();
-
-        // Apply overlay diff to the contracts tree (idempotent — safe to re-apply)
-        let batch = overlay.state.aggregate().unwrap_or_default();
-        contracts_tree.apply_batch(batch).map_err(|e| Error::Custom(format!(
-            "apply_batch for {name}: {e}"
-        )))?;
-
-        // Cumulative supply state (value_commit, blind, total_supply) is now
-        // managed by CumulativeSupplyChain (src/linear/src/supply_chain.rs).
-        // Pre-seeding TOTAL_SUPPLY here was incorrect — it should start at 0
-        // (identity) and be written after the first block commits.
+        // No per-contract commit — all contracts share the overlay.
         info!(target: "dwowd::init_genesis_contracts",
             "{name}: init_contract OK");
     }
+
+    // Single atomic commit after all contracts deploy.
+    // Cumulative supply state is managed by CumulativeSupplyChain
+    // (src/linear/src/supply_chain.rs) — it starts at 0 (identity)
+    // and is written after the first block commits.
+    let shared_overlay_ref = shared_overlay.lock().unwrap();
+    let batch = shared_overlay_ref.state.aggregate().unwrap_or_default();
+    drop(shared_overlay_ref);
+    contracts_tree.apply_batch(batch).map_err(|e| Error::Custom(format!(
+        "apply_batch for genesis contracts: {e}"
+    )))?;
+    info!(target: "dwowd::init_genesis_contracts",
+        "All 9 genesis contracts committed atomically");
 
     // Store manifests (keyed by contract_id + b"_manifest").
     // Manifests are TOML blobs, not WASM — no init_contract needed.

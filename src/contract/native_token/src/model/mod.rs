@@ -310,27 +310,6 @@ pub struct SpendUpdateV1 {
     pub coin: Coin,
 }
 
-/// Parameters for MintV1 - create new coins (Z-cash style mint)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct MintParamsV1 {
-    /// The newly minted coin
-    pub coin: Coin,
-    /// Pedersen commitment of the value
-    pub value_commit: pallas::Point,
-    /// Commitment of the token ID
-    pub token_commit: pallas::Base,
-    /// Transaction binding: poseidon_hash(tx_commitment, tx_nonce)
-    pub tx_binding: pallas::Base,
-    /// Transaction nonce: unique per transaction
-    pub tx_nonce: pallas::Base,
-}
-
-/// State update for MintV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct MintUpdateV1 {
-    pub coin: Coin,
-}
-
 /// Parameters for BurnV1 - destroy coins (Z-cash style burn)
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct BurnParamsV1 {

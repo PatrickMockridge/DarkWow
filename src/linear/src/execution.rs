@@ -70,9 +70,18 @@ use dwow_core::runtime::vm_runtime::RuntimeBackend;
 pub const BLOCK_GAS_LIMIT: u64 = 100_000_000_000;
 
 /// WASM runtime backend providing sled overlay access for contract execution.
-/// Formerly in the deleted `blockchain.rs` god object.
+///
+/// Per-call overlay clones provide transaction isolation: each contract call
+/// executes against an independent clone of the base overlay, so a failing
+/// call can be checkpoint-reverted without affecting sibling calls.  This
+/// means a call's overlay does NOT contain writes from other calls in the
+/// same block.  The hybrid read pattern (overlay-get first, then bare-tree
+/// fallback via `store.get_contract_data`) provides visibility into data
+/// written by PRIOR blocks, which is the correct semantics for cross-block
+/// state reads.  Intra-block cross-call visibility is deferred until the
+/// deterministic merge phase at the end of `execute_block`.
 pub struct TxBackend {
-    pub overlay: std::sync::Mutex<sled_overlay::SledTreeOverlay>,
+    pub overlay: std::sync::Arc<std::sync::Mutex<sled_overlay::SledTreeOverlay>>,
     pub store: std::sync::Arc<LinearStore>,
     pub height: u64,
     pub vm: std::sync::Arc<randomx::RandomXVM>,
@@ -120,7 +129,7 @@ pub fn execute_block(
     struct CallJob {
         tx_hash: Blake3Hash,
         is_canonical: bool,
-        overlay: SledTreeOverlay,
+        overlay: Arc<std::sync::Mutex<SledTreeOverlay>>,
         wasm_bytes: Vec<u8>,
         contract_id: ContractId,
         call_data: Vec<u8>,
@@ -143,7 +152,7 @@ pub fn execute_block(
             jobs.push(CallJob {
                 tx_hash,
                 is_canonical: true,
-                overlay: base_overlay.clone(),
+                overlay: Arc::new(std::sync::Mutex::new(base_overlay.clone())),
                 wasm_bytes,
                 contract_id,
                 call_data: call.data.clone(),
@@ -167,7 +176,7 @@ pub fn execute_block(
                 jobs.push(CallJob {
                     tx_hash,
                     is_canonical: false,
-                    overlay: base_overlay.clone(),
+                    overlay: Arc::new(std::sync::Mutex::new(base_overlay.clone())),
                     wasm_bytes,
                     contract_id,
                     call_data: call.data.clone(),
@@ -194,7 +203,7 @@ pub fn execute_block(
         let is_canonical = job.is_canonical;
         let tx_hash = job.tx_hash;
         let backend = Arc::new(TxBackend {
-            overlay: std::sync::Mutex::new(job.overlay),
+            overlay: Arc::clone(&job.overlay),
             store: store.clone(),
             height: current_height,
             vm: vm.clone(),
@@ -423,9 +432,9 @@ fn deploy_contract_in_overlay(
         sled_overlay::sled::IVec::from(wasm),
     );
 
-    let deploy_overlay = std::sync::Mutex::new(overlay.clone());
+    let deploy_overlay = Arc::new(std::sync::Mutex::new(overlay.clone()));
     let backend = Arc::new(TxBackend {
-        overlay: deploy_overlay,
+        overlay: Arc::clone(&deploy_overlay),
         store: Arc::new(store),
         height: current_height,
         vm,
@@ -437,10 +446,9 @@ fn deploy_contract_in_overlay(
     runtime.deploy(ix).map_err(|e| Error::Custom(format!("DeployV1 init: {}", e)))?;
     drop(runtime);
 
-    let deploy_overlay = Arc::try_unwrap(backend)
-        .map_err(|_| Error::Custom("backend still referenced after deploy".to_string()))?
-        .overlay.into_inner().unwrap();
-    *overlay = deploy_overlay;
+    // Clone the overlay out of the shared Arc — the deploy runtime may hold
+    // an extra reference, so try_unwrap is unreliable here.
+    *overlay = deploy_overlay.lock().unwrap().clone();
     Ok(())
 }
 

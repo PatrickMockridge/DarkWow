@@ -44,7 +44,7 @@
 //! | Function | Opcode | Purpose | Priority |
 //! |----------|--------|---------|----------|
 //! | FeeV1 | 0x00 | Pay network fees | CONSENSUS |
-//! | MintV1 | 0x01 | Create new capabilities | PRIVACY |
+//! | MintV1 | 0x01 | DISABLED — walled off behind PoWRewardV1 (consensus-locked coinbase) |
 //! | BurnV1 | 0x02 | Destroy capabilities | PRIVACY |
 //! | TransferV1 | 0x03 | Private transfers | PRIVACY |
 //! | SpendV1 | 0x04 | Spend with change | PRIVACY |

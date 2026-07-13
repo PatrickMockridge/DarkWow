@@ -36,7 +36,7 @@ use dwow_native_token_contract::{
         burn_v1::{BurnCallBuilder, BurnCallInput},
         pow_reward_v1::PoWRewardCallBuilder,
     },
-    model::{Coin, MintParamsV1},
+    model::Coin,
     NativeTokenFunction,
 };
 
@@ -47,33 +47,6 @@ pub fn init_logger() {
         .with_target(false)
         .finish();
     let _ = tracing::subscriber::set_global_default(subscriber);
-}
-
-/// Test MintV1 - simple coin creation
-fn test_mint() -> Result<(), Box<dyn std::error::Error>> {
-    info!(target: "test_harness::native_token", "=== Testing MintV1 ===");
-
-    let keypair = Keypair::new(SecretKey::from(pallas::Base::from(42)));
-
-    // Create a simple coin
-    let coin = Coin::from_attributes(
-        &keypair.public,
-        1000,
-        dwow_sdk::crypto::TokenId(pallas::Base::zero()),
-        FuncId::none(),
-        pallas::Base::zero(),
-        BaseBlind::random(&mut OsRng),
-    );
-
-    info!(target: "test_harness::native_token", "Mint created coin: {:?}", coin);
-
-    // Verify the coin can be serialized
-    let mut data = vec![NativeTokenFunction::MintV1 as u8];
-    let params = MintParamsV1 { coin, token_commit: pallas::Base::zero(), value_commit: pallas::Point::identity(), tx_binding: pallas::Base::zero(), tx_nonce: pallas::Base::zero() };
-    params.encode(&mut data)?;
-
-    info!(target: "test_harness::native_token", "MintV1 test PASSED");
-    Ok(())
 }
 
 /// Test PoWRewardCallBuilder - build a PoW reward call
@@ -179,7 +152,6 @@ fn run_tests() -> Result<(), Box<dyn std::error::Error>> {
 
     info!(target: "test_harness::native_token", "Starting NativeToken contract tests");
 
-    test_mint()?;
     test_pow_reward_call_builder()?;
     // test_burn_call_builder()?; // Requires proper Merkle tree infrastructure
 

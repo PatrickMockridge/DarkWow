@@ -61,8 +61,8 @@ use dwow_serial::{deserialize, serialize, Encodable, WriteExt};
 use crate::{
     error::NativeTokenError,
     model::{
-        BurnParamsV1, BurnUpdateV1, DRKW_TOKEN_ID, FeeParamsV1, FeeUpdateV1, MintParamsV1,
-        MintUpdateV1, PoWRewardParamsV1, PoWRewardUpdateV1, SpendParamsV1, SpendUpdateV1,
+        BurnParamsV1, BurnUpdateV1, DRKW_TOKEN_ID, FeeParamsV1, FeeUpdateV1,
+        PoWRewardParamsV1, PoWRewardUpdateV1, SpendParamsV1, SpendUpdateV1,
         TransferParamsV1, TransferUpdateV1,
     },
     NativeTokenFunction, NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE,
@@ -249,38 +249,6 @@ fn fee_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     ));
 
     // Serialize everything gathered and return it
-    let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    signature_pubkeys.encode(&mut metadata).unwrap();
-    metadata
-}
-
-/// Metadata for MintV1
-fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
-    let self_ = &calls[call_idx];
-    let params: MintParamsV1 = match deserialize(&self_.data.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
-
-    // Public inputs for the ZK proofs we have to verify
-    let value_coords = params.value_commit.to_affine().coordinates();
-    if value_coords.is_none().into() {
-        return vec![];
-    }
-    let value_coords = value_coords.unwrap();
-
-    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    // Public keys for the transaction signatures we have to verify
-    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
-
-    zk_public_inputs.push((
-        NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
-        vec![
-            params.coin.inner(),
-            *value_coords.x(),
-            *value_coords.y(),
-            params.token_commit,
-        ],
-    ));
-
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata).unwrap();
     signature_pubkeys.encode(&mut metadata).unwrap();
@@ -684,28 +652,6 @@ fn spend_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 }
 
 // ============================================================================
-// MINT - Create new coins (Z-cash style mint)
-// ============================================================================
-
-fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
-    let self_ = &calls[call_idx].data;
-    let params: MintParamsV1 = deserialize(&self_.data[1..])?;
-    msg!("[native_token::mint_v1] Processing mint");
-
-    let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
-
-    // Verify coin doesn't already exist
-    if wasm::db::db_contains_key(coins_db, &serialize(&params.coin))? {
-        msg!("[mint_v1] Error: Coin already exists");
-        return Err(NativeTokenError::DuplicateCoin.into())
-    }
-
-    let update = MintUpdateV1 { coin: params.coin };
-    msg!("[native_token::mint_v1] Mint valid");
-    wasm::util::set_return_data(&serialize(&(NativeTokenFunction::MintV1 as u8, update)))
-}
-
-// ============================================================================
 // BURN - Destroy coins (Z-cash style burn)
 // ============================================================================
 
@@ -1024,26 +970,6 @@ fn apply_spend(cid: ContractId, update: SpendUpdateV1) -> ContractResult {
 
     wasm::db::db_set(nullifiers_db, &serialize(&update.nullifier.inner()), &[])?;
     wasm::db::db_set(coins_db, &serialize(&update.coin), &[])?;
-    Ok(())
-}
-
-fn apply_mint(cid: ContractId, update: MintUpdateV1) -> ContractResult {
-    msg!("[native_token::apply_mint] Adding coin to state");
-    let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
-    let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
-
-    // Add coin
-    wasm::db::db_set(coins_db, &serialize(&update.coin), &[])?;
-
-    // Update Merkle tree
-    wasm::merkle::merkle_add(
-        info_db,
-        wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?,
-        NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
-        NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE,
-        &[MerkleNode::from(update.coin.inner())],
-    )?;
-
     Ok(())
 }
 

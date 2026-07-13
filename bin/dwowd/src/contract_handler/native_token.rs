@@ -67,9 +67,12 @@ impl ContractHandler for NativeTokenContractHandler {
     }
 
     fn function_selector(&self, function: &str) -> Option<u8> {
+        // MintV1 is intentionally disabled — coin creation is walled off behind
+        // PoWRewardV1 (the consensus-locked coinbase). Exposing MintV1 through
+        // the handler would tell RPC callers it is available when WASM will
+        // hard-reject it as InvalidFunction.
         match function {
             "FeeV1" => Some(SELECTOR_FEE_V1),
-            "MintV1" => Some(SELECTOR_MINT_V1),
             "BurnV1" => Some(SELECTOR_BURN_V1),
             "TransferV1" => Some(SELECTOR_TRANSFER_V1),
             "SpendV1" => Some(SELECTOR_SPEND_V1),
@@ -95,9 +98,10 @@ impl ContractHandler for NativeTokenContractHandler {
     }
 
     fn supported_functions(&self) -> Vec<&'static str> {
+        // MintV1 is intentionally excluded — coin creation is walled off
+        // behind PoWRewardV1 (consensus-locked coinbase).
         vec![
             "FeeV1",
-            "MintV1",
             "BurnV1",
             "TransferV1",
             "SpendV1",
