@@ -411,8 +411,7 @@ by auditors or light clients.
 ```rust
 struct DepositParams {
     commitment: IntentCommitment,      // H(secret, amount, bridge_address)
-    recipient_pub_x: [u8; 32],         // For address derivation
-    recipient_pub_y: [u8; 32],
+    recipient: PublicKey,               // For address derivation
     bridge_nonce: u64,                  // Fresh address per deposit
     chain: ExternalChain,               // Target chain
     external_block_hash: [u8; 32],

@@ -1,6 +1,14 @@
 # Sync Module
 
-A clean, minimal blockchain synchronization module for DarkWow validator.
+A clean, minimal blockchain synchronization module for DarkWow's linear blockchain.
+
+> **Architecture note**: The sync module previously lived at `src/validator/sync/`.
+> It has been migrated to the linear blockchain architecture: `CChainState`
+> (`src/linear/src/chain_state.rs`) manages block connection and state,
+> `bin/dwowd/src/block_acceptor.rs` handles block acceptance, and
+> `bin/dwowd/src/proto/linear_broadcast.rs` handles P2P block propagation.
+> Some code examples below reference the pre-migration API and should be
+> read as conceptual patterns rather than copy-pasteable code.
 
 ## Overview
 
@@ -71,7 +79,7 @@ sync::verify_block(&block, &previous, &zkbin_data)
     ↓
 verify_zkp(proof, zkbin_bytes, instances) for each proof
     ↓
-validator.append_proposal(&proposal)
+chain_state.connect_block(&block).await?;
 ```
 
 ### Key Components
@@ -80,9 +88,9 @@ validator.append_proposal(&proposal)
 |-----------|------|---------|
 | `verify_zkp` | `src/zk/verifier.rs` | Pure ZK verification function |
 | `ZkVerifyResult` | `src/zk/verifier.rs` | Verification result enum |
-| `ZkBinEntry` | `src/validator/sync/types.rs` | `(ContractId, String, Vec<u8>, Vec<pallas::Base>)` |
+| `ZkBinEntry` | `src/linear/src/chain_state.rs` | `(ContractId, String, Vec<u8>, Vec<pallas::Base>)` |
 | `ExtendedProposalMessage` | `bin/dwowd/src/proto/protocol_proposal.rs` | P2P message with zkbin_data |
-| `verify_block` | `src/validator/sync/verify.rs` | Verifies header + ZK proofs |
+| `verify_block` | `bin/dwowd/src/block_acceptor.rs` | Verifies header + ZK proofs |
 | `handle_receive_proposal` | `bin/dwowd/src/proto/protocol_proposal.rs` | Calls verify_block before append |
 
 ## API
@@ -173,13 +181,13 @@ Replaces `ProposalMessage` for sync. The `zkbin_data` field carries all circuit 
 
 ```rust
 // Get previous block for verification
-let previous_block = validator.blockchain.get_blocks_by_hash(&[previous_hash])?;
+let previous_block = chain_state.get_block(previous_hash)?.ok_or(Error::BlockNotFound)?;;
 
 // Verify ZK proofs statelessly using zkbin_data
 sync::verify_block(&proposal.block, &previous, &zkbin_data).await?;
 
-// Only then append to validator
-validator.append_proposal(&proposal).await?;
+// Only then connect block to chain state
+chain_state.connect_block(&block).await?;
 ```
 
 ## Comparison
@@ -243,14 +251,13 @@ let proposal = message.proposal;
 let zkbin_data = message.zkbin_data;
 
 // Get previous block
-let previous_hash = validator.blockchain.get_block_hash_by_height(block.header.height - 1)?;
-let previous_block = validator.blockchain.get_blocks_by_hash(&[previous_hash])?;
+let previous_block = chain_state.get_block(block.header.height - 1)?.ok_or(Error::BlockNotFound)?;
 
 // Verify ZK proofs statelessly
 sync::verify_block(&proposal.block, &previous_block, &zkbin_data).await?;
 
 // Only then append
-validator.append_proposal(&proposal).await?;
+chain_state.connect_block(&block).await?;.await?;
 ```
 
 ## Breaking Changes
@@ -308,7 +315,9 @@ Blocks must now be accompanied by circuit data during synchronization via `Exten
 src/zk/
 └── verifier.rs          # Pure ZK verification (verify_zkp, ZkVerifyResult)
 
-src/validator/sync/
+## File Layout (pre-migration, for historical reference)
+
+src/validator/sync/  *(archived — migrated to src/linear/ + bin/dwowd/)*
 ├── mod.rs               # Module exports
 ├── types.rs             # ZkBinEntry, SyncBlock, VerifyResult, SyncState
 ├── verify.rs            # verify_header, verify_block

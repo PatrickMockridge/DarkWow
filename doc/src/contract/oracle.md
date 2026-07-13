@@ -66,8 +66,7 @@ Oracle operators register their data feed:
 ```rust
 pub struct RegisterOracleParamsV1 {
     pub oracle_id: OracleId,
-    pub oracle_pub_x: pallas::Base,
-    pub oracle_pub_y: pallas::Base,
+    pub oracle_pubkey: PublicKey,
     pub name: String,
     pub data_type: String,
 }

@@ -83,7 +83,7 @@ All other contracts are deployed post-genesis via the Deployooor contract:
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │ STEP 3: deploy_native_contracts()                                             │
 │                                                                               │
-│   Contracts hardcoded in dwowd (src/validator/utils.rs):                     │
+│   Contracts hardcoded in dwowd (bin/dwowd/src/contract_registry.rs):              │
 │   ┌────────────────────────────────────────────────────────────────────┐     │
 │   │  Name              │ ContractID              │ WASM Binary         │     │
 │   ├────────────────────────────────────────────────────────────────────┤     │

@@ -395,13 +395,13 @@ determines which one is used at startup (`bin/dwowd/src/main.rs:170-180`):
 
 | Network | Consensus | Location | Status |
 |---------|-----------|----------|--------|
-| `testnet` | Fork/overlay (DAG) | `src/validator/consensus.rs` | Legacy — maintained, no new features |
+| `testnet` | Fork/overlay (DAG) | *(archived — src/validator/ removed)* | Legacy — no longer maintained |
 | `linear-testnet` | Uncle Merkle (linear) | `src/linear/` | Local devnet — fast iteration, fixed difficulty |
 | `darkwow-testnet` | Uncle Merkle (linear) | `src/linear/` | Public testnet — mining, contracts, merge mining |
 
-**In the fork-based validator**, uncle Merkle verification is a placeholder
-("Phase 2 TODO" at `src/validator/verification.rs:314`). Only the zero/empty
-uncle root is accepted — no actual uncle blocks are validated or rewarded.
+**In the legacy fork-based validator** (archived), uncle Merkle verification
+was a placeholder. The `src/validator/` directory has been removed; all
+consensus development targets the linear blockchain.
 
 **In the linear blockchain**, uncle structures and verification are implemented
 in `src/linear/src/block.rs`. WASM contract execution during block validation is

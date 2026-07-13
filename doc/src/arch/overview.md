@@ -79,7 +79,7 @@ Example usage:
 All private state transitions use ZK proofs verified on-chain:
 
 - **zkVM**: DarkWow's virtual machine executes Halo2 proofs
-- **No trusted setup**: zkSNARK system uses universal reference strings
+- **Transparent setup**: Halo2 uses polynomial commitments over the Pasta cycle (Pallas/Vesta) — no trusted setup ceremony required
 - **Privacy**: Zero-knowledge proofs hide amounts, identities, and state changes
 
 ## Testing

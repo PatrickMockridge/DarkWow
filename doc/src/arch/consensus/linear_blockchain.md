@@ -268,9 +268,13 @@ WASM contracts can access these host functions:
 
 The WASM runtime uses `Metering` middleware with `GAS_LIMIT = 400_000_000` points.
 
-## LinearBlockAdapter
+## LinearBlockAdapter *(archived)*
 
-The wallet scanner cannot directly process linear blocks because the types differ:
+> The `LinearBlockAdapter` struct no longer exists in the codebase. The wallet
+> scanner now processes linear blocks directly. This section is retained for
+> historical reference.
+
+The wallet scanner previously used an adapter layer because the types differed:
 
 | Aspect | Regular Blockchain | Linear Blockchain |
 |--------|------------------|------------------|
@@ -353,6 +357,6 @@ This is a deliberate design choice that simplifies the wallet scanner significan
 
 ## Limitations
 
-1. **No DarkLeaf children_indexes**: Linear `ContractCall` lacks the `children_indexes` field, so DAO child call traversal is not possible
-2. **No ZK verification in scanner**: Scanner trusts dwowd's validation
-3. **Simplied state**: No overlay/rollback system means simpler but less powerful state management
+1. **DarkLeaf tree**: Contract call hierarchy uses DarkLeaf at execution time (`src/linear/src/execution.rs`) — child call traversal is supported.
+2. **Scanner ZK verification**: The wallet scanner independently verifies ZK proofs — it does not trust dwowd's validation.
+3. **Simplified state**: No overlay/rollback system means deterministic, reproducible state — a design feature, not a limitation.

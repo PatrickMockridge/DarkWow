@@ -16,7 +16,7 @@ The linear blockchain originally used a stateless ZK verification model without 
 | Component | File | Purpose |
 |-----------|------|---------|
 | `ZkVerifier` | `bin/dwowd/src/zk.rs` | Wrapper around `verify_zkp` for linear chain |
-| `derive_vk()` | `src/validator/verification.rs:61` | Derives VerifyingKey from embedded zkbin_data |
+| `derive_vk()` | *(archived with src/validator/)* | Derives VerifyingKey from embedded zkbin_data |
 | `Runtime::new()` | `src/runtime/vm_runtime.rs:379` | Creates WASM runtime for contract execution |
 | WASM adapters | `src/linear_wasm_adapter.rs` | Trait implementations for linear storage |
 
@@ -196,7 +196,7 @@ impl CChainState {
 |------|---------|
 | `bin/dwowd/src/zk.rs` | ZkVerifier wrapper |
 | `bin/dwowd/src/block_acceptor.rs` | CChainState with zk_verifier |
-| `src/validator/verification.rs` | derive_vk(), verify_producer_transaction() |
+| `src/validator/verification.rs` | *(archived)* — derive_vk(), verify_producer_transaction() |
 | `src/runtime/vm_runtime.rs` | Runtime::new(), WASM execution |
 | `src/linear_wasm_adapter.rs` | Trait implementations for linear storage |
 

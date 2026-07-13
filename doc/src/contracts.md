@@ -49,7 +49,7 @@ from the deployer's public key.
 | [Subscription](contract/subscription.md) | `dwow_subscription_contract` | ⚠️ Experimental | Recurring payments and time-based billing |
 | [Tender](contract/tender.md) | `dwow_tender_contract` | ⚠️ Experimental | Sealed-bid tendering with O-Cap gating |
 
-### Gaming (7)
+### Gaming (8)
 
 | Contract | Crate | Maturity | Description |
 |----------|-------|----------|-------------|

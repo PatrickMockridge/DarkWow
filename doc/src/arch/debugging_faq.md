@@ -110,7 +110,7 @@ cargo check -p dwowd  # Should compile
 ```
 error[E0004]: non-exhaustive patterns: `Opcode::IsEqualBase`,
 `Opcode::LessThanOrEqual`, `Opcode::NotBase` and 1 more not covered
-   --> src/validator/fees.rs:65:26
+   --> src/validator/fees.rs:65:26 *(legacy — src/validator/ archived)*
 ```
 
 **Cause:**
