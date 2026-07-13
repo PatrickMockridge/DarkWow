@@ -116,15 +116,18 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         return Err(NativeTokenError::RootsValueDataMismatch.into())
     }
 
-    // Set up coin roots database
-    if wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE).is_err() {
-        let db_coin_roots = wasm::db::db_init(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
+    // Set up coin roots database.
+    // db_lookup always succeeds (it's a handle allocator, not an existence
+    // check).  Use db_contains_key on a known marker to test whether the
+    // tree has actually been initialized.
+    let db_coin_roots = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
+    if !wasm::db::db_contains_key(db_coin_roots, &serialize(&EMPTY_COINS_TREE_ROOT))? {
         wasm::db::db_set(db_coin_roots, &serialize(&EMPTY_COINS_TREE_ROOT), &roots_value_data)?;
     }
 
     // Set up nullifier roots database
-    if wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE).is_err() {
-        let db_null_roots = wasm::db::db_init(cid, NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE)?;
+    let db_null_roots = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE)?;
+    if !wasm::db::db_contains_key(db_null_roots, &serialize(&pallas::Base::zero().to_repr()))? {
         wasm::db::db_set(
             db_null_roots,
             &serialize(&pallas::Base::zero().to_repr()),
@@ -133,44 +136,37 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     }
 
     // Set up coins database
-    if wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE).is_err() {
-        wasm::db::db_init(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
-    }
+    let _coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
 
     // Set up nullifiers database
-    if wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE).is_err() {
-        wasm::db::db_init(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
+    let _nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
+
+    // Set up info database.
+    // Use db_contains_key to check whether the info tree has actually been
+    // initialized (db_lookup always succeeds — it only allocates a handle).
+    let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
+    let version_key = NATIVE_TOKEN_CONTRACT_DB_VERSION;
+    if !wasm::db::db_contains_key(info_db, version_key)? {
+        // Create Merkle tree for coins
+        let mut coin_tree = MerkleTree::new(1);
+        coin_tree.append(MerkleNode::from(pallas::Base::ZERO));
+        let mut coin_tree_data = vec![];
+        coin_tree_data.write_u32(0)?;
+        coin_tree.encode(&mut coin_tree_data)?;
+        wasm::db::db_set(info_db, NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE, &coin_tree_data)?;
+
+        // Initialize latest roots
+        wasm::db::db_set(
+            info_db,
+            NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
+            &serialize(&EMPTY_COINS_TREE_ROOT),
+        )?;
+        wasm::db::db_set(
+            info_db,
+            NATIVE_TOKEN_CONTRACT_LATEST_NULLIFIER_ROOT,
+            &serialize(&pallas::Base::zero().to_repr()),
+        )?;
     }
-
-    // Set up info database
-    let info_db = match wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE) {
-        Ok(v) => v,
-        Err(_) => {
-            let info_db = wasm::db::db_init(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
-
-            // Create Merkle tree for coins
-            let mut coin_tree = MerkleTree::new(1);
-            coin_tree.append(MerkleNode::from(pallas::Base::ZERO));
-            let mut coin_tree_data = vec![];
-            coin_tree_data.write_u32(0)?;
-            coin_tree.encode(&mut coin_tree_data)?;
-            wasm::db::db_set(info_db, NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE, &coin_tree_data)?;
-
-            // Initialize latest roots
-            wasm::db::db_set(
-                info_db,
-                NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
-                &serialize(&EMPTY_COINS_TREE_ROOT),
-            )?;
-            wasm::db::db_set(
-                info_db,
-                NATIVE_TOKEN_CONTRACT_LATEST_NULLIFIER_ROOT,
-                &serialize(&pallas::Base::zero().to_repr()),
-            )?;
-
-            info_db
-        }
-    };
 
     wasm::db::db_set(info_db, NATIVE_TOKEN_CONTRACT_DB_VERSION, env!("CARGO_PKG_VERSION").as_bytes())?;
 
