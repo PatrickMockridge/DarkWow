@@ -278,7 +278,7 @@ rpc_retry() {
         attempt=$((attempt + 1))
         local result
         result=$(docker exec "$container" bash -c \
-            "exec 3<>/dev/tcp/127.0.0.1/$port 2>/dev/null || exit 1; echo '{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":$params,\"id\":1}' >&3; cat <&3" 2>/dev/null)
+            "exec 3<>/dev/tcp/127.0.0.1/$port 2>/dev/null || exit 1; echo '{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":$params,\"id\":1}' >&3; timeout 30 cat <&3" 2>/dev/null)
         if [ -n "$result" ] && echo "$result" | grep -q '"result"'; then
             echo "$result"
             return 0
