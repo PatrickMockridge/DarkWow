@@ -110,16 +110,16 @@ impl NativeTokenSource {
 /// A native token output discovered during block scan.
 /// Carries enough data to construct a CapRecord + MerkleProof during persistence.
 #[derive(Debug, Clone)]
-pub(crate) struct NativeTokenDiscovery {
-    pub(crate) cap_record: CapRecord,
-    pub(crate) merkle_proof: MerkleProof,
+pub struct NativeTokenDiscovery {
+    pub cap_record: CapRecord,
+    pub merkle_proof: MerkleProof,
 }
 
 /// A capability discovered via generic AEAD scan of non-native contract calls.
 #[derive(Debug, Clone)]
-pub(crate) struct CapabilityDiscovery {
-    pub(crate) cap_record: CapRecord,
-    pub(crate) merkle_proof: MerkleProof,
+pub struct CapabilityDiscovery {
+    pub cap_record: CapRecord,
+    pub merkle_proof: MerkleProof,
 }
 
 /// A nullifier published in a spending contract call.
@@ -145,11 +145,11 @@ pub(crate) struct DeploymentDiscovery {
 /// The caller persists these results to the database.
 #[derive(Debug, Clone)]
 pub struct BlockScanResult {
-    native_outputs: Vec<NativeTokenDiscovery>,
-    capabilities: Vec<CapabilityDiscovery>,
-    published_nullifiers: Vec<NullifierRecord>,
-    deployments: Vec<DeploymentDiscovery>,
-    messages: Vec<String>,
+    pub native_outputs: Vec<NativeTokenDiscovery>,
+    pub capabilities: Vec<CapabilityDiscovery>,
+    pub published_nullifiers: Vec<NullifierRecord>,
+    pub deployments: Vec<DeploymentDiscovery>,
+    pub messages: Vec<String>,
 }
 
 impl BlockScanResult {

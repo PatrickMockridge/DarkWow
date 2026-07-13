@@ -3253,6 +3253,7 @@ dependencies = [
  "dwow_promissory_note_contract",
  "dwow_stablecoin_contract",
  "dwow_tender_contract",
+ "dwow_wallet",
  "easy-parallel",
  "glob",
  "hex",
