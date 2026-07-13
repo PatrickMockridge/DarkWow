@@ -2607,15 +2607,16 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
             scan_cache.log(
                 f"  [CAPABILITY] Stage 1 (SCAN): found AEAD note at offset={off} "
                 f"consumed={consumed} cid={contract_id_bs58[:8]} height={height}")
-            off += consumed
         except Exception:
             off += 1
             continue
 
+        decrypted = False
         for sk in scan_cache.secrets:
             plaintext = aes.decrypt(sk.inner)
             if plaintext is None:
                 continue
+            decrypted = True
 
             # Compute nullifier
             nullifier_hash = hashlib.blake2b(aes.ciphertext, digest_size=32).digest()
@@ -2659,6 +2660,11 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
                 scan_cache.log(
                     f"  [CAPABILITY] Stage 3 (STORE): stored opaque cap "
                     f"nullifier={nullifier_b58[:8]} cid={contract_id_bs58[:8]} height={height}")
+
+        if decrypted:
+            off += consumed  # advance past this note only on successful decrypt
+        else:
+            off += 1  # false-positive decode: advance 1 byte, don't skip the real note
 
     return found_any
 
