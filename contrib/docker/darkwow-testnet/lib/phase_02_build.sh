@@ -149,6 +149,7 @@ phase_build() {
     if [ "$WITH_WALLET" -gt 0 ] && ! is_join_mode; then
         info "  Building wallet container..."
         docker build \
+            --pull=false \
             $BUILD_ARGS \
             --build-arg BUILD_COMMIT="${BUILD_COMMIT}" \
             --build-arg CARGO_PACKAGE="${CARGO_PACKAGE:-dwow_wallet}" \
