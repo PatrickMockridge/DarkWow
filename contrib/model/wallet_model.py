@@ -2821,15 +2821,16 @@ def _discover_native_token_outputs(params: bytes, scan_cache: ScanCache,
     while off < len(params) - 32:
         try:
             aes, consumed = AeadEncryptedNote.decode(params[off:])
-            off += consumed
         except Exception:
             off += 1
             continue
 
+        decrypted = False
         for sk in trial_secrets:
             note = aes.decrypt_as(sk.inner, NativeToken.decode)
             if note is None:
                 continue
+            decrypted = True
 
             pk = sk.to_public()
             pk_pt = AffinePoint.decompress(pk.compressed)
@@ -2864,7 +2865,11 @@ def _discover_native_token_outputs(params: bytes, scan_cache: ScanCache,
             scan_cache.log(
                 f"  [NATIVE_TOKEN] {fname} output: value={note.value} at height {height}")
             found_any = True
+            off += consumed  # advance past this note only on successful decrypt
             break  # found match — next note
+
+        if not decrypted:
+            off += 1  # false-positive decode: advance 1 byte, don't skip the real note
 
     return found_any
 

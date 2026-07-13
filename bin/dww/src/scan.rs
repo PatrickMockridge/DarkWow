@@ -373,7 +373,6 @@ fn discover_native_token_outputs(
         tracing::info!(target: "dww::scan",
             "[NATIVE_TOKEN] step=2 aead_decode status=OK offset={}", off);
         let consumed = (cursor.position() - pos_before) as usize;
-        off += consumed;
 
         let mut decrypted = false;
         for secret in &trial_secrets {
@@ -393,12 +392,14 @@ fn discover_native_token_outputs(
                     results.push((cap_record, merkle_proof));
                     messages.push(msg);
                 }
+                off += consumed; // advance past this note only on successful decrypt
                 break; // found match for this note → next note
             }
         }
         if !decrypted {
             tracing::debug!(target: "dww::scan",
                 "[NATIVE_TOKEN] step=3 aead_decrypt status=FAIL reason=\"no key matched — wallet key differs from miner\"");
+            off += 1; // false-positive decode: advance 1 byte, don't skip the real note
         }
     }
 
@@ -593,7 +594,6 @@ fn scan_block(
                 if let Ok(generic_note) = AeadEncryptedNote::decode(&mut cursor) {
                     aead_notes_tried += 1;
                     let consumed = (cursor.position() - pos_before) as usize;
-                    off += consumed;
 
                     // Build augmented secret set with per-contract derived keys
                     let mut trial_secrets: Vec<SecretKey> = account_mgr.secrets();
@@ -607,6 +607,7 @@ fn scan_block(
                         trial_secrets.extend(derived);
                     }
 
+                    let mut path2_decrypted = false;
                     for secret in &trial_secrets {
                         let Ok(raw) = generic_note.decrypt_raw(secret) else { continue };
                         // Path 2: generic manifest-driven type-construction.
@@ -656,7 +657,12 @@ fn scan_block(
                             created_at_height: height_u32,
                         };
                         result.capabilities.push(CapabilityDiscovery { cap_record, merkle_proof });
+                        path2_decrypted = true;
+                        off += consumed; // advance past this note only on successful decrypt
                         break; // our secret matched → next note
+                    }
+                    if !path2_decrypted {
+                        off += 1; // false-positive decode: advance 1 byte, don't skip the real note
                     }
                 } else {
                     off += 1;

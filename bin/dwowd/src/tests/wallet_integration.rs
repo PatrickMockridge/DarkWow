@@ -145,12 +145,8 @@ fn test_wallet_integration() {
             .await
             .expect("coinbase for height 2");
 
-        // Save the encrypted_note for wallet-friendly scan format.
-        // The wallet's Path 1 scan slides a 32-byte window over call.data[1..]
-        // looking for AeadEncryptedNote. In production PoWRewardParamsV1, the
-        // note is at a variable offset that may not land on a 32-byte boundary.
-        // The wallet expects [0x05][AeadEncryptedNote bytes] directly.
-        let encrypted_note_bytes = coinbase_2.encrypted_note.clone();
+        // Save call data before pow_reward_call is moved into the transaction
+        let pow_reward_call_data = pow_reward_call.data.clone();
 
         let tx = Transaction {
             version: 1,
@@ -247,24 +243,18 @@ fn test_wallet_integration() {
         // ================================================================
         // Phase 5: Scan Production Blocks (Path 1 Verification)
         // ================================================================
-
-        // The wallet's Path 1 scan (discover_native_token_outputs) slides a
-        // 32-byte window over call.data[1..] looking for AeadEncryptedNote.
-        // In production PoWRewardParamsV1, the note is at a variable offset
-        // that may not land on a 32-byte boundary from data[1]. The wallet
-        // expects the note directly after the function code byte.
         //
-        // To test the wallet with authentic coinbase data, we extract the
-        // encrypted_note from CoinbaseTransaction (built via the production
-        // build_linear_coinbase path) and construct wallet-friendly call data:
-        //   [0x05][AeadEncryptedNote bytes]
+        // Use production-format call data: [0x05][PoWRewardParamsV1 bytes].
+        // The wallet's Path 1 scan slides byte-by-byte over call.data[1..]
+        // looking for AeadEncryptedNote. The note is at offset 264 in
+        // serialized PoWRewardParamsV1. The scan must survive false-positive
+        // AEAD decodes at earlier offsets (VarInt + compressed point bytes
+        // that happen to look like valid AeadEncryptedNote headers).
 
-        fn build_wallet_coinbase_block(
+        fn build_coinbase_scan_block(
             height: u64,
-            encrypted_note: &[u8],
+            pow_reward_call_data: Vec<u8>,
         ) -> dwow_chain::Block {
-            let mut call_data = vec![0x05u8];
-            call_data.extend_from_slice(encrypted_note);
             dwow_chain::Block {
                 header: dwow_chain::BlockHeader {
                     version: 1,
@@ -291,7 +281,7 @@ fn test_wallet_integration() {
                     outputs: vec![],
                     contract_calls: vec![ContractCall {
                         contract_id: *NATIVE_TOKEN_CONTRACT_ID,
-                        data: call_data,
+                        data: pow_reward_call_data,
                     }],
                     lock_time: 0,
                     nullifiers: vec![],
@@ -302,9 +292,9 @@ fn test_wallet_integration() {
         let mut tree = dww.get_capability_commitment_tree()
             .expect("initial Merkle tree");
 
-        // Scan genesis coinbase (wallet-friendly format)
-        let genesis_coinbase_note = {
-            let (cb, _, _) = crate::registry::model::build_linear_coinbase(
+        // Scan genesis coinbase — production format
+        let genesis_call_data = {
+            let (_, _, call) = crate::registry::model::build_linear_coinbase(
                 crate::accounts::MiningRecipient::from_account(&miner_mgr, 1)
                     .expect("recipient"),
                 expected_gen_reward,
@@ -313,10 +303,10 @@ fn test_wallet_integration() {
             )
             .await
             .expect("rebuild genesis coinbase for note");
-            cb.encrypted_note
+            call.data
         };
         let gen_scan_block =
-            build_wallet_coinbase_block(1, &genesis_coinbase_note);
+            build_coinbase_scan_block(1, genesis_call_data);
         let result_1 = dww.scan_block_linear(&mut tree, &gen_scan_block)
             .expect("scan genesis block");
         assert!(
@@ -333,9 +323,9 @@ fn test_wallet_integration() {
             "Path1: genesis cap created_at_height must be 1"
         );
 
-        // Scan height-2 coinbase (wallet-friendly format)
+        // Scan height-2 coinbase — production format
         let b2_scan_block =
-            build_wallet_coinbase_block(2, &encrypted_note_bytes);
+            build_coinbase_scan_block(2, pow_reward_call_data);
         let result_2 = dww.scan_block_linear(&mut tree, &b2_scan_block)
             .expect("scan height-2 block");
         assert!(
