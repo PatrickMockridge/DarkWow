@@ -100,6 +100,7 @@ pub fn build_coinbase_tx(reward: u64) -> Transaction {
         contract_calls: vec![],
         lock_time: 0,
                 nullifiers: vec![],
+        witness: vec![],
     }
 }
 
@@ -112,6 +113,7 @@ pub fn build_contract_tx(contract_id: dwow_sdk::crypto::ContractId, call_data: V
         contract_calls: vec![ContractCall { contract_id, data: call_data }],
         lock_time: 0,
                 nullifiers: vec![],
+        witness: vec![],
     }
 }
 

@@ -109,23 +109,38 @@ impl DwowNode {
         {
             use dwow_sdk::dark_tree::DarkLeaf;
             use dwow_sdk::tx::ContractCall;
-            let core_tx = dwow_core::tx::Transaction {
-                calls: chain_tx.contract_calls.iter().map(|c| {
-                    DarkLeaf {
-                        data: ContractCall {
-                            contract_id: c.contract_id,
-                            data: c.data.clone(),
-                        },
-                        children_indexes: vec![],
-                        parent_index: None,
-                    }
-                }).collect(),
-                proofs: vec![],
-                signatures: vec![],
-                tx_commitment: [0u8; 32],
-                nullifiers: chain_tx.nullifiers.clone(),
-            };
-            self.p2p_handler.p2p.broadcast(&core_tx).await;
+            // L1: preserve the witness on relay. A present witness MUST decode
+            // and be relayed verbatim (proofs + signatures intact) — never
+            // silently downgraded to a proofless form (T4.3). Only an ABSENT
+            // witness (a proofless submission) reconstructs a proofless core tx,
+            // which L2 verification will reject.
+            if chain_tx.witness.is_empty() {
+                let core_tx = dwow_core::tx::Transaction {
+                    calls: chain_tx.contract_calls.iter().map(|c| {
+                        DarkLeaf {
+                            data: ContractCall {
+                                contract_id: c.contract_id,
+                                data: c.data.clone(),
+                            },
+                            children_indexes: vec![],
+                            parent_index: None,
+                        }
+                    }).collect(),
+                    proofs: vec![],
+                    signatures: vec![],
+                    tx_commitment: [0u8; 32],
+                    nullifiers: chain_tx.nullifiers.clone(),
+                };
+                self.p2p_handler.p2p.broadcast(&core_tx).await;
+            } else {
+                match dwow_serial::deserialize::<dwow_core::tx::Transaction>(&chain_tx.witness) {
+                    Ok(core_tx) => self.p2p_handler.p2p.broadcast(&core_tx).await,
+                    Err(e) => tracing::error!(
+                        target: "dwowd::rpc::tx_submit_linear",
+                        "Refusing to relay: present witness failed to decode ({}); \
+                         not downgrading to proofless", e),
+                }
+            }
         }
 
         info!(target: "dwowd::rpc::tx_submit_linear", "Transaction {} added to mempool and relayed", tx_hash);

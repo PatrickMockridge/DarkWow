@@ -337,6 +337,7 @@ mod tests {
             }],
             lock_time: 0,
             nullifiers: vec![],
+            witness: vec![],
         }
     }
 
@@ -375,6 +376,7 @@ mod tests {
                     contract_calls: vec![],  // no native token calls
                     lock_time: 0,
                             nullifiers: vec![],
+                    witness: vec![],
                 },
             ],
         };
@@ -462,6 +464,7 @@ mod tests {
                     contract_calls: vec![contract_call],
                     lock_time: 0,
                             nullifiers: vec![],
+                    witness: vec![],
                 },
             ],
         };
@@ -534,6 +537,7 @@ mod tests {
                     }],
                     lock_time: 0,
                     nullifiers: vec![],
+                    witness: vec![],
                 },
             ],
         };

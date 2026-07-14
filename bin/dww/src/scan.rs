@@ -1185,6 +1185,7 @@ mod tests {
                 }],
                 lock_time: 0,
                 nullifiers: vec![],
+                witness: vec![],
             }],
         };
 
@@ -1305,7 +1306,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         let tx = Transaction {
             version: 1, inputs: vec![], outputs: vec![],
             contract_calls: vec![dwow_chain::ContractCall { contract_id: foreign_cid, data: call_data }],
-            lock_time: 0, nullifiers: vec![],
+            lock_time: 0, nullifiers: vec![], witness: vec![],
         };
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
@@ -1396,7 +1397,7 @@ produces = [{ name = "thing" }]
         let tx = Transaction {
             version: 1, inputs: vec![], outputs: vec![],
             contract_calls: vec![dwow_chain::ContractCall { contract_id: foreign_cid, data: call_data }],
-            lock_time: 0, nullifiers: vec![],
+            lock_time: 0, nullifiers: vec![], witness: vec![],
         };
         let h = 99u64;
         let block = dwow_chain::Block {
@@ -1477,7 +1478,7 @@ required_barbs = ["Spend","Mine"]
         let tx = Transaction {
             version: 1, inputs: vec![], outputs: vec![],
             contract_calls: vec![dwow_chain::ContractCall { contract_id: foreign_cid, data: call_data }],
-            lock_time: 0, nullifiers: vec![],
+            lock_time: 0, nullifiers: vec![], witness: vec![],
         };
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {

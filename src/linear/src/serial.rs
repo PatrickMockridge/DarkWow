@@ -96,6 +96,11 @@ impl AsyncEncodable for Transaction {
         len += self.outputs.encode_async(s).await?;
         len += self.contract_calls.encode_async(s).await?;
         len += self.lock_time.encode_async(s).await?;
+        // Round-trip ALL fields (L1): nullifiers and the authenticated `witness`
+        // must not be dropped by the binary codec, or any future path routing a
+        // chain tx/block through dwow_serial would silently lose the witness.
+        len += self.nullifiers.encode_async(s).await?;
+        len += self.witness.encode_async(s).await?;
         Ok(len)
     }
 }
@@ -108,7 +113,9 @@ impl AsyncDecodable for Transaction {
         let outputs = AsyncDecodable::decode_async(d).await?;
         let contract_calls = AsyncDecodable::decode_async(d).await?;
         let lock_time = AsyncDecodable::decode_async(d).await?;
-        Ok(Self { version, inputs, outputs, contract_calls, lock_time, nullifiers: vec![] })
+        let nullifiers = AsyncDecodable::decode_async(d).await?;
+        let witness = AsyncDecodable::decode_async(d).await?;
+        Ok(Self { version, inputs, outputs, contract_calls, lock_time, nullifiers, witness })
     }
 }
 

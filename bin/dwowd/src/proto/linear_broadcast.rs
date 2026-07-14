@@ -217,8 +217,10 @@ pub async fn broadcast_block(p2p: &P2pPtr, block: dwow_chain::Block) {
 // Receive Loop
 // ============================================================================
 
-/// Max block size in bytes for P2P reception (4 MB).
-const MAX_BLOCK_SIZE: usize = 4 * 1024 * 1024;
+/// Max block size in bytes for P2P reception. Pinned to the single shared
+/// source of truth (L1 barrier #7) so the wire decode cap and the miner's
+/// template byte cap can never drift apart.
+const MAX_BLOCK_SIZE: usize = dwow_chain::execution::MAX_BLOCK_SIZE;
 
 /// Handle incoming block messages from peers
 async fn handle_receive_block(

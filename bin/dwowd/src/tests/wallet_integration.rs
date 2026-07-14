@@ -155,6 +155,7 @@ fn test_wallet_integration() {
             contract_calls: vec![pow_reward_call],
             lock_time: 0,
             nullifiers: vec![],
+            witness: vec![],
         };
         let merkle_root = tx.hash();
         let gen_hash = har.chain_state.hash_block_with_cached_vm(&gen_block);
@@ -285,6 +286,7 @@ fn test_wallet_integration() {
                     }],
                     lock_time: 0,
                     nullifiers: vec![],
+                    witness: vec![],
                 }],
             }
         }
@@ -491,6 +493,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 }],
                 lock_time: 0,
                 nullifiers: vec![],
+                witness: vec![],
             }],
         };
 
@@ -684,6 +687,7 @@ required_barbs = ["Spend","Mine"]
                 }],
                 lock_time: 0,
                 nullifiers: vec![],
+                witness: vec![],
             }],
         };
 

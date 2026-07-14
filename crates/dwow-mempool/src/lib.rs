@@ -541,6 +541,7 @@ mod tests {
             contract_calls: calls,
             lock_time: 0,
             nullifiers: vec![],
+            witness: vec![],
         };
         if let Some(f) = fee {
             // Add a mock FeeV1 call to set the fee

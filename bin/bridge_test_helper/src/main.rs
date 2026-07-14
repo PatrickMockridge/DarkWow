@@ -292,6 +292,7 @@ let contract_call = dwow_chain::ContractCall {
         contract_calls: vec![contract_call],
         lock_time: 0,
         nullifiers: vec![],
+        witness: vec![],
     };
 
     // Serialize to JSON and base64-encode

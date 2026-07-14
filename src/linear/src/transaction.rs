@@ -254,12 +254,55 @@ pub struct Transaction {
     /// hash determinism across code versions.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub nullifiers: Vec<Nullifier>,
+    /// L1 authenticated-transaction carriage: the opaque, dwow_serial-encoded
+    /// witness bundle — the ZK proofs, signatures, and tx_commitment of the core
+    /// transaction. Carried and persisted so a verifier (L2) can check it;
+    /// EXCLUDED from `hash()` — block identity commits to transaction semantics,
+    /// never to interchangeable witness bytes (see `hash`). Empty for the
+    /// coinbase and for not-yet-populated txs; omitted from JSON when empty, so
+    /// the persisted and wire format stays byte-identical to the pre-witness
+    /// format (no fork, no genesis regen).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub witness: Vec<u8>,
+}
+
+/// `skip_serializing_if` helper for the borrowed `nullifiers` field of the hash
+/// preimage (a `&&Vec` because the field is a reference). See `Transaction::hash`.
+fn vec_ref_is_empty<T>(v: &&Vec<T>) -> bool {
+    v.is_empty()
 }
 
 impl Transaction {
-    /// Calculate the hash of this transaction
+    /// Calculate the hash of this transaction.
+    ///
+    /// L1 barrier #1 — identity/witness decoupling. The hash commits ONLY to the
+    /// transaction's semantics (version, inputs, outputs, contract_calls,
+    /// lock_time, nullifiers) and NEVER to the `witness` (ZK proofs + signatures
+    /// + tx_commitment). ZK proofs are interchangeable, randomized witnesses;
+    /// binding block identity to proof bytes would fork the merkle root and the
+    /// RandomX header hash the instant proofs are populated. The identity
+    /// preimage is byte-identical to the pre-witness `serde_json(self)`, so every
+    /// existing block hash and the pinned genesis hash are preserved.
     pub fn hash(&self) -> Hash {
-        let data = serde_json::to_vec(self).unwrap_or_else(|e| {
+        #[derive(Serialize)]
+        struct TxIdentity<'a> {
+            version: u8,
+            inputs: &'a Vec<TxInput>,
+            outputs: &'a Vec<TxOutput>,
+            contract_calls: &'a Vec<ContractCall>,
+            lock_time: u64,
+            #[serde(skip_serializing_if = "vec_ref_is_empty")]
+            nullifiers: &'a Vec<Nullifier>,
+        }
+        let identity = TxIdentity {
+            version: self.version,
+            inputs: &self.inputs,
+            outputs: &self.outputs,
+            contract_calls: &self.contract_calls,
+            lock_time: self.lock_time,
+            nullifiers: &self.nullifiers,
+        };
+        let data = serde_json::to_vec(&identity).unwrap_or_else(|e| {
             tracing::error!(target: "dwow_chain::transaction",
                 "Transaction::hash serialization failed: {}", e);
             vec![0u8; 32] // deterministic fallback — unreachable with current types
@@ -284,6 +327,7 @@ mod tests {
             contract_calls: vec![],
             lock_time: 0,
             nullifiers: vec![],
+            witness: vec![],
         };
 
         let hash1 = tx.hash();
@@ -307,6 +351,7 @@ mod tests {
             contract_calls: vec![],
             lock_time: 0,
             nullifiers: vec![nf],
+            witness: vec![],
         };
 
         let json = serde_json::to_vec(&tx).unwrap();
@@ -325,6 +370,7 @@ mod tests {
             contract_calls: vec![],
             lock_time: 0,
             nullifiers: vec![],
+            witness: vec![],
         };
 
         let json_str = serde_json::to_string(&tx).unwrap();
@@ -332,6 +378,90 @@ mod tests {
             !json_str.contains("\"nullifiers\""),
             "empty nullifiers MUST be omitted from JSON output: {}",
             json_str
+        );
+    }
+
+    /// L1 barrier #1: `hash()` uses an identity-only preimage that is
+    /// byte-identical to `serde_json(self)` for a witness-less transaction, so
+    /// every existing block hash and the pinned genesis hash are preserved.
+    #[test]
+    fn test_hash_preimage_matches_self_for_witnessless_tx() {
+        // Empty case (nullifiers skipped).
+        let tx = Transaction {
+            version: 1,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![],
+            lock_time: 0,
+            nullifiers: vec![],
+            witness: vec![],
+        };
+        assert_eq!(
+            blake3::hash(&serde_json::to_vec(&tx).unwrap()),
+            tx.hash(),
+            "identity hash == serde_json(self) hash (witness-less, empty nullifiers)"
+        );
+
+        // With-nullifier case (exercises the skip boundary).
+        let tx2 = Transaction {
+            nullifiers: vec![Nullifier::from_bytes([1u8; 32]).unwrap()],
+            ..tx.clone()
+        };
+        assert_eq!(
+            blake3::hash(&serde_json::to_vec(&tx2).unwrap()),
+            tx2.hash(),
+            "identity hash == serde_json(self) hash (witness-less, with nullifiers)"
+        );
+    }
+
+    /// L1 barrier #1 (operational): populating the `witness` (proofs +
+    /// signatures + tx_commitment) MUST NOT change `tx.hash()`. Block identity
+    /// commits to transaction semantics, not to interchangeable witness bytes —
+    /// this is what preserves every existing block hash and the genesis hash
+    /// once proofs are actually carried.
+    #[test]
+    fn test_witness_excluded_from_hash() {
+        let mut tx = Transaction {
+            version: 1,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![],
+            lock_time: 0,
+            nullifiers: vec![Nullifier::from_bytes([2u8; 32]).unwrap()],
+            witness: vec![],
+        };
+        let h_empty = tx.hash();
+        tx.witness = vec![9u8; 4096];
+        assert_eq!(h_empty, tx.hash(), "populating the witness MUST NOT change tx.hash()");
+        tx.witness = vec![0xAB; 100];
+        assert_eq!(h_empty, tx.hash(), "any witness → identical hash");
+    }
+
+    /// L1: the `witness` rides the serde_json format used for block persistence,
+    /// the block P2P wire, and mempool storage — round-tripping a proof-carrying
+    /// tx MUST preserve the witness bytes and MUST NOT change the hash. An empty
+    /// witness MUST be omitted from JSON (byte-identical to the pre-witness
+    /// format — no fork, no genesis regen).
+    #[test]
+    fn test_witness_survives_serde_roundtrip() {
+        let tx = Transaction {
+            version: 1,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![],
+            lock_time: 0,
+            nullifiers: vec![],
+            witness: vec![1u8, 2, 3, 4, 5],
+        };
+        let json = serde_json::to_vec(&tx).unwrap();
+        let tx2: Transaction = serde_json::from_slice(&json).unwrap();
+        assert_eq!(tx2.witness, tx.witness, "witness must survive the serde round-trip");
+        assert_eq!(tx.hash(), tx2.hash(), "hash stable across a witness round-trip");
+
+        let empty = Transaction { witness: vec![], ..tx.clone() };
+        assert!(
+            !serde_json::to_string(&empty).unwrap().contains("witness"),
+            "empty witness MUST be omitted from JSON (byte-identical to pre-witness format)"
         );
     }
 }

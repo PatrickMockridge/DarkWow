@@ -109,6 +109,13 @@ impl ProtocolTxHandler {
                                         .collect(),
                                     lock_time: 0,
                                                                         nullifiers: core_tx.nullifiers.clone(),
+                                    // L1: carry the full authenticated tx (proofs +
+                                    // signatures + tx_commitment) as opaque bytes so it
+                                    // is persisted and a verifier (L2) can check it.
+                                    // Excluded from Transaction::hash() (identity is the
+                                    // semantic projection above). Store-verbatim — never
+                                    // re-derived.
+                                    witness: dwow_serial::serialize(&core_tx),
                                 };
                                 if !chain_tx.contract_calls.is_empty() {
                                     match mp.add(chain_tx).await {

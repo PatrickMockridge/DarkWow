@@ -353,6 +353,7 @@ mod tests {
                 contract_calls: vec![pow_reward_call],
                 lock_time: 0,
                 nullifiers: vec![],
+                witness: vec![],
             };
             let merkle_root = tx.hash();
 

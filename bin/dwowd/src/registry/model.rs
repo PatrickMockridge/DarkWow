@@ -357,15 +357,32 @@ pub async fn generate_linear_block_template(
     // Remaining txs stay in the mempool for the next block.
     let gas_limit = dwow_core::runtime::vm_runtime::GAS_LIMIT;
     let block_gas_limit = dwow_chain::execution::BLOCK_GAS_LIMIT;
+    // L1 barrier #7: also cap by serialized byte size so the miner never builds
+    // a block that peers reject at the wire cap (MAX_BLOCK_SIZE). Proof witnesses
+    // ride inside each tx now, so gas accounting alone is insufficient. Reserve
+    // headroom for the block header and the coinbase tx added after this
+    // selection (uncles are persisted in a separate tree, not in the wire Block).
+    let byte_budget = dwow_chain::execution::MAX_BLOCK_SIZE.saturating_sub(512 * 1024);
     let transactions: Vec<dwow_chain::Transaction> = {
         let mut capped = Vec::new();
         let mut estimated_gas: u64 = 0;
+        let mut estimated_bytes: usize = 0;
         for tx in transactions {
             let call_gas = tx.contract_calls.len() as u64 * gas_limit;
-            if estimated_gas + call_gas > block_gas_limit {
+            // A tx that cannot be serialized cannot be broadcast/persisted; skip
+            // it — never let an overflow smuggle an un-serializable tx into the
+            // block (release-mode wraparound would otherwise pass the check).
+            let tx_bytes = match serde_json::to_vec(&tx) {
+                Ok(v) => v.len(),
+                Err(_) => continue,
+            };
+            if estimated_gas.saturating_add(call_gas) > block_gas_limit
+                || estimated_bytes.saturating_add(tx_bytes) > byte_budget
+            {
                 break; // stop here; remainder stays in mempool
             }
             estimated_gas += call_gas;
+            estimated_bytes += tx_bytes;
             capped.push(tx);
         }
         capped
