@@ -60,16 +60,21 @@ proof_circuit = "BlindOutput_V1"
 discriminant = 0
 name = "coin"
 description = "An unspent coin in the wallet — can be spent via burn, transfer, or redeem. Consumable."
+primitives = ["SecretKey","Coin","Nullifier","ContractId","FuncId","TokenId","MerkleNode"]
+note_schema = [{ name = "value", type = "u64" }, { name = "commitment", type = "pallas_base" }]
 
 [[capabilities]]
 discriminant = 1
 name = "mint_authority"
 description = "Knowledge of the mint_secret for a specific token_id — allows minting new coins of that token. Non-consumable."
+primitives = ["SecretKey","Nullifier","ContractId","FuncId","TokenId"]
 
 [[capabilities]]
 discriminant = 2
 name = "receipt"
 description = "A zero-value receipt coin from RedeemV1 — cryptographic proof of redemption. Non-transferable, non-consumable."
+primitives = ["Coin","ContractId","FuncId","TokenId","MerkleNode"]
+note_schema = [{ name = "value", type = "u64" }, { name = "commitment", type = "pallas_base" }]
 
 # ============================================================================
 # Actions
@@ -80,36 +85,42 @@ function = "token_mint"
 requires = { type = "none" }
 consumes = []
 produces = [{ name = "mint_authority", description = "Mint authority for the newly created token" }]
+required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
 [[actions]]
 function = "mint"
 requires = { type = "all", capabilities = ["mint_authority"] }
 consumes = []
 produces = [{ name = "coin", description = "Newly minted coins" }]
+required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
 [[actions]]
 function = "burn"
 requires = { type = "any", capabilities = ["coin"] }
 consumes = ["coin"]
 produces = []
+required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
 [[actions]]
 function = "transfer"
 requires = { type = "any", capabilities = ["coin"] }
 consumes = ["coin"]
 produces = [{ name = "coin", description = "New blind output coins" }]
+required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
 [[actions]]
 function = "redeem"
 requires = { type = "any", capabilities = ["coin"] }
 consumes = ["coin"]
 produces = [{ name = "receipt", description = "Zero-value receipt coin — proof of redemption" }]
+required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
 [[actions]]
 function = "otc_swap"
 requires = { type = "any", capabilities = ["coin"] }
 consumes = ["coin"]
 produces = [{ name = "coin", description = "New blind output coins for both swap parties" }]
+required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
 # ============================================================================
 # State Trees
