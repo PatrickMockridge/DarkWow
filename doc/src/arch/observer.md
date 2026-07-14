@@ -1,6 +1,6 @@
 # Observer (Relay Node)
 
-*Bitcoin-style community relay full node. No mining. Full validation. Active relay.*
+*Bitcoin-style community relay full node. No mining. Full validation. Active relay using structured fan-out gossip.*
 
 ## Design Intent
 
@@ -72,8 +72,12 @@ relay-only mode" and devotes all compute to validation and relay.
 ### Steady State
 
 - **Block relay**: Incoming blocks are validated (PoW, proof-of-token-balance,
-  WASM). Valid blocks are accepted and immediately rebroadcast to all connected
-  peers. Height-gap rejection handles duplicates gracefully.
+  WASM). Valid blocks are accepted and relayed via structured fan-out gossip:
+  `k = ⌈log₂(N)⌉` randomly selected peers receive the block (see
+  [P2P Network](net/p2p-network.md#structured-gossip)). The `broadcast_block()`
+  function at `linear_broadcast.rs:206-256` implements this. The receive-side
+  relay at `:385` currently uses `p2p.broadcast()` (flood) — an acknowledged
+  limitation. Height-gap rejection handles duplicates gracefully.
 
 - **Transaction relay**: P2P-received transactions are added to the mempool and
   broadcast to all peers. JSON-RPC-submitted transactions (`tx.submit_linear`)

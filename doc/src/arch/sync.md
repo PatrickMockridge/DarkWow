@@ -332,6 +332,22 @@ bin/dwowd/src/tests/
 └── sync_native.rs       # Full ZK verification test
 ```
 
+## Gossip Propagation
+
+Block sync messages are carried over the P2P network using structured fan-out
+gossip. The `broadcast_block()` function at `linear_broadcast.rs:206-256`
+implements the ρ-calculus `GossipStructured(b)` process (see
+[Type System §10.2](type-system.md#102-blockchain-path--structured-gossip)):
+each block is relayed to `k = ⌈log₂(N)⌉` randomly selected peers, producing
+O(log N) propagation rounds with O(k·N) total messages.
+
+Sync-specific messages (`GetTip`, `GetBlocks`) use point-to-point P2P channels
+and do not require structured gossip. Block broadcast is the only sync message
+path that uses fan-out propagation.
+
+See [P2P Network](net/p2p-network.md#structured-gossip) and
+[Observer](observer.md) (relay behavior).
+
 ## Related Documentation
 
 - [ZK Verification](./zk/zk_verification.md) - Detailed ZK verifier design
