@@ -35,6 +35,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
+use rand::seq::SliceRandom;
 use dwow_core::{
     impl_p2p_message,
     net::{
@@ -202,15 +203,52 @@ impl LinearBroadcastHandler {
 // Broadcast Function
 // ============================================================================
 
-/// Broadcast a block to all connected peers
+/// Fan-out block relay — structured gossip replacing flood broadcast.
+///
+/// Replaces O(N²) flood broadcast with fan-out = ⌈log₂(N)⌉ randomly
+/// selected peers. This is the ρ-calculus `GossipStructured` process
+/// from type-system.md §10.2. Propagation: O(log N) rounds, O(k·N)
+/// total messages — optimal for epidemic dissemination.
+///
+/// Falls back to flood broadcast when ≤ 2 peers are connected.
 pub async fn broadcast_block(p2p: &P2pPtr, block: dwow_chain::Block) {
     let msg = BlockBroadcast { block };
+    let height = msg.block.header.height;
+
+    let peers = p2p.hosts().peers();
+    let n = peers.len();
+
+    if n <= 2 {
+        // Fallback: with ≤ 2 peers, fan-out = all peers = flood
+        tracing::debug!(
+            target: "dwowd::proto::linear_broadcast",
+            "Broadcasting block at height {} to {} peers (flood — too few peers for fan-out)",
+            height, n,
+        );
+        p2p.broadcast(&msg).await;
+        return;
+    }
+
+    // Fan-out: k = ⌈log₂(N)⌉, minimum 2
+    let k = ((n as f64).log2().ceil() as usize).max(2);
+    let mut rng = rand::thread_rng();
+    let selected: Vec<_> = peers.choose_multiple(&mut rng, k).collect();
+
     tracing::debug!(
         target: "dwowd::proto::linear_broadcast",
-        "Broadcasting block at height {} to peers",
-        msg.block.header.height
+        "Fan-out block at height {}: {}/{} peers selected (k=⌈log₂({})⌉={})",
+        height, selected.len(), n, n, k,
     );
-    p2p.broadcast(&msg).await
+
+    for peer in selected {
+        if let Err(e) = peer.send(&msg).await {
+            tracing::warn!(
+                target: "dwowd::proto::linear_broadcast",
+                "Fan-out send to {} failed: {}",
+                peer.address(), e,
+            );
+        }
+    }
 }
 
 // ============================================================================
