@@ -63,6 +63,7 @@ use dwow_sdk::deploy::DeployParamsV1;
 
 use crate::CChainState;
 use crate::LinearStore;
+use crate::schedule::ExecutionSchedule;
 use dwow_core::runtime::vm_runtime::RuntimeBackend;
 
 /// Maximum gas a single block can consume across all contract calls.
@@ -381,6 +382,12 @@ pub fn execute_block(
 
     let mut written_keys: HashSet<Vec<u8>> = HashSet::new();
 
+    // Collect per-call write key sets for ExecutionSchedule diagnostic.
+    // This is the SHALL-analyze step from type-system.md §9.4: compute the
+    // dependency graph and log the parallelism potential without changing
+    // execution order (wasmer blocks true parallelism — Tier 6).
+    let mut per_call_keys: Vec<HashSet<Vec<u8>>> = Vec::with_capacity(results.len());
+
     for r in results.iter().filter(|r| r.is_canonical) {
         if r.success {
             calls_executed += 1;
@@ -395,13 +402,16 @@ pub fn execute_block(
             // any key is written twice.
             if let Some(ref diff) = r.diff {
                 let overlay_state = SledTreeOverlayState::from(diff);
+                let mut call_keys: HashSet<Vec<u8>> = HashSet::new();
                 for key in overlay_state.cache.keys().chain(overlay_state.removed.iter()) {
                     if !written_keys.insert(key.to_vec()) {
                         return Err(Error::Custom(
                             "DuplicateKeyConflict: same-block double-write detected".to_string()
                         ));
                     }
+                    call_keys.insert(key.to_vec());
                 }
+                per_call_keys.push(call_keys);
                 main_overlay.add_diff(diff);
             }
         } else {
@@ -428,6 +438,26 @@ pub fn execute_block(
         } else {
             uncle_calls_failed += 1;
         }
+    }
+
+    // ---- ExecutionSchedule diagnostic (§9.4) ----
+    // Compute the parallelism potential from per-call write key sets.
+    // This does not change execution order — it logs what COULD be parallel
+    // when wasmer supports concurrent Runtime instances (Tier 6).
+    if !per_call_keys.is_empty() {
+        let schedule = ExecutionSchedule::build(&per_call_keys);
+        let total = schedule.total_calls();
+        let max_par = schedule.max_parallelism();
+        let score = if total > 0 { max_par as f64 / total as f64 } else { 0.0 };
+        info!(
+            target: "execution",
+            "ExecutionSchedule: {} calls, {} waves, max_parallelism={}, fully_parallel={}, score={:.2}",
+            total,
+            schedule.wave_count(),
+            max_par,
+            schedule.is_fully_parallel(),
+            score,
+        );
     }
 
     if calls_failed > 0 {
