@@ -1158,10 +1158,10 @@ impl Dww {
         proofs: Vec<Vec<u8>>,
     ) -> Result<Transaction> {
         // Manifest-driven fallback storage — lives outside the or_else chain so
-        // the reference survives. Contracts deployed with manifests but without
-        // hardcoded registry entries are invocable for functions that don't need
-        // bespoke Rust param encoding (manifests are a 1:1 superset of the registry).
+        // the reference survives. Stores both the synthetic metadata AND the
+        // full manifest so the dispatch block can construct ManifestContractClient.
         let mut _manifest_owned: Option<crate::contract_metadata::ContractMetadata> = None;
+        let mut _manifest_full: Option<dwow_sdk::manifest::ContractManifest> = None;
 
         // First try to look up as contract name (e.g., "dao_escrow")
         // If not found, try to parse as Base58 contract ID
@@ -1185,16 +1185,19 @@ impl Dww {
             })
             .or_else(|| {
                 // Manifest-driven: load stored manifest, build metadata on the fly.
+                // P4 Step 4: retain the FULL manifest so the dispatch block can
+                // construct a ManifestContractClient and reach circuit_registry.
                 let cid = crate::contract_imports::get_contract_id(contract_id_or_name)?;
                 let cid_str = bs58::encode(cid.to_bytes()).into_string();
                 let m = self.wallet.get_contract_manifest(&cid_str).ok()??;
                 let f = m.functions.iter().find(|f| f.name == function)?;
                 let name: &'static str = Box::leak(f.name.clone().into_boxed_str());
+                _manifest_full = Some(m.clone());
                 _manifest_owned = Some(crate::contract_metadata::ContractMetadata {
                     name,
                     functions: vec![crate::contract_metadata::FunctionSignature {
                         name, code: f.code, requires_proof: f.requires_proof,
-                        proof_circuit: None,
+                        proof_circuit: None, // manifest uses ManifestContractClient directly
                     }],
                 });
                 _manifest_owned.as_ref()
@@ -1242,6 +1245,34 @@ impl Dww {
                     proofs: proofs.into_iter().map(|p| Proof::new(p)).collect(),
                 };
                 let (mut tx, ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, &self.account_mgr, leaf, None, None)?;
+                let mut all_secrets = self.account_mgr.secrets();
+                all_secrets.extend(ephemeral);
+                let sigs = tx.create_sigs(&all_secrets)
+                    .map_err(|e| Error::Custom(format!("create_sigs: {}", e)))?;
+                tx.signatures.push(sigs);
+                return Ok(tx);
+            }
+            // P4 Step 4: if a stored manifest exists, construct a
+            // ManifestContractClient — this connects the wallet to the
+            // circuit_registry.
+            if let Some(ref manifest) = _manifest_full {
+                use dwow_sdk::contract_client::ContractClient;
+                let mc = dwow_sdk::contract_client::ManifestContractClient::new(
+                    metadata.name, manifest.clone(),
+                );
+                let (contract_call_data, builder_proofs) = mc
+                    .build(function, params.unwrap_or("{}"), self)
+                    .map_err(|e| Error::Custom(e))?;
+                call_data.extend_from_slice(&contract_call_data);
+
+                let contract_call = ContractCall { contract_id, data: call_data };
+                let leaf = ContractCallLeaf {
+                    call: contract_call,
+                    proofs: builder_proofs.into_iter().map(|p| Proof::new(p)).collect(),
+                };
+                let (mut tx, ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(
+                    &self.wallet, &self.account_mgr, leaf, None, None,
+                )?;
                 let mut all_secrets = self.account_mgr.secrets();
                 all_secrets.extend(ephemeral);
                 let sigs = tx.create_sigs(&all_secrets)
