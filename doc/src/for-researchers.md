@@ -89,10 +89,38 @@ Three independent trust layers:
 See [Contract Trust Model](arch/contract-trust-model.md) and
 [Formal Specification](arch/formal-specification.md).
 
-## Quantum threat model
+## Quantum and Post-Quantum Security
 
-See [Quantum Threat Analysis](arch/quantum-threat.md) and
-[Quantum OS](arch/quantum-os.md).
+DarkWow's quantum security posture is documented across three specifications:
+
+- **[Quantum Threat Model](arch/quantum-threat.md)** — Formal threat specification
+  with quantified qubit requirements, Grover impact on hash widths, migration
+  trigger criteria (T1-T5 with coinbase signaling), retroactive privacy analysis,
+  and circuit inventory for migration planning. Start here to understand the threat
+  landscape.
+
+- **[Post-Quantum Proving System Requirements](arch/zk/post-quantum-proving-system.md)** —
+  Formal specification of 18 functional requirements (FR-1 through FR-18) a
+  post-Halo2 proving system must satisfy for like-for-like replacement. The
+  "swap-out spec" — maps each of Halo2's 12 properties to a functional requirement
+  and defines the API surface, constraint system interface, arithmetization
+  requirements, and quantum resistance requirements.
+
+- **[ZK Engineering Posture](arch/zk-engineering-posture.md)** — Three-tier circuit
+  classification (Tier 1: Schnorr-sufficient, Tier 2: mixed, Tier 3: genuinely
+  needs ZK) that informs migration priority.
+
+**Current posture:** Halo2 proofs rely on ECDLP (Shor-vulnerable). Hash functions
+(Poseidon, Sinsemilla, Blake2b) are quantum-safe up to Grover's quadratic speedup.
+P2P signatures (ed25519) are ECDLP-vulnerable. Note encryption (X25519) is ECDLP-
+vulnerable. The architecture is designed for community-coordinated hard fork when
+quantum timeline clarifies. No emergency governance — PoW-driven migration.
+
+**PQXDH research:** A Signal PQXDH implementation (Kyber-1024 + X25519 + Double
+Ratchet) exists at `script/research/pqxdh/` and provides the note encryption
+migration path.
+
+See also [Quantum OS](arch/quantum-os.md) for the ZFA-algebra design comparison.
 
 ## Reference
 

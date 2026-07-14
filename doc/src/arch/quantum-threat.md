@@ -54,6 +54,48 @@ known Halo2 variant that replaces the curve with a quantum-resistant primitive
 while preserving the proving efficiency and recursion properties that make Halo2
 practical.
 
+### Primitive Vulnerability Table
+
+| Primitive | Location | Hardness Assumption | Quantum Breakdown | Mitigation |
+|---|---|---|---|---|
+| Halo2 PLONK (Pallas/Vesta) | `src/zk/vm.rs`, `src/zk/proof.rs` | ECDLP over Pallas (~255-bit) | Broken by Shor (polynomial time) | Replace proving system (see [Post-Quantum Proving System](zk/post-quantum-proving-system.md)) |
+| ed25519 signatures | P2P layer, wallet auth | ECDLP over Curve25519 | Broken by Shor | NIST PQC signatures (Dilithium/FALCON) |
+| X25519 key agreement | AEAD note encryption | ECDH over Curve25519 | Broken by Shor | Kyber-1024 hybrid (see [PQXDH](#retroactive-privacy-protection)) |
+| Poseidon P128Pow5T3 | Coin commitments, nullifiers, SMT | Collision resistance | Grover: 128-bit classic → ~85-bit quantum | Double width to P256Pow5T3 |
+| Sinsemilla | Merkle tree hashing | Collision resistance | Grover: same analysis | Migrate to Poseidon-based Merkle (SparseMerkleRoot exists) |
+| Blake2b | Fiat-Shamir transcript | Collision resistance | Grover: 512-bit → 256-bit PQ | Acceptable; no migration needed |
+| ChaCha20Poly1305 | AEAD note encryption | Symmetric security | Grover: 256-bit key → 128-bit PQ | Acceptable |
+| RandomX | PoW | Hash preimage | Grover: quadratic speedup | Acceptable; ASIC-resistance preserved |
+
+### Quantified Qubit Requirements
+
+| Attack Target | Algorithm | Logical Qubits (approx.) | Physical Qubits (surface code, d~30) | Gate Depth |
+|---|---|---|---|---|
+| ECDLP over Pallas (~255-bit) | Shor | ~1,500-3,000 | ~10^7-10^8 | ~2^33 Toffoli |
+| ed25519 discrete log | Shor | ~1,500 | ~10^7 | ~2^33 |
+| Poseidon 128-bit collision | Grover | ~10^4 (estimate) | ~10^6 | Lower than Shor |
+| Kyber-1024 | Known attacks | None | None | N/A |
+
+### Grover Impact on Hash Widths
+
+Poseidon P128Pow5T3 derives its "128" from the classical collision resistance
+level. Under Grover's algorithm, collision-finding is accelerated:
+
+- **Plain Grover**: O(2^(n/2)) — effective security drops from 128-bit to
+  ~85-bit for collision resistance
+- **BHT algorithm** (Brassard-Høyer-Tapp): O(2^(n/3)) — further reduces
+  effective security for some constructions
+
+For 128-bit post-quantum security, the hash width SHALL double:
+`P128Pow5T3 → P256Pow5T3`. This increases constraint count per hash
+invocation from ~1,500 to ~3,000 (roughly linear with state size).
+
+Sinsemilla produces a ~255-bit field element; effective PQ security is ~127
+bits — marginal for a 128-bit target. Recommendation: migrate Merkle hashing
+to Poseidon-based (SparseMerkleRoot opcode already exists).
+
+Blake2b at 512-bit output gives 256-bit PQ security — no migration needed.
+
 **For DarkWow specifically:** the zkVM's 39 opcodes, all 120 contract circuits,
 the Pedersen commitments, the Sinsemilla hashes, the Merkle inclusion proofs —
 all of them bottom out on ECDLP over Pallas. A CRQC does not find a clever bug.
@@ -108,6 +150,81 @@ Grover-quadratic sense), but every ZK contract becomes a decrypted ledger.
 quantum-resistant up to Grover's quadratic speedup), the linear blockchain
 structure, the P2P network, the WASM runtime, and any contract logic that
 does not depend on ZK proofs.
+
+---
+
+## Retroactive Privacy Protection
+
+### The Problem
+
+Every Pedersen commitment on the Merkle tree since genesis becomes
+de-committed under a CRQC. Every shielded transaction becomes transparent.
+This is not fixable post-hoc — privacy that relied on ECDLP is permanently
+lost for historical blocks. All ZK blockchains share this exposure.
+
+**Harvest-now-decrypt-later (HNDL)**: an adversary storing all encrypted
+notes today can decrypt them once a CRQC breaks X25519. Current note
+encryption uses X25519 DH + ChaCha20Poly1305 in `AeadEncryptedNote`.
+
+### What Can Be Protected Going Forward
+
+1. **Forward-secret note encryption**: If PQXDH (Kyber-1024 + X25519 hybrid)
+   is adopted for note encryption before a CRQC emerges, notes encrypted
+   AFTER the migration are protected. The Kyber-1024 shared secret protects
+   the AEAD key even if X25519 is broken. See `script/research/pqxdh/` for
+   the existing research implementation.
+
+2. **Nullifier privacy**: Nullifiers reveal only that a coin was spent, not
+   its value or recipient. Current nullifier derivation uses Poseidon
+   (`poseidon_hash(spend_key, coin_hash)`) — an EC-independent construction
+   that survives CRQC. Nullifier privacy is preserved.
+
+3. **User guidance**: Pre-migration shielded transactions SHALL be considered
+   pseudonymous, not anonymous, in a post-CRQC world. This is a known
+   limitation of ALL ZK blockchains today and SHALL be documented for users.
+
+### Migration Timeline
+
+PQXDH for note encryption SHALL be deployed BEFORE Trigger T1 (1,500 logical
+qubits demonstrated). This closes the HNDL window for post-migration notes.
+Notes can carry a version byte: v1 = X25519-only (vulnerable to retroactive
+decryption), v2 = PQXDH hybrid (protected).
+
+---
+
+## Migration Trigger Criteria
+
+Explicit, observable criteria that would activate a quantum-resistant fork.
+Triggers are cumulative — each builds on the previous.
+
+| # | Trigger | Threshold | Observable Signal | Action |
+|---|---|---|---|---|
+| T1 | Logical qubit milestone | ≥ 1,500 logical qubits demonstrated (error-corrected, 2-qubit gate fidelity > 99.9%) | Published in Nature/Science/PRL or NIST/NSA advisory | Begin hash width doubling (Poseidon, Sinsemilla). Deploy PQXDH for note encryption. |
+| T2 | ECDLP factoring milestone | ≥ 112-bit ECDLP broken (secp112r1) | Published cryptanalysis result | Begin STARK migration of Tier 3 circuits |
+| T3 | CRQC demonstration | ≥ 256-bit ECDLP broken or ≥ 2,048-bit RSA factored | Published result | Emergency hard fork: halt ZK verification, fallback to Schnorr-only mode |
+| T4 | NIST PQC deprecation | NIST deprecates ECDSA/EdDSA for government use | NIST IR or FIPS publication | Migrate P2P signatures to NIST PQC standards |
+| T5 | Coordinated industry fork | ≥ 50% of ZK-using chains announce migration timelines | Public announcements from major projects | DarkWow community vote via coinbase signaling |
+
+**Coinbase signaling mechanism**: miners include a `FORK_SIGNAL` tag in
+coinbase data (e.g., `PQ_FORK_READY` or `PQ_FORK_ACTIVATE`). Fork activates
+when > 50% of blocks in a 2,016-block window signal readiness — consistent
+with Uncle Merkle fork mechanics.
+
+---
+
+## Circuit Inventory
+
+Referencing the [ZK Engineering Posture](zk-engineering-posture.md)
+three-tier classification. Summary counts (not exhaustive).
+
+| Tier | Count (est.) | Examples | Quantum Vulnerability | Migration Priority |
+|---|---|---|---|---|
+| Tier 1 (Schnorr-sufficient) | ~30 circuits across ~15 contracts | Gov config, house auth, oracle registration, deployooor | Can fall back to Schnorr immediately — no ZK dependency | P0: migrate now |
+| Tier 2 (mixed) | ~40 circuits | CDP operations, DEX swaps, auction bids, subscription management | Identity portion → PQ signatures; value portion needs STARK | P1: after STARK zkVM |
+| Tier 3 (genuinely ZK) | ~50 circuits | Purse balance proofs, PN coin spends, credential claims, bridge deposits, MultiSig ballots | Full STARK migration required | P2: after STARK zkVM |
+
+See [Post-Quantum Proving System Requirements](zk/post-quantum-proving-system.md)
+for the formal swap-out specification (18 functional requirements).
 
 ---
 
@@ -208,8 +325,11 @@ a collective bet about the future, expressed through the chain they build on.
 
 ## Further Reading
 
+- [Post-Quantum Proving System Requirements](zk/post-quantum-proving-system.md) — Formal swap-out specification (18 functional requirements)
+- [PQXDH Research](../../../script/research/pqxdh/src/main.rs) — Kyber-1024 + X25519 hybrid key agreement for note encryption
 - [NIST Post-Quantum Cryptography](https://csrc.nist.gov/projects/post-quantum-cryptography) — Standardization process and timeline
 - [Shor's Algorithm (1994)](https://arxiv.org/abs/quant-ph/9508027) — Original paper establishing polynomial-time quantum factoring and discrete log
 - [STARKs](https://eprint.iacr.org/2018/046) — Scalable, transparent, post-quantum proof system
 - [NIST IR 8547 (2024)](https://csrc.nist.gov/pubs/ir/2024/transition-to-pqc-standards) — Transition guidance for post-quantum cryptography
-- [DarkWow Consensus](../arch/consensus/consensus.md) — Uncle Merkle PoW consensus and fork mechanics
+- [ZK Engineering Posture](zk-engineering-posture.md) — Three-tier circuit classification
+- [DarkWow Consensus](consensus/consensus.md) — Uncle Merkle PoW consensus and fork mechanics

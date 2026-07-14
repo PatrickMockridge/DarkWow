@@ -23,3 +23,23 @@ and math primitives, including but not limited to:
   double ratchet algorithm used in signal.
 * [Various EC math](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/script/research/ec)
   such as valuations, riemann-roch basis, hyperelliptic curves, divisor reduction.
+
+## Post-Quantum Cryptography
+
+* [PQXDH (Post-Quantum Extended Diffie-Hellman)](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/script/research/pqxdh/)
+  — Hybrid key agreement (Kyber-1024 + X25519 + Double Ratchet) following Signal's
+  PQXDH specification. Research implementation for post-quantum note encryption.
+  See [Post-Quantum Architecture](../arch/quantum-threat.md#retroactive-privacy-protection).
+
+* [NIST PQC Standards](https://csrc.nist.gov/projects/post-quantum-cryptography)
+  — FIPS 203 (ML-KEM / Kyber), FIPS 204 (ML-DSA / Dilithium), FIPS 205 (SLH-DSA /
+  SPHINCS+). Relevant for P2P signature hardening.
+
+* STARK Proving Systems — Post-quantum ZK from collision-resistant hash functions.
+  DarkWow's post-Halo2 migration target. See
+  [Post-Quantum Proving System Requirements](../arch/zk/post-quantum-proving-system.md)
+  for the formal swap-out specification (18 functional requirements).
+
+* Lattice-Based ZK Proofs — Zero-knowledge from LWE/SIS assumptions (no known
+  quantum break). Longer-term research target for compact post-quantum ZK proofs.
+  See [Quantum Threat Model](../arch/quantum-threat.md#upgrade-paths).

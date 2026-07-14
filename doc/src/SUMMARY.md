@@ -55,6 +55,7 @@
   - [ZK Verification](arch/zk/zk_verification.md)
   - [MerkleRoot Depth](arch/zk/merkle_depth.md)
   - [Quantum Threat](arch/quantum-threat.md)
+  - [Post-Quantum Proving System](arch/zk/post-quantum-proving-system.md)
 
 ## Smart Contracts
   - [Smart Contracts](arch/sc/sc.md)
