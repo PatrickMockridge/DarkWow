@@ -3898,11 +3898,14 @@ def build_transfer(wallet_db: WalletDb, token_id_str: str, amount: int,
     # Publish the input capability's nullifier (§6.3 step 4)
     input_nf = _b58encode(compute_cap_nullifier(input_coin))
 
-    # Step 2: Build PN TransferV1
+    # Step 2: Build NativeToken TransferV1 — per wallet.md §6.4, native_token
+    # is the one bespoke citizen for write-path construction. DRKW routes
+    # through NativeToken (function code 0x03), NOT promissory_note (0x04).
+    # (The model is the spec — Python leads, Rust follows.)
     recipient_address = poseidon_hash([int.from_bytes(recipient_pk.compressed, 'little')])
-    mock_proof = hashlib.blake2b(b"PN_TransferV1_proof", digest_size=32).digest()
+    mock_proof = hashlib.blake2b(b"NT_TransferV1_proof", digest_size=32).digest()
 
-    func_code = 0x04  # TransferV1
+    func_code = 0x03  # NativeToken TransferV1
     call_data = bytes([func_code])
     call_data += amount.to_bytes(8, 'little')
     call_data += recipient_address
@@ -3937,7 +3940,7 @@ def build_transfer(wallet_db: WalletDb, token_id_str: str, amount: int,
         call_data += change_aes.encode()
 
     transfer_leaf = ContractCallLeaf(
-        contract_id=PROMISSORY_NOTE_CONTRACT_ID,
+        contract_id=NATIVE_TOKEN_CONTRACT_ID,
         data=call_data,
         proofs=[mock_proof])
 
@@ -4764,8 +4767,8 @@ def test_10_transaction_building():
 
     assert tx.fee == DEFAULT_FEE
     assert len(tx.calls) >= 2  # transfer + fee
-    # First call should be PN TransferV1
-    assert tx.calls[0].data[0] == 0x04
+    # First call should be NativeToken TransferV1 (wallet.md §6.4)
+    assert tx.calls[0].data[0] == 0x03
     # Second call should be NT FeeV1
     assert tx.calls[1].data[0] == 0x00
 
