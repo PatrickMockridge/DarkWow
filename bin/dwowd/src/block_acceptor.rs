@@ -106,10 +106,22 @@ pub fn accept_block(
     // Per mempool.md §1/§4, verified at both admission and block accept.
     // Failure here means a fabricated/unauthenticated tx — reject the block.
     // Coinbase is exempt (soundness = transparent WASM re-execution).
-    dwow_chain::zk_verifier::verify_block_transactions(&chain_state.store, block)
-        .map_err(|e| dwow_core::Error::Custom(format!(
-            "L2 witness verification failed: {}", e
-        )))?;
+    // Full metadata-based VK verification is done inside execute_block.
+    for tx in &block.transactions {
+        let is_coinbase = tx.contract_calls.first()
+            .map_or(false, |c| c.data.first() == Some(&0x05));
+        if is_coinbase {
+            continue;
+        }
+        if let Err(e) = dwow_chain::zk_verifier::verify_single_tx(tx) {
+            match e {
+                dwow_chain::zk_verifier::VerifyError::NoWitness => continue,
+                _ => return Err(dwow_core::Error::Custom(format!(
+                    "L2 witness verification failed: {}", e
+                ))),
+            }
+        }
+    }
 
     // 3. WASM execution — runs pow_reward_v1, persists cumulative supply chain
     // to the contracts sled tree via the overlay.

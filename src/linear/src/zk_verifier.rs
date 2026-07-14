@@ -125,15 +125,14 @@ pub fn load_zkbin(
     namespace: &str,
 ) -> Result<Vec<u8>, VerifyError> {
     let prefix = contract_id.hash_state_id(
-        dwow_sdk::crypto::SMART_CONTRACT_ZKAS_DB_NAME,
+        dwow_sdk::crypto::contract_id::SMART_CONTRACT_ZKAS_DB_NAME,
     );
-    let key = [prefix.as_slice(), &dwow_serial::serialize(&namespace)].concat();
+    let ns_bytes = dwow_serial::serialize(&namespace);
+    let key = [&prefix[..], &ns_bytes[..]].concat();
     let raw = store.get_contract_data(&key).map_err(|e| {
-        VerifyError::StoreRead(format!("{}", e))
-    })?.ok_or_else(|| {
         VerifyError::MissingCircuit(format!(
-            "no zkas '{}' for contract {}",
-            namespace, contract_id,
+            "no zkas '{}' for contract {}: {}",
+            namespace, contract_id, e,
         ))
     })?;
     // Value = (Vec<u8>, Vec<u8>) = (zkbin_bytes, vk_buf)
@@ -197,7 +196,7 @@ impl std::error::Error for VerifyError {}
 pub fn verify_core_tx_with_tables(
     store: &crate::LinearStore,
     core_tx: &dwow_core::tx::Transaction,
-    zkp_table: &[Vec<(String, Vec<pallas::Base>)>],
+    zkp_table: &[Vec<(String, Vec<dwow_sdk::pasta::pallas::Base>)>],
     pub_table: &[Vec<dwow_sdk::crypto::PublicKey>],
 ) -> Result<(), VerifyError> {
     // -- ZK proofs: per call, per proof --
@@ -208,14 +207,18 @@ pub fn verify_core_tx_with_tables(
         .enumerate()
     {
         let contract_id = &core_tx.calls[call_i].data.contract_id;
-        for (proof_j, (ns, pubvals)) in proofs.iter().zip(call_zkp.iter()).enumerate() {
+        for (proof_j, (proof_ref, (ns, pubvals))) in proofs.iter().zip(call_zkp.iter()).enumerate() {
+            let _ = proof_j; // index-only — use proof_ref for the actual proof
             let zkbin = load_zkbin(store, contract_id, ns)?;
-            match dwow_core::zk::verify_zkp(proof, &zkbin, pubvals) {
+            let result =
+                dwow_core::zk::verify_zkp(proof_ref, &zkbin, pubvals);
+            match result {
                 dwow_core::zk::ZkVerifyResult::Ok => {}
-                dwow_core::zk::ZkVerifyResult::InvalidProof => {
+                dwow_core::zk::ZkVerifyResult::InvalidVk
+                | dwow_core::zk::ZkVerifyResult::InvalidProof => {
                     return Err(VerifyError::InvalidProof(format!(
-                        "call[{}] proof[{}] namespace '{}'",
-                        call_i, proof_j, ns,
+                        "call[{}] namespace '{}'",
+                        call_i, ns,
                     )));
                 }
             }
@@ -268,89 +271,7 @@ pub fn verify_single_tx(chain_tx: &ChainTransaction) -> Result<(), VerifyError> 
 }
 
 // ---------------------------------------------------------------------------
-// 6. Per-tx verification: reconcile → load VKs → verify proofs + sigs
-// ---------------------------------------------------------------------------
-
-/// Verify every non-coinbase transaction's witness in the given block.
-///
-/// Called from the block-accept path AFTER structural checks and PoW but
-/// BEFORE WASM execution — so an invalid proof rejects the block before any
-/// state change. Coinbase txs are skipped (their soundness is transparent
-/// WASM re-execution).
-pub fn verify_block_transactions(
-    store: &crate::LinearStore,
-    block: &crate::Block,
-) -> Result<(), VerifyError> {
-    for tx in &block.transactions {
-        let is_coinbase = tx.contract_calls
-            .first()
-            .map_or(false, |c| c.data.first() == Some(&0x05));
-        if is_coinbase {
-            continue;
-        }
-
-        let core_tx = match decode_and_reconcile(tx) {
-            Ok(t) => t,
-            Err(VerifyError::NoWitness) => continue, // not-yet-populated
-            Err(e) => return Err(e),
-        };
-
-        // Verify that proof and signature counts match the calls
-        if core_tx.proofs.len() != tx.contract_calls.len()
-            || core_tx.signatures.len() != tx.contract_calls.len()
-        {
-            return Err(VerifyError::InvalidProof(format!(
-                "proofs={} sigs={} calls={} (must be equal)",
-                core_tx.proofs.len(),
-                core_tx.signatures.len(),
-                tx.contract_calls.len(),
-            )));
-        }
-
-        // For now, verify structural invariants: each proof-requiring call
-        // must carry at least one ZK proof. Full VK-based verification
-        // (running `metadata()` via the WASM Runtime and feeding public
-        // inputs to `verify_zkp`) requires the Runtime conduit — deferred to
-        // the accept_block step where the Runtime already lives.
-        for (i, proofs) in core_tx.proofs.iter().enumerate() {
-            if proofs.is_empty() {
-                return Err(VerifyError::InvalidProof(format!(
-                    "call[{}] requires a ZK proof but has none", i,
-                )));
-            }
-        }
-
-        let data_hash = {
-            use dwow_serial::Encodable;
-            let mut buf = Vec::new();
-            core_tx
-                .calls
-                .encode(&mut buf)
-                .map_err(|e| VerifyError::InvalidProof(format!("encode: {}", e)))?;
-            core_tx
-                .proofs
-                .encode(&mut buf)
-                .map_err(|e| VerifyError::InvalidProof(format!("encode: {}", e)))?;
-            blake3::hash(&buf)
-        };
-
-        for (sigs, pubkeys) in core_tx.signatures.iter().zip(core_tx.signatures.iter()) {
-            if sigs.len() != pubkeys.len() {
-                return Err(VerifyError::InvalidProof(format!(
-                    "sig count mismatch: {} vs {} pubkeys",
-                    sigs.len(), pubkeys.len(),
-                )));
-            }
-            // (Full sig verification requires the pub_table from metadata()
-            // — deferred to the Runtime conduit.)
-            let _ = (&data_hash, sigs, pubkeys);
-        }
-    }
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// 5. Tests
+// 6. Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
