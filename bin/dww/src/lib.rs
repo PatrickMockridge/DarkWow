@@ -453,6 +453,46 @@ impl Dww {
         let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN key_coords_blob BLOB;");
         // The externally_revoked column was removed (never populated or read).
 
+        // P4 Step 2: seed genesis contract manifests into the wallet DB.
+        {
+            use crate::contract_imports::get_contract_id;
+            use dwow_sdk::manifest::ContractManifest;
+            use crate::walletdb::ContractMetadataRecord;
+
+            let genesis_manifests: &[(&str, &str)] = &[
+                ("promissory_note", include_str!("../../../src/contract/promissory_note/manifest.toml")),
+            ];
+            for (name, toml_str) in genesis_manifests {
+                let manifest = match ContractManifest::from_toml(toml_str) {
+                    Ok(m) => m,
+                    Err(e) => { tracing::warn!(target: "dww::init", "genesis manifest {} parse: {}", name, e); continue; }
+                };
+                let cid = match get_contract_id(name) {
+                    Some(c) => c,
+                    None => { tracing::warn!(target: "dww::init", "genesis manifest {} cid", name); continue; }
+                };
+                let manifest_json = match serde_json::to_string(&manifest) {
+                    Ok(j) => j,
+                    Err(e) => { tracing::warn!(target: "dww::init", "genesis manifest {} json: {}", name, e); continue; }
+                };
+                let record = ContractMetadataRecord {
+                    contract_id: bs58::encode(cid.to_bytes()).into_string(),
+                    name: manifest.name.clone(),
+                    symbol: Some(name.to_string()),
+                    category: manifest.category.clone(),
+                    description: Some(manifest.description.clone()),
+                    public: true,
+                    deployer_pubkey: String::new(),
+                    deploy_height: 1,
+                    attestations_json: String::new(),
+                    lock_status: "unlocked".into(),
+                };
+                let _ = self.wallet.insert_contract_metadata_with_manifest(
+                    &record, Some(&manifest_json),
+                );
+            }
+        }
+
         // Register default DRKW native token alias so `transfer 1.0 DRKW <addr>` works
         // The tokens table is gone — a token's identity is discovered via scan,
         // not declared at init (capabilities carry their own token_id).
