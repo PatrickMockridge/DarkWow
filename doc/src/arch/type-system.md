@@ -24,6 +24,7 @@ The primitive operations:
 | Replication | `!P` | Replicate `P` arbitrarily many times |
 | Reflection | `quote(x)` | Treat name `x` as data |
 | Dereference | `eval(x)` | Treat data `x` as a name |
+| Parallel Composition | `P \| Q` | Execute `P` and `Q` concurrently; synchronize on shared names |
 
 In the blockchain context:
 - A **channel** is a contract instance (sled tree + WASM entrypoint).
@@ -74,12 +75,37 @@ No type SHALL exhibit a barb that its definition does not declare.
 | `↓derive` | Can produce a scoped sub-key (per-instance derivation) |
 | `↓discover` | Can detect own outputs (AEAD decryption) |
 | `↓mine` | Can produce a valid coinbase (possesses MiningRecipient) |
+| `↓concurrent` | Can execute in parallel with siblings (no shared mutable state dependency) |
+| `↓merge` | Can deterministically combine concurrent state diffs |
+| `↓sync-barrier` | Can block until a synchronization condition is met |
+| `↓broadcast` | Can publish a message to multiple subscribers simultaneously |
+| `↓rate-limit` | Can constrain its own output rate for backpressure |
+| `↓gossip-forward` | Can relay an inbound message to a subset of outbound peers |
+| `↓quorum-query` | Can query a threshold of peers and converge on agreement |
+| `↓dag-parent` | Can reference prior events in a partial-order data structure |
 
 ### 1.2 Bisimulation
 
-Two processes `P` and `Q` are bisimilar (`P ∼ Q`) if an observer cannot
-distinguish them through interaction. For every action `P` can take, `Q`
-can take a matching action leading to bisimilar states, and vice versa.
+Two processes `P` and `Q` are **strongly bisimilar** (`P ∼ Q`) if an observer
+cannot distinguish them through interaction. For every action `P` can take,
+`Q` can take a matching action leading to bisimilar states, and vice versa.
+This extends to concurrency barbs: for every barb `P` exhibits (including
+↓concurrent, ↓merge, ↓broadcast, etc.), `Q` MUST exhibit a matching barb.
+
+**Weak bisimulation** (`P ≈ Q`): internal synchronization actions (τ-transitions)
+are unobservable. Two process nets that differ only in internal task scheduling
+are weak-bisimilar. `P | (a?(x).Q) | a!(v).R ≈ P | Q{v/x} | R` — internal
+communication on channel `a` is transparent to observers. The smol executor's
+internal task scheduling SHALL be modeled as τ-transitions and MUST NOT affect
+observable barb behavior.
+
+**Barbed bisimulation** (`P ≅ Q`): two concurrent processes are equivalent if
+their observable concurrent barbs match, even if their internal scheduling
+order differs. Two task graphs with different scheduling yield the same sled
+overlay if and only if the key sets are disjoint — this is the formal
+justification for parallel contract execution. `P | Q ≅ Q | P` (commutativity of
+parallel composition). `(P | Q) | R ≅ P | (Q | R)` (associativity of parallel
+composition).
 
 ## 2. Type Distinction Principle
 
@@ -365,7 +391,217 @@ Serialization for chain persistence (serde `Serialize`/`Deserialize`) SHALL
 be implemented manually via `to_bytes()`/`from_bytes()` for each type. No
 type SHALL derive serde directly — `pallas::Base` does not implement serde.
 
-## 10. Verified Properties
+## 9. Concurrent Execution Model
+
+The ρ-calculus primitives in Section 0 define both authorization semantics
+(what capabilities each process holds) and execution semantics (how processes
+execute in parallel). This section defines the latter — the mapping from
+ρ-calculus concurrent processes to Rust async tasks on the `smol` executor.
+
+### 9.1 Process-to-Task Mapping
+
+Every ρ-calculus process maps to a `smol::Task<T>` spawned on `ExecutorPtr`:
+
+| ρ-Calculus Construct | Rust Implementation | Location |
+|---|---|---|
+| Process `P` | `smol::Task<T>` — a spawned future | `src/concurrency/mod.rs:45` |
+| Channel `x` | `smol::channel::Sender<T>` / `Receiver<T>` | `src/net/channel.rs` |
+| `P \| Q` | `JoinSet::spawn(P); JoinSet::spawn(Q); JoinSet::join_all()` | `src/concurrency/join_set.rs` |
+| `νx.P` (restriction) | Rust module scope + `Send` bound — `x` cannot escape `P`'s type boundary | Compile-time |
+| `!P` (replication) | `StoppableTask` — repl until stopped | `src/concurrency/stoppable_task.rs` |
+| `↓sync-barrier` | `CondVar::wait()` / `CondVar::notify()` | `src/concurrency/condvar.rs` |
+| `↓broadcast` | `Publisher<T>::notify()` → all `Subscription<T>` receivers | `src/concurrency/publisher.rs` |
+| `↓gossip-forward` | `p2p.broadcast_with_exclude(msg, origin_peer)` | `bin/dwowd/src/proto/linear_broadcast.rs` |
+| `↓rate-limit` | Linear sleep proportional to `count - RATELIMIT_MIN_COUNT` | `src/event_graph/proto.rs:610` |
+| `↓quorum-query` | `consideration_threshold = communicated_peers * 2 / 3` | `src/event_graph/mod.rs:307` |
+| `↓dag-parent` | `Event.parents: [blake3::Hash; N_EVENT_PARENTS]` | `src/event_graph/event.rs:44` |
+| Temporal scoping | `timeout(Duration, future)` / `sleep(Duration)` | `src/concurrency/timeout.rs:43` |
+
+### 9.2 Parallel Execution Safety
+
+Transaction calls within a block SHALL execute in parallel (`P_1 | P_2 | ... | P_n`)
+when their key sets are pairwise disjoint. The duplicate-key check at
+`src/linear/src/execution.rs:398-405` (`written_keys.insert(key)`) is the
+bisimulation witness: if a key collision is detected, the parallel composition
+is NOT bisimilar to sequential execution, and the block SHALL be rejected.
+
+```
+theorem parallelMerge_correctness (calls : List CallJob)
+    (h_disjoint : pairwise_disjoint_keys calls) :
+    parallel_execute(calls) ≈ sequential_execute(calls)
+```
+
+Parallel execution is weak-bisimilar (`≈`) to sequential execution because
+internal task scheduling (τ-transitions) may differ, but observable state
+diff outputs are identical when keys are disjoint.
+
+### 9.3 Block Production Concurrency
+
+Block production SHALL be modeled as concurrent mining with deterministic resolution:
+
+```
+BlockProduction =
+  νcompeting_blocks.(νconnect_lock.(
+    M!(canonical_header, canonical_txs)                // canonical miner
+    | U_1!(competing_header_1, competing_txs_1)         // competing miner 1
+    | U_n!(competing_header_n, competing_txs_n)         // competing miner n
+    | C?(all_blocks).resolve!(tip, uncles)              // consensus observer
+  ))
+```
+
+Where `resolve!(tip, uncles)` implements:
+1. First-seen-wins: the first block at a given height becomes canonical
+2. Competing blocks become uncles: `competing_blocks.lock().insert(height, block)`
+3. Chain reorganization: `try_reorg_from_competing()`
+
+Mapped to: `CChainState` at `src/linear/src/chain_state.rs:64`,
+`competing_blocks: Mutex<HashMap<u64, Vec<Block>>>` at line 105,
+`try_reorg_from_competing()` at line 982.
+
+### 9.4 ExecutionSchedule — Dependency Analysis
+
+Before parallel execution, the SHALL-analyze step computes an `ExecutionSchedule`
+from the key set of each call:
+
+```
+ExecutionSchedule =
+  νkey_sets.(
+    analyze_keys!(jobs, key_sets)
+    | build_waves!(key_sets, waves)   // calls with disjoint key sets form one wave
+    | for wave in waves:
+        parallel_execute!(wave)       // all calls in a wave execute concurrently
+        | merge_wave!(wave)           // barrier before next wave
+  )
+```
+
+Calls with intersecting key sets SHALL execute in dependency order across
+sequential waves. Calls with disjoint key sets SHALL execute concurrently
+within a single wave. The schedule SHALL be deterministic: same block,
+same key sets, same wave partition.
+
+### 9.5 Scaling — Emergent-Topology Sharding
+
+The scaling model at `doc/src/arch/consensus/scaling.md` formalizes as:
+
+```
+ShardedSystem =
+  νcanonical_chain.(
+    C!(settlement)                                          // canonical chain = settlement layer
+    | S_1!(state_root_1, txs_1, uncle_proof_1)              // shard 1 = uncle block
+    | S_2!(state_root_2, txs_2, uncle_proof_2)              // shard 2 = uncle block
+    | CrossShardProof?(import_A_B).settle!(batch)           // cross-shard settlement
+  )
+```
+
+Where `S_i` is an uncle block extended with a `state_root` field, and
+`CrossShardProof` is a ZK proof that Shard A's state transition depends
+on Shard B's state at a known root. This is emergent: the network's latency
+graph determines which miners form shards. No protocol-level assignment needed.
+
+## 10. P2P Network as Replicated Process Nets
+
+The P2P network SHALL be formalized as a collection of replicated processes
+communicating through typed channels. DarkWow has two distinct P2P paths
+sharing a common transport layer.
+
+### 10.1 Three-Tier Feature Gate as Process Hierarchy
+
+The three-tier feature gate at `Cargo.toml` defines a process hierarchy:
+
+```
+net-wallet ⊂ net-node ⊂ net-full
+
+ProcessNet(wallet) =
+  νtransport.(νchannel.(νsession.(
+    ProtocolAddress | ProtocolVersion    // address exchange + handshake
+  )))
+
+ProcessNet(node) = ProcessNet(wallet) |
+  RefineSession                           // peer refinement (greylist/whitelist)
+
+ProcessNet(full) = ProcessNet(node) |
+  ProtocolSeed | SeedSyncSession | BanPolicy |
+  TransportTor | TransportI2p | TransportQuic  // additional transports
+```
+
+### 10.2 Blockchain Path — Structured Gossip
+
+The blockchain P2P path (`net-node` tier) SHALL replace flood broadcast with
+structured fan-out gossip:
+
+```
+GossipStructured(b) =
+  νfan_out.(
+    broadcaster?(b).
+    fan_out_selector!(peers, log₂(N)).     // select k = log₂(N) peers
+    (for p in fan_out: p!(b)).              // send to selected peers
+    fan_out?(acks).                         // wait for k acknowledgments
+    GossipStructured(next_b)
+  )
+```
+
+Fan-out factor `k = log₂(N)` produces O(log N) propagation rounds and
+O(k·N) total messages — optimal for epidemic dissemination. This replaces
+the current flood broadcast (`p2p.broadcast(&msg)` at `linear_broadcast.rs:343`)
+which produces O(N²) traffic per block.
+
+### 10.3 Event Graph Path — DAG Sync
+
+The event graph DAG sync SHALL be formalized as a replicated process:
+
+```
+ProtocolEventGraph =
+  handle_event_put      // receive + validate + recursive-fetch incoming events
+  | handle_event_req     // serve parent-event requests from peers
+  | handle_tip_req       // serve tip-set queries from syncing peers
+  | broadcast_rate_limiter  // rate-limited relay of inbound events to other peers
+```
+
+These four concurrent tasks correspond to the `ProtocolJobsManager::spawn()`
+calls at `src/event_graph/proto.rs:161-164`, each running as an independent
+`smol::Task`. The quarantine boundary — event graph sled overlay MUST NOT touch
+blockchain execution sled trees — SHALL be enforced as a restriction:
+
+```
+νquarantine.(
+  νblockchain_sled.( blockchain_processes(blockchain_sled) )
+| νeventgraph_sled.( eventgraph_processes(eventgraph_sled) )
+)
+```
+
+The two sled trees are separate restricted names. No process in the blockchain
+scope holds a reference to `eventgraph_sled`, and no process in the event graph
+scope holds a reference to `blockchain_sled`. The compiler enforces this through
+the `event-graph` feature gate at `src/lib.rs:33-39`.
+
+### 10.4 Bridging — Shared Channels with Typed Barbs
+
+The two paths SHALL communicate through typed channels with barb-carried
+type safety:
+
+```
+bridge_chain_evg : Channel<BridgeMessage>
+  exhibits { ↓commit, ↓verify }            // blockchain barbs
+
+bridge_evg_chain : Channel<StateProof>
+  exhibits { ↓broadcast, ↓dag-parent }      // event-graph barbs
+
+sync_barrier : Channel<()>
+  exhibits { ↓sync-barrier }                // both paths can wait/notify
+```
+
+The quarantine boundary SHALL be enforced at compile time: messages carrying
+blockchain barbs (↓spend, ↓nullify, ↓commit) SHALL NOT be routable through
+the event graph channel. The `BarbWitness` trait at `src/net/barb_trait.rs`
+provides the static check.
+
+Event graph as blockchain P2P substrate: blockchain events SHALL be wrapped
+in event content with marker byte `0x42` ('B' for blockchain) and routed
+through DAG sync instead of flood broadcast. The event graph sled tree
+(`dag`) remains quarantined from blockchain sled trees (`contracts`, `blocks`,
+`coins`, `nullifiers`).
+
+## 11. Verified Properties
 
 The type system defined in this document is formalized in the Lean4 calculus
 of constructions at `proofs/lean/src/DarkFi/Capability/`. The following
@@ -453,7 +689,7 @@ model (Halo2 constraint semantics, polynomial commitments, Fiat-Shamir
 transform) in Lean4 is future work. When complete, `circuitSoundnessBridge`
 will be replaced with a proved theorem referencing the Halo2 formalization.
 
-## 11. References
+## 12. References
 
 - Meredith, L.G. and Radestock, M. (2005). "A Reflective Higher-Order Calculus."
   *Electronic Notes in Theoretical Computer Science*, 141(5), 49-67.

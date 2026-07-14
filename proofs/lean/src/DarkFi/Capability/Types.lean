@@ -32,6 +32,14 @@ inductive Barb : Type where
   | derive         -- ↓derive: can produce scoped sub-keys
   | discover       -- ↓discover: can detect own outputs
   | mine           -- ↓mine: can produce a valid coinbase
+  | concurrent     -- ↓concurrent: can execute in parallel with siblings
+  | merge          -- ↓merge: can deterministically combine concurrent state diffs
+  | syncBarrier    -- ↓sync-barrier: can block until a synchronization condition is met
+  | broadcast      -- ↓broadcast: can publish to multiple subscribers simultaneously
+  | rateLimit      -- ↓rate-limit: can constrain its own output rate
+  | gossipForward  -- ↓gossip-forward: can relay to a subset of outbound peers
+  | quorumQuery    -- ↓quorum-query: can query a threshold of peers and converge
+  | dagParent      -- ↓dag-parent: can reference prior events in a partial-order
   deriving DecidableEq, Repr, Inhabited
 
 /- ==========================================================================
@@ -46,6 +54,25 @@ structure PrimitiveType where
   barbs : Finset Barb
   description : String
   deriving Repr, BEq
+
+/- ==========================================================================
+   Part 2a: Concurrency Process Types (type-system.md §9)
+   ==========================================================================
+   Concurrency primitives map to process types with concurrency barbs.
+   These types describe HOW a process executes, complementing the
+   cryptographic types which describe WHAT a process can do.
+-/
+
+structure ConcurrentProcess where
+  name : String
+  authorizationBarbs : Finset Barb    -- cryptographic barbs (spend, nullify, etc.)
+  concurrencyBarbs : Finset Barb      -- execution barbs (concurrent, merge, etc.)
+  canConcurrent : Bool
+  canMerge : Bool
+  deriving Repr, BEq
+
+def concurrentProcessBarbs (p : ConcurrentProcess) : Finset Barb :=
+  p.authorizationBarbs ∪ p.concurrencyBarbs
 
 /- ==========================================================================
    Part 3: Primitive Type Definitions
