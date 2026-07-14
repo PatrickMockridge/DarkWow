@@ -54,6 +54,27 @@ pub enum Error {
 
     #[error("Contract error: {0}")]
     ContractError(String),
+
+    /// Write-path errors (wallet.md §6.3, type-system.md §4)
+    #[error("Insufficient funds: token={token} needed={needed} available={available}")]
+    InsufficientFunds {
+        token: String,
+        needed: u64,
+        available: u64,
+    },
+
+    #[error("Proof build failed: circuit={circuit} step={step}: {detail}")]
+    ProofBuildFailed {
+        circuit: String,
+        step: String,
+        detail: String,
+    },
+
+    #[error("Capability key resolution failed: cap_id={cap_id}: {detail}")]
+    CapKeyResolutionFailed {
+        cap_id: String,
+        detail: String,
+    },
 }
 
 // Transition bridges — convert external error types to wallet Error.
