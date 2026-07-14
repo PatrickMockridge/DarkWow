@@ -79,13 +79,16 @@ pub fn estimate_fee(num_inputs: usize, _num_outputs: usize) -> u64 {
 /// (which is the master key, unable to witness per-block-derived coinbase caps).
 /// `fee_proofs` is optional for callers that merge fee ZK proofs into the main
 /// proof bundle.
+/// Returns `(tx, ephemeral_secrets)` — the ephemeral secret keys the fee
+/// metadata expects for per-call signature verification. The caller MUST use
+/// these (not the wallet's master key) when signing the fee call.
 pub fn build_fee_and_finalize_tx(
     wallet: &WalletPtr,
     account_mgr: &dwow_accounts::AccountManager,
     call_leaf: ContractCallLeaf,
     fee_proofs: Option<Vec<Proof>>,
     exclude_cap_id: Option<&str>,
-) -> Result<Transaction> {
+) -> Result<(Transaction, Vec<SecretKey>)> {
     // Get DRKW cap for fee
     let fee_cap_records = wallet.get_capabilities_for_token(&DRKW_TOKEN_ID, Some(false))
         .map_err(|e| Error::Custom(format!("Failed to get DRKW capabilities: {:?}", e)))?;
@@ -220,13 +223,17 @@ pub fn build_fee_and_finalize_tx(
         data: fee_call_data,
     };
 
-    // Fee leaf — carries proofs when fee_proofs is provided (transfer/token path).
-    // When fee_proofs is None, the fee leaf has empty proofs (swap/lib path).
-    let fee_proofs = fee_proofs.unwrap_or_default();
-    let fee_leaf = ContractCallLeaf { call: fee_call, proofs: fee_proofs };
+    // P2.2: use the REAL fee proofs from the ZK builder (not empty).
+    // fee_proofs param is for callers that merge proofs externally; default
+    // to the proofs the builder just produced.
+    let fee_leaf_proofs = if let Some(ext) = fee_proofs {
+        if ext.is_empty() { fee_debris.proofs } else { ext }
+    } else {
+        fee_debris.proofs
+    };
+    let fee_leaf = ContractCallLeaf { call: fee_call, proofs: fee_leaf_proofs };
 
     // Collect nullifiers for mempool double-spend detection.
-    // Typed Nullifier per type-system.md §8.1 — direct assignment, no raw bytes.
     let nf = fee_debris.params.input.nullifier;
 
     // Build final transaction
@@ -240,7 +247,7 @@ pub fn build_fee_and_finalize_tx(
     let tx = tx_builder.build()
         .map_err(|e| Error::Custom(format!("Failed to build transaction: {:?}", e)))?;
 
-    Ok(tx)
+    Ok((tx, fee_debris.signature_secrets))
 }
 
 #[cfg(test)]
