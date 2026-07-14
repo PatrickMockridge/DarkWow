@@ -280,13 +280,26 @@ impl RpcHandler for DwwRpcHandler {
                 let spend_hook = params.get("spend_hook").and_then(|v| v.as_str());
                 let user_data = params.get("user_data").and_then(|v| v.as_str());
 
-                let params_str = format!(
-                    r#"{{"amount":{},"token_id":"{}","recipient":"{}"{}{}}}"#,
-                    amount, token_id, recipient,
-                    spend_hook.map(|s| format!(r#","spend_hook":"{}""#, s)).unwrap_or_default(),
-                    user_data.map(|s| format!(r#","user_data":"{}""#, s)).unwrap_or_default(),
-                );
-                let tx = dww.invoke_contract("promissory_note", "TransferV1", Some(&params_str), vec![]).await
+                // P2.3: route DRKW through native_token (per wallet.md §6.4).
+                // P0 dispatched CLI commands; this handles the RPC path that
+                // the pipeline's `wal` helper invokes.
+                let is_drkw = token_id == "DRKW" || token_id == "drkw";
+                let (contract_name, params_str) = if is_drkw {
+                    ("native_token", format!(
+                        r#"{{"amount":{},"recipient":"{}"{}{}}}"#,
+                        amount, recipient,
+                        spend_hook.map(|s| format!(r#","spend_hook":"{}""#, s)).unwrap_or_default(),
+                        user_data.map(|s| format!(r#","user_data":"{}""#, s)).unwrap_or_default(),
+                    ))
+                } else {
+                    ("promissory_note", format!(
+                        r#"{{"amount":{},"token_id":"{}","recipient":"{}"{}{}}}"#,
+                        amount, token_id, recipient,
+                        spend_hook.map(|s| format!(r#","spend_hook":"{}""#, s)).unwrap_or_default(),
+                        user_data.map(|s| format!(r#","user_data":"{}""#, s)).unwrap_or_default(),
+                    ))
+                };
+                let tx = dww.invoke_contract(contract_name, "TransferV1", Some(&params_str), vec![]).await
                     .map_err(|e| err(-32000, &format!("transfer build failed: {}", e)))?;
                 let mut output = vec![];
                 let txid = dww.broadcast_tx(&tx, &mut output, false, None, None).await

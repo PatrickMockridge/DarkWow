@@ -2943,6 +2943,7 @@ dependencies = [
 name = "dwow_native_token_contract"
 version = "0.1.0"
 dependencies = [
+ "bs58",
  "chacha20poly1305",
  "dwow-sdk",
  "dwow-serial",
@@ -2952,6 +2953,7 @@ dependencies = [
  "pasta_curves",
  "rand 0.8.6",
  "serde",
+ "serde_json",
  "smol",
  "thiserror 2.0.18",
  "tracing",

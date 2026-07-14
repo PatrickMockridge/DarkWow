@@ -393,7 +393,7 @@ fn discover_native_token_outputs(
                     // P1b: populate key_coords so the spend path can recover
                     // the owning secret via AccountManager::resolve_key.
                     let mut cap_record = cap_record;
-                    cap_record.key_coords = self.account_mgr.find_owner(
+                    cap_record.key_coords = account_mgr.find_owner(
                         &*NATIVE_TOKEN_CONTRACT_ID,
                         &height.to_le_bytes(),
                         &PublicKey::from_secret(*secret),
