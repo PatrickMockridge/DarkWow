@@ -196,6 +196,15 @@ pub fn execute_block(
     }
 
     // ---- Execute all calls sequentially ----
+    //
+    // Future (Tier 6 / wasmer-gated): replace this loop with JoinSet-based
+    // parallel execution when wasmer Runtime confirms concurrent safety.
+    // Per-call overlays are already independent (Arc<Mutex<SledTreeOverlay>>),
+    // Runtime::new() creates fresh instances per call, and the ExecutionSchedule
+    // diagnostic logs parallelism potential for each block.
+    //
+    // See: doc/src/arch/consensus/scaling.md#parallel-contract-execution-future
+    // See: doc/src/arch/type-system.md §9.2 (Parallel Execution Safety)
 
     struct CallResult {
         tx_hash: Blake3Hash,

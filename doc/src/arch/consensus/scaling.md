@@ -299,6 +299,64 @@ migrate to Shard A. This is economically rational but could create a concentrati
 dynamic where one shard dominates transaction processing. Whether pin reward
 economics are sufficient to maintain a diverse shard ecosystem is an open question.
 
+## Parallel Contract Execution (Future)
+
+DarkWow's architecture is structurally ready for parallel contract execution
+within a single block. The ρ-calculus formalization (see
+[Type System §9](../type-system.md#9-concurrent-execution-model)) defines
+contract calls as concurrent processes: `P₁ | P₂ | ... | Pₙ` where processes
+with disjoint write key sets execute independently and their state diffs
+merge deterministically.
+
+**What's in place:**
+
+- **Independent per-call overlays** (`execution.rs:163`): each contract call
+  executes against a clone of the base sled overlay (`Arc<Mutex<SledTreeOverlay>>`),
+  so calls do not share mutable state during execution.
+- **JoinSet<T>** (`src/concurrency/join_set.rs`): concurrent task collection
+  for spawning parallel work and joining results — the Rust mapping of
+  ρ-calculus `P | Q | merge!`.
+- **ExecutionSchedule** (`src/linear/src/schedule.rs`): key-set-based
+  dependency analysis that partitions calls into parallel waves. The merge
+  phase already collects per-call write keys and logs a parallelism score
+  (`info!` level: wave count, max parallelism, fully_parallel flag).
+- **Duplicate-key detection** (`execution.rs:398-405`): the existing
+  `written_keys.insert(key)` check is the bisimulation witness — if a
+  key collision is detected at merge time, the block is rejected. This
+  is exactly the safety condition for parallel execution: calls with
+  disjoint keys are bisimilar to sequential execution.
+
+**The gate: wasmer Runtime concurrency.** The `wasmer::Runtime` type
+handles WASM compilation, caching, and execution. Its internal state
+(compiler, code cache, instance pool) may not be safe for concurrent
+access from multiple smol tasks. Each call already creates a fresh
+`Runtime::new()` instance (`execution.rs:232`), so the per-call state
+is independent — the question is whether the underlying compiler
+internals are thread-safe.
+
+**Path to enablement:**
+
+1. Confirm wasmer `Runtime` is `Send + Sync` for independent instances
+2. Add `#[cfg(feature = "parallel-execution")]` feature gate in `Cargo.toml`
+3. Replace the sequential `for job in jobs` loop with `JoinSet::spawn` +
+   `JoinSet::join_all`
+4. Verify deterministic consensus: same block, parallel or sequential,
+   identical state root
+
+The ExecutionSchedule diagnostic already logs per-block parallelism
+potential. When wasmer confirms concurrent Runtime safety, the code
+change is mechanical — the architecture, formal verification, and
+diagnostic infrastructure are complete.
+
+Known wasmer concurrency issues (as of July 2026):
+- [wasmer#4158](https://github.com/wasmerio/wasmer/issues/4158) — Send+Sync soundness bug
+- [wasmer#1630](https://github.com/wasmerio/wasmer/issues/1630) — host_state shared across threads (UB)
+- [wasmer#1632](https://github.com/wasmerio/wasmer/issues/1632) — memory_grow unsynchronized write (data race)
+
+Track concurrency status:
+[wasmer GitHub Issues](https://github.com/wasmerio/wasmer/issues)
+(search: "thread safety" / "Send Sync" / "concurrent Runtime")
+
 ## Comparison
 
 | Aspect | ETH2 Sharding | Polkadot Parachains | Cosmos Zones | DarkWow Uncle-Merkle Sharding |
