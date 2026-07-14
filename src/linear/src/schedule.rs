@@ -27,7 +27,7 @@
 //! SHALL be deterministic — same block, same key sets, same wave partition.
 //!
 //! Maps to ρ-calculus:
-//! ```
+//! ```text
 //! ExecutionSchedule =
 //!   νkey_sets.(
 //!     analyze_keys!(jobs, key_sets)

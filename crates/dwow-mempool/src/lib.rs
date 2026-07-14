@@ -184,7 +184,7 @@ impl Mempool {
             let hash = tx.hash();
             let fee = fee_extractor.extract_fee(&tx);
             let gas = fee_extractor.estimate_gas(&tx);
-            let fee_rate = if gas > 0 { fee / gas } else { 0 };
+            let fee_rate = if gas > 0 { fee.saturating_mul(1_000_000) / gas } else { 0 };
             let added_at = now_secs();
 
             fee_index.insert(FeeIndexEntry { fee_rate, tx_hash: hash });
@@ -240,7 +240,7 @@ impl Mempool {
 
         let fee = self.fee_extractor.extract_fee(&tx);
         let gas = self.fee_extractor.estimate_gas(&tx);
-        let fee_rate = if gas > 0 { fee / gas } else { 0 };
+        let fee_rate = if gas > 0 { fee.saturating_mul(1_000_000) / gas } else { 0 };
         let now = now_secs();
 
         // Fee minimum (non-coinbase txs — coinbase = PoWRewardV1 call, function 0x05)
@@ -622,13 +622,14 @@ mod tests {
     fn test_gas_limit_respected() {
         smol::block_on(async {
             let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeExtractor));
-            // Each call = 400M gas. 3 calls = 1.2B. Gas limit = 800M.
+            // Each call = 400M gas. 1 payload call + FeeV1 = 2 calls = 800M per tx.
+            // Gas limit = 800M — should only fit one tx.
             let tx1 = make_tx(
-                vec![make_call(vec![1]), make_call(vec![2])],
+                vec![make_call(vec![1])],
                 Some(50_000_000),
             );
             let tx2 = make_tx(
-                vec![make_call(vec![3]), make_call(vec![4])],
+                vec![make_call(vec![2])],
                 Some(100_000_000),
             );
             mempool.add(tx1).await.unwrap();

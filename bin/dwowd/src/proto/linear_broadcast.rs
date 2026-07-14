@@ -231,8 +231,12 @@ pub async fn broadcast_block(p2p: &P2pPtr, block: dwow_chain::Block) {
 
     // Fan-out: k = ⌈log₂(N)⌉, minimum 2
     let k = ((n as f64).log2().ceil() as usize).max(2);
-    let mut rng = rand::thread_rng();
-    let selected: Vec<_> = peers.choose_multiple(&mut rng, k).collect();
+    // Scope the rng so it drops before the .await below — ThreadRng is !Send
+    // and must not cross an async yield point (regression from 5644ae385c).
+    let selected: Vec<_> = {
+        let mut rng = rand::thread_rng();
+        peers.choose_multiple(&mut rng, k).cloned().collect()
+    };
 
     tracing::debug!(
         target: "dwowd::proto::linear_broadcast",
@@ -240,7 +244,7 @@ pub async fn broadcast_block(p2p: &P2pPtr, block: dwow_chain::Block) {
         height, selected.len(), n, n, k,
     );
 
-    for peer in selected {
+    for peer in &selected {
         if let Err(e) = peer.send(&msg).await {
             tracing::warn!(
                 target: "dwowd::proto::linear_broadcast",
