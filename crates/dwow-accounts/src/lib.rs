@@ -114,10 +114,28 @@ impl Account {
     }
 }
 
+/// Persistent coordinates for re-deriving a per-capability secret via the
+/// AccountManager. These are NOT key material — they identify which account
+/// index and which derivation (master or per-instance) produced a given cap's
+/// owner-key. They are safe to store at rest with the CapRecord.
+#[derive(Debug, Clone)]
+pub enum KeyDerivation {
+    Master,
+    PerInstance {
+        contract_id: dwow_sdk::crypto::ContractId,
+        instance_seed: Vec<u8>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct KeyCoordinates {
+    pub account_index: usize,
+    pub derivation: KeyDerivation,
+}
+
 /// Holds the node/wallet's declared identity + lifecycle-managed keys. The
 /// declared identity is derived on boot from keys.toml [section]; additional
 /// keys are added via lifecycle operations (import, generate, HD derivation).
-pub struct AccountManager {
     accounts: Vec<Account>,
     default_index: usize,
     /// True when `accounts[0]` is an owner-declared identity (from `open()` /
@@ -430,6 +448,84 @@ impl AccountManager {
 
     pub fn secrets(&self) -> Vec<SecretKey> {
         self.accounts.iter().map(|a| a.keypair.secret).collect()
+    }
+
+    // ========================================================================
+    // Capability-aware key resolution (wallet spend path)
+    //
+    // The wallet's scan path trial-decrypts notes with per-contract derived
+    // keys, but historically dropped the association — the winning trial key
+    // (which account index, master vs derived, which instance seed) was never
+    // persisted with the CapRecord. The spend path therefore fell back to
+    // `secrets[0]` which cannot witness per-block-derived caps.
+    //
+    // These two methods provide the clean boundary: `find_owner` at scan-time
+    // (compute and store coordinates), `resolve_key` at spend-time (re-derive
+    // the same key from stored coordinates). Coordinates are NOT key material
+    // and can be stored at rest.
+    // ========================================================================
+
+    /// Find which account + derivation produced the given `public_key` for the
+    /// given `(contract_id, instance_seed)`. Returns the coordinates so the
+    /// scan path can persist them with the CapRecord. Iteration order is
+    /// deterministic (stable account order), so repeated calls return the same
+    /// result for the same inputs. `None` means no account's key matched.
+    pub fn find_owner(
+        &self,
+        cid: &ContractId,
+        instance_seed: &[u8],
+        pubkey: &PublicKey,
+    ) -> Option<KeyCoordinates> {
+        for (idx, acc) in self.accounts.iter().enumerate() {
+            let owned = OwnedSecretKey::from_declared(acc.keypair.secret);
+            // Master
+            if PublicKey::from_secret(acc.keypair.secret) == *pubkey {
+                return Some(KeyCoordinates {
+                    account_index: idx,
+                    derivation: KeyDerivation::Master,
+                });
+            }
+            // Per-instance
+            if let Ok(derived) = owned.derive_instance(cid, instance_seed) {
+                if PublicKey::from_secret(derived.expose_secret()) == *pubkey {
+                    return Some(KeyCoordinates {
+                        account_index: idx,
+                        derivation: KeyDerivation::PerInstance {
+                            contract_id: *cid,
+                            instance_seed: instance_seed.to_vec(),
+                        },
+                    });
+                }
+            }
+        }
+        None
+    }
+
+    /// Re-derive the exact same `OwnedSecretKey` from stored coordinates.
+    /// This is the deterministic inverse of `find_owner` — given the same
+    /// account state, it always produces the same key. Used by the wallet
+    /// spend path to obtain the correct witness for signing and nullifer
+    /// computation.
+    pub fn resolve_key(
+        &self,
+        coords: &KeyCoordinates,
+    ) -> Result<OwnedSecretKey, String> {
+        if coords.account_index >= self.accounts.len() {
+            return Err(format!(
+                "account index {} out of range (have {} accounts)",
+                coords.account_index, self.accounts.len(),
+            ));
+        }
+        let acc = &self.accounts[coords.account_index];
+        let owned = OwnedSecretKey::from_declared(acc.keypair.secret);
+        match &coords.derivation {
+            KeyDerivation::Master => Ok(owned),
+            KeyDerivation::PerInstance { contract_id, instance_seed } => {
+                owned
+                    .derive_instance(contract_id, instance_seed)
+                    .map_err(|e| format!("derive_instance: {}", e))
+            }
+        }
     }
 
     // Persistence (sled JSON cache), at-rest AEAD encryption (to_json/from_json,

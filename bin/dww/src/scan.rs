@@ -273,6 +273,7 @@ fn build_native_token_cap_record(
         revoked: false,
         revoked_at_height: None,
         created_at_height: height,
+        key_coords: None, // P0.1b: caller should populate via account_mgr.find_owner()
     };
 
     let msg = format!(
@@ -655,6 +656,7 @@ fn scan_block(
                             revoked: false,
                             revoked_at_height: None,
                             created_at_height: height_u32,
+                            key_coords: None, // P0.1b: Path 2 seed deferred
                         };
                         result.capabilities.push(CapabilityDiscovery { cap_record, merkle_proof });
                         path2_decrypted = true;

@@ -74,9 +74,14 @@ pub fn estimate_fee(num_inputs: usize, _num_outputs: usize) -> u64 {
 /// This supports the transfer.rs/token.rs pattern where fee ZK proofs are
 /// merged into the main call's proof bundle. When `fee_proofs` is None
 /// (the default for swap.rs/lib.rs), the fee leaf carries empty proofs.
+/// P0.1c: Delegation through AccountManager. The fee cap's key is resolved
+/// via `account_mgr.resolve_key(cap.key_coords)` — never assumes `secrets[0]`
+/// (which is the master key, unable to witness per-block-derived coinbase caps).
+/// `fee_proofs` is optional for callers that merge fee ZK proofs into the main
+/// proof bundle.
 pub fn build_fee_and_finalize_tx(
     wallet: &WalletPtr,
-    secrets: &[SecretKey],
+    account_mgr: &dwow_accounts::AccountManager,
     call_leaf: ContractCallLeaf,
     fee_proofs: Option<Vec<Proof>>,
     exclude_cap_id: Option<&str>,
@@ -116,9 +121,18 @@ pub fn build_fee_and_finalize_tx(
         )));
     }
 
-    // Secrets from AccountManager per Cornerstone 1.
-    let dark_secret = secrets.iter().next().cloned()
-        .ok_or_else(|| Error::Custom("No secrets in AccountManager".to_string()))?;
+    // P0.1c: resolve the cap's OWN key through AccountManager delegation.
+    // The fee cap carries key_coords (set at scan time); resolve_key
+    // re-derives the per-block or master key that actually owns this cap.
+    let dark_secret = {
+        let coords = fee_cap.key_coords.as_ref()
+            .ok_or_else(|| Error::Custom(format!(
+                "fee cap {} has no key_coords — cannot determine owning secret", fee_cap.cap_id,
+            )))?;
+        account_mgr.resolve_key(coords)
+            .map_err(|e| Error::Custom(format!("resolve_key fee cap: {}", e)))?
+            .expose_secret()
+    };
 
     // Get DRKW Merkle proof
     let dark_merkle_proof = wallet.get_merkle_proof(&fee_cap.cap_id)

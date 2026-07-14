@@ -637,7 +637,13 @@ impl WalletStateProvider for Dww {
             .map(|c| CapInfo {
                 cap_id: c.cap_id.clone(),
                 value: c.value,
-                secret: String::new(),
+                // P0.1c: resolve per-cap secret via AccountManager delegation.
+                // Caps without stored coordinates (legacy / pre-upgrade) get
+                // an empty secret — still unspendable, but scan-safe.
+                secret: c.key_coords.as_ref()
+                    .and_then(|coords| self.account_mgr.resolve_key(coords).ok())
+                    .map(|k| bs58::encode(k.expose_secret().to_bytes()).into_string())
+                    .unwrap_or_default(),
                 token_id: c.token_id,
                 leaf_position: c.leaf_position,
                 cap_blind: c.cap_blind,
@@ -814,7 +820,11 @@ impl Dww {
         let held_capabilities: Vec<CapabilityInfo> = unspent_caps.iter()
             .map(|c| CapabilityInfo {
                 capability_id: c.cap_id.clone(),
-                secret: String::new(),
+                // P0.1c: resolve per-cap secret via AccountManager delegation
+                secret: c.key_coords.as_ref()
+                    .and_then(|coords| self.account_mgr.resolve_key(coords).ok())
+                    .map(|k| bs58::encode(k.expose_secret().to_bytes()).into_string())
+                    .unwrap_or_default(),
             })
             .collect();
 
@@ -1043,7 +1053,7 @@ impl Dww {
                     call: contract_call,
                     proofs: proofs.into_iter().map(|p| Proof::new(p)).collect(),
                 };
-                return crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, &self.account_mgr.secrets(), leaf, None, None);
+                return crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, &self.account_mgr, leaf, None, None);
             }
         }
 
@@ -1109,7 +1119,7 @@ impl Dww {
         };
 
         // Build transaction with fee
-        let tx = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, &self.account_mgr.secrets(), leaf, None, None)?;
+        let tx = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, &self.account_mgr, leaf, None, None)?;
 
         Ok(tx)
     }

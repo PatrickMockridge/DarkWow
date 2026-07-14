@@ -57,7 +57,11 @@ CREATE TABLE IF NOT EXISTS held_capabilities (
     resource TEXT,
     action TEXT,
     primitives_csv TEXT,
-    barbs_csv TEXT
+    barbs_csv TEXT,
+    -- KeyCoordinates blob: identification record (account index + derivation
+    -- parameters) that lets the spend path re-derive the owning secret via
+    -- AccountManager::resolve_key. NOT key material — safe to store at rest.
+    key_coords_blob BLOB
 );
 
 CREATE INDEX IF NOT EXISTS idx_held_capabilities_token_id ON held_capabilities(token_id);

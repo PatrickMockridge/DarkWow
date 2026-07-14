@@ -81,6 +81,10 @@ pub struct CapRecord {
     pub revoked: bool,
     pub revoked_at_height: Option<u32>,
     pub created_at_height: u32,
+    /// Identification record (account index + derivation) that lets the
+    /// spend path re-derive the owning secret via AccountManager::resolve_key.
+    /// NOT key material — safe to store at rest. None for pre-upgrade caps.
+    pub key_coords: Option<dwow_accounts::KeyCoordinates>,
     /// Manifest capability name (None for native Path 1 / pre-manifest).
     pub capability_name: Option<String>,
     /// TypedCapability resource / action identity (ocap.md §3).
@@ -255,7 +259,7 @@ impl WalletDb {
                     value_blind_blob, value_blind, token_blind_blob, token_blind,
                     contract_id_blob, func_id_blob, capability_discriminant,
                     revoked, revoked_at_height, created_at_height,
-                    capability_name, resource, action, primitives_csv, barbs_csv
+                    capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob
              FROM held_capabilities WHERE (?1 IS NULL OR revoked = ?1)
              ORDER BY cap_id",
         )?;
@@ -412,9 +416,14 @@ impl WalletDb {
                         .and_then(|s| primitives_from_csv(&s)).unwrap_or_default();
                     let barbs = row.get::<_, Option<String>>(27).ok().flatten()
                         .and_then(|s| barbs_from_csv(&s)).unwrap_or_default();
+                    // Column 28: key_coords_blob (nullable, not key material)
+                    let key_coords: Option<dwow_accounts::KeyCoordinates> =
+                        row.get::<_, Option<Vec<u8>>>(28).ok().flatten()
+                            .and_then(|v| dwow_serial::deserialize(&v).ok());
 
                     caps.push(CapRecord {
                         cap_id,
+                        key_coords,
                         value: value as u64,
                         token_id,
                         spend_hook,
@@ -616,9 +625,14 @@ impl WalletDb {
                         .and_then(|s| primitives_from_csv(&s)).unwrap_or_default();
                     let barbs = row.get::<_, Option<String>>(27).ok().flatten()
                         .and_then(|s| barbs_from_csv(&s)).unwrap_or_default();
+                    // Column 28: key_coords_blob (nullable, not key material)
+                    let key_coords: Option<dwow_accounts::KeyCoordinates> =
+                        row.get::<_, Option<Vec<u8>>>(28).ok().flatten()
+                            .and_then(|v| dwow_serial::deserialize(&v).ok());
 
                     caps.push(CapRecord {
                         cap_id,
+                        key_coords,
                         value: value as u64,
                         token_id: token_id_val,
                         spend_hook,
@@ -680,8 +694,8 @@ impl WalletDb {
                     leaf_position, commitment_blob, contract_id_blob, func_id_blob, capability_discriminant,
                     cap_blind_blob, value_blind_blob, token_blind_blob,
                     revoked, revoked_at_height, created_at_height,
-                    capability_name, resource, action, primitives_csv, barbs_csv)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+                    capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
                 params![
                     cap.cap_id,
                     cap.value as i64,
@@ -704,6 +718,7 @@ impl WalletDb {
                     cap.action,
                     primitives_to_csv(&cap.primitives),
                     barbs_to_csv(&cap.barbs),
+                    cap.key_coords.as_ref().map(|k| dwow_serial::serialize(k)),
                 ],
             )
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;
@@ -1256,6 +1271,7 @@ mod tests {
             action: None,
             primitives: vec![],
             barbs: vec![],
+            key_coords: None,
         }
     }
 
