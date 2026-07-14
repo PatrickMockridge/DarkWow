@@ -643,7 +643,7 @@ impl WalletStateProvider for Dww {
                 // an empty secret — still unspendable, but scan-safe.
                 secret: c.key_coords.as_ref()
                     .and_then(|coords| self.account_mgr.resolve_key(coords).ok())
-                    .map(|k| bs58::encode(k.expose_secret().to_repr()).into_string())
+                    .map(|k| bs58::encode(k.expose_secret().inner().to_repr()).into_string())
                     .unwrap_or_default(),
                 token_id: c.token_id,
                 leaf_position: c.leaf_position,
@@ -841,7 +841,7 @@ impl Dww {
                 // P0.1c: resolve per-cap secret via AccountManager delegation
                 secret: c.key_coords.as_ref()
                     .and_then(|coords| self.account_mgr.resolve_key(coords).ok())
-                    .map(|k| bs58::encode(k.expose_secret().to_repr()).into_string())
+                    .map(|k| bs58::encode(k.expose_secret().inner().to_repr()).into_string())
                     .unwrap_or_default(),
             })
             .collect();
@@ -1071,10 +1071,10 @@ impl Dww {
                     call: contract_call,
                     proofs: proofs.into_iter().map(|p| Proof::new(p)).collect(),
                 };
-                let mut tx = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, &self.account_mgr, leaf, None, None)?;
-                // P0.3: sign the transaction before returning — L2 mempool
-                // admission rejects unsigned txs (verify_single_tx).
-                let sigs = tx.create_sigs(&self.account_mgr.secrets())
+                let (mut tx, ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, &self.account_mgr, leaf, None, None)?;
+                let mut all_secrets = self.account_mgr.secrets();
+                all_secrets.extend(ephemeral);
+                let sigs = tx.create_sigs(&all_secrets)
                     .map_err(|e| Error::Custom(format!("create_sigs: {}", e)))?;
                 tx.signatures.push(sigs);
                 return Ok(tx);
@@ -1143,11 +1143,12 @@ impl Dww {
         };
 
         // Build transaction with fee
-        let mut tx = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, &self.account_mgr, leaf, None, None)?;
-        // P0.3: sign the transaction before returning
-        let sigs = tx.create_sigs(&self.account_mgr.secrets())
+        let (mut tx, ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, &self.account_mgr, leaf, None, None)?;
+        let mut all_secrets = self.account_mgr.secrets();
+        all_secrets.extend(ephemeral);
+        let sigs = tx.create_sigs(&all_secrets)
             .map_err(|e| Error::Custom(format!("create_sigs: {}", e)))?;
-        tx.signatures = sigs;
+        tx.signatures.push(sigs);
 
         Ok(tx)
     }
