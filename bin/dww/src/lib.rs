@@ -812,6 +812,18 @@ impl Dww {
 
     /// Build a native-token transfer (wallet.md §6.4 — one bespoke write-path citizen).
     /// Composes the TransferCallBuilder (Step 2) with wallet state.
+    ///
+    /// Used by `wallet transfer <amount> DRKW <recipient>` via the dispatch path
+    /// (dispatch.rs) and the RPC path (rpc_server.rs). Returns a
+    /// `ContractCallLeaf` ready for fee finalization through
+    /// `build_fee_and_finalize_tx`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InsufficientFunds` if no DRKW cap has enough value (amount +
+    /// fee_reserve). Returns `CapKeyResolutionFailed` if the selected cap
+    /// has no stored `key_coords` (pre-upgrade wallet). Returns `ProofBuildFailed`
+    /// if ZK proof generation fails.
     pub async fn build_native_transfer(
         &self,
         amount: u64,

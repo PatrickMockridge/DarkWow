@@ -21,10 +21,47 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! NativeToken Transfer API
+//! NativeToken Transfer API (wallet.md §6.4 — the one bespoke write-path citizen)
 //!
 //! Transfer V1 uses the same mint proof as PoWReward since both create new coins.
 //! Burn proof is used for destroying coins.
+//!
+//! # Example (construction pattern — `no_run` because proving keys need ZK setup)
+//!
+//! ```rust,no_run
+//! use dwow_native_token_contract::client::transfer_v1::{
+//!     TransferCallBuilder, TransferCallInput, TransferCallOutput,
+//! };
+//! use dwow_native_token_contract::model::{CoinAttributes, InputWitness};
+//! use dwow_core::zk::{ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses};
+//! use dwow_core::zkas::ZkBinary;
+//! use dwow_sdk::crypto::{Blind, FuncId, MerkleNode, PublicKey, SecretKey};
+//! use dwow_sdk::pasta::pallas;
+//! use rand::rngs::OsRng;
+//!
+//! # fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! let burn_bin = dwow_native_token_contract::client::zkbins::NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V1_BIN;
+//! let mint_bin = dwow_native_token_contract::client::zkbins::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN;
+//! let burn_zk = ZkBinary::decode(burn_bin, false)?;
+//! let mint_zk = ZkBinary::decode(mint_bin, false)?;
+//! let burn_pk = { let c = ZkCircuit::new(empty_witnesses(&burn_zk)?, &burn_zk);
+//!     ProvingKey::build(burn_zk.k, &c)? };
+//! let mint_pk = { let c = ZkCircuit::new(empty_witnesses(&mint_zk)?, &mint_zk);
+//!     ProvingKey::build(mint_zk.k, &c)? };
+//!
+//! let builder = TransferCallBuilder {
+//!     inputs: vec![/* (InputWitness, SecretKey, spend_hook) */],
+//!     outputs: vec![/* CoinAttributes */],
+//!     burn_zkbin: burn_zk, burn_pk,
+//!     mint_zkbin: mint_zk, mint_pk,
+//!     tx_commitment: pallas::Base::zero(),
+//!     tx_nonce: pallas::Base::zero(),
+//! };
+//! // let debris = builder.build()?;
+//! // vec![0x03] + dwow_serial::serialize(&debris.params) → ContractCallLeaf
+//! Ok(())
+//! # }
+//! ```
 
 pub mod proof;
 
