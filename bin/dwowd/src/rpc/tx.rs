@@ -98,6 +98,20 @@ impl DwowNode {
 
         let tx_hash = format!("{}", chain_tx.hash());
 
+        // L2 mempool admission gate — structural witness verification
+        // before admission. Coinbase was already rejected above.
+        if !is_coinbase {
+            if let Err(e) = dwow_chain::zk_verifier::verify_single_tx(&chain_tx) {
+                error!(target: "dwowd::rpc::tx_submit_linear",
+                    "L2 mempool verify failed: {} — rejecting tx", e);
+                return JsonError::new(
+                    InvalidParams,
+                    Some(format!("L2 witness verification failed: {}", e)),
+                    id,
+                ).into();
+            }
+        }
+
         // Add to mempool
         if let Err(e) = mempool.add(chain_tx.clone()).await {
             error!(target: "dwowd::rpc::tx_submit_linear", "Failed to add transaction to mempool: {}", e);

@@ -118,6 +118,21 @@ impl ProtocolTxHandler {
                                     witness: dwow_serial::serialize(&core_tx),
                                 };
                                 if !chain_tx.contract_calls.is_empty() {
+                                    // L2 mempool admission gate: verify the
+                                    // witness structurally before admitting.
+                                    // Coinbase txs (0x05) have no witness
+                                    // and are already rejected by the
+                                    // mempool; this guards non-coinbase.
+                                    let is_coinbase = chain_tx.contract_calls
+                                        .first()
+                                        .map_or(false, |c| c.data.first() == Some(&0x05));
+                                    if !is_coinbase {
+                                        if let Err(e) = dwow_chain::zk_verifier::verify_single_tx(&chain_tx) {
+                                            error!(target: "dwowd::proto::protocol_tx",
+                                                "L2 mempool verify failed: {} — dropping tx", e);
+                                            continue;
+                                        }
+                                    }
                                     match mp.add(chain_tx).await {
                                         Ok(_) => {
                                             // Relay to all peers. The sender

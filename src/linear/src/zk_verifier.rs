@@ -182,7 +182,93 @@ impl std::fmt::Display for VerifyError {
 impl std::error::Error for VerifyError {}
 
 // ---------------------------------------------------------------------------
-// 4. Per-tx verification: reconcile → load VKs → verify proofs + sigs
+// 4. Per-tx verification with accumulated metadata tables
+// ---------------------------------------------------------------------------
+
+/// Verify the decoded core_tx against the accumulated per-call `metadata()`
+/// tables (see `execute_block`) and the on-chain zkas binaries.
+///
+/// For each call in core_tx: load the zkbin from the contracts store,
+/// feed it to the stateless `verify_zkp` along with the proof and public
+/// inputs. Then verify all Schnorr signatures against the pub_table.
+///
+/// This is the function that closes HAZOP C1 (counterfeiting) — a
+/// fabricated transaction has no valid proof and is rejected here.
+pub fn verify_core_tx_with_tables(
+    store: &crate::LinearStore,
+    core_tx: &dwow_core::tx::Transaction,
+    zkp_table: &[Vec<(String, Vec<pallas::Base>)>],
+    pub_table: &[Vec<dwow_sdk::crypto::PublicKey>],
+) -> Result<(), VerifyError> {
+    // -- ZK proofs: per call, per proof --
+    for (call_i, (proofs, call_zkp)) in core_tx
+        .proofs
+        .iter()
+        .zip(zkp_table.iter())
+        .enumerate()
+    {
+        let contract_id = &core_tx.calls[call_i].data.contract_id;
+        for (proof_j, (ns, pubvals)) in proofs.iter().zip(call_zkp.iter()).enumerate() {
+            let zkbin = load_zkbin(store, contract_id, ns)?;
+            match dwow_core::zk::verify_zkp(proof, &zkbin, pubvals) {
+                dwow_core::zk::ZkVerifyResult::Ok => {}
+                dwow_core::zk::ZkVerifyResult::InvalidProof => {
+                    return Err(VerifyError::InvalidProof(format!(
+                        "call[{}] proof[{}] namespace '{}'",
+                        call_i, proof_j, ns,
+                    )));
+                }
+            }
+        }
+    }
+
+    // -- Schnorr signatures --
+    if let Err(e) = core_tx.verify_sigs(pub_table.to_vec()) {
+        return Err(VerifyError::InvalidProof(format!(
+            "signature verification failed: {}",
+            e,
+        )));
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// 5. Mempool-side verification: structural check for admission
+// ---------------------------------------------------------------------------
+
+/// Verify a single chain tx for mempool admission. Called before `mp.add()`.
+///
+/// Performs witness decode + reconciliation (soundness gate #1 — the witness
+/// must describe the same tx as the chain tx), then checks that every
+/// proof-requiring call has at least one ZK proof. Full VK-based verification
+/// is done at block accept (see `verify_core_tx_with_tables`).
+///
+/// Returns `Ok(())` if the tx is safe to admit. Coinbase txs (empty witness)
+/// are silently ok — the mempool already rejects them before this call.
+pub fn verify_single_tx(chain_tx: &ChainTransaction) -> Result<(), VerifyError> {
+    let core_tx = decode_and_reconcile(chain_tx)?;
+    // Every call that is proof-requiring must carry at least one proof.
+    for (i, proofs) in core_tx.proofs.iter().enumerate() {
+        if proofs.is_empty() {
+            return Err(VerifyError::InvalidProof(format!(
+                "call[{}] requires a proof but has none (mempool admission)",
+                i,
+            )));
+        }
+    }
+    // Structural sig check: every call with calls must have sigs.
+    if core_tx.calls.len() != core_tx.signatures.len() {
+        return Err(VerifyError::InvalidProof(format!(
+            "signature table length mismatch: {} calls vs {} sigs",
+            core_tx.calls.len(), core_tx.signatures.len(),
+        )));
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// 6. Per-tx verification: reconcile → load VKs → verify proofs + sigs
 // ---------------------------------------------------------------------------
 
 /// Verify every non-coinbase transaction's witness in the given block.

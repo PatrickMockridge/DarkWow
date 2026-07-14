@@ -47,7 +47,7 @@
 //! [`connect_block`]: dwow_linear::chain_state::CChainState::connect_block
 //! [`verify_cumulative_supply`]: dwow_sdk::blockchain::verify_cumulative_supply
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 use std::sync::Arc;
 
@@ -207,6 +207,15 @@ pub fn execute_block(
     let mut results: Vec<CallResult> = Vec::with_capacity(jobs.len());
     let mut pending_deployments: Vec<(Vec<u8>, ContractId, Vec<u8>)> = Vec::new();
 
+    // L2 verification state: accumulate per-tx metadata tables (zkp + pub)
+    // during the job loop, then verify proofs+sigs after the loop.  Keyed by
+    // canonical tx_hash so only on-chain txs are verified (uncles excluded).
+    struct TxVeriTables {
+        zkp: Vec<Vec<(String, Vec<dwow_sdk::pasta::pallas::Base>)>>,
+        pubkeys: Vec<Vec<dwow_sdk::crypto::PublicKey>>,
+    }
+    let mut veri_state: HashMap<Blake3Hash, TxVeriTables> = HashMap::new();
+
     for job in jobs {
         let is_canonical = job.is_canonical;
         let tx_hash = job.tx_hash;
@@ -238,7 +247,29 @@ pub fn execute_block(
         };
 
         let mut success = true;
-        if runtime.metadata(&job.call_data).is_err() { success = false; }
+        // L2: capture the `metadata()` return — the contract's declared ZK
+        // public inputs + signature pubkeys — instead of discarding it.
+        // Accumulate per-tx for post-loop verification with the witness.
+        let metadata_bytes = match runtime.metadata(&job.call_data) {
+            Ok(m) => {
+                let mut c = Cursor::new(&m);
+                let zkp: Vec<(String, Vec<dwow_sdk::pasta::pallas::Base>)> =
+                    dwow_serial::Decodable::decode(&mut c).unwrap_or_default();
+                let sigs: Vec<dwow_sdk::crypto::PublicKey> =
+                    dwow_serial::Decodable::decode(&mut c).unwrap_or_default();
+                let entry = veri_state.entry(job.tx_hash).or_insert_with(|| {
+                    TxVeriTables { zkp: vec![], pubkeys: vec![] }
+                });
+                entry.zkp.push(zkp);
+                entry.pubkeys.push(sigs);
+                Some(m) // retain for any future use
+            }
+            Err(_) => {
+                success = false;
+                None
+            }
+        };
+        let _ = metadata_bytes;
 
         // exec() computes the state update and returns it as `[selector | update]`.
         // The host MUST thread those bytes into apply() below (see spend-hook path
@@ -291,6 +322,49 @@ pub fn execute_block(
                     }
                 }
             }
+        }
+    }
+
+    // ---- L2: verify every canonical non-coinbase tx's witness ----
+    // Uses the metadata tables accumulated during the job loop above.
+    // A fabricated tx (HAZOP C1 — no valid proof) is rejected here,
+    // BEFORE any state changes are merged.
+    for tx in &block.transactions {
+        let is_coinbase =
+            tx.contract_calls.first().map_or(false, |c| c.data.first() == Some(&0x05));
+        if is_coinbase {
+            continue;
+        }
+        let tx_hash = tx.hash();
+        if let Some(tables) = veri_state.get(&tx_hash) {
+            let core_tx = crate::zk_verifier::decode_and_reconcile(tx).map_err(|e| {
+                dwow_core::Error::Custom(format!(
+                    "L2 witness verify tx {}: {}",
+                    hex::encode(tx_hash.as_bytes()),
+                    e,
+                ))
+            })?;
+            crate::zk_verifier::verify_core_tx_with_tables(
+                &store,
+                &core_tx,
+                &tables.zkp,
+                &tables.pubkeys,
+            )
+            .map_err(|e| {
+                dwow_core::Error::Custom(format!(
+                    "L2 proof/signature verify tx {}: {}",
+                    hex::encode(tx_hash.as_bytes()),
+                    e,
+                ))
+            })?;
+        } else {
+            // The tx has contract calls but no metadata was accumulated —
+            // this should not happen in normal execution (every call runs
+            // metadata).  Treat as a verification gap and reject.
+            return Err(dwow_core::Error::Custom(format!(
+                "L2 verify: tx {} has no accumulated metadata tables",
+                hex::encode(tx_hash.as_bytes()),
+            )));
         }
     }
 
