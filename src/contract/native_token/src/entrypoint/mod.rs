@@ -333,7 +333,11 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
         }
         let value_coords = value_coords.unwrap();
         // Transfer mints: cumulative supply doesn't advance (only coinbase does).
-        // S_H.x and S_H.y are the identity point for non-coinbase mints.
+        // The mint proof computes new_cumulative = identity + value_commit (since
+        // old_cumulative = identity for non-coinbase), so S_H.x, S_H.y ARE the
+        // value_commit coordinates (matching positions 3,4). The identity-point
+        // coordinates were incorrect — the proof reveals value_commit, and the
+        // metadata MUST match for L2 verification to pass.
         zk_public_inputs.push((
             NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
             vec![
@@ -342,8 +346,8 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
                 *value_coords.x(),              // 3: vc.x
                 *value_coords.y(),              // 4: vc.y
                 output.token_commit,            // 5: tc
-                pallas::Base::zero(),           // 6: S_H.x (identity — non-coinbase mint)
-                pallas::Base::zero(),           // 7: S_H.y
+                *value_coords.x(),              // 6: S_H.x (== vc.x — identity + vc = vc)
+                *value_coords.y(),              // 7: S_H.y (== vc.y)
                 tp.tx_binding,                  // 8: tx_binding
                 tp.tx_nonce,                    // 9: tx_nonce
             ],

@@ -810,21 +810,139 @@ impl Dww {
         Ok(())
     }
 
-    /// Build a native-token transfer: selects a DRKW input coin, creates burn
-    /// proof (spend) + mint proofs (receive + change), nullifier, and AEAD notes.
-    /// Returns a ContractCallLeaf ready for fee attachment via build_fee_and_finalize_tx.
-    /// Per wallet.md §6.4: native_token is the one bespoke write-path citizen.
-    ///
-    /// ZK proof wiring is deferred to P3 (TransferCallBuilder in the native_token
-    /// crate, mirroring FeeCallBuilder).
+    /// Build a native-token transfer (wallet.md §6.4 — one bespoke write-path citizen).
+    /// Composes the TransferCallBuilder (Step 2) with wallet state.
     pub async fn build_native_transfer(
         &self,
-        _amount: u64,
-        _recipient_bs58: &str,
+        amount: u64,
+        recipient_bs58: &str,
     ) -> Result<dwow_core::tx::ContractCallLeaf> {
-        Err(Error::Custom(
-            "build_native_transfer: ZK proof wiring not yet implemented".into(),
-        ))
+        use crate::contract_imports::native_token::{
+            DRKW_TOKEN_ID, InputWitness, TransferCallBuilder, TransferCallOutput,
+            NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V1_BIN, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN,
+        };
+        use dwow_core::zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses};
+        use dwow_core::zkas::ZkBinary;
+        use dwow_sdk::crypto::{
+            keypair::Address, BaseBlind, Blind, FuncId, MerkleNode, PublicKey, SecretKey,
+        };
+        use dwow_sdk::pasta::pallas;
+        use dwow_serial::Encodable;
+        use rand::rngs::OsRng;
+
+        // wallet.md §6.2: select coin covering amount + fee reserve
+        let fee_reserve = crate::fee_builder::DEFAULT_FEE + 10_000_000;
+        let caps = self.wallet.get_capabilities_for_token(&DRKW_TOKEN_ID, Some(false))
+            .map_err(|e| Error::Custom(format!("get DRKW caps: {:?}", e)))?;
+        let selected = caps.iter()
+            .find(|c| c.value >= amount + fee_reserve)
+            .ok_or_else(|| Error::Custom(format!(
+                "No DRKW cap with value >= {} (need {} + {} fee reserve)",
+                amount + fee_reserve, amount, fee_reserve,
+            )))?;
+        let change_value = selected.value - amount - fee_reserve;
+
+        // wallet.md §4: resolve per-cap secret via AccountManager
+        let coords = selected.key_coords.as_ref()
+            .ok_or_else(|| Error::Custom(format!(
+                "Cap {} has no key_coords", selected.cap_id,
+            )))?;
+        let owned = self.account_mgr.resolve_key(coords)
+            .map_err(|e| Error::Custom(format!("resolve_key: {}", e)))?;
+        let cap_secret = *owned.expose_secret();
+
+        // wallet.md §6.1 shell: Merkle proof from DB
+        let merkle_proof = self.wallet.get_merkle_proof(&selected.cap_id)
+            .map_err(|e| Error::Custom(format!("merkle proof: {:?}", e)))?;
+        let merkle_path: Vec<MerkleNode> = merkle_proof.siblings.iter()
+            .map(|s| {
+                let b: [u8; 32] = bs58::decode(s).into_vec()
+                    .map_err(|e| Error::Custom(e.to_string()))?
+                    .try_into().map_err(|_| Error::Custom("bad merkle len".into()))?;
+                Ok(MerkleNode::from_bytes(b).ok_or_else(|| Error::Custom("bad merkle node".into()))?)
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        // Load ZK binaries
+        let burn_zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V1_BIN, false)
+            .map_err(|e| Error::Custom(format!("burn zkbin: {}", e)))?;
+        let burn_pk = {
+            let c = ZkCircuit::new(empty_witnesses(&burn_zkbin)?, &burn_zkbin);
+            ProvingKey::build(burn_zkbin.k, &c).map_err(|e| Error::Custom(format!("burn pk: {}", e)))?
+        };
+        let mint_zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN, false)
+            .map_err(|e| Error::Custom(format!("mint zkbin: {}", e)))?;
+        let mint_pk = {
+            let c = ZkCircuit::new(empty_witnesses(&mint_zkbin)?, &mint_zkbin);
+            ProvingKey::build(mint_zkbin.k, &c).map_err(|e| Error::Custom(format!("mint pk: {}", e)))?
+        };
+
+        let tx_commitment = pallas::Base::zero();
+        let tx_nonce = pallas::Base::zero();
+        let spend_hook = pallas::Base::zero();
+        let user_data = pallas::Base::zero();
+
+        // Compose input witness from selected cap
+        let input_witness = InputWitness {
+            value: selected.value,
+            token_id: DRKW_TOKEN_ID.inner(),
+            user_data,
+            coin_blind: selected.cap_blind,
+            leaf_position: selected.leaf_position,
+            merkle_path,
+        };
+
+        // Compose recipient output
+        let addr: Address = recipient_bs58.parse()
+            .map_err(|e| Error::Custom(format!("recipient address: {}", e)))?;
+        let recipient_pk = *addr.public_key();
+        let recv_coin = TransferCallOutput {
+            version: 0,
+            public_key: recipient_pk,
+            value: amount,
+            token_id: DRKW_TOKEN_ID,
+            spend_hook: FuncId::from(spend_hook),
+            user_data,
+            blind: Blind(BaseBlind::random(&mut OsRng).inner()),
+        };
+
+        let mut builder = TransferCallBuilder {
+            inputs: vec![(input_witness, cap_secret, spend_hook)],
+            outputs: vec![recv_coin],
+            burn_zkbin, burn_pk, mint_zkbin, mint_pk,
+            tx_commitment, tx_nonce,
+        };
+
+        // Compose change output if applicable
+        if change_value > 0 {
+            let master_pk = PublicKey::from_secret(self.account_mgr.secrets().first()
+                .copied().ok_or_else(|| Error::Custom("no master key".into()))?);
+            builder.outputs.push(TransferCallOutput {
+                version: 0,
+                public_key: master_pk,
+                value: change_value,
+                token_id: DRKW_TOKEN_ID,
+                spend_hook: FuncId::from(spend_hook),
+                user_data,
+                blind: Blind(BaseBlind::random(&mut OsRng).inner()),
+            });
+        }
+
+        let debris = builder.build()
+            .map_err(|e| Error::Custom(format!("transfer build: {}", e)))?;
+
+        // wallet.md §6.3 step 8: serialize params with function selector
+        let mut data = vec![0x03u8];
+        dwow_serial::serialize(&debris.params).encode(&mut data)
+            .map_err(|e| Error::Custom(format!("encode params: {}", e)))?;
+
+        Ok(dwow_core::tx::ContractCallLeaf {
+            call: dwow_sdk::tx::ContractCall {
+                contract_id: *NATIVE_TOKEN_CONTRACT_ID,
+                data,
+            },
+            proofs: debris.proofs,
+        })
     }
 
     /// Mark caps from a transaction as revoked in the wallet database.
