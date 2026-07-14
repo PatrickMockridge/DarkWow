@@ -59,6 +59,12 @@ pub mod channel;
 #[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub use channel::ChannelPtr;
 
+/// Compile-time barb declaration for protocol handlers (§1.1, §10.4).
+pub mod barb_trait;
+
+/// Typed cross-path channel with barb-carrying type safety (§10.4).
+pub mod bridge_channel;
+
 /// P2P orchestrator — all six sessions, channel store, broadcast.
 #[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub mod p2p;

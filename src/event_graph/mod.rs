@@ -68,6 +68,9 @@ use util::{generate_genesis, millis_until_next_rotation, next_rotation_timestamp
 pub mod deg;
 use deg::DegEvent;
 
+/// Blockchain event wrapper — route blockchain data through event graph DAG (§10.4).
+pub mod blockchain_bridge;
+
 #[cfg(test)]
 mod tests;
 
