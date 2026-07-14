@@ -1053,7 +1053,13 @@ impl Dww {
                     call: contract_call,
                     proofs: proofs.into_iter().map(|p| Proof::new(p)).collect(),
                 };
-                return crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, &self.account_mgr, leaf, None, None);
+                let mut tx = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, &self.account_mgr, leaf, None, None)?;
+                // P0.3: sign the transaction before returning — L2 mempool
+                // admission rejects unsigned txs (verify_single_tx).
+                let sigs = tx.create_sigs(&self.account_mgr.secrets())
+                    .map_err(|e| Error::Custom(format!("create_sigs: {}", e)))?;
+                tx.signatures = sigs;
+                return Ok(tx);
             }
         }
 
@@ -1119,7 +1125,11 @@ impl Dww {
         };
 
         // Build transaction with fee
-        let tx = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, &self.account_mgr, leaf, None, None)?;
+        let mut tx = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, &self.account_mgr, leaf, None, None)?;
+        // P0.3: sign the transaction before returning
+        let sigs = tx.create_sigs(&self.account_mgr.secrets())
+            .map_err(|e| Error::Custom(format!("create_sigs: {}", e)))?;
+        tx.signatures = sigs;
 
         Ok(tx)
     }

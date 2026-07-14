@@ -60,18 +60,40 @@ impl ContractClient for NativeTokenClient {
         match function {
             "FeeV1" => Some(0x00),
             "BurnV1" => Some(0x02),
+            "TransferV1" => Some(0x03), // wallet.md §6.4 — the one bespoke write-path citizen
             "PoWRewardV1" => Some(0x05),
             _ => None,
         }
     }
 
     fn supported_functions(&self) -> Vec<&'static str> {
-        vec!["FeeV1", "PoWRewardV1", "BurnV1"]
+        vec!["FeeV1", "PoWRewardV1", "BurnV1", "TransferV1"]
     }
 
-    fn build(&self, function: &str, _params: &str, _wallet_state: &dyn WalletStateProvider) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String> {
+    fn build(&self, function: &str, params: &str, wallet_state: &dyn WalletStateProvider) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String> {
         match function {
             "FeeV1" | "PoWRewardV1" | "BurnV1" => Ok((vec![], vec![])),
+            "TransferV1" => {
+                // P0.2: native token transfer — the one bespoke write-path citizen
+                // (wallet.md §6.4). The wallet dispatches here via invoke_contract
+                // with a JSON params string; extract amount + recipient.
+                let v: serde_json::Value = serde_json::from_str(params)
+                    .map_err(|e| format!("TransferV1 params JSON: {}", e))?;
+                let amount: u64 = v.get("amount")
+                    .and_then(|a| a.as_u64())
+                    .ok_or_else(|| "TransferV1: missing or invalid 'amount'".to_string())?;
+                let recipient_str: &str = v.get("recipient")
+                    .and_then(|r| r.as_str())
+                    .ok_or_else(|| "TransferV1: missing 'recipient'".to_string())?;
+                let recipient_bytes = bs58::decode(recipient_str).into_vec()
+                    .map_err(|e| format!("TransferV1 recipient bs58: {}", e))?;
+                let mut data = vec![0x03u8]; // function selector
+                data.extend_from_slice(&amount.to_le_bytes());
+                data.extend_from_slice(&recipient_bytes);
+                // Proofs are produced by the wallet's ZK pipeline (fee builder +
+                // transfer builder); the client returns call data only.
+                Ok((data, vec![]))
+            }
             _ => Err(format!("NativeToken: unsupported function '{}'", function)),
         }
     }

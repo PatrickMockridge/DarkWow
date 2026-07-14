@@ -95,8 +95,8 @@ processes), then simply use the future:
 
 Another tool in our toolbox is the `subscribe()/notify()` paradigm.
 
-We can use `system::Subscriber`. Then inside our method we can define
-a method like so:
+We can use `concurrency::Publisher`. Then inside our method we can subscribe
+like so:
 
 ```rust
     pub async fn subscribe_stop(&self) -> Result<Subscription<Error>> {

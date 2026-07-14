@@ -542,8 +542,9 @@ GossipStructured(b) =
 
 Fan-out factor `k = log₂(N)` produces O(log N) propagation rounds and
 O(k·N) total messages — optimal for epidemic dissemination. This replaces
-the current flood broadcast (`p2p.broadcast(&msg)` at `linear_broadcast.rs:343`)
-which produces O(N²) traffic per block.
+the current flood broadcast (`p2p.broadcast(&msg)` — send-side fan-out at
+`linear_broadcast.rs:206-256`, receive-side relay still flood at `:385`)
+which produces O(N²) traffic per block on the receive side.
 
 ### 10.3 Event Graph Path — DAG Sync
 
@@ -600,6 +601,42 @@ in event content with marker byte `0x42` ('B' for blockchain) and routed
 through DAG sync instead of flood broadcast. The event graph sled tree
 (`dag`) remains quarantined from blockchain sled trees (`contracts`, `blocks`,
 `coins`, `nullifiers`).
+
+### Implementation
+
+The barb system is implemented across three modules:
+
+**BarbId enum** (`src/net/barb_trait.rs`): 22 observable actions — 14
+authorization barbs (Spend, View, Nullify, Commit, Prove, Verify, Dispatch,
+Gate, Denominate, ProveInclusion, Encrypt, Derive, Discover, Mine) and 8
+concurrency barbs (Concurrent, Merge, SyncBarrier, Broadcast, RateLimit,
+GossipForward, QuorumQuery, DagParent). Classification predicates:
+`is_blockchain_barb()`, `is_event_graph_barb()`, `is_concurrency_barb()`.
+
+**ExhibitsBarb trait** (`src/net/barb_trait.rs`): Protocol handlers implement
+this marker trait to declare their barb set at compile time. `bridge_safe
+::<Source, Dest>()` provides the static quarantine check — blockchain barbs
+(↓spend, ↓nullify, ↓commit) SHALL NOT cross to event-graph channels.
+
+**BridgeChannel** (`src/net/bridge_channel.rs`): Typed channel with
+`BarbWitness<B>` phantom type parameter. `BridgeChannel<T, B>::pair()` creates
+a `BridgeSender`/`BridgeReceiver` pair. The `B` parameter statically enforces
+that a channel declared for blockchain messages cannot receive from an
+event-graph process.
+
+**BlockchainEvent bridge** (`src/event_graph/blockchain_bridge.rs`): Wraps
+blockchain messages in event graph content. `wrap_blockchain_event(data)`
+prepends marker `0x42`. `is_blockchain_event(content)` checks the marker
+with a single byte comparison (zero allocation). `unwrap_blockchain_event()`
+extracts the payload.
+
+**Quarantine enforcement** operates at three layers:
+1. **Feature gate** (`Cargo.toml` + `src/lib.rs:33-39`): `event-graph` feature
+   independently enable/disable, sled-overlay quarantined behind it
+2. **Compile-time**: `BarbWitness<B>` phantom type + `bridge_safe()` prevent
+   blockchain barbs from crossing to event-graph channels
+3. **Runtime**: Separate sled trees — blockchain (`contracts`, `blocks`,
+   `coins`, `nullifiers`) vs event graph (`dag`)
 
 ## 11. Verified Properties
 

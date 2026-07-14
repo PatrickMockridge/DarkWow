@@ -21,6 +21,14 @@ tutorial:
 
 * [Understanding Protocols](../../learn/dchat/creating-dchatd/protocols.md)
 
+The P2P network is formalized in the ρ-calculus as replicated process nets
+(see [Type System §10](../type-system.md#10-p2p-network-as-replicated-process-nets)).
+A `P2p` instance maps to a concurrent composition of processes communicating
+through typed channels: `ProtocolAddress | ProtocolVersion | ...`.
+The three-tier feature gate — `ProcessNet(wallet) ⊂ ProcessNet(node) ⊂
+ProcessNet(full)` — defines which processes are available at each tier
+(see [Wallet vs Daemon](../wallet-vs-daemon.md) for the per-tier breakdown).
+
 ## Outbound Session
 
 The outbound session is responsible to ensure the hosts pool is
@@ -260,6 +268,37 @@ Apps should be able to configure:
 > Note: we have a configurable setting called `blacklist` which allows
 > us to reject hosts by addr.
 * Accounting abstraction for scoring connections.
+
+## Structured Gossip
+
+Block propagation uses structured fan-out gossip instead of flood broadcast.
+This is the ρ-calculus `GossipStructured(b)` process (see
+[Type System §10.2](../type-system.md#102-blockchain-path--structured-gossip)).
+
+**Algorithm**: The `broadcast_block()` function at
+`bin/dwowd/src/proto/linear_broadcast.rs:206-256` selects `k = ⌈log₂(N)⌉`
+randomly chosen peers and sends the block only to those peers. The fan-out
+factor reduces total message count from O(N²) (flood) to O(k·N) (structured)
+and propagation rounds from O(N) to O(log N). When N ≤ 2, the function falls
+back to flood broadcast — with fewer than 3 peers, fan-out = flood.
+
+**Known limitation**: The receive-side relay at `linear_broadcast.rs:385`
+currently uses `p2p.broadcast()` (flood). This means receivers still relay
+to all peers, partially defeating the fan-out benefit. This is an acknowledged
+issue tracked for a future hardening pass.
+
+**Performance**:
+
+| Model | Messages per block | Propagation rounds |
+|---|---|---|
+| Flood | O(N²) | O(N) |
+| Fan-out (k = log₂ N) | O(k·N) | O(log N) |
+
+For a 1,000-node network, fan-out reduces messages from ~1,000,000 to
+~10,000 per block — a 100× reduction.
+
+See also: [Observer](../observer.md) (relay behavior),
+[Sync Module](../sync.md) (block propagation flow).
 
 ## Swarming
 

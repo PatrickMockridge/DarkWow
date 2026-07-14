@@ -459,24 +459,29 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             })
         }
 
-        // === Transfer/Redeem/Burn — CLI convenience wrappers ===
-        // These are UX sugar for common PN operations (transfer, redeem, burn).
-        // They parse CLI args into JSON params and route through the SAME generic
-        // invoke_contract("promissory_note", function, params) path as every other
-        // contract. No special code path — just parameter construction.
+        // === Transfer — dispatches to the correct contract by asset ===
+        // Per wallet.md §6.4: DRKW (native token) routes through the hardcoded
+        // NativeToken client (the one bespoke write-path citizen). Every other
+        // asset routes through the contract identified by its token_id (the
+        // generic manifest-driven path).
         //
-        // Spend hooks are a common PN pattern (protocol-owned liquidity, DAO
-        // callbacks). The `--spend-hook` flag on transfer/redeem is a justified
-        // convenience because nearly every PN transfer in a DeFi setting uses one.
+        // Redeem/Burn remain PN-specific — those operations belong to the
+        // promissory_note contract and always route through it.
         WalletCommand::Transfer { amount, token_id, recipient, spend_hook, user_data, half_split: _, porcelain } => {
+            let is_drkw = token_id == "DRKW" || token_id == "drkw";
+            let (contract_name, function) = if is_drkw {
+                ("native_token", "TransferV1")
+            } else {
+                ("promissory_note", "TransferV1")
+            };
             let params = format!(
-                r#"{{"amount":{},"token_id":"{}","recipient":"{}"{}{}}}"#,
-                amount, token_id, recipient,
+                r#"{{"amount":{},"recipient":"{}"{}{}}}"#,
+                amount, recipient,
                 spend_hook.as_ref().map(|s| format!(r#","spend_hook":"{}""#, s)).unwrap_or_default(),
                 user_data.as_ref().map(|s| format!(r#","user_data":"{}""#, s)).unwrap_or_default(),
             );
             smol::block_on(async {
-                let tx = dww.invoke_contract("promissory_note", "TransferV1", Some(&params), vec![]).await?;
+                let tx = dww.invoke_contract(contract_name, function, Some(&params), vec![]).await?;
                 let tx_b64 = crate::wallet_util::base64_encode(&dwow_serial::serialize_async(&tx).await);
                 if !*porcelain { println!("Transaction (base64): {tx_b64}"); }
                 let mut output = vec![];
