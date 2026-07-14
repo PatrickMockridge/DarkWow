@@ -70,7 +70,7 @@ pub mod native_token {
 
     pub use dwow_native_token_contract::model::{
         Coin as NativeCoin, CoinAttributes as NativeCoinAttributes,
-        Input as NativeInput, Output as NativeOutput,
+        Input as NativeInput, InputWitness, Output as NativeOutput,
         FeeParamsV1, BurnParamsV1, TransferParamsV1 as NativeTransferParamsV1,
         DRKW_TOKEN_ID,
     };

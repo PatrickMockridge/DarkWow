@@ -45,6 +45,7 @@ use dwow_sdk::crypto::{
     BaseBlind, Blind, FuncId, MerkleNode, PublicKey, ScalarBlind, SecretKey, TokenId,
 };
 use dwow_sdk::pasta::pallas;
+use pasta_curves::group::ff::PrimeField;
 use rand::rngs::OsRng;
 
 // ---------------------------------------------------------------------------
@@ -133,7 +134,7 @@ impl TransferCallBuilder {
             input_entries.push(crate::model::Input {
                 value_commit: revealed.value_commit,
                 token_commit: revealed.token_commit,
-                nullifier: revealed.nullifier,
+                nullifier: revealed.nullifier,  // TransferBurnRevealed: Nullifier type
                 merkle_root: revealed.merkle_root,
                 user_data_enc: revealed.user_data_enc,
                 spend_hook: FuncId::from(*spend_hook),
@@ -204,7 +205,7 @@ impl TransferCallBuilder {
                 value_commit: revealed.value_commit,
                 token_commit: revealed.token_commit,
                 coin: output_coin,
-                nullifier: revealed.nullifier,
+                nullifier: Nullifier::from_bytes(revealed.nullifier.to_repr()).expect("nf zero"),
                 note: encrypted_note,
             });
         }
