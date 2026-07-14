@@ -312,6 +312,12 @@ it exhibits, its scope, and its construction rules.
 | `BlockHeader` | `{ merkle_root, previous, height, ... }` — all merkle roots SHALL be `blake3::Hash` | `↓validate-pow` |
 | `AeadEncryptedNote` | `{ ciphertext, ephem_public: PublicKey }` | `↓discover` |
 
+A `Transaction`'s `proofs` and `signatures` are load-bearing: they SHALL be carried
+end-to-end (broadcast → mempool → block) and verified at both mempool admission and block
+acceptance ([mempool.md](mempool.md)). Stripping them erases the `↓prove`/`↓verify` barbs
+(§2.2) and defeats the authority model (§5). Transaction construction — the exercise of a
+held capability — is specified in [wallet.md §6](wallet.md).
+
 ### 8.3 Authority Types
 
 | Type | Inner | Barbs | Construction |

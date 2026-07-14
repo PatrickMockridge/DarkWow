@@ -58,6 +58,11 @@ a pure function ([type-system.md §7](type-system.md)):
 6. Block iteration: sequential by height — deterministic
 7. SQLite inserts: `INSERT OR IGNORE` — idempotent
 
+This section specifies **confirmed** wallet state. The write path (§6) adds a provisional
+layer for transactions in flight; the refinement `WalletState = ConfirmedState ⊕
+ProvisionalState` (§6.5) preserves this guarantee — provisional state never mutates the
+pure function defined here.
+
 ## 2. Scan Paths: Primitives → Capability Types
 
 The wallet discovers capabilities through two scan paths. Both operate on
@@ -131,6 +136,10 @@ pipeline.
 | `key_lifecycle` | Additive lifecycle keys | ν-restricted name store |
 | `contract_metadata` | On-chain contract manifests | Type declarations |
 
+The write path adds **provisional** stores (§6.5): a pending-transaction record and a
+per-capability spend-state (`Unspent`/`Reserved`/`Spent`). These hold no confirmed
+authority — they are reconciled into the tables above when a block is scanned.
+
 ## 4. Authority: Name Possession Only
 
 The wallet enforces the authority model from [type-system.md §5](type-system.md):
@@ -188,23 +197,166 @@ Manifests can lie. The wallet SHALL defend against this with three layers:
    wallet SHALL NOT block interaction based on trust tier. It warns. The
    user decides.
 
-## 6. Transaction Construction
+## 6. The Write Path: Transaction Construction (Exercise)
 
-When the user invokes a capability (e.g., `dwow_wallet contract invoke
-<contract_id> transfer --params '{...}'`), the wallet:
+Sections 1–5 specify the wallet's **read path** — Discover and Hold. This section
+specifies the **write path** — Exercise — the formal dual of the scan. Where the scan
+*receives* a name (the AEAD input operation, §2) and constructs a capability type, the
+write path *exercises* a held capability: it generates the zero-knowledge proof that
+inhabits the capability type's predicate language L_{r,s} ([ocap.md §6](ocap.md)),
+publishes the nullifier that consumes the name, and emits an authenticated `Transaction`
+([type-system.md §8.2](type-system.md)).
 
-1. Resolves the manifest for `<contract_id>`.
-2. Selects held capabilities whose constructed types match the action's
-   `requires` field.
-3. Generates ZK proofs that the holder knows the primitive names (witnesses)
-   satisfying the predicate language L_{r,s}.
-4. Computes nullifiers for each consumed capability.
-5. Attaches the fee capability (DRKW) per the fee builder.
-6. Broadcasts the transaction via P2P gossip.
+The write path SHALL uphold the same discipline the read path does: it is a **pure
+function** (§6.1), it selects inputs by **barb coverage** (§6.2), it has exactly **one
+bespoke citizen** (§6.4), and — because broadcasting a transaction creates state that is
+not yet on the chain — it introduces a formally-delimited **provisional state** (§6.5)
+that reconciles against confirmed state without ever mutating it.
 
-The capability (the note being exercised) is NOT in the params. The params
-are pure business-logic arguments. The wallet automatically selects
-capabilities, generates ZK proofs, and attaches nullifiers.
+### 6.1 Exercise Is a Pure Function
+
+Per the referential-transparency requirement of §1, transaction construction SHALL be a
+pure function:
+
+```
+Transaction = f(SelectedCapabilities, Action, Params, Secrets, Seed)
+```
+
+- **SelectedCapabilities** — the held capabilities being exercised (§6.2), each with its
+  primitive names, commitment, and Merkle inclusion proof.
+- **Action** — the manifest-declared action being invoked, with its
+  `requires`/`consumes`/`produces` and its `proof_circuit` ([manifest.md](manifest.md)).
+- **Params** — pure business-logic arguments. The capability being exercised is NEVER in
+  the params; the wallet selects it (§6.2).
+- **Secrets** — the ν-restricted spending names from the `AccountManager` (§4).
+- **Seed** — the explicit randomness name. Every blind, every ephemeral key, and the
+  Halo2 proving randomness SHALL be derived from `Seed`. No construction step SHALL draw
+  from ambient randomness.
+
+Given identical inputs, `f` SHALL produce a byte-identical transaction. This is the
+write-path analogue of §1's guarantee that "AEAD decryption is deterministic for a given
+ciphertext + key": by making `Seed` an explicit name rather than ambient authority, the
+whole pipeline — coin selection, note encryption, nullifier derivation, ZK proving,
+signing — is a reproducible pure computation. The effectful shell that gathers the inputs
+(reads the wallet DB for held capabilities and Merkle proofs, draws a fresh `Seed`) SHALL
+be separated from `f`; only the shell performs I/O. This is the functional-core /
+imperative-shell discipline the scan already follows.
+
+### 6.2 Barb-Cover Input Selection
+
+The wallet SHALL select `SelectedCapabilities` so that the union of their barbs covers the
+Action's required barbs, using the same `wallet_construct` composition rule the read path
+uses at discovery ([ocap.md §2](ocap.md), [type-system.md §6.1](type-system.md)):
+
+```
+covers( ⋃ barbs(SelectedCapabilities), requiredBarbs(Action) ) = true
+```
+
+Selection by asset value alone SHALL NOT satisfy this requirement: a capability is
+eligible only if its constructed type's barbs cover the action's `requires`. This is the
+write-path use of the soundness invariant `walletConstruct_sound` (§7.1) — the read path
+proves the invariant when it *constructs* a held type; the write path enforces it when it
+*exercises* one. A capability in the `Reserved` state (§6.5) SHALL NOT be selected.
+
+### 6.3 The Construction Pipeline
+
+For an invocation `dwow_wallet contract invoke <contract_id> <action> --params '{...}'`,
+`f` SHALL:
+
+1. Resolve the manifest for `<contract_id>` (§5; the manifest is the type declaration).
+2. Select held capabilities whose composed barbs cover the action's `requires` (§6.2).
+3. Derive all blinds and proving randomness from `Seed` (§6.1).
+4. Compute the **nullifier** for each consumed capability and publish every such nullifier
+   in `Transaction.nullifiers`. A consumed capability whose nullifier is absent from
+   `Transaction.nullifiers` SHALL be a construction error (nullifier completeness, §7.8).
+5. Generate the ZK proof(s) that the holder knows the witnesses satisfying L_{r,s}, using
+   the action's `proof_circuit` (§6.4).
+6. Attach the fee capability (DRKW) per the fee builder; the fee input's nullifier is
+   likewise published in `Transaction.nullifiers`.
+7. Sign the transaction (Schnorr over `calls` + `proofs`); an unsigned transaction SHALL
+   NOT be broadcast.
+8. Return the authenticated `Transaction { calls, proofs, signatures, tx_commitment,
+   nullifiers }` ([type-system.md §8.2](type-system.md)). Broadcast (§6.5) is the shell's
+   responsibility, not `f`'s.
+
+The capability (the note being exercised) is NOT in the params. The params are pure
+business-logic arguments. The wallet automatically selects capabilities, generates ZK
+proofs, and publishes nullifiers.
+
+### 6.4 One Bespoke Citizen, Write Side
+
+Per §9 (read side) and [type-system.md §13](type-system.md), the write path SHALL have
+exactly one bespoke citizen: **NativeToken**, the consensus-critical asset. Native
+transfers, burns, and fee payments SHALL be constructed by the hardcoded NativeToken
+client. Every other contract — genesis or user-deployed — SHALL be constructed
+generically from its manifest: the manifest's `proof_circuit` names the builder in the
+circuit registry, and no per-contract wallet code is required ([manifest.md](manifest.md);
+the wallet is a generic capability engine). Adding a second bespoke construction path
+breaks the write path's design exactly as it would break the scan (§9).
+
+### 6.5 Provisional State: The In-Between
+
+Broadcasting a transaction creates state that is real to the wallet but not yet on the
+chain: the transaction is pending, and the capabilities it consumes are spoken-for but
+not yet spent. §1 defines `WalletState` as a pure function of confirmed chain blocks; the
+write path refines this **without weakening it**:
+
+```
+WalletState   = ConfirmedState ⊕ ProvisionalState
+ConfirmedState = f(AccountManager, ChainBlocks)      -- §1, unchanged
+```
+
+`ConfirmedState` remains exactly the pure function of §1. `ProvisionalState` is a separate,
+monotonically-reconciled layer holding pending transactions and reserved capabilities.
+The governing invariant:
+
+> **ProvisionalState SHALL NOT mutate ConfirmedState.** Only scanning a block (§2) promotes
+> a provisional fact to a confirmed fact. A pending transaction that confirms collapses
+> into `ConfirmedState` (its outputs discovered by scan, its inputs' nullifiers observed);
+> a pending transaction that is dropped is discarded, and its reservations are released.
+
+**Capability spend-state lifecycle.** Each held capability SHALL carry a spend-state:
+
+```
+Unspent ──broadcast──▶ Reserved ──confirmation──▶ Spent
+                          │
+                          └────────drop──────────▶ Unspent
+```
+
+`Reserved` excludes the capability from selection (§6.2) but is provisional, not a chain
+fact — the on-chain consumption evidence is the nullifier (§6.3 step 4), observed only
+when the block is scanned. The binary `revoked` marker of the read path is the `Spent`
+terminal state *as observed by scan*; the write path adds the `Reserved` in-between so the
+wallet does not re-select a capability it has already spoken for.
+
+**Transaction status lifecycle.** Each transaction the wallet builds SHALL carry a status:
+
+```
+Built ─▶ Broadcast ─▶ Pending ─▶ Mined ─▶ Confirmed(≥N)
+                          │
+                          └────────────▶ Dropped / Replaced
+```
+
+Transitions are driven by two observers: (a) mempool observation — the node-side
+in-between, [mempool.md](mempool.md) — advances `Broadcast → Pending` and detects
+`Dropped`; (b) block scan (§2) advances `Pending → Mined → Confirmed` and, on
+confirmation, reconciles the consumed capabilities to `Spent` and discovers the produced
+ones. A terminal `Dropped` SHALL release the transaction's reservations
+(`Reserved → Unspent`).
+
+The stores backing `ProvisionalState` — a pending-transaction record and the capability
+spend-state — extend §3's data stores. They are provisional and hold no confirmed
+authority; authority still flows only through name possession (§4) realized on-chain.
+
+### 6.6 Formal Properties
+
+The write path's construction is subject to the soundness obligations of §7.8:
+`construct_sound` (the built proofs inhabit L_{r,s}), `construct_deterministic` (identical
+inputs, including `Seed`, yield a byte-identical transaction), and `nullifier_completeness`
+(every consumed capability's nullifier is published). Transaction *authentication* — that
+no unverified transaction is ever admitted to the mempool or accepted into a block — is a
+consensus invariant specified in [mempool.md](mempool.md) and enforced at both mempool
+admission and block acceptance.
 
 ## 7. Soundness
 
@@ -262,11 +414,33 @@ and the resource requires non-empty barbs, construction correctly returns
 `proofs/lean/src/DarkFi/Capability/Wallet.lean` — all theorems above.
 Run `lake build` in `proofs/lean/` to type-check.
 
+### 7.8 Write-Path Obligations (Exercise)
+
+The write path (§6) is subject to the following obligations — the exercise-time duals of
+§7.1, §7.4, and the nullifier discipline. They are to be discharged in
+`proofs/lean/src/DarkFi/Capability/Wallet.lean` (proved, or stated as explicit
+future-work in the manner of [type-system.md §10.6](type-system.md)):
+
+- **`construct_sound`** — if `f(SelectedCapabilities, Action, Params, Secrets, Seed)`
+  returns a transaction, the proofs it carries inhabit the predicate language L_{r,s} of
+  the action's capability type; equivalently, the composed barbs of the selected
+  capabilities cover the action's `requiredBarbs` (§6.2). Dual of `walletConstruct_sound`
+  (§7.1).
+- **`construct_deterministic`** — given identical `(SelectedCapabilities, Action, Params,
+  Secrets, Seed)`, `f` returns a byte-identical transaction (§6.1). The write-path
+  expression of the wallet's pure-function property; dual of
+  `walletConstruct_deterministic` (§7.4).
+- **`nullifier_completeness`** — for every capability in `SelectedCapabilities` consumed
+  by the transaction, its nullifier appears in `Transaction.nullifiers` (§6.3 step 4).
+  This is the property the mempool relies on for double-spend detection
+  ([mempool.md](mempool.md)).
+
 ## 8. References
 
 - **[Type System Specification](type-system.md)** — Primitive types, behavioral positions, invariants.
 - **[O-Cap: Emergent Types](ocap.md)** — Capability type construction from primitives.
 - **[Manifest System](manifest.md)** — Contract type declarations.
+- **[Mempool: The Pending-Transaction Pool](mempool.md)** — Verified admission, the node-side in-between, observability.
 - **[Genesis Contracts](genesis.md)** — Capability primitive layer.
 - **[Contract Trust Model](contract-trust-model.md)** — WASM verification, attestations, caveat emptor.
 

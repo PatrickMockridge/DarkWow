@@ -258,6 +258,11 @@ composition whose structure is determined by the contract manifest and the
 primitives discovered during AEAD scan. Every primitive name in the composition
 has a known barb. The capability type tells the wallet what the user can DO.
 
+The **Exercise**, **Verify**, and **Revoke** phases of this lifecycle — constructing and
+authenticating the transaction that consumes a name — are specified as the wallet's write
+path in [wallet.md §6](wallet.md), with the pending-transaction pool (the node-side
+in-between) in [mempool.md](mempool.md).
+
 ## 7. The Manifest as Type Declaration
 
 A contract's manifest ([manifest.md](manifest.md)) declares what capabilities
