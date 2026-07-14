@@ -7,6 +7,15 @@
 > was replaced by [Uncle Merkle consensus](../consensus/uncle_merkle.md).
 > The event graph is an independent P2P primitive for message passing and
 > has no dependency on the blockchain execution layer.
+>
+> The event graph is formalized in the ρ-calculus as `ProtocolEventGraph`
+> (see [Type System §10.3](../type-system.md#103-event-graph-path--dag-sync)):
+> four concurrent tasks — `handle_event_put | handle_event_req | handle_tip_req |
+> broadcast_rate_limiter` — spawned via `ProtocolJobsManager` at
+> `src/event_graph/proto.rs:161-164`. Blockchain events can route through
+> the event graph via the bridging mechanism (see
+> [Type System §10.4](../type-system.md#104-bridging--shared-channels-with-typed-barbs)):
+> blockchain messages wrapped with marker byte `0x42` in event content.
 
 Event graph is a syncing mechanism between nodes working asynchronously.
 
