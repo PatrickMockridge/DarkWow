@@ -42,6 +42,7 @@ mod store;
 pub mod supply_chain;
 mod transaction;
 pub mod validation;
+pub mod zk_verifier;
 
 #[cfg(feature = "async")]
 mod serial;
