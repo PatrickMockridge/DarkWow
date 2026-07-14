@@ -78,27 +78,25 @@ impl<T: Send + 'static> JoinSet<T> {
     pub async fn join_all(self) -> Vec<T> {
         let mut results: Vec<Option<T>> = (0..self.next_index).map(|_| None).collect();
 
-        for (_index, rx) in self.tasks {
+        // Take a copy before draining — the first loop consumes self.tasks.
+        // Clone is cheap: Vec<Receiver> where Receiver is an Arc-backed
+        // channel handle.
+        let mut tasks: Vec<(usize, channel::Receiver<T>)> = self.tasks.clone();
+        for (_index, rx) in tasks.iter() {
             match rx.recv().await {
                 Ok(value) => {
                     // Place result at the position matching spawn order.
-                    // We need the index — reconstruct from ordered iteration.
-                    // Since tasks are stored in spawn order, results arrive
-                    // in completion order but we place them in spawn order.
+                    _ = value;
                 }
-                Err(_) => {
-                    // Task panicked or channel closed — skip
-                }
+                Err(_) => {}
             }
         }
 
-        // Fallback: results are placed by spawn-index from the task tuples
-        // Rebuild in spawn order
-        let mut ordered: Vec<(usize, channel::Receiver<T>)> = self.tasks;
-        ordered.sort_by_key(|(idx, _)| *idx);
+        // Rebuild results in spawn order from the cloned copy.
+        tasks.sort_by_key(|(idx, _)| *idx);
 
-        let mut out = Vec::with_capacity(ordered.len());
-        for (_idx, rx) in ordered {
+        let mut out = Vec::with_capacity(tasks.len());
+        for (_idx, rx) in tasks {
             match rx.recv().await {
                 Ok(value) => out.push(value),
                 Err(_) => {} // skip panicked tasks
