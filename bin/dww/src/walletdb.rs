@@ -464,7 +464,7 @@ impl WalletDb {
                     value_blind_blob, value_blind, token_blind_blob, token_blind,
                     contract_id_blob, func_id_blob, capability_discriminant,
                     revoked, revoked_at_height, created_at_height,
-                    capability_name, resource, action, primitives_csv, barbs_csv
+                    capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob
              FROM held_capabilities WHERE token_id_blob = ?1 AND revoked = ?2 AND contract_id_blob = ?3",
         )?;
 

@@ -450,6 +450,7 @@ impl Dww {
         let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN action TEXT;");
         let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN primitives_csv TEXT;");
         let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN barbs_csv TEXT;");
+        let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN key_coords_blob BLOB;");
         // The externally_revoked column was removed (never populated or read).
 
         // Register default DRKW native token alias so `transfer 1.0 DRKW <addr>` works
@@ -642,7 +643,7 @@ impl WalletStateProvider for Dww {
                 // an empty secret — still unspendable, but scan-safe.
                 secret: c.key_coords.as_ref()
                     .and_then(|coords| self.account_mgr.resolve_key(coords).ok())
-                    .map(|k| bs58::encode(k.expose_secret().to_bytes()).into_string())
+                    .map(|k| bs58::encode(k.expose_secret().to_repr()).into_string())
                     .unwrap_or_default(),
                 token_id: c.token_id,
                 leaf_position: c.leaf_position,
@@ -823,7 +824,7 @@ impl Dww {
                 // P0.1c: resolve per-cap secret via AccountManager delegation
                 secret: c.key_coords.as_ref()
                     .and_then(|coords| self.account_mgr.resolve_key(coords).ok())
-                    .map(|k| bs58::encode(k.expose_secret().to_bytes()).into_string())
+                    .map(|k| bs58::encode(k.expose_secret().to_repr()).into_string())
                     .unwrap_or_default(),
             })
             .collect();
@@ -1058,7 +1059,7 @@ impl Dww {
                 // admission rejects unsigned txs (verify_single_tx).
                 let sigs = tx.create_sigs(&self.account_mgr.secrets())
                     .map_err(|e| Error::Custom(format!("create_sigs: {}", e)))?;
-                tx.signatures = sigs;
+                tx.signatures.push(sigs);
                 return Ok(tx);
             }
         }

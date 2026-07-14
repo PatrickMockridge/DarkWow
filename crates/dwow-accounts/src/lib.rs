@@ -89,6 +89,7 @@ use std::path::Path;
 use dwow_sdk::crypto::keypair::{Address, Keypair, Network, PublicKey, SecretKey, StandardAddress};
 use dwow_sdk::crypto::ContractId;
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
+use dwow_serial::{SerialDecodable, SerialEncodable};
 use dwow_sdk::ContractError;
 use pasta_curves::{group::ff::FromUniformBytes, pallas};
 
@@ -118,7 +119,7 @@ impl Account {
 /// AccountManager. These are NOT key material — they identify which account
 /// index and which derivation (master or per-instance) produced a given cap's
 /// owner-key. They are safe to store at rest with the CapRecord.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub enum KeyDerivation {
     Master,
     PerInstance {
@@ -127,7 +128,7 @@ pub enum KeyDerivation {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct KeyCoordinates {
     pub account_index: usize,
     pub derivation: KeyDerivation,
@@ -136,6 +137,7 @@ pub struct KeyCoordinates {
 /// Holds the node/wallet's declared identity + lifecycle-managed keys. The
 /// declared identity is derived on boot from keys.toml [section]; additional
 /// keys are added via lifecycle operations (import, generate, HD derivation).
+pub struct AccountManager {
     accounts: Vec<Account>,
     default_index: usize,
     /// True when `accounts[0]` is an owner-declared identity (from `open()` /

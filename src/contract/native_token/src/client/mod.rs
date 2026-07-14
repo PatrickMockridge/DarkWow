@@ -87,7 +87,8 @@ impl ContractClient for NativeTokenClient {
                     .ok_or_else(|| "TransferV1: missing 'recipient'".to_string())?;
                 let recipient_bytes = bs58::decode(recipient_str).into_vec()
                     .map_err(|e| format!("TransferV1 recipient bs58: {}", e))?;
-                let mut data = vec![0x03u8]; // function selector
+                // invoke_contract prepends func_sig.code — do not double-emit
+                let mut data = Vec::new();
                 data.extend_from_slice(&amount.to_le_bytes());
                 data.extend_from_slice(&recipient_bytes);
                 // Proofs are produced by the wallet's ZK pipeline (fee builder +

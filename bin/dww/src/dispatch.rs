@@ -474,12 +474,23 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             } else {
                 ("promissory_note", "TransferV1")
             };
-            let params = format!(
-                r#"{{"amount":{},"recipient":"{}"{}{}}}"#,
-                amount, recipient,
-                spend_hook.as_ref().map(|s| format!(r#","spend_hook":"{}""#, s)).unwrap_or_default(),
-                user_data.as_ref().map(|s| format!(r#","user_data":"{}""#, s)).unwrap_or_default(),
-            );
+            // DRKW: token_id is inherent (native_token client knows it).
+            // Non-DRKW: the PN client requires token_id for coin selection.
+            let params = if is_drkw {
+                format!(
+                    r#"{{"amount":{},"recipient":"{}"{}{}}}"#,
+                    amount, recipient,
+                    spend_hook.as_ref().map(|s| format!(r#","spend_hook":"{}""#, s)).unwrap_or_default(),
+                    user_data.as_ref().map(|s| format!(r#","user_data":"{}""#, s)).unwrap_or_default(),
+                )
+            } else {
+                format!(
+                    r#"{{"amount":{},"token_id":"{}","recipient":"{}"{}{}}}"#,
+                    amount, token_id, recipient,
+                    spend_hook.as_ref().map(|s| format!(r#","spend_hook":"{}""#, s)).unwrap_or_default(),
+                    user_data.as_ref().map(|s| format!(r#","user_data":"{}""#, s)).unwrap_or_default(),
+                )
+            };
             smol::block_on(async {
                 let tx = dww.invoke_contract(contract_name, function, Some(&params), vec![]).await?;
                 let tx_b64 = crate::wallet_util::base64_encode(&dwow_serial::serialize_async(&tx).await);

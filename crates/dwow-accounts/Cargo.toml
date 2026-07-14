@@ -10,6 +10,7 @@ edition = "2021"
 
 [dependencies]
 dwow-sdk = {path = "../../src/sdk"}
+dwow-serial = {path = "../../src/serial"}
 hex = "0.4.3"
 toml = "0.9.8"
 bs58 = "0.5.1"

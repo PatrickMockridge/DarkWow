@@ -89,6 +89,7 @@ impl ContractMetadataRegistry {
 				FunctionSignature { name: "mint", code: 0x01, requires_proof: true, proof_circuit: Some("mint_v1") },
 				FunctionSignature { name: "burn", code: 0x02, requires_proof: true, proof_circuit: Some("burn_v1") },
 				FunctionSignature { name: "transfer", code: 0x03, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "TransferV1", code: 0x03, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "spend", code: 0x04, requires_proof: false, proof_circuit: None },
 				FunctionSignature { name: "pow_reward", code: 0x05, requires_proof: false, proof_circuit: None },
 			],

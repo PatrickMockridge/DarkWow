@@ -88,7 +88,7 @@ impl CapabilityResolver {
     /// typed capabilities with human-readable names. Falls back to "unknown" for
     /// contracts without manifests.
     fn resolve_typed_capabilities(&self) -> Result<Vec<TypedCapability>> {
-        let held = self.wallet.get_held_capabilities(Some(false))
+        let held = self.wallet.get_held_capabilities(None) // P1c: include revoked so [EXERCISED] is reachable
             .map_err(|e| Error::Custom(format!("Failed to get held capabilities: {:?}", e)))?;
 
         let mut typed = Vec::with_capacity(held.len());

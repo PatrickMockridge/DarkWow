@@ -124,14 +124,15 @@ pub fn build_fee_and_finalize_tx(
     // P0.1c: resolve the cap's OWN key through AccountManager delegation.
     // The fee cap carries key_coords (set at scan time); resolve_key
     // re-derives the per-block or master key that actually owns this cap.
+    // SecretKey is Copy — dereference the borrow from expose_secret().
     let dark_secret = {
         let coords = fee_cap.key_coords.as_ref()
             .ok_or_else(|| Error::Custom(format!(
                 "fee cap {} has no key_coords — cannot determine owning secret", fee_cap.cap_id,
             )))?;
-        account_mgr.resolve_key(coords)
-            .map_err(|e| Error::Custom(format!("resolve_key fee cap: {}", e)))?
-            .expose_secret()
+        let owned = account_mgr.resolve_key(coords)
+            .map_err(|e| Error::Custom(format!("resolve_key fee cap: {}", e)))?;
+        *owned.expose_secret()
     };
 
     // Get DRKW Merkle proof

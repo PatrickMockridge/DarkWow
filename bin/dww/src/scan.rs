@@ -390,6 +390,14 @@ fn discover_native_token_outputs(
                     tracing::info!(target: "dww::scan",
                         "[NATIVE_TOKEN] step=4 coin_reconstruct status=OK coin=0x{}",
                         hex::encode(&cap_record.commitment.to_bytes()));
+                    // P1b: populate key_coords so the spend path can recover
+                    // the owning secret via AccountManager::resolve_key.
+                    let mut cap_record = cap_record;
+                    cap_record.key_coords = self.account_mgr.find_owner(
+                        &*NATIVE_TOKEN_CONTRACT_ID,
+                        &height.to_le_bytes(),
+                        &PublicKey::from_secret(*secret),
+                    );
                     results.push((cap_record, merkle_proof));
                     messages.push(msg);
                 }
