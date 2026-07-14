@@ -3710,11 +3710,12 @@ class TxSummary:
 
 def summarize_transaction(tx: BuiltTransaction) -> TxSummary:
     """Extract amount, recipient, fee from a transaction's call data.
-    Matches the PN TransferV1 encoding: func_code 0x04 + 8-byte amount + 32-byte address."""
+    Matches NativeToken TransferV1 encoding: func_code 0x03 + 8-byte amount + 32-byte address
+    (per wallet.md §6.4 — DRKW routes through native_token, the one bespoke citizen)."""
     amount = 0
     recipient = "?"
     for call in tx.calls:
-        if call.data and len(call.data) > 1 and call.data[0] == 0x04:
+        if call.data and len(call.data) > 1 and call.data[0] == 0x03:
             amount = int.from_bytes(call.data[1:9], 'little')
             recipient = call.data[9:41].hex()[:16]
     return TxSummary(
@@ -6548,7 +6549,7 @@ def test_27_tx_summary_fields():
         fee=42_000_000,
         calls=[ContractCallLeaf(
             contract_id=ContractId(b'\x00' * 32),
-            data=b'\x04' + (5000).to_bytes(8, 'little') + b'\xAA' * 32)],
+            data=b'\x03' + (5000).to_bytes(8, 'little') + b'\xAA' * 32)],
     )
     summary = summarize_transaction(tx)
     assert summary.amount > 0

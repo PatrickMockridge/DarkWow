@@ -380,7 +380,7 @@ impl Mempool {
         for hash in tx_hashes {
             if let Some(entry) = txs.remove(hash) {
                 fee_idx.remove(&FeeIndexEntry {
-                    fee_rate: if entry.estimated_gas > 0 { entry.fee / entry.estimated_gas } else { 0 },
+                    fee_rate: if entry.estimated_gas > 0 { entry.fee.saturating_mul(1_000_000) / entry.estimated_gas } else { 0 },
                     tx_hash: *hash,
                 });
                 let entry_nulls = extract_nullifiers(&entry.tx);
@@ -417,7 +417,7 @@ impl Mempool {
         for hash in &stale {
             if let Some(entry) = txs.remove(hash) {
                 fee_idx.remove(&FeeIndexEntry {
-                    fee_rate: if entry.estimated_gas > 0 { entry.fee / entry.estimated_gas } else { 0 },
+                    fee_rate: if entry.estimated_gas > 0 { entry.fee.saturating_mul(1_000_000) / entry.estimated_gas } else { 0 },
                     tx_hash: *hash,
                 });
                 let entry_nulls = extract_nullifiers(&entry.tx);
