@@ -489,7 +489,7 @@ impl AccountManager {
             }
             // Per-instance
             if let Ok(derived) = owned.derive_instance(cid, instance_seed) {
-                if PublicKey::from_secret(derived.expose_secret()) == *pubkey {
+                if PublicKey::from_secret(*derived.expose_secret()) == *pubkey {
                     return Some(KeyCoordinates {
                         account_index: idx,
                         derivation: KeyDerivation::PerInstance {
