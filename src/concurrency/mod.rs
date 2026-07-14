@@ -34,6 +34,11 @@ pub use condvar::CondVar;
 pub mod stoppable_task;
 pub use stoppable_task::{StoppableTask, StoppableTaskPtr};
 
+/// Concurrent task collection for parallel execution.
+/// Maps to ρ-calculus P₁ | P₂ | ... | Pₙ.
+pub mod join_set;
+pub use join_set::JoinSet;
+
 /// Simple broadcast (publish-subscribe) class
 pub mod publisher;
 pub use publisher::{Publisher, PublisherPtr, Subscription};

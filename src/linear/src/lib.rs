@@ -34,6 +34,7 @@ mod consensus;
 mod error;
 pub mod execution;
 pub mod fee_estimator;
+pub mod schedule;
 pub mod finality;
 pub mod proof_of_token_balance;
 mod miner;
