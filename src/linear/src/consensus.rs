@@ -454,7 +454,7 @@ impl Default for PoWConfig {
     fn default() -> Self {
         Self {
             target_block_time: 120,
-            initial_target: 0x00FF_FFFF,
+            initial_target: 0x0FFFFFFF,  // matches PoWConsensus::default() + Docker entrypoints
             min_target: 1,
             max_target: u32::MAX,
         }

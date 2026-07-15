@@ -107,35 +107,27 @@ pub fn check_block_header(
     Ok(())
 }
 
-/// Validate block timestamp against consensus rules (CRITICAL-4 fix).
+/// Validate block timestamp against consensus rules.
 ///
-/// Bitcoin Core's CheckBlockTimestamp pattern:
-/// 1. Timestamp must not be more than MAX_FUTURE (2 hours) ahead of local time.
-/// 2. Timestamp must be strictly greater than the median of the last
-///    MEDIAN_BLOCK_COUNT (11) block timestamps (time warp protection).
+/// This function is **pure** — deterministic function of block data only.
+/// Per type-system.md §9, consensus validation SHALL NOT depend on wall-clock time.
 ///
-/// Pure — does not touch sled. Caller provides the block heights and timestamps.
+/// The future-timestamp check (Bitcoin Core's MAX_FUTURE) is a network policy,
+/// not a consensus rule. It is enforced at the P2P layer before relaying a block.
+///
+/// Median time warp protection (Bitcoin Core CheckBlockTimestamp pattern):
+/// timestamp MUST be strictly greater than the median of the last
+/// MEDIAN_BLOCK_COUNT (11) block timestamps.
 pub fn check_block_timestamp(
     timestamp: u64,
     height: u64,
     recent_timestamps: &[u64],
 ) -> Result<()> {
-    const MAX_FUTURE: u64 = 2 * 60 * 60; // 2 hours
     const MEDIAN_BLOCK_COUNT: usize = 11;
 
-    // Future timestamp check
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    if timestamp > now + MAX_FUTURE {
-        return Err(LinearError::InvalidTimestamp {
-            timestamp,
-            reason: "timestamp too far in the future".to_string(),
-        });
-    }
-
-    // Median of last N blocks (time warp protection)
+    // Median of last N blocks (time warp protection).
+    // This is the deterministic portion of Bitcoin Core's CheckBlockTimestamp.
+    // The non-deterministic future-timestamp check is a P2P policy, not a consensus rule.
     if height > 1 && recent_timestamps.len() >= MEDIAN_BLOCK_COUNT {
         let mut sorted: Vec<u64> = recent_timestamps.to_vec();
         sorted.sort_unstable();

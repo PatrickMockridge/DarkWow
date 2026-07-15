@@ -97,18 +97,30 @@ impl ProtocolTxHandler {
                             if let Some(ref mp) = mempool {
                                 // Convert dwow_core::tx::Transaction to
                                 // dwow_chain::Transaction for the mempool.
+                                //
+                                // FIELD MAPPING (two representations of the same tx):
+                                //   core_tx.calls      → chain_tx.contract_calls
+                                //   core_tx.nullifiers → chain_tx.nullifiers
+                                //   core_tx (entire)   → chain_tx.witness (opaque, L1 carriage)
+                                //
+                                // version/lock_time: the core tx does not carry these;
+                                // they are chain-level metadata set at block inclusion.
+                                // inputs/outputs: the core tx uses DarkLeaf<ContractCall>;
+                                // chain-level inputs/outputs track value transfer separately.
+                                // These fields default to empty per the Transaction spec
+                                // (type-system.md §8.2) for wallet-constructed txs.
                                 let chain_tx = ChainTransaction {
-                                    version: 1,
-                                    inputs: vec![],
-                                    outputs: vec![],
+                                    version: 1,       // chain-level, set at block inclusion
+                                    inputs: vec![],   // chain-level value tracking
+                                    outputs: vec![],   // chain-level value tracking
                                     contract_calls: core_tx.calls.iter()
                                         .map(|leaf| dwow_chain::ContractCall {
                                             contract_id: leaf.data.contract_id,
                                             data: leaf.data.data.clone(),
                                         })
                                         .collect(),
-                                    lock_time: 0,
-                                                                        nullifiers: core_tx.nullifiers.clone(),
+                                    lock_time: 0,     // chain-level, set at block inclusion
+                                    nullifiers: core_tx.nullifiers.clone(),
                                     // L1: carry the full authenticated tx (proofs +
                                     // signatures + tx_commitment) as opaque bytes so it
                                     // is persisted and a verifier (L2) can check it.

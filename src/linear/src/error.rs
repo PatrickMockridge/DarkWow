@@ -112,6 +112,59 @@ pub enum LinearError {
 
     #[error("Monero number of chains is zero")]
     MoneroNumberOfChainZero,
+
+    // ---- Concurrency errors ----
+    #[error("Lock poisoned: {0}")]
+    LockPoisoned(String),
+}
+
+impl LinearError {
+    /// Map each error variant to its type-system.md §4 error barb.
+    /// This provides a structured error classification that callers can
+    /// use for logging, metrics, and decision-making without parsing
+    /// human-readable error strings.
+    pub fn error_barb(&self) -> &'static str {
+        match self {
+            // ↓bad-proof — proof/structure/signature failures
+            LinearError::InvalidPoW(..)
+            | LinearError::InvalidTarget { .. }
+            | LinearError::HeightDiscontinuity { .. }
+            | LinearError::InvalidPreviousHash(..)
+            | LinearError::MerkleRootMismatch(..)
+            | LinearError::BlockStructure(..)
+            | LinearError::UnclePoWInvalid(..)
+            | LinearError::UncleProofInvalid(..)
+            | LinearError::TooManyUncles { .. }
+            | LinearError::UncleMerkleRootMismatch(..)
+            | LinearError::UncleTooOld { .. }
+            | LinearError::InvalidTimestamp { .. }
+            | LinearError::DifficultyNotMet
+            | LinearError::InvalidGenesis => "↓bad-proof",
+
+            // ↓bad-nullifier — duplicate/conflict nullifier
+            LinearError::DuplicateUncle(..) => "↓bad-nullifier",
+
+            // ↓db-fail — storage/infrastructure failures
+            LinearError::BlockNotFound(..)
+            | LinearError::TransactionNotFound(..)
+            | LinearError::StorageError(..)
+            | LinearError::SerializationError(..)
+            | LinearError::RandomXError(..)
+            | LinearError::LockPoisoned(..)
+            | LinearError::MoneroMergeMineError(..)
+            | LinearError::MoneroHashingError(..)
+            | LinearError::MoneroNumberOfChainZero => "↓db-fail",
+
+            // ↓double-spend — block-level conflict (anchored block replacement)
+            LinearError::AnchoredBlockConflict => "↓double-spend",
+
+            // Generic invalid block — could be any of the above, default to ↓bad-proof
+            LinearError::BlockIsInvalid(..) => "↓bad-proof",
+
+            // Genesis already exists — configuration error, not runtime
+            LinearError::GenesisExists => "↓db-fail",
+        }
+    }
 }
 
 impl From<std::io::Error> for LinearError {

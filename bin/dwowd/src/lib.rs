@@ -85,7 +85,10 @@ pub use dwow_accounts as accounts;
 // mempool → dwow_mempool crate
 use dwow_mempool::{create_mempool, FeeExtractor, Mempool, MempoolPtr, MinerConfig, MinerMode};
 
-/// NativeToken fee extraction — knows FeeV1 contract ID and selector.
+/// NativeToken fee extraction — knows FeeV1 contract ID (selector 0x00) and
+/// PoWRewardV1 (selector 0x05). FeeV1 call data layout: [0x00][fee: u64 LE].
+/// Truncated FeeV1 calls (< 9 bytes) are logged and treated as zero-fee;
+/// the mempool's min_fee check will reject them downstream.
 struct NativeTokenFeeExtractor;
 impl FeeExtractor for NativeTokenFeeExtractor {
     fn extract_fee(&self, tx: &dwow_chain::Transaction) -> u64 {
@@ -93,8 +96,14 @@ impl FeeExtractor for NativeTokenFeeExtractor {
         for call in &tx.contract_calls {
             if call.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID && call.data.first() == Some(&0x00u8) {
                 if call.data.len() >= 9 {
-                    let fee_bytes: [u8; 8] = call.data[1..9].try_into().unwrap_or([0u8; 8]);
+                    // data[1..9] is exactly 8 bytes — guarded by the len >= 9 check
+                    let fee_bytes: [u8; 8] = call.data[1..9].try_into()
+                        .expect("FeeV1: slice[1..9] is 8 bytes (guarded by len >= 9)");
                     total_fee += u64::from_le_bytes(fee_bytes);
+                } else {
+                    tracing::warn!(target: "dwowd::fee",
+                        "FeeV1 call with truncated data ({} bytes < 9) — fee treated as zero",
+                        call.data.len());
                 }
             }
         }
@@ -656,7 +665,7 @@ impl Dwowd {
         } else {
             dwow_chain::PoWConfig {
                 target_block_time: net_settings.pow.target_block_time.unwrap_or(120),
-                initial_target: net_settings.pow.initial_target.unwrap_or(0x00FFFFFF) as u32,
+                initial_target: net_settings.pow.initial_target.unwrap_or(0x0FFFFFFF) as u32,
                 min_target: net_settings.pow.min_target.unwrap_or(1) as u32,
                 max_target: net_settings.pow.max_target.unwrap_or(u32::MAX) as u32,
             }
@@ -1146,10 +1155,14 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         // allocation — only the 2 MB scratchpad is allocated fresh.
         let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
         let rx_cache = chain_state.get_cache(randomx_key);
-        let vm = Arc::new(
-            randomx::RandomXVM::new(flags, Some(rx_cache), None)
-                .expect("Failed to create RandomX VM for miner"),
-        );
+        let vm = match randomx::RandomXVM::new(flags, Some(rx_cache), None) {
+            Ok(vm) => Arc::new(vm),
+            Err(e) => {
+                tracing::error!(target: "dwowd::miner",
+                    "Failed to create RandomX VM: {} — retrying next cycle", e);
+                continue;
+            }
+        };
         // Chain-derived target: matches Python model's get_next_work_required.
         // Reads timestamps from canonical chain blocks, not accumulator.
         let target = {

@@ -313,7 +313,10 @@ impl Mempool {
         if let Some(ref db) = self.db {
             if let Some(entry) = txs.get(&tx_hash) {
                 if let Ok(value) = serde_json::to_vec(&entry.tx) {
-                    let _ = db.insert(tx_hash.as_bytes(), value);
+                    if let Err(e) = db.insert(tx_hash.as_bytes(), value) {
+                        tracing::warn!(target: "dwowd::mempool",
+                            "sled insert failed during add: {}", e);
+                    }
                 }
             }
         }
@@ -387,7 +390,10 @@ impl Mempool {
                 for n in &entry_nulls { nulls.remove(n); }
                 // Remove from sled
                 if let Some(ref db) = self.db {
-                    let _ = db.remove(hash.as_bytes());
+                    if let Err(e) = db.remove(hash.as_bytes()) {
+                        tracing::warn!(target: "dwowd::mempool",
+                            "sled remove failed during mark_mined: {}", e);
+                    }
                 }
             }
         }
@@ -423,7 +429,10 @@ impl Mempool {
                 let entry_nulls = extract_nullifiers(&entry.tx);
                 for n in &entry_nulls { nulls.remove(n); }
                 if let Some(ref db) = self.db {
-                    let _ = db.remove(hash.as_bytes());
+                    if let Err(e) = db.remove(hash.as_bytes()) {
+                        tracing::warn!(target: "dwowd::mempool",
+                            "sled remove failed during eviction: {}", e);
+                    }
                 }
             }
         }

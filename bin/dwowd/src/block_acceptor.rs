@@ -115,7 +115,14 @@ pub fn accept_block(
         }
         if let Err(e) = dwow_chain::zk_verifier::verify_single_tx(tx) {
             match e {
-                dwow_chain::zk_verifier::VerifyError::NoWitness => continue,
+                // Per mempool.md §1: the witness is load-bearing. A non-coinbase
+                // transaction without a witness cannot be authenticated. Coinbase
+                // is exempt (soundness = transparent WASM re-execution).
+                dwow_chain::zk_verifier::VerifyError::NoWitness => {
+                    return Err(dwow_core::Error::Custom(
+                        "Non-coinbase transaction missing witness — per mempool.md §1, witness is load-bearing".into()
+                    ));
+                }
                 _ => return Err(dwow_core::Error::Custom(format!(
                     "L2 witness verification failed: {}", e
                 ))),
@@ -209,35 +216,43 @@ fn read_cumulative_from_overlay(
 
     let info_prefix = NATIVE_TOKEN_CONTRACT_ID.hash_state_id(NATIVE_TOKEN_CONTRACT_INFO_TREE);
 
-    // Read TOTAL_SUPPLY from overlay
+    // Read TOTAL_SUPPLY from overlay — fail closed, never silently default to zero.
+    // A missing or corrupt TOTAL_SUPPLY means WASM execution failed; substituting
+    // zero would brick the cumulative supply chain for all subsequent blocks.
     let mut total_supply_key = Vec::from(info_prefix.as_slice());
     total_supply_key.extend_from_slice(NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY);
-    let total_supply: u64 = overlay
+    let total_supply_raw = overlay
         .get(&total_supply_key)
-        .ok()
-        .flatten()
-        .map(|v| dwow_serial::deserialize(&v).unwrap_or(0))
-        .unwrap_or(0);
+        .map_err(|e| dwow_core::Error::Custom(format!("overlay read total_supply: {}", e)))?
+        .ok_or_else(|| dwow_core::Error::Custom(
+            "total_supply not found in WASM execution overlay".into()
+        ))?;
+    let total_supply: u64 = dwow_serial::deserialize(&total_supply_raw)
+        .map_err(|e| dwow_core::Error::Custom(format!("deserialize total_supply: {}", e)))?;
 
-    // Read CUMULATIVE_VALUE_COMMIT from overlay
+    // Read CUMULATIVE_VALUE_COMMIT from overlay — fail closed.
     let mut cum_key = Vec::from(info_prefix.as_slice());
     cum_key.extend_from_slice(NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT);
-    let value_commit: dwow_sdk::pasta::pallas::Point = overlay
+    let value_commit_raw = overlay
         .get(&cum_key)
-        .ok()
-        .flatten()
-        .map(|v| dwow_serial::deserialize(&v).unwrap_or_else(|_| dwow_sdk::pasta::pallas::Point::identity()))
-        .unwrap_or_else(dwow_sdk::pasta::pallas::Point::identity);
+        .map_err(|e| dwow_core::Error::Custom(format!("overlay read value_commit: {}", e)))?
+        .ok_or_else(|| dwow_core::Error::Custom(
+            "cumulative_value_commit not found in WASM execution overlay".into()
+        ))?;
+    let value_commit: dwow_sdk::pasta::pallas::Point = dwow_serial::deserialize(&value_commit_raw)
+        .map_err(|e| dwow_core::Error::Custom(format!("deserialize value_commit: {}", e)))?;
 
-    // Read CUMULATIVE_BLIND from overlay
+    // Read CUMULATIVE_BLIND from overlay — fail closed.
     let mut blind_key = Vec::from(info_prefix.as_slice());
     blind_key.extend_from_slice(NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND);
-    let blind: dwow_sdk::pasta::pallas::Scalar = overlay
+    let blind_raw = overlay
         .get(&blind_key)
-        .ok()
-        .flatten()
-        .map(|v| dwow_serial::deserialize(&v).unwrap_or_else(|_| dwow_sdk::pasta::pallas::Scalar::zero()))
-        .unwrap_or_else(dwow_sdk::pasta::pallas::Scalar::zero);
+        .map_err(|e| dwow_core::Error::Custom(format!("overlay read blind: {}", e)))?
+        .ok_or_else(|| dwow_core::Error::Custom(
+            "cumulative_blind not found in WASM execution overlay".into()
+        ))?;
+    let blind: dwow_sdk::pasta::pallas::Scalar = dwow_serial::deserialize(&blind_raw)
+        .map_err(|e| dwow_core::Error::Custom(format!("deserialize blind: {}", e)))?;
 
     // If no cumulative state was written (e.g., genesis block with no WASM),
     // return None — nothing to mirror.
