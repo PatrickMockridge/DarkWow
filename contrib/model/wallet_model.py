@@ -1,65 +1,51 @@
 #!/usr/bin/env python3
-"""
-Production-Grade Wallet Model — 1:1 mapping of the DarkWow Rust wallet.
+r"""
+DarkWow Wallet Model — Executable Companion Specification
+==========================================================
 
-Canonical specification. Python leads, Rust follows.
+This file is a Python model of the DarkWow wallet. It serves two purposes:
 
-Key Management — Clean Separation of Concerns (2026-07-02):
-  AccountManager (crates/dwow-accounts/src/lib.rs) is the single key authority.
-  It handles generation, import, export, and persistence — the complete key module.
-  Miner and wallet are consumers: they call AccountManager, they don't manipulate
-  key material themselves.
+1. SPECIFICATION: A readable, executable description of wallet behavior
+   that mirrors the formal specifications (wallet.md, ocap.md,
+   type-system.md, manifest.md). Read the formal specs first, then use
+   this model as a stepping stone to understand the Rust implementation.
 
-  AccountManager API:
-    open(keys_toml, section)   — pure resolver: reads [section].wallet_secret, derives keypair
-                                  (NO cache, NO auto-gen, hard error on missing file/section)
-    generate()                 — owner-initiated random keypair (module API, not auto-gen)
-    import_hex(hex)            — from hex string (module API)
-    import_base58(b58)        — from base58 string (module API)
-    export_hex(idx)            — to hex string (backup)
-    export_base58(idx)        — to base58 string (backup; used by `darkwow account export`)
-    secrets()                  — all SecretKeys for scanning
-    default_public_key()       — mining identity
+2. REASONING TOOL: A sandbox for scoping code changes and analyzing
+   knock-on effects. The model is fast to modify and test — iterate here
+   before committing to Rust changes. Every Rust code path SHOULD have a
+   corresponding model path that exercises the same logic.
 
-  Miner key flow:
-    NODE_NAME env → open(keys_toml, NODE_NAME) → default_public_key() for coinbase
-    → export_base58(0) for key backup/sharing
-    Keys are NEVER auto-generated — missing keys.toml/section = hard error.
+AUTHORITY: The Rust implementation in bin/dww/ and src/sdk/ is the
+definitive implementation. The formal specification documents (doc/src/arch/)
+are the normative authority. Where this model diverges from either, update
+the model. The model is a companion, not a replacement.
 
-  Wallet key flow:
-    WALLET_NAME env → open(keys_toml, WALLET_NAME)
-    → import_base58() from stdin (via wallet import-secrets)
-    → secrets() for scanning / AEAD decryption
+STRUCTURE: The file is organized in layers, bottom-up:
+  Layer 0 — Cryptographic primitives (Pallas curve, Poseidon hash, AEAD)
+  Layer 1 — Database schema (matching wallet.sql + walletdb.rs)
+  Layer 2 — Capability model (Barb, Primitive, TypedCapability,
+            wallet_construct — the soundness gate)
+  Layer 3 — Contract state models (per-contract data classes)
+  Layer 4 — Block scan (Path 1 coinbase + Path 2 manifest-driven)
+  Layer 5 — Capability resolution (manifest-first, generic fallback)
+  Layer 6 — Balance, capability selection, transaction construction
+  Layer 7 — Mempool and provisional state
+  Layer 8 — P2P transport architecture
+  Layer 9 — Manifest lifecycle and WASM verification
+  Tests — Property-based tests exercising each layer independently
 
-  Pipeline key sharing (testing only):
-    wallet-1 DECLARES node0's secret in keys.toml (darkwow account generate).
-    Backup/verify via `darkwow account export` → AccountManager::export_base58(0).
-    No shell-level key manipulation — no xxd, no bs58, no mining_secret file.
-
-  Hard guardrails:
-    - import failure → exit 1, daemon does not start (no keys = no decrypt)
-    - export failure → exit 1, prints error (no keys to export)
-    - scan with zero secrets → prints error, exits non-zero
-    - Every AccountManager method returns Result, every CLI checks it
-
-  Localnet gate: declared keys only on LOCALNET=true. Production generates random.
-  See: keys.toml, crates/dwow-accounts/src/lib.rs
-
-Matches:
+KEY RUST REFERENCE FILES:
   bin/dww/src/scan.rs             — scan_block_linear, generic AEAD, coinbase
-  bin/dww/src/capability.rs       — CapabilityResolver::resolve() (planned)
-  bin/dww/src/walletdb.rs         — WalletDb (13 tables, full CRUD)
-  bin/dww/src/dispatch.rs         — transfer/redeem/burn via invoke_contract("promissory_note", ...)
-  bin/dww/src/p2p_wallet.rs       — PeerConnection, connect_peer(), transport layers
-  bin/dww/wallet.sql              — complete database DDL
-  src/transport/src/lib.rs        — Dialer, DialerVariant, PtStream (shared transport crate)
-  src/transport/src/tcp.rs        — TcpDialer (socket2, keepalive)
-  src/transport/src/tor.rs        — TorDialer (arti-client), TorListener
-  src/transport/src/tls.rs        — TlsUpgrade, certificate verifiers
-  src/transport/src/socks5.rs     — Socks5Dialer, Socks5Client
-  src/sdk/src/capability.rs       — Capability, Action, CapabilityExpression
-  src/sdk/src/crypto/note.rs      — AeadEncryptedNote
-  src/sdk/src/crypto/diffie_hellman.rs — sapling_ka_agree, kdf_sapling
+  bin/dww/src/walletdb.rs         — WalletDb, CapRecord, MerkleProof
+  bin/dww/src/lib.rs              — Dww, build_native_transfer, capability_balance
+  bin/dww/src/fee_builder.rs      — build_fee_and_finalize_tx (deterministic, §6.1)
+  bin/dww/src/ffi.rs              — C FFI exports for mobile bindings
+  src/sdk/src/capability.rs       — Primitive, Barb, TypedCapability, wallet_construct
+  src/sdk/src/manifest.rs         — ContractManifest, resolve_capability, decode_note_by_schema
+  doc/src/arch/wallet.md          — Normative wallet specification
+  doc/src/arch/ocap.md            — Object-capability model
+  doc/src/arch/type-system.md     — Type system and barb definitions
+  doc/src/arch/manifest.md        — Manifest format specification
 
 Usage:
   python3 contrib/model/wallet_model.py
@@ -70,7 +56,6 @@ import hmac
 import struct
 import os
 import sqlite3
-import pickle
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple, Set, Callable
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
@@ -1437,25 +1422,45 @@ class TokenInfo:
 #   revoked_at_height — block height when nullifier was published
 #   created_at_height — block height when capability was discovered
 #
-# Lifecycle per ocap.md §Capability Grammar (retained ↔ revoked):
-#   Commit → Prove → Consume(nullifier) → Revoke
+# Lifecycle per ocap.md §6 (Create → Discover → Hold → Exercise → Verify → Consume):
+#   CapRecord models the Hold phase — a discovered capability stored in SQLite.
 @dataclass
 class CapRecord:
-    """Capability record — matches bin/dww/src/walletdb.rs:CapRecord — 13 fields."""
+    """Held capability — matches bin/dww/src/walletdb.rs::CapRecord.
+
+    Stores every primitive name discovered during scan plus the typed
+    composition (primitives + barbs) constructed by wallet_construct.
+    Key resolution is deferred via key_coords — the raw secret SHALL NOT
+    be stored (wallet.md §4, type-system.md §8.3).
+    """
     cap_id: str = ""
     value: int = 0
-    token_id: str = ""
+    asset_id: str = ""                     # AssetId (↓denominate) — was "token_id"
     spend_hook: Optional[str] = None
     user_data: Optional[str] = None
     leaf_position: int = 0
-    secret: str = ""
-    cap_blind: str = ""
+    commitment: str = ""                   # CoinCommitment — the public face
+    contract_id: str = ""                  # ContractId (↓dispatch)
+    func_id: Optional[str] = None          # FuncId (↓gate) — function constrained
+    capability_discriminant: Optional[int] = None  # From manifest [[capabilities]]
+    cap_blind: str = ""                    # Commitment blind
     value_blind: str = ""
-    token_blind: str = ""
+    asset_blind: str = ""                  # was "token_blind"
+    capability_name: Optional[str] = None  # From manifest — human-readable label
+    resource: Optional[str] = None         # From manifest — what the action applies to
+    action: Optional[str] = None           # From manifest — function name
+    primitives: list = field(default_factory=list)   # Vec<Primitive> — typed composition
+    barbs: list = field(default_factory=list)        # Vec<Barb> — composed barb set
     revoked: int = 0
     revoked_at_height: Optional[int] = None
-    reserved_by: Optional[str] = None  # ProvisionalState overlay (wallet.md §6.5)
     created_at_height: int = 0
+    key_coords: Optional[tuple] = None     # KeyCoordinates — resolve via AccountManager
+    # DEPRECATED — retained for backward compat with existing call sites.
+    # Prefer key_coords; secrets SHALL be resolved at moment of use, never stored.
+    secret: str = ""
+    token_id: str = ""                     # Use asset_id
+    token_blind: str = ""                  # Use asset_blind
+    reserved_by: Optional[str] = None      # ProvisionalState overlay (wallet.md §6.5)
 
     def spend_state(self) -> str:
         """Effective spend-state (wallet.md §6.5). `revoked` is the confirmed
@@ -3876,29 +3881,35 @@ def build_transfer(wallet_db: WalletDb, token_id_str: str, amount: int,
                    recipient_pk: PublicKey,
                    spend_hook: int = 0, user_data: int = 0,
                    half_split: bool = False,
-                   seed: Optional[bytes] = None) -> BuiltTransaction:
+                   seed: bytes = None) -> BuiltTransaction:
     """Write path (Exercise) — wallet.md §6. A pure function of
     (SelectedCapabilities, Action, Params, Secrets, Seed): identical inputs
     (including `seed`) yield a byte-identical transaction (§6.1,
     `construct_deterministic`). The input capability is selected by barb
     coverage (§6.2), its nullifier is published in `tx.nullifiers` (§6.3 step 4,
-    `nullifier_completeness`), and the tx is signed (§6.3 step 7).
+    `nullifier_completeness`).
 
-    1. Select token coin by barb coverage (excludes Reserved)
-    2. Build PN TransferV1 call (placeholder ZK proof)
-    3. Select DRKW coin for fee (excludes the transfer input)
-    4. Build NT FeeV1 call
-    5. Publish nullifiers + sign
+    SEED IS REQUIRED per wallet.md §6.1. The `seed` parameter has no default —
+    callers MUST provide an explicit randomness name. This enforces the
+    functional-core / imperative-shell discipline: the shell draws the seed
+    and passes it down; no function below the shell draws ambient randomness.
+
+    1. Select input capability by barb coverage (§6.2, excludes Reserved)
+    2. Build TransferV1 call (ZK proof approximated — see Rust authority)
+    3. Select DRKW cap for fee (excludes the transfer input)
+    4. Build FeeV1 call
+    5. Publish nullifiers + sign (§6.3)
     """
     import base58
 
-    # Shell: gather the input by barb coverage; draw the Seed if not provided.
+    if seed is None:
+        raise ValueError("seed is required per wallet.md §6.1 — deterministic construction")
+
+    # Shell: gather the input by barb coverage
     coins = select_coins_covering(wallet_db, token_id_str, amount,
                                   NATIVE_TRANSFER_PRIMITIVES, NATIVE_TRANSFER_REQUIRED_BARBS)
     input_coin = coins[0]
     change_value = input_coin.value - amount
-    if seed is None:
-        seed = os.urandom(32)  # the shell draws the randomness name (§6.1)
 
     sk = SecretKey(base58.b58decode(input_coin.secret))
 
@@ -3908,7 +3919,7 @@ def build_transfer(wallet_db: WalletDb, token_id_str: str, amount: int,
     # Step 2: Build NativeToken TransferV1 — per wallet.md §6.4, native_token
     # is the one bespoke citizen for write-path construction. DRKW routes
     # through NativeToken (function code 0x03), NOT promissory_note (0x04).
-    # (The model is the spec — Python leads, Rust follows.)
+    # Rust authority: bin/dww/src/lib.rs::build_native_transfer
     recipient_address = poseidon_hash([int.from_bytes(recipient_pk.compressed, 'little')])
     mock_proof = hashlib.blake2b(b"NT_TransferV1_proof", digest_size=32).digest()
 
@@ -4770,7 +4781,7 @@ def test_10_transaction_building():
         created_at_height=1)
     db.insert_capability(drkw_coin)
 
-    tx = build_transfer(db, test_token_id, 50, pk)
+    tx = build_transfer(db, test_token_id, 50, pk, seed=os.urandom(32))
 
     assert tx.fee == DEFAULT_FEE
     assert len(tx.calls) >= 2  # transfer + fee
@@ -6288,7 +6299,6 @@ def generate_zk_proof(circuit: ZkCircuitBinary,
     h = hashlib.blake2b(digest_size=circuit.proof_bytes, person=b"DarkFi_ZkProof")
     h.update(sk.inner + circuit.name.encode())
     return h.digest()
-    return proof_data
 
 
 def build_contract_call(contract_name: str, function: str,
@@ -6363,64 +6373,6 @@ def test_21_zk_proof_model():
 # ==============================================================================
 # Current Architecture Invariants
 # ==============================================================================
-def model_fundamental_diffs():
-    """Architectural invariants that define the NOW wallet.
-
-    1. Native Token + Capabilities — two things, no third category
-    2. Generic AEAD scan — byte-level, AEAD tag is discriminator
-    3. O-Cap model — capabilities as unforgeable references
-    4. Process separation — dwowd syncs, wallet talks RPC
-    5. Linear chain — dwow_chain::Block, not DAG BlockInfo
-    6. Sync by default — only 5 network commands use smol::block_on
-    7. Visible code — no macro-generated main, no invisible derives
-    8. Result propagation — no exit(), no unwrap()
-    9. Modular — args, config, dispatch, wallet are independent modules
-    """
-    assert "NativeToken" != "Capability"  # 1
-    assert "coinbase" != "generic_aead"    # 2
-    assert len({"commitment", "nullifier", "proof", "revocation"}) == 4  # 3
-    assert "sync_chain" != "rpc_client"    # 4
-    assert "dwow_chain::Block" != "BlockInfo"  # 5
-    # 6 commands net → 6: Broadcast, Scan, Sync, FetchTx, SimulateTx, Mine
-    assert len({"Broadcast", "Scan", "Sync", "FetchTx", "SimulateTx", "Mine"}) == 6
-    main_visible = True  # fn main() is hand-written in main.rs
-    assert main_visible                       # 7
-    exit_not_called = True  # parse_args returns Result
-    assert exit_not_called                    # 8
-    assert len({"args.rs", "config.rs", "dispatch.rs", "wallet.rs"}) == 4  # 9
-    return True
-
-def model_generic_scan():
-    """Every non-genesis contract is handled by generic AEAD.
-    Path 1: Native Token coinbase (sole special citizen).
-    Path 2: Generic AEAD for EVERY other contract. No per-contract handler.
-    PN, BB, Deployooor — all capabilities. AEAD tag is the discriminator.
-    """
-    special = {"NativeToken"}
-    all_contracts = {"NativeToken", "PromissoryNote", "BearerBond", "Deployooor",
-                     "Escrow", "Auction", "DEX", "Stablecoin", "DAO-Escrow",
-                     "DrainProtection", "GameRoom", "Lottery", "OTC-Swap"}
-    capabilities = all_contracts - special
-    assert "PromissoryNote" in capabilities, "PN is a capability"
-    assert "BearerBond" in capabilities, "BB is a capability"
-    assert "Deployooor" in capabilities, "Deployooor is a capability"
-    return True
-
-def nullifier_justification():
-    """Wallet MUST scan every block — nullifiers are unlinkable."""
-    wallet_coins = [
-        {"cap_id": "coin_A", "nullifier": None, "revoked": False},
-        {"cap_id": "coin_B", "nullifier": None, "revoked": False},
-    ]
-    block_nullifiers = ["N(secret_A, commitment_A)"]
-    for nullifier in block_nullifiers:
-        for coin in wallet_coins:
-            if nullifier == f"N(secret_{coin['cap_id'][-1]}, commitment_{coin['cap_id'][-1]})":
-                coin["revoked"] = True
-                coin["nullifier"] = nullifier
-    assert wallet_coins[0]["revoked"] == True
-    assert wallet_coins[1]["revoked"] == False
-    return "Wallet MUST scan every block — nullifiers are unlinkable"
 
 
 
@@ -8003,41 +7955,6 @@ class TrustTier(Enum):
 # Genesis contract IDs — matches Rust wallet.md Genesis table (9 contracts).
 GENESIS_CONTRACT_NAMES = {"native_token", "deployooor", "promissory_note", "identity", "oracle", "attestation", "purse", "box", "multisig"}
 
-
-def resolve_trust_tier(
-    contract_name: str,
-    deployer_pubkey: Optional[str] = None,
-    wallet_pubkeys: Optional[set] = None,
-    attestations: Optional[list] = None,
-    trusted_issuers: Optional[set] = None,
-) -> TrustTier:
-    """Resolve the trust tier for a contract.
-
-    Resolution order (first match wins):
-    1. GENESIS — contract name matches a known genesis contract
-    2. SELF_DEPLOYED — deployer pubkey is in the user's wallet
-    3. ATTESTED — at least one attestation from a trusted issuer exists
-    4. UNVERIFIED — none of the above (caveat emptor)
-
-    Trust is additive — once a higher tier is established, it never downgrades.
-    """
-    # Tier 1: Genesis contracts are implicitly trusted
-    if contract_name in GENESIS_CONTRACT_NAMES:
-        return TrustTier.GENESIS
-
-    # Tier 2: Self-deployed contracts — user deployed it themselves
-    if deployer_pubkey and wallet_pubkeys and deployer_pubkey in wallet_pubkeys:
-        return TrustTier.SELF_DEPLOYED
-
-    # Tier 3: Attested by a trusted issuer
-    if attestations and trusted_issuers:
-        for attestation in attestations:
-            issuer = attestation.get("issuer_pubkey", "")
-            if issuer in trusted_issuers:
-                return TrustTier.ATTESTED
-
-    # Tier 4: Unverified — caveat emptor
-    return TrustTier.UNVERIFIED
 
 
 # ==============================================================================
