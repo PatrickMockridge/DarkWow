@@ -134,10 +134,22 @@ pub struct ManifestTree {
 }
 
 /// A ZK proof circuit referenced by the contract.
+///
+/// The `witness_map` declares how each witness slot in the circuit's
+/// ordered `ZkBinary.witnesses: Vec<VarType>` is bound at proof time
+/// (wallet.md §6.4.1, witness-binding rule). One entry per slot, each
+/// a source string: `"note:<field>"`, `"param:<field>"`, `"secret"`,
+/// `"merkle_path"`, `"leaf_position"`, `"blind"`, `"tx_commitment"`,
+/// `"tx_nonce"`. Parsed by `CircuitWitnessMap::from_manifest` in the
+/// generic prover module (prover.rs).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ManifestCircuit {
     pub name: String,
     pub namespace: String,
+    /// Witness-binding declarations, one per witness slot in declared order.
+    /// Empty for contracts that pre-date the typed-manifest specification.
+    #[serde(default)]
+    pub witness_map: Vec<String>,
 }
 
 /// Parameter schema for a function.
