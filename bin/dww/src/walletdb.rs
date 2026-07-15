@@ -33,6 +33,7 @@ use dwow_sdk::crypto::{
 };
 use dwow_sdk::pasta::{group::ff::PrimeField, pallas};
 use dwow_serial::{deserialize, serialize};
+use serde::Serialize;
 use rusqlite::{
     params,
     types::ToSql,
@@ -97,7 +98,7 @@ pub struct CapRecord {
 }
 
 /// Merkle proof for a capability commitment in the note tree.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct MerkleProof {
     pub siblings: Vec<String>,
     pub root: String,
@@ -1073,6 +1074,12 @@ impl WalletDb {
         Ok(())
     }
 
+    /// Load a stored Merkle tree by name.
+    ///
+    /// Returns `None` when the tree does not exist (first run / fresh state).
+    /// Corrupt tree data (checksum or deserialization failure) is logged but also
+    /// returns `None` — the caller creates a fresh tree. The log ensures the
+    /// corruption is visible rather than silently replaced.
     pub fn get_merkle_tree(&self, name: &[u8]) -> Option<MerkleTree> {
         let conn = self.conn.lock().ok()?;
         let tree_bytes: Vec<u8> = conn.query_row(
@@ -1080,8 +1087,24 @@ impl WalletDb {
             rusqlite::params![name],
             |row| row.get(0),
         ).ok()?;
-        let raw = crate::sled_checksum::checksum_decode(&tree_bytes).ok()?;
-        deserialize(&raw).ok()
+        let raw = match crate::sled_checksum::checksum_decode(&tree_bytes) {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!(target: "dww::walletdb",
+                    "merkle tree '{:?}' checksum failed: {} — creating fresh tree",
+                    std::str::from_utf8(name).unwrap_or("?"), e);
+                return None;
+            }
+        };
+        match deserialize(&raw) {
+            Ok(tree) => Some(tree),
+            Err(e) => {
+                tracing::error!(target: "dww::walletdb",
+                    "merkle tree '{:?}' deserialization failed: {} — creating fresh tree",
+                    std::str::from_utf8(name).unwrap_or("?"), e);
+                None
+            }
+        }
     }
 
     pub fn insert_scanned_block(
@@ -1381,7 +1404,7 @@ mod tests {
         cap.capability_name = Some("coin".to_string());
         cap.resource = Some("coin".to_string());
         cap.action = Some("transfer".to_string());
-        cap.primitives = vec![Primitive::SecretKey, Primitive::Coin, Primitive::Nullifier];
+        cap.primitives = vec![Primitive::SecretKey, Primitive::Commitment, Primitive::Nullifier];
         cap.barbs = vec![Barb::Spend, Barb::Commit, Barb::Nullify];
         wallet.insert_capability(&cap, &proof).unwrap();
 

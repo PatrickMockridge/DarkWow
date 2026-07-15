@@ -93,8 +93,10 @@ impl Dww {
         // Attach the fee call and build the transaction (§6.3 step 6) —
         // fee proofs, fee nullifier, and the outer tx_commitment all handled
         // by the centralized fee builder.
+        let mut seed = [0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
         let (mut tx, fee_ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(
-            &self.wallet, &self.account_mgr, deploy_leaf, None, None,
+            &self.wallet, &self.account_mgr, deploy_leaf, None, None, seed,
         )?;
 
         // Per-call signature rows, in call order (calls[0] = deploy,

@@ -63,7 +63,7 @@ proof_circuit = "Mint_V1"
 discriminant = 0
 name = "coin"
 description = "An unspent native token coin. Consumable via transfer/burn/spend/fee."
-primitives = ["SecretKey", "Coin", "Nullifier", "ContractId", "FuncId", "TokenId", "MerkleNode"]
+primitives = ["SecretKey", "Commitment", "Nullifier", "ContractId", "FuncId", "AssetId", "MerkleNode"]
 note_schema = [{ name = "value", type = "u64" }, { name = "commitment", type = "pallas_base" }]
 
 [[actions]]

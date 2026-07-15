@@ -60,20 +60,20 @@ proof_circuit = "BlindOutput_V1"
 discriminant = 0
 name = "coin"
 description = "An unspent coin in the wallet — can be spent via burn, transfer, or redeem. Consumable."
-primitives = ["SecretKey","Coin","Nullifier","ContractId","FuncId","TokenId","MerkleNode"]
+primitives = ["SecretKey","Commitment","Nullifier","ContractId","FuncId","AssetId","MerkleNode"]
 note_schema = [{ name = "value", type = "u64" }, { name = "commitment", type = "pallas_base" }]
 
 [[capabilities]]
 discriminant = 1
 name = "mint_authority"
 description = "Knowledge of the mint_secret for a specific token_id — allows minting new coins of that token. Non-consumable."
-primitives = ["SecretKey","Nullifier","ContractId","FuncId","TokenId"]
+primitives = ["SecretKey","Nullifier","ContractId","FuncId","AssetId"]
 
 [[capabilities]]
 discriminant = 2
 name = "receipt"
 description = "A zero-value receipt coin from RedeemV1 — cryptographic proof of redemption. Non-transferable, non-consumable."
-primitives = ["Coin","ContractId","FuncId","TokenId","MerkleNode"]
+primitives = ["Commitment","ContractId","FuncId","AssetId","MerkleNode"]
 note_schema = [{ name = "value", type = "u64" }, { name = "commitment", type = "pallas_base" }]
 
 # ============================================================================

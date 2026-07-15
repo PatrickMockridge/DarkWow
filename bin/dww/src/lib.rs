@@ -166,6 +166,11 @@ pub struct Dww {
     /// Blocks below this height are cryptographically final — cannot be reorged.
     /// The chain state rejects AnchoredBlockConflict for anchored blocks.
     pub verified_anchor_height: smol::lock::Mutex<u32>,
+    /// Cached burn proving key — built once from the embedded zkas binary.
+    /// Depends only on the compile-time constant BURN_V1_BIN.
+    pub burn_pk_cache: smol::lock::Mutex<Option<dwow_core::zk::proof::ProvingKey>>,
+    /// Cached mint proving key — built once from the embedded zkas binary.
+    pub mint_pk_cache: smol::lock::Mutex<Option<dwow_core::zk::proof::ProvingKey>>,
 }
 
 impl Dww {
@@ -208,7 +213,7 @@ impl Dww {
             }
         }
 
-        Ok(Self { network, account_mgr, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), last_synced_tip_hash: smol::lock::Mutex::new(None), verified_anchor_height: smol::lock::Mutex::new(0) })
+        Ok(Self { network, account_mgr, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), last_synced_tip_hash: smol::lock::Mutex::new(None), verified_anchor_height: smol::lock::Mutex::new(0), burn_pk_cache: smol::lock::Mutex::new(None), mint_pk_cache: smol::lock::Mutex::new(None) })
     }
 
     /// Get the current chain tip height from the local block store.
@@ -358,10 +363,12 @@ impl Dww {
 
         // Broadcast with retry: 3 attempts × 2s delay.
         // Transient P2P drops should not cause permanent tx loss.
+        // broadcast() is fire-and-forget (returns unit). Reliable delivery is
+        // the P2P layer's responsibility. We check peer connectivity as a
+        // best-effort health signal — if peers drop during broadcast, retry.
         let mut broadcast_ok = false;
         for attempt in 1..=3 {
             p2p.broadcast(tx).await;
-            // Verify peers still connected after broadcast
             if p2p.hosts().peers().len() > 0 {
                 broadcast_ok = true;
                 break;
@@ -556,7 +563,8 @@ impl Dww {
         match self.wallet.get_merkle_tree(b"capability_commitment_tree") {
             Some(tree) => Ok(tree),
             None => {
-                // Create an empty Merkle tree for darkwow-devnet (no previous state)
+                // Create an empty Merkle tree (first run / fresh wallet, or
+                // corruption logged inside get_merkle_tree)
                 let tree = MerkleTree::new(1);
                 Ok(tree)
             }
@@ -615,7 +623,7 @@ impl Dww {
             "AEAD self-test encrypt failed: {:?}", e
         )))?;
 
-        let decrypted: Vec<u8> = encrypted.decrypt(secret)
+        let decrypted: Vec<u8> = encrypted.decrypt(&secret)
             .map_err(|e| Error::Custom(format!(
                 "AEAD self-test decrypt failed: {:?}", e
             )))?;
@@ -840,18 +848,29 @@ impl Dww {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        // Load ZK binaries
+        // Load ZK binaries — proving keys are cached across calls.
+        // The PK depends only on the compile-time-embedded zkas binary.
         let burn_zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V1_BIN, false)
             .map_err(|e| Error::Custom(format!("burn zkbin: {}", e)))?;
         let burn_pk = {
-            let c = ZkCircuit::new(empty_witnesses(&burn_zkbin)?, &burn_zkbin);
-            ProvingKey::build(burn_zkbin.k, &c).map_err(|e| Error::Custom(format!("burn pk: {}", e)))?
+            let mut cache = self.burn_pk_cache.lock().await;
+            if cache.is_none() {
+                let c = ZkCircuit::new(empty_witnesses(&burn_zkbin)?, &burn_zkbin);
+                *cache = Some(ProvingKey::build(burn_zkbin.k, &c)
+                    .map_err(|e| Error::Custom(format!("burn pk: {}", e)))?);
+            }
+            cache.as_ref().unwrap().clone()
         };
         let mint_zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN, false)
             .map_err(|e| Error::Custom(format!("mint zkbin: {}", e)))?;
         let mint_pk = {
-            let c = ZkCircuit::new(empty_witnesses(&mint_zkbin)?, &mint_zkbin);
-            ProvingKey::build(mint_zkbin.k, &c).map_err(|e| Error::Custom(format!("mint pk: {}", e)))?
+            let mut cache = self.mint_pk_cache.lock().await;
+            if cache.is_none() {
+                let c = ZkCircuit::new(empty_witnesses(&mint_zkbin)?, &mint_zkbin);
+                *cache = Some(ProvingKey::build(mint_zkbin.k, &c)
+                    .map_err(|e| Error::Custom(format!("mint pk: {}", e)))?);
+            }
+            cache.as_ref().unwrap().clone()
         };
 
         // wallet.md §6.1: the Seed is the explicit randomness name. Every
@@ -959,7 +978,7 @@ impl Dww {
         // TransactionBuilder computes the outer tx_commitment; the fee input's
         // nullifier is published by the fee builder.
         let (mut tx, fee_ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(
-            &self.wallet, &self.account_mgr, leaf, None, Some(&selected.cap_id),
+            &self.wallet, &self.account_mgr, leaf, None, Some(&selected.cap_id), seed,
         )?;
 
         // Model step 5 (wallet_model.py:3954): nullifier order is
@@ -1237,7 +1256,10 @@ impl Dww {
                     call: contract_call,
                     proofs: proofs.into_iter().map(|p| Proof::new(p)).collect(),
                 };
-                let (mut tx, ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, &self.account_mgr, leaf, None, None)?;
+                let mut seed = [0u8; 32];
+                rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
+                let (mut tx, ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(
+                    &self.wallet, &self.account_mgr, leaf, None, None, seed)?;
                 // §6.3 step 7 / mempool admission: ONE signature row per call,
                 // in call order — calls[0] = main (signed by the caller-supplied
                 // secrets matching the call's metadata pubkeys, empty row when
@@ -1268,8 +1290,10 @@ impl Dww {
                     call: contract_call,
                     proofs: builder_proofs.into_iter().map(|p| Proof::new(p)).collect(),
                 };
+                let mut seed = [0u8; 32];
+                rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
                 let (mut tx, ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(
-                    &self.wallet, &self.account_mgr, leaf, None, None,
+                    &self.wallet, &self.account_mgr, leaf, None, None, seed,
                 )?;
                 // Per-call signature rows (see the Path A exit above).
                 let main_sigs = tx.create_sigs(&signing_secrets)
@@ -1343,7 +1367,10 @@ impl Dww {
         };
 
         // Build transaction with fee
-        let (mut tx, ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, &self.account_mgr, leaf, None, None)?;
+        let mut seed = [0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
+        let (mut tx, ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(
+            &self.wallet, &self.account_mgr, leaf, None, None, seed)?;
         // Per-call signature rows (see the Path A exit above).
         let main_sigs = tx.create_sigs(&signing_secrets)
             .map_err(|e| Error::Custom(format!("create_sigs main: {}", e)))?;

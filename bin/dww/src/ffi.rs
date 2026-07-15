@@ -44,7 +44,7 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use dwow_sdk::crypto::{keypair::Network, ContractId};
@@ -202,14 +202,15 @@ pub extern "C" fn dwow_wallet_derive_address(
             .try_into()
             .ok()?;
         let cid = ContractId::from_bytes(cid_bytes).ok()?;
-        let addr = mgr.per_block_address(&cid, height).ok()?;
+        let addr = mgr.per_block_address(&cid, &height.to_le_bytes()).ok()?;
         let addr_str = addr.to_string();
         let bytes = addr_str.as_bytes();
         let len = bytes.len() + 1; // include NUL
         if len > out_len as usize { return None; }
         unsafe {
-            std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_address as *mut u8, bytes.len());
-            std::ptr::write(out_address.add(bytes.len()), 0u8);
+            let out = out_address as *mut u8;
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len());
+            std::ptr::write(out.add(bytes.len()), 0u8);
         }
         Some(len as i32)
     }));
@@ -265,6 +266,8 @@ pub extern "C" fn dwow_wallet_open(
             ),
             last_synced_tip_hash: smol::lock::Mutex::new(None),
             verified_anchor_height: smol::lock::Mutex::new(0),
+            burn_pk_cache: smol::lock::Mutex::new(None),
+            mint_pk_cache: smol::lock::Mutex::new(None),
         };
         dww.initialize_wallet().ok()?;
 
@@ -328,9 +331,11 @@ pub extern "C" fn dwow_wallet_open_persistent(
             p2p: None,
             executor: None,
             p2p_settings: None,
-            highest_peer_tip: Arc::new(HighestPeerTip(AtomicU64::new(0))),
+            highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip(std::sync::atomic::AtomicU64::new(0))),
             last_synced_tip_hash: smol::lock::Mutex::new(None),
             verified_anchor_height: smol::lock::Mutex::new(0),
+            burn_pk_cache: smol::lock::Mutex::new(None),
+            mint_pk_cache: smol::lock::Mutex::new(None),
         };
         dww.initialize_wallet().ok()?;
         Some(Box::new(WalletHandle { dww, _wallet: wallet, last_error: std::cell::RefCell::new(None) }))
@@ -743,7 +748,7 @@ mod tests {
     use super::*;
     use std::ffi::CString;
 
-    /// Verify the FFI lifecycle: open account → derive key → free.
+    /// Verify the FFI lifecycle: open account → derive address → free.
     /// Uses the same deterministic test key as the wallet integration test.
     #[test]
     fn test_ffi_lifecycle() {
@@ -762,24 +767,42 @@ mod tests {
         );
         assert!(!account.is_null());
 
-        let mut secret = [0u8; 32];
-        let ret = dwow_wallet_derive_key(
-            account,
-            dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes().as_ptr(),
-            1,
-            secret.as_mut_ptr(),
-        );
-        assert_eq!(ret, 0);
-        assert_ne!(secret, [0u8; 32]);
+        let cid = dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes();
 
-        let mut secret2 = [0u8; 32];
-        dwow_wallet_derive_key(
-            account,
-            dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes().as_ptr(),
-            2,
-            secret2.as_mut_ptr(),
+        // Derive addresses at two different heights
+        let mut addr1 = [0i8; 64];
+        let ret1 = dwow_wallet_derive_address(
+            account, cid.as_ptr(), 1, addr1.as_mut_ptr(), 64,
         );
-        assert_ne!(secret, secret2);
+        assert!(ret1 > 0, "derive_address height=1 failed");
+        let s1 = CStr::from_bytes_until_nul(
+            unsafe { std::slice::from_raw_parts(addr1.as_ptr() as *const u8, 64) }
+        ).unwrap().to_str().unwrap().to_string();
+        assert!(!s1.is_empty());
+
+        let mut addr2 = [0i8; 64];
+        let ret2 = dwow_wallet_derive_address(
+            account, cid.as_ptr(), 2, addr2.as_mut_ptr(), 64,
+        );
+        assert!(ret2 > 0, "derive_address height=2 failed");
+        let s2 = CStr::from_bytes_until_nul(
+            unsafe { std::slice::from_raw_parts(addr2.as_ptr() as *const u8, 64) }
+        ).unwrap().to_str().unwrap().to_string();
+        assert!(!s2.is_empty());
+
+        // Different heights produce different addresses
+        assert_ne!(s1, s2);
+
+        // Determinism: same height returns same address
+        let mut addr1b = [0i8; 64];
+        let ret1b = dwow_wallet_derive_address(
+            account, cid.as_ptr(), 1, addr1b.as_mut_ptr(), 64,
+        );
+        assert!(ret1b > 0);
+        let s1b = CStr::from_bytes_until_nul(
+            unsafe { std::slice::from_raw_parts(addr1b.as_ptr() as *const u8, 64) }
+        ).unwrap().to_str().unwrap().to_string();
+        assert_eq!(s1, s1b);
 
         dwow_wallet_free_account(account);
         let _ = std::fs::remove_file(&path);

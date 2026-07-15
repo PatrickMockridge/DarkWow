@@ -178,7 +178,7 @@ impl TransferCallBuilder {
                 signature_public: PublicKey::from_secret(*secret),
             };
 
-            let (burn_proof, revealed) = proof::create_transfer_burn_proof(
+            let (burn_proof, revealed, sig_secret) = proof::create_transfer_burn_proof(
                 &self.burn_zkbin,
                 &self.burn_pk,
                 &call_input,
@@ -192,7 +192,7 @@ impl TransferCallBuilder {
             )?;
 
             proofs.push(burn_proof);
-            signature_secrets.push(*secret);
+            signature_secrets.push(sig_secret);
 
             input_entries.push(crate::model::Input {
                 value_commit: revealed.value_commit,

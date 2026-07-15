@@ -37,7 +37,7 @@ use dwow_sdk::{
     tx::ContractCall,
 };
 use dwow_serial::Encodable;
-use rand::rngs::OsRng;
+use rand::{rngs::StdRng, SeedableRng};
 
 use crate::contract_imports::native_token::{
     DRKW_TOKEN_ID, FeeCallBuilder, FeeCallInput, FeeCallOutput,
@@ -88,7 +88,10 @@ pub fn build_fee_and_finalize_tx(
     call_leaf: ContractCallLeaf,
     fee_proofs: Option<Vec<Proof>>,
     exclude_cap_id: Option<&str>,
+    seed: [u8; 32],
 ) -> Result<(Transaction, Vec<SecretKey>)> {
+    // wallet.md §6.1: Seed-derived randomness — no OsRng.
+    let mut rng = StdRng::from_seed(seed);
     // Get DRKW cap for fee
     let fee_cap_records = wallet.get_capabilities_by_asset(&DRKW_TOKEN_ID, Some(false))
         .map_err(|e| Error::Custom(format!("Failed to get DRKW capabilities: {:?}", e)))?;
@@ -185,14 +188,14 @@ pub fn build_fee_and_finalize_tx(
         leaf_position: fee_cap.leaf_position,
         merkle_path: dark_merkle_path,
         secret: dark_secret,
-        ephemeral_signature_secret: SecretKey::random(&mut OsRng),
+        ephemeral_signature_secret: SecretKey::random(&mut rng),
         tx_commitment,
         tx_nonce: pallas::Base::zero(),
     };
 
     // Fee output - change goes back to our public key
     let dark_public_key = PublicKey::from_secret(dark_secret);
-    let change_blind = BaseBlind::random(&mut OsRng);
+    let change_blind = BaseBlind::random(&mut rng);
     let fee_output = FeeCallOutput {
         recipient: dark_public_key,
         value: fee_cap.value.saturating_sub(DEFAULT_FEE),

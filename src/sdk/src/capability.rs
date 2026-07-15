@@ -271,10 +271,10 @@ pub enum Primitive {
     SecretKey,
     PublicKey,
     Nullifier,
-    Coin,
+    Commitment,
     ContractId,
     FuncId,
-    TokenId,
+    AssetId,
     MerkleNode,
     OwnedSecretKey,
     MiningRecipient,
@@ -288,10 +288,10 @@ impl Primitive {
             Primitive::SecretKey       => &[Barb::Spend, Barb::Derive],
             Primitive::PublicKey       => &[Barb::Verify, Barb::Encrypt],
             Primitive::Nullifier       => &[Barb::Nullify],
-            Primitive::Coin            => &[Barb::Commit],
+            Primitive::Commitment     => &[Barb::Commit],
             Primitive::ContractId      => &[Barb::Dispatch],
             Primitive::FuncId          => &[Barb::Gate],
-            Primitive::TokenId         => &[Barb::Denominate],
+            Primitive::AssetId         => &[Barb::Denominate],
             Primitive::MerkleNode      => &[Barb::ProveInclusion],
             Primitive::OwnedSecretKey  => &[Barb::Spend],
             Primitive::MiningRecipient => &[Barb::Spend, Barb::Mine],
@@ -305,10 +305,10 @@ impl Primitive {
             Primitive::SecretKey       => "SecretKey",
             Primitive::PublicKey       => "PublicKey",
             Primitive::Nullifier       => "Nullifier",
-            Primitive::Coin            => "Coin",
+            Primitive::Commitment     => "Commitment",
             Primitive::ContractId      => "ContractId",
             Primitive::FuncId          => "FuncId",
-            Primitive::TokenId         => "TokenId",
+            Primitive::AssetId         => "AssetId",
             Primitive::MerkleNode      => "MerkleNode",
             Primitive::OwnedSecretKey  => "OwnedSecretKey",
             Primitive::MiningRecipient => "MiningRecipient",
@@ -325,10 +325,12 @@ impl Primitive {
             "SecretKey"       => Primitive::SecretKey,
             "PublicKey"       => Primitive::PublicKey,
             "Nullifier"       => Primitive::Nullifier,
-            "Coin"            => Primitive::Coin,
+            // Aliases for backward compatibility with manifests deployed
+            // before the Coin→Commitment, TokenId→AssetId rename.
+            "Coin" | "Commitment" => Primitive::Commitment,
             "ContractId"      => Primitive::ContractId,
             "FuncId"          => Primitive::FuncId,
-            "TokenId"         => Primitive::TokenId,
+            "TokenId" | "AssetId" => Primitive::AssetId,
             "MerkleNode"      => Primitive::MerkleNode,
             "OwnedSecretKey"  => Primitive::OwnedSecretKey,
             "MiningRecipient" => Primitive::MiningRecipient,
@@ -498,8 +500,8 @@ mod type_construction_tests {
     fn test_native_token_coinbase_constructible() {
         let ct = wallet_construct(
             "native_token_coinbase", "claim_coinbase",
-            vec![Primitive::SecretKey, Primitive::Coin, Primitive::Nullifier,
-                 Primitive::ContractId, Primitive::FuncId, Primitive::TokenId,
+            vec![Primitive::SecretKey, Primitive::Commitment, Primitive::Nullifier,
+                 Primitive::ContractId, Primitive::FuncId, Primitive::AssetId,
                  Primitive::MiningRecipient],
             &[Barb::Spend, Barb::Nullify, Barb::Commit, Barb::Dispatch,
               Barb::Gate, Barb::Denominate, Barb::Mine],
@@ -513,8 +515,8 @@ mod type_construction_tests {
     fn test_native_token_transfer_constructible() {
         let ct = wallet_construct(
             "native_token", "transfer",
-            vec![Primitive::SecretKey, Primitive::Coin, Primitive::Nullifier,
-                 Primitive::ContractId, Primitive::FuncId, Primitive::TokenId,
+            vec![Primitive::SecretKey, Primitive::Commitment, Primitive::Nullifier,
+                 Primitive::ContractId, Primitive::FuncId, Primitive::AssetId,
                  Primitive::MerkleNode],
             &[Barb::Spend, Barb::Nullify, Barb::Commit, Barb::Dispatch,
               Barb::Gate, Barb::Denominate],
@@ -526,8 +528,8 @@ mod type_construction_tests {
     fn test_dao_vote_constructible() {
         let ct = wallet_construct(
             "dao_governance", "vote",
-            vec![Primitive::SecretKey, Primitive::Coin, Primitive::Nullifier,
-                 Primitive::ContractId, Primitive::FuncId, Primitive::TokenId,
+            vec![Primitive::SecretKey, Primitive::Commitment, Primitive::Nullifier,
+                 Primitive::ContractId, Primitive::FuncId, Primitive::AssetId,
                  Primitive::MerkleNode],
             &[Barb::Spend, Barb::Nullify, Barb::Commit, Barb::Dispatch,
               Barb::Gate, Barb::Denominate, Barb::ProveInclusion],
@@ -539,8 +541,8 @@ mod type_construction_tests {
     fn test_purse_balance_constructible() {
         let ct = wallet_construct(
             "purse_balance", "balance",
-            vec![Primitive::SecretKey, Primitive::Coin, Primitive::ContractId,
-                 Primitive::TokenId],
+            vec![Primitive::SecretKey, Primitive::Commitment, Primitive::ContractId,
+                 Primitive::AssetId],
             &[Barb::Spend, Barb::Commit, Barb::Dispatch, Barb::Denominate],
         );
         assert!(ct.is_some(), "purseBalanceType must be constructible");
@@ -550,8 +552,8 @@ mod type_construction_tests {
     fn test_purse_withdraw_constructible() {
         let ct = wallet_construct(
             "purse_withdrawal", "withdraw",
-            vec![Primitive::SecretKey, Primitive::Coin, Primitive::Nullifier,
-                 Primitive::ContractId, Primitive::TokenId],
+            vec![Primitive::SecretKey, Primitive::Commitment, Primitive::Nullifier,
+                 Primitive::ContractId, Primitive::AssetId],
             &[Barb::Spend, Barb::Commit, Barb::Nullify, Barb::Dispatch, Barb::Denominate],
         );
         assert!(ct.is_some(), "purseWithdrawType must be constructible");
@@ -618,7 +620,7 @@ mod type_construction_tests {
     fn test_wrong_primitives_rejected() {
         let ct = wallet_construct(
             "native_token", "transfer",
-            vec![Primitive::SecretKey, Primitive::Coin],
+            vec![Primitive::SecretKey, Primitive::Commitment],
             &[Barb::Spend, Barb::Nullify, Barb::Commit, Barb::Dispatch],
         );
         assert!(ct.is_none(), "missing Nullifier must cause construction to fail");
@@ -630,10 +632,10 @@ mod type_construction_tests {
         assert_eq!(Primitive::SecretKey.barbs(), &[Barb::Spend, Barb::Derive]);
         assert_eq!(Primitive::PublicKey.barbs(), &[Barb::Verify, Barb::Encrypt]);
         assert_eq!(Primitive::Nullifier.barbs(), &[Barb::Nullify]);
-        assert_eq!(Primitive::Coin.barbs(), &[Barb::Commit]);
+        assert_eq!(Primitive::Commitment.barbs(), &[Barb::Commit]);
         assert_eq!(Primitive::ContractId.barbs(), &[Barb::Dispatch]);
         assert_eq!(Primitive::FuncId.barbs(), &[Barb::Gate]);
-        assert_eq!(Primitive::TokenId.barbs(), &[Barb::Denominate]);
+        assert_eq!(Primitive::AssetId.barbs(), &[Barb::Denominate]);
         assert_eq!(Primitive::MerkleNode.barbs(), &[Barb::ProveInclusion]);
         assert_eq!(Primitive::OwnedSecretKey.barbs(), &[Barb::Spend]);
         assert_eq!(Primitive::MiningRecipient.barbs(), &[Barb::Spend, Barb::Mine]);
@@ -641,9 +643,9 @@ mod type_construction_tests {
 
     #[test]
     fn test_csv_codec_roundtrip_and_fail_closed() {
-        let prims = vec![Primitive::SecretKey, Primitive::Coin, Primitive::TokenId];
+        let prims = vec![Primitive::SecretKey, Primitive::Commitment, Primitive::AssetId];
         let csv = primitives_to_csv(&prims);
-        assert_eq!(csv, "SecretKey,Coin,TokenId");
+        assert_eq!(csv, "SecretKey,Commitment,AssetId");
         assert_eq!(primitives_from_csv(&csv), Some(prims));
         assert_eq!(primitives_from_csv(""), Some(vec![]));
         // Fail closed on an unknown name.
@@ -662,8 +664,8 @@ mod type_construction_tests {
         // unknown names parse to None (forward-compat).
         let prims = [
             Primitive::SecretKey, Primitive::PublicKey, Primitive::Nullifier,
-            Primitive::Coin, Primitive::ContractId, Primitive::FuncId,
-            Primitive::TokenId, Primitive::MerkleNode,
+            Primitive::Commitment, Primitive::ContractId, Primitive::FuncId,
+            Primitive::AssetId, Primitive::MerkleNode,
             Primitive::OwnedSecretKey, Primitive::MiningRecipient,
         ];
         for p in prims {
@@ -687,8 +689,8 @@ mod type_construction_tests {
         // Pareto-efficiency: no two primitives share identical barb sets
         let all = [
             Primitive::SecretKey, Primitive::PublicKey, Primitive::Nullifier,
-            Primitive::Coin, Primitive::ContractId, Primitive::FuncId,
-            Primitive::TokenId, Primitive::MerkleNode,
+            Primitive::Commitment, Primitive::ContractId, Primitive::FuncId,
+            Primitive::AssetId, Primitive::MerkleNode,
             Primitive::OwnedSecretKey, Primitive::MiningRecipient,
         ];
         for i in 0..all.len() {

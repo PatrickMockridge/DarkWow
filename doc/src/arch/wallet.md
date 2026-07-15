@@ -128,8 +128,8 @@ bin/dwowd                    ← bin/dww (test-only), dwow_core,
 
 Rules:
 - `dwow-sdk` SHALL NOT depend on `dwow_core`. It defines the protocol types
-  (`Transaction`, `ContractCall`, `AeadEncryptedNote`, `Nullifier`, `Coin`,
-  `TokenId`, `MerkleNode`); the node crate (`dwow_core`) implements the ZK
+  (`Transaction`, `ContractCall`, `AeadEncryptedNote`, `Nullifier`, `Commitment`,
+  `AssetId`, `MerkleNode`); the node crate (`dwow_core`) implements the ZK
   prover, the VM, and the runtime that operate ON those types.
 - `bin/dww` depends on `dwow_core` for ZK proving (`ZkBinary`, `ProvingKey`,
   `Proof`) and transaction assembly (`TransactionBuilder`) — these are
@@ -179,7 +179,7 @@ The boundary between the wallet core and dwowd-sdk SHALL be:
 - All cryptographic primitive types SHALL cross this boundary by their nominal
   newtype, never as `[u8; 32]` or `pallas::Base` (type-system.md §2.2)
 - `Transaction`, `ContractCall`, `ContractCallLeaf` — transaction assembly types
-- `AeadEncryptedNote`, `Nullifier`, `Coin`, `TokenId`, `MerkleNode` — protocol types
+- `AeadEncryptedNote`, `Nullifier`, `Commitment`, `AssetId`, `MerkleNode` — protocol types
 - `TransactionBuilder`, `DarkForest`, `DarkLeaf` — transaction tree construction
 
 ### 0.1.4 Module Map Per Component
@@ -211,7 +211,7 @@ prover.rs            — generic prover architecture, witness-binding rules
 
 **dwowd-sdk** (`src/sdk/src/` — physically same crate, logically distinct component):
 ```
-crypto/     — nominal primitives (SecretKey, PublicKey, Nullifier, Coin, TokenId,
+crypto/     — nominal primitives (SecretKey, PublicKey, Nullifier, Commitment, AssetId,
               MerkleNode, ContractId, FuncId), AEAD notes, keypair, pedersen, poseidon
 tx.rs       — Transaction, ContractCall types
 blockchain.rs — block/chain data structures, reward schedule
@@ -287,11 +287,11 @@ consensus asset required for fee payment. The scan:
 ```
 Capability(native_token_coinbase, reward) ≡ compose(
     SecretKey(↓spend, ν-restricted),
-    Coin(↓commit, value = reward),
+    Commitment(↓commit, value = reward),
     Nullifier(↓nullify),
     ContractId(↓dispatch = NATIVE_TOKEN),
     FuncId(↓gate = PoWRewardV1),
-    TokenId(↓denominate = DRKW),
+    AssetId(↓denominate = DRKW),
     MerkleNode(↓prove-inclusion)
 )
 ```
@@ -659,7 +659,7 @@ transparency.
 Three concrete proofs verify that the wallet can construct real
 capability types:
 
-- `nativeTokenTransfer_constructible`: from `[SecretKey, Coin, Nullifier, ContractId, FuncId, TokenId, MerkleNode]`
+- `nativeTokenTransfer_constructible`: from `[SecretKey, Commitment, Nullifier, ContractId, FuncId, AssetId, MerkleNode]`
 - `daoVote_constructible`: same primitives, different resource
 - `tenderBid_constructible`: same primitives, different resource
 

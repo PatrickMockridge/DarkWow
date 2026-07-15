@@ -502,7 +502,7 @@ code = 7
 [[capabilities]]
 discriminant = 42
 name = "badge"
-primitives = ["SecretKey","Coin","Nullifier","ContractId","FuncId","TokenId","MerkleNode"]
+primitives = ["SecretKey","Commitment","Nullifier","ContractId","FuncId","AssetId","MerkleNode"]
 note_schema = [
     { name = "commitment", type = "pallas_base" },
     { name = "badge_id", type = "u64" },
@@ -647,16 +647,16 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             "Path2: must compose 7 primitives"
         );
         assert!(path2_cap.primitives.contains(&Primitive::SecretKey));
-        assert!(path2_cap.primitives.contains(&Primitive::Coin));
+        assert!(path2_cap.primitives.contains(&Primitive::Commitment));
         assert!(path2_cap.primitives.contains(&Primitive::Nullifier));
         assert!(path2_cap.primitives.contains(&Primitive::ContractId));
         assert!(path2_cap.primitives.contains(&Primitive::FuncId));
-        assert!(path2_cap.primitives.contains(&Primitive::TokenId));
+        assert!(path2_cap.primitives.contains(&Primitive::AssetId));
         assert!(path2_cap.primitives.contains(&Primitive::MerkleNode));
 
         // Barbs: composed union of primitive barbs.
-        // 7 primitives: SecretKey(Spend,Derive) + Coin(Commit) + Nullifier(Nullify) +
-        // ContractId(Dispatch) + FuncId(Gate) + TokenId(Denominate) + MerkleNode(ProveInclusion)
+        // 7 primitives: SecretKey(Spend,Derive) + Commitment(Commit) + Nullifier(Nullify) +
+        // ContractId(Dispatch) + FuncId(Gate) + AssetId(Denominate) + MerkleNode(ProveInclusion)
         // = {Spend, Derive, Commit, Nullify, Dispatch, Gate, Denominate, ProveInclusion} = 8
         assert_eq!(
             path2_cap.barbs.len(), 8,
@@ -712,7 +712,7 @@ code = 3
 [[capabilities]]
 discriminant = 1
 name = "fake_miner"
-primitives = ["TokenId","SecretKey"]
+primitives = ["AssetId","SecretKey"]
 note_schema = [{ name = "commitment", type = "pallas_base" }]
 
 [[actions]]
@@ -801,7 +801,7 @@ required_barbs = ["Spend","Mine"]
         assert!(
             uncovered_result.capabilities.is_empty(),
             "Path2: uncovered composition must drop the note — \
-             primitives TokenId+SecretKey don't cover required barb Mine. \
+             primitives AssetId+SecretKey don't cover required barb Mine. \
              Fix the composition, not the wallet."
         );
 

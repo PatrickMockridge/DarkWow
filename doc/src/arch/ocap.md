@@ -38,10 +38,10 @@ Each has a distinct behavioral position. No two may be unified.
 | `SecretKey` | `↓spend`, `↓derive` | ν-restricted | Proves knowledge of the name; authorizes action |
 | `PublicKey` | `↓verify`, `↓encrypt` | Extrudable | Receives encrypted notes; verifies signatures |
 | `Nullifier` | `↓nullify` | Public | Prevents replay; each exercise produces a fresh one |
-| `Coin` | `↓commit` | Public | Represents value on-chain; the commitment face of a capability |
+| `Commitment` | `↓commit` | Public | The commitment face of a capability |
 | `ContractId` | `↓dispatch` | Public | Routes a capability to the contract that recognizes it |
 | `FuncId` | `↓gate` | Public | Constrains which function can exercise the capability |
-| `TokenId` | `↓denominate` | Public | Identifies the asset type the capability controls |
+| `AssetId` | `↓denominate` | Public | The asset denomination face |
 | `MerkleNode` | `↓prove-inclusion` | Public | Proves the capability exists in the recognized set |
 
 ## 2. Capability Type Construction
@@ -82,11 +82,11 @@ The capability "can transfer up to N native tokens" composes:
 ```
 Capability(native_token_transfer, N) ≡ compose(
     SecretKey(↓spend, ν-restricted),     // "I know the spending key"
-    Coin(↓commit),                       // "This commitment represents N value"
+    Commitment(↓commit),                 // "This commitment represents N value"
     Nullifier(↓nullify),                 // "I can prove I haven't spent it before"
     ContractId(↓dispatch),               // "This is a native token contract call"
     FuncId(↓gate),                       // "This is a transfer function (not burn, not fee)"
-    TokenId(↓denominate),                // "This is the native token (not a wrapped asset)"
+    AssetId(↓denominate),                // "This is the native token (not a wrapped asset)"
     MerkleNode(↓prove-inclusion)         // "This commitment is in the recognized set"
 )
 ```
@@ -108,11 +108,11 @@ The capability "can vote on proposal X" composes:
 ```
 Capability(dao_vote, proposal_X) ≡ compose(
     SecretKey(↓spend, ν-restricted),     // "I know the voting key"
-    Coin(↓commit),                       // "I hold governance tokens"
+    Commitment(↓commit),                 // "I hold governance tokens"
     Nullifier(↓nullify),                 // "I haven't voted on this proposal before"
     ContractId(↓dispatch),               // "This is the DAO contract"
     FuncId(↓gate),                       // "This is the vote function"
-    TokenId(↓denominate),                // "This is the governance token"
+    AssetId(↓denominate),                // "This is the governance token"
     MerkleNode(↓prove-inclusion)         // "My tokens existed at snapshot time"
 )
 ```

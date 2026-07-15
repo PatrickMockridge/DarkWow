@@ -69,7 +69,7 @@ No type SHALL exhibit a barb that its definition does not declare.
 | `↓verify` | Can check a ZK proof or signature (validates a Proof) |
 | `↓dispatch` | Can route a call (identifies a contract) |
 | `↓gate` | Can authorize a spend hook (identifies a function) |
-| `↓denominate` | Can identify an asset type (identifies a token) |
+| `↓denominate` | Can identify an asset type (identifies the asset class) |
 | `↓prove-inclusion` | Can prove membership in a set (Merkle proof) |
 | `↓encrypt` | Can produce ciphertext for a recipient (DH key agreement) |
 | `↓derive` | Can produce a scoped sub-key (per-instance derivation) |
@@ -126,7 +126,7 @@ positions are provably different under bisimulation:
 
 - `SecretKey` exhibits `↓spend` and `↓derive`. `[u8; 32]` exhibits neither.
 - `Nullifier` exhibits `↓nullify`. `[u8; 32]` exhibits no barbs.
-- `Coin` exhibits `↓commit`. `[u8; 32]` exhibits no barbs.
+- `Commitment` exhibits `↓commit`. `[u8; 32]` exhibits no barbs.
 - `PublicKey` exhibits `↓verify` and `↓encrypt`. `pallas::Point` exhibits neither.
 - `ContractId` exhibits `↓dispatch`. `[u8; 32]` exhibits no barbs.
 
@@ -161,7 +161,7 @@ security semantics; a generic interface that accepts any capability erases
 the distinction between `↓spend`, `↓nullify`, and `↓prove`.
 
 ANY function that accepts `impl AsRef<[u8]>` and is callable with a
-`SecretKey`, `Nullifier`, or `Coin` SHALL NOT compile. The trait bound
+`SecretKey`, `Nullifier`, or `Commitment` SHALL NOT compile. The trait bound
 erases the barb. The behavioral position is lost.
 
 ## 4. Error Types
@@ -236,8 +236,8 @@ It is constructed by composition of primitive types:
 Capability(can_transfer_100_native_tokens) ≡
     compose(
         Nullifier(↓nullify),
-        Coin(↓commit),
-        TokenId(↓denominate),
+        Commitment(↓commit),
+        AssetId(↓denominate),
         FuncId(↓gate),
         ContractId(↓dispatch),
         SecretKey(↓spend, ν-restricted)
@@ -257,7 +257,7 @@ primitive type preserves its barbs across every module boundary.
 
 If `Nullifier` is unified with `[u8; 32]` at any boundary, the composition
 collapses. The wallet cannot determine whether a given 32-byte value is a
-`Nullifier` (exhibiting `↓nullify`, preventing replay), a `Coin` (exhibiting
+`Nullifier` (exhibiting `↓nullify`, preventing replay), a `Commitment` (exhibiting
 `↓commit`, representing value), or an opaque byte buffer (exhibiting no barbs).
 All three are behaviorally distinct under bisimulation (§2). Unifying them
 under `[u8; 32]` makes all three indistinguishable.
@@ -322,9 +322,9 @@ it exhibits, its scope, and its construction rules.
 | `SecretKey` | `pallas::Base` | `↓spend`, `↓derive` | ν-restricted to holder | `from_bytes` (validates), `derive_instance` (binds to contract+instance) |
 | `PublicKey` | `pallas::Point` | `↓verify`, `↓encrypt` | Extrudable | `from_secret`, `from_bytes` (rejects identity) |
 | `Nullifier` | `pallas::Base` | `↓nullify` | Public | `new(secret, coin_hash)` only. `from_bytes` SHALL reject zero. |
-| `Coin` | `pallas::Base` | `↓commit` | Public | `from_attributes(pk, value, token_id, spend_hook, user_data, blind)` |
+| `Commitment` | `pallas::Base` | `↓commit` | Public | `from_attributes(pk, value, token_id, spend_hook, user_data, blind)` |
 | `ContractId` | `pallas::Base` | `↓dispatch` | Public | `derive(deploy_key)` or well-known constant |
-| `TokenId` | `pallas::Base` | `↓denominate` | Public | `derive(auth_parent, user_data, blind)` or well-known constant |
+| `AssetId` | `pallas::Base` | `↓denominate` | Public | `derive(auth_parent, user_data, blind)` or well-known constant |
 | `FuncId` | `pallas::Base` | `↓gate` | Public | `from(contract_id, func_code)` |
 | `MerkleNode` | `pallas::Base` | `↓prove-inclusion` | Public | Tree insertion |
 
@@ -334,7 +334,7 @@ it exhibits, its scope, and its construction rules.
 |------|------------|-------|
 | `Transaction` | `{ calls, proofs, signatures, nullifiers: Vec<Nullifier> }` | `↓process` |
 | `ContractCall` | `{ contract_id: ContractId, data: Vec<u8> }` | `↓invoke` |
-| `CoinbaseTransaction` | `{ proof, public_inputs, coin: Coin, nullifier: Nullifier, encrypted_note }` | `↓mine` |
+| `CoinbaseTransaction` | `{ proof, public_inputs, coin: Commitment, nullifier: Nullifier, encrypted_note }` | `↓mine` |
 | `BlockHeader` | `{ merkle_root, previous, height, ... }` — all merkle roots SHALL be `blake3::Hash` | `↓validate-pow` |
 | `AeadEncryptedNote` | `{ ciphertext, ephem_public: PublicKey }` | `↓discover` |
 
@@ -362,13 +362,13 @@ code that treats the left type as the right type.
 |------|------------------------|--------|
 | `Nullifier` | `[u8; 32]` | `↓nullify` ≠ no barbs |
 | `Nullifier` | `IntentNullifier` | Different predicate languages |
-| `Coin` | `[u8; 32]` | `↓commit` ≠ no barbs |
+| `Commitment` | `[u8; 32]` | `↓commit` ≠ no barbs |
 | `SecretKey` | `[u8; 32]` | `↓spend`, `↓derive` ≠ no barbs |
 | `SecretKey` | `pallas::Base` | One barbs, one does not |
 | `PublicKey` | `pallas::Point` | One validates identity, one does not |
 | `ContractId` | `[u8; 32]` | `↓dispatch` ≠ no barbs |
 | `FuncId` | `pallas::Base` | `↓gate` ≠ no barbs |
-| `TokenId` | `pallas::Base` | `↓denominate` ≠ no barbs |
+| `AssetId` | `pallas::Base` | `↓denominate` ≠ no barbs |
 | `OwnedSecretKey` | `SecretKey` | `↓spend` requires declaration; `SecretKey` may be random |
 
 ### 8.5 Shared Derives
@@ -667,9 +667,9 @@ pareto-efficiency — no accidental unification is possible.
 
 All 10 pairs in §8.4 are proved distinct (`native_decide`). The conjunction
 `allUnifiablePairsProved` bundles them for single-reference verification:
-Nullifier ≠ [u8; 32], Coin ≠ [u8; 32], SecretKey ≠ [u8; 32], ContractId ≠
+Nullifier ≠ [u8; 32], Commitment ≠ [u8; 32], SecretKey ≠ [u8; 32], ContractId ≠
 [u8; 32], PublicKey ≠ pallas::Point, SecretKey ≠ pallas::Base, FuncId ≠
-pallas::Base, TokenId ≠ pallas::Base, Nullifier ≠ IntentNullifier,
+pallas::Base, AssetId ≠ pallas::Base, Nullifier ≠ IntentNullifier,
 OwnedSecretKey ≠ SecretKey.
 
 ### 10.3 Barb Preservation Under Composition

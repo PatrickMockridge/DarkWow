@@ -412,9 +412,9 @@ impl FeeCallBuilder {
             token_blind: token_blind.inner(),
             memo: vec![],
         };
-        let encrypted_note =
-            AeadEncryptedNote::encrypt(&fee_note, &self.output.recipient, &mut OsRng)
-            .unwrap_or(AeadEncryptedNote { ciphertext: vec![], ephem_public: PublicKey::from_secret(SecretKey::random(&mut OsRng)) });
+        let encrypted_note = AeadEncryptedNote::encrypt(&fee_note, &self.output.recipient, &mut OsRng)
+            .map_err(|e| ContractError::IoError(format!(
+                "fee change note encryption: {:?}", e)))?;
 
         let output_nullifier = Nullifier::new(self.input.secret, output_coin.inner());
 

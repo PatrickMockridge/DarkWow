@@ -30,14 +30,14 @@ requires_proof = false
 discriminant = 0
 name = "purse_balance"
 description = "Hidden balance via Pedersen commitment. Non-consumable."
-primitives = ["SecretKey", "ContractId", "FuncId", "TokenId"]
+primitives = ["SecretKey", "ContractId", "FuncId", "AssetId"]
 note_schema = [{ name = "balance", type = "u64" }, { name = "balance_commit", type = "pallas_base" }]
 
 [[capabilities]]
 discriminant = 1
 name = "purse_withdrawal"
 description = "Withdrawal right from a purse. Consumable."
-primitives = ["SecretKey", "Nullifier", "ContractId", "FuncId", "TokenId"]
+primitives = ["SecretKey", "Nullifier", "ContractId", "FuncId", "AssetId"]
 note_schema = [{ name = "amount", type = "u64" }]
 
 [[actions]]

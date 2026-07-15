@@ -2255,10 +2255,10 @@ _PRIMITIVE_BARBS = {
     "SecretKey":       (Barb.Spend, Barb.Derive),
     "PublicKey":       (Barb.Verify, Barb.Encrypt),
     "Nullifier":       (Barb.Nullify,),
-    "Coin":            (Barb.Commit,),
+    "Commitment":      (Barb.Commit,),
     "ContractId":      (Barb.Dispatch,),
     "FuncId":          (Barb.Gate,),
-    "TokenId":         (Barb.Denominate,),
+    "AssetId":         (Barb.Denominate,),
     "MerkleNode":      (Barb.ProveInclusion,),
     "OwnedSecretKey":  (Barb.Spend,),
     "MiningRecipient": (Barb.Spend, Barb.Mine),
@@ -2271,10 +2271,10 @@ class Primitive(Enum):
     SecretKey = "SecretKey"
     PublicKey = "PublicKey"
     Nullifier = "Nullifier"
-    Coin = "Coin"
+    Commitment = "Commitment"
     ContractId = "ContractId"
     FuncId = "FuncId"
-    TokenId = "TokenId"
+    AssetId = "AssetId"
     MerkleNode = "MerkleNode"
     OwnedSecretKey = "OwnedSecretKey"
     MiningRecipient = "MiningRecipient"
@@ -2284,10 +2284,16 @@ class Primitive(Enum):
 
     @staticmethod
     def from_name(s: str) -> "Optional[Primitive]":
+        # Aliases for backward compatibility with manifests deployed
+        # before the Coin→Commitment, TokenId→AssetId rename.
+        _ALIASES = {
+            "Coin": Primitive.Commitment,
+            "TokenId": Primitive.AssetId,
+        }
         try:
             return Primitive(s)
         except ValueError:
-            return None
+            return _ALIASES.get(s)
 
 
 def primitives_to_csv(primitives: "List[Primitive]") -> str:
@@ -3740,8 +3746,8 @@ def review_transaction(tx: BuiltTransaction) -> bool:
 # Native-token transfer capability composition (ocap.md §2.1). The write path
 # selects an input only if its type covers these barbs (wallet.md §6.2, §7.8).
 NATIVE_TRANSFER_PRIMITIVES = [
-    Primitive.SecretKey, Primitive.Coin, Primitive.Nullifier, Primitive.ContractId,
-    Primitive.FuncId, Primitive.TokenId, Primitive.MerkleNode,
+    Primitive.SecretKey, Primitive.Commitment, Primitive.Nullifier, Primitive.ContractId,
+    Primitive.FuncId, Primitive.AssetId, Primitive.MerkleNode,
 ]
 NATIVE_TRANSFER_REQUIRED_BARBS = [
     Barb.Spend, Barb.Commit, Barb.Nullify, Barb.Dispatch,
@@ -8630,7 +8636,7 @@ proof_circuit = "SubmitBid_V1"
 discriminant = 0
 name = "bid_slot"
 description = "Capability to submit a sealed bid"
-primitives = ["SecretKey","Coin","Nullifier","ContractId","FuncId","TokenId","MerkleNode"]
+primitives = ["SecretKey","Commitment","Nullifier","ContractId","FuncId","AssetId","MerkleNode"]
 note_schema = [
     { name = "value", type = "u64" },
     { name = "commitment", type = "pallas_base" },
@@ -8660,8 +8666,8 @@ def test_typed_manifest_parse():
     """Typed fields parse and round-trip; wallet_construct covers the barbs."""
     m = parse_manifest(_TYPED_MANIFEST_FIXTURE)
     cap = m.capabilities[0]
-    assert cap.primitives == ["SecretKey", "Coin", "Nullifier", "ContractId",
-                              "FuncId", "TokenId", "MerkleNode"]
+    assert cap.primitives == ["SecretKey", "Commitment", "Nullifier", "ContractId",
+                              "FuncId", "AssetId", "MerkleNode"]
     assert [f.name for f in cap.note_schema] == ["value", "commitment"]
     assert m.actions[0].required_barbs == ["Spend", "Nullify", "Commit",
                                            "Dispatch", "Gate", "Denominate"]
@@ -9975,8 +9981,8 @@ def test_33_barb_cover_wallet_construct():
     gate (`construct_sound`)."""
     # Native token transfer primitives (ocap.md §2.1)
     native_transfer = [
-        Primitive.SecretKey, Primitive.Coin, Primitive.Nullifier,
-        Primitive.ContractId, Primitive.FuncId, Primitive.TokenId,
+        Primitive.SecretKey, Primitive.Commitment, Primitive.Nullifier,
+        Primitive.ContractId, Primitive.FuncId, Primitive.AssetId,
         Primitive.MerkleNode,
     ]
     # Composed barb set (ocap.md §9.1)

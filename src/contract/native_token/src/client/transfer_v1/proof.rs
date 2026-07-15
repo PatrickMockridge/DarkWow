@@ -219,6 +219,7 @@ pub fn create_transfer_mint_proof(
 }
 
 /// Create a ZK proof for burning (destroying) a coin.
+/// Returns (proof, revealed_public_inputs, per_burn_signature_secret).
 #[allow(clippy::too_many_arguments)]
 pub fn create_transfer_burn_proof(
     zkbin: &ZkBinary,
@@ -231,9 +232,8 @@ pub fn create_transfer_burn_proof(
     secret: SecretKey,
     tx_commitment: pallas::Base,
     tx_nonce: pallas::Base,
-) -> Result<(Proof, TransferBurnRevealed)> {
+) -> Result<(Proof, TransferBurnRevealed, SecretKey)> {
     let public_key = PublicKey::from_secret(secret);
-    let signature_public = public_key;
 
     // Reconstruct coin from the witness data
     let coin = CoinAttributes {
@@ -249,6 +249,12 @@ pub fn create_transfer_burn_proof(
 
     // Calculate nullifier: poseidon_hash(secret, coin)
     let nullifier = Nullifier::new(secret, coin.inner());
+
+    // Derive per-burn unique signature_secret from coin_secret + nullifier.
+    // This binds the signer to the coin owner (fixes H2) while keeping
+    // signature_public unlinkable across burns (nullifier is unique per coin).
+    let signature_secret = SecretKey::from(poseidon_hash([secret.inner(), nullifier.inner()]));
+    let signature_public = PublicKey::from_secret(signature_secret);
 
     // Calculate merkle root from coin and merkle path
     let merkle_root = {
@@ -289,6 +295,12 @@ pub fn create_transfer_burn_proof(
         Witness::Base(Value::known(user_data_blind.inner())),
         Witness::Uint32(Value::known(u64::from(witness.leaf_position).try_into().unwrap())),
         Witness::MerklePath(Value::known(witness.merkle_path.clone().try_into().unwrap())),
+        // Per-burn signature_secret = poseidon_hash(coin_secret, nullifier).
+        // Cryptographically bound to coin_secret (fixes H2) but unique per burn
+        // (different nullifier → different signature_public — unlinkable).
+        Witness::Base(Value::known(signature_secret.inner())),
+        Witness::Base(Value::known(signature_public.x().expect("pk not identity"))),
+        Witness::Base(Value::known(signature_public.y().expect("pk not identity"))),
         Witness::Base(Value::known(tx_commitment)),
         Witness::Base(Value::known(tx_nonce)),
         Witness::Base(Value::known(pallas::Base::zero())), // tx_binding computed in-circuit
@@ -305,5 +317,5 @@ pub fn create_transfer_burn_proof(
     #[cfg(target_arch = "wasm32")]
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
-    Ok((proof, public_inputs))
+    Ok((proof, public_inputs, signature_secret))
 }

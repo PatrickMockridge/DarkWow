@@ -64,7 +64,7 @@ pub struct ManifestCapability {
     #[serde(default)]
     pub description: String,
     /// The primitive types this capability composes — canonical §8.1 names, e.g.
-    /// `["SecretKey","Coin","Nullifier","ContractId","FuncId","TokenId","MerkleNode"]`.
+    /// `["SecretKey","Commitment","Nullifier","ContractId","FuncId","AssetId","MerkleNode"]`.
     /// The wallet unions their barbs to construct the emergent capability type
     /// (ocap.md §2, composition.md §1). Empty = not typed-constructible (opt-in).
     #[serde(default)]
@@ -748,7 +748,7 @@ code = 4
 [[capabilities]]
 discriminant = 0
 name = "coin"
-primitives = ["SecretKey","Coin","Nullifier","ContractId","FuncId","TokenId","MerkleNode"]
+primitives = ["SecretKey","Commitment","Nullifier","ContractId","FuncId","AssetId","MerkleNode"]
 
 [[actions]]
 function = "transfer"
@@ -772,8 +772,8 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // Primitives are canonical (sorted by Ord) — declaration order is
         // irrelevant (composition.md §1.2).
         assert_eq!(ct.primitives, vec![
-            Primitive::SecretKey, Primitive::Nullifier, Primitive::Coin,
-            Primitive::ContractId, Primitive::FuncId, Primitive::TokenId,
+            Primitive::SecretKey, Primitive::Nullifier, Primitive::Commitment,
+            Primitive::ContractId, Primitive::FuncId, Primitive::AssetId,
             Primitive::MerkleNode,
         ]);
         // barbs are canonical (sorted).
@@ -787,8 +787,8 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // Two manifests declaring the same primitives in different order yield
         // equal TypedCapabilities (canonicalization + Eq).
         let shuffled = TYPED_TOML.replace(
-            r#"primitives = ["SecretKey","Coin","Nullifier","ContractId","FuncId","TokenId","MerkleNode"]"#,
-            r#"primitives = ["MerkleNode","TokenId","FuncId","ContractId","Nullifier","Coin","SecretKey"]"#,
+            r#"primitives = ["SecretKey","Commitment","Nullifier","ContractId","FuncId","AssetId","MerkleNode"]"#,
+            r#"primitives = ["MerkleNode","AssetId","FuncId","ContractId","Nullifier","Commitment","SecretKey"]"#,
         );
         let a = ContractManifest::from_toml(TYPED_TOML).unwrap().resolve_capability_type(4).unwrap();
         let b = ContractManifest::from_toml(&shuffled).unwrap().resolve_capability_type(4).unwrap();
@@ -800,8 +800,8 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // Drop Nullifier from the composition but still require Nullify: the
         // primitives no longer cover the barbs → None ("fix the composition").
         let toml = TYPED_TOML.replace(
-            r#"primitives = ["SecretKey","Coin","Nullifier","ContractId","FuncId","TokenId","MerkleNode"]"#,
-            r#"primitives = ["SecretKey","Coin","ContractId","FuncId","TokenId","MerkleNode"]"#,
+            r#"primitives = ["SecretKey","Commitment","Nullifier","ContractId","FuncId","AssetId","MerkleNode"]"#,
+            r#"primitives = ["SecretKey","Commitment","ContractId","FuncId","AssetId","MerkleNode"]"#,
         );
         let m = ContractManifest::from_toml(&toml).unwrap();
         assert!(m.resolve_capability_type(4).is_none(),

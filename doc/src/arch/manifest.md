@@ -247,8 +247,8 @@ is a parse error, not a passthrough.
 **`[[capabilities]].primitives`** — the primitive types this capability
 composes. Names are drawn from the primitive table
 ([type-system.md §8.1](type-system.md), mirrored by the capability SDK's
-`Primitive` enum): `SecretKey`, `PublicKey`, `Nullifier`, `Coin`,
-`ContractId`, `FuncId`, `TokenId`, `MerkleNode`, `OwnedSecretKey`,
+`Primitive` enum): `SecretKey`, `PublicKey`, `Nullifier`, `Commitment`,
+`ContractId`, `FuncId`, `AssetId`, `MerkleNode`, `OwnedSecretKey`,
 `MiningRecipient`.
 
 **`[[capabilities]].note_schema`** — the ordered field layout of the
@@ -285,7 +285,7 @@ Example:
 discriminant = 0
 name = "coin"
 description = "An unspent coin — consumable"
-primitives = ["SecretKey", "Coin", "Nullifier", "ContractId", "FuncId", "TokenId", "MerkleNode"]
+primitives = ["SecretKey", "Commitment", "Nullifier", "ContractId", "FuncId", "AssetId", "MerkleNode"]
 note_schema = [
     { name = "value", type = "u64" },
     { name = "commitment", type = "pallas_base" },

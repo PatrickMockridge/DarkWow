@@ -44,6 +44,7 @@ use dwow_sdk::{
 };
 use dwow_native_token_contract::client::NativeToken;
 use dwow_native_token_contract::model::{BurnParamsV1, CoinAttributes, SpendParamsV1, TransferParamsV1};
+use dwow_sdk::capability::{wallet_construct, Barb, Primitive};
 use dwow_sdk::crypto::note::AeadEncryptedNote;
 use dwow_sdk::pasta::pallas;
 use dwow_serial::Decodable;
@@ -249,6 +250,20 @@ fn build_native_token_cap_record(
     let cap_id = derive_cap_id(secret, &commitment_bytes);
     let (leaf_pos, merkle_proof) = append_leaf_and_prove(tree, commitment.inner())?;
 
+    // wallet.md §2.1: Path 1 coinbase capability type construction.
+    // The same wallet_construct pipeline as Path 2 (§2.2) — only the source
+    // of primitives differs (hardcoded per §6.4 vs manifest-declared).
+    let native_typed = wallet_construct(
+        "native_token_coinbase", "reward",
+        vec![
+            Primitive::SecretKey, Primitive::Commitment, Primitive::Nullifier,
+            Primitive::ContractId, Primitive::FuncId, Primitive::AssetId,
+            Primitive::MiningRecipient,
+        ],
+        &[Barb::Spend, Barb::Nullify, Barb::Commit, Barb::Dispatch,
+          Barb::Gate, Barb::Denominate, Barb::Mine],
+    );
+
     let cap_record = CapRecord {
         cap_id: cap_id.clone(),
         value: note.value,
@@ -263,13 +278,13 @@ fn build_native_token_cap_record(
         value_blind: Blind(note.value_blind),
         asset_blind: Blind(note.token_blind),
         capability_discriminant,
-        // Native path is bespoke/untyped (Path 1, wallet.md §13) — no manifest
-        // composition; typed fields stay empty.
-        capability_name: None,
-        resource: None,
-        action: None,
-        primitives: vec![],
-        barbs: vec![],
+        capability_name: native_typed.as_ref().map(|_| "coin".to_string()),
+        resource: native_typed.as_ref().map(|ct| ct.resource.clone()),
+        action: native_typed.as_ref().map(|ct| ct.action.clone()),
+        primitives: native_typed.as_ref()
+            .map(|ct| ct.primitives.clone()).unwrap_or_default(),
+        barbs: native_typed.as_ref()
+            .map(|ct| ct.barbs.clone()).unwrap_or_default(),
         revoked: false,
         revoked_at_height: None,
         created_at_height: height,
@@ -545,7 +560,13 @@ fn scan_block(
                             dwow_sdk::manifest::ContractManifest::from_deploy_ix(&params.ix);
                         let manifest_json = match manifest_result {
                             Some(Ok(ref m)) => serde_json::to_string(m).ok(),
-                            _ => None,
+                            Some(Err(ref e)) => {
+                                tracing::error!(target: "dww::scan",
+                                    "[scan_block] DeployV1: manifest parse error for {}: {:?}",
+                                    &contract_id_str[..8], e);
+                                None
+                            }
+                            None => None,
                         };
                         result.deployments.push(DeploymentDiscovery {
                             contract_id,
@@ -558,26 +579,6 @@ fn scan_block(
                         result.messages.push(format!(
                             "[scan_block] Deployooor::DeployV1: {} at height {}",
                             &contract_id_str[..8], height_u32
-                        ));
-                    }
-                }
-                continue;
-            }
-
-            // ── Identity contract — O-Cap opcode detection ───
-            if cid == *dwow_sdk::crypto::IDENTITY_CONTRACT_ID {
-                if let Some(&fn_code) = call.data.first() {
-                    let label = match fn_code {
-                        0x09 => "RegisterCapabilityV1",
-                        0x0a => "IssueCapabilityV1",
-                        0x0b => "VerifyCapabilityV1",
-                        0x0c => "RevokeCapabilityV1",
-                        _ => "",
-                    };
-                    if !label.is_empty() {
-                        result.messages.push(format!(
-                            "[scan_block] O-Cap: {} detected at height {}",
-                            label, height_u32
                         ));
                     }
                 }
@@ -624,12 +625,28 @@ fn scan_block(
                         // there is no native fallback.
                         let Some(fn_code) = call.data.first().copied() else { break };
                         let Some(manifest) = manifests.get(&cid) else { break };
-                        let Some(resolved) = manifest.resolve_capability(fn_code) else { break };
+                        let Some(resolved) = manifest.resolve_capability(fn_code) else {
+                            tracing::debug!(target: "dww::scan",
+                                "Path2: no capability for fn_code 0x{:02x} in manifest {}",
+                                fn_code, bs58::encode(cid.to_bytes()).into_string());
+                            break;
+                        };
                         // The coverage gate: an uncovered composition (primitives don't
                         // cover required barbs) is NOT a valid capability — drop the note
                         // per §13 "fix the composition, not the wallet."
-                        let Some(typed) = manifest.resolve_capability_type(fn_code) else { break };
-                        let Some(schema) = manifest.note_schema_for_function(fn_code) else { break };
+                        let Some(typed) = manifest.resolve_capability_type(fn_code) else {
+                            tracing::warn!(target: "dww::scan",
+                                "Path2: coverage gate closed for fn 0x{:02x} contract {} — \
+                                 primitives don't cover required barbs (fix the composition, not the wallet)",
+                                fn_code, bs58::encode(cid.to_bytes()).into_string());
+                            break;
+                        };
+                        let Some(schema) = manifest.note_schema_for_function(fn_code) else {
+                            tracing::debug!(target: "dww::scan",
+                                "Path2: no note_schema for fn 0x{:02x} in manifest {}",
+                                fn_code, bs58::encode(cid.to_bytes()).into_string());
+                            break;
+                        };
                         if schema.is_empty() { break }
                         let Ok(fields) =
                             dwow_sdk::manifest::decode_note_by_schema(&raw, schema) else { break };
@@ -648,7 +665,7 @@ fn scan_block(
                         // line 396; Path 2 was deferred (P0.1b) — fixed here.
                         let key_coords = account_mgr.find_owner(
                             &call.contract_id,
-                            &height.to_le_bytes(),
+                            &height_u32.to_le_bytes(),
                             &PublicKey::from_secret(*secret),
                         );
 
@@ -868,21 +885,25 @@ impl Dww {
         let mut result = scan_block(tree, &self.account_mgr, &manifests, block);
 
         // ── Persist results ──────────────────────────────────
+        // Insertions are FATAL on failure: if a cap can't be inserted, the
+        // wallet state is inconsistent. The block marker is written before
+        // processing (crash recovery pattern); a failed insert leaves a
+        // partially-marked block that the next scan will recover.
         for out in &result.native_outputs {
-            if let Err(e) = self.wallet.insert_capability(&out.cap_record, &out.merkle_proof) {
-                tracing::error!(target: "dww::scan",
-                    "Failed to insert native token cap {}: {:?}",
-                    &out.cap_record.cap_id[..8.min(out.cap_record.cap_id.len())], e);
-            }
+            self.wallet.insert_capability(&out.cap_record, &out.merkle_proof)
+                .map_err(|e| crate::wallet_error::Error::Custom(format!(
+                    "Failed to insert native token cap {} at height {}: {:?}",
+                    &out.cap_record.cap_id[..8.min(out.cap_record.cap_id.len())],
+                    height_u32, e)))?;
         }
         // Discriminant is now set inside the pure scan_block (Path 2 manifest
         // resolution) — the post-hoc DB manifest lookup is no longer needed.
         for cap in &result.capabilities {
-            if let Err(e) = self.wallet.insert_capability(&cap.cap_record, &cap.merkle_proof) {
-                tracing::error!(target: "dww::scan",
-                    "Failed to insert capability cap {}: {:?}",
-                    &cap.cap_record.cap_id[..8.min(cap.cap_record.cap_id.len())], e);
-            }
+            self.wallet.insert_capability(&cap.cap_record, &cap.merkle_proof)
+                .map_err(|e| crate::wallet_error::Error::Custom(format!(
+                    "Failed to insert cap {} at height {}: {:?}",
+                    &cap.cap_record.cap_id[..8.min(cap.cap_record.cap_id.len())],
+                    height_u32, e)))?;
         }
 
         // Apply nullifier revocations
@@ -1301,7 +1322,7 @@ code = 4
 [[capabilities]]
 discriminant = 0
 name = "coin"
-primitives = ["SecretKey","Coin","Nullifier","ContractId","FuncId","TokenId","MerkleNode"]
+primitives = ["SecretKey","Commitment","Nullifier","ContractId","FuncId","AssetId","MerkleNode"]
 note_schema = [{ name = "value", type = "u64" }, { name = "commitment", type = "pallas_base" }]
 [[actions]]
 function = "transfer"
@@ -1474,7 +1495,7 @@ code = 0
 [[capabilities]]
 discriminant = 0
 name = "fake_miner"
-primitives = ["TokenId","SecretKey"]
+primitives = ["AssetId","SecretKey"]
 note_schema = [{ name = "commitment", type = "pallas_base" }]
 [[actions]]
 function = "mine"
