@@ -109,6 +109,135 @@ reimplement, inline, or bypass any of these functions.
    capability" — they are constructions any present or future contract may
    declare.
 
+### 0.1.1 Crate Dependency Graph
+
+The wallet's four components form a strict dependency ordering. Each arrow is a
+compile-time dependency; no component may reverse or bypass an arrow.
+
+```
+dwow-accounts (crates/)     ← zero deps beyond dwow-sdk crypto types
+       ↑                        (SecretKey, PublicKey, ContractId — pure key math)
+dwow-sdk (src/sdk/)         ← dwow-serial, pasta_curves, rand_core
+       ↑                      (no dwow_core — the SDK is protocol-layer types;
+       │                       the node crate implements ZK/VM/runtime on them)
+bin/dww                      ← dwow-sdk, dwow-accounts, dwow_core,
+       ↑                       dwow_native_token_contract (ONLY contract dep)
+bin/dwowd                    ← bin/dww (test-only), dwow_core,
+                               all contract crates (genesis pre-deployment)
+```
+
+Rules:
+- `dwow-sdk` SHALL NOT depend on `dwow_core`. It defines the protocol types
+  (`Transaction`, `ContractCall`, `AeadEncryptedNote`, `Nullifier`, `Coin`,
+  `TokenId`, `MerkleNode`); the node crate (`dwow_core`) implements the ZK
+  prover, the VM, and the runtime that operate ON those types.
+- `bin/dww` depends on `dwow_core` for ZK proving (`ZkBinary`, `ProvingKey`,
+  `Proof`) and transaction assembly (`TransactionBuilder`) — these are
+  wallet-side construction operations that require the concrete ZK machinery.
+- The generic prover's **architecture** (witness-binding rules, manifest
+  resolution, `CircuitWitnessMap`, `CapabilityProvider` trait) lives in the
+  SDK (`src/sdk/src/prover.rs`). Its **concrete implementation** (`ZkBinary::decode`,
+  `ProvingKey::build`, `Proof::create`) lives in the wallet — the SDK defines
+  the contract; the wallet implements it.
+- The wallet SHALL depend on EXACTLY ONE contract crate:
+  `dwow_native_token_contract`. This is the bespoke-citizen exception
+  (wallet.md §6.4). All other contracts enter through their stored manifest.
+  The Deployooor contract is accessed through its `ContractId` (a constant
+  in the SDK, not a crate dependency).
+
+### 0.1.2 Import Rules Per Component
+
+| Component | MAY import from | SHALL NOT import from | Rationale |
+|---|---|---|---|
+| **Wallet core** (`bin/dww`) | dwow-sdk, dwow-accounts, dwow_core, native_token crate | Contract crates (except native_token); contract names as string literals (except genesis ID table, §5.2) | Native token is the one bespoke citizen |
+| **AccountManager** (`crates/dwow-accounts`) | dwow-sdk (crypto types only: `SecretKey`, `PublicKey`, `ContractId`) | dwow_core, bin/dww, any contract crate | Pure key derivation — no chain, no wallet, no contracts |
+| **dwowd-sdk** (`src/sdk`: `crypto/`, `tx.rs`, `blockchain.rs`, `deploy.rs`, `wasm/`) | dwow-serial, pasta_curves, rand_core | dwow_core, bin/dww, contract crates | Protocol-layer types only — no ZK/VM/runtime |
+| **Capability SDK** (`src/sdk`: `capability.rs`, `manifest.rs`, `contract_client.rs`, `prover.rs`) | dwow-sdk (internal), dwow-serial | dwow_core (traits only — no concrete ZK types); native_token crate | Architecture separate from implementation; contract-agnostic |
+
+Additional rules:
+- The Capability SDK SHALL NOT import, reference, or special-case
+  `native_token`. The two paths (bespoke and generic) meet ONLY in the wallet
+  core's shell, which routes by `ContractId`.
+- No component SHALL import `bin/dww` from any other component (the wallet is
+  the top of the dependency graph; nothing depends on it except test crates).
+
+### 0.1.3 Interface Contracts
+
+The boundary between the wallet core and the Capability SDK SHALL be:
+- `wallet_construct(primitives: &[Primitive], required_barbs: &[Barb]) -> Option<TypedCapability>` — the ONE composition function (type-system.md §6.3, ocap.md §2)
+- `ManifestContractClient::build(function, params, wallet_state) -> Result<(Vec<u8>, Vec<Vec<u8>>), String>` — generic action dispatch
+- `ProverContext::build_proof(cap: &dyn CapabilityProvider, params: &str) -> Result<Vec<Proof>, Error>` — generic proof construction (§6.4.1)
+- `CircuitWitnessMap::from_manifest(entries: &[String]) -> CircuitWitnessMap` — witness-binding rule parser
+
+The boundary between the wallet core and the AccountManager SHALL be:
+- `resolve_key(coords: &KeyCoordinates) -> Result<OwnedSecretKey, Error>` — resolve stored coordinates to secrets at the moment of use (§4)
+- `find_owner(cid: &ContractId, instance_seed: &[u8], pubkey: &PublicKey) -> Option<KeyCoordinates>` — discover key ownership at scan time (§2.1)
+- `secrets() -> Vec<SecretKey>` — master secrets for trial decryption (Path 1)
+- `secrets_for_contract(cid: &ContractId, instance_seed: &[u8]) -> Result<Vec<SecretKey>, Error>` — per-instance derived secrets (Path 1)
+
+The boundary between the wallet core and dwowd-sdk SHALL be:
+- All cryptographic primitive types SHALL cross this boundary by their nominal
+  newtype, never as `[u8; 32]` or `pallas::Base` (type-system.md §2.2)
+- `Transaction`, `ContractCall`, `ContractCallLeaf` — transaction assembly types
+- `AeadEncryptedNote`, `Nullifier`, `Coin`, `TokenId`, `MerkleNode` — protocol types
+- `TransactionBuilder`, `DarkForest`, `DarkLeaf` — transaction tree construction
+
+### 0.1.4 Module Map Per Component
+
+**Wallet core** (`bin/dww/src/`):
+```
+lib.rs              — Dww struct, pure functions, DB shell, initialize_wallet
+cap_selection.rs    — barb-cover input selection from held capabilities
+scan.rs             — Path 1 (native) + Path 2 (manifest) pure scan functions
+dispatch.rs         — CLI command dispatch (shell layer)
+fee_builder.rs      — fee attachment and transaction finalization
+walletdb.rs         — CapRecord persistence, held_capabilities queries
+contract_imports.rs — ContractId lookup table (genesis trust tier, §5.2)
+contract_metadata.rs — trimmed registry (native_token + deployooor only)
+capability.rs       — wallet capability browser (ocap.md)
+manifest_resolver.rs — on-chain manifest queries (RPC-free; wallet IS a full node)
+deploy.rs           — contract deployment via Deployooor
+rpc_server.rs       — JSON-RPC interface (firewalled to a single justified purpose)
+sync_task.rs        — P2P chain sync (GetTip/GetBlocks, same protocol as mining nodes)
+```
+
+**Capability SDK** (`src/sdk/src/`):
+```
+capability.rs        — wallet_construct, Primitive, Barb, TypedCapability
+manifest.rs          — ContractManifest, manifest parsing, typed-field resolution
+contract_client.rs   — ManifestContractClient, ContractClient trait, WalletStateProvider
+prover.rs            — generic prover architecture, witness-binding rules
+```
+
+**dwowd-sdk** (`src/sdk/src/` — physically same crate, logically distinct component):
+```
+crypto/     — nominal primitives (SecretKey, PublicKey, Nullifier, Coin, TokenId,
+              MerkleNode, ContractId, FuncId), AEAD notes, keypair, pedersen, poseidon
+tx.rs       — Transaction, ContractCall types
+blockchain.rs — block/chain data structures, reward schedule
+deploy.rs   — DeployParamsV1, deploy instruction types
+wasm/       — WASM host functions
+```
+
+**AccountManager** (`crates/dwow-accounts/`):
+```
+lib.rs      — AccountManager, OwnedSecretKey, KeyCoordinates, MiningRecipient
+```
+
+### 0.1.5 Purity Rules (extension of §6.1)
+
+1. **Seed rule**: The `Seed` SHALL be drawn by the shell (dispatch or RPC handler)
+   and passed down. No function below the shell SHALL draw from ambient
+   randomness (`OsRng`, `thread_rng`, or any system entropy source). This makes
+   every construction below the shell byte-deterministic given the Seed.
+2. **Shell isolation**: The shell gathers inputs (reads the wallet DB for held
+   capabilities and Merkle proofs, draws a fresh `Seed`) and passes them to the
+   pure construction function `f`. The shell performs I/O; `f` does not. This
+   is the functional-core/imperative-shell discipline (§6.1).
+3. **Proving randomness**: The Halo2 proving randomness SHALL also derive from
+   `Seed`. The existing `deterministic_zk_enabled()` flag (seeds `StdRng(0)`)
+   is a pipeline-level override; in production, the Seed supplies the entropy.
+
 ## 1. Wallet State as a Pure Function
 
 Per the type system's referential transparency requirement:

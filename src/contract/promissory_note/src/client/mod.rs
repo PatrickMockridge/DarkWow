@@ -309,7 +309,7 @@ impl PromissoryNoteClient {
         let user_data_str = parse_json_optional_string(&v, "user_data");
 
         // Select a coin with sufficient value
-        let coins = wallet_state.held_capabilities_for_token(token_id_str)?;
+        let coins = wallet_state.held_capabilities_by_asset(token_id_str)?;
         let coin = coins.iter()
             .find(|c| c.value >= amount)
             .ok_or_else(|| format!("No retained capability with value >= {}", amount))?;
@@ -392,7 +392,7 @@ impl PromissoryNoteClient {
                  .ok_or_else(|| "coin_ids: array element not a string".to_string()))
             .collect::<std::result::Result<_, _>>()?;
 
-        let all_coins = wallet_state.held_capabilities_for_token("")?;  // all tokens
+        let all_coins = wallet_state.held_capabilities_by_asset("")?;  // all tokens
         let mut inputs = vec![];
         for coin_id in &coin_ids {
             let coin = all_coins.iter()
@@ -435,7 +435,7 @@ impl PromissoryNoteClient {
         let coin_id = parse_json_string(&v, "coin_id")?.to_string();
         let spend_hook_str = parse_json_optional_string(&v, "spend_hook");
 
-        let all_coins = wallet_state.held_capabilities_for_token("")?;
+        let all_coins = wallet_state.held_capabilities_by_asset("")?;
         let coin = all_coins.iter()
             .find(|c| c.cap_id == coin_id)
             .ok_or_else(|| format!("Capability not found: {}", coin_id))?;
@@ -589,7 +589,7 @@ impl PromissoryNoteClient {
         let our_recipient_str = parse_json_string(&our, "recipient")?;
         let their_recipient_str = parse_json_string(&their, "recipient")?;
 
-        let all_coins = wallet_state.held_capabilities_for_token("")?;
+        let all_coins = wallet_state.held_capabilities_by_asset("")?;
 
         let our_coin = all_coins.iter().find(|c| c.cap_id == our_coin_id)
             .ok_or_else(|| format!("Our coin not found: {}", our_coin_id))?;

@@ -26,3 +26,4 @@ pub mod harness;
 pub mod pipeline;
 pub mod heavyweight_pipeline;
 pub mod wallet_integration;
+pub mod tripwire;
