@@ -90,7 +90,7 @@ pub fn build_fee_and_finalize_tx(
     exclude_cap_id: Option<&str>,
 ) -> Result<(Transaction, Vec<SecretKey>)> {
     // Get DRKW cap for fee
-    let fee_cap_records = wallet.get_capabilities_for_token(&DRKW_TOKEN_ID, Some(false))
+    let fee_cap_records = wallet.get_capabilities_by_asset(&DRKW_TOKEN_ID, Some(false))
         .map_err(|e| Error::Custom(format!("Failed to get DRKW capabilities: {:?}", e)))?;
 
     if fee_cap_records.is_empty() {

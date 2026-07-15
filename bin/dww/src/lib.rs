@@ -76,7 +76,7 @@ use error::{WalletDbError, WalletDbResult};
 pub mod common;
 
 /// Coin selection — multi-input, fee-aware, dust threshold
-pub mod coin_selection;
+pub mod cap_selection;
 
 /// Local block scanning — cap discovery, AEAD decryption
 pub mod scan;
@@ -612,15 +612,15 @@ impl Dww {
         self.wallet.get_held_capabilities(revoked).map_err(|e| Error::Custom(format!("{:?}", e)))
     }
 
-    // get_capabilities_for_token REMOVED — dead code. Fee builder calls
-    // wallet.get_capabilities_for_token() directly (walletdb returns CapRecords).
+    // get_capabilities_by_asset REMOVED — dead code. Fee builder calls
+    // wallet.get_capabilities_by_asset() directly (walletdb returns CapRecords).
 
     // get_token REMOVED — dead code. Only called by parse_token_pair
     // (also removed — zero callers). Token resolution is handled
     // generically through manifests and CapRecord.token_id.
 
     /// Get aliases mapped by token
-    pub fn get_aliases_mapped_by_token(&self) -> Result<HashMap<String, String>> {
+    pub fn get_aliases_mapped_by_asset(&self) -> Result<HashMap<String, String>> {
         // The aliases table is gone (never populated); returns empty.
         Ok(HashMap::new())
     }
@@ -661,7 +661,7 @@ impl WalletStateProvider for Dww {
         Ok(bs58::encode(public.to_bytes()).into_string())
     }
 
-    fn held_capabilities_for_token(&self, token_id: &str) -> std::result::Result<Vec<CapInfo>, String> {
+    fn held_capabilities_by_asset(&self, token_id: &str) -> std::result::Result<Vec<CapInfo>, String> {
         let cap_records = self.wallet.get_held_capabilities(Some(false))
             .map_err(|e| format!("{:?}", e))?;
         // If token_id is empty, return all held caps. Otherwise, decode
@@ -781,7 +781,7 @@ impl Dww {
         // build_fee_and_finalize_tx, exclude_cap_id) — no fee reserve is
         // deducted here (deducting one while paying the fee elsewhere would
         // silently destroy that value).
-        let caps = self.wallet.get_capabilities_for_token(&DRKW_TOKEN_ID, Some(false))
+        let caps = self.wallet.get_capabilities_by_asset(&DRKW_TOKEN_ID, Some(false))
             .map_err(|e| Error::Custom(format!("get DRKW caps: {:?}", e)))?;
         let selected = caps.iter()
             .find(|c| c.value >= amount)
@@ -1051,7 +1051,7 @@ impl Dww {
 
     // get_aliases REMOVED — dead code (zero callers).
     // add_alias REMOVED — dead code (zero callers).
-    // get_aliases_mapped_by_token (above) is the live alias API.
+    // get_aliases_mapped_by_asset (above) is the live alias API.
 
     // get_mint_authority_for_token REMOVED — dead code (zero callers).
     // get_mint_authorities REMOVED — dead code (zero callers).

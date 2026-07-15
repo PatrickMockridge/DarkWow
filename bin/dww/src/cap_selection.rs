@@ -16,13 +16,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Coin selection algorithms for wallet transaction building.
+//! Capability selection algorithms for wallet transaction building.
 //!
-//! Production patterns (Bitcoin Core, Geth):
-//!   - Single coin first (privacy-preserving, avoids linking)
+//! Production patterns:
+//!   - Single cap first (privacy-preserving, avoids linking)
 //!   - Largest-first accumulation fallback (fewest inputs)
 //!   - Dust threshold for change outputs
-//!   - Fee-aware: ensure fee coin is distinct from transfer coins
+//!   - Fee-aware: ensure fee cap is distinct from transfer caps
 //!
 //! HAZOP T3/T4/T5 remediation (2026-07-01).
 
@@ -38,37 +38,37 @@ use dwow_sdk::pasta::pallas;
 /// 1 DRKW = 1_000_000_000 base units, so 10_000 = 0.00001 DRKW.
 pub const DUST_THRESHOLD: u64 = 10_000;
 
-/// Result of coin selection.
+/// Result of capability selection.
 #[derive(Debug, Clone)]
-pub struct CoinSelection {
-    /// Selected coins for the transfer (spendable inputs)
+pub struct CapSelection {
+    /// Selected capabilities for the transfer (spendable inputs)
     pub inputs: Vec<CapRecord>,
     /// Total value of selected inputs
     pub total_input: u64,
     /// Change amount to return to sender (0 if exact match)
     pub change: u64,
-    /// Fee coin (distinct from transfer inputs, may be None if transfer
+    /// Fee capability (distinct from transfer inputs, may be None if transfer
     /// is not paying a fee or if fee is included in transfer inputs)
-    pub fee_coin: Option<CapRecord>,
+    pub fee_cap: Option<CapRecord>,
 }
 
-/// Select coins for a transfer with fee awareness.
+/// Select capabilities for a transfer with fee awareness.
 ///
 /// Strategy:
-///   1. Single coin ≥ target + fee — privacy-preserving, no linking
+///   1. Single cap ≥ target + fee — privacy-preserving, no linking
 ///   2. Multi-input accumulation — largest-first greedy, fewest inputs
-///   3. Fee coin selection — distinct from transfer inputs when possible
+///   3. Fee cap selection — distinct from transfer inputs when possible
 ///
-/// Returns `CoinSelection` or an error if insufficient funds.
-pub fn select_coins(
+/// Returns `CapSelection` or an error if insufficient funds.
+pub fn select_caps(
     available: &[CapRecord],
     token_id: &TokenId,
     transfer_amount: u64,
     fee_amount: u64,
-) -> Result<CoinSelection> {
+) -> Result<CapSelection> {
     let target = transfer_amount + fee_amount;
 
-    // Filter to matching token
+    // Filter to matching asset
     let matching: Vec<&CapRecord> = available
         .iter()
         .filter(|c| &c.token_id == token_id && !c.revoked && c.contract_id == *NATIVE_TOKEN_CONTRACT_ID)
@@ -76,21 +76,21 @@ pub fn select_coins(
 
     if matching.is_empty() {
         return Err(Error::Custom(format!(
-            "No retained capabilities for resource {}",
+            "No retained capabilities for asset {}",
             bs58::encode(&token_id.to_bytes()).into_string()
         )));
     }
 
-    // Strategy 1: Single coin ≥ target
-    if let Some(coin) = matching.iter().find(|c| c.value >= target) {
-        let change = coin.value - target;
+    // Strategy 1: Single cap ≥ target
+    if let Some(cap) = matching.iter().find(|c| c.value >= target) {
+        let change = cap.value - target;
         let change = if change < DUST_THRESHOLD { 0 } else { change };
-        // Single coin covers both transfer + fee
-        return Ok(CoinSelection {
-            inputs: vec![(*coin).clone()],
-            total_input: coin.value,
+        // Single cap covers both transfer + fee
+        return Ok(CapSelection {
+            inputs: vec![(*cap).clone()],
+            total_input: cap.value,
             change,
-            fee_coin: None, // fee paid from same coin, change covers it
+            fee_cap: None, // fee paid from same cap, change covers it
         });
     }
 
@@ -101,9 +101,9 @@ pub fn select_coins(
     let mut selected: Vec<CapRecord> = Vec::new();
     let mut accumulated: u64 = 0;
 
-    for &coin in &sorted {
-        selected.push(coin.clone());
-        accumulated += coin.value;
+    for &cap in &sorted {
+        selected.push(cap.clone());
+        accumulated += cap.value;
         if accumulated >= target {
             break;
         }
@@ -119,30 +119,30 @@ pub fn select_coins(
     let change = accumulated - target;
     let change = if change < DUST_THRESHOLD { 0 } else { change };
 
-    Ok(CoinSelection {
+    Ok(CapSelection {
         inputs: selected,
         total_input: accumulated,
         change,
-        fee_coin: None, // fee paid from accumulated coins, change covers it
+        fee_cap: None, // fee paid from accumulated caps, change covers it
     })
 }
 
-/// Select a separate coin for fee payment.
+/// Select a separate capability for fee payment.
 ///
-/// Used when the transfer coin(s) should not also pay the fee
-/// (e.g., transfer is in a non-DRKW token, or privacy preference).
+/// Used when the transfer cap(s) should not also pay the fee
+/// (e.g., transfer is in a non-DRKW asset, or privacy preference).
 ///
-/// `fee_token_id` is the bs58-encoded token ID used for fee payment
+/// `fee_token_id` is the asset ID used for fee payment
 /// (typically the DRKW native token).
 ///
-/// Returns the selected fee coin or an error.
-pub fn select_fee_coin(
+/// Returns the selected fee capability or an error.
+pub fn select_fee_cap(
     available: &[CapRecord],
     exclude_cap_ids: &[String],
     fee_amount: u64,
     fee_token_id: &TokenId,
 ) -> Result<CapRecord> {
-    let fee_coins: Vec<&CapRecord> = available
+    let fee_caps: Vec<&CapRecord> = available
         .iter()
         .filter(|c| {
             &c.token_id == fee_token_id
@@ -152,18 +152,18 @@ pub fn select_fee_coin(
         })
         .collect();
 
-    // Try single coin ≥ fee
-    if let Some(coin) = fee_coins.iter().find(|c| c.value >= fee_amount) {
-        return Ok((*coin).clone());
+    // Try single cap ≥ fee
+    if let Some(cap) = fee_caps.iter().find(|c| c.value >= fee_amount) {
+        return Ok((*cap).clone());
     }
 
-    // Error: no suitable fee coin
+    // Error: no suitable fee cap
     Err(Error::Custom(format!(
         "No DRKW capability available for fee payment (need {}). \
          Excluded capabilities: {:?}. Available DRKW capabilities: {}",
         fee_amount,
         exclude_cap_ids,
-        fee_coins.len()
+        fee_caps.len()
     )))
 }
 
@@ -208,25 +208,25 @@ mod tests {
     }
 
     #[test]
-    fn test_single_coin_covers_all() {
+    fn test_single_cap_covers_all() {
         let caps = vec![
             make_cap("a", "DRKW", 100_000_000),
             make_cap("b", "DRKW", 50_000_000),
         ];
-        let sel = select_coins(&caps, &tid("DRKW"), 40_000_000, 42_000_000).unwrap();
+        let sel = select_caps(&caps, &tid("DRKW"), 40_000_000, 42_000_000).unwrap();
         assert_eq!(sel.inputs.len(), 1);
         assert_eq!(sel.inputs[0].cap_id, "a");
         assert_eq!(sel.change, 100_000_000 - 82_000_000);
     }
 
     #[test]
-    fn test_multi_input_accumulation() {
+    fn test_multi_cap_accumulation() {
         let caps = vec![
             make_cap("a", "DRKW", 30_000_000),
             make_cap("b", "DRKW", 30_000_000),
             make_cap("c", "DRKW", 30_000_000),
         ];
-        let sel = select_coins(&caps, &tid("DRKW"), 70_000_000, 0).unwrap();
+        let sel = select_caps(&caps, &tid("DRKW"), 70_000_000, 0).unwrap();
         assert_eq!(sel.inputs.len(), 3);
         assert_eq!(sel.total_input, 90_000_000);
     }
@@ -236,7 +236,7 @@ mod tests {
         let caps = vec![
             make_cap("a", "DRKW", 10_000_000),
         ];
-        let err = select_coins(&caps, &tid("DRKW"), 100_000_000, 0).unwrap_err();
+        let err = select_caps(&caps, &tid("DRKW"), 100_000_000, 0).unwrap_err();
         assert!(err.to_string().contains("Insufficient funds"));
     }
 
@@ -246,27 +246,27 @@ mod tests {
             make_cap("a", "DRKW", 82_001_000),
         ];
         // transfer + fee = 82_000_000, change = 1_000 which is < DUST_THRESHOLD
-        let sel = select_coins(&caps, &tid("DRKW"), 40_000_000, 42_000_000).unwrap();
+        let sel = select_caps(&caps, &tid("DRKW"), 40_000_000, 42_000_000).unwrap();
         assert_eq!(sel.change, 0); // dust suppressed
     }
 
     #[test]
-    fn test_fee_coin_selection() {
+    fn test_fee_cap_selection() {
         let caps = vec![
             make_cap("a", "DRKW", 50_000_000),
             make_cap("b", "DRKW", 100_000_000),
         ];
-        let fee = select_fee_coin(&caps, &["a".into()], 42_000_000, &tid("DRKW")).unwrap();
+        let fee = select_fee_cap(&caps, &["a".into()], 42_000_000, &tid("DRKW")).unwrap();
         assert_eq!(fee.cap_id, "b"); // "a" excluded, "b" selected
     }
 
     #[test]
-    fn test_revoked_coins_excluded() {
+    fn test_revoked_caps_excluded() {
         let mut caps = vec![
             make_cap("a", "DRKW", 100_000_000),
         ];
         caps[0].revoked = true;
-        let err = select_coins(&caps, &tid("DRKW"), 50_000_000, 0).unwrap_err();
+        let err = select_caps(&caps, &tid("DRKW"), 50_000_000, 0).unwrap_err();
         assert!(err.to_string().contains("No retained capabilities"));
     }
 }

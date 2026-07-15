@@ -97,7 +97,7 @@ pub trait WalletStateProvider: Send + Sync {
     fn default_address(&self) -> std::result::Result<String, String>;
 
     /// Get held capability records for a given token ID.
-    fn held_capabilities_for_token(&self, _token_id: &str) -> std::result::Result<Vec<CapInfo>, String> {
+    fn held_capabilities_by_asset(&self, _token_id: &str) -> std::result::Result<Vec<CapInfo>, String> {
         Ok(vec![])
     }
 

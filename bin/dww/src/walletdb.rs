@@ -455,7 +455,7 @@ impl WalletDb {
     }
 
     /// Get held capabilities for a specific token ID (32-byte field element repr).
-    pub fn get_capabilities_for_token(&self, token_id: &TokenId, revoked: Option<bool>) -> WalletDbResult<Vec<CapRecord>> {
+    pub fn get_capabilities_by_asset(&self, token_id: &TokenId, revoked: Option<bool>) -> WalletDbResult<Vec<CapRecord>> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let mut stmt = conn.prepare(
             "SELECT cap_id, value, token_id_blob, token_id, spend_hook_blob, spend_hook,
@@ -1321,7 +1321,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_capabilities_for_token_filter() {
+    fn test_get_capabilities_by_asset_filter() {
         let wallet = setup_test_wallet();
         let proof = MerkleProof {
             siblings: vec![],
@@ -1348,7 +1348,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_capabilities_for_token_excludes_non_native() {
+    fn test_get_capabilities_by_asset_excludes_non_native() {
         // Inflation guard: a foreign-contract cap with the SAME token_id must not
         // be returned for value/fee selection — only native-token caps are spendable.
         let wallet = setup_test_wallet();
@@ -1374,7 +1374,7 @@ mod tests {
         // Both are stored (get_held_capabilities is intentionally ungated)...
         assert_eq!(wallet.get_held_capabilities(Some(false)).unwrap().len(), 2);
         // ...but only the native one is selectable for value.
-        let selectable = wallet.get_capabilities_for_token(&token, Some(false)).unwrap();
+        let selectable = wallet.get_capabilities_by_asset(&token, Some(false)).unwrap();
         assert_eq!(selectable.len(), 1, "foreign cap must be excluded from selection");
         assert_eq!(selectable[0].cap_id, "native");
         assert_eq!(selectable[0].contract_id, *NATIVE_TOKEN_CONTRACT_ID);

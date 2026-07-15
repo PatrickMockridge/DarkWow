@@ -227,7 +227,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 }
                 return Ok(());
             }
-            let aliases_map = dww.get_aliases_mapped_by_token()?;
+            let aliases_map = dww.get_aliases_mapped_by_asset()?;
             if balmap.is_empty() {
                 println!("No retained balances found");
                 let (last_height, _) = dww.get_last_scanned_block().unwrap_or((0, String::new()));
@@ -284,7 +284,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
         WalletCommand::Wallet { command: WalletSubcmd::Capabilities } => {
             let caps = dww.get_held_capabilities(None)?;  // all, include revoked
             if caps.is_empty() { return Ok(()); }
-            let aliases_map = dww.get_aliases_mapped_by_token()?;
+            let aliases_map = dww.get_aliases_mapped_by_asset()?;
             use crate::common::prettytable_held_capabilities;
             let table = prettytable_held_capabilities(&caps, &aliases_map);
             println!("{table}");
