@@ -572,8 +572,11 @@ impl Dww {
             );
             return Ok(());
         }
-        let secret = &secrets[0];
-        let public = dwow_sdk::crypto::keypair::PublicKey::from_secret(*secret);
+        // §0.1.3: resolve via AccountManager delegation, never raw index.
+        let owned = self.account_mgr.default_owned()
+            .map_err(|e| Error::Custom(format!("default_owned: {}", e)))?;
+        let secret = *owned.expose_secret();
+        let public = dwow_sdk::crypto::keypair::PublicKey::from_secret(secret);
         let test_plaintext: Vec<u8> =
             b"DarkWow AEAD pipeline self-test vector 2026".to_vec();
 
@@ -878,11 +881,18 @@ impl Dww {
         // height but per-block keys only at their own height, so change sent
         // to an old per-block key would never be rediscovered.
         if change_value > 0 {
-            let change_secret = self.account_mgr.secrets()
-                .get(coords.account_index).copied()
-                .ok_or_else(|| Error::Custom(format!(
-                    "no account at index {}", coords.account_index,
-                )))?;
+            // §0.1.3: resolve change-output key via AccountManager delegation —
+            // the SAME resolve_key path the fee builder uses, not a manual
+            // index into secrets(). KeyDerivation::Master: change always
+            // returns to the account's master key (not per-block), so Path 1
+            // scan rediscovers it at any height.
+            let change_owned = self.account_mgr.resolve_key(
+                &dwow_accounts::KeyCoordinates {
+                    account_index: coords.account_index,
+                    derivation: dwow_accounts::KeyDerivation::Master,
+                },
+            ).map_err(|e| Error::Custom(format!("resolve_key change: {}", e)))?;
+            let change_secret = *change_owned.expose_secret();
             builder.outputs.push(TransferCallOutput {
                 version: 0,
                 public_key: PublicKey::from_secret(change_secret),
@@ -1142,7 +1152,8 @@ impl Dww {
             .or_else(|| {
                 // Manifest-driven: load stored manifest, build metadata on the fly.
                 // P4 Step 4: retain the FULL manifest so the dispatch block can
-                // construct a ManifestContractClient and reach circuit_registry.
+                // construct a ManifestContractClient (D2: circuit_registry removed;
+                // proofs are built by the generic prover, wallet.md §6.4.1).
                 let cid = crate::contract_imports::get_contract_id(contract_id_or_name)?;
                 let cid_str = bs58::encode(cid.to_bytes()).into_string();
                 let m = self.wallet.get_contract_manifest(&cid_str).ok()??;
@@ -1214,8 +1225,8 @@ impl Dww {
                 return Ok(tx);
             }
             // P4 Step 4: if a stored manifest exists, construct a
-            // ManifestContractClient — this connects the wallet to the
-            // circuit_registry.
+            // ManifestContractClient (D2: circuit_registry removed;
+            // proofs via the generic prover, wallet.md §6.4.1).
             if let Some(ref manifest) = _manifest_full {
                 use dwow_sdk::contract_client::ContractClient;
                 let mc = dwow_sdk::contract_client::ManifestContractClient::new(
