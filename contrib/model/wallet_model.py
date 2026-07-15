@@ -52,7 +52,6 @@ Usage:
 """
 
 import hashlib
-import hmac
 import struct
 import os
 import sqlite3
@@ -3463,9 +3462,39 @@ class CapabilityResolver:
         Architecture per manifest.md STAGE 4 (Resolution):
           Manifest → CapabilityResolver → capabilities + actions
         """
+        # Pre-compute capability type constructions from manifest declarations.
+        # Each (capability, action) pair goes through wallet_construct — the
+        # same soundness gate as Rust's resolve_capability_type().
+        typed_caps: dict = {}  # (cap_name, func_name) → TypedCapability | None
+        for cap_decl in manifest.capabilities:
+            cap_prims = [Primitive.from_name(p) for p in cap_decl.primitives]
+            cap_prims = [p for p in cap_prims if p is not None]
+            if not cap_prims:
+                continue  # name-only declaration — no typed composition possible
+            for action_decl in manifest.actions:
+                action_barbs = [Barb.from_name(b) for b in action_decl.required_barbs]
+                action_barbs = [b for b in action_barbs if b is not None]
+                if not action_barbs:
+                    continue
+                typed = wallet_construct(
+                    cap_decl.name, action_decl.function,
+                    cap_prims, action_barbs,
+                )
+                typed_caps[(cap_decl.name, action_decl.function)] = typed
+
         # Derive capabilities from manifest's [[capabilities]] table
         for cap_decl in manifest.capabilities:
             cap_id = CapabilityId.derive(cid, cap_decl.discriminant, b"")
+            # Coverage gate: if NO action produces a valid typed composition
+            # for this capability, skip it — the manifest's declarations
+            # don't form a valid capability type (wallet.md §2.2 coverage gate).
+            has_valid_type = any(
+                typed is not None
+                for (cn, _), typed in typed_caps.items()
+                if cn == cap_decl.name
+            )
+            if not has_valid_type and typed_caps:
+                continue
             caps.append(Capability(
                 cap_id=cap_id,
                 contract_id=cid,
@@ -3480,6 +3509,15 @@ class CapabilityResolver:
             func = next((f for f in manifest.functions
                         if f.name == action_decl.function), None)
             if func is None:
+                continue
+            # Coverage gate: if this action's declared capability doesn't
+            # produce a valid typed composition, skip the action.
+            action_has_typed = any(
+                typed is not None
+                for (cn, fn), typed in typed_caps.items()
+                if fn == action_decl.function
+            )
+            if not action_has_typed and typed_caps:
                 continue
             actions.append(Action(
                 function_id=func.code,
@@ -3600,9 +3638,8 @@ def select_heaviest_chain(candidates: List[Tuple[int, int]]) -> int:
 
 # --- Transaction Building ---
 
-DEFAULT_FEE = 42_000_000  # transfer.rs:92
-# bs58(pallas::Base::zero().to_repr()) = bs58(b'\x00' * 32) = 32 '1' chars
-DRKW_TOKEN_ID_STR = "11111111111111111111111111111111"
+# DEFAULT_FEE defined above (Layer 4).
+DRKW_TOKEN_ID_STR = "11111111111111111111111111111111"  # bs58(pallas::Base::zero())
 
 
 def _b58encode(data: bytes) -> str:
@@ -4138,7 +4175,7 @@ def _make_test_contract_id(name: str) -> ContractId:
     return ContractId(cid_bytes)
 
 
-def test_1_keygen_roundtrip():
+def test_keygen_roundtrip():
     """Key generation round-trip: seed → SecretKey → PublicKey → address."""
     print("  Test 1: Key generation round-trip...", end=" ")
 
@@ -4164,7 +4201,7 @@ def test_1_keygen_roundtrip():
     print("PASSED")
 
 
-def test_2_database_crud():
+def test_database_crud():
     """Database CRUD — all 15 tables."""
     print("  Test 2: Database CRUD...", end=" ")
 
@@ -4248,7 +4285,7 @@ def test_2_database_crud():
     print("PASSED")
 
 
-def test_3_aead_roundtrip():
+def test_aead_roundtrip():
     """AEAD encrypt/decrypt round-trip for all 3 note types."""
     print("  Test 3: AEAD encrypt/decrypt round-trip...", end=" ")
 
@@ -4344,7 +4381,7 @@ def _make_coinbase_tx(sk, height, value=100_000_000, cap_blind=42, value_blind=9
 
     return Transaction(contract_calls=[call], coinbase=cb)
 
-def test_4_coinbase_scan():
+def test_coinbase_scan():
     """Coinbase scan → NativeToken coin inserted via per-block key derivation."""
     print("  Test 4: Coinbase scan...", end=" ")
 
@@ -4404,7 +4441,7 @@ def test_4_coinbase_scan():
     print("PASSED")
 
 
-def test_4b_coinbase_nullifier():
+def test_coinbase_nullifier():
     """CoinbaseTransaction nullifier verification — miner claims reward via nf."""
     print("  Test 4b: Coinbase nullifier...", end=" ")
 
@@ -4458,7 +4495,7 @@ def test_4b_coinbase_nullifier():
     print("PASSED")
 
 
-def test_5_generic_aead():
+def test_generic_aead():
     """Generic AEAD fallback → capability inserted for unknown contract."""
     print("  Test 5: Generic AEAD fallback...", end=" ")
 
@@ -4487,7 +4524,7 @@ def test_5_generic_aead():
     print("PASSED")
 
 
-def test_6_pn_transfer_scan():
+def test_pn_transfer_scan():
     """PN TransferV1 scan → coin discovered."""
     print("  Test 6: PN TransferV1 scan...", end=" ")
 
@@ -4520,7 +4557,7 @@ def test_6_pn_transfer_scan():
     print("PASSED")
 
 
-def test_7_manifest_first_resolution():
+def test_manifest_first_resolution():
     """Manifest-first resolution: capabilities and actions come exclusively
     from on-chain manifests. No per-contract state-tree walkers. Every contract
     (except native_token coinbase, handled in scan Path 1) resolves through
@@ -4682,7 +4719,7 @@ consumes = ["subscription_token"]
     print("PASSED")
 
 
-def test_8_balance():
+def test_balance():
     """Balance computation after scan."""
     print("  Test 8: Balance computation...", end=" ")
 
@@ -4716,7 +4753,7 @@ def test_8_balance():
     print("PASSED")
 
 
-def test_9_coin_selection():
+def test_coin_selection():
     """Coin selection: sufficient + insufficient."""
     print("  Test 9: Coin selection...", end=" ")
 
@@ -4753,7 +4790,7 @@ def test_9_coin_selection():
     print("PASSED")
 
 
-def test_10_transaction_building():
+def test_transaction_building():
     """Transaction building produces valid structure."""
     print("  Test 10: Transaction building...", end=" ")
 
@@ -4794,7 +4831,7 @@ def test_10_transaction_building():
     print("PASSED")
 
 
-def test_11_spend_detection():
+def test_spend_detection():
     """Spend detection: mark → unspent excludes, spent includes."""
     print("  Test 11: Spend detection...", end=" ")
 
@@ -4816,7 +4853,7 @@ def test_11_spend_detection():
     print("PASSED")
 
 
-def test_12_reorg():
+def test_reorg():
     """Reorg handling: reset_to_height removes coins above, unmarks spent."""
     print("  Test 12: Reorg handling...", end=" ")
 
@@ -4848,7 +4885,7 @@ def test_12_reorg():
     print("PASSED")
 
 
-def test_13_kernel_properties():
+def test_kernel_properties():
     """4 kernel properties from capability_kernel_model.py."""
     print("  Test 13: Kernel properties...", end=" ")
 
@@ -4912,7 +4949,7 @@ def test_13_kernel_properties():
     print("PASSED")
 
 
-def test_14_end_to_end():
+def test_end_to_end():
     """Full end-to-end: keygen → scan → resolve → balance → transfer → spend."""
     print("  Test 14: End-to-end...", end=" ")
 
@@ -4973,7 +5010,7 @@ def test_14_end_to_end():
     print("PASSED")
 
 
-def test_15_token_id_universal_encoding():
+def test_token_id_universal_encoding():
     """Token ID roundtrip: pallas::Base → bs58 → DB query → decode → match.
     Proves universal encoding works for native token, PN tokens, and all DeFi."""
     print("  Test 15: Token ID universal encoding...", end=" ")
@@ -5024,7 +5061,7 @@ def test_15_token_id_universal_encoding():
     print("PASSED")
 
 
-def test_16_merkle_proofs_universal():
+def test_merkle_proofs_universal():
     """Merkle proofs: single leaf→empty, multi-leaf→non-empty, all coins have proofs."""
     print("  Test 16: Merkle proofs universal...", end=" ")
 
@@ -5071,7 +5108,7 @@ def test_16_merkle_proofs_universal():
     print("PASSED")
 
 
-def test_17_single_coin_fee_empty_proof():
+def test_single_coin_fee_empty_proof():
     """Single DRKW coin → empty Merkle proof (depth-0 tree) is valid.
     The leaf IS the root. This is cryptographically correct — the
     FeeV1 circuit must handle empty Merkle paths for coinbase coins."""
@@ -5115,7 +5152,7 @@ def test_17_single_coin_fee_empty_proof():
     print("PASSED")
 
 
-def test_18_circuit_merkle_root_empty_path():
+def test_circuit_merkle_root_empty_path():
     """Circuit Merkle root computation: empty path (depth-0) → leaf IS root.
     Models the FeeV1 circuit's merkle_root() function. Zero nodes are not valid
     curve points — the circuit must accept empty paths natively."""
@@ -5161,7 +5198,7 @@ def test_18_circuit_merkle_root_empty_path():
     print("PASSED")
 
 
-def test_25_fee_builder_proof_bearing_leaf():
+def test_fee_builder_proof_bearing_leaf():
     """build_fee_and_finalize_tx with explicit fee_proofs attaches proofs to the fee leaf.
     Models the B5 consolidation: transfer.rs and token.rs pass fee ZK proofs
     through the centralized builder rather than constructing fee leaves inline."""
@@ -5249,7 +5286,7 @@ def pad_merkle_path(siblings: List[str], leaf_position: int,
     return padded
 
 
-def test_19_padded_merkle_path():
+def test_padded_merkle_path():
     """Fixed-depth Merkle path: pad to 32 elements with empty nodes.
     Single coin (depth-0) → 32-element path, all empty nodes.
     Multi-coin → real siblings first, empty nodes for remaining levels."""
@@ -5300,7 +5337,7 @@ def test_19_padded_merkle_path():
     print("PASSED")
 
 
-def test_20_mint_burn_nullifier():
+def test_mint_burn_nullifier():
     """Full mint→burn flow: coin commitment → Merkle inclusion → nullifier.
     C = H(pub_x, pub_y, value, token, spend_hook, user_data, blind)
     N = H(secret, C)
@@ -6029,7 +6066,7 @@ class PromissoryNoteClient(ContractClient):
         return call_data, [b"placeholder_proof"]
 
 
-def test_22_generic_contract_invocation():
+def test_generic_contract_invocation():
     """Generic contract invocation: wallet dispatches to contract builders.
     The wallet has NO per-contract logic. Each contract's client lives
     in its own crate, not in the wallet."""
@@ -6084,7 +6121,7 @@ def test_22_generic_contract_invocation():
     print("PASSED")
 
 
-def test_23_generic_capability_resolution():
+def test_generic_capability_resolution():
     """Generic capability resolution: unknown contract capability goes
     scan → store → resolve → surface. Even without a registered descriptor,
     the capability MUST appear in the resolver output as an orphan.
@@ -6147,7 +6184,7 @@ def test_23_generic_capability_resolution():
     print("PASSED")
 
 
-def test_24_contract_id_filtering():
+def test_contract_id_filtering():
     """Contract_id filtering: TWO unknown contracts, descriptor only for A.
     Contract A's caps appear under its descriptor. Contract B's caps appear
     as orphans. NO cross-contract leaking (A's descriptor does NOT surface
@@ -6313,7 +6350,7 @@ def build_contract_call(contract_name: str, function: str,
     return ContractCall(contract_id=cid.to_bytes(), data=call_data)
 
 
-def test_21_zk_proof_model():
+def test_zk_proof_model():
     """ZK proof generation model: coin selection → Merkle proof → ZK proof.
     Models the full Layer 4 flow from wallet.md."""
     print("  Test 21: ZK proof generation model...", end=" ")
@@ -6455,7 +6492,7 @@ def test_p2p_broadcast_tx_needs_p2p():
     print("PASSED")
 
 
-def test_26_tx_broadcast_confirmation_modes():
+def test_tx_broadcast_confirmation_modes():
     """broadcast_tx with confirm=True waits for local chain to advance.
     Without confirm, returns immediately after gossip (current behavior).
     Wallet is a full node — confirmation uses local chain state, not RPC."""
@@ -6500,7 +6537,7 @@ def test_26_tx_broadcast_confirmation_modes():
     print("PASSED")
 
 
-def test_27_tx_summary_fields():
+def test_tx_summary_fields():
     """TxSummary contains all required fields for user review."""
     print("  Test 27: Tx summary fields...", end=" ")
     tx = BuiltTransaction(
@@ -6517,7 +6554,7 @@ def test_27_tx_summary_fields():
     print("PASSED")
 
 
-def test_28_fork_selection_accumulated_work():
+def test_fork_selection_accumulated_work():
     """Two chains at same height — heavier chain wins. Shorter but heavier beats taller."""
     print("  Test 28: Fork selection by accumulated work...", end=" ")
     # Same height, different work: heavier wins
@@ -6529,7 +6566,7 @@ def test_28_fork_selection_accumulated_work():
     print("PASSED")
 
 
-def test_29_block_difficulty():
+def test_block_difficulty():
     """BlockHeader.difficulty: lower target = higher difficulty = more work."""
     print("  Test 29: Block difficulty...", end=" ")
     h1 = BlockHeader(target=0xFFFF_FFFF)  # easiest
@@ -6539,7 +6576,7 @@ def test_29_block_difficulty():
     print("PASSED")
 
 
-def test_30_reorg_detection():
+def test_reorg_detection():
     """Same height + same hash = no reorg. Same height + different hash = reorg."""
     print("  Test 30: Reorg detection...", end=" ")
     w = SpecWallet(WalletConfig(
@@ -6558,7 +6595,7 @@ def test_30_reorg_detection():
     print("PASSED")
 
 
-def test_31_tx_commitment_binds_proofs():
+def test_tx_commitment_binds_proofs():
     """tx_commitment = hash(all_call_data). Changing any call changes the commitment."""
     print("  Test 31: Transaction commitment...", end=" ")
     c1 = ContractCallLeaf(NATIVE_TOKEN_CONTRACT_ID, b'\x04' + b'\x00' * 40)
@@ -6570,7 +6607,7 @@ def test_31_tx_commitment_binds_proofs():
     print("PASSED")
 
 
-def test_32_fee_enforcement_round_trip():
+def test_fee_enforcement_round_trip():
     """Wallet builds tx with fee → miner validates → passes. No fee → rejected."""
     print("  Test 32: Fee enforcement round-trip...", end=" ")
     assert round_trip_test_fee_binding(), "Round-trip fee enforcement failed"
@@ -9890,7 +9927,7 @@ def test_wallet_insert_idempotent():
     print("PASSED")
 
 
-def test_33_barb_cover_wallet_construct():
+def test_barb_cover_wallet_construct():
     """wallet_construct barb-cover (wallet.md §6.2, §7.8; ocap.md §2.1/§9.1).
     Mirrors capability.rs type_construction_tests: the native-token transfer
     capability composes from its 7 primitives and covers the required barbs;
@@ -9950,7 +9987,7 @@ def _fund_drkw_wallet(wallet_db, base_secret: bytes, count: int, value: int = 10
         wallet_db.insert_capability(cap)
 
 
-def test_34_write_path_determinism():
+def test_write_path_determinism():
     """construct_deterministic (wallet.md §6.1, §7.8): identical (wallet, params,
     seed) → byte-identical transaction; a different seed → a different tx."""
     _, recipient_pk = _make_test_keypair()
@@ -9970,7 +10007,7 @@ def test_34_write_path_determinism():
     print("PASSED")
 
 
-def test_35_nullifier_completeness():
+def test_nullifier_completeness():
     """nullifier_completeness (wallet.md §6.3.4, §7.8): the exercised input's
     nullifier is published in tx.nullifiers (equal to what scan would detect),
     alongside the fee input's — with no duplicates."""
@@ -9986,7 +10023,7 @@ def test_35_nullifier_completeness():
     print("PASSED")
 
 
-def test_36_mempool_admission():
+def test_mempool_admission():
     """Authenticated-Pool invariant (mempool.md §1-§2): a valid tx is admitted; a
     fabricated (unproven) or unsigned tx, an underpaid tx, and a double-spend are
     each rejected with a typed error barb — plus observability + removal."""
@@ -10014,7 +10051,7 @@ def test_36_mempool_admission():
     print("PASSED")
 
 
-def test_37_provisional_state_invariant():
+def test_provisional_state_invariant():
     """Provisional state (wallet.md §6.5): reserving at broadcast excludes the cap
     from selection WITHOUT mutating the confirmed `revoked` field; dropping the tx
     releases the reservation (Reserved → Unspent)."""
@@ -10074,32 +10111,32 @@ def run_all_tests():
         test_wallet_no_auto_keygen,
         test_wallet_insert_idempotent,
         # Core wallet functionality (25 tests)
-        test_1_keygen_roundtrip,
-        test_2_database_crud,
-        test_3_aead_roundtrip,
-        test_4_coinbase_scan,
-        test_4b_coinbase_nullifier,
-        test_5_generic_aead,
-        test_6_pn_transfer_scan,
-        test_7_manifest_first_resolution,
-        test_8_balance,
-        test_9_coin_selection,
-        test_10_transaction_building,
-        test_11_spend_detection,
-        test_12_reorg,
-        test_13_kernel_properties,
-        test_14_end_to_end,
-        test_15_token_id_universal_encoding,
-        test_16_merkle_proofs_universal,
-        test_17_single_coin_fee_empty_proof,
-        test_18_circuit_merkle_root_empty_path,
-        test_19_padded_merkle_path,
-        test_25_fee_builder_proof_bearing_leaf,
-        test_20_mint_burn_nullifier,
-        test_21_zk_proof_model,
-        test_22_generic_contract_invocation,
-        test_23_generic_capability_resolution,
-        test_24_contract_id_filtering,
+        test_keygen_roundtrip,
+        test_database_crud,
+        test_aead_roundtrip,
+        test_coinbase_scan,
+        test_coinbase_nullifier,
+        test_generic_aead,
+        test_pn_transfer_scan,
+        test_manifest_first_resolution,
+        test_balance,
+        test_coin_selection,
+        test_transaction_building,
+        test_spend_detection,
+        test_reorg,
+        test_kernel_properties,
+        test_end_to_end,
+        test_token_id_universal_encoding,
+        test_merkle_proofs_universal,
+        test_single_coin_fee_empty_proof,
+        test_circuit_merkle_root_empty_path,
+        test_padded_merkle_path,
+        test_fee_builder_proof_bearing_leaf,
+        test_mint_burn_nullifier,
+        test_zk_proof_model,
+        test_generic_contract_invocation,
+        test_generic_capability_resolution,
+        test_contract_id_filtering,
         # Current architecture invariants (6 tests)
         # P2P sync + broadcast (3 tests)
         test_p2p_sync_is_synced_compares_peer_tip,
@@ -10127,18 +10164,18 @@ def run_all_tests():
         # Varint encoding (1 test)
         # P2p defense in depth — seed retry, watchdog, edge cases (7 tests)
         test_p2p_init_uses_dwow_core_net_p2p,
-        test_26_tx_broadcast_confirmation_modes,
-        test_27_tx_summary_fields,
-        test_28_fork_selection_accumulated_work,
-        test_29_block_difficulty,
-        test_30_reorg_detection,
-        test_31_tx_commitment_binds_proofs,
-        test_32_fee_enforcement_round_trip,
-        test_33_barb_cover_wallet_construct,
-        test_34_write_path_determinism,
-        test_35_nullifier_completeness,
-        test_36_mempool_admission,
-        test_37_provisional_state_invariant,
+        test_tx_broadcast_confirmation_modes,
+        test_tx_summary_fields,
+        test_fork_selection_accumulated_work,
+        test_block_difficulty,
+        test_reorg_detection,
+        test_tx_commitment_binds_proofs,
+        test_fee_enforcement_round_trip,
+        test_barb_cover_wallet_construct,
+        test_write_path_determinism,
+        test_nullifier_completeness,
+        test_mempool_admission,
+        test_provisional_state_invariant,
         test_sync_status_shows_network_tip,
         # Dispatch (2 tests)
         test_dispatch_import_secrets_succeeds,
