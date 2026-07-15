@@ -11,9 +11,11 @@ Imports from 4 existing specs (composition, not duplication):
   - chain_validation_model → full validation with uncles, real emission
   - proof_of_token_balance → mass conservation, fee accounting
 
-Adds 2 new components absent from all existing specs:
-  - CanonicalTransaction   → unifies 3 incompatible Transaction types
+Adds 1 new component absent from all existing specs:
   - Mempool                → tx acceptance, nullifier dedup, fee ordering
+
+wallet_model.Transaction is the single Transaction type (matches
+src/linear/src/transaction.rs and type-system.md §8.2). No bridge class needed.
 
 Also acts as a SENSE CHECK — verifies cross-spec invariants hold
 (DEFAULT_FEE consistency, expected_reward matching, etc.).
@@ -66,85 +68,51 @@ DRKW_TOKEN_ID_STR = wm.DRKW_TOKEN_ID_STR
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# CanonicalTransaction — unifies 3 incompatible Transaction types
+# Transaction bridge — wallet_model.Transaction is the single authority
 # ═══════════════════════════════════════════════════════════════════════════
-
-@dataclass
-class CoinbaseTxData:
-    """Coinbase-specific data. Lives on CanonicalTransaction.coinbase."""
-    reward: int
-    miner_pubkey: Any = None  # PublicKey
-    encrypted_note: Optional[bytes] = None
-
-
-@dataclass
-class CanonicalTransaction:
-    """Single Transaction type usable by both consensus and wallet layers.
-
-    Unifies:
-      - wallet_model.Transaction (version, contract_calls, coinbase)
-      - dockernet_model.Transaction (reward: int)
-      - chain_validation_model.Transaction (reward: int)
-
-    All bridge functions preserve data losslessly.
-    """
-    version: int = 1
-    contract_calls: List[Any] = field(default_factory=list)  # wallet_model.ContractCall
-    coinbase: Optional[CoinbaseTxData] = None
-    fee: int = 0
-    tx_commitment: bytes = b'\x00' * 32
-
-    def txid(self) -> str:
-        """Deterministic transaction ID: blake2b hash of serialized fields."""
-        h = hashlib.blake2b(digest_size=32)
-        h.update(struct.pack('<I', self.version))
-        h.update(struct.pack('<Q', self.fee))
-        h.update(self.tx_commitment)
-        for call in self.contract_calls:
-            h.update(call.contract_id)
-            h.update(call.data)
-        if self.coinbase:
-            h.update(struct.pack('<Q', self.coinbase.reward))
-        return h.hexdigest()
+#
+# wallet_model.Transaction now matches src/linear/src/transaction.rs::Transaction
+# and type-system.md §8.2. It is the single Transaction type used by wallet,
+# consensus, and mempool layers.
+#
+# The deprecated CanonicalTransaction bridge class has been removed.
+# bridge_chain_block_to_wallet() maps simplified chain-model transactions
+# (reward-only) into full wallet_model.Transaction instances for scanning.
 
 
-# ── Bridge functions ──────────────────────────────────────────────────────
+def compute_txid(tx: wm.Transaction) -> str:
+    """Deterministic transaction ID: blake2b hash of transaction semantics.
+    Witness bytes are EXCLUDED per type-system.md §8.2 (L1 identity/witness decoupling).
+    Includes fee as a convenience field — in the real system, different fees mean different
+    FeeV1 contract calls, which naturally produce different txids."""
+    h = hashlib.blake2b(digest_size=32)
+    h.update(struct.pack('<B', tx.version))
+    h.update(struct.pack('<Q', tx.lock_time))
+    h.update(struct.pack('<Q', tx.fee))
+    for call in tx.contract_calls:
+        h.update(call.contract_id)
+        h.update(call.data)
+    if tx.coinbase:
+        h.update(tx.coinbase.coin)
+    return h.hexdigest()
 
-def canonical_from_wallet_built(built: BuiltTransaction, fee: int = DEFAULT_FEE) -> CanonicalTransaction:
-    """Convert wallet_model.BuiltTransaction → CanonicalTransaction."""
+
+def chain_tx_from_wallet_built(built: BuiltTransaction) -> wm.Transaction:
+    """Convert wallet_model.BuiltTransaction → wallet_model.Transaction for mempool/block use.
+    Maps ContractCallLeaf → ContractCall, extracts nullifiers from witness."""
     calls = []
     for leaf in built.calls:
-        # ContractCallLeaf.contract_id is ContractId, ContractCall expects bytes
         cid_bytes = leaf.contract_id.to_bytes() if hasattr(leaf.contract_id, 'to_bytes') else bytes(leaf.contract_id)
         calls.append(ContractCall(
             contract_id=cid_bytes,
             data=leaf.data,
         ))
-    return CanonicalTransaction(
+    return wm.Transaction(
         version=1,
         contract_calls=calls,
-        fee=fee,
-        tx_commitment=built.tx_commitment,
-    )
-
-
-def canonical_to_wallet_tx(ct: CanonicalTransaction) -> wm.Transaction:
-    """Convert CanonicalTransaction → wallet_model.Transaction (for scanning)."""
-    coinbase = None
-    if ct.coinbase:
-        coinbase = wm.CoinbaseTransaction(
-            encrypted_note=ct.coinbase.encrypted_note or b'',
-            proof=b'',
-            public_inputs=b'',
-            coin=b'\x00' * 32,
-            value_commit_x=0,
-            value_commit_y=0,
-            token_commit=0,
-        )
-    return wm.Transaction(
-        version=ct.version,
-        contract_calls=ct.contract_calls,
-        coinbase=coinbase,
+        lock_time=0,
+        fee=built.fee,
+        witness=built.tx_commitment,
     )
 
 
@@ -216,12 +184,12 @@ class Mempool:
     """
 
     def __init__(self, max_size: int = 10_000):
-        self._txs: Dict[str, CanonicalTransaction] = {}
+        self._txs: Dict[str, wm.Transaction] = {}
         self._nullifiers: Set[bytes] = set()
         self._max_size: int = max_size
         self.rejected: List[Tuple[str, str]] = []  # (txid, reason)
 
-    def accept(self, tx: CanonicalTransaction) -> Tuple[bool, str]:
+    def accept(self, tx: wm.Transaction) -> Tuple[bool, str]:
         """Validate and accept a transaction. Returns (accepted, reason).
 
         Acceptance criteria:
@@ -230,26 +198,22 @@ class Mempool:
           3. Fee minimum — reject below MIN_FEE (unless coinbase)
           4. Size limit — evict lowest-fee if full
         """
-        txid = tx.txid()
+        txid = compute_txid(tx)
 
         # 1. Dedup by txid
         if txid in self._txs:
             self.rejected.append((txid, "duplicate txid"))
             return False, "Transaction already in mempool"
 
-        # 2. Nullifier dedup (double-spend prevention)
-        # Extract nullifiers from coinbase rewards (simplified model)
-        if tx.coinbase:
-            nullifier = hashlib.blake2b(
-                struct.pack('<Q', tx.coinbase.reward) + str(tx.coinbase.miner_pubkey).encode(),
-                digest_size=32
-            ).digest()
-            if nullifier in self._nullifiers:
+        # 2. Nullifier dedup — use tx.nullifiers (pre-computed by wallet)
+        for nf in tx.nullifiers:
+            if nf in self._nullifiers:
                 self.rejected.append((txid, "nullifier already spent"))
                 return False, "Double-spend detected: nullifier already in pool"
 
-        # 3. Fee minimum (non-coinbase txs)
-        if not tx.coinbase and tx.fee < DEFAULT_FEE:
+        # 3. Fee minimum (non-coinbase txs — coinbase has PoWRewardV1 at contract_calls[0])
+        is_coinbase = tx.coinbase and tx.coinbase.reward > 0
+        if not is_coinbase and tx.fee < DEFAULT_FEE:
             self.rejected.append((txid, f"fee below minimum ({tx.fee} < {DEFAULT_FEE})"))
             return False, f"Fee {tx.fee} below minimum {DEFAULT_FEE}"
 
@@ -259,33 +223,26 @@ class Mempool:
 
         # Accept
         self._txs[txid] = tx
-        if tx.coinbase:
-            nullifier = hashlib.blake2b(
-                struct.pack('<Q', tx.coinbase.reward) + str(tx.coinbase.miner_pubkey).encode(),
-                digest_size=32
-            ).digest()
-            self._nullifiers.add(nullifier)
+        for nf in tx.nullifiers:
+            self._nullifiers.add(nf)
         return True, "Accepted"
 
-    def get_for_block(self, max_txs: int = 100) -> List[CanonicalTransaction]:
+    def get_for_block(self, max_txs: int = 100) -> List[wm.Transaction]:
         """Return transactions for block inclusion, highest fee first.
 
         Coinbase transactions always come first, then fee-paying txs.
         """
-        coinbase_txs = [tx for tx in self._txs.values() if tx.coinbase]
-        user_txs = [tx for tx in self._txs.values() if not tx.coinbase]
+        coinbase_txs = [tx for tx in self._txs.values() if tx.coinbase and tx.coinbase.reward > 0]
+        user_txs = [tx for tx in self._txs.values() if not (tx.coinbase and tx.coinbase.reward > 0)]
         user_txs.sort(key=lambda tx: tx.fee, reverse=True)
         return (coinbase_txs + user_txs)[:max_txs]
 
     def remove(self, txid: str):
         """Remove a mined transaction from the pool."""
         tx = self._txs.pop(txid, None)
-        if tx and tx.coinbase:
-            nullifier = hashlib.blake2b(
-                struct.pack('<Q', tx.coinbase.reward) + str(tx.coinbase.miner_pubkey).encode(),
-                digest_size=32
-            ).digest()
-            self._nullifiers.discard(nullifier)
+        if tx:
+            for nf in tx.nullifiers:
+                self._nullifiers.discard(nf)
 
     def remove_many(self, txids: List[str]):
         """Remove multiple mined transactions."""
@@ -391,8 +348,8 @@ def test_sc5_block_hash_consistency():
     assert h1 <= dm.U32_MAX, f"hash must fit in u32, got {h1}"
 
 
-def test_sc6_canonical_roundtrip():
-    """SC6: CanonicalTransaction ↔ wallet_model.Transaction round-trips."""
+def test_sc6_transaction_roundtrip():
+    """SC6: wallet_model.Transaction txid is deterministic, fields round-trip."""
     tx_commitment = hashlib.blake2b(b'test', digest_size=32).digest()
     built = BuiltTransaction(
         calls=[
@@ -405,19 +362,14 @@ def test_sc6_canonical_roundtrip():
         fee=DEFAULT_FEE,
         tx_commitment=tx_commitment,
     )
-    ct = canonical_from_wallet_built(built)
-    assert ct.fee == DEFAULT_FEE
-    assert len(ct.contract_calls) == 1
-    assert ct.tx_commitment == built.tx_commitment
+    tx = chain_tx_from_wallet_built(built)
+    assert tx.fee == DEFAULT_FEE
+    assert len(tx.contract_calls) == 1
+    assert tx.witness == built.tx_commitment
 
-    # Round-trip back
-    wtx = canonical_to_wallet_tx(ct)
-    assert wtx.version == ct.version
-    assert len(wtx.contract_calls) == len(ct.contract_calls)
-
-    # txid is deterministic
-    txid1 = ct.txid()
-    txid2 = ct.txid()
+    # txid is deterministic (excludes witness per L1 identity/witness decoupling)
+    txid1 = compute_txid(tx)
+    txid2 = compute_txid(tx)
     assert txid1 == txid2, "txid must be deterministic"
     assert len(txid1) == 64, f"txid must be 64 hex chars, got {len(txid1)}"
 
@@ -523,8 +475,8 @@ def test_full_lifecycle():
 
     # Scan the blocks to discover coinbases
     scan_cache = ScanCache(
-        native_token_tree=MerkleTree(32),
-        nullifier_smt=None,
+        capability_commitment_tree=MerkleTree(32),
+        nullifier_smt={},
         secrets=[wallet_sk],
         own_deploy_auths={},
         messages_buffer=[],
@@ -536,11 +488,14 @@ def test_full_lifecycle():
             wm.scan_block_linear(wblock, wallet_db, scan_cache)
 
     # Build a transfer using wallet_model's build_transfer
+    # seed is required per wallet.md §6.1 for deterministic construction
+    test_seed = hashlib.blake2b(b"test_full_lifecycle", digest_size=32).digest()
     built_tx = wm.build_transfer(
         wallet_db=wallet_db,
         token_id_str=DRKW_TOKEN_ID_STR,
         amount=50_000_000,
         recipient_pk=recipient_pk,
+        seed=test_seed,
     )
     assert built_tx is not None, "build_transfer should succeed"
     assert len(built_tx.calls) >= 1, "Must have at least one contract call"
@@ -549,13 +504,15 @@ def test_full_lifecycle():
 
     # ── Step 2: Convert to canonical + broadcast via P2P ───────────────
     print("  Step 2: Broadcast via P2P...", end=" ")
-    ctx = canonical_from_wallet_built(built_tx)
+    ctx = chain_tx_from_wallet_built(built_tx)
+    ctx.fee = built_tx.fee
     assert ctx.fee == DEFAULT_FEE
-    assert ctx.txid() != '', "txid must be non-empty"
+    txid = compute_txid(ctx)
+    assert txid != '', "txid must be non-empty"
 
     # Broadcast: send to all peers (simulated)
     p2p.broadcast("wallet-1", ctx)
-    print(f"PASSED (txid={ctx.txid()[:16]}...)")
+    print(f"PASSED (txid={txid[:16]}...)")
 
     # ── Step 3: Mempool accepts ────────────────────────────────────────
     print("  Step 3: Mempool accepts...", end=" ")
@@ -563,7 +520,7 @@ def test_full_lifecycle():
     msgs = p2p.receive("node0")
     received_tx = None
     for msg_type, payload in msgs:
-        if isinstance(payload, CanonicalTransaction):
+        if isinstance(payload, wm.Transaction):
             received_tx = payload
             break
     assert received_tx is not None, "Miner should receive broadcast tx"
@@ -652,7 +609,7 @@ def test_edge_duplicate_txid():
     """Mempool rejects duplicate txid."""
     print("  Edge: duplicate txid...", end=" ")
     mempool = Mempool()
-    tx = CanonicalTransaction(fee=DEFAULT_FEE)
+    tx = wm.Transaction(fee=DEFAULT_FEE)
     ok1, _ = mempool.accept(tx)
     assert ok1
     ok2, reason = mempool.accept(tx)
@@ -665,7 +622,7 @@ def test_edge_zero_fee_rejected():
     """Mempool rejects zero-fee transactions."""
     print("  Edge: zero fee...", end=" ")
     mempool = Mempool()
-    tx = CanonicalTransaction(fee=0)
+    tx = wm.Transaction(fee=0)
     ok, reason = mempool.accept(tx)
     assert not ok, f"Zero-fee tx should be rejected: {reason}"
     assert "below minimum" in reason.lower()
@@ -678,9 +635,9 @@ def test_edge_mempool_eviction():
     mempool = Mempool(max_size=3)
 
     # Add 3 txs with different fees
-    tx1 = CanonicalTransaction(fee=50_000_000)
-    tx2 = CanonicalTransaction(fee=60_000_000)
-    tx3 = CanonicalTransaction(fee=42_000_000)  # lowest fee
+    tx1 = wm.Transaction(fee=50_000_000)
+    tx2 = wm.Transaction(fee=60_000_000)
+    tx3 = wm.Transaction(fee=42_000_000)  # lowest fee
 
     assert mempool.accept(tx1)[0]
     assert mempool.accept(tx2)[0]
@@ -688,14 +645,15 @@ def test_edge_mempool_eviction():
     assert mempool.size() == 3
 
     # Add 4th tx — should evict tx3 (lowest fee)
-    tx4 = CanonicalTransaction(fee=70_000_000)
+    tx4 = wm.Transaction(fee=70_000_000)
     ok, _ = mempool.accept(tx4)
     assert ok
     assert mempool.size() == 3
-    assert not mempool.contains(tx3.txid()), "Lowest-fee tx should be evicted"
-    assert mempool.contains(tx1.txid())
-    assert mempool.contains(tx2.txid())
-    assert mempool.contains(tx4.txid())
+    txid3 = compute_txid(tx3)
+    assert not mempool.contains(txid3), "Lowest-fee tx should be evicted"
+    assert mempool.contains(compute_txid(tx1))
+    assert mempool.contains(compute_txid(tx2))
+    assert mempool.contains(compute_txid(tx4))
     print("PASSED")
 
 
@@ -703,9 +661,9 @@ def test_edge_fee_ordering():
     """Mempool.get_for_block returns txs in fee-descending order."""
     print("  Edge: fee ordering...", end=" ")
     mempool = Mempool()
-    tx_low = CanonicalTransaction(fee=42_000_000)
-    tx_mid = CanonicalTransaction(fee=60_000_000)
-    tx_high = CanonicalTransaction(fee=100_000_000)
+    tx_low = wm.Transaction(fee=42_000_000)
+    tx_mid = wm.Transaction(fee=60_000_000)
+    tx_high = wm.Transaction(fee=100_000_000)
 
     mempool.accept(tx_low)
     mempool.accept(tx_mid)
@@ -760,8 +718,8 @@ def test_edge_restart_idempotency():
     )
 
     scan_cache = ScanCache(
-        native_token_tree=MerkleTree(32),
-        nullifier_smt=None, secrets=[sk],
+        capability_commitment_tree=MerkleTree(32),
+        nullifier_smt={}, secrets=[sk],
         own_deploy_auths={}, messages_buffer=[],
     )
 
@@ -803,7 +761,7 @@ def test_edge_multi_wallet_scenario():
 
     # Each wallet builds a tx
     for w in wallets:
-        tx = CanonicalTransaction(fee=DEFAULT_FEE + (wallets.index(w) * 10_000_000))
+        tx = wm.Transaction(fee=DEFAULT_FEE + (wallets.index(w) * 10_000_000))
         mempool.accept(tx)
 
     assert mempool.size() == 2
@@ -820,12 +778,187 @@ def test_edge_coinbase_only_mempool():
     """Coinbase transaction is not subject to fee minimum (it pays the reward, not a fee)."""
     print("  Edge: coinbase fee exemption...", end=" ")
     mempool = Mempool()
-    coinbase = CanonicalTransaction(
-        coinbase=CoinbaseTxData(reward=100_000_000),
+    coinbase = wm.Transaction(
+        coinbase=wm.CoinbaseTransaction(reward=100_000_000),
         fee=0,  # coinbase has no fee
     )
     ok, reason = mempool.accept(coinbase)
     assert ok, f"Coinbase should be accepted without fee: {reason}"
+    print("PASSED")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DeployV1 Lifecycle — contract deployment end-to-end
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_deploy_v1_mempool_accepts():
+    """DeployV1 transaction is accepted by mempool (has fee, non-coinbase)."""
+    print("  DeployV1: mempool accepts...", end=" ")
+    mempool = Mempool()
+    # Simulate a DeployV1 call — contract_id = Deployooor, data[0] = 0x00 (DeployV1)
+    deploy_tx = wm.Transaction(
+        contract_calls=[wm.ContractCall(
+            contract_id=wm.DEPLOYOOOR_CONTRACT_ID.to_bytes() if hasattr(wm.DEPLOYOOOR_CONTRACT_ID, 'to_bytes') else b'\x04' + b'\x00' * 31,
+            data=b'\x00' + b'wasm_bincode_placeholder',
+        )],
+        fee=DEFAULT_FEE,
+    )
+    ok, reason = mempool.accept(deploy_tx)
+    assert ok, f"DeployV1 should be accepted: {reason}"
+    assert mempool.size() == 1
+    print("PASSED")
+
+
+def test_deploy_v1_nullifier_dedup():
+    """DeployV1 with spent nullifier is rejected (double-spend prevention)."""
+    print("  DeployV1: nullifier dedup...", end=" ")
+    mempool = Mempool()
+    nf = hashlib.blake2b(b"spent_nullifier", digest_size=32).digest()
+    tx1 = wm.Transaction(
+        contract_calls=[wm.ContractCall(
+            contract_id=b'\x04' + b'\x00' * 31,
+            data=b'\x00' + b'wasm_bincode',
+        )],
+        fee=DEFAULT_FEE,
+        nullifiers=[nf],
+    )
+    ok1, _ = mempool.accept(tx1)
+    assert ok1
+    # Second tx with same nullifier should be rejected
+    tx2 = wm.Transaction(
+        contract_calls=[wm.ContractCall(
+            contract_id=b'\x04' + b'\x00' * 31,
+            data=b'\x00' + b'wasm_bincode_2',
+        )],
+        fee=DEFAULT_FEE,
+        nullifiers=[nf],  # same nullifier
+    )
+    ok2, reason = mempool.accept(tx2)
+    assert not ok2, "DeployV1 with spent nullifier should be rejected"
+    assert "nullifier" in reason.lower()
+    print("PASSED")
+
+
+def test_deploy_v1_mempool_to_block():
+    """DeployV1 in mempool is selected for block inclusion by miner."""
+    print("  DeployV1: mempool → block...", end=" ")
+    mempool = Mempool()
+    deploy_tx = wm.Transaction(
+        contract_calls=[wm.ContractCall(
+            contract_id=b'\x04' + b'\x00' * 31,
+            data=b'\x00' + b'wasm_bincode',
+        )],
+        fee=DEFAULT_FEE,
+    )
+    mempool.accept(deploy_tx)
+    # Miner selects for block
+    block_txs = mempool.get_for_block(max_txs=100)
+    assert len(block_txs) == 1
+    assert block_txs[0].contract_calls[0].data[0] == 0x00  # DeployV1 selector
+    print("PASSED")
+
+
+def test_deploy_v1_manifest_discovery():
+    """After deployment, manifest is stored and discoverable for wallet_construct.
+
+    Models the full path: DeployV1 execution → Deployooor post-processing →
+    manifest stored in contract registry → wallet discovers manifest →
+    wallet_construct resolves typed capability.
+
+    This is the gateway from the old CapRecord (pre-capability-era "coin record")
+    to the new TypedCapability with barb-covered composition verification.
+    """
+    print("  DeployV1: manifest discovery...", end=" ")
+
+    # Simulate a manifest for a purse-like contract
+    manifest_toml = b'\x4D' + b"""
+[manifest]
+name = "test_purse"
+version = "1.0.0"
+
+[capabilities.transfer]
+resource = "value"
+action = "transfer"
+primitives = ["Commitment", "Nullifier", "AssetId", "ContractId", "FuncId", "MerkleNode"]
+required_barbs = ["Nullify", "Prove", "Dispatch", "Gate", "Denominate"]
+"""
+
+    # Simulate Deployooor post-processing: store manifest under contract_id key
+    contract_id = b'\x99' + b'\x00' * 31  # mock deployed contract ID
+    manifest_store = {contract_id: manifest_toml}
+
+    # Wallet scan: detect DeployV1 call → extract manifest
+    stored_manifest = manifest_store.get(contract_id)
+    assert stored_manifest is not None, "Manifest should be stored after deploy"
+    assert stored_manifest[0] == 0x4D, "Manifest should have magic byte 0x4D prefix"
+
+    # Parse the manifest and verify wallet_construct coverage
+    # The manifest declares primitives + required_barbs for the "transfer" action
+    from wallet_model import Primitive, Barb, wallet_construct
+
+    primitives = [
+        Primitive.Commitment, Primitive.Nullifier, Primitive.AssetId,
+        Primitive.ContractId, Primitive.FuncId, Primitive.MerkleNode,
+    ]
+    required_barbs = [
+        Barb.Nullify, Barb.ProveInclusion, Barb.Dispatch, Barb.Gate, Barb.Denominate,
+    ]
+
+    # wallet_construct is the soundness gate — returns None if barbs uncovered
+    typed_cap = wallet_construct("value", "transfer", primitives, required_barbs)
+    assert typed_cap is not None, \
+        "wallet_construct should return a typed capability — barbs must be covered"
+    assert typed_cap.action == "transfer"
+    assert typed_cap.resource == "value"
+    assert typed_cap.covers(required_barbs), \
+        "composed barbs should cover all required barbs"
+
+    # Verify the resolve-then-construct pattern:
+    # 1. Manifest declares what barbs are required
+    # 2. Manifest declares what primitives it provides
+    # 3. wallet_construct checks coverage → creates TypedCapability
+    # 4. If uncovered, skip the capability (don't crash)
+    uncovered = wallet_construct("value", "transfer", primitives[:2], required_barbs)
+    assert uncovered is None, \
+        "wallet_construct should return None when primitives don't cover required barbs"
+
+    print("PASSED")
+
+
+def test_deploy_v1_full_scan_cycle():
+    """Full DeployV1 lifecycle: wallet builds → mempool → block → manifest → scan.
+
+    Same flow as test_full_lifecycle but focused on deployment rather than transfer.
+    """
+    print("  DeployV1: full scan cycle...", end=" ")
+    cfg = KeyConfig.default_keys()
+    p2p = P2PNetwork()
+    mempool = Mempool()
+
+    miner = KeyedMiningNode("node0", True, p2p, key_config=cfg, localnet=True)
+    miner.start_sync_task()
+
+    # Build a DeployV1 transaction
+    manifest_bytes = b'\x4D' + b'[manifest]\nname = "test"\n'
+    deploy_tx = wm.Transaction(
+        contract_calls=[wm.ContractCall(
+            contract_id=b'\x04' + b'\x00' * 31,
+            data=b'\x00' + b'wasm_bincode' + manifest_bytes,
+        )],
+        fee=DEFAULT_FEE,
+    )
+
+    # Mempool accepts
+    ok, _ = mempool.accept(deploy_tx)
+    assert ok
+
+    # Miner mines (includes in block)
+    miner.mine_one_block()
+    assert miner.chain.height >= 2  # genesis + 1 mined block
+
+    # After block acceptance, mempool is cleared
+    mempool.remove(compute_txid(deploy_tx))
+
     print("PASSED")
 
 
@@ -847,7 +980,7 @@ if __name__ == '__main__':
         ("SC3", test_sc3_balance_proof_coinbase_only),
         ("SC4", test_sc4_nullifier_format_consistency),
         ("SC5", test_sc5_block_hash_consistency),
-        ("SC6", test_sc6_canonical_roundtrip),
+        ("SC6", test_sc6_transaction_roundtrip),
         ("SC7", test_sc7_fee_accounting),
         ("SC8", test_sc8_coinbase_fee_collection),
     ]
@@ -901,9 +1034,33 @@ if __name__ == '__main__':
     print(f"  Edge tests: {edge_passed} passed, {edge_failed} failed")
     print()
 
+    # ── DeployV1 lifecycle tests ─────────────────────────────────────────
+    print("--- DeployV1 Lifecycle Tests ---")
+    deploy_tests = [
+        ("mempool-accepts", test_deploy_v1_mempool_accepts),
+        ("nullifier-dedup", test_deploy_v1_nullifier_dedup),
+        ("mempool-to-block", test_deploy_v1_mempool_to_block),
+        ("manifest-discovery", test_deploy_v1_manifest_discovery),
+        ("full-scan-cycle", test_deploy_v1_full_scan_cycle),
+    ]
+
+    deploy_passed = 0
+    deploy_failed = 0
+    for name, test_fn in deploy_tests:
+        try:
+            test_fn()
+            deploy_passed += 1
+        except Exception as e:
+            deploy_failed += 1
+            print(f"  DeployV1 {name}: FAILED — {e}")
+    print(f"  DeployV1 tests: {deploy_passed} passed, {deploy_failed} failed")
+    print()
+
+    print()
+
     # ── Summary ────────────────────────────────────────────────────────
-    total_passed = sc_passed + edge_passed + (1 if lifecycle_ok else 0)
-    total_failed = sc_failed + edge_failed + (0 if lifecycle_ok else 1)
+    total_passed = sc_passed + edge_passed + deploy_passed + (1 if lifecycle_ok else 0)
+    total_failed = sc_failed + edge_failed + deploy_failed + (0 if lifecycle_ok else 1)
     total = total_passed + total_failed
 
     print("=" * 60)

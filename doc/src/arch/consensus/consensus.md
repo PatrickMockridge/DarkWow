@@ -435,7 +435,9 @@ validators verify nf against nullifier SMT → reward claimed
 ### Consensus Rule (7-Phase Validation)
 
 Every validator MUST verify the following before accepting a block. Phases run
-in order — cheapest check first, fail fast.
+in order — cheapest check first, fail fast. Phase failures SHALL produce typed
+error barbs per [type-system.md §4](type-system.md): `↓bad-proof` (ZK/signature/
+structural), `↓bad-nullifier` (duplicate nullifier), `↓db-fail` (state corruption).
 
 ```
 Phase 0 — Structural (validate_block_structure):
@@ -492,17 +494,18 @@ The miner MUST:
 
 ### Cheat Detection — Sybil/Spoof Rejection
 
-Every deviation from the protocol is detectable at a specific phase:
+Every deviation from the protocol is detectable at a specific phase.
+Error terminology follows [type-system.md §4](type-system.md):
 
-| Attack | Detection | Phase | Rejection Reason |
+| Attack | Detection | Phase | Rejection Error Barb |
 |--------|-----------|-------|-----------------|
-| Wrong nullifier (random bytes) | ZK proof fails — nf != poseidon_hash(sk_H, C) | 3.3 | Invalid ZK proof |
-| Duplicate nullifier (replay) | nf already in nullifier SMT | 3.2 | DuplicateNullifier |
-| Missing nullifier (zero bytes) | Structural check — nf == 0 | 0.4 | BlockStructure |
-| Wrong reward amount | Validator compares with expected_reward(H) | 3.4 | ValueMismatch |
-| Coinbase not at transactions[0] | Structural check | 0.2 | BlockStructure |
-| Multiple coinbases | Count check | 0.3 | BlockStructure |
-| Random key (not deterministic) | Wallet can't decrypt — nullifier won't match derived key | 3.3 | Proof fails (wallet-side detection) |
+| Wrong nullifier (random bytes) | ZK proof fails — nf != poseidon_hash(sk_H, C) | 3.3 | `↓bad-proof` |
+| Duplicate nullifier (replay) | nf already in nullifier SMT | 3.2 | `↓bad-nullifier` |
+| Missing nullifier (zero bytes) | Structural check — nf == 0 | 0.4 | `↓bad-proof` |
+| Wrong reward amount | Validator compares with expected_reward(H) | 3.4 | `↓bad-proof` |
+| Coinbase not at transactions[0] | Structural check | 0.2 | `↓bad-proof` |
+| Multiple coinbases | Count check | 0.3 | `↓bad-proof` |
+| Random key (not deterministic) | Wallet can't decrypt — nullifier won't match derived key | 3.3 | `↓bad-proof` (wallet-side detection) |
 
 ### Wallet Pure Function Integration
 

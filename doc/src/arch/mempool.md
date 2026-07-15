@@ -29,8 +29,12 @@ what keeps that in-between state sound.
 transaction is admitted if and only if it passes **every** admission check; otherwise it
 is rejected with a typed error barb ([type-system.md §4](type-system.md)).
 
-Admission checks (all REQUIRED):
+Admission checks (all REQUIRED, matching `Mempool::add()` at
+`crates/dwow-mempool/src/lib.rs`):
 
+- **Non-empty.** The transaction SHALL have at least one contract call or input.
+  An empty transaction SHALL be rejected.
+- **Size.** The serialized transaction SHALL NOT exceed `max_tx_size`.
 - **`↓bad-proof` (ZK).** Every proof-requiring call's ZK proof SHALL verify against the
   verifying key for the call's contract and circuit, over the public inputs the contract's
   `metadata()` declares ([type-system.md §8.2](type-system.md); the metadata ABI). A
@@ -40,13 +44,21 @@ Admission checks (all REQUIRED):
   rejected.
 - **fee.** The transaction SHALL pay at least the minimum fee, denominated in DRKW and
   itself a verified NativeToken call — the fee is not exempt from proof verification.
+  Coinbase transactions (PoWRewardV1, function `0x05`) are exempt from the fee minimum.
+- **Dedup.** The transaction's hash SHALL NOT already be in the pool.
 - **`↓bad-nullifier` / `↓double-spend`.** The transaction's nullifiers SHALL be well-formed
-  and unspent (§2).
+  and unspent (§2). Nullifiers are read directly from `Transaction.nullifiers`
+  ([type-system.md §8.2](type-system.md)) — the wallet pre-computes them during
+  transaction construction ([wallet.md §6](wallet.md)).
+- **Eviction.** If the pool is at capacity, the lowest fee-rate entry SHALL be evicted
+  before inserting a higher fee-rate transaction. Stale entries (older than
+  `max_age_secs`) SHALL be evicted before each insertion.
 
-The pool SHALL carry the **full** transaction — `calls`, `proofs`, `signatures`,
-`tx_commitment`, and `nullifiers` ([type-system.md §8.2](type-system.md)). Proofs and
-signatures SHALL NOT be stripped on the path from broadcast to the pool; a pool entry that
-cannot be re-verified is not a valid pool entry.
+The pool SHALL carry the **full** transaction — `contract_calls`, `witness`
+(containing ZK proofs, signatures, and tx_commitment as an opaque bundle), and
+`nullifiers` ([type-system.md §8.2](type-system.md)). The witness SHALL NOT be
+stripped on the path from broadcast to the pool; a pool entry that cannot be
+re-verified is not a valid pool entry.
 
 > **Invariant (Authenticated Pool).** The mempool SHALL NOT hold an unverified transaction.
 > Equivalently: possession of a spendable capability is provable only by a valid

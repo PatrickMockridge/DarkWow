@@ -2679,21 +2679,49 @@ class ContractCall:
 
 @dataclass
 class CoinbaseTransaction:
+    """Coinbase output with ZK proof, commitment, nullifier, and encrypted note.
+    Matches src/linear/src/transaction.rs::CoinbaseTransaction.
+    `reward` is a convenience field for chain-model block production."""
     encrypted_note: bytes = b''  # Encodable-serialized AeadEncryptedNote
     proof: bytes = b''           # ZK proof bytes (Mint_V1)
-    public_inputs: List[bytes] = field(default_factory=list)  # 7 x [u8; 32]
-    coin: bytes = b'\x00' * 32   # Coin commitment [u8; 32]
-    value_commit_x: bytes = b'\x00' * 32
-    value_commit_y: bytes = b'\x00' * 32
-    token_commit: bytes = b'\x00' * 32
+    public_inputs: List[bytes] = field(default_factory=list)  # 9 x [u8; 32]
+    coin: bytes = b'\x00' * 32   # Commitment — C = poseidon_hash([pk, value, asset_id, ...])
+    value_commit_x: bytes = b'\x00' * 32  # PedersenCoordinate
+    value_commit_y: bytes = b'\x00' * 32  # PedersenCoordinate
+    token_commit: bytes = b'\x00' * 32     # TokenCommitment
     nullifier: bytes = b'\x00' * 32  # nf = poseidon_hash(sk_H.inner(), C) — capability claim
+    reward: int = 0  # convenience field for chain-model block production (emission schedule amount)
+
+
+@dataclass
+class TxInput:
+    """Transaction input — matches src/linear/src/transaction.rs::TxInput."""
+    previous_output: bytes = b'\x00' * 32  # blake3::Hash
+    script: bytes = b''                      # Signature script / proof
+    sequence: int = 0                        # Sequence number (timelock)
+
+
+@dataclass
+class TxOutput:
+    """Transaction output — matches src/linear/src/transaction.rs::TxOutput."""
+    value: int = 0
+    script: bytes = b''  # Public key or script hash
 
 
 @dataclass
 class Transaction:
+    """Transaction — matches src/linear/src/transaction.rs::Transaction and type-system.md §8.2.
+    The `coinbase` field is a wallet-model convenience; in the Rust implementation
+    the coinbase is stored at contract_calls[0] (PoWRewardV1, function 0x05)."""
     version: int = 1
+    inputs: List[TxInput] = field(default_factory=list)
+    outputs: List[TxOutput] = field(default_factory=list)
     contract_calls: List[ContractCall] = field(default_factory=list)
-    coinbase: Optional[CoinbaseTransaction] = None
+    lock_time: int = 0
+    nullifiers: List[bytes] = field(default_factory=list)  # Vec<Nullifier> — mempool dedup
+    witness: bytes = b''  # Opaque dwow_serial-encoded ZK proofs + signatures
+    fee: int = 0  # convenience field — in Rust, fee is extracted by FeeExtractor
+    coinbase: Optional[CoinbaseTransaction] = None  # wallet-model convenience field
 
 
 @dataclass

@@ -84,11 +84,13 @@ Block Merkle Tree:
 
 The PoWRewardV1 nullifier is the first entry in the nullifier SMT for this
 block. It "unlocks" the block — the nullifier proves the miner knows the
-per-block derived secret `sk_H` corresponding to the coin's public key.
+per-block derived secret `sk_H` corresponding to the commitment's public key.
 Subsequent transactions build on top. This is the same capability-exercise
 pattern as every other native token operation.
 
 ### 1.3 Block Header
+
+The `BlockHeader` structural type is defined in [type-system.md §8.2](type-system.md).
 
 ```
 BlockHeader {
@@ -159,7 +161,9 @@ derive_instance(sk, cid, data):
 The wallet derives `sk_H` identically via `AccountManager::secrets_for_contract()`.
 No shared state between miner and wallet — they compute the same hash independently.
 
-### 2.3 Coin Commitment
+### 2.3 Commitment
+
+The commitment `C` is a `CoinCommitment` ([type-system.md §8.2](type-system.md)):
 
 ```
 C = poseidon_hash([pk_H.x, pk_H.y, reward, DRKW_TOKEN_ID, 0, 0, blind])
@@ -356,7 +360,7 @@ LinearBlockTemplate {
 ZK proving materials are initialized on first template request, not at daemon
 startup. This avoids blocking startup on proving key construction.
 
-## 4. Uncle Merkle Consensus
+## 5. Uncle Merkle Consensus
 
 ### Problem
 
@@ -398,7 +402,7 @@ This is Pareto efficient: miners are never punished for producing non-canonical
 blocks, smaller miners aren't excluded from rewards, and uncle references live
 in the canonical block header.
 
-## 5. Emission Curve
+## 6. Emission Curve
 
 ```
 Reward
@@ -426,9 +430,9 @@ Reward
 The main emission phase runs ~16.5 years before the exponential reward drops
 below the per-block tail threshold. After that, the tail takes over permanently.
 
-## 6. Target Adjustment
+## 7. Target Adjustment
 
-### 5.1 Algorithm
+### 6.1 Algorithm
 
 ```
 avg_interval = sum(last_10_intervals) / (n - 1)
@@ -437,7 +441,7 @@ delta = clamp(ratio - 1.0, -0.10, +0.10)
 new_target = clamp(target / (1.0 + delta), min_target, max_target)
 ```
 
-### 5.2 Parameters
+### 6.2 Parameters
 
 | Parameter | Value |
 |-----------|-------|
@@ -447,7 +451,7 @@ new_target = clamp(target / (1.0 + delta), min_target, max_target)
 | Ratio bound | [0.5, 2.0] |
 | Target bounds | [min_target, max_target] — default [1, u32::MAX] |
 
-## 7. MemPool Design
+## 8. MemPool Design
 
 The mempool collects transactions with contract calls before they are included
 in blocks. Source: [`bin/dwowd/src/mempool.rs`](../../bin/dwowd/src/mempool.rs).
@@ -495,7 +499,7 @@ xmrig ──submit──► verify PoW, reconstruct block
                 generate new template, push to all clients
 ```
 
-## 8. Mining Flow
+## 9. Mining Flow
 
 1. `dwowd` generates a RandomX key for the next block template
 2. Miner receives 228-byte mining blob (header with zeroed nonce) + target
@@ -516,7 +520,7 @@ max_target = 4294967295       # u32::MAX, easiest possible
 min_block_interval = 10       # seconds between blocks
 ```
 
-## 9. Coinbase Reward Forwarding
+## 10. Coinbase Reward Forwarding
 
 Miners MAY redirect coinbase rewards to any address — a wallet, DAO, or contract
 treasury — without changing the mining keypair. The recipient is changed *inside
@@ -558,9 +562,9 @@ Set at node startup via env var. Read once during init, stored in
 `MiningState.forward_destination`, immutable after startup. No runtime API to
 change it — restart required.
 
-## 10. Mining Network Architecture
+## 11. Mining Network Architecture
 
-### 10.1 Three-Layer Model
+### 11.1 Three-Layer Model
 
 The mining network operates in three layers. Every node handshakes via P2P.
 Pool mining and merge mining are overlays — they add capabilities without
@@ -596,7 +600,7 @@ distributes mining jobs, and pays rewards via PPLNS (Pay Per Last N Shares).
 
 Monero merge mining via p2pool + monerod sidecar. See [Merge Mining](merge-mining.md).
 
-### 10.2 Node Roles
+### 11.2 Node Roles
 
 | Role | Function |
 |------|----------|
@@ -605,9 +609,9 @@ Monero merge mining via p2pool + monerod sidecar. See [Merge Mining](merge-minin
 | **Observer** | Chain monitoring, passive supply audit — verifies but does not mine |
 | **Wallet** | Full node syncing chain, scanning for capabilities — see [Wallet](wallet.md) |
 
-## 11. Wallet Integration — User Sovereignty
+## 12. Wallet Integration — User Sovereignty
 
-### 7.1 The Pure Function
+### 12.1 The Pure Function
 
 The wallet is a pure mathematical function of its inputs:
 
@@ -619,7 +623,7 @@ See [Wallet Architecture](wallet.md), Cornerstone 2. Same keys + same chain =
 identical wallet state, every time. The coinbase specification is designed so
 the wallet can independently verify every claim the miner makes.
 
-### 7.2 Deterministic Scan
+### 12.2 Deterministic Scan
 
 The wallet scans the coinbase transaction exactly as the miner built it:
 
@@ -639,12 +643,12 @@ The wallet derives the same `sk_H` as the miner — independently,
 deterministically, with zero shared state. If the keys match, the note
 decrypts. If the nullifier matches, the claim is valid.
 
-### 7.3 Fee Payment Cycle
+### 12.3 Fee Payment Cycle
 
 ```
 Wallet                          Miner
   │                               │
-  │  selects DRKW coin             │
+  │  selects DRKW capability        │
   │  builds FeeV1 ZK proof        │
   │  publishes nullifier           │
   │  ──── transaction ────────►   │
@@ -653,7 +657,7 @@ Wallet                          Miner
   │                               │  can spend reward (FeeV1/BurnV1/TransferV1)
   │                               │
   │  scans block                   │
-  │  detects fee nullifier ←────── │  (wallet revokes spent coin)
+  │  detects fee nullifier ←────── │  (wallet revokes spent capability)
   │  detects new coinbase ←──────  │  (wallet discovers reward if this wallet's miner)
 ```
 
@@ -663,7 +667,7 @@ payment is a capability exercise (FeeV1 nullifier) — the wallet proves it
 can spend the DRKW input. The miner proves it can claim the reward (PoWRewardV1
 nullifier). Both follow the same o-cap pattern.
 
-### 7.4 User Sovereignty
+### 12.4 User Sovereignty
 
 The architecture is user-centric from genesis:
 
@@ -681,7 +685,7 @@ The architecture is user-centric from genesis:
 See [What's Different from Upstream](../about/differences_from_upstream.md)
 for the full comparison.
 
-## 12. Comparison: DRKW vs BTC vs XMR
+## 13. Comparison: DRKW vs BTC vs XMR
 
 | | Bitcoin | Monero | DarkWow |
 |---|---------|--------|---------|
@@ -700,7 +704,7 @@ every user verifies the coinbase independently. The ZK nullifier claim model
 means coinbase rewards follow the same privacy-preserving capability pattern
 as every other transaction.
 
-## 13. Open Questions
+## 14. Open Questions
 
 ### Absolute Supply Under Tail
 
@@ -726,7 +730,7 @@ At ~0.80 DRKW/block tail rate, the daily security budget is ~576 DRKW/day.
 Security depends on DRKW market price — if the tail value drops below the
 cost of attack, the chain becomes vulnerable.
 
-## 14. See Also
+## 15. See Also
 
 - [Consensus](consensus/consensus.md) — 7-phase validation, PoW rules, cheat detection
 - [Wallet Architecture](wallet.md) — Pure function design, key sovereignty, scan pipeline

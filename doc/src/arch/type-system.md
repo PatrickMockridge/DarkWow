@@ -339,17 +339,34 @@ if their barbs differ.
 
 | Type | Composition | Barbs |
 |------|------------|-------|
-| `Transaction` | `{ calls, proofs, signatures, nullifiers: Vec<Nullifier> }` | `↓process` |
+| `Transaction` | `{ version: u8, inputs: Vec<TxInput>, outputs: Vec<TxOutput>, contract_calls: Vec<ContractCall>, lock_time: u64, nullifiers: Vec<Nullifier>, witness: Vec<u8> }` | `↓process` |
+| `TxInput` | `{ previous_output: blake3::Hash, script: Vec<u8>, sequence: u32 }` | — |
+| `TxOutput` | `{ value: u64, script: Vec<u8> }` | — |
 | `ContractCall` | `{ contract_id: ContractId, data: Vec<u8> }` | `↓invoke` |
-| `CoinbaseTransaction` | `{ proof, public_inputs, coin: Commitment, nullifier: Nullifier, encrypted_note }` | `↓mine` |
+| `CoinbaseTransaction` | `{ proof: Vec<u8>, public_inputs: ZkPublicInputs<9>, coin: CoinCommitment, value_commit_x: PedersenCoordinate, value_commit_y: PedersenCoordinate, token_commit: TokenCommitment, nullifier: Nullifier, new_cumulative_x: PedersenCoordinate, new_cumulative_y: PedersenCoordinate, encrypted_note: Vec<u8> }` | `↓mine` |
+| `CoinCommitment` | `pallas::Base` — `C = poseidon_hash([pk.x, pk.y, value, asset_id, ...])` | `↓commit` |
+| `TokenCommitment` | `pallas::Base` — `poseidon_hash(asset_id, token_blind)` | `↓denominate` |
+| `PedersenCoordinate` | `pallas::Base` — one coordinate of a Pedersen value commitment | — |
+| `ZkPublicInputs<N>` | `[[u8; 32]; N]` — N circuit-specific elements exposed to the verifier | `↓verify` |
 | `BlockHeader` | `{ merkle_root, previous, height, ... }` — all merkle roots SHALL be `blake3::Hash` | `↓validate-pow` |
 | `AeadEncryptedNote` | `{ ciphertext, ephem_public: PublicKey }` | `↓discover` |
 
-A `Transaction`'s `proofs` and `signatures` are load-bearing: they SHALL be carried
-end-to-end (broadcast → mempool → block) and verified at both mempool admission and block
-acceptance ([mempool.md](mempool.md)). Stripping them erases the `↓prove`/`↓verify` barbs
-(§2.2) and defeats the authority model (§5). Transaction construction — the exercise of a
-held capability — is specified in [wallet.md §6](wallet.md).
+A `Transaction`'s `witness` carries the ZK proofs and signatures as an opaque,
+dwow_serial-encoded bundle. The witness SHALL be carried end-to-end (broadcast →
+mempool → block) and verified at both mempool admission and block acceptance
+([mempool.md](mempool.md)). The witness is EXCLUDED from the transaction hash —
+block identity commits to transaction semantics (version, inputs, outputs,
+contract_calls, lock_time, nullifiers), never to interchangeable witness bytes.
+Stripping the witness erases the `↓prove`/`↓verify` barbs (§2.2) and defeats the
+authority model (§5).
+
+The `nullifiers` field carries pre-extracted nullifiers for the mempool's
+double-spend detection ([mempool.md §2](mempool.md)). When empty, it SHALL be
+omitted from the serialized form to preserve hash determinism across code versions.
+
+Transaction construction — the exercise of a held capability — is specified in
+[wallet.md §6](wallet.md). The Rust implementation is at
+`src/linear/src/transaction.rs`.
 
 ### 8.3 Authority Types
 

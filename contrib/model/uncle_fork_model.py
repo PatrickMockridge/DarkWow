@@ -77,7 +77,7 @@ class PinRecord:
     uncle_height: int
     canonical_height: int
     depth: int
-    coin_hash: bytes
+    commitment_hash: bytes
     is_active: bool = True
 
 
@@ -185,8 +185,8 @@ class ForkSimulation:
         self.chain: Dict[int, Tuple[MinerID, int, List[PinRecord]]] = {}
         # Competing blocks at each height (potential deeper uncles)
         self.competing: Dict[int, List[CompetingBlock]] = defaultdict(list)
-        # Coin set: coin_hash -> creation_height
-        self.coin_set: Dict[bytes, int] = {}
+        # Commitment set: commitment_hash -> creation_height
+        self.commitment_set: Dict[bytes, int] = {}
 
         self.reorg_count = 0
         self.blocks_rolled_back = 0
@@ -280,11 +280,11 @@ class ForkSimulation:
 
     def _mine_block(self, height: int, miner: MinerID):
         reward = expected_reward(height)
-        coin_hash = hashlib.blake2b(
+        commitment_hash = hashlib.blake2b(
             struct.pack('<Q', height) + miner.name.encode(), digest_size=32
         ).digest()
         self.chain[height] = (miner, reward, [])
-        self.coin_set[coin_hash] = height
+        self.commitment_set[commitment_hash] = height
         self.accounts[miner].rewards.append(
             MinerReward(height, reward, is_canonical=True)
         )
@@ -313,19 +313,19 @@ class ForkSimulation:
             h.update(struct.pack('<Q', uncle_height))
             h.update(struct.pack('<Q', pin_reward))
             h.update(struct.pack('<Q', canonical_height))
-            coin_hash = h.digest()
+            commitment_hash = h.digest()
         else:
             h = hashlib.sha256()
             h.update(prev_hash)
             h.update(struct.pack('<Q', uncle_height))
             h.update(struct.pack('<Q', pin_reward))
             h.update(struct.pack('<Q', canonical_height))
-            coin_hash = h.digest()
-        self.coin_set[coin_hash] = canonical_height
+            commitment_hash = h.digest()
+        self.commitment_set[commitment_hash] = canonical_height
         return PinRecord(
             pin_reward=pin_reward, uncle_miner=miner,
             uncle_height=uncle_height, canonical_height=canonical_height,
-            depth=depth, coin_hash=coin_hash, is_active=True,
+            depth=depth, commitment_hash=commitment_hash, is_active=True,
         )
 
     def _commit_block(self, height: int, miner: MinerID, base_reward: int,
@@ -338,11 +338,11 @@ class ForkSimulation:
         if total_pin > base_reward:
             # Block would be rejected by Rust — skip this block
             return
-        coin_hash = hashlib.blake2b(
+        commitment_hash = hashlib.blake2b(
             struct.pack('<Q', height) + miner.name.encode(), digest_size=32
         ).digest()
         self.chain[height] = (miner, canonical_effective, uncles)
-        self.coin_set[coin_hash] = height
+        self.commitment_set[commitment_hash] = height
         self.accounts[miner].rewards.append(
             MinerReward(height, canonical_effective, is_canonical=True)
         )
@@ -367,10 +367,10 @@ class ForkSimulation:
             alt = next((m for m in self.miners if m != original), self.miners[0])
             reward = expected_reward(h)
             self.chain[h] = (alt, reward, [])
-            coin_hash = hashlib.blake2b(
+            commitment_hash = hashlib.blake2b(
                 struct.pack('<Q', h) + alt.name.encode(), digest_size=32
             ).digest()
-            self.coin_set[coin_hash] = h
+            self.commitment_set[commitment_hash] = h
             self.accounts[alt].rewards.append(
                 MinerReward(h, reward, is_canonical=True)
             )
@@ -388,10 +388,10 @@ class ForkSimulation:
         # Deactivate miner rewards
         for acct in self.accounts.values():
             acct.deactivate_at_height(height)
-        # Remove coins from coin_set
-        to_remove = [c for c, h in self.coin_set.items() if h == height]
+        # Remove coins from commitment_set
+        to_remove = [c for c, h in self.commitment_set.items() if h == height]
         for c in to_remove:
-            del self.coin_set[c]
+            del self.commitment_set[c]
 
     def _get_original_miner(self, height: int) -> Optional[MinerID]:
         """Get the miner who mined the block originally at this height."""
@@ -433,17 +433,17 @@ class ForkSimulation:
             )
 
     def _verify_uncle_consistency(self, height: int):
-        """Active pins have coin_set entries; inactive pins don't."""
+        """Active pins have commitment_set entries; inactive pins don't."""
         for h in range(1, height + 1):
             for pin in self.ledger.pins_at_height(h):
                 if pin.is_active:
-                    if pin.coin_hash not in self.coin_set:
-                        print(f"  WARNING: active pin at h={h} missing from coin_set")
+                    if pin.commitment_hash not in self.commitment_set:
+                        print(f"  WARNING: active pin at h={h} missing from commitment_set")
                 else:
-                    if pin.coin_hash in self.coin_set:
-                        ch = self.coin_set[pin.coin_hash]
+                    if pin.commitment_hash in self.commitment_set:
+                        ch = self.commitment_set[pin.commitment_hash]
                         if ch == pin.canonical_height:
-                            print(f"  WARNING: inactive pin at h={h} still in coin_set")
+                            print(f"  WARNING: inactive pin at h={h} still in commitment_set")
 
     # ── Report ────────────────────────────────────────────────────────
 

@@ -347,16 +347,21 @@ Response: {"jsonrpc": "2.0", "result": "base64encodedLinearBlockAdapter", "id": 
 
 ## ZK Verification
 
-ZK proof verification in the linear blockchain differs from the original:
+ZK proof verification follows a two-point model ([mempool.md §4](../mempool.md)):
 
-1. **dwowd validates all proofs** before including transactions in blocks
-2. The wallet scanner **does not verify proofs** - it trusts that dwowd has validated them
-3. Scanner's only job is **note decryption** to detect wallet-owned coins
+1. **dwowd validates all proofs** at mempool admission and block acceptance —
+   the first verification point, preventing invalid transactions from propagating.
+2. The wallet scanner **independently verifies ZK proofs** — it does not trust
+   dwowd's validation. This is the second verification point, ensuring a syncing
+   node validates every transaction it did not admit itself.
+3. Scanner verification uses the verifying key declared by the contract's
+   `metadata()` ABI ([type-system.md §8.2](../type-system.md)).
 
-This is a deliberate design choice that simplifies the wallet scanner significantly.
+Both verification points SHALL use the same verifying keys and SHALL produce
+the same acceptance decision for the same transaction. This is the
+Authenticated-Pool invariant ([mempool.md §1](../mempool.md)).
 
 ## Limitations
 
 1. **DarkLeaf tree**: Contract call hierarchy uses DarkLeaf at execution time (`src/linear/src/execution.rs`) — child call traversal is supported.
-2. **Scanner ZK verification**: The wallet scanner independently verifies ZK proofs — it does not trust dwowd's validation.
-3. **Simplified state**: No overlay/rollback system means deterministic, reproducible state — a design feature, not a limitation.
+2. **Simplified state**: No overlay/rollback system means deterministic, reproducible state — a design feature, not a limitation.
