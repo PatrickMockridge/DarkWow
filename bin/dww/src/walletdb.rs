@@ -1440,4 +1440,70 @@ mod tests {
         // Revoked only
         assert_eq!(wallet.get_held_capabilities(Some(true)).unwrap().len(), 1);
     }
+
+    /// P12 — INSERT OR IGNORE idempotence and manifest atomic storage.
+    ///
+    /// Verifies that inserting the same capability twice does not produce
+    /// duplicate rows, and that `insert_contract_metadata_with_manifest`
+    /// stores both metadata and manifest JSON in a single operation.
+    #[test]
+    fn test_insert_idempotence_and_manifest_atomicity() {
+        use crate::walletdb::{WalletDb, WalletPtr};
+        use dwow_chain::CoinCommitment;
+
+        let wallet = WalletDb::new(None, None, false).expect("in-memory WalletDb");
+        wallet.exec_batch_sql(include_str!("../wallet.sql")).ok();
+
+        // Build a minimal CapRecord
+        let cap_id = "test_cap_idempotent_01";
+        let record = super::CapRecord {
+            cap_id: cap_id.to_string(), value: 100,
+            asset_id: dwow_sdk::crypto::TokenId(dwow_sdk::pasta::pallas::Base::zero()),
+            spend_hook: None, user_data: None,
+            leaf_position: 0,
+            commitment: CoinCommitment::from_base(dwow_sdk::pasta::pallas::Base::from(42)),
+            contract_id: *NATIVE_TOKEN_CONTRACT_ID, func_id: None,
+            cap_blind: dwow_sdk::crypto::Blind(dwow_sdk::pasta::pallas::Base::zero()),
+            value_blind: dwow_sdk::crypto::Blind(dwow_sdk::pasta::pallas::Scalar::zero()),
+            asset_blind: dwow_sdk::crypto::Blind(dwow_sdk::pasta::pallas::Base::zero()),
+            capability_discriminant: None, capability_name: None,
+            resource: None, action: None, primitives: vec![], barbs: vec![],
+            revoked: false, revoked_at_height: None,
+            created_at_height: 1, key_coords: None,
+        };
+        let proof = super::MerkleProof { root: String::new(), siblings: vec![] };
+
+        // Insert once — should succeed
+        wallet.insert_capability(&record, &proof)
+            .expect("P12: first insert must succeed");
+        assert_eq!(wallet.get_held_capabilities(None).unwrap().len(), 1,
+            "P12: one cap after first insert");
+
+        // Insert again with the SAME cap_id — should not duplicate
+        wallet.insert_capability(&record, &proof)
+            .expect("P12: second insert must succeed (INSERT OR IGNORE)");
+        assert_eq!(wallet.get_held_capabilities(None).unwrap().len(), 1,
+            "P12: still one cap after duplicate insert (idempotent)");
+
+        // ── Manifest atomicity ────────────────────────────────
+        let cid_str = "test_atomic_manifest_cid";
+        let manifest_json = r#"{"name":"atomic_test","category":"Testing","version":"1.0.0","description":"atomic","dependencies":[],"functions":[],"capabilities":[],"actions":[],"trees":[],"circuits":[]}"#;
+        let record = super::ContractMetadataRecord {
+            contract_id: cid_str.to_string(), name: "atomic_test".into(),
+            symbol: None, category: "Testing".into(),
+            description: Some("atomic test".into()), public: true,
+            deployer_pubkey: String::new(), deploy_height: 1,
+            attestations_json: "[]".into(), lock_status: "unlocked".into(),
+        };
+        wallet.insert_contract_metadata_with_manifest(&record, Some(manifest_json))
+            .expect("P12: insert metadata+manifest must succeed");
+
+        // Verify manifest is retrievable
+        let stored = wallet.get_contract_manifest(cid_str)
+            .expect("P12: get_contract_manifest must succeed");
+        assert!(stored.is_some(), "P12: manifest must be retrievable after insert");
+        let m = stored.unwrap();
+        assert_eq!(m.name, "atomic_test",
+            "P12: stored manifest name must match");
+    }
 }

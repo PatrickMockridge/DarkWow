@@ -1539,4 +1539,553 @@ required_barbs = ["Spend","Mine"]
         assert!(result.capabilities.is_empty(),
             "tripwire: uncovered composition must be dropped — no CapRecord");
     }
+
+    /// P8 — User-deployed contract manifest discovery pipeline.
+    ///
+    /// Exercises the full DeployV1 → manifest extraction → deployment discovery →
+    /// manifest storage → manifest-driven Path 2 typing chain. This is the code
+    /// path that genesis seeding bypasses at wallet init — without this test,
+    /// `from_deploy_ix()`, the 0x4D magic byte, and the DeployV1 manifest handler
+    /// have zero pre-Docker coverage.
+    #[test]
+    fn test_deployv1_manifest_discovery_to_path2_typing() {
+        use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
+        use dwow_sdk::deploy::DeployParamsV1;
+        use dwow_sdk::manifest::ContractManifest;
+        use dwow_serial::Encodable;
+        use dwow_chain::Transaction as ChainTransaction;
+
+        let height_deploy: u32 = 100;
+        let height_call: u32 = 101;
+        let temp_dir = std::env::temp_dir();
+        let keys_path = temp_dir.join("dwow_test_p8.toml");
+        std::fs::write(&keys_path,
+            "[wallet]\nwallet_secret = \"0100000000000000000000000000000000000000000000000000000000000000\"\n").ok();
+        let account_mgr = dwow_accounts::AccountManager::open(
+            &keys_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet",
+        ).expect("AccountManager::open");
+        let _ = std::fs::remove_file(&keys_path);
+        let wallet_sk = account_mgr.secrets().into_iter().next()
+            .expect("secrets");
+        let wallet_pk = PublicKey::from_secret(wallet_sk);
+
+        // Step 1: build a manifest TOML for a synthetic user-deployed contract
+        let deployer_kp = dwow_sdk::crypto::Keypair::random(&mut rand::rngs::OsRng);
+        let contract_id = ContractId::derive_public(deployer_kp.public);
+        let cid_str = bs58::encode(contract_id.to_bytes()).into_string();
+
+        let manifest_toml = r#"
+[contract]
+name = "synthetic_user_contract"
+category = "Testing"
+description = "User-deployed contract for manifest discovery test"
+version = "1.0.0"
+dependencies = []
+
+[[functions]]
+name = "do_thing"
+code = 7
+requires_proof = true
+proof_circuit = "Test_V1"
+
+[[capabilities]]
+discriminant = 1
+name = "thing_cap"
+description = "A capability produced by do_thing"
+primitives = ["SecretKey","Commitment","Nullifier","ContractId","FuncId","AssetId","MerkleNode"]
+note_schema = [
+    { name = "value", type = "u64" },
+    { name = "commitment", type = "pallas_base" },
+]
+
+[[actions]]
+function = "do_thing"
+requires = { type = "none" }
+produces = [{ name = "thing_cap" }]
+required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","ProveInclusion"]
+"#;
+
+        // Step 2: build deploy_ix with 0x4D magic byte + TOML
+        let deploy_ix = {
+            let mut ix = vec![0x4Du8];
+            ix.extend_from_slice(manifest_toml.as_bytes());
+            ix
+        };
+        let manifest_parsed = ContractManifest::from_deploy_ix(&deploy_ix);
+        assert!(manifest_parsed.is_some(), "0x4D magic byte must be detected");
+        let manifest_parsed = manifest_parsed.unwrap();
+        assert!(manifest_parsed.is_ok(), "manifest TOML must parse");
+        let manifest_parsed = manifest_parsed.unwrap();
+        assert_eq!(manifest_parsed.name, "synthetic_user_contract");
+
+        // Step 3: build DeployParamsV1 with this ix
+        let deploy_params = DeployParamsV1 {
+            wasm_bincode: vec![0x00, 0x61, 0x73, 0x6d],
+            public_key: deployer_kp.public,
+            ix: deploy_ix,
+            singleton: false,
+            singleton_name: String::new(),
+        };
+        let mut deploy_call_data = vec![0x00u8];
+        deploy_params.encode(&mut deploy_call_data)
+            .expect("DeployParamsV1 must encode");
+
+        // Step 4: build a block with the DeployV1 transaction
+        let deploy_tx = ChainTransaction {
+            version: 1, inputs: vec![], outputs: vec![],
+            contract_calls: vec![dwow_chain::ContractCall {
+                contract_id: *DEPLOYOOOR_CONTRACT_ID,
+                data: deploy_call_data,
+            }],
+            lock_time: 0, nullifiers: vec![], witness: vec![],
+        };
+        let deploy_block = dwow_chain::Block {
+            header: dwow_chain::BlockHeader {
+                version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
+                merkle_root: blake3::Hash::from_bytes([0u8; 32]),
+                timestamp: 0, target: u32::MAX, nonce: 0,
+                height: height_deploy as u64, uncle_merkle_root: [0u8; 32],
+                total_reward: 0, randomx_key: [0u8; 32],
+                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
+                anchor_monero_hash: [0u8; 32], finality_flags: 0,
+                pow_source: dwow_chain::PowSource::Native,
+            },
+            transactions: vec![deploy_tx],
+        };
+
+        // Step 5: scan the DeployV1 block
+        let mut tree = MerkleTree::new(32);
+        let empty_manifests = BTreeMap::new();
+        let deploy_result = scan_block(&mut tree, &account_mgr, &empty_manifests, &deploy_block);
+        assert_eq!(deploy_result.deployments.len(), 1,
+            "P8: DeployV1 must produce exactly 1 DeploymentDiscovery");
+        let dep = &deploy_result.deployments[0];
+        assert_eq!(dep.contract_id, contract_id,
+            "P8: DeploymentDiscovery.contract_id must match derived ContractId");
+        assert!(dep.manifest_json.is_some(),
+            "P8: DeploymentDiscovery.manifest_json must be Some for a 0x4D-ix deploy");
+        let manifest_json = dep.manifest_json.as_ref().unwrap();
+        let stored_manifest: ContractManifest = serde_json::from_str(manifest_json)
+            .expect("manifest_json must deserialize");
+        assert_eq!(stored_manifest.name, "synthetic_user_contract",
+            "P8: manifest JSON roundtrip must preserve name");
+
+        // Step 6: store manifest via wallet DB (simulating scan_block_linear)
+        let wallet = crate::walletdb::WalletDb::new(None, None, false)
+            .expect("in-memory WalletDb");
+        wallet.exec_batch_sql(include_str!("../wallet.sql")).ok();
+        let record = crate::walletdb::ContractMetadataRecord {
+            contract_id: cid_str.clone(), name: "synthetic_user_contract".into(),
+            symbol: None, category: "Testing".into(),
+            description: Some("test".into()), public: true,
+            deployer_pubkey: bs58::encode(deployer_kp.public.to_bytes()).into_string(),
+            deploy_height: height_deploy, attestations_json: "[]".into(),
+            lock_status: "unlocked".into(),
+        };
+        wallet.insert_contract_metadata_with_manifest(&record, None).ok();
+        wallet.store_manifest(&cid_str, manifest_json)
+            .expect("store_manifest must succeed");
+
+        // Step 7: read back via get_contract_manifest
+        let loaded = wallet.get_contract_manifest(&cid_str)
+            .expect("get_contract_manifest must succeed");
+        assert!(loaded.is_some(), "P8: get_contract_manifest must return stored manifest");
+        let loaded_manifest = loaded.unwrap();
+        let mut manifests: BTreeMap<ContractId, ContractManifest> = BTreeMap::new();
+        manifests.insert(contract_id, loaded_manifest);
+
+        // Step 8: build a contract call block for the user-deployed contract
+        #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
+        struct TestNote { value: u64, commitment: pallas::Base }
+        let note = TestNote { value: 0, commitment: pallas::Base::from(42) };
+        let enc_note = AeadEncryptedNote::encrypt(&note, &wallet_pk, &mut rand::rngs::OsRng)
+            .expect("encrypt");
+        let mut call_data = vec![0x07u8];
+        dwow_serial::Encodable::encode(&enc_note, &mut call_data).ok();
+
+        let call_tx = ChainTransaction {
+            version: 1, inputs: vec![], outputs: vec![],
+            contract_calls: vec![dwow_chain::ContractCall { contract_id, data: call_data }],
+            lock_time: 0, nullifiers: vec![], witness: vec![],
+        };
+        let call_block = dwow_chain::Block {
+            header: dwow_chain::BlockHeader {
+                version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
+                merkle_root: blake3::Hash::from_bytes([0u8; 32]),
+                timestamp: 0, target: u32::MAX, nonce: 0,
+                height: height_call as u64, uncle_merkle_root: [0u8; 32],
+                total_reward: 0, randomx_key: [0u8; 32],
+                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
+                anchor_monero_hash: [0u8; 32], finality_flags: 0,
+                pow_source: dwow_chain::PowSource::Native,
+            },
+            transactions: vec![call_tx],
+        };
+
+        // Step 9: Path 2 types the capability from the user-deployed manifest
+        let mut tree2 = MerkleTree::new(32);
+        let call_result = scan_block(&mut tree2, &account_mgr, &manifests, &call_block);
+        assert!(!call_result.capabilities.is_empty(),
+            "P8: Path 2 must type capability from user-deployed manifest");
+        let cap = &call_result.capabilities[0].cap_record;
+        assert_eq!(cap.capability_name.as_deref(), Some("thing_cap"),
+            "P8: capability name must match manifest");
+        assert_eq!(cap.capability_discriminant, Some(1),
+            "P8: discriminant must match manifest");
+        assert_eq!(cap.contract_id, contract_id,
+            "P8: contract_id must match the user-deployed contract");
+        assert!(!cap.primitives.is_empty(),
+            "P8: primitives must be populated from manifest (not empty vec)");
+        assert!(!cap.barbs.is_empty(),
+            "P8: barbs must be populated from manifest composition");
+        assert_eq!(cap.value, 0, "P8: synthetic capability must carry zero value");
+        assert_eq!(cap.created_at_height, height_call,
+            "P8: created_at_height must match call block height");
+    }
+
+    /// P9 — Nullifier publication and revocation.
+    ///
+    /// Both `match_nullifiers` and `mark_revoked` had zero test coverage before
+    /// this test. Verifies that when a block publishes a nullifier matching a
+    /// held capability, the capability is detected as revoked and filtered from
+    /// unspent queries.
+    #[test]
+    fn test_nullifier_revocation_lifecycle() {
+        let height: u32 = 42;
+        let temp_dir = std::env::temp_dir();
+        let keys_path = temp_dir.join("dwow_test_p9.toml");
+        std::fs::write(&keys_path,
+            "[wallet]\nwallet_secret = \"0100000000000000000000000000000000000000000000000000000000000000\"\n").ok();
+        let account_mgr = dwow_accounts::AccountManager::open(
+            &keys_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet",
+        ).expect("AccountManager::open");
+        let _ = std::fs::remove_file(&keys_path);
+        let sk = account_mgr.secrets().into_iter().next().expect("secrets");
+        let _pk = PublicKey::from_secret(sk);
+
+        // Build a NativeToken output using deterministic values so the wallet
+        // can decrypt it via trial decryption with its master key.
+        let value: u64 = 100_000_000;
+        let coin_blind = Blind(pallas::Base::from(9999));
+        let note = dwow_native_token_contract::client::NativeToken {
+            value,
+            token_id: pallas::Base::zero(),
+            spend_hook: pallas::Base::zero(),
+            user_data: pallas::Base::zero(),
+            coin_blind: coin_blind.inner(),
+            value_blind: pallas::Scalar::zero(),
+            token_blind: pallas::Base::zero(),
+            memo: vec![],
+        };
+        let enc_note = AeadEncryptedNote::encrypt(&note, &_pk, &mut rand::rngs::OsRng)
+            .expect("AEAD encrypt");
+        let mut call_data = vec![0x05u8]; // PoWRewardV1
+        dwow_serial::Encodable::encode(&enc_note, &mut call_data).ok();
+        // Decode the note to verify the wallet sees the same commitment
+        let trial_notes = account_mgr.secrets();
+        let mut found_commitment = None;
+        for trial_sk in &trial_notes {
+            if let Ok(decrypted) = enc_note.decrypt::<dwow_native_token_contract::client::NativeToken>(trial_sk) {
+                let attrs = dwow_native_token_contract::model::CoinAttributes {
+                    version: 0, public_key: _pk, value,
+                    token_id: TokenId(pallas::Base::zero()),
+                    spend_hook: FuncId::from(pallas::Base::zero()),
+                    user_data: pallas::Base::zero(), blind: coin_blind,
+                };
+                let coin = attrs.to_coin();
+                found_commitment = Some(coin);
+                break;
+            }
+        }
+        let commitment = found_commitment.expect("P9: must decrypt note to get commitment");
+
+        // Derive nullifier: nf = poseidon_hash(secret, coin)
+        let nullifier = Nullifier::new(sk, commitment.inner());
+
+        // Insert a CapRecord into the wallet DB representing this held coin
+        let wallet = crate::walletdb::WalletDb::new(None, None, false)
+            .expect("in-memory WalletDb");
+        wallet.exec_batch_sql(include_str!("../wallet.sql")).ok();
+        let cap_id = super::derive_cap_id(&sk, &commitment.to_bytes());
+        let record = super::CapRecord {
+            cap_id: cap_id.clone(), value,
+            asset_id: TokenId(pallas::Base::zero()),
+            spend_hook: None, user_data: None,
+            leaf_position: 0,
+            commitment: CoinCommitment::from_base(commitment.inner()),
+            contract_id: *NATIVE_TOKEN_CONTRACT_ID,
+            func_id: None,
+            cap_blind: coin_blind,
+            value_blind: Blind(pallas::Scalar::zero()),
+            asset_blind: Blind(pallas::Base::zero()),
+            capability_discriminant: None, capability_name: None,
+            resource: None, action: None, primitives: vec![], barbs: vec![],
+            revoked: false, revoked_at_height: None,
+            created_at_height: height, key_coords: None,
+        };
+        let merkle_proof = crate::walletdb::MerkleProof { root: String::new(), siblings: vec![] };
+        wallet.insert_capability(&record, &merkle_proof)
+            .expect("P9: insert must succeed");
+
+        // Verify the cap is visible as unspent
+        let unspent = wallet.get_held_capabilities(Some(false))
+            .expect("get unspent");
+        assert_eq!(unspent.len(), 1, "P9: cap must be visible as unspent");
+        assert_eq!(unspent[0].cap_id, cap_id);
+
+        // Build a block that publishes the nullifier (TransferV1 call)
+        let nf_record = super::NullifierRecord { nullifier };
+        let mut published_nfs = std::collections::BTreeMap::new();
+        published_nfs.insert(nullifier, nf_record);
+
+        // match_nullifiers: should detect the match
+        let secrets = account_mgr.secrets();
+        let existing = wallet.get_held_capabilities(Some(false))
+            .expect("get existing");
+        let published: Vec<super::NullifierRecord> =
+            published_nfs.values().cloned().collect();
+        let revoked_matches = super::match_nullifiers(
+            &existing, &secrets, &published, height,
+        );
+        assert_eq!(revoked_matches.len(), 1,
+            "P9: match_nullifiers must detect the published nullifier");
+        assert_eq!(revoked_matches[0].0, cap_id,
+            "P9: revoked cap_id must match");
+        assert_eq!(revoked_matches[0].1, height,
+            "P9: revoked height must match block height");
+
+        // mark_revoked: mark the cap as spent
+        wallet.mark_revoked(&cap_id, height)
+            .expect("P9: mark_revoked must succeed");
+
+        // Verify the cap is now filtered from unspent queries
+        let unspent_after = wallet.get_held_capabilities(Some(false))
+            .expect("get unspent after revoke");
+        assert!(unspent_after.is_empty(),
+            "P9: unspent caps must be empty after revocation");
+        // But visible in "include revoked" queries
+        let all_caps = wallet.get_held_capabilities(Some(true))
+            .expect("get all caps");
+        assert_eq!(all_caps.len(), 1,
+            "P9: cap must still be visible when include_revoked=true");
+        assert!(all_caps[0].revoked, "P9: cap must be marked revoked");
+        assert_eq!(all_caps[0].revoked_at_height, Some(height),
+            "P9: revoked_at_height must match");
+    }
+
+    /// P10 — Multi-transaction block scan: coinbase + generic Path 2 + TransferV1.
+    ///
+    /// The `scan_block` loop processes transactions sequentially. A block with
+    /// multiple transactions of different types (native coinbase, manifest-driven
+    /// Path 2, native transfer) exercises the full routing logic: NATIVE_TOKEN
+    /// dispatch, DEPLOYOOOR bypass, generic AEAD Path 2, and native output
+    /// discovery — all in one call.
+    #[test]
+    fn test_multi_transaction_block_scan() {
+        use dwow_sdk::capability::{Barb, Primitive};
+        use dwow_sdk::manifest::ContractManifest;
+        use dwow_chain::Transaction;
+
+        let height: u32 = 100;
+        let temp_dir = std::env::temp_dir();
+        let keys_path = temp_dir.join("dwow_test_p10.toml");
+        std::fs::write(&keys_path,
+            "[wallet]\nwallet_secret = \"0100000000000000000000000000000000000000000000000000000000000000\"\n").ok();
+        let account_mgr = dwow_accounts::AccountManager::open(
+            &keys_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet",
+        ).expect("AccountManager::open");
+        let _ = std::fs::remove_file(&keys_path);
+        let sk = account_mgr.secrets().into_iter().next().expect("secrets");
+        let pk = PublicKey::from_secret(sk);
+
+        // ── Tx 1: NativeToken PoWRewardV1 coinbase ─────────────────────
+        let value: u64 = 100_000_000;
+        let coin_blind = Blind(pallas::Base::from(9999));
+        let note = dwow_native_token_contract::client::NativeToken {
+            value, token_id: pallas::Base::zero(),
+            spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
+            coin_blind: coin_blind.inner(),
+            value_blind: pallas::Scalar::zero(),
+            token_blind: pallas::Base::zero(), memo: vec![],
+        };
+        let enc_note = AeadEncryptedNote::encrypt(&note, &pk, &mut rand::rngs::OsRng)
+            .expect("AEAD encrypt");
+        let mut coinbase_data = vec![0x05u8];
+        dwow_serial::Encodable::encode(&enc_note, &mut coinbase_data).ok();
+
+        // ── Tx 2: Foreign Path 2 capability (manifest-driven) ─────────
+        let manifest_toml = r#"
+[contract]
+name = "multi_tx_test"
+category = "Testing"
+description = "Multi-tx block scan test"
+version = "1.0.0"
+[[functions]]
+name = "emit"
+code = 1
+[[capabilities]]
+discriminant = 0
+name = "event"
+primitives = ["SecretKey","Commitment","Nullifier","ContractId","FuncId","AssetId","MerkleNode"]
+note_schema = [{ name = "value", type = "u64" }, { name = "commitment", type = "pallas_base" }]
+[[actions]]
+function = "emit"
+requires = { type = "none" }
+produces = [{ name = "event" }]
+required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
+"#;
+        let manifest = ContractManifest::from_toml(manifest_toml).unwrap();
+        let foreign_cid = ContractId::from_bytes([0u8; 32]).unwrap();
+        let mut manifests: BTreeMap<ContractId, ContractManifest> = BTreeMap::new();
+        manifests.insert(foreign_cid, manifest);
+
+        #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
+        struct Path2Note { value: u64, commitment: pallas::Base }
+        let p2note = Path2Note { value: 0, commitment: pallas::Base::from(77) };
+        let enc_p2note = AeadEncryptedNote::encrypt(&p2note, &pk, &mut rand::rngs::OsRng)
+            .expect("AEAD encrypt");
+        let mut p2_data = vec![0x01u8];
+        dwow_serial::Encodable::encode(&enc_p2note, &mut p2_data).ok();
+
+        // ── Block with 2 transactions ─────────────────────────────────
+        let block = dwow_chain::Block {
+            header: dwow_chain::BlockHeader {
+                version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
+                merkle_root: blake3::Hash::from_bytes([0u8; 32]),
+                timestamp: 0, target: u32::MAX, nonce: 0,
+                height: height as u64, uncle_merkle_root: [0u8; 32],
+                total_reward: value, randomx_key: [0u8; 32],
+                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
+                anchor_monero_hash: [0u8; 32], finality_flags: 0,
+                pow_source: dwow_chain::PowSource::Native,
+            },
+            transactions: vec![
+                Transaction {
+                    version: 1, inputs: vec![], outputs: vec![],
+                    contract_calls: vec![dwow_chain::ContractCall {
+                        contract_id: *NATIVE_TOKEN_CONTRACT_ID, data: coinbase_data,
+                    }],
+                    lock_time: 0, nullifiers: vec![], witness: vec![],
+                },
+                Transaction {
+                    version: 1, inputs: vec![], outputs: vec![],
+                    contract_calls: vec![dwow_chain::ContractCall {
+                        contract_id: foreign_cid, data: p2_data,
+                    }],
+                    lock_time: 0, nullifiers: vec![], witness: vec![],
+                },
+            ],
+        };
+
+        let mut tree = MerkleTree::new(32);
+        let result = scan_block(&mut tree, &account_mgr, &manifests, &block);
+
+        // Path 1: coinbase output discovered
+        assert_eq!(result.native_outputs.len(), 1,
+            "P10: must discover 1 coinbase output (Path 1)");
+        assert_eq!(result.native_outputs[0].cap_record.value, value,
+            "P10: coinbase value must match");
+
+        // Path 2: foreign capability typed from manifest
+        assert_eq!(result.capabilities.len(), 1,
+            "P10: must discover 1 Path 2 capability");
+        let p2cap = &result.capabilities[0].cap_record;
+        assert_eq!(p2cap.contract_id, foreign_cid,
+            "P10: Path 2 cap must reference foreign contract");
+        assert!(!p2cap.primitives.is_empty(),
+            "P10: Path 2 cap must have typed primitives");
+    }
+
+    /// P11 — FeeV1 output discovery.
+    ///
+    /// `discover_native_token_outputs` handles FeeV1 (0x00), but before this
+    /// test only PoWRewardV1 (0x05) and TransferV1 (0x03) were exercised.
+    /// Verifies that a FeeV1 call with an AEAD-encrypted change note is
+    /// discovered and tagged with the correct source.
+    #[test]
+    fn test_feev1_output_discovery() {
+        use dwow_native_token_contract::client::NativeToken;
+        use dwow_native_token_contract::model::CoinAttributes;
+
+        let height: u32 = 42;
+        let temp_dir = std::env::temp_dir();
+        let keys_path = temp_dir.join("dwow_test_p11.toml");
+        std::fs::write(&keys_path,
+            "[wallet]\nwallet_secret = \"0100000000000000000000000000000000000000000000000000000000000000\"\n").ok();
+        let account_mgr = dwow_accounts::AccountManager::open(
+            &keys_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet",
+        ).expect("AccountManager::open");
+        let _ = std::fs::remove_file(&keys_path);
+        let sk = account_mgr.secrets().into_iter().next().expect("secrets");
+        let pk = PublicKey::from_secret(sk);
+
+        // Build a FeeV1 change output note (same structure as any native token note)
+        let value: u64 = 500_000_000;
+        let coin_blind = Blind(pallas::Base::from(12345));
+        let note = NativeToken {
+            value, token_id: pallas::Base::zero(),
+            spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
+            coin_blind: coin_blind.inner(),
+            value_blind: pallas::Scalar::zero(),
+            token_blind: pallas::Base::zero(), memo: vec![],
+        };
+        let enc_note = AeadEncryptedNote::encrypt(&note, &pk, &mut rand::rngs::OsRng)
+            .expect("AEAD encrypt");
+
+        // FeeV1 call data: [0x00 selector][FeeParamsV1]
+        // We only need the note bytes — the scanner slides byte-by-byte looking
+        // for AeadEncryptedNote. Wrap in a minimal FeeParamsV1 structure.
+        #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
+        struct FeeInput { fee: u64, nullifier: pallas::Base, tx_nonce: pallas::Base }
+        #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
+        struct FeeOutput { coin: pallas::Base, note: AeadEncryptedNote }
+        #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
+        struct FeeParams { input: FeeInput, output: FeeOutput, tx_binding: pallas::Base }
+
+        let fee_params = FeeParams {
+            input: FeeInput { fee: 42_000_000, nullifier: pallas::Base::zero(), tx_nonce: pallas::Base::zero() },
+            output: FeeOutput { coin: pallas::Base::zero(), note: enc_note },
+            tx_binding: pallas::Base::zero(),
+        };
+        let mut call_data = vec![0x00u8]; // FeeV1 function code
+        dwow_serial::Encodable::encode(&fee_params, &mut call_data).ok();
+
+        let block = dwow_chain::Block {
+            header: dwow_chain::BlockHeader {
+                version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
+                merkle_root: blake3::Hash::from_bytes([0u8; 32]),
+                timestamp: 0, target: u32::MAX, nonce: 0,
+                height: height as u64, uncle_merkle_root: [0u8; 32],
+                total_reward: 0, randomx_key: [0u8; 32],
+                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
+                anchor_monero_hash: [0u8; 32], finality_flags: 0,
+                pow_source: dwow_chain::PowSource::Native,
+            },
+            transactions: vec![dwow_chain::Transaction {
+                version: 1, inputs: vec![], outputs: vec![],
+                contract_calls: vec![dwow_chain::ContractCall {
+                    contract_id: *NATIVE_TOKEN_CONTRACT_ID, data: call_data,
+                }],
+                lock_time: 0, nullifiers: vec![], witness: vec![],
+            }],
+        };
+
+        let mut tree = MerkleTree::new(32);
+        let result = scan_block(&mut tree, &account_mgr, &BTreeMap::new(), &block);
+
+        // Must discover the fee change output
+        assert!(!result.native_outputs.is_empty(),
+            "P11: FeeV1 change output must be discovered (function_code 0x00)");
+        let cap = &result.native_outputs[0].cap_record;
+        assert_eq!(cap.value, value,
+            "P11: FeeV1 change output value must match");
+        assert_eq!(cap.asset_id.inner(), pallas::Base::zero(),
+            "P11: FeeV1 change must carry DRKW asset_id");
+        assert_eq!(cap.created_at_height, height,
+            "P11: FeeV1 change created_at_height must match");
+    }
 }
