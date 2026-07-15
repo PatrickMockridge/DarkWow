@@ -64,23 +64,43 @@ WalletHandle* dwow_wallet_open(
 /** Free a full wallet handle. */
 void dwow_wallet_free(WalletHandle* handle);
 
+/* ── Lifecycle (extended) ─────────────────────────────────────── */
+
+/** Get the wallet version string.
+ *
+ *  @return Static C string (e.g. "0.5.0"). Never returns NULL. */
+const char* dwow_wallet_version(void);
+
+/** Get the last error message from a wallet handle.
+ *
+ *  @param handle  WalletHandle to query
+ *  @param out_buf Caller-allocated buffer
+ *  @param buf_len Buffer size in bytes
+ *  @return        Error length (0 if no error), or -1 on invalid args. */
+int32_t dwow_wallet_last_error(
+    const WalletHandle* handle,
+    char* out_buf,
+    int32_t buf_len);
+
 /* ── Key derivation ───────────────────────────────────────────── */
 
-/** Derive the per-block secret key sk_H for a given contract and height.
+/** Derive the per-block address for a given contract and height.
  *
- *  sk_H = derive_instance(sk_owner, contract_id, height.to_le_bytes())
- *  Same derivation as the mining node — deterministic, zero shared state.
+ *  Uses AccountManager::per_block_address — the sanctioned delegation
+ *  path. NEVER exports raw secret bytes.
  *
  *  @param account       Open AccountManager handle
  *  @param contract_id   32 bytes, the contract's ID
- *  @param height        Block height (u32, little-endian)
- *  @param out_secret    Output buffer, 32 bytes written on success
- *  @return              0 on success, -1 on error */
-int32_t dwow_wallet_derive_key(
+ *  @param height        Block height (u32)
+ *  @param out_address   Output buffer for the Testnet address C string
+ *  @param out_len       Buffer size (must be >= 64)
+ *  @return              Bytes written (including NUL), or 0 on error. */
+int32_t dwow_wallet_derive_address(
     const AccountManagerHandle* account,
     const uint8_t* contract_id,
     uint32_t height,
-    uint8_t* out_secret);
+    char* out_address,
+    int32_t out_len);
 
 /* ── Scan ──────────────────────────────────────────────────────── */
 
@@ -156,6 +176,42 @@ int32_t dwow_wallet_cap_commitment(
  *
  *  @return 1 if revoked, 0 if active, -1 on error. */
 int32_t dwow_wallet_cap_revoked(const CapRecordHandle* handle);
+
+/** Get the asset ID (TokenId) for a capability (always 32 bytes).
+ *
+ *  @param out_buf  Caller-allocated buffer, must be >= 32 bytes
+ *  @param buf_len  Buffer size in bytes
+ *  @return         Bytes written (always 32), or -1 on error. */
+int32_t dwow_wallet_cap_token_id(
+    const CapRecordHandle* handle,
+    uint8_t* out_buf,
+    int32_t buf_len);
+
+/** Get the leaf position for a capability in its Merkle tree.
+ *
+ *  @return Leaf position (u64), or 0 on error. */
+uint64_t dwow_wallet_cap_leaf_position(const CapRecordHandle* handle);
+
+/** Get the default address for this wallet.
+ *
+ *  @param handle   Open WalletHandle
+ *  @param out_buf  Caller-allocated buffer
+ *  @param buf_len  Buffer size in bytes
+ *  @return         Bytes written (excluding NUL), or -1 on error. */
+int32_t dwow_wallet_default_address(
+    const WalletHandle* handle,
+    char* out_buf,
+    int32_t buf_len);
+
+/** Get the current local chain height.
+ *
+ *  @return Block height, or 0 if uninitialized/error. */
+uint64_t dwow_wallet_chain_height(const WalletHandle* handle);
+
+/** Run a self-test of the AEAD encrypt/decrypt pipeline.
+ *
+ *  @return 1 if the pipeline is working, 0 on failure. */
+int32_t dwow_wallet_aead_self_test(const WalletHandle* handle);
 
 /* ── Balance ───────────────────────────────────────────────────── */
 
