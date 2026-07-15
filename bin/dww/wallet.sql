@@ -24,13 +24,15 @@ CREATE TABLE IF NOT EXISTS chain_blocks (
 
 -- Held capabilities: retained capabilities with Merkle proof metadata
 -- V.1 migration (2026-07): cryptographic fields changed from TEXT (bs58) to BLOB.
--- Migration adds new BLOB columns, copies data from old TEXT columns, then drops
--- old columns. See walletdb.rs::migrate_v1_caprecord().
+-- V.2 migration (2026-07): token_id/token_blind columns renamed to
+-- asset_id/asset_blind (ocap.md grammar — "token" is reserved for the DRKW
+-- native token). Existing DBs are migrated via ALTER TABLE RENAME COLUMN in
+-- lib.rs::initialize_wallet().
 CREATE TABLE IF NOT EXISTS held_capabilities (
     cap_id TEXT PRIMARY KEY NOT NULL,
     value INTEGER NOT NULL,
-    token_id_blob BLOB,
-    token_id TEXT,
+    asset_id_blob BLOB,
+    asset_id TEXT,
     spend_hook_blob BLOB,
     spend_hook TEXT,
     user_data_blob BLOB,
@@ -45,8 +47,8 @@ CREATE TABLE IF NOT EXISTS held_capabilities (
     cap_blind TEXT,
     value_blind_blob BLOB,
     value_blind TEXT,
-    token_blind_blob BLOB,
-    token_blind TEXT,
+    asset_blind_blob BLOB,
+    asset_blind TEXT,
     revoked INTEGER NOT NULL DEFAULT 0,
     revoked_at_height INTEGER,
     created_at_height INTEGER NOT NULL,
@@ -64,7 +66,7 @@ CREATE TABLE IF NOT EXISTS held_capabilities (
     key_coords_blob BLOB
 );
 
-CREATE INDEX IF NOT EXISTS idx_held_capabilities_token_id ON held_capabilities(token_id);
+CREATE INDEX IF NOT EXISTS idx_held_capabilities_asset_id ON held_capabilities(asset_id);
 CREATE INDEX IF NOT EXISTS idx_held_capabilities_revoked ON held_capabilities(revoked);
 
 -- Coin Merkle proofs table: stores Merkle paths

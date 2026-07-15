@@ -429,6 +429,32 @@ impl Dww {
 
     /// Initialize wallet with tables for `Dww`.
     pub fn initialize_wallet(&self) -> WalletDbResult<()> {
+        // V.2 migration (T2 taxonomy): rename token_id/token_blind columns to
+        // asset_id/asset_blind (ocap.md grammar — "token" is reserved for the
+        // DRKW native token). MUST run BEFORE wallet.sql: its
+        // CREATE INDEX ... ON held_capabilities(asset_id) fails on a V.1 DB
+        // whose column is still named token_id. On a fresh DB the table does
+        // not exist yet and each ALTER fails harmlessly (best-effort, same
+        // pattern as the ADD COLUMN migrations below). Requires SQLite ≥3.25.
+        let _ = self.wallet.exec_batch_sql(
+            "ALTER TABLE held_capabilities RENAME COLUMN token_id_blob TO asset_id_blob;"
+        );
+        let _ = self.wallet.exec_batch_sql(
+            "ALTER TABLE held_capabilities RENAME COLUMN token_id TO asset_id;"
+        );
+        let _ = self.wallet.exec_batch_sql(
+            "ALTER TABLE held_capabilities RENAME COLUMN token_blind_blob TO asset_blind_blob;"
+        );
+        let _ = self.wallet.exec_batch_sql(
+            "ALTER TABLE held_capabilities RENAME COLUMN token_blind TO asset_blind;"
+        );
+        // Drop the V.1 index name — RENAME COLUMN rewrites the indexed column
+        // but keeps the old index name; wallet.sql recreates it as
+        // idx_held_capabilities_asset_id.
+        let _ = self.wallet.exec_batch_sql(
+            "DROP INDEX IF EXISTS idx_held_capabilities_token_id;"
+        );
+
         // Initialize wallet schema
         self.wallet.exec_batch_sql(include_str!("../wallet.sql"))?;
 
@@ -503,7 +529,7 @@ impl Dww {
 
         // Register default DRKW native token alias so `transfer 1.0 DRKW <addr>` works
         // The tokens table is gone — a token's identity is discovered via scan,
-        // not declared at init (capabilities carry their own token_id).
+        // not declared at init (capabilities carry their own asset_id).
         Ok(())
     }
 
@@ -620,7 +646,7 @@ impl Dww {
 
     // get_token REMOVED — dead code. Only called by parse_token_pair
     // (also removed — zero callers). Token resolution is handled
-    // generically through manifests and CapRecord.token_id.
+    // generically through manifests and CapRecord.asset_id.
 
     /// Get aliases mapped by token
     pub fn get_aliases_mapped_by_asset(&self) -> Result<HashMap<String, String>> {
@@ -664,18 +690,18 @@ impl WalletStateProvider for Dww {
         Ok(bs58::encode(public.to_bytes()).into_string())
     }
 
-    fn held_capabilities_by_asset(&self, token_id: &str) -> std::result::Result<Vec<CapInfo>, String> {
+    fn held_capabilities_by_asset(&self, asset_id: &str) -> std::result::Result<Vec<CapInfo>, String> {
         let cap_records = self.wallet.get_held_capabilities(Some(false))
             .map_err(|e| format!("{:?}", e))?;
-        // If token_id is empty, return all held caps. Otherwise, decode
-        // token_id from bs58 for byte comparison.
-        let filter_bytes: Option<[u8; 32]> = if token_id.is_empty() {
+        // If asset_id is empty, return all held caps. Otherwise, decode
+        // asset_id from bs58 for byte comparison.
+        let filter_bytes: Option<[u8; 32]> = if asset_id.is_empty() {
             None
         } else {
-            let decoded = bs58::decode(token_id).into_vec()
-                .map_err(|e| format!("bs58 decode token_id: {}", e))?;
+            let decoded = bs58::decode(asset_id).into_vec()
+                .map_err(|e| format!("bs58 decode asset_id: {}", e))?;
             let arr: [u8; 32] = decoded.try_into()
-                .map_err(|_| format!("Invalid token_id length"))?;
+                .map_err(|_| format!("Invalid asset_id length"))?;
             Some(arr)
         };
         Ok(cap_records.iter()
@@ -683,7 +709,7 @@ impl WalletStateProvider for Dww {
             // are never spendable value (see capability_balance).
             .filter(|c| c.contract_id == *NATIVE_TOKEN_CONTRACT_ID)
             .filter(|c| match &filter_bytes {
-                Some(ref bytes) => &c.token_id.to_bytes().to_vec() == bytes,
+                Some(ref bytes) => &c.asset_id.to_bytes().to_vec() == bytes,
                 None => true,
             })
             .map(|c| CapInfo {
@@ -696,11 +722,11 @@ impl WalletStateProvider for Dww {
                     .and_then(|coords| self.account_mgr.resolve_key(coords).ok())
                     .map(|k| bs58::encode(k.expose_secret().inner().to_repr()).into_string())
                     .unwrap_or_default(),
-                token_id: c.token_id,
+                asset_id: c.asset_id,
                 leaf_position: c.leaf_position,
                 cap_blind: c.cap_blind,
                 value_blind: c.value_blind,
-                token_blind: c.token_blind,
+                asset_blind: c.asset_blind,
                 spend_hook: c.spend_hook,
                 user_data: c.user_data,
             })
@@ -1040,13 +1066,13 @@ impl Dww {
         for record in cap_records {
             // Inflation guard: only the native token contract carries spendable
             // value. Foreign/composed capabilities are non-fungible metadata and
-            // MUST NEVER be summed into a token balance, regardless of token_id.
+            // MUST NEVER be summed into a token balance, regardless of asset_id.
             if record.contract_id != *NATIVE_TOKEN_CONTRACT_ID {
                 continue
             }
-            // token_id is now [u8; 32] — encode as bs58 for HashMap key (display boundary)
-            let token_key = bs58::encode(&record.token_id.to_bytes()).into_string();
-            *balances.entry(token_key).or_insert(0) += record.value;
+            // asset_id is now [u8; 32] — encode as bs58 for HashMap key (display boundary)
+            let asset_key = bs58::encode(&record.asset_id.to_bytes()).into_string();
+            *balances.entry(asset_key).or_insert(0) += record.value;
         }
 
         Ok(balances)

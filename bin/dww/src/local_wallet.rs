@@ -96,9 +96,9 @@ impl LocalWallet {
             if cap.contract_id != *NATIVE_TOKEN_CONTRACT_ID {
                 continue
             }
-            // token_id is now [u8; 32] — encode as bs58 for HashMap key (display boundary)
-            let token_key = bs58::encode(&cap.token_id.to_bytes()).into_string();
-            *balances.entry(token_key).or_insert(0) += cap.value;
+            // asset_id is now [u8; 32] — encode as bs58 for HashMap key (display boundary)
+            let asset_key = bs58::encode(&cap.asset_id.to_bytes()).into_string();
+            *balances.entry(asset_key).or_insert(0) += cap.value;
         }
         Ok(balances)
     }

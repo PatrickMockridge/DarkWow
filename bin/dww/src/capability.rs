@@ -25,7 +25,7 @@ use crate::{
 pub struct TypedCapability {
     pub cap_id: String,
     pub value: u64,
-    pub token_id: String,
+    pub asset_id: String,
     pub contract_id: String,
     pub contract_name: String,
     /// Human-readable capability name from manifest (e.g., "creator", "member")
@@ -93,8 +93,8 @@ impl CapabilityResolver {
 
         let mut typed = Vec::with_capacity(held.len());
         for cap in &held {
-            let token_id_str = bs58::encode(&cap.token_id.to_bytes()).into_string();
-            // Fix the mis-key bug: manifest lookups key on contract_id, not token_id.
+            let asset_id_str = bs58::encode(&cap.asset_id.to_bytes()).into_string();
+            // Fix the mis-key bug: manifest lookups key on contract_id, not asset_id.
             let contract_id_str = bs58::encode(&cap.contract_id.to_bytes()).into_string();
 
             let contract_name = self.wallet
@@ -111,7 +111,7 @@ impl CapabilityResolver {
             typed.push(TypedCapability {
                 cap_id: cap.cap_id.clone(),
                 value: cap.value,
-                token_id: token_id_str,
+                asset_id: asset_id_str,
                 contract_id: contract_id_str,
                 contract_name,
                 capability_name,

@@ -62,7 +62,7 @@ pub fn prettytable_held_capabilities(
     let mut table = Table::new();
     table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
     table.set_titles(row![
-        "Token ID",
+        "Asset ID",
         "Aliases",
         "Value",
         "Spend Hook",
@@ -70,8 +70,8 @@ pub fn prettytable_held_capabilities(
     ]);
 
     for cap in caps {
-        let token_str = bs58::encode(&cap.token_id.to_bytes()).into_string();
-        let alias = match alimap.get(&token_str) {
+        let asset_str = bs58::encode(&cap.asset_id.to_bytes()).into_string();
+        let alias = match alimap.get(&asset_str) {
             Some(v) => v,
             None => "-",
         };
@@ -88,7 +88,7 @@ pub fn prettytable_held_capabilities(
         };
 
         table.add_row(row![
-            token_str,
+            asset_str,
             alias,
             format!(
                 "{} ({})",

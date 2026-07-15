@@ -182,8 +182,9 @@ fn run() -> Result<()> {
             }
             WalletCommand::Wallet { command: WalletSubcmd::Capabilities } => {
                 for cap in wallet.capabilities()? {
-                    let token_str = bs58::encode(&cap.token_id.to_bytes()).into_string();
-                    println!("{} value={} token={}", cap.cap_id, cap.value, token_str);
+                    let asset_str = bs58::encode(&cap.asset_id.to_bytes()).into_string();
+                    // Display key stays "token=" until T4 (API/CLI surface renames).
+                    println!("{} value={} token={}", cap.cap_id, cap.value, asset_str);
                 }
                 Ok(())
             }

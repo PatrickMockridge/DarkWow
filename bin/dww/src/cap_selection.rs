@@ -62,7 +62,7 @@ pub struct CapSelection {
 /// Returns `CapSelection` or an error if insufficient funds.
 pub fn select_caps(
     available: &[CapRecord],
-    token_id: &TokenId,
+    asset_id: &TokenId,
     transfer_amount: u64,
     fee_amount: u64,
 ) -> Result<CapSelection> {
@@ -71,13 +71,13 @@ pub fn select_caps(
     // Filter to matching asset
     let matching: Vec<&CapRecord> = available
         .iter()
-        .filter(|c| &c.token_id == token_id && !c.revoked && c.contract_id == *NATIVE_TOKEN_CONTRACT_ID)
+        .filter(|c| &c.asset_id == asset_id && !c.revoked && c.contract_id == *NATIVE_TOKEN_CONTRACT_ID)
         .collect();
 
     if matching.is_empty() {
         return Err(Error::Custom(format!(
             "No retained capabilities for asset {}",
-            bs58::encode(&token_id.to_bytes()).into_string()
+            bs58::encode(&asset_id.to_bytes()).into_string()
         )));
     }
 
@@ -132,7 +132,7 @@ pub fn select_caps(
 /// Used when the transfer cap(s) should not also pay the fee
 /// (e.g., transfer is in a non-DRKW asset, or privacy preference).
 ///
-/// `fee_token_id` is the asset ID used for fee payment
+/// `fee_asset_id` is the asset ID used for fee payment
 /// (typically the DRKW native token).
 ///
 /// Returns the selected fee capability or an error.
@@ -140,12 +140,12 @@ pub fn select_fee_cap(
     available: &[CapRecord],
     exclude_cap_ids: &[String],
     fee_amount: u64,
-    fee_token_id: &TokenId,
+    fee_asset_id: &TokenId,
 ) -> Result<CapRecord> {
     let fee_caps: Vec<&CapRecord> = available
         .iter()
         .filter(|c| {
-            &c.token_id == fee_token_id
+            &c.asset_id == fee_asset_id
                 && !c.revoked
                 && c.contract_id == *NATIVE_TOKEN_CONTRACT_ID
                 && !exclude_cap_ids.contains(&c.cap_id)
@@ -180,11 +180,11 @@ mod tests {
         TokenId::from_bytes(arr).unwrap()
     }
 
-    fn make_cap(cap_id: &str, token_label: &str, value: u64) -> CapRecord {
+    fn make_cap(cap_id: &str, asset_label: &str, value: u64) -> CapRecord {
         CapRecord {
             cap_id: cap_id.to_string(),
             value,
-            token_id: tid(token_label),
+            asset_id: tid(asset_label),
             spend_hook: None,
             user_data: None,
             leaf_position: 0,
@@ -193,7 +193,7 @@ mod tests {
             func_id: None,
             cap_blind: BaseBlind::from(0u64),
             value_blind: Blind(pallas::Scalar::from(0u64)),
-            token_blind: BaseBlind::from(0u64),
+            asset_blind: BaseBlind::from(0u64),
             capability_discriminant: None,
             capability_name: None,
             resource: None,

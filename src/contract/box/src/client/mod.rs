@@ -21,47 +21,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Box contract client — wallet-side capability construction.
-//!
-//! Provides parameter construction for PutV1 and TakeV1, and the
-//! ContractClient impl for the wallet's generic dispatch.
+//! Box contract client — ZK circuit binary constants.
 
 /// ZK circuit binary constants for client-side proof generation.
 pub mod zkbins;
 
-use dwow_sdk::contract_client::{ContractClient, WalletStateProvider};
-
-use crate::model::{PutParamsV1, TakeParamsV1};
-
-/// Box contract client.
-pub struct BoxClient;
-
-impl ContractClient for BoxClient {
-    fn contract_name(&self) -> &'static str {
-        "box"
-    }
-
-    fn function_selector(&self, function: &str) -> Option<u8> {
-        match function {
-            "PutV1" => Some(0x01),
-            "TakeV1" => Some(0x02),
-            _ => None,
-        }
-    }
-
-    fn supported_functions(&self) -> Vec<&'static str> {
-        vec!["PutV1", "TakeV1"]
-    }
-
-    fn build(
-        &self,
-        function: &str,
-        _params: &str,
-        _wallet_state: &dyn WalletStateProvider,
-    ) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String> {
-        match function {
-            "PutV1" | "TakeV1" => Ok((vec![], vec![])),
-            _ => Err(format!("Box: unsupported function '{}'", function)),
-        }
-    }
-}
+// BoxClient REMOVED (T2a — phantom-code-removed-first, 2026-07-15).
+// The `impl ContractClient` stub was wallet grammar (WalletStateProvider) in a
+// contract crate with zero consumers. Per wallet.md §6.4 / type-system.md §13
+// (Box is the worked example: five primitives, five barbs, zero Box-specific
+// code), Box is exercised through the generic manifest path — no per-contract
+// wallet client. There is native token and there are capabilities; that is it.

@@ -56,14 +56,14 @@ pub type WalletPtr = Arc<WalletDb>;
 pub struct CapRecord {
     pub cap_id: String,
     pub value: u64,
-    /// TokenId (↓denominate) — typed per type-system.md §8.1
-    pub token_id: TokenId,
+    /// AssetId (↓denominate) — typed per type-system.md §8.1
+    pub asset_id: TokenId,
     /// Spend hook (↓gate) — spending condition
     pub spend_hook: Option<FuncId>,
     /// Raw user data field element
     pub user_data: Option<[u8; 32]>,
     pub leaf_position: u64,
-    /// Coin commitment (↓commit) — poseidon_hash(coin_attrs)
+    /// Capability commitment (↓commit) — poseidon_hash(cap_attrs)
     pub commitment: CoinCommitment,
     /// ContractId (↓dispatch) — the contract this capability routes to
     pub contract_id: ContractId,
@@ -72,12 +72,12 @@ pub struct CapRecord {
     /// Capability discriminant from the contract manifest (u8).
     /// None for Path 1 (native token) capabilities or pre-manifest discoveries.
     pub capability_discriminant: Option<u8>,
-    /// BaseBlind — coin blinding factor
+    /// BaseBlind — capability commitment blinding factor
     pub cap_blind: BaseBlind,
     /// ScalarBlind — value blinding factor
     pub value_blind: ScalarBlind,
-    /// BaseBlind — token blinding factor
-    pub token_blind: BaseBlind,
+    /// BaseBlind — asset blinding factor
+    pub asset_blind: BaseBlind,
     pub revoked: bool,
     pub revoked_at_height: Option<u32>,
     pub created_at_height: u32,
@@ -112,7 +112,7 @@ pub struct MerkleProof {
 
 /// Helper: convert a 32-byte array into a typed crypto wrapper.
 /// Used by SELECT readers to reconstruct CapRecord from stored BLOBs.
-fn bytes_to_token_id(bytes: [u8; 32]) -> WalletDbResult<TokenId> {
+fn bytes_to_asset_id(bytes: [u8; 32]) -> WalletDbResult<TokenId> {
     TokenId::from_bytes(bytes).map_err(|e| WalletDbError::QueryExecutionFailed)
 }
 fn bytes_to_contract_id(bytes: [u8; 32]) -> WalletDbResult<ContractId> {
@@ -253,10 +253,10 @@ impl WalletDb {
     pub fn get_held_capabilities(&self, revoked: Option<bool>) -> WalletDbResult<Vec<CapRecord>> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let mut stmt = conn.prepare(
-            "SELECT cap_id, value, token_id_blob, token_id, spend_hook_blob, spend_hook,
+            "SELECT cap_id, value, asset_id_blob, asset_id, spend_hook_blob, spend_hook,
                     user_data_blob, user_data,
                     leaf_position, commitment_blob, commitment, cap_blind_blob, cap_blind,
-                    value_blind_blob, value_blind, token_blind_blob, token_blind,
+                    value_blind_blob, value_blind, asset_blind_blob, asset_blind,
                     contract_id_blob, func_id_blob, capability_discriminant,
                     revoked, revoked_at_height, created_at_height,
                     capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob
@@ -268,8 +268,8 @@ impl WalletDb {
         let mut rows = stmt.query(params![revoked_param])?;
 
         // Column index constants for the SELECT above
-        const C_TOKEN_BLOB: usize = 2;
-        const C_TOKEN_TEXT: usize = 3;
+        const C_ASSET_BLOB: usize = 2;
+        const C_ASSET_TEXT: usize = 3;
         const C_SPEND_BLOB: usize = 4;
         const C_SPEND_TEXT: usize = 5;
         const C_USER_BLOB: usize = 6;
@@ -280,8 +280,8 @@ impl WalletDb {
         const C_CAPBLIND_TEXT: usize = 12;
         const C_VALBLIND_BLOB: usize = 13;
         const C_VALBLIND_TEXT: usize = 14;
-        const C_TOKBLIND_BLOB: usize = 15;
-        const C_TOKBLIND_TEXT: usize = 16;
+        const C_ASSETBLIND_BLOB: usize = 15;
+        const C_ASSETBLIND_TEXT: usize = 16;
         const C_CONTRACT_BLOB: usize = 17;
         const C_FUNC_BLOB: usize = 18;
         const C_DISCRIMINANT: usize = 19;
@@ -357,8 +357,8 @@ impl WalletDb {
                 Ok(Some(row)) => {
                     let cap_id: String = row.get(0).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let value: i64 = row.get(1).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let token_id = bytes_to_token_id(
-                        read_blob32_text_fallback(&row, C_TOKEN_BLOB, C_TOKEN_TEXT)
+                    let asset_id = bytes_to_asset_id(
+                        read_blob32_text_fallback(&row, C_ASSET_BLOB, C_ASSET_TEXT)
                             .map_err(|_| WalletDbError::QueryExecutionFailed)?
                     )?;
                     let spend_hook: Option<FuncId> = match read_opt_blob32_text_fallback(&row, C_SPEND_BLOB, C_SPEND_TEXT)
@@ -382,8 +382,8 @@ impl WalletDb {
                         read_blob32_text_fallback(&row, C_VALBLIND_BLOB, C_VALBLIND_TEXT)
                             .map_err(|_| WalletDbError::QueryExecutionFailed)?
                     )?;
-                    let token_blind = bytes_to_base_blind(
-                        read_blob32_text_fallback(&row, C_TOKBLIND_BLOB, C_TOKBLIND_TEXT)
+                    let asset_blind = bytes_to_base_blind(
+                        read_blob32_text_fallback(&row, C_ASSETBLIND_BLOB, C_ASSETBLIND_TEXT)
                             .map_err(|_| WalletDbError::QueryExecutionFailed)?
                     )?;
                     let contract_id = match row.get::<_, Option<Vec<u8>>>(C_CONTRACT_BLOB) {
@@ -425,7 +425,7 @@ impl WalletDb {
                         cap_id,
                         key_coords,
                         value: value as u64,
-                        token_id,
+                        asset_id,
                         spend_hook,
                         user_data,
                         leaf_position: leaf_position as u64,
@@ -434,7 +434,7 @@ impl WalletDb {
                         func_id,
                         cap_blind,
                         value_blind,
-                        token_blind,
+                        asset_blind,
                         capability_discriminant: capability_discriminant.map(|d| d as u8),
                         revoked: spent_val != 0,
                         revoked_at_height: revoked_at_height.map(|h| h as u32),
@@ -454,32 +454,32 @@ impl WalletDb {
         Ok(caps)
     }
 
-    /// Get held capabilities for a specific token ID (32-byte field element repr).
-    pub fn get_capabilities_by_asset(&self, token_id: &TokenId, revoked: Option<bool>) -> WalletDbResult<Vec<CapRecord>> {
+    /// Get held capabilities for a specific asset ID (32-byte field element repr).
+    pub fn get_capabilities_by_asset(&self, asset_id: &TokenId, revoked: Option<bool>) -> WalletDbResult<Vec<CapRecord>> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let mut stmt = conn.prepare(
-            "SELECT cap_id, value, token_id_blob, token_id, spend_hook_blob, spend_hook,
+            "SELECT cap_id, value, asset_id_blob, asset_id, spend_hook_blob, spend_hook,
                     user_data_blob, user_data,
                     leaf_position, commitment_blob, commitment, cap_blind_blob, cap_blind,
-                    value_blind_blob, value_blind, token_blind_blob, token_blind,
+                    value_blind_blob, value_blind, asset_blind_blob, asset_blind,
                     contract_id_blob, func_id_blob, capability_discriminant,
                     revoked, revoked_at_height, created_at_height,
                     capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob
-             FROM held_capabilities WHERE token_id_blob = ?1 AND revoked = ?2 AND contract_id_blob = ?3",
+             FROM held_capabilities WHERE asset_id_blob = ?1 AND revoked = ?2 AND contract_id_blob = ?3",
         )?;
 
         // Inflation guard: fee/coin selection is native-token only — foreign
         // capabilities are never spendable value (see capability_balance).
         let revoked_param: Option<i64> = revoked.map(|r| if r { 1 } else { 0 });
         let mut rows = stmt.query(params![
-            token_id.to_bytes().to_vec(),
+            asset_id.to_bytes().to_vec(),
             revoked_param,
             NATIVE_TOKEN_CONTRACT_ID.to_bytes().to_vec(),
         ])?;
 
         // Column index constants (same layout as get_held_capabilities SELECT)
-        const C_TOKEN_BLOB: usize = 2;
-        const C_TOKEN_TEXT: usize = 3;
+        const C_ASSET_BLOB: usize = 2;
+        const C_ASSET_TEXT: usize = 3;
         const C_SPEND_BLOB: usize = 4;
         const C_SPEND_TEXT: usize = 5;
         const C_USER_BLOB: usize = 6;
@@ -490,8 +490,8 @@ impl WalletDb {
         const C_CAPBLIND_TEXT: usize = 12;
         const C_VALBLIND_BLOB: usize = 13;
         const C_VALBLIND_TEXT: usize = 14;
-        const C_TOKBLIND_BLOB: usize = 15;
-        const C_TOKBLIND_TEXT: usize = 16;
+        const C_ASSETBLIND_BLOB: usize = 15;
+        const C_ASSETBLIND_TEXT: usize = 16;
         const C_CONTRACT_BLOB: usize = 17;
         const C_FUNC_BLOB: usize = 18;
         const C_DISCRIMINANT: usize = 19;
@@ -566,8 +566,8 @@ impl WalletDb {
                 Ok(Some(row)) => {
                     let cap_id: String = row.get(0).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let value: i64 = row.get(1).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let token_id_val = bytes_to_token_id(
-                        read_blob32_text_fallback(&row, C_TOKEN_BLOB, C_TOKEN_TEXT)
+                    let asset_id_val = bytes_to_asset_id(
+                        read_blob32_text_fallback(&row, C_ASSET_BLOB, C_ASSET_TEXT)
                             .map_err(|_| WalletDbError::QueryExecutionFailed)?
                     )?;
                     let spend_hook: Option<FuncId> = match read_opt_blob32_text_fallback(&row, C_SPEND_BLOB, C_SPEND_TEXT)
@@ -591,8 +591,8 @@ impl WalletDb {
                         read_blob32_text_fallback(&row, C_VALBLIND_BLOB, C_VALBLIND_TEXT)
                             .map_err(|_| WalletDbError::QueryExecutionFailed)?
                     )?;
-                    let token_blind = bytes_to_base_blind(
-                        read_blob32_text_fallback(&row, C_TOKBLIND_BLOB, C_TOKBLIND_TEXT)
+                    let asset_blind = bytes_to_base_blind(
+                        read_blob32_text_fallback(&row, C_ASSETBLIND_BLOB, C_ASSETBLIND_TEXT)
                             .map_err(|_| WalletDbError::QueryExecutionFailed)?
                     )?;
                     let contract_id = match row.get::<_, Option<Vec<u8>>>(C_CONTRACT_BLOB) {
@@ -634,7 +634,7 @@ impl WalletDb {
                         cap_id,
                         key_coords,
                         value: value as u64,
-                        token_id: token_id_val,
+                        asset_id: asset_id_val,
                         spend_hook,
                         user_data,
                         leaf_position: leaf_position as u64,
@@ -643,7 +643,7 @@ impl WalletDb {
                         func_id,
                         cap_blind,
                         value_blind,
-                        token_blind,
+                        asset_blind,
                         capability_discriminant: capability_discriminant.map(|d| d as u8),
                         revoked: spent_val != 0,
                         revoked_at_height: revoked_at_height.map(|h| h as u32),
@@ -690,16 +690,16 @@ impl WalletDb {
 
         let result = (|| -> WalletDbResult<()> {
             conn.execute(
-                "INSERT OR IGNORE INTO held_capabilities (cap_id, value, token_id_blob, spend_hook_blob, user_data_blob,
+                "INSERT OR IGNORE INTO held_capabilities (cap_id, value, asset_id_blob, spend_hook_blob, user_data_blob,
                     leaf_position, commitment_blob, contract_id_blob, func_id_blob, capability_discriminant,
-                    cap_blind_blob, value_blind_blob, token_blind_blob,
+                    cap_blind_blob, value_blind_blob, asset_blind_blob,
                     revoked, revoked_at_height, created_at_height,
                     capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
                 params![
                     cap.cap_id,
                     cap.value as i64,
-                    cap.token_id.to_bytes().to_vec(),
+                    cap.asset_id.to_bytes().to_vec(),
                     cap.spend_hook.map(|f| f.to_bytes().to_vec()),
                     cap.user_data.map(|b| b.to_vec()),
                     cap.leaf_position as i64,
@@ -709,7 +709,7 @@ impl WalletDb {
                     cap.capability_discriminant.map(|d| d as i64),
                     cap.cap_blind.inner().to_repr().to_vec(),
                     cap.value_blind.inner().to_repr().to_vec(),
-                    cap.token_blind.inner().to_repr().to_vec(),
+                    cap.asset_blind.inner().to_repr().to_vec(),
                     if cap.revoked { 1 } else { 0 },
                     cap.revoked_at_height.map(|h| h as i64),
                     cap.created_at_height as i64,
@@ -1197,19 +1197,8 @@ impl WalletDb {
     }
 }
 
-/// Token information stored in wallet database.
-#[derive(Debug, Clone)]
-pub struct TokenInfo {
-    pub token_id: String,
-    pub name: Option<String>,
-    pub symbol: Option<String>,
-    pub decimals: u8,
-    pub mint_authority: Option<String>,
-    pub token_blind: String,
-    pub is_frozen: bool,
-    pub freeze_height: Option<u32>,
-    pub created_at_height: u32,
-}
+/// TokenInfo struct REMOVED — dead code (tokens table was removed; token
+/// knowledge comes from capabilities).
 
 /// Custom implementation of rusqlite::named_params! to use `expr` instead of `literal` as `$param_name`,
 /// and append the ":" named parameters prefix.
@@ -1252,7 +1241,7 @@ mod tests {
         CapRecord {
             cap_id: "test_cap_1".to_string(),
             value: 42_000_000,
-            token_id: TokenId::from_bytes([1u8; 32]).unwrap(),
+            asset_id: TokenId::from_bytes([1u8; 32]).unwrap(),
             spend_hook: Some(FuncId::from_bytes([2u8; 32]).unwrap()),
             user_data: Some([3u8; 32]),
             leaf_position: 0,
@@ -1262,7 +1251,7 @@ mod tests {
             capability_discriminant: Some(7u8),
             cap_blind: BaseBlind::from(8u64),
             value_blind: Blind(pallas::Scalar::from(9u64)),
-            token_blind: BaseBlind::from(10u64),
+            asset_blind: BaseBlind::from(10u64),
             revoked: false,
             revoked_at_height: None,
             created_at_height: 1,
@@ -1292,14 +1281,14 @@ mod tests {
 
         assert_eq!(read.cap_id, cap.cap_id);
         assert_eq!(read.value, cap.value);
-        assert_eq!(read.token_id, cap.token_id);
+        assert_eq!(read.asset_id, cap.asset_id);
         assert_eq!(read.commitment, cap.commitment);
         assert_eq!(read.contract_id, cap.contract_id);
         assert_eq!(read.func_id, cap.func_id);
         assert_eq!(read.capability_discriminant, cap.capability_discriminant);
         assert_eq!(read.cap_blind, cap.cap_blind);
         assert_eq!(read.value_blind, cap.value_blind);
-        assert_eq!(read.token_blind, cap.token_blind);
+        assert_eq!(read.asset_blind, cap.asset_blind);
         assert_eq!(read.spend_hook, cap.spend_hook);
         assert_eq!(read.revoked, false);
         assert_eq!(read.created_at_height, 1);
@@ -1328,16 +1317,16 @@ mod tests {
             root: "11111111111111111111111111111111".to_string(),
         };
 
-        // Insert cap for token A
+        // Insert cap for asset A
         let mut cap_a = make_test_cap();
         cap_a.cap_id = "cap_a".to_string();
-        cap_a.token_id = TokenId::from_bytes([1u8; 32]).unwrap();
+        cap_a.asset_id = TokenId::from_bytes([1u8; 32]).unwrap();
         wallet.insert_capability(&cap_a, &proof).unwrap();
 
-        // Insert cap for token B
+        // Insert cap for asset B
         let mut cap_b = make_test_cap();
         cap_b.cap_id = "cap_b".to_string();
-        cap_b.token_id = TokenId::from_bytes([2u8; 32]).unwrap();
+        cap_b.asset_id = TokenId::from_bytes([2u8; 32]).unwrap();
         wallet.insert_capability(&cap_b, &proof).unwrap();
 
         // Both caps should be stored and retrievable
@@ -1349,24 +1338,24 @@ mod tests {
 
     #[test]
     fn test_get_capabilities_by_asset_excludes_non_native() {
-        // Inflation guard: a foreign-contract cap with the SAME token_id must not
+        // Inflation guard: a foreign-contract cap with the SAME asset_id must not
         // be returned for value/fee selection — only native-token caps are spendable.
         let wallet = setup_test_wallet();
         let proof = MerkleProof {
             siblings: vec![],
             root: "11111111111111111111111111111111".to_string(),
         };
-        let token = TokenId::from_bytes([1u8; 32]).unwrap();
+        let asset = TokenId::from_bytes([1u8; 32]).unwrap();
 
         let mut native = make_test_cap();
         native.cap_id = "native".to_string();
-        native.token_id = token;
+        native.asset_id = asset;
         native.contract_id = *NATIVE_TOKEN_CONTRACT_ID;
         wallet.insert_capability(&native, &proof).unwrap();
 
         let mut foreign = make_test_cap();
         foreign.cap_id = "foreign".to_string();
-        foreign.token_id = token; // SAME token_id
+        foreign.asset_id = asset; // SAME asset_id
         foreign.commitment = CoinCommitment::from_bytes([8u8; 32]).unwrap();
         foreign.contract_id = ContractId::from_bytes([9u8; 32]).unwrap();
         wallet.insert_capability(&foreign, &proof).unwrap();
@@ -1374,7 +1363,7 @@ mod tests {
         // Both are stored (get_held_capabilities is intentionally ungated)...
         assert_eq!(wallet.get_held_capabilities(Some(false)).unwrap().len(), 2);
         // ...but only the native one is selectable for value.
-        let selectable = wallet.get_capabilities_by_asset(&token, Some(false)).unwrap();
+        let selectable = wallet.get_capabilities_by_asset(&asset, Some(false)).unwrap();
         assert_eq!(selectable.len(), 1, "foreign cap must be excluded from selection");
         assert_eq!(selectable[0].cap_id, "native");
         assert_eq!(selectable[0].contract_id, *NATIVE_TOKEN_CONTRACT_ID);

@@ -525,7 +525,8 @@ pub extern "C" fn dwow_wallet_balance(handle: *const WalletHandle) -> u64 {
 // Missing capability accessors
 // ============================================================================
 
-/// Get the token ID for a capability (always 32 bytes).
+/// Get the asset ID for a capability (always 32 bytes).
+/// Symbol name keeps `token_id` until T4 (C-ABI surface rename, coordinated).
 #[no_mangle]
 pub extern "C" fn dwow_wallet_cap_token_id(
     handle: *const CapRecordHandle,
@@ -533,7 +534,7 @@ pub extern "C" fn dwow_wallet_cap_token_id(
     buf_len: i32,
 ) -> i32 {
     if handle.is_null() || buf_len < 32 { return -1; }
-    let bytes = unsafe { (*handle).cap_record.token_id }.to_bytes();
+    let bytes = unsafe { (*handle).cap_record.asset_id }.to_bytes();
     unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf, 32); }
     32
 }

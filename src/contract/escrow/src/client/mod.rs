@@ -32,37 +32,8 @@ pub mod claim_v1;
 pub mod refund_v1;
 pub mod cancel_v1;
 
-use dwow_sdk::contract_client::{ContractClient, WalletStateProvider};
-
-/// Escrow contract client — implements ContractClient for the wallet's
-/// generic dispatch. Lives in the contract crate, NOT the wallet.
-pub struct EscrowClient;
-
-impl ContractClient for EscrowClient {
-    fn contract_name(&self) -> &'static str { "escrow" }
-
-    fn function_selector(&self, function: &str) -> Option<u8> {
-        match function {
-            "CreateV1" => Some(0x00),
-            "FundV1" => Some(0x01),
-            "ClaimV1" => Some(0x02),
-            "RefundV1" => Some(0x03),
-            "CancelV1" => Some(0x04),
-            _ => None,
-        }
-    }
-
-    fn supported_functions(&self) -> Vec<&'static str> {
-        vec!["CreateV1", "FundV1", "ClaimV1", "RefundV1", "CancelV1"]
-    }
-
-    fn build(&self, function: &str, _params: &str, _wallet_state: &dyn WalletStateProvider) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String> {
-        match function {
-            "CreateV1" | "FundV1" | "ClaimV1" | "RefundV1" | "CancelV1" => {
-                Ok((vec![], vec![]))
-            }
-            _ => Err(format!("Escrow: unsupported function '{}'", function)),
-        }
-    }
-}
-
+// EscrowClient REMOVED (T2a — phantom-code-removed-first, 2026-07-15).
+// The `impl ContractClient` stub was wallet grammar (WalletStateProvider) in a
+// contract crate with zero consumers. Per wallet.md §6.4 / type-system.md §13,
+// escrow is exercised through the generic manifest path — no per-contract
+// wallet client. There is native token and there are capabilities; that is it.

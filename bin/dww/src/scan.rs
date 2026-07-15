@@ -252,7 +252,7 @@ fn build_native_token_cap_record(
     let cap_record = CapRecord {
         cap_id: cap_id.clone(),
         value: note.value,
-        token_id: TokenId(note.token_id),
+        asset_id: TokenId(note.token_id),
         spend_hook: None,
         user_data: None,
         leaf_position: leaf_pos,
@@ -261,7 +261,7 @@ fn build_native_token_cap_record(
         func_id,
         cap_blind: Blind(note.coin_blind),
         value_blind: Blind(note.value_blind),
-        token_blind: Blind(note.token_blind),
+        asset_blind: Blind(note.token_blind),
         capability_discriminant,
         // Native path is bespoke/untyped (Path 1, wallet.md §13) — no manifest
         // composition; typed fields stay empty.
@@ -655,7 +655,7 @@ fn scan_block(
                         let cap_record = CapRecord {
                             cap_id: derive_cap_id(secret, &leaf.to_repr()),
                             value: 0,
-                            token_id: TokenId(pallas::Base::zero()),
+                            asset_id: TokenId(pallas::Base::zero()),
                             spend_hook: None,
                             user_data: None,
                             leaf_position: leaf_pos,
@@ -664,7 +664,7 @@ fn scan_block(
                             func_id: Some(FuncId::from(pallas::Base::from(fn_code as u64))),
                             cap_blind: Blind(pallas::Base::zero()),
                             value_blind: Blind(pallas::Scalar::zero()),
-                            token_blind: Blind(pallas::Base::zero()),
+                            asset_blind: Blind(pallas::Base::zero()),
                             capability_discriminant: Some(resolved.discriminant),
                             capability_name: Some(resolved.name.clone()),
                             resource: Some(typed.resource.clone()),
@@ -1218,8 +1218,8 @@ mod tests {
         let cap = &result.native_outputs[0].cap_record;
         assert_eq!(cap.value, value,
             "SYM FAIL: decrypted value must match miner's value");
-        assert_eq!(cap.token_id.inner(), pallas::Base::zero(),
-            "SYM FAIL: token_id must be DRKW_TOKEN_ID");
+        assert_eq!(cap.asset_id.inner(), pallas::Base::zero(),
+            "SYM FAIL: asset_id must be DRKW_TOKEN_ID");
         assert_eq!(cap.created_at_height, height,
             "SYM FAIL: created_at_height must match block height");
 
@@ -1361,8 +1361,8 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         assert_eq!(cr.barbs.len(), 8,
             "tripwire: composed union has 8 barbs (not 6 required)");
         assert_eq!(cr.value, 0, "tripwire: foreign cap must have zero value");
-        assert_eq!(cr.token_id.inner(), pallas::Base::zero(),
-            "tripwire: foreign cap must have zero token_id");
+        assert_eq!(cr.asset_id.inner(), pallas::Base::zero(),
+            "tripwire: foreign cap must have zero asset_id");
     }
 
     /// P7 tripwire — negative: a manifest lacking typed fields drops the note

@@ -365,8 +365,8 @@ impl WalletDb {
 
         let null_caps: i64 = conn.query_row(
             "SELECT COUNT(*) FROM held_capabilities \
-             WHERE cap_id IS NULL OR secret IS NULL OR token_id IS NULL \
-                OR cap_blind IS NULL OR value_blind IS NULL OR token_blind IS NULL",
+             WHERE cap_id IS NULL OR asset_id IS NULL \
+                OR cap_blind IS NULL OR value_blind IS NULL OR asset_blind IS NULL",
             [],
             |row| row.get(0),
         ).unwrap_or(-1);

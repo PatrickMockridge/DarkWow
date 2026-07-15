@@ -96,8 +96,8 @@ pub trait WalletStateProvider: Send + Sync {
     /// Get the default wallet address.
     fn default_address(&self) -> std::result::Result<String, String>;
 
-    /// Get held capability records for a given token ID.
-    fn held_capabilities_by_asset(&self, _token_id: &str) -> std::result::Result<Vec<CapInfo>, String> {
+    /// Get held capability records for a given asset ID.
+    fn held_capabilities_by_asset(&self, _asset_id: &str) -> std::result::Result<Vec<CapInfo>, String> {
         Ok(vec![])
     }
 
@@ -127,16 +127,16 @@ pub struct MerkleProofInfo {
 pub struct CapInfo {
     pub cap_id: String,
     pub value: u64,
-    /// TokenId (↓denominate) — typed per type-system.md §8.1
-    pub token_id: TokenId,
+    /// AssetId (↓denominate) — typed per type-system.md §8.1
+    pub asset_id: TokenId,
     pub leaf_position: u64,
     pub secret: String,       // bs58-encoded (per Cornerstone 1, secrets in memory)
-    /// BaseBlind — coin blinding factor
+    /// BaseBlind — capability commitment blinding factor
     pub cap_blind: BaseBlind,
     /// ScalarBlind — value blinding factor
     pub value_blind: ScalarBlind,
-    /// BaseBlind — token blinding factor
-    pub token_blind: BaseBlind,
+    /// BaseBlind — asset blinding factor
+    pub asset_blind: BaseBlind,
     /// FuncId (↓gate) — None for pre-V.1 records
     pub spend_hook: Option<FuncId>,
     /// Raw user data field element
