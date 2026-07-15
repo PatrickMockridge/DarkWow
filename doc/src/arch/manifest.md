@@ -62,7 +62,7 @@ The `ix` field currently holds opaque bytes. When the first byte is `0x4D`
 (ASCII `M`, for "manifest"), the remaining bytes are a TOML document. When the
 first byte is anything else, the `ix` is interpreted as legacy opaque data.
 
-**Encoding constraint**: The TOML bytes after the `0x4D` prefix must be valid
+**Encoding constraint**: The TOML bytes after the `0x4D` prefix SHALL be valid
 UTF-8. The wallet's `from_deploy_ix()` uses `std::str::from_utf8()` to decode
 the bytes. Non-UTF-8 bytes cause the manifest to be silently treated as absent
 (functionally equivalent to no `0x4D` prefix).
@@ -278,32 +278,32 @@ each slot, in slot order: `note:<field>`, `param:<field>`, `secret`,
 capability SDK type-checks every entry against the slot's declared witness
 type and rejects the construction on any mismatch.
 
-Example:
+Example (generic capability — delegate an action to another holder):
 
 ```toml
 [[capabilities]]
 discriminant = 0
-name = "coin"
-description = "An unspent coin — consumable"
+name = "delegation_right"
+description = "Authority to delegate an action to another holder — consumable"
 primitives = ["SecretKey", "Commitment", "Nullifier", "ContractId", "FuncId", "AssetId", "MerkleNode"]
 note_schema = [
-    { name = "value", type = "u64" },
+    { name = "quantity", type = "u64" },
     { name = "commitment", type = "pallas_base" },
 ]
 
 [[actions]]
-function = "transfer"
-requires = { type = "any", capabilities = ["coin"] }
-consumes = ["coin"]
-produces = [{ name = "coin", description = "New blind output coins" }]
+function = "delegate"
+requires = { type = "any", capabilities = ["delegation_right"] }
+consumes = ["delegation_right"]
+produces = [{ name = "delegation_right", description = "Delegation right transferred to the recipient" }]
 required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate", "Denominate"]
 
 [[circuits]]
-name = "Transfer_V1"
+name = "Delegate_V1"
 namespace = "example_contract"
 witness_map = [
     "secret",
-    "note:value",
+    "note:quantity",
     "blind",
     "merkle_path",
     "leaf_position",
@@ -311,6 +311,12 @@ witness_map = [
     "tx_nonce",
 ]
 ```
+
+The primitive names in `primitives` are drawn from the closed vocabulary
+above. The capability name (`"delegation_right"`) is a human-readable label
+chosen by the contract author — it SHALL be unique within the contract's
+declared capabilities. The action name (`"delegate"`) SHALL match a declared
+function name in `[[functions]]`.
 
 These fields describe capability **types**, never instances — the same
 schema/data split as the rest of the manifest. Declaring them requires
@@ -497,7 +503,7 @@ DeployV1 tx on chain
 
 The manifest does NOT replace:
 
-- **ZK circuit binaries** — `.zk.bin` files must still be compiled; they reach
+- **ZK circuit binaries** — `.zk.bin` files SHALL still be compiled; they reach
   the wallet's generic prover embedded (genesis) or via the `DeployV1` payload
   (user-deployed) — see Circuit Binary Delivery above
 - **The one bespoke citizen** — NativeToken's hardcoded client

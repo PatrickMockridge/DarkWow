@@ -31,7 +31,7 @@ exercise, and verify the capability. The type encodes:
 ## 1. Primitive Types Available for Composition
 
 Per [type-system.md §8.1](type-system.md), the following primitive types exist.
-Each has a distinct behavioral position. No two may be unified.
+Each has a distinct behavioral position. No two SHALL be unified.
 
 | Primitive | Barbs | Scope | Role in Capability Construction |
 |-----------|-------|-------|-------------------------------|
@@ -81,13 +81,13 @@ The capability "can transfer up to N native tokens" composes:
 
 ```
 Capability(native_token_transfer, N) ≡ compose(
-    SecretKey(↓spend, ν-restricted),     // "I know the spending key"
-    Commitment(↓commit),                 // "This commitment represents N value"
-    Nullifier(↓nullify),                 // "I can prove I haven't spent it before"
-    ContractId(↓dispatch),               // "This is a native token contract call"
-    FuncId(↓gate),                       // "This is a transfer function (not burn, not fee)"
-    AssetId(↓denominate),                // "This is the native token (not a wrapped asset)"
-    MerkleNode(↓prove-inclusion)         // "This commitment is in the recognized set"
+    SecretKey(↓spend, ν-restricted),     // Authorization secret — possession proves authority to exercise
+    Commitment(↓commit),                 // Public face — binds parameters (quantity N, recipient, asset class) without revealing them
+    Nullifier(↓nullify),                 // Single-exercise guard — each exercise SHALL produce a unique nullifier
+    ContractId(↓dispatch),               // Routes exercise to the native token contract
+    FuncId(↓gate),                       // Constrains exercise to the transfer function
+    AssetId(↓denominate),                // Denominates the capability in the native asset class (DRKW)
+    MerkleNode(↓prove-inclusion)         // Proves the commitment is included in the recognized set
 )
 ```
 
@@ -107,13 +107,13 @@ The capability "can vote on proposal X" composes:
 
 ```
 Capability(dao_vote, proposal_X) ≡ compose(
-    SecretKey(↓spend, ν-restricted),     // "I know the voting key"
-    Commitment(↓commit),                 // "I hold governance tokens"
-    Nullifier(↓nullify),                 // "I haven't voted on this proposal before"
-    ContractId(↓dispatch),               // "This is the DAO contract"
-    FuncId(↓gate),                       // "This is the vote function"
-    AssetId(↓denominate),                // "This is the governance token"
-    MerkleNode(↓prove-inclusion)         // "My tokens existed at snapshot time"
+    SecretKey(↓spend, ν-restricted),     // Authorization secret — possession proves authority to vote
+    Commitment(↓commit),                 // Public face — binds the governance stake without revealing the holder
+    Nullifier(↓nullify),                 // Single-exercise guard — prevents voting twice on the same proposal
+    ContractId(↓dispatch),               // Routes exercise to the DAO contract
+    FuncId(↓gate),                       // Constrains exercise to the vote function
+    AssetId(↓denominate),                // Denominates the capability in the governance asset class
+    MerkleNode(↓prove-inclusion)         // Proves the governance stake existed at the snapshot root
 )
 ```
 
@@ -147,8 +147,7 @@ capability chaining: types compose, and the composition is itself a type.
 
 ## 3. The Authorization Inversion Theorem as Type Construction
 
-The Authorization Inversion Theorem states ([type-system.md §6](type-system.md),
-[ocap-original.md](ocap.md)):
+The Authorization Inversion Theorem states ([type-system.md §6](type-system.md)):
 
 > An ACL-based authorization system A(p, r, s) can be inverted to a
 > privacy-preserving O-Cap scheme A'(π, r, s) if and only if there exists a
@@ -232,49 +231,71 @@ capability type, and vice versa, by adding or removing the zero-knowledge
 wrapper. This is type refinement: the same behavioral position at different
 levels of disclosure.
 
-## 6. Capability Composition as a Calculus of Constructions
+## 6. Capability Lifecycle: Generic Grammar and DarkWow Instantiation
 
-The capability grammar (Commitment → Nullifier → Proof → Revocation) is not
-an arbitrary protocol — it is a **calculus of constructions** over the
-primitive type system. Each operation in the lifecycle maps to a type-level
-operation:
+Every object-capability system implements the same lifecycle. The capability
+is created, discovered, held, exercised, verified, and consumed. This section
+defines the lifecycle in two layers: the generic grammar (applicable to any
+o-cap system) and the DarkWow instantiation (ZK mode).
 
-| Lifecycle Phase | Process Calculus | Type Construction |
-|-----------------|-----------------|-------------------|
-| **Issue** | `ν secret. commit!(poseidon_hash(secret, params))` | Create fresh name, output commitment |
-| **Discover** | `block?(tx). aead_decrypt(note, secret).P` | Receive name via AEAD, construct capability type |
-| **Hold** | Store secret + commitment + merkle_proof in wallet | Store typed CapRecord with all primitive names |
-| **Exercise** | `ν nullifier. prove!(π, nullifier).P` | Generate ZK proof inhabiting the capability type |
-| **Verify** | `verify?(π, nullifier). check(π).P` | Type-check: does proof inhabit L_{r,s}? |
-| **Revoke** | `revoke!(nullifier).P` | Invalidate the type instance |
+### 6.1 Generic Capability Grammar
+
+The grammar applies to all object-capability systems. Each phase SHALL be
+implemented by every DarkWow contract that exercises capabilities.
+
+| Phase | Generic Operation | Type Construction |
+|-------|------------------|-------------------|
+| **Create** | `ν name. publish!(public_face(name, params))` | Create a fresh name. Publish its public face — a binding commitment to the name and its parameters that reveals neither the name nor the parameters. |
+| **Discover** | `transport?(name). receive(name).P` | Receive a capability name through the name transport layer. The receiving process now possesses the name and SHALL construct its type. |
+| **Hold** | Store `(name, public_face, inclusion_proof)` | Store a typed record containing every primitive name the capability composes. Each primitive name has a known barb set. The type tells the holder what actions are authorized. |
+| **Exercise** | `generate_proof(name, predicate). publish!(consumption_evidence).P` | Generate proof that the holder knows a witness satisfying the capability's predicate language L_{r,s}. Publish consumption evidence that marks this instance as exercised. |
+| **Verify** | `verify?(proof, consumption_evidence, predicate).P` | Verify that the proof inhabits the capability type's predicate language and that the consumption evidence is valid and has not been previously published. |
+| **Consume** | `consume!(consumption_evidence).P` | Record that the name instance has been exercised. The consumption evidence SHALL prevent re-exercise. Once consumed, the name SHALL NOT authorize further actions. |
+
+### 6.2 DarkWow Instantiation (ZK Mode)
+
+DarkWow instantiates the generic grammar using zero-knowledge proofs over
+Halo2 PLONK circuits, AEAD-encrypted note discovery, and nullifier-based
+consumption evidence.
+
+| Phase | DarkWow Mechanism |
+|-------|------------------|
+| **Create** | `poseidon_hash(secret, commitment_parameters)` → Commitment. The commitment is a Pedersen-like hash binding the capability's primitive names without revealing them. |
+| **Discover** | Trial AEAD decryption over `ContractCall.data` in scanned blocks. The wallet attempts decryption with every secret it holds; success means the wallet possesses the capability name. |
+| **Hold** | `CapRecord` stored in SQLite `held_capabilities` with Merkle inclusion proof in `capability_proofs`. The record carries the typed composition — primitives and barbs — constructed by `wallet_construct`. |
+| **Exercise** | Halo2 `Proof::create` over a `ZkCircuit` whose witness is the capability's private names and whose public inputs are the commitment, nullifier, and Merkle root. |
+| **Verify** | `Proof::verify` against the circuit's public inputs. The verifier (node, mempool) checks the proof without learning the witness. |
+| **Consume** | Nullifier published in `Transaction.nullifiers`. The nullifier is `poseidon_hash(secret, commitment)` — unique per capability instance. A nullifier appearing on-chain SHALL prevent any future exercise of that instance. |
+
+### 6.3 The Wallet as Type Construction Engine
 
 The wallet, as a capability engine, performs type construction at scan time:
-it discovers commitments (receives names), resolves contracts (identifies
-predicate languages), and constructs capability types from the composition
-of primitives the contract declares.
+it discovers commitments (receives names), resolves contracts via their
+stored manifests (identifies predicate languages), and constructs capability
+types from the composition of primitives the contract declares.
 
 The wallet SHALL NOT store a generic `cap_id: String`. It SHALL store a typed
-composition whose structure is determined by the contract manifest and the
-primitives discovered during AEAD scan. Every primitive name in the composition
-has a known barb. The capability type tells the wallet what the user can DO.
+composition — every primitive name in the composition has a known barb. The
+capability type tells the wallet what actions the holder is authorized to
+perform.
 
-The **Exercise**, **Verify**, and **Revoke** phases of this lifecycle — constructing and
-authenticating the transaction that consumes a name — are specified as the wallet's write
-path in [wallet.md §6](wallet.md), with the pending-transaction pool (the node-side
-in-between) in [mempool.md](mempool.md).
+The **Exercise**, **Verify**, and **Consume** phases of this lifecycle —
+constructing and authenticating the transaction that exercises a name — are
+specified as the wallet's write path in [wallet.md §6](wallet.md), with the
+pending-transaction pool (the node-side in-between) in [mempool.md](mempool.md).
 
 ## 7. The Manifest as Type Declaration
 
 A contract's manifest ([manifest.md](manifest.md)) declares what capabilities
-the contract recognizes and what predicates must be satisfied to exercise them.
-This is a **type declaration** — the manifest tells the wallet what type
-parameters are required for capability construction.
+the contract recognizes and what predicates SHALL be satisfied to exercise
+them. This is a **type declaration** — the manifest tells the wallet what
+type parameters are required for capability construction.
 
 When the wallet parses a manifest, it learns:
 
-- What primitive types the contract's capabilities compose (the `requires` fields).
-- What actions are available (the `[[actions]]` section).
-- What ZK circuits verify each action's predicates.
+- What primitive types each capability composes (the `primitives` field on `[[capabilities]]`).
+- What actions are available (the `[[actions]]` section, each referencing a declared function).
+- What ZK circuits verify each action's predicates (the `proof_circuit` field on `[[functions]]`).
 
 The manifest enables the wallet to construct capability types without
 per-contract code. The manifest IS the type declaration. The wallet reads it
@@ -324,10 +345,13 @@ primitives. The composed barb sets are:
 - DAO vote: `{↓spend, ↓derive, ↓commit, ↓nullify, ↓dispatch, ↓gate, ↓denominate, ↓proveInclusion}`
 - Tender bid: `{↓spend, ↓derive, ↓commit, ↓nullify, ↓dispatch, ↓gate, ↓denominate, ↓proveInclusion}` (plus `↓prove` for identity credential sub-capability)
 
-The DAO vote and native token transfer have identical composed barb sets
-but are distinguished by their Resources (different `requiredBarbs`) and
-Actions (different names). This is type-level bisimulation: same structure,
-different behavioral positions.
+The DAO vote and native token transfer compose the same seven primitive types,
+producing identical composed barb sets from the primitives. They are
+distinguished by their Actions (different names: "transfer" vs "vote") and
+by which subset of the composed barbs each Action declares as required.
+Same primitive composition, different behavioral positions — the Action
+determines what subset of the composed barbs the predicate language must
+cover.
 
 ### 9.2 Capability Type Existence
 

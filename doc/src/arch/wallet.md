@@ -112,7 +112,7 @@ reimplement, inline, or bypass any of these functions.
 ### 0.1.1 Crate Dependency Graph
 
 The wallet's four components form a strict dependency ordering. Each arrow is a
-compile-time dependency; no component may reverse or bypass an arrow.
+compile-time dependency; no component SHALL reverse or bypass an arrow.
 
 ```
 dwow-accounts (crates/)     ← zero deps beyond dwow-sdk crypto types
@@ -257,7 +257,7 @@ a pure function ([type-system.md §7](type-system.md)):
 
 1. Key derivation: `poseidon_hash([secret, cid, instance])` — pure
 2. AEAD decryption: deterministic for given ciphertext + key
-3. Coin commitment: `poseidon_hash(7 elements)` — pure
+3. Capability commitment: `poseidon_hash(7 elements)` — pure
 4. Nullifier: `poseidon_hash(2 elements)` — pure
 5. Merkle tree: ordered append to `BridgeTree` — deterministic
 6. Block iteration: sequential by height — deterministic
@@ -318,6 +318,13 @@ For every contract call in every transaction:
 5. Constructs the specific capability type per the manifest's
    declaration — composing the primitives the manifest names.
 6. Stores the typed composition in `held_capabilities`.
+
+**Coverage gate**: Step 5 SHALL apply `wallet_construct` — the pure function
+that checks whether the composed barbs of the declared primitives cover the
+action's required barbs. If coverage fails, the note is dropped. This is the
+**coverage gate**: an uncovered composition is not a valid capability type.
+The fix is always to correct the contract's manifest declarations, never to
+add wallet code ([type-system.md §13](type-system.md)).
 
 The manifest IS the type declaration. Every contract SHALL declare its
 capabilities in its manifest. The wallet SHALL NOT need per-contract code
@@ -448,7 +455,7 @@ Transaction = f(SelectedCapabilities, Action, Params, Secrets, Seed)
 Given identical inputs, `f` SHALL produce a byte-identical transaction. This is the
 write-path analogue of §1's guarantee that "AEAD decryption is deterministic for a given
 ciphertext + key": by making `Seed` an explicit name rather than ambient authority, the
-whole pipeline — coin selection, note encryption, nullifier derivation, ZK proving,
+whole pipeline — capability selection, note encryption, nullifier derivation, ZK proving,
 signing — is a reproducible pure computation. The effectful shell that gathers the inputs
 (reads the wallet DB for held capabilities and Merkle proofs, draws a fresh `Seed`) SHALL
 be separated from `f`; only the shell performs I/O. This is the functional-core /
@@ -710,10 +717,13 @@ The wallet has exactly **one** bespoke scan path: NativeToken (Path 1). This is
 not a precedent. It is an exception justified by NativeToken's unique role as the
 consensus-critical asset (block rewards, fee payment, supply audit).
 
-Every other contract — including all genesis contracts — must work through the
+Every other contract — including all genesis contracts — SHALL work through the
 **generic Path 2**: AEAD decryption → manifest resolution → barb composition →
 `wallet_construct` → `TypedCapability`. Adding a second bespoke scan path breaks
 the wallet's design as a generic capability construction engine.
+Any pull request adding a second bespoke scan path SHALL be rejected
+without review — the fix is always in the contract's type definitions,
+never in the wallet.
 
 **Why this matters:** The wallet.md spec states "Adding support for a new contract
 requires zero wallet code changes." If a contract seems to need a bespoke scan
@@ -737,5 +747,5 @@ by the primitives.
 
 **Enforcement:** Before merging any change that adds a contract-specific branch
 to `bin/dww/src/scan.rs`, verify that the contract cannot work through the
-generic Path 2. In every case to date, the fix has been to tighten the
+generic Path 2. The fix is always to tighten the
 contract's type definitions, not to add wallet code.

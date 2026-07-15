@@ -59,30 +59,30 @@ barb `↓x` if `P` can engage in input or output on channel `x`.
 Every type SHALL define the barbs that processes at that type may exhibit.
 No type SHALL exhibit a barb that its definition does not declare.
 
-| Barb | Meaning |
-|------|---------|
-| `↓spend` | Can authorize a value transfer (possesses SpendingKey) |
-| `↓view` | Can decrypt notes (possesses ViewingKey) |
-| `↓nullify` | Can prevent replay (produces a Nullifier) |
-| `↓commit` | Can create a capability (produces a Commitment) |
-| `↓prove` | Can satisfy a ZK predicate (generates a Proof) |
-| `↓verify` | Can check a ZK proof or signature (validates a Proof) |
-| `↓dispatch` | Can route a call (identifies a contract) |
-| `↓gate` | Can authorize a spend hook (identifies a function) |
-| `↓denominate` | Can identify an asset type (identifies the asset class) |
-| `↓prove-inclusion` | Can prove membership in a set (Merkle proof) |
-| `↓encrypt` | Can produce ciphertext for a recipient (DH key agreement) |
-| `↓derive` | Can produce a scoped sub-key (per-instance derivation) |
-| `↓discover` | Can detect own outputs (AEAD decryption) |
-| `↓mine` | Can produce a valid coinbase (possesses MiningRecipient) |
-| `↓concurrent` | Can execute in parallel with siblings (no shared mutable state dependency) |
-| `↓merge` | Can deterministically combine concurrent state diffs |
-| `↓sync-barrier` | Can block until a synchronization condition is met |
-| `↓broadcast` | Can publish a message to multiple subscribers simultaneously |
-| `↓rate-limit` | Can constrain its own output rate for backpressure |
-| `↓gossip-forward` | Can relay an inbound message to a subset of outbound peers |
-| `↓quorum-query` | Can query a threshold of peers and converge on agreement |
-| `↓dag-parent` | Can reference prior events in a partial-order data structure |
+| Barb | Observable Action |
+|------|-------------------|
+| `↓spend` | Exercises a capability — consumes a resource and authorizes spawning of new resources. Requires possession of the capability's authorization secret. |
+| `↓view` | Decrypts an encrypted note addressed to the holder, revealing the capability parameters it contains. |
+| `↓nullify` | Publishes evidence that a capability instance has been exercised. Each exercise SHALL produce a unique nullifier. A nullifier appearing on-chain SHALL prevent re-exercise of the same capability instance. |
+| `↓commit` | Publishes the public face of a capability as a Commitment. The commitment cryptographically binds the capability parameters while revealing none of them. |
+| `↓prove` | Generates a zero-knowledge proof that the holder knows a witness satisfying the capability's predicate language, without revealing the witness. |
+| `↓verify` | Verifies a zero-knowledge proof or digital signature. Returns acceptance only if the proof is cryptographically valid against the declared public inputs. |
+| `↓dispatch` | Routes a capability exercise to the contract that recognizes it. The contract is identified by its ContractId. |
+| `↓gate` | Constrains capability exercise to a specific function. The function is identified by the contract's function code as declared in its manifest. |
+| `↓denominate` | Identifies the capability class. Two capabilities with different AssetId values SHALL be distinguishable by verifiers, even if all other parameters are identical. |
+| `↓prove-inclusion` | Proves membership of a commitment in a recognized set. In DarkWow: a Merkle proof from the commitment to a known Merkle root. |
+| `↓encrypt` | Produces ciphertext that only the holder of the corresponding decryption secret can decrypt. Uses Diffie-Hellman key agreement to derive a shared secret. |
+| `↓derive` | Derives a scoped sub-key from an existing secret. The derived key is bound to a specific contract instance and SHALL NOT be usable in other contexts. |
+| `↓discover` | Detects capabilities addressed to the holder. In DarkWow: trial AEAD decryption of encrypted notes in block call data. |
+| `↓mine` | Produces a valid coinbase commitment. The coinbase is the consensus mechanism that creates the native asset (DRKW). Requires possession of a MiningRecipient. |
+| `↓concurrent` | Executes in parallel with sibling processes. Requires no shared mutable state dependency between the processes. |
+| `↓merge` | Deterministically combines concurrent state diffs. Two processes with disjoint key sets SHALL produce mergeable state deltas. |
+| `↓sync-barrier` | Blocks until a synchronization condition is met. Used to coordinate processes across execution waves. |
+| `↓broadcast` | Publishes a message to multiple subscribers simultaneously. The message SHALL be delivered to all active subscribers. |
+| `↓rate-limit` | Constrains output rate for backpressure. The process SHALL NOT exceed its declared rate budget. |
+| `↓gossip-forward` | Relays an inbound message to a subset of outbound peers. Forwarding SHALL exclude the origin peer. |
+| `↓quorum-query` | Queries a threshold of peers and converges on agreement. Agreement requires a supermajority of queried peers. |
+| `↓dag-parent` | References prior events in a partial-order data structure. The reference forms a directed acyclic graph edge. |
 
 ### 1.2 Bisimulation
 
@@ -248,7 +248,7 @@ The wallet, as a capability engine, constructs these emergent types at scan
 time: it discovers a commitment via AEAD decryption, resolves the contract
 via its manifest, and derives the capability's type from the composition of
 the primitives the contract declares. The wallet never stores a generic
-`cap_id: String` — it stores a typed composition.
+`cap_id: String` — it SHALL store a typed composition.
 
 ### 6.2 Primitive Soundness Is a Prerequisite
 
@@ -258,7 +258,7 @@ primitive type preserves its barbs across every module boundary.
 If `Nullifier` is unified with `[u8; 32]` at any boundary, the composition
 collapses. The wallet cannot determine whether a given 32-byte value is a
 `Nullifier` (exhibiting `↓nullify`, preventing replay), a `Commitment` (exhibiting
-`↓commit`, representing value), or an opaque byte buffer (exhibiting no barbs).
+`↓commit`, the public face of a capability), or an opaque byte buffer (exhibiting no barbs).
 All three are behaviorally distinct under bisimulation (§2). Unifying them
 under `[u8; 32]` makes all three indistinguishable.
 
@@ -315,7 +315,14 @@ Every program that compiles SHALL satisfy these five invariants:
 Every type in the DarkWow type system, its inner representation, the barbs
 it exhibits, its scope, and its construction rules.
 
-### 8.1 Cryptographic Primitive Types
+### 8.1 Cryptographic Primitive Types (Nominal)
+
+These types are **nominal** — distinguished by their name and behavioral
+position, not by their internal representation. Two primitive types with
+identical internal representations (`pallas::Base`) SHALL NOT be unified
+if their barbs differ.
+
+
 
 | Type | Inner | Barbs | Scope | Construction |
 |------|-------|-------|-------|-------------|
