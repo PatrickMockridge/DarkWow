@@ -64,6 +64,23 @@ WalletHandle* dwow_wallet_open(
 /** Free a full wallet handle. */
 void dwow_wallet_free(WalletHandle* handle);
 
+/** Open a persistent wallet instance (on-disk DB with optional encryption).
+ *
+ *  @param keys_path   Path to keys.toml
+ *  @param section     TOML section name
+ *  @param network     "testnet" or "mainnet"
+ *  @param db_path     Path to wallet.db (SQLite file)
+ *  @param password    Password for encrypted DB ("" for none)
+ *  @param production  Non-zero for production mode
+ *  @return            Opaque handle, or NULL on error. */
+WalletHandle* dwow_wallet_open_persistent(
+    const char* keys_path,
+    const char* section,
+    const char* network,
+    const char* db_path,
+    const char* password,
+    int32_t production);
+
 /* ── Lifecycle (extended) ─────────────────────────────────────── */
 
 /** Get the wallet version string.

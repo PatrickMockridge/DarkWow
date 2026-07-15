@@ -276,6 +276,71 @@ pub extern "C" fn dwow_wallet_open(
     }
 }
 
+/// Open a persistent wallet instance (AccountManager + on-disk WalletDb + Dww).
+///
+/// @param db_path   Path to wallet.db (SQLite file)
+/// @param password  Password for encrypted DB (pass empty string for none)
+/// @param production  Non-zero for production mode (HMAC checks enabled)
+///
+/// Returns opaque handle, or NULL on error.
+/// Free with `dwow_wallet_free`.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_open_persistent(
+    keys_path: *const c_char,
+    section: *const c_char,
+    network: *const c_char,
+    db_path: *const c_char,
+    password: *const c_char,
+    production: i32,
+) -> *mut WalletHandle {
+    if keys_path.is_null() || section.is_null() || network.is_null() || db_path.is_null() {
+        return std::ptr::null_mut();
+    }
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let keys_path_str = unsafe { CStr::from_ptr(keys_path) }.to_str().ok()?;
+        let section_str = unsafe { CStr::from_ptr(section) }.to_str().ok()?;
+        let network_str = unsafe { CStr::from_ptr(network) }.to_str().ok()?;
+        let db_path_str = unsafe { CStr::from_ptr(db_path) }.to_str().ok()?;
+        let pass_str = if password.is_null() {
+            String::new()
+        } else {
+            unsafe { CStr::from_ptr(password) }.to_str().ok()?.to_string()
+        };
+        let net = match network_str {
+            "mainnet" => Network::Mainnet,
+            _ => Network::Testnet,
+        };
+        let prod = production != 0;
+
+        let wallet = WalletDb::new(
+            Some(PathBuf::from(db_path_str)),
+            Some(&pass_str),
+            prod,
+        ).ok()?;
+        let account_mgr = dwow_accounts::AccountManager::open(
+            Path::new(keys_path_str), net, section_str,
+        ).ok()?;
+
+        let dww = Dww {
+            network: net,
+            account_mgr,
+            wallet: wallet.clone(),
+            p2p: None,
+            executor: None,
+            p2p_settings: None,
+            highest_peer_tip: Arc::new(HighestPeerTip(AtomicU64::new(0))),
+            last_synced_tip_hash: smol::lock::Mutex::new(None),
+            verified_anchor_height: smol::lock::Mutex::new(0),
+        };
+        dww.initialize_wallet().ok()?;
+        Some(Box::new(WalletHandle { dww, _wallet: wallet, last_error: std::cell::RefCell::new(None) }))
+    }));
+    match result {
+        Ok(Some(b)) => Box::into_raw(b),
+        _ => std::ptr::null_mut(),
+    }
+}
+
 // ============================================================================
 // Scan — full pipeline (pure scan + SQLite persistence)
 // ============================================================================
@@ -292,6 +357,7 @@ pub extern "C" fn dwow_wallet_scan_block_json(
     handle: *mut WalletHandle,
     block_json: *const c_char,
 ) -> i32 {
+    if handle.is_null() || block_json.is_null() { return -1; }
     let result = catch_unwind(AssertUnwindSafe(|| {
         let wallet = unsafe { &mut (*handle) };
         let json = unsafe { CStr::from_ptr(block_json) }.to_str().ok()?;
@@ -302,7 +368,12 @@ pub extern "C" fn dwow_wallet_scan_block_json(
     }));
     match result {
         Ok(Some(v)) => v,
-        _ => -1,
+        _ => {
+            // last_error may be set by scan_block_linear internally;
+            // write a fallback if the outer catch_unwind caught a panic.
+            if let Ok(Some(v)) = result { return v; }
+            -1
+        }
     }
 }
 
@@ -315,10 +386,14 @@ pub extern "C" fn dwow_wallet_scan_block_json(
 /// Returns count (>= 0), or -1 on error.
 #[no_mangle]
 pub extern "C" fn dwow_wallet_cap_count(handle: *const WalletHandle) -> i32 {
+    if handle.is_null() { return -1; }
     let wallet = unsafe { &(*handle) };
     match wallet._wallet.get_held_capabilities(Some(false)) {
         Ok(caps) => caps.len() as i32,
-        Err(_) => -1,
+        Err(e) => {
+            wallet.last_error.borrow_mut().replace(format!("cap_count: {:?}", e));
+            -1
+        }
     }
 }
 
@@ -331,10 +406,14 @@ pub extern "C" fn dwow_wallet_get_cap(
     handle: *const WalletHandle,
     index: i32,
 ) -> *mut CapRecordHandle {
+    if handle.is_null() { return std::ptr::null_mut(); }
     let wallet = unsafe { &(*handle) };
     let caps = match wallet._wallet.get_held_capabilities(Some(false)) {
         Ok(c) => c,
-        Err(_) => return std::ptr::null_mut(),
+        Err(e) => {
+            wallet.last_error.borrow_mut().replace(format!("get_cap: {:?}", e));
+            return std::ptr::null_mut();
+        }
     };
     if index < 0 || (index as usize) >= caps.len() {
         return std::ptr::null_mut();
@@ -431,10 +510,14 @@ pub extern "C" fn dwow_wallet_cap_revoked(handle: *const CapRecordHandle) -> i32
 /// Get the sum of all unspent native token values (balance in base units).
 #[no_mangle]
 pub extern "C" fn dwow_wallet_balance(handle: *const WalletHandle) -> u64 {
+    if handle.is_null() { return 0; }
     let wallet = unsafe { &(*handle) };
     match wallet.dww.capability_balance() {
         Ok(balances) => balances.values().sum(),
-        Err(_) => 0,
+        Err(e) => {
+            wallet.last_error.borrow_mut().replace(format!("balance: {:?}", e));
+            0
+        }
     }
 }
 
