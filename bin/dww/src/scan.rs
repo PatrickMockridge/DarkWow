@@ -642,6 +642,16 @@ fn scan_block(
                             append_leaf_and_prove(tree, leaf) else { break };
                         // merkle_proof is consumed in CapabilityDiscovery below
 
+                        // §0.1.3: resolve key coordinates via AccountManager
+                        // delegation so the spend path can later recover the
+                        // owning secret (wallet.md §4). Path 1 does this at
+                        // line 396; Path 2 was deferred (P0.1b) — fixed here.
+                        let key_coords = account_mgr.find_owner(
+                            &call.contract_id,
+                            &height.to_le_bytes(),
+                            &PublicKey::from_secret(*secret),
+                        );
+
                         let cap_record = CapRecord {
                             cap_id: derive_cap_id(secret, &leaf.to_repr()),
                             value: 0,
@@ -664,7 +674,7 @@ fn scan_block(
                             revoked: false,
                             revoked_at_height: None,
                             created_at_height: height_u32,
-                            key_coords: None, // P0.1b: Path 2 seed deferred
+                            key_coords, // resolved via find_owner
                         };
                         result.capabilities.push(CapabilityDiscovery { cap_record, merkle_proof });
                         path2_decrypted = true;
