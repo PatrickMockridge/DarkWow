@@ -177,6 +177,45 @@ int32_t dwow_wallet_cap_commitment(
  *  @return 1 if revoked, 0 if active, -1 on error. */
 int32_t dwow_wallet_cap_revoked(const CapRecordHandle* handle);
 
+/** Get the block height at which this capability was revoked (0 if active). */
+uint32_t dwow_wallet_cap_revoked_at_height(const CapRecordHandle* handle);
+
+/** Get the manifest capability name (e.g. "coin", "credential").
+ *  Returns bytes written (excluding NUL), or -1 on error. */
+int32_t dwow_wallet_cap_name(
+    const CapRecordHandle* handle, char* out_buf, int32_t buf_len);
+
+/** Get the capability resource identity (ocap.md §3). */
+int32_t dwow_wallet_cap_resource(
+    const CapRecordHandle* handle, char* out_buf, int32_t buf_len);
+
+/** Get the capability action identity (ocap.md §3). */
+int32_t dwow_wallet_cap_action(
+    const CapRecordHandle* handle, char* out_buf, int32_t buf_len);
+
+/** Get the manifest capability discriminant (u8). */
+uint8_t dwow_wallet_cap_discriminant(const CapRecordHandle* handle);
+
+/** Get the composed primitives as a comma-separated string. */
+int32_t dwow_wallet_cap_primitives(
+    const CapRecordHandle* handle, char* out_buf, int32_t buf_len);
+
+/** Get the covered barbs as a comma-separated string. */
+int32_t dwow_wallet_cap_barbs(
+    const CapRecordHandle* handle, char* out_buf, int32_t buf_len);
+
+/** Get the spend hook FuncId (32 bytes, zeros if none). */
+int32_t dwow_wallet_cap_spend_hook(
+    const CapRecordHandle* handle, uint8_t* out_buf, int32_t buf_len);
+
+/** Get the FuncId (32 bytes, zeros if none). */
+int32_t dwow_wallet_cap_func_id(
+    const CapRecordHandle* handle, uint8_t* out_buf, int32_t buf_len);
+
+/** Get the Merkle inclusion proof as a JSON array of bs58 sibling strings. */
+int32_t dwow_wallet_cap_merkle_proof(
+    const CapRecordHandle* handle, char* out_buf, int32_t buf_len);
+
 /** Get the asset ID (TokenId) for a capability (always 32 bytes).
  *
  *  @param out_buf  Caller-allocated buffer, must be >= 32 bytes

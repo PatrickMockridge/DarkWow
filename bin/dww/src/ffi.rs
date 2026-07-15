@@ -462,6 +462,146 @@ pub extern "C" fn dwow_wallet_cap_leaf_position(handle: *const CapRecordHandle) 
     unsafe { (*handle).cap_record.leaf_position }
 }
 
+// ── Typed-capability accessors (wallet.md §2.2, ocap.md §6) ─────────
+
+/// Return string from Option<String> into caller buffer. Returns bytes
+/// written (excluding NUL), or -1 on error. Writes empty string for None.
+fn write_str_opt(opt: &Option<String>, out_buf: *mut c_char, buf_len: i32) -> i32 {
+    if out_buf.is_null() || buf_len <= 0 { return -1; }
+    let s = opt.as_deref().unwrap_or("");
+    let cstr = match CString::new(s) { Ok(c) => c, Err(_) => return -1 };
+    let bytes = cstr.as_bytes_with_nul();
+    if bytes.len() > buf_len as usize { return -1; }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf as *mut u8, bytes.len()); }
+    s.len() as i32
+}
+
+/// Join a slice into a comma-separated string, write to caller buffer.
+fn write_csv(items: &[String], out_buf: *mut c_char, buf_len: i32) -> i32 {
+    if out_buf.is_null() || buf_len <= 0 { return -1; }
+    let csv = items.join(",");
+    let cstr = match CString::new(csv) { Ok(c) => c, Err(_) => return -1 };
+    let bytes = cstr.as_bytes_with_nul();
+    if bytes.len() > buf_len as usize { return -1; }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf as *mut u8, bytes.len()); }
+    (bytes.len() - 1) as i32
+}
+
+macro_rules! cap_str_accessor {
+    ($name:ident, $field:ident, $desc:literal) => {
+        #[doc = $desc]
+        #[no_mangle]
+        pub extern "C" fn $name(
+            handle: *const CapRecordHandle,
+            out_buf: *mut c_char,
+            buf_len: i32,
+        ) -> i32 {
+            if handle.is_null() { return -1; }
+            let cap = unsafe { &(*handle).cap_record };
+            write_str_opt(&cap.$field, out_buf, buf_len)
+        }
+    };
+}
+
+cap_str_accessor!(dwow_wallet_cap_name, capability_name,
+    "Get the manifest capability name (e.g. \"coin\", \"credential\").");
+cap_str_accessor!(dwow_wallet_cap_resource, resource,
+    "Get the capability resource identity (ocap.md §3).");
+cap_str_accessor!(dwow_wallet_cap_action, action,
+    "Get the capability action identity (ocap.md §3).");
+
+/// Get the manifest capability discriminant (u8). Returns 0 if unset.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_cap_discriminant(handle: *const CapRecordHandle) -> u8 {
+    if handle.is_null() { return 0; }
+    unsafe { (*handle).cap_record.capability_discriminant.unwrap_or(0) }
+}
+
+/// Get the composed primitives as a comma-separated string.
+/// Returns bytes written (excluding NUL), or -1 on error.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_cap_primitives(
+    handle: *const CapRecordHandle,
+    out_buf: *mut c_char,
+    buf_len: i32,
+) -> i32 {
+    if handle.is_null() { return -1; }
+    let cap = unsafe { &(*handle).cap_record };
+    let names: Vec<String> = cap.primitives.iter().map(|p| p.name().to_string()).collect();
+    write_csv(&names, out_buf, buf_len)
+}
+
+/// Get the covered barbs as a comma-separated string.
+/// Returns bytes written (excluding NUL), or -1 on error.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_cap_barbs(
+    handle: *const CapRecordHandle,
+    out_buf: *mut c_char,
+    buf_len: i32,
+) -> i32 {
+    if handle.is_null() { return -1; }
+    let cap = unsafe { &(*handle).cap_record };
+    let names: Vec<String> = cap.barbs.iter().map(|b| b.name().to_string()).collect();
+    write_csv(&names, out_buf, buf_len)
+}
+
+/// Get the amount at which this capability was revoked, or 0 if unspent.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_cap_revoked_at_height(handle: *const CapRecordHandle) -> u32 {
+    if handle.is_null() { return 0; }
+    unsafe { (*handle).cap_record.revoked_at_height.unwrap_or(0) }
+}
+
+/// Get the spend hook FuncId as 32 bytes. Returns 0 on success, -1 on error.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_cap_spend_hook(
+    handle: *const CapRecordHandle,
+    out_buf: *mut u8,
+    buf_len: i32,
+) -> i32 {
+    if handle.is_null() || buf_len < 32 { return -1; }
+    let cap = unsafe { &(*handle).cap_record };
+    let hook_bytes: [u8; 32] = cap.spend_hook.map(|f| f.to_bytes()).unwrap_or([0u8; 32]);
+    unsafe { std::ptr::copy_nonoverlapping(hook_bytes.as_ptr(), out_buf, 32); }
+    0
+}
+
+/// Get the FuncId as 32 bytes. Returns 0 on success, -1 on error.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_cap_func_id(
+    handle: *const CapRecordHandle,
+    out_buf: *mut u8,
+    buf_len: i32,
+) -> i32 {
+    if handle.is_null() || buf_len < 32 { return -1; }
+    let cap = unsafe { &(*handle).cap_record };
+    let func_bytes: [u8; 32] = cap.func_id.map(|f| f.to_bytes()).unwrap_or([0u8; 32]);
+    unsafe { std::ptr::copy_nonoverlapping(func_bytes.as_ptr(), out_buf, 32); }
+    0
+}
+
+/// Get the stored Merkle proof for this capability as a JSON array of
+/// bs58-encoded sibling strings. Returns bytes written (excluding NUL) or -1.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_cap_merkle_proof(
+    handle: *const CapRecordHandle,
+    out_buf: *mut c_char,
+    buf_len: i32,
+) -> i32 {
+    if handle.is_null() || out_buf.is_null() || buf_len <= 0 { return -1; }
+    let cap_handle = unsafe { &(*handle) };
+    let proof = &cap_handle.merkle_proof;
+    let json = match serde_json::to_string(proof) {
+        Ok(j) => j,
+        Err(_) => return -1,
+    };
+    let cstr = match CString::new(json) { Ok(c) => c, Err(_) => return -1 };
+    let bytes = cstr.as_bytes_with_nul();
+    if bytes.len() > buf_len as usize { return -1; }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf as *mut u8, bytes.len()); }
+    (bytes.len() - 1) as i32
+}
+
 // ============================================================================
 // Additional lifecycle
 // ============================================================================
