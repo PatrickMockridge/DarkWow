@@ -215,15 +215,10 @@ impl ContractClient for PromissoryNoteClient {
     }
 }
 
-// Self-register ZK circuit builders in the SDK's circuit registry.
-// Called once at startup. Circuit names match manifest `proof_circuit` fields.
-pub fn register_circuit_builders() {
-    dwow_sdk::circuit_registry::register("Revoke_V1", PromissoryNoteClient::build_burn_from_state);
-    dwow_sdk::circuit_registry::register("Transfer_V1", PromissoryNoteClient::build_transfer_from_state);
-    dwow_sdk::circuit_registry::register("Redeem_V1", PromissoryNoteClient::build_redeem_from_state);
-    dwow_sdk::circuit_registry::register("RegisterType_V1", PromissoryNoteClient::build_token_mint_from_state);
-    dwow_sdk::circuit_registry::register("Issue_V1", PromissoryNoteClient::build_mint_from_state);
-}
+// register_circuit_builders REMOVED (D2 — phantom-code-removed-first).
+// Proofs are built by the generic prover (wallet.md §6.4.1, Phase 6) from
+// the zkas binary + manifest witness_map — no compiled-in per-contract builder.
+// The circuit_registry crate is deleted.
 
 // ============================================================================
 // JSON-driven dispatch helpers — parse manifest params, query wallet state,

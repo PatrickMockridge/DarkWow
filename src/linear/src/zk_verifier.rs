@@ -251,9 +251,18 @@ pub fn verify_core_tx_with_tables(
 /// are silently ok — the mempool already rejects them before this call.
 pub fn verify_single_tx(chain_tx: &ChainTransaction) -> Result<(), VerifyError> {
     let core_tx = decode_and_reconcile(chain_tx)?;
-    // Every call that is proof-requiring must carry at least one proof.
-    for (i, proofs) in core_tx.proofs.iter().enumerate() {
-        if proofs.is_empty() {
+    // Every proof-requiring call must carry at least one ZK proof. At the
+    // structural stage only the native token's value-bearing selectors are
+    // knowably proof-requiring (the mempool already hardcodes native
+    // knowledge — see the fee extractor); other contracts' calls may be
+    // legitimately proofless (e.g. Deployooor DeployV1/LockV1). The
+    // authoritative per-call verification against each contract's metadata
+    // happens at block accept (`verify_core_tx_with_tables`).
+    for (i, (call, proofs)) in core_tx.calls.iter().zip(core_tx.proofs.iter()).enumerate() {
+        let is_native_proof_call = call.data.contract_id
+            == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
+            && matches!(call.data.data.first(), Some(0x00 | 0x02 | 0x03 | 0x04));
+        if is_native_proof_call && proofs.is_empty() {
             return Err(VerifyError::InvalidProof(format!(
                 "call[{}] requires a proof but has none (mempool admission)",
                 i,

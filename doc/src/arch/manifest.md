@@ -234,6 +234,103 @@ requires = { type = "threshold", count = 2, total = 3, capabilities = ["a", "b",
 | `string` | UTF-8 string | Length-prefixed varint |
 | `bytes` | Opaque bytes | Length-prefixed varint |
 
+### Typed Capability Fields
+
+The manifest is the type declaration ([ocap.md §7](ocap.md)). For the wallet's
+capability engine to *construct* a capability type from a manifest — the scan's
+coverage gate ([wallet.md §2.2](wallet.md)) and the write path's generic prover
+([wallet.md §6.4.1](wallet.md)) — the declarations SHALL carry the type
+parameters themselves. Three fields provide them. Their vocabularies are
+closed: every name SHALL come from the referenced table, and an unknown name
+is a parse error, not a passthrough.
+
+**`[[capabilities]].primitives`** — the primitive types this capability
+composes. Names are drawn from the primitive table
+([type-system.md §8.1](type-system.md), mirrored by the capability SDK's
+`Primitive` enum): `SecretKey`, `PublicKey`, `Nullifier`, `Coin`,
+`ContractId`, `FuncId`, `TokenId`, `MerkleNode`, `OwnedSecretKey`,
+`MiningRecipient`.
+
+**`[[capabilities]].note_schema`** — the ordered field layout of the
+capability's AEAD-encrypted note. Each entry is `{ name, type }` with `type`
+drawn from the Parameter Types table above. A schema for a capability that
+proves Merkle inclusion SHALL include the leaf field
+`{ name = "commitment", type = "pallas_base" }`.
+
+**`[[actions]].required_barbs`** — the barbs the action's predicate requires.
+Names are drawn from the barb table ([type-system.md §1.1](type-system.md),
+mirrored by the capability SDK's `Barb` enum), e.g. `Spend`, `Nullify`,
+`Commit`, `Prove`, `Verify`, `Dispatch`, `Gate`, `Denominate`,
+`ProveInclusion`, `Encrypt`.
+
+The wallet's scan constructs the capability type by passing the declared
+primitives and required barbs through `wallet_construct`
+([wallet.md §7.1](wallet.md)). If the primitives do not cover the barbs, the
+composition is not a valid capability type and the note is dropped — the
+contract's declaration is at fault, never the wallet
+([wallet.md §9](wallet.md), [type-system.md §13](type-system.md)).
+
+**`[[circuits]].witness_map`** — the ordered witness-binding declaration for
+the generic prover ([wallet.md §6.4.1](wallet.md)). A zkas binary's witness
+section is an ordered, typed, unnamed list; `witness_map` names the source of
+each slot, in slot order: `note:<field>`, `param:<field>`, `secret`,
+`merkle_path`, `leaf_position`, `blind`, `tx_commitment`, `tx_nonce`. The
+capability SDK type-checks every entry against the slot's declared witness
+type and rejects the construction on any mismatch.
+
+Example:
+
+```toml
+[[capabilities]]
+discriminant = 0
+name = "coin"
+description = "An unspent coin — consumable"
+primitives = ["SecretKey", "Coin", "Nullifier", "ContractId", "FuncId", "TokenId", "MerkleNode"]
+note_schema = [
+    { name = "value", type = "u64" },
+    { name = "commitment", type = "pallas_base" },
+]
+
+[[actions]]
+function = "transfer"
+requires = { type = "any", capabilities = ["coin"] }
+consumes = ["coin"]
+produces = [{ name = "coin", description = "New blind output coins" }]
+required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate", "Denominate"]
+
+[[circuits]]
+name = "Transfer_V1"
+namespace = "example_contract"
+witness_map = [
+    "secret",
+    "note:value",
+    "blind",
+    "merkle_path",
+    "leaf_position",
+    "tx_commitment",
+    "tx_nonce",
+]
+```
+
+These fields describe capability **types**, never instances — the same
+schema/data split as the rest of the manifest. Declaring them requires
+reading the contract's actual circuits and note layouts; they SHALL NOT be
+copied from another contract's manifest.
+
+### Circuit Binary Delivery
+
+The generic prover needs the zkas binary named by each `[[circuits]]` entry:
+
+- **Genesis contracts** — binaries are embedded at compile time (Stage 1
+  below), alongside the embedded manifest.
+- **User-deployed contracts** — binaries travel in the `DeployV1` payload.
+  The wallet extracts them when it scans the deploy transaction and stores
+  them in its `zkas_binaries` store keyed by
+  `(ContractId, namespace, circuit name)` ([wallet.md §3](wallet.md)).
+
+No contract crate needs to be linked into the wallet for its proofs to be
+constructed.
+
 ## Full Lifecycle
 
 The manifest flows through the system in six stages:
@@ -400,13 +497,20 @@ DeployV1 tx on chain
 
 The manifest does NOT replace:
 
-- **ZK circuit binaries** — `.zk.bin` files must still be compiled and available to the prover
-- **Client builders** — type-safe Rust wrappers for building contract calls remain in contract crates
-- **Complex capability resolvers** — imperative "scan sled tree, match pubkey" logic stays in `capability.rs`
+- **ZK circuit binaries** — `.zk.bin` files must still be compiled; they reach
+  the wallet's generic prover embedded (genesis) or via the `DeployV1` payload
+  (user-deployed) — see Circuit Binary Delivery above
+- **The one bespoke citizen** — NativeToken's hardcoded client
+  ([wallet.md §6.4](wallet.md)); consensus-critical, not per-contract business logic
 
-The manifest makes these **optional**. A contract WITH a manifest is auto-discoverable
-by any wallet. A contract WITH a Rust client crate additionally gets type-safe builders.
-The manifest is the minimum; the crate is the enhancement.
+Contract client crates (type-safe Rust wrappers for building contract calls)
+remain in contract crates as **optional tooling** for non-wallet consumers.
+The wallet does not require, link, or invoke them: wallet-side invocation is
+manifest-driven end-to-end — typed capability fields for discovery, the
+`witness_map` and the generic prover for construction
+([wallet.md §6.4.1](wallet.md)). A contract WITH a manifest is fully usable
+by any wallet; a contract WITH a client crate additionally gets type-safe
+builders for its own tests and tools.
 
 ## See Also
 

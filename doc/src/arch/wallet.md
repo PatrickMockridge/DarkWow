@@ -33,6 +33,82 @@ The wallet SHALL NOT store a generic `cap_id: String`. It SHALL store a
 typed composition whose structure is determined by the contract manifest
 and the primitives discovered during scan.
 
+### 0.1 Component Architecture
+
+The wallet is composed of four components. **The wallet core is all a pure
+function**: its two computations — the scan (§2) and transaction construction
+(§6.1) — are referentially transparent, and everything else the core does is
+gather their inputs and persist their outputs. The core delegates to three
+components, each with a defined interface. This decomposition is normative;
+every implementation change SHALL be attributable to exactly one component.
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│ Wallet core (bin/dww) — owns wallet.db                         │
+│   pure:  scan_block(...)                          (read, §2)   │
+│          Transaction = f(caps, action, params,                 │
+│                          secrets, seed)          (write, §6.1) │
+│   shell: DB reads gather inputs; DB writes persist outputs     │
+└───────┬───────────────────────┬───────────────────────┬────────┘
+        │                       │                       │
+        ▼                       ▼                       ▼
+  AccountManager            dwowd-sdk             Capability SDK
+  (crates/dwow-accounts)    (src/sdk: crypto/,    (src/sdk: capability.rs,
+  declared identity;        tx.rs, blockchain.rs,  manifest.rs,
+  key derivation and        deploy.rs, wasm/)      contract_client.rs,
+  resolution                typed primitives;      generic prover)
+                            tx assembly            ALL manifest paths
+```
+
+**Wallet core** (`bin/dww`). Owns `wallet.db`. Purity applies to the scan and
+construction functions; the core's DB reads gather those functions' inputs and
+its DB writes persist their outputs. The core SHALL contain zero contract
+names. The only contract-specific citizens are **native_token** (the
+consensus-critical asset, §2.1/§6.4) and **deployooor** (deployment
+infrastructure — without it, manifest discovery is impossible). The nine
+genesis `ContractId`s appear only in the trust-tier display table (§5.2).
+Nothing else in the core names, imports, or branches on a contract.
+
+**AccountManager** (`crates/dwow-accounts`). The declared identity (§4). ALL
+secret resolution is delegated to it — `find_owner`, `resolve_key`,
+`secrets_for_contract` — and every derivation step is a pure Poseidon hash
+([type-system.md §8.3](type-system.md)). The wallet core SHALL NOT store raw
+secrets; it stores key *coordinates* and resolves them through the
+AccountManager at the moment of use.
+
+**dwowd-sdk** (`src/sdk`: `crypto/`, `tx.rs`, `blockchain.rs`, `deploy.rs`,
+`wasm/`). The nominal cryptographic primitive types
+([type-system.md §8.1](type-system.md)), transaction assembly, and chain data
+structures. Barb preservation holds across this boundary: no value crosses it
+as `[u8; 32]` ([type-system.md §2.2](type-system.md)).
+
+**Capability SDK** (`src/sdk`: `capability.rs`, `manifest.rs`,
+`contract_client.rs`, and the generic prover). A distinct architectural
+component — physically inside the `dwow-sdk` crate, logically separate from
+the dwowd-sdk. It owns ALL manifest paths: manifest parsing and resolution
+(the type declarations, §5), `wallet_construct` (the one composition function,
+§7.1), generic action dispatch (`ManifestContractClient`), and generic proof
+construction (§6.4). The wallet core calls the capability SDK; it SHALL NOT
+reimplement, inline, or bypass any of these functions.
+
+**Interface rules (normative):**
+
+1. The wallet core SHALL NOT pass contract names into the capability SDK.
+   Contract identity enters exclusively as a `ContractId` plus the stored
+   manifest resolved by that id.
+2. Function names and contract names are distinct namespaces and SHALL NOT
+   be conflated. An action is addressed as `(ContractId, action_name)` where
+   `action_name` is declared by the manifest.
+3. Per-contract knowledge lives in exactly two places: the contract's own
+   crate, and the contract's manifest. The manifest is the only one of the
+   two the wallet reads. A contract crate is optional tooling
+   ([manifest.md](manifest.md)); the wallet SHALL NOT require one.
+4. The capability SDK is contract-agnostic: given the same manifest and the
+   same primitives, it behaves identically whichever contract they came from.
+   Specific barb compositions used by one contract are not "that contract's
+   capability" — they are constructions any present or future contract may
+   declare.
+
 ## 1. Wallet State as a Pure Function
 
 Per the type system's referential transparency requirement:
@@ -135,6 +211,13 @@ pipeline.
 | `merkle_trees` | Capability commitment tree checkpoints | Merkle root state |
 | `key_lifecycle` | Additive lifecycle keys | ν-restricted name store |
 | `contract_metadata` | On-chain contract manifests | Type declarations |
+| `zkas_binaries` | Circuit binaries keyed by (ContractId, namespace, circuit name) | Predicate languages L_{r,s} for the generic prover (§6.4) |
+
+Genesis contracts' circuit binaries are embedded at compile time
+([manifest.md](manifest.md), Stage 1); user-deployed contracts' binaries are
+extracted from the `DeployV1` payload when the deploy transaction is scanned
+and stored in `zkas_binaries`. Held capabilities discovered through Path 2
+(§2.2) store their AccountManager key *coordinates* (§0.1), never raw secrets.
 
 The write path adds **provisional** stores (§6.5): a pending-transaction record and a
 per-capability spend-state (`Unspent`/`Reserved`/`Spent`). These hold no confirmed
@@ -289,10 +372,58 @@ Per §9 (read side) and [type-system.md §13](type-system.md), the write path SH
 exactly one bespoke citizen: **NativeToken**, the consensus-critical asset. Native
 transfers, burns, and fee payments SHALL be constructed by the hardcoded NativeToken
 client. Every other contract — genesis or user-deployed — SHALL be constructed
-generically from its manifest: the manifest's `proof_circuit` names the builder in the
-circuit registry, and no per-contract wallet code is required ([manifest.md](manifest.md);
-the wallet is a generic capability engine). Adding a second bespoke construction path
-breaks the write path's design exactly as it would break the scan (§9).
+generically from its manifest by the capability SDK's **generic prover** (§0.1): no
+per-contract wallet code, and no compiled-in proof builder, is required
+([manifest.md](manifest.md); the wallet is a generic capability engine). Adding a second
+bespoke construction path breaks the write path's design exactly as it would break the
+scan (§9).
+
+#### 6.4.1 The Generic Prover
+
+Given `(ContractId, action, params)` and the selected capabilities (§6.2), the
+capability SDK SHALL construct the proof(s) as follows:
+
+1. Resolve the stored manifest by `ContractId` (§5).
+2. Find the manifest action and its function; the function's `proof_circuit`
+   names a `[[circuits]]` entry `(name, namespace)`.
+3. Load the zkas binary for `(ContractId, namespace, name)` from the
+   `zkas_binaries` store (§3) — embedded at compile time for genesis
+   contracts, extracted from the `DeployV1` payload at deploy-scan time for
+   user-deployed contracts.
+4. Decode it (`ZkBinary::decode`), obtaining the circuit's ordered witness
+   list (`ZkBinary.witnesses: Vec<VarType>`).
+5. Bind every witness slot per the **witness-binding rule** below.
+6. Build the proving key (`ProvingKey::build`, cacheable per circuit) and
+   create the proof, with all proving randomness derived from `Seed` (§6.1).
+
+**Witness-binding rule.** A zkas binary's witness section is an *ordered,
+typed, unnamed* list — heap names exist only in the optional debug section
+and SHALL NOT be load-bearing. Binding is therefore ordered and
+manifest-declared: the manifest's `[[circuits]]` entry SHALL carry a
+`witness_map` — one entry per witness slot, in slot order, each naming its
+source ([manifest.md](manifest.md), Typed Capability Fields):
+
+| Source | Meaning | Typical `VarType` |
+|--------|---------|-------------------|
+| `note:<field>` | Field from the selected capability's decrypted note (`note_schema`) | `Base`, `Uint64` |
+| `param:<field>` | Field from the action's `[[parameters]]` | per parameter type |
+| `secret` | The capability's spending key, resolved via AccountManager key coordinates (§0.1) | `Base` |
+| `merkle_path` | The capability's inclusion proof (`capability_proofs`, §3) | `MerklePath` |
+| `leaf_position` | The capability's leaf position | `Uint32` |
+| `blind` | A fresh blind derived from `Seed` (§6.1) | `Base`, `Scalar` |
+| `tx_commitment`, `tx_nonce` | The transaction binding names | `Base` |
+
+The capability SDK SHALL type-check every binding against the slot's declared
+`VarType` and SHALL reject the construction with a typed error barb — never a
+fallback — on any arity or type mismatch. This is the write-path dual of the
+read path's coverage gate (§2.2): an unbindable circuit is a type error in the
+*contract's declarations*. Fix the manifest, not the wallet (§9).
+
+**Public inputs.** The prover SHALL derive the proof's public inputs by
+evaluating the witnessed circuit through the existing trace machinery
+(`ZkCircuit::enable_trace`, the `constrain_instance` opcode outputs) — the
+same evaluation the verifier's metadata call performs node-side. No
+per-contract Rust computes public inputs on the generic path.
 
 ### 6.5 Provisional State: The In-Between
 

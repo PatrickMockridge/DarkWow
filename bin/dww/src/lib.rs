@@ -460,7 +460,15 @@ impl Dww {
             use crate::walletdb::ContractMetadataRecord;
 
             let genesis_manifests: &[(&str, &str)] = &[
+                ("native_token", include_str!("../../../src/contract/native_token/manifest.toml")),
+                ("deployooor", include_str!("../../../src/contract/deployooor/manifest.toml")),
                 ("promissory_note", include_str!("../../../src/contract/promissory_note/manifest.toml")),
+                ("attestation", include_str!("../../../src/contract/attestation/manifest.toml")),
+                ("box", include_str!("../../../src/contract/box/manifest.toml")),
+                ("identity", include_str!("../../../src/contract/identity/manifest.toml")),
+                ("multisig", include_str!("../../../src/contract/multisig/manifest.toml")),
+                ("oracle", include_str!("../../../src/contract/oracle/manifest.toml")),
+                ("purse", include_str!("../../../src/contract/purse/manifest.toml")),
             ];
             for (name, toml_str) in genesis_manifests {
                 let manifest = match ContractManifest::from_toml(toml_str) {
@@ -656,8 +664,8 @@ impl WalletStateProvider for Dww {
     fn held_capabilities_for_token(&self, token_id: &str) -> std::result::Result<Vec<CapInfo>, String> {
         let cap_records = self.wallet.get_held_capabilities(Some(false))
             .map_err(|e| format!("{:?}", e))?;
-        // If token_id is empty, return all caps (promissory_note "all coins" lookup).
-        // Otherwise, decode token_id from bs58 for byte comparison.
+        // If token_id is empty, return all held caps. Otherwise, decode
+        // token_id from bs58 for byte comparison.
         let filter_bytes: Option<[u8; 32]> = if token_id.is_empty() {
             None
         } else {
@@ -726,149 +734,35 @@ impl WalletStateProvider for Dww {
 }
 
 impl Dww {
-    /// Attach fee to transaction
+    /// Build a native-token transfer transaction (wallet.md §6.4 — the ONE
+    /// bespoke write-path citizen; executable spec:
+    /// `wallet_model.py::build_transfer`).
     ///
-    /// Builds a NativeToken::FeeV1 call using the wallet's first DRKW cap
-    /// and appends it as a root-level call in the transaction.
+    /// The full §6.3 pipeline: select the input capability (§6.2), resolve its
+    /// secret via AccountManager key coordinates (§4), build the TransferV1
+    /// call with real burn/mint proofs via the hardcoded `TransferCallBuilder`
+    /// (§6.4), attach the fee call from a DIFFERENT DRKW cap (§6.3 step 6 —
+    /// one nullifier is never published twice), publish every consumed
+    /// nullifier in `Transaction.nullifiers` — transfer input first, fee input
+    /// after (§6.3 step 4, model step 5) — and sign per-call (§6.3 step 7):
+    /// one signature row per call, transfer row = input secrets, fee row =
+    /// the fee ephemeral (mempool admission rejects any other layout).
     ///
-    /// TODO(arch): Extract ZK proof building to NativeTokenClient::build_fee()
-    /// in the native_token contract crate. The wallet should call the client,
-    /// not build FeeV1 proofs directly. Native Token is the sole special citizen
-    /// per wallet.md — its ZK logic belongs in its contract crate like all others.
-    pub async fn attach_fee(&self, tx: &mut Transaction, _fee: u64) -> Result<()> {
-        use crate::contract_imports::native_token::{
-            DRKW_TOKEN_ID, FeeCallBuilder, FeeCallInput, FeeCallOutput,
-            NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN,
-        };
-        use dwow_core::zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses};
-        use dwow_sdk::crypto::{BaseBlind, MerkleNode};
-        use dwow_serial::Encodable;
-        use rand::rngs::OsRng;
-
-        use crate::fee_builder::DEFAULT_FEE;
-
-        // Get DRKW cap for fee
-        let fee_cap_records = self.wallet.get_capabilities_for_token(&DRKW_TOKEN_ID, Some(false))
-            .map_err(|e| Error::Custom(format!("Failed to get DRKW capabilities: {:?}", e)))?;
-
-        if fee_cap_records.is_empty() {
-            return Err(Error::Custom(
-                "No DRKW capabilities available for fee payment.".to_string(),
-            ));
-        }
-
-        let fee_cap = &fee_cap_records[0];
-        // Per Cornerstone 1: secrets come from AccountManager (in-memory),
-        // never from the database. The wallet holds secrets in memory only.
-        let dark_secret = self.account_mgr.secrets()
-            .into_iter()
-            .next()
-            .ok_or_else(|| Error::Custom("No secrets in AccountManager".to_string()))?;
-
-        let dark_merkle_proof = self.wallet.get_merkle_proof(&fee_cap.cap_id)
-            .map_err(|e| Error::Custom(format!("Failed to get DRKW Merkle proof: {:?}", e)))?;
-
-        let dark_merkle_path: Vec<MerkleNode> = dark_merkle_proof
-            .siblings
-            .iter()
-            .map(|s| {
-                let bytes: [u8; 32] = bs58::decode(s)
-                    .into_vec()
-                    .map_err(|e| Error::Custom(e.to_string()))?
-                    .try_into()
-                    .map_err(|_| Error::Custom("Invalid Merkle node length".to_string()))?;
-                Ok(MerkleNode::from_bytes(bytes)
-                    .ok_or_else(|| Error::Custom("Invalid Merkle node".to_string()))?)
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        // cap_blind is now BaseBlind — typed, no from_repr needed
-        let fee_cap_blind = fee_cap.cap_blind.inner();
-
-        // Load fee ZK binary and build fee proof
-        let fee_zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN, false)
-            .map_err(|e| Error::Custom(format!("Failed to decode fee ZK binary: {:?}", e)))?;
-
-        let fee_empty_wits = empty_witnesses(&fee_zkbin)?;
-        let fee_circuit = ZkCircuit::new(fee_empty_wits, &fee_zkbin);
-        let fee_pk = ProvingKey::build(fee_zkbin.k, &fee_circuit)
-            .map_err(|e| Error::Custom(format!("ProvingKey::build fee: {:?}", e)))?;
-
-        let fee_input = FeeCallInput {
-            value: fee_cap.value,
-            token_id: DRKW_TOKEN_ID.inner(),
-            spend_hook: pallas::Base::zero(),
-            user_data: pallas::Base::zero(),
-            coin_blind: fee_cap_blind,
-            leaf_position: fee_cap.leaf_position,
-            merkle_path: dark_merkle_path,
-            secret: dark_secret,
-            ephemeral_signature_secret: SecretKey::random(&mut OsRng),
-            tx_commitment: pallas::Base::zero(),
-            tx_nonce: pallas::Base::zero(),
-        };
-
-        let dark_public_key = PublicKey::from_secret(dark_secret);
-        let change_blind = BaseBlind::random(&mut OsRng);
-        let fee_output = FeeCallOutput {
-            recipient: dark_public_key,
-            value: fee_cap.value.saturating_sub(DEFAULT_FEE),
-            spend_hook: pallas::Base::zero(),
-            user_data: pallas::Base::zero(),
-            coin_blind: change_blind.inner(),
-        };
-
-        let fee_builder = FeeCallBuilder {
-            input: fee_input,
-            output: fee_output,
-            fee_zkbin,
-            fee_pk,
-            fee: DEFAULT_FEE,
-        };
-
-        let fee_debris = fee_builder.build()
-            .map_err(|e| Error::Custom(format!("Failed to build fee: {:?}", e)))?;
-
-        // Encode fee params into call data (FeeV1 = 0x00)
-        let mut fee_call_data = vec![0x00u8];
-        fee_debris.params.encode(&mut fee_call_data)
-            .map_err(|e| Error::Custom(format!("Failed to encode fee params: {:?}", e)))?;
-
-        let fee_call = ContractCall {
-            contract_id: *NATIVE_TOKEN_CONTRACT_ID,
-            data: fee_call_data,
-        };
-
-        // Append fee as root-level call (no parent, no children)
-        tx.calls.push(dwow_core::tx::DarkLeaf {
-            data: fee_call,
-            parent_index: None,
-            children_indexes: vec![],
-        });
-        tx.proofs.push(vec![]);
-
-        Ok(())
-    }
-
-    /// Build a native-token transfer (wallet.md §6.4 — one bespoke write-path citizen).
-    /// Composes the TransferCallBuilder (Step 2) with wallet state.
-    ///
-    /// Used by `wallet transfer <amount> DRKW <recipient>` via the dispatch path
-    /// (dispatch.rs) and the RPC path (rpc_server.rs). Returns a
-    /// `ContractCallLeaf` ready for fee finalization through
-    /// `build_fee_and_finalize_tx`.
+    /// `seed` is the explicit randomness name (§6.1), drawn by the shell
+    /// (dispatch/RPC): every transfer blind and AEAD ephemeral derives from
+    /// it, so identical (inputs, seed) yield identical transfer params.
     ///
     /// # Errors
     ///
-    /// Returns `InsufficientFunds` if no DRKW cap has enough value (amount +
-    /// fee_reserve). Returns `CapKeyResolutionFailed` if the selected cap
-    /// has no stored `key_coords` (pre-upgrade wallet). Returns `ProofBuildFailed`
-    /// if ZK proof generation fails.
+    /// Returns an error if no DRKW cap covers `amount`, if the selected cap
+    /// has no stored `key_coords` (pre-upgrade wallet), if no second DRKW cap
+    /// is available for the fee, or if ZK proof generation fails.
     pub async fn build_native_transfer(
         &self,
         amount: u64,
         recipient_bs58: &str,
-    ) -> Result<dwow_core::tx::ContractCallLeaf> {
+        seed: [u8; 32],
+    ) -> Result<Transaction> {
         use crate::contract_imports::native_token::{
             DRKW_TOKEN_ID, InputWitness, TransferCallBuilder, TransferCallOutput,
             NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V1_BIN, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN,
@@ -876,23 +770,25 @@ impl Dww {
         use dwow_core::zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses};
         use dwow_core::zkas::ZkBinary;
         use dwow_sdk::crypto::{
-            keypair::Address, BaseBlind, Blind, FuncId, MerkleNode, PublicKey, SecretKey,
+            keypair::Address, BaseBlind, Blind, FuncId, MerkleNode,
         };
         use dwow_sdk::pasta::pallas;
         use dwow_serial::Encodable;
-        use rand::rngs::OsRng;
+        use rand::{rngs::StdRng, SeedableRng};
 
-        // wallet.md §6.2: select coin covering amount + fee reserve
-        let fee_reserve = crate::fee_builder::DEFAULT_FEE + 10_000_000;
+        // wallet.md §6.2 / model step 1: select the input capability covering
+        // `amount`. The fee is paid from a DIFFERENT cap (model
+        // build_fee_and_finalize_tx, exclude_cap_id) — no fee reserve is
+        // deducted here (deducting one while paying the fee elsewhere would
+        // silently destroy that value).
         let caps = self.wallet.get_capabilities_for_token(&DRKW_TOKEN_ID, Some(false))
             .map_err(|e| Error::Custom(format!("get DRKW caps: {:?}", e)))?;
         let selected = caps.iter()
-            .find(|c| c.value >= amount + fee_reserve)
+            .find(|c| c.value >= amount)
             .ok_or_else(|| Error::Custom(format!(
-                "No DRKW cap with value >= {} (need {} + {} fee reserve)",
-                amount + fee_reserve, amount, fee_reserve,
+                "No DRKW cap with value >= {}", amount,
             )))?;
-        let change_value = selected.value - amount - fee_reserve;
+        let change_value = selected.value - amount;
 
         // wallet.md §4: resolve per-cap secret via AccountManager
         let coords = selected.key_coords.as_ref()
@@ -929,6 +825,16 @@ impl Dww {
             ProvingKey::build(mint_zkbin.k, &c).map_err(|e| Error::Custom(format!("mint pk: {}", e)))?
         };
 
+        // wallet.md §6.1: the Seed is the explicit randomness name. Every
+        // blind and AEAD ephemeral below derives from this rng (model
+        // _derive_blind/_seeded_rng).
+        let mut rng = StdRng::from_seed(seed);
+
+        // In-circuit binding values — same as every other caller (fee builder,
+        // miner coinbase): the circuit constrains tx_binding =
+        // poseidon(tx_commitment, tx_nonce); the OUTER Transaction.tx_commitment
+        // is computed over the call data by TransactionBuilder::build (the Rust
+        // port of the model's compute_tx_commitment).
         let tx_commitment = pallas::Base::zero();
         let tx_nonce = pallas::Base::zero();
         let spend_hook = pallas::Base::zero();
@@ -944,7 +850,7 @@ impl Dww {
             merkle_path,
         };
 
-        // Compose recipient output
+        // Compose recipient output (blind Seed-derived, §6.1)
         let addr: Address = recipient_bs58.parse()
             .map_err(|e| Error::Custom(format!("recipient address: {}", e)))?;
         let recipient_pk = *addr.public_key();
@@ -955,7 +861,7 @@ impl Dww {
             token_id: DRKW_TOKEN_ID,
             spend_hook: FuncId::from(spend_hook),
             user_data,
-            blind: Blind(BaseBlind::random(&mut OsRng).inner()),
+            blind: Blind(BaseBlind::random(&mut rng).inner()),
         };
 
         let mut builder = TransferCallBuilder {
@@ -965,36 +871,78 @@ impl Dww {
             tx_commitment, tx_nonce,
         };
 
-        // Compose change output if applicable
+        // Compose change output if applicable — change returns to the OWNING
+        // ACCOUNT's master key (model step: change to sender,
+        // wallet_model.py:3938). The account's master key rather than the
+        // per-block instance key: Path 1 scan trials master keys at every
+        // height but per-block keys only at their own height, so change sent
+        // to an old per-block key would never be rediscovered.
         if change_value > 0 {
-            let master_pk = PublicKey::from_secret(self.account_mgr.secrets().first()
-                .copied().ok_or_else(|| Error::Custom("no master key".into()))?);
+            let change_secret = self.account_mgr.secrets()
+                .get(coords.account_index).copied()
+                .ok_or_else(|| Error::Custom(format!(
+                    "no account at index {}", coords.account_index,
+                )))?;
             builder.outputs.push(TransferCallOutput {
                 version: 0,
-                public_key: master_pk,
+                public_key: PublicKey::from_secret(change_secret),
                 value: change_value,
                 token_id: DRKW_TOKEN_ID,
                 spend_hook: FuncId::from(spend_hook),
                 user_data,
-                blind: Blind(BaseBlind::random(&mut OsRng).inner()),
+                blind: Blind(BaseBlind::random(&mut rng).inner()),
             });
         }
 
-        let debris = builder.build()
+        let debris = builder.build(&mut rng)
             .map_err(|e| Error::Custom(format!("transfer build: {}", e)))?;
 
-        // wallet.md §6.3 step 8: serialize params with function selector
+        // §6.3 step 4: the nullifiers this transfer publishes — one per
+        // consumed input, the SAME values the entrypoint verifies from params.
+        let transfer_nullifiers: Vec<dwow_sdk::crypto::Nullifier> =
+            debris.params.inputs.iter().map(|i| i.nullifier).collect();
+        let transfer_secrets = debris.signature_secrets.clone();
+
+        // wallet.md §6.3 step 8: serialize params with function selector.
+        // Layout: [0x03][TransferParamsV1] — what the entrypoint's
+        // deserialize(params) and the balance checker parse. Direct encode,
+        // no length prefix.
         let mut data = vec![0x03u8];
-        dwow_serial::serialize(&debris.params).encode(&mut data)
+        debris.params.encode(&mut data)
             .map_err(|e| Error::Custom(format!("encode params: {}", e)))?;
 
-        Ok(dwow_core::tx::ContractCallLeaf {
+        let leaf = dwow_core::tx::ContractCallLeaf {
             call: dwow_sdk::tx::ContractCall {
                 contract_id: *NATIVE_TOKEN_CONTRACT_ID,
                 data,
             },
             proofs: debris.proofs,
-        })
+        };
+
+        // §6.3 step 6 / model steps 3-4: fee from a different DRKW cap;
+        // TransactionBuilder computes the outer tx_commitment; the fee input's
+        // nullifier is published by the fee builder.
+        let (mut tx, fee_ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(
+            &self.wallet, &self.account_mgr, leaf, None, Some(&selected.cap_id),
+        )?;
+
+        // Model step 5 (wallet_model.py:3954): nullifier order is
+        // [transfer inputs..., fee input].
+        for nf in transfer_nullifiers.iter().rev() {
+            tx.nullifiers.insert(0, *nf);
+        }
+
+        // §6.3 step 7: per-call signature rows, in call order
+        // (calls[0] = transfer, calls[1] = fee). The transfer row is signed by
+        // the input secrets (metadata: inputs[].signature_public); the fee row
+        // by the fee ephemeral (metadata: input.signature_public = ephemeral).
+        let transfer_sigs = tx.create_sigs(&transfer_secrets)
+            .map_err(|e| Error::Custom(format!("create_sigs transfer: {}", e)))?;
+        let fee_sigs = tx.create_sigs(&fee_ephemeral)
+            .map_err(|e| Error::Custom(format!("create_sigs fee: {}", e)))?;
+        tx.signatures = vec![transfer_sigs, fee_sigs];
+
+        Ok(tx)
     }
 
     /// Mark caps from a transaction as revoked in the wallet database.
@@ -1060,7 +1008,7 @@ impl Dww {
         Ok(())
     }
 
-    /// Unspent promissory note caps after block height
+    /// Check if a call is a NativeToken::FeeV1 call
     pub fn is_native_token_fee(&self, call: &ContractCall) -> bool {
         call.contract_id == *NATIVE_TOKEN_CONTRACT_ID &&
             call.data.first() == Some(&0x00) // FeeV1 function code
@@ -1135,8 +1083,11 @@ impl Dww {
         // Build LockV1 params — just the deployer's public key
         let params = format!(r#"{{"public_key":"{}"}}"#, public_key_bs58);
 
-        // Route through generic invoke — uses Deployooor's ContractClient
-        self.invoke_contract("deployooor", "LockV1", Some(&params), vec![]).await
+        // Route through generic invoke — uses Deployooor's ContractClient.
+        // LockV1 metadata declares [params.public_key] as its signature pubkey
+        // (deployooor entrypoint/lock_v1.rs) — the deploy authority signs the
+        // lock call's row.
+        self.invoke_contract("deployooor", "LockV1", Some(&params), vec![], vec![deploy_key]).await
     }
 
 
@@ -1150,12 +1101,17 @@ impl Dww {
     /// * `function` - Function name to call (e.g., "enable_drain_protection")
     /// * `params` - JSON string with function parameters
     /// * `proofs` - ZK proofs for functions that require them; use `vec![]` for non-ZK functions
+    /// * `signing_secrets` - secrets that sign the MAIN call's signature row —
+    ///   they must match the pubkeys the contract's `get_metadata` declares for
+    ///   this call (e.g., the deploy authority for `LockV1`); `vec![]` when the
+    ///   call's metadata declares no signature pubkeys
     pub async fn invoke_contract(
         &self,
         contract_id_or_name: &str,
         function: &str,
         params: Option<&str>,
         proofs: Vec<Vec<u8>>,
+        signing_secrets: Vec<SecretKey>,
     ) -> Result<Transaction> {
         // Manifest-driven fallback storage — lives outside the or_else chain so
         // the reference survives. Stores both the synthetic metadata AND the
@@ -1165,7 +1121,8 @@ impl Dww {
 
         // First try to look up as contract name (e.g., "dao_escrow")
         // If not found, try to parse as Base58 contract ID
-        let metadata = crate::contract_metadata::CONTRACT_METADATA_REGISTRY
+        let registry = &*crate::contract_metadata::CONTRACT_METADATA_REGISTRY;
+        let metadata = registry
             .get(contract_id_or_name)
             .or_else(|| {
                 // Path B: Parse as Base58 ContractId, then reverse-lookup
@@ -1176,11 +1133,10 @@ impl Dww {
                     .and_then(|v| v.try_into().ok())
                     .and_then(|bytes: [u8; 32]| ContractId::from_bytes(bytes).ok());
                 cid.and_then(|id| {
-                    crate::contract_metadata::CONTRACT_METADATA_REGISTRY
-                        .find_by_contract_id(&id)
+                    registry.find_by_contract_id(&id)
                 })
                 .and_then(|name| {
-                    crate::contract_metadata::CONTRACT_METADATA_REGISTRY.get(name)
+                    registry.get(name)
                 })
             })
             .or_else(|| {
@@ -1245,11 +1201,16 @@ impl Dww {
                     proofs: proofs.into_iter().map(|p| Proof::new(p)).collect(),
                 };
                 let (mut tx, ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, &self.account_mgr, leaf, None, None)?;
-                let mut all_secrets = self.account_mgr.secrets();
-                all_secrets.extend(ephemeral);
-                let sigs = tx.create_sigs(&all_secrets)
-                    .map_err(|e| Error::Custom(format!("create_sigs: {}", e)))?;
-                tx.signatures.push(sigs);
+                // §6.3 step 7 / mempool admission: ONE signature row per call,
+                // in call order — calls[0] = main (signed by the caller-supplied
+                // secrets matching the call's metadata pubkeys, empty row when
+                // the metadata declares none), calls[1] = fee (signed by the
+                // fee ephemeral, fee metadata: signature_public = ephemeral).
+                let main_sigs = tx.create_sigs(&signing_secrets)
+                    .map_err(|e| Error::Custom(format!("create_sigs main: {}", e)))?;
+                let fee_sigs = tx.create_sigs(&ephemeral)
+                    .map_err(|e| Error::Custom(format!("create_sigs fee: {}", e)))?;
+                tx.signatures = vec![main_sigs, fee_sigs];
                 return Ok(tx);
             }
             // P4 Step 4: if a stored manifest exists, construct a
@@ -1273,11 +1234,12 @@ impl Dww {
                 let (mut tx, ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(
                     &self.wallet, &self.account_mgr, leaf, None, None,
                 )?;
-                let mut all_secrets = self.account_mgr.secrets();
-                all_secrets.extend(ephemeral);
-                let sigs = tx.create_sigs(&all_secrets)
-                    .map_err(|e| Error::Custom(format!("create_sigs: {}", e)))?;
-                tx.signatures.push(sigs);
+                // Per-call signature rows (see the Path A exit above).
+                let main_sigs = tx.create_sigs(&signing_secrets)
+                    .map_err(|e| Error::Custom(format!("create_sigs main: {}", e)))?;
+                let fee_sigs = tx.create_sigs(&ephemeral)
+                    .map_err(|e| Error::Custom(format!("create_sigs fee: {}", e)))?;
+                tx.signatures = vec![main_sigs, fee_sigs];
                 return Ok(tx);
             }
         }
@@ -1345,11 +1307,12 @@ impl Dww {
 
         // Build transaction with fee
         let (mut tx, ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, &self.account_mgr, leaf, None, None)?;
-        let mut all_secrets = self.account_mgr.secrets();
-        all_secrets.extend(ephemeral);
-        let sigs = tx.create_sigs(&all_secrets)
-            .map_err(|e| Error::Custom(format!("create_sigs: {}", e)))?;
-        tx.signatures.push(sigs);
+        // Per-call signature rows (see the Path A exit above).
+        let main_sigs = tx.create_sigs(&signing_secrets)
+            .map_err(|e| Error::Custom(format!("create_sigs main: {}", e)))?;
+        let fee_sigs = tx.create_sigs(&ephemeral)
+            .map_err(|e| Error::Custom(format!("create_sigs fee: {}", e)))?;
+        tx.signatures = vec![main_sigs, fee_sigs];
 
         Ok(tx)
     }

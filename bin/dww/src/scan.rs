@@ -836,8 +836,8 @@ impl Dww {
 
         // ── Load manifests for generic capability typing (Path 2) ─
         // Pre-load once per block so the pure scan_block can resolve capability
-        // types without DB access. Only foreign (non-native/deployooor/identity)
-        // contracts need manifests — those three are handled by bespoke paths.
+        // types without DB access. Only foreign (non-native/deployooor)
+        // contracts need manifests — those two are the sanctioned citizens.
         // Pre-load manifests so the pure scan can resolve capability types from
         // declarations without DB access (ocap.md §7: manifest-driven, zero per-contract code).
         let mut manifests: BTreeMap<ContractId, dwow_sdk::manifest::ContractManifest> = BTreeMap::new();
@@ -845,8 +845,7 @@ impl Dww {
             for call in &tx.contract_calls {
                 let cid = call.contract_id;
                 if cid == *NATIVE_TOKEN_CONTRACT_ID
-                    || cid == *DEPLOYOOOR_CONTRACT_ID
-                    || cid == *dwow_sdk::crypto::IDENTITY_CONTRACT_ID { continue; }
+                    || cid == *DEPLOYOOOR_CONTRACT_ID { continue; }
                 if manifests.contains_key(&cid) { continue; }
                 let cid_str = bs58::encode(cid.to_bytes()).into_string();
                 if let Ok(Some(m)) = self.wallet.get_contract_manifest(&cid_str) {

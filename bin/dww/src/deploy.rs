@@ -26,14 +26,13 @@
 //! This module handles smart contract deployment using the Deployooor contract.
 
 use dwow_core::{
-    tx::{ContractCallLeaf, Transaction, TransactionBuilder},
+    tx::{ContractCallLeaf, Transaction},
 };
 use crate::wallet_error::{Error, Result};
 use dwow_sdk::{
     crypto::{Keypair, ContractId, PublicKey, SecretKey},
     tx::ContractCall,
 };
-use dwow_serial::Encodable;
 use dwow_sdk::deploy::DeployParamsV1;
 use rand::rngs::OsRng;
 
@@ -51,8 +50,13 @@ impl Dww {
     /// This function:
     /// 1. Takes WASM bytes and a deploy authority keypair
     /// 2. Builds a DeployV1 call to Deployooor contract
-    /// 3. Uses the deploy authority's public key to derive the new contract ID
-    /// 4. Broadcasts the deployment transaction
+    /// 3. Attaches the FeeV1 call from the wallet's DRKW caps
+    ///    (`build_fee_and_finalize_tx` — real fee proofs, fee nullifier
+    ///    published, outer tx_commitment computed)
+    /// 4. Signs per-call: the deploy row with the deploy authority
+    ///    (DeployV1 metadata declares `[params.public_key]`,
+    ///    deployooor entrypoint/deploy_v1.rs), the fee row with the fee
+    ///    ephemeral — one signature row per call, in call order
     #[allow(dead_code)]
     pub async fn deploy_contract(
         &self,
@@ -86,12 +90,20 @@ impl Dww {
             proofs: vec![],
         };
 
-        // Build final transaction
-        let mut tx_builder = TransactionBuilder::new(deploy_leaf, vec![])
-            .map_err(|e| Error::Custom(format!("Failed to create transaction builder: {:?}", e)))?;
+        // Attach the fee call and build the transaction (§6.3 step 6) —
+        // fee proofs, fee nullifier, and the outer tx_commitment all handled
+        // by the centralized fee builder.
+        let (mut tx, fee_ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(
+            &self.wallet, &self.account_mgr, deploy_leaf, None, None,
+        )?;
 
-        let tx = tx_builder.build()
-            .map_err(|e| Error::Custom(format!("Failed to build transaction: {:?}", e)))?;
+        // Per-call signature rows, in call order (calls[0] = deploy,
+        // calls[1] = fee). Mempool admission rejects any other layout.
+        let deploy_sigs = tx.create_sigs(&[deploy_keypair.secret])
+            .map_err(|e| Error::Custom(format!("create_sigs deploy: {}", e)))?;
+        let fee_sigs = tx.create_sigs(&fee_ephemeral)
+            .map_err(|e| Error::Custom(format!("create_sigs fee: {}", e)))?;
+        tx.signatures = vec![deploy_sigs, fee_sigs];
 
         Ok(tx)
     }

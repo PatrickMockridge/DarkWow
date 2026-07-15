@@ -203,8 +203,13 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 
 /// Metadata for FeeV1
 fn fee_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
-    // params = serialize(FeeParamsV1) after the function selector
-    let fee_params: FeeParamsV1 = match deserialize(params) { Ok(p) => p, Err(_) => return vec![] };
+    // FeeV1 call data after the selector: [fee u64 LE (8)][FeeParamsV1] —
+    // the SAME layout `fee_v1` (process) and the block balance checker
+    // (proof_of_token_balance::process_fee_call) parse.
+    if params.len() < 9 {
+        return vec![];
+    }
+    let fee_params: FeeParamsV1 = match deserialize(&params[8..]) { Ok(p) => p, Err(_) => return vec![] };
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];

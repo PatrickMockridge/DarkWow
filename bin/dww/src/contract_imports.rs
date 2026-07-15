@@ -123,12 +123,10 @@ pub fn get_client_registry() -> &'static ContractClientRegistry {
         registry.register("deployooor", Box::new(GenericContractClient::new(
             "deployooor", &[("DeployV1", 0x00), ("LockV1", 0x01)])));
 
-        // Contract crates self-register their ZK circuit builders at load
-        // time via LazyLock initializers in their own lib.rs files.
-        // The wallet must explicitly trigger each contract's registration.
-        // The wallet provides the registry; each contract crate provides
-        // the builders. Per manifest.md STAGE 5 — INVOCATION.
-        dwow_promissory_note_contract::ensure_circuits_registered();
+        // ZK circuit builders removed — the generic prover (wallet.md §6.4.1,
+        // Phase 6) builds from the zkas binary + manifest witness_map.
+        // No per-contract compiled-in builder is required; the
+        // circuit_registry (D2) is deleted.
 
         registry
     })

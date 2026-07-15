@@ -42,8 +42,12 @@ pub mod monotree;
 /// Capability-based wallet architecture types
 pub mod capability;
 
+/// Generic prover — wallet.md §6.4.1 (Phase 6)
+pub mod prover;
+
 /// Contract deployment utilities
-pub mod circuit_registry;
+// circuit_registry removed (D2 — phantom-code-removed-first).
+// Proofs are built by the generic prover (Phase 6).
 pub mod contract_client;
 pub mod deploy;
 pub mod manifest;

@@ -1,37 +1,48 @@
+# Deployooor contract manifest — capability declarations for type construction.
+# The wallet reads this manifest to construct capability types per wallet.md §2.2.
+
 [contract]
 name = "deployooor"
 category = "Infrastructure"
-description = "Contract deployment infrastructure — deploys WASM contracts post-genesis. Supports singleton enforcement, WASM hash storage, and import whitelist validation."
+description = "Contract deployment infrastructure — deploys WASM, locks deployed contracts. The second sanctioned citizen (wallet.md §0.1)."
 version = "1.0.0"
 dependencies = []
+genesis_inclusion_reason = "Deployment infrastructure — required for user-deployed contracts"
 
 [[functions]]
 name = "deploy"
 code = 0
-description = "Deploy a WASM contract. Validates WASM binary structure (required exports: memory, __initialize, __entrypoint, __update, __metadata), scans for disallowed imports, enforces singleton semantics when requested, and computes a WASM content hash for integrity verification."
+description = "Deploy a WASM contract. Validates WASM binary structure."
 requires_proof = false
 
 [[functions]]
 name = "lock"
 code = 1
-description = "Lock a deployed contract — marks it as immutable. Requires the deployer's signature (matching the public key used to derive the ContractId). Irrevocable."
+description = "Lock a deployed contract — marks it immutable. Requires deployer's signature."
+requires_proof = false
 
 [[capabilities]]
 discriminant = 0
 name = "deployment_right"
-description = "Right to deploy a contract. Consumed on deploy."
+description = "Right to deploy and lock a contract. Consumable — consumed on deploy."
+primitives = ["SecretKey", "ContractId", "FuncId"]
+note_schema = []
 
 [[actions]]
 function = "deploy"
-requires = ["deployment_right"]
+requires = { type = "all", capabilities = ["deployment_right"] }
 produces = []
 consumes = ["deployment_right"]
+required_barbs = ["Commit", "Dispatch", "Gate"]
 
 [[actions]]
 function = "lock"
-requires = ["deployment_right"]
+requires = { type = "all", capabilities = ["deployment_right"] }
 produces = []
 consumes = ["deployment_right"]
+required_barbs = ["Commit", "Dispatch", "Gate"]
+
+# Deployooor has no ZK circuits — DeployV1 and LockV1 are native contract calls.
 
 [[trees]]
 name = "info"
@@ -43,4 +54,4 @@ description = "Contract lock status — contract_id → locked(bool)"
 
 [[trees]]
 name = "singleton"
-description = "Singleton registry — singleton_name → contract_id mapping for preventing duplicate logical deployments"
+description = "Singleton registry — singleton_name → contract_id mapping"

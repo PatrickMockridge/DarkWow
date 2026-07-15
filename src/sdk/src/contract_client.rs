@@ -63,7 +63,7 @@ pub trait ContractClient: Send + Sync {
         &self,
         function: &str,
         params: &str,
-        wallet_state: &dyn WalletStateProvider,
+        _wallet_state: &dyn WalletStateProvider,
     ) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String>;
 
     /// Detect which held capabilities were transferred (exercised/consumed)
@@ -252,7 +252,7 @@ impl ContractClient for ManifestContractClient {
         &self,
         function: &str,
         params: &str,
-        wallet_state: &dyn WalletStateProvider,
+        _wallet_state: &dyn WalletStateProvider,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), String> {
         let func = self.manifest.functions.iter()
             .find(|f| f.name == function)
@@ -260,12 +260,9 @@ impl ContractClient for ManifestContractClient {
                 "{}: unknown function '{}'", self.name, function
             ))?;
 
-        // Route to circuit builder if one is registered
-        if let Some(ref circuit_name) = func.proof_circuit {
-            if crate::circuit_registry::is_registered(circuit_name) {
-                return crate::circuit_registry::build(circuit_name, params, wallet_state);
-            }
-        }
+        // circuit_registry route removed (D2 — phantom-code-removed-first).
+        // The generic prover (wallet.md §6.4.1, Phase 6) builds proofs from
+        // the zkas binary + manifest witness_map — no compiled-in builder.
 
         if func.requires_proof {
             Err(format!(

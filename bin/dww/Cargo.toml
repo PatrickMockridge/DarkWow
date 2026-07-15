@@ -23,11 +23,10 @@ dwow_chain = {path = "../../src/linear"}
 async-trait = "0.1"
 
 # Core contract crates — ZK binary blobs for proof generation.
-# Genesis contracts are on-chain; wallets discover interfaces via manifest during scan.
-# Non-genesis contract Rust/ZK code remains available for deploy-on-command.
-dwow_promissory_note_contract = {path = "../../src/contract/promissory_note", features = ["client", "no-entrypoint"]}
+# Native token is the ONE bespoke citizen (wallet.md §6.4); its proof builders
+# are compiled in. All other contracts use the generic manifest-driven path
+# (Phase 6 — manifest→zkas binary→generic prover, no per-contract wallet deps).
 dwow_native_token_contract = {path = "../../src/contract/native_token", features = ["client", "no-entrypoint"]}
-# All other contract crate deps removed — zero source references, pure compile waste.
 
 # Misc
 blake2b_simd = "1.0.3"

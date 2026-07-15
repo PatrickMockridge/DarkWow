@@ -7467,10 +7467,18 @@ class ManifestFunction:
 
 @dataclass
 class ManifestCapability:
-    """A capability type this contract defines."""
+    """A capability type this contract defines.
+
+    Typed capability fields (manifest.md "Typed Capability Fields"):
+    `primitives` names the primitive types the capability composes
+    (type-system.md §8.1, closed vocabulary — Primitive enum);
+    `note_schema` is the ordered field layout of the capability's
+    AEAD-encrypted note (types from the Parameter Types table)."""
     discriminant: int                  # capability type byte (0-255)
     name: str
     description: str = ""
+    primitives: List[str] = field(default_factory=list)
+    note_schema: List[ParameterField] = field(default_factory=list)
 
     def __post_init__(self):
         if not (0 <= self.discriminant <= 255):
@@ -7479,11 +7487,15 @@ class ManifestCapability:
 
 @dataclass
 class ManifestAction:
-    """An action that exercises capabilities — requires/consumes/produces."""
+    """An action that exercises capabilities — requires/consumes/produces.
+
+    `required_barbs` names the barbs the action's predicate requires
+    (type-system.md §1.1, closed vocabulary — Barb enum)."""
     function: str                      # references ManifestFunction.name
     requires: CapabilityExpression = field(default_factory=lambda: CapabilityExpression(type="none"))
     consumes: List[str] = field(default_factory=list)
     produces: List[CapabilityOutput] = field(default_factory=list)
+    required_barbs: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -7495,9 +7507,14 @@ class ManifestTree:
 
 @dataclass
 class ManifestCircuit:
-    """A ZK proof circuit referenced by the contract."""
+    """A ZK proof circuit referenced by the contract.
+
+    `witness_map` is the ordered witness-binding declaration for the
+    generic prover (wallet.md §6.4.1): one entry per zkas witness slot,
+    each naming its source (closed grammar — see WITNESS_AMBIENT_SOURCES)."""
     name: str
     namespace: str
+    witness_map: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -7573,12 +7590,20 @@ def parse_manifest(toml_str: str) -> ContractManifest:
             proof_circuit=f.get("proof_circuit"),
         ))
 
-    # Parse [[capabilities]]
+    # Parse [[capabilities]] — incl. typed capability fields
+    # (manifest.md "Typed Capability Fields")
     for c in data.get("capabilities", []):
+        note_schema = [ParameterField(
+            name=f["name"],
+            type=f["type"],
+            optional=f.get("optional", False),
+        ) for f in c.get("note_schema", [])]
         manifest.capabilities.append(ManifestCapability(
             discriminant=c["discriminant"],
             name=c["name"],
             description=c.get("description", ""),
+            primitives=c.get("primitives", []),
+            note_schema=note_schema,
         ))
 
     # Parse [[actions]]
@@ -7598,6 +7623,7 @@ def parse_manifest(toml_str: str) -> ContractManifest:
             requires=requires,
             consumes=a.get("consumes", []),
             produces=produces,
+            required_barbs=a.get("required_barbs", []),
         ))
 
     # Parse [[trees]]
@@ -7607,11 +7633,12 @@ def parse_manifest(toml_str: str) -> ContractManifest:
             description=t.get("description", ""),
         ))
 
-    # Parse [[circuits]]
+    # Parse [[circuits]] — incl. witness_map (wallet.md §6.4.1)
     for c in data.get("circuits", []):
         manifest.circuits.append(ManifestCircuit(
             name=c["name"],
             namespace=c["namespace"],
+            witness_map=c.get("witness_map", []),
         ))
 
     # Parse [[parameters]]
@@ -7633,9 +7660,12 @@ def parse_manifest(toml_str: str) -> ContractManifest:
 
 
 def _validate_manifest(m: ContractManifest):
-    """Validate cross-references between manifest sections."""
+    """Validate cross-references between manifest sections, and the typed
+    capability fields' closed vocabularies (manifest.md "Typed Capability
+    Fields"): an unknown name is a parse error, not a passthrough."""
     func_names = {f.name for f in m.functions}
     cap_names = {c.name for c in m.capabilities}
+    param_type_values = {t.value for t in ParamType}
 
     for action in m.actions:
         if action.function not in func_names:
@@ -7646,10 +7676,154 @@ def _validate_manifest(m: ContractManifest):
         for cap_name in action.consumes:
             if cap_name not in cap_names:
                 raise ValueError(f"Action consumes unknown capability: {cap_name}")
+        # required_barbs: closed vocabulary (type-system.md §1.1 / Barb enum)
+        for barb_name in action.required_barbs:
+            if Barb.from_name(barb_name) is None:
+                raise ValueError(
+                    f"Action '{action.function}': unknown barb '{barb_name}'")
+
+    for cap in m.capabilities:
+        # primitives: closed vocabulary (type-system.md §8.1 / Primitive enum)
+        for prim_name in cap.primitives:
+            if Primitive.from_name(prim_name) is None:
+                raise ValueError(
+                    f"Capability '{cap.name}': unknown primitive '{prim_name}'")
+        # note_schema: field types from the Parameter Types table
+        for nf in cap.note_schema:
+            if nf.type not in param_type_values:
+                raise ValueError(
+                    f"Capability '{cap.name}': note_schema field '{nf.name}' "
+                    f"has unknown type '{nf.type}'")
 
     for param in m.parameters:
         if param.function not in func_names:
             raise ValueError(f"Parameters reference unknown function: {param.function}")
+
+    # witness_map: closed source grammar + cross-references (wallet.md §6.4.1)
+    note_fields = {nf.name for cap in m.capabilities for nf in cap.note_schema}
+    for circuit in m.circuits:
+        # Parameters of the function(s) this circuit proves, if declared.
+        circuit_funcs = {f.name for f in m.functions if f.proof_circuit == circuit.name}
+        circuit_params = {pf.name for p in m.parameters if p.function in circuit_funcs
+                          for pf in p.fields}
+        for entry in circuit.witness_map:
+            if entry in WITNESS_AMBIENT_SOURCES:
+                continue
+            if entry.startswith("note:"):
+                fname = entry[len("note:"):]
+                if fname not in note_fields:
+                    raise ValueError(
+                        f"Circuit '{circuit.name}': witness_map entry '{entry}' "
+                        f"references a field absent from every note_schema")
+                continue
+            if entry.startswith("param:"):
+                fname = entry[len("param:"):]
+                if circuit_funcs and fname not in circuit_params:
+                    raise ValueError(
+                        f"Circuit '{circuit.name}': witness_map entry '{entry}' "
+                        f"references a field absent from the function's parameters")
+                continue
+            raise ValueError(
+                f"Circuit '{circuit.name}': unknown witness_map source '{entry}'")
+
+
+# --- Generic Prover: Witness Binding (wallet.md §6.4.1) ---
+#
+# A zkas binary's witness section is an ordered, typed, UNNAMED list
+# (ZkBinary.witnesses: Vec<VarType>; heap names live only in the optional
+# debug section and are never load-bearing). Binding is therefore ordered
+# and manifest-declared: the [[circuits]].witness_map names the source of
+# every slot, in slot order. The capability SDK type-checks each binding
+# against the slot's declared VarType and rejects the construction — a
+# typed error, never a fallback — on any arity or type mismatch.
+
+# Ambient sources the wallet supplies (not note- or param-derived).
+WITNESS_AMBIENT_SOURCES = (
+    "secret",         # capability's spending key via AccountManager coordinates
+    "merkle_path",    # capability's inclusion proof (capability_proofs store)
+    "leaf_position",  # capability's leaf position
+    "blind",          # fresh blind derived from Seed (wallet.md §6.1)
+    "tx_commitment",  # transaction binding name
+    "tx_nonce",       # transaction binding name
+)
+
+# Source → permitted zkas witness VarTypes (wallet.md §6.4.1 table).
+_AMBIENT_SOURCE_VARTYPES = {
+    "secret": ("Base",),
+    "merkle_path": ("MerklePath",),
+    "leaf_position": ("Uint32",),
+    "blind": ("Base", "Scalar"),
+    "tx_commitment": ("Base",),
+    "tx_nonce": ("Base",),
+}
+
+# Manifest field type → permitted zkas witness VarTypes, for note:/param:
+# sources. Types not listed are not witnessable (typed error).
+_FIELD_TYPE_VARTYPES = {
+    "u64": ("Uint64", "Base"),
+    "pallas_base": ("Base",),
+    "pallas_scalar": ("Scalar",),
+    "public_key": ("EcPoint", "EcNiPoint"),
+    "contract_id": ("Base",),
+}
+
+
+def bind_witnesses(manifest: ContractManifest, circuit_name: str,
+                   witness_types: List[str],
+                   note_fields: dict, params: dict) -> List[Tuple[str, object]]:
+    """Model of the generic prover's witness binding (wallet.md §6.4.1).
+
+    `witness_types` stands for ZkBinary.witnesses (ordered VarType names).
+    `note_fields` are the selected capability's decrypted note fields;
+    `params` the action's validated parameters. Returns the ordered
+    [(source, value)] binding, or raises ValueError (the typed error barb)
+    on arity mismatch, unknown source, unavailable value, or VarType
+    mismatch. Never falls back. Fix the manifest, not the wallet
+    (wallet.md §9)."""
+    circuit = next((c for c in manifest.circuits if c.name == circuit_name), None)
+    if circuit is None:
+        raise ValueError(f"bind_witnesses: unknown circuit '{circuit_name}'")
+    if len(circuit.witness_map) != len(witness_types):
+        raise ValueError(
+            f"bind_witnesses: circuit '{circuit_name}' declares "
+            f"{len(circuit.witness_map)} witness_map entries but the zkas "
+            f"binary has {len(witness_types)} witness slots")
+
+    # Manifest field types, for note:/param: type-checks.
+    note_types = {nf.name: nf.type for cap in manifest.capabilities
+                  for nf in cap.note_schema}
+    param_types = {pf.name: pf.type for p in manifest.parameters
+                   for pf in p.fields}
+
+    bound: List[Tuple[str, object]] = []
+    for slot, (entry, var_type) in enumerate(zip(circuit.witness_map, witness_types)):
+        if entry in WITNESS_AMBIENT_SOURCES:
+            allowed = _AMBIENT_SOURCE_VARTYPES[entry]
+            if var_type not in allowed:
+                raise ValueError(
+                    f"bind_witnesses: slot {slot} source '{entry}' cannot "
+                    f"bind witness type '{var_type}' (allowed: {allowed})")
+            bound.append((entry, f"<{entry}>"))
+            continue
+        if entry.startswith("note:") or entry.startswith("param:"):
+            kind, fname = entry.split(":", 1)
+            source_map = note_fields if kind == "note" else params
+            type_map = note_types if kind == "note" else param_types
+            if fname not in source_map:
+                raise ValueError(
+                    f"bind_witnesses: slot {slot} source '{entry}' has no "
+                    f"value available")
+            field_type = type_map.get(fname)
+            allowed = _FIELD_TYPE_VARTYPES.get(field_type, ())
+            if var_type not in allowed:
+                raise ValueError(
+                    f"bind_witnesses: slot {slot} source '{entry}' (type "
+                    f"'{field_type}') cannot bind witness type '{var_type}'")
+            bound.append((entry, source_map[fname]))
+            continue
+        raise ValueError(
+            f"bind_witnesses: slot {slot} unknown source '{entry}'")
+    return bound
 
 
 def is_manifest(deploy_ix: bytes) -> bool:
@@ -8427,6 +8601,160 @@ def run_manifest_lifecycle_tests():
     test_manifest_lifecycle_duplicate_circuit_registration()
     test_manifest_lifecycle_requires_proof_no_circuit()
     print("Manifest lifecycle: all specification checks passed")
+
+
+# ==============================================================================
+# Typed Capability Fields + Generic Prover Binding
+# (manifest.md "Typed Capability Fields", wallet.md §6.4.1)
+# ==============================================================================
+#
+# The fixture is deliberately NOT any repo contract — a tender instance per
+# ocap.md §2.3. The engine is generic: contracts are instances, and specific
+# barb constructions are not "the PN capability" or "the DAO capability".
+
+_TYPED_MANIFEST_FIXTURE = """
+[contract]
+name = "tender"
+category = "Procurement"
+description = "Sealed-bid tender — ocap.md §2.3 example instance"
+version = "1.0.0"
+
+[[functions]]
+name = "submit_bid"
+code = 0
+description = "Submit a sealed bid"
+requires_proof = true
+proof_circuit = "SubmitBid_V1"
+
+[[capabilities]]
+discriminant = 0
+name = "bid_slot"
+description = "Capability to submit a sealed bid"
+primitives = ["SecretKey","Coin","Nullifier","ContractId","FuncId","TokenId","MerkleNode"]
+note_schema = [
+    { name = "value", type = "u64" },
+    { name = "commitment", type = "pallas_base" },
+]
+
+[[actions]]
+function = "submit_bid"
+requires = { type = "any", capabilities = ["bid_slot"] }
+consumes = ["bid_slot"]
+produces = []
+required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
+
+[[circuits]]
+name = "SubmitBid_V1"
+namespace = "tender"
+witness_map = ["secret","note:value","blind","merkle_path","leaf_position","tx_commitment","tx_nonce"]
+
+[[parameters]]
+function = "submit_bid"
+fields = [
+    { name = "bid_amount", type = "u64" },
+]
+"""
+
+
+def test_typed_manifest_parse():
+    """Typed fields parse and round-trip; wallet_construct covers the barbs."""
+    m = parse_manifest(_TYPED_MANIFEST_FIXTURE)
+    cap = m.capabilities[0]
+    assert cap.primitives == ["SecretKey", "Coin", "Nullifier", "ContractId",
+                              "FuncId", "TokenId", "MerkleNode"]
+    assert [f.name for f in cap.note_schema] == ["value", "commitment"]
+    assert m.actions[0].required_barbs == ["Spend", "Nullify", "Commit",
+                                           "Dispatch", "Gate", "Denominate"]
+    assert m.circuits[0].witness_map[0] == "secret"
+    # The declared composition constructs through the ONE composition function.
+    prims = [Primitive.from_name(p) for p in cap.primitives]
+    barbs = [Barb.from_name(b) for b in m.actions[0].required_barbs]
+    assert all(p is not None for p in prims) and all(b is not None for b in barbs)
+    ct = wallet_construct("bid_slot", "submit_bid", prims, barbs)
+    assert ct is not None, "declared primitives must cover required barbs"
+    print("PASS: typed manifest parses; wallet_construct covers declared barbs")
+
+
+def _expect_manifest_error(toml_str: str, needle: str):
+    try:
+        parse_manifest(toml_str)
+    except ValueError as e:
+        assert needle in str(e), f"expected '{needle}' in error, got: {e}"
+        return
+    raise AssertionError(f"manifest accepted; expected error containing '{needle}'")
+
+
+def test_typed_manifest_unknown_primitive_rejected():
+    """Closed vocabulary: unknown primitive name is a parse error."""
+    bad = _TYPED_MANIFEST_FIXTURE.replace('"MerkleNode"]', '"Erc20Balance"]')
+    _expect_manifest_error(bad, "unknown primitive")
+    print("PASS: unknown primitive rejected at parse")
+
+
+def test_typed_manifest_unknown_barb_rejected():
+    """Closed vocabulary: unknown barb name is a parse error."""
+    bad = _TYPED_MANIFEST_FIXTURE.replace('"Denominate"]', '"Approve"]')
+    _expect_manifest_error(bad, "unknown barb")
+    print("PASS: unknown barb rejected at parse")
+
+
+def test_typed_manifest_bad_note_schema_type_rejected():
+    """note_schema field types come from the Parameter Types table."""
+    bad = _TYPED_MANIFEST_FIXTURE.replace('type = "u64" },', 'type = "uint256" },', 1)
+    _expect_manifest_error(bad, "unknown type")
+    print("PASS: unknown note_schema type rejected at parse")
+
+
+def test_typed_manifest_witness_map_rejects_bad_sources():
+    """witness_map: closed source grammar; note: refs must exist."""
+    bad = _TYPED_MANIFEST_FIXTURE.replace('"secret",', '"msg_sender",', 1)
+    _expect_manifest_error(bad, "unknown witness_map source")
+    bad = _TYPED_MANIFEST_FIXTURE.replace('"note:value"', '"note:balance"', 1)
+    _expect_manifest_error(bad, "absent from every note_schema")
+    print("PASS: witness_map bad sources rejected at parse")
+
+
+def test_generic_prover_bind_witnesses():
+    """wallet.md §6.4.1: ordered, type-checked binding; typed errors, no fallback."""
+    m = parse_manifest(_TYPED_MANIFEST_FIXTURE)
+    note = {"value": 1000, "commitment": "aa" * 32}
+    # Happy path: slot types match the witness_map sources.
+    types_ok = ["Base", "Base", "Base", "MerklePath", "Uint32", "Base", "Base"]
+    bound = bind_witnesses(m, "SubmitBid_V1", types_ok, note, {"bid_amount": 1000})
+    assert len(bound) == 7
+    assert bound[0][0] == "secret" and bound[1] == ("note:value", 1000)
+    # Arity mismatch: typed error.
+    try:
+        bind_witnesses(m, "SubmitBid_V1", types_ok[:-1], note, {})
+        raise AssertionError("arity mismatch accepted")
+    except ValueError as e:
+        assert "witness slots" in str(e)
+    # VarType mismatch: merkle_path slot declared as Base.
+    types_bad = ["Base", "Base", "Base", "Base", "Uint32", "Base", "Base"]
+    try:
+        bind_witnesses(m, "SubmitBid_V1", types_bad, note, {})
+        raise AssertionError("type mismatch accepted")
+    except ValueError as e:
+        assert "cannot bind witness type" in str(e)
+    # Missing note value: typed error, never a fallback.
+    try:
+        bind_witnesses(m, "SubmitBid_V1", types_ok, {}, {})
+        raise AssertionError("missing source value accepted")
+    except ValueError as e:
+        assert "no value available" in str(e)
+    print("PASS: generic prover witness binding — ordered, typed, no fallback")
+
+
+def run_typed_manifest_tests():
+    """Typed capability fields + generic prover binding (6 tests)."""
+    print("\nTyped Capability Fields / Generic Prover Tests:")
+    test_typed_manifest_parse()
+    test_typed_manifest_unknown_primitive_rejected()
+    test_typed_manifest_unknown_barb_rejected()
+    test_typed_manifest_bad_note_schema_type_rejected()
+    test_typed_manifest_witness_map_rejects_bad_sources()
+    test_generic_prover_bind_witnesses()
+    print("Typed manifest: all specification checks passed")
 
 
 # ==============================================================================
@@ -9916,6 +10244,8 @@ def run_all_tests():
         # Specification (17 tests)
         # Contract manifest (10 tests)
         run_manifest_lifecycle_tests,
+        # Typed capability fields + generic prover binding (6 tests)
+        run_typed_manifest_tests,
         # Capability pipeline end-to-end (1 test)
         test_capability_pipeline_e2e,
         # Seed error messages — visibility diagnostics (8 tests)

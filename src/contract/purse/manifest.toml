@@ -1,49 +1,64 @@
+# Purse contract manifest — capability declarations for type construction.
+# The wallet reads this manifest to construct capability types per wallet.md §2.2.
+
 [contract]
 name = "purse"
 category = "Asset"
 description = "ZK fungible asset container — DarkWow equivalent of Agoric ERTP Purse. Deposit, withdraw, and balance operations with hidden balances (Pedersen) and hidden token types (Poseidon)."
-genesis_inclusion_reason = "O-Cap primitive — the fungible asset container that all token balances are measured in. Every wallet depends on it for balance tracking."
+genesis_inclusion_reason = "O-Cap primitive — the fungible asset container that all token balances are measured in."
 version = "1.0.0"
 
 [[functions]]
 name = "deposit"
 code = 1
 description = "Deposit tokens into a Purse. Proves old_balance + deposit == new_balance via Pedersen additive homomorphism."
+requires_proof = false
 
 [[functions]]
 name = "withdraw"
 code = 2
 description = "Withdraw tokens from a Purse. Constrains withdraw_amount <= old_balance. Nullifier prevents replay."
+requires_proof = false
 
 [[functions]]
 name = "balance"
 code = 3
 description = "Prove knowledge of Purse ownership and balance. Exposes balance_commit for predicate checks by other contracts."
+requires_proof = false
 
 [[capabilities]]
 discriminant = 0
 name = "purse_balance"
 description = "Hidden balance via Pedersen commitment. Non-consumable."
+primitives = ["SecretKey", "ContractId", "FuncId", "TokenId"]
+note_schema = [{ name = "balance", type = "u64" }, { name = "balance_commit", type = "pallas_base" }]
 
 [[capabilities]]
 discriminant = 1
 name = "purse_withdrawal"
 description = "Withdrawal right from a purse. Consumable."
+primitives = ["SecretKey", "Nullifier", "ContractId", "FuncId", "TokenId"]
+note_schema = [{ name = "amount", type = "u64" }]
 
 [[actions]]
 function = "deposit"
-requires = []
-produces = ["purse_balance"]
+requires = { type = "none" }
+produces = [{ name = "purse_balance", description = "Updated hidden balance after deposit" }]
 consumes = []
+required_barbs = ["Commit", "Dispatch", "Gate", "Denominate"]
 
 [[actions]]
 function = "withdraw"
-requires = ["purse_balance"]
-produces = ["purse_balance"]
+requires = { type = "all", capabilities = ["purse_balance"] }
+produces = [{ name = "purse_balance", description = "Updated hidden balance after withdrawal" }]
 consumes = ["purse_withdrawal"]
+required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate", "Denominate"]
 
 [[actions]]
 function = "balance"
-requires = ["purse_balance"]
+requires = { type = "all", capabilities = ["purse_balance"] }
 produces = []
 consumes = []
+required_barbs = ["Dispatch", "Gate"]
+
+# Purse has no ZK circuits.

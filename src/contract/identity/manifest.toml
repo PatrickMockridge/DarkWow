@@ -78,7 +78,7 @@ code = 12
 name = "create_claim_dag"
 code = 13
 requires_proof = true
-proof_circuit = "CreateClaim_DAG_V1"
+proof_circuit = "CreateClaim_V1_DAG"
 
 [[functions]]
 name = "register_issuer"
@@ -91,71 +91,97 @@ code = 15
 [[capabilities]]
 discriminant = 0
 name = "credential"
-description = "A credential issued by a trusted issuer. Proves the holder possesses an attribute satisfying a threshold (e.g., role >= senior_engineer). Non-consumable, non-transferable. Composes: SecretKey + Nullifier + ContractId + FuncId + MerkleNode + credential schema."
+description = "A credential issued by a trusted issuer. Proves the holder possesses an attribute satisfying a threshold. Non-consumable, non-transferable."
+primitives = ["SecretKey", "Nullifier", "ContractId", "FuncId", "MerkleNode"]
+note_schema = []
 
 [[capabilities]]
 discriminant = 1
 name = "capability"
-description = "A registered capability derived from credentials (e.g., can_merge_pr). Consumable on verify — the Box is taken, proving possession. Composes: SecretKey + Nullifier + ContractId + FuncId + CredentialRequirement + Box."
+description = "A registered capability derived from credentials (e.g., can_merge_pr). Consumable on verify."
+primitives = ["SecretKey", "Nullifier", "ContractId", "FuncId"]
+note_schema = []
 
 [[capabilities]]
 discriminant = 2
 name = "dag_claim"
-description = "A composite claim proving one path through a competency DAG (OR across paths, AND within each path). Non-consumable. Composes: SecretKey + Nullifier + ContractId + FuncId + DAG paths."
+description = "A composite claim proving one path through a competency DAG (OR across paths, AND within each path). Non-consumable."
+primitives = ["SecretKey", "Nullifier", "ContractId", "FuncId"]
+note_schema = []
 
 [[actions]]
 function = "issue_credential"
 requires = { type = "none" }
-produces = ["credential"]
+produces = [{ name = "credential", description = "Issued credential from a trusted issuer" }]
+consumes = []
+required_barbs = ["Commit", "Dispatch", "Gate"]
 
 [[actions]]
 function = "register_capability"
 requires = { type = "none" }
-produces = ["capability"]
+produces = [{ name = "capability", description = "Registered capability derived from credentials" }]
+consumes = []
+required_barbs = ["Commit", "Dispatch", "Gate"]
 
 [[actions]]
 function = "issue_capability"
 requires = { type = "all", capabilities = ["credential"] }
-produces = ["capability"]
+produces = [{ name = "capability", description = "Capability issued from a credential" }]
+consumes = []
+required_barbs = ["Commit", "Dispatch", "Gate"]
 
 [[actions]]
 function = "verify_capability"
 requires = { type = "any", capabilities = ["capability"] }
+produces = []
 consumes = ["capability"]
+required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate"]
 
 [[actions]]
 function = "revoke_capability"
 requires = { type = "any", capabilities = ["capability"] }
+produces = []
 consumes = ["capability"]
+required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate"]
 
 [[actions]]
 function = "create_claim_dag"
 requires = { type = "all", capabilities = ["credential"] }
-produces = ["dag_claim"]
+produces = [{ name = "dag_claim", description = "Composite DAG claim across credential paths" }]
+consumes = []
+required_barbs = ["Commit", "Dispatch", "Gate"]
 
 [[trees]]
 name = "credentials"
+description = "Credential records"
 
 [[trees]]
 name = "nullifiers"
+description = "Nullifier SMT for double-spend prevention"
 
 [[trees]]
 name = "issuers"
+description = "Trusted issuer records"
 
 [[trees]]
 name = "config"
+description = "Contract configuration"
 
 [[trees]]
 name = "capabilities"
+description = "Registered capability records"
 
 [[trees]]
 name = "capability_issuances"
+description = "Capability issuance tracking"
 
 [[trees]]
 name = "reputations"
+description = "Issuer reputation scores"
 
 [[trees]]
 name = "identity_info"
+description = "Contract metadata"
 
 [[circuits]]
 name = "IssueCredential_V1"

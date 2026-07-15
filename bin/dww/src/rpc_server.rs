@@ -280,27 +280,29 @@ impl RpcHandler for DwwRpcHandler {
                 let spend_hook = params.get("spend_hook").and_then(|v| v.as_str());
                 let user_data = params.get("user_data").and_then(|v| v.as_str());
 
-                // P2.3: route DRKW through native_token (per wallet.md §6.4).
-                // P0 dispatched CLI commands; this handles the RPC path that
-                // the pipeline's `wal` helper invokes.
+                // Two paths, by law (wallet.md §6.4, §9): DRKW = the native
+                // token = the ONE bespoke write-path citizen, built by the
+                // hardcoded NativeToken client via build_native_transfer —
+                // never through invoke_contract or any manifest path. Non-DRKW
+                // assets route through the generic path. (The promissory_note
+                // hardcoding below is audit item A2 — replaced by generic
+                // routing in the capability-side remediation phase.)
                 let is_drkw = token_id == "DRKW" || token_id == "drkw";
-                let (contract_name, params_str) = if is_drkw {
-                    ("native_token", format!(
-                        r#"{{"amount":{},"recipient":"{}"{}{}}}"#,
-                        amount, recipient,
-                        spend_hook.map(|s| format!(r#","spend_hook":"{}""#, s)).unwrap_or_default(),
-                        user_data.map(|s| format!(r#","user_data":"{}""#, s)).unwrap_or_default(),
-                    ))
+                let tx = if is_drkw {
+                    let amount_u64: u64 = amount.parse()
+                        .map_err(|e| err(-32602, &format!("invalid 'amount': {}", e)))?;
+                    // The shell draws the Seed (wallet.md §6.1).
+                    let mut seed = [0u8; 32];
+                    use rand::RngCore;
+                    rand::rngs::OsRng.fill_bytes(&mut seed);
+                    dww.build_native_transfer(amount_u64, recipient, seed).await
+                        .map_err(|e| err(-32000, &format!("transfer build failed: {}", e)))?
                 } else {
-                    ("promissory_note", format!(
-                        r#"{{"amount":{},"token_id":"{}","recipient":"{}"{}{}}}"#,
-                        amount, token_id, recipient,
-                        spend_hook.map(|s| format!(r#","spend_hook":"{}""#, s)).unwrap_or_default(),
-                        user_data.map(|s| format!(r#","user_data":"{}""#, s)).unwrap_or_default(),
-                    ))
+                    return Err(err(-32601,
+                        "Non-DRKW token transfers are not yet wired through the \
+                         generic manifest path. Use DRKW native transfers or wait \
+                         for the generic engine rebuild (Phase 6)."));
                 };
-                let tx = dww.invoke_contract(contract_name, "TransferV1", Some(&params_str), vec![]).await
-                    .map_err(|e| err(-32000, &format!("transfer build failed: {}", e)))?;
                 let mut output = vec![];
                 let txid = dww.broadcast_tx(&tx, &mut output, false, None, None).await
                     .map_err(|e| err(-32000, &format!("broadcast failed: {}", e)))?;

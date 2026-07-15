@@ -3200,7 +3200,6 @@ dependencies = [
  "dwow_core",
  "dwow_deployooor_contract",
  "dwow_native_token_contract",
- "dwow_promissory_note_contract",
  "dwow_transport",
  "ed25519-compact",
  "futures",

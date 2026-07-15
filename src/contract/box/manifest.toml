@@ -1,33 +1,44 @@
+# Box contract manifest — capability declarations for type construction.
+# The wallet reads this manifest to construct capability types per wallet.md §2.2.
+
 [contract]
 name = "box"
 category = "Infrastructure"
 description = "ZK capability container — Put a capability in, Take it out. Linear consumption via nullifier. Contents hidden on-chain. DarkWow equivalent of capability delegation."
-genesis_inclusion_reason = "O-Cap primitive — the transferable capability container. Enables capability delegation without revealing what is being transferred. Powers the Invitation pattern from Agoric's o-cap model."
+genesis_inclusion_reason = "O-Cap primitive — the transferable capability container. Enables capability delegation without revealing what is being transferred."
 version = "1.0.0"
 
 [[functions]]
 name = "put"
 code = 1
 description = "Place a capability into a Box. Proves the Box was empty, now contains H(capability_data)."
+requires_proof = false
 
 [[functions]]
 name = "take"
 code = 2
 description = "Take a capability from a Box. Proves knowledge of box_secret. Box consumed via nullifier."
+requires_proof = false
 
 [[capabilities]]
 discriminant = 0
 name = "box_capability"
 description = "A capability stored in a Box. Linear consumption via nullifier on Take."
+primitives = ["SecretKey", "Nullifier", "ContractId", "FuncId"]
+note_schema = []
 
 [[actions]]
 function = "put"
-requires = []
-produces = ["box_capability"]
+requires = { type = "none" }
+produces = [{ name = "box_capability", description = "Capability sealed inside the Box" }]
 consumes = []
+required_barbs = ["Commit", "Dispatch", "Gate"]
 
 [[actions]]
 function = "take"
-requires = ["box_capability"]
+requires = { type = "all", capabilities = ["box_capability"] }
 produces = []
 consumes = ["box_capability"]
+required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate"]
+
+# Box has no ZK circuits.

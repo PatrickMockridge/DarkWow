@@ -1,4 +1,5 @@
 # Oracle contract manifest — capability declarations for type construction.
+# The wallet reads this manifest to construct capability types per wallet.md §2.2.
 
 [contract]
 name = "oracle"
@@ -44,49 +45,91 @@ code = 5
 discriminant = 0
 name = "oracle_registration"
 description = "Registered oracle operator. Non-consumable."
+primitives = ["SecretKey", "ContractId", "FuncId"]
+note_schema = []
 
 [[capabilities]]
 discriminant = 1
 name = "oracle_value"
-description = "A pushed oracle data value with attestation. Produced by push_value, consumed by attest_value."
+description = "A value pushed by an oracle. Consumable on attest."
+primitives = ["SecretKey", "Nullifier", "ContractId", "FuncId"]
+note_schema = [{ name = "value", type = "u64" }]
 
 [[capabilities]]
 discriminant = 2
-name = "aggregate_result"
-description = "Aggregated value from multiple oracles. Non-consumable."
+name = "attestation"
+description = "An attestation of an oracle value. Produced by attest_value."
+primitives = ["ContractId", "FuncId"]
+note_schema = []
+
+[[capabilities]]
+discriminant = 3
+name = "aggregate"
+description = "Aggregated oracle values. Produced by aggregate."
+primitives = ["ContractId", "FuncId"]
+note_schema = [{ name = "value", type = "u64" }]
+
+[[capabilities]]
+discriminant = 4
+name = "value_commitment"
+description = "A Pedersen commitment to an oracle value. Produced by push_value_commitment."
+primitives = ["ContractId", "FuncId"]
+note_schema = [{ name = "commitment", type = "pallas_base" }]
 
 [[actions]]
 function = "register_oracle"
-requires = []
-produces = ["oracle_registration"]
+requires = { type = "none" }
+produces = [{ name = "oracle_registration", description = "Registered oracle operator capability" }]
 consumes = []
+required_barbs = ["Commit", "Dispatch", "Gate"]
 
 [[actions]]
 function = "push_value"
-requires = ["oracle_registration"]
-produces = ["oracle_value"]
+requires = { type = "all", capabilities = ["oracle_registration"] }
+produces = [{ name = "oracle_value", description = "Oracle value pushed to the feed" }]
 consumes = []
+required_barbs = ["Commit", "Dispatch", "Gate", "Denominate"]
 
 [[actions]]
 function = "attest_value"
-requires = ["oracle_value"]
-produces = []
+requires = { type = "any", capabilities = ["oracle_value"] }
+produces = [{ name = "attestation", description = "Attested oracle value" }]
 consumes = ["oracle_value"]
+required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate"]
+
+[[actions]]
+function = "push_value_commitment"
+requires = { type = "all", capabilities = ["oracle_registration"] }
+produces = [{ name = "value_commitment", description = "Pedersen commitment to an oracle value" }]
+consumes = []
+required_barbs = ["Commit", "Dispatch", "Gate", "Denominate"]
 
 [[actions]]
 function = "aggregate"
-requires = ["oracle_value"]
-produces = ["aggregate_result"]
-consumes = []
+requires = { type = "any", capabilities = ["oracle_value"] }
+produces = [{ name = "aggregate", description = "Aggregated oracle values" }]
+consumes = ["oracle_value"]
+required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate", "Denominate"]
 
 [[trees]]
 name = "oracles"
+description = "Oracle registrations"
+
+[[trees]]
+name = "values"
+description = "Oracle value records"
+
+[[trees]]
+name = "nullifiers"
+description = "Nullifier SMT for double-spend prevention"
 
 [[trees]]
 name = "attestations"
+description = "Attestation records"
 
 [[trees]]
-name = "info"
+name = "aggregates"
+description = "Aggregate records"
 
 [[circuits]]
 name = "RegisterOracle_V1"

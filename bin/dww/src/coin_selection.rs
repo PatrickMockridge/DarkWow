@@ -203,6 +203,7 @@ mod tests {
             revoked: false,
             revoked_at_height: None,
             created_at_height: 0,
+            key_coords: None,
         }
     }
 

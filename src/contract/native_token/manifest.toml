@@ -54,6 +54,39 @@ description = "Block reward via PoWRewardV1. Consensus-governed emission — ver
 requires_proof = true
 proof_circuit = "Mint_V1"
 
+# Native token is the ONE bespoke citizen (wallet.md §6.4, §9) — this manifest
+# documents the interface but is NOT used for capability discovery or construction.
+# The wallet handles native_token natively via Path 1 (scan) and the hardcoded
+# TransferCallBuilder (write).
+
+[[capabilities]]
+discriminant = 0
+name = "coin"
+description = "An unspent native token coin. Consumable via transfer/burn/spend/fee."
+primitives = ["SecretKey", "Coin", "Nullifier", "ContractId", "FuncId", "TokenId", "MerkleNode"]
+note_schema = [{ name = "value", type = "u64" }, { name = "commitment", type = "pallas_base" }]
+
+[[actions]]
+function = "transfer"
+requires = { type = "any", capabilities = ["coin"] }
+produces = [{ name = "coin", description = "New blind output coins" }]
+consumes = ["coin"]
+required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate", "Denominate"]
+
+[[actions]]
+function = "fee"
+requires = { type = "any", capabilities = ["coin"] }
+produces = [{ name = "coin", description = "Change output coin after fee deduction" }]
+consumes = ["coin"]
+required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate", "Denominate"]
+
+[[actions]]
+function = "spend"
+requires = { type = "any", capabilities = ["coin"] }
+produces = [{ name = "coin", description = "New blind output coins" }]
+consumes = ["coin"]
+required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate", "Denominate"]
+
 [[trees]]
 name = "coins"
 description = "Coin commitment Merkle tree"

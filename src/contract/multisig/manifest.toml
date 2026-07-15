@@ -1,54 +1,71 @@
+# Multisig contract manifest — capability declarations for type construction.
+# The wallet reads this manifest to construct capability types per wallet.md §2.2.
+
 [contract]
 name = "multisig"
 category = "Governance"
 description = "Threshold signature factory — create N-of-M groups, collect partial signatures, produce approval capabilities. Genesis primitive for multi-party authorization."
-genesis_inclusion_reason = "O-Cap primitive — threshold signature authorization. Enables N-of-M multi-sig for any contract that composes with approval capabilities. Extracted from duplicated threshold logic in DAO-Escrow and DrainProtection."
+genesis_inclusion_reason = "O-Cap primitive — threshold signature authorization. Enables N-of-M multi-sig for any contract that composes with approval capabilities."
 version = "1.0.0"
 
 [[functions]]
 name = "create_group"
 code = 1
-description = "Create an N-of-M threshold signature group. Takes list of public keys and required threshold. Produces group_capability."
+description = "Create an N-of-M threshold signature group. Takes list of public keys and required threshold."
+requires_proof = false
 
 [[functions]]
 name = "sign"
 code = 2
-description = "Sign a message as a group member. Proves membership via public key in group. Produces partial_signature capability."
+description = "Sign a message as a group member. Proves membership via public key in group."
+requires_proof = false
 
 [[functions]]
 name = "finalize"
 code = 3
 description = "Finalize when threshold partial signatures exist for a message. Consumes partial signatures, produces approval capability for composition."
+requires_proof = false
 
 [[capabilities]]
 discriminant = 0
 name = "group_membership"
 description = "Membership in an N-of-M signing group. Non-consumable."
+primitives = ["SecretKey", "ContractId", "FuncId"]
+note_schema = []
 
 [[capabilities]]
 discriminant = 1
 name = "partial_signature"
 description = "A partial Schnorr signature. Consumable on finalize."
+primitives = ["SecretKey", "Nullifier", "ContractId", "FuncId"]
+note_schema = []
 
 [[capabilities]]
 discriminant = 2
 name = "approval"
 description = "Threshold approval (>= N signatures collected). Produced by finalize."
+primitives = ["ContractId", "FuncId"]
+note_schema = []
 
 [[actions]]
 function = "create_group"
-requires = []
-produces = ["group_membership"]
+requires = { type = "none" }
+produces = [{ name = "group_membership", description = "Membership in the newly created signing group" }]
 consumes = []
+required_barbs = ["Commit", "Dispatch", "Gate"]
 
 [[actions]]
 function = "sign"
-requires = ["group_membership"]
-produces = ["partial_signature"]
+requires = { type = "all", capabilities = ["group_membership"] }
+produces = [{ name = "partial_signature", description = "Partial Schnorr signature for the message" }]
 consumes = []
+required_barbs = ["Commit", "Dispatch", "Gate"]
 
 [[actions]]
 function = "finalize"
-requires = ["partial_signature"]
-produces = ["approval"]
+requires = { type = "all", capabilities = ["partial_signature"] }
+produces = [{ name = "approval", description = "Threshold approval capability for composition" }]
 consumes = ["partial_signature"]
+required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate"]
+
+# Multisig has no ZK circuits.

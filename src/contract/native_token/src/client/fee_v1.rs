@@ -310,10 +310,13 @@ impl FeeCallBuilder {
         let mut proofs = vec![];
         let signature_secrets = vec![self.input.ephemeral_signature_secret];
 
-        // Generate random blinds
+        // Generate random blinds. token_blind MUST be zero: the fee entrypoint
+        // pins the native token_commit to poseidon([0, 0]) (entrypoint/mod.rs
+        // fee_v1, "Token must be DARK") with TokenId::DRKW = zero — a random
+        // blind fails consensus with TokenMismatch.
         let input_value_blind = ScalarBlind::random(&mut OsRng);
         let output_value_blind = ScalarBlind::random(&mut OsRng);
-        let token_blind = BaseBlind::random(&mut OsRng);
+        let token_blind = BaseBlind::ZERO;
         let output_coin_blind = BaseBlind::random(&mut OsRng);
 
         // Create output value (input - fee)

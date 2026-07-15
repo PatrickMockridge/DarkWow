@@ -352,12 +352,12 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 )
                 .await
                 .map_err(|e| Error::Custom(format!("Failed to read WASM: {e}")))?;
-                let mut tx = dww
+                let tx = dww
                     .deploy_contract(&keypair, wasm_bin, ix_bytes)
                     .await?;
-                // Attach Native Token fee before broadcast.
-                // Per wallet.md: every transaction requires a FeeV1 call.
-                dww.attach_fee(&mut tx, crate::fee_builder::DEFAULT_FEE).await?;
+                // deploy_contract attaches the FeeV1 call (real fee proofs,
+                // fee nullifier) and signs per-call — deploy authority row +
+                // fee ephemeral row (wallet.md §6.3 steps 6-7).
                 let tx_b64 =
                     crate::wallet_util::base64_encode(
                         &dwow_serial::serialize_async(&tx).await,
@@ -396,7 +396,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
         } => {
             smol::block_on(async {
                 let tx = dww
-                    .invoke_contract(&contract_id, &function, params.as_deref(), vec![])
+                    .invoke_contract(&contract_id, &function, params.as_deref(), vec![], vec![])
                     .await?;
                 let tx_b64 =
                     crate::wallet_util::base64_encode(
@@ -459,40 +459,39 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             })
         }
 
-        // === Transfer — dispatches to the correct contract by asset ===
-        // Per wallet.md §6.4: DRKW (native token) routes through the hardcoded
-        // NativeToken client (the one bespoke write-path citizen). Every other
-        // asset routes through the contract identified by its token_id (the
-        // generic manifest-driven path).
+        // === Transfer — two paths, by law (wallet.md §6.4, §9) ===
+        // DRKW (the native token) is the ONE bespoke write-path citizen: it is
+        // built by the hardcoded NativeToken client via build_native_transfer
+        // (real burn/mint proofs, fee attach, nullifiers, per-call signing) —
+        // it NEVER goes through invoke_contract or any manifest path.
         //
-        // Redeem/Burn remain PN-specific — those operations belong to the
-        // promissory_note contract and always route through it.
+        // Non-DRKW assets route through the manifest-driven generic path.
+        // (The promissory_note hardcoding below is the fired agent's A1
+        // violation — ripped out and replaced by generic routing in the
+        // capability-side remediation phase.)
         WalletCommand::Transfer { amount, token_id, recipient, spend_hook, user_data, half_split: _, porcelain } => {
             let is_drkw = token_id == "DRKW" || token_id == "drkw";
-            let (contract_name, function) = if is_drkw {
-                ("native_token", "TransferV1")
-            } else {
-                ("promissory_note", "TransferV1")
-            };
-            // DRKW: token_id is inherent (native_token client knows it).
-            // Non-DRKW: the PN client requires token_id for coin selection.
-            let params = if is_drkw {
-                format!(
-                    r#"{{"amount":{},"recipient":"{}"{}{}}}"#,
-                    amount, recipient,
-                    spend_hook.as_ref().map(|s| format!(r#","spend_hook":"{}""#, s)).unwrap_or_default(),
-                    user_data.as_ref().map(|s| format!(r#","user_data":"{}""#, s)).unwrap_or_default(),
-                )
-            } else {
-                format!(
-                    r#"{{"amount":{},"token_id":"{}","recipient":"{}"{}{}}}"#,
-                    amount, token_id, recipient,
-                    spend_hook.as_ref().map(|s| format!(r#","spend_hook":"{}""#, s)).unwrap_or_default(),
-                    user_data.as_ref().map(|s| format!(r#","user_data":"{}""#, s)).unwrap_or_default(),
-                )
-            };
             smol::block_on(async {
-                let tx = dww.invoke_contract(contract_name, function, Some(&params), vec![]).await?;
+                let tx = if is_drkw {
+                    let amount: u64 = amount.parse()
+                        .map_err(|e| Error::Custom(format!("Invalid amount '{amount}': {e}")))?;
+                    // The shell draws the Seed — the explicit randomness name
+                    // (wallet.md §6.1). Everything below it is deterministic.
+                    let mut seed = [0u8; 32];
+                    use rand::RngCore;
+                    rand::rngs::OsRng.fill_bytes(&mut seed);
+                    dww.build_native_transfer(amount, recipient, seed).await?
+                } else {
+                    // Generic non-DRKW transfer: the manifest-driven path.
+                    // Phase 6 wires this — select held capability by token_id →
+                    // stored manifest → action → generic invoke.
+                    return Err(Error::Custom(
+                        "Non-DRKW token transfers are not yet wired through the \
+                         generic manifest path (Phase 6 pending — capability-side \
+                         remediation). Use the DRKW native path (transfer <amount> DRKW <recipient>) \
+                         or wait for the generic engine rebuild.".into(),
+                    ));
+                };
                 let tx_b64 = crate::wallet_util::base64_encode(&dwow_serial::serialize_async(&tx).await);
                 if !*porcelain { println!("Transaction (base64): {tx_b64}"); }
                 let mut output = vec![];
@@ -517,44 +516,21 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 }
             })
         }
-        WalletCommand::Redeem { cap_id, spend_hook } => {
-            let params = format!(
-                r#"{{"cap_id":"{}"{}}}"#,
-                cap_id,
-                spend_hook.as_ref().map(|s| format!(r#","spend_hook":"{}""#, s)).unwrap_or_default(),
-            );
-            smol::block_on(async {
-                let tx = dww.invoke_contract("promissory_note", "RedeemV1", Some(&params), vec![]).await?;
-                let tx_b64 = crate::wallet_util::base64_encode(&dwow_serial::serialize_async(&tx).await);
-                println!("Transaction (base64): {tx_b64}");
-                let mut output = vec![];
-                match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
-                    Ok(txid) => {
-                        for line in &output { println!("{line}"); }
-                        let _ = dww.mark_tx_exercise(&tx, &mut output);
-                        println!("Redeemed: {txid}"); Ok(())
-                    }
-                    Err(e) => Err(Error::Custom(format!("Redeem tx built but broadcast failed: {e}"))),
-                }
-            })
+        // Redeem / Burn — operations that belong to the promissory_note
+        // contract. Ripped out: the wallet names no contract beyond the two
+        // sanctioned citizens (native_token, deployooor). These verbs are
+        // replaced by the generic `contract invoke <contract_id> <action>`
+        // path (wallet.md §2.2, §6.4.1) once the generic engine is rebuilt
+        // (Phase 6) and a stored manifest is available for the target contract.
+        WalletCommand::Redeem { .. } => {
+            Err(Error::Custom("Redeem is a contract-specific operation — use \
+                'contract invoke <contract_id> redeem' (the generic manifest path, \
+                Phase 6 pending). No per-contract verbs in the wallet.".into()))
         }
-        WalletCommand::Burn { cap_ids } => {
-            let ids_json: Vec<String> = cap_ids.iter().map(|id| format!(r#""{}""#, id)).collect();
-            let params = format!(r#"{{"cap_ids":[{}]}}"#, ids_json.join(","));
-            smol::block_on(async {
-                let tx = dww.invoke_contract("promissory_note", "BurnV1", Some(&params), vec![]).await?;
-                let tx_b64 = crate::wallet_util::base64_encode(&dwow_serial::serialize_async(&tx).await);
-                println!("Transaction (base64): {tx_b64}");
-                let mut output = vec![];
-                match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
-                    Ok(txid) => {
-                        for line in &output { println!("{line}"); }
-                        let _ = dww.mark_tx_exercise(&tx, &mut output);
-                        println!("Burned: {txid}"); Ok(())
-                    }
-                    Err(e) => Err(Error::Custom(format!("Burn tx built but broadcast failed: {e}"))),
-                }
-            })
+        WalletCommand::Burn { .. } => {
+            Err(Error::Custom("Burn is a contract-specific operation — use \
+                'contract invoke <contract_id> burn' (the generic manifest path, \
+                Phase 6 pending). No per-contract verbs in the wallet.".into()))
         }
 
         // === Default address by index ===

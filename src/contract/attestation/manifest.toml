@@ -1,3 +1,6 @@
+# Attestation contract manifest — capability declarations for type construction.
+# The wallet reads this manifest to construct capability types per wallet.md §2.2.
+
 [contract]
 name = "attestation"
 category = "Identity"
@@ -81,64 +84,81 @@ proof_circuit = "CommitFeeSchedule_V1"
 discriminant = 0
 name = "attestation"
 description = "An on-chain attestation from a trusted issuer. Non-consumable."
+primitives = ["SecretKey", "ContractId", "FuncId"]
+note_schema = []
 
 [[capabilities]]
 discriminant = 1
 name = "claim"
 description = "A claim against an attestation. Consumable on verify."
+primitives = ["SecretKey", "Nullifier", "ContractId", "FuncId"]
+note_schema = []
 
 [[capabilities]]
 discriminant = 2
 name = "delegation"
 description = "A delegated attestation authority. Non-consumable, revocable."
+primitives = ["SecretKey", "ContractId", "FuncId"]
+note_schema = []
 
 [[actions]]
 function = "create_attestation"
-requires = []
-produces = ["attestation"]
+requires = { type = "none" }
+produces = [{ name = "attestation", description = "New on-chain attestation" }]
 consumes = []
+required_barbs = ["Commit", "Dispatch", "Gate"]
 
 [[actions]]
 function = "create_claim"
-requires = ["attestation"]
-produces = ["claim"]
+requires = { type = "any", capabilities = ["attestation"] }
+produces = [{ name = "claim", description = "Claim against an attestation" }]
 consumes = []
+required_barbs = ["Commit", "Dispatch", "Gate"]
 
 [[actions]]
 function = "verify_claim"
-requires = ["claim"]
+requires = { type = "any", capabilities = ["claim"] }
 produces = []
 consumes = ["claim"]
+required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate"]
 
 [[actions]]
 function = "consume_claim"
-requires = ["claim"]
+requires = { type = "any", capabilities = ["claim"] }
 produces = []
 consumes = ["claim"]
+required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate"]
 
 [[actions]]
 function = "delegate_attestation"
-requires = ["attestation"]
-produces = ["delegation"]
+requires = { type = "any", capabilities = ["attestation"] }
+produces = [{ name = "delegation", description = "Delegated attestation authority" }]
 consumes = []
+required_barbs = ["Commit", "Dispatch", "Gate"]
 
 [[trees]]
 name = "attestations"
+description = "Attestation records"
 
 [[trees]]
 name = "claims"
+description = "Claim records"
 
 [[trees]]
 name = "nullifiers"
+description = "Nullifier SMT for double-spend prevention"
 
 [[trees]]
 name = "attestation_index"
+description = "Attestation index for lookup"
 
 [[trees]]
 name = "claim_rate_limits"
+description = "Rate limit tracking for claims"
 
 [[trees]]
 name = "delegations"
+description = "Delegation records"
 
 [[circuits]]
 name = "CreateAttestation_V1"

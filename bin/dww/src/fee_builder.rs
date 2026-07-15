@@ -213,8 +213,15 @@ pub fn build_fee_and_finalize_tx(
     let fee_debris = fee_builder.build()
         .map_err(|e| Error::Custom(format!("Failed to build fee: {:?}", e)))?;
 
-    // Create fee call data
+    // Create fee call data — authoritative FeeV1 layout:
+    // [0x00 selector][fee u64 LE][FeeParamsV1]. This is what the wasm
+    // process fn, the wasm metadata fn, the block balance checker
+    // (proof_of_token_balance::process_fee_call), and the mempool fee
+    // extractor all parse. The model writes the same prefix
+    // (wallet_model.py build_fee_and_finalize_tx).
     let mut fee_call_data = vec![0x00u8]; // FeeV1 function code
+    DEFAULT_FEE.encode(&mut fee_call_data)
+        .map_err(|e| Error::Custom(format!("Failed to encode fee value: {:?}", e)))?;
     fee_debris.params.encode(&mut fee_call_data)
         .map_err(|e| Error::Custom(format!("Failed to encode fee params: {:?}", e)))?;
 
