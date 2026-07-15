@@ -740,6 +740,462 @@ pub extern "C" fn dwow_wallet_aead_self_test(handle: *const WalletHandle) -> i32
 }
 
 // ============================================================================
+// Phase 4 — Low-Level Type System Access
+// ============================================================================
+// Expose Primitive and Barb as first-class FFI types, not just CSV strings.
+// Static functions — no wallet handle needed. Callable before wallet open.
+
+// Static arrays for enumeration — Primitive/Barb don't derive EnumIter.
+use dwow_sdk::capability::{Primitive, Barb};
+static ALL_PRIMITIVES: &[Primitive] = &[
+    Primitive::SecretKey, Primitive::PublicKey, Primitive::Nullifier,
+    Primitive::Commitment, Primitive::ContractId, Primitive::FuncId,
+    Primitive::AssetId, Primitive::MerkleNode, Primitive::OwnedSecretKey,
+    Primitive::MiningRecipient,
+];
+static ALL_BARBS: &[Barb] = &[
+    Barb::Spend, Barb::Nullify, Barb::Commit, Barb::Prove,
+    Barb::Verify, Barb::Dispatch, Barb::Gate, Barb::Denominate,
+    Barb::ProveInclusion, Barb::Encrypt, Barb::Derive, Barb::Discover,
+    Barb::Mine, Barb::View,
+];
+
+/// Count of known primitive types (type-system.md §8.1).
+#[no_mangle]
+pub extern "C" fn dwow_primitive_count() -> i32 {
+    ALL_PRIMITIVES.len() as i32
+}
+
+/// Name of the primitive at `index`. Returns a static string (do not free).
+/// Returns NULL if index is out of bounds.
+#[no_mangle]
+pub extern "C" fn dwow_primitive_name(index: i32) -> *const c_char {
+    if index < 0 || (index as usize) >= ALL_PRIMITIVES.len() {
+        return std::ptr::null();
+    }
+    let name = ALL_PRIMITIVES[index as usize].name();
+    let cstr = CString::new(name).unwrap_or_default();
+    cstr.into_raw()
+}
+
+/// Barbs exhibited by the primitive at `index`, as a comma-separated string.
+/// Returns bytes written (excluding NUL), or -1 on error.
+#[no_mangle]
+pub extern "C" fn dwow_primitive_barbs(
+    index: i32,
+    out_buf: *mut c_char,
+    buf_len: i32,
+) -> i32 {
+    if out_buf.is_null() || buf_len <= 0 { return -1; }
+    if index < 0 || (index as usize) >= ALL_PRIMITIVES.len() { return -1; }
+    let barbs = ALL_PRIMITIVES[index as usize].barbs();
+    let names: Vec<&str> = barbs.iter().map(|b| b.name()).collect();
+    let csv = names.join(",");
+    let cstr = match CString::new(csv) { Ok(c) => c, Err(_) => return -1 };
+    let bytes = cstr.as_bytes_with_nul();
+    if bytes.len() > buf_len as usize { return -1; }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf as *mut u8, bytes.len()); }
+    (bytes.len() - 1) as i32
+}
+
+/// Count of known barbs (type-system.md §1.1).
+#[no_mangle]
+pub extern "C" fn dwow_barb_count() -> i32 {
+    ALL_BARBS.len() as i32
+}
+
+/// Name of the barb at `index`. Returns a static string (do not free).
+/// Returns NULL if index is out of bounds.
+#[no_mangle]
+pub extern "C" fn dwow_barb_name(index: i32) -> *const c_char {
+    if index < 0 || (index as usize) >= ALL_BARBS.len() {
+        return std::ptr::null();
+    }
+    let cstr = CString::new(ALL_BARBS[index as usize].name()).unwrap_or_default();
+    cstr.into_raw()
+}
+
+/// wallet_construct soundness gate (wallet.md §2.2, ocap.md §6).
+/// Checks whether the given primitives cover all required barbs.
+///
+/// @param resource      Resource name (e.g. "value")
+/// @param action        Action name (e.g. "transfer")
+/// @param primitives_csv Comma-separated primitive names
+/// @param barbs_csv     Comma-separated required barb names
+/// @param out_buf       Output buffer for composed barb CSV (can be NULL to skip)
+/// @param buf_len       Output buffer size (0 if out_buf is NULL)
+/// @return 1 if covered, 0 if not covered, -1 on error
+#[no_mangle]
+pub extern "C" fn dwow_wallet_construct(
+    resource: *const c_char,
+    action: *const c_char,
+    primitives_csv: *const c_char,
+    barbs_csv: *const c_char,
+    out_buf: *mut c_char,
+    buf_len: i32,
+) -> i32 {
+    if resource.is_null() || action.is_null() || primitives_csv.is_null() || barbs_csv.is_null() {
+        return -1;
+    }
+    let resource = match unsafe { CStr::from_ptr(resource) }.to_str() { Ok(s) => s, Err(_) => return -1 };
+    let action = match unsafe { CStr::from_ptr(action) }.to_str() { Ok(s) => s, Err(_) => return -1 };
+    let p_csv = match unsafe { CStr::from_ptr(primitives_csv) }.to_str() { Ok(s) => s, Err(_) => return -1 };
+    let b_csv = match unsafe { CStr::from_ptr(barbs_csv) }.to_str() { Ok(s) => s, Err(_) => return -1 };
+
+    let primitives = match dwow_sdk::capability::primitives_from_csv(p_csv) {
+        Some(p) => p,
+        None => return -1,
+    };
+    let barbs = match dwow_sdk::capability::barbs_from_csv(b_csv) {
+        Some(b) => b,
+        None => return -1,
+    };
+
+    match dwow_sdk::capability::wallet_construct(resource, action, primitives, &barbs) {
+        Some(tc) => {
+            if !out_buf.is_null() && buf_len > 0 {
+                let composed: Vec<&str> = tc.barbs.iter().map(|b| b.name()).collect();
+                let csv = composed.join(",");
+                if let Ok(cstr) = CString::new(csv) {
+                    let bytes = cstr.as_bytes_with_nul();
+                    if bytes.len() <= buf_len as usize {
+                        unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf as *mut u8, bytes.len()); }
+                    }
+                }
+            }
+            1 // covered
+        }
+        None => 0, // not covered
+    }
+}
+
+// ============================================================================
+// Phase 1 — Read-Path Gaps
+// ============================================================================
+
+/// Check whether the wallet has caught up with the network tip.
+/// Returns 1 if synced, 0 if syncing, -1 on error.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_is_synced(handle: *const WalletHandle) -> i32 {
+    if handle.is_null() { return -1; }
+    let wallet = unsafe { &(*handle) };
+    if wallet.dww.is_synced() { 1 } else { 0 }
+}
+
+/// Get per-asset balances as a JSON map string.
+/// Returns bytes written (excluding NUL), or -1 on error.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_balance_by_asset(
+    handle: *const WalletHandle,
+    out_buf: *mut c_char,
+    buf_len: i32,
+) -> i32 {
+    if handle.is_null() || out_buf.is_null() || buf_len <= 0 { return -1; }
+    let wallet = unsafe { &(*handle) };
+    let balances = match wallet.dww.capability_balance() {
+        Ok(b) => b,
+        Err(e) => {
+            wallet.last_error.borrow_mut().replace(format!("balance_by_asset: {}", e));
+            return -1;
+        }
+    };
+    let json = match serde_json::to_string(&balances) {
+        Ok(j) => j,
+        Err(_) => return -1,
+    };
+    let cstr = match CString::new(json) { Ok(c) => c, Err(_) => return -1 };
+    let bytes = cstr.as_bytes_with_nul();
+    if bytes.len() > buf_len as usize { return -1; }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf as *mut u8, bytes.len()); }
+    (bytes.len() - 1) as i32
+}
+
+/// Get a contract's manifest TOML by its bs58 contract ID string.
+/// Returns bytes written (excluding NUL), or -1 on error.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_manifest(
+    handle: *const WalletHandle,
+    contract_id_str: *const c_char,
+    out_buf: *mut c_char,
+    buf_len: i32,
+) -> i32 {
+    if handle.is_null() || contract_id_str.is_null() || out_buf.is_null() || buf_len <= 0 { return -1; }
+    let wallet = unsafe { &(*handle) };
+    let cid_str = match unsafe { CStr::from_ptr(contract_id_str) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+    let manifest = match wallet.dww.get_contract_manifest(cid_str) {
+        Ok(Some(m)) => format!("{:?}", m), // debug-format manifest
+        Ok(None) => { return 0; } // no manifest stored
+        Err(e) => {
+            wallet.last_error.borrow_mut().replace(format!("manifest: {}", e));
+            return -1;
+        }
+    };
+    let cstr = match CString::new(manifest) { Ok(c) => c, Err(_) => return -1 };
+    let bytes = cstr.as_bytes_with_nul();
+    if bytes.len() > buf_len as usize { return -1; }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf as *mut u8, bytes.len()); }
+    (bytes.len() - 1) as i32
+}
+
+/// Get the native token commitment tree Merkle root (32 bytes).
+/// Returns 32 on success, -1 on error.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_cap_merkle_root(
+    handle: *const WalletHandle,
+    out_buf: *mut u8,
+) -> i32 {
+    if handle.is_null() || out_buf.is_null() { return -1; }
+    let wallet = unsafe { &(*handle) };
+    let tree = match wallet.dww.get_capability_commitment_tree() {
+        Ok(t) => t,
+        Err(e) => {
+            wallet.last_error.borrow_mut().replace(format!("merkle_root: {}", e));
+            return -1;
+        }
+    };
+    let root = tree.root(0).map(|n| n.to_bytes()).unwrap_or([0u8; 32]);
+    unsafe { std::ptr::copy_nonoverlapping(root.as_ptr(), out_buf, 32); }
+    32
+}
+
+/// Get all derived addresses as a JSON array of strings.
+/// Returns bytes written (excluding NUL), or -1 on error.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_addresses(
+    handle: *const WalletHandle,
+    out_buf: *mut c_char,
+    buf_len: i32,
+) -> i32 {
+    if handle.is_null() || out_buf.is_null() || buf_len <= 0 { return -1; }
+    let wallet = unsafe { &(*handle) };
+    let addrs = match wallet.dww.addresses() {
+        Ok(a) => a,
+        Err(e) => {
+            wallet.last_error.borrow_mut().replace(format!("addresses: {}", e));
+            return -1;
+        }
+    };
+    // addresses() returns Vec<(u64, PublicKey, SecretKey, u64)> — extract labels + pubkey strings
+    let addr_strings: Vec<String> = addrs.iter()
+        .map(|(label, pk, _, _)| format!("{}:{}", label, pk))
+        .collect();
+    let json = match serde_json::to_string(&addr_strings) {
+        Ok(j) => j,
+        Err(_) => return -1,
+    };
+    let cstr = match CString::new(json) { Ok(c) => c, Err(_) => return -1 };
+    let bytes = cstr.as_bytes_with_nul();
+    if bytes.len() > buf_len as usize { return -1; }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf as *mut u8, bytes.len()); }
+    (bytes.len() - 1) as i32
+}
+
+/// Get the asset alias map as a JSON object.
+/// Returns bytes written (excluding NUL), or -1 on error.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_aliases_by_asset(
+    handle: *const WalletHandle,
+    out_buf: *mut c_char,
+    buf_len: i32,
+) -> i32 {
+    if handle.is_null() || out_buf.is_null() || buf_len <= 0 { return -1; }
+    let wallet = unsafe { &(*handle) };
+    let aliases = match wallet.dww.get_aliases_mapped_by_asset() {
+        Ok(a) => a,
+        Err(e) => {
+            wallet.last_error.borrow_mut().replace(format!("aliases: {}", e));
+            return -1;
+        }
+    };
+    let json = match serde_json::to_string(&aliases) {
+        Ok(j) => j,
+        Err(_) => return -1,
+    };
+    let cstr = match CString::new(json) { Ok(c) => c, Err(_) => return -1 };
+    let bytes = cstr.as_bytes_with_nul();
+    if bytes.len() > buf_len as usize { return -1; }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf as *mut u8, bytes.len()); }
+    (bytes.len() - 1) as i32
+}
+
+/// Batch-retrieve capability IDs as a JSON array of cap_id strings.
+/// Fixes O(n^2) per-index pattern. Callers use dwow_wallet_get_cap for details.
+/// @param revoked_filter  0 = active only, 1 = revoked only, 2 = all
+/// Returns bytes written (excluding NUL), or -1 on error.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_get_cap_batch(
+    handle: *const WalletHandle,
+    revoked_filter: i32,
+    out_buf: *mut c_char,
+    buf_len: i32,
+) -> i32 {
+    if handle.is_null() || out_buf.is_null() || buf_len <= 0 { return -1; }
+    let wallet = unsafe { &(*handle) };
+    let revoked = match revoked_filter {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    };
+    let caps = match wallet.dww.get_held_capabilities(revoked) {
+        Ok(c) => c,
+        Err(e) => {
+            wallet.last_error.borrow_mut().replace(format!("cap_batch: {}", e));
+            return -1;
+        }
+    };
+    // Serialize just the cap IDs — callers use dwow_wallet_get_cap for full details
+    let cap_ids: Vec<String> = caps.iter()
+        .map(|c| bs58::encode(c.cap_id.as_bytes()).into_string())
+        .collect();
+    let json = match serde_json::to_string(&cap_ids) {
+        Ok(j) => j,
+        Err(_) => return -1,
+    };
+    let cstr = match CString::new(json) { Ok(c) => c, Err(_) => return -1 };
+    let bytes = cstr.as_bytes_with_nul();
+    if bytes.len() > buf_len as usize { return -1; }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf as *mut u8, bytes.len()); }
+    (bytes.len() - 1) as i32
+}
+
+// ============================================================================
+// Phase 2 — Write-Path Gaps
+// ============================================================================
+
+/// Insert a synced block into the wallet's local chain store.
+/// Block is passed as JSON (matches scan_block_json format).
+/// Returns 0 on success, -1 on error.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_insert_block(
+    handle: *mut WalletHandle,
+    block_json: *const c_char,
+) -> i32 {
+    if handle.is_null() || block_json.is_null() { return -1; }
+    let wallet = unsafe { &(*handle) };
+    let json_str = match unsafe { CStr::from_ptr(block_json) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+    let block: dwow_chain::Block = match serde_json::from_str(json_str) {
+        Ok(b) => b,
+        Err(e) => {
+            wallet.last_error.borrow_mut().replace(format!("insert_block parse: {}", e));
+            return -1;
+        }
+    };
+    match wallet.dww.insert_synced_block(&block) {
+        Ok(()) => 0,
+        Err(e) => {
+            wallet.last_error.borrow_mut().replace(format!("insert_block: {}", e));
+            -1
+        }
+    }
+}
+
+/// Get a block by height as a JSON string.
+/// Returns bytes written (excluding NUL), or -1 on error.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_get_block(
+    handle: *const WalletHandle,
+    height: u64,
+    out_buf: *mut c_char,
+    buf_len: i32,
+) -> i32 {
+    if handle.is_null() || out_buf.is_null() || buf_len <= 0 { return -1; }
+    let wallet = unsafe { &(*handle) };
+    let block = match wallet.dww.chain_block(height) {
+        Ok(b) => b,
+        Err(e) => {
+            wallet.last_error.borrow_mut().replace(format!("get_block: {}", e));
+            return -1;
+        }
+    };
+    let json = match serde_json::to_string(&block) {
+        Ok(j) => j,
+        Err(_) => return -1,
+    };
+    let cstr = match CString::new(json) { Ok(c) => c, Err(_) => return -1 };
+    let bytes = cstr.as_bytes_with_nul();
+    if bytes.len() > buf_len as usize { return -1; }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf as *mut u8, bytes.len()); }
+    (bytes.len() - 1) as i32
+}
+
+/// Mark a capability as exercised. Accepts a JSON array of nullifier hex strings,
+/// e.g. `["a1b2...", "c3d4..."]`. Each nullifier must be 64 hex chars (32 bytes).
+/// Returns 0 on success, -1 on error.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_mark_exercise(
+    handle: *mut WalletHandle,
+    nullifier_json: *const c_char,
+) -> i32 {
+    if handle.is_null() || nullifier_json.is_null() { return -1; }
+    let wallet = unsafe { &(*handle) };
+    let json_str = match unsafe { CStr::from_ptr(nullifier_json) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+    let nullifier_hexes: Vec<String> = match serde_json::from_str(json_str) {
+        Ok(v) => v,
+        Err(e) => {
+            wallet.last_error.borrow_mut().replace(format!("mark_exercise parse: {}", e));
+            return -1;
+        }
+    };
+    let nullifiers: Vec<dwow_chain::Nullifier> = nullifier_hexes.iter().filter_map(|hex| {
+        let bytes = hex::decode(hex).ok()?;
+        if bytes.len() != 32 { return None; }
+        let arr: [u8; 32] = bytes.try_into().ok()?;
+        dwow_chain::Nullifier::from_bytes(arr).ok()
+    }).collect();
+    if nullifiers.is_empty() {
+        wallet.last_error.borrow_mut().replace("mark_exercise: no valid nullifiers".into());
+        return -1;
+    }
+    let tx = dwow_core::tx::Transaction {
+        calls: vec![],
+        proofs: vec![],
+        signatures: vec![],
+        tx_commitment: [0u8; 32],
+        nullifiers,
+    };
+    let mut output = Vec::new();
+    match wallet.dww.mark_tx_exercise(&tx, &mut output) {
+        Ok(()) => 0,
+        Err(e) => {
+            wallet.last_error.borrow_mut().replace(format!("mark_exercise: {}", e));
+            -1
+        }
+    }
+}
+
+/// Run a wallet diagnostic and return the report as a string.
+/// Returns bytes written (excluding NUL), or -1 on error.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_diagnostic(
+    handle: *const WalletHandle,
+    out_buf: *mut c_char,
+    buf_len: i32,
+) -> i32 {
+    if handle.is_null() || out_buf.is_null() || buf_len <= 0 { return -1; }
+    let wallet = unsafe { &(*handle) };
+    let mut output: Vec<String> = Vec::new();
+    if let Err(e) = wallet.dww.diagnostic(&mut output) {
+        wallet.last_error.borrow_mut().replace(format!("diagnostic: {}", e));
+        return -1;
+    }
+    let report = output.join("\n");
+    let cstr = match CString::new(report) { Ok(c) => c, Err(_) => return -1 };
+    let bytes = cstr.as_bytes_with_nul();
+    if bytes.len() > buf_len as usize { return -1; }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf as *mut u8, bytes.len()); }
+    (bytes.len() - 1) as i32
+}
+
+// ============================================================================
 // FFI self-tests
 // ============================================================================
 

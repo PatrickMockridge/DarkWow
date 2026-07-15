@@ -248,6 +248,45 @@ int32_t dwow_wallet_cap_token_id(
  *  @return Leaf position (u64), or 0 on error. */
 uint64_t dwow_wallet_cap_leaf_position(const CapRecordHandle* handle);
 
+/** Get the native token commitment tree Merkle root (32 bytes).
+ *  Returns 32 on success, -1 on error. */
+int32_t dwow_wallet_cap_merkle_root(
+    const WalletHandle* handle, uint8_t* out_buf);
+
+/** Batch-retrieve capability IDs as a JSON array (fixes O(n^2) per-index).
+ *  @param revoked_filter 0=active, 1=revoked, 2=all
+ *  Returns bytes written (excluding NUL), or -1 on error. */
+int32_t dwow_wallet_get_cap_batch(
+    const WalletHandle* handle, int32_t revoked_filter,
+    char* out_buf, int32_t buf_len);
+
+/* ── Read Path ─────────────────────────────────────────────────── */
+
+/** Check whether the wallet has caught up with the network tip.
+ *  @return 1 if synced, 0 if syncing, -1 on error. */
+int32_t dwow_wallet_is_synced(const WalletHandle* handle);
+
+/** Get per-asset balances as a JSON map string.
+ *  Returns bytes written (excluding NUL), or -1 on error. */
+int32_t dwow_wallet_balance_by_asset(
+    const WalletHandle* handle, char* out_buf, int32_t buf_len);
+
+/** Get a contract's manifest TOML by its bs58 contract ID string.
+ *  Returns bytes written (excluding NUL), 0 if none stored, -1 on error. */
+int32_t dwow_wallet_manifest(
+    const WalletHandle* handle, const char* contract_id_str,
+    char* out_buf, int32_t buf_len);
+
+/** Get all derived addresses as a JSON array of "label:address" strings.
+ *  Returns bytes written (excluding NUL), or -1 on error. */
+int32_t dwow_wallet_addresses(
+    const WalletHandle* handle, char* out_buf, int32_t buf_len);
+
+/** Get the asset alias map as a JSON object.
+ *  Returns bytes written (excluding NUL), or -1 on error. */
+int32_t dwow_wallet_aliases_by_asset(
+    const WalletHandle* handle, char* out_buf, int32_t buf_len);
+
 /** Get the default address for this wallet.
  *
  *  @param handle   Open WalletHandle
@@ -275,6 +314,65 @@ int32_t dwow_wallet_aead_self_test(const WalletHandle* handle);
  *
  *  @return Balance in satoshi-equivalent base units, or 0 on error. */
 uint64_t dwow_wallet_balance(const WalletHandle* handle);
+
+/* ── Write Path ────────────────────────────────────────────────── */
+
+/** Insert a synced block into the wallet's local chain store.
+ *  Block is JSON (matches scan_block_json format).
+ *  Returns 0 on success, -1 on error. */
+int32_t dwow_wallet_insert_block(
+    WalletHandle* handle, const char* block_json);
+
+/** Get a block by height as a JSON string.
+ *  Returns bytes written (excluding NUL), or -1 on error. */
+int32_t dwow_wallet_get_block(
+    const WalletHandle* handle, uint64_t height,
+    char* out_buf, int32_t buf_len);
+
+/** Mark capabilities as exercised by nullifier hex strings.
+ *  `nullifier_json` is a JSON array of 64-char hex strings.
+ *  Returns 0 on success, -1 on error. */
+int32_t dwow_wallet_mark_exercise(
+    WalletHandle* handle, const char* nullifier_json);
+
+/** Run a wallet diagnostic and return the report as a string.
+ *  Returns bytes written (excluding NUL), or -1 on error. */
+int32_t dwow_wallet_diagnostic(
+    const WalletHandle* handle, char* out_buf, int32_t buf_len);
+
+/* ── Type System ───────────────────────────────────────────────── */
+
+/** Count of known primitive types (type-system.md §8.1). */
+int32_t dwow_primitive_count(void);
+
+/** Name of the primitive at `index`. Returns static string (do not free).
+ *  NULL if index out of bounds. */
+const char* dwow_primitive_name(int32_t index);
+
+/** Barbs exhibited by the primitive at `index`, as comma-separated string.
+ *  Returns bytes written (excluding NUL), or -1 on error. */
+int32_t dwow_primitive_barbs(int32_t index, char* out_buf, int32_t buf_len);
+
+/** Count of known barbs (type-system.md §1.1). */
+int32_t dwow_barb_count(void);
+
+/** Name of the barb at `index`. Returns static string (do not free).
+ *  NULL if index out of bounds. */
+const char* dwow_barb_name(int32_t index);
+
+/** wallet_construct soundness gate (wallet.md §2.2, ocap.md §6).
+ *  Checks whether the given primitives cover all required barbs.
+ *  @param resource       Resource name (e.g. "value")
+ *  @param action         Action name (e.g. "transfer")
+ *  @param primitives_csv Comma-separated primitive names
+ *  @param barbs_csv      Comma-separated required barb names
+ *  @param out_buf        Output buffer for composed barb CSV (NULL to skip)
+ *  @param buf_len        Output buffer size (0 if out_buf is NULL)
+ *  @return 1 if covered, 0 if not covered, -1 on error. */
+int32_t dwow_wallet_construct(
+    const char* resource, const char* action,
+    const char* primitives_csv, const char* barbs_csv,
+    char* out_buf, int32_t buf_len);
 
 #ifdef __cplusplus
 }

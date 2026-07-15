@@ -80,6 +80,49 @@ Rust implementation in [`bin/dww/src/ffi.rs`](../../../bin/dww/src/ffi.rs).
 | `dwow_wallet_aead_self_test(handle)` | AEAD encrypt/decrypt roundtrip. 0 = pass. |
 | `dwow_wallet_last_error(handle, buf, len)` | Last error message. Clears after read. |
 
+### Read Path
+
+| Function | Description |
+|----------|-------------|
+| `dwow_wallet_balance_by_asset(handle, buf, len)` | Per-asset balances as a JSON map. |
+| `dwow_wallet_is_synced(handle)` | 1 if chain is caught up, 0 if syncing. |
+| `dwow_wallet_manifest(handle, cid_str, buf, len)` | Contract manifest TOML by bs58 contract ID. |
+| `dwow_wallet_cap_merkle_root(handle, buf)` | Native token commitment tree root (32 bytes). |
+| `dwow_wallet_addresses(handle, buf, len)` | All derived addresses as a JSON array. |
+| `dwow_wallet_aliases_by_asset(handle, buf, len)` | Asset alias map as a JSON object. |
+| `dwow_wallet_get_cap_batch(handle, filter, buf, len)` | Batch capability IDs (fixes O(n²) per-index). |
+
+### Write Path
+
+| Function | Description |
+|----------|-------------|
+| `dwow_wallet_insert_block(handle, block_json)` | Feed synced block to chain store. |
+| `dwow_wallet_get_block(handle, height, buf, len)` | Get block by height as JSON. |
+| `dwow_wallet_mark_exercise(handle, nullifier_json)` | Mark capabilities exercised by nullifier. |
+| `dwow_wallet_diagnostic(handle, buf, len)` | Wallet diagnostic report. |
+
+### Type System
+
+| Function | Description |
+|----------|-------------|
+| `dwow_primitive_count()` | How many primitive types exist (currently 10). |
+| `dwow_primitive_name(index)` | Static name string of primitive at index. |
+| `dwow_primitive_barbs(index, buf, len)` | Comma-separated barbs for this primitive. |
+| `dwow_barb_count()` | How many barbs exist (currently 14). |
+| `dwow_barb_name(index)` | Static name string of barb at index. |
+| `dwow_wallet_construct(resource, action, p_csv, b_csv, buf, len)` | wallet_construct soundness gate. Returns 1 if primitives cover required barbs, 0 if not. |
+
+The type system functions enable C/C++ developers to enumerate all capability
+primitives and barbs, understand primitive→barb mappings, and validate
+capability compositions through `wallet_construct` without writing Rust.
+
+### ZK / Halo2
+
+Planned (Phase 5). The Python FFI at `src/sdk/python/src/zkas.rs` provides the
+proven pattern. Future C FFI functions will expose proof verification, circuit
+discovery, and canonical crypto helpers (Pedersen, Poseidon, nullifier, Merkle
+root, key derivation).
+
 ## Language Bindings
 
 Bindings for 18 languages are maintained alongside the C header. Each is a
@@ -147,7 +190,7 @@ wraps the existing Rust public API — no new Rust code beyond the FFI layer.
      └──────────┴─────────┴──────────┴────────┘
                        │
               libdwow_wallet.so
-              (C ABI — 23 symbols)
+              (C ABI — 55 symbols)
                        │
               bin/dww/src/ffi.rs
                        │
