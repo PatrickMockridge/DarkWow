@@ -173,35 +173,49 @@ pub extern "C" fn dwow_wallet_free(handle: *mut WalletHandle) {
 // Key derivation — miner-wallet symmetry
 // ============================================================================
 
-/// Derive the per-block secret key sk_H for a given contract and height.
+/// Derive the per-block address for a given contract and height.
 ///
-/// `sk_H = derive_instance(sk_owner, contract_id, height.to_le_bytes())`
+/// Uses `AccountManager::per_block_address` — the sanctioned delegation path
+/// (wallet.md §0.1.3): derives `sk_H = derive_instance(default_owned_sk, cid,
+/// height.to_le_bytes())`, computes the public key, formats a Testnet address,
+/// and writes it to `out_address` as a C string (max 64 bytes including NUL).
+///
 /// Same derivation as the mining node — deterministic, zero shared state.
+/// NEVER exports raw secret bytes (owned-secret discipline, wallet.md §4).
 ///
-/// Returns 0 on success, -1 on error.
+/// Returns the number of bytes written to out_address (including NUL), or 0
+/// on error.
 #[no_mangle]
-pub extern "C" fn dwow_wallet_derive_key(
+pub extern "C" fn dwow_wallet_derive_address(
     handle: *const AccountManagerHandle,
     contract_id: *const u8,
     height: u32,
-    out_secret: *mut u8,
+    out_address: *mut c_char,
+    out_len: i32,
 ) -> i32 {
+    if handle.is_null() || contract_id.is_null() || out_address.is_null() || out_len < 64 {
+        return 0;
+    }
     let result = catch_unwind(AssertUnwindSafe(|| {
         let mgr = unsafe { &(*handle).0 };
         let cid_bytes: [u8; 32] = unsafe { std::slice::from_raw_parts(contract_id, 32) }
             .try_into()
             .ok()?;
         let cid = ContractId::from_bytes(cid_bytes).ok()?;
-        let master_sk = mgr.secrets().into_iter().next()?;
-        use dwow_sdk::crypto::pasta_prelude::PrimeField;
-        let derived = master_sk.derive_instance(&cid, &height.to_le_bytes()).ok()?;
-        let secret_bytes = derived.inner().to_repr();
-        unsafe { std::ptr::copy_nonoverlapping(secret_bytes.as_ptr(), out_secret, 32); }
-        Some(0)
+        let addr = mgr.per_block_address(&cid, height).ok()?;
+        let addr_str = addr.to_string();
+        let bytes = addr_str.as_bytes();
+        let len = bytes.len() + 1; // include NUL
+        if len > out_len as usize { return None; }
+        unsafe {
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_address as *mut u8, bytes.len());
+            std::ptr::write(out_address.add(bytes.len()), 0u8);
+        }
+        Some(len as i32)
     }));
     match result {
         Ok(Some(v)) => v,
-        _ => -1,
+        _ => 0,
     }
 }
 
