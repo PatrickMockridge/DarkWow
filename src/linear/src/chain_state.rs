@@ -813,6 +813,23 @@ impl CChainState {
                         nullifiers_batch.insert(&params.nullifier.to_bytes(), &height.to_le_bytes());
                     }
                 }
+                // Fee collection plate detected via FeeCollectV1 call (0x06).
+                // Same coin + nullifier tracking as the coinbase
+                // (consensus-coinbase.md §3.8). Iterates all calls for
+                // consistency with Phase 0.5 per-call counting — at most
+                // one call exists structurally, but we don't assume position.
+                for c in &tx.contract_calls {
+                    if c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
+                        && c.data.first() == Some(&0x06)
+                    {
+                        let fc_data = &c.data[1..]; // skip selector
+                        if let Ok(params) = dwow_serial::deserialize::<dwow_native_token_contract::model::FeeCollectParamsV1>(fc_data) {
+                            coins_batch.insert(&params.output.coin.inner().to_repr(), &height.to_le_bytes());
+                            nullifiers_batch.insert(&params.nullifier.to_bytes(), &height.to_le_bytes());
+                        }
+                        break; // at most one per block (structural enforcement)
+                    }
+                }
             }
 
             // Accumulate chain work
@@ -894,6 +911,22 @@ impl CChainState {
                     self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).insert(CoinCommitment::from_base(params.output.coin.inner()), height);
                     // Phase 1: params.nullifier is already a typed Nullifier — no bytes round-trip
                     self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).insert(params.nullifier, height);
+                }
+            }
+            // FeeCollectV1 fee coin + nullifier (consensus-coinbase.md §3.8) —
+            // tracked so compute_root_including_coin sees fee-collect coins
+            // when generating the next block template (audit finding L3).
+            // Iterates all calls (consistency with Phase 0.5 per-call counting).
+            for c in &tx.contract_calls {
+                if c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
+                    && c.data.first() == Some(&0x06)
+                {
+                    let fc_data = &c.data[1..]; // skip selector
+                    if let Ok(params) = dwow_serial::deserialize::<dwow_native_token_contract::model::FeeCollectParamsV1>(fc_data) {
+                        self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).insert(CoinCommitment::from_base(params.output.coin.inner()), height);
+                        self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).insert(params.nullifier, height);
+                    }
+                    break; // at most one FeeCollect call per block
                 }
             }
         }

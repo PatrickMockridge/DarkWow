@@ -94,6 +94,9 @@ pub enum NativeTokenError {
 
     #[error("Value mismatch")]
     ValueMismatch,
+
+    #[error("Fee total mismatch — does not match fees_db accumulator")]
+    FeeTotalMismatch,
 }
 
 impl From<NativeTokenError> for ContractError {

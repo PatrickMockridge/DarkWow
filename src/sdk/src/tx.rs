@@ -98,8 +98,10 @@ impl ContractCall {
     }
 
     /// Returns true if call is a native token PoW reward.
+    /// Selector 0x05 = NativeTokenFunction::PoWRewardV1 (was 0x02 = BurnV1 —
+    /// pre-existing bug B1, fixed per red-team audit).
     pub fn is_native_token_pow_reward(&self) -> bool {
-        self.matches_contract_call_type(*NATIVE_TOKEN_CONTRACT_ID, 0x02)
+        self.matches_contract_call_type(*NATIVE_TOKEN_CONTRACT_ID, 0x05)
     }
 
     /// Returns true if call matches provided contract id and function code.

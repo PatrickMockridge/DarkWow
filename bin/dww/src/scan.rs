@@ -95,6 +95,9 @@ pub(crate) enum NativeTokenSource {
     TransferV1,
     SpendV1,
     FeeV1,
+    /// FeeCollectV1 — miner fee coin (capability claim for a NEW coin,
+    /// not a spend — same exclusion as PoWRewardV1 from nullifier extraction)
+    FeeCollectV1,
 }
 
 impl NativeTokenSource {
@@ -104,6 +107,7 @@ impl NativeTokenSource {
             NativeTokenSource::TransferV1 => "TransferV1",
             NativeTokenSource::SpendV1 => "SpendV1",
             NativeTokenSource::FeeV1 => "FeeV1",
+            NativeTokenSource::FeeCollectV1 => "FeeCollectV1",
         }
     }
 }
@@ -373,6 +377,7 @@ fn discover_native_token_outputs(
         0x03 => NativeTokenSource::TransferV1,
         0x04 => NativeTokenSource::SpendV1,
         0x05 => NativeTokenSource::PoWRewardV1,
+        0x06 => NativeTokenSource::FeeCollectV1,
         _ => NativeTokenSource::TransferV1, // fallback
     };
 
@@ -458,6 +463,10 @@ fn scan_native_token_contract_calls(
         let function_code = call.data[0];
 
         // ── Spend detection: extract published nullifiers ──
+        // 0x05 (PoWRewardV1) and 0x06 (FeeCollectV1) are excluded: their
+        // nullifiers are capability CLAIMS for NEW coins, not spends of held
+        // capabilities. Inserting them would double-count the claim as both a
+        // revocation signal and a spend — identical reasoning.
         if matches!(function_code, 0x00 | 0x02 | 0x03 | 0x04) {
             let mut cursor = std::io::Cursor::new(&call.data[1..]);
             // V.2: NullifierRecord stores typed Nullifier, not raw pallas::Base
@@ -482,11 +491,13 @@ fn scan_native_token_contract_calls(
         }
 
         // ── Output discovery: decrypt output notes ──
-        // PoWRewardV1 (0x05): mint output
-        // TransferV1  (0x03): receiver outputs
-        // SpendV1     (0x04): change output
-        // FeeV1       (0x00): change output
-        if matches!(function_code, 0x00 | 0x03 | 0x04 | 0x05) {
+        // PoWRewardV1  (0x05): coinbase reward
+        // FeeCollectV1 (0x06): miner fee coin (claim for new coin — same
+        //                      key derivation as coinbase, already in trial_secrets)
+        // TransferV1   (0x03): receiver outputs
+        // SpendV1      (0x04): change output
+        // FeeV1        (0x00): change output
+        if matches!(function_code, 0x00 | 0x03 | 0x04 | 0x05 | 0x06) {
             let (caps, msgs) = match discover_native_token_outputs(
                 account_mgr, tree, &call.data, height, function_code,
             ) {
@@ -2087,5 +2098,106 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             "P11: FeeV1 change must carry DRKW asset_id");
         assert_eq!(cap.created_at_height, height,
             "P11: FeeV1 change created_at_height must match");
+    }
+
+    /// P12: FeeCollectV1 (0x06) fee coin discovery — miner's collection plate.
+    /// The same per-block key derivation as coinbase (pk_H), plus FeeCollectV1
+    /// deterministic blinds. Port of the 0x05 discover test.
+    #[test]
+    fn test_feecollectv1_output_discovery() {
+        use dwow_native_token_contract::client::NativeToken;
+        use dwow_native_token_contract::model::CoinAttributes;
+
+        let height: u32 = 42;
+        let temp_dir = std::env::temp_dir();
+        let keys_path = temp_dir.join("dwow_test_p12.toml");
+        std::fs::write(&keys_path,
+            "[wallet]\nwallet_secret = \"0100000000000000000000000000000000000000000000000000000000000000\"\n").ok();
+        let account_mgr = dwow_accounts::AccountManager::open(
+            &keys_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet",
+        ).expect("AccountManager::open");
+        let _ = std::fs::remove_file(&keys_path);
+        let sk = account_mgr.secrets().into_iter().next().expect("secrets");
+
+        // ── Miner side: per-block key + deterministic FeeCollectV1 blinds ──
+        let sk_H = sk.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes())
+            .expect("valid test derive_instance");
+        let pk_H = PublicKey::from_secret(sk_H);
+        let h_base = pallas::Base::from(height as u64);
+        // Deterministic ephemeral key (domain 13 per spec §3.6)
+        let ephem = SecretKey::from(poseidon_hash([
+            sk_H.inner(), h_base, pallas::Base::from(13u64),
+        ]));
+        // Deterministic blinds (domains 10-12 per spec §3.6)
+        let coin_blind = Blind(poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(12u64)]));
+        let value_blind = Blind(pallas::Scalar::from_repr(
+            poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(10u64)]).to_repr(),
+        ).unwrap());
+        let token_blind = Blind(poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(11u64)]));
+
+        // ── Build the fee coin note (identical structure to coinbase) ──
+        let value: u64 = 42_000_000;
+        let note = NativeToken {
+            value, token_id: pallas::Base::zero(),
+            spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
+            coin_blind: coin_blind.inner(),
+            value_blind: value_blind.inner(),
+            token_blind: token_blind.inner(), memo: vec![],
+        };
+        let enc_note = AeadEncryptedNote::encrypt_deterministic(&note, &pk_H, ephem)
+            .expect("AEAD encrypt_deterministic");
+
+        // ── Minimal FeeCollectParamsV1 wrapper ──
+        #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
+        struct FcOutput { value_commit: Vec<u8>, token_commit: pallas::Base,
+            coin: pallas::Base, nullifier: pallas::Base, note: AeadEncryptedNote }
+        #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
+        struct FcParams { total_fees: u64, output: FcOutput,
+            nullifier: pallas::Base, tx_binding: pallas::Base, tx_nonce: pallas::Base }
+
+        let fc_params = FcParams {
+            total_fees: value,
+            output: FcOutput { value_commit: vec![], token_commit: pallas::Base::zero(),
+                coin: pallas::Base::zero(), nullifier: pallas::Base::zero(), note: enc_note },
+            nullifier: pallas::Base::zero(),
+            tx_binding: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
+        };
+        let mut call_data = vec![0x06u8]; // FeeCollectV1 function code
+        dwow_serial::Encodable::encode(&fc_params, &mut call_data).ok();
+
+        let block = dwow_chain::Block {
+            header: dwow_chain::BlockHeader {
+                version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
+                merkle_root: blake3::Hash::from_bytes([0u8; 32]),
+                timestamp: 0, target: u32::MAX, nonce: 0,
+                height: height as u64, uncle_merkle_root: [0u8; 32],
+                total_reward: 0, randomx_key: [0u8; 32],
+                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
+                anchor_monero_hash: [0u8; 32], finality_flags: 0,
+                pow_source: dwow_chain::PowSource::Native,
+            },
+            transactions: vec![dwow_chain::Transaction {
+                version: 1, inputs: vec![], outputs: vec![],
+                contract_calls: vec![dwow_chain::ContractCall {
+                    contract_id: *NATIVE_TOKEN_CONTRACT_ID, data: call_data,
+                }],
+                lock_time: 0, nullifiers: vec![], witness: vec![],
+            }],
+        };
+
+        let mut tree = MerkleTree::new(32);
+        let result = scan_block(&mut tree, &account_mgr, &BTreeMap::new(), &block);
+
+        // Must discover the fee coin output
+        assert!(!result.native_outputs.is_empty(),
+            "P12: FeeCollectV1 fee coin must be discovered (function_code 0x06)");
+        let cap = &result.native_outputs[0].cap_record;
+        assert_eq!(cap.value, value,
+            "P12: FeeCollectV1 fee coin value must match");
+        assert_eq!(cap.asset_id.inner(), pallas::Base::zero(),
+            "P12: FeeCollectV1 fee coin must carry DRKW asset_id");
+        assert_eq!(cap.created_at_height, height,
+            "P12: FeeCollectV1 fee coin created_at_height must match");
     }
 }

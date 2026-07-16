@@ -150,7 +150,8 @@ pub fn verify_proof_of_token_balance(block: &Block) -> Result<(), BalanceError> 
                 // MintV1 and PoWRewardV1 are not included in the mass balance.
                 // MintV1 outputs go through the coinbase (PoWRewardV1), which is
                 // verified separately against the emission schedule.
-                NativeTokenFunction::MintV1 | NativeTokenFunction::PoWRewardV1 => {}
+                NativeTokenFunction::MintV1 | NativeTokenFunction::PoWRewardV1 // coinbase + disabled
+                | NativeTokenFunction::FeeCollectV1 => {} // fee redistribution, not mint/burn
             }
         }
     }

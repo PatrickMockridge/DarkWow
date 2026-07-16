@@ -48,6 +48,8 @@
 //! | BurnV1 | 0x02 | Destroy capabilities | PRIVACY |
 //! | TransferV1 | 0x03 | Private transfers | PRIVACY |
 //! | SpendV1 | 0x04 | Spend with change | PRIVACY |
+//! | PoWRewardV1 | 0x05 | Coinbase — opens the coin merkle tree | CONSENSUS |
+//! | FeeCollectV1 | 0x06 | Fee collection plate — closes the coin merkle tree | CONSENSUS |
 
 use dwow_sdk::{crypto::TokenId, error::ContractError};
 
@@ -61,6 +63,7 @@ pub enum NativeTokenFunction {
     TransferV1 = 0x03,
     SpendV1 = 0x04,
     PoWRewardV1 = 0x05,
+    FeeCollectV1 = 0x06,
 }
 
 impl TryFrom<u8> for NativeTokenFunction {
@@ -74,6 +77,7 @@ impl TryFrom<u8> for NativeTokenFunction {
             0x03 => Ok(Self::TransferV1),
             0x04 => Ok(Self::SpendV1),
             0x05 => Ok(Self::PoWRewardV1),
+            0x06 => Ok(Self::FeeCollectV1),
             _ => Err(ContractError::InvalidFunction),
         }
     }
@@ -141,6 +145,9 @@ pub const NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT: &[u8] = b"last_coin_root";
 pub const NATIVE_TOKEN_CONTRACT_LATEST_NULLIFIER_ROOT: &[u8] = b"last_nullifier_root";
 /// Coin Merkle tree data key
 pub const NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE: &[u8] = b"coin_merkle_tree";
+/// Miner's per-block public key for fee distribution.
+/// Stored by apply_pow_reward, read by apply_fee to create fee-to-miner coins.
+pub const NATIVE_TOKEN_CONTRACT_MINER_PUBKEY: &[u8] = b"miner_pubkey";
 
 // ============================================================================
 // EMPTY TREE ROOTS
@@ -163,6 +170,10 @@ pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1: &str = "Mint_V1";
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1: &str = "Burn_V1";
 /// zkas fee circuit namespace (for network fees)
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1: &str = "Fee_V1";
+/// zkas fee-collect circuit namespace (for the fee collection plate —
+/// consensus-coinbase.md §3.5). Dedicated circuit: 12 witnesses, 7 public
+/// inputs, no cumulative supply chain.
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V1: &str = "FeeCollect_V1";
 
 // ============================================================================
 // ZK CIRCUIT BINARIES (for client-side proof generation)
@@ -173,6 +184,7 @@ pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1: &str = "Fee_V1";
 #[cfg(feature = "client")]
 pub use crate::client::zkbins::{
     NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V1_BIN,
+    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V1_BIN,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN,
 };

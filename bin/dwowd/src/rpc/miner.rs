@@ -197,6 +197,11 @@ impl DwowNode {
         let competing_originals = prep.competing_originals;
         let mut all_txs = prep.mempool_txs.clone();
         all_txs.insert(0, prep.coinbase_tx);
+        // FeeCollectV1 closes the merkle tree — final transaction
+        // (consensus-coinbase.md §3.1: present iff total_fees > 0).
+        if let Some(fee_tx) = prep.fee_collect_tx {
+            all_txs.push(fee_tx);
+        }
 
         // Create miner and mine a block
         let consensus = dwow_chain::PoWConsensus::new(120, target, 1, u32::MAX);

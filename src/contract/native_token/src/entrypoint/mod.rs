@@ -61,9 +61,9 @@ use dwow_serial::{deserialize, serialize, Encodable, WriteExt};
 use crate::{
     error::NativeTokenError,
     model::{
-        BurnParamsV1, BurnUpdateV1, DRKW_TOKEN_ID, FeeParamsV1, FeeUpdateV1,
-        PoWRewardParamsV1, PoWRewardUpdateV1, SpendParamsV1, SpendUpdateV1,
-        TransferParamsV1, TransferUpdateV1,
+        BurnParamsV1, BurnUpdateV1, DRKW_TOKEN_ID, FeeCollectParamsV1, FeeCollectUpdateV1,
+        FeeParamsV1, FeeUpdateV1, PoWRewardParamsV1, PoWRewardUpdateV1,
+        SpendParamsV1, SpendUpdateV1, TransferParamsV1, TransferUpdateV1,
     },
     NativeTokenFunction, NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE,
     NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE, NATIVE_TOKEN_CONTRACT_COINS_TREE,
@@ -73,6 +73,7 @@ use crate::{
     NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE, NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
     NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT, NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,
     NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1, NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1,
+    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V1,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1, EMPTY_COINS_TREE_ROOT,
 };
 
@@ -98,10 +99,12 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let mint_v1_bincode = include_bytes!("../../proof/mint_v1.zk.bin");
     let burn_v1_bincode = include_bytes!("../../proof/burn_v1.zk.bin");
     let fee_v1_bincode = include_bytes!("../../proof/fee_v1.zk.bin");
+    let fee_collect_v1_bincode = include_bytes!("../../proof/fee_collect_v1.zk.bin");
 
     wasm::db::zkas_db_set(&mint_v1_bincode[..])?;
     wasm::db::zkas_db_set(&burn_v1_bincode[..])?;
     wasm::db::zkas_db_set(&fee_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&fee_collect_v1_bincode[..])?;
 
     let tx_hash = wasm::util::get_tx_hash()?;
     let call_idx = wasm::util::get_call_index()?;
@@ -140,6 +143,17 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     // Set up nullifiers database
     let _nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
+
+    // Set up fees database and seed the height-2 accumulator.
+    // Genesis (height 1) bypasses WASM execution, so apply_pow_reward never
+    // runs at H=1 and cannot create fees_db[2]. Without this seed, the first
+    // FeeV1 or FeeCollectV1 at height 2 aborts with DbGetEmpty
+    // (consensus-coinbase.md §3.13, Genesis). From height 2 onward,
+    // apply_pow_reward seeds fees_db[H+1] for each block.
+    let fees_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_FEES_TREE)?;
+    if !wasm::db::db_contains_key(fees_db, &serialize(&2_u32))? {
+        wasm::db::db_set(fees_db, &serialize(&2_u32), &serialize(&0_u64))?;
+    }
 
     // Set up info database.
     // Use db_contains_key to check whether the info tree has actually been
@@ -196,6 +210,7 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         NativeTokenFunction::TransferV1 => transfer_get_metadata(cid, params),
         NativeTokenFunction::SpendV1 => spend_get_metadata(cid, params),
         NativeTokenFunction::PoWRewardV1 => pow_reward_get_metadata(cid, params),
+        NativeTokenFunction::FeeCollectV1 => fee_collect_get_metadata(cid, params),
     };
 
     wasm::util::set_return_data(&metadata)
@@ -440,6 +455,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         NativeTokenFunction::TransferV1 => transfer_v1(cid, params),
         NativeTokenFunction::SpendV1 => spend_v1(cid, params),
         NativeTokenFunction::PoWRewardV1 => pow_reward_v1(cid, params),
+        NativeTokenFunction::FeeCollectV1 => fee_collect_v1(cid, params),
     }
 }
 
@@ -898,7 +914,144 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update: PoWRewardUpdateV1 = deserialize(&update_data[1..])?;
             apply_pow_reward(cid, update)
         }
+        NativeTokenFunction::FeeCollectV1 => {
+            let update: FeeCollectUpdateV1 = deserialize(&update_data[1..])?;
+            apply_fee_collect(cid, update)
+        }
     }
+}
+
+// ============================================================================
+// FEE COLLECT — Forward accumulated fees to miner (CONSENSUS CRITICAL)
+// ============================================================================
+
+fn fee_collect_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
+    let fc: FeeCollectParamsV1 = match deserialize(params) { Ok(p) => p, Err(_) => return vec![] };
+
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    let value_coords = fc.output.value_commit.to_affine().coordinates();
+    if value_coords.is_none().into() {
+        return vec![];
+    }
+    let value_coords = value_coords.unwrap();
+
+    // Dedicated FeeCollect_V1 circuit — 7 public inputs, no cumulative supply
+    // (spec §3.5). Fees are redistribution, not minting: the circuit has no
+    // S_H constraint and the supply chain is untouched (spec §3.10).
+    zk_public_inputs.push((
+        NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V1.to_string(),
+        vec![
+            fc.output.coin.inner(),         // 1: C
+            fc.nullifier.inner(),           // 2: nf
+            *value_coords.x(),              // 3: vc.x
+            *value_coords.y(),              // 4: vc.y
+            fc.output.token_commit,         // 5: tc
+            fc.tx_binding,                  // 6: tx_binding = poseidon_hash(tx_commitment, tx_nonce)
+            fc.tx_nonce,                    // 7: tx_nonce
+        ],
+    ));
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata).unwrap();
+    // FeeCollectV1: no signature public key (miner identity proven via nullifier)
+    let empty_sigs: Vec<dwow_sdk::crypto::PublicKey> = vec![];
+    empty_sigs.encode(&mut metadata).unwrap();
+    metadata
+}
+
+fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
+    let fc: FeeCollectParamsV1 = deserialize(params)?;
+    let height = wasm::util::get_verifying_block_height()?;
+    msg!("[native_token::fee_collect_v1] Collecting {} fee units at height {}", fc.total_fees, height);
+
+    // Check 1 (spec §3.7): reject zero-value claims. Kills the 0-fee replay:
+    // after the pot is zeroed, a second FeeCollect claiming total_fees = 0
+    // would otherwise pass check 2 and mint a 0-value coin, reopening the
+    // closed merkle tree (audit finding D12).
+    if fc.total_fees == 0 {
+        msg!("[fee_collect_v1] Zero-value fee claim rejected");
+        return Err(NativeTokenError::FeeTotalMismatch.into())
+    }
+
+    // Check 2 (spec §3.7): claimed total matches the accumulated pot
+    let fees_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_FEES_TREE)?;
+    let accumulated: u64 =
+        deserialize(&wasm::db::db_get(fees_db, &serialize(&height))?.ok_or(ContractError::DbGetEmpty)?)?;
+    if fc.total_fees != accumulated {
+        msg!("[fee_collect_v1] Fee total mismatch: claimed {} != accumulated {} at height {}",
+             fc.total_fees, accumulated, height);
+        return Err(NativeTokenError::FeeTotalMismatch.into())
+    }
+
+    // Check 3 (spec §3.7): the fee coin is not a duplicate
+    let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
+    if wasm::db::db_contains_key(coins_db, &serialize(&fc.output.coin))? {
+        msg!("[fee_collect_v1] Duplicate fee coin");
+        return Err(NativeTokenError::DuplicateCoin.into())
+    }
+
+    // Check 4 (spec §3.7): nullifier is not already spent
+    let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
+    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
+    let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
+    if smt.get_leaf(&fc.nullifier.inner()) != pallas::Base::zero() {
+        msg!("[fee_collect_v1] Duplicate nullifier");
+        return Err(NativeTokenError::DuplicateNullifier.into())
+    }
+
+    // Check 5 (spec §3.7): token must be DARK (native token)
+    let token_commit = poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]);
+    if fc.output.token_commit != token_commit {
+        msg!("[fee_collect_v1] Non-native token in fee collection");
+        return Err(NativeTokenError::TokenMismatch.into())
+    }
+
+    let update = FeeCollectUpdateV1 {
+        coin: fc.output.coin,
+        height,
+        total_fees: fc.total_fees,
+    };
+
+    msg!("[native_token::fee_collect_v1] Fee collection valid — {} units to miner", fc.total_fees);
+    wasm::util::set_return_data(&serialize(&(NativeTokenFunction::FeeCollectV1 as u8, update)))
+}
+
+fn apply_fee_collect(cid: ContractId, update: FeeCollectUpdateV1) -> ContractResult {
+    msg!("[native_token::apply_fee_collect] Adding fee coin, clearing fee pot at height {}: {} units",
+         update.height, update.total_fees);
+
+    let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
+    let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
+    let fees_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_FEES_TREE)?;
+
+    // The claim nullifier nf = poseidon_hash(sk_H, C_fee) is NOT inserted
+    // into the contract nullifiers_db — the SAME value is the future spend
+    // nullifier for this fee coin. Inserting it would make the coin born-
+    // unspendable (the spend path checks the SMT and rejects duplicates).
+    // PoWRewardV1 uses the identical model: sparse_merkle_insert_batch with
+    // an EMPTY batch. Claim-replay prevention lives in: zero-claim rejection
+    // (check #1), pot zeroing (this function's last step), Phase 0.5
+    // structural rules, and host-level nullifier tracking (tx.nullifiers,
+    // sled batches, chain_state in-memory cache — COINBASE_MATURITY applies).
+    // Defense-in-depth: check #4 in fee_collect_v1 catches SMT collision with
+    // a previously-SPENT coin (same formula, different height/key collision).
+
+    // Add fee coin to coin set
+    wasm::db::db_set(coins_db, &serialize(&update.coin), &[])?;
+
+    // Update Merkle tree (closes the tree for this block)
+    wasm::merkle::merkle_add(
+        info_db,
+        wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?,
+        NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
+        NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE,
+        &[MerkleNode::from(update.coin.inner())],
+    )?;
+
+    // Zero out the fee pot for this height (prevents double-claim)
+    wasm::db::db_set(fees_db, &serialize(&update.height), &serialize(&0_u64))?;
+
+    Ok(())
 }
 
 fn apply_fee(cid: ContractId, update: FeeUpdateV1) -> ContractResult {

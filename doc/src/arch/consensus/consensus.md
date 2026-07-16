@@ -466,6 +466,10 @@ Phase 0 — Structural (validate_block_structure):
   0.2 transactions[0].contract_calls[0] is PoWRewardV1 (contract_id == NATIVE_TOKEN, data[0] == 0x05)
   0.3 Exactly one PoWRewardV1 call in block
   0.4 Coinbase nullifier is non-zero
+  0.5 FeeCollectV1 rules (consensus-coinbase.md §3.15):
+      at most one FeeCollectV1 call (data[0] == 0x06);
+      present iff sum of FeeV1 fees in block > 0 (checked add — overflow rejects);
+      must be the final transaction
 
 Phase 1 — PoW:
   RandomX(to_mining_blob())[0..4] as u32 LE <= block.header.target
@@ -479,21 +483,71 @@ Phase 3 — Nullifier + ZK Proof:
   3.2 nf NOT IN nullifier SMT (duplicate claim = reject)
   3.3 verify_ZK(proof, public_inputs) — Mint_V1 circuit constrains nf == poseidon_hash(sk_H, C)
   3.4 reward == expected_reward(H) — emission schedule enforcement
+  3.5 FeeCollectV1 witness verification — FeeCollect_V1 circuit, 7 public inputs
+      (L2: decode_and_reconcile + verify_core_tx_with_tables)
 
 Phase 4 — WASM Execution:
   execute pow_reward_v1 (0x05) — verifies nullifier, coin uniqueness, cumulative supply chain
 
 Phase 5 — Transactions:
-  Execute remaining transactions (fees, transfers, burns, spends)
+  Execute remaining transactions (fees, transfers, burns, spends) sequentially
+  in block order — see Execution Ordering & Atomicity Layers below.
+  fee_collect_v1 (0x06) executes LAST: verifies total against fees_db[H]
+  accumulated by this block's FeeV1 calls, closes the coin merkle tree.
 
 Phase 6 — Nullifier SMT Update:
   Insert nf into nullifier SMT as first entry for this block
-  Insert remaining nullifiers from spends
+  Insert remaining nullifiers from spends (incl. the fee-collect nullifier)
   Verify nullifier_root matches block header
 
 Phase 7 — Atomic Commit:
   Commit block, contracts overlay, supply chain, coins, nullifiers in single sled transaction
 ```
+
+### Execution Ordering & Atomicity Layers
+
+*Normative. Added 2026-07-16 with FeeCollectV1 (consensus-coinbase.md §3) —
+supersedes the per-call isolated-overlay model.*
+
+Canonical contract calls SHALL execute **sequentially in block order**
+(transaction order, then call order within each transaction) against a
+**single shared sled overlay**. Call N SHALL observe all state written by
+calls 1..N-1 of the same block. Any contract logic that reads state written
+by a sibling call in the same block (e.g. `fee_collect_v1` reading
+`fees_db[H]` accumulated by this block's FeeV1 calls) depends on exactly
+this guarantee and MUST cite this section.
+
+Block state integrity is enforced at three nested atomicity layers:
+
+| Layer | Scope | Mechanism | Integrity check |
+|-------|-------|-----------|-----------------|
+| 1. Transaction atomicity | one contract call | per-call `checkpoint()` / `revert_to_checkpoint()` on the shared overlay | a failing call leaves zero writes |
+| 2. Merkle-tree atomicity | all canonical calls, block order | one shared `SledTreeOverlay` — call N sees calls 1..N-1 | **the fee release check**: PoWRewardV1 opens the coin merkle tree at transactions[0]; FeeCollectV1 closes it at transactions[last] — its entrypoint check `total_fees == fees_db[H]` passes iff every FeeV1 in the block executed and is visible |
+| 3. Block-commit atomicity | whole block | single sled cross-tree transaction in `connect_block` (blocks, uncles, contracts, consensus, coins, nullifiers, supply chain) | all-or-nothing block application |
+
+**Failure semantics (strict):** any failed canonical call SHALL reject the
+block. A valid miner never includes failing transactions — mempool admission
+verifies every transaction's witness before acceptance, and the miner
+re-executes at block assembly. Tolerating failed canonical calls would let
+a malicious miner include garbage that diverges validator state.
+
+**Uncle calls** remain isolated: they were mined against pre-block state and
+execute against independent overlay clones, merged after canonical execution
+with canonical-wins semantics (`remove_diff`). Uncle call failures are
+tolerated (best-effort). Uncle-vs-uncle duplicate key writes reject the block
+(non-deterministic merge order otherwise).
+
+**Double-spend detection:** with sequential visibility, the second spend of
+a coin within a block fails directly at the entrypoint's nullifier SMT check
+(it sees the first call's nullifier write). The former same-block
+double-write conflict rejection is superseded for canonical calls; it is
+retained for uncle-vs-uncle merges and Deployooor deployments.
+
+**Consensus impact:** this changes execution semantics relative to the
+per-call isolated-overlay model (which rejected any block containing two
+calls writing the same key — making a coinbase plus any coin-creating user
+transaction unminable). Deployed networks MUST restart from a fresh genesis
+(`--fresh`); no mainnet exists.
 
 ### Miner Obligation
 

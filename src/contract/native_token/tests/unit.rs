@@ -30,8 +30,8 @@ mod tests {
     use dwow_native_token_contract::{
         model::{
             BurnParamsV1, BurnUpdateV1, ClearInput, Coin, CoinAttributes, DRKW_TOKEN_ID,
-            FeeParamsV1, FeeUpdateV1, Input, Nullifier, Output,
-            PoWRewardParamsV1, PoWRewardUpdateV1, SpendParamsV1, SpendUpdateV1,
+            FeeCollectParamsV1, FeeCollectUpdateV1, FeeParamsV1, FeeUpdateV1, Input, Nullifier,
+            Output, PoWRewardParamsV1, PoWRewardUpdateV1, SpendParamsV1, SpendUpdateV1,
             TransferParamsV1, TransferUpdateV1,
             MAX_COIN_VALUE,
         },
@@ -52,12 +52,13 @@ mod tests {
         assert!(NativeTokenFunction::try_from(0x03).is_ok()); // TransferV1
         assert!(NativeTokenFunction::try_from(0x04).is_ok()); // SpendV1
         assert!(NativeTokenFunction::try_from(0x05).is_ok()); // PoWRewardV1
+        assert!(NativeTokenFunction::try_from(0x06).is_ok()); // FeeCollectV1
     }
 
     #[test]
     fn test_native_token_function_enum_invalid() {
         assert!(NativeTokenFunction::try_from(0xFF).is_err()); // Invalid
-        assert!(NativeTokenFunction::try_from(0x06).is_err()); // Out of range
+        assert!(NativeTokenFunction::try_from(0x07).is_err()); // Out of range
         assert!(NativeTokenFunction::try_from(0x10).is_err()); // Out of range
     }
 
@@ -69,6 +70,7 @@ mod tests {
         assert_eq!(NativeTokenFunction::TransferV1 as u8, 0x03);
         assert_eq!(NativeTokenFunction::SpendV1 as u8, 0x04);
         assert_eq!(NativeTokenFunction::PoWRewardV1 as u8, 0x05);
+        assert_eq!(NativeTokenFunction::FeeCollectV1 as u8, 0x06);
     }
 
     // ================================================================
@@ -419,6 +421,76 @@ mod tests {
         };
 
         assert_eq!(params.input.value, 1000);
+    }
+
+    // ================================================================
+    // FeeCollectParamsV1 / FeeCollectUpdateV1 tests
+    // ================================================================
+
+    #[test]
+    fn test_fee_collect_params_v1_structure() {
+        // consensus-coinbase.md §3: the "collection plate" — total_fees,
+        // output coin for the miner, nullifier capability claim, tx binding.
+        let params = FeeCollectParamsV1 {
+            total_fees: 42_000_000,
+            output: create_test_output(),
+            nullifier: Nullifier::from_bytes([3u8; 32]).unwrap(),
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        };
+
+        assert_eq!(params.total_fees, 42_000_000);
+        assert!(params.output.coin.inner() != pallas::Base::zero());
+    }
+
+    #[test]
+    fn test_fee_collect_update_v1_layout() {
+        // Spec §3.8: FeeCollectUpdateV1 = {coin, height, total_fees}.
+        // The claim nullifier is NOT stored in the contract nullifiers_db
+        // (it equals the future spend nullifier — PoWRewardV1 model).
+        let keypair = Keypair::random(&mut rand::rngs::OsRng);
+        let coin = Coin::from_attributes(
+            &keypair.public,
+            42_000_000,
+            DRKW_TOKEN_ID,
+            FuncId::none(),
+            pallas::Base::zero(),
+            Blind(pallas::Base::zero()),
+        );
+
+        let update = FeeCollectUpdateV1 {
+            coin,
+            height: 7,
+            total_fees: 42_000_000,
+        };
+
+        assert_eq!(update.height, 7);
+        assert_eq!(update.total_fees, 42_000_000);
+    }
+
+    #[test]
+    fn test_fee_collect_update_v1_serial_roundtrip() {
+        // The update crosses the WASM set_return_data boundary — the
+        // serialized layout is consensus-relevant. 3-field layout per §3.8.
+        let keypair = Keypair::random(&mut rand::rngs::OsRng);
+        let coin = Coin::from_attributes(
+            &keypair.public,
+            1,
+            DRKW_TOKEN_ID,
+            FuncId::none(),
+            pallas::Base::zero(),
+            Blind(pallas::Base::zero()),
+        );
+        let update = FeeCollectUpdateV1 {
+            coin,
+            height: 3,
+            total_fees: 9,
+        };
+        let bytes = dwow_serial::serialize(&update);
+        let back: FeeCollectUpdateV1 = dwow_serial::deserialize(&bytes).unwrap();
+        assert_eq!(back.height, update.height);
+        assert_eq!(back.total_fees, update.total_fees);
+        assert_eq!(back.coin.inner(), update.coin.inner());
     }
 
     // ================================================================

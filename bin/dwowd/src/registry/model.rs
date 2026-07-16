@@ -32,14 +32,15 @@ use dwow_core::{
 };
 use blake3::Hash as Blake3Hash;
 use dwow_chain::Nullifier;
-use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN;
+use dwow_native_token_contract::{
+    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V1_BIN, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN,
+};
 use dwow_sdk::crypto::{
     keypair::{SecretKey},
     pasta_prelude::PrimeField,
     poseidon_hash,
 };
 use dwow_serial::Encodable;
-use rand::rngs::OsRng;
 
 use crate::error::RpcError;
 
@@ -300,6 +301,121 @@ pub async fn build_linear_coinbase(
     Ok((coinbase, public_inputs, pow_reward_call))
 }
 
+/// Build the FeeCollectV1 "collection plate" transaction — the final
+/// transaction in every block (consensus-coinbase.md §3). Single source of
+/// truth for all mining paths (built-in miner, RPC miner, stratum, mm_rpc).
+///
+/// Sums all NativeToken FeeV1 fees in `transactions` per spec §3.12
+/// (contract_id filter + checked arithmetic), and if the total is non-zero,
+/// builds the FeeCollect_V1 ZK proof with the same sk_H as the coinbase and
+/// assembles the chain transaction: proof in the L1 `witness` carriage, fee
+/// nullifier in `tx.nullifiers`.
+///
+/// Returns `Ok(None)` iff `total_fees == 0`. A build failure with non-zero
+/// fees is an error — silently omitting fee collection violates spec §3.1
+/// and strands the fees permanently (§3.13).
+pub fn build_fee_collect_tx(
+    recipient: &crate::accounts::MiningRecipient,
+    transactions: &[dwow_chain::Transaction],
+    height: u32,
+    linear_zk: &LinearPowRewardZk,
+) -> Result<Option<dwow_chain::Transaction>> {
+    use dwow_native_token_contract::client::fee_collect_v1::FeeCollectCallBuilder;
+    use dwow_sdk::pasta::pallas;
+
+    // Fee summation per spec §3.12: FeeV1 layout is
+    // [selector: u8][fee: u64 LE][FeeParamsV1].
+    let mut total_fees: u64 = 0;
+    for tx in transactions {
+        for c in &tx.contract_calls {
+            // Only NativeToken FeeV1 calls count — without the contract_id
+            // filter, any contract's call starting with 0x00 would be
+            // miscounted as a fee (red-team audit finding, HIGH).
+            if c.contract_id != *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID {
+                continue;
+            }
+            if c.data.first() != Some(&0x00) {
+                continue;
+            }
+            // Malformed FeeV1 call data is an error, never silently zero.
+            if c.data.len() < 9 {
+                return Err(Error::Custom(format!(
+                    "FeeV1 call data too short ({} bytes) in selected tx at height {}",
+                    c.data.len(), height,
+                )));
+            }
+            let fee_bytes: [u8; 8] = c.data[1..9].try_into().expect("length checked above");
+            let fee = u64::from_le_bytes(fee_bytes);
+            // Overflow is an explicit block-preparation error (spec §3.12).
+            total_fees = total_fees.checked_add(fee).ok_or_else(|| {
+                Error::Custom(format!("fee sum overflow at height {}", height))
+            })?;
+        }
+    }
+
+    if total_fees == 0 {
+        return Ok(None);
+    }
+
+    let sk_H: SecretKey = recipient.secret().clone().into();
+    let debris = FeeCollectCallBuilder {
+        secret: sk_H,
+        block_height: height,
+        total_fees,
+        fee_collect_zkbin: (*linear_zk.fee_collect_zkbin).clone(),
+        fee_collect_pk: (*linear_zk.fee_collect_provingkey).clone(),
+        tx_nonce: pallas::Base::zero(),
+        tx_commitment: pallas::Base::zero(),
+    }
+    .build()
+    .map_err(|e| {
+        Error::Custom(format!("FeeCollectV1 build failed at height {}: {}", height, e))
+    })?;
+
+    tracing::info!(target: "dwowd::registry::model::build_fee_collect_tx",
+        "FeeCollectV1: {} fee units to miner at height {}", total_fees, height);
+
+    let nullifier = debris.params.nullifier;
+    let call_data = {
+        let serialized = dwow_serial::serialize(&debris.params);
+        let mut buf = vec![dwow_native_token_contract::NativeTokenFunction::FeeCollectV1 as u8];
+        buf.extend_from_slice(&serialized);
+        buf
+    };
+
+    // L1 witness carriage (same as user transactions): the core tx carries
+    // the ZK proof; the chain tx carries the serialized core tx in `witness`
+    // and the nullifier in `nullifiers`. L2 verifies the proof at block
+    // accept via verify_core_tx_with_tables (spec §3.15, Phase 3.1).
+    let core_tx = dwow_core::tx::Transaction {
+        calls: vec![dwow_sdk::dark_tree::DarkLeaf {
+            data: dwow_sdk::tx::ContractCall {
+                contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+                data: call_data.clone(),
+            },
+            children_indexes: vec![],
+            parent_index: None,
+        }],
+        proofs: vec![debris.proofs],
+        signatures: vec![vec![]], // no sigs — nullifier proves identity (spec §3.7)
+        tx_commitment: [0u8; 32],
+        nullifiers: vec![nullifier],
+    };
+
+    Ok(Some(dwow_chain::Transaction {
+        version: 1,
+        inputs: vec![],
+        outputs: vec![],
+        contract_calls: vec![dwow_chain::ContractCall {
+            contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+            data: call_data,
+        }],
+        lock_time: 0,
+        nullifiers: vec![nullifier],
+        witness: dwow_serial::serialize(&core_tx),
+    }))
+}
+
 /// Linear blockchain ZK mining data.
 /// Loads the Mint_V1 ZK circuit and proving key for creating privacy-preserving
 /// coinbase transactions.
@@ -311,6 +427,10 @@ pub async fn build_linear_coinbase(
 pub struct LinearPowRewardZk {
     pub zkbin: Arc<ZkBinary>,
     pub provingkey: Arc<ProvingKey>,
+    /// FeeCollect_V1 circuit — the "collection plate" final transaction
+    /// (consensus-coinbase.md §3.5). Same Arc pattern as Mint_V1.
+    pub fee_collect_zkbin: Arc<ZkBinary>,
+    pub fee_collect_provingkey: Arc<ProvingKey>,
     pub chain_state: Arc<dwow_chain::CChainState>,
 }
 
@@ -333,9 +453,27 @@ impl LinearPowRewardZk {
             "Mint_V1 ZK circuit loaded (k={})", zkbin.k,
         );
 
+        let fee_collect_zkbin = ZkBinary::decode(
+            NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V1_BIN,
+            false,
+        )
+        .map_err(|e| Error::Custom(format!("Failed to decode FeeCollect_V1 ZK binary: {}", e)))?;
+
+        let fee_collect_circuit =
+            ZkCircuit::new(empty_witnesses(&fee_collect_zkbin)?, &fee_collect_zkbin);
+        let fee_collect_provingkey = ProvingKey::build(fee_collect_zkbin.k, &fee_collect_circuit)
+            .map_err(|e| Error::Custom(format!("ProvingKey::build fee_collect: {:?}", e)))?;
+
+        info!(
+            target: "dwowd::registry::model::LinearPowRewardZk::new",
+            "FeeCollect_V1 ZK circuit loaded (k={})", fee_collect_zkbin.k,
+        );
+
         Ok(Self {
             zkbin: Arc::new(zkbin),
             provingkey: Arc::new(provingkey),
+            fee_collect_zkbin: Arc::new(fee_collect_zkbin),
+            fee_collect_provingkey: Arc::new(fee_collect_provingkey),
             chain_state,
         })
     }
@@ -391,6 +529,27 @@ pub async fn generate_linear_block_template(
     };
 
     let height = chain_state.get_height() + 1;
+
+    // FeeCollectV1 — the "collection plate" as the final template transaction
+    // (consensus-coinbase.md §3.12). MUST be appended BEFORE the merkle root
+    // computation below so the mining blob commits to it, and it rides in
+    // template.transactions into the submit-reconstructed block (stratum /
+    // mm_rpc paths). Only in the ZK path — the debug-only non-ZK fallback
+    // produces downstream-rejected blocks regardless.
+    let transactions: Vec<dwow_chain::Transaction> = {
+        let mut txs = transactions;
+        if let Some(zk) = linear_zk {
+            if let Some(fee_tx) = build_fee_collect_tx(
+                &recipient_config.recipient,
+                &txs,
+                height as u32,
+                zk,
+            )? {
+                txs.push(fee_tx);
+            }
+        }
+        txs
+    };
 
     let previous_hash: [u8; 32] = if height == 1 {
         [0u8; 32]

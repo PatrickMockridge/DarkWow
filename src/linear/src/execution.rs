@@ -23,11 +23,13 @@
 
 //! WASM contract execution for linear blockchain blocks.
 //!
-//! Extracts execution jobs from block transactions, runs them through the
-//! WASM runtime, merges per-call state diffs deterministically (canonical
-//! first, then uncles with canonical subtraction), and handles deployooor
-//! post-processing. Returns a merged [`SledTreeOverlay`] ready for atomic
-//! commit.
+//! Extracts execution jobs from block transactions and runs them through the
+//! WASM runtime. Canonical calls execute sequentially in block order against
+//! a single shared overlay (layer-2 sequential visibility — see consensus.md
+//! "Execution Ordering & Atomicity Layers"); any canonical failure rejects
+//! the block. Uncle calls execute against isolated pre-block clones and merge
+//! canonical-wins. Handles deployooor post-processing. Returns the canonical
+//! [`SledTreeOverlay`] ready for atomic commit.
 //!
 //! # Proof of Token Balance
 //!
@@ -80,15 +82,15 @@ pub const MAX_BLOCK_SIZE: usize = 4 * 1024 * 1024;
 
 /// WASM runtime backend providing sled overlay access for contract execution.
 ///
-/// Per-call overlay clones provide transaction isolation: each contract call
-/// executes against an independent clone of the base overlay, so a failing
-/// call can be checkpoint-reverted without affecting sibling calls.  This
-/// means a call's overlay does NOT contain writes from other calls in the
-/// same block.  The hybrid read pattern (overlay-get first, then bare-tree
-/// fallback via `store.get_contract_data`) provides visibility into data
-/// written by PRIOR blocks, which is the correct semantics for cross-block
-/// state reads.  Intra-block cross-call visibility is deferred until the
-/// deterministic merge phase at the end of `execute_block`.
+/// Execution ordering per consensus.md "Execution Ordering & Atomicity Layers":
+/// canonical calls share ONE overlay and execute sequentially in block order —
+/// call N observes all writes of calls 1..N-1 (layer-2 sequential visibility).
+/// Per-call `checkpoint()`/`revert_to_checkpoint()` provides layer-1
+/// transaction atomicity: a failing call leaves zero writes. The hybrid read
+/// pattern (overlay-get first, then bare-tree fallback via
+/// `store.get_contract_data`) additionally provides visibility into data
+/// written by PRIOR blocks. Uncle calls execute against independent clones of
+/// the pre-block state (they were mined against it) and merge canonical-wins.
 pub struct TxBackend {
     pub overlay: std::sync::Arc<std::sync::Mutex<sled_overlay::SledTreeOverlay>>,
     pub store: std::sync::Arc<LinearStore>,
@@ -133,6 +135,14 @@ pub fn execute_block(
     let base_overlay = SledTreeOverlay::new(&contracts_tree);
     let mut early_fail = 0u64;
 
+    // Layer-2 (merkle-tree atomicity): ONE shared overlay for all canonical
+    // calls, executed sequentially in block order. Call N observes writes of
+    // calls 1..N-1 — required by fee_collect_v1 reading fees_db[H] accumulated
+    // by this block's FeeV1 calls, and by every coin-creating call appending
+    // to the same coin merkle tree. See consensus.md "Execution Ordering &
+    // Atomicity Layers".
+    let canonical_overlay = Arc::new(std::sync::Mutex::new(SledTreeOverlay::new(&contracts_tree)));
+
     // ---- Build execution jobs ----
 
     struct CallJob {
@@ -147,21 +157,28 @@ pub fn execute_block(
 
     let mut jobs: Vec<CallJob> = Vec::new();
 
-    // Canonical transactions
+    // Canonical transactions — in block order (transaction order, call order
+    // within transaction). Missing/empty contract WASM is a hard reject in
+    // strict mode: a canonical call that cannot execute would silently skip
+    // state transitions the block header commits to.
     for tx in &block.transactions {
         let tx_hash = tx.hash();
         for (call_idx, call) in tx.contract_calls.iter().enumerate() {
             // Phase 2.1: contract_id is now typed ContractId — no from_bytes needed
             let contract_id = call.contract_id;
             let wasm_bytes = match store.get_contract_data(&contract_id.to_bytes()) {
-                Ok(b) => b,
-                Err(_) => { early_fail += 1; continue; }
+                Ok(b) if !b.is_empty() => b,
+                _ => {
+                    return Err(Error::Custom(format!(
+                        "canonical call {} of tx {} targets unknown contract {}",
+                        call_idx, hex::encode(tx_hash.as_bytes()), contract_id,
+                    )));
+                }
             };
-            if wasm_bytes.is_empty() { early_fail += 1; continue; }
             jobs.push(CallJob {
                 tx_hash,
                 is_canonical: true,
-                overlay: Arc::new(std::sync::Mutex::new(base_overlay.clone())),
+                overlay: Arc::clone(&canonical_overlay),
                 wasm_bytes,
                 contract_id,
                 call_data: call.data.clone(),
@@ -197,24 +214,21 @@ pub fn execute_block(
 
     // ---- Execute all calls sequentially ----
     //
-    // Future (Tier 6 / wasmer-gated): replace this loop with JoinSet-based
-    // parallel execution when wasmer Runtime confirms concurrent safety.
-    // Per-call overlays are already independent (Arc<Mutex<SledTreeOverlay>>),
-    // Runtime::new() creates fresh instances per call, and the ExecutionSchedule
-    // diagnostic logs parallelism potential for each block.
-    //
-    // See: doc/src/arch/consensus/scaling.md#parallel-contract-execution-future
-    // See: doc/src/arch/type-system.md §9.2 (Parallel Execution Safety)
+    // Canonical calls are inherently sequential per consensus.md "Execution
+    // Ordering & Atomicity Layers" — call N observes writes of calls 1..N-1
+    // on the shared overlay. Only uncle calls (isolated pre-block clones)
+    // could ever parallelize (Tier 6, wasmer-gated).
 
+    // Uncle call results — canonical calls execute strictly and never
+    // produce a tolerated-failure result.
     struct CallResult {
         tx_hash: Blake3Hash,
-        is_canonical: bool,
         success: bool,
         gas: u64,
         diff: Option<SledTreeOverlayStateDiff>,
     }
 
-    let mut results: Vec<CallResult> = Vec::with_capacity(jobs.len());
+    let mut uncle_results: Vec<CallResult> = Vec::new();
     let mut pending_deployments: Vec<(Vec<u8>, ContractId, Vec<u8>)> = Vec::new();
 
     // L2 verification state: accumulate per-tx metadata tables (zkp + pub)
@@ -226,6 +240,16 @@ pub fn execute_block(
     }
     let mut veri_state: HashMap<Blake3Hash, TxVeriTables> = HashMap::new();
 
+    let mut cumulative_gas: u64 = 0;
+    let mut calls_executed = 0u64;
+    let mut uncle_calls_executed = 0u64;
+    let mut uncle_calls_failed = 0u64;
+
+    // Per-call write key sets for the ExecutionSchedule diagnostic (§9.4).
+    // Canonical keys are computed by before/after snapshot on the shared
+    // overlay (same pattern as Deployooor post-processing below).
+    let mut per_call_keys: Vec<HashSet<Vec<u8>>> = Vec::with_capacity(jobs.len());
+
     for job in jobs {
         let is_canonical = job.is_canonical;
         let tx_hash = job.tx_hash;
@@ -236,7 +260,17 @@ pub fn execute_block(
             vm: vm.clone(),
         });
 
+        // Layer-1 (transaction atomicity): checkpoint before the call; any
+        // failure reverts to it, leaving zero writes from this call.
         backend.overlay.lock().unwrap_or_else(|e| e.into_inner()).checkpoint();
+
+        // Diagnostic snapshot — canonical write-set = after-keys minus before-keys.
+        let before_keys: Option<HashSet<Vec<u8>>> = if is_canonical {
+            let guard = backend.overlay.lock().unwrap_or_else(|e| e.into_inner());
+            Some(guard.state.cache.keys().chain(guard.state.removed.iter()).map(|k| k.to_vec()).collect())
+        } else {
+            None
+        };
 
         let tx_hash_bytes = dwow_sdk::tx::TransactionHash(*tx_hash.as_bytes());
         let mut runtime = match dwow_core::runtime::vm_runtime::Runtime::new(
@@ -249,18 +283,27 @@ pub fn execute_block(
             job.call_idx,
         ) {
             Ok(r) => r,
-            Err(_) => {
+            Err(e) => {
                 backend.overlay.lock().unwrap_or_else(|e| e.into_inner()).revert_to_checkpoint();
-                results.push(CallResult { tx_hash, is_canonical, success: false, gas: 0, diff: None });
+                if is_canonical {
+                    // Strict mode: a canonical call that cannot execute rejects
+                    // the block (consensus.md Execution Ordering, failure semantics).
+                    return Err(Error::Custom(format!(
+                        "canonical call runtime creation failed for tx {}: {}",
+                        hex::encode(tx_hash.as_bytes()), e,
+                    )));
+                }
+                uncle_results.push(CallResult { tx_hash, success: false, gas: 0, diff: None });
                 continue;
             }
         };
 
         let mut success = true;
+        let mut fail_stage = "";
         // L2: capture the `metadata()` return — the contract's declared ZK
         // public inputs + signature pubkeys — instead of discarding it.
         // Accumulate per-tx for post-loop verification with the witness.
-        let metadata_bytes = match runtime.metadata(&job.call_data) {
+        match runtime.metadata(&job.call_data) {
             Ok(m) => {
                 let mut c = Cursor::new(&m);
                 let zkp: Vec<(String, Vec<dwow_sdk::pasta::pallas::Base>)> =
@@ -272,14 +315,12 @@ pub fn execute_block(
                 });
                 entry.zkp.push(zkp);
                 entry.pubkeys.push(sigs);
-                Some(m) // retain for any future use
             }
             Err(_) => {
                 success = false;
-                None
+                fail_stage = "metadata";
             }
-        };
-        let _ = metadata_bytes;
+        }
 
         // exec() computes the state update and returns it as `[selector | update]`.
         // The host MUST thread those bytes into apply() below (see spend-hook path
@@ -289,7 +330,7 @@ pub fn execute_block(
         if success {
             match runtime.exec(&job.call_data) {
                 Ok(u) => update = u,
-                Err(_) => success = false,
+                Err(_) => { success = false; fail_stage = "exec"; }
             }
         }
 
@@ -301,23 +342,53 @@ pub fn execute_block(
                     &store, backend.clone(), &target_cid_bytes, &payload,
                     current_height, difficulty, tx_hash_bytes,
                 );
+                if !success { fail_stage = "spend_hook"; }
             }
         }
 
-        if success && runtime.apply(&update).is_err() { success = false; }
+        if success && runtime.apply(&update).is_err() { success = false; fail_stage = "apply"; }
 
         if !success {
             backend.overlay.lock().unwrap_or_else(|e| e.into_inner()).revert_to_checkpoint();
-            results.push(CallResult { tx_hash, is_canonical, success: false, gas: 0, diff: None });
+            if is_canonical {
+                // Strict mode: any failed canonical call rejects the block.
+                // A valid miner never includes failing txs — mempool admission
+                // verifies witnesses, and the miner re-executes at assembly.
+                return Err(Error::Custom(format!(
+                    "canonical call failed at {} for tx {} (contract {})",
+                    fail_stage, hex::encode(tx_hash.as_bytes()), job.contract_id,
+                )));
+            }
+            uncle_results.push(CallResult { tx_hash, success: false, gas: 0, diff: None });
             continue;
         }
 
         let gas = runtime.gas_used();
-        let diff = SledTreeOverlayStateDiff::new(
-            &contracts_tree,
-            &backend.overlay.lock().unwrap_or_else(|e| e.into_inner()).state,
-        ).ok();
-        results.push(CallResult { tx_hash, is_canonical, success: true, gas, diff });
+
+        if is_canonical {
+            calls_executed += 1;
+            cumulative_gas += gas;
+            if cumulative_gas >= BLOCK_GAS_LIMIT {
+                return Err(Error::Custom("BlockGasLimitExceeded".to_string()));
+            }
+            // Diagnostic: this call's write-set (after minus before).
+            if let Some(before) = before_keys {
+                let guard = backend.overlay.lock().unwrap_or_else(|e| e.into_inner());
+                let call_keys: HashSet<Vec<u8>> = guard.state.cache.keys()
+                    .chain(guard.state.removed.iter())
+                    .map(|k| k.to_vec())
+                    .filter(|k| !before.contains(k))
+                    .collect();
+                drop(guard);
+                per_call_keys.push(call_keys);
+            }
+        } else {
+            let diff = SledTreeOverlayStateDiff::new(
+                &contracts_tree,
+                &backend.overlay.lock().unwrap_or_else(|e| e.into_inner()).state,
+            ).ok();
+            uncle_results.push(CallResult { tx_hash, success: true, gas, diff });
+        }
 
         // Deployooor post-processing
         if is_canonical && job.contract_id == *DEPLOYOOOR_CONTRACT_ID {
@@ -378,68 +449,35 @@ pub fn execute_block(
         }
     }
 
-    // ---- Merge results in deterministic order (canonical-first) ----
-
-    results.sort_by(|a, b| a.tx_hash.as_bytes().cmp(b.tx_hash.as_bytes()));
-
-    let mut main_overlay = base_overlay;
-    let mut cumulative_gas: u64 = 0;
-    let mut calls_executed = 0u64;
-    let mut calls_failed = early_fail;
-    let mut uncle_calls_executed = 0u64;
-    let mut uncle_calls_failed = 0u64;
-
-    let mut written_keys: HashSet<Vec<u8>> = HashSet::new();
-
-    // Collect per-call write key sets for ExecutionSchedule diagnostic.
-    // This is the SHALL-analyze step from type-system.md §9.4: compute the
-    // dependency graph and log the parallelism potential without changing
-    // execution order (wasmer blocks true parallelism — Tier 6).
-    let mut per_call_keys: Vec<HashSet<Vec<u8>>> = Vec::with_capacity(results.len());
-
-    for r in results.iter().filter(|r| r.is_canonical) {
-        if r.success {
-            calls_executed += 1;
-            cumulative_gas += r.gas;
-            if cumulative_gas >= BLOCK_GAS_LIMIT {
-                return Err(Error::Custom("BlockGasLimitExceeded".to_string()));
-            }
-            // SECURITY: Detect same-block key conflicts (duplicate nullifier
-            // spending, double-write to same state). Each call executes against
-            // an independent overlay clone, so conflicts are only visible at
-            // merge time. We track all written keys and reject the block if
-            // any key is written twice.
-            if let Some(ref diff) = r.diff {
-                let overlay_state = SledTreeOverlayState::from(diff);
-                let mut call_keys: HashSet<Vec<u8>> = HashSet::new();
-                for key in overlay_state.cache.keys().chain(overlay_state.removed.iter()) {
-                    if !written_keys.insert(key.to_vec()) {
-                        return Err(Error::Custom(
-                            "DuplicateKeyConflict: same-block double-write detected".to_string()
-                        ));
-                    }
-                    call_keys.insert(key.to_vec());
-                }
-                per_call_keys.push(call_keys);
-                main_overlay.add_diff(diff);
-            }
-        } else {
-            calls_failed += 1;
-        }
-    }
+    // ---- Canonical overlay becomes the main overlay ----
+    // Layer-2 complete: the shared overlay already holds every canonical
+    // write in block order — no per-call diff merge, no cross-call conflict
+    // resolution needed (sequential visibility supersedes the former
+    // same-block double-write rejection for canonical calls; intra-block
+    // double-spends fail at the entrypoint SMT check instead).
+    let mut main_overlay =
+        canonical_overlay.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let calls_failed = early_fail;
 
     let canonical_total = SledTreeOverlayStateDiff::new(
         &contracts_tree, &main_overlay.state,
     ).map_err(|e| Error::Custom(e.to_string()))?;
 
+    // Seed written_keys with the canonical write-set — Deployooor conflict
+    // detection below checks deployments against already-written state.
+    let mut written_keys: HashSet<Vec<u8>> = {
+        let state = SledTreeOverlayState::from(&canonical_total);
+        state.cache.keys().chain(state.removed.iter()).map(|k| k.to_vec()).collect()
+    };
+
+    // ---- Merge uncle results (canonical-wins) ----
     // Track uncle-written keys for duplicate-key conflict detection.
-    // Canonical keys are already protected by written_keys above.
     // Uncle-vs-canonical conflicts are resolved by remove_diff (canonical wins).
     // Uncle-vs-uncle conflicts MUST be rejected — two uncles writing the same
     // key would produce non-deterministic results dependent on iteration order.
     let mut uncle_written_keys: HashSet<Vec<u8>> = HashSet::new();
 
-    for r in results.iter().filter(|r| !r.is_canonical) {
+    for r in uncle_results.iter() {
         if r.success {
             uncle_calls_executed += 1;
             cumulative_gas += r.gas;
@@ -451,7 +489,6 @@ pub fn execute_block(
                 // Subtract canonical writes (canonical wins on conflict)
                 d.remove_diff(&canonical_total);
                 // Reject uncle-vs-uncle duplicate key writes.
-                // Same pattern as canonical loop at line 412-422.
                 let overlay_state = SledTreeOverlayState::from(&*d);
                 for key in overlay_state.cache.keys().chain(overlay_state.removed.iter()) {
                     if !uncle_written_keys.insert(key.to_vec()) {

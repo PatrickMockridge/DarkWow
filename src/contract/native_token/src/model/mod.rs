@@ -324,3 +324,41 @@ pub struct BurnParamsV1 {
 pub struct BurnUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
 }
+
+/// Parameters for FeeCollectV1 — collects accumulated fees for miner (CONSENSUS)
+///
+/// This is the "collection plate" — the final transaction in every block that forwards
+/// all FeeV1 burns to the miner. Uses the dedicated FeeCollect_V1 ZK circuit
+/// (12 witnesses, 7 public inputs, no cumulative supply chain — fees are
+/// redistribution, not minting). Zero public key exposure; miner identity proven
+/// via nullifier only (same o-cap model as PoWRewardV1).
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct FeeCollectParamsV1 {
+    /// Total fees accumulated in fees_db[height] for this block
+    pub total_fees: u64,
+    /// The fee coin output — pays the miner using the same pk_H as coinbase
+    pub output: Output,
+    /// Nullifier: nf = poseidon_hash(sk_H, fee_coin)
+    pub nullifier: Nullifier,
+    /// Transaction binding: poseidon_hash(tx_commitment, tx_nonce)
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce: unique per transaction
+    pub tx_nonce: pallas::Base,
+}
+
+/// State update for FeeCollectV1
+///
+/// Per consensus-coinbase.md §3.8: the claim nullifier is NOT stored in the
+/// contract nullifiers_db — it equals the future spend nullifier and would
+/// make the fee coin born-unspendable (same model as PoWRewardV1's empty
+/// SMT batch). Claim-replay prevention: zero-claim rejection (check #1),
+/// pot zeroing, Phase 0.5 structural rules, host-level nullifier tracking.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct FeeCollectUpdateV1 {
+    /// The fee coin created for the miner
+    pub coin: Coin,
+    /// Block height (must match verifying block height)
+    pub height: u32,
+    /// Total fees collected (must match fees_db[height])
+    pub total_fees: u64,
+}

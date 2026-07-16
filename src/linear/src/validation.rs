@@ -221,6 +221,8 @@ pub fn check_uncles(
 ///   2. First transaction has PoWRewardV1 call (contract_calls[0], function code 0x05)
 ///   3. Exactly one PoWRewardV1 call in the block
 ///   4. PoWRewardV1 call data is non-empty (params present)
+///   5. FeeCollectV1 rules (consensus-coinbase.md §3.15): at most one call,
+///      present iff summed FeeV1 fees > 0, and at the final position
 ///
 /// Pure — no sled, no locks, no async, no side effects. Testable in isolation.
 pub fn validate_block_structure(block: &Block) -> Result<()> {
@@ -275,6 +277,82 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
         return Err(LinearError::BlockStructure(
             "coinbase nullifier is zero — must be non-zero per consensus rule".into()
         ));
+    }
+
+    // Phase 0.5 FeeCollectV1 structural rules (consensus-coinbase.md §3.15):
+    //   1. At most one FeeCollectV1 CALL per block (spec says "calls," not
+    //      "transactions containing a call" — two 0x06 calls in one tx pass
+    //      the old .any() check. Per-call count enforced by flat iteration.)
+    //   2. FeeCollectV1 present iff the block's summed FeeV1 fees > 0
+    //   3. FeeCollectV1 must be the final transaction
+    // FeeV1 layout: [selector 0x00][fee u64 LE][FeeParamsV1]; FeeCollectV1
+    // selector is 0x06. Both filtered by NATIVE_TOKEN_CONTRACT_ID.
+    let is_native = |c: &crate::ContractCall| -> bool {
+        c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
+    };
+
+    // Count FeeCollectV1 CALLS (not transactions) — >1 call in any tx → reject.
+    let fee_collect_call_count = block.transactions.iter()
+        .flat_map(|tx| tx.contract_calls.iter())
+        .filter(|c| is_native(c) && c.data.first() == Some(&0x06))
+        .count();
+    if fee_collect_call_count > 1 {
+        return Err(LinearError::BlockStructure(
+            format!("expected at most 1 FeeCollectV1 call, found {}", fee_collect_call_count)
+        ));
+    }
+
+    // Find the transaction containing the fee-collect call (if any) for the
+    // position rule. The call count check above ensures at most one exists.
+    let fee_collect_tx_position: Option<usize> = block.transactions.iter().enumerate()
+        .find(|(_, tx)| tx.contract_calls.iter()
+            .any(|c| is_native(c) && c.data.first() == Some(&0x06)))
+        .map(|(i, _)| i);
+
+    // Sum FeeV1 fees across the block (checked — overflow is a structural error).
+    let mut total_fees: u64 = 0;
+    for tx in &block.transactions {
+        for c in &tx.contract_calls {
+            if !is_native(c) || c.data.first() != Some(&0x00) {
+                continue;
+            }
+            if c.data.len() < 9 {
+                return Err(LinearError::BlockStructure(
+                    format!("FeeV1 call data too short ({} bytes)", c.data.len())
+                ));
+            }
+            let fee_bytes: [u8; 8] = c.data[1..9].try_into().expect("length checked above");
+            total_fees = total_fees.checked_add(u64::from_le_bytes(fee_bytes))
+                .ok_or_else(|| LinearError::BlockStructure("FeeV1 fee sum overflow".into()))?;
+        }
+    }
+
+    match (fee_collect_tx_position, total_fees, fee_collect_call_count) {
+        // Present with zero fees — zero-value claim / 0-fee replay (§3.13)
+        (Some(_), 0, _) => {
+            return Err(LinearError::BlockStructure(
+                "FeeCollectV1 present but block has zero FeeV1 fees".into()
+            ));
+        }
+        // Absent with non-zero fees — fees stranded permanently (§3.13)
+        (None, f, _) if f > 0 => {
+            return Err(LinearError::BlockStructure(
+                format!("block pays {} fee units but has no FeeCollectV1 call", f)
+            ));
+        }
+        // Present with fees — must be the final transaction (§3.1)
+        (Some(pos), _, _) => {
+            if pos != block.transactions.len() - 1 {
+                return Err(LinearError::BlockStructure(
+                    format!(
+                        "FeeCollectV1 at position {} — must be the final transaction ({})",
+                        pos, block.transactions.len() - 1
+                    )
+                ));
+            }
+        }
+        // Absent with zero fees — valid zero-fee block (§3.13)
+        (None, _, _) => {}
     }
 
     Ok(())
@@ -400,5 +478,177 @@ mod tests {
             None,
         );
         assert!(result.is_ok(), "expected Ok, got {:?}", result);
+    }
+
+    // ================================================================
+    // Phase 0.5 — FeeCollectV1 structural rules (consensus-coinbase.md §3.15)
+    // ================================================================
+
+    use dwow_native_token_contract::model::{
+        ClearInput, Coin, Nullifier as NtNullifier, Output, PoWRewardParamsV1 as PowParams,
+    };
+    use dwow_sdk::crypto::pasta_prelude::{Field, Group};
+    use dwow_sdk::crypto::{note::AeadEncryptedNote, BaseBlind, Blind, FuncId, Keypair};
+    use dwow_sdk::pasta::pallas;
+
+    /// A structurally valid coinbase transaction: PoWRewardV1 call with
+    /// deserializable params and a non-zero nullifier.
+    fn coinbase_tx() -> crate::Transaction {
+        let keypair = Keypair::random(&mut rand::rngs::OsRng);
+        let coin = Coin::from_attributes(
+            &keypair.public,
+            1000,
+            dwow_native_token_contract::model::DRKW_TOKEN_ID,
+            FuncId::none(),
+            pallas::Base::zero(),
+            Blind(pallas::Base::zero()),
+        );
+        let params = PowParams {
+            input: ClearInput {
+                value: 1000,
+                token_id: dwow_native_token_contract::model::DRKW_TOKEN_ID.inner(),
+                value_blind: Blind(pallas::Scalar::zero()),
+                token_blind: BaseBlind::ZERO,
+                signature_public: keypair.public,
+            },
+            output: Output {
+                value_commit: pallas::Point::identity(),
+                token_commit: pallas::Base::zero(),
+                coin,
+                nullifier: NtNullifier::from_bytes([2u8; 32]).unwrap(),
+                note: AeadEncryptedNote { ciphertext: vec![0u8; 32], ephem_public: keypair.public },
+            },
+            nullifier: NtNullifier::from_bytes([2u8; 32]).unwrap(),
+            expected_cumulative_supply: 0,
+            old_cumulative_commit: pallas::Point::identity(),
+            old_cumulative_blind: pallas::Scalar::zero(),
+            new_cumulative_commit: pallas::Point::identity(),
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        };
+        let mut data = vec![0x05u8];
+        data.extend(dwow_serial::serialize(&params));
+        crate::Transaction {
+            version: 1,
+            contract_calls: vec![crate::ContractCall {
+                contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+                data,
+            }],
+            ..Default::default()
+        }
+    }
+
+    /// A FeeV1 transaction — Phase 0 only reads [selector][fee u64 LE].
+    fn fee_tx(fee: u64) -> crate::Transaction {
+        let mut data = vec![0x00u8];
+        data.extend_from_slice(&fee.to_le_bytes());
+        crate::Transaction {
+            version: 1,
+            contract_calls: vec![crate::ContractCall {
+                contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+                data,
+            }],
+            ..Default::default()
+        }
+    }
+
+    /// A FeeCollectV1 transaction — Phase 0 only reads the selector.
+    fn fee_collect_tx() -> crate::Transaction {
+        crate::Transaction {
+            version: 1,
+            contract_calls: vec![crate::ContractCall {
+                contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+                data: vec![0x06u8, 0u8],
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn phase05_accepts_fees_with_final_fee_collect() {
+        let mut block = dummy_block();
+        block.transactions = vec![coinbase_tx(), fee_tx(42_000_000), fee_collect_tx()];
+        assert!(validate_block_structure(&block).is_ok());
+    }
+
+    #[test]
+    fn phase05_accepts_zero_fee_block_without_fee_collect() {
+        let mut block = dummy_block();
+        block.transactions = vec![coinbase_tx()];
+        assert!(validate_block_structure(&block).is_ok());
+    }
+
+    #[test]
+    fn phase05_rejects_duplicate_fee_collect() {
+        let mut block = dummy_block();
+        block.transactions =
+            vec![coinbase_tx(), fee_tx(1), fee_collect_tx(), fee_collect_tx()];
+        let err = validate_block_structure(&block).unwrap_err();
+        assert!(format!("{:?}", err).contains("at most 1 FeeCollectV1"), "got {:?}", err);
+    }
+
+    #[test]
+    fn phase05_rejects_fee_collect_with_zero_fees() {
+        // 0-fee replay shape (audit finding D12): FeeCollect present, no fees.
+        let mut block = dummy_block();
+        block.transactions = vec![coinbase_tx(), fee_collect_tx()];
+        let err = validate_block_structure(&block).unwrap_err();
+        assert!(format!("{:?}", err).contains("zero FeeV1 fees"), "got {:?}", err);
+    }
+
+    #[test]
+    fn phase05_rejects_fees_without_fee_collect() {
+        // Stranded-fees shape (spec §3.13): fees paid, no collection plate.
+        let mut block = dummy_block();
+        block.transactions = vec![coinbase_tx(), fee_tx(7)];
+        let err = validate_block_structure(&block).unwrap_err();
+        assert!(format!("{:?}", err).contains("no FeeCollectV1"), "got {:?}", err);
+    }
+
+    #[test]
+    fn phase05_rejects_fee_collect_not_final() {
+        let mut block = dummy_block();
+        block.transactions = vec![coinbase_tx(), fee_collect_tx(), fee_tx(7)];
+        let err = validate_block_structure(&block).unwrap_err();
+        assert!(format!("{:?}", err).contains("final transaction"), "got {:?}", err);
+    }
+
+    #[test]
+    fn phase05_rejects_short_fee_call_data() {
+        // Malformed FeeV1 data must be an error, never silently zero (spec §3.12).
+        let mut block = dummy_block();
+        let mut tx = fee_tx(1);
+        tx.contract_calls[0].data = vec![0x00u8, 1, 2]; // < 9 bytes
+        block.transactions = vec![coinbase_tx(), tx];
+        let err = validate_block_structure(&block).unwrap_err();
+        assert!(format!("{:?}", err).contains("too short"), "got {:?}", err);
+    }
+
+    #[test]
+    fn phase05_rejects_two_collect_calls_in_one_tx() {
+        // Two FeeCollectV1 calls inside ONE transaction — per-call counting
+        // catches this (spec says "at most one call", not "at most one tx").
+        let mut block = dummy_block();
+        let mut tx = fee_collect_tx();
+        // Second call in same tx, same contract_id
+        tx.contract_calls.push(crate::ContractCall {
+            contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+            data: vec![0x06u8, 0u8],
+        });
+        block.transactions = vec![coinbase_tx(), fee_tx(1), tx];
+        let err = validate_block_structure(&block).unwrap_err();
+        assert!(format!("{:?}", err).contains("at most 1 FeeCollectV1"), "got {:?}", err);
+    }
+
+    #[test]
+    fn phase05_ignores_other_contracts_zero_selector() {
+        // contract_id filter: a non-native call starting with 0x00 is NOT a fee.
+        let mut block = dummy_block();
+        let mut alien = fee_tx(u64::MAX); // would trigger rules if counted
+        alien.contract_calls[0].contract_id =
+            dwow_sdk::crypto::ContractId::from_bytes([9u8; 32]).unwrap();
+        block.transactions = vec![coinbase_tx(), alien];
+        // No native fees, no FeeCollect → valid zero-fee block.
+        assert!(validate_block_structure(&block).is_ok());
     }
 }

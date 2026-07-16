@@ -37,6 +37,9 @@ pub mod burn_v1;
 /// `NativeToken::FeeV1` API
 pub mod fee_v1;
 
+/// `NativeToken::FeeCollectV1` API
+pub mod fee_collect_v1;
+
 /// `NativeToken::PoWRewardV1` API
 pub mod pow_reward_v1;
 

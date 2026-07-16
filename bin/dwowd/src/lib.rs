@@ -992,6 +992,11 @@ struct PreparedBlock {
     competing_originals: Vec<dwow_chain::Block>,
     mempool_txs: Vec<dwow_chain::Transaction>,
     coinbase_tx: dwow_chain::Transaction,
+    /// FeeCollectV1 transaction — final transaction, closes the merkle tree
+    /// (consensus-coinbase.md §3). Carries the ZK proof in the witness field
+    /// (same L1 carriage as user transactions) and the fee nullifier in
+    /// tx.nullifiers. None iff no fees were paid in this block.
+    fee_collect_tx: Option<dwow_chain::Transaction>,
 }
 
 /// Prepare a block for mining — collects uncles, builds coinbase, selects txs.
@@ -1010,8 +1015,10 @@ async fn prepare_block(
 
     // 1. Build ZK coinbase FIRST — fallible operation (ZK proof generation).
     //    Must succeed before any destructive state mutation (take_competing_blocks).
+    //    Clone: `recipient` is used again in step 6 (build_fee_collect_tx —
+    //    same sk_H for coinbase and fee collection, spec §3.2).
     let (_, _, pow_reward_call) = build_linear_coinbase(
-        recipient,
+        recipient.clone(),
         base_reward,
         linear_zk,
         height as u32,
@@ -1068,9 +1075,25 @@ async fn prepare_block(
         ..Default::default()
     };
 
+    // 6. Build FeeCollectV1 — the "collection plate" as final transaction
+    //    (consensus-coinbase.md §3.12). Single source of truth:
+    //    registry::model::build_fee_collect_tx, shared with the stratum and
+    //    mm_rpc template paths. Uses the same sk_H as the coinbase.
+    //    Deterministic: every validator re-executing this block produces
+    //    identical fee coin, nullifier, and merkle tree. A build failure with
+    //    non-zero fees fails block preparation (spec §3.1 — never silently
+    //    omit fee collection).
+    let fee_collect_tx = crate::registry::model::build_fee_collect_tx(
+        &recipient,
+        &mempool_txs,
+        height as u32,
+        linear_zk,
+    )?;
+
     Ok(PreparedBlock {
         uncles, pow_reward_call,
         competing_originals, mempool_txs, coinbase_tx,
+        fee_collect_tx,
     })
 }
 
@@ -1228,6 +1251,12 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         let mempool_txs = prep.mempool_txs.clone(); // cloned for error recovery
         let mut all_txs = vec![prep.coinbase_tx];
         all_txs.extend(prep.mempool_txs); // original moved into all_txs
+        // FeeCollectV1 closes the merkle tree — final transaction (spec §3.1).
+        // Carries proof in witness + nullifier in tx.nullifiers (built in
+        // prepare_block).
+        if let Some(fee_tx) = prep.fee_collect_tx {
+            all_txs.push(fee_tx);
+        }
 
         // Check if a block already arrived at this height (P2P broadcast
         // from a peer mining at the same time). If so, skip mining — the

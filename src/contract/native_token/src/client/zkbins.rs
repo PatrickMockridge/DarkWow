@@ -42,3 +42,6 @@ pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V1_BIN: &[u8] =
 /// Fee_V1 zkas circuit binary
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN: &[u8] =
     include_bytes!("../../proof/fee_v1.zk.bin");
+/// FeeCollect_V1 zkas circuit binary
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V1_BIN: &[u8] =
+    include_bytes!("../../proof/fee_collect_v1.zk.bin");

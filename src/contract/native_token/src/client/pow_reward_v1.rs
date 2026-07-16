@@ -38,7 +38,6 @@ use dwow_sdk::{
     },
     pasta::pallas,
 };
-use rand::rngs::OsRng;
 use tracing::debug;
 
 use super::{transfer_v1::proof::create_transfer_mint_proof, NativeToken};
