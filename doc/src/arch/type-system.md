@@ -668,11 +668,11 @@ The type system defined in this document is formalized in the Lean4 calculus
 of constructions at `proofs/lean/src/DarkFi/Capability/`. The following
 theorems are proved or stated with explicit verification status.
 
-### 10.1 Pareto-Efficiency of the Primitive Type Namespace
+### 11.1 Pareto-Efficiency of the Primitive Type Namespace
 
 **Status:** PROVED. `proofs/lean/src/DarkFi/Capability/Pareto.lean`
 
-`primitiveTypesAreParetoEfficient`: All 12 primitive types have pairwise
+`primitiveTypesAreParetoEfficient`: All 17 primitive types have pairwise
 distinct barb sets. No type distinction can be removed without losing
 behavioral information. Proof: `dec_trivial` over the finite list of
 `Finset Barb` values.
@@ -685,7 +685,7 @@ for each pair in §8.1 and §8.3 (e.g., `secretKey_distinct_from_nullifier`,
 barb sets, they are the same type. This is the contrapositive of
 pareto-efficiency — no accidental unification is possible.
 
-### 10.2 Non-Unifiable Pairs
+### 11.2 Non-Unifiable Pairs
 
 **Status:** PROVED. `proofs/lean/src/DarkFi/Capability/Distinction.lean`
 
@@ -696,7 +696,7 @@ Nullifier ≠ [u8; 32], Commitment ≠ [u8; 32], SecretKey ≠ [u8; 32], Contrac
 pallas::Base, AssetId ≠ pallas::Base, Nullifier ≠ IntentNullifier,
 OwnedSecretKey ≠ SecretKey.
 
-### 10.3 Barb Preservation Under Composition
+### 11.3 Barb Preservation Under Composition
 
 **Status:** PROVED. `proofs/lean/src/DarkFi/Capability/Composition.lean`
 
@@ -705,7 +705,7 @@ every barb of `p` is in the composed barb set. Proof: structural induction
 on the primitive list. This guarantees that composing capability types does
 not erase barbs — the fundamental requirement for emergent type construction.
 
-### 10.4 Authorization Inversion (Type-Level)
+### 11.4 Authorization Inversion (Type-Level)
 
 **Status:** PROVED (type-level). `proofs/lean/src/DarkFi/Capability/Inversion.lean`
 
@@ -724,7 +724,12 @@ all `constrain_instance` calls verified for instance-derivation binding).
 MUST have that barb covered by its composition. This closes HAZOP Pattern 4
 ("capability predicate result is free witness; provenance unverified").
 
-### 10.5 Wallet Type Construction Soundness and Completeness
+`verifierLearnsOnlyRequiredBarbs` (`verifierMinimumDisclosure`): The verifier
+learns NO barbs beyond those explicitly declared as required. This is the
+privacy property of the Authorization Inversion — the ZK proof reveals only
+the predicate result, not the witness.
+
+### 11.5 Wallet Type Construction Soundness and Completeness
 
 **Status:** PROVED. `proofs/lean/src/DarkFi/Capability/Wallet.lean`
 
@@ -737,11 +742,21 @@ and resource `r`, then `walletConstruct p r` returns `some` (not `none`).
 `walletConstruct_preservesPrimitives`: The primitives returned are exactly
 the primitives passed in — no loss, no modification.
 
-Three concrete constructibility proofs verify that native token transfer,
-DAO vote, and tender bid capability types are constructible from their
-respective primitive lists.
+`walletConstruct_deterministic`: Same primitives + same resource → same
+TypedCapability every time (deterministic pure function).
 
-### 10.6 Full ZK Proof System Model
+`walletConstruct_idempotent`: Constructing twice with identical arguments
+produces identical results.
+
+`walletConstruct_rejects_emptyPrimitives`: An empty primitive list always
+returns `none` — soundness gate closed when no primitives are provided.
+
+Four concrete constructibility proofs verify that native token transfer,
+DAO vote, tender bid, and coinbase claim capability types are constructible
+from their respective primitive lists (`nativeTokenTransferExists`,
+`daoVoteExists`, `tenderBidExists`, `coinbaseClaim_constructible`).
+
+### 11.6 Full ZK Proof System Model
 
 **Status:** FUTURE WORK. Not yet formalized.
 

@@ -130,12 +130,12 @@ This is sound but ** bloats circuits** — a 2-opcode check becomes 3-4x more ex
 | `LessThanStrict` | No | ✅ | ✅ Production |
 | `LessThanLoose` | No | ✅ | ✅ Production |
 | `IsEqualBase` | Yes | ❌ | ⚠️ Bug (delta_invert unconstrained when a==b) |
-| `LessThanOrEqual` | Yes | ✅ | ✅ **Verified Sound** (Lean 4) |
+| `LessThanOrEqual` | Yes | ⚠️ | ⚠️ **Conditionally Sound** — delta-invert bug without `range_check(253, a)` (see §5.3) |
 | `IsNotEqual` | Yes | ✅ | ✅ **Verified Sound** (Lean 4) |
 | `BaseLtStrict` | Yes | ✅ | ✅ Verified |
 | `NotBase` | Yes | ✅ | ✅ Verified |
 
-**Comparison Opcode Status**: `LessThanStrict` and `LessThanLoose` are **constrain-only** (no return value). `LessThanOrEqual` and `IsNotEqual` are **verified sound** via Lean 4 exhaustive testing. `IsEqualBase` has a known bug.
+**Comparison Opcode Status**: `LessThanStrict` and `LessThanLoose` are **constrain-only** (no return value). `LessThanOrEqual` and `IsEqualBase` share the delta-invert bug when used without `range_check(253, a)` — both are **conditionally sound** (see §5.3 matrix). `IsNotEqual` is verified sound via Lean 4 exhaustive testing.
 
 **IsEqualBase bug** (known issue):
 ```zk

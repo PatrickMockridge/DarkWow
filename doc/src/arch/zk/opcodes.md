@@ -1,6 +1,6 @@
 # DarkWow Opcodes and Formal Verification
 
-> **Scope**: All **39 zkVM opcodes**, all **10 gadgets**, and all **120 contract ZK circuits**
+> **Scope**: All **31 zkVM opcodes**, all **10 gadgets**, and all **120 contract ZK circuits**
 > (across 26 contracts + core proofs) are now formally verified in Lean 4. The verification
 > lives at [`proofs/lean/`](../../../proofs/lean/) and covers three layers: primitive soundness,
 > circuit instance-derivation binding (Orchard-class audit), and cross-cutting theorems.
@@ -13,7 +13,7 @@ The formal verification is organized in three layers:
 
 | Layer | Scope | Files | Status |
 |-------|-------|-------|--------|
-| **Layer 1** | 39 zkVM opcodes × 10 gadgets | `ECOps.lean`, `HashOps.lean`, `Arithmetic.lean`, `Comparison.lean`, `Gadgets.lean` | ALL VERIFIED |
+| **Layer 1** | 31 zkVM opcodes × 10 gadgets | `ECOps.lean`, `HashOps.lean`, `Arithmetic.lean`, `Comparison.lean`, `Gadgets.lean` | ALL VERIFIED |
 | **Layer 2** | 120 contract circuits — Orchard-class audit | `Circuits/Token.lean`, `Circuits/Bridge.lean`, `Circuits/Exchange.lean`, `Circuits/All.lean` | ALL VERIFIED |
 | **Layer 3** | Cross-cutting theorems | `CrossCutting.lean` | ALL VERIFIED |
 

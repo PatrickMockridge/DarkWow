@@ -18,7 +18,7 @@ In the calculus of constructions, this becomes:
 This file references the existing circuit proof infrastructure:
   - Circuits/Token.lean: BurnV1 witness → public input derivation
   - HashOps.lean: Poseidon collision resistance, Merkle inclusion soundness
-  - HAZOP.lean: pattern4_capability_bypass (the vulnerability this theorem prevents)
+  - doc/src/arch/consensus/hazid-report.md §H-C3: capability predicate bypass (the vulnerability this theorem prevents)
 
 IMPORTANT: This theorem does NOT model the ZK proof system in Lean4. It
 proves the TYPE-LEVEL statement: a capability type is well-formed iff the

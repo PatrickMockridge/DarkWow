@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document tracks the formal verification status of all **39 zkVM opcodes**,
+This document tracks the formal verification status of all **31 zkVM opcodes**,
 **10 gadgets**, and **120 contract ZK circuits** across 26 contracts.
 
 All verification runs via: `cd proofs/lean && lean --run src/Main.lean`
@@ -47,9 +47,9 @@ All verification runs via: `cd proofs/lean && lean --run src/Main.lean`
 |--------|------|---------|--------|-------|
 | `range_check` | 0x50 | No | ✅ SOUND | Running-sum decomposition, 64 and 253-bit |
 | `less_than_strict` | 0x51 | No | ✅ SOUND | Constrain-only, recommended for assertion checks |
-| `less_than_loose` | 0x52 | No | ✅ SOUND | Remaining bits not enforced |
+| `less_than_loose` | 0x52 | No | ⚠️ LOOSE | Remaining bits not enforced; constrains lower bits only |
 | `bool_check` | 0x53 | No | ✅ SOUND | Polynomial product: (v-0)(v-1)=0 → v∈{0,1} |
-| `is_equal_base` | 0x54 | Yes | ❌ BUG | delta_invert unconstrained when a=b |
+| `is_equal_base` | 0x54 | Yes | ✅ FIXED | delta_invert constrained — purity constraint applied (0f69cd89) |
 | `less_than_or_equal` | 0x55 | Yes | ✅ SOUND | Exhaustive 1000×1000: 0 counterexamples |
 | `not_base` | 0x56 | Yes | ✅ SOUND | Deterministic: out = 1 - a for a∈{0,1} |
 | `base_lt_strict` | 0x57 | Yes | ✅ SOUND | Exhaustive 1000×1000: 0 counterexamples |
