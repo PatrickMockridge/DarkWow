@@ -246,8 +246,17 @@ if [ "$MERGE_MINING" = "true" ]; then
 fi
 
 # --- Finality config ---
-# Disable Caribina in merge mode only. Native mode honors the env var.
+# Precedence (highest to lowest):
+#   1. Hard override: merge mining disables Caribina (Monero anchoring replaces it)
+#   2. Env var: FINALITY_CARIBINA_ENABLED, FINALITY_ENABLE_MONERO (operator override)
+#   3. Default: Caribina=true, Monero=false (native mode); Monero=true (merge mode)
+# In merge mode, Caribina is unconditionally disabled because Monero p2pool
+# anchoring provides equivalent finality. The operator cannot override this.
+# See merge-mining-ffi.md §7 for the security model.
 if [ "$MERGE_MINING" = "true" ]; then
+    if [ "${FINALITY_CARIBINA_ENABLED:-true}" != "false" ]; then
+        echo "  Merge mode: disabling Caribina (Monero anchoring provides finality)"
+    fi
     FINALITY_CARIBINA_ENABLED="false"
 fi
 cat >> "$CONFIGFILE" << DWOWEOF

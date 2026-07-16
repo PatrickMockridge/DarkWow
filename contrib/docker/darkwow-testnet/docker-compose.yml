@@ -18,6 +18,8 @@ services:
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
+      args:
+        BUILD_COMMIT: "${BUILD_COMMIT:-}"
     container_name: dwow-observer
     deploy:
       resources:
@@ -72,6 +74,8 @@ services:
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
+      args:
+        BUILD_COMMIT: "${BUILD_COMMIT:-}"
     container_name: dwow-node0
     # 6GB: node0 runs genesis contract initialization (9 contracts × ZK keygen)
     # plus RandomX VM. halo2 keygen for k>=15 circuits can use 1-2GB.
@@ -140,6 +144,8 @@ services:
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
+      args:
+        BUILD_COMMIT: "${BUILD_COMMIT:-}"
     container_name: dwow-node1
     deploy:
       resources:
@@ -209,6 +215,8 @@ services:
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
+      args:
+        BUILD_COMMIT: "${BUILD_COMMIT:-}"
     container_name: dwow-node2
     deploy:
       resources:
@@ -270,6 +278,8 @@ services:
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
+      args:
+        BUILD_COMMIT: "${BUILD_COMMIT:-}"
     container_name: dwow-node3
     deploy:
       resources:
@@ -333,6 +343,8 @@ services:
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
+      args:
+        BUILD_COMMIT: "${BUILD_COMMIT:-}"
     container_name: dwow-node4
     deploy:
       resources:
@@ -459,7 +471,9 @@ services:
     image: darkwow-wallet:latest
     build:
       context: ../../..
-      dockerfile: contrib/docker/darkwow-testnet/Dockerfile.wallet
+      dockerfile: contrib/docker/darkwow-testnet/Dockerfile
+      args:
+        BUILD_COMMIT: "${BUILD_COMMIT:-}".wallet
     entrypoint: ["/app/entrypoint.sh"]
     environment:
       - WALLET_MODE=${WALLET_MODE:-interactive}
@@ -491,7 +505,9 @@ services:
     image: darkwow-monerod:latest
     build:
       context: ../../..
-      dockerfile: contrib/docker/darkwow-testnet/Dockerfile.monero
+      dockerfile: contrib/docker/darkwow-testnet/Dockerfile
+      args:
+        BUILD_COMMIT: "${BUILD_COMMIT:-}".monero
     container_name: dwow-monerod
     deploy:
       resources:
@@ -538,6 +554,8 @@ services:
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
+      args:
+        BUILD_COMMIT: "${BUILD_COMMIT:-}"
     container_name: dwow-node0-join
     deploy:
       resources:
@@ -588,7 +606,9 @@ services:
     image: darkwow-monerod:latest
     build:
       context: ../../..
-      dockerfile: contrib/docker/darkwow-testnet/Dockerfile.monero
+      dockerfile: contrib/docker/darkwow-testnet/Dockerfile
+      args:
+        BUILD_COMMIT: "${BUILD_COMMIT:-}".monero
     container_name: dwow-monerod
     deploy:
       resources:
@@ -613,7 +633,9 @@ services:
     image: darkwow-p2pool:latest
     build:
       context: ../../..
-      dockerfile: contrib/docker/darkwow-testnet/Dockerfile.p2pool
+      dockerfile: contrib/docker/darkwow-testnet/Dockerfile
+      args:
+        BUILD_COMMIT: "${BUILD_COMMIT:-}".p2pool
     container_name: dwow-p2pool
     deploy:
       resources:
