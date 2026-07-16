@@ -817,31 +817,41 @@ mod tests {
     // These tests verify the merge mining FFI contract without Docker.
     // Each test maps to a SHALL/MUST in merge-mining-ffi.md.
 
-    /// P0: FIFO eviction — oldest entry removed, newest survives.
+    /// P0: FIFO eviction — oldest entry evicted, newest survives.
     /// merge-mining-ffi.md §4.4: "When the table reaches capacity, the oldest
     /// entry SHALL be evicted, not all entries."
+    ///
+    /// Uses a Vec as an insertion-order tracker alongside the HashMap to
+    /// deterministically identify the oldest entry for FIFO eviction.
     #[test]
     fn test_fifo_eviction_removes_oldest_not_newest() {
         let mut map: HashMap<String, ()> = HashMap::new();
-        // Fill to capacity with ordered keys
+        let mut order: Vec<String> = Vec::new();
+
+        // Fill to capacity with ordered keys, tracking insertion order
         for i in 0..100 {
-            map.insert(format!("job_{:03}", i), ());
+            let key = format!("job_{:03}", i);
+            map.insert(key.clone(), ());
+            order.push(key);
         }
         assert_eq!(map.len(), 100, "table at capacity");
+        assert_eq!(order.len(), 100, "order tracker at capacity");
 
-        // FIFO: remove oldest (job_000)
-        if let Some(oldest) = map.keys().next().cloned() {
-            map.remove(&oldest);
-        }
+        // FIFO: remove oldest by insertion order (first in Vec)
+        let oldest = order.remove(0);
+        map.remove(&oldest);
         assert_eq!(map.len(), 99, "one entry evicted");
+        assert_eq!(order.len(), 99, "order tracker updated");
 
-        // Insert new job — should fit
-        map.insert("job_new".into(), ());
+        // Insert new job — track in order
+        let new_key = "job_new".to_string();
+        map.insert(new_key.clone(), ());
+        order.push(new_key);
         assert_eq!(map.len(), 100, "new entry fits after FIFO eviction");
 
-        // Oldest was removed (job_000), newest (job_099) survives
-        assert!(!map.contains_key("job_000"), "oldest evicted");
-        assert!(map.contains_key("job_099"), "newest survives");
+        // Oldest was evicted (job_000), job_099 still present, new entry present
+        assert!(!map.contains_key("job_000"), "oldest (job_000) evicted");
+        assert!(map.contains_key("job_099"), "job_099 survives FIFO");
         assert!(map.contains_key("job_new"), "new entry present");
     }
 

@@ -36,6 +36,8 @@ use std::sync::{
 
 use dwow_chain::{CChainState, FinalityConfig, PoWConfig};
 use dwow_core::Result;
+use dwow_sdk::pasta::pallas;
+use dwow_sdk::pasta::group::Group;
 use dwow_sdk::crypto::{
     ATTESTATION_CONTRACT_ID, BOX_CONTRACT_ID, ContractId, DEPLOYOOOR_CONTRACT_ID,
     IDENTITY_CONTRACT_ID, MULTISIG_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
@@ -443,21 +445,23 @@ mod tests {
             // AC7: Supply chain non-identity — S_2 commitment must not be identity
             let supply_entry = har.chain_state.supply_chain.get(2)
                 .expect("supply_chain entry at height 2");
-            let identity = dwow_sdk::pasta::pallas::Point::identity();
+            let identity = pallas::Point::identity();
             assert!(
                 supply_entry.value_commit != identity,
                 "AC7: cumulative supply commitment S_2 != identity"
             );
 
-            // AC8: Nullifier uniqueness — genesis nullifier ≠ block 2 nullifier
+            // AC8: Nullifier uniqueness — genesis nullifier ≠ block 2 nullifier.
+            // ContractCall doesn't derive PartialEq — compare the call data.
             let b1 = har.chain_state.get_block(1).expect("block 1 retrievable");
-            let gen_coinbase = &b1.transactions[0];
-            let b2_coinbase = &b2.transactions[0];
-            // Nullifier is in the coinbase transaction (CoinbaseTransaction.nullifier)
-            // For genesis, the coinbase is constructed differently — check they differ
+            let empty = vec![];
+            let gen_data = b1.transactions[0].contract_calls.first()
+                .map(|c| &c.data).unwrap_or(&empty);
+            let b2_data = b2.transactions[0].contract_calls.first()
+                .map(|c| &c.data).unwrap_or(&empty);
             assert!(
-                gen_coinbase.contract_calls != b2_coinbase.contract_calls,
-                "AC8: genesis and block 2 coinbase calls differ (distinct nullifiers)"
+                gen_data != b2_data,
+                "AC8: genesis and block 2 coinbase data differ (distinct nullifiers)"
             );
 
             drop(mgr);
