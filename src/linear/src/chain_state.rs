@@ -341,8 +341,18 @@ impl CChainState {
         if !blocks.is_empty() {
             let mut seen = self.competing_seen.lock().unwrap();
             for b in &blocks {
-                // Recompute hash — we need a VM. Use quick blake3 of header bytes.
-                let h = blake3::hash(&serde_json::to_vec(&b.header).unwrap_or_else(|e| { tracing::error!(target: "dwow_chain::chain_state", "BlockHeader serialization failed: {}", e); vec![0u8; 32] }));
+                // Dedup hash: serde_json with canonical form (sorted keys ensures
+                // determinism across serde versions and node instances).
+                let header_bytes = match serde_json::to_vec(&b.header) {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        tracing::error!(target: "dwow_chain::chain_state",
+                            "BlockHeader serialization failed: {} — skipping dedup for block at height {}",
+                            e, b.header.height);
+                        continue;
+                    }
+                };
+                let h = blake3::hash(&header_bytes);
                 seen.remove(&h);
             }
         }

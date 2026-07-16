@@ -432,6 +432,13 @@ pub fn execute_block(
         &contracts_tree, &main_overlay.state,
     ).map_err(|e| Error::Custom(e.to_string()))?;
 
+    // Track uncle-written keys for duplicate-key conflict detection.
+    // Canonical keys are already protected by written_keys above.
+    // Uncle-vs-canonical conflicts are resolved by remove_diff (canonical wins).
+    // Uncle-vs-uncle conflicts MUST be rejected — two uncles writing the same
+    // key would produce non-deterministic results dependent on iteration order.
+    let mut uncle_written_keys: HashSet<Vec<u8>> = HashSet::new();
+
     for r in results.iter().filter(|r| !r.is_canonical) {
         if r.success {
             uncle_calls_executed += 1;
@@ -441,7 +448,18 @@ pub fn execute_block(
             }
             let mut diff = r.diff.clone();
             if let Some(ref mut d) = diff {
+                // Subtract canonical writes (canonical wins on conflict)
                 d.remove_diff(&canonical_total);
+                // Reject uncle-vs-uncle duplicate key writes.
+                // Same pattern as canonical loop at line 412-422.
+                let overlay_state = SledTreeOverlayState::from(&*d);
+                for key in overlay_state.cache.keys().chain(overlay_state.removed.iter()) {
+                    if !uncle_written_keys.insert(key.to_vec()) {
+                        return Err(Error::Custom(
+                            "DuplicateKeyConflict: two uncles wrote the same key".to_string()
+                        ));
+                    }
+                }
                 main_overlay.add_diff(d);
             }
         } else {
