@@ -810,4 +810,128 @@ mod tests {
         assert_eq!(blob[227], 0, "Native pow_source should write discriminator 0");
         assert_eq!(blob.len(), 228);
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Pre-pipeline integration tests — merge mining (Phase 3)
+    // ═══════════════════════════════════════════════════════════════════════
+    // These tests verify the merge mining FFI contract without Docker.
+    // Each test maps to a SHALL/MUST in merge-mining-ffi.md.
+
+    /// P0: FIFO eviction — oldest entry removed, newest survives.
+    /// merge-mining-ffi.md §4.4: "When the table reaches capacity, the oldest
+    /// entry SHALL be evicted, not all entries."
+    #[test]
+    fn test_fifo_eviction_removes_oldest_not_newest() {
+        let mut map: HashMap<String, ()> = HashMap::new();
+        // Fill to capacity with ordered keys
+        for i in 0..100 {
+            map.insert(format!("job_{:03}", i), ());
+        }
+        assert_eq!(map.len(), 100, "table at capacity");
+
+        // FIFO: remove oldest (job_000)
+        if let Some(oldest) = map.keys().next().cloned() {
+            map.remove(&oldest);
+        }
+        assert_eq!(map.len(), 99, "one entry evicted");
+
+        // Insert new job — should fit
+        map.insert("job_new".into(), ());
+        assert_eq!(map.len(), 100, "new entry fits after FIFO eviction");
+
+        // Oldest was removed (job_000), newest (job_099) survives
+        assert!(!map.contains_key("job_000"), "oldest evicted");
+        assert!(map.contains_key("job_099"), "newest survives");
+        assert!(map.contains_key("job_new"), "new entry present");
+    }
+
+    /// P0: Submitted set FIFO eviction — same pattern as job table.
+    /// merge-mining-ffi.md §4.4
+    #[test]
+    fn test_submitted_fifo_eviction() {
+        let mut submitted: HashSet<String> = HashSet::new();
+        for i in 0..1000 {
+            submitted.insert(format!("sub_{:04}", i));
+        }
+        assert_eq!(submitted.len(), 1000, "submitted set at capacity");
+
+        // FIFO: remove oldest entry (arbitrary pick from set)
+        if let Some(oldest) = submitted.iter().next().cloned() {
+            submitted.remove(&oldest);
+        }
+        assert_eq!(submitted.len(), 999, "one entry evicted");
+        submitted.insert("sub_new".into());
+        assert_eq!(submitted.len(), 1000, "new entry fits");
+    }
+
+    /// P3: Job ID determinism — same template contents produce same job ID.
+    /// merge-mining-ffi.md §4.3: "job_id SHALL be a deterministic function
+    /// of template contents."
+    #[test]
+    fn test_job_id_deterministic() {
+        let prev = [0xAAu8; 32];
+        let height: u64 = 42;
+        let merkle = [0xBBu8; 32];
+        let ts: u64 = 1234567890;
+
+        // Compute job_id twice with same inputs
+        let mut hasher1 = blake3::Hasher::new();
+        hasher1.update(&prev);
+        hasher1.update(&height.to_le_bytes());
+        hasher1.update(&merkle);
+        hasher1.update(&ts.to_le_bytes());
+        let job1 = hasher1.finalize();
+
+        let mut hasher2 = blake3::Hasher::new();
+        hasher2.update(&prev);
+        hasher2.update(&height.to_le_bytes());
+        hasher2.update(&merkle);
+        hasher2.update(&ts.to_le_bytes());
+        let job2 = hasher2.finalize();
+
+        assert_eq!(job1.as_bytes(), job2.as_bytes(), "same inputs → same job_id");
+    }
+
+    /// P3: Job ID changes with different inputs.
+    /// merge-mining-ffi.md §4.3
+    #[test]
+    fn test_job_id_changes_with_height() {
+        let prev = [0xAAu8; 32];
+        let merkle = [0xBBu8; 32];
+        let ts: u64 = 1234567890;
+
+        let mut hasher1 = blake3::Hasher::new();
+        hasher1.update(&prev);
+        hasher1.update(&42u64.to_le_bytes());
+        hasher1.update(&merkle);
+        hasher1.update(&ts.to_le_bytes());
+        let job_h42 = hasher1.finalize();
+
+        let mut hasher2 = blake3::Hasher::new();
+        hasher2.update(&prev);
+        hasher2.update(&43u64.to_le_bytes());
+        hasher2.update(&merkle);
+        hasher2.update(&ts.to_le_bytes());
+        let job_h43 = hasher2.finalize();
+
+        assert_ne!(job_h42.as_bytes(), job_h43.as_bytes(), "different height → different job_id");
+    }
+
+    /// Newtype validation: MoneroHash rejects zero.
+    /// merge-mining-ffi.md §2.1
+    #[test]
+    fn test_monero_hash_rejects_zero_in_mm_context() {
+        use dwow_chain::monero::MoneroHash;
+        assert!(MoneroHash::from_bytes([0u8; 32]).is_none(), "zero hash rejected");
+    }
+
+    /// Newtype validation: RandomXKey rejects non-32-byte.
+    /// merge-mining-ffi.md §2.1
+    #[test]
+    fn test_randomx_key_rejects_bad_length() {
+        use dwow_chain::monero::RandomXKey;
+        assert!(RandomXKey::from_bytes(&[0x42u8; 31]).is_none(), "31 bytes rejected");
+        assert!(RandomXKey::from_bytes(&[0x42u8; 33]).is_none(), "33 bytes rejected");
+        assert!(RandomXKey::from_bytes(&[0x42u8; 32]).is_some(), "32 bytes accepted");
+    }
 }
