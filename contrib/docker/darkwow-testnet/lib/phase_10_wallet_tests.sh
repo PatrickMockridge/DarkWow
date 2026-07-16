@@ -145,10 +145,11 @@ phase_wallet_verify() {
     source "${SCRIPT_DIR}/wallet-shell.sh"
 
     # Stabilize: wait for node0 and observer to report healthy before wallet ops.
-    # Wallet connectivity depends on these nodes being ready.
+    # Wallet connectivity depends on these nodes being ready. If either node
+    # is unhealthy after the timeout, fail — a wallet cannot sync to dead nodes.
     info "Stabilizing container health before wallet verification..."
-    _wait_for_container_healthy "dwow-node0" 60 || true
-    _wait_for_container_healthy "dwow-observer" 60 || true
+    _wait_for_container_healthy "dwow-node0" 60 || { fail "node0 not healthy after 60s — wallet cannot sync"; return 1; }
+    _wait_for_container_healthy "dwow-observer" 60 || { fail "observer not healthy after 60s — P2P mesh may be broken"; return 1; }
 
     for wallet_idx in $(seq 1 "${WITH_WALLET:-1}"); do
     info "Phase 10: Verifying wallet container dwow-wallet-${wallet_idx}..."
@@ -160,7 +161,7 @@ phase_wallet_verify() {
         node0_height=$(jsonrpc_get_block "$NODE0" "31345" "2" 2>/dev/null | jq -r '.result | fromjson | .header.height // 0' 2>/dev/null || echo 0)
         if [ "${node0_height:-0}" -eq 0 ]; then
             fail "node0 has not produced block 2 yet — chain is empty, wallet cannot sync"
-            continue
+            return 1
         fi
     fi
 
@@ -182,7 +183,10 @@ phase_wallet_verify() {
         info "  Fresh scan output (may reveal decrypt state):"
         wal "$wallet_idx" scan 2>&1 | tail -5 | while read line; do info "    $line"; done
         fail "wallet-$wallet_idx failed to sync any blocks after ${timeout}s"
-        continue
+        if [ "$wallet_idx" -eq 1 ]; then
+            return 1  # wallet-1 is the funded wallet — its failure is a hard stop
+        fi
+        continue      # wallet-2+ may legitimately have nothing to sync
     fi
     pass "wallet-$wallet_idx synced blocks (height=$height after ${elapsed}s)"
 
