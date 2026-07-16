@@ -1080,7 +1080,7 @@ User ──submit_transaction──► mempool.add(tx)
                                   │
 Miner ──mine_linear────────► generate_linear_block_template()
                                   │
-                            take_all() → drain mempool into block
+                            select_for_block(&miner_config) → non-destructive tx selection
                                   │
                             build coinbase (ZK with nullifier)
                                   │

@@ -253,7 +253,7 @@ impl PoWRewardCallBuilder {
 
     /// Build the PoWReward call with the standard block reward plus fees.
     pub fn build(&self) -> Result<PoWRewardCallDebris> {
-        let reward = expected_reward(self.block_height) + self.fees;
+        let reward = expected_reward(self.block_height as u64) + self.fees;
         self._build(reward)
     }
 

@@ -91,7 +91,9 @@ pub mod note;
 
 /// Pedersen commitment utilities
 pub mod pedersen;
-pub use pedersen::{pedersen_commitment_base, pedersen_commitment_u64};
+// pedersen_commitment_base is NOT re-exported — deprecated; uses NullifierK
+// generator incompatible with all on-chain circuits. Use pedersen_commitment_u64.
+pub use pedersen::pedersen_commitment_u64;
 
 /// Schnorr signature traits
 pub mod schnorr;

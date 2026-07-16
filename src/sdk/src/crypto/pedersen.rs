@@ -36,6 +36,13 @@ use super::{
 };
 
 /// Pedersen commitment for a full-width base field element.
+///
+/// **DEPRECATED.** This function uses `NullifierK.generator()` for the value
+/// base (V), which is incompatible with every on-chain zkas circuit — all
+/// circuits declare their `VALUE_COMMIT_VALUE` as a hash-to-curve point
+/// (`EcFixedPointShort`). Using this function produces commitments that fail ZK
+/// verification. Prefer `pedersen_commitment_u64` for all on-chain values.
+#[deprecated(since = "0.6.0", note = "use pedersen_commitment_u64 — this function uses a different generator (NullifierK) incompatible with all zkas circuits")]
 #[allow(non_snake_case)]
 pub fn pedersen_commitment_base(value: pallas::Base, blind: ScalarBlind) -> pallas::Point {
     let hasher = pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION);

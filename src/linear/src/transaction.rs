@@ -205,7 +205,7 @@ pub struct ContractCall {
 /// Contains ZK proof data, coin commitment, nullifier, and encrypted note.
 /// Newtypes enforce the mathematical spec at compile time:
 ///   - CoinCommitment ≠ Nullifier ≠ TokenCommitment (compiler rejects swaps)
-///   - ZkPublicInputs enforces exactly 7 elements
+///   - ZkPublicInputs enforces exactly 9 elements
 ///   - Nullifier::from_bytes rejects zero sentinel
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CoinbaseTransaction {

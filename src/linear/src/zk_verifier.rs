@@ -200,6 +200,17 @@ pub fn verify_core_tx_with_tables(
     pub_table: &[Vec<dwow_sdk::crypto::PublicKey>],
 ) -> Result<(), VerifyError> {
     // -- ZK proofs: per call, per proof --
+    // Safety gate: the outer zip silently truncates to the minimum length.
+    // A witness whose proofs vec is shorter than the metadata tables would
+    // pass with zero ZK verification (HAZOP C1 — counterfeiting guard).
+    // Reject length mismatches before any iteration.
+    if core_tx.proofs.len() != zkp_table.len() {
+        return Err(VerifyError::InvalidProof(format!(
+            "proof vec length {} != metadata {} calls",
+            core_tx.proofs.len(),
+            zkp_table.len(),
+        )));
+    }
     for (call_i, (proofs, call_zkp)) in core_tx
         .proofs
         .iter()
@@ -207,6 +218,15 @@ pub fn verify_core_tx_with_tables(
         .enumerate()
     {
         let contract_id = &core_tx.calls[call_i].data.contract_id;
+        // Per-call length guard: a call with N metadata-declared proof
+        // entries must carry exactly N proofs — an undersized vec
+        // silently skips verification via zip truncation.
+        if proofs.len() != call_zkp.len() {
+            return Err(VerifyError::InvalidProof(format!(
+                "call[{}] has {} proofs but metadata declares {} entries",
+                call_i, proofs.len(), call_zkp.len(),
+            )));
+        }
         for (proof_j, (proof_ref, (ns, pubvals))) in proofs.iter().zip(call_zkp.iter()).enumerate() {
             let _ = proof_j; // index-only — use proof_ref for the actual proof
             let zkbin = load_zkbin(store, contract_id, ns)?;
@@ -261,7 +281,7 @@ pub fn verify_single_tx(chain_tx: &ChainTransaction) -> Result<(), VerifyError> 
     for (i, (call, proofs)) in core_tx.calls.iter().zip(core_tx.proofs.iter()).enumerate() {
         let is_native_proof_call = call.data.contract_id
             == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
-            && matches!(call.data.data.first(), Some(0x00 | 0x02 | 0x03 | 0x04));
+            && matches!(call.data.data.first(), Some(0x00 | 0x02 | 0x03 | 0x04 | 0x06));
         if is_native_proof_call && proofs.is_empty() {
             return Err(VerifyError::InvalidProof(format!(
                 "call[{}] requires a proof but has none (mempool admission)",
@@ -287,6 +307,7 @@ pub fn verify_single_tx(chain_tx: &ChainTransaction) -> Result<(), VerifyError> 
 mod tests {
     use super::*;
     use crate::ContractCall;
+    use dwow_sdk::pasta::pallas;
 
     #[test]
     fn test_reconciliation_rejects_divergent_calls() {
@@ -370,5 +391,49 @@ mod tests {
             decode_and_reconcile(&chain_tx),
             Err(VerifyError::NoWitness),
         ));
+    }
+
+    /// A proof-less core_tx with non-empty metadata tables must be rejected —
+    /// the zip-truncation gap would otherwise silently skip ZK verification
+    /// (HAZOP C1 counterfeiting guard, red-team audit item 1).
+    #[test]
+    fn test_proof_metadata_length_mismatch_rejected() {
+        let core_tx = dwow_core::tx::Transaction {
+            calls: vec![dwow_sdk::dark_tree::DarkLeaf {
+                data: dwow_sdk::tx::ContractCall {
+                    contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+                    data: vec![0x06u8, 0u8],
+                },
+                children_indexes: vec![],
+                parent_index: None,
+            }],
+            proofs: vec![], // EMPTY — should trigger the outer length guard
+            signatures: vec![vec![]],
+            tx_commitment: [0u8; 32],
+            nullifiers: vec![],
+        };
+        // zkp_table declares one call's worth of metadata — the proof vec
+        // is empty, so lengths differ. The guard rejects before any iteration.
+        let zkp_table: Vec<Vec<(String, Vec<pallas::Base>)>> = vec![
+            vec![("FeeCollect_V1".to_string(), vec![pallas::Base::zero()])],
+        ];
+        let pub_table: Vec<Vec<dwow_sdk::crypto::PublicKey>> = vec![vec![]];
+
+        // The function never reaches load_zkbin on this code path (fails on
+        // the length guard before any store access), but the type system
+        // requires a store handle. Create a minimal LinearStore via sled
+        // tempdir — the sled API guarantees ::new() never fails.
+        let tmp_db = sled::Config::new().temporary(true).open().unwrap();
+        let store = crate::LinearStore::new(tmp_db).unwrap();
+        let result = verify_core_tx_with_tables(
+            &store,
+            &core_tx,
+            &zkp_table,
+            &pub_table,
+        );
+        assert!(
+            matches!(result, Err(VerifyError::InvalidProof(_))),
+            "empty proofs with non-empty metadata must be rejected, got {:?}", result,
+        );
     }
 }

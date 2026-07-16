@@ -118,7 +118,14 @@ pub fn block_version(_height: u32) -> u8 {
 ///
 /// Height 0 (no block) always returns 0. Height 1 (genesis) receives
 /// GENESIS_REWARD (= INITIAL_REWARD). Heights >= 2 follow the exponential decay.
-pub fn expected_reward(height: u32) -> u64 {
+///
+/// # Panics
+///
+/// Panics if `height > u32::MAX` (the emission formula depends on 64-bit
+/// exponentiation that is only validated for the u32 range). At a 2-minute
+/// block time this exceeds 8,000 years of chain history — not a practical
+/// consensus bound, but the function documents the assumption.
+pub fn expected_reward(height: u64) -> u64 {
     if height == 0 {
         return 0;
     }
@@ -224,7 +231,7 @@ use pasta_curves::{
 pub fn expected_cumulative_supply(height: u32) -> u64 {
     let mut total: u64 = 0;
     for h in 1..=height {
-        total = total.saturating_add(expected_reward(h));
+        total = total.saturating_add(expected_reward(h as u64));
     }
     total
 }
@@ -306,7 +313,7 @@ pub fn verify_cumulative_supply(
         if *height != expected_height {
             return false; // heights must be sequential
         }
-        let reward = expected_reward(*height);
+        let reward = expected_reward(*height as u64);
         let blind = coinbase_blind(&prev_coin, *height);
         let coin_vc = pedersen_commitment_u64(reward, Blind(blind));
         expected = expected + coin_vc;

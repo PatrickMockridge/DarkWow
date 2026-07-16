@@ -181,7 +181,7 @@ impl DwowNode {
             zk_lock.clone()
         };
 
-        let reward = dwow_sdk::blockchain::expected_reward(height as u32);
+        let reward = dwow_sdk::blockchain::expected_reward(height);
         let cs = chain_state.clone();
         let prep = match crate::prepare_block(
             &cs, &self.mining_state, self.mempool.as_ref(),

@@ -147,7 +147,9 @@ impl<const N: usize> FunctionParams for crypto::note::ElGamalEncryptedNote<N> {
 pub(crate) fn create_module(py: Python<'_>) -> PyResult<Bound<'_, PyModule>> {
     let submod = PyModule::new(py, "crypto")?;
     submod.add_function(wrap_pyfunction!(poseidon_hash, &submod)?)?;
+    // pedersen_commitment_base intentionally NOT exported — uses a different
+    // generator (NullifierK) incompatible with all on-chain zkas circuits.
+    // The Rust function is deprecated; Python users must use pedersen_commitment_u64.
     submod.add_function(wrap_pyfunction!(pedersen_commitment_u64, &submod)?)?;
-    submod.add_function(wrap_pyfunction!(pedersen_commitment_base, &submod)?)?;
     Ok(submod)
 }

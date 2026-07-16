@@ -566,7 +566,7 @@ pub async fn generate_linear_block_template(
     };
 
     use dwow_sdk::blockchain::expected_reward;
-    let reward = expected_reward(height as u32);
+    let reward = expected_reward(height as u64);
 
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

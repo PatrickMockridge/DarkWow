@@ -121,11 +121,15 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         Ok(contract_id)
     }
 
-    /// Execute a contract call through `apply_block_with_uncles()` in a canonical block.
+    /// Execute a contract call through the production block acceptance path.
+    ///
+    /// Routes through `accept_block` → `execute_block` → `connect_block` —
+    /// the full WASM runtime path with contracts overlay and cumulative supply
+    /// state (MOC close-out item 5: was apply_block_with_uncles bypass, now
+    /// the real execution path).
     ///
     /// Takes the ZK-generated call_data (which must include the function code byte)
-    /// and proofs, then executes through the full WASM runtime. Constructs a block with
-    /// `target: u32::MAX` (instant PoW) — the identical code path as production.
+    /// and proofs. Constructs a block with `target: u32::MAX` (instant PoW).
     ///
     /// Proofs are verified locally against the harness's ZK binary before submission.
     /// If the contract has ZK circuits (circuits() is non-empty), proofs must be non-empty.
@@ -160,11 +164,32 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
 
         let tx = build_contract_tx(contract_id, call_data.to_vec());
         let height = self.genesis.block_height();
-        let reward = dwow_sdk::blockchain::expected_reward((height + 1) as u32);
+        let next_height = height + 1;
+        let reward = dwow_sdk::blockchain::expected_reward(next_height);
         let coinbase = build_coinbase_tx(reward);
-        let block = build_test_block(&self.genesis.chain_state, height + 1, vec![tx, coinbase]);
-        self.genesis.chain_state.apply_block_with_uncles(&block, &[]).await
-            .map_err(|e| dwow_core::Error::Custom(e.to_string()))
+        let block = build_test_block(&self.genesis.chain_state, next_height, vec![tx, coinbase]);
+
+        // Production path: accept_block → execute_block (WASM) → connect_block
+        // with contracts overlay + supply chain state. Fixes the Defect-3
+        // rejection that the old apply_block_with_uncles bypass triggered.
+        let rx_flags = randomx::RandomXFlags::get_recommended_flags()
+            & !randomx::RandomXFlags::JIT;
+        let rx_cache = randomx::RandomXCache::new(rx_flags, &block.header.randomx_key)
+            .map_err(|e| dwow_core::Error::Custom(format!("RandomX cache: {}", e)))?;
+        let vm = std::sync::Arc::new(
+            randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
+                .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?,
+        );
+
+        crate::block_acceptor::accept_block(
+            &self.genesis.chain_state,
+            &block,
+            &[],
+            &vm,
+            height,
+            u32::MAX,
+        )
+        .map_err(|e| dwow_core::Error::Custom(format!("accept_block exec: {}", e)))
     }
 
     /// Execute a contract call as an uncle block transaction.
@@ -187,7 +212,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
             .ok_or_else(|| dwow_core::Error::Custom("Contract not deployed".to_string()))?;
         let height = self.genesis.block_height();
         let next = height + 1;
-        let reward = dwow_sdk::blockchain::expected_reward(next as u32);
+        let reward = dwow_sdk::blockchain::expected_reward(next as u64);
 
         let contract_tx = build_contract_tx(contract_id, call_data.to_vec());
         let coinbase = build_coinbase_tx(reward);
@@ -225,7 +250,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
             .ok_or_else(|| dwow_core::Error::Custom("Contract not deployed".to_string()))?;
         let height = self.genesis.block_height();
         let next = height + 1;
-        let reward = dwow_sdk::blockchain::expected_reward(next as u32);
+        let reward = dwow_sdk::blockchain::expected_reward(next as u64);
 
         let canon_tx = build_contract_tx(contract_id, canonical_data.to_vec());
         let coinbase = build_coinbase_tx(reward);
@@ -267,7 +292,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
             .ok_or_else(|| dwow_core::Error::Custom("Contract not deployed".to_string()))?;
         let height = self.genesis.block_height();
         let next = height + 1;
-        let reward = dwow_sdk::blockchain::expected_reward(next as u32);
+        let reward = dwow_sdk::blockchain::expected_reward(next as u64);
 
         let coinbase = build_coinbase_tx(reward);
         let mut uncles = Vec::new();
@@ -2708,7 +2733,7 @@ fn test_heavyweight_empty_uncle() -> std::result::Result<(), Box<dyn std::error:
         let (pipeline, _keypair) = setup_native_token_pipeline().await?;
         let height = pipeline.genesis.block_height();
         let next = height + 1;
-        let reward = dwow_sdk::blockchain::expected_reward(next as u32);
+        let reward = dwow_sdk::blockchain::expected_reward(next as u64);
 
         let coinbase = build_coinbase_tx(reward);
         // Uncle has coinbase but no contract calls
@@ -2744,7 +2769,7 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
         let (pipeline, keypair) = setup_native_token_pipeline().await?;
         let height = pipeline.genesis.block_height();
         let next = height + 1;
-        let reward = dwow_sdk::blockchain::expected_reward(next as u32);
+        let reward = dwow_sdk::blockchain::expected_reward(next as u64);
 
         let coinbase = build_coinbase_tx(reward);
 
@@ -2869,7 +2894,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         println!("  Deposit call_data={}B", deposit.call_data.len());
 
         let height1 = start_height + 1;
-        let reward = dwow_sdk::blockchain::expected_reward(height1 as u32);
+        let reward = dwow_sdk::blockchain::expected_reward(height1 as u64);
         let deposit_tx = build_contract_tx(bridge_id, deposit.call_data);
         let coinbase = build_coinbase_tx(reward);
         let block1 = build_test_block(&genesis.chain_state, height1, vec![deposit_tx, coinbase]);
@@ -2901,7 +2926,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         println!("  Withdraw call_data={}B", withdraw.call_data.len());
 
         let height2 = genesis.block_height() + 1;
-        let reward = dwow_sdk::blockchain::expected_reward(height2 as u32);
+        let reward = dwow_sdk::blockchain::expected_reward(height2 as u64);
         let withdraw_tx = build_contract_tx(bridge_id, withdraw.call_data);
         let coinbase = build_coinbase_tx(reward);
         let block2 = build_test_block(&genesis.chain_state, height2, vec![withdraw_tx, coinbase]);
@@ -2931,7 +2956,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         };
 
         let height3 = genesis.block_height() + 1;
-        let reward = dwow_sdk::blockchain::expected_reward(height3 as u32);
+        let reward = dwow_sdk::blockchain::expected_reward(height3 as u64);
         let double_tx = build_contract_tx(bridge_id, double_withdraw.call_data);
         let coinbase = build_coinbase_tx(reward);
         let block3 = build_test_block(&genesis.chain_state, height3, vec![double_tx, coinbase]);
@@ -2968,7 +2993,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         println!("  DeployCapital call_data={}B", deploy.call_data.len());
 
         let height4 = genesis.block_height() + 1;
-        let reward = dwow_sdk::blockchain::expected_reward(height4 as u32);
+        let reward = dwow_sdk::blockchain::expected_reward(height4 as u64);
         let init_tx = build_contract_tx(relayer_id, init.call_data);
         let deploy_tx = build_contract_tx(relayer_id, deploy.call_data);
         let coinbase = build_coinbase_tx(reward);

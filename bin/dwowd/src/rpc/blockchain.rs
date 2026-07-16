@@ -352,7 +352,7 @@ impl DwowNode {
         let mut cumulative_blind = pallas::Scalar::zero();
 
         for h in 1u64..=height {
-            let reward = expected_reward(h as u32);
+            let reward = expected_reward(h);
             // For the RPC audit, prev_coin is the previous block hash.
             // The contract uses the actual coinbase coin commitment; both
             // are deterministic and verifiable.

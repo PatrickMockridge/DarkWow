@@ -722,7 +722,7 @@ impl CChainState {
         // verify_uncle_split MUST run BEFORE the sled commit closure.
         // A block with violated supply invariant must never reach disk.
         let height = block_height;
-        let base_reward = dwow_sdk::blockchain::expected_reward(height as u32);
+        let base_reward = dwow_sdk::blockchain::expected_reward(height);
         let pin_rewards: Vec<u64> = uncles.iter()
             .filter(|u| u.pin_accepted && u.pin_reward > 0)
             .map(|u| u.pin_reward)

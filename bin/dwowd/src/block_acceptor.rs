@@ -135,7 +135,7 @@ pub fn accept_block(
     // Previously deferred entirely to WASM pow_reward_v1. Now enforced at host level
     // for fail-fast — reject under-reward blocks before spawning WASM runtime.
     {
-        let expected = dwow_sdk::blockchain::expected_reward(block.header.height as u32) as u64;
+        let expected = dwow_sdk::blockchain::expected_reward(block.header.height);
         if block.header.total_reward < expected {
             return Err(dwow_core::Error::Custom(format!(
                 "Coinbase reward {} below expected_reward({}) = {}",

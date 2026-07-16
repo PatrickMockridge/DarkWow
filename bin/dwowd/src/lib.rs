@@ -495,7 +495,7 @@ async fn init_genesis(
     let timestamp = 0u64;
 
     // Genesis block reward — same as every other block. One emission schedule.
-    let genesis_reward = expected_reward(genesis_height as u32);
+    let genesis_reward = expected_reward(genesis_height);
 
     // Load ZK proving materials for Mint_V1 coinbase.
     // Circuits were compiled into the binary; init_genesis_contracts already
@@ -1198,7 +1198,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             consensus.get_next_work_required(&chain_state.store, height)
         };
 
-        let base_reward = dwow_sdk::blockchain::expected_reward(height as u32);
+        let base_reward = dwow_sdk::blockchain::expected_reward(height);
         info!(target: "dwowd::miner_task",
             "Mining block {} (target={:#010x})", height, target);
 

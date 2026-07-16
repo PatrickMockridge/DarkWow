@@ -526,7 +526,7 @@ pub fn create_block_with_uncles(
 
     // Build uncle merkle and compute rewards (uses blake3 for merkle structure)
     let (uncle_merkle_root, _) = build_uncle_merkle(uncles, vm);
-    let base_reward = dwow_sdk::blockchain::expected_reward(height as u32);
+    let base_reward = dwow_sdk::blockchain::expected_reward(height);
     let (total_reward, _) = compute_reward(base_reward, uncles);
 
     Block {

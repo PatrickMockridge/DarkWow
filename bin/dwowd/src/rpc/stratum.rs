@@ -477,7 +477,7 @@ impl DwowNode {
             (None, vec![], [0u8; 32], [0u8; 32])
         };
 
-        let reward = dwow_sdk::blockchain::expected_reward(submitted_height as u32);
+        let reward = dwow_sdk::blockchain::expected_reward(submitted_height);
 
         // Use template's merkle root and transactions (frozen at login time)
         let (merkle_root, template_txs) = template.as_ref()

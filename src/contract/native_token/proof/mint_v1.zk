@@ -37,7 +37,11 @@ witness "Mint_V1" {
     Base new_cumulative_y,       # New cumulative commitment y-coordinate (public input)
     Base tx_commitment,
     Base tx_nonce,
-    Base tx_binding,
+    # tx_binding is computed in-circuit at line 100:
+    #   tx_binding = poseidon_hash(tx_commitment, tx_nonce)
+    # The witness slot was dead — the prover assigned a value that was
+    # never read (shadowed by the local circuit variable). Removed per
+    # MOC close-out item 3.
 }
 
 circuit "Mint_V1" {

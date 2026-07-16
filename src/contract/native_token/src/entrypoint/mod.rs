@@ -812,7 +812,7 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     // Canonical miner mints full base_reward. Uncle rewards are subtracted
     // at the consensus level (connect_block) via Pedersen mass balance —
     // no pin_deductions needed in the contract.
-    let expected = expected_reward(verifying_block_height);
+    let expected = expected_reward(verifying_block_height as u64);
     if pr.input.value < expected {
         msg!("[pow_reward_v1] Error: Reward below schedule: got {}, expected {} at height {}",
              pr.input.value, expected, verifying_block_height);

@@ -561,7 +561,7 @@ impl DwowNode {
         }
 
         // Build coinbase
-        let reward = dwow_sdk::blockchain::expected_reward(template.height as u32);
+        let reward = dwow_sdk::blockchain::expected_reward(template.height);
         let (coinbase_tx_data, pow_reward_call_data, coin_merkle_root, nullifier_root) = if !template.zk_proof.is_empty() {
             let cb = dwow_chain::CoinbaseTransaction {
                 proof: template.zk_proof.clone(),
