@@ -48,6 +48,76 @@ use tracing::warn;
 
 use crate::{error::LinearError, Result};
 
+// ============================================================================
+// Typed newtypes — Monero types crossing the FFI boundary per type-system.md §2
+// ============================================================================
+// Per merge-mining-ffi.md §2.1: Monero types MUST be distinct DarkWow newtypes.
+// No [u8; 32] crosses the boundary without validation. Bytes round-trip is
+// forbidden per type-system.md §2.2.
+
+/// Monero Keccak-256 hash. Distinct from DarkWow's blake3::Hash and Poseidon
+/// commitments. MUST NOT be unified with any other 32-byte type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MoneroHash([u8; 32]);
+
+impl MoneroHash {
+    /// Construct from a 32-byte array. All-zero is rejected.
+    pub fn from_bytes(bytes: [u8; 32]) -> Option<Self> {
+        if bytes == [0u8; 32] { return None; }
+        Some(Self(bytes))
+    }
+
+    pub fn inner(&self) -> &[u8; 32] { &self.0 }
+    pub fn to_bytes(&self) -> [u8; 32] { self.0 }
+}
+
+impl From<monero::Hash> for MoneroHash {
+    fn from(h: monero::Hash) -> Self { Self(h.0) }
+}
+
+impl From<MoneroHash> for monero::Hash {
+    fn from(h: MoneroHash) -> Self { monero::Hash(h.0) }
+}
+
+/// RandomX VM key (seed_hash from Monero). MUST be exactly 32 bytes.
+/// Distinct from MoneroHash and DarkWow's randomx_key in BlockHeader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RandomXKey([u8; 32]);
+
+impl RandomXKey {
+    /// Construct from exactly 32 bytes. Rejects non-32-byte inputs.
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() != 32 { return None; }
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(bytes);
+        if arr == [0u8; 32] { return None; }
+        Some(Self(arr))
+    }
+
+    pub fn inner(&self) -> &[u8; 32] { &self.0 }
+    pub fn to_bytes(&self) -> [u8; 32] { self.0 }
+}
+
+/// Merge mining job identifier. blake3 hash of template contents, used as the
+/// aux_hash in the P2Pool protocol. MUST be non-zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct JobId([u8; 32]);
+
+impl JobId {
+    pub fn from_bytes(bytes: [u8; 32]) -> Option<Self> {
+        if bytes == [0u8; 32] { return None; }
+        Some(Self(bytes))
+    }
+
+    pub fn from_monero_hash(h: &monero::Hash) -> Option<Self> {
+        Self::from_bytes(h.0)
+    }
+
+    pub fn inner(&self) -> &[u8; 32] { &self.0 }
+    pub fn to_bytes(&self) -> [u8; 32] { self.0 }
+    pub fn to_hex(&self) -> String { hex::encode(self.0) }
+}
+
 pub mod fixed_array;
 use fixed_array::{FixedByteArray, MaxSizeVec};
 
@@ -558,5 +628,45 @@ mod tests {
 
         assert_eq!(de_sync_digest, powdata_digest);
         assert_eq!(de_async_digest, powdata_digest);
+    }
+
+    // ── Newtype validation tests (merge-mining-ffi.md §2.1) ─────────
+
+    #[test]
+    fn monero_hash_rejects_zero() {
+        assert!(MoneroHash::from_bytes([0u8; 32]).is_none());
+    }
+
+    #[test]
+    fn monero_hash_accepts_nonzero() {
+        let mut bytes = [0u8; 32];
+        bytes[0] = 0x42;
+        assert!(MoneroHash::from_bytes(bytes).is_some());
+    }
+
+    #[test]
+    fn randomx_key_rejects_wrong_length() {
+        assert!(RandomXKey::from_bytes(&[0u8; 31]).is_none());
+        assert!(RandomXKey::from_bytes(&[0u8; 33]).is_none());
+    }
+
+    #[test]
+    fn randomx_key_rejects_zero() {
+        assert!(RandomXKey::from_bytes(&[0u8; 32]).is_none());
+    }
+
+    #[test]
+    fn job_id_rejects_zero() {
+        assert!(JobId::from_bytes([0u8; 32]).is_none());
+    }
+
+    #[test]
+    fn newtype_roundtrip_monero_hash() {
+        let mut bytes = [0u8; 32];
+        bytes[0] = 0x13;
+        let mh = MoneroHash::from_bytes(bytes).unwrap();
+        let xmr: monero::Hash = mh.into();
+        let back: MoneroHash = xmr.into();
+        assert_eq!(mh, back);
     }
 }
