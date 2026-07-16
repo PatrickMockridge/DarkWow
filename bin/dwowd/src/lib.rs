@@ -1327,7 +1327,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
 
         // Rate-limit: wait for min_block_interval before next block
         let min_interval = node.min_block_interval;
-        let last = node.mining_state.last_block_time.load(std::sync::atomic::Ordering::Relaxed);
+        let last = node.mining_state.last_block_time.load(std::sync::atomic::Ordering::SeqCst);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -1338,6 +1338,6 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
                 min_interval.saturating_sub(elapsed)
             )).await;
         }
-        node.mining_state.last_block_time.store(now, std::sync::atomic::Ordering::Relaxed);
+        node.mining_state.last_block_time.store(now, std::sync::atomic::Ordering::SeqCst);
     }
 }

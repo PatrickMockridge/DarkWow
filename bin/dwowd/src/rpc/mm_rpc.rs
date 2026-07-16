@@ -239,11 +239,13 @@ impl DwowNode {
             None => vec![],
         };
 
-        // Collect uncles from previous height — matches Python miner_cycle
-        let uncles: Vec<dwow_chain::UncleBlock> = match chain_state.get_latest_block() {
+        // Collect uncles from previous height — matches Python miner_cycle.
+        // Save original blocks for error recovery (validate-then-mutate pattern).
+        let (uncles, competing_originals) = match chain_state.get_latest_block() {
             Ok(latest) => {
-                let competing = chain_state.take_competing_blocks(latest.header.height);
-                competing.iter().map(|block| {
+                let latest_height = latest.header.height;
+                let competing = chain_state.take_competing_blocks(latest_height);
+                let uncle_blocks: Vec<dwow_chain::UncleBlock> = competing.iter().map(|block| {
                     dwow_chain::UncleBlock {
                         header: block.header.clone(),
                         transactions: block.transactions.clone(),
@@ -252,9 +254,10 @@ impl DwowNode {
                         pin_accepted: false,
                         pin_reward: 0,
                     }
-                }).collect()
+                }).collect();
+                (uncle_blocks, competing)
             }
-            Err(_) => vec![],
+            Err(_) => (vec![], vec![]),
         };
 
         let template = match crate::registry::model::generate_linear_block_template(
@@ -272,6 +275,16 @@ impl DwowNode {
                     target: "dwowd::rpc::mm_rpc::mm_get_aux_block",
                     "[RPC-MM] Failed to generate block template: {e}",
                 );
+                // HAZOP #5: Re-insert competing blocks that were destructively
+                // consumed above. Without this, a template generation failure
+                // permanently loses the competing miner's uncle reward.
+                if !competing_originals.is_empty() {
+                    let latest = chain_state.get_height();
+                    chain_state.put_competing_blocks(
+                        latest,
+                        competing_originals,
+                    );
+                }
                 return JsonResponse::new(JsonValue::from(HashMap::new()), id).into()
             }
         };
