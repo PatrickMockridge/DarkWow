@@ -130,6 +130,20 @@ pub fn accept_block(
         }
     }
 
+    // 2.6 Host-side reward check (Phase 3.4 compliance fix):
+    // Verify coinbase reward meets emission schedule BEFORE expensive WASM execution.
+    // Previously deferred entirely to WASM pow_reward_v1. Now enforced at host level
+    // for fail-fast — reject under-reward blocks before spawning WASM runtime.
+    {
+        let expected = dwow_sdk::blockchain::expected_reward(block.header.height as u32) as u64;
+        if block.header.total_reward < expected {
+            return Err(dwow_core::Error::Custom(format!(
+                "Coinbase reward {} below expected_reward({}) = {}",
+                block.header.total_reward, block.header.height, expected
+            )));
+        }
+    }
+
     // 3. WASM execution — runs pow_reward_v1, persists cumulative supply chain
     // to the contracts sled tree via the overlay.
     let outcome = match execute_block(chain_state, block, uncles, vm, block.header.height, target) {

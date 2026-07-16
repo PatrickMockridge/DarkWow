@@ -254,8 +254,28 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
             "PoWRewardV1 call data too short — missing serialized params".into()
         ));
     }
-    // Nullifier zero-check and SMT verification happen in WASM entrypoint (Phase 4)
-    // and Phase 3.2/3.3. Phase 0 only validates structure.
+
+    // Phase 0.2 contract_id check (HAZOP F7 fix):
+    // Verify contract_id == NATIVE_TOKEN_CONTRACT_ID alongside function selector.
+    if pow_call.contract_id != *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID {
+        return Err(LinearError::BlockStructure(
+            "PoWRewardV1 must target NATIVE_TOKEN_CONTRACT_ID".into()
+        ));
+    }
+
+    // Phase 0.4 nullifier zero-check (HAZOP compliance fix):
+    // Previously deferred to WASM Phase 4. Now enforced at structural validation
+    // for fail-fast — reject blocks with zero coinbase nullifier before PoW/WASM.
+    let pow_params: dwow_native_token_contract::model::PoWRewardParamsV1 =
+        dwow_serial::deserialize(&pow_call.data[1..])
+            .map_err(|e| LinearError::BlockStructure(
+                format!("PoWRewardV1 params deserialization failed: {}", e)
+            ))?;
+    if pow_params.nullifier.is_zero() {
+        return Err(LinearError::BlockStructure(
+            "coinbase nullifier is zero — must be non-zero per consensus rule".into()
+        ));
+    }
 
     Ok(())
 }
