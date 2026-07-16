@@ -60,7 +60,7 @@ The formal verification is organized in three layers:
 | `less_than_loose` | 0x52 | No | LOOSE (remaining bits not enforced) |
 | `bool_check` | 0x53 | No | SOUND ✓ (polynomial product) |
 | `is_equal_base` | 0x54 | Yes | ✅ SOUND (purity constraint fixed in 0f69cd89) |
-| `less_than_or_equal` | 0x55 | Yes | ✅ SOUND (exhaustive 1000×1000) |
+| `less_than_or_equal` | 0x55 | Yes | ✅ SOUND (exhaustive 1000×1000 + range_check audit: all 37 uses safe) |
 | `not_base` | 0x56 | Yes | ✅ SOUND (deterministic) |
 | `base_lt_strict` | 0x57 | Yes | ✅ SOUND (exhaustive 1000×1000) |
 | `cond_select` | 0x60 | Yes | ✅ SOUND (boolean guard + selection) |
