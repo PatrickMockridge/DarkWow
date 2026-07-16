@@ -92,9 +92,12 @@ phase_build() {
             -f "$SCRIPT_DIR/Dockerfile" \
             "$REPO_ROOT" 2>&1
         check $? "docker build testnet"
-        # Merge-mining sidecars (monerod, p2pool) — no Rust compilation
+        # Merge-mining sidecars (monerod, p2pool) — no Rust compilation.
+        # Pass BUILD_COMMIT to override compose file build args — the testnet
+        # image was already built above, compose just tags sidecar images.
         info "  Building merge sidecars..."
-        docker compose --profile merge build $BUILD_ARGS 2>&1
+        docker compose --profile merge build $BUILD_ARGS \
+            --build-arg BUILD_COMMIT="${BUILD_COMMIT}" 2>&1
         check $? "docker build (merge sidecars)"
     elif [ "$MODE" = "bridge" ]; then
         info "  Building darkwow-testnet:latest..."
