@@ -433,6 +433,35 @@ The ZK circuit constrains `S_H = S_{H-1} + C_base` (total minted correctly).
 Any node can recompute every blind deterministically and verify
 `C_effective + Σ C_uncle_i = C_base` using only public data.
 
+### PoWReward Function — Relationship to Uncle Split
+
+The `PoWRewardCallBuilder` (Rust: `build_linear_coinbase()` at
+`bin/dwowd/src/registry/model.rs:136`) SHALL always commit to the **full
+base reward** `C_base = pedersen_commit(expected_reward(H), blind_H)` in the
+Mint_V1 ZK proof. The ZK proof is constructed BEFORE the uncle split is applied.
+
+The uncle split SHALL be applied at the **consensus layer** by
+`CChainState::connect_block()` after the ZK proof is already generated:
+
+1. `build_linear_coinbase()` — builds ZK proof committing to `C_base` (full reward)
+2. `connect_block()` — subtracts `Σ C_uncle_i` from `C_base` via Pedersen
+   arithmetic, producing `C_effective` for the canonical miner
+3. `compute_reward()` — computes value-level split: `canonical_reward = base_reward - Σ pin_rewards`
+4. `verify_uncle_split()` — enforces `canonical_value + Σ pin_rewards == base_reward` PRE-commit
+
+The canonical miner's actual coin is `C_effective = C_base - Σ C_uncle_i`.
+The cumulative supply chain SHALL accumulate `C_base` (the total minted),
+NOT `C_effective`. Uncle coins `C_uncle_i` are tracked separately in
+`uncle_coin_set` as Pedersen compressed points.
+
+**Key invariant**: the miner ALWAYS proves knowledge of the full `base_reward`
+in the ZK circuit. The uncle deduction happens at the consensus level, not in
+the proof. This means:
+- The ZK proof is independent of whether uncles exist
+- The proof verifies identically for blocks with and without uncles
+- The supply audit can recompute `C_uncle_i` deterministically and verify the split
+- No new ZK proving key or circuit is needed for uncle blocks
+
 This is Pareto efficient: miners are never punished for producing non-canonical
 blocks, smaller miners aren't excluded from rewards, and uncle references live
 in the canonical block header.
