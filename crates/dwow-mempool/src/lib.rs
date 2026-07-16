@@ -149,13 +149,18 @@ pub struct Mempool {
     config: MempoolConfig,
     /// Fee extraction strategy (contract-specific, injected by caller)
     fee_extractor: Box<dyn FeeExtractor>,
+    /// Optional chain state for on-chain nullifier consultation.
+    /// When set, add() checks nullifiers against the confirmed set in addition
+    /// to the in-pool set. per mempool.md §2.
+    chain_state: Option<Arc<dwow_chain::CChainState>>,
 }
 
 impl Mempool {
     // ── Construction ─────────────────────────────────────────────────
 
     /// Create a new mempool with the given config, persistence, and fee extractor.
-    pub fn new(config: MempoolConfig, db: Option<sled::Tree>, fee_extractor: Box<dyn FeeExtractor>) -> Self {
+    pub fn new(config: MempoolConfig, db: Option<sled::Tree>, fee_extractor: Box<dyn FeeExtractor>,
+               chain_state: Option<Arc<dwow_chain::CChainState>>) -> Self {
         Self {
             txs: Mutex::new(HashMap::new()),
             fee_index: Mutex::new(BTreeSet::new()),
@@ -163,11 +168,13 @@ impl Mempool {
             db,
             config,
             fee_extractor,
+            chain_state,
         }
     }
 
     /// Restore mempool state from a sled tree (called on startup).
-    pub fn load(tree: sled::Tree, fee_extractor: Box<dyn FeeExtractor>) -> dwow_core::Result<Self> {
+    pub fn load(tree: sled::Tree, fee_extractor: Box<dyn FeeExtractor>,
+                chain_state: Option<Arc<dwow_chain::CChainState>>) -> dwow_core::Result<Self> {
         let config = MempoolConfig::default();
         let mut txs = HashMap::new();
         let mut fee_index = BTreeSet::new();
@@ -211,6 +218,7 @@ impl Mempool {
             db: Some(clean_tree),
             config,
             fee_extractor,
+            chain_state,
         })
     }
 
@@ -277,12 +285,24 @@ impl Mempool {
             ));
         }
 
-        // Nullifier dedup
+        // Nullifier dedup (in-mempool)
         for n in &tx_nullifiers {
             if nulls.contains(n) {
                 return Err(dwow_core::Error::Custom(
                     "Double-spend: nullifier already in mempool".to_string()
                 ));
+            }
+        }
+
+        // On-chain nullifier check (mempool.md §2):
+        // "Admission SHALL consult the confirmed nullifier set, not only the in-pool set."
+        if let Some(ref cs) = self.chain_state {
+            for n in &tx_nullifiers {
+                if cs.has_nullifier(n) {
+                    return Err(dwow_core::Error::Custom(format!(
+                        "Double-spend: nullifier already confirmed on-chain"
+                    )));
+                }
             }
         }
 
@@ -507,13 +527,15 @@ fn extract_nullifiers(tx: &Transaction) -> Vec<Nullifier> {
 pub type MempoolPtr = Arc<Mempool>;
 
 /// Create a new Mempool with default config and no persistence.
-pub fn create_mempool(fee_extractor: Box<dyn FeeExtractor>) -> MempoolPtr {
-    Arc::new(Mempool::new(MempoolConfig::default(), None, fee_extractor))
+pub fn create_mempool(fee_extractor: Box<dyn FeeExtractor>,
+                      chain_state: Option<Arc<dwow_chain::CChainState>>) -> MempoolPtr {
+    Arc::new(Mempool::new(MempoolConfig::default(), None, fee_extractor, chain_state))
 }
 
 /// Create a new Mempool with sled persistence.
-pub fn create_mempool_persistent(tree: sled::Tree, fee_extractor: Box<dyn FeeExtractor>) -> MempoolPtr {
-    Arc::new(Mempool::new(MempoolConfig::default(), Some(tree), fee_extractor))
+pub fn create_mempool_persistent(tree: sled::Tree, fee_extractor: Box<dyn FeeExtractor>,
+                                 chain_state: Option<Arc<dwow_chain::CChainState>>) -> MempoolPtr {
+    Arc::new(Mempool::new(MempoolConfig::default(), Some(tree), fee_extractor, chain_state))
 }
 
 #[cfg(test)]
@@ -580,7 +602,7 @@ mod tests {
     #[test]
     fn test_add_and_select() {
         smol::block_on(async {
-            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeExtractor));
+            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeExtractor), None);
             let tx1 = make_tx(vec![make_call(vec![0x01])], Some(50_000_000));
             let tx2 = make_tx(vec![make_call(vec![0x02])], Some(100_000_000));
 
@@ -607,7 +629,7 @@ mod tests {
     #[test]
     fn test_fee_too_low_rejected() {
         smol::block_on(async {
-            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeExtractor));
+            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeExtractor), None);
             let tx = make_tx(vec![make_call(vec![0x01])], Some(1_000_000)); // below 42M min
             let result = mempool.add(tx).await;
             assert!(result.is_err());
@@ -618,7 +640,7 @@ mod tests {
     #[test]
     fn test_duplicate_rejected() {
         smol::block_on(async {
-            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeExtractor));
+            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeExtractor), None);
             let tx = make_tx(vec![make_call(vec![0x01])], Some(50_000_000));
             mempool.add(tx.clone()).await.unwrap();
             let result = mempool.add(tx).await;
@@ -630,7 +652,7 @@ mod tests {
     #[test]
     fn test_gas_limit_respected() {
         smol::block_on(async {
-            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeExtractor));
+            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeExtractor), None);
             // Each call = 400M gas. 1 payload call + FeeV1 = 2 calls = 800M per tx.
             // Gas limit = 800M — should only fit one tx.
             let tx1 = make_tx(
@@ -664,7 +686,7 @@ mod tests {
 
             // Reload
             let tree2 = db.open_tree("mempool").unwrap();
-            let mempool2 = Mempool::load(tree2, Box::new(TestFeeExtractor)).unwrap();
+            let mempool2 = Mempool::load(tree2, Box::new(TestFeeExtractor), None).unwrap();
             assert_eq!(mempool2.len().await, 1);
             assert!(mempool2.contains(&hash).await);
         });

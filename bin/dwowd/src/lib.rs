@@ -725,7 +725,10 @@ impl Dwowd {
 
         // Create mempool early — needed by both the P2P handler (for cleanup)
         // and the miner RPC (for transaction submission).
-        let mempool = Some(create_mempool(Box::new(NativeTokenFeeExtractor)));
+        let mempool = Some(create_mempool(
+            Box::new(NativeTokenFeeExtractor),
+            Some(chain_state.clone()),
+        ));
 
         // Initialize P2P network.
         // - chain_state → single source of truth for both sync and broadcast handlers
