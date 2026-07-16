@@ -35,8 +35,20 @@ phase_build() {
     fi
 
     # Pre-flight: verify BUILD_COMMIT exists on origin/linear-master.
-    if ! git ls-remote --heads origin linear-master 2>/dev/null | grep -q "$BUILD_COMMIT"; then
-        error "BUILD_COMMIT ${BUILD_COMMIT} not found on origin/linear-master"
+    # Retry: Codeberg propagation can take a few seconds after push.
+    local commit_verified=false
+    for i in 1 2 3; do
+        if git ls-remote --heads origin linear-master 2>/dev/null | grep -q "$BUILD_COMMIT"; then
+            commit_verified=true
+            break
+        fi
+        if [ "$i" -lt 3 ]; then
+            warn "BUILD_COMMIT ${BUILD_COMMIT:0:10}... not found on origin (attempt $i/3) — retrying in 5s"
+            sleep 5
+        fi
+    done
+    if [ "$commit_verified" != true ]; then
+        error "BUILD_COMMIT ${BUILD_COMMIT} not found on origin/linear-master after 3 attempts"
         error "The pipeline clones from origin/linear-master and tests code on that branch."
         error "Your commit may be on a different branch, or hasn't been pushed."
         error ""

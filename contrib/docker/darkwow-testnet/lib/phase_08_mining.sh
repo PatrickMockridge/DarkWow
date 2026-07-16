@@ -36,7 +36,8 @@ phase_mining_activity() {
             MONERO_INFO=$(docker exec dwow-monerod curl -s --max-time 2 http://127.0.0.1:28081/json_rpc \
                 -H 'Content-Type: application/json' \
                 -d '{"jsonrpc":"2.0","method":"get_info","id":1}' 2>/dev/null || true)
-            MONERO_HEIGHT=$(echo "$MONERO_INFO" | grep -o '"height":[0-9]*' | head -1 | grep -o '[0-9]*') || true
+            # Use jq for structured parsing — avoids false positives from error JSON
+            MONERO_HEIGHT=$(echo "$MONERO_INFO" | jq -r '.result.height // 0' 2>/dev/null) || true
             if [ -n "$MONERO_HEIGHT" ] && [ "$MONERO_HEIGHT" -gt 0 ]; then
                 info "monerod height=$MONERO_HEIGHT (attempt $i)"
                 break
@@ -83,29 +84,42 @@ phase_mining_activity() {
         if [ "$P2POOL_READY" = true ]; then
             pass "p2pool merge mining sidecars active"
         else
-            warn "p2pool sidecars not detected in node logs — log format may differ, or sidecars may not have started"
+            fail "p2pool sidecars not detected — merge mining cannot work without p2pool"
         fi
 
         info "Checking xmrig activity in node containers..."
-        NODE0_XMRIG=$(docker logs "$NODE0" 2>&1 || true)
-        if echo "$NODE0_XMRIG" | grep -qi "xmrig sidecar started\|Merge mining.*xmrig"; then
-            pass "xmrig sidecar active in node0"
+        XMRIG_READY=false
+        for i in $(seq 1 30); do
+            NODE0_XMRIG=$(docker logs "$NODE0" 2>&1 || true)
+            NODE1_XMRIG=$(docker logs dwow-node1 2>&1 || true)
+            N0_OK=$(echo "$NODE0_XMRIG" | grep -qi "xmrig sidecar started\|Merge mining.*xmrig" && echo 1 || echo 0)
+            N1_OK=$(echo "$NODE1_XMRIG" | grep -qi "xmrig sidecar started\|Merge mining.*xmrig" && echo 1 || echo 0)
+            if [ "$N0_OK" = "1" ] && [ "$N1_OK" = "1" ]; then
+                XMRIG_READY=true
+                break
+            fi
+            sleep 3
+        done
+        if [ "$XMRIG_READY" = true ]; then
+            pass "xmrig sidecars active in node0 and node1"
         else
-            info "node0 logs don't show xmrig sidecar startup yet (diagnostic)"
-        fi
-        NODE1_XMRIG=$(docker logs dwow-node1 2>&1 || true)
-        if echo "$NODE1_XMRIG" | grep -qi "xmrig sidecar started\|Merge mining.*xmrig"; then
-            pass "xmrig sidecar active in node1"
-        else
-            info "node1 logs don't show xmrig sidecar startup yet (diagnostic)"
+            fail "xmrig sidecars not detected — merge mining cannot work without xmrig"
         fi
 
         info "Checking mm_rpc aux block polling..."
-        NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
-        if echo "$NODE0_LOGS" | grep -qi "merge_mining_get_aux_block\|get_aux_block"; then
+        AUX_POLLING=false
+        for i in $(seq 1 30); do
+            NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
+            if echo "$NODE0_LOGS" | grep -qi "merge_mining_get_aux_block\|get_aux_block"; then
+                AUX_POLLING=true
+                break
+            fi
+            sleep 3
+        done
+        if [ "$AUX_POLLING" = true ]; then
             pass "p2pool polling mm_get_aux_block on node0"
         else
-            info "no mm_get_aux_block calls detected yet (p2pool may still be starting)"
+            fail "no mm_get_aux_block calls detected — p2pool is not polling for merge mining work"
         fi
 
         info "Checking xmrig stratum connections..."

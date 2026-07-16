@@ -70,7 +70,11 @@ phase_blocks() {
     if [ "${b2_height:-0}" -ge 2 ]; then
         pass "node0 height=$b2_height — block production confirmed"
     else
-        warn "node0 still at height=${b2_height:-?} after 30s — mining may be slow"
+        if [ "$MODE" = "merge" ]; then
+            fail "node0 still at height=${b2_height:-?} after 30s — merge mining should produce blocks quickly"
+        else
+            warn "node0 still at height=${b2_height:-?} after 30s — mining may be slow"
+        fi
     fi
 
     # ── Other nodes: alive check, observational only ───────────────
