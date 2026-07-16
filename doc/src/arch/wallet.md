@@ -8,6 +8,76 @@ compose into capability types. This document defines how the wallet, as a
 **capability type construction engine**, discovers primitives at scan time,
 composes them into capability types, and presents the user with actions.
 
+## Current Implementation Status
+
+The shipping wallet (`bin/dww`) implements a subset of the full ρ-calculus
+architecture described in §§0-9 below. This section documents what works today.
+
+### What Works [IMPLEMENTED]
+
+- **Path 1 (Native Token):** Full scan + write for DRKW. Coinbase discovery,
+  transfers, burns, fee payments — all with real ZK proofs. `scan.rs:343-508`,
+  `lib.rs:797-1001`.
+- **Path 2 Read (Manifest Discovery):** The scan path resolves manifests, applies
+  coverage gates, and constructs typed CapRecords for all contracts. `scan.rs:588-713`.
+- **AccountManager:** Declared identity, BIP39/BIP32, key derivation, key coordinates.
+  `crates/dwow-accounts/src/lib.rs`.
+- **wallet_construct:** The composition function exists in Rust
+  (`src/sdk/src/capability.rs:462-488`) and is proven sound in Lean4
+  (`proofs/lean/src/DarkFi/Capability/Wallet.lean`). Used during scan.
+- **Manifest pipeline:** Author → deploy → scan → store → resolve → query.
+  Full lifecycle implemented per `manifest.md`.
+- **Database schema:** held_capabilities, capability_proofs, scanned_blocks,
+  merkle_trees, key_lifecycle, contract_metadata, zkas_binaries — all implemented.
+- **Trust tiers:** Genesis / SelfDeployed / Attested / Unverified — implemented
+  in `capability.rs` with CLI display.
+- **CLI:** initialize, balance, address, scan, sync, contract show, contract deploy,
+  contract lock, capabilities, tree, position, diagnostic, broadcast.
+- **Full node:** P2P sync via GetTip/GetBlocks (same protocol as mining nodes),
+  local SQLite DB. Zero RPC dependency for scan operations.
+
+### What Is Partial [PARTIAL]
+
+- **Generic contract invocation (non-ZK):** Works via `ManifestContractClient`
+  (`src/sdk/src/contract_client.rs:221-278`). Returns empty call data for
+  non-proof functions.
+- **Generic contract invocation (ZK):** Errors out — `"requires ZK proof but no
+  builder registered"` (`contract_client.rs:268-273`). The generic prover
+  architecture exists at `src/sdk/src/prover.rs` but concrete proof
+  construction is not yet wired (Phase 6).
+- **Non-DRKW transfers:** Stubbed with explicit error: `"Non-DRKW token transfers
+  are not yet wired through the generic manifest path (Phase 6 pending)"`
+  (`dispatch.rs:488-493`).
+
+### What Is Spec-Only [VISION]
+
+- **Generic prover (§6.4.1):** Architecture defined at `src/sdk/src/prover.rs`;
+  concrete ZK proof building (`ZkBinary::decode`, `ProvingKey::build`,
+  `Proof::create`) not implemented in the wallet binary.
+- **Provisional state (§6.5):** Capability spend-state lifecycle
+  (Unspent/Reserved/Spent) not implemented; a simpler immediate-revoke model
+  (`mark_tx_exercise`) is used instead.
+- **Write-path barb-cover selection (§6.2):** `wallet_construct` is not yet
+  used for capability selection on the write path.
+- **Seed discipline (§6.1):** `OsRng` is used directly in dispatch; explicit
+  `Seed` plumbing through the pure construction function is not complete.
+- **Write-path Lean4 obligations (§7.8):** `construct_sound`, `construct_deterministic`,
+  `nullifier_completeness` are stated but not yet proved.
+
+### What the Shipping Wallet Can Do
+
+- Initialize a wallet with BIP39 seed phrase
+- Sync chain state via P2P (GetTip/GetBlocks — same protocol as mining nodes)
+- Scan blocks for DRKW — coinbase rewards, transfers, fees, burns
+- Show balance, held capabilities, and merkle tree state
+- Send DRKW transfers with full ZK burn/mint proofs
+- Deploy WASM contracts via Deployooor
+- Inspect any contract's on-chain manifest (`contract show`)
+- Invoke non-ZK contract functions generically via manifest resolution
+- All operations are local — the wallet is a full node, no RPC dependency
+
+---
+
 ## 0. Foundation: The Wallet as a Type Construction Engine
 
 The wallet does not hardcode capability types. It constructs them at scan time

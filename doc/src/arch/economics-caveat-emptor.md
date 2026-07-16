@@ -325,31 +325,32 @@ redemption never happens on-chain for most token types.
 
 ### 7. The Maturity Arbitrage
 
-**Actor:** Malicious holder bypassing wallet-level checks.
+**Actor:** Malicious holder attempting early unstaking.
 
-**Mechanism:** The wallet's capability resolver derives `CAP_UNSTAKE_RIGHT` only
-when a stake coin is at or past its `maturity_block`. But the `unstake_v1`
-entrypoint **never checks maturity**. It only verifies: (1) the coin exists in
-the coins tree, (2) the nullifier is unspent. If a holder constructs the
-UnstakeV1 call manually (bypassing the wallet's capability resolution), the
-contract processes it regardless of maturity. The `maturity_block` field on
-`BondCoin` is plaintext metadata — it exists in the coin struct but is never
-read by the entrypoint during unstaking.
+**Mechanism (historical):** A prior version of the `unstake_v1` entrypoint did not
+check the `maturity_block` field on `BondCoin`, relying solely on wallet-level
+capability resolution to prevent early unstaking. A holder could theoretically
+construct the UnstakeV1 call manually, bypassing wallet checks.
 
-**Detection:** Compare unstake block height with the coin's stored
-`maturity_block`. Off-chain watchers can flag early unstakes. On-chain, nothing
-prevents it.
+**Current status (July 2026):** The `unstake_v1` entrypoint at
+`src/contract/bearer_bond/src/entrypoint/mod.rs:878` now enforces maturity
+on-chain:
+```rust
+if params.current_block < stake_coin.maturity_block {
+    return Err(BearerBondError::StakeNotMatured { ... }.into());
+}
+```
+Maturity is enforced at the entrypoint level — not just the wallet.
 
-**Impact:** Issuers relying on maturity locks for capital planning have no
-on-chain enforcement. An attacker can drain a pool before the locked period ends,
-disrupting the issuer's capital timeline.
+**Impact:** Resolved. On-chain maturity enforcement prevents early unstaking
+regardless of how the transaction is constructed (wallet or manual).
 
 **Mitigations:**
 
-| Existing | Needed |
+| Existing | Status |
 |----------|--------|
-| Wallet-level capability check (CAP_UNSTAKE_RIGHT derivation) | Add block height check to `unstake_v1`: `require(current_height >= coin.maturity_block)` |
-| Coin struct has `maturity_block` field | This is a straightforward entrypoint fix — the data exists, it just needs to be checked |
+| Wallet-level capability check (CAP_UNSTAKE_RIGHT derivation) | Defense in depth |
+| Entrypoint-level `current_block >= maturity_block` check | ✅ IMPLEMENTED (July 2026) |
 
 ### 8. The Double-Count Collateral
 
@@ -493,7 +494,7 @@ They depend entirely on issuer honesty:
 | Coverage is current | No report freshness requirement. A report filed at block 1000 is treated as valid at block 50000. |
 | Anyone will redeem your notes | RedeemV1 exists but is unused by most token types. Redemption is purely voluntary. |
 | Stake coins will pay yield or hold principal | Profits can be zero. Coverage can be fraudulent. |
-| Maturity locks prevent early unstaking | `unstake_v1` entrypoint never checks `maturity_block`. Wallet-level check only. |
+| Maturity locks prevent early unstaking | Enforced on-chain at entrypoint level (`entrypoint/mod.rs:878`) | N/A (protocol-enforced) |
 | Supply doesn't explode | No supply cap at MintV1. `mint_secret` compromise = unlimited minting. |
 
 ### Summary Table

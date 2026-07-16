@@ -1,5 +1,11 @@
 # DarkWow
 
+> **This document describes the active `linear-master` branch**, which uses
+> Uncle Merkle consensus with RandomX Proof-of-Work. The legacy overlay-DAG
+> architecture was fully replaced — `src/validator/` has been removed. See
+> [What's Different from Upstream](about/differences_from_upstream.md) for
+> the fork rationale and architectural divergence.
+>
 > **Genesis contracts are sound and proven.** Post-genesis contracts are
 > experimental and unaudited. Use at your own risk.
 
@@ -27,13 +33,57 @@ proofs by default.
 - **One page to read:** The [Formal Specification](arch/formal-specification.md)
   covers the entire system.
 
+## What Ships vs. What's Planned
+
+### [SHIPPING] — Code exists, tests pass
+
+| Component | Status | Location |
+|-----------|--------|----------|
+| Uncle Merkle consensus (RandomX PoW) | [IMPLEMENTED] | `src/linear/` |
+| Exponential reward schedule | [IMPLEMENTED] | `src/sdk/src/blockchain.rs` |
+| Pedersen uncle coinbase split | [IMPLEMENTED] | `src/linear/src/chain_state.rs` |
+| Caribina (Arweave) anchoring finality | [IMPLEMENTED] | `src/linear/src/caribina/` |
+| Monero merge-mining + anchoring | [IMPLEMENTED] | `src/linear/src/monero/` |
+| nullifier_root block header verification | [IMPLEMENTED] | `src/linear/src/chain_state.rs` |
+| Supply audit (Pedersen mass balance) | [IMPLEMENTED] | `src/linear/src/proof_of_token_balance.rs` |
+| 9 genesis contracts | [IMPLEMENTED] | `src/contract/<name>/` |
+| 32 deployable contracts (code + manifests) | [IMPLEMENTED] | `src/contract/<name>/` |
+| 32 zkVM opcodes | [IMPLEMENTED] | `src/zkas/opcode.rs` |
+| dwowd daemon (mining, P2P, RPC) | [IMPLEMENTED] | `bin/dwowd/` |
+| dwow_wallet — DRKW scan + transfer | [IMPLEMENTED] | `bin/dww/` |
+| dwow_wallet — manifest discovery (read) | [IMPLEMENTED] | `bin/dww/src/scan.rs` |
+| wallet_construct (Rust + Lean4) | [IMPLEMENTED] | `src/sdk/src/capability.rs` |
+| AccountManager (declared identity) | [IMPLEMENTED] | `crates/dwow-accounts/` |
+| 5-level test pipeline | [IMPLEMENTED] | `contrib/docker/` |
+| Mempool with on-chain nullifier check | [IMPLEMENTED] | `crates/dwow-mempool/` |
+| Universal relayer | [IMPLEMENTED] | `bin/universal_relayer/` |
+
+### [PARTIAL] — Core works, limitations listed
+
+| Component | Status | Limitation |
+|-----------|--------|-----------|
+| Wallet generic contract invocation (non-ZK) | [PARTIAL] | Works via ManifestContractClient |
+| Wallet generic contract invocation (ZK) | [PARTIAL] | Generic prover architecture exists, concrete proof construction not wired (Phase 6) |
+| Non-DRKW token transfers | [PARTIAL] | Stubbed — "Phase 6 pending" |
+| P2P three-tier feature gate | [PARTIAL] | net-wallet ⊂ net-node ⊂ net-full |
+
+### [VISION] — Long-term design direction
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Generic prover (write path) | [VISION] | Architecture at `src/sdk/src/prover.rs`; no concrete impl |
+| ρ-calculus wallet composition (full) | [VISION] | Provisional state, Seed discipline, barb-cover write-path selection pending |
+| Sharding via uncle merkle topology | [VISION] | Design exploration; see [scaling.md](arch/consensus/scaling.md) |
+| Parallel contract execution | [VISION] | Gated on wasmer thread safety |
+| Quantum-resistant migration | [VISION] | Research prototype at `script/research/pqxdh/` |
+
 ## Canonical References
 
 - [Genesis Configuration](arch/genesis.md) — 9 genesis contracts, ContractId derivation, bootstrap sequence
 - [Smart Contracts](contracts.md) — full catalog (32 contracts), maturity status, per-contract docs
-- [Consensus & Coinbase](arch/consensus-coinbase.md) — supply model, reward schedule, emission curve
+- [Consensus & Coinbase](arch/consensus-coinbase.md) — exponential supply model, reward schedule, emission curve
 - [Wallet Architecture](arch/wallet.md) — manifest-first capability engine, Box/Purse/MultiSig primitives
-- [Opcodes & Formal Verification](arch/zk/opcodes.md) — all 39 opcodes, Lean4-verified additions
+- [Opcodes & Formal Verification](arch/zk/opcodes.md) — all 32 opcodes, Lean4-verified additions
 - [Security Analysis](arch/security-analysis.md) — known issues, ZK circuit troubleshooting
 
 DarkWow began as a fork of DarkFi. See [Architecture Divergence](about/differences_from_upstream.md)

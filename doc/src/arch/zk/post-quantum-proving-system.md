@@ -9,7 +9,7 @@ The proving system is the computational realization of the `↓prove` and
 [Type System §0-§2](../type-system.md)). Under the Authorization Inversion
 Theorem (§6): `CapabilityType(r, s) = L_{r,s}` where `L_{r,s}` is the ZK
 proof language. The replacement SHALL support the same predicate language
-expressiveness as Halo2 — the 39 zkVM opcodes SHALL have equivalent gadgets.
+expressiveness as Halo2 — the 32 zkVM opcodes SHALL have equivalent gadgets.
 
 **RFC 2119**: SHALL, MUST, SHALL NOT, MUST NOT are used throughout.
 
@@ -21,7 +21,7 @@ requirement a replacement proving system SHALL satisfy.
 | # | Halo2 Property | Requirement | Must Match |
 |---|---|---|---|
 | FR-1 | Transparent setup | SHALL be transparent — no trusted ceremony, no toxic waste, no MPC. `Params::new(k)` equivalent SHALL be deterministic from public randomness. | `src/zk/proof.rs:44` |
-| FR-2 | Pallas field arithmetic | SHALL support arithmetic in a prime field ≥ 255 bits with a large 2-adic subgroup for FFT (≥ 2^20). | All 39 opcodes in `src/zk/vm.rs` |
+| FR-2 | Pallas field arithmetic | SHALL support arithmetic in a prime field ≥ 255 bits with a large 2-adic subgroup for FFT (≥ 2^20). | All 32 opcodes in `src/zk/vm.rs` |
 | FR-3 | Vesta commitment scheme | The commitment scheme SHALL be binding and hiding. SHALL support additive homomorphism for value conservation proofs. | `src/zk/proof.rs` — `VerifyingKey`, `Proof::verify()` |
 | FR-4 | PLONK arithmetization | SHALL support custom gates with degree ≥ 5 (Poseidon S-box x^5). SHALL support copy constraints (permutation argument). SHALL support lookup arguments for range checks. | `configure_with_params()` in `vm.rs:444-605` |
 | FR-5 | Poseidon hash | SHALL provide a circuit-friendly sponge hash with S-box exponent 5 over the field from FR-2. For PQ: SHALL support double-width (P256Pow5T3 for 128-bit PQ security). | `src/zk/vm.rs:501-507` |
@@ -80,7 +80,7 @@ columns (Fixed, Instance, Lookup). The replacement SHALL support:
 
 | Primitive | Current (Halo2) | Requirement | Notes |
 |---|---|---|---|
-| Field | Pallas::Base (255-bit) | ≥ 255-bit prime with 2-adic FFT subgroup | All 39 opcodes affected |
+| Field | Pallas::Base (255-bit) | ≥ 255-bit prime with 2-adic FFT subgroup | All 32 opcodes affected |
 | Hash (commitments) | Poseidon P128Pow5T3 | Poseidon or equivalent sponge. P256Pow5T3 for PQ | S-box exponent 5 |
 | Hash (Merkle) | Sinsemilla (Orchard) | Poseidon-based acceptable (SparseMerkleRoot exists) | FR-6 migration path |
 | Commitments | Pedersen (ECC) | Hash-based (Poseidon) for STARKs | FR-7: zero-knowledge property |
@@ -186,5 +186,5 @@ hierarchy.
 - [Quantum Threat Model](../quantum-threat.md) — threat specification, triggers, circuit inventory
 - [Type System Specification](../type-system.md) — ρ-calculus formalism
 - [ZK Verification Architecture](zk_verification.md) — current Halo2 verification flow
-- [zkVM Primitives](zkvm_primitives.md) — all 39 opcodes
+- [zkVM Primitives](zkvm_primitives.md) — all 32 opcodes
 - [NIST PQC Standards](https://csrc.nist.gov/projects/post-quantum-cryptography)

@@ -137,95 +137,14 @@ After each successful verify, the contract MUST mark `subscription_spent_nullifi
 
 **Impact** (resolved): Bulla unpredictable via MPC security. Malicious DAO cannot predict/track members. Privacy preserved against colluding MPC parties.
 
-### Atomic Swap Contract
+### Atomic Swap Contract — DEPRECATED
 
-#### Issue 5: State Update No-Ops (CRITICAL) — FIXED
-
-**Location**: [atomic_swap/src/entrypoint/mod.rs](file://../../src/contract/atomic_swap/src/entrypoint/mod.rs)
-
-**Problem (Original)**: The `claim`, `refund`, and `cancel` functions had state transition logic that was entirely stubbed out. The state machine could be bypassed entirely.
-
-**Fix Applied**: The `process_instruction` and `process_update` functions now properly:
-1. Load and verify swap state
-2. Check nullifiers haven't been used (prevent double-spend)
-3. Mark swaps as Claimed/Refunded
-4. Record nullifiers to prevent replay
-
-```rust
-// Now properly updates state:
-swap.state = SwapState::Claimed;
-wasm::db::db_set(swaps_db, &serialize(&update.swap_id), &swap.encode())?;
-let nullifiers_db = wasm::db::db_lookup(cid, ATOMIC_SWAP_CONTRACT_NULLIFIERS_TREE)?;
-wasm::db::db_set(nullifiers_db, &serialize(&update.nullifier), &[])?;
-```
-
-**Impact** (resolved):
-- Swaps can no longer be claimed multiple times
-- Nullifier tracking prevents double-spend
-- State transitions are enforced
-
----
-
-#### Issue 5b: ZK Proof Verification Not Integrated (CRITICAL) — ARCHITECTURAL LIMITATION
-
-**Location**: [atomic_swap/src/entrypoint/mod.rs:131-201](file://../../src/contract/atomic_swap/src/entrypoint/mod.rs#L131-L201)
-
-**Problem**: `wasm::zk::verify_zk_proof()` is not implemented in the SDK. ZK verification is provided by the DarkWow validator runtime, not the WASM SDK.
-
-**Workaround** (secure): Manual hash verification — `poseidon_hash(secret) == swap.hash` — proves secret knowledge with equivalent security to the ZK circuit. Secret revelation is inherent to HTLC design (counterparty needs secret to complete the swap), so this is not a privacy regression. Each swap uses a fresh secret and new nullifiers — no cross-swap correlation. The `claim_v1.zk` circuit exists and correctly constrains the hash; verification just isn't wired in.
-
----
-
-#### Issue 5c: Timelock Witness Never Enforced (MAJOR) — INTENTIONAL BY DESIGN
-
-**Location**: [atomic_swap/proof/claim_v1.zk](file://../../src/contract/atomic_swap/proof/claim_v1.zk)
-
-**Problem**: The `timelock` is passed as a witness but never checked in the circuit. The value has no effect on claim eligibility.
-
-**Analysis**: This is **intentional by design** — asymmetric timelocks are superior to symmetric ones for cross-chain atomic swaps. Alice has refund protection via Ethereum timelock, Bob has immediate claim on DarkWow. See Issue #6 below for full analysis.
-
-**Status**: INTENTIONAL — not a bug, a feature.
-
----
-
-#### Issue 5d: Hash Not Verified In-Circuit (CRITICAL) — PARTIALLY FIXED
-
-**Location**: claim_v1.zk, create_swap_v1.zk
-
-**Problem (Original)**: The circuit did NOT verify `hash == SHA256(secret)`. It only stored the hash as a witness.
-
-**Fix Applied**: Both CreateSwap and Claim circuits now verify `poseidon_hash(secret)` matches the stored hash. The hash is no longer a free variable.
-
-**Remaining Issue**: For cross-chain swaps with Ethereum (SHA256), the poseidon_hash on DarkWow is not cryptographically bound to the external chain's SHA256 hash. A bridge or oracle is needed to verify the cross-chain binding.
-
-**Impact** (mitigated): The poseidon_hash verification prevents arbitrary (hash, secret) pairs from being used. The claimer must have created the swap via CreateSwap, establishing the swap_id binding.
-
-**Recommendation**: External chain integration requires a commit-reveal or bridge scheme where an oracle verifies SHA256(hash) on Ethereum and creates a corresponding DarkWow swap.
-
----
-
-#### Issue 6: No Timelock Check on Claim — INTENTIONAL BY DESIGN
-
-**Location**: [claim_v1.zk](file://../../src/contract/atomic_swap/proof/claim_v1.zk)
-
-**Analysis**: The claim circuit has no timelock verification. This is intentional and correct — DarkWow uses asymmetric timelocks by design. Alice (initiator) has refund protection via Ethereum's timelock. Bob (responder) has immediate claim on DarkWow. Adding a timelock on claim would create a griefing vector where Alice blocks Bob's claim.
-
-| Design | Claim Protection | Refund Protection | Problem |
-|--------|-------------------|-------------------|---------|
-| Symmetric timelock | Must wait | Must wait | Griefing — either party can block |
-| Asymmetric (DarkWow) | Immediate | Via other chain | **Correct** |
-
-Atomicity comes from hash binding, not timelocks: Alice reveals secret → Bob claims → both execute atomically. If Alice doesn't reveal, both refund eventually via timelocks on the other chain.
-
----
-
-#### Issue 7: External Hash Function Trust (MAJOR) — MITIGATED BY DESIGN
-
-**Location**: [claim_v1.zk](file://../../src/contract/atomic_swap/proof/claim_v1.zk)
-
-**Problem**: DarkWow uses poseidon_hash; Ethereum uses SHA256. Neither can verify the other chain's hash.
-
-**Analysis**: Not a vulnerability — each chain only needs to verify its own hash. Alice creates a DarkWow swap with `H' = poseidon_hash(secret)` and an Ethereum HTLC with `H = SHA256(secret)`. She reveals on Ethereum to claim, Bob sees the secret and claims on DarkWow. No cross-chain hash verification needed. For non-cooperative cases, timelock refunds protect both parties.
+> **The Atomic Swap contract was a design exploration that was never created as a
+> deployable contract crate.** `src/contract/atomic_swap/` does not exist.
+> Cross-chain swap functionality is provided by the [Bridge](../contract/bridge.md)
+> and [OTC Swap](../contract/otc_swap.md) contracts, which are implemented and
+> tested. The audit issues below (formerly Issues 5-7) are retained for design
+> reference only — they describe a design, not an implemented contract.
 
 ---
 
@@ -514,20 +433,15 @@ For the full formal verification (gate constraints, delta-invert analysis, Lean4
 | 2 | Subscription | Permission bitmask checking absent | MAJOR | ✅ FIXED (Tiered approach - tiered access with less_than_strict, privacy limitation) |
 | 3 | Subscription | No cancellation nullifier verification | MODERATE | ⚠️ PROVISIONAL FIX (single-use, privacy leak) |
 | 4 | Subscription | Bulla used as blind factor | MODERATE | ✅ FIXED (MPC commit-reveal for bulla) |
-| 5 | Atomic Swap | State update no-ops | CRITICAL | ❌ UNFIXED |
-| 5b | Atomic Swap | ZK proof verification stubbed (returns empty) | CRITICAL | ❌ UNFIXED |
-| 5c | Atomic Swap | Hash not verified in-circuit | CRITICAL | ⚠️ PARTIALLY FIXED (poseidon verified, SHA256 bridge needed) |
-| 6 | Atomic Swap | No timelock check on claim | MAJOR | ✅ INTENTIONAL (feature not bug - asymmetric timelock) |
-| 7 | Atomic Swap | External hash function trust | MAJOR | ✅ MITIGATED (each chain verifies own hash) |
-| 8 | Escrow | No state verification on claim | MAJOR | ⚠️ Entrypoint written, state check in contract |
-| 9 | Escrow | Seller public key in plaintext | MODERATE | ✅ FIXED (H(seller_pub) in commitment, circuit verifies hash) |
-| 10 | DAO-Escrow | No endowment drain protection | MAJOR | ✅ FIXED: drain_protection with 8 best practices |
-| 11 | DAO-Escrow | Membership expiry as witness, no max cap | MODERATE | ✅ FIXED (max 1-year cap added) |
-| 12 | Bridge | Weak range check (only < 2^64) | MODERATE | ✅ FIXED (min amount floor: 100_000_000) |
-| 16 | DEX | Public keys hardcoded to zero | CRITICAL | ⚠️ ARCHITECTURAL LIMITATION (documented) |
-| 17 | DEX | lock_proof never verified | CRITICAL | ⚠️ PARTIALLY FIXED (basic validation added) |
-| 18 | DEX | ZK proof verification stubbed | CRITICAL | ⚠️ ARCHITECTURAL LIMITATION (documented) |
-| 19 | Multiple | Missing public key constraint binding | MAJOR | ✅ FULLY FIXED (25+ circuits fixed, pre-commit hook added, zkas builtin proposed) |
+| 5 | Escrow | No state verification on claim | MAJOR | ⚠️ Entrypoint written, state check in contract |
+| 6 | Escrow | Seller public key in plaintext | MODERATE | ✅ FIXED (H(seller_pub) in commitment, circuit verifies hash) |
+| 7 | DAO-Escrow | No endowment drain protection | MAJOR | ✅ FIXED: drain_protection with 8 best practices |
+| 8 | DAO-Escrow | Membership expiry as witness, no max cap | MODERATE | ✅ FIXED (max 1-year cap added) |
+| 9 | Bridge | Weak range check (only < 2^64) | MODERATE | ✅ FIXED (min amount floor: 100_000_000) |
+| 10 | DEX | Public keys hardcoded to zero | CRITICAL | ⚠️ ARCHITECTURAL LIMITATION (documented) |
+| 11 | DEX | lock_proof never verified | CRITICAL | ⚠️ PARTIALLY FIXED (basic validation added) |
+| 12 | DEX | ZK proof verification stubbed | CRITICAL | ⚠️ ARCHITECTURAL LIMITATION (documented) |
+| 13 | Multiple | Missing public key constraint binding | MAJOR | ✅ FULLY FIXED (25+ circuits fixed, pre-commit hook added, zkas builtin proposed) |
 
 ---
 
@@ -539,9 +453,9 @@ Most issues are resolved. See the summary table above for per-issue status.
 
 **Outstanding for DrainProtection**: ZK circuit for vote authorization, vote weight calculation, integration tests.
 
-**Intentional design**: Issue 6 (no timelock on claim) — asymmetric timelocks are correct for cross-chain atomic swaps.
+**Deprecated — removed**: Atomic Swap (formerly Issues 5-7). The contract design was never implemented. Cross-chain swap functionality is provided by Bridge and OTC Swap.
 
-**Architectural limitations**: DEX (Issues 16–18) requires deeper DarkWow framework integration for ZK proof verification and signature checks.
+**Architectural limitations**: DEX (Issues 10-12) requires deeper DarkWow framework integration for ZK proof verification and signature checks.
 
 ---
 
@@ -588,7 +502,7 @@ Since the manual security audit, all 120 contract ZK circuits across 26 contract
 
 The formal verification suite runs at `cd proofs/lean && lean --run src/Main.lean` and covers:
 
-- **Layer 1**: All 39 zkVM opcodes proven sound (EC operations, hashes, field arithmetic, comparisons)
+- **Layer 1**: All 32 zkVM opcodes proven sound (EC operations, hashes, field arithmetic, comparisons)
 - **Layer 2**: All 120 contract circuits pass the Orchard-class instance-derivation audit
 - **Layer 3**: Cross-cutting theorems (Pedersen homomorphism, value conservation, nullifier determinism, signature binding, Merkle inclusion, zero-cond soundness)
 
@@ -600,7 +514,7 @@ as non-exploitable. See [Opcodes and Formal Verification](zk/opcodes.md) and
 ### Documentation
 
 - [safety.md](../dev/contracts/safety.md) — Lessons 16-20 document ZK vulnerability classes; includes formal verification results summary
-- [opcodes.md](zk/opcodes.md) — Full Lean 4 proof architecture and all 39 opcode verification results
+- [opcodes.md](zk/opcodes.md) — Full Lean 4 proof architecture and all 32 opcode verification results
 - [opcodes-status.md](zk/opcodes-status.md) — Complete verification status for all 120 circuits
 - [Full audit report](../../../contrib/model/security_audit_2026-06-05.md) — Detailed findings with code traces
 

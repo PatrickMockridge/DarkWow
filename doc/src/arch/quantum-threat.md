@@ -96,7 +96,7 @@ to Poseidon-based (SparseMerkleRoot opcode already exists).
 
 Blake2b at 512-bit output gives 256-bit PQ security — no migration needed.
 
-**For DarkWow specifically:** the zkVM's 39 opcodes, all 120 contract circuits,
+**For DarkWow specifically:** the zkVM's 32 opcodes, all 120 contract circuits,
 the Pedersen commitments, the Sinsemilla hashes, the Merkle inclusion proofs —
 all of them bottom out on ECDLP over Pallas. A CRQC does not find a clever bug.
 It breaks the mathematical lock the entire system hangs on.

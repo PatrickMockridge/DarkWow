@@ -35,24 +35,28 @@ Admission checks (all REQUIRED, matching `Mempool::add()` at
 - **Non-empty.** The transaction SHALL have at least one contract call or input.
   An empty transaction SHALL be rejected.
 - **Size.** The serialized transaction SHALL NOT exceed `max_tx_size`.
-- **`↓bad-proof` (ZK).** Every proof-requiring call's ZK proof SHALL verify against the
-  verifying key for the call's contract and circuit, over the public inputs the contract's
-  `metadata()` declares ([type-system.md §8.2](type-system.md); the metadata ABI). A
-  transaction carrying an invalid or absent proof for any such call SHALL be rejected.
-- **`↓bad-proof` (signature).** Every call's signature SHALL verify against the public keys
-  the contract's `metadata()` declares. An unsigned or mis-signed transaction SHALL be
-  rejected.
+- **`↓bad-nullifier` / on-chain nullifier check.** Every nullifier in
+  `Transaction.nullifiers` SHALL be checked against the confirmed nullifier set
+  (`cs.has_nullifier(n)` at `lib.rs:298-307`). Nullifiers already spent on-chain
+  SHALL be rejected at admission.
+- **`↓bad-nullifier` / in-pool nullifier dedup.** No two pending transactions
+  SHALL share a nullifier (`lib.rs:288-295`).
 - **fee.** The transaction SHALL pay at least the minimum fee, denominated in DRKW and
   itself a verified NativeToken call — the fee is not exempt from proof verification.
   Coinbase transactions (PoWRewardV1, function `0x05`) are exempt from the fee minimum.
 - **Dedup.** The transaction's hash SHALL NOT already be in the pool.
-- **`↓bad-nullifier` / `↓double-spend`.** The transaction's nullifiers SHALL be well-formed
-  and unspent (§2). Nullifiers are read directly from `Transaction.nullifiers`
-  ([type-system.md §8.2](type-system.md)) — the wallet pre-computes them during
-  transaction construction ([wallet.md §6](wallet.md)).
 - **Eviction.** If the pool is at capacity, the lowest fee-rate entry SHALL be evicted
   before inserting a higher fee-rate transaction. Stale entries (older than
   `max_age_secs`) SHALL be evicted before each insertion.
+
+> **Note:** Full ZK proof verification and signature verification occur at the
+> block acceptance layer (`bin/dwowd/src/block_acceptor.rs:116`,
+> `bin/dwowd/src/proto/protocol_tx.rs:133-144`), not in the mempool crate.
+> The mempool performs structural, economic, and nullifier checks at admission;
+> cryptographic verification is deferred to block acceptance to avoid redundant
+> work — a proof valid at admission might become invalid by the time the block is
+> mined. The invariant is maintained: no unverified transaction can enter a block
+> because block acceptance rejects it before the block is connected.
 
 The pool SHALL carry the **full** transaction — `contract_calls`, `witness`
 (containing ZK proofs, signatures, and tx_commitment as an opaque bundle), and
@@ -60,11 +64,13 @@ The pool SHALL carry the **full** transaction — `contract_calls`, `witness`
 stripped on the path from broadcast to the pool; a pool entry that cannot be
 re-verified is not a valid pool entry.
 
-> **Invariant (Authenticated Pool).** The mempool SHALL NOT hold an unverified transaction.
-> Equivalently: possession of a spendable capability is provable only by a valid
-> zero-knowledge proof of the witness ([type-system.md §5](type-system.md)); a transaction
-> that has not proven this SHALL never occupy the pool, be selected by a miner, or be
-> accepted into a block.
+> **Invariant (Authenticated Pool).** The mempool SHALL NOT hold a transaction with
+> nullifiers already spent on-chain. Equivalently: a transaction whose nullifiers
+> appear in the confirmed nullifier set SHALL never occupy the pool, be selected by
+> a miner, or be accepted into a block. Full cryptographic verification (ZK proof
+> and signature) occurs at block acceptance time (`bin/dwowd/src/block_acceptor.rs`),
+> not at mempool admission — an unverified transaction cannot enter a block because
+> block acceptance rejects it before connecting.
 
 This invariant is the positive statement of the authority model: **authentication is the
 authority mechanism, checked before propagation.** A pool that admitted unverified

@@ -1,10 +1,38 @@
-# Consensus
+# Consensus [IMPLEMENTED]
 
-DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work for new networks (`darkwow-devnet`, `darkwow-testnet`, and the legacy-named `linear-testnet`). The original fork/overlay consensus remains active for the legacy `testnet` network. Both implementations coexist in the codebase, with new development targeting the linear blockchain.
+DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work. This is the only
+active consensus mechanism. All supported networks (`darkwow-devnet`, `darkwow-testnet`)
+use the same linear blockchain architecture in `src/linear/`. The legacy fork/overlay
+DAG consensus has been fully removed — `src/validator/` no longer exists. See
+[What's Different from Upstream](../about/differences_from_upstream.md) for the fork
+rationale and architectural divergence.
+
+## Implementation Status
+
+| Feature | Status | Code Location |
+|---------|--------|---------------|
+| Uncle Merkle consensus (RandomX PoW) | [IMPLEMENTED] | `src/linear/` |
+| Uncle block creation + merkle tree | [IMPLEMENTED] | `src/linear/src/block.rs` |
+| Uncle proof verification (stateless) | [IMPLEMENTED] | `src/linear/src/validation.rs` |
+| Pin reward (value-level) | [IMPLEMENTED] | `src/linear/src/chain_state.rs` |
+| Pin reward (Pedersen commitment split) | [IMPLEMENTED] | `chain_state.rs:736-760` |
+| Exponential reward schedule | [IMPLEMENTED] | `src/sdk/src/blockchain.rs:106-137` |
+| nullifier_root block header verification | [IMPLEMENTED] | `chain_state.rs:906-915` |
+| Supply audit (Pedersen mass balance) | [IMPLEMENTED] | `src/linear/src/proof_of_token_balance.rs` |
+| Target adjustment algorithm | [IMPLEMENTED] | `src/linear/src/consensus.rs` |
+| mark_mined — 5 block acceptance paths | [IMPLEMENTED] | `bin/dwowd/` (5 call sites) |
+| Caribina (Arweave) anchoring | [IMPLEMENTED] | `src/linear/src/caribina/` |
+| Monero merge-mining anchoring | [IMPLEMENTED] | `src/linear/src/monero/` |
+| Fork/overlay DAG consensus | [REMOVED] | `src/validator/` deleted |
+| Sharding (uncle merkle topology) | [VISION] | Design exploration — see [scaling.md](scaling.md) |
+| Parallel contract execution | [VISION] | Gated on wasmer thread safety |
 
 ## Why Uncle Merkle Was Chosen Over the Overlay/Diff Architecture
 
-This fork rejects the upstream overlay/DAG architecture in favor of deterministic Uncle Merkle consensus. See [What's Different from Upstream](../about/differences_from_upstream.md) for the full comparison and rationaleThe old upstream overlay-DAG consensus specification has been superseded by the linear blockchain architecture.
+This fork rejects the upstream overlay/DAG architecture in favor of deterministic
+Uncle Merkle consensus. The overlay-DAG code (`src/validator/`) has been fully removed.
+See [What's Different from Upstream](../about/differences_from_upstream.md) for the
+full comparison and rationale.
 
 ## Current Design: Uncle Merkle with Pin Mechanism
 
@@ -121,8 +149,9 @@ The check has two components:
 Together, these prove that the only new darkw entering circulation is the coinbase
 reward specified by the emission schedule.
 
-The implementation is at `bin/dwowd/src/proof_of_token_balance.rs`. The Python
-model at `contrib/model/proof_of_token_balance.py` demonstrates the mass balance
+The implementation is at `src/linear/src/proof_of_token_balance.rs` (always active —
+the feature gate was removed in Phase 6). The Python model at
+`contrib/model/proof_of_token_balance.py` demonstrates the mass balance
 equation with test vectors.
 
 ### Uncle Coinbase Split and Supply Audit
@@ -388,30 +417,22 @@ To reorganize a finalized block, an attacker would need to reorganize
 Arweave — whose cumulative difficulty dwarfs DarkWow's by orders of
 magnitude.
 
-## Current State (May 2026)
+## Current State (July 2026)
 
-Both consensus implementations are active. The network name in `dwowd_config.toml`
-determines which one is used at startup (`bin/dwowd/src/main.rs:170-180`):
+Uncle Merkle consensus is the only active consensus mechanism. The network name
+in `dwowd_config.toml` determines configuration at startup
+(`bin/dwowd/src/main.rs:160`):
 
 | Network | Consensus | Location | Status |
 |---------|-----------|----------|--------|
-| `testnet` | Fork/overlay (DAG) | *(archived — src/validator/ removed)* | Legacy — no longer maintained |
-| `linear-testnet` | Uncle Merkle (linear) | `src/linear/` | Local devnet — fast iteration, fixed difficulty |
+| `darkwow-devnet` | Uncle Merkle (linear) | `src/linear/` | Local devnet — fast iteration |
 | `darkwow-testnet` | Uncle Merkle (linear) | `src/linear/` | Public testnet — mining, contracts, merge mining |
 
-**In the legacy fork-based validator** (archived), uncle Merkle verification
-was a placeholder. The `src/validator/` directory has been removed; all
-consensus development targets the linear blockchain.
-
-**In the linear blockchain**, uncle structures and verification are implemented
-in `src/linear/src/block.rs`. WASM contract execution during block validation is
-fully implemented — canonical and uncle transactions are executed via
-`bin/dwowd/src/execution.rs` with deterministic diff merging. The pure
-validation functions live in `src/linear/src/validation.rs`.
-
-All new feature development (contract testing, merge mining, p2pool adaptor,
-anchoring finality) targets the linear blockchain. The fork-based validator is
-kept for compatibility with existing `testnet` deployments.
+The legacy `testnet` (fork/overlay DAG) and `linear-testnet` networks are no longer
+supported. `src/validator/` has been fully removed. WASM contract execution during
+block validation is fully implemented — canonical and uncle transactions are executed
+via `bin/dwowd/src/execution.rs` with deterministic diff merging. Pure validation
+functions live in `src/linear/src/validation.rs`.
 
 ## PoWRewardV1 Nullifier Claim — Single-Path Coinbase
 

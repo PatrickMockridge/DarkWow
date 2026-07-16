@@ -8,6 +8,14 @@ DarkWow has **32 deployable contracts**: 9 deployed at genesis (counters 2–10)
 and 23 deployed post-genesis via Deployooor. There is also a `test-harness`
 crate that is a test utility, not a deployable contract.
 
+### Maturity Labels
+
+| Label | Meaning |
+|-------|---------|
+| `✅ Proven` | Genesis-deployed, consensus-tested, Lean4-verified circuits |
+| `⚠️ Experimental` | Post-genesis, code + circuits exist, basic tests pass |
+| `🔬 Spec` | Design document only, no deployable contract crate |
+
 ---
 
 ## Genesis Contracts (9)

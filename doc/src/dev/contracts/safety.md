@@ -885,7 +885,7 @@ was `constrain_instance`'d without a `poseidon_hash(backing_secret)` derivation 
 Five other bugs confirmed fixed (C2, C4, H2, H3, M1). All 120 circuits now pass.
 
 The formal proofs cover three layers:
-- **Layer 1**: All 39 zkVM opcodes proved sound (EC operations, hashes, field arithmetic, comparisons)
+- **Layer 1**: All 32 zkVM opcodes proved sound (EC operations, hashes, field arithmetic, comparisons)
 - **Layer 2**: All 120 contract circuits pass the Orchard-class instance-derivation audit
 - **Layer 3**: Cross-cutting theorems (Pedersen homomorphism, value conservation, nullifier determinism, signature binding, Merkle inclusion, zero-cond soundness)
 

@@ -9,7 +9,7 @@ the Pasta cycle of curves (Pallas/Vesta). No trusted setup ceremony required.
 Circuits are written in **ZKAS** (zero-knowledge assembly), compiled to
 Halo2 constraints, and executed inside the zkVM.
 
-- **39 opcodes** in the zkVM. Three added by DarkWow: `LessThanOrEqual`,
+- **32 opcodes** in the zkVM. Three added by DarkWow: `LessThanOrEqual`,
   `IsNotEqual`, `BaseDiv` — all formally verified in Lean4.
 - **228 ZK circuits** across 32 contracts.
 - **Poseidon hash** for all commitments (Pallas base field), replacing

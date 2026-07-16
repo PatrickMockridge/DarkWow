@@ -23,7 +23,6 @@
   - [Mempool: Pending-Transaction Pool](arch/mempool.md)
   - [Key & Account Management](arch/key-management.md)
   - [Contract Manifest](arch/manifest.md)
-  - [Contract Trust Model](arch/contract-trust-model.md)
   - [Contract Deployment Pipeline](arch/dwowd_contract_pipeline.md)
   - [Contract Invocation API](arch/contract_invoke_api.md)
   - [Contract Metadata](arch/contract-metadata.md)
@@ -54,26 +53,30 @@
   - [Opcode Universe](arch/zk/opcode_universe.md)
   - [ZK Verification](arch/zk/zk_verification.md)
   - [MerkleRoot Depth](arch/zk/merkle_depth.md)
-  - [Quantum Threat](arch/quantum-threat.md)
   - [Post-Quantum Proving System](arch/zk/post-quantum-proving-system.md)
 
 ## Smart Contracts
   - [Smart Contracts](arch/sc/sc.md)
     - [Transaction lifetime](arch/sc/tx-lifetime.md)
 
-## Economics & Security
+## Economics
   - [Consensus & Coinbase](arch/consensus-coinbase.md)
   - [Merge Mining](arch/merge-mining.md)
   - [Monero Merge Mining](arch/monero-merge-mining.md)
   - [Slashing & Economic Security](arch/slashing.md)
-  - [Caveat Emptor: Pricing, Coverage & Adversarial Analysis](arch/economics-caveat-emptor.md)
-  - [Security Analysis](arch/security-analysis.md)
 
 ## Network & Services
   - [P2P Network](arch/net/p2p-network.md)
   - [Network Types](arch/network-types.md)
   - [Services](arch/services.md)
   - [Sync Module](arch/sync.md)
+
+# Risk & Security Considerations
+
+- [Caveat Emptor: Token Economics & Adversarial Analysis](arch/economics-caveat-emptor.md)
+- [Security Analysis: Contract Audit Findings](arch/security-analysis.md)
+- [Quantum Threat Assessment](arch/quantum-threat.md)
+- [Contract Trust Model](arch/contract-trust-model.md)
 
 # Contracts
 
@@ -310,8 +313,11 @@
 
 # Legacy Architecture
 
-> **ARCHIVED**: The following documents describe the original overlay-DAG
-> blockchain consensus, which has been replaced by [Uncle Merkle](arch/consensus/uncle_merkle.md).
+> The overlay-DAG blockchain consensus has been fully replaced by
+> [Uncle Merkle](arch/consensus/uncle_merkle.md). `src/validator/` has been
+> removed. See [What's Different from Upstream](about/differences_from_upstream.md)
+> for the fork rationale.
+>
 > **Exception:** The [Event Graph](arch/legacy/event_graph.md) is still active —
 > it is the P2P messaging DAG used by darkirc, not blockchain consensus.
 

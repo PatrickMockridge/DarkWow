@@ -498,8 +498,8 @@ The 5-node profile is reserved for consensus protocol verification. See the
 
 ## Implementation Status
 
-The uncle-merkle consensus is partially implemented. The table below documents
-what is implemented vs. what is specified.
+The uncle-merkle consensus is fully implemented. The table below documents
+the implementation status of each feature.
 
 | Feature | Spec Section | Implementation Status |
 |---------|-------------|----------------------|
@@ -508,7 +508,7 @@ what is implemented vs. what is specified.
 | Uncle proof verification | §Verification (Stateless) | ✅ Implemented in `validation.rs::check_uncles()` |
 | Pin reward computation (value-level) | §Reward Distribution | ✅ Implemented in `block.rs::compute_reward()` using u64 arithmetic |
 | Value-level uncle split invariant | §Coinbase Split — Supply Invariant | ✅ Implemented in `chain_state.rs::connect_block()` |
-| Pedersen commitment-level uncle split | §Coinbase Split — Mass Balance Proof | ❌ NOT IMPLEMENTED. The spec formalizes `C_effective = C_base - Σ C_uncle_i` with deterministic blinds `r_i = blake3(uncle_hash ‖ u_i ‖ H)`. The current implementation tracks uncle coins via blake3 hashes in `uncle_coin_set`, not Pedersen commitments. The cumulative supply audit (`verify_cumulative_supply()`) cannot verify uncle coinbase splits. See HAZID H-C4 (spec audit finding H1). |
+| Pedersen commitment-level uncle split | §Coinbase Split — Mass Balance Proof | ✅ Implemented in `chain_state.rs:736-760`. Uncle coin commitments `C_uncle_i = pedersen_commitment_u64(u_i, Blind(r_i))` with deterministic blinds `r_i = blake3(uncle_hash)` mapped to scalar via `from_uniform_bytes`. Supply invariant `canonical + sum(pin_rewards) == expected_reward(height)` verified at lines 722-734. |
 | Uncle coin maturity tracking | §Uncle Coins and Maturity | ✅ Uncle coins tracked in `uncle_coin_set` with creation height; COINBASE_MATURITY applies uniformly |
 | Uncle coin set restoration on restart | — | ✅ Implemented in `chain_state.rs::CChainState::new()` (Phase 3 H-H4 fix) |
 

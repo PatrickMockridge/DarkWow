@@ -257,35 +257,36 @@ for the cheat detection table.
 | Block time | 120 seconds | 262,980 blocks/year |
 | Genesis reward | INITIAL_REWARD | ~13.84 DRKW, height 1 |
 
-### 3.2 Reward Function
+### 3.2 Reward Function [IMPLEMENTED]
 
-The implemented formula uses a linear approximation of exponential decay
-with fixed-point arithmetic for deterministic, cross-platform consensus safety:
+The reward function uses true exponential decay with closed-form binary exponentiation
+(`fixed_pow_decay`) for deterministic, cross-platform consensus safety:
 
 ```
 For h = 0: R(0) = 0 (pre-genesis)
-For h = 1: R(1) = INITIAL_REWARD (genesis, ~13.84 DRKW)
-For 2 ≤ h ≤ HALF_LIFE_BLOCKS:
-    R(h) = R_tail + (R₀ - R_tail) × (1 - (h-1)/H)
-For h > HALF_LIFE_BLOCKS:
-    R(h) = R_tail (permanent tail emission, ~0.80 DRKW)
+For h ≥ 1:
+    R(h) = max(R₀ × 2^(-h/H), R_tail)
+
+where 2^(-h/H) is computed via integer binary exponentiation:
+    exp = fixed_pow_decay(h, H)  // ≈ 2^(-h/H), deterministically
+    R(h) = max(R₀ × exp / 2^64, R_tail)
 
 Constants:
-    R₀ = 1,383,764,049 base units
+    R₀ = 1,383,764,049 base units (~13.84 DRKW)
     H  = 1,051,920 blocks (half-life, ~4 years at 2-min blocks)
-    R_tail = 79,853,981 base units (1% per annum of 21M cap)
+    R_tail = 79,853,981 base units (~0.80 DRKW, 1% per annum of 21M cap)
 ```
 
-> **Note (HAZID H-C3):** The specification originally documented an exponential
-> formula `R(h) = max(R₀ × 2^(-h/H), R_tail)`. The implemented linear approximation
-> is simpler and deterministic but produces different reward values — at the
-> half-life, the linear formula pays ~0.80 DRKW vs the exponential's ~6.92 DRKW.
-> A reference implementation of the exponential formula exists at
-> `src/sdk/src/blockchain.rs::expected_reward_exponential()` behind
-> `#[cfg(feature = "client")]`. This discrepancy must be resolved before mainnet.
+This is the production-default formula — there is no feature gate. The exponential
+function is implemented at [`src/sdk/src/blockchain.rs:106-137`](../../src/sdk/src/blockchain.rs)
+(`expected_reward()`) using integer-only fixed-point arithmetic. Floating point
+MUST NOT be used.
 
-The function is implemented at [`src/sdk/src/blockchain.rs`](../../src/sdk/src/blockchain.rs)
-using integer-only fixed-point arithmetic. Floating point MUST NOT be used.
+> **Historical note (HAZID H-C3 — RESOLVED):** A prior version of the code
+> implemented a linear approximation `R(h) = R_tail + (R₀ - R_tail) × (1 - (h-1)/H)`.
+> This was replaced by the closed-form exponential on 2026-07-16 (commits
+> `d6c78eb5b9` and `d1e062fa8f`). The linear approximation underpaid by ~8.7×
+> at the half-life.
 
 ### 3.3 Cumulative Supply Bootstrap
 
@@ -319,7 +320,7 @@ R₀ = ⌊total_supply × ln(2) / half_life_blocks⌋
 ```
 
 Genesis (height 1) receives INITIAL_REWARD. Height 2 is the first decay step:
-`R(2) = R_tail + (R₀ - R_tail) × (1 - 1/H)`.
+`R(2) = max(R₀ × 2^(-2/H), R_tail)`.
 ```
 
 Tail emission (1% per annum of 21M cap):

@@ -568,9 +568,9 @@ localnet = true
 #seeds = []
 
 ## ======================
-## LINEAR-TESTNET CONFIGURATION
+## DARKWOW-DEVNET CONFIGURATION
 ## ======================
-# Linear-testnet blockchain network configuration
+# Darkwow-devnet blockchain network configuration (formerly linear-testnet)
 [network_config."darkwow-devnet"]
 # Path to the blockchain database directory
 database = "~/.local/share/dwow/dwowd/darkwow-devnet"
