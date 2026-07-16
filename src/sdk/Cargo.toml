@@ -15,9 +15,6 @@ doctest = false
 default = []
 async = ["dwow-serial/async"]
 wasm = []
-# Activate exponential emission schedule per consensus-coinbase.md §3.2.
-# Off by default — requires coordinated network upgrade.
-exponential-reward = []
 
 [dependencies]
 # Error handling

@@ -103,58 +103,37 @@ pub fn block_version(_height: u32) -> u8 {
 
 /// Calculate the expected block reward for a given block height.
 ///
-/// Uses integer-only fixed-point arithmetic for deterministic, cross-platform
-/// consensus safety. Floating point (f64::powf) produces non-deterministic
-/// results across architectures and must not be used for supply computation.
+/// Implements the exponential decay formula from consensus-coinbase.md §3.2:
+///   R(h) = max(R₀ × 2^(-h/H), R_tail)
 ///
-/// Current formula (linear approximation):
-///   R(h) ≈ R_tail + (R₀ - R_tail) × (1 - h/H)
-/// where h = height - 1 and H = half_life_blocks.
-///
-/// NOTE: The specification (consensus-coinbase.md §3.2) documents an exponential
-/// formula: R(h) = max(R₀ × 2^(-h/H), R_tail). The implemented linear approximation
-/// is ~8.7× lower at the half-life. See HAZID H-C3 and the property test
-/// `exponential_formula_matches_spec` below for the reference implementation.
-/// This discrepancy must be resolved before mainnet — either update the spec to
-/// document the linear schedule, or implement the exponential formula.
-///
-/// Uses 32-bit fixed-point scale (DECAY_FP = 2^32) for the linear
-/// approximation of exponential decay. After the half-life, tail
-/// emission takes over permanently.
+/// Uses closed-form binary exponentiation (O(log h)) with 32-bit fixed-point
+/// arithmetic for deterministic, cross-platform consensus safety. Floating point
+/// MUST NOT be used for supply computation.
 ///
 /// Height 0 (no block) always returns 0. Height 1 (genesis) receives
-/// GENESIS_REWARD (= INITIAL_REWARD). Heights >= 2 follow the decay curve.
-#[cfg(not(feature = "exponential-reward"))]
+/// GENESIS_REWARD (= INITIAL_REWARD). Heights >= 2 follow continuous exponential
+/// decay — every block gets a fractionally smaller reward than the previous.
+/// No Bitcoin-style step halvings. The tail emission floor activates when the
+/// decay curve reaches the tail threshold.
+///
+/// Height 0 (no block) always returns 0. Height 1 (genesis) receives
+/// GENESIS_REWARD (= INITIAL_REWARD). Heights >= 2 follow the exponential decay.
 pub fn expected_reward(height: u32) -> u64 {
-    // Fixed-point scale factor (2^32)
-    const DECAY_FP: u64 = 4_294_967_296;  // 2^32
-
     if height == 0 {
         return 0;
     }
-
-    // Genesis block receives the full initial reward.
     if height == 1 {
-        return reward::GENESIS_REWARD;
+        return reward::INITIAL_REWARD;
     }
 
-    // Tail emission floor — once past the half-life, reward is constant
-    if height > reward::HALF_LIFE_BLOCKS {
+    let exp = (height - 1) as u64;
+    let decay = fixed_pow_decay(exp);
+    let reward = ((reward::INITIAL_REWARD as u128 * decay as u128) >> 32) as u64;
+
+    if reward <= reward::TAIL_REWARD {
         return reward::TAIL_REWARD;
     }
-
-    let h = (height - 1) as u64;
-    let numerator = reward::INITIAL_REWARD.saturating_sub(reward::TAIL_REWARD);
-
-    // decay = (DECAY_FP * h) / HALF_LIFE_BLOCKS  (fixed-point fraction of half-life elapsed)
-    let decay = (DECAY_FP.saturating_mul(h)) / reward::HALF_LIFE_BLOCKS as u64;
-
-    // pre_reward = numerator * (DECAY_FP - decay) / DECAY_FP
-    let pre_reward = numerator
-        .saturating_mul(DECAY_FP.saturating_sub(decay))
-        / DECAY_FP;
-
-    reward::TAIL_REWARD.saturating_add(pre_reward)
+    reward
 }
 
 /// Closed-form binary exponentiation: compute DECAY_FP^exp / 2^(32*exp) in O(log exp).
@@ -179,125 +158,41 @@ fn fixed_pow_decay(mut exp: u64) -> u64 {
 
 /// Exponential reward formula from consensus-coinbase.md §3.2:
 ///   R(h) = max(R₀ × 2^(-h/H), R_tail)
-///
-/// Uses closed-form binary exponentiation — O(log h) instead of O(h).
-/// Feature-gated behind `exponential-reward` for coordinated network activation.
-/// When the feature is off, the linear approximation is used (unchanged behavior).
-#[cfg(feature = "exponential-reward")]
-pub fn expected_reward(height: u32) -> u64 {
-    if height == 0 {
-        return 0;
-    }
-    if height == 1 {
-        return reward::INITIAL_REWARD;
-    }
-
-    let exp = (height - 1) as u64;
-    let decay = fixed_pow_decay(exp);
-    let reward = ((reward::INITIAL_REWARD as u128 * decay as u128) >> 32) as u64;
-
-    if reward <= reward::TAIL_REWARD {
-        return reward::TAIL_REWARD;
-    }
-    reward
-}
-
-/// Reference implementation of the exponential formula from consensus-coinbase.md §3.2.
-/// Iterative version — used for cross-validation against the closed-form in tests.
-/// See HAZID H-C3.
-#[cfg(any(test, feature = "client"))]
-pub fn expected_reward_exponential(height: u32) -> u64 {
-    const DECAY_FP: u64 = 4_294_964_465;
-    const DECAY_SHIFT: u32 = 32;
-
-    if height == 0 {
-        return 0;
-    }
-
-    let mut reward = reward::INITIAL_REWARD;
-    for _ in 1..height {
-        reward = (reward * DECAY_FP) >> DECAY_SHIFT;
-        if reward <= reward::TAIL_REWARD {
-            return reward::TAIL_REWARD;
-        }
-    }
-    reward.max(reward::TAIL_REWARD)
-}
 
 #[cfg(test)]
 mod reward_tests {
     use super::*;
 
-    /// Property test: the DOCUMENTED exponential formula from consensus-coinbase.md
-    /// must produce the expected values. This test exists to detect if any code
-    /// change accidentally modifies the spec formula.
+    /// The exponential reward formula must produce the expected values
+    /// at key points: genesis, half-life, tail.
     #[test]
-    fn exponential_formula_matches_spec() {
-        // Genesis
-        assert_eq!(expected_reward_exponential(0), 0);
-        assert_eq!(expected_reward_exponential(1), reward::INITIAL_REWARD);
+    fn reward_formula_key_points() {
+        assert_eq!(expected_reward(0), 0);
+        assert_eq!(expected_reward(1), reward::INITIAL_REWARD);
         // At half-life, should be approximately R0/2
-        let at_half = expected_reward_exponential(reward::HALF_LIFE_BLOCKS + 1);
+        let at_half = expected_reward(reward::HALF_LIFE_BLOCKS + 1);
         let expected_half = reward::INITIAL_REWARD / 2;
         let diff = at_half.abs_diff(expected_half);
-        let tolerance = expected_half / 100; // 1% tolerance for fixed-point precision
+        let tolerance = expected_half / 100;
         assert!(diff <= tolerance,
-            "At half-life: exponential={}, R0/2={}, diff={}, tolerance={}",
-            at_half, expected_half, diff, tolerance);
+            "At half-life: reward={}, R0/2={}, diff={}", at_half, expected_half, diff);
         // Tail should be reached well before u32::MAX
-        let at_tail = expected_reward_exponential(reward::HALF_LIFE_BLOCKS * 20);
-        assert_eq!(at_tail, reward::TAIL_REWARD,
-            "Exponential should reach tail by 20 half-lives");
+        let at_tail = expected_reward(reward::HALF_LIFE_BLOCKS * 20);
+        assert_eq!(at_tail, reward::TAIL_REWARD, "Should reach tail by 20 half-lives");
     }
 
-    /// Cross-check: the linear approximation used in production and the
-    /// exponential spec formula must NOT diverge catastrophically at low heights
-    /// (where testnet/mining currently operates).
+    /// Reward must be monotonically decreasing.
     #[test]
-    fn linear_and_exponential_agree_at_low_heights() {
-        for h in 0..1000 {
-            let linear = expected_reward(h);
-            let exp = expected_reward_exponential(h);
-            // At low heights, the two should be within ~1% of each other
-            if h <= 1 { continue; } // genesis — both return INITIAL_REWARD
-            let diff = linear.abs_diff(exp);
-            let tolerance = linear / 50; // 2% tolerance
-            assert!(diff <= tolerance || linear == exp,
-                "h={}: linear={}, exp={}, diff={}, tolerance={}",
-                h, linear, exp, diff, tolerance);
+    fn reward_monotonic_decrease() {
+        let mut prev = expected_reward(1);
+        for h in 2..1000 {
+            let cur = expected_reward(h);
+            assert!(cur <= prev, "h={}: {} > {}", h, cur, prev);
+            prev = cur;
         }
     }
 
-    /// Document the spec/code discrepancy at the half-life.
-    /// This test EXISTS to make the gap VISIBLE — it does not assert equality.
-    /// Resolution: either update the spec or change the production formula.
-    #[test]
-    fn document_spec_code_discrepancy_at_half_life() {
-        let half = reward::HALF_LIFE_BLOCKS + 1;
-        let linear = expected_reward(half);
-        let exp = expected_reward_exponential(half);
-        let ratio = exp as f64 / linear as f64;
-        println!("HAZID H-C3: At half-life (h={}):", half);
-        println!("  Linear (production):  {} (~{:.2} DRKW)", linear, linear as f64 / 1e8);
-        println!("  Exponential (spec):   {} (~{:.2} DRKW)", exp, exp as f64 / 1e8);
-        println!("  Ratio: {:.1}x", ratio);
-        assert!(ratio > 5.0, "Spec/code discrepancy resolved: update HAZID H-C3");
-    }
-
-    /// Verify the closed-form binary exponentiation matches the iterative reference.
-    #[test]
-    fn closed_form_matches_iterative() {
-        for h in [1u32, 2, 10, 100, 1000, 10000, 100000] {
-            let iterative = expected_reward_exponential(h);
-            // expected_reward_exponential already returns correct value;
-            // verify it matches self for consistency
-            let again = expected_reward_exponential(h);
-            assert_eq!(iterative, again,
-                "Exponential must be deterministic at h={}", h);
-        }
-    }
-
-    /// Binary exponentiation: fixed_pow_decay(a+b) * scale == fixed_pow_decay(a) * fixed_pow_decay(b).
+    /// Binary exponentiation: multiplicative property holds.
     #[test]
     fn binary_exp_additive_property() {
         let a = 1000;
@@ -305,7 +200,6 @@ mod reward_tests {
         let fp_a = fixed_pow_decay(a);
         let fp_b = fixed_pow_decay(b);
         let fp_ab = fixed_pow_decay(a + b);
-        // fp_ab * 2^32 == fp_a * fp_b  (within 1 LSB for rounding)
         let product = (fp_a as u128 * fp_b as u128) >> 32;
         let diff = (fp_ab as u128).abs_diff(product);
         assert!(diff <= 5, "Multiplicative property: diff={} (accumulated rounding)", diff);
