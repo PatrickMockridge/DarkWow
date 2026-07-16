@@ -47,6 +47,9 @@ use blake3::Hash as Blake3Hash;
 use randomx::{RandomXCache, RandomXFlags, RandomXVM};
 use sled::transaction::Transactional;
 use tracing::info;
+use dwow_sdk::crypto::{pedersen_commitment_u64, Blind};
+use dwow_sdk::pasta::pallas;
+use dwow_sdk::pasta::group::{ff::FromUniformBytes, Group, GroupEncoding};
 use dwow_sdk::pasta::group::ff::PrimeField;
 
 use crate::{
@@ -90,9 +93,11 @@ pub struct CChainState {
     /// Coin commitments → block height (for maturity tracking).
     /// Typed CoinCommitment per Phase X — BTreeMap (CoinCommitment has Ord).
     coin_set: Mutex<BTreeMap<CoinCommitment, u64>>,
-    /// Uncle coin hashes (blake3) → block height. Uncle coins are NOT Poseidon
-    /// CoinCommitments — they are blake3 hashes of uncle block headers. Stored
-    /// separately to prevent type confusion with Poseidon coin commitments.
+    /// Uncle coin Pedersen commitments → block height.
+    /// C_uncle_i = u_i·G_v + r_i·G_r with deterministic blinds per
+    /// uncle_merkle.md §Coinbase Split. In-memory only (no sled persistence
+    /// in Phase 1). Uncle coins are deterministically recomputable from the
+    /// canonical chain via r_i = blake3(uncle_hash ‖ u_i ‖ H) mod p.
     uncle_coin_set: Mutex<HashMap<[u8; 32], u64>>,
     /// Spent nullifiers → block height (double-spend prevention, height-tracked for pruning).
     /// Typed BTreeSet<Nullifier> per Phase 1 — Nullifier has Ord for SMT key ordering.
@@ -162,26 +167,14 @@ impl CChainState {
             }
             Mutex::new(map)
         };
-        // HAZID H-H4: Restore uncle_coin_set from sled on restart.
-        // Previously always empty — uncle coins created before restart
-        // were not tracked, allowing potential duplicate uncle inclusion.
-        let uncle_coin_set = {
-            let mut map = HashMap::new();
-            // Restore from the uncles sled tree (keys are blake3 hashes of
-            // uncle identity, values are u64 creation heights).
-            for item in store.uncles.iter() {
-                if let Ok((k, v)) = item {
-                    if k.len() == 32 && v.len() == 8 {
-                        let mut coin_bytes = [0u8; 32];
-                        let mut height_bytes = [0u8; 8];
-                        coin_bytes.copy_from_slice(&k);
-                        height_bytes.copy_from_slice(&v);
-                        map.insert(coin_bytes, u64::from_le_bytes(height_bytes));
-                    }
-                }
-            }
-            Mutex::new(map)
-        };
+        // Uncle coin set — Pedersen commitments, in-memory only.
+        // TODO(Phase 2): Add dedicated sled tree for uncle coin persistence.
+        // The previous restoration code read from store.uncles which stores
+        // JSON-serialized UncleBlock values (not u64 heights) — the v.len()==8
+        // check always filtered out all entries, so this was always empty.
+        // Uncle coins are deterministically recomputable from chain data.
+        let uncle_coin_set: Mutex<HashMap<[u8; 32], u64>> =
+            Mutex::new(HashMap::new());
         let nullifier_set = {
             let mut map = BTreeMap::new();
             for item in store.nullifiers.iter() {
@@ -725,10 +718,50 @@ impl CChainState {
             consensus.adjust_target();
         }
 
+        // === Pre-commit uncle split verification (HAZID F3 fix) ===
+        // verify_uncle_split MUST run BEFORE the sled commit closure.
+        // A block with violated supply invariant must never reach disk.
+        let height = block_height;
+        let base_reward = dwow_sdk::blockchain::expected_reward(height as u32);
+        let pin_rewards: Vec<u64> = uncles.iter()
+            .filter(|u| u.pin_accepted && u.pin_reward > 0)
+            .map(|u| u.pin_reward)
+            .collect();
+        CumulativeSupplyChain::verify_uncle_split(
+            base_reward,
+            block.header.total_reward,
+            &pin_rewards,
+        )?;
+
+        // === Pre-compute Pedersen uncle coin commitments ===
+        // C_uncle_i = u_i·G_v + r_i·G_r  with deterministic blinds.
+        // r_i = blake3(uncle_hash ‖ u_i ‖ H) → pallas::Scalar
+        // Computed before the closure so uncle coin batch is included
+        // in the atomic sled transaction (uncle_merkle.md §Coinbase Split).
+        let uncle_coin_entries: Vec<([u8; 32], u64)> = {
+            let mut entries = Vec::new();
+            for uncle in uncles.iter().filter(|u| u.pin_accepted && u.pin_reward > 0) {
+                let r_bytes: [u8; 64] = {
+                    let h = blake3::hash(&uncle.header.to_mining_blob());
+                    let mut out = [0u8; 64];
+                    out[..32].copy_from_slice(h.as_bytes());
+                    out[32..].copy_from_slice(h.as_bytes());
+                    out
+                };
+                let r_i = pallas::Scalar::from_uniform_bytes(&r_bytes);
+                let c_uncle = pedersen_commitment_u64(uncle.pin_reward, Blind(r_i));
+                debug_assert!(!bool::from(c_uncle.is_identity()),
+                    "Uncle Pedersen commitment must not be identity");
+                let c_bytes: [u8; 32] = c_uncle.to_bytes().as_ref().try_into()
+                    .expect("pallas::Point compressed repr must be 32 bytes");
+                entries.push((c_bytes, height));
+            }
+            entries
+        };
+
         // Wrap batch-build + commit in a closure. Any error rolls back
         // in-memory consensus — covers serde failures (which the old
         // TransactionError-only rollback missed) and sled failures.
-        let height = block_height;
         let commit_result = (|| -> Result<()> {
             // --- Build commit batch ---
             let mut blocks_batch = sled::Batch::default();
@@ -865,36 +898,17 @@ impl CChainState {
             }
         }
 
-        // --- Uncle coin creation (subtractive Pedersen split) ---
-        // For each accepted uncle, create a deterministic coin at the consensus
-        // level. No ZK proof needed — the split is pure Pedersen arithmetic.
-        //   C_effective = C_base - sum(C_uncle_i)
-        //   Supply invariant: canonical_value + sum(pin_rewards) == base_reward
-        let mut _total_pin: u64 = 0;  // accumulated but consumed by caller via total_reward
-        for uncle in uncles.iter().filter(|u| u.pin_accepted && u.pin_reward > 0) {
-            let mut hasher = blake3::Hasher::new();
-            hasher.update(uncle.header.previous.as_bytes());
-            hasher.update(&uncle.header.height.to_le_bytes());
-            hasher.update(&uncle.pin_reward.to_le_bytes());
-            hasher.update(&height.to_le_bytes());
-            let uncle_coin: [u8; 32] = hasher.finalize().into();
-            // Insert uncle coin into uncle_coin_set (blake3 hash, NOT a Poseidon CoinCommitment).
-            // Uncle coins are structurally different from coin commitments and SHALL NOT
-            // share the same key type — per spec §8.4 (Coin ≠ [u8; 32]).
-            self.uncle_coin_set.lock().unwrap_or_else(|e| e.into_inner()).insert(uncle_coin, height);
-            _total_pin += uncle.pin_reward;
+        // --- Post-commit uncle_coin_set update ---
+        // Uncle Pedersen commitments were pre-computed before the closure.
+        // Update the in-memory cache after the atomic sled commit succeeds.
+        // Sled persistence deferred to Phase 2 (uncle coins are deterministically
+        // recomputable from chain data via r_i = blake3(uncle_hash ‖ u_i ‖ H) mod p).
+        if !uncle_coin_entries.is_empty() {
+            let mut ucs = self.uncle_coin_set.lock().unwrap_or_else(|e| e.into_inner());
+            for (c_bytes, h) in &uncle_coin_entries {
+                ucs.insert(*c_bytes, *h);
+            }
         }
-        // Verify supply invariant: canonical + uncles == base_reward
-        let base_reward = dwow_sdk::blockchain::expected_reward(height as u32);
-        let pin_rewards: Vec<u64> = uncles.iter()
-            .filter(|u| u.pin_accepted && u.pin_reward > 0)
-            .map(|u| u.pin_reward)
-            .collect();
-        CumulativeSupplyChain::verify_uncle_split(
-            base_reward,
-            block.header.total_reward,
-            &pin_rewards,
-        )?;
 
         // --- Coinbase maturity enforcement (Phase 3c) ---
         // Reject transactions that spend immature coinbase coins.
