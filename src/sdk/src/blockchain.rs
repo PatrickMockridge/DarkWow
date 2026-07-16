@@ -263,7 +263,7 @@ pub fn compute_fee(gas: &u64) -> u64 {
 }
 
 use pasta_curves::{
-    group::ff::FromUniformBytes,
+    group::{ff::FromUniformBytes, Group},
     pallas,
 };
 
@@ -341,7 +341,6 @@ pub fn coinbase_blind(prev_coin: &[u8; 32], height: u32) -> pallas::Scalar {
 /// detect hidden inflation. The Pedersen chain provides this capability —
 /// even if the ZK circuit had a soundness bug, the binding property of
 /// Pedersen commitments makes any divergence cryptographically detectable.
-#[cfg(feature = "client")]
 pub fn verify_cumulative_supply(
     cumulative_commits: &[(u32, pallas::Point)],  // (height, S_H) pairs
 ) -> bool {

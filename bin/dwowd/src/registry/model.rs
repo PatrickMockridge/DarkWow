@@ -202,10 +202,12 @@ pub async fn build_linear_coinbase(
         debris.params.input.value_blind.inner(),
         value,
     );
-    debug_assert_eq!(
-        _computed_next.value_commit, debris.params.new_cumulative_commit,
-        "ZK proof new_cumulative_commit does not match compute_next()"
-    );
+    if _computed_next.value_commit != debris.params.new_cumulative_commit {
+        return Err(Error::Custom(format!(
+            "Cumulative supply chain invariant violated: computed={:?} zk_proof={:?}",
+            _computed_next.value_commit, debris.params.new_cumulative_commit
+        )));
+    }
 
     let params = &debris.params;
     let output = &params.output;
