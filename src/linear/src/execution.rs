@@ -236,7 +236,7 @@ pub fn execute_block(
             vm: vm.clone(),
         });
 
-        backend.overlay.lock().unwrap().checkpoint();
+        backend.overlay.lock().unwrap_or_else(|e| e.into_inner()).checkpoint();
 
         let tx_hash_bytes = dwow_sdk::tx::TransactionHash(*tx_hash.as_bytes());
         let mut runtime = match dwow_core::runtime::vm_runtime::Runtime::new(
@@ -250,7 +250,7 @@ pub fn execute_block(
         ) {
             Ok(r) => r,
             Err(_) => {
-                backend.overlay.lock().unwrap().revert_to_checkpoint();
+                backend.overlay.lock().unwrap_or_else(|e| e.into_inner()).revert_to_checkpoint();
                 results.push(CallResult { tx_hash, is_canonical, success: false, gas: 0, diff: None });
                 continue;
             }
@@ -307,7 +307,7 @@ pub fn execute_block(
         if success && runtime.apply(&update).is_err() { success = false; }
 
         if !success {
-            backend.overlay.lock().unwrap().revert_to_checkpoint();
+            backend.overlay.lock().unwrap_or_else(|e| e.into_inner()).revert_to_checkpoint();
             results.push(CallResult { tx_hash, is_canonical, success: false, gas: 0, diff: None });
             continue;
         }
@@ -315,7 +315,7 @@ pub fn execute_block(
         let gas = runtime.gas_used();
         let diff = SledTreeOverlayStateDiff::new(
             &contracts_tree,
-            &backend.overlay.lock().unwrap().state,
+            &backend.overlay.lock().unwrap_or_else(|e| e.into_inner()).state,
         ).ok();
         results.push(CallResult { tx_hash, is_canonical, success: true, gas, diff });
 
@@ -587,7 +587,7 @@ fn deploy_contract_in_overlay(
 
     // Clone the overlay out of the shared Arc — the deploy runtime may hold
     // an extra reference, so try_unwrap is unreliable here.
-    *overlay = deploy_overlay.lock().unwrap().clone();
+    *overlay = deploy_overlay.lock().unwrap_or_else(|e| e.into_inner()).clone();
     Ok(())
 }
 
@@ -609,7 +609,7 @@ impl RuntimeBackend for TxBackend {
     fn contract_lookup(&self, cid: &ContractId, tree_name: &str) -> dwow_core::Result<[u8; 32]> {
         let handle = cid.hash_state_id(tree_name);
         let handle_str = format!("{:?}", handle);
-        let ov = self.overlay.lock().unwrap();
+        let ov = self.overlay.lock().unwrap_or_else(|e| e.into_inner());
         match ov.get(handle_str.as_bytes()) {
             Ok(Some(iv)) if !iv.is_empty() => return Ok(handle),
             Ok(Some(_)) => return Err(Error::ContractStateNotFound),
@@ -628,21 +628,21 @@ impl RuntimeBackend for TxBackend {
     fn contract_init(&self, cid: &ContractId, tree_name: &str) -> dwow_core::Result<[u8; 32]> {
         let handle = cid.hash_state_id(tree_name);
         let handle_str = format!("{:?}", handle);
-        self.overlay.lock().unwrap()
+        self.overlay.lock().unwrap_or_else(|e| e.into_inner())
             .insert(handle_str.as_bytes(), tree_name.as_bytes())
             .map_err(|e| Error::Custom(e.to_string()))?;
         Ok(handle)
     }
 
     fn contract_insert_bincode(&self, cid: ContractId, bincode: &[u8]) -> dwow_core::Result<()> {
-        self.overlay.lock().unwrap()
+        self.overlay.lock().unwrap_or_else(|e| e.into_inner())
             .insert(&cid.to_bytes(), bincode)
             .map_err(|e| Error::Custom(e.to_string()))?;
         Ok(())
     }
 
     fn contract_get_bincode(&self, cid: &ContractId) -> dwow_core::Result<Vec<u8>> {
-        let ov = self.overlay.lock().unwrap();
+        let ov = self.overlay.lock().unwrap_or_else(|e| e.into_inner());
         if let Ok(Some(iv)) = ov.get(&cid.to_bytes()) {
             if iv.is_empty() {
                 return Err(Error::ContractStateNotFound);
@@ -660,7 +660,7 @@ impl RuntimeBackend for TxBackend {
 
     fn db_insert(&self, tree: &[u8], key: &[u8], value: &[u8]) -> dwow_core::Result<()> {
         let ck = Self::composite_key(tree, key);
-        self.overlay.lock().unwrap()
+        self.overlay.lock().unwrap_or_else(|e| e.into_inner())
             .insert(&ck, value)
             .map_err(|e| Error::Custom(e.to_string()))?;
         Ok(())
@@ -668,7 +668,7 @@ impl RuntimeBackend for TxBackend {
 
     fn db_get(&self, tree: &[u8], key: &[u8]) -> dwow_core::Result<Option<Vec<u8>>> {
         let ck = Self::composite_key(tree, key);
-        let ov = self.overlay.lock().unwrap();
+        let ov = self.overlay.lock().unwrap_or_else(|e| e.into_inner());
         match ov.get(&ck) {
             Ok(Some(iv)) => {
                 if iv.is_empty() { return Ok(None); }
@@ -685,7 +685,7 @@ impl RuntimeBackend for TxBackend {
 
     fn db_remove(&self, tree: &[u8], key: &[u8]) -> dwow_core::Result<()> {
         let ck = Self::composite_key(tree, key);
-        self.overlay.lock().unwrap()
+        self.overlay.lock().unwrap_or_else(|e| e.into_inner())
             .insert(&ck, &[])
             .map_err(|e| Error::Custom(e.to_string()))?;
         Ok(())
@@ -693,7 +693,7 @@ impl RuntimeBackend for TxBackend {
 
     fn db_contains_key(&self, tree: &[u8], key: &[u8]) -> dwow_core::Result<bool> {
         let ck = Self::composite_key(tree, key);
-        let ov = self.overlay.lock().unwrap();
+        let ov = self.overlay.lock().unwrap_or_else(|e| e.into_inner());
         match ov.get(&ck) {
             Ok(Some(iv)) => return Ok(!iv.is_empty()),
             Ok(None) => {}

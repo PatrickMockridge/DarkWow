@@ -237,7 +237,7 @@ impl CChainState {
     /// Safe for async contexts because no !Send type is held across yield points.
     pub fn hash_block_with_cached_vm(&self, block: &Block) -> blake3::Hash {
         let vm = self.get_vm(block.header.randomx_key);
-        let guard = vm.lock().unwrap();
+        let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
         block.hash_with_vm(&*guard)
     }
 
@@ -256,7 +256,7 @@ impl CChainState {
     const MAX_CACHED_CACHES: usize = 6;
 
     pub fn get_vm(&self, key: [u8; 32]) -> Arc<std::sync::Mutex<RandomXVM>> {
-        let mut cache = self.vm_cache.lock().unwrap();
+        let mut cache = self.vm_cache.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(vm) = cache.get(&key) {
             return vm.clone();
         }
@@ -290,7 +290,7 @@ impl CChainState {
     /// compared to the 256 MB cache. This pool ensures the 256 MB allocation
     /// happens ONCE per key, not once per operation.
     pub fn get_cache(&self, key: [u8; 32]) -> RandomXCache {
-        let mut pool = self.cache_pool.lock().unwrap();
+        let mut pool = self.cache_pool.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(cache) = pool.get(&key) {
             return cache.clone();
         }
@@ -310,23 +310,23 @@ impl CChainState {
     // --- Coin / nullifier sets ---
 
     pub fn has_coin(&self, coin: &CoinCommitment) -> bool {
-        self.coin_set.lock().unwrap().contains_key(coin)
+        self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).contains_key(coin)
     }
 
     pub fn is_coin_mature(&self, coin: &CoinCommitment, current_height: u64) -> bool {
-        match self.coin_set.lock().unwrap().get(coin) {
+        match self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).get(coin) {
             Some(&created_at) => current_height.saturating_sub(created_at) >= COINBASE_MATURITY,
             None => false,
         }
     }
 
     pub fn has_nullifier(&self, nullifier: &Nullifier) -> bool {
-        self.nullifier_set.lock().unwrap().contains_key(nullifier)
+        self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).contains_key(nullifier)
     }
 
     /// Return the block height at which this nullifier was created, if present.
     pub fn nullifier_height(&self, nullifier: &Nullifier) -> Option<u64> {
-        self.nullifier_set.lock().unwrap().get(nullifier).copied()
+        self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).get(nullifier).copied()
     }
 
     /// Take competing blocks at the current height for uncle inclusion.
@@ -336,10 +336,10 @@ impl CChainState {
     /// the next block's `uncle_merkle_root` and passes them to
     /// `apply_block_with_uncles`.
     pub fn take_competing_blocks(&self, height: u64) -> Vec<Block> {
-        let blocks = self.competing_blocks.lock().unwrap().remove(&height).unwrap_or_default();
+        let blocks = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner()).remove(&height).unwrap_or_default();
         // Clean dedup set for consumed blocks (H7 follow-up)
         if !blocks.is_empty() {
-            let mut seen = self.competing_seen.lock().unwrap();
+            let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
             for b in &blocks {
                 // Dedup hash: serde_json with canonical form (sorted keys ensures
                 // determinism across serde versions and node instances).
@@ -368,8 +368,8 @@ impl CChainState {
         if blocks.is_empty() {
             return;
         }
-        let mut seen = self.competing_seen.lock().unwrap();
-        let mut competing = self.competing_blocks.lock().unwrap();
+        let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
+        let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
         for b in &blocks {
             let h = blake3::hash(&serde_json::to_vec(&b.header).unwrap_or_else(|e| { tracing::error!(target: "dwow_chain::chain_state", "BlockHeader serialization failed: {}", e); vec![0u8; 32] }));
             seen.insert(h);
@@ -385,8 +385,8 @@ impl CChainState {
             return;
         }
         let cutoff = current_height - max_depth;
-        let mut competing = self.competing_blocks.lock().unwrap();
-        let mut seen = self.competing_seen.lock().unwrap();
+        let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
+        let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
         competing.retain(|&height, blocks| {
             if height < cutoff {
                 for b in blocks {
@@ -421,7 +421,7 @@ impl CChainState {
     ) -> Result<()> {
         // Serialize all block application — prevents concurrent connect_block
         // calls from racing on height, VM cache, sled writes, and RandomX FFI.
-        let _lock = self.connect_lock.lock().unwrap();
+        let _lock = self.connect_lock.lock().unwrap_or_else(|e| e.into_inner());
         let vm = self.get_vm(block.header.randomx_key);
         let current_height = self.get_height();
         let block_height = block.header.height;
@@ -452,7 +452,7 @@ impl CChainState {
         if block_height == current_height {
             // Lock the cached VM for hashing — prevents concurrent RandomX FFI
             // with other tasks (miner_task, GetTip, RPC) accessing the same key.
-            let guard = vm.lock().unwrap();
+            let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
             let hash_u32 = {
                 let h = block.hash_with_vm(&*guard);
                 u32::from_le_bytes(h.as_bytes()[0..4].try_into().unwrap())
@@ -467,7 +467,7 @@ impl CChainState {
             // performed without the fork's timestamp history, but we
             // can enforce bounds.
             {
-                let consensus = self.consensus.lock().unwrap();
+                let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
                 let min = consensus.min_target();
                 let max = consensus.max_target();
                 if block.header.target < min || block.header.target > max {
@@ -486,7 +486,7 @@ impl CChainState {
             if current_height > 0 {
                 let parent = self.get_block(current_height)?;
                 let parent_vm = self.get_vm(parent.header.randomx_key);
-                let parent_guard = parent_vm.lock().unwrap();
+                let parent_guard = parent_vm.lock().unwrap_or_else(|e| e.into_inner());
                 let parent_hash = parent.hash_with_vm(&*parent_guard);
                 drop(parent_guard);
                 if block.header.previous != parent_hash {
@@ -524,13 +524,13 @@ impl CChainState {
             let block_hash = block.hash_with_vm(&*guard);
             drop(guard); // Release VM lock before acquiring other locks
             {
-                let mut seen = self.competing_seen.lock().unwrap();
+                let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
                 if seen.contains(&block_hash) {
                     return Ok(());  // Already stored, silently ignore
                 }
                 seen.insert(block_hash);
             }
-            let mut competing = self.competing_blocks.lock().unwrap();
+            let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
             let entry = competing.entry(block_height).or_default();
             if entry.len() >= MAX_COMPETING_BLOCKS {
                 return Ok(());  // Silent drop — competing store is full
@@ -551,7 +551,7 @@ impl CChainState {
         let tip_hash = if current_height > 0 {
             let prev = self.get_block(current_height)?;
             let prev_vm = self.get_vm(prev.header.randomx_key);
-            let prev_guard = prev_vm.lock().unwrap();
+            let prev_guard = prev_vm.lock().unwrap_or_else(|e| e.into_inner());
             Some(prev.hash_with_vm(&*prev_guard))
         } else {
             None
@@ -566,20 +566,20 @@ impl CChainState {
         if !builds_on_tip {
             // Block doesn't build on our canonical tip. Check if it builds
             // on a competing block (uncle) at current_height.
-            let mut competing = self.competing_blocks.lock().unwrap();
+            let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
             let uncle_parent = competing
                 .get(&current_height)
                 .and_then(|blocks| {
                     blocks.iter().find(|b| {
                         let pvm = self.get_vm(b.header.randomx_key);
-                        let pguard = pvm.lock().unwrap();
+                        let pguard = pvm.lock().unwrap_or_else(|e| e.into_inner());
                         b.hash_with_vm(&*pguard) == block.header.previous
                     })
                 });
             if uncle_parent.is_some() {
                 // Uncle chain extension: store as competing at next height.
                 // Stage 1 PoW validated first (same as competing path).
-                let guard = vm.lock().unwrap();
+                let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
                 let hash_u32 = {
                     let h = block.hash_with_vm(&*guard);
                     u32::from_le_bytes(h.as_bytes()[0..4].try_into().unwrap())
@@ -591,7 +591,7 @@ impl CChainState {
                 }
                 // H2 fix: validate target range for uncle chain extensions.
                 {
-                    let consensus = self.consensus.lock().unwrap();
+                    let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
                     let min = consensus.min_target();
                     let max = consensus.max_target();
                     if block.header.target < min || block.header.target > max {
@@ -628,9 +628,9 @@ impl CChainState {
                 // H5 fix: cap competing blocks per height
                 const MAX_COMPETING_BLOCKS_UNCLE: usize = 20;
                 let block_hash = block.hash_with_vm(
-                    &*vm.lock().unwrap()
+                    &*vm.lock().unwrap_or_else(|e| e.into_inner())
                 );
-                let mut seen = self.competing_seen.lock().unwrap();
+                let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
                 if !seen.contains(&block_hash) {
                     seen.insert(block_hash);
                     drop(seen);
@@ -652,12 +652,12 @@ impl CChainState {
 
         // --- Stage 1 & 2 PoW validation ---
         let expected_target = {
-            self.consensus.lock().unwrap()
+            self.consensus.lock().unwrap_or_else(|e| e.into_inner())
                 .get_next_work_required(&self.store, block_height)
         };
 
         // Lock the VM for validation hashing — prevents concurrent RandomX FFI
-        let guard = vm.lock().unwrap();
+        let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
         validation::check_block_header(
             block, &*guard, expected_target, current_height, tip_hash.as_ref(),
         )?;
@@ -700,7 +700,7 @@ impl CChainState {
         let pre_timestamps: Vec<u64>;
         let pre_target: u32;
         {
-            let consensus = self.consensus.lock().unwrap();
+            let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
             pre_target = consensus.target();
             pre_timestamps = consensus.snapshot_timestamps();
             consensus.record_block(block.header.timestamp);
@@ -767,7 +767,7 @@ impl CChainState {
             // Accumulate chain work
             let block_target = block.header.target;
             let block_work = if block_target == 0 { 0u64 } else { (u32::MAX as u64) / (block_target as u64) };
-            let consensus = self.consensus.lock().unwrap();
+            let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
             let accumulated = consensus.accumulated_work.load(Ordering::SeqCst).saturating_add(block_work);
             consensus.accumulated_work.store(accumulated, Ordering::SeqCst);
 
@@ -821,7 +821,7 @@ impl CChainState {
 
         // H5.2: Roll back in-memory consensus on ANY error (not just TransactionError).
         if commit_result.is_err() {
-            let consensus = self.consensus.lock().unwrap();
+            let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
             consensus.force_target(pre_target);
             consensus.restore_timestamps(pre_timestamps);
         }
@@ -840,9 +840,9 @@ impl CChainState {
             if has_pow_reward {
                 let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
                 if let Ok(params) = dwow_serial::deserialize::<dwow_native_token_contract::model::PoWRewardParamsV1>(pow_data) {
-                    self.coin_set.lock().unwrap().insert(CoinCommitment::from_base(params.output.coin.inner()), height);
+                    self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).insert(CoinCommitment::from_base(params.output.coin.inner()), height);
                     // Phase 1: params.nullifier is already a typed Nullifier — no bytes round-trip
-                    self.nullifier_set.lock().unwrap().insert(params.nullifier, height);
+                    self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).insert(params.nullifier, height);
                 }
             }
         }
@@ -863,7 +863,7 @@ impl CChainState {
             // Insert uncle coin into uncle_coin_set (blake3 hash, NOT a Poseidon CoinCommitment).
             // Uncle coins are structurally different from coin commitments and SHALL NOT
             // share the same key type — per spec §8.4 (Coin ≠ [u8; 32]).
-            self.uncle_coin_set.lock().unwrap().insert(uncle_coin, height);
+            self.uncle_coin_set.lock().unwrap_or_else(|e| e.into_inner()).insert(uncle_coin, height);
             _total_pin += uncle.pin_reward;
         }
         // Verify supply invariant: canonical + uncles == base_reward
@@ -892,7 +892,7 @@ impl CChainState {
             for nullifier in &tx.nullifiers {
                 // Check if this nullifier was created by a coinbase output.
                 // The nullifier's creation height is stored in nullifier_set.
-                if let Some(&created_at) = self.nullifier_set.lock().unwrap().get(nullifier) {
+                if let Some(&created_at) = self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).get(nullifier) {
                     // V.9 fix: use nullifier's own height for maturity, not coin_set lookup.
                     // Previously used nullifier.to_bytes() as coin_set key — but nullifier
                     // bytes ≠ coin commitment bytes, so the lookup always returned None,
@@ -922,9 +922,9 @@ impl CChainState {
         const COINBASE_MATURITY: u64 = 100;
         if height > COINBASE_MATURITY {
             let prune_h = height - COINBASE_MATURITY;
-            self.coin_set.lock().unwrap().retain(|_, h| *h >= prune_h);
+            self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, h| *h >= prune_h);
             // Prune nullifiers older than maturity (sled is authoritative source)
-            self.nullifier_set.lock().unwrap().retain(|_, h| *h >= prune_h);
+            self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, h| *h >= prune_h);
         }
 
         info!(target: "chain_state", "Block {} at height {} committed",
@@ -944,18 +944,18 @@ impl CChainState {
 
     /// Memory diagnostics: number of cached RandomX VMs.
     pub fn vm_cache_size(&self) -> usize {
-        self.vm_cache.lock().unwrap().len()
+        self.vm_cache.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     /// Memory diagnostics: number of coins in the in-memory set.
     pub fn coin_set_size(&self) -> usize {
-        self.coin_set.lock().unwrap().len()
+        self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     /// Compute the coin merkle root including a new coin commitment.
     /// Used by block template generation for the coinbase coin.
     pub fn compute_root_including_coin(&self, new_coin: &CoinCommitment) -> [u8; 32] {
-        let coins = self.coin_set.lock().unwrap();
+        let coins = self.coin_set.lock().unwrap_or_else(|e| e.into_inner());
         let mut sorted: Vec<&CoinCommitment> = coins.keys().collect();
         sorted.push(new_coin);
         sorted.sort_by_key(|c| c.to_bytes());
@@ -969,7 +969,7 @@ impl CChainState {
     /// Compute the current nullifier merkle root.
     /// Used by block template generation.
     pub fn compute_nullifier_root(&self) -> [u8; 32] {
-        let nullifiers = self.nullifier_set.lock().unwrap();
+        let nullifiers = self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner());
         if nullifiers.is_empty() {
             return [0u8; 32]
         }
@@ -991,7 +991,7 @@ impl CChainState {
     /// Returns the number of blocks reorganized (0 if no reorg occurred).
     pub fn try_reorg_from_competing(&self) -> Result<usize> {
         let current_height = self.get_height();
-        let competing = self.competing_blocks.lock().unwrap();
+        let competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
 
         // Find the max height of any competing block
         let mut peer_max = current_height;
@@ -1033,7 +1033,7 @@ impl CChainState {
                 // Walk upward through competing blocks by previous_hash link
                 let mut prev_hash = {
                     let vm = self.get_vm(start_block.header.randomx_key);
-                    let guard = vm.lock().unwrap();
+                    let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
                     start_block.hash_with_vm(&*guard)
                 };
                 let mut h = start_h + 1;
@@ -1043,7 +1043,7 @@ impl CChainState {
                     if let Some(child_block) = child {
                         chain.insert(h, child_block.clone());
                         let child_vm = self.get_vm(child_block.header.randomx_key);
-                        let child_guard = child_vm.lock().unwrap();
+                        let child_guard = child_vm.lock().unwrap_or_else(|e| e.into_inner());
                         prev_hash = child_block.hash_with_vm(&*child_guard);
                         h += 1;
                     } else {
@@ -1061,7 +1061,7 @@ impl CChainState {
                             (chain.get(&ch), chain.get(&(ch - 1)))
                         {
                             let bvm = self.get_vm(parent.header.randomx_key);
-                            let bguard = bvm.lock().unwrap();
+                            let bguard = bvm.lock().unwrap_or_else(|e| e.into_inner());
                             let parent_hash = parent.hash_with_vm(&*bguard);
                             if block.header.previous != parent_hash {
                                 valid = false;
@@ -1103,7 +1103,7 @@ impl CChainState {
     ///
     /// Returns the number of blocks reorganized (0 if no reorg occurred).
     pub fn reorganize_to(&self, peer_blocks: &HashMap<u64, Block>) -> Result<usize> {
-        let _lock = self.connect_lock.lock().unwrap();
+        let _lock = self.connect_lock.lock().unwrap_or_else(|e| e.into_inner());
         let current_height = self.get_height();
 
         // Find peer's max height
@@ -1115,11 +1115,11 @@ impl CChainState {
             if let Ok(our_block) = self.get_block(h) {
                 if let Some(peer_block) = peer_blocks.get(&h) {
                     let vm = self.get_vm(our_block.header.randomx_key);
-                    let our_guard = vm.lock().unwrap();
+                    let our_guard = vm.lock().unwrap_or_else(|e| e.into_inner());
                     let our_hash = our_block.hash_with_vm(&*our_guard);
                     drop(our_guard);
                     let peer_vm = self.get_vm(peer_block.header.randomx_key);
-                    let peer_guard = peer_vm.lock().unwrap();
+                    let peer_guard = peer_vm.lock().unwrap_or_else(|e| e.into_inner());
                     let peer_hash = peer_block.hash_with_vm(&*peer_guard);
                     drop(peer_guard);
                     if our_hash == peer_hash {
@@ -1179,7 +1179,7 @@ impl CChainState {
         // when forks exist. The peer's fork has its own timestamp history from
         // ancestor+1 onward — the first peer block after fork must be validated
         // against the target derived from the chain it actually extends.
-        let consensus = self.consensus.lock().unwrap();
+        let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
         let mut current_target = consensus.initial_target();
         // Walk accumulated timestamps (canonical blocks 1..ancestor) to derive
         // the target at the fork point — same algorithm as get_next_work_required
@@ -1196,12 +1196,12 @@ impl CChainState {
         for h in (ancestor + 1)..=peer_max {
             if let Some(peer_block) = peer_blocks.get(&h) {
                 let vm = self.get_vm(peer_block.header.randomx_key);
-                let guard = vm.lock().unwrap();
+                let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
                 let expected_target = current_target;
                 let prev_hash = if temp_height > 0 {
                     temp_blocks.get(&temp_height).map(|b| {
                         let pvm = self.get_vm(b.header.randomx_key);
-                        let pvm_guard = pvm.lock().unwrap();
+                        let pvm_guard = pvm.lock().unwrap_or_else(|e| e.into_inner());
                         b.hash_with_vm(&*pvm_guard)
                     })
                 } else {
@@ -1230,7 +1230,7 @@ impl CChainState {
                 timestamps.push(peer_block.header.timestamp);
                 if timestamps.len() > 20 { timestamps.remove(0); }
                 if timestamps.len() >= 2 {
-                    let consensus = self.consensus.lock().unwrap();
+                    let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
                     current_target = PoWConsensus::compute_adjustment(
                         &timestamps, current_target,
                         consensus.target_block_time(),
@@ -1249,18 +1249,18 @@ impl CChainState {
         // become canonical and must not appear as uncle candidates later
         // (matches Python model reorg fix).
         {
-            let mut competing = self.competing_blocks.lock().unwrap();
-            let mut seen = self.competing_seen.lock().unwrap();
+            let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
+            let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
             for h in (ancestor + 1)..=peer_max {
                 if let Some(peer_block) = peer_blocks.get(&h) {
                     if let Some(entries) = competing.get_mut(&h) {
                         let vm = self.get_vm(peer_block.header.randomx_key);
-                        let guard = vm.lock().unwrap();
+                        let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
                         let peer_hash = peer_block.hash_with_vm(&*guard);
                         drop(guard);
                         entries.retain(|b| {
                             let bvm = self.get_vm(b.header.randomx_key);
-                            let bvm_guard = bvm.lock().unwrap();
+                            let bvm_guard = bvm.lock().unwrap_or_else(|e| e.into_inner());
                             let h = b.hash_with_vm(&*bvm_guard);
                             if h == peer_hash {
                                 seen.remove(&h);
@@ -1280,7 +1280,7 @@ impl CChainState {
         // Move our blocks above ancestor to competing (potential uncles).
         for h in (ancestor + 1)..=current_height {
             if let Ok(block) = self.get_block(h) {
-                self.competing_blocks.lock().unwrap()
+                self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner())
                     .entry(h)
                     .or_default()
                     .push(block);

@@ -1005,7 +1005,17 @@ async fn prepare_block(
     use crate::registry::model::build_linear_coinbase;
     use dwow_chain::UncleBlock;
 
-    // 1. Collect uncles with correct pin rewards (create_uncle)
+    // 1. Build ZK coinbase FIRST — fallible operation (ZK proof generation).
+    //    Must succeed before any destructive state mutation (take_competing_blocks).
+    let (_, _, pow_reward_call) = build_linear_coinbase(
+        recipient,
+        base_reward,
+        linear_zk,
+        height as u32,
+    ).await?;
+
+    // 2. Collect uncles with correct pin rewards (create_uncle).
+    //    Only AFTER the fallible coinbase build succeeds — validate-then-mutate.
     let latest_height = chain_state.get_height();
     let competing_originals: Vec<dwow_chain::Block> =
         chain_state.take_competing_blocks(latest_height);
@@ -1020,14 +1030,6 @@ async fn prepare_block(
         info!(target: "dwowd::prepare_block",
             "Including {} uncles at height {}", uncles.len(), height);
     }
-
-    // 2. Build ZK coinbase
-    let (_, _, pow_reward_call) = build_linear_coinbase(
-        recipient,
-        base_reward,
-        linear_zk,
-        height as u32,
-    ).await?;
 
     // 3. Select mempool transactions
     let mempool_txs = if let Some(m) = mempool {
@@ -1220,15 +1222,21 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         let uncles = prep.uncles;
         let competing_originals = prep.competing_originals;
         let pow_reward_call = prep.pow_reward_call;
+        let mempool_txs = prep.mempool_txs.clone(); // cloned for error recovery
         let mut all_txs = vec![prep.coinbase_tx];
-        all_txs.extend(prep.mempool_txs);
+        all_txs.extend(prep.mempool_txs); // original moved into all_txs
 
         // Check if a block already arrived at this height (P2P broadcast
         // from a peer mining at the same time). If so, skip mining — the
-        // peer's block is already committed.
+        // peer's block is already committed. Re-insert mempool txs.
         if chain_state.get_height() >= height {
             info!(target: "dwowd::miner_task",
                 "Block already exists at height {} — peer beat us to it", height);
+            if let Some(ref mp) = node.mempool {
+                for tx in &all_txs[1..] { // skip coinbase at index 0
+                    let _ = mp.add(tx.clone()).await;
+                }
+            }
             smol::Timer::after(std::time::Duration::from_secs(1)).await;
             continue;
         }
@@ -1240,6 +1248,13 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             Ok(b) => b,
             Err(e) => {
                 error!(target: "dwowd::miner_task", "Mining failed: {}", e);
+                // Re-insert mempool txs — they were consumed by all_txs above.
+                // Matches miner_mine_linear recovery pattern (rpc/miner.rs:206-218).
+                if let Some(ref mp) = node.mempool {
+                    for tx in &mempool_txs {
+                        let _ = mp.add(tx.clone()).await;
+                    }
+                }
                 smol::Timer::after(std::time::Duration::from_secs(2)).await;
                 continue;
             }
@@ -1285,8 +1300,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
                 error!(target: "dwowd::miner_task",
                     "Failed to apply mined block: {}", e);
                 // H3.4: Re-insert competing blocks that were destructively
-                // consumed by take_competing_blocks(). Without this, the
-                // competing miner permanently loses their uncle reward.
+                // consumed by take_competing_blocks().
                 if !competing_originals.is_empty() {
                     info!(target: "dwowd::miner_task",
                         "Re-inserting {} competing blocks after accept failure",
@@ -1295,6 +1309,13 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
                         latest_block.header.height,
                         competing_originals,
                     );
+                }
+                // H-H7: Re-insert mempool transactions.
+                // Matches miner_mine_linear recovery (rpc/miner.rs:234-243).
+                if let Some(ref mp) = node.mempool {
+                    for tx in &mempool_txs {
+                        let _ = mp.add(tx.clone()).await;
+                    }
                 }
                 smol::Timer::after(std::time::Duration::from_secs(2)).await;
                 continue;

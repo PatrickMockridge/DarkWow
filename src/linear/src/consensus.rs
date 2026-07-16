@@ -85,7 +85,7 @@ impl Clone for PoWConsensus {
             min_target: self.min_target,
             max_target: self.max_target,
             initial_target: self.initial_target,
-            timestamps: Mutex::new(self.timestamps.lock().unwrap().clone()),
+            timestamps: Mutex::new(self.timestamps.lock().unwrap_or_else(|e| e.into_inner()).clone()),
             accumulated_work: AtomicU64::new(self.accumulated_work.load(Ordering::Acquire)),
         }
     }
@@ -122,12 +122,12 @@ impl PoWConsensus {
 
     /// Snapshot current timestamps (used for rollback on failed commit).
     pub fn snapshot_timestamps(&self) -> Vec<u64> {
-        self.timestamps.lock().unwrap().clone()
+        self.timestamps.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Restore timestamps from snapshot (used for rollback on failed commit).
     pub fn restore_timestamps(&self, ts: Vec<u64>) {
-        let mut timestamps = self.timestamps.lock().unwrap();
+        let mut timestamps = self.timestamps.lock().unwrap_or_else(|e| e.into_inner());
         *timestamps = ts;
     }
 
@@ -157,7 +157,7 @@ impl PoWConsensus {
 
     /// Record a block timestamp for target tracking.
     pub fn record_block(&self, timestamp: u64) {
-        let mut timestamps = self.timestamps.lock().unwrap();
+        let mut timestamps = self.timestamps.lock().unwrap_or_else(|e| e.into_inner());
         if timestamps.len() >= TIMESTAMP_WINDOW {
             timestamps.remove(0);
         }
@@ -173,7 +173,7 @@ impl PoWConsensus {
     /// All arithmetic uses integer fixed-point math (scale = `SCALE`)
     /// to guarantee deterministic results across CPU architectures.
     pub fn adjust_target(&self) -> u32 {
-        let timestamps = self.timestamps.lock().unwrap();
+        let timestamps = self.timestamps.lock().unwrap_or_else(|e| e.into_inner());
         if timestamps.len() < 2 {
             return self.target.load(Ordering::Acquire);
         }
@@ -258,7 +258,7 @@ impl PoWConsensus {
         batch.insert(b"min_target", &self.min_target.to_le_bytes());
         batch.insert(b"max_target", &self.max_target.to_le_bytes());
 
-        let ts = self.timestamps.lock().unwrap();
+        let ts = self.timestamps.lock().unwrap_or_else(|e| e.into_inner());
         if !ts.is_empty() {
             let mut data = Vec::with_capacity(ts.len() * 8);
             for t in ts.iter() {
@@ -285,7 +285,7 @@ impl PoWConsensus {
             .get(b"timestamps")
             .map_err(|e| LinearError::StorageError(e.to_string()))?
         {
-            let mut timestamps = self.timestamps.lock().unwrap();
+            let mut timestamps = self.timestamps.lock().unwrap_or_else(|e| e.into_inner());
             timestamps.clear();
             for chunk in bytes.chunks_exact(8) {
                 let mut arr = [0u8; 8];
@@ -297,7 +297,7 @@ impl PoWConsensus {
             target: "consensus",
             "Loaded consensus state: target={}, {} timestamps",
             self.target.load(Ordering::Acquire),
-            self.timestamps.lock().unwrap().len()
+            self.timestamps.lock().unwrap_or_else(|e| e.into_inner()).len()
         );
         Ok(())
     }
