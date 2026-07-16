@@ -80,13 +80,13 @@ pub struct PoWConsensus {
 impl Clone for PoWConsensus {
     fn clone(&self) -> Self {
         Self {
-            target: AtomicU32::new(self.target.load(Ordering::Relaxed)),
+            target: AtomicU32::new(self.target.load(Ordering::Acquire)),
             target_block_time: self.target_block_time,
             min_target: self.min_target,
             max_target: self.max_target,
             initial_target: self.initial_target,
             timestamps: Mutex::new(self.timestamps.lock().unwrap().clone()),
-            accumulated_work: AtomicU64::new(self.accumulated_work.load(Ordering::Relaxed)),
+            accumulated_work: AtomicU64::new(self.accumulated_work.load(Ordering::Acquire)),
         }
     }
 }
@@ -112,12 +112,12 @@ impl PoWConsensus {
 
     /// Current target — `hash_u32 <= target` is valid. Higher = easier.
     pub fn target(&self) -> u32 {
-        self.target.load(Ordering::Relaxed)
+        self.target.load(Ordering::Acquire)
     }
 
     /// Force-set the target (used for rollback on failed commit).
     pub fn force_target(&self, value: u32) {
-        self.target.store(value, Ordering::Relaxed);
+        self.target.store(value, Ordering::Release);
     }
 
     /// Snapshot current timestamps (used for rollback on failed commit).
@@ -133,7 +133,7 @@ impl PoWConsensus {
 
     /// Conventional difficulty (higher = harder), derived from target.
     pub fn difficulty(&self) -> u64 {
-        let t = self.target.load(Ordering::Relaxed);
+        let t = self.target.load(Ordering::Acquire);
         if t == 0 {
             return u64::MAX;
         }
@@ -175,7 +175,7 @@ impl PoWConsensus {
     pub fn adjust_target(&self) -> u32 {
         let timestamps = self.timestamps.lock().unwrap();
         if timestamps.len() < 2 {
-            return self.target.load(Ordering::Relaxed);
+            return self.target.load(Ordering::Acquire);
         }
 
         // Sum intervals between consecutive timestamps in the window
@@ -184,7 +184,16 @@ impl PoWConsensus {
         let mut total_interval = 0u64;
         for i in start + 1..timestamps.len() {
             total_interval +=
-                timestamps[i].saturating_sub(timestamps[i - 1]);
+                // Decreasing timestamps violate causality. checked_sub surfaces
+                // the violation rather than silently masking it as zero-interval.
+                // A zero interval is substituted (same behavior as before) but the
+                // anomaly is logged so operators can detect timestamp manipulation.
+                timestamps[i].checked_sub(timestamps[i - 1]).unwrap_or_else(|| {
+                    tracing::warn!(target: "dwow_chain::consensus",
+                        "Decreasing timestamp in adjustment window: {} < {}",
+                        timestamps[i], timestamps[i - 1]);
+                    0
+                });
         }
         let count = (n - 1) as u64;
 
@@ -220,7 +229,7 @@ impl PoWConsensus {
 
         // ratio_scaled > SCALE (blocks fast) → adjustment > SCALE → target decreases (harder)
         // ratio_scaled < SCALE (blocks slow) → adjustment < SCALE → target increases (easier)
-        let current = self.target.load(Ordering::Relaxed) as u64;
+        let current = self.target.load(Ordering::Acquire) as u64;
         let new_target = (current * SCALE / adjustment) as u32;
         let clamped = new_target.clamp(self.min_target, self.max_target);
 
@@ -230,7 +239,7 @@ impl PoWConsensus {
             current, clamped, avg_interval, ratio_scaled, adjustment
         );
 
-        self.target.store(clamped, Ordering::Relaxed);
+        self.target.store(clamped, Ordering::Release);
         clamped
     }
 
@@ -244,7 +253,7 @@ impl PoWConsensus {
 
     /// Write consensus state into a sled Batch (for use with transactions).
     pub fn save_to_batch(&self, batch: &mut sled::Batch) {
-        batch.insert(b"target", &self.target.load(Ordering::Relaxed).to_le_bytes());
+        batch.insert(b"target", &self.target.load(Ordering::Acquire).to_le_bytes());
         batch.insert(b"target_block_time", &self.target_block_time.to_le_bytes());
         batch.insert(b"min_target", &self.min_target.to_le_bytes());
         batch.insert(b"max_target", &self.max_target.to_le_bytes());
@@ -269,7 +278,7 @@ impl PoWConsensus {
             if bytes.len() == 4 {
                 let mut arr = [0u8; 4];
                 arr.copy_from_slice(&bytes);
-                self.target.store(u32::from_le_bytes(arr), Ordering::Relaxed);
+                self.target.store(u32::from_le_bytes(arr), Ordering::Release);
             }
         }
         if let Some(bytes) = tree
@@ -287,7 +296,7 @@ impl PoWConsensus {
         debug!(
             target: "consensus",
             "Loaded consensus state: target={}, {} timestamps",
-            self.target.load(Ordering::Relaxed),
+            self.target.load(Ordering::Acquire),
             self.timestamps.lock().unwrap().len()
         );
         Ok(())
@@ -305,7 +314,7 @@ impl PoWConsensus {
     /// 64-bit check — see `stratum.rs` target encoding comment.
     pub fn check_pow(&self, hash: &Blake3Hash) -> bool {
         let hash_u32 = u32::from_le_bytes(hash.as_bytes()[0..4].try_into().unwrap());
-        hash_u32 <= self.target.load(Ordering::Relaxed)
+        hash_u32 <= self.target.load(Ordering::Acquire)
     }
 
     /// Verify an uncle block meets the target.

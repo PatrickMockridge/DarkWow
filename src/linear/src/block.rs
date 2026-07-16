@@ -457,8 +457,16 @@ pub fn compute_reward(base_reward: u64, uncles: &[UncleBlock]) -> (u64, Vec<u64>
 
     let total_pin_rewards: u64 = uncle_rewards.iter().sum();
     // Canonical reward is base minus what it pays in pins.
-    // Use saturating_sub to prevent underflow if pin rewards exceed base.
-    let canonical_reward = base_reward.saturating_sub(total_pin_rewards);
+    // Use checked_sub to surface invariant violations — pin rewards
+    // exceeding base is a consensus bug, not a recoverable condition.
+    // downstream verify_uncle_split() also catches this at commit time.
+    let canonical_reward = base_reward.checked_sub(total_pin_rewards)
+        .unwrap_or_else(|| {
+            tracing::error!(target: "dwow_chain::block",
+                "Invariant violated: pin rewards ({}) exceed base reward ({})",
+                total_pin_rewards, base_reward);
+            0
+        });
     (canonical_reward, uncle_rewards)
 }
 
