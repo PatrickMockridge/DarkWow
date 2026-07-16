@@ -689,6 +689,13 @@ impl DwowNode {
                     template.height,
                 );
 
+                // HAZID F5: Remove mined transactions from mempool.
+                if let Some(ref mp) = self.mempool {
+                    let tx_hashes: Vec<blake3::Hash> = block.transactions.iter()
+                        .map(|tx| tx.hash()).collect();
+                    mp.mark_mined(&tx_hashes).await;
+                }
+
                 // HAZID H-C2: broadcast merge-mined block to P2P peers.
                 // Previously merge-mined blocks were committed locally but
                 // never propagated — the network only discovered them via

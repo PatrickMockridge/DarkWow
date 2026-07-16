@@ -343,11 +343,11 @@ async fn handle_receive_block(
                     msg.block.header.height
                 );
 
-                // Clean confirmed transactions from the mempool
+                // Clean confirmed transactions from the mempool (batch)
                 if let Some(ref mempool) = mempool {
-                    for tx in &msg.block.transactions {
-                        mempool.remove(tx.hash().as_bytes()).await;
-                    }
+                    let tx_hashes: Vec<blake3::Hash> = msg.block.transactions.iter()
+                        .map(|tx| tx.hash()).collect();
+                    mempool.mark_mined(&tx_hashes).await;
                 }
 
                 // H9 trigger: try chain reorganization from competing blocks.

@@ -628,6 +628,13 @@ impl DwowNode {
                     submitted_height
                 );
 
+                // HAZID F5: Remove mined transactions from mempool.
+                if let Some(ref mp) = self.mempool {
+                    let tx_hashes: Vec<blake3::Hash> = block.transactions.iter()
+                        .map(|tx| tx.hash()).collect();
+                    mp.mark_mined(&tx_hashes).await;
+                }
+
                 // Push new mining job to all connected miners
                 if let Some(ref publisher) = *self.mining_state.linear_stratum_publisher.lock().await {
                     if let Some(ref recipient_config) = *self.mining_state.linear_recipient_config.lock().await {

@@ -229,6 +229,12 @@ impl DwowNode {
         ) {
             Ok(()) => {
                 info!(target: "dwowd::rpc::miner", "Mined and applied block {} at height {}", block_hash, height);
+                // HAZID F5: Remove mined transactions from mempool.
+                if let Some(ref mp) = self.mempool {
+                    let tx_hashes: Vec<blake3::Hash> = mined_block.transactions.iter()
+                        .map(|tx| tx.hash()).collect();
+                    mp.mark_mined(&tx_hashes).await;
+                }
             }
             Err(e) => {
                 error!(target: "dwowd::rpc::miner",

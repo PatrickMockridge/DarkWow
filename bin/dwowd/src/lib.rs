@@ -1295,6 +1295,14 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
                     .flat_map(|tx| tx.contract_calls.iter())
                     .count() as u64 * 400_000_000; // GAS_LIMIT per call
                 node.fee_estimator.record_block(gas_used).await;
+
+                // HAZID F5: Remove mined transactions from mempool.
+                // Previously never called — mined txs persisted forever in the pool.
+                if let Some(ref mp) = node.mempool {
+                    let tx_hashes: Vec<blake3::Hash> = mined_block.transactions.iter()
+                        .map(|tx| tx.hash()).collect();
+                    mp.mark_mined(&tx_hashes).await;
+                }
             }
             Err(e) => {
                 error!(target: "dwowd::miner_task",
