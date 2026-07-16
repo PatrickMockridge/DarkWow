@@ -297,8 +297,13 @@ impl DwowNode {
         {
             const MAX_MM_JOBS: usize = 100;
             let mut mm_jobs = self.mining_state.mm_jobs.lock().await;
+            // HAZID H-M11: FIFO eviction — remove oldest entry, not all entries.
+            // Previously clear() wiped 100 jobs at once, evicting recently-created
+            // valid jobs alongside expired ones.
             if mm_jobs.len() >= MAX_MM_JOBS {
-                mm_jobs.clear();
+                if let Some(oldest) = mm_jobs.keys().next().cloned() {
+                    mm_jobs.remove(&oldest);
+                }
             }
             mm_jobs.insert(job_id.clone(), ());
         }
@@ -671,12 +676,22 @@ impl DwowNode {
                     template.height,
                 );
 
+                // HAZID H-C2: broadcast merge-mined block to P2P peers.
+                // Previously merge-mined blocks were committed locally but
+                // never propagated — the network only discovered them via
+                // 30-second sync poll. Now broadcast immediately.
+                crate::proto::linear_broadcast::broadcast_block(
+                    &self.p2p_handler.p2p, block.clone()).await;
+
                 // Mark job as submitted with bounded capacity
                 {
                     const MAX_MM_SUBMITTED: usize = 1000;
                     let mut submitted = self.mining_state.mm_jobs_submitted.lock().await;
+                    // HAZID H-M11: FIFO eviction for submitted set too.
                     if submitted.len() >= MAX_MM_SUBMITTED {
-                        submitted.clear();
+                        if let Some(oldest) = submitted.iter().next().cloned() {
+                            submitted.remove(&oldest);
+                        }
                     }
                     submitted.insert(aux_hash.clone());
                 }
