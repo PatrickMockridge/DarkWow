@@ -106,7 +106,11 @@ BlockHeader {
     randomx_key: [u8; 32],   // derived from height: blake3(height.to_le_bytes())
     coin_merkle_root: [u8; 32],
     nullifier_root: [u8; 32], // root of nullifier SMT after this block
-    anchor_tx_id: [u8; 32],  // Caribina Arweave anchor (zero if none)
+    anchor_tx_id: [u8; 32],       // Caribina Arweave anchor (zero if none)
+    anchor_monero_height: u64,     // Monero p2pool anchor height (0 if none)
+    anchor_monero_hash: [u8; 32],  // Monero p2pool anchor hash
+    finality_flags: u8,            // 0x01=Caribina, 0x02=Monero, 0x04=Signaled
+    pow_source: PowSource,         // Native or Monero (merge-mined)
 }
 ```
 
@@ -358,7 +362,7 @@ LinearBlockTemplate {
     timestamp: u64,                   // Unix seconds
     value: u64,                       // Coinbase reward = expected_reward(height)
     zk_proof: Vec<u8>,               // Mint_V1 ZK proof bytes
-    zk_public_inputs: [[u8; 32]; 7], // [coin, vc.x, vc.y, tc, nf, S_H.x, S_H.y]
+    zk_public_inputs: [[u8; 32]; 9], // [C, nf, vc.x, vc.y, tc, S_H.x, S_H.y, tx_binding, tx_nonce]
     coin: [u8; 32],                  // Coin commitment C
     value_commit_x: [u8; 32],        // Pedersen value commitment x
     value_commit_y: [u8; 32],        // Pedersen value commitment y
@@ -385,7 +389,7 @@ LinearBlockTemplate {
 6. Build ZK coinbase via `build_linear_coinbase()`:
    - Derive `sk_H` deterministically from declared identity (MUST, not random)
    - Compute `C`, `nf`, `vc`, `tc`, `S_H` as specified in Section 2
-   - Generate `Mint_V1` ZK proof with 7 public inputs
+   - Generate `Mint_V1` ZK proof with 9 public inputs
    - Build PoWRewardV1 contract call (selector `0x05` + serialized `PoWRewardParamsV1`)
    - Store `pow_reward_call_data` in template for stratum/mm_rpc miners
    - Compute `coin_merkle_root` including new coin
