@@ -162,8 +162,26 @@ impl CChainState {
             }
             Mutex::new(map)
         };
-        let uncle_coin_set: Mutex<HashMap<[u8; 32], u64>> =
-            Mutex::new(HashMap::new());
+        // HAZID H-H4: Restore uncle_coin_set from sled on restart.
+        // Previously always empty — uncle coins created before restart
+        // were not tracked, allowing potential duplicate uncle inclusion.
+        let uncle_coin_set = {
+            let mut map = HashMap::new();
+            // Restore from the uncles sled tree (keys are blake3 hashes of
+            // uncle identity, values are u64 creation heights).
+            for item in store.uncles.iter() {
+                if let Ok((k, v)) = item {
+                    if k.len() == 32 && v.len() == 8 {
+                        let mut coin_bytes = [0u8; 32];
+                        let mut height_bytes = [0u8; 8];
+                        coin_bytes.copy_from_slice(&k);
+                        height_bytes.copy_from_slice(&v);
+                        map.insert(coin_bytes, u64::from_le_bytes(height_bytes));
+                    }
+                }
+            }
+            Mutex::new(map)
+        };
         let nullifier_set = {
             let mut map = BTreeMap::new();
             for item in store.nullifiers.iter() {
@@ -989,6 +1007,15 @@ impl CChainState {
     ///
     /// This is a lightweight trigger — no network requests required.
     /// Returns the number of blocks reorganized (0 if no reorg occurred).
+    ///
+    /// # Safety
+    ///
+    /// HAZID H-C1: reorganize_to() does NOT execute WASM, update contract state,
+    /// or update the cumulative supply chain. Activating reorg without these
+    /// implementations silently corrupts chain state. This function is gated
+    /// behind the `reorg-enabled` feature flag until the missing implementations
+    /// are completed.
+    #[cfg(feature = "reorg-enabled")]
     pub fn try_reorg_from_competing(&self) -> Result<usize> {
         let current_height = self.get_height();
         let competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
@@ -1102,6 +1129,14 @@ impl CChainState {
     /// 2. If same height → keep ours (first-seen-wins)
     ///
     /// Returns the number of blocks reorganized (0 if no reorg occurred).
+    ///
+    /// # Safety
+    ///
+    /// HAZID H-C1: This function does NOT execute WASM, update contract state,
+    /// or update the cumulative supply chain for peer blocks. It is gated behind
+    /// the `reorg-enabled` feature flag until the missing implementations are
+    /// completed. See doc/src/arch/consensus/hazid-report.md §H-C1.
+    #[cfg(feature = "reorg-enabled")]
     pub fn reorganize_to(&self, peer_blocks: &HashMap<u64, Block>) -> Result<usize> {
         let _lock = self.connect_lock.lock().unwrap_or_else(|e| e.into_inner());
         let current_height = self.get_height();

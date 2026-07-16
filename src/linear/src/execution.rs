@@ -495,12 +495,36 @@ pub fn execute_block(
     }
 
     // ---- Deployooor post-processing ----
+    // HAZID H-M3: Track Deployooor-written keys to detect conflicts with
+    // already-merged canonical/uncle state changes. Deployooor WASM execution
+    // can write arbitrary contract state keys. If it writes a key already
+    // written by a canonical or uncle call, the conflict must be detected.
     for (wasm, contract_id, ix) in &pending_deployments {
         info!(target: "execution", "Deploying {:?} via Deployooor", contract_id);
+        // Snapshot existing overlay keys before deployment
+        let before_keys: HashSet<Vec<u8>> = {
+            let state = main_overlay.state.clone();
+            state.cache.keys()
+                .chain(state.removed.iter())
+                .map(|k| k.to_vec())
+                .collect()
+        };
         deploy_contract_in_overlay(
             &mut main_overlay, (*store).clone(), vm.clone(),
             wasm, *contract_id, ix, current_height, difficulty,
         )?;
+        // Detect new keys introduced by the deployment
+        let after_state = main_overlay.state.clone();
+        for key in after_state.cache.keys().chain(after_state.removed.iter()) {
+            let key_vec = key.to_vec();
+            if !before_keys.contains(&key_vec) {
+                if !written_keys.insert(key_vec) {
+                    return Err(Error::Custom(
+                        "DuplicateKeyConflict: Deployooor wrote key already in overlay".to_string()
+                    ));
+                }
+            }
+        }
     }
 
     Ok(ExecutionOutcome {

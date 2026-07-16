@@ -502,6 +502,8 @@ pub async fn consensus_linear_init_task(
         // H3.5: Check for longer competing chains while waiting.
         // A fork may have grown past our canonical chain while no
         // new P2P blocks triggered try_reorg_from_competing().
+        // HAZID H-C1: gated behind reorg-enabled feature flag.
+        #[cfg(feature = "reorg-enabled")]
         if let Err(e) = blockchain.try_reorg_from_competing() {
             warn!(target: "dwowd::task::consensus_linear_init_task",
                 "try_reorg_from_competing failed: {}", e);

@@ -352,6 +352,9 @@ async fn handle_receive_block(
 
                 // H9 trigger: try chain reorganization from competing blocks.
                 // If a peer has a longer chain, reorganize to it.
+                // HAZID H-C1: reorganize_to() is gated behind reorg-enabled feature.
+                // When disabled, competing blocks are stored for uncle rewards only.
+                #[cfg(feature = "reorg-enabled")]
                 match blockchain.try_reorg_from_competing() {
                     Ok(count) if count > 0 => {
                         tracing::info!(
@@ -367,6 +370,12 @@ async fn handle_receive_block(
                         );
                     }
                     _ => {} // No reorg needed
+                }
+                #[cfg(not(feature = "reorg-enabled"))]
+                {
+                    // HAZID H-C1: reorg is disabled — competing blocks are stored
+                    // for uncle rewards only. No chain reorganization occurs.
+                    let _ = blockchain; // suppress unused warning
                 }
             }
             Err(e) => {
