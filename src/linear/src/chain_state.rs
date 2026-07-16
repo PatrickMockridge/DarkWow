@@ -898,6 +898,22 @@ impl CChainState {
             }
         }
 
+        // --- Phase 4B: nullifier_root verification ---
+        // Per consensus.md Phase 6: verify that the block header's nullifier_root
+        // matches the computed root after this block's nullifiers are inserted.
+        // Blocks with [0u8; 32] nullifier_root are grandfathered (pre-existing
+        // blocks and test fixtures that predate this verification).
+        if block.header.nullifier_root != [0u8; 32] {
+            let computed_root = self.compute_nullifier_root();
+            if computed_root != block.header.nullifier_root {
+                return Err(LinearError::BlockIsInvalid(format!(
+                    "nullifier_root mismatch: computed={} header={}",
+                    hex::encode(computed_root),
+                    hex::encode(block.header.nullifier_root),
+                )));
+            }
+        }
+
         // --- Post-commit uncle_coin_set update ---
         // Uncle Pedersen commitments were pre-computed before the closure.
         // Update the in-memory cache after the atomic sled commit succeeds.
