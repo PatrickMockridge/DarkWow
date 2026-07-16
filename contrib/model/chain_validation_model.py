@@ -76,13 +76,23 @@ GENESIS_REWARD = 0                   # Bootstrap block
 def expected_reward(height: int) -> int:
     """
     Coinbase reward at a given block height.
-    Matches the documented emission schedule exactly.
+    Uses the exponential formula from consensus-coinbase.md §3.2:
 
     R(h) = max(R0 * 2^(-h/H), R_tail)
 
     Integer-only fixed-point arithmetic. No floats. Deterministic.
     The decay constant is pre-computed from H using Python's decimal
     module (exact rational math) and hardcoded — never recomputed.
+
+    NOTE (HAZID H-C3): The Rust implementation uses a LINEAR approximation:
+      R(h) ≈ R_tail + (R0 - R_tail) * (1 - (h-1)/H)
+    This Python model implements the spec's exponential formula, which produces
+    DIFFERENT rewards than the Rust code. At the half-life (h=H+1):
+      Exponential (Python): ~6.92 DRKW
+      Linear (Rust):        ~0.80 DRKW
+    The Rust implementation has a reference exponential function at
+    src/sdk/src/blockchain.rs::expected_reward_exponential() behind
+    #[cfg(feature = \"client\")]. This discrepancy must be resolved before mainnet.
     """
     if height == 0:
         return GENESIS_REWARD
@@ -99,6 +109,24 @@ def expected_reward(height: int) -> int:
             return TAIL_REWARD
 
     return max(reward, TAIL_REWARD)
+
+
+def expected_reward_linear(height: int) -> int:
+    """Reference implementation of the Rust linear approximation.
+    Documented for cross-reference with the spec's exponential formula.
+    See HAZID H-C3."""
+    if height == 0:
+        return 0
+    if height == 1:
+        return INITIAL_REWARD_R0
+    if height > HALF_LIFE_BLOCKS:
+        return TAIL_REWARD
+    h = height - 1
+    DECAY_FP = 4_294_967_296  # 2^32
+    numerator = INITIAL_REWARD_R0 - TAIL_REWARD
+    decay = (DECAY_FP * h) // HALF_LIFE_BLOCKS
+    pre_reward = numerator * (DECAY_FP - decay) // DECAY_FP
+    return TAIL_REWARD + pre_reward
 
 
 # ============================================================================
@@ -1170,6 +1198,14 @@ class NodeChain:
         CRITICAL-2 fix: Validate the ENTIRE peer chain FIRST before
         disconnecting any canonical blocks. Only disconnect our blocks
         after the peer chain is proven valid. This ensures atomic reorg:
+
+        SAFETY NOTE (HAZID H-C1): The Rust reorganize_to() does NOT execute
+        WASM or update the cumulative supply chain for peer blocks. It is
+        gated behind the `reorg-enabled` feature flag (off by default).
+        This Python model executes the full reorg including validation but
+        does not model WASM execution or supply chain updates — it models
+        block-level chain state only. If reorg is enabled in production,
+        the Rust implementation must be completed to match this model.
         if validation fails, our chain is untouched.
 
         Matches: Bitcoin Core CChainState::ActivateBestChain.

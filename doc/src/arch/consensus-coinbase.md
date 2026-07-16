@@ -198,8 +198,11 @@ The `Mint_V1` ZK circuit constrains:
 | 5 | `S_H = S_{H-1} + vc` | Cumulative supply chain invariant holds |
 | 6 | `range_check(64, reward)` | Reward value fits in u64 |
 
-Public inputs exposed to validators: `[C, vc.x, vc.y, tc, nf, S_H.x, S_H.y]`
-plus `tx_binding` and `tx_nonce`.
+Nine (9) public inputs are exposed to validators via `ZkPublicInputs<9>`:
+`[C, nf, vc.x, vc.y, tc, S_H.x, S_H.y, tx_binding, tx_nonce]`.
+
+The circuit also constrains `range_check(64, old_cumulative_value)` as a
+defense-in-depth witness constraint (not a public input).
 
 Witness (private): `sk_H`, `pk_H`, `reward`, `blind`, `value_blind`,
 `token_blind`, old cumulative values.
@@ -256,20 +259,52 @@ for the cheat detection table.
 
 ### 3.2 Reward Function
 
+The implemented formula uses a linear approximation of exponential decay
+with fixed-point arithmetic for deterministic, cross-platform consensus safety:
+
 ```
-R(h) = max( R₀ × 2^(-h / H), R_tail )
-  where:
-    h = block height
-    genesis (h=1) returns INITIAL_REWARD (R₀)
-    heights 2+ follow the exponential decay curve
+For h = 0: R(0) = 0 (pre-genesis)
+For h = 1: R(1) = INITIAL_REWARD (genesis, ~13.84 DRKW)
+For 2 ≤ h ≤ HALF_LIFE_BLOCKS:
+    R(h) = R_tail + (R₀ - R_tail) × (1 - (h-1)/H)
+For h > HALF_LIFE_BLOCKS:
+    R(h) = R_tail (permanent tail emission, ~0.80 DRKW)
+
+Constants:
     R₀ = 1,383,764,049 base units
-    H  = 1,051,920 blocks
-    R_tail = 79,853,981 base units
+    H  = 1,051,920 blocks (half-life, ~4 years at 2-min blocks)
+    R_tail = 79,853,981 base units (1% per annum of 21M cap)
 ```
 
+> **Note (HAZID H-C3):** The specification originally documented an exponential
+> formula `R(h) = max(R₀ × 2^(-h/H), R_tail)`. The implemented linear approximation
+> is simpler and deterministic but produces different reward values — at the
+> half-life, the linear formula pays ~0.80 DRKW vs the exponential's ~6.92 DRKW.
+> A reference implementation of the exponential formula exists at
+> `src/sdk/src/blockchain.rs::expected_reward_exponential()` behind
+> `#[cfg(feature = "client")]`. This discrepancy must be resolved before mainnet.
+
 The function is implemented at [`src/sdk/src/blockchain.rs`](../../src/sdk/src/blockchain.rs)
-using integer-only fixed-point arithmetic for deterministic, cross-platform
-consensus safety. Floating point MUST NOT be used for supply computation.
+using integer-only fixed-point arithmetic. Floating point MUST NOT be used.
+
+### 3.3 Cumulative Supply Bootstrap
+
+The cumulative supply chain `S_H` tracks the Pedersen commitment to total
+minted supply at each height:
+
+```
+S_0 = PedersenIdentity (pre-genesis: total_supply=0, blind=0)
+S_H = S_{H-1} + C_H  where C_H = pedersen_commit(R(H), blind_H)
+
+At genesis (H=1):
+    S_1 = identity + C_1
+    total_supply = 0 + INITIAL_REWARD
+
+The WASM contract `pow_reward_v1` enforces S_H correctness from H=2 onward.
+At H=1 (genesis), the cumulative supply is bootstrapped directly into the
+NativeToken contract's TOTAL_SUPPLY key during `init_genesis_contracts()`
+without WASM execution. See [genesis.md](genesis.md) for the full bootstrap
+specification.
 
 ### 3.3 Derivation
 

@@ -43,13 +43,19 @@ One instance per node. No dual caches. No diverged height/target/VM state.
 
 ```
 CChainState {
-    store: Arc<LinearStore>,        // sled persistence (6 trees)
+    store: Arc<LinearStore>,        // sled persistence (7 trees: blocks, txs,
+                                    //   contracts, uncles, consensus, coins, nullifiers)
+    supply_chain: CumulativeSupply, // Pedersen chain S_H = S_{H-1} + C_H
     consensus: Mutex<PoWConsensus>, // difficulty adjustment
     height: AtomicU64,              // O(1) cached tip height
-    vm_cache: Mutex<HashMap>,       // RandomX VM pool
-    coin_set: Mutex<HashMap>,       // coin commitments → height
-    nullifier_set: Mutex<HashSet>,  // spent nullifiers
+    vm_cache: Mutex<HashMap>,       // RandomX VM pool (keyed by randomx_key)
+    coin_set: Mutex<BTreeMap>,      // CoinCommitment → creation_height
+    uncle_coin_set: Mutex<HashMap>, // blake3 uncle coin hash → creation_height
+    nullifier_set: Mutex<BTreeMap>, // Nullifier → creation_height
+    competing_blocks: Mutex<HashMap>, // height → Vec<Block> (uncle candidates)
+    competing_seen: Mutex<HashSet>,   // blake3 dedup hashes
     peer_best_height: AtomicU64,    // best peer-reported height
+    connect_lock: Mutex<()>,        // serializes block insertion
 }
 ```
 
@@ -57,6 +63,13 @@ Single insertion path: `connect_block()`. Used by genesis, sync, broadcast,
 miner RPC, stratum, and merge mining. Replaces the old dual-instance pattern
 where `src/linear/src/blockchain.rs` and `bin/dwowd/src/blockchain.rs` held
 independent caches that diverged.
+
+**Cache restoration on restart (Phase 3 H-H4 fix):** On node startup, `coin_set`
+and `nullifier_set` are rebuilt from the `coins` and `nullifiers` sled trees.
+`uncle_coin_set` is rebuilt from the `uncles` sled tree. These restorations
+prevent duplicate coin/nullifier/uncle acceptance after a crash restart.
+The `competing_blocks` and `competing_seen` caches are NOT restored (they
+represent in-flight state that is invalidated by a restart).
 
 ### MiningState — Block Production
 

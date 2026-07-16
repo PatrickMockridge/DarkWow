@@ -113,6 +113,21 @@ The genesis block SHALL be committed through the standard block acceptance path
 from the execution overlay, and commits block + contracts + supply_chain atomically.
 The genesis block SHALL NOT bypass WASM execution.
 
+### Genesis Miner Identity
+
+The genesis block's coinbase nullifier `nf_1` is computed from the per-block
+derived key `sk_1 = derive_instance(sk_genesis, NATIVE_TOKEN_CONTRACT_ID, 1.to_le_bytes())`.
+The genesis miner identity `sk_genesis` is the well-known key declared in the
+node's `keys.toml` under the section that creates genesis (typically `[node0]`).
+The `init_genesis()` function in `bin/dwowd/src/lib.rs` reads this key from the
+configured AccountManager and derives `sk_1` deterministically.
+
+Any node configured with the same `[node0]` secret will produce an identical
+genesis block. Nodes joining an existing network verify the genesis hash against
+their local genesis block — the genesis miner identity is NOT a consensus rule,
+it is a local configuration choice. The network's genesis is identified by its
+block hash, not by the miner who created it.
+
 ## Cumulative Supply Bootstrap
 
 The cumulative supply chain uses a Pedersen commitment accumulator:
