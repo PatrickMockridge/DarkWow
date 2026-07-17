@@ -57,14 +57,14 @@ proofs by default.
 | 5-level test pipeline | [IMPLEMENTED] | `contrib/docker/` |
 | Mempool with on-chain nullifier check | [IMPLEMENTED] | `crates/dwow-mempool/` |
 | Universal relayer | [IMPLEMENTED] | `bin/universal_relayer/` |
+| Manifest-driven generic prover (ZK) | [IMPLEMENTED] | `src/sdk/src/prover.rs`, `bin/dww/src/prover_impl.rs` — zkas_binaries store, witness-binding, manifest-driven proof construction for any contract |
+| Manifest parameter encoding (non-ZK) | [IMPLEMENTED] | `src/sdk/src/manifest.rs` — `encode_params_by_schema`, write-path dual of `decode_note_by_schema` |
+| Capability selection by asset_id (write path) | [IMPLEMENTED] | `bin/dww/src/lib.rs` — `resolve_transfer_contract`, dispatch + RPC routing through manifest-driven `invoke_contract` |
 
 ### [PARTIAL] — Core works, limitations listed
 
 | Component | Status | Limitation |
 |-----------|--------|-----------|
-| Wallet generic contract invocation (non-ZK) | [PARTIAL] | Manifest lookup, fee attach, signing, broadcast all wired; parameter encoding from manifest schema implemented (`encode_params_by_schema`); capability selection by barb-cover (§6.2) not yet implemented |
-| Wallet generic contract invocation (ZK) | [PARTIAL] | Generic prover wired (wallet.md §6.4.1 steps 1-6): zkas_binaries store, ProverImpl, manifest-driven proof construction. Remaining gap: capability selection by asset_id for input binding, DeployV1 zkas extraction during scan |
-| Non-native capability transfers via manifest path | [PARTIAL] | Generic prover wired; capability selection by asset_id from held caps is the remaining gap — contract resolution + invoke_contract routing partially implemented |
 | P2P three-tier feature gate | [PARTIAL] | net-wallet (dww) and net-full (dwowd) active in production; net-node middle tier defined in Cargo.toml but unused by any binary, not compile-tested, structured-gossip behavior not implemented |
 
 ### [VISION] — Long-term design direction

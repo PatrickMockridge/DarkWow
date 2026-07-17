@@ -35,26 +35,22 @@ architecture described in §§0-9 below. This section documents what works today
   contract lock, capabilities, tree, position, diagnostic, broadcast.
 - **Full node:** P2P sync via GetTip/GetBlocks (same protocol as mining nodes),
   local SQLite DB. Zero RPC dependency for scan operations.
+- **Generic prover (§6.4.1):** Manifest-driven proof construction for any contract
+  with a stored manifest. SDK-side witness-binding (`prover.rs`,
+  `encode_params_by_schema`), wallet-side `ProverImpl` (`prover_impl.rs`),
+  `zkas_binaries` store with genesis circuit embed. Capability selection by
+  asset_id via `resolve_transfer_contract`. Non-native transfers route through
+  `invoke_contract` → manifest → prover — ONE path, zero per-contract code.
 
 ### What Is Partial [PARTIAL]
 
-- **Generic contract invocation (non-ZK):** Manifest lookup, fee attach, signing,
-  broadcast all wired via `ManifestContractClient` (`src/sdk/src/contract_client.rs`).
-  Parameter encoding from manifest `[[parameters]]` schema implemented
-  (`encode_params_by_schema`, `src/sdk/src/manifest.rs`). Capability selection
-  by barb-cover (§6.2) not yet implemented.
-- **Generic contract invocation (ZK):** The generic prover is wired (Steps 1-6 of
-  §6.4.1): `zkas_binaries` store with genesis circuit embed (`wallet.sql`,
-  `walletdb.rs`), `ProverImpl` in `bin/dww/src/prover_impl.rs` using
-  `dwow_core::zk`, `WalletStateProvider::generate_proof` trait method, manifest-
-  driven proof construction in `ManifestContractClient::build`. Remaining gap:
-  capability selection by asset_id for input binding, DeployV1 zkas extraction
-  during scan.
-- **Non-native capability transfers:** The generic prover is wired. Capability
-  selection by asset_id from held caps — resolving the contract from stored
-  `contract_metadata`, selecting the function by manifest action, and routing
-  through `invoke_contract` — is partially implemented (cap selection exists on
-  the read side, write-side routing is the remaining gap).
+- **P2P three-tier feature gate:** net-wallet (dww) and net-full (dwowd) active
+  in production; net-node middle tier defined in Cargo.toml but unused by any
+  binary, not compile-tested, structured-gossip behavior not implemented.
+- **DeployV1 zkas extraction during scan:** Circuit binaries for user-deployed
+  contracts are not yet extracted from `DeployV1` payloads and stored in
+  `zkas_binaries` during scan. Genesis contracts are embedded; user-deployed
+  contracts need this for the generic prover's step 3 (§6.4.1).
 
 ### What Is Spec-Only [VISION]
 

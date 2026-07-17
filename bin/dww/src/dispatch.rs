@@ -483,23 +483,27 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                     dww.build_native_transfer(amount, recipient, seed).await?
                 } else {
                     // Generic non-native transfer: manifest-driven path.
-                    // Steps 1-5 (parameter encoding, zkas_binaries store, generic
-                    // prover, dispatch wiring) are done. The remaining gap is
-                    // capability selection by asset_id + contract resolution:
-                    //   held_capabilities_by_asset(token_id) → contract_id →
-                    //   invoke_contract(contract_id, "transfer", params) →
-                    //   manifest → CapabilityProvider → prover_impl
-                    // The generic prover is wired; the selection logic is the
-                    // follow-on. Until then, non-DRKW transfers error with a
-                    // precise diagnostic.
-                    return Err(Error::Custom(format!(
-                        "Non-native transfer: the generic prover is now wired \
-                         (Steps 1-5 complete). Capability selection by asset_id \
-                         '{}' is the remaining gap — contract resolution from \
-                         held caps is needed. Use DRKW native transfer \
-                         (transfer <amount> DRKW <recipient>) for now.",
-                        token_id,
-                    )));
+                    // Select held capability by asset_id → resolve contract →
+                    // invoke_contract → manifest → CapabilityProvider → prover_impl.
+                    let all_caps = dww.wallet.get_held_capabilities(Some(false))
+                        .map_err(|e| Error::Custom(format!("{:?}", e)))?;
+                    let token_bytes = bs58::decode(&token_id).into_vec().unwrap_or_default();
+                    let rec = all_caps.iter()
+                        .find(|c| c.asset_id.to_bytes().to_vec() == token_bytes)
+                        .ok_or_else(|| Error::Custom(format!(
+                            "no held capability found for asset_id '{}'", token_id,
+                        )))?;
+                    let (contract_id, function_name) = dww.resolve_transfer_contract(rec, "transfer")
+                        .map_err(|e| Error::Custom(e))?;
+                    let params_json = serde_json::json!({
+                        "amount": amount,
+                        "recipient": recipient,
+                    });
+                    let cid_str = bs58::encode(contract_id.to_bytes()).into_string();
+                    dww.invoke_contract(
+                        &cid_str, &function_name, Some(&params_json.to_string()),
+                        vec![], vec![],
+                    ).await?
                 };
                 let tx_b64 = crate::wallet_util::base64_encode(&dwow_serial::serialize_async(&tx).await);
                 if !*porcelain { println!("Transaction (base64): {tx_b64}"); }

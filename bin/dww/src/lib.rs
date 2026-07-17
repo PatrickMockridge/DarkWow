@@ -731,9 +731,10 @@ impl WalletStateProvider for Dww {
             Some(arr)
         };
         Ok(cap_records.iter()
-            // Inflation guard: coin selection is native-token only; foreign caps
-            // are never spendable value (see capability_balance).
-            .filter(|c| c.contract_id == *NATIVE_TOKEN_CONTRACT_ID)
+            // Generic capability selection: filter by asset_id across ALL
+            // contracts. Native-token callers (fee builder) pass DRKW asset_id
+            // which only native_token caps carry. Non-native callers pass their
+            // contract's asset_id; the contract_id disambiguates naturally.
             .filter(|c| match &filter_bytes {
                 Some(ref bytes) => &c.asset_id.to_bytes().to_vec() == bytes,
                 None => true,
@@ -855,6 +856,36 @@ impl WalletStateProvider for Dww {
 }
 
 impl Dww {
+    /// Resolve a held capability to its contract's manifest and find the
+    /// function for a named action (e.g. "transfer"). This is the missing
+    /// piece between capability selection and manifest-driven invocation.
+    pub fn resolve_transfer_contract(
+        &self,
+        cap: &CapRecord,
+        action_name: &str,
+    ) -> std::result::Result<(dwow_sdk::crypto::ContractId, String), String> {
+        let cid_bs58 = bs58::encode(cap.contract_id.to_bytes()).into_string();
+        let manifest = self.wallet.get_contract_manifest(&cid_bs58)
+            .map_err(|e| format!("get_contract_manifest: {:?}", e))?
+            .ok_or_else(|| format!(
+                "contract {} has no stored manifest", cid_bs58,
+            ))?;
+        let action = manifest.actions.iter()
+            .find(|a| a.function == action_name)
+            .ok_or_else(|| format!(
+                "contract {} has no action '{}'", cid_bs58, action_name,
+            ))?;
+        let output_cap_name = action.produces.first()
+            .map(|c| c.name.clone())
+            .ok_or_else(|| format!("action '{}' produces no capabilities", action_name))?;
+        // Find the function that exercises this action.
+        let func = manifest.functions.iter()
+            .find(|f| f.name == output_cap_name || f.name == action_name)
+            .or_else(|| manifest.functions.first())
+            .ok_or_else(|| format!("no function found for action '{}'", action_name))?;
+        Ok((cap.contract_id, func.name.clone()))
+    }
+
     /// Build a native-token transfer transaction (wallet.md §6.4 — the ONE
     /// bespoke write-path citizen; executable spec:
     /// `wallet_model.py::build_transfer`).

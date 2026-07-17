@@ -298,10 +298,28 @@ impl RpcHandler for DwwRpcHandler {
                     dww.build_native_transfer(amount_u64, recipient, seed).await
                         .map_err(|e| err(-32000, &format!("transfer build failed: {}", e)))?
                 } else {
-                    return Err(err(-32601, &format!(
-                        "Non-native transfer: the generic prover is now wired. \
-                         Capability selection by asset_id '{}' is the remaining \
-                         gap — use DRKW native transfers for now.", token_id)));
+                    // Non-native capability transfer: manifest-driven path.
+                    // Select held capability by asset_id → resolve contract →
+                    // invoke_contract → manifest → CapabilityProvider → prover_impl.
+                    let all_caps = dww.wallet.get_held_capabilities(Some(false))
+                        .map_err(|e| err(-32000, &format!("{:?}", e)))?;
+                    let asset_bytes = bs58::decode(token_id).into_vec().unwrap_or_default();
+                    let rec = all_caps.iter()
+                        .find(|c| c.asset_id.to_bytes().to_vec() == asset_bytes)
+                        .ok_or_else(|| err(-32602, &format!(
+                            "no held capability with asset_id '{}'", token_id)))?;
+                    let (contract_id, function_name) = dww.resolve_transfer_contract(rec, "transfer")
+                        .map_err(|e| err(-32000, &e))?;
+                    let amount_u64: u64 = amount.parse()
+                        .map_err(|e| err(-32602, &format!("invalid 'amount': {}", e)))?;
+                    let params_json = serde_json::json!({
+                        "amount": amount_u64,
+                        "recipient": recipient,
+                    }).to_string();
+                    let cid_str = bs58::encode(contract_id.to_bytes()).into_string();
+                    dww.invoke_contract(&cid_str, &function_name, Some(&params_json), vec![], vec![])
+                        .await
+                        .map_err(|e| err(-32000, &format!("invoke_contract: {}", e)))?
                 };
                 let mut output = vec![];
                 let txid = dww.broadcast_tx(&tx, &mut output, false, None, None).await
