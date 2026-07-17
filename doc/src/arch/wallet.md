@@ -47,10 +47,6 @@ architecture described in §§0-9 below. This section documents what works today
 - **P2P three-tier feature gate:** net-wallet (dww) and net-full (dwowd) active
   in production; net-node middle tier defined in Cargo.toml but unused by any
   binary, not compile-tested, structured-gossip behavior not implemented.
-- **DeployV1 zkas extraction during scan:** Circuit binaries for user-deployed
-  contracts are not yet extracted from `DeployV1` payloads and stored in
-  `zkas_binaries` during scan. Genesis contracts are embedded; user-deployed
-  contracts need this for the generic prover's step 3 (§6.4.1).
 
 ### What Is Spec-Only [VISION]
 

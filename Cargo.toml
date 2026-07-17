@@ -282,8 +282,8 @@ net-wire = [
     "dwow-serial",
 ]
 
-# Wallet P2P — minimal. No ProtocolSeed, no BanPolicy, no SESSION_SEED.
-# ProtocolAddress handles all address exchange.
+# Wallet P2P — minimal. No BanPolicy (addr filtering unnecessary for wallets).
+# Includes protocol-seed for seed sync and seed-sync-session for handshake.
 net-wallet = [
     "net-wire",
     "async-trait",

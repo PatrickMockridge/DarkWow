@@ -146,6 +146,16 @@ pub(crate) struct DeploymentDiscovery {
     pub(crate) height: u32,
 }
 
+/// A zkas circuit binary discovered during deploy-scan.
+/// Extracted from the DeployV1 WASM blob — stored in zkas_binaries (§3).
+#[derive(Debug, Clone)]
+pub(crate) struct ZkasBinaryDiscovery {
+    pub contract_id: ContractId,
+    pub namespace: String,
+    pub circuit_name: String,
+    pub zkas_bytes: Vec<u8>,
+}
+
 /// Result of scanning a single block — pure computation, no side effects.
 /// The caller persists these results to the database.
 #[derive(Debug, Clone)]
@@ -154,6 +164,9 @@ pub struct BlockScanResult {
     pub capabilities: Vec<CapabilityDiscovery>,
     pub published_nullifiers: Vec<NullifierRecord>,
     pub deployments: Vec<DeploymentDiscovery>,
+    /// zkas circuit binaries extracted from DeployV1 WASM blobs — stored
+    /// in zkas_binaries for the generic prover (§6.4.1 step 3).
+    pub zkas_binaries: Vec<ZkasBinaryDiscovery>,
     pub messages: Vec<String>,
 }
 
@@ -164,6 +177,7 @@ impl BlockScanResult {
             capabilities: vec![],
             published_nullifiers: vec![],
             deployments: vec![],
+            zkas_binaries: vec![],
             messages: vec![],
         }
     }
@@ -591,6 +605,50 @@ fn scan_block(
                             "[scan_block] Deployooor::DeployV1: {} at height {}",
                             &contract_id_str[..8], height_u32
                         ));
+
+                        // Extract zkas circuit binaries from the deployed WASM
+                        // (wallet.md §3, §6.4.1 step 3). include_bytes! embeds
+                        // .zk.bin files in the WASM data segment at build time.
+                        // We scan the raw WASM blob for byte sequences that
+                        // successfully decode as ZkBinary — one per circuit.
+                        // The namespace is extracted from the binary header
+                        // (zkas wire format: k u32 LE, field_len u32 LE,
+                        //  field bytes, namespace_len u32 LE, namespace bytes).
+                        let mut seen: std::collections::HashSet<String> =
+                            std::collections::HashSet::new();
+                        for offset in 0..params.wasm_bincode.len().saturating_sub(20) {
+                            let slice = &params.wasm_bincode[offset..];
+                            if let Ok(zkbin) = dwow_core::zkas::ZkBinary::decode(slice, false) {
+                                // Extract namespace from the binary header.
+                                // Header: k(u32) + field_len(u32) + field(str) +
+                                //         namespace_len(u32) + namespace(str)
+                                let mut pos = 4; // skip k
+                                let field_len = u32::from_le_bytes(
+                                    slice.get(pos..pos+4).unwrap_or(&[0;4]).try_into().unwrap()
+                                ) as usize;
+                                pos += 4 + field_len;
+                                let ns_len = u32::from_le_bytes(
+                                    slice.get(pos..pos+4).unwrap_or(&[0;4]).try_into().unwrap()
+                                ) as usize;
+                                pos += 4;
+                                let ns = String::from_utf8_lossy(
+                                    slice.get(pos..pos+ns_len).unwrap_or(b"")
+                                ).to_string();
+                                let binary_end = pos + ns_len;
+                                if !ns.is_empty() && seen.insert(ns.clone()) {
+                                    result.zkas_binaries.push(ZkasBinaryDiscovery {
+                                        contract_id,
+                                        namespace: ns.clone(),
+                                        circuit_name: ns.clone(),
+                                        zkas_bytes: slice[..binary_end].to_vec(),
+                                    });
+                                    result.messages.push(format!(
+                                        "[scan_block] zkas '{}' extracted for {} (k={})",
+                                        ns, &contract_id_str[..8], zkbin.k,
+                                    ));
+                                }
+                            }
+                        }
                     }
                 }
                 continue;
@@ -951,6 +1009,18 @@ impl Dww {
                 if let Some(ref manifest_json) = dep.manifest_json {
                     let _ = self.wallet.store_manifest(&contract_id_str, manifest_json);
                 }
+            }
+        }
+
+        // Persist extracted zkas binaries
+        for zkb in &result.zkas_binaries {
+            let cid_str = bs58::encode(zkb.contract_id.to_bytes()).into_string();
+            if let Err(e) = self.wallet.store_zkas_binary(
+                &cid_str, &zkb.namespace, &zkb.circuit_name, &zkb.zkas_bytes,
+            ) {
+                tracing::error!(target: "dww::scan",
+                    "[scan_blocks] Failed to store zkas binary '{}' for {}: {:?}",
+                    zkb.namespace, &cid_str[..8], e);
             }
         }
 
