@@ -298,10 +298,10 @@ impl RpcHandler for DwwRpcHandler {
                     dww.build_native_transfer(amount_u64, recipient, seed).await
                         .map_err(|e| err(-32000, &format!("transfer build failed: {}", e)))?
                 } else {
-                    return Err(err(-32601,
-                        "Non-DRKW token transfers are not yet wired through the \
-                         generic manifest path. Use DRKW native transfers or wait \
-                         for the generic engine rebuild (Phase 6)."));
+                    return Err(err(-32601, &format!(
+                        "Non-native transfer: the generic prover is now wired. \
+                         Capability selection by asset_id '{}' is the remaining \
+                         gap — use DRKW native transfers for now.", token_id)));
                 };
                 let mut output = vec![];
                 let txid = dww.broadcast_tx(&tx, &mut output, false, None, None).await

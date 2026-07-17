@@ -111,6 +111,35 @@ pub trait WalletStateProvider: Send + Sync {
     fn get_secret(&self) -> std::result::Result<String, String> {
         Err("get_secret not implemented".to_string())
     }
+
+    /// Load a zkas circuit binary from the wallet's zkas_binaries store
+    /// (wallet.md §3, §6.4.1 step 3). Keyed by (contract_id bs58, namespace,
+    /// circuit_name). Returns None if not found.
+    fn load_zkas_binary(
+        &self,
+        _contract_id: &str,
+        _namespace: &str,
+        _circuit_name: &str,
+    ) -> Option<Vec<u8>> {
+        None
+    }
+
+    /// Generate a ZK proof from a manifest-declared circuit.
+    ///
+    /// The wallet implements this via its concrete ProverImpl (which has
+    /// `dwow_core::zk` access). The SDK defines the prover context and
+    /// witness-binding logic; the wallet provides the ZK machinery.
+    ///
+    /// Returns the encoded proof bytes, or an error string.
+    fn generate_proof(
+        &self,
+        _contract_id: &str,
+        _witness_map: &crate::prover::CircuitWitnessMap,
+        _zkas_bytes: &[u8],
+        _seed: [u8; 32],
+    ) -> Result<Vec<u8>, String> {
+        Err("generate_proof not implemented — wallet must provide concrete ProverImpl".to_string())
+    }
 }
 
 /// Merkle proof info passed to contract clients for ZK witness construction.
@@ -252,7 +281,7 @@ impl ContractClient for ManifestContractClient {
         &self,
         function: &str,
         params: &str,
-        _wallet_state: &dyn WalletStateProvider,
+        wallet_state: &dyn WalletStateProvider,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), String> {
         let func = self.manifest.functions.iter()
             .find(|f| f.name == function)
@@ -260,19 +289,65 @@ impl ContractClient for ManifestContractClient {
                 "{}: unknown function '{}'", self.name, function
             ))?;
 
+        // Encode call parameters from the manifest's parameter schema.
+        // The function code is prepended by the caller (invoke_contract).
+        let param_schema: Vec<crate::manifest::ParameterField> = self
+            .manifest
+            .parameters
+            .iter()
+            .find(|p| p.function == function)
+            .map(|p| p.fields.clone())
+            .unwrap_or_default();
+        let encoded_params = crate::manifest::encode_params_by_schema(
+            &param_schema, params,
+        ).map_err(|e| format!("{}: '{}' parameter encoding: {}", self.name, function, e))?;
+
         // circuit_registry route removed (D2 — phantom-code-removed-first).
-        // The generic prover (wallet.md §6.4.1, Phase 6) builds proofs from
-        // the zkas binary + manifest witness_map — no compiled-in builder.
+        // The generic prover (wallet.md §6.4.1) builds proofs from the
+        // zkas binary + manifest witness_map — no compiled-in builder.
 
         if func.requires_proof {
-            Err(format!(
-                "{}: '{}' requires ZK proof (circuit: {}) but no builder registered",
-                self.name,
-                function,
-                func.proof_circuit.as_deref().unwrap_or("none"),
-            ))
+            // Resolve the circuit declaration and witness_map from the manifest.
+            let circuit_name = func.proof_circuit.as_deref().unwrap_or("none");
+            let circuit = self.manifest.circuits.iter()
+                .find(|c| c.name == circuit_name)
+                .ok_or_else(|| format!(
+                    "{}: '{}' requires proof circuit '{}' but manifest has no [[circuits]] entry for it",
+                    self.name, function, circuit_name,
+                ))?;
+
+            let witness_map = crate::prover::CircuitWitnessMap::from_manifest(
+                &circuit.witness_map,
+            );
+
+            // Load the zkas binary from the wallet's store (§3, §6.4.1 step 3).
+            // The contract_id bs58 is resolved by the caller (invoke_contract).
+            // For genesis contracts: binaries are embedded at wallet init.
+            // For user-deployed: stored during deploy-scan.
+            let zkas_bytes = wallet_state.load_zkas_binary(
+                "", // caller-provided ContractId — see invoke_contract
+                &circuit.namespace,
+                circuit_name,
+            ).ok_or_else(|| format!(
+                "{}: '{}' requires ZK proof (circuit: {}) but zkas binary not found \
+                 in store — contract may not be deployed or the circuit is not \
+                 embedded/extracted",
+                self.name, function, circuit_name,
+            ))?;
+
+            // Delegate to the wallet's concrete ProverImpl (§6.4.1 steps 4-6)
+            let proof_bytes = wallet_state.generate_proof(
+                "", // caller-provided ContractId
+                &witness_map,
+                &zkas_bytes,
+                [0u8; 32], // Seed — caller provides via invoke_contract
+            ).map_err(|e| format!(
+                "{}: '{}' generic prover failed: {}", self.name, function, e,
+            ))?;
+
+            Ok((encoded_params, vec![proof_bytes]))
         } else {
-            Ok((vec![], vec![]))
+            Ok((encoded_params, vec![]))
         }
     }
 }

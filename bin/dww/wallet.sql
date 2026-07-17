@@ -128,3 +128,15 @@ CREATE INDEX IF NOT EXISTS idx_contract_metadata_public ON contract_metadata(pub
 -- of whether we recognize the note type. Structured decoders (NativeToken,
 -- PromissoryNote, etc.) also record here in addition to their typed tables.
 -- generic capabilities table REMOVED — write-only dead (only held_capabilities lives).
+
+-- ZK circuit binaries: the generic prover's predicate-language store
+-- (wallet.md §3, §6.4.1 step 3). Keyed by (contract_id, namespace, circuit_name).
+-- Genesis contracts' binaries are embedded at wallet init; user-deployed
+-- contracts' binaries are extracted from DeployV1 payloads during scan.
+CREATE TABLE IF NOT EXISTS zkas_binaries (
+    contract_id TEXT NOT NULL,
+    namespace TEXT NOT NULL,
+    circuit_name TEXT NOT NULL,
+    zkas_bytes BLOB NOT NULL,
+    PRIMARY KEY (contract_id, namespace, circuit_name)
+);

@@ -482,15 +482,24 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                     rand::rngs::OsRng.fill_bytes(&mut seed);
                     dww.build_native_transfer(amount, recipient, seed).await?
                 } else {
-                    // Generic non-DRKW transfer: the manifest-driven path.
-                    // Phase 6 wires this — select held capability by token_id →
-                    // stored manifest → action → generic invoke.
-                    return Err(Error::Custom(
-                        "Non-DRKW token transfers are not yet wired through the \
-                         generic manifest path (Phase 6 pending — capability-side \
-                         remediation). Use the DRKW native path (transfer <amount> DRKW <recipient>) \
-                         or wait for the generic engine rebuild.".into(),
-                    ));
+                    // Generic non-native transfer: manifest-driven path.
+                    // Steps 1-5 (parameter encoding, zkas_binaries store, generic
+                    // prover, dispatch wiring) are done. The remaining gap is
+                    // capability selection by asset_id + contract resolution:
+                    //   held_capabilities_by_asset(token_id) → contract_id →
+                    //   invoke_contract(contract_id, "transfer", params) →
+                    //   manifest → CapabilityProvider → prover_impl
+                    // The generic prover is wired; the selection logic is the
+                    // follow-on. Until then, non-DRKW transfers error with a
+                    // precise diagnostic.
+                    return Err(Error::Custom(format!(
+                        "Non-native transfer: the generic prover is now wired \
+                         (Steps 1-5 complete). Capability selection by asset_id \
+                         '{}' is the remaining gap — contract resolution from \
+                         held caps is needed. Use DRKW native transfer \
+                         (transfer <amount> DRKW <recipient>) for now.",
+                        token_id,
+                    )));
                 };
                 let tx_b64 = crate::wallet_util::base64_encode(&dwow_serial::serialize_async(&tx).await);
                 if !*porcelain { println!("Transaction (base64): {tx_b64}"); }

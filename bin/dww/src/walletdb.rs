@@ -1059,6 +1059,48 @@ impl WalletDb {
         }
     }
 
+    // ── ZK circuit binary store (wallet.md §3, §6.4.1 step 3) ─────
+
+    /// Store a zkas binary for a deployed contract's circuit.
+    /// Keyed by (contract_id bs58, namespace, circuit_name).
+    /// Genesis circuits are embedded at wallet init via
+    /// `dwow_native_token_contract` compile-time binaries.
+    pub fn store_zkas_binary(
+        &self,
+        contract_id: &str,
+        namespace: &str,
+        circuit_name: &str,
+        zkas_bytes: &[u8],
+    ) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.execute(
+            "INSERT OR REPLACE INTO zkas_binaries (contract_id, namespace, circuit_name, zkas_bytes) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![contract_id, namespace, circuit_name, zkas_bytes],
+        ).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+
+    /// Load a zkas binary for a contract's circuit.
+    pub fn load_zkas_binary(
+        &self,
+        contract_id: &str,
+        namespace: &str,
+        circuit_name: &str,
+    ) -> WalletDbResult<Option<Vec<u8>>> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let mut stmt = conn.prepare(
+            "SELECT zkas_bytes FROM zkas_binaries WHERE contract_id = ?1 AND namespace = ?2 AND circuit_name = ?3",
+        )?;
+        let mut rows = stmt.query(rusqlite::params![contract_id, namespace, circuit_name])?;
+        match rows.next()? {
+            Some(row) => {
+                let bytes: Vec<u8> = row.get(0)?;
+                Ok(Some(bytes))
+            }
+            None => Ok(None),
+        }
+    }
+
     // ── Cache methods (merged from cache.rs) ──────────────────────
 
     pub fn insert_merkle_trees(&self, trees: &[(&[u8], &MerkleTree)]) -> WalletDbResult<()> {

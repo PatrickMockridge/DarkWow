@@ -10,7 +10,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use dwow_serial::Decodable;
+use dwow_serial::{Decodable, Encodable};
+
+use hex;
 
 use crate::capability::{wallet_construct, Barb, Primitive, TypedCapability};
 use crate::crypto::PublicKey;
@@ -252,7 +254,147 @@ pub fn note_field<'a>(fields: &'a [(String, NoteFieldValue)], name: &str) -> Opt
     fields.iter().find(|(n, _)| n == name).map(|(_, v)| v)
 }
 
+/// Encode call-parameters according to a manifest-declared schema.
+///
+/// This is the write-path dual of [`decode_note_by_schema`]: given a function's
+/// `[[parameters]]` field list and a JSON-encoded `params` object, produce the
+/// tag-free positional wire bytes that the contract's entrypoint expects.
+///
+/// Wire semantics (same as decode):
+/// - `u64` = LE 8 bytes; `bool` = 1 byte.
+/// - `pallas_base` / `token_id` / `func_id` / `contract_id` = 32 bytes.
+/// - `pallas_scalar` = 32 bytes.
+/// - `public_key` = 32 bytes (x-coordinate).
+/// - `bytes` = VarInt length prefix + N bytes.
+/// - `optional=true` = leading 1-byte presence tag.
+///
+/// All fields are positional (in schema declaration order) and tag-free —
+/// `dwow_serial` encodes structs strictly by field order with no names or type
+/// tags on the wire.
+pub fn encode_params_by_schema(
+    schema: &[ParameterField],
+    params_json: &str,
+) -> Result<Vec<u8>, String> {
+    // Parse JSON into a flat map — lightweight, no serde derive needed.
+    let param_map: std::collections::HashMap<String, serde_json::Value> =
+        serde_json::from_str(params_json).map_err(|e| format!("params JSON parse: {e}"))?;
+
+    let mut buf = Vec::new();
+    for field in schema {
+        let raw = param_map.get(&field.name);
+        if field.optional {
+            let present = raw.is_some() && !raw.unwrap().is_null();
+            dwow_serial::Encodable::encode(&present, &mut buf)
+                .map_err(|e| format!("optional tag '{}': {e}", field.name))?;
+            if !present {
+                continue;
+            }
+        }
+        let val = raw.ok_or_else(|| {
+            format!("missing required parameter '{}'", field.name)
+        })?;
+        match field.param_type.as_str() {
+            "u64" => {
+                let v: u64 = val.as_u64().ok_or_else(||
+                    format!("param '{}': expected u64, got {}", field.name, val))?;
+                dwow_serial::Encodable::encode(&v, &mut buf)
+                    .map_err(|e| format!("encode u64 '{}': {e}", field.name))?;
+            }
+            "bool" => {
+                let v: bool = val.as_bool().ok_or_else(||
+                    format!("param '{}': expected bool, got {}", field.name, val))?;
+                dwow_serial::Encodable::encode(&v, &mut buf)
+                    .map_err(|e| format!("encode bool '{}': {e}", field.name))?;
+            }
+            "pallas_base" | "token_id" | "func_id" | "contract_id" => {
+                let hex = val.as_str().or_else(|| val.as_object().and_then(|_| None))
+                    .ok_or_else(|| format!(
+                        "param '{}': expected hex string for {}, got {}",
+                        field.name, field.param_type, val,
+                    ))?;
+                let bytes = hex::decode(hex.strip_prefix("0x").unwrap_or(hex))
+                    .map_err(|e| format!("param '{}' hex: {e}", field.name))?;
+                if bytes.len() != 32 {
+                    return Err(format!(
+                        "param '{}': expected 32 bytes for {}, got {}",
+                        field.name, field.param_type, bytes.len(),
+                    ));
+                }
+                buf.extend_from_slice(&bytes);
+            }
+            "pallas_scalar" => {
+                let hex = val.as_str()
+                    .ok_or_else(|| format!(
+                        "param '{}': expected hex string for pallas_scalar, got {}",
+                        field.name, val,
+                    ))?;
+                let bytes = hex::decode(hex.strip_prefix("0x").unwrap_or(hex))
+                    .map_err(|e| format!("param '{}' hex: {e}", field.name))?;
+                if bytes.len() != 32 {
+                    return Err(format!(
+                        "param '{}': expected 32 bytes for pallas_scalar, got {}",
+                        field.name, bytes.len(),
+                    ));
+                }
+                buf.extend_from_slice(&bytes);
+            }
+            "public_key" => {
+                let hex = val.as_str()
+                    .ok_or_else(|| format!(
+                        "param '{}': expected hex string for public_key, got {}",
+                        field.name, val,
+                    ))?;
+                let bytes = hex::decode(hex.strip_prefix("0x").unwrap_or(hex))
+                    .map_err(|e| format!("param '{}' hex: {e}", field.name))?;
+                if bytes.len() != 32 {
+                    return Err(format!(
+                        "param '{}': expected 32 bytes for public_key, got {}",
+                        field.name, bytes.len(),
+                    ));
+                }
+                buf.extend_from_slice(&bytes);
+            }
+            "bytes" => {
+                let hex = val.as_str()
+                    .ok_or_else(|| format!(
+                        "param '{}': expected hex string for bytes, got {}",
+                        field.name, val,
+                    ))?;
+                let raw = hex::decode(hex.strip_prefix("0x").unwrap_or(hex))
+                    .map_err(|e| format!("param '{}' hex: {e}", field.name))?;
+                let len: u32 = raw.len() as u32;
+                dwow_serial::Encodable::encode(&len, &mut buf)
+                    .map_err(|e| format!("encode bytes len '{}': {e}", field.name))?;
+                buf.extend_from_slice(&raw);
+            }
+            other => return Err(format!(
+                "param '{}': unknown type '{}'", field.name, other,
+            )),
+        }
+    }
+    Ok(buf)
+}
+
 impl ContractManifest {
+    /// Empty manifest — used as a placeholder when the caller provides
+    /// pre-resolved capabilities and the witness_map + zkas binary are the
+    /// only inputs the prover needs (wallet.md §6.4.1).
+    pub fn empty() -> Self {
+        Self {
+            name: String::new(),
+            description: String::new(),
+            category: String::new(),
+            version: "1.0.0".to_string(),
+            dependencies: vec![],
+            functions: vec![],
+            actions: vec![],
+            capabilities: vec![],
+            trees: vec![],
+            parameters: vec![],
+            circuits: vec![],
+        }
+    }
+
     /// Resolve the note field schema for the capability a function call produces.
     pub fn note_schema_for_function(&self, function_code: u8) -> Option<&[ParameterField]> {
         let f = self.function_by_code(function_code)?;

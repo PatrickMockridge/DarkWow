@@ -23,6 +23,8 @@ thiserror = "2.0.17"
 # Serialization
 dwow-serial = {path = "../serial", features = ["derive", "crypto"]}
 serde = {version = "1.0", features = ["derive"]}
+serde_json = "1.0"
+hex = "0.4"
 toml = "0.9"
 
 # Encoding

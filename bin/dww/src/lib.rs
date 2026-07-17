@@ -99,6 +99,7 @@ pub mod cli_util;
 
 /// Wallet functionality related to Deployooor
 pub mod deploy;
+pub mod prover_impl;
 
 // dao_escrow and drain_protection removed — wallet uses generic AEAD scan + manifest.
 // All contracts (except Native Token for fees + Deployooor for deployment) are
@@ -534,6 +535,23 @@ impl Dww {
             }
         }
 
+        // P4 Step 3: embed genesis zkas circuit binaries (wallet.md §3, §6.4.1 step 3).
+        // These are compiled into dww at build time via the native_token contract crate.
+        // Keyed by (contract_id bs58, namespace, circuit_name).
+        {
+            let cid_str = bs58::encode(crate::contract_imports::get_contract_id("native_token")
+                .expect("native_token cid").to_bytes()).into_string();
+            let circuits: &[(&str, &[u8])] = &[
+                ("Mint_V1", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN),
+                ("Burn_V1", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V1_BIN),
+                ("Fee_V1", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN),
+                ("FeeCollect_V1", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V1_BIN),
+            ];
+            for (name, zkas_bytes) in circuits {
+                let _ = self.wallet.store_zkas_binary(&cid_str, name, name, zkas_bytes);
+            }
+        }
+
         // Register default DRKW native token alias so `transfer 1.0 DRKW <addr>` works
         // The tokens table is gone — a token's identity is discovered via scan,
         // not declared at init (capabilities carry their own asset_id).
@@ -767,6 +785,72 @@ impl WalletStateProvider for Dww {
             .map_err(|e| format!("{e}"))?;
         let secret = account.keypair.secret;
         Ok(bs58::encode(secret.inner().to_repr()).into_string())
+    }
+
+    fn load_zkas_binary(
+        &self,
+        contract_id: &str,
+        namespace: &str,
+        circuit_name: &str,
+    ) -> Option<Vec<u8>> {
+        self.wallet.load_zkas_binary(contract_id, namespace, circuit_name)
+            .unwrap_or(None)
+    }
+
+    fn generate_proof(
+        &self,
+        _contract_id: &str,
+        witness_map: &dwow_sdk::prover::CircuitWitnessMap,
+        zkas_bytes: &[u8],
+        seed: [u8; 32],
+    ) -> std::result::Result<Vec<u8>, String> {
+        // The concrete ProverImpl needs a CapabilityProvider. For the
+        // initial wiring, construct one from the wallet's held capabilities
+        // matching the asset/contract the manifest function expects.
+        // Full capability selection by barb-cover (§6.2) is deferred.
+        let caps = self.wallet.get_held_capabilities(Some(false))
+            .map_err(|e| format!("{:?}", e))?;
+        if caps.is_empty() {
+            return Err("no held capabilities — nothing to spend".into());
+        }
+        // Use the first held cap as the input. The full selection logic
+        // (§6.2 barb-cover) matches the manifest's capability expression
+        // to held caps. For now, single-capability transactions work.
+        let cap = &caps[0];
+        let owned_secret = cap.key_coords.as_ref()
+            .and_then(|coords| self.account_mgr.resolve_key(coords).ok())
+            .ok_or_else(|| "no stored key coordinates — cannot resolve secret".to_string())?;
+        let secret: dwow_sdk::crypto::SecretKey = *owned_secret.expose_secret();
+        let merkle_proof_info = self.get_merkle_proof(&cap.cap_id)?;
+        let merkle_path: Vec<pallas::Base> = merkle_proof_info.siblings.iter()
+            .map(|s| {
+                let decoded = bs58::decode(s).into_vec().unwrap_or_default();
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(&decoded[..32.min(decoded.len())]);
+                pallas::Base::from_repr(arr).unwrap_or(pallas::Base::zero())
+            })
+            .collect();
+
+        let provider = crate::prover_impl::ResolvedCapProvider::new(
+            vec![
+                ("value".to_string(), pallas::Base::from(cap.value)),
+                ("token_id".to_string(), cap.asset_id.inner()),
+                ("spend_hook".to_string(), cap.spend_hook.map(|h| h.inner()).unwrap_or(pallas::Base::zero())),
+                ("user_data".to_string(), cap.user_data.map(|b| pallas::Base::from_repr(b).unwrap_or(pallas::Base::zero())).unwrap_or(pallas::Base::zero())),
+            ],
+            secret,
+            merkle_path,
+            cap.leaf_position as u32,
+        );
+
+        let ctx = dwow_sdk::prover::ProverContext::new(
+            dwow_sdk::manifest::ContractManifest::empty(),
+            String::new(), // function name — witness_map covers binding
+            witness_map.clone(),
+            seed,
+        );
+
+        crate::prover_impl::create_generic_proof(&ctx, &provider, zkas_bytes)
     }
 }
 
