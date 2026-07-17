@@ -45,7 +45,7 @@ run_gate() {
     fi
 }
 
-TIER="${1:-}"
+TIER="${1:-}${2:-}"  # allows "--tier 2" as two args: $1=--tier $2=2
 
 run_gate "build contract ZK circuits"     "$SCRIPT_DIR/build-contract-zk.sh"
 run_gate "pre-build guard (dwowd + wallet + 32 contracts→wasm32)" \
