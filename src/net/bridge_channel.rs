@@ -182,9 +182,9 @@ mod tests {
         smol::block_on(ex.run(async {
             let (tx, rx) = BridgeChannel::<String, BlockchainMessage>::pair();
             tx.send("hello".to_string()).await.unwrap();
-            let (msg, witness) = rx.recv().await.unwrap();
+            let (msg, _witness) = rx.recv().await.unwrap();
             assert_eq!(msg, "hello");
-            assert_eq!(witness.barbs(), &[BarbId::Commit, BarbId::Verify]);
+            assert_eq!(BarbWitness::<BlockchainMessage>::barbs(), &[BarbId::Commit, BarbId::Verify]);
         }));
     }
 
