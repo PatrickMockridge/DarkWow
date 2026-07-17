@@ -235,7 +235,7 @@ impl DwowNode {
         };
 
         let mempool_txs = match &self.mempool {
-            Some(mp) => mp.select_for_block(&Default::default()).await,
+            Some(mp) => mp.select_for_block(&self.mining_state.miner_config).await,
             None => vec![],
         };
 
@@ -677,7 +677,7 @@ impl DwowNode {
 
         match crate::block_acceptor::accept_block(
             &chain_state, &block, &uncles, &exec_vm,
-            template.height.saturating_sub(1), template.target,
+            template.height.saturating_sub(1), template.target, None,
         ) {
             Ok(()) => {
                 drop(exec_vm);
@@ -725,7 +725,7 @@ impl DwowNode {
                     };
 
                     let next_mempool_txs = match &self.mempool {
-                        Some(mp) => mp.select_for_block(&Default::default()).await,
+                        Some(mp) => mp.select_for_block(&self.mining_state.miner_config).await,
                         None => vec![],
                     };
 

@@ -193,7 +193,7 @@ impl DwowNode {
 
         // Drain mempool for transaction inclusion in this block template
         let mempool_txs = match &self.mempool {
-            Some(mp) => mp.select_for_block(&Default::default()).await,
+            Some(mp) => mp.select_for_block(&self.mining_state.miner_config).await,
             None => vec![],
         };
 
@@ -616,7 +616,7 @@ impl DwowNode {
 
         let current_h = chain_state.get_height();
         match crate::block_acceptor::accept_block(
-            &chain_state, &block, &uncles, &exec_vm, current_h, block.header.target,
+            &chain_state, &block, &uncles, &exec_vm, current_h, block.header.target, None,
         ) {
             Ok(()) => {
                 drop(exec_vm);
@@ -647,7 +647,7 @@ impl DwowNode {
 
                         // Drain mempool for the next block template
                         let next_mempool_txs = match &self.mempool {
-                            Some(mp) => mp.select_for_block(&Default::default()).await,
+                            Some(mp) => mp.select_for_block(&self.mining_state.miner_config).await,
                             None => vec![],
                         };
 

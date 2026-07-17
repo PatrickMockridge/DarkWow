@@ -679,7 +679,7 @@ mod tests {
             let db = config.open().unwrap();
             let tree = db.open_tree("mempool").unwrap();
 
-            let mempool = Mempool::new(MempoolConfig::default(), Some(tree), Box::new(TestFeeExtractor));
+            let mempool = Mempool::new(MempoolConfig::default(), Some(tree), Box::new(TestFeeExtractor), None);
             let tx = make_tx(vec![make_call(vec![0x01])], Some(50_000_000));
             let hash = mempool.add(tx).await.unwrap();
             mempool.flush().await.unwrap();

@@ -333,7 +333,7 @@ async fn handle_receive_block(
         let target = msg.block.header.target;
 
         match crate::block_acceptor::accept_block(
-            &blockchain, &msg.block, &[], &vm, height, target,
+            &blockchain, &msg.block, &[], &vm, height, target, None,
         ) {
             Ok(()) => {
                 drop(vm);

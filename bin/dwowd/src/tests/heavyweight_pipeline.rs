@@ -188,6 +188,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
             &vm,
             height,
             u32::MAX,
+            None,
         )
         .map_err(|e| dwow_core::Error::Custom(format!("accept_block exec: {}", e)))
     }

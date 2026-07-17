@@ -230,7 +230,7 @@ impl DwowNode {
             "Block {} mined (nonce={}), applying to chain...", block_hash, mined_block.header.nonce);
         match crate::block_acceptor::accept_block(
             &chain_state, &mined_block, &prep.uncles, &mining_vm,
-            latest_block.header.height, latest_block.header.target,
+            latest_block.header.height, latest_block.header.target, None,
         ) {
             Ok(()) => {
                 info!(target: "dwowd::rpc::miner", "Mined and applied block {} at height {}", block_hash, height);

@@ -201,6 +201,7 @@ fn test_wallet_integration() {
             &vm,
             1,
             u32::MAX,
+            None,
         )
         .expect("accept_block height 2");
 

@@ -77,6 +77,7 @@ pub fn accept_block(
     vm: &Arc<randomx::RandomXVM>,
     current_height: u64,
     target: u32,
+    fee_estimator: Option<&std::sync::Arc<dwow_chain::fee_estimator::FeeEstimator>>,
 ) -> Result<()> {
     // 1. Proof of token balance — no hidden darkw minting beyond the coinbase.
     // 0. Phase 0 structural validation — cheapest check first.
@@ -161,6 +162,17 @@ pub fn accept_block(
             return Err(e);
         }
     };
+
+    // Fee estimator sampling — every accepted block contributes its actual
+    // gas usage to the rolling window (MOC close-out item 10.3). Previously
+    // only the self-mining path called record_block; non-mining nodes never
+    // sampled, reporting stale/MIN_FEE estimates permanently.
+    // smol::block_on: accept_block is a sync fn in a sync call chain, but
+    // record_block is async. Running the estimator update synchronously in
+    // this path adds negligible latency (<1ms atomic pushes) to block accept.
+    if let Some(estimator) = fee_estimator {
+        smol::block_on(estimator.record_block(outcome.stats.gas_used));
+    }
 
     // 4. Read cumulative supply state from the WASM execution overlay BEFORE
     // aggregation. This is the single bridge point between the contracts tree

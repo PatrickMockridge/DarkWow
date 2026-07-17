@@ -402,6 +402,7 @@ mod tests {
                 &vm,
                 1,            // current_height = block.height - 1
                 u32::MAX,     // target
+                None,
             )
             .expect("AC3: accept_block height 2");
 

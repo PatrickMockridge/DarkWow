@@ -441,6 +441,7 @@ pub async fn consensus_linear_init_task(
                                 &vm,
                                 current_height,
                                 target,
+                                None,
                             ) {
                                 Ok(()) => {
                                     next_height = block.header.height + 1;

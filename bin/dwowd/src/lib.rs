@@ -292,6 +292,9 @@ pub struct Dwowd {
     consensus_task: StoppableTaskPtr,
     /// Built-in mining task (replaces bash /dev/tcp loop)
     miner_task: StoppableTaskPtr,
+    /// Mempool maintenance task — periodic stale eviction every 5 minutes
+    /// (MOC close-out item 10). Without this, eviction only fires on add().
+    mempool_task: StoppableTaskPtr,
     /// Whether built-in mining is enabled. Observer/relay nodes set false.
     mining_enabled: bool,
     /// Database path for mining address file
@@ -585,6 +588,7 @@ async fn init_genesis(
         &vm,
         0, // current_height = 0 (empty chain before genesis)
         target,
+        None,
     )
     .map_err(|e| Error::Custom(format!("Genesis block acceptance failed: {}", e)))?;
 
@@ -792,10 +796,11 @@ impl Dwowd {
         let management_rpc_task = StoppableTask::new();
         let consensus_task = StoppableTask::new();
         let miner_task = StoppableTask::new();
+        let mempool_task = StoppableTask::new();
 
         info!(target: "dwowd::Dwowd::init_linear", "DarkWow daemon for darkwow-devnet initialized successfully!");
 
-        Ok(Arc::new(Self { node, dnet_task, rpc_task, management_rpc_task, consensus_task, miner_task, mining_enabled, db_path: db_path.to_path_buf() }))
+        Ok(Arc::new(Self { node, dnet_task, rpc_task, management_rpc_task, consensus_task, miner_task, mempool_task, mining_enabled, db_path: db_path.to_path_buf() }))
     }
 
     /// Start the DarkWow daemon in the given executor, using the
@@ -928,6 +933,30 @@ impl Dwowd {
             info!(target: "dwowd::Dwowd::start", "Mining disabled — relay-only mode");
         }
 
+        // Start the mempool maintenance task — periodic stale eviction every 5
+        // minutes (MOC close-out item 10). Without this, eviction only fires on
+        // add(), so a quiet mempool retains stale txs + nullifiers indefinitely.
+        {
+            let mempool = self.node.mempool.clone();
+            self.mempool_task.clone().start(
+                async move {
+                    loop {
+                        smol::Timer::after(std::time::Duration::from_secs(300)).await;
+                        if let Some(mp) = mempool.as_ref() {
+                            let evicted = mp.evict_stale().await;
+                            if evicted > 0 {
+                                info!(target: "dwowd::mempool_task",
+                                    "Evicted {} stale transactions", evicted);
+                            }
+                        }
+                    }
+                },
+                |_| async {}, // no completion handler — runs forever
+                Error::ConsensusTaskStopped, // harmless sentinel, never reached
+                executor.clone(),
+            );
+        }
+
         info!(target: "dwowd::Dwowd::start", "DarkWow daemon started successfully!");
         Ok(())
     }
@@ -963,6 +992,7 @@ impl Dwowd {
         // Stop the miner task
         info!(target: "dwowd::Dwowd::stop", "Stopping miner task...");
         self.miner_task.stop().await;
+        self.mempool_task.stop().await;
 
         // Flush linear blockchain store
         info!(target: "dwowd::Dwowd::stop", "Flushing sled database...");
@@ -1310,6 +1340,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             &vm,
             latest_block.header.height,
             target,
+            Some(&node.fee_estimator),
         );
 
         // Drop VM reference after block acceptance — avoids concurrent
@@ -1322,11 +1353,9 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
                     "Block {} mined and applied: {}",
                     height, applied_hash);
 
-                // Record gas utilization for fee estimation
-                let gas_used: u64 = mined_block.transactions.iter()
-                    .flat_map(|tx| tx.contract_calls.iter())
-                    .count() as u64 * 400_000_000; // GAS_LIMIT per call
-                node.fee_estimator.record_block(gas_used).await;
+                // Fee estimation now recorded in accept_block via the fee_estimator
+                // parameter, using actual WASM execution gas (stats.gas_used) rather
+                // than the ad-hoc calls*400M estimate. No duplicate recording needed.
 
                 // HAZID F5: Remove mined transactions from mempool.
                 // Previously never called — mined txs persisted forever in the pool.

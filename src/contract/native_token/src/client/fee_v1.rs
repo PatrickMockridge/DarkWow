@@ -42,6 +42,7 @@ use dwow_sdk::{
     pasta::pallas,
 };
 use rand::rngs::OsRng;
+use rand::SeedableRng;
 
 use crate::model::{Coin, CoinAttributes, FeeParamsV1, Input, Nullifier};
 use crate::client::NativeToken;
@@ -271,7 +272,12 @@ pub fn create_fee_proof(
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
 
     Ok((proof, public_inputs))
 }
@@ -310,14 +316,20 @@ impl FeeCallBuilder {
         let mut proofs = vec![];
         let signature_secrets = vec![self.input.ephemeral_signature_secret];
 
-        // Generate random blinds. token_blind MUST be zero: the fee entrypoint
+        // Generate blinds. token_blind MUST be zero: the fee entrypoint
         // pins the native token_commit to poseidon([0, 0]) (entrypoint/mod.rs
         // fee_v1, "Token must be DARK") with TokenId::DRKW = zero — a random
         // blind fails consensus with TokenMismatch.
-        let input_value_blind = ScalarBlind::random(&mut OsRng);
-        let output_value_blind = ScalarBlind::random(&mut OsRng);
+        // Gated: deterministic when enable_deterministic_zk() is set
+        // (MOC item 10 bug-3 — matching transfer_v1/proof.rs gating pattern).
+        let (input_value_blind, output_value_blind, output_coin_blind) =
+            if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            (ScalarBlind::random(&mut rng), ScalarBlind::random(&mut rng), BaseBlind::random(&mut rng))
+        } else {
+            (ScalarBlind::random(&mut OsRng), ScalarBlind::random(&mut OsRng), BaseBlind::random(&mut OsRng))
+        };
         let token_blind = BaseBlind::ZERO;
-        let output_coin_blind = BaseBlind::random(&mut OsRng);
 
         // Create output value (input - fee)
         let output_value = self.input.value - self.fee;
@@ -412,7 +424,12 @@ impl FeeCallBuilder {
             token_blind: token_blind.inner(),
             memo: vec![],
         };
-        let encrypted_note = AeadEncryptedNote::encrypt(&fee_note, &self.output.recipient, &mut OsRng)
+        let encrypted_note = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            AeadEncryptedNote::encrypt(&fee_note, &self.output.recipient, &mut rng)
+        } else {
+            AeadEncryptedNote::encrypt(&fee_note, &self.output.recipient, &mut OsRng)
+        }
             .map_err(|e| ContractError::IoError(format!(
                 "fee change note encryption: {:?}", e)))?;
 
