@@ -41,14 +41,10 @@ architecture described in §§0-9 below. This section documents what works today
   `zkas_binaries` store with genesis circuit embed. Capability selection by
   asset_id via `resolve_transfer_contract`. Non-native transfers route through
   `invoke_contract` → manifest → prover — ONE path, zero per-contract code.
-
-### What Is Partial [PARTIAL]
-
-- **P2P three-tier feature gate:** net-wallet (dww) and net-full (dwowd) active;
-  net-node compiled transitively but no binary selects it standalone (dwowd
-  needs seed-sync from net-full). Send-side fan-out gossip implemented
+- **P2P three-tier feature gate:** net-wallet (dww) and net-full (dwowd)
+  active; net-node compiled transitively; send-side fan-out gossip implemented
   (`linear_broadcast.rs:206-256`), receive-side relay intentionally flood
-  (`type-system.md` §10.2). Standalone compile gate added to CI.
+  (`type-system.md` §10.2); standalone compile gate in CI.
 
 ### What Is Spec-Only [VISION]
 

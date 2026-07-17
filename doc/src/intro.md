@@ -60,12 +60,7 @@ proofs by default.
 | Manifest-driven generic prover (ZK) | [IMPLEMENTED] | `src/sdk/src/prover.rs`, `bin/dww/src/prover_impl.rs` — zkas_binaries store, witness-binding, manifest-driven proof construction for any contract |
 | Manifest parameter encoding (non-ZK) | [IMPLEMENTED] | `src/sdk/src/manifest.rs` — `encode_params_by_schema`, write-path dual of `decode_note_by_schema` |
 | Capability selection by asset_id (write path) | [IMPLEMENTED] | `bin/dww/src/lib.rs` — `resolve_transfer_contract`, dispatch + RPC routing through manifest-driven `invoke_contract` |
-
-### [PARTIAL] — Core works, limitations listed
-
-| Component | Status | Limitation |
-|-----------|--------|-----------|
-| P2P three-tier feature gate | [PARTIAL] | net-wallet (dww) and net-full (dwowd) active; net-node compiled transitively but no binary selects it standalone (dwowd needs seed-sync from net-full); send-side fan-out gossip implemented (linear_broadcast.rs:206-256), receive-side relay intentionally flood (type-system.md §10.2); standalone compile gate added |
+| P2P three-tier feature gate | [IMPLEMENTED] | net-wallet (dww) and net-full (dwowd) active; net-node compiled transitively; send-side fan-out gossip implemented (linear_broadcast.rs:206-256); standalone compile gate in CI |
 
 ### [VISION] — Long-term design direction
 
