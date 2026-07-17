@@ -177,14 +177,14 @@ mod reward_tests {
         assert_eq!(expected_reward(0), 0);
         assert_eq!(expected_reward(1), reward::INITIAL_REWARD);
         // At half-life, should be approximately R0/2
-        let at_half = expected_reward(reward::HALF_LIFE_BLOCKS + 1);
+        let at_half = expected_reward(reward::HALF_LIFE_BLOCKS as u64 + 1);
         let expected_half = reward::INITIAL_REWARD / 2;
         let diff = at_half.abs_diff(expected_half);
         let tolerance = expected_half / 100;
         assert!(diff <= tolerance,
             "At half-life: reward={}, R0/2={}, diff={}", at_half, expected_half, diff);
         // Tail should be reached well before u32::MAX
-        let at_tail = expected_reward(reward::HALF_LIFE_BLOCKS * 20);
+        let at_tail = expected_reward(reward::HALF_LIFE_BLOCKS as u64 * 20);
         assert_eq!(at_tail, reward::TAIL_REWARD, "Should reach tail by 20 half-lives");
     }
 
