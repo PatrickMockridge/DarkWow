@@ -48,7 +48,7 @@ pub trait Message: 'static + Send + Sync + AsyncDecodable + AsyncEncodable {
     /// that makes the absorber measurable. Empty by default for messages
     /// that have not yet been audited; a cardinality snapshot test gates
     /// production deploy profiles on audit completeness.
-    const BARBS: &'static [$crate::barb::BarbId] = &[];
+    const BARBS: &'static [crate::barb::BarbId] = &[];
 }
 
 /// Generic serialized message template.
@@ -67,7 +67,7 @@ impl SerializedMessage {
 macro_rules! impl_p2p_message {
     // Classic 5-arg form (backward-compatible; BARBS defaults to &[]).
     ($st:ty, $nm:expr, $mb:expr, $ms:expr, $mc:expr) => {
-        impl_p2p_message!($st, $nm, $mb, $ms, $mc, &[]);
+        $crate::impl_p2p_message!($st, $nm, $mb, $ms, $mc, &[]);
     };
     // 6-arg form with explicit barb set.
     // $crate resolves to the defining crate (dwow_core), so the path

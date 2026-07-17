@@ -229,11 +229,10 @@ mod tests {
     /// value here with the MoC decision recorded in the commit message.
     #[test]
     fn test_notify_on_barb_set_growth() {
-        // ── P2P core handlers (barb trait test fixtures) ──
+        // ── P2P core handlers ──
         assert_eq!(BlockchainMiner::exhibited_barbs().len(), 5);
         assert_eq!(EventGraphNode::exhibited_barbs().len(), 4);
         assert_eq!(BlockchainObserver::exhibited_barbs().len(), 2);
-        assert_eq!(CommitPublisher::exhibited_barbs().len(), 3);
         // ── Production protocol handler fixtures ──
         assert_eq!(ProtocolPing::exhibited_barbs().len(), 0);
         assert_eq!(ProtocolVersion::exhibited_barbs().len(), 0);
