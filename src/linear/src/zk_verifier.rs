@@ -424,7 +424,7 @@ mod tests {
         // requires a store handle. Create a minimal LinearStore via sled
         // tempdir — the sled API guarantees ::new() never fails.
         let tmp_db = sled::Config::new().temporary(true).open().unwrap();
-        let store = crate::LinearStore::new(tmp_db).unwrap();
+        let store = crate::LinearStore::new(std::sync::Arc::new(tmp_db)).unwrap();
         let result = verify_core_tx_with_tables(
             &store,
             &core_tx,
