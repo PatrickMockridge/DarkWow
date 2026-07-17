@@ -62,16 +62,15 @@ proofs by default.
 
 | Component | Status | Limitation |
 |-----------|--------|-----------|
-| Wallet generic contract invocation (non-ZK) | [PARTIAL] | Works via ManifestContractClient |
-| Wallet generic contract invocation (ZK) | [PARTIAL] | Generic prover architecture exists, concrete proof construction not wired (Phase 6) |
-| Non-DRKW token transfers | [PARTIAL] | Stubbed — "Phase 6 pending" |
-| P2P three-tier feature gate | [PARTIAL] | net-wallet ⊂ net-node ⊂ net-full |
+| Wallet generic contract invocation (non-ZK) | [PARTIAL] | Manifest lookup, fee attach, signing, broadcast all wired; parameter encoding from manifest schema implemented (`encode_params_by_schema`); capability selection by barb-cover (§6.2) not yet implemented |
+| Wallet generic contract invocation (ZK) | [PARTIAL] | Generic prover wired (wallet.md §6.4.1 steps 1-6): zkas_binaries store, ProverImpl, manifest-driven proof construction. Remaining gap: capability selection by asset_id for input binding, DeployV1 zkas extraction during scan |
+| Non-native capability transfers via manifest path | [PARTIAL] | Generic prover wired; capability selection by asset_id from held caps is the remaining gap — contract resolution + invoke_contract routing partially implemented |
+| P2P three-tier feature gate | [PARTIAL] | net-wallet (dww) and net-full (dwowd) active in production; net-node middle tier defined in Cargo.toml but unused by any binary, not compile-tested, structured-gossip behavior not implemented |
 
 ### [VISION] — Long-term design direction
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Generic prover (write path) | [VISION] | Architecture at `src/sdk/src/prover.rs`; no concrete impl |
 | ρ-calculus wallet composition (full) | [VISION] | Provisional state, Seed discipline, barb-cover write-path selection pending |
 | Sharding via uncle merkle topology | [VISION] | Design exploration; see [scaling.md](arch/consensus/scaling.md) |
 | Parallel contract execution | [VISION] | Gated on wasmer thread safety |

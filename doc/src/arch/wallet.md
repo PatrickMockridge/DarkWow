@@ -38,22 +38,26 @@ architecture described in §§0-9 below. This section documents what works today
 
 ### What Is Partial [PARTIAL]
 
-- **Generic contract invocation (non-ZK):** Works via `ManifestContractClient`
-  (`src/sdk/src/contract_client.rs:221-278`). Returns empty call data for
-  non-proof functions.
-- **Generic contract invocation (ZK):** Errors out — `"requires ZK proof but no
-  builder registered"` (`contract_client.rs:268-273`). The generic prover
-  architecture exists at `src/sdk/src/prover.rs` but concrete proof
-  construction is not yet wired (Phase 6).
-- **Non-DRKW transfers:** Stubbed with explicit error: `"Non-DRKW token transfers
-  are not yet wired through the generic manifest path (Phase 6 pending)"`
-  (`dispatch.rs:488-493`).
+- **Generic contract invocation (non-ZK):** Manifest lookup, fee attach, signing,
+  broadcast all wired via `ManifestContractClient` (`src/sdk/src/contract_client.rs`).
+  Parameter encoding from manifest `[[parameters]]` schema implemented
+  (`encode_params_by_schema`, `src/sdk/src/manifest.rs`). Capability selection
+  by barb-cover (§6.2) not yet implemented.
+- **Generic contract invocation (ZK):** The generic prover is wired (Steps 1-6 of
+  §6.4.1): `zkas_binaries` store with genesis circuit embed (`wallet.sql`,
+  `walletdb.rs`), `ProverImpl` in `bin/dww/src/prover_impl.rs` using
+  `dwow_core::zk`, `WalletStateProvider::generate_proof` trait method, manifest-
+  driven proof construction in `ManifestContractClient::build`. Remaining gap:
+  capability selection by asset_id for input binding, DeployV1 zkas extraction
+  during scan.
+- **Non-native capability transfers:** The generic prover is wired. Capability
+  selection by asset_id from held caps — resolving the contract from stored
+  `contract_metadata`, selecting the function by manifest action, and routing
+  through `invoke_contract` — is partially implemented (cap selection exists on
+  the read side, write-side routing is the remaining gap).
 
 ### What Is Spec-Only [VISION]
 
-- **Generic prover (§6.4.1):** Architecture defined at `src/sdk/src/prover.rs`;
-  concrete ZK proof building (`ZkBinary::decode`, `ProvingKey::build`,
-  `Proof::create`) not implemented in the wallet binary.
 - **Provisional state (§6.5):** Capability spend-state lifecycle
   (Unspent/Reserved/Spent) not implemented; a simpler immediate-revoke model
   (`mark_tx_exercise`) is used instead.
