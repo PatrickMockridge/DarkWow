@@ -745,7 +745,7 @@ impl Dwowd {
             Some(chain_state.clone()),
             Some(chain_state.clone()),
             mempool.clone(),
-            Some(sled_database.clone()),
+            Some(sled_db.clone()),
         ).await?;
 
         // Initialize the miners registry (placeholder for now)

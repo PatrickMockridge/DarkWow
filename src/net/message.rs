@@ -70,13 +70,16 @@ macro_rules! impl_p2p_message {
         impl_p2p_message!($st, $nm, $mb, $ms, $mc, &[]);
     };
     // 6-arg form with explicit barb set.
+    // $crate resolves to the defining crate (dwow_core), so the path
+    // compiles correctly even when the macro is invoked from another
+    // crate (e.g. dwowd's proto modules).
     ($st:ty, $nm:expr, $mb:expr, $ms:expr, $mc:expr, $barbs:expr) => {
         impl Message for $st {
             const NAME: &'static str = $nm;
             const MAX_BYTES: u64 = $mb;
             const METERING_SCORE: u64 = $ms;
             const METERING_CONFIGURATION: MeteringConfiguration = $mc;
-            const BARBS: &'static [crate::net::barb_trait::BarbId] = $barbs;
+            const BARBS: &'static [$crate::net::barb_trait::BarbId] = $barbs;
         }
     };
 }
