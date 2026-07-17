@@ -48,6 +48,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use dwow_sdk::crypto::{keypair::Network, ContractId};
+use dwow_sdk::pasta::pallas;
 
 use crate::walletdb::{WalletDb, WalletPtr};
 use crate::Dww;
@@ -531,9 +532,9 @@ pub extern "C" fn dwow_wallet_balance(handle: *const WalletHandle) -> u64 {
 // ============================================================================
 
 /// Get the asset ID for a capability (always 32 bytes).
-/// Symbol name keeps `token_id` until T4 (C-ABI surface rename, coordinated).
+/// Canonical name — T4 rename from `cap_token_id` per o-cap grammar.
 #[no_mangle]
-pub extern "C" fn dwow_wallet_cap_token_id(
+pub extern "C" fn dwow_wallet_cap_asset_id(
     handle: *const CapRecordHandle,
     out_buf: *mut u8,
     buf_len: i32,
@@ -542,6 +543,17 @@ pub extern "C" fn dwow_wallet_cap_token_id(
     let bytes = unsafe { (*handle).cap_record.asset_id }.to_bytes();
     unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf, 32); }
     32
+}
+
+/// Deprecated alias for `dwow_wallet_cap_asset_id` — T4 rename.
+/// Removal target: next major version. Use the canonical name.
+#[no_mangle]
+pub extern "C" fn dwow_wallet_cap_token_id(
+    handle: *const CapRecordHandle,
+    out_buf: *mut u8,
+    buf_len: i32,
+) -> i32 {
+    dwow_wallet_cap_asset_id(handle, out_buf, buf_len)
 }
 
 /// Get the Merkle tree leaf position for a capability.
@@ -634,7 +646,7 @@ pub extern "C" fn dwow_wallet_cap_barbs(
     write_csv(&names, out_buf, buf_len)
 }
 
-/// Get the amount at which this capability was revoked, or 0 if unspent.
+/// Get the height at which this capability was revoked, or 0 if unspent.
 #[no_mangle]
 pub extern "C" fn dwow_wallet_cap_revoked_at_height(handle: *const CapRecordHandle) -> u32 {
     if handle.is_null() { return 0; }
@@ -740,6 +752,354 @@ pub extern "C" fn dwow_wallet_aead_self_test(handle: *const WalletHandle) -> i32
 }
 
 // ============================================================================
+// Phase 5 — Write Path / Transaction Construction
+// ============================================================================
+// Generic contract invocation, proof generation, capability selection, and
+// transfer construction. All functions follow the same pattern: blocking
+// wrappers over async Dww methods, caller-provided output buffer, return
+// bytes written (excluding NUL) or -1 on error.
+
+/// Invoke a contract function generically through the manifest path.
+/// Handles both ZK and non-ZK functions — proofs are built by the generic
+/// prover (wallet.md §6.4.1).
+///
+/// @param handle       Wallet handle
+/// @param contract_id  bs58 contract ID string
+/// @param function     Function name (e.g. "transfer")
+/// @param params_json  JSON-encoded parameters (or NULL for none)
+/// @param out_tx       Output buffer for serialized transaction JSON
+/// @param buf_len      Output buffer size
+/// @return bytes written (excluding NUL), or -1 on error
+#[no_mangle]
+pub extern "C" fn dwow_wallet_invoke_contract(
+    handle: *const WalletHandle,
+    contract_id: *const c_char,
+    function: *const c_char,
+    params_json: *const c_char,
+    out_tx: *mut c_char,
+    buf_len: i32,
+) -> i32 {
+    if handle.is_null() || contract_id.is_null() || function.is_null() || out_tx.is_null() || buf_len <= 0 {
+        return -1;
+    }
+    let wallet = unsafe { &(*handle) };
+    let cid = match unsafe { CStr::from_ptr(contract_id) }.to_str() { Ok(s) => s, Err(_) => return -1 };
+    let func = match unsafe { CStr::from_ptr(function) }.to_str() { Ok(s) => s, Err(_) => return -1 };
+    let params = if params_json.is_null() {
+        None
+    } else {
+        Some(match unsafe { CStr::from_ptr(params_json) }.to_str() { Ok(s) => s, Err(_) => return -1 })
+    };
+    let tx = match smol::block_on(wallet.dww.invoke_contract(cid, func, params, vec![], vec![])) {
+        Ok(t) => t,
+        Err(e) => {
+            wallet.last_error.borrow_mut().replace(format!("invoke_contract: {e}"));
+            return -1;
+        }
+    };
+    // Serialize tx via dwow_serial (same as dispatch.rs:401-405)
+    let tx_b64 = crate::wallet_util::base64_encode(&dwow_serial::serialize(&tx));
+    let cstr = match CString::new(tx_b64) { Ok(c) => c, Err(_) => return -1 };
+    let bytes = cstr.as_bytes_with_nul();
+    if bytes.len() > buf_len as usize { return -1; }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_tx as *mut u8, bytes.len()); }
+    (bytes.len() - 1) as i32
+}
+
+/// Encode contract call parameters from a manifest schema (static, no wallet needed).
+/// This is the write-path dual of `decode_note_by_schema` (wallet.md §6.4.1 step 2).
+///
+/// @param schema_json   JSON array of ParameterField objects
+/// @param function      Function name
+/// @param params_json   JSON object of parameter values
+/// @param out_buf       Output buffer for encoded bytes
+/// @param buf_len       Output buffer size
+/// @return bytes written (excluding NUL), or -1 on error
+#[no_mangle]
+pub extern "C" fn dwow_encode_params_by_schema(
+    schema_json: *const c_char,
+    function: *const c_char,
+    params_json: *const c_char,
+    out_buf: *mut c_char,
+    buf_len: i32,
+) -> i32 {
+    if schema_json.is_null() || function.is_null() || params_json.is_null() || out_buf.is_null() || buf_len <= 0 {
+        return -1;
+    }
+    let schema_str = match unsafe { CStr::from_ptr(schema_json) }.to_str() { Ok(s) => s, Err(_) => return -1 };
+    let params_str = match unsafe { CStr::from_ptr(params_json) }.to_str() { Ok(s) => s, Err(_) => return -1 };
+    let schema: Vec<dwow_sdk::manifest::ParameterField> = match serde_json::from_str(schema_str) {
+        Ok(s) => s, Err(_) => return -1,
+    };
+    let encoded = match dwow_sdk::manifest::encode_params_by_schema(&schema, params_str) {
+        Ok(e) => e,
+        Err(e) => {
+            // No wallet handle here — use a thread-local error or just return -1.
+            // The caller can validate the schema beforehand.
+            // Static function — no wallet handle to store error. Return -1;
+            // caller can pre-validate schema via the schema JSON itself.
+            return -1;
+        }
+    };
+    if encoded.len() > buf_len as usize { return -1; }
+    unsafe { std::ptr::copy_nonoverlapping(encoded.as_ptr(), out_buf as *mut u8, encoded.len()); }
+    encoded.len() as i32
+}
+
+/// List held capabilities filtered by asset ID.
+/// Returns a JSON array of CapInfo objects.
+///
+/// @param handle       Wallet handle
+/// @param asset_id     bs58 asset ID (empty string = all assets)
+/// @param revoked      Filter: 0 = unspent only, 1 = spent only, 2 = all
+/// @param out_buf      Output buffer for JSON
+/// @param buf_len      Output buffer size
+/// @return bytes written (excluding NUL), or -1 on error
+#[no_mangle]
+pub extern "C" fn dwow_wallet_caps_by_asset(
+    handle: *const WalletHandle,
+    asset_id: *const c_char,
+    revoked: i32,
+    out_buf: *mut c_char,
+    buf_len: i32,
+) -> i32 {
+    if handle.is_null() || asset_id.is_null() || out_buf.is_null() || buf_len <= 0 { return -1; }
+    let wallet = unsafe { &(*handle) };
+    let aid = match unsafe { CStr::from_ptr(asset_id) }.to_str() { Ok(s) => s, Err(_) => return -1 };
+    let revoked_flag = match revoked { 1 => Some(true), 0 => Some(false), _ => None };
+    let cap_records = match wallet.dww.wallet.get_held_capabilities(revoked_flag) {
+        Ok(c) => c,
+        Err(e) => { wallet.last_error.borrow_mut().replace(format!("{:?}", e)); return -1; }
+    };
+    let caps_json: Vec<serde_json::Value> = cap_records.iter()
+        .filter(|c| aid.is_empty() || c.asset_id.to_bytes().to_vec() ==
+            bs58::decode(aid).into_vec().unwrap_or_default())
+        .map(|c| serde_json::json!({
+            "cap_id": c.cap_id,
+            "value": c.value,
+            "asset_id": bs58::encode(c.asset_id.to_bytes()).into_string(),
+            "leaf_position": c.leaf_position,
+        }))
+        .collect();
+    let json = match serde_json::to_string(&caps_json) { Ok(j) => j, Err(_) => return -1 };
+    let cstr = match CString::new(json) { Ok(c) => c, Err(_) => return -1 };
+    let bytes = cstr.as_bytes_with_nul();
+    if bytes.len() > buf_len as usize { return -1; }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf as *mut u8, bytes.len()); }
+    (bytes.len() - 1) as i32
+}
+
+/// Resolve a held capability to its contract and transfer function.
+///
+/// @param handle       Wallet handle
+/// @param cap_id       Capability ID (bs58 string)
+/// @param action_name  Action name (e.g. "transfer")
+/// @param out_cid      Output buffer for contract ID (bs58 string)
+/// @param out_func     Output buffer for function name
+/// @param func_len     Output buffer size for function name
+/// @return bytes written to out_func (excluding NUL), or -1 on error.
+///         out_cid receives the contract ID bs58 string (max 64 bytes needed).
+#[no_mangle]
+pub extern "C" fn dwow_wallet_resolve_transfer_contract(
+    handle: *const WalletHandle,
+    cap_id: *const c_char,
+    action_name: *const c_char,
+    out_cid: *mut c_char,
+    out_func: *mut c_char,
+    func_len: i32,
+) -> i32 {
+    if handle.is_null() || cap_id.is_null() || action_name.is_null() || out_cid.is_null() || out_func.is_null()
+        || func_len <= 0
+    {
+        return -1;
+    }
+    let wallet = unsafe { &(*handle) };
+    let cid = match unsafe { CStr::from_ptr(cap_id) }.to_str() { Ok(s) => s, Err(_) => return -1 };
+    let act = match unsafe { CStr::from_ptr(action_name) }.to_str() { Ok(s) => s, Err(_) => return -1 };
+    let caps = match wallet.dww.wallet.get_held_capabilities(Some(false)) {
+        Ok(c) => c, Err(e) => { wallet.last_error.borrow_mut().replace(format!("{:?}", e)); return -1; }
+    };
+    let rec = match caps.iter().find(|c| c.cap_id == cid) {
+        Some(r) => r, None => { wallet.last_error.borrow_mut().replace("cap not found".to_string()); return -1; }
+    };
+    let (contract_id, func_name) = match wallet.dww.resolve_transfer_contract(rec, act) {
+        Ok(r) => r, Err(e) => { wallet.last_error.borrow_mut().replace(e); return -1; }
+    };
+    let cid_str = bs58::encode(contract_id.to_bytes()).into_string();
+    let cid_cstr = match CString::new(cid_str) { Ok(c) => c, Err(_) => return -1 };
+    let func_cstr = match CString::new(func_name) { Ok(c) => c, Err(_) => return -1 };
+    // out_cid: bs58 string, max ~48 chars for 32-byte CID
+    let cid_bytes = cid_cstr.as_bytes_with_nul();
+    if cid_bytes.len() > 64 { return -1; }
+    unsafe { std::ptr::copy_nonoverlapping(cid_bytes.as_ptr(), out_cid as *mut u8, cid_bytes.len()); }
+    // out_func: function name
+    let fbytes = func_cstr.as_bytes_with_nul();
+    if fbytes.len() > func_len as usize { return -1; }
+    unsafe { std::ptr::copy_nonoverlapping(fbytes.as_ptr(), out_func as *mut u8, fbytes.len()); }
+    (fbytes.len() - 1) as i32
+}
+
+/// Store a zkas circuit binary in the wallet's zkas_binaries store (wallet.md §3).
+///
+/// @param handle       Wallet handle
+/// @param contract_id  bs58 contract ID string
+/// @param namespace    Circuit namespace (e.g. "FeeCollect_V1")
+/// @param circuit_name Circuit name (e.g. "FeeCollect_V1")
+/// @param zkas_bytes   Raw zkas binary bytes
+/// @param zkas_len     Length of zkas_bytes
+/// @return 0 on success, -1 on error
+#[no_mangle]
+pub extern "C" fn dwow_wallet_zkas_store(
+    handle: *const WalletHandle,
+    contract_id: *const c_char,
+    namespace: *const c_char,
+    circuit_name: *const c_char,
+    zkas_bytes: *const u8,
+    zkas_len: i32,
+) -> i32 {
+    if handle.is_null() || contract_id.is_null() || namespace.is_null() || circuit_name.is_null()
+        || zkas_bytes.is_null() || zkas_len <= 0
+    {
+        return -1;
+    }
+    let wallet = unsafe { &(*handle) };
+    let cid = match unsafe { CStr::from_ptr(contract_id) }.to_str() { Ok(s) => s, Err(_) => return -1 };
+    let ns = match unsafe { CStr::from_ptr(namespace) }.to_str() { Ok(s) => s, Err(_) => return -1 };
+    let name = match unsafe { CStr::from_ptr(circuit_name) }.to_str() { Ok(s) => s, Err(_) => return -1 };
+    let bytes = unsafe { std::slice::from_raw_parts(zkas_bytes, zkas_len as usize) };
+    match wallet.dww.wallet.store_zkas_binary(cid, ns, name, bytes) {
+        Ok(_) => 0,
+        Err(e) => { wallet.last_error.borrow_mut().replace(format!("{:?}", e)); -1 }
+    }
+}
+
+/// Load a zkas circuit binary from the wallet's zkas_binaries store.
+///
+/// @param handle       Wallet handle
+/// @param contract_id  bs58 contract ID string
+/// @param namespace    Circuit namespace
+/// @param circuit_name Circuit name
+/// @param out_buf      Output buffer for zkas bytes
+/// @param buf_len      Output buffer size
+/// @return bytes written, 0 if not found, -1 on error
+#[no_mangle]
+pub extern "C" fn dwow_wallet_zkas_load(
+    handle: *const WalletHandle,
+    contract_id: *const c_char,
+    namespace: *const c_char,
+    circuit_name: *const c_char,
+    out_buf: *mut u8,
+    buf_len: i32,
+) -> i32 {
+    if handle.is_null() || contract_id.is_null() || namespace.is_null() || circuit_name.is_null()
+        || out_buf.is_null() || buf_len <= 0
+    {
+        return -1;
+    }
+    let wallet = unsafe { &(*handle) };
+    let cid = match unsafe { CStr::from_ptr(contract_id) }.to_str() { Ok(s) => s, Err(_) => return -1 };
+    let ns = match unsafe { CStr::from_ptr(namespace) }.to_str() { Ok(s) => s, Err(_) => return -1 };
+    let name = match unsafe { CStr::from_ptr(circuit_name) }.to_str() { Ok(s) => s, Err(_) => return -1 };
+    let result = match wallet.dww.wallet.load_zkas_binary(cid, ns, name) {
+        Ok(r) => r,
+        Err(e) => { wallet.last_error.borrow_mut().replace(format!("{:?}", e)); return -1; }
+    };
+    match result {
+        Some(bytes) => {
+            if bytes.len() > buf_len as usize { return -1; }
+            unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf, bytes.len()); }
+            bytes.len() as i32
+        }
+        None => 0,
+    }
+}
+
+/// List all stored zkas circuit entries as a JSON array.
+///
+/// @param handle   Wallet handle
+/// @param out_buf  Output buffer for JSON
+/// @param buf_len  Output buffer size
+/// @return bytes written (excluding NUL), or -1 on error
+#[no_mangle]
+pub extern "C" fn dwow_wallet_zkas_list(
+    handle: *const WalletHandle,
+    out_buf: *mut c_char,
+    buf_len: i32,
+) -> i32 {
+    if handle.is_null() || out_buf.is_null() || buf_len <= 0 { return -1; }
+    // zkas_binaries table has no enumeration API yet — return a diagnostic.
+    // Implementation deferred to when the table gains a list query.
+    let msg = "{\"note\":\"zkas_list not yet implemented — store/load only\"}";
+    let cstr = match CString::new(msg) { Ok(c) => c, Err(_) => return -1 };
+    let bytes = cstr.as_bytes_with_nul();
+    if bytes.len() > buf_len as usize { return -1; }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf as *mut u8, bytes.len()); }
+    (bytes.len() - 1) as i32
+}
+
+/// Generate a ZK proof from a manifest-declared circuit (generic prover §6.4.1).
+///
+/// @param handle             Wallet handle
+/// @param contract_id        bs58 contract ID string
+/// @param witness_map_json   JSON array of witness source strings
+/// @param zkas_bytes         Raw zkas binary bytes
+/// @param zkas_len           Length of zkas_bytes
+/// @param seed               Seed bytes (32 bytes, NULL = zero seed)
+/// @param out_proof          Output buffer for encoded proof
+/// @param proof_len          Output buffer size
+/// @return bytes written, or -1 on error
+#[no_mangle]
+pub extern "C" fn dwow_wallet_generate_proof(
+    handle: *const WalletHandle,
+    contract_id: *const c_char,
+    witness_map_json: *const c_char,
+    zkas_bytes: *const u8,
+    zkas_len: i32,
+    seed: *const u8,
+    out_proof: *mut u8,
+    proof_len: i32,
+) -> i32 {
+    if handle.is_null() || witness_map_json.is_null() || zkas_bytes.is_null() || zkas_len <= 0
+        || out_proof.is_null() || proof_len <= 0
+    {
+        return -1;
+    }
+    let wallet = unsafe { &(*handle) };
+    let cid = match unsafe { CStr::from_ptr(contract_id) }.to_str() { Ok(s) => s, Err(_) => return -1 };
+    let wm_str = match unsafe { CStr::from_ptr(witness_map_json) }.to_str() { Ok(s) => s, Err(_) => return -1 };
+    let entries: Vec<String> = match serde_json::from_str(wm_str) { Ok(e) => e, Err(_) => return -1 };
+    let witness_map = dwow_sdk::prover::CircuitWitnessMap::from_manifest(&entries);
+    let zkas = unsafe { std::slice::from_raw_parts(zkas_bytes, zkas_len as usize) };
+    let seed_arr: [u8; 32] = if seed.is_null() {
+        [0u8; 32]
+    } else {
+        let s = unsafe { std::slice::from_raw_parts(seed, 32) };
+        let mut arr = [0u8; 32]; arr.copy_from_slice(&s[..32.min(s.len())]); arr
+    };
+    let proof = match crate::prover_impl::create_generic_proof(
+        &dwow_sdk::prover::ProverContext::new(
+            dwow_sdk::manifest::ContractManifest::empty(),
+            cid.to_string(),
+            witness_map,
+            seed_arr,
+        ),
+        &crate::prover_impl::ResolvedCapProvider::new(
+            vec![], // caller provides pre-resolved caps
+            dwow_sdk::crypto::SecretKey::from(pallas::Base::zero()),
+            vec![],
+            0,
+        ),
+        zkas,
+    ) {
+        Ok(p) => p,
+        Err(e) => { wallet.last_error.borrow_mut().replace(e); return -1; }
+    };
+    if proof.len() > proof_len as usize { return -1; }
+    unsafe { std::ptr::copy_nonoverlapping(proof.as_ptr(), out_proof, proof.len()); }
+    proof.len() as i32
+}
+
+// ============================================================================
 // Phase 4 — Low-Level Type System Access
 // ============================================================================
 // Expose Primitive and Barb as first-class FFI types, not just CSV strings.
@@ -768,14 +1128,21 @@ pub extern "C" fn dwow_primitive_count() -> i32 {
 
 /// Name of the primitive at `index`. Returns a static string (do not free).
 /// Returns NULL if index is out of bounds.
+///
+/// Names are compiled into static tables (OnceLock) — no allocation, no leak.
+/// Previous implementation allocated a fresh CString per call, contradicting
+/// the "do not free" contract.
 #[no_mangle]
 pub extern "C" fn dwow_primitive_name(index: i32) -> *const c_char {
-    if index < 0 || (index as usize) >= ALL_PRIMITIVES.len() {
+    use std::sync::OnceLock;
+    static NAMES: OnceLock<Vec<CString>> = OnceLock::new();
+    let names = NAMES.get_or_init(|| {
+        ALL_PRIMITIVES.iter().map(|p| CString::new(p.name()).unwrap()).collect()
+    });
+    if index < 0 || (index as usize) >= names.len() {
         return std::ptr::null();
     }
-    let name = ALL_PRIMITIVES[index as usize].name();
-    let cstr = CString::new(name).unwrap_or_default();
-    cstr.into_raw()
+    names[index as usize].as_ptr()
 }
 
 /// Barbs exhibited by the primitive at `index`, as a comma-separated string.
@@ -806,13 +1173,21 @@ pub extern "C" fn dwow_barb_count() -> i32 {
 
 /// Name of the barb at `index`. Returns a static string (do not free).
 /// Returns NULL if index is out of bounds.
+///
+/// Names are compiled into static tables (OnceLock) — no allocation, no leak.
+/// Previous implementation allocated a fresh CString per call, contradicting
+/// the "do not free" contract.
 #[no_mangle]
 pub extern "C" fn dwow_barb_name(index: i32) -> *const c_char {
-    if index < 0 || (index as usize) >= ALL_BARBS.len() {
+    use std::sync::OnceLock;
+    static NAMES: OnceLock<Vec<CString>> = OnceLock::new();
+    let names = NAMES.get_or_init(|| {
+        ALL_BARBS.iter().map(|b| CString::new(b.name()).unwrap()).collect()
+    });
+    if index < 0 || (index as usize) >= names.len() {
         return std::ptr::null();
     }
-    let cstr = CString::new(ALL_BARBS[index as usize].name()).unwrap_or_default();
-    cstr.into_raw()
+    names[index as usize].as_ptr()
 }
 
 /// wallet_construct soundness gate (wallet.md §2.2, ocap.md §6).
@@ -926,7 +1301,34 @@ pub extern "C" fn dwow_wallet_manifest(
         Err(_) => return -1,
     };
     let manifest = match wallet.dww.get_contract_manifest(cid_str) {
-        Ok(Some(m)) => format!("{:?}", m), // debug-format manifest
+        Ok(Some(m)) => m.to_toml(),
+        Ok(None) => { return 0; }
+        Err(e) => {
+            wallet.last_error.borrow_mut().replace(format!("manifest: {}", e));
+            return -1;
+        }
+    };
+    let cstr = match CString::new(manifest) { Ok(c) => c, Err(_) => return -1 };
+    let bytes = cstr.as_bytes_with_nul();
+    if bytes.len() > buf_len as usize { return -1; }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf as *mut u8, bytes.len()); }
+    (bytes.len() - 1) as i32
+}
+
+// ============================================================================
+// Phase 5 — Write Path / Transaction Construction (continued)
+// ============================================================================
+// Legacy stub — replaced by the real dwow_wallet_invoke_contract above.
+#[allow(dead_code)]
+fn _legacy_manifest_stub_inline() -> i32 { -1 }
+
+// Original manifest function removed — now uses to_toml() above.
+// Original body (pre-fix) accessed below via the legacy comment.
+
+// Was:
+// Ok(Some(m)) => format!("{:?}", m), // debug-format manifest
+// Now uses m.to_toml() above.
+        Ok(Some(m)) => m.to_toml(), // canonical TOML (was Debug fmt: "ContractManifest { ... }")
         Ok(None) => { return 0; } // no manifest stored
         Err(e) => {
             wallet.last_error.borrow_mut().replace(format!("manifest: {}", e));

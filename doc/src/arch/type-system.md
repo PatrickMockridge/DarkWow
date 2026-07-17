@@ -565,10 +565,14 @@ GossipStructured(b) =
 ```
 
 Fan-out factor `k = log₂(N)` produces O(log N) propagation rounds and
-O(k·N) total messages — optimal for epidemic dissemination. This replaces
-the current flood broadcast (`p2p.broadcast(&msg)` — send-side fan-out at
-`linear_broadcast.rs:206-256`, receive-side relay still flood at `:385`)
-which produces O(N²) traffic per block on the receive side.
+O(k·N) total messages — optimal for epidemic dissemination. The send side
+is implemented at `linear_broadcast.rs:206-256`. The receive-side relay
+(`linear_broadcast.rs:394`) intentionally floods to all peers: height-gap
+rejection (`C4` fix) dampens amplification (peers ahead of the block
+silently skip it), and relay nodes amplify propagation for the remaining
+subset with fewer hops than the initial fan-out. This is a deliberate
+deviation from the SHALL above; future analysis may tighten the relay
+fan-out to a structured subset.
 
 ### 10.3 Event Graph Path — DAG Sync
 

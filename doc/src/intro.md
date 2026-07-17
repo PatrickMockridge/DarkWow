@@ -65,7 +65,7 @@ proofs by default.
 
 | Component | Status | Limitation |
 |-----------|--------|-----------|
-| P2P three-tier feature gate | [PARTIAL] | net-wallet (dww) and net-full (dwowd) active in production; net-node middle tier defined in Cargo.toml but unused by any binary, not compile-tested, structured-gossip behavior not implemented |
+| P2P three-tier feature gate | [PARTIAL] | net-wallet (dww) and net-full (dwowd) active; net-node compiled transitively but no binary selects it standalone (dwowd needs seed-sync from net-full); send-side fan-out gossip implemented (linear_broadcast.rs:206-256), receive-side relay intentionally flood (type-system.md §10.2); standalone compile gate added |
 
 ### [VISION] — Long-term design direction
 

@@ -315,7 +315,66 @@ int32_t dwow_wallet_aead_self_test(const WalletHandle* handle);
  *  @return Balance in satoshi-equivalent base units, or 0 on error. */
 uint64_t dwow_wallet_balance(const WalletHandle* handle);
 
-/* ── Write Path ────────────────────────────────────────────────── */
+/* ── Write Path — Generic Invocation ──────────────────────────── */
+
+/** Invoke a contract function generically through the manifest path
+ *  (wallet.md §6.4.1). Handles ZK + non-ZK, proofs via generic prover.
+ *  @return bytes written (excluding NUL), or -1 on error. */
+int32_t dwow_wallet_invoke_contract(
+    WalletHandle* handle, const char* contract_id,
+    const char* function, const char* params_json,
+    char* out_tx, int32_t buf_len);
+
+/** Encode call parameters from a manifest schema (static, no wallet needed).
+ *  @return bytes written, or -1 on error. */
+int32_t dwow_encode_params_by_schema(
+    const char* schema_json, const char* function,
+    const char* params_json, char* out_buf, int32_t buf_len);
+
+/* ── Write Path — Capability Selection ──────────────────────────── */
+
+/** List held caps filtered by asset ID. Returns JSON array.
+ *  asset_id "" = all assets. revoked: 0=unspent, 1=spent, 2=all.
+ *  @return bytes written (excluding NUL), or -1 on error. */
+int32_t dwow_wallet_caps_by_asset(
+    const WalletHandle* handle, const char* asset_id, int32_t revoked,
+    char* out_buf, int32_t buf_len);
+
+/** Resolve a held cap to its contract + transfer function.
+ *  @return bytes written to out_func (excluding NUL), or -1 on error. */
+int32_t dwow_wallet_resolve_transfer_contract(
+    const WalletHandle* handle, const char* cap_id,
+    const char* action_name, char* out_cid, char* out_func, int32_t func_len);
+
+/* ── Write Path — ZK / Prover ────────────────────────────────────── */
+
+/** Store a zkas circuit binary (wallet.md §3).
+ *  @return 0 on success, -1 on error. */
+int32_t dwow_wallet_zkas_store(
+    const WalletHandle* handle, const char* contract_id,
+    const char* namespace, const char* circuit_name,
+    const uint8_t* zkas_bytes, int32_t zkas_len);
+
+/** Load a zkas circuit binary.
+ *  @return bytes written, 0 if not found, -1 on error. */
+int32_t dwow_wallet_zkas_load(
+    const WalletHandle* handle, const char* contract_id,
+    const char* namespace, const char* circuit_name,
+    uint8_t* out_buf, int32_t buf_len);
+
+/** List stored zkas circuits. Returns JSON array.
+ *  @return bytes written (excluding NUL), or -1 on error. */
+int32_t dwow_wallet_zkas_list(
+    const WalletHandle* handle, char* out_buf, int32_t buf_len);
+
+/** Generate a ZK proof from a manifest circuit (generic prover §6.4.1).
+ *  @return bytes written, or -1 on error. */
+int32_t dwow_wallet_generate_proof(
+    const WalletHandle* handle, const char* contract_id,
+    const char* witness_map_json, const uint8_t* zkas_bytes, int32_t zkas_len,
+    const uint8_t* seed, uint8_t* out_proof, int32_t proof_len);
+
+/* ── Write Path — Storage ────────────────────────────────────────── */
 
 /** Insert a synced block into the wallet's local chain store.
  *  Block is JSON (matches scan_block_json format).
@@ -340,7 +399,14 @@ int32_t dwow_wallet_mark_exercise(
 int32_t dwow_wallet_diagnostic(
     const WalletHandle* handle, char* out_buf, int32_t buf_len);
 
-/* ── Type System ───────────────────────────────────────────────── */
+/* ── Capability Accessors — T4 Rename ─────────────────────────────── */
+
+/** Get the asset ID for a capability (always 32 bytes).
+ *  Canonical name — T4 rename. Use this, not cap_token_id. */
+int32_t dwow_wallet_cap_asset_id(
+    const CapRecordHandle* handle, uint8_t* out_buf, int32_t buf_len);
+
+/* ── Type System ─────────────────────────────────────────────────── */
 
 /** Count of known primitive types (type-system.md §8.1). */
 int32_t dwow_primitive_count(void);

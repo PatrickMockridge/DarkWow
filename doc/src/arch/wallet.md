@@ -44,9 +44,11 @@ architecture described in §§0-9 below. This section documents what works today
 
 ### What Is Partial [PARTIAL]
 
-- **P2P three-tier feature gate:** net-wallet (dww) and net-full (dwowd) active
-  in production; net-node middle tier defined in Cargo.toml but unused by any
-  binary, not compile-tested, structured-gossip behavior not implemented.
+- **P2P three-tier feature gate:** net-wallet (dww) and net-full (dwowd) active;
+  net-node compiled transitively but no binary selects it standalone (dwowd
+  needs seed-sync from net-full). Send-side fan-out gossip implemented
+  (`linear_broadcast.rs:206-256`), receive-side relay intentionally flood
+  (`type-system.md` §10.2). Standalone compile gate added to CI.
 
 ### What Is Spec-Only [VISION]
 

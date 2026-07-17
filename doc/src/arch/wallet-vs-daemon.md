@@ -229,12 +229,17 @@ ProcessNet(wallet) ⊂ ProcessNet(node) ⊂ ProcessNet(full)
 
 - **`net-wallet`** = `ProcessNet(wallet)` — `ProtocolAddress | ProtocolVersion`.
   Basic P2P with TCP+TLS transport. Used by `dwow_wallet`.
-- **`net`** (includes `net-node`) = `ProcessNet(node)` — `ProcessNet(wallet) |
-  RefineSession`. Peer refinement (greylist/whitelist). Used by `dwowd` in
-  observer and mining modes. Structured gossip (fan-out block relay) runs at
-  this tier.
-- **`net`** (includes `net-full`) = `ProcessNet(full)` — `ProcessNet(node) |
-  ProtocolSeed | SeedSyncSession | BanPolicy | TransportTor | TransportI2p |
+- **`net-wallet`** = `ProcessNet(wallet)` — `ProtocolAddress | ProtocolVersion`.
+  Basic P2P with TCP+TLS transport. Used by `dwow_wallet`.
+- **`net`** (resolves to `net-full` ⊃ `net-node`) = `ProcessNet(full)` —
+  `ProcessNet(wallet) | RefineSession | ProtocolSeed | SeedSyncSession |
+  BanPolicy | TransportTor | TransportI2p | TransportQuic`. Used by `dwowd` —
+  it compiles the full stack but its blockchain broadcast path operates at the
+  `net-node` tier (structured fan-out gossip, `linear_broadcast.rs:206-256`).
+- **`net`** (standalone `net-node` tier) = `ProcessNet(node)` — `ProcessNet(wallet) |
+  RefineSession`. Peer refinement (greylist/whitelist). Compiled transitively
+  but no binary selects it alone (dwowd needs seed-sync from `net-full`).
+  Structured gossip (fan-out block relay) runs at this tier.
   TransportQuic`. Full P2P stack with all transport plugins.
 
 The wallet's `ProcessNet(wallet)` can connect to any daemon's

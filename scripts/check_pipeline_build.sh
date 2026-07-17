@@ -84,6 +84,12 @@ else
     echo "=== Host binaries (node + wallet) ==="
     echo ""
     for b in "${HOST_BINS[@]}"; do check_host "$b"; done
+    # Feature-gate compile check: net-node is the middle P2P tier (net-wallet +
+    # refine-session). It is compiled transitively through net-full in every
+    # dwowd build, but never standalone. This gate catches bit-rot in the
+    # standalone cfg combination (MOC item 1, close-out of the [PARTIAL] doc entry).
+    run_check "net-node (standalone feature gate)" -p dwow-core --no-default-features \
+        --features "net-node, async-serial, blockchain"
     echo ""
     echo "=== Contract entrypoints -> $WASM_TARGET ==="
     echo ""
