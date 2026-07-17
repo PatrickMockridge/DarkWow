@@ -75,34 +75,21 @@ impl<T: Send + 'static> JoinSet<T> {
     ///
     /// This is the `merge!` barrier in ρ-calculus: all parallel processes
     /// must complete before the barrier releases.
+    ///
+    /// A single receive pass in spawn order: `self.tasks` is pushed with
+    /// monotonically increasing indices, so iterating in order IS spawn
+    /// order. Each `recv().await` awaits only that task's completion while
+    /// every detached task runs concurrently on the executor — barrier
+    /// latency is max-of-tasks, preserving §9.2 weak bisimilarity and the
+    /// §9.4 merge-barrier contract.
     pub async fn join_all(self) -> Vec<T> {
-        let mut results: Vec<Option<T>> = (0..self.next_index).map(|_| None).collect();
-
-        // Take a copy before draining — the first loop consumes self.tasks.
-        // Clone is cheap: Vec<Receiver> where Receiver is an Arc-backed
-        // channel handle.
-        let mut tasks: Vec<(usize, channel::Receiver<T>)> = self.tasks.clone();
-        for (_index, rx) in tasks.iter() {
-            match rx.recv().await {
-                Ok(value) => {
-                    // Place result at the position matching spawn order.
-                    _ = value;
-                }
-                Err(_) => {}
-            }
-        }
-
-        // Rebuild results in spawn order from the cloned copy.
-        tasks.sort_by_key(|(idx, _)| *idx);
-
-        let mut out = Vec::with_capacity(tasks.len());
-        for (_idx, rx) in tasks {
+        let mut out = Vec::with_capacity(self.tasks.len());
+        for (_index, rx) in self.tasks {
             match rx.recv().await {
                 Ok(value) => out.push(value),
                 Err(_) => {} // skip panicked tasks
             }
         }
-
         out
     }
 
@@ -127,7 +114,6 @@ impl<T: Send + 'static> Default for JoinSet<T> {
 mod tests {
     use super::*;
     use std::sync::Arc;
-    use std::time::Duration;
 
     use smol::Executor;
 

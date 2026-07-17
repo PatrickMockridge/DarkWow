@@ -41,7 +41,7 @@ use crate::{
         hosts::HostColor,
         message::{GetAddrsMessage, Message},
         metering::{MeteringConfiguration, DEFAULT_METERING_CONFIGURATION},
-        settings::NetworkProfile,
+        settings::{BanPolicy, NetworkProfile},
         P2p, Settings,
     },
     concurrency::sleep,
@@ -123,6 +123,10 @@ async fn spawn_seed_session(
     for port in ports {
         let settings = Settings {
             localnet: true,
+            // Loopback test overlay: hostlist gates key on p2p_local (not
+            // localnet) since the flag split — without it every 127.0.0.1
+            // addr is dropped by filter_addresses and bans are skipped.
+            p2p_local: true,
             inbound_addrs: vec![Url::parse(&format!("tcp://127.0.0.1:{port}")).unwrap()],
             external_addrs: vec![Url::parse(&format!("tcp://127.0.0.1:{port}")).unwrap()],
             outbound_connections: 2,
@@ -177,6 +181,11 @@ async fn spawn_manual_session(
         let inbound_port = ports[i];
         let settings = Settings {
             localnet: true,
+            // Loopback test overlay (see spawn_seed_session note).
+            p2p_local: true,
+            // The ban tests assert on Black-list insertion — pin Strict so
+            // the outcome doesn't depend on the feature-driven default.
+            ban_policy: BanPolicy::Strict,
             inbound_addrs: vec![Url::parse(&format!("tcp://127.0.0.1:{inbound_port}")).unwrap()],
             external_addrs: vec![Url::parse(&format!("tcp://127.0.0.1:{inbound_port}")).unwrap()],
             outbound_connections: 2,
@@ -314,10 +323,6 @@ macro_rules! test_body {
     };
 }
 
-// TODO(p2p-net-tests): FAILING — parked for a separate scope. This is P2P
-// message-passing infrastructure (not blockchain/type-system). It binds real TCP on
-// 127.0.0.1 and relies on fixed-timing sleeps, so it is environment/timing-sensitive.
-// Unrelated to the type-system migration. Grep marker: p2p-net-tests
 #[test]
 fn p2p_test() {
     test_body!(p2p_test_real, 5);
@@ -335,6 +340,8 @@ async fn p2p_test_real(ex: Arc<Executor<'static>>) {
 
     let settings = Settings {
         localnet: true,
+        // Loopback test overlay (see spawn_seed_session note).
+        p2p_local: true,
         inbound_addrs: vec![seed_addr.clone()],
         outbound_connections: 0,
         inbound_connections: usize::MAX,
@@ -429,9 +436,9 @@ async fn p2p_test_real(ex: Arc<Executor<'static>>) {
     //    empty. This ensures the seed node is sharing whitelisted
     //    nodes around the network.
     // ===========================================================
-    // PEX propagation from seed to outbound nodes — ProtocolSeed now
-    // retries GetAddrs up to 3 times with 5-second gaps, giving other
-    // nodes time to register with the seed before each query.
+    // PEX propagation from seed to outbound nodes. ProtocolSeed sends a
+    // single GetAddrs per session; check_all_hostlist retries below to
+    // tolerate propagation delay.
     check_all_hostlist(&outbound_instances).await;
     info!("========================================================");
     info!("Peers successfully received addrs!");
@@ -444,9 +451,6 @@ async fn p2p_test_real(ex: Arc<Executor<'static>>) {
 
     // ===========================================================
     // 6-7. Gold host selection + kill + greylist downgrade
-    //
-    // PEX propagation now works — ProtocolSeed retries GetAddrs up to
-    // 3 times with 5-second gaps, giving nodes time to register.
     // ===========================================================
     {
         info!("========================================================");
@@ -523,10 +527,6 @@ async fn p2p_test_real(ex: Arc<Executor<'static>>) {
     }
 }
 
-// TODO(p2p-net-tests): FAILING — parked for a separate scope. This is P2P
-// message-passing infrastructure (not blockchain/type-system). It binds real TCP on
-// 127.0.0.1 and relies on fixed-timing sleeps, so it is environment/timing-sensitive.
-// Unrelated to the type-system migration. Grep marker: p2p-net-tests
 #[test]
 fn p2p_channel_unsupported_message_type_gets_banned() {
     test_body!(p2p_channel_unsupported_message_type_gets_banned_real, 2);
@@ -567,10 +567,6 @@ async fn p2p_channel_unsupported_message_type_gets_banned_real(ex: Arc<Executor<
     node2_p2p.stop().await;
 }
 
-// TODO(p2p-net-tests): FAILING — parked for a separate scope. This is P2P
-// message-passing infrastructure (not blockchain/type-system). It binds real TCP on
-// 127.0.0.1 and relies on fixed-timing sleeps, so it is environment/timing-sensitive.
-// Unrelated to the type-system migration. Grep marker: p2p-net-tests
 #[test]
 fn p2p_channel_invalid_command_length_gets_banned() {
     test_body!(p2p_channel_invalid_command_length_gets_banned_real, 2);
@@ -611,10 +607,6 @@ async fn p2p_channel_invalid_command_length_gets_banned_real(ex: Arc<Executor<'s
     node2_p2p.stop().await;
 }
 
-// TODO(p2p-net-tests): FAILING — parked for a separate scope. This is P2P
-// message-passing infrastructure (not blockchain/type-system). It binds real TCP on
-// 127.0.0.1 and relies on fixed-timing sleeps, so it is environment/timing-sensitive.
-// Unrelated to the type-system migration. Grep marker: p2p-net-tests
 #[test]
 fn p2p_channel_invalid_message_length_gets_banned() {
     test_body!(p2p_channel_invalid_message_length_gets_banned_real, 2);

@@ -180,7 +180,11 @@ mod tests {
     struct BlockchainObserver;
     impl ExhibitsBarb for BlockchainObserver {
         fn exhibited_barbs() -> &'static [BarbId] {
-            &[BarbId::Verify, BarbId::Commit, BarbId::GossipForward]
+            // A read-only observer verifies proofs and relays messages. It
+            // does NOT publish commitments — ↓commit is "Publishes the public
+            // face of a capability" (type-system.md §1.1) and is a quarantined
+            // blockchain barb (§10.4).
+            &[BarbId::Verify, BarbId::GossipForward]
         }
     }
 
@@ -198,9 +202,25 @@ mod tests {
 
     #[test]
     fn test_observer_to_eventgraph_allowed() {
-        // Observer has no blockchain-only barbs (no Spend/Nullify/Mine)
+        // Observer has no blockchain barbs (no Spend/Nullify/Commit/Mine)
         // but has GossipForward → allowed through
         assert!(!BlockchainObserver::has_blockchain_barbs());
         assert!(bridge_safe::<BlockchainObserver, EventGraphNode>());
+    }
+
+    /// Converse witness of the §10.4 SHALL NOT: a process that publishes
+    /// commitments (↓commit) is a blockchain-barb carrier and is BLOCKED
+    /// from event-graph channels — commits cross only via the dedicated
+    /// typed bridge (`bridge_chain_evg`, see bridge_channel.rs).
+    #[test]
+    fn test_commit_publisher_to_eventgraph_blocked() {
+        struct CommitPublisher;
+        impl ExhibitsBarb for CommitPublisher {
+            fn exhibited_barbs() -> &'static [BarbId] {
+                &[BarbId::Commit, BarbId::Verify, BarbId::GossipForward]
+            }
+        }
+        assert!(CommitPublisher::has_blockchain_barbs());
+        assert!(!bridge_safe::<CommitPublisher, EventGraphNode>());
     }
 }
