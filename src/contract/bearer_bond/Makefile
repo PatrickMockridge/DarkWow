@@ -57,7 +57,7 @@ check-zkas-version:
 
 # Pattern rule for ZK binaries
 proof/%.zk.bin: proof/%.zk $(ZKAS) check-zkas-version
-	$(ZKAS) $$< -o $$@
+	$(ZKAS) $< -o $@
 
 # Check if source hash changed
 check-source-hash:
