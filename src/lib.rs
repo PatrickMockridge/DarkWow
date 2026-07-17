@@ -24,6 +24,11 @@
 pub mod error;
 pub use error::{ClientFailed, ClientResult, Error, Result};
 
+/// Barb vocabulary — the 22 observable actions (type-system.md §1.1).
+/// Unconditionally compiled: type-system interior vocabulary, not
+/// networking infrastructure. Re-exported as `net::barb_trait`.
+pub mod barb;
+
 #[cfg(feature = "blockchain")]
 pub mod blockchain;
 

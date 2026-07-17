@@ -554,30 +554,35 @@ pub async fn dag_announce_block(
 /// Compile-time assertion that the DAG absorber's barb crossing is
 /// in the allowed direction (§10.4). Called from dag_absorber.rs at
 /// startup; unit-testable.
-#[cfg(feature = "event-graph")]
+///
+/// The barb vocabulary is unconditional (`dwow_core::barb`), so this
+/// assertion is live in every dwowd build profile — not feature-gated
+/// (a `#[cfg(feature = "event-graph")]` on dwowd would check dwowd's
+/// own features (which dwowd doesn't define), making the check silently
+/// dead in all profiles — HAZOP 3 deviation D1).
 pub fn dag_absorber_barb_check() {
     struct BlockchainAbsorber;
-    impl dwow_core::net::barb_trait::ExhibitsBarb for BlockchainAbsorber {
-        fn exhibited_barbs() -> &'static [dwow_core::net::barb_trait::BarbId] {
+    impl dwow_core::barb::ExhibitsBarb for BlockchainAbsorber {
+        fn exhibited_barbs() -> &'static [dwow_core::barb::BarbId] {
             &[
-                dwow_core::net::barb_trait::BarbId::Verify,
-                dwow_core::net::barb_trait::BarbId::Commit,
+                dwow_core::barb::BarbId::Verify,
+                dwow_core::barb::BarbId::Commit,
             ]
         }
     }
     struct EventGraphBarbs;
-    impl dwow_core::net::barb_trait::ExhibitsBarb for EventGraphBarbs {
-        fn exhibited_barbs() -> &'static [dwow_core::net::barb_trait::BarbId] {
+    impl dwow_core::barb::ExhibitsBarb for EventGraphBarbs {
+        fn exhibited_barbs() -> &'static [dwow_core::barb::BarbId] {
             &[
-                dwow_core::net::barb_trait::BarbId::DagParent,
-                dwow_core::net::barb_trait::BarbId::Broadcast,
-                dwow_core::net::barb_trait::BarbId::RateLimit,
-                dwow_core::net::barb_trait::BarbId::QuorumQuery,
+                dwow_core::barb::BarbId::DagParent,
+                dwow_core::barb::BarbId::Broadcast,
+                dwow_core::barb::BarbId::RateLimit,
+                dwow_core::barb::BarbId::QuorumQuery,
             ]
         }
     }
     assert!(
-        dwow_core::net::barb_trait::bridge_safe::<EventGraphBarbs, BlockchainAbsorber>(),
+        dwow_core::barb::bridge_safe::<EventGraphBarbs, BlockchainAbsorber>(),
         "§10.4 quarantine: event-graph → blockchain SHALL be the allowed direction",
     );
 }

@@ -16,21 +16,19 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! ExhibitsBarb — compile-time barb declaration for protocol handlers.
+//! Barb vocabulary — the 22 observable actions (type-system.md §1.1).
 //!
-//! Protocol handlers implement this marker trait to declare their observable
-//! behaviors (barbs) at compile time. The trait enables:
+//! This module is unconditionally compiled: barbs are type-system interior
+//! vocabulary (a 1:1 mirror of the Lean4 `Barb` inductive), not networking
+//! infrastructure. They are referenced by compilation units inside and
+//! outside the `net` module. Placing them behind a networking feature gate
+//! is a category error — the barb vocabulary is the static type language
+//! for describing process behavior; the boundary obligations in `net`
+//! (channel.rs bans, hosts.rs quarantine, metering.rs rate-limit) are the
+//! runtime enforcement that uses this vocabulary as a tool (§10.5:
+//! "statically-proven interior ⊆ absorber boundary ⊆ dynamic residue").
 //!
-//! 1. **Static verification**: the compiler enforces that a protocol handler
-//!    claiming to exhibit `↓gossip-forward` actually has the capability.
-//! 2. **Bridging safety**: messages carrying blockchain barbs (↓spend,
-//!    ↓nullify, ↓commit) cannot be routed through event-graph channels.
-//! 3. **Documentation**: the barb set is machine-readable for tooling.
-//!
-//! Maps to ρ-calculus: a process `P` typed at `T` exhibits barb `↓x` if
-//! `↓x ∈ concurrentProcessBarbs(P)`. The trait is the Rust-level witness.
-//!
-//! See: doc/src/arch/type-system.md §1.1 (Barbs), §10.4 (Bridging)
+//! Re-exported as `crate::net::barb_trait` for backward compatibility.
 
 /// Barb identifiers for the 22 observable actions defined in Types.lean.
 ///
@@ -145,8 +143,8 @@ pub trait ExhibitsBarb {
 /// Bridging safety check: a message from `Source` can be forwarded to
 /// `Destination` only if no incompatible barbs cross the quarantine boundary.
 ///
-/// A blockchain process (carrying ↓spend, ↓nullify, ↓commit) SHALL NOT
-/// route messages through an event-graph channel. A process with
+/// A blockchain process (carrying ↓spend, ↓nullify, ↓commit, ↓mine) SHALL
+/// NOT route messages through an event-graph channel. A process with
 /// blockchain barbs routed through the event graph would leak capability
 /// semantics across the quarantine boundary.
 pub fn bridge_safe<Source: ExhibitsBarb, Dest: ExhibitsBarb>() -> bool {
@@ -231,7 +229,7 @@ mod tests {
     /// value here with the MoC decision recorded in the commit message.
     #[test]
     fn test_notify_on_barb_set_growth() {
-        // ── P2P core handlers (barb_trait.rs test fixtures) ──
+        // ── P2P core handlers (barb trait test fixtures) ──
         assert_eq!(BlockchainMiner::exhibited_barbs().len(), 5);
         assert_eq!(EventGraphNode::exhibited_barbs().len(), 4);
         assert_eq!(BlockchainObserver::exhibited_barbs().len(), 2);

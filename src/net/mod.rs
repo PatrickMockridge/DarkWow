@@ -60,7 +60,7 @@ pub mod channel;
 pub use channel::ChannelPtr;
 
 /// Compile-time barb declaration for protocol handlers (§1.1, §10.4).
-pub mod barb_trait;
+pub use crate::barb as barb_trait;
 
 /// Typed cross-path channel with barb-carrying type safety (§10.4).
 pub mod bridge_channel;
