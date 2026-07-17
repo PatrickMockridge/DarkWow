@@ -47,7 +47,7 @@ run_gate() {
 
 TIER="${1:-}"
 
-run_gate "validate ZK bins"               "$SCRIPT_DIR/validate_zk_bins.sh"
+run_gate "build contract ZK circuits"     "$SCRIPT_DIR/build-contract-zk.sh"
 run_gate "pre-build guard (dwowd + wallet + 32 contracts→wasm32)" \
                                           "$SCRIPT_DIR/check_pipeline_build.sh"
 run_gate "Rust tests (make test)"          make test

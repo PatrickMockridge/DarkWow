@@ -8,7 +8,8 @@
 
 set -e
 
-ZKAS="${ZKAS:-target/release/zkas}"
+ZKAS="${ZKAS:-$(cd "$(dirname "$0")/.." && pwd)/zkas}"
+[ -x "$ZKAS" ] || ZKAS="target/release/zkas"  # fallback for CI where only target/ exists
 CONTRACT_DIR="src/contract"
 
 # Colors
