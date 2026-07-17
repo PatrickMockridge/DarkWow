@@ -88,7 +88,7 @@ else
     # refine-session). It is compiled transitively through net-full in every
     # dwowd build, but never standalone. This gate catches bit-rot in the
     # standalone cfg combination (MOC item 1, close-out of the [PARTIAL] doc entry).
-    run_check "net-node (standalone feature gate)" -p dwow-core --no-default-features \
+    run_check "net-node (standalone feature gate)" -p dwow_core --no-default-features \
         --features "net-node, async-serial, blockchain"
     echo ""
     echo "=== Contract entrypoints -> $WASM_TARGET ==="
