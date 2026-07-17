@@ -27,6 +27,7 @@
 //! Uses Pedersen commitments for hidden values and nullifiers for double-spend prevention.
 
 use dwow_sdk::{
+    blockchain::BlockHeight,
     crypto::{note::AeadEncryptedNote, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, PublicKey, TokenId},
     pasta::pallas,
 };
@@ -229,7 +230,7 @@ pub struct FeeParamsV1 {
 pub struct FeeUpdateV1 {
     pub nullifier: Nullifier,
     pub coin: Coin,
-    pub height: u32,
+    pub height: BlockHeight,
     pub fee: u64,
 }
 
@@ -263,7 +264,7 @@ pub struct PoWRewardParamsV1 {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct PoWRewardUpdateV1 {
     pub coin: Coin,
-    pub height: u32,
+    pub height: BlockHeight,
     /// Cumulative total supply after this reward (for supply cap enforcement)
     pub new_total_supply: u64,
     /// Cumulative value commitment after this reward (Pedersen point: S_H).
@@ -358,7 +359,7 @@ pub struct FeeCollectUpdateV1 {
     /// The fee coin created for the miner
     pub coin: Coin,
     /// Block height (must match verifying block height)
-    pub height: u32,
+    pub height: BlockHeight,
     /// Total fees collected (must match fees_db[height])
     pub total_fees: u64,
 }

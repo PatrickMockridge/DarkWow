@@ -190,7 +190,7 @@ pub extern "C" fn dwow_wallet_free(handle: *mut WalletHandle) {
 pub extern "C" fn dwow_wallet_derive_address(
     handle: *const AccountManagerHandle,
     contract_id: *const u8,
-    height: u32,
+    height: u64,
     out_address: *mut c_char,
     out_len: i32,
 ) -> i32 {
@@ -451,7 +451,7 @@ pub extern "C" fn dwow_wallet_cap_value(handle: *const CapRecordHandle) -> u64 {
 
 /// Get the block height at which this capability was created.
 #[no_mangle]
-pub extern "C" fn dwow_wallet_cap_height(handle: *const CapRecordHandle) -> u32 {
+pub extern "C" fn dwow_wallet_cap_height(handle: *const CapRecordHandle) -> u64 {
     if handle.is_null() { return 0; }
     unsafe { (*handle).cap_record.created_at_height }
 }
@@ -648,7 +648,7 @@ pub extern "C" fn dwow_wallet_cap_barbs(
 
 /// Get the height at which this capability was revoked, or 0 if unspent.
 #[no_mangle]
-pub extern "C" fn dwow_wallet_cap_revoked_at_height(handle: *const CapRecordHandle) -> u32 {
+pub extern "C" fn dwow_wallet_cap_revoked_at_height(handle: *const CapRecordHandle) -> u64 {
     if handle.is_null() { return 0; }
     unsafe { (*handle).cap_record.revoked_at_height.unwrap_or(0) }
 }

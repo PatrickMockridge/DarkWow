@@ -108,14 +108,14 @@ int32_t dwow_wallet_last_error(
  *
  *  @param account       Open AccountManager handle
  *  @param contract_id   32 bytes, the contract's ID
- *  @param height        Block height (u32)
+ *  @param height        Block height (u64)
  *  @param out_address   Output buffer for the Testnet address C string
  *  @param out_len       Buffer size (must be >= 64)
  *  @return              Bytes written (including NUL), or 0 on error. */
 int32_t dwow_wallet_derive_address(
     const AccountManagerHandle* account,
     const uint8_t* contract_id,
-    uint32_t height,
+    uint64_t height,
     char* out_address,
     int32_t out_len);
 
@@ -157,7 +157,7 @@ CapRecordHandle* dwow_wallet_get_cap(
 uint64_t dwow_wallet_cap_value(const CapRecordHandle* handle);
 
 /** Get the block height at which this capability was created. */
-uint32_t dwow_wallet_cap_height(const CapRecordHandle* handle);
+uint64_t dwow_wallet_cap_height(const CapRecordHandle* handle);
 
 /** Get the capability ID as a bs58 string.
  *
@@ -195,7 +195,7 @@ int32_t dwow_wallet_cap_commitment(
 int32_t dwow_wallet_cap_revoked(const CapRecordHandle* handle);
 
 /** Get the block height at which this capability was revoked (0 if active). */
-uint32_t dwow_wallet_cap_revoked_at_height(const CapRecordHandle* handle);
+uint64_t dwow_wallet_cap_revoked_at_height(const CapRecordHandle* handle);
 
 /** Get the manifest capability name (e.g. "coin", "credential").
  *  Returns bytes written (excluding NUL), or -1 on error. */

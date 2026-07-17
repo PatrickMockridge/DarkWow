@@ -190,7 +190,7 @@ pub fn baccarat_commit_bet_process_instruction_v1(
 
     // Get current block height for created_at and settle_block
     let current_block = wasm::util::get_verifying_block_height()?;
-    let created_at = current_block as u64;
+    let created_at = current_block.get();
 
     // Calculate settle block: bet can only settle after confirmation_depth blocks
     let settle_block = created_at + params.confirmation_depth as u64;

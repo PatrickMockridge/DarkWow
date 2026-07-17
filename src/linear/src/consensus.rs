@@ -37,6 +37,7 @@
 use std::sync::{atomic::{AtomicU32, AtomicU64, Ordering}, Mutex};
 
 use blake3::Hash as Blake3Hash;
+use dwow_sdk::blockchain::BlockHeight;
 use tracing::debug;
 
 use super::{Block, LinearError, UncleBlock, Result};
@@ -334,8 +335,8 @@ impl PoWConsensus {
     /// chain history. For height > 1, walks the chain from genesis through
     /// `height - 1`, recomputing the target from each block's timestamp.
     /// Uses the same adjustment algorithm as `adjust_target()`.
-    pub fn get_next_work_required(&self, store: &super::LinearStore, height: u64) -> u32 {
-        if height <= 1 {
+    pub fn get_next_work_required(&self, store: &super::LinearStore, height: BlockHeight) -> u32 {
+        if height <= BlockHeight::GENESIS {
             return u32::MAX;
         }
 
@@ -347,8 +348,8 @@ impl PoWConsensus {
         let mut target = self.initial_target();
         let mut timestamps: Vec<u64> = Vec::with_capacity(TIMESTAMP_WINDOW);
 
-        for h in 1..height {
-            if let Ok(block) = store.get_block(h) {
+        for h in 1..height.get() {
+            if let Ok(block) = store.get_block(BlockHeight::new(h)) {
                 timestamps.push(block.header.timestamp);
                 if timestamps.len() > TIMESTAMP_WINDOW {
                     timestamps.remove(0);

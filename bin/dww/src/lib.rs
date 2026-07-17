@@ -166,7 +166,7 @@ pub struct Dww {
     /// Highest block height with a verified Caribina (Arweave) anchor.
     /// Blocks below this height are cryptographically final — cannot be reorged.
     /// The chain state rejects AnchoredBlockConflict for anchored blocks.
-    pub verified_anchor_height: smol::lock::Mutex<u32>,
+    pub verified_anchor_height: smol::lock::Mutex<u64>,
     /// Cached burn proving key — built once from the embedded zkas binary.
     /// Depends only on the compile-time constant BURN_V1_BIN.
     pub burn_pk_cache: smol::lock::Mutex<Option<dwow_core::zk::proof::ProvingKey>>,
@@ -302,7 +302,9 @@ impl Dww {
     /// verification: after insert, read back and verify the header hash matches.
     /// Detects torn writes and sled-level corruption before the block is trusted.
     pub fn insert_synced_block(&self, block: &dwow_chain::Block) -> Result<()> {
-        let height = block.header.height;
+        // Chain seam: lower the nominal height to the wallet's persistence
+        // domain (SQLite chain store keys are u64 — type-system.md §2.3).
+        let height = block.header.height.get();
         self.wallet.insert_block(height, block)
             .map_err(|e| Error::Custom(format!("insert block {}: {:?}", height, e)))?;
         // Defense in depth: verify the write by reading it back.
@@ -347,7 +349,7 @@ impl Dww {
 
         // Record chain height before broadcast for confirmation polling
         let start_height = if confirm {
-            self.wallet.chain_height().map(|h| h as u32).unwrap_or(0)
+            self.wallet.chain_height().unwrap_or(0)
         } else {
             0
         };
@@ -412,7 +414,7 @@ impl Dww {
     async fn poll_for_confirmation(
         &self,
         txid: &str,
-        start_height: u32,
+        start_height: u64,
         timeout_secs: u64,
         interval_secs: u64,
     ) -> Result<String> {
@@ -422,7 +424,7 @@ impl Dww {
 
         loop {
             smol::Timer::after(interval).await;
-            let current_height = self.wallet.chain_height().map(|h| h as u32).unwrap_or(0);
+            let current_height = self.wallet.chain_height().unwrap_or(0);
             if current_height > start_height {
                 return Ok(txid.to_string());
             }
@@ -1163,7 +1165,7 @@ impl Dww {
             for capability_id in &transferred {
                 // Use current chain tip as the revoke height; reorg reconciler
                 // will un-revoke if the block is reverted.
-                let current_height = self.chain_height().unwrap_or(0) as u32;
+                let current_height = self.chain_height().unwrap_or(0);
                 if let Err(e) = self.wallet.mark_revoked(capability_id, current_height) {
                     output.push(format!(
                         "Failed to mark capability {} as revoked: {:?}", capability_id, e

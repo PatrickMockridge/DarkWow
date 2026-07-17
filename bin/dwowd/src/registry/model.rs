@@ -35,6 +35,7 @@ use dwow_chain::Nullifier;
 use dwow_native_token_contract::{
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V1_BIN, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN,
 };
+use dwow_sdk::blockchain::BlockHeight;
 use dwow_sdk::crypto::{
     keypair::{SecretKey},
     pasta_prelude::PrimeField,
@@ -64,7 +65,7 @@ impl LinearMinerRewardsRecipientConfig {
     /// a fresh unlinkable recipient per block for privacy-preserving rewards.
     pub fn from_account(
         mgr: &crate::accounts::AccountManager,
-        height: u32,
+        height: BlockHeight,
     ) -> std::result::Result<Self, RpcError> {
         let recipient = crate::accounts::MiningRecipient::from_account(mgr, height)
             .map_err(|_| RpcError::MinerMissingAddress)?;
@@ -78,7 +79,7 @@ pub struct LinearBlockTemplate {
     /// Previous block hash
     pub previous: [u8; 32],
     /// Block height
-    pub height: u64,
+    pub height: BlockHeight,
     /// Difficulty target
     pub target: u32,
     /// Unix timestamp (seconds) — captured once and reused for mining blob + verification
@@ -138,7 +139,7 @@ pub async fn build_linear_coinbase(
     recipient: crate::accounts::MiningRecipient,
     value: u64,
     linear_zk: &LinearPowRewardZk,
-    height: u32,
+    height: BlockHeight,
 ) -> Result<(
     dwow_chain::CoinbaseTransaction,
     [[u8; 32]; 9],
@@ -317,7 +318,7 @@ pub async fn build_linear_coinbase(
 pub fn build_fee_collect_tx(
     recipient: &crate::accounts::MiningRecipient,
     transactions: &[dwow_chain::Transaction],
-    height: u32,
+    height: BlockHeight,
     linear_zk: &LinearPowRewardZk,
 ) -> Result<Option<dwow_chain::Transaction>> {
     use dwow_native_token_contract::client::fee_collect_v1::FeeCollectCallBuilder;
@@ -528,7 +529,7 @@ pub async fn generate_linear_block_template(
         capped
     };
 
-    let height = chain_state.get_height() + 1;
+    let height = chain_state.get_height().succ();
 
     // FeeCollectV1 — the "collection plate" as the final template transaction
     // (consensus-coinbase.md §3.12). MUST be appended BEFORE the merkle root
@@ -542,7 +543,7 @@ pub async fn generate_linear_block_template(
             if let Some(fee_tx) = build_fee_collect_tx(
                 &recipient_config.recipient,
                 &txs,
-                height as u32,
+                height,
                 zk,
             )? {
                 txs.push(fee_tx);
@@ -551,7 +552,7 @@ pub async fn generate_linear_block_template(
         txs
     };
 
-    let previous_hash: [u8; 32] = if height == 1 {
+    let previous_hash: [u8; 32] = if height == BlockHeight::GENESIS {
         [0u8; 32]
     } else {
         let latest_block = chain_state.get_latest_block()
@@ -566,7 +567,7 @@ pub async fn generate_linear_block_template(
     };
 
     use dwow_sdk::blockchain::expected_reward;
-    let reward = expected_reward(height as u64);
+    let reward = expected_reward(height);
 
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -631,7 +632,7 @@ pub async fn generate_linear_block_template(
             recipient_config.recipient.clone(),
             reward,
             zk,
-            height as u32,
+            height,
         ).await?;
 
         let coin_merkle_root = chain_state.compute_root_including_coin(&coinbase.coin);

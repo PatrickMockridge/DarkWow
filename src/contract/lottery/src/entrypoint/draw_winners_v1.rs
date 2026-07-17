@@ -52,13 +52,13 @@ pub fn lottery_draw_winners_process_instruction_v1(
     }
 
     // Verify lottery has ended
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
-    if current_block < lottery.draw_block_deadline {
+    let current_block = wasm::util::get_verifying_block_height()?;
+    if current_block.get() < lottery.draw_block_deadline {
         return Err(LotteryError::DrawNotYetAvailable.into())
     }
 
     // Get block hash for randomness
-    let tx_block_hash = wasm::util::get_block_hash(current_block as u32)?;
+    let tx_block_hash = wasm::util::get_block_hash(current_block)?;
 
     // Convert block_hash bytes to pallas::Base for entropy
     // TransactionHash is a wrapper around [u8; 32]
@@ -87,7 +87,7 @@ pub fn lottery_draw_winners_process_instruction_v1(
     let update = DrawWinnersUpdateV1 {
         lottery_id: params.lottery_id,
         winning_numbers,
-        draw_block: current_block,
+        draw_block: current_block.get(),
         gross_pool,
         house_share,
         prize_pool,

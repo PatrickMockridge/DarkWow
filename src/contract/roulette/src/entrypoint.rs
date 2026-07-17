@@ -211,7 +211,7 @@ fn roulette_initialize_process_instruction_v1(
     msg!("  max_straight_bet: {}", params.max_straight_bet);
 
     // Get current block
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Derive table ID
     let table_id = derive_table_id(&params.house_pub, current_block);
@@ -246,7 +246,7 @@ fn roulette_initialize_process_instruction_v1(
 
 fn roulette_initialize_process_update_v1(cid: ContractId, update: InitializeUpdateV1) -> ContractResult {
     let tables_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_TABLES_TREE)?;
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     let table = if update.wheel_size == 38 {
         RouletteTable::new_american(
@@ -336,7 +336,7 @@ fn roulette_place_bet_process_instruction_v1(
         None => return Err(RouletteError::TableNotFound.into()),
     };
 
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Verify table is active and accepting bets
     if table.state != RouletteTableState::Active {
@@ -417,7 +417,7 @@ fn roulette_place_bet_process_update_v1(cid: ContractId, update: PlaceBetUpdateV
         won: None,
         actual_payout: 0,
         spin_number: update.spin_number,
-        placed_at: wasm::util::get_verifying_block_height()? as u64,
+        placed_at: wasm::util::get_verifying_block_height()?.get(),
         nullifier: update.nullifier,
         instance_seed: update.instance_seed,
     };
@@ -451,7 +451,7 @@ fn roulette_spin_wheel_process_instruction_v1(
         None => return Err(RouletteError::TableNotFound.into()),
     };
 
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?;
 
     // Verify table is active
     if table.state != RouletteTableState::Active {
@@ -459,7 +459,7 @@ fn roulette_spin_wheel_process_instruction_v1(
     }
 
     // Check if bets should close
-    if current_block < table.bets_close_block {
+    if current_block.get() < table.bets_close_block {
         return Err(RouletteError::SpinNotReady.into())
     }
 
@@ -476,7 +476,7 @@ fn roulette_spin_wheel_process_instruction_v1(
     }
 
     // Get block hash for randomness
-    let block_hash = wasm::util::get_block_hash(current_block as u32)?;
+    let block_hash = wasm::util::get_block_hash(current_block)?;
 
     // Convert block_hash bytes to pallas::Base for entropy
     let hash_bytes = block_hash.0;
@@ -492,13 +492,13 @@ fn roulette_spin_wheel_process_instruction_v1(
     // Update table
     table.winning_number = Some(winning_number);
     table.spin_count += 1;
-    table.spun_at_block = Some(current_block);
+    table.spun_at_block = Some(current_block.get());
 
     let update = SpinWheelUpdateV1 {
         table_id: params.table_id,
         winning_number,
         spin_number: table.spin_count,
-        spun_at_block: current_block,
+        spun_at_block: current_block.get(),
         spin_nullifier: params.spin_nullifier,
     };
 

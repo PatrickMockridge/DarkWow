@@ -240,7 +240,7 @@ fn register_oracle_v1(cid: ContractId, params: RegisterOracleParamsV1) -> Result
     }
 
     // Get current block
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Create oracle
     let oracle = Oracle {
@@ -285,7 +285,7 @@ fn push_value_v1(cid: ContractId, params: PushValueParamsV1) -> Result<Vec<u8>, 
     }
 
     // Update value
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     oracle.value = params.value;
     oracle.updated_at = current_block;
 
@@ -411,7 +411,7 @@ fn aggregate_v1(cid: ContractId, params: AggregateParamsV1) -> Result<Vec<u8>, C
     }
 
     // Update oracle value with aggregated result
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     oracle.value = params.result;
     oracle.updated_at = current_block;
 

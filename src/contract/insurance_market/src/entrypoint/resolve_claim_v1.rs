@@ -130,7 +130,7 @@ pub fn insurance_market_resolve_claim_process_instruction_v1(
         0
     };
 
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     let value_blind = poseidon_hash([
         pallas::Base::from(payout),

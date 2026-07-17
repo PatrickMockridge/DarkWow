@@ -114,10 +114,10 @@ impl DwowNode {
             }
         };
 
-        let height = latest_block.header.height + 1;
+        let height = latest_block.header.height.succ();
 
         let mining_recipient = match crate::accounts::MiningRecipient::from_account(
-            &*self.account_manager.read().await, height as u32,
+            &*self.account_manager.read().await, height,
         ) {
             Ok(r) => r,
             Err(e) => {
@@ -294,7 +294,7 @@ impl DwowNode {
         // Return block hash
         let result = JsonValue::from(HashMap::from([
             ("block_hash".to_string(), JsonValue::String(block_hash)),
-            ("height".to_string(), JsonValue::Number(height as f64)),
+            ("height".to_string(), JsonValue::Number(height.get() as f64)),
         ]));
         JsonResponse::new(result, id).into()
     }

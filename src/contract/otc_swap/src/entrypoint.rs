@@ -365,7 +365,7 @@ fn swap_create_process_instruction_v1(
         alice_value_blind: pallas::Scalar::ZERO,
         bob_value_commit: pallas::Point::identity(),
         spent_nullifier: pallas::Base::ZERO,
-        created_at: wasm::util::get_verifying_block_height()?.into(),
+        created_at: wasm::util::get_verifying_block_height()?.get(),
         funded_at: None,
         instance_seed: params.instance_seed,
     };
@@ -434,7 +434,7 @@ fn swap_fund_process_instruction_v1(
     // Update swap with funding details
     swap.alice_value_commit = params.value_commit;
     swap.state = SwapState::Funded;
-    swap.funded_at = Some(wasm::util::get_verifying_block_height()?.into());
+    swap.funded_at = Some(wasm::util::get_verifying_block_height()?.get());
 
     let update = FundSwapUpdateV1 { swap_id: swap.id };
     Ok(serialize(&update))
@@ -549,7 +549,7 @@ fn swap_cancel_process_instruction_v1(
     } else if swap.state == SwapState::Funded {
         // CRITICAL: Verify timelock has passed
         let current_block = wasm::util::get_verifying_block_height()?;
-        if u64::from(current_block) < swap.timeout {
+        if current_block.get() < swap.timeout {
             msg!(
                 "[CancelSwapV1] Error: Timelock not reached (current: {}, timeout: {})",
                 current_block,
@@ -623,7 +623,7 @@ fn swap_fund_process_update_v1(cid: ContractId, update: FundSwapUpdateV1) -> Con
     let mut swap: OtcSwap = deserialize(&swap_data)?;
 
     swap.state = SwapState::Funded;
-    swap.funded_at = Some(wasm::util::get_verifying_block_height()?.into());
+    swap.funded_at = Some(wasm::util::get_verifying_block_height()?.get());
 
     wasm::db::db_set(swaps_db, &serialize(&swap.id), &serialize(&swap))?;
     msg!("[FundSwapV1] Swap {:?} funded and state updated to Funded", update.swap_id);

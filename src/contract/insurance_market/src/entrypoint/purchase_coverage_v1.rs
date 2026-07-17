@@ -98,7 +98,7 @@ pub fn insurance_market_purchase_coverage_process_instruction_v1(
     }
 
     // Verify market isn't closed
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     if market.closes_at > 0 && current_block >= market.closes_at {
         return Err(InsuranceMarketError::MarketNotActive.into())
     }

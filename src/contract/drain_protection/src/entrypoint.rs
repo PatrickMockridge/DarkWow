@@ -312,7 +312,7 @@ fn init_fund_process_instruction_v1(
         members: vec![],
         lock_expires_at: 0,
         authority_change_timelock: 0,
-        created_at: wasm::util::get_verifying_block_height()? as u64,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
         exit_queue_state: vec![],
         circuit_breaker_state: None,
         dead_mans_switch_state: None,
@@ -344,7 +344,7 @@ fn propose_process_instruction_v1(
     let fund: ProtectedFund = deserialize(&fund_data)?;
 
     if fund.lock_state == crate::model::LockState::Locked {
-        if (wasm::util::get_verifying_block_height()? as u64) < fund.lock_expires_at {
+        if (wasm::util::get_verifying_block_height()?.get()) < fund.lock_expires_at {
             return Err(DrainProtectionError::FundsLocked.into())
         }
     }
@@ -475,14 +475,14 @@ fn transfer_process_instruction_v1(
 
     // Check if locked
     if fund.lock_state == crate::model::LockState::Locked {
-        let current_block: u64 = wasm::util::get_verifying_block_height()? as u64;
+        let current_block: u64 = wasm::util::get_verifying_block_height()?.get();
         if current_block < fund.lock_expires_at {
             return Err(DrainProtectionError::FundsLocked.into())
         }
     }
 
     // Check rate limit
-    let current_block: u64 = wasm::util::get_verifying_block_height()? as u64;
+    let current_block: u64 = wasm::util::get_verifying_block_height()?.get();
     let rate_limited = check_rate_limit(&fund, transfers_db, params.amount, current_block)?;
 
     if rate_limited && !params.exceeds_rate_limit {
@@ -529,7 +529,7 @@ fn lock_process_instruction_v1(
         .ok_or(DrainProtectionError::MemberNotFound)?;
     let mut fund: ProtectedFund = deserialize(&fund_data)?;
 
-    let current_block: u64 = wasm::util::get_verifying_block_height()? as u64;
+    let current_block: u64 = wasm::util::get_verifying_block_height()?.get();
 
     // Max lock duration is 7 days worth of blocks (~30240 blocks/day at 5min blocks)
     let max_lock_blocks = 7 * 30240;
@@ -560,7 +560,7 @@ fn unlock_process_instruction_v1(
     let mut fund: ProtectedFund = deserialize(&fund_data)?;
 
     // Check timelock (24hr after lock expires)
-    let current_block: u64 = wasm::util::get_verifying_block_height()? as u64;
+    let current_block: u64 = wasm::util::get_verifying_block_height()?.get();
     if fund.lock_state == crate::model::LockState::Locked {
         if current_block < fund.lock_expires_at + 1440 {
             // 24hr timelock
@@ -591,7 +591,7 @@ fn update_config_process_instruction_v1(
         .ok_or(DrainProtectionError::MemberNotFound)?;
     let mut fund: ProtectedFund = deserialize(&fund_data)?;
 
-    let current_block: u64 = wasm::util::get_verifying_block_height()? as u64;
+    let current_block: u64 = wasm::util::get_verifying_block_height()?.get();
 
     // Update rate limit if provided
     if let Some(rate_limit) = params.rate_limit {

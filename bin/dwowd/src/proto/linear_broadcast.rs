@@ -298,7 +298,7 @@ async fn handle_receive_block(
         // This prevents CPU waste and HeightDiscontinuity noise from
         // peers broadcasting blocks beyond our current tip.
         let current_height = blockchain.get_height();
-        if msg.block.header.height > current_height + 1 {
+        if msg.block.header.height > current_height.succ() {
             tracing::debug!(
                 target: "dwowd::proto::linear_broadcast",
                 "Skipping far-future block at height {} (local height={})",

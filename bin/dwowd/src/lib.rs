@@ -43,6 +43,7 @@ use dwow_core::{
     concurrency::{ExecutorPtr, PublisherPtr, StoppableTask, StoppableTaskPtr},
     Error, Result,
 };
+use dwow_sdk::blockchain::BlockHeight;
 use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::crypto::{
     ATTESTATION_CONTRACT_ID, BOX_CONTRACT_ID, DEPLOYOOOR_CONTRACT_ID,
@@ -401,7 +402,7 @@ fn init_genesis_contracts(
         let backend = std::sync::Arc::new(TxBackend {
             overlay: std::sync::Arc::clone(&shared_overlay),
             store: chain_state.store.clone(),
-            height: 0,
+            height: BlockHeight::new(0),
             vm: genesis_vm.clone(),
         });
 
@@ -409,7 +410,7 @@ fn init_genesis_contracts(
             &wasm,
             backend.clone(),
             *contract_id,
-            0, 0,
+            BlockHeight::new(0), 0,
             TransactionHash::none(),
             0,
         ).map_err(|e| Error::Custom(format!(
@@ -492,7 +493,7 @@ async fn init_genesis(
     use dwow_chain::{Block, BlockHeader, Miner, PowSource, Transaction};
     use dwow_sdk::blockchain::expected_reward;
 
-    let genesis_height = 1u64;
+    let genesis_height = BlockHeight::GENESIS;
     let target = u32::MAX;
     // Deterministic genesis timestamp — must be identical across all nodes.
     let timestamp = 0u64;
@@ -515,7 +516,7 @@ async fn init_genesis(
             recipient,
             genesis_reward,
             &linear_zk,
-            genesis_height as u32,
+            genesis_height,
         )
         .await?;
 
@@ -586,7 +587,7 @@ async fn init_genesis(
         &genesis_block,
         &[],
         &vm,
-        0, // current_height = 0 (empty chain before genesis)
+        BlockHeight::new(0), // current_height = 0 (empty chain before genesis)
         target,
         None,
     )
@@ -755,7 +756,7 @@ impl Dwowd {
             let magic_bytes = net_settings.magic_bytes.0;
             let acct_guard = account_mgr.read().await;
             let recipient = crate::accounts::MiningRecipient::from_account(
-                &acct_guard, 1,
+                &acct_guard, BlockHeight::GENESIS,
             )
             .map_err(|e| Error::Custom(format!("MiningRecipient for genesis: {}", e)))?;
             drop(acct_guard); // release lock before async ZK work
@@ -882,8 +883,8 @@ impl Dwowd {
         // init_linear() happens before p2p.start() and is silently dropped.
         // Now that P2P is running, connected peers can receive the broadcast.
         if let Some(linear_chain) = &self.node.chain_state {
-            if linear_chain.get_height() >= 1 {
-                if let Ok(genesis) = linear_chain.get_block(1) {
+            if linear_chain.get_height() >= BlockHeight::GENESIS {
+                if let Ok(genesis) = linear_chain.get_block(BlockHeight::GENESIS) {
                     info!(target: "dwowd::Dwowd::start",
                         "Broadcasting genesis to connected peers...");
                     crate::proto::linear_broadcast::broadcast_block(
@@ -1036,7 +1037,7 @@ async fn prepare_block(
     mining_state: &MiningState,
     mempool: Option<&Arc<dwow_mempool::Mempool>>,
     recipient: crate::accounts::MiningRecipient,
-    height: u64,
+    height: BlockHeight,
     base_reward: u64,
     linear_zk: &crate::registry::model::LinearPowRewardZk,
 ) -> Result<PreparedBlock> {
@@ -1051,7 +1052,7 @@ async fn prepare_block(
         recipient.clone(),
         base_reward,
         linear_zk,
-        height as u32,
+        height,
     ).await?;
 
     // 2. Collect uncles with correct pin rewards (create_uncle).
@@ -1061,7 +1062,7 @@ async fn prepare_block(
         chain_state.take_competing_blocks(latest_height);
     let uncles: Vec<UncleBlock> = {
         competing_originals.iter().map(|block| {
-            let depth = (height - block.header.height)
+            let depth = height.saturating_sub(block.header.height)
                 .min(dwow_chain::MAX_UNCLE_DEPTH as u64) as u8;
             dwow_chain::create_uncle(block.clone(), depth, base_reward)
         }).collect()
@@ -1116,7 +1117,7 @@ async fn prepare_block(
     let fee_collect_tx = crate::registry::model::build_fee_collect_tx(
         &recipient,
         &mempool_txs,
-        height as u32,
+        height,
         linear_zk,
     )?;
 
@@ -1181,12 +1182,12 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             }
         };
 
-        let height = latest_block.header.height + 1;
+        let height = latest_block.header.height.succ();
         // Memory diagnostics — log every 5 blocks to catch leaks early.
         // Reads /proc/self/status for VmRSS (no allocator dependency).
         // Rust's ownership model eliminates use-after-free but doesn't
         // prevent unbounded collection growth. This is the canary.
-        if height % 5 == 0 {
+        if height.get() % 5 == 0 {
             let vm_cache_size = chain_state.vm_cache_size();
             let coin_set_size = chain_state.coin_set_size();
             let resident_kb = std::fs::read_to_string("/proc/self/status")
@@ -1252,7 +1253,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         // one miner, one key — no external/forwarded recipient). MiningRecipient
         // can only be built from a key the node holds.
         let recipient = match crate::accounts::MiningRecipient::from_account(
-            &*node.account_manager.read().await, height as u32,
+            &*node.account_manager.read().await, height,
         ) {
             Ok(r) => r,
             Err(e) => {

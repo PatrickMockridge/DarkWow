@@ -354,7 +354,7 @@ pub async fn run_wallet_sync(
 
             let dww_r = dww.read().await;
             for block in &blocks_msg.blocks {
-                let height = block.header.height;
+                let height = block.header.height.get();
                 match dww_r.insert_synced_block(block) {
                     Ok(()) => {
                         info!(target: "dww::wallet::sync",

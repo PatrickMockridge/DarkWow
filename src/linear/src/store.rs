@@ -25,6 +25,7 @@
 
 use std::sync::Arc;
 
+use dwow_sdk::blockchain::BlockHeight;
 use sled::{Db, Tree};
 
 use super::{Block, LinearError, Transaction, UncleBlock};
@@ -76,7 +77,7 @@ impl LinearStore {
     }
 
     /// Insert a block at the given height
-    pub fn insert_block(&self, height: u64, block: &Block) -> Result<(), LinearError> {
+    pub fn insert_block(&self, height: BlockHeight, block: &Block) -> Result<(), LinearError> {
         let key = height.to_le_bytes();
         let value = serde_json::to_vec(block).map_err(|e| LinearError::SerializationError(e.to_string()))?;
         self.blocks.insert(&key, value.as_slice()).map_err(|e| LinearError::StorageError(e.to_string()))?;
@@ -84,7 +85,7 @@ impl LinearStore {
     }
 
     /// Get a block by height
-    pub fn get_block(&self, height: u64) -> Result<Block, LinearError> {
+    pub fn get_block(&self, height: BlockHeight) -> Result<Block, LinearError> {
         let key = height.to_le_bytes();
         let value = self.blocks.get(&key).map_err(|e| LinearError::StorageError(e.to_string()))?
             .ok_or(LinearError::BlockNotFound(height))?;
@@ -110,15 +111,15 @@ impl LinearStore {
     /// Get the current chain height.
     /// Uses sled B-tree ordering: keys are height.to_le_bytes(), so
     /// the last entry is the highest height. O(log n) instead of O(n).
-    pub fn get_height(&self) -> Result<u64, LinearError> {
+    pub fn get_height(&self) -> Result<BlockHeight, LinearError> {
         if let Ok(Some((k, _))) = self.blocks.last() {
             if k.len() == 8 {
                 let mut bytes = [0u8; 8];
                 bytes.copy_from_slice(k.as_ref());
-                return Ok(u64::from_le_bytes(bytes));
+                return Ok(BlockHeight::from_le_bytes(bytes));
             }
         }
-        Err(LinearError::BlockNotFound(0))
+        Err(LinearError::BlockNotFound(BlockHeight::new(0)))
     }
 
     /// Flush the database

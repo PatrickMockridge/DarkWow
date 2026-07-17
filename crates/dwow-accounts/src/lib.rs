@@ -1246,7 +1246,7 @@ impl MiningRecipient {
     /// `sk_H = derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, H.to_le_bytes())`
     /// per consensus-coinbase.md §2.2. The wallet derives the same key via
     /// `secrets_for_contract` — zero shared state, pure determinism.
-    pub fn from_account(mgr: &AccountManager, height: u32) -> Result<Self, String> {
+    pub fn from_account(mgr: &AccountManager, height: dwow_sdk::blockchain::BlockHeight) -> Result<Self, String> {
         use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
         let owned = mgr.default_owned()?;
         let derived =
@@ -1397,13 +1397,13 @@ mod tests {
 
         let path = write_temp_keys("recip", DECL);
         let mgr = AccountManager::open(&path, Network::Testnet, "node0").unwrap();
-        let r = MiningRecipient::from_account(&mgr, 1).unwrap();
+        let r = MiningRecipient::from_account(&mgr, dwow_sdk::blockchain::BlockHeight::GENESIS).unwrap();
         // At every height (including genesis), the recipient key is
         // derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, height).
         // This matches what the wallet derives via secrets_for_contract.
         let owned = mgr.default_owned().unwrap();
         let expected = owned
-            .derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &1u32.to_le_bytes())
+            .derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &1u64.to_le_bytes())
             .unwrap();
         assert_eq!(
             r.public().to_bytes(),
@@ -1433,7 +1433,7 @@ mod tests {
             .expect("valid test secret");
 
         // Miner side: derive via MiningRecipient (as prepare_block does)
-        let height: u32 = 42;
+        let height: u64 = 42;
         let miner_sk_h = sk_owner.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes())
             .expect("valid test derive_instance");
 
@@ -1446,7 +1446,7 @@ mod tests {
             "F3 FAIL: miner and wallet derive different per-block keys — G2 violated");
 
         // G6: different heights produce different keys (address cycling)
-        let height_other: u32 = 99;
+        let height_other: u64 = 99;
         let sk_h_other = sk_owner.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height_other.to_le_bytes())
             .expect("valid test derive_instance");
         assert_ne!(miner_sk_h.inner().to_repr(), sk_h_other.inner().to_repr(),

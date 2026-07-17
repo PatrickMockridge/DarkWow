@@ -39,25 +39,25 @@ use dwow_chain::{
     build_uncle_merkle, create_uncle,
 };
 use dwow_core::Result;
-use dwow_sdk::blockchain;
+use dwow_sdk::blockchain::{self, BlockHeight};
 
 /// Synthetic timestamp for test blocks, spaced 120s per height so the
 /// consensus target stays at `u32::MAX` (no difficulty drift when blocks
 /// are built in a rapid test loop).
 const TEST_BASE_TIMESTAMP: u64 = 1776770000;
 
-fn test_block_timestamp(height: u64) -> u64 {
-    TEST_BASE_TIMESTAMP + (height - 1) * 120
+fn test_block_timestamp(height: BlockHeight) -> u64 {
+    TEST_BASE_TIMESTAMP + (height.get() - 1) * 120
 }
 
 /// Build a block header with `target: u32::MAX` (instant PoW).
 pub fn build_test_header(
     chain_state: &CChainState,
-    height: u64,
+    height: BlockHeight,
     merkle_root: blake3::Hash,
     timestamp: u64,
 ) -> BlockHeader {
-    let previous_hash = if height <= 1 {
+    let previous_hash = if height <= BlockHeight::GENESIS {
         blake3::Hash::from_bytes([0u8; 32])
     } else {
         match chain_state.get_latest_block() {
@@ -79,7 +79,7 @@ pub fn build_test_header(
         nonce: 0,
         height,
         uncle_merkle_root: [0u8; 32],
-        total_reward: blockchain::expected_reward(height as u32),
+        total_reward: blockchain::expected_reward(height),
         randomx_key: Miner::derive_key_from_height(height),
         coin_merkle_root: [0u8; 32],
         nullifier_root: [0u8; 32],
@@ -142,7 +142,7 @@ pub fn compute_merkle_root(txs: &[Transaction]) -> blake3::Hash {
 /// Build a canonical block from a set of transactions (instant PoW, no mining).
 pub fn build_test_block(
     chain_state: &CChainState,
-    height: u64,
+    height: BlockHeight,
     txs: Vec<Transaction>,
 ) -> Block {
     let timestamp = test_block_timestamp(height);
@@ -159,7 +159,7 @@ pub fn build_test_uncle(block: Block, depth: u8, base_reward: u64) -> UncleBlock
 /// Build a canonical block with uncles.
 pub fn build_test_block_with_uncles(
     chain_state: &CChainState,
-    height: u64,
+    height: BlockHeight,
     txs: Vec<Transaction>,
     uncles: &[UncleBlock],
 ) -> Block {
@@ -168,7 +168,7 @@ pub fn build_test_block_with_uncles(
     let randomx_key = Miner::derive_key_from_height(height);
     let vm = chain_state.get_vm(randomx_key);
     let (uncle_merkle_root, _) = build_uncle_merkle(uncles, &vm.lock().unwrap());
-    let previous_hash = if height <= 1 {
+    let previous_hash = if height <= BlockHeight::GENESIS {
         blake3::Hash::from_bytes([0u8; 32])
     } else {
         match chain_state.get_latest_block() {
@@ -191,7 +191,7 @@ pub fn build_test_block_with_uncles(
             nonce: 0,
             height,
             uncle_merkle_root,
-            total_reward: blockchain::expected_reward(height as u32),
+            total_reward: blockchain::expected_reward(height),
             randomx_key,
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],

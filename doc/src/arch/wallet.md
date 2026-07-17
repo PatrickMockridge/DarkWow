@@ -233,6 +233,21 @@ The boundary between the wallet core and the Capability SDK SHALL be:
 - `ProverContext::build_proof(cap: &dyn CapabilityProvider, params: &str) -> Result<Vec<Proof>, Error>` — generic proof construction (§6.4.1)
 - `CircuitWitnessMap::from_manifest(entries: &[String]) -> CircuitWitnessMap` — witness-binding rule parser
 
+The boundary between the Capability SDK and the wallet's state SHALL be the
+`WalletStateProvider` trait (`src/sdk/src/contract_client.rs`) — the ONLY
+surface through which generic contract clients read wallet state. Its
+methods SHALL be exactly:
+- `default_address() -> Result<String, String>` — the wallet's default receiving address
+- `held_capabilities_by_asset(asset_id: &str) -> Result<Vec<CapInfo>, String>` — held capability records for an asset (§6.2 selection input)
+- `get_merkle_proof(cap_id: &str) -> Result<MerkleProofInfo, String>` — inclusion proof siblings + leaf position for a held capability
+- `get_secret() -> Result<String, String>` — the default wallet secret (bs58), resolved at the moment of use (§4)
+- `load_zkas_binary(contract_id: &str, namespace: &str, circuit_name: &str) -> Option<Vec<u8>>` — zkas circuit bytes from the wallet's `zkas_binaries` store (§3, §6.4.1 step 3)
+- `generate_proof(contract_id: &str, witness_map: &CircuitWitnessMap, zkas_bytes: &[u8], seed: [u8; 32]) -> Result<Vec<u8>, String>` — proof construction via the wallet's concrete ProverImpl (§6.4.1); the SDK owns witness binding, the wallet owns the ZK machinery
+
+A contract client that needs wallet state not expressible through this trait
+SHALL NOT be given a side channel — the trait is extended by MoC review, or
+the contract's manifest is corrected (§2.2).
+
 The boundary between the wallet core and the AccountManager SHALL be:
 - `resolve_key(coords: &KeyCoordinates) -> Result<OwnedSecretKey, Error>` — resolve stored coordinates to secrets at the moment of use (§4)
 - `find_owner(cid: &ContractId, instance_seed: &[u8], pubkey: &PublicKey) -> Option<KeyCoordinates>` — discover key ownership at scan time (§2.1)
@@ -750,7 +765,7 @@ Run `lake build` in `proofs/lean/` to type-check.
 The write path (§6) is subject to the following obligations — the exercise-time duals of
 §7.1, §7.4, and the nullifier discipline. They are to be discharged in
 `proofs/lean/src/DarkFi/Capability/Wallet.lean` (proved, or stated as explicit
-future-work in the manner of [type-system.md §10.6](type-system.md)):
+future-work in the manner of [type-system.md §11.6](type-system.md)):
 
 - **`construct_sound`** — if `f(SelectedCapabilities, Action, Params, Secrets, Seed)`
   returns a transaction, the proofs it carries inhabit the predicate language L_{r,s} of

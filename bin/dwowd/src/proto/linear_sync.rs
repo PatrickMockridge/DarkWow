@@ -48,6 +48,7 @@ use dwow_core::{
     Error, Result,
 };
 use dwow_chain::Block;
+use dwow_sdk::blockchain::BlockHeight;
 use dwow_serial::{AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, FutAsyncReadExt, FutAsyncWriteExt};
 
 /// Constant defining max blocks we send in a single response.
@@ -67,7 +68,7 @@ const LINEAR_SYNC_METERING_CONFIGURATION: MeteringConfiguration = MeteringConfig
 /// Request blocks starting from a given height
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetBlocks {
-    pub start_height: u64,
+    pub start_height: BlockHeight,
     pub count: u64,
 }
 
@@ -80,7 +81,7 @@ pub struct Blocks {
 /// Request a single block by height
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetBlock {
-    pub height: u64,
+    pub height: BlockHeight,
 }
 
 /// Response containing a single block
@@ -96,7 +97,7 @@ pub struct GetTip;
 /// Response containing chain tip info
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Tip {
-    pub height: u64,
+    pub height: BlockHeight,
     pub hash: String,
     /// Genesis block hash — allows peers to detect incompatible chains
     /// before downloading blocks (defense-in-depth, HAZID F7/F26).
@@ -413,7 +414,7 @@ async fn handle_get_blocks(
         let mut blocks = Vec::with_capacity(count);
 
         for i in 0..count {
-            let height = request.start_height + i as u64;
+            let height = BlockHeight::new(request.start_height.get() + i as u64);
             match chain_state.get_block(height) {
                 Ok(block) => blocks.push(block),
                 Err(_) => break,
@@ -481,8 +482,8 @@ async fn handle_get_tip(
         );
 
         // CChainState.store is the single source of truth — no stale caches.
-        let height = chain_state.store.get_height().unwrap_or(0);
-        let hash = if height > 0 {
+        let height = chain_state.store.get_height().unwrap_or(BlockHeight::new(0));
+        let hash = if height.get() > 0 {
             match chain_state.store.get_block(height) {
                 Ok(tip_block) => {
                     format!("{}", chain_state.hash_block_with_cached_vm(&tip_block))
@@ -495,8 +496,8 @@ async fn handle_get_tip(
 
         // Include genesis hash so peers can detect incompatible chains
         // before downloading blocks (defense-in-depth, HAZID F7/F26).
-        let genesis_hash = if height >= 1 {
-            match chain_state.store.get_block(1) {
+        let genesis_hash = if height >= BlockHeight::GENESIS {
+            match chain_state.store.get_block(BlockHeight::GENESIS) {
                 Ok(genesis_block) => {
                     Some(format!("{}", chain_state.hash_block_with_cached_vm(&genesis_block)))
                 }
@@ -558,21 +559,21 @@ mod tests {
     #[test]
     fn max_bytes_sufficient_for_json_encoding() {
         // GetBlocks: {"start_height":18446744073709551615,"count":20} ≈ 67 bytes + varint
-        let gb = GetBlocks { start_height: u64::MAX, count: 20 };
+        let gb = GetBlocks { start_height: BlockHeight::new(u64::MAX), count: 20 };
         let json = serde_json::to_vec(&gb).unwrap();
         assert!(json.len() as u64 <= GetBlocks::MAX_BYTES,
             "GetBlocks MAX_BYTES={} but max-value JSON is {} bytes",
             GetBlocks::MAX_BYTES, json.len());
 
         // GetBlock: {"height":18446744073709551615} ≈ 36 bytes + varint
-        let gb2 = GetBlock { height: u64::MAX };
+        let gb2 = GetBlock { height: BlockHeight::new(u64::MAX) };
         let json = serde_json::to_vec(&gb2).unwrap();
         assert!(json.len() as u64 <= GetBlock::MAX_BYTES,
             "GetBlock MAX_BYTES={} but max-value JSON is {} bytes",
             GetBlock::MAX_BYTES, json.len());
 
         // Tip: {"height":18446744073709551615,"hash":"<64 hex>"} ≈ 104 bytes + varint
-        let tip = Tip { height: u64::MAX, hash: "f".repeat(64), genesis_hash: None };
+        let tip = Tip { height: BlockHeight::new(u64::MAX), hash: "f".repeat(64), genesis_hash: None };
         let json = serde_json::to_vec(&tip).unwrap();
         assert!(json.len() as u64 <= Tip::MAX_BYTES,
             "Tip MAX_BYTES={} but max-value JSON is {} bytes",

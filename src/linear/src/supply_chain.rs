@@ -85,6 +85,7 @@
 
 use std::sync::Mutex;
 
+use dwow_sdk::blockchain::BlockHeight;
 use dwow_sdk::pasta::{
     group::Group,
     pallas,
@@ -170,7 +171,7 @@ pub struct CumulativeSupplyChain {
     tree: Tree,
     /// In-memory cache: (latest_height, latest_entry).
     /// Restored from sled on startup. Sled is authoritative on restart.
-    latest: Mutex<Option<(u64, CumulativeSupplyEntry)>>,
+    latest: Mutex<Option<(BlockHeight, CumulativeSupplyEntry)>>,
 }
 
 impl CumulativeSupplyChain {
@@ -206,12 +207,12 @@ impl CumulativeSupplyChain {
     }
 
     /// Scan sled for the highest-height entry.
-    fn restore_latest(tree: &Tree) -> Result<Option<(u64, CumulativeSupplyEntry)>, LinearError> {
-        let mut max_height: Option<u64> = None;
+    fn restore_latest(tree: &Tree) -> Result<Option<(BlockHeight, CumulativeSupplyEntry)>, LinearError> {
+        let mut max_height: Option<BlockHeight> = None;
         for result in tree.iter() {
             let (key, _) = result.map_err(|e| LinearError::StorageError(e.to_string()))?;
             if key.len() == 8 {
-                let h = u64::from_le_bytes(key.as_ref().try_into().unwrap());
+                let h = BlockHeight::from_le_bytes(key.as_ref().try_into().unwrap());
                 max_height = Some(max_height.map_or(h, |m| m.max(h)));
             }
         }
@@ -242,19 +243,19 @@ impl CumulativeSupplyChain {
     }
 
     /// Get the latest committed height (0 if pre-genesis).
-    pub fn get_latest_height(&self) -> u64 {
+    pub fn get_latest_height(&self) -> BlockHeight {
         self.latest
             .lock()
             .unwrap()
             .as_ref()
             .map(|(h, _)| *h)
-            .unwrap_or(0)
+            .unwrap_or(BlockHeight::new(0))
     }
 
     /// Get cumulative supply state at a specific height.
     /// Returns an error if the height has no entry.
-    pub fn get(&self, height: u64) -> Result<CumulativeSupplyEntry, LinearError> {
-        if height == 0 {
+    pub fn get(&self, height: BlockHeight) -> Result<CumulativeSupplyEntry, LinearError> {
+        if height.get() == 0 {
             return Ok(CumulativeSupplyEntry::genesis());
         }
         let val = self
@@ -320,7 +321,7 @@ impl CumulativeSupplyChain {
     pub fn commit_to_batch(
         &self,
         batch: &mut sled::Batch,
-        height: u64,
+        height: BlockHeight,
         entry: &CumulativeSupplyEntry,
     ) -> Result<(), LinearError> {
         let key = height.to_le_bytes();
@@ -340,7 +341,7 @@ impl CumulativeSupplyChain {
     /// Use this only for standalone operations (e.g., genesis seeding).
     pub fn commit(
         &self,
-        height: u64,
+        height: BlockHeight,
         entry: &CumulativeSupplyEntry,
     ) -> Result<(), LinearError> {
         let key = height.to_le_bytes();
@@ -360,7 +361,7 @@ impl CumulativeSupplyChain {
 
     /// Update the in-memory cache after an atomic cross-tree transaction
     /// has been committed. Must be called AFTER the sled transaction succeeds.
-    pub fn update_cache(&self, height: u64, entry: CumulativeSupplyEntry) {
+    pub fn update_cache(&self, height: BlockHeight, entry: CumulativeSupplyEntry) {
         let mut guard = self.latest.lock().unwrap();
         if let Some((existing_h, _)) = *guard {
             if height <= existing_h {
@@ -386,17 +387,17 @@ impl CumulativeSupplyChain {
     /// independently to verify the supply chain without executing WASM.
     pub fn verify_entries(
         &self,
-        from_height: u64,
-        to_height: u64,
+        from_height: BlockHeight,
+        to_height: BlockHeight,
     ) -> Result<bool, LinearError> {
-        let mut prev = if from_height <= 1 {
+        let mut prev = if from_height <= BlockHeight::GENESIS {
             CumulativeSupplyEntry::genesis()
         } else {
-            self.get(from_height - 1)?
+            self.get(from_height.pred().expect("height >= 1"))?
         };
 
-        for h in from_height..=to_height {
-            let entry = self.get(h)?;
+        for h in from_height.get()..=to_height.get() {
+            let entry = self.get(BlockHeight::new(h))?;
             // Verify total_supply is monotonic (non-decreasing)
             if entry.total_supply < prev.total_supply {
                 return Ok(false);

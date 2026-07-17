@@ -150,10 +150,10 @@ pub fn dice_commit_bet_process_instruction_v1(
     }
 
     // Get current block height
-    let current_block = wasm::util::get_verifying_block_height()?;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Calculate settle block: bet can only settle after confirmation_depth blocks
-    let settle_block = current_block as u64 + params.confirmation_depth as u64;
+    let settle_block = current_block + params.confirmation_depth as u64;
 
     // Create the update
     let update = CommitBetUpdateV1 {
@@ -169,7 +169,7 @@ pub fn dice_commit_bet_process_instruction_v1(
         confirmation_depth: params.confirmation_depth,
         settle_block,
         nullifier,
-        created_at: current_block as u64,
+        created_at: current_block,
         instance_seed: params.instance_seed,
     };
 

@@ -100,7 +100,7 @@ impl NativeTokenHarness {
         &self,
         secret: SecretKey,
         ephemeral_signature_secret: SecretKey,
-        block_height: u32,
+        block_height: dwow_sdk::blockchain::BlockHeight,
         fees: u64,
         recipient: Option<PublicKey>,
     ) -> Result<PoWRewardResult, Box<dyn std::error::Error>> {

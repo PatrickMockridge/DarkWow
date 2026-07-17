@@ -382,7 +382,7 @@ fn staking_stake_process_instruction_v1(
 
     // Generate stake ID
     let stake_id =
-        derive_stake_id(params.table_id, &params.staker_pub, params.amount, wasm::util::get_verifying_block_height()? as u64);
+        derive_stake_id(params.table_id, &params.staker_pub, params.amount, wasm::util::get_verifying_block_height()?.get());
 
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
@@ -440,7 +440,7 @@ fn staking_stake_process_update_v1(cid: ContractId, update: StakeUpdateV1) -> Co
         original_amount: update.amount,
         current_amount: update.amount,
         accumulated_earnings: 0,
-        created_at: wasm::util::get_verifying_block_height()? as u64,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
         unstake_requested_at: None,
         is_active: true,
     };
@@ -513,7 +513,7 @@ fn staking_unstake_process_instruction_v1(
     }
 
     // Verify lock period has expired before unstake
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     if !stake.can_unstake(crate::UNSTAKE_LOCK_PERIOD, current_block) {
         msg!("[betting_stake::unstake] Error: Unstake lock period not expired");
         return Err(BettingStakeError::StakeLocked.into())

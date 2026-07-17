@@ -98,7 +98,7 @@ pub fn lottery_expire_lottery_process_instruction_v1(
         deserialize(&wasm::db::db_get(lotteries_db, &serialize(&params.lottery_id))?.ok_or(ContractError::DbGetEmpty)?)?;
 
     // Allow expiry from Initialized (draw deadline passed) or WinnersDrawn (claim deadline passed)
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     match lottery.state {
         LotteryState::Initialized => {
             if current_block <= lottery.draw_block_deadline {

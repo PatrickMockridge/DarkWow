@@ -71,7 +71,7 @@ impl DwowNode {
         let height = chain.get_height();
 
         let result = JsonValue::from(std::collections::HashMap::from([
-            ("height".to_string(), JsonValue::Number(height as f64)),
+            ("height".to_string(), JsonValue::Number(height.get() as f64)),
         ]));
 
         JsonResponse::new(result, id).into()
@@ -110,7 +110,7 @@ impl DwowNode {
         };
 
         let result = JsonValue::Array(vec![
-            JsonValue::Number(height as f64),
+            JsonValue::Number(height.get() as f64),
             JsonValue::String(hash),
         ]);
 
@@ -177,7 +177,7 @@ impl DwowNode {
             return JsonError::new(InvalidParams, None, id).into()
         }
 
-        let height = *params[0].get::<f64>().unwrap() as u64;
+        let height = dwow_sdk::blockchain::BlockHeight::new(*params[0].get::<f64>().unwrap() as u64);
 
         let chain = match &self.chain_state {
             Some(lb) => lb.clone(),
@@ -338,12 +338,12 @@ impl DwowNode {
             }
         };
 
-        use dwow_sdk::blockchain::{coinbase_blind, expected_cumulative_supply, expected_reward};
+        use dwow_sdk::blockchain::{coinbase_blind, expected_cumulative_supply, expected_reward, BlockHeight};
         use dwow_sdk::crypto::{pedersen_commitment_u64, pasta_prelude::{Group, PrimeField}, Blind};
         use dwow_sdk::pasta::pallas;
 
         let height = chain.get_height();
-        let _total_supply = expected_cumulative_supply(height as u32);
+        let _total_supply = expected_cumulative_supply(height);
 
         // Compute cumulative commitment from canonical block history.
         // Uses the deterministic blind derivation: blind_H = coinbase_blind(prev_coin, H).
@@ -351,24 +351,24 @@ impl DwowNode {
         let mut cumulative = pallas::Point::identity();
         let mut cumulative_blind = pallas::Scalar::zero();
 
-        for h in 1u64..=height {
-            let reward = expected_reward(h);
+        for h in 1u64..=height.get() {
+            let reward = expected_reward(BlockHeight::new(h));
             // For the RPC audit, prev_coin is the previous block hash.
             // The contract uses the actual coinbase coin commitment; both
             // are deterministic and verifiable.
             let prev_bytes = if h == 1 {
                 [0u8; 32]
-            } else if let Ok(prev_block) = chain.get_block(h - 1) {
+            } else if let Ok(prev_block) = chain.get_block(BlockHeight::new(h - 1)) {
                 *chain.hash_block_with_cached_vm(&prev_block).as_bytes()
             } else {
                 [0u8; 32]
             };
-            let blind = coinbase_blind(&prev_bytes, h as u32);
+            let blind = coinbase_blind(&prev_bytes, BlockHeight::new(h));
             cumulative = cumulative + pedersen_commitment_u64(reward, Blind(blind));
             cumulative_blind += blind;
         }
 
-        let total_supply = expected_cumulative_supply(height as u32);
+        let total_supply = expected_cumulative_supply(height);
 
         // Serialize using dwow_serial (Encodable trait)
         use dwow_serial::Encodable;
@@ -378,7 +378,7 @@ impl DwowNode {
         blind_bytes.copy_from_slice(&cumulative_blind.to_repr());
 
         let result = JsonValue::from(std::collections::HashMap::from([
-            ("height".to_string(), JsonValue::Number(height as f64)),
+            ("height".to_string(), JsonValue::Number(height.get() as f64)),
             ("total_supply".to_string(), JsonValue::Number(total_supply as f64)),
             ("cumulative_value_commit".to_string(), JsonValue::String(base64::encode(&commit_bytes))),
             ("cumulative_blind".to_string(), JsonValue::String(base64::encode(&blind_bytes))),

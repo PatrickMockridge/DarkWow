@@ -142,7 +142,7 @@ fn relayer_endowment_initialize_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let (rx, ry) = params.signature_public.xy().expect("pk not identity");
     let config_hash = poseidon_hash([pallas::Base::from(params.default_backer_cut_bp as u64)]);
-    let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()? as u64);
+    let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()?.get());
     let endowment_id = poseidon_hash([rx, ry, config_hash, nonce]);
     zk_public_inputs.push((
         RELAYER_ENDOWMENT_ZKAS_INIT_NS_V1.to_string(),
@@ -160,7 +160,7 @@ fn relayer_endowment_deploy_capital_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let (rx, ry) = params.relayer_pub.xy().expect("pk not identity");
     let (bx, by) = params.signature_public.xy().expect("pk not identity");
-    let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()? as u64);
+    let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()?.get());
     // Compute endowment_id the same way as initialize
     let config_hash = poseidon_hash([pallas::Base::from(params.backer_cut_bp as u64)]);
     let endowment_id = poseidon_hash([rx, ry, config_hash, nonce]);
@@ -192,7 +192,7 @@ fn relayer_endowment_claim_fees_get_metadata_v1(
     params: ClaimFeesParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()? as u64);
+    let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()?.get());
     let backer_x = Option::from(pallas::Base::from_repr(params.backer_pub_x))
         .ok_or(RelayerEndowmentError::InvalidParams("Invalid backer_pub_x".to_string()))?;
     let backer_y = Option::from(pallas::Base::from_repr(params.backer_pub_y))
@@ -316,7 +316,7 @@ fn process_initialize_instruction(
         instance_seed: params.instance_seed,
         relayer_pub,
         default_backer_cut_bp: params.default_backer_cut_bp,
-        created_at: wasm::util::get_verifying_block_height()? as u64,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
     };
 
     msg!("[relayer_endowment::initialize] Endowment account created");
@@ -450,7 +450,7 @@ fn process_deploy_capital_instruction(
     let deployment_id = derive_deployment_id(
         params.relayer_pub,
         &backer_pub,
-        wasm::util::get_verifying_block_height()? as u64,
+        wasm::util::get_verifying_block_height()?.get(),
     );
 
     // Update account
@@ -501,7 +501,7 @@ fn apply_deploy_capital_update(cid: ContractId, update: DeployCapitalUpdateV1) -
         amount: update.amount,
         backer_cut_bp: update.backer_cut_bp,
         accumulated_fees: 0,
-        deployed_at: wasm::util::get_verifying_block_height()? as u64,
+        deployed_at: wasm::util::get_verifying_block_height()?.get(),
         withdraw_requested_at: None,
         withdrawn: false,
     };
@@ -766,7 +766,7 @@ fn apply_settle_fees_update(cid: ContractId, update: SettleFeesUpdateV1) -> Cont
 
     // Track total fees ever settled and update settlement height
     account.accumulated_fees += update.total_fees_settled;
-    account.last_settlement_height = wasm::util::get_verifying_block_height()? as u64;
+    account.last_settlement_height = wasm::util::get_verifying_block_height()?.get();
 
     wasm::db::db_set(
         registry_db,
@@ -849,7 +849,7 @@ fn process_force_settle_instruction(
 
     // Verify settlement timeout has elapsed (use on-chain block height, not caller-provided)
     let current_block = wasm::util::get_verifying_block_height()?;
-    let blocks_since_settlement = (current_block as u64).saturating_sub(account.last_settlement_height);
+    let blocks_since_settlement = current_block.get().saturating_sub(account.last_settlement_height);
     if blocks_since_settlement < RELAYER_ENDOWMENT_FORCE_SETTLEMENT_TIMEOUT {
         msg!("[relayer_endowment::force_settle] Settlement not due: {} blocks since last settlement (need {})",
             blocks_since_settlement, RELAYER_ENDOWMENT_FORCE_SETTLEMENT_TIMEOUT);
@@ -920,7 +920,7 @@ fn apply_force_settle_update(cid: ContractId, update: ForceSettleUpdateV1) -> Co
 
     // Subtract force-settled amount from fee log and update settlement height
     account.total_collected_fees_log = account.total_collected_fees_log.saturating_sub(update.force_settled_amount);
-    account.last_settlement_height = wasm::util::get_verifying_block_height()? as u64;
+    account.last_settlement_height = wasm::util::get_verifying_block_height()?.get();
 
     wasm::db::db_set(
         registry_db,

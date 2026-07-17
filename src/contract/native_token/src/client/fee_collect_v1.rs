@@ -37,6 +37,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
+    blockchain::BlockHeight,
     crypto::{
         note::AeadEncryptedNote, pasta_prelude::*, pedersen_commitment_u64, poseidon_hash,
         BaseBlind, Blind, FuncId, PublicKey, ScalarBlind, SecretKey, TokenId,
@@ -115,7 +116,7 @@ fn create_fee_collect_proof(
     coin_secret: SecretKey,
     value_blind: ScalarBlind,
     token_blind: BaseBlind,
-    block_height: u32,
+    block_height: BlockHeight,
     tx_commitment: pallas::Base,
     tx_nonce: pallas::Base,
 ) -> Result<(Proof, FeeCollectRevealed)> {
@@ -165,7 +166,7 @@ fn create_fee_collect_proof(
     // validator re-execution.
     let seed: [u8; 32] = poseidon_hash([
         coin_secret.inner(),
-        pallas::Base::from(block_height as u64),
+        pallas::Base::from(block_height.get()),
         pallas::Base::from(DOMAIN_PROOF_RNG),
     ])
     .to_repr();
@@ -187,7 +188,7 @@ pub struct FeeCollectCallBuilder {
     /// Caller's secret key (sk_H — per-block derived, same as coinbase §3.2)
     pub secret: SecretKey,
     /// Block height this fee collection targets
-    pub block_height: u32,
+    pub block_height: BlockHeight,
     /// Total fees accumulated in fees_db[height] for this block
     pub total_fees: u64,
     /// FeeCollect_V1 zkas circuit ZkBinary
@@ -209,7 +210,7 @@ impl FeeCollectCallBuilder {
 
         // Deterministic blinds — spec §3.6, domains 10-12.
         let sk_base = self.secret.inner();
-        let h_base = pallas::Base::from(self.block_height as u64);
+        let h_base = pallas::Base::from(self.block_height.get());
         let value_blind: ScalarBlind = Blind(pallas::Scalar::from_repr(
             poseidon_hash([sk_base, h_base, pallas::Base::from(DOMAIN_VALUE_BLIND)]).to_repr(),
         ).unwrap()); // Pallas base field < scalar field — always safe

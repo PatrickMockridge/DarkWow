@@ -80,7 +80,7 @@ pub fn insurance_market_purchase_coverage_with_capability_process_instruction_v1
     // (namespace: INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_CAPABILITY_NS_V1)
 
     // Verify market isn't closed
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     if market.closes_at > 0 && current_block >= market.closes_at {
         return Err(InsuranceMarketError::MarketNotActive.into())
     }

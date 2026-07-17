@@ -67,7 +67,7 @@ fn test_pow_reward_call_builder() -> Result<(), Box<dyn std::error::Error>> {
     let debris = PoWRewardCallBuilder {
         secret,
         ephemeral_signature_secret,
-        block_height: 1,
+        block_height: dwow_sdk::blockchain::BlockHeight::GENESIS,
         fees: 0,
         recipient: None,
         spend_hook: None,

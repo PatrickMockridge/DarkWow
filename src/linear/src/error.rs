@@ -23,6 +23,7 @@
 
 //! Linear blockchain errors
 
+use dwow_sdk::blockchain::BlockHeight;
 use thiserror::Error;
 
 /// All errors the linear blockchain can produce.
@@ -34,7 +35,7 @@ use thiserror::Error;
 pub enum LinearError {
     // ---- Storage errors ----
     #[error("Block not found at height {0}")]
-    BlockNotFound(u64),
+    BlockNotFound(BlockHeight),
 
     #[error("Transaction not found: {0}")]
     TransactionNotFound(String),
@@ -53,10 +54,10 @@ pub enum LinearError {
     InvalidPoW(String),
 
     #[error("PoW target mismatch at height {height}: declared {declared}, expected {expected}")]
-    InvalidTarget { declared: u32, expected: u32, height: u64 },
+    InvalidTarget { declared: u32, expected: u32, height: BlockHeight },
 
     #[error("height discontinuity: expected {expected}, got {got}")]
-    HeightDiscontinuity { expected: u64, got: u64 },
+    HeightDiscontinuity { expected: BlockHeight, got: BlockHeight },
 
     #[error("invalid previous hash for block {0}")]
     InvalidPreviousHash(String),
@@ -71,7 +72,7 @@ pub enum LinearError {
     UncleProofInvalid(String),
 
     #[error("uncle {uncle_height} too old: current {current}, max depth {max_depth}")]
-    UncleTooOld { uncle_height: u64, current: u64, max_depth: u8 },
+    UncleTooOld { uncle_height: BlockHeight, current: BlockHeight, max_depth: u8 },
 
     #[error("duplicate uncle: {0}")]
     DuplicateUncle(String),

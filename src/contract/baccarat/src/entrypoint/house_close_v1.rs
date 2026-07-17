@@ -110,7 +110,7 @@ pub fn baccarat_house_close_process_instruction_v1(
     let current_block = wasm::util::get_verifying_block_height()?;
 
     // If bet is still Committed, verify timeout has been reached
-    if bet.state == BetState::Committed && (current_block as u64) < bet.settle_block {
+    if bet.state == BetState::Committed && current_block.get() < bet.settle_block {
         return Err(BaccaratError::BetTimeoutNotReached.into())
     }
 

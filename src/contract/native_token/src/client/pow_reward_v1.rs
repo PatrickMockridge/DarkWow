@@ -31,7 +31,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    blockchain::expected_reward,
+    blockchain::{expected_reward, BlockHeight},
     crypto::{
         note::AeadEncryptedNote, pasta_prelude::*, poseidon_hash,
         BaseBlind, Blind, FuncId, PublicKey, ScalarBlind, SecretKey, TokenId,
@@ -106,7 +106,7 @@ pub struct PoWRewardCallBuilder {
     /// Ephemeral signature secret — MUST be fresh per reward claim
     pub ephemeral_signature_secret: SecretKey,
     /// Rewarded block height
-    pub block_height: u32,
+    pub block_height: BlockHeight,
     /// Rewarded block transactions paid fees
     pub fees: u64,
     /// Optional recipient's public key, in case we want to mint to a different address
@@ -151,7 +151,7 @@ impl PoWRewardCallBuilder {
         const DOMAIN_TOKEN_BLIND: u64 = 2;
         const DOMAIN_COIN_BLIND: u64 = 3;
         let sk_base = self.secret.inner();
-        let h_base = pallas::Base::from(self.block_height as u64);
+        let h_base = pallas::Base::from(self.block_height.get());
         // value_blind: Blind<pallas::Scalar> (ScalarBlind)
         let value_blind: ScalarBlind = Blind(pallas::Scalar::from_repr(
             poseidon_hash([sk_base, h_base, pallas::Base::from(DOMAIN_VALUE_BLIND)]).to_repr(),
@@ -253,7 +253,7 @@ impl PoWRewardCallBuilder {
 
     /// Build the PoWReward call with the standard block reward plus fees.
     pub fn build(&self) -> Result<PoWRewardCallDebris> {
-        let reward = expected_reward(self.block_height as u64) + self.fees;
+        let reward = expected_reward(self.block_height) + self.fees;
         self._build(reward)
     }
 

@@ -102,7 +102,7 @@ pub fn insurance_market_underwrite_with_capability_process_instruction_v1(
     let underwriter_id =
         derive_underwriter_id(params.market_id, &params.underwriter, params.bond_amount);
 
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Create the update
     let update = UnderwriteWithCapabilityUpdateV1 {

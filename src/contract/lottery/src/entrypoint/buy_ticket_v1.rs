@@ -112,7 +112,7 @@ pub fn lottery_buy_ticket_process_instruction_v1(
         deserialize(&wasm::db::db_get(lotteries_db, &serialize(&lottery_id))?.ok_or(ContractError::DbGetEmpty)?)?;
 
     // Verify lottery is active
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     if !lottery.is_active(current_block) {
         return Err(LotteryError::LotteryNotActive.into())
     }

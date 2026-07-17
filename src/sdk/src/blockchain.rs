@@ -57,6 +57,100 @@
 //! geometric decay. Tail emission begins when the exponential reward
 //! drops below the per-block tail threshold (~16.5 years after launch).
 
+use dwow_serial::{SerialDecodable, SerialEncodable};
+
+/// Nominal block-height type (type-system.md §2.3, §8.1).
+///
+/// A block height and a reward amount are both representable as `u64`, but
+/// they inhabit different consensus domains and SHALL NOT unify. The newtype
+/// makes the compiler enforce the distinction: `expected_reward(reward)` does
+/// not compile.
+///
+/// - dwow-serial encoding is transparent (the inner `u64`) — every structure
+///   carrying a height is wire-identical to a bare `u64` field.
+/// - serde encoding is a plain JSON number (manual impl below).
+/// - Canonical byte encoding is `to_le_bytes() -> [u8; 8]` — used for every
+///   hash preimage, key-derivation seed, and sled key that includes a height.
+/// - No `Add`/`Sub` operators and no `Step`: height arithmetic uses the named
+///   methods (`succ`, `pred`, `checked_sub`, `saturating_sub`) so intent is
+///   explicit; range loops iterate `u64` and construct `BlockHeight::new(h)`.
+#[repr(transparent)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable,
+)]
+pub struct BlockHeight(u64);
+
+impl BlockHeight {
+    /// Genesis block height. Height 0 is the pre-genesis sentinel ("no block").
+    pub const GENESIS: Self = Self(1);
+
+    /// Construct from the raw height domain. Total: all `u64` values are
+    /// valid heights (`0` = pre-genesis sentinel, `1` = genesis).
+    pub const fn new(height: u64) -> Self {
+        Self(height)
+    }
+
+    /// The raw height value — for arithmetic at domain edges and display.
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+
+    /// The next block height (`h + 1`). Overflow is unreachable in the
+    /// height domain (2^64 blocks at 120 s ≫ age of the universe).
+    pub const fn succ(self) -> Self {
+        Self(self.0 + 1)
+    }
+
+    /// The previous block height, or `None` at the pre-genesis sentinel.
+    pub const fn pred(self) -> Option<Self> {
+        match self.0.checked_sub(1) {
+            Some(h) => Some(Self(h)),
+            None => None,
+        }
+    }
+
+    /// Depth arithmetic: `self - rhs`, or `None` if `rhs` is above `self`.
+    pub const fn checked_sub(self, rhs: Self) -> Option<u64> {
+        self.0.checked_sub(rhs.0)
+    }
+
+    /// Depth arithmetic clamped at zero (maturity / uncle-depth checks).
+    pub const fn saturating_sub(self, rhs: Self) -> u64 {
+        self.0.saturating_sub(rhs.0)
+    }
+
+    /// Canonical byte encoding (§2.3): 8 bytes little-endian. The ONLY
+    /// encoding permitted in hash preimages, derivation seeds, and sled keys.
+    pub const fn to_le_bytes(self) -> [u8; 8] {
+        self.0.to_le_bytes()
+    }
+
+    /// Persistence-boundary lift (§2.2): reconstruct from the canonical bytes.
+    pub const fn from_le_bytes(bytes: [u8; 8]) -> Self {
+        Self(u64::from_le_bytes(bytes))
+    }
+}
+
+impl core::fmt::Display for BlockHeight {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+// Manual serde as a plain number — keeps every JSON shape (RPC, wallet DB
+// chain_blocks, header serde tests) identical to the bare-u64 encoding.
+impl serde::Serialize for BlockHeight {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u64(self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for BlockHeight {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(Self(u64::deserialize(d)?))
+    }
+}
+
 /// Constants for the block reward schedule.
 pub mod reward {
     /// Initial block reward at genesis (height 1, in base units: 1 DRKW = 10^8).
@@ -76,7 +170,7 @@ pub mod reward {
     pub const GENESIS_REWARD: u64 = INITIAL_REWARD;
 
     /// Half-life in blocks (~4 years at 2-minute blocks).
-    pub const HALF_LIFE_BLOCKS: u32 = 1_051_920;
+    pub const HALF_LIFE_BLOCKS: u64 = 1_051_920;
 
     /// Tail emission reward per block (in base units).
     ///
@@ -92,12 +186,12 @@ pub mod reward {
     pub const MAX_SUPPLY: u64 = MAX_SUPPLY_DRK * 100_000_000; // 2.1 × 10^15
 
     /// Blocks per year at 2-minute block time (365.25 × 24 × 3600 / 120).
-    pub const BLOCKS_PER_YEAR: u32 = 262_980;
+    pub const BLOCKS_PER_YEAR: u64 = 262_980;
 }
 
 /// Auxiliary function to calculate provided block height block version.
 /// Currently, a single version(1) exists.
-pub fn block_version(_height: u32) -> u8 {
+pub fn block_version(_height: BlockHeight) -> u8 {
     1
 }
 
@@ -115,17 +209,8 @@ pub fn block_version(_height: u32) -> u8 {
 /// decay — every block gets a fractionally smaller reward than the previous.
 /// No Bitcoin-style step halvings. The tail emission floor activates when the
 /// decay curve reaches the tail threshold.
-///
-/// Height 0 (no block) always returns 0. Height 1 (genesis) receives
-/// GENESIS_REWARD (= INITIAL_REWARD). Heights >= 2 follow the exponential decay.
-///
-/// # Panics
-///
-/// Panics if `height > u32::MAX` (the emission formula depends on 64-bit
-/// exponentiation that is only validated for the u32 range). At a 2-minute
-/// block time this exceeds 8,000 years of chain history — not a practical
-/// consensus bound, but the function documents the assumption.
-pub fn expected_reward(height: u64) -> u64 {
+pub fn expected_reward(height: BlockHeight) -> u64 {
+    let height = height.get();
     if height == 0 {
         return 0;
     }
@@ -133,7 +218,7 @@ pub fn expected_reward(height: u64) -> u64 {
         return reward::INITIAL_REWARD;
     }
 
-    let exp = (height - 1) as u64;
+    let exp = height - 1;
     let decay = fixed_pow_decay(exp);
     let reward = ((reward::INITIAL_REWARD as u128 * decay as u128) >> 32) as u64;
 
@@ -174,26 +259,26 @@ mod reward_tests {
     /// at key points: genesis, half-life, tail.
     #[test]
     fn reward_formula_key_points() {
-        assert_eq!(expected_reward(0), 0);
-        assert_eq!(expected_reward(1), reward::INITIAL_REWARD);
+        assert_eq!(expected_reward(BlockHeight::new(0)), 0);
+        assert_eq!(expected_reward(BlockHeight::GENESIS), reward::INITIAL_REWARD);
         // At half-life, should be approximately R0/2
-        let at_half = expected_reward(reward::HALF_LIFE_BLOCKS as u64 + 1);
+        let at_half = expected_reward(BlockHeight::new(reward::HALF_LIFE_BLOCKS + 1));
         let expected_half = reward::INITIAL_REWARD / 2;
         let diff = at_half.abs_diff(expected_half);
         let tolerance = expected_half / 100;
         assert!(diff <= tolerance,
             "At half-life: reward={}, R0/2={}, diff={}", at_half, expected_half, diff);
         // Tail should be reached well before u32::MAX
-        let at_tail = expected_reward(reward::HALF_LIFE_BLOCKS as u64 * 20);
+        let at_tail = expected_reward(BlockHeight::new(reward::HALF_LIFE_BLOCKS * 20));
         assert_eq!(at_tail, reward::TAIL_REWARD, "Should reach tail by 20 half-lives");
     }
 
     /// Reward must be monotonically decreasing.
     #[test]
     fn reward_monotonic_decrease() {
-        let mut prev = expected_reward(1);
+        let mut prev = expected_reward(BlockHeight::GENESIS);
         for h in 2..1000 {
-            let cur = expected_reward(h);
+            let cur = expected_reward(BlockHeight::new(h));
             assert!(cur <= prev, "h={}: {} > {}", h, cur, prev);
             prev = cur;
         }
@@ -228,10 +313,10 @@ use pasta_curves::{
 
 /// Compute the expected cumulative total supply at a given block height.
 /// Sum of expected_reward(h) for h = 1..=height.
-pub fn expected_cumulative_supply(height: u32) -> u64 {
+pub fn expected_cumulative_supply(height: BlockHeight) -> u64 {
     let mut total: u64 = 0;
-    for h in 1..=height {
-        total = total.saturating_add(expected_reward(h as u64));
+    for h in 1..=height.get() {
+        total = total.saturating_add(expected_reward(BlockHeight::new(h)));
     }
     total
 }
@@ -244,7 +329,7 @@ pub fn expected_cumulative_supply(height: u32) -> u64 {
 /// unpredictable without knowing the full chain history. Anyone with the
 /// blockchain can independently recompute all blinds and verify the
 /// cumulative supply commitment chain.
-pub fn coinbase_blind(prev_coin: &[u8; 32], height: u32) -> pallas::Scalar {
+pub fn coinbase_blind(prev_coin: &[u8; 32], height: BlockHeight) -> pallas::Scalar {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"native_token_coinbase_blind");
     hasher.update(prev_coin);
@@ -301,19 +386,19 @@ pub fn coinbase_blind(prev_coin: &[u8; 32], height: u32) -> pallas::Scalar {
 /// even if the ZK circuit had a soundness bug, the binding property of
 /// Pedersen commitments makes any divergence cryptographically detectable.
 pub fn verify_cumulative_supply(
-    cumulative_commits: &[(u32, pallas::Point)],  // (height, S_H) pairs
+    cumulative_commits: &[(BlockHeight, pallas::Point)],  // (height, S_H) pairs
 ) -> bool {
     use crate::crypto::{pedersen_commitment_u64, ScalarBlind, Blind};
 
     let mut expected = pallas::Point::identity();
     let mut prev_coin = [0u8; 32]; // genesis: zero
-    let mut expected_height: u32 = 1;
+    let mut expected_height = BlockHeight::GENESIS;
 
     for (height, commit) in cumulative_commits {
         if *height != expected_height {
             return false; // heights must be sequential
         }
-        let reward = expected_reward(*height as u64);
+        let reward = expected_reward(*height);
         let blind = coinbase_blind(&prev_coin, *height);
         let coin_vc = pedersen_commitment_u64(reward, Blind(blind));
         expected = expected + coin_vc;
@@ -325,7 +410,7 @@ pub fn verify_cumulative_supply(
         // the function verifies internal consistency of caller-supplied data.
         // When prev_coin is read from on-chain blocks, this function will
         // independently verify the entire canonical chain from genesis to tip.
-        expected_height += 1;
+        expected_height = expected_height.succ();
     }
     true
 }

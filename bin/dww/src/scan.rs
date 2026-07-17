@@ -143,7 +143,7 @@ pub(crate) struct DeploymentDiscovery {
     pub(crate) deployer_pubkey: PublicKey,
     pub(crate) metadata: Option<ContractMetadata>,
     pub(crate) manifest_json: Option<String>,
-    pub(crate) height: u32,
+    pub(crate) height: u64,
 }
 
 /// A zkas circuit binary discovered during deploy-scan.
@@ -247,7 +247,7 @@ fn build_native_token_cap_record(
     tree: &mut MerkleTree,
     secret: &SecretKey,
     note: &NativeToken,
-    height: u32,
+    height: u64,
     source: &NativeTokenSource,
     contract_id: ContractId,
     func_id: Option<FuncId>,
@@ -326,8 +326,8 @@ fn match_nullifiers(
     existing_caps: &[CapRecord],
     secrets: &[SecretKey],
     published: &[NullifierRecord],
-    height: u32,
-) -> Vec<(String, u32)> {
+    height: u64,
+) -> Vec<(String, u64)> {
     if published.is_empty() {
         return vec![];
     }
@@ -362,7 +362,7 @@ fn discover_native_token_outputs(
     account_mgr: &dwow_accounts::AccountManager,
     tree: &mut MerkleTree,
     data: &[u8],
-    height: u32,
+    height: u64,
     function_code: u8,
 ) -> std::result::Result<(Vec<(CapRecord, MerkleProof)>, Vec<String>), String> {
     let mut results = vec![];
@@ -459,7 +459,7 @@ fn scan_native_token_contract_calls(
     account_mgr: &dwow_accounts::AccountManager,
     tree: &mut MerkleTree,
     tx: &dwow_chain::Transaction,
-    height: u32,
+    height: u64,
 ) -> (Vec<NativeTokenDiscovery>, Vec<NullifierRecord>, Vec<String>) {
     let mut outputs = vec![];
     let mut nullifiers = vec![];
@@ -542,7 +542,9 @@ fn scan_block(
     block: &dwow_chain::Block,
 ) -> BlockScanResult {
     let mut result = BlockScanResult::new();
-    let height_u32 = block.header.height as u32;
+    // Chain seam: lower the nominal height once; wallet-side scan and
+    // persistence run in the u64 domain (type-system.md §2.3 boundary).
+    let height = block.header.height.get();
 
     result.messages.push(format!("[linear] Block height: {}", block.header.height));
     result.messages.push(format!(
@@ -553,7 +555,7 @@ fn scan_block(
     for tx in block.transactions.iter() {
         // ── Path 1: Native Token (sole special citizen) ──────
         let (native_outputs, nullifiers, mut msgs) =
-            scan_native_token_contract_calls(account_mgr, tree, tx, height_u32);
+            scan_native_token_contract_calls(account_mgr, tree, tx, height);
         result.native_outputs.extend(native_outputs);
         result.published_nullifiers.extend(nullifiers);
         result.messages.append(&mut msgs);
@@ -598,12 +600,12 @@ fn scan_block(
                             deployer_pubkey: params.public_key,
                             metadata,
                             manifest_json,
-                            height: height_u32,
+                            height,
                         });
 
                         result.messages.push(format!(
                             "[scan_block] Deployooor::DeployV1: {} at height {}",
-                            &contract_id_str[..8], height_u32
+                            &contract_id_str[..8], height
                         ));
 
                         // Extract zkas circuit binaries from the deployed WASM
@@ -734,7 +736,7 @@ fn scan_block(
                         // line 396; Path 2 was deferred (P0.1b) — fixed here.
                         let key_coords = account_mgr.find_owner(
                             &call.contract_id,
-                            &height_u32.to_le_bytes(),
+                            &height.to_le_bytes(),
                             &PublicKey::from_secret(*secret),
                         );
 
@@ -759,7 +761,7 @@ fn scan_block(
                             barbs: typed.barbs.clone(),
                             revoked: false,
                             revoked_at_height: None,
-                            created_at_height: height_u32,
+                            created_at_height: height,
                             key_coords, // resolved via find_owner
                         };
                         result.capabilities.push(CapabilityDiscovery { cap_record, merkle_proof });
@@ -811,16 +813,16 @@ impl Dww {
         sender: Option<&Sender<Vec<String>>>,
         print: &bool,
     ) -> WalletDbResult<()> {
-        // Grab last scanned block height (stored as u32 in wallet db, convert to u64)
-        let (last_scanned_u32, _) = self.get_last_scanned_block()?;
-        let mut height: u64 = if last_scanned_u32 == 0 {
+        // Grab last scanned block height from the wallet db
+        let (last_scanned, _) = self.get_last_scanned_block()?;
+        let mut height: u64 = if last_scanned == 0 {
             let mut buf = vec![];
             self.reset(&mut buf)?;
             append_or_print(output, sender, print, buf).await;
             1 // Start scanning from genesis block (height 1)
         } else {
             // Defense-in-depth: always re-scan the last marked block.
-            last_scanned_u32 as u64
+            last_scanned
         };
 
         // Load tree once (immutable for the scan loop).
@@ -881,7 +883,7 @@ impl Dww {
                 // Advance verified anchor height if this block has a
                 // verified Caribina (Arweave) anchor.
                 if block.header.anchor_tx_id != [0u8; 32] {
-                    let anchor_height = block.header.height as u32;
+                    let anchor_height = block.header.height.get();
                     let mut current = self.verified_anchor_height.lock().await;
                     if anchor_height > *current {
                         *current = anchor_height;
@@ -910,23 +912,23 @@ impl Dww {
         tree: &mut MerkleTree,
         block: &dwow_chain::Block,
     ) -> Result<BlockScanResult> {
-        let height_u32 = block.header.height as u32;
+        let height = block.header.height.get();
 
         // Write marker BEFORE processing — enables crash recovery.
         self.wallet.insert_scanned_block(
-            &height_u32,
+            &height,
             &HeaderHash(*block.header.previous.as_bytes()),
             &None,
         )?;
 
         // Checkpoint the merkle tree
-        tree.checkpoint(block.header.height as usize);
+        tree.checkpoint(block.header.height.get() as usize);
 
         // Get existing held caps for nullifier detection (spends by other parties)
         let existing_caps = self.wallet.get_held_capabilities(Some(false)).unwrap_or_else(|e| {
             tracing::error!(target: "dww::scan",
                 "Failed to load held capabilities: {:?} — nullifier detection skipped for block {}",
-                e, height_u32);
+                e, height);
             vec![]
         });
 
@@ -963,7 +965,7 @@ impl Dww {
                 .map_err(|e| crate::wallet_error::Error::Custom(format!(
                     "Failed to insert native token cap {} at height {}: {:?}",
                     &out.cap_record.cap_id[..8.min(out.cap_record.cap_id.len())],
-                    height_u32, e)))?;
+                    height, e)))?;
         }
         // Discriminant is now set inside the pure scan_block (Path 2 manifest
         // resolution) — the post-hoc DB manifest lookup is no longer needed.
@@ -972,12 +974,12 @@ impl Dww {
                 .map_err(|e| crate::wallet_error::Error::Custom(format!(
                     "Failed to insert cap {} at height {}: {:?}",
                     &cap.cap_record.cap_id[..8.min(cap.cap_record.cap_id.len())],
-                    height_u32, e)))?;
+                    height, e)))?;
         }
 
         // Apply nullifier revocations
         let secrets = self.account_mgr.secrets();
-        let revoked = match_nullifiers(&existing_caps, &secrets, &result.published_nullifiers, height_u32);
+        let revoked = match_nullifiers(&existing_caps, &secrets, &result.published_nullifiers, height);
         for (cap_id, h) in &revoked {
             if let Err(e) = self.wallet.mark_revoked(cap_id, *h) {
                 tracing::error!(target: "dww::scan",
@@ -1051,7 +1053,7 @@ mod tests {
     /// Falsifiable: correct key finds output, wrong key finds nothing.
     #[test]
     fn test_discover_determinism() {
-        let height: u32 = 42;
+        let height: u64 = 42;
 
         // Minimal AccountManager with a known declared secret.
         let temp_dir = std::env::temp_dir();
@@ -1217,7 +1219,7 @@ mod tests {
     /// and correctly decrypts the coinbase output.
     #[test]
     fn test_wallet_miner_coinbase_symmetry() {
-        let height: u32 = 42;
+        let height: u64 = 42;
         let value: u64 = 50_000_000;
 
         // ── Setup: AccountManager from test key ─────────────────────
@@ -1284,7 +1286,7 @@ mod tests {
                 timestamp: 0,
                 target: u32::MAX,
                 nonce: 0,
-                height: height as u64,
+                height: dwow_sdk::blockchain::BlockHeight::new(height),
                 uncle_merkle_root: [0u8; 32],
                 total_reward: value,
                 randomx_key: [0u8; 32],
@@ -1379,7 +1381,7 @@ mod tests {
         use dwow_sdk::crypto::Keypair;
         use dwow_chain::Transaction;
 
-        let height: u32 = 100;
+        let height: u64 = 100;
         let temp_dir = std::env::temp_dir();
         let keys_path = temp_dir.join("dwow_test_tripwire.toml");
         std::fs::write(&keys_path,
@@ -1434,7 +1436,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
                 version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: 0, target: u32::MAX, nonce: 0,
-                height: height as u64, uncle_merkle_root: [0u8; 32],
+                height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
                 total_reward: 0, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
@@ -1526,7 +1528,7 @@ produces = [{ name = "thing" }]
                 version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: 0, target: u32::MAX, nonce: 0,
-                height: h, uncle_merkle_root: [0u8; 32],
+                height: dwow_sdk::blockchain::BlockHeight::new(h), uncle_merkle_root: [0u8; 32],
                 total_reward: 0, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
@@ -1606,7 +1608,7 @@ required_barbs = ["Spend","Mine"]
                 version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: 0, target: u32::MAX, nonce: 0,
-                height: 101, uncle_merkle_root: [0u8; 32],
+                height: dwow_sdk::blockchain::BlockHeight::new(101), uncle_merkle_root: [0u8; 32],
                 total_reward: 0, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
@@ -1636,8 +1638,8 @@ required_barbs = ["Spend","Mine"]
         use dwow_serial::Encodable;
         use dwow_chain::Transaction as ChainTransaction;
 
-        let height_deploy: u32 = 100;
-        let height_call: u32 = 101;
+        let height_deploy: u64 = 100;
+        let height_call: u64 = 101;
         let temp_dir = std::env::temp_dir();
         let keys_path = temp_dir.join("dwow_test_p8.toml");
         std::fs::write(&keys_path,
@@ -1725,7 +1727,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: 0, target: u32::MAX, nonce: 0,
-                height: height_deploy as u64, uncle_merkle_root: [0u8; 32],
+                height: dwow_sdk::blockchain::BlockHeight::new(height_deploy), uncle_merkle_root: [0u8; 32],
                 total_reward: 0, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
@@ -1795,7 +1797,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: 0, target: u32::MAX, nonce: 0,
-                height: height_call as u64, uncle_merkle_root: [0u8; 32],
+                height: dwow_sdk::blockchain::BlockHeight::new(height_call), uncle_merkle_root: [0u8; 32],
                 total_reward: 0, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
@@ -1834,7 +1836,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
     /// unspent queries.
     #[test]
     fn test_nullifier_revocation_lifecycle() {
-        let height: u32 = 42;
+        let height: u64 = 42;
         let temp_dir = std::env::temp_dir();
         let keys_path = temp_dir.join("dwow_test_p9.toml");
         std::fs::write(&keys_path,
@@ -1969,7 +1971,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         use dwow_sdk::manifest::ContractManifest;
         use dwow_chain::Transaction;
 
-        let height: u32 = 100;
+        let height: u64 = 100;
         let temp_dir = std::env::temp_dir();
         let keys_path = temp_dir.join("dwow_test_p10.toml");
         std::fs::write(&keys_path,
@@ -2036,7 +2038,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
                 version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: 0, target: u32::MAX, nonce: 0,
-                height: height as u64, uncle_merkle_root: [0u8; 32],
+                height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
                 total_reward: value, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
@@ -2091,7 +2093,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         use dwow_native_token_contract::client::NativeToken;
         use dwow_native_token_contract::model::CoinAttributes;
 
-        let height: u32 = 42;
+        let height: u64 = 42;
         let temp_dir = std::env::temp_dir();
         let keys_path = temp_dir.join("dwow_test_p11.toml");
         std::fs::write(&keys_path,
@@ -2139,7 +2141,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
                 version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: 0, target: u32::MAX, nonce: 0,
-                height: height as u64, uncle_merkle_root: [0u8; 32],
+                height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
                 total_reward: 0, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
@@ -2178,7 +2180,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         use dwow_native_token_contract::client::NativeToken;
         use dwow_native_token_contract::model::CoinAttributes;
 
-        let height: u32 = 42;
+        let height: u64 = 42;
         let temp_dir = std::env::temp_dir();
         let keys_path = temp_dir.join("dwow_test_p12.toml");
         std::fs::write(&keys_path,
@@ -2240,7 +2242,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
                 version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: 0, target: u32::MAX, nonce: 0,
-                height: height as u64, uncle_merkle_root: [0u8; 32],
+                height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
                 total_reward: 0, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: 0,

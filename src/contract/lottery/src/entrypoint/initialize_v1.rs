@@ -52,8 +52,7 @@ pub fn lottery_initialize_process_instruction_v1(
     params.config.validate()?;
 
     // Get current block height
-    let current_block = wasm::util::get_verifying_block_height()?;
-    let current_block = current_block as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Derive lottery ID
     let lottery_id = derive_lottery_id(&params.house_pub, current_block);
@@ -107,7 +106,7 @@ pub fn lottery_initialize_process_update_v1(
         winning_numbers: None,
         draw_block: None,
         ticket_merkle_root: pallas::Base::zero(),
-        created_at: wasm::util::get_verifying_block_height()? as u64,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
         draw_block_deadline: update.draw_block_deadline,
         claim_deadline: update.claim_deadline,
         rolled_over: update.rolled_over,

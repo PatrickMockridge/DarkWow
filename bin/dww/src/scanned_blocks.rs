@@ -29,15 +29,15 @@ use crate::{
 };
 
 impl Dww {
-    pub fn get_scanned_block(&self, height: &u32) -> WalletDbResult<(String, String)> {
+    pub fn get_scanned_block(&self, height: &u64) -> WalletDbResult<(String, String)> {
         self.wallet.get_scanned_block(height)
     }
 
-    pub fn get_scanned_block_records(&self) -> WalletDbResult<Vec<(u32, String, String)>> {
+    pub fn get_scanned_block_records(&self) -> WalletDbResult<Vec<(u64, String, String)>> {
         self.wallet.get_scanned_block_records()
     }
 
-    pub fn get_last_scanned_block(&self) -> WalletDbResult<(u32, String)> {
+    pub fn get_last_scanned_block(&self) -> WalletDbResult<(u64, String)> {
         self.wallet.get_last_scanned_block()
     }
 
@@ -53,7 +53,7 @@ impl Dww {
 
     pub fn reset_to_height(
         &self,
-        height: u32,
+        height: u64,
         output: &mut Vec<String>,
     ) -> WalletDbResult<()> {
         output.push(format!("Resetting wallet state to block: {height}"));

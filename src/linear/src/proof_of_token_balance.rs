@@ -313,7 +313,7 @@ mod tests {
             timestamp: 0,
             target: 0,
             nonce: 0,
-            height,
+            height: dwow_sdk::blockchain::BlockHeight::new(height),
             uncle_merkle_root: [0u8; 32],
             total_reward: 0,
             randomx_key: [0u8; 32],

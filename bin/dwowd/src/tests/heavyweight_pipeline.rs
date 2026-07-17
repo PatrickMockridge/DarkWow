@@ -164,7 +164,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
 
         let tx = build_contract_tx(contract_id, call_data.to_vec());
         let height = self.genesis.block_height();
-        let next_height = height + 1;
+        let next_height = height.succ();
         let reward = dwow_sdk::blockchain::expected_reward(next_height);
         let coinbase = build_coinbase_tx(reward);
         let block = build_test_block(&self.genesis.chain_state, next_height, vec![tx, coinbase]);
@@ -212,8 +212,8 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         let contract_id = self.contract_id
             .ok_or_else(|| dwow_core::Error::Custom("Contract not deployed".to_string()))?;
         let height = self.genesis.block_height();
-        let next = height + 1;
-        let reward = dwow_sdk::blockchain::expected_reward(next as u64);
+        let next = height.succ();
+        let reward = dwow_sdk::blockchain::expected_reward(next);
 
         let contract_tx = build_contract_tx(contract_id, call_data.to_vec());
         let coinbase = build_coinbase_tx(reward);
@@ -250,8 +250,8 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         let contract_id = self.contract_id
             .ok_or_else(|| dwow_core::Error::Custom("Contract not deployed".to_string()))?;
         let height = self.genesis.block_height();
-        let next = height + 1;
-        let reward = dwow_sdk::blockchain::expected_reward(next as u64);
+        let next = height.succ();
+        let reward = dwow_sdk::blockchain::expected_reward(next);
 
         let canon_tx = build_contract_tx(contract_id, canonical_data.to_vec());
         let coinbase = build_coinbase_tx(reward);
@@ -292,8 +292,8 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         let contract_id = self.contract_id
             .ok_or_else(|| dwow_core::Error::Custom("Contract not deployed".to_string()))?;
         let height = self.genesis.block_height();
-        let next = height + 1;
-        let reward = dwow_sdk::blockchain::expected_reward(next as u64);
+        let next = height.succ();
+        let reward = dwow_sdk::blockchain::expected_reward(next);
 
         let coinbase = build_coinbase_tx(reward);
         let mut uncles = Vec::new();
@@ -508,7 +508,7 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
         // --- mint_pow_reward ---
         println!("  Test: mint_pow_reward");
         let ephem_secret = SecretKey::from_bytes([9u8; 32]).unwrap();
-        let reward = harness.mint_pow_reward(keypair.secret, ephem_secret, 42, 100, None)?;
+        let reward = harness.mint_pow_reward(keypair.secret, ephem_secret, dwow_sdk::blockchain::BlockHeight::new(42), 100, None)?;
         assert!(!reward.call_data.is_empty());
         println!("    call_data={}B", reward.call_data.len());
 
@@ -2733,8 +2733,8 @@ fn test_heavyweight_empty_uncle() -> std::result::Result<(), Box<dyn std::error:
     smol::block_on(async {
         let (pipeline, _keypair) = setup_native_token_pipeline().await?;
         let height = pipeline.genesis.block_height();
-        let next = height + 1;
-        let reward = dwow_sdk::blockchain::expected_reward(next as u64);
+        let next = height.succ();
+        let reward = dwow_sdk::blockchain::expected_reward(next);
 
         let coinbase = build_coinbase_tx(reward);
         // Uncle has coinbase but no contract calls
@@ -2769,8 +2769,8 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
     smol::block_on(async {
         let (pipeline, keypair) = setup_native_token_pipeline().await?;
         let height = pipeline.genesis.block_height();
-        let next = height + 1;
-        let reward = dwow_sdk::blockchain::expected_reward(next as u64);
+        let next = height.succ();
+        let reward = dwow_sdk::blockchain::expected_reward(next);
 
         let coinbase = build_coinbase_tx(reward);
 
@@ -2894,8 +2894,8 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         assert!(!deposit.call_data.is_empty(), "deposit call_data must not be empty");
         println!("  Deposit call_data={}B", deposit.call_data.len());
 
-        let height1 = start_height + 1;
-        let reward = dwow_sdk::blockchain::expected_reward(height1 as u64);
+        let height1 = start_height.succ();
+        let reward = dwow_sdk::blockchain::expected_reward(height1);
         let deposit_tx = build_contract_tx(bridge_id, deposit.call_data);
         let coinbase = build_coinbase_tx(reward);
         let block1 = build_test_block(&genesis.chain_state, height1, vec![deposit_tx, coinbase]);
@@ -2926,8 +2926,8 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         assert!(!withdraw.call_data.is_empty(), "withdraw call_data must not be empty");
         println!("  Withdraw call_data={}B", withdraw.call_data.len());
 
-        let height2 = genesis.block_height() + 1;
-        let reward = dwow_sdk::blockchain::expected_reward(height2 as u64);
+        let height2 = genesis.block_height().succ();
+        let reward = dwow_sdk::blockchain::expected_reward(height2);
         let withdraw_tx = build_contract_tx(bridge_id, withdraw.call_data);
         let coinbase = build_coinbase_tx(reward);
         let block2 = build_test_block(&genesis.chain_state, height2, vec![withdraw_tx, coinbase]);
@@ -2956,8 +2956,8 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             }
         };
 
-        let height3 = genesis.block_height() + 1;
-        let reward = dwow_sdk::blockchain::expected_reward(height3 as u64);
+        let height3 = genesis.block_height().succ();
+        let reward = dwow_sdk::blockchain::expected_reward(height3);
         let double_tx = build_contract_tx(bridge_id, double_withdraw.call_data);
         let coinbase = build_coinbase_tx(reward);
         let block3 = build_test_block(&genesis.chain_state, height3, vec![double_tx, coinbase]);
@@ -2993,8 +2993,8 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         assert!(!deploy.call_data.is_empty(), "deploy_capital call_data must not be empty");
         println!("  DeployCapital call_data={}B", deploy.call_data.len());
 
-        let height4 = genesis.block_height() + 1;
-        let reward = dwow_sdk::blockchain::expected_reward(height4 as u64);
+        let height4 = genesis.block_height().succ();
+        let reward = dwow_sdk::blockchain::expected_reward(height4);
         let init_tx = build_contract_tx(relayer_id, init.call_data);
         let deploy_tx = build_contract_tx(relayer_id, deploy.call_data);
         let coinbase = build_coinbase_tx(reward);
@@ -3010,7 +3010,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
 
         // --- Verify final state ---
         let final_height = genesis.block_height();
-        assert!(final_height >= 3, "must have at least 3 successful blocks (deposit + withdraw + relayer)");
+        assert!(final_height.get() >= 3, "must have at least 3 successful blocks (deposit + withdraw + relayer)");
         println!(
             "\n=== Relayer Lifecycle Heavyweight: All assertions passed (final height: {}) ===",
             final_height

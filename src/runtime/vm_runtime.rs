@@ -28,6 +28,7 @@ use std::{
 };
 
 use dwow_sdk::{
+    blockchain::BlockHeight,
     crypto::contract_id::{
         ContractId, SMART_CONTRACT_MONOTREE_DB_NAME, SMART_CONTRACT_ZKAS_DB_NAME,
     },
@@ -78,10 +79,10 @@ pub trait RuntimeBackend: Send + Sync {
 
     /// Blockchain queries
     fn last_block_timestamp(&self) -> Result<Vec<u8>>;
-    fn last_block_height(&self) -> Result<u32>;
+    fn last_block_height(&self) -> Result<BlockHeight>;
     fn get_tx(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>>;
     fn get_tx_location(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>>;
-    fn get_block_hash_by_height(&self, height: u32) -> Result<Option<Vec<u8>>>;
+    fn get_block_hash_by_height(&self, height: BlockHeight) -> Result<Option<Vec<u8>>>;
 }
 
 /// Type-erased pointer to the runtime backend. A single pointer replaces the
@@ -161,7 +162,7 @@ pub struct Env {
     pub objects: RefCell<Vec<Vec<u8>>>,
     /// Block height number runtime verifies against.
     /// For unconfirmed txs, this will be the current max height in the chain.
-    pub verifying_block_height: u32,
+    pub verifying_block_height: BlockHeight,
     /// Currently configured block time target, in seconds
     pub block_target: u32,
     /// The hash for this transaction the runtime is being run against.
@@ -226,7 +227,7 @@ impl Runtime {
         wasm_bytes: &[u8],
         backend: BackendPtr,
         contract_id: ContractId,
-        verifying_block_height: u32,
+        verifying_block_height: BlockHeight,
         block_target: u32,
         tx_hash: TransactionHash,
         call_idx: u8,

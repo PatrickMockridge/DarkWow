@@ -119,7 +119,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
     let func = DarkbetFunction::try_from(self_.data[0])?;
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     let metadata = match func {
         DarkbetFunction::CreateMarketV1 => {
@@ -327,7 +327,7 @@ fn darkbet_create_market_process_instruction_v1(
     msg!("[darkbet::create_market] Creating market: {}", params.description);
 
     // Get current block
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Validate params
     if params.outcomes.is_empty() {
@@ -419,7 +419,7 @@ fn darkbet_create_market_process_update_v1(
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
 
     // Create market struct using the update fields
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     let num_outcomes = update.outcomes.len();
 
     let market = Market {
@@ -513,7 +513,7 @@ fn darkbet_place_back_process_instruction_v1(
         return Err(DarkbetError::InvalidOutcome.into())
     }
 
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Validate order params
     if params.stake < DARKBET_EXCHANGE_MIN_ORDER_SIZE {
@@ -589,7 +589,7 @@ fn darkbet_place_back_process_update_v1(
         liability: 0,
         user_pub: update.user_pub,
         state: OrderState::Open,
-        created_at: wasm::util::get_verifying_block_height()? as u64,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
         nullifier: update.nullifier,
         instance_seed: update.instance_seed,
     };
@@ -659,7 +659,7 @@ fn darkbet_place_lay_process_instruction_v1(
         return Err(DarkbetError::InvalidOutcome.into())
     }
 
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Validate order params
     if params.stake < DARKBET_EXCHANGE_MIN_ORDER_SIZE {
@@ -744,7 +744,7 @@ fn darkbet_place_lay_process_update_v1(
         liability: update.liability,
         user_pub: update.user_pub,
         state: OrderState::Open,
-        created_at: wasm::util::get_verifying_block_height()? as u64,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
         nullifier: update.nullifier,
         instance_seed: update.instance_seed,
     };
@@ -822,7 +822,7 @@ fn darkbet_match_orders_process_instruction_v1(
         return Err(DarkbetError::OddsMismatch.into())
     }
 
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Create message for signature verification
     let signature_msg = serialize(&(
@@ -911,7 +911,7 @@ fn darkbet_match_orders_process_update_v1(
         lay_user: lay_order.user_pub,
         commission: update.commission,
         state: MatchState::Pending,
-        created_at: wasm::util::get_verifying_block_height()? as u64,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
     };
     wasm::db::db_set(matches_db, &serialize(&update.match_id), &serialize(&m))?;
 
@@ -988,7 +988,7 @@ fn darkbet_buy_position_process_instruction_v1(
         return Err(DarkbetError::InsufficientStake.into())
     }
 
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Create message for signature verification
     let signature_msg = serialize(&(
@@ -1148,7 +1148,7 @@ fn darkbet_add_liquidity_process_instruction_v1(
         return Err(DarkbetError::InsufficientStake.into())
     }
 
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Create message for signature verification
     let signature_msg = serialize(&(params.market_id, params.amount, current_block));
@@ -1282,7 +1282,7 @@ fn darkbet_remove_liquidity_process_instruction_v1(
     }
 
     // Create message for signature verification
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     let signature_msg = serialize(&(params.market_id, params.lp_share_id, current_block));
 
     // Verify signature from provider
@@ -1516,7 +1516,7 @@ fn darkbet_resolve_market_process_instruction_v1(
         return Err(DarkbetError::InvalidOracleSignature.into())
     }
 
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Create message for oracle signature verification
     let signature_msg = serialize(&(
@@ -1780,7 +1780,7 @@ fn darkbet_cancel_order_process_instruction_v1(
     }
 
     // Create message for signature verification
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     let signature_msg = serialize(&(params.order_id, current_block));
 
     // Verify signature from user

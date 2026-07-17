@@ -142,7 +142,7 @@ impl Dww {
         scan_cache: &mut ScanCache,
         data: &[u8],
         tx_hash: &dwow_sdk::tx::TransactionHash,
-        _block_height: &u32,
+        _block_height: &u64,
     ) -> Result<bool> {
         if data.is_empty() {
             return Ok(false);
@@ -189,7 +189,7 @@ impl Dww {
         _scan_cache: &mut ScanCache,
         _params: &DeployParamsV1,
         _tx_hash: &dwow_sdk::tx::TransactionHash,
-        _block_height: &u32,
+        _block_height: &u64,
     ) -> Result<bool> {
         // TODO: Store deployment info in wallet database
         Ok(false)
@@ -201,7 +201,7 @@ impl Dww {
         _scan_cache: &mut ScanCache,
         _public_key: &PublicKey,
         _tx_hash: &dwow_sdk::tx::TransactionHash,
-        _block_height: &u32,
+        _block_height: &u64,
     ) -> Result<bool> {
         // TODO: Store lock info in wallet database
         Ok(false)

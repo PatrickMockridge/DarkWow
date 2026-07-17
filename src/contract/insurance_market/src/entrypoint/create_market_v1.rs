@@ -62,7 +62,7 @@ pub fn insurance_market_create_market_process_instruction_v1(
         params.risk_type_id,
         dwow_sdk::pasta::pallas::Base::from(params.total_coverage),
         dwow_sdk::pasta::pallas::Base::from(params.coverage_period),
-        dwow_sdk::pasta::pallas::Base::from(wasm::util::get_verifying_block_height()? as u64),
+        dwow_sdk::pasta::pallas::Base::from(wasm::util::get_verifying_block_height()?.get()),
     ]);
 
     // Check if market already exists
@@ -91,7 +91,7 @@ pub fn insurance_market_create_market_process_instruction_v1(
         params.initial_premium_rate
     };
 
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Create the update
     let update = CreateMarketUpdateV1 {

@@ -55,7 +55,7 @@ pub(crate) fn game_room_create_process_instruction_v1(
     }
 
     // Get current block
-    let current_block = wasm::util::get_verifying_block_height()?;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Use owner from params (verified by proof/signature)
     let owner = params.owner;
@@ -64,7 +64,7 @@ pub(crate) fn game_room_create_process_instruction_v1(
     let room_id = GameRoom::derive_room_id(
         &dwow_sdk::crypto::ContractId::derive_public(owner),
         params.token_id,
-        current_block as u64,
+        current_block,
         params.nonce,
     );
 
@@ -84,7 +84,7 @@ pub(crate) fn game_room_create_process_instruction_v1(
     };
 
     // Create room
-    let room = GameRoom::new(room_id, config.clone(), current_block as u64, params.instance_seed);
+    let room = GameRoom::new(room_id, config.clone(), current_block, params.instance_seed);
 
     // Store room
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;

@@ -37,7 +37,7 @@ mod tests {
         },
         NativeTokenFunction,
     };
-    use dwow_sdk::{crypto::BaseBlind, crypto::Blind, crypto::FuncId, crypto::Keypair, crypto::MerkleNode, crypto::TokenId, pasta::pallas};
+    use dwow_sdk::{blockchain::BlockHeight, crypto::BaseBlind, crypto::Blind, crypto::FuncId, crypto::Keypair, crypto::MerkleNode, crypto::TokenId, pasta::pallas};
     use pasta_curves::group::Group;
 
     // ================================================================
@@ -386,11 +386,11 @@ mod tests {
             nullifier:
                 dwow_native_token_contract::model::Nullifier::from_bytes([1u8; 32]).unwrap(),
             coin,
-            height: 100,
+            height: BlockHeight::new(100),
             fee: 5,
         };
 
-        assert_eq!(update.height, 100);
+        assert_eq!(update.height, BlockHeight::new(100));
         assert_eq!(update.fee, 5);
     }
 
@@ -460,11 +460,11 @@ mod tests {
 
         let update = FeeCollectUpdateV1 {
             coin,
-            height: 7,
+            height: BlockHeight::new(7),
             total_fees: 42_000_000,
         };
 
-        assert_eq!(update.height, 7);
+        assert_eq!(update.height, BlockHeight::new(7));
         assert_eq!(update.total_fees, 42_000_000);
     }
 
@@ -483,7 +483,7 @@ mod tests {
         );
         let update = FeeCollectUpdateV1 {
             coin,
-            height: 3,
+            height: BlockHeight::new(3),
             total_fees: 9,
         };
         let bytes = dwow_serial::serialize(&update);
@@ -583,13 +583,13 @@ mod tests {
 
         let update = PoWRewardUpdateV1 {
             coin,
-            height: 100,
+            height: BlockHeight::new(100),
             new_total_supply: 0,
             cumulative_value_commit: pallas::Point::identity(),
             aggregate_blind: pallas::Scalar::zero(),
         };
 
-        assert_eq!(update.height, 100);
+        assert_eq!(update.height, BlockHeight::new(100));
     }
 
     #[test]

@@ -119,7 +119,7 @@ impl Explorer {
             let tx_idx = TxIndex {
                 offset: current_tx_offset,
                 length: tx_data.len() as u64,
-                block_height: block.header.height as u64,
+                block_height: block.header.height.get(),
             };
             tx.append_entries(&self.database.tx_index, std::slice::from_ref(&tx_idx))?;
 
@@ -144,7 +144,7 @@ impl Explorer {
         // Prepare data for atomic sled transaction
         let header_hash = blake3::hash(&serde_json::to_vec(&block.header).unwrap()).as_bytes().to_vec();
         // Store height as u64 (8 bytes) to match lookup format
-        let height_bytes = (block.header.height as u64).to_le_bytes();
+        let height_bytes = block.header.height.to_le_bytes();
 
         // Collect tx hashes and their indices
         let mut tx_entries: Vec<([u8; 32], [u8; 8])> = Vec::with_capacity(block.transactions.len());
@@ -156,7 +156,7 @@ impl Explorer {
 
         // Scan for contract deployments and locks
         let (new_contracts, locked_contracts) =
-            self.scan_contract_calls(block, block.header.height as u64).await;
+            self.scan_contract_calls(block, block.header.height.get()).await;
 
         // Atomic sled transaction for tx_indices, header_indices, and contracts
         (&self.tx_indices, &self.header_indices, &self.contracts)

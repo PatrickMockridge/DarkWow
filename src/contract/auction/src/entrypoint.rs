@@ -385,7 +385,7 @@ fn create_auction_v1(cid: ContractId, params: CreateAuctionParamsV1) -> Contract
     }
 
     // Get current block
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Create new auction
     let auction = Auction {
@@ -434,7 +434,7 @@ fn place_bid_v1(cid: ContractId, params: PlaceBidParamsV1) -> ContractResult {
     }
 
     // Get current block
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Verify auction hasn't ended
     if current_block >= auction.deadline_block {

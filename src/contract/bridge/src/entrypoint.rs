@@ -920,7 +920,7 @@ fn process_cancel_withdraw_instruction(
 
     // Verify timeout has expired (use on-chain block height, not caller-provided)
     let current_block = wasm::util::get_verifying_block_height()?;
-    if u64::from(current_block) < pending.timeout_height {
+    if current_block.get() < pending.timeout_height {
         msg!("[bridge::CancelWithdrawV1] ERROR: Timeout not expired (current={}, timeout={})", current_block, pending.timeout_height);
         return Err(BridgeError::InvalidWithdrawal("Timeout not expired".into()).into())
     }
@@ -1109,7 +1109,7 @@ fn process_reassign_withdrawal_instruction(
     let current_block = wasm::util::get_verifying_block_height()?;
     match pending.reassignable_after {
         Some(reassignable_at) => {
-            if u64::from(current_block) < reassignable_at {
+            if current_block.get() < reassignable_at {
                 msg!("[bridge::ReassignWithdrawalV1] ERROR: Not yet reassignable (current={}, reassignable_at={})",
                     current_block, reassignable_at);
                 return Err(BridgeError::InvalidFunction.into())
@@ -1694,7 +1694,7 @@ fn process_refund_htlc_instruction(
 
     // Verify timelock has expired (use on-chain block height, not caller-provided)
     let current_block = wasm::util::get_verifying_block_height()?;
-    if u64::from(current_block) < htlc.timelock {
+    if current_block.get() < htlc.timelock {
         msg!("[bridge::process_instruction] ERROR: Timelock not expired, timelock={}, current={}", htlc.timelock, current_block);
         return Err(BridgeError::InvalidFunction.into())
     }
@@ -1833,7 +1833,7 @@ fn process_register_relayer_instruction(
 
     let update = RegisterRelayerUpdateV1 {
         relayer_pub: params.relayer_pub,
-        registered_at: wasm::util::get_verifying_block_height()? as u64,
+        registered_at: wasm::util::get_verifying_block_height()?.get(),
     };
     wasm::util::set_return_data(&serialize(&update))
 }
@@ -1906,7 +1906,7 @@ fn process_accept_withdrawal_instruction(
         return Err(BridgeError::FeeExceedsCap.into())
     }
 
-    let current_height = wasm::util::get_verifying_block_height()? as u64;
+    let current_height = wasm::util::get_verifying_block_height()?.get();
 
     msg!("[bridge::AcceptWithdrawalV1] Withdrawal acceptance approved");
 

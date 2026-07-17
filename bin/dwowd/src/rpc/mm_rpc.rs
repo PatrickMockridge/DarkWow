@@ -56,6 +56,7 @@ use dwow_chain::{
     },
     PowSource,
 };
+use dwow_sdk::blockchain::BlockHeight;
 
 use crate::{error::{miner_status_response, server_error, RpcError}, DwowNode};
 
@@ -206,7 +207,7 @@ impl DwowNode {
         // stored (e.g. by a stratum login) it already holds the node's own key;
         // otherwise resolve it directly from the node's AccountManager. Never a
         // random key.
-        let height = chain_state.get_height().saturating_add(1) as u32;
+        let height = chain_state.get_height().succ();
         let recipient_config = {
             let stored = self.mining_state.linear_recipient_config.lock().await;
             match *stored {
@@ -677,7 +678,7 @@ impl DwowNode {
 
         match crate::block_acceptor::accept_block(
             &chain_state, &block, &uncles, &exec_vm,
-            template.height.saturating_sub(1), template.target, None,
+            template.height.pred().unwrap_or(BlockHeight::new(0)), template.target, None,
         ) {
             Ok(()) => {
                 drop(exec_vm);
@@ -775,7 +776,7 @@ mod tests {
             timestamp: 1234567890,
             target: 0x00FFFFFF,
             nonce: 0xDEADBEEF,
-            height: 42,
+            height: BlockHeight::new(42),
             uncle_merkle_root: [0xCC; 32],
             total_reward: 1000000000,
             randomx_key: [0xDD; 32],

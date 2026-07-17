@@ -66,7 +66,7 @@ pub fn insurance_market_register_risk_type_process_instruction_v1(
         return Err(InsuranceMarketError::InvalidParameter("Invalid bond rate".to_string()).into())
     }
 
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Create the update
     let update = RegisterRiskTypeUpdateV1 {

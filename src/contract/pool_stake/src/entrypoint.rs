@@ -279,7 +279,7 @@ fn process_create_pool_instruction(
     }
 
     // Derive pool ID
-    let pool_id = derive_pool_id(wasm::util::get_verifying_block_height()? as u64);
+    let pool_id = derive_pool_id(wasm::util::get_verifying_block_height()?.get());
 
     // Check pool doesn't already exist (shouldn't happen with unique ID)
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
@@ -293,7 +293,7 @@ fn process_create_pool_instruction(
         owner_pub: params.owner_pub,
         max_coverage_ratio: params.max_coverage_ratio,
         operator_fee_bp: params.operator_fee_bp,
-        created_at: wasm::util::get_verifying_block_height()? as u64,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
     };
 
     msg!("[pool_stake::create_pool] Pool {:?} created", pool_id);
@@ -384,7 +384,7 @@ fn process_join_pool_instruction(
     let stake_id = derive_stake_id(
         params.pool_id,
         &params.relayer_id,
-        wasm::util::get_verifying_block_height()? as u64,
+        wasm::util::get_verifying_block_height()?.get(),
     );
 
     // Check stake doesn't already exist
@@ -456,7 +456,7 @@ fn apply_join_pool_update(cid: ContractId, update: JoinPoolUpdateV1) -> Contract
         coverage_contribution: update.coverage_contribution,
         pool_share_bp: update.pool_share_bp,
         accumulated_fees: 0,
-        created_at: wasm::util::get_verifying_block_height()? as u64,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
         leave_requested_at: None,
         slash_count: 0,
         is_active: true,
@@ -517,7 +517,7 @@ fn process_leave_pool_instruction(
     }
 
     // Enforce cooldown period before leaving
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     if let Some(requested_at) = stake.leave_requested_at {
         // Cooldown started — verify it's elapsed
         if current_block < requested_at + crate::POOL_STAKE_LEAVE_COOLDOWN_BLOCKS {
@@ -612,7 +612,7 @@ fn process_allocate_coverage_instruction(
     let allocation_id = derive_allocation_id(
         params.pool_id,
         &params.withdrawal_nullifier,
-        wasm::util::get_verifying_block_height()? as u64,
+        wasm::util::get_verifying_block_height()?.get(),
     );
 
     // NOTE: contributing_members requires iteration over POOL_STAKE_MEMBERS_TREE.
@@ -659,7 +659,7 @@ fn apply_allocate_coverage_update(cid: ContractId, update: AllocateCoverageUpdat
         withdrawal_nullifier: update.withdrawal_nullifier,
         amount: update.amount,
         contributing_members: update.contributing_members,
-        created_at: wasm::util::get_verifying_block_height()? as u64,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
         timeout_height: update.timeout_height,
         executed: false,
         slashed: false,

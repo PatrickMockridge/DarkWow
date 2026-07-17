@@ -415,7 +415,7 @@ fn escrow_create_process_instruction_v1(
         value_commit: pallas::Point::identity(), // Set during Fund
         value_blind: pallas::Scalar::ZERO,      // Set during Fund
         spent_nullifier: pallas::Base::ZERO,    // Set during Claim/Refund
-        created_at: wasm::util::get_verifying_block_height()?.into(),
+        created_at: wasm::util::get_verifying_block_height()?.get(),
         funded_at: None,
         instance_seed: params.instance_seed,
     };
@@ -486,7 +486,7 @@ fn escrow_fund_process_instruction_v1(
     // Update escrow with funding details
     escrow.value_commit = params.value_commit;
     escrow.state = EscrowState::Funded;
-    escrow.funded_at = Some(wasm::util::get_verifying_block_height()?.into());
+    escrow.funded_at = Some(wasm::util::get_verifying_block_height()?.get());
 
     let update = FundEscrowUpdateV1 { escrow_id: escrow.id };
     Ok(serialize(&update))
@@ -630,7 +630,7 @@ fn escrow_refund_process_instruction_v1(
 
     // CRITICAL: Verify timelock has passed
     let current_block = wasm::util::get_verifying_block_height()?;
-    if u64::from(current_block) < escrow.timeout {
+    if current_block.get() < escrow.timeout {
         msg!(
             "[RefundV1] Error: Timelock not reached (current: {}, timeout: {})",
             current_block,
@@ -757,7 +757,7 @@ fn escrow_fund_process_update_v1(cid: ContractId, update: FundEscrowUpdateV1) ->
     let mut escrow: Escrow = deserialize(&escrow_data)?;
 
     escrow.state = EscrowState::Funded;
-    escrow.funded_at = Some(wasm::util::get_verifying_block_height()?.into());
+    escrow.funded_at = Some(wasm::util::get_verifying_block_height()?.get());
 
     wasm::db::db_set(escrows_db, &serialize(&escrow.id), &serialize(&escrow))?;
     msg!("[FundV1] Escrow {:?} funded and state updated to Funded", update.escrow_id);

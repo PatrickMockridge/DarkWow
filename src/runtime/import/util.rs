@@ -288,10 +288,15 @@ pub(crate) fn get_verifying_block_height(mut ctx: FunctionEnvMut<Env>) -> i64 {
     }
 
     // Subtract used gas. Here we count the size of the object.
-    // u32 is 4 bytes.
-    env.subtract_gas(&mut store, 4);
+    // u64 is 8 bytes.
+    env.subtract_gas(&mut store, 8);
 
-    env.verifying_block_height as i64
+    // Width conversion at the FFI edge: the import ABI is i64 (type-system.md
+    // §2.3). A height above i64::MAX is unrepresentable on the wire.
+    match i64::try_from(env.verifying_block_height.get()) {
+        Ok(height) => height,
+        Err(_) => dwow_sdk::error::DATA_TOO_LARGE,
+    }
 }
 
 /// Will return currently configured block time target, in seconds
@@ -711,9 +716,21 @@ pub(crate) fn get_block_hash_(mut ctx: FunctionEnvMut<Env>, height: i64) -> i64 
     // blake3::OUT_LEN is 32 bytes.
     env.subtract_gas(&mut store, blake3::OUT_LEN as u64);
 
+    // Width conversion at the FFI edge: the import ABI is i64 (type-system.md
+    // §2.3). Negative heights are unrepresentable in the height domain.
+    // Lift via the validating constructor (§2.2).
+    let Ok(height) = u64::try_from(height) else {
+        error!(
+            target: "runtime::util::get_block_hash_",
+            "[WASM] [{cid}] get_block_hash_(): Negative height {height}"
+        );
+        return dwow_sdk::error::DB_GET_FAILED
+    };
+    let height = dwow_sdk::blockchain::BlockHeight::new(height);
+
     // Grab block hash by height
     let block_hash =
-        match env.backend.get_block_hash_by_height(height as u32) {
+        match env.backend.get_block_hash_by_height(height) {
             Ok(Some(hash)) => hash,
             Ok(None) => {
                 debug!(

@@ -60,6 +60,7 @@ use tracing::{error, info};
 
 use dwow_core::Error;
 use dwow_serial::Decodable;
+use dwow_sdk::blockchain::BlockHeight;
 use dwow_sdk::crypto::{ContractId, DEPLOYOOOR_CONTRACT_ID};
 use dwow_sdk::deploy::DeployParamsV1;
 
@@ -94,7 +95,7 @@ pub const MAX_BLOCK_SIZE: usize = 4 * 1024 * 1024;
 pub struct TxBackend {
     pub overlay: std::sync::Arc<std::sync::Mutex<sled_overlay::SledTreeOverlay>>,
     pub store: std::sync::Arc<LinearStore>,
-    pub height: u64,
+    pub height: BlockHeight,
     pub vm: std::sync::Arc<randomx::RandomXVM>,
 }
 
@@ -127,7 +128,7 @@ pub fn execute_block(
     block: &crate::Block,
     uncles: &[crate::UncleBlock],
     vm: &Arc<RandomXVM>,
-    current_height: u64,
+    current_height: BlockHeight,
     difficulty: u32,
 ) -> dwow_core::Result<ExecutionOutcome> {
     let store = chain_state.store.clone();
@@ -277,7 +278,7 @@ pub fn execute_block(
             &job.wasm_bytes,
             backend.clone(),
             job.contract_id,
-            current_height as u32,
+            current_height,
             difficulty,
             tx_hash_bytes,
             job.call_idx,
@@ -582,7 +583,7 @@ fn execute_spend_hook(
     backend: Arc<TxBackend>,
     target_cid_bytes: &[u8],
     payload: &[u8],
-    current_height: u64,
+    current_height: BlockHeight,
     difficulty: u32,
     tx_hash_bytes: dwow_sdk::tx::TransactionHash,
 ) -> bool {
@@ -602,7 +603,7 @@ fn execute_spend_hook(
 
     let mut target_runtime = match dwow_core::runtime::vm_runtime::Runtime::new(
         &target_wasm_bytes, backend.clone(), target_cid,
-        current_height as u32, difficulty, tx_hash_bytes, 0u8,
+        current_height, difficulty, tx_hash_bytes, 0u8,
     ) {
         Ok(r) => r,
         Err(_) => { error!(target: "execution", "spend_hook: runtime creation failed"); return false; }
@@ -624,7 +625,7 @@ fn deploy_contract_in_overlay(
     wasm: &[u8],
     contract_id: ContractId,
     ix: &[u8],
-    current_height: u64,
+    current_height: BlockHeight,
     difficulty: u32,
 ) -> dwow_core::Result<()> {
     overlay.state.cache.insert(
@@ -640,7 +641,7 @@ fn deploy_contract_in_overlay(
         vm,
     });
     let mut runtime = dwow_core::runtime::vm_runtime::Runtime::new(
-        wasm, backend.clone(), contract_id, current_height as u32,
+        wasm, backend.clone(), contract_id, current_height,
         difficulty, dwow_sdk::tx::TransactionHash::none(), 0,
     ).map_err(|e| Error::Custom(format!("DeployV1 runtime: {}", e)))?;
     runtime.deploy(ix).map_err(|e| Error::Custom(format!("DeployV1 init: {}", e)))?;
@@ -767,15 +768,15 @@ impl RuntimeBackend for TxBackend {
     }
 
     fn last_block_timestamp(&self) -> dwow_core::Result<Vec<u8>> {
-        if self.height == 0 {
+        if self.height.get() == 0 {
             return Ok(0u64.to_le_bytes().to_vec())
         }
         let block = self.store.get_block(self.height).map_err(|e| Error::Custom(e.to_string()))?;
         Ok(block.header.timestamp.to_le_bytes().to_vec())
     }
 
-    fn last_block_height(&self) -> dwow_core::Result<u32> {
-        Ok(self.height as u32)
+    fn last_block_height(&self) -> dwow_core::Result<BlockHeight> {
+        Ok(self.height)
     }
 
     fn get_tx(&self, hash: &[u8; 32]) -> dwow_core::Result<Option<Vec<u8>>> {
@@ -795,11 +796,17 @@ impl RuntimeBackend for TxBackend {
     }
 
     fn get_tx_location(&self, hash: &[u8; 32]) -> dwow_core::Result<Option<Vec<u8>>> {
-        for h in 1..=self.height {
-            if let Ok(block) = self.store.get_block(h) {
-                for tx in &block.transactions {
+        for h in 1..=self.height.get() {
+            if let Ok(block) = self.store.get_block(BlockHeight::new(h)) {
+                for (tx_index, tx) in block.transactions.iter().enumerate() {
                     if tx.hash().as_bytes() == hash {
-                        return Ok(Some((h as u32).to_le_bytes().to_vec()))
+                        // Payload matches the guest decode in sdk wasm/util.rs
+                        // `get_tx_location`: (block_height: u64, tx_index: u16).
+                        let tx_index = u16::try_from(tx_index)
+                            .map_err(|_| Error::Custom("tx index exceeds u16".to_string()))?;
+                        let mut payload = h.to_le_bytes().to_vec();
+                        payload.extend_from_slice(&tx_index.to_le_bytes());
+                        return Ok(Some(payload))
                     }
                 }
             }
@@ -807,8 +814,8 @@ impl RuntimeBackend for TxBackend {
         Ok(None)
     }
 
-    fn get_block_hash_by_height(&self, height: u32) -> dwow_core::Result<Option<Vec<u8>>> {
-        match self.store.get_block(height as u64) {
+    fn get_block_hash_by_height(&self, height: BlockHeight) -> dwow_core::Result<Option<Vec<u8>>> {
+        match self.store.get_block(height) {
             Ok(block) => Ok(Some(block.hash_with_vm(&self.vm).as_bytes().to_vec())),
             Err(e) => {
                 if e.to_string().contains("BlockNotFound") {

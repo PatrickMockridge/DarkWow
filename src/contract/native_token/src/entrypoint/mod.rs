@@ -45,7 +45,7 @@
 
 use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
-    blockchain::{expected_reward, reward},
+    blockchain::{expected_reward, reward, BlockHeight},
     crypto::{
         pasta_prelude::{Curve, CurveAffine, Field, Group, PrimeField}, pedersen_commitment_u64,
         smt::{wasmdb::SmtWasmFp, PoseidonFp, EMPTY_NODES_FP}, ContractId, MerkleNode, MerkleTree,
@@ -151,8 +151,9 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // (consensus-coinbase.md §3.13, Genesis). From height 2 onward,
     // apply_pow_reward seeds fees_db[H+1] for each block.
     let fees_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_FEES_TREE)?;
-    if !wasm::db::db_contains_key(fees_db, &serialize(&2_u32))? {
-        wasm::db::db_set(fees_db, &serialize(&2_u32), &serialize(&0_u64))?;
+    let height_2_key = serialize(&BlockHeight::GENESIS.succ());
+    if !wasm::db::db_contains_key(fees_db, &height_2_key)? {
+        wasm::db::db_set(fees_db, &height_2_key, &serialize(&0_u64))?;
     }
 
     // Set up info database.
@@ -812,7 +813,7 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     // Canonical miner mints full base_reward. Uncle rewards are subtracted
     // at the consensus level (connect_block) via Pedersen mass balance —
     // no pin_deductions needed in the contract.
-    let expected = expected_reward(verifying_block_height as u64);
+    let expected = expected_reward(verifying_block_height);
     if pr.input.value < expected {
         msg!("[pow_reward_v1] Error: Reward below schedule: got {}, expected {} at height {}",
              pr.input.value, expected, verifying_block_height);
@@ -1155,7 +1156,7 @@ fn apply_pow_reward(cid: ContractId, update: PoWRewardUpdateV1) -> ContractResul
 
     // Generate the accumulator for the next height
     msg!("[PoWRewardV1] Creating next height fees accumulator");
-    wasm::db::db_set(fees_db, &serialize(&(update.height + 1)), &serialize(&0_u64))?;
+    wasm::db::db_set(fees_db, &serialize(&update.height.succ()), &serialize(&0_u64))?;
 
     // Update nullifiers snapshot
     msg!("[PoWRewardV1] Updating nullifiers snapshot");

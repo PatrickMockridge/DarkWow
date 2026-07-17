@@ -27,6 +27,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
 use blake3::Hash as Blake3Hash;
+use dwow_sdk::blockchain::BlockHeight;
 use randomx::{RandomXFlags, RandomXVM};
 use rand::Rng;
 
@@ -52,7 +53,7 @@ impl Miner {
         &self,
         vm: &Arc<RandomXVM>,
         previous: Blake3Hash,
-        height: u64,
+        height: BlockHeight,
         txs: Vec<Transaction>,
         target: u32,
         uncles: &[super::UncleBlock],
@@ -82,7 +83,7 @@ impl Miner {
 
     /// Derive RandomX key from block height (key rotation).
     /// Per consensus-coinbase.md §1.3: blake3(height.to_le_bytes()).
-    pub fn derive_key_from_height(height: u64) -> [u8; 32] {
+    pub fn derive_key_from_height(height: BlockHeight) -> [u8; 32] {
         *blake3::hash(&height.to_le_bytes()).as_bytes()
     }
 

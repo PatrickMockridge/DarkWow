@@ -129,12 +129,12 @@ impl ContractTestingPipeline {
 
         // Build a coinbase transaction for the block reward
         let height = self.genesis.block_height();
-        let reward = dwow_sdk::blockchain::expected_reward((height + 1) as u32);
+        let reward = dwow_sdk::blockchain::expected_reward(height.succ());
         let coinbase = build_coinbase_tx(reward);
 
         let block = build_test_block(
             &self.genesis.chain_state,
-            height + 1,
+            height.succ(),
             vec![contract_tx, coinbase],
         );
 
@@ -170,12 +170,12 @@ impl ContractTestingPipeline {
         let contract_tx = build_contract_tx(*DEPLOYOOOR_CONTRACT_ID, call_data);
 
         let height = self.genesis.block_height();
-        let reward = dwow_sdk::blockchain::expected_reward((height + 1) as u32);
+        let reward = dwow_sdk::blockchain::expected_reward(height.succ());
         let coinbase = build_coinbase_tx(reward);
 
         let block = build_test_block(
             &self.genesis.chain_state,
-            height + 1,
+            height.succ(),
             vec![contract_tx, coinbase],
         );
 
@@ -461,7 +461,7 @@ fn test_metadata_deploy_lightweight() -> Result<()> {
         println!("Deployed escrow at {:?}", contract_id.to_bytes());
         println!("Block height after deploy: {}", height);
 
-        assert!(height > 0, "block height must increase after deploy");
+        assert!(height.get() > 0, "block height must increase after deploy");
         assert_ne!(contract_id.to_bytes(), [0u8; 32], "contract_id must not be zero");
 
         let decoded = ContractMetadata::from_ix_bytes(&ix_bytes)

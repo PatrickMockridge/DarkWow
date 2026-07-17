@@ -145,6 +145,29 @@ The conversion SHALL use `Type::from_bytes()` which SHALL validate. Reading
 back from persistence SHALL validate through `Type::from_bytes()`. No code
 path SHALL construct a type by directly accessing a `pub` field.
 
+### 2.3 Consensus Numeric Domains Are Nominal
+
+The distinction principle applies to consensus scalars exactly as it applies
+to `pallas::Base` capabilities. A block height and a reward amount are both
+representable as `u64`, but a process holding a height exhibits observably
+different behavior (chain position, maturity, key derivation) from a process
+holding an amount (value conservation, supply accounting). They SHALL NOT
+unify.
+
+- Block heights SHALL be the nominal type `BlockHeight` (inner `u64`)
+  end-to-end: SDK, WASM host interface, contract models, chain store,
+  daemon, and wallet. There SHALL be exactly one height domain — a parallel
+  `u32` height domain SHALL NOT exist.
+- A bare `as` cast on any consensus quantity (height, amount, supply)
+  SHALL NOT pass review. Width conversions at FFI edges (the WASM import
+  ABI is `i64`) SHALL use `try_from` with an explicit error path.
+- The canonical byte encoding of a height SHALL be
+  `BlockHeight::to_le_bytes() -> [u8; 8]`. Every hash preimage, key
+  derivation, and sled key that includes a height SHALL use it.
+- Persistence boundaries lift heights via the validating constructor
+  (`BlockHeight::new` / `from_le_bytes`), per §2.2. No code path SHALL
+  construct a height by directly accessing a `pub` field.
+
 ## 3. Generic Types and Capabilities
 
 A generic parameter `T` abstracts over the behavioral position of a name. This
@@ -334,6 +357,11 @@ if their barbs differ.
 | `AssetId` | `pallas::Base` | `↓denominate` | Public | `derive(auth_parent, user_data, blind)` or well-known constant |
 | `FuncId` | `pallas::Base` | `↓gate` | Public | `from(contract_id, func_code)` |
 | `MerkleNode` | `pallas::Base` | `↓prove-inclusion` | Public | Tree insertion |
+| `BlockHeight` | `u64` | `↓chain-position` | Public | `new(u64)`; `0` = pre-genesis sentinel, `1` = genesis. `from_le_bytes([u8; 8])` at persistence boundaries only. |
+
+`BlockHeight` is the one non-`pallas::Base` primitive in this table: a
+nominal consensus scalar (§2.3). Its nominality guards the numeric domain
+(height ≠ amount ≠ supply), not a cryptographic secret.
 
 ### 8.2 Structural Types
 
@@ -405,6 +433,20 @@ Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable
 
 `ContractId` and `MerkleNode` SHALL additionally derive `Ord, PartialOrd`.
 `Nullifier` SHALL additionally derive `Ord, PartialOrd`.
+
+`BlockHeight` (inner `u64`, §2.3) SHALL derive
+`Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable,
+SerialDecodable` — `Ord` per the `ContractId`/`Nullifier` precedent (map
+keys, comparisons). Its dwow-serial encoding is transparent (the inner
+`u64`), so the wire format of every structure that carries a height is
+unchanged by the newtype. Its serde encoding SHALL be implemented manually
+as a plain JSON number. `BlockHeight` SHALL NOT derive `Hash`, `Default`,
+or implement `From<u64>` — construction is `new(u64)` at domain entry
+points and `from_le_bytes` at persistence boundaries. It SHALL NOT
+implement `Add`/`Sub` operators or `Step`; height arithmetic SHALL use the
+named methods (`succ`, `pred`, `checked_sub`, `saturating_sub`) so intent
+is explicit, and range iteration constructs `BlockHeight::new(h)` from a
+`u64` loop variable.
 
 No type in §8.1 SHALL derive `Hash`, `Default`, or `From<pallas::Base>`.
 The `From<pallas::Base>` impl erases the type distinction — any field element

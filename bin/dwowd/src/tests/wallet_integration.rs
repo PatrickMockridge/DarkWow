@@ -49,6 +49,7 @@ use std::sync::Arc;
 
 use dwow_chain::{ContractCall, Transaction};
 use dwow_core::Result;
+use dwow_sdk::blockchain::BlockHeight;
 use dwow_sdk::crypto::{
     keypair::Network,
     pasta_prelude::{CurveAffine, Group},
@@ -95,7 +96,7 @@ fn test_wallet_integration() {
         )
         .expect("open miner AccountManager");
         let recipient =
-            crate::accounts::MiningRecipient::from_account(&miner_mgr, 1)
+            crate::accounts::MiningRecipient::from_account(&miner_mgr, BlockHeight::new(1))
                 .expect("MiningRecipient");
         let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
 
@@ -105,9 +106,9 @@ fn test_wallet_integration() {
         crate::init_genesis(&har.chain_state, recipient.clone(), magic_bytes)
             .await
             .expect("init_genesis");
-        assert_eq!(har.block_height(), 1);
+        assert_eq!(har.block_height(), BlockHeight::new(1));
 
-        let gen_block = har.chain_state.get_block(1).expect("genesis block 1");
+        let gen_block = har.chain_state.get_block(BlockHeight::new(1)).expect("genesis block 1");
         assert_eq!(gen_block.transactions.len(), 1);
         assert_eq!(gen_block.transactions[0].contract_calls.len(), 1);
         assert!(
@@ -116,16 +117,16 @@ fn test_wallet_integration() {
             "genesis coinbase must target native_token"
         );
 
-        let expected_gen_reward = dwow_sdk::blockchain::expected_reward(1);
-        let sc1 = har.chain_state.supply_chain.get(1)
+        let expected_gen_reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
+        let sc1 = har.chain_state.supply_chain.get(BlockHeight::new(1))
             .expect("supply_chain at height 1");
         assert_eq!(sc1.total_supply, expected_gen_reward);
 
         // ================================================================
         // Phase 3: Height-2 Coinbase Block (Path 1, Production accept_block)
         // ================================================================
-        let height_2: u64 = 2;
-        let reward_2 = dwow_sdk::blockchain::expected_reward(height_2 as u32);
+        let height_2 = BlockHeight::new(2);
+        let reward_2 = dwow_sdk::blockchain::expected_reward(height_2);
 
         let linear_zk =
             crate::registry::model::LinearPowRewardZk::new(har.chain_state.clone())
@@ -133,14 +134,14 @@ fn test_wallet_integration() {
                 .expect("LinearPowRewardZk");
         // Recipient at height 2 — sk_H depends on the height parameter
         let recipient_2 =
-            crate::accounts::MiningRecipient::from_account(&miner_mgr, 2)
+            crate::accounts::MiningRecipient::from_account(&miner_mgr, BlockHeight::new(2))
                 .expect("MiningRecipient height 2");
         let (coinbase_2, _public_inputs, pow_reward_call) =
             crate::registry::model::build_linear_coinbase(
                 recipient_2,
                 reward_2,
                 &linear_zk,
-                height_2 as u32,
+                height_2,
             )
             .await
             .expect("coinbase for height 2");
@@ -199,14 +200,14 @@ fn test_wallet_integration() {
             &block_2,
             &[],
             &vm,
-            1,
+            BlockHeight::new(1),
             u32::MAX,
             None,
         )
         .expect("accept_block height 2");
 
-        assert_eq!(har.block_height(), 2);
-        let b2 = har.chain_state.get_block(2).expect("block 2");
+        assert_eq!(har.block_height(), BlockHeight::new(2));
+        let b2 = har.chain_state.get_block(BlockHeight::new(2)).expect("block 2");
 
         // ================================================================
         // Phase 4: Wallet Construction
@@ -256,7 +257,7 @@ fn test_wallet_integration() {
         // that happen to look like valid AeadEncryptedNote headers).
 
         fn build_coinbase_scan_block(
-            height: u64,
+            height: BlockHeight,
             pow_reward_call_data: Vec<u8>,
         ) -> dwow_chain::Block {
             dwow_chain::Block {
@@ -269,7 +270,7 @@ fn test_wallet_integration() {
                     nonce: 0,
                     height,
                     uncle_merkle_root: [0u8; 32],
-                    total_reward: dwow_sdk::blockchain::expected_reward(height as u32),
+                    total_reward: dwow_sdk::blockchain::expected_reward(height),
                     randomx_key: dwow_chain::Miner::derive_key_from_height(height),
                     coin_merkle_root: [0u8; 32],
                     nullifier_root: [0u8; 32],
@@ -300,18 +301,18 @@ fn test_wallet_integration() {
         // Scan genesis coinbase — production format
         let genesis_call_data = {
             let (_, _, call) = crate::registry::model::build_linear_coinbase(
-                crate::accounts::MiningRecipient::from_account(&miner_mgr, 1)
+                crate::accounts::MiningRecipient::from_account(&miner_mgr, BlockHeight::new(1))
                     .expect("recipient"),
                 expected_gen_reward,
                 &linear_zk,
-                1u32,
+                BlockHeight::new(1),
             )
             .await
             .expect("rebuild genesis coinbase for note");
             call.data
         };
         let gen_scan_block =
-            build_coinbase_scan_block(1, genesis_call_data);
+            build_coinbase_scan_block(BlockHeight::new(1), genesis_call_data);
         let result_1 = dww.scan_block_linear(&mut tree, &gen_scan_block)
             .expect("scan genesis block");
         assert!(
@@ -330,7 +331,7 @@ fn test_wallet_integration() {
 
         // Scan height-2 coinbase — production format
         let b2_scan_block =
-            build_coinbase_scan_block(2, pow_reward_call_data);
+            build_coinbase_scan_block(BlockHeight::new(2), pow_reward_call_data);
         let result_2 = dww.scan_block_linear(&mut tree, &b2_scan_block)
             .expect("scan height-2 block");
         assert!(
@@ -578,7 +579,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 timestamp: 0,
                 target: u32::MAX,
                 nonce: 0,
-                height: 99,
+                height: BlockHeight::new(99),
                 uncle_merkle_root: [0u8; 32],
                 total_reward: 0,
                 randomx_key: [0u8; 32],
@@ -772,7 +773,7 @@ required_barbs = ["Spend","Mine"]
                 timestamp: 0,
                 target: u32::MAX,
                 nonce: 0,
-                height: 98,
+                height: BlockHeight::new(98),
                 uncle_merkle_root: [0u8; 32],
                 total_reward: 0,
                 randomx_key: [0u8; 32],

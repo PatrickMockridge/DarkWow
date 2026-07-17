@@ -241,7 +241,7 @@ impl ExplBlock {
         let coinbase = CoinbaseInfo::new(&block.transactions[block.transactions.len() - 1]).await;
 
         Self {
-            height: block.header.height as u64,
+            height: block.header.height.get(),
             hash: header_display_hash(&block.header),
             version: block.header.version,
             previous_hash: block.header.previous.to_string(),
@@ -368,7 +368,7 @@ impl Explorer {
             };
 
             blocks.push(JsonValue::Object(HashMap::from([
-                ("height".to_string(), JsonValue::Number(header.height as f64)),
+                ("height".to_string(), JsonValue::Number(header.height.get() as f64)),
                 ("size".to_string(), JsonValue::Number(size as f64)),
                 ("n_txs".to_string(), JsonValue::Number(tx_count as f64)),
                 ("timestamp".to_string(), JsonValue::Number(header.timestamp as f64)),

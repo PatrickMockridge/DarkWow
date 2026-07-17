@@ -34,6 +34,7 @@ use std::sync::Arc;
 
 use dwow_chain::{Block, CChainState, CumulativeSupplyEntry, UncleBlock};
 use dwow_core::Result;
+use dwow_sdk::blockchain::BlockHeight;
 
 use dwow_chain::execution::execute_block;
 use dwow_chain::proof_of_token_balance;
@@ -75,7 +76,7 @@ pub fn accept_block(
     block: &Block,
     uncles: &[UncleBlock],
     vm: &Arc<randomx::RandomXVM>,
-    current_height: u64,
+    current_height: BlockHeight,
     target: u32,
     fee_estimator: Option<&std::sync::Arc<dwow_chain::fee_estimator::FeeEstimator>>,
 ) -> Result<()> {
@@ -229,7 +230,7 @@ pub fn accept_block(
 fn read_cumulative_from_overlay(
     chain_state: &dwow_chain::CChainState,
     overlay: &sled_overlay::SledTreeOverlay,
-    height: u64,
+    height: BlockHeight,
 ) -> dwow_core::Result<(Option<sled::Batch>, Option<dwow_chain::CumulativeSupplyEntry>)> {
     use dwow_native_token_contract::{
         NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,

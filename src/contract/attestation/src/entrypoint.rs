@@ -375,7 +375,7 @@ fn create_attestation_v1(cid: ContractId, params: CreateAttestationParamsV1) -> 
     }
 
     // Get current block
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Create attestation
     let attestation = Attestation {
@@ -472,7 +472,7 @@ fn expire_attestation_v1(cid: ContractId, params: ExpireAttestationParamsV1) -> 
     }
 
     // Verify expiry block has passed
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     if let Some(expires_at) = attestation.expires_at {
         if current_block < expires_at {
             msg!("[attestation::expire_attestation_v1] ERROR: Attestation not yet expired");
@@ -519,7 +519,7 @@ fn create_claim_v1(cid: ContractId, params: CreateClaimParamsV1) -> Result<Vec<u
     }
 
     // Check expiry
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     if let Some(expires_at) = attestation.expires_at {
         if current_block >= expires_at {
             msg!("[attestation::create_claim_v1] ERROR: Attestation expired");
@@ -762,7 +762,7 @@ fn consume_claim_v1(cid: ContractId, params: ConsumeClaimParamsV1) -> Result<Vec
     }
 
     // Update claim state to consumed
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     claim.state = ClaimState::Consumed;
     claim.consumed_at = Some(current_block);
     wasm::db::db_set(claims_db, &serialize(&params.claim_id), &serialize(&claim))?;
@@ -1004,7 +1004,7 @@ fn attest_slash_v1(cid: ContractId, params: AttestSlashParamsV1) -> Result<Vec<u
         }))
     }
 
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Verify the slash event is in the past and within the acceptable recency window.
     // Prevents pre-registration of future slash attestations that would block
@@ -1078,7 +1078,7 @@ fn commit_fee_schedule_v1(cid: ContractId, params: CommitFeeScheduleParamsV1) ->
         msg!("[attestation::commit_fee_schedule_v1] Fee schedule already committed — updating");
     }
 
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     let attestation = Attestation {
         version: 1,

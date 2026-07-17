@@ -161,7 +161,7 @@ pub(crate) fn game_room_raise_process_instruction_v1(
     }
 
     // Only update last_action_block (token movement handled by promissory_note child call)
-    account.last_action_block = wasm::util::get_verifying_block_height()? as u64;
+    account.last_action_block = wasm::util::get_verifying_block_height()?.get();
 
     // Update pot
     pot.total += params.amount;
@@ -169,7 +169,7 @@ pub(crate) fn game_room_raise_process_instruction_v1(
         player: caller,
         amount: params.amount,
         bet_type: BetType::Raise,
-        block: wasm::util::get_verifying_block_height()? as u64,
+        block: wasm::util::get_verifying_block_height()?.get(),
     });
     let new_pot_total = pot.total;
 
@@ -178,7 +178,7 @@ pub(crate) fn game_room_raise_process_instruction_v1(
         pot_id,
         caller.xy().expect("pk not identity").0,
         pallas::Base::from(raise_total),
-        pallas::Base::from(wasm::util::get_verifying_block_height()? as u64),
+        pallas::Base::from(wasm::util::get_verifying_block_height()?.get()),
     ]);
     let bet = Bet::new(
         bet_id,
@@ -189,7 +189,7 @@ pub(crate) fn game_room_raise_process_instruction_v1(
         BetType::Raise,
         pot.betting_round,
         params.nonce,
-        wasm::util::get_verifying_block_height()? as u64,
+        wasm::util::get_verifying_block_height()?.get(),
     );
 
     // Store bet

@@ -66,8 +66,8 @@ pub(crate) fn process_contribute_entropy_instruction(
     }
 
     // Check deadline
-    let current_block = wasm::util::get_verifying_block_height()?;
-    if current_block as u64 > room.entropy_deadline {
+    let current_block = wasm::util::get_verifying_block_height()?.get();
+    if current_block > room.entropy_deadline {
         msg!("[Entropy] Error: Entropy contribution deadline passed");
         return Err(GameRoomError::EntropyDeadlinePassed.into())
     }
@@ -121,7 +121,7 @@ pub(crate) fn process_contribute_entropy_instruction(
     account.entropy_contribution = Some(EntropyContribution {
         commitment: params.commitment,
         revealed_nonce: params.reveal,
-        contributed_at: current_block as u64,
+        contributed_at: current_block,
     });
     wasm::db::db_set(accounts_db, &account_key, &dwow_serial::serialize(&account))?;
 

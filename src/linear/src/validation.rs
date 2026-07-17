@@ -32,6 +32,7 @@
 use std::collections::HashSet;
 
 use blake3::Hash as Blake3Hash;
+use dwow_sdk::blockchain::BlockHeight;
 use randomx::RandomXVM;
 
 use super::{
@@ -54,7 +55,7 @@ pub fn check_block_header(
     block: &Block,
     vm: &RandomXVM,
     expected_target: u32,
-    current_height: u64,
+    current_height: BlockHeight,
     previous_hash: Option<&Blake3Hash>,
 ) -> Result<()> {
     let block_hash = block.hash_with_vm(&vm);
@@ -70,9 +71,9 @@ pub fn check_block_header(
 
     // Height continuity: must be exactly current + 1.
     // Checked BEFORE previous hash and target — structural errors fail fast.
-    if block.header.height != current_height + 1 {
+    if block.header.height != current_height.succ() {
         return Err(LinearError::HeightDiscontinuity {
-            expected: current_height + 1,
+            expected: current_height.succ(),
             got: block.header.height,
         });
     }
@@ -120,7 +121,7 @@ pub fn check_block_header(
 /// MEDIAN_BLOCK_COUNT (11) block timestamps.
 pub fn check_block_timestamp(
     timestamp: u64,
-    height: u64,
+    height: BlockHeight,
     recent_timestamps: &[u64],
 ) -> Result<()> {
     const MEDIAN_BLOCK_COUNT: usize = 11;
@@ -128,7 +129,7 @@ pub fn check_block_timestamp(
     // Median of last N blocks (time warp protection).
     // This is the deterministic portion of Bitcoin Core's CheckBlockTimestamp.
     // The non-deterministic future-timestamp check is a P2P policy, not a consensus rule.
-    if height > 1 && recent_timestamps.len() >= MEDIAN_BLOCK_COUNT {
+    if height > BlockHeight::GENESIS && recent_timestamps.len() >= MEDIAN_BLOCK_COUNT {
         let mut sorted: Vec<u64> = recent_timestamps.to_vec();
         sorted.sort_unstable();
         let median = sorted[sorted.len() / 2];
@@ -152,7 +153,7 @@ pub fn check_uncles(
     uncles: &[UncleBlock],
     proofs: &[super::UncleProof],
     expected_uncle_root: &[u8; 32],
-    current_height: u64,
+    current_height: BlockHeight,
     vm: &RandomXVM,
     target: u32,
     existing_uncle_keys: &HashSet<[u8; 32]>,
@@ -189,8 +190,8 @@ pub fn check_uncles(
         }
 
         // Recency: uncle must not be too old
-        let min_allowed = current_height.saturating_sub(super::MAX_UNCLE_DEPTH as u64);
-        if uncle.header.height <= min_allowed {
+        let min_allowed = current_height.get().saturating_sub(super::MAX_UNCLE_DEPTH as u64);
+        if uncle.header.height.get() <= min_allowed {
             return Err(LinearError::UncleTooOld {
                 uncle_height: uncle.header.height,
                 current: current_height,
@@ -373,7 +374,7 @@ mod tests {
                 timestamp: 0,
                 target: u32::MAX,
                 nonce: 0,
-                height: 1,
+                height: BlockHeight::new(1),
                 uncle_merkle_root: [0u8; 32],
                 total_reward: 0,
                 randomx_key: [0u8; 32],
@@ -399,18 +400,18 @@ mod tests {
     #[test]
     fn rejects_height_discontinuity_forward() {
         let mut block = dummy_block();
-        block.header.height = 5; // claim 5 when chain is at 0 — expected 1
+        block.header.height = BlockHeight::new(5); // claim 5 when chain is at 0 — expected 1
         let err = check_block_header(
             &block,
             &test_vm(),
             u32::MAX, // expected_target (matches block.header.target = u32::MAX)
-            0,         // current_height
+            BlockHeight::new(0), // current_height
             None,      // no previous (genesis-like)
         ).unwrap_err();
         match err {
             LinearError::HeightDiscontinuity { expected, got } => {
-                assert_eq!(expected, 1);
-                assert_eq!(got, 5);
+                assert_eq!(expected, BlockHeight::new(1));
+                assert_eq!(got, BlockHeight::new(5));
             }
             e => panic!("wrong error variant: {:?}", e),
         }
@@ -423,13 +424,13 @@ mod tests {
             &block,
             &test_vm(),
             u32::MAX, // expected_target (must match block.header.target = u32::MAX)
-            5,         // current_height=5, so expected=6, but block says 1
+            BlockHeight::new(5), // current_height=5, so expected=6, but block says 1
             None,
         ).unwrap_err();
         match err {
             LinearError::HeightDiscontinuity { expected, got } => {
-                assert_eq!(expected, 6);
-                assert_eq!(got, 1);
+                assert_eq!(expected, BlockHeight::new(6));
+                assert_eq!(got, BlockHeight::new(1));
             }
             e => panic!("wrong error variant: {:?}", e),
         }
@@ -447,14 +448,14 @@ mod tests {
             &block,
             &test_vm(),
             0x0FFF_FFFF, // expected_target (must differ from block.header.target)
-            0,            // current_height=0 (pre-genesis)
+            BlockHeight::new(0), // current_height=0 (pre-genesis)
             None,
         ).unwrap_err();
         match err {
             LinearError::InvalidTarget { declared, expected, height } => {
                 assert_eq!(declared, u32::MAX);
                 assert_eq!(expected, 0x0FFF_FFFF);
-                assert_eq!(height, 1); // block header height
+                assert_eq!(height, BlockHeight::new(1)); // block header height
             }
             e => panic!("wrong error variant: {:?}", e),
         }
@@ -466,7 +467,7 @@ mod tests {
     fn accepts_matching_target_and_pow() {
         let mut block = dummy_block();
         block.header.target = u32::MAX;
-        block.header.height = 2;
+        block.header.height = BlockHeight::new(2);
         // expected_target = u32::MAX matches header target → stage 2 passes
         // hash_u32 <= u32::MAX → stage 1 always passes
         // merkle_root = blake3::hash(&[]) matches 0 transactions → passes
@@ -474,7 +475,7 @@ mod tests {
             &block,
             &test_vm(),
             u32::MAX,    // expected_target matches block.header.target
-            1,            // current_height=1, expected height=2
+            BlockHeight::new(1), // current_height=1, expected height=2
             None,
         );
         assert!(result.is_ok(), "expected Ok, got {:?}", result);

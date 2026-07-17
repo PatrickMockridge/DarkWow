@@ -35,6 +35,7 @@ use std::sync::Arc;
 
 use dwow_chain::{Block, ContractCall, Transaction};
 use dwow_core::Result;
+use dwow_sdk::blockchain::BlockHeight;
 use dwow_sdk::crypto::{
     keypair::Network,
     pasta_prelude::Group,
@@ -48,8 +49,8 @@ use crate::tests::genesis::GenesisHarness;
 /// Build a block header with `target: u32::MAX` (guaranteed PoW pass — first
 /// RandomX nonce wins). Deterministic keys per height.
 fn build_block_header(
-    prev: &Block,
-    height: u64,
+    prev_hash: blake3::Hash,
+    height: BlockHeight,
     reward: u64,
     txs: &[Transaction],
 ) -> dwow_chain::BlockHeader {
@@ -79,7 +80,7 @@ fn build_block_header(
         version: 1,
         previous: prev_hash,
         merkle_root,
-        timestamp: 120 * height, // deterministic per height
+        timestamp: 120 * height.get(), // deterministic per height
         target: u32::MAX,
         nonce: 0,
         height,
@@ -100,7 +101,7 @@ fn build_block_header(
 fn mine_block(
     har: &GenesisHarness,
     recipient: &crate::accounts::MiningRecipient,
-    height: u64,
+    height: BlockHeight,
     txs: Vec<Transaction>,
 ) -> Result<Block> {
     let prev = har.chain_state.get_latest_block()
@@ -157,7 +158,7 @@ fn mine_block(
         witness: vec![],
     });
 
-    let header = build_block_header(&prev, height, reward, &all_txs);
+    let header = build_block_header(prev_hash, height, reward, &all_txs);
     let block = Block { header, transactions: all_txs };
 
     let rx_flags = randomx::RandomXFlags::get_recommended_flags()
@@ -170,7 +171,10 @@ fn mine_block(
     );
 
     crate::block_acceptor::accept_block(
-        &har.chain_state, &block, &[], &vm, height - 1, u32::MAX, None,
+        &har.chain_state, &block, &[], &vm,
+        height.pred().expect("mine_block is only called for post-genesis heights (h >= 2); \
+             the old `height - 1` relied on the same guarantee"),
+        u32::MAX, None,
     )?;
     Ok(block)
 }
@@ -207,34 +211,34 @@ fn test_fee_collect_determinism() {
         let mut blocks: Vec<Block> = Vec::new();
 
         // ── Genesis (height 1) ───────────────────────────────────
-        let recipient_1 = crate::accounts::MiningRecipient::from_account(&miner_mgr, 1)
+        let recipient_1 = crate::accounts::MiningRecipient::from_account(&miner_mgr, BlockHeight::new(1))
             .expect("MiningRecipient height 1");
         crate::init_genesis(&har.chain_state, recipient_1.clone(), magic_bytes)
             .await.expect("init_genesis");
-        assert_eq!(har.block_height(), 1);
-        blocks.push(har.chain_state.get_block(1).expect("block 1"));
+        assert_eq!(har.block_height(), BlockHeight::new(1));
+        blocks.push(har.chain_state.get_block(BlockHeight::new(1)).expect("block 1"));
 
         // ── Mine heights 2..=101 for COINBASE_MATURITY ──────────
         let mut recipient_cur = recipient_1.clone();
         for h in 2..=101 {
-            recipient_cur = crate::accounts::MiningRecipient::from_account(&miner_mgr, h as u32)
+            recipient_cur = crate::accounts::MiningRecipient::from_account(&miner_mgr, BlockHeight::new(h))
                 .expect(&format!("MiningRecipient height {}", h));
-            let block = mine_block(&har, &recipient_cur, h, vec![])
+            let block = mine_block(&har, &recipient_cur, BlockHeight::new(h), vec![])
                 .expect(&format!("mine_block height {}", h));
-            assert_eq!(har.block_height(), h);
+            assert_eq!(har.block_height(), BlockHeight::new(h));
             blocks.push(block);
         }
 
         // Verify supply after maturity runway
         let total_supply_after_101: u64 = (1..=101u64)
-            .map(|h| dwow_sdk::blockchain::expected_reward(h))
+            .map(|h| dwow_sdk::blockchain::expected_reward(BlockHeight::new(h)))
             .sum();
-        let sc_entry = har.chain_state.supply_chain.get(101)
+        let sc_entry = har.chain_state.supply_chain.get(BlockHeight::new(101))
             .expect("supply_chain at 101");
         assert_eq!(sc_entry.total_supply, total_supply_after_101);
 
         // ── Build FeeV1 tx ───────────────────────────────────────
-        let recipient_102 = crate::accounts::MiningRecipient::from_account(&miner_mgr, 102)
+        let recipient_102 = crate::accounts::MiningRecipient::from_account(&miner_mgr, BlockHeight::new(102))
             .expect("MiningRecipient height 102");
         let fee_amount = 42_000_000u64;
 
@@ -270,12 +274,12 @@ fn test_fee_collect_determinism() {
             let zk = crate::registry::model::LinearPowRewardZk::new(har.chain_state.clone())
                 .await.expect("LinearPowRewardZk");
             if let Some(fee_collect_tx) = crate::registry::model::build_fee_collect_tx(
-                &recipient_102, &block102_txs, 102, &zk,
+                &recipient_102, &block102_txs, BlockHeight::new(102), &zk,
             ).expect("build_fee_collect_tx") {
                 block102_txs.push(fee_collect_tx);
             }
         }
-        let block102 = mine_block(&har, &recipient_102, 102, block102_txs)
+        let block102 = mine_block(&har, &recipient_102, BlockHeight::new(102), block102_txs)
             .expect("mine_block 102");
 
         // ── Assertions ───────────────────────────────────────────
@@ -287,10 +291,10 @@ fn test_fee_collect_determinism() {
         assert!(has_0x06, "final tx must be FeeCollectV1 (0x06)");
 
         // Supply unchanged by fee collection (fees redistribute, not mint)
-        let sc_102 = har.chain_state.supply_chain.get(102)
+        let sc_102 = har.chain_state.supply_chain.get(BlockHeight::new(102))
             .expect("supply_chain at 102");
         let total_supply_102: u64 = (1..=102u64)
-            .map(|h| dwow_sdk::blockchain::expected_reward(h))
+            .map(|h| dwow_sdk::blockchain::expected_reward(BlockHeight::new(h)))
             .sum();
         assert_eq!(sc_102.total_supply, total_supply_102,
             "TOTAL_SUPPLY unchanged — fees redistribute, not mint");
@@ -303,15 +307,15 @@ fn test_fee_collect_determinism() {
             &keys_path, Network::Testnet, "node0",
         ).expect("AccountManager2");
         let magic2 = [0xDA, 0x57, 0x01, 0x57];
-        let recipient2 = crate::accounts::MiningRecipient::from_account(&miner_mgr2, 1)
+        let recipient2 = crate::accounts::MiningRecipient::from_account(&miner_mgr2, BlockHeight::new(1))
             .expect("MiningRecipient2 height 1");
         crate::init_genesis(&har2.chain_state, recipient2.clone(), magic2)
             .await.expect("init_genesis2");
-        assert_eq!(har2.block_height(), 1);
+        assert_eq!(har2.block_height(), BlockHeight::new(1));
 
         // Re-exec blocks 2..=102 identically
         for h in 2..=102 {
-            let rec = crate::accounts::MiningRecipient::from_account(&miner_mgr2, h as u32)
+            let rec = crate::accounts::MiningRecipient::from_account(&miner_mgr2, BlockHeight::new(h))
                 .expect(&format!("MiningRecipient2 height {}", h));
             let txs = if h == 102 {
                 // Reconstruct the same block102 txs (fee + fee_collect)
@@ -331,7 +335,7 @@ fn test_fee_collect_determinism() {
                 };
                 let mut tx102 = vec![ft.clone()];
                 if let Some(fc) = crate::registry::model::build_fee_collect_tx(
-                    &rec, &tx102, h as u32, &zk,
+                    &rec, &tx102, BlockHeight::new(h), &zk,
                 ).expect("build_fee_collect_tx re-exec") {
                     tx102.push(fc);
                 }
@@ -339,11 +343,11 @@ fn test_fee_collect_determinism() {
             } else {
                 vec![]
             };
-            let block_re = mine_block(&har2, &rec, h, txs)
+            let block_re = mine_block(&har2, &rec, BlockHeight::new(h), txs)
                 .expect(&format!("re-exec mine_block {}", h));
             let original_hash = har.chain_state
                 .hash_block_with_cached_vm(
-                    &har.chain_state.get_block(h).expect(&format!("orig block {}", h))
+                    &har.chain_state.get_block(BlockHeight::new(h)).expect(&format!("orig block {}", h))
                 );
             let rebuilt_hash = har2.chain_state.hash_block_with_cached_vm(&block_re);
             assert_eq!(original_hash, rebuilt_hash,
@@ -351,15 +355,15 @@ fn test_fee_collect_determinism() {
         }
 
         // Supply identical after re-exec
-        let sc2_102 = har2.chain_state.supply_chain.get(102)
+        let sc2_102 = har2.chain_state.supply_chain.get(BlockHeight::new(102))
             .expect("supply_chain2 at 102");
         assert_eq!(sc_102.total_supply, sc2_102.total_supply,
             "re-exec total supply must match");
 
         // ── Negative: empty mempool → no FeeCollect ──────────────
-        let recipient_103 = crate::accounts::MiningRecipient::from_account(&miner_mgr, 103)
+        let recipient_103 = crate::accounts::MiningRecipient::from_account(&miner_mgr, BlockHeight::new(103))
             .expect("MiningRecipient 103");
-        let block103_no_fees = mine_block(&har, &recipient_103, 103, vec![])
+        let block103_no_fees = mine_block(&har, &recipient_103, BlockHeight::new(103), vec![])
             .expect("mine_block 103");
         let has_no_0x06 = !block103_no_fees.transactions.iter()
             .any(|tx| tx.contract_calls.iter()

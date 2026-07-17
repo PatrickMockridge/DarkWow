@@ -326,7 +326,7 @@ fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree
     ]);
     validate_child_value_commit(&child_call.data, plan.price, value_blind)?;
 
-    let current_block = wasm::util::get_verifying_block_height()?;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Create subscription
     let subscription = Subscription {
@@ -334,19 +334,19 @@ fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree
         id: params.commitment,
         subscriber_pubkey: params.subscriber_pubkey,
         plan_id: params.plan_id,
-        lock_until_block: current_block as u64 + plan.duration_blocks as u64,
+        lock_until_block: current_block + plan.duration_blocks as u64,
         deposit: plan.price,
         token_id: plan.token_id,
         value_commit: params.value_commit,
         state: SubscriptionState::Active,
         spent_nullifier: pallas::Base::zero(),
-        created_at: current_block as u64,
+        created_at: current_block,
         dao_escrow_bulla: params.dao_escrow_bulla,
         dao_membership_note: params.dao_membership_note,
         uses_allowed: 0,
         rate_period: 0,
         period_uses: 0,
-        last_access_block: current_block as u64,
+        last_access_block: current_block,
         uses_remaining: 0,
         instance_seed: params.instance_seed,
     };
@@ -498,7 +498,7 @@ fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::Da
     ]);
     validate_child_value_commit(&child_call.data, plan.price, value_blind)?;
 
-    let current_block = wasm::util::get_verifying_block_height()?;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Create new subscription with renewed lock_until_block
     let new_subscription = Subscription {
@@ -512,13 +512,13 @@ fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::Da
         value_commit: params.value_commit,
         state: SubscriptionState::Active,
         spent_nullifier: pallas::Base::zero(),
-        created_at: current_block as u64,
+        created_at: current_block,
         dao_escrow_bulla: old_subscription.dao_escrow_bulla,
         dao_membership_note: old_subscription.dao_membership_note,
         uses_allowed: old_subscription.uses_allowed,
         rate_period: old_subscription.rate_period,
         period_uses: old_subscription.period_uses,
-        last_access_block: current_block as u64,
+        last_access_block: current_block,
         uses_remaining: old_subscription.uses_remaining,
         instance_seed: old_subscription.instance_seed,
     };
@@ -568,7 +568,7 @@ fn update_usage_v1(cid: ContractId, params: UpdateUsageParamsV1) -> Result<Vec<u
     };
 
     // Verify subscription hasn't expired (lock_until_block check)
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     if current_block >= subscription.lock_until_block {
         msg!("[subscription::update_usage_v1] ERROR: Subscription expired at block {}", subscription.lock_until_block);
         return Err(ContractError::Custom(6).into())

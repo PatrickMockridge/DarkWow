@@ -131,7 +131,7 @@ pub fn insurance_market_underwrite_process_instruction_v1(
         msg!("[insurance_market::underwrite] Updating existing underwriter");
     }
 
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     let value_blind = poseidon_hash([
         pallas::Base::from(params.bond_amount),

@@ -74,17 +74,17 @@ pub fn baccarat_draw_cards_process_instruction_v1(
     let current_block = wasm::util::get_verifying_block_height()?;
 
     // Verify settle block has been reached
-    if (current_block as u64) < bet.settle_block {
+    if current_block.get() < bet.settle_block {
         return Err(BaccaratError::BetTimeoutNotReached.into())
     }
 
     // Collect block hashes for entropy using confirmation_depth
     // We use get_block_hash for cumulative PoW entropy
-    let confirmation_depth = bet.confirmation_depth as usize;
+    let confirmation_depth = u64::from(bet.confirmation_depth);
     let mut block_hashes = vec![];
 
     for i in 0..confirmation_depth {
-        let block_height = current_block.saturating_sub(i as u32);
+        let block_height = dwow_sdk::blockchain::BlockHeight::new(current_block.get().saturating_sub(i));
         let block_hash = wasm::util::get_block_hash(block_height)?;
         block_hashes.push(block_hash);
     }

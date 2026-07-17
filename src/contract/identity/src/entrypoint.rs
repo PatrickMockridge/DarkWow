@@ -310,7 +310,7 @@ fn process_initialize_instruction(
 
     let update = InitializeUpdateV1 {
         version: params.version,
-        created_at: wasm::util::get_verifying_block_height()? as u64,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
     };
 
     msg!("[identity::initialize] Identity contract initialized successfully");
@@ -476,7 +476,7 @@ fn process_create_claim_instruction(
     let update = CreateClaimUpdateV1 {
         nullifier: params.nullifier,
         claim_type: params.claim_type,
-        created_at: wasm::util::get_verifying_block_height()? as u64,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
     };
 
     msg!("[identity::create_claim] Claim created");
@@ -519,7 +519,7 @@ fn process_create_claim_l1_instruction(
     let update = CreateClaimUpdateV1 {
         nullifier: params.nullifier,
         claim_type: params.claim_type,
-        created_at: wasm::util::get_verifying_block_height()? as u64,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
     };
 
     msg!(
@@ -600,7 +600,7 @@ fn process_create_claim_l1_v2_instruction(
     let update = CreateClaimUpdateV1 {
         nullifier: params.nullifier,
         claim_type: params.claim_type,
-        created_at: wasm::util::get_verifying_block_height()? as u64,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
     };
 
     msg!(
@@ -635,7 +635,7 @@ fn process_create_claim_multi_instruction(
     let update = CreateClaimUpdateV1 {
         nullifier: params.nullifier,
         claim_type: params.claim_type,
-        created_at: wasm::util::get_verifying_block_height()? as u64,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
     };
 
     msg!("[identity::create_claim_multi] Multi-credential claim created");
@@ -667,7 +667,7 @@ fn process_create_claim_ratio_instruction(
     let update = CreateClaimUpdateV1 {
         nullifier: params.nullifier,
         claim_type: params.claim_type,
-        created_at: wasm::util::get_verifying_block_height()? as u64,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
     };
 
     msg!("[identity::create_claim_ratio] Ratio claim created");
@@ -984,7 +984,7 @@ fn process_register_issuer_instruction(
         issuer_id: params.issuer_pub,
         name: params.name.clone(),
         authorized_schemas: params.authorized_schemas.clone(),
-        registered_at: wasm::util::get_verifying_block_height()? as u64,
+        registered_at: wasm::util::get_verifying_block_height()?.get(),
     };
 
     msg!("[identity::register_issuer] Issuer registration prepared");
@@ -1036,7 +1036,7 @@ fn process_update_reputation_instruction(
         .ok_or(IdentityError::IssuerNotTrusted)?;
 
     let reputation_id = compute_reputation_id(&params.issuer_pub, &params.relayer_pub);
-    let current_height = wasm::util::get_verifying_block_height()? as u64;
+    let current_height = wasm::util::get_verifying_block_height()?.get();
 
     let update = UpdateReputationUpdateV1 {
         reputation_id,

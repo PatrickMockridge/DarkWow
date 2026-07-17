@@ -356,7 +356,7 @@ fn commit_spin_process_instruction_v1(
     }
 
     // Calculate settle block
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     let settle_block = current_block + params.confirmation_depth as u64 + 1;
 
     let secret_nonce_commit = poseidon_hash([params.secret_nonce]);
@@ -675,7 +675,7 @@ fn cancel_spin_process_instruction_v1(
     }
 
     // Check timeout (current block past settle_block)
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     if current_block < spin.settle_block {
         return Err(SlotError::InvalidSpinState.into())
     }

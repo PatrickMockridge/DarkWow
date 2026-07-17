@@ -110,7 +110,7 @@ pub fn lottery_claim_prize_process_instruction_v1(
     }
 
     // Verify claim period hasn't expired
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     if current_block > lottery.claim_deadline {
         return Err(LotteryError::ClaimPeriodExpired.into())
     }

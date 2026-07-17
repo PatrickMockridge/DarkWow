@@ -47,6 +47,7 @@ use blake3::Hash as Blake3Hash;
 use randomx::{RandomXCache, RandomXFlags, RandomXVM};
 use sled::transaction::Transactional;
 use tracing::info;
+use dwow_sdk::blockchain::BlockHeight;
 use dwow_sdk::crypto::{pedersen_commitment_u64, Blind};
 use dwow_sdk::pasta::pallas;
 use dwow_sdk::pasta::group::{ff::FromUniformBytes, Group, GroupEncoding};
@@ -92,22 +93,22 @@ pub struct CChainState {
     cache_pool: Mutex<HashMap<[u8; 32], RandomXCache>>,
     /// Coin commitments → block height (for maturity tracking).
     /// Typed CoinCommitment per Phase X — BTreeMap (CoinCommitment has Ord).
-    coin_set: Mutex<BTreeMap<CoinCommitment, u64>>,
+    coin_set: Mutex<BTreeMap<CoinCommitment, BlockHeight>>,
     /// Uncle coin Pedersen commitments → block height.
     /// C_uncle_i = u_i·G_v + r_i·G_r with deterministic blinds per
     /// uncle_merkle.md §Coinbase Split. In-memory only (no sled persistence
     /// in Phase 1). Uncle coins are deterministically recomputable from the
     /// canonical chain via r_i = blake3(uncle_hash ‖ u_i ‖ H) mod p.
-    uncle_coin_set: Mutex<HashMap<[u8; 32], u64>>,
+    uncle_coin_set: Mutex<HashMap<[u8; 32], BlockHeight>>,
     /// Spent nullifiers → block height (double-spend prevention, height-tracked for pruning).
     /// Typed BTreeSet<Nullifier> per Phase 1 — Nullifier has Ord for SMT key ordering.
-    nullifier_set: Mutex<BTreeMap<Nullifier, u64>>,
+    nullifier_set: Mutex<BTreeMap<Nullifier, BlockHeight>>,
     /// Competing blocks at the same height — potential uncles for fork resolution.
     /// When two miners produce blocks at height N simultaneously, the first
     /// received becomes canonical and the second is stored here. The next block
     /// mined (N+1) can include these as uncles with partial rewards.
     /// Key: height, Value: competing block at that height.
-    competing_blocks: Mutex<HashMap<u64, Vec<Block>>>,
+    competing_blocks: Mutex<BTreeMap<BlockHeight, Vec<Block>>>,
     /// Dedup set for competing blocks — prevents storing the same block twice (H7).
     competing_seen: Mutex<HashSet<Blake3Hash>>,
     /// Serializes connect_block calls — prevents concurrent block application
@@ -135,7 +136,7 @@ impl CChainState {
                 consensus.accumulated_work.store(work, Ordering::SeqCst);
             }
         }
-        let height = store.get_height().unwrap_or(0);
+        let height = store.get_height().unwrap_or(BlockHeight::new(0));
 
         // Create initial VM with zero key (wrapped in Mutex for thread safety)
         let flags = RandomXFlags::get_recommended_flags() & !RandomXFlags::JIT;
@@ -160,7 +161,7 @@ impl CChainState {
                         coin_bytes.copy_from_slice(&k);
                         height_bytes.copy_from_slice(&v);
                         if let Ok(coin) = CoinCommitment::from_bytes(coin_bytes) {
-                            map.insert(coin, u64::from_le_bytes(height_bytes));
+                            map.insert(coin, BlockHeight::from_le_bytes(height_bytes));
                         }
                     }
                 }
@@ -173,7 +174,7 @@ impl CChainState {
         // JSON-serialized UncleBlock values (not u64 heights) — the v.len()==8
         // check always filtered out all entries, so this was always empty.
         // Uncle coins are deterministically recomputable from chain data.
-        let uncle_coin_set: Mutex<HashMap<[u8; 32], u64>> =
+        let uncle_coin_set: Mutex<HashMap<[u8; 32], BlockHeight>> =
             Mutex::new(HashMap::new());
         let nullifier_set = {
             let mut map = BTreeMap::new();
@@ -188,7 +189,7 @@ impl CChainState {
                             // be removed. Height 0 means "do not prune" — pruning
                             // skips entries with h < prune_h, and since prune_h is
                             // always > 0 after genesis, these survive.
-                            map.insert(nf, 0u64);
+                            map.insert(nf, BlockHeight::new(0));
                         }
                     }
                 }
@@ -204,13 +205,13 @@ impl CChainState {
             supply_chain,
             consensus: Mutex::new(consensus),
             finality_config,
-            height: AtomicU64::new(height),
+            height: AtomicU64::new(height.get()),
             vm_cache: Mutex::new(vm_cache),
             cache_pool: Mutex::new(HashMap::new()),
             coin_set,
             uncle_coin_set,
             nullifier_set,
-            competing_blocks: Mutex::new(HashMap::new()),
+            competing_blocks: Mutex::new(BTreeMap::new()),
             competing_seen: Mutex::new(HashSet::new()),
             connect_lock: Mutex::new(()),
         }))
@@ -219,24 +220,24 @@ impl CChainState {
     // --- Height ---
 
     /// Current chain height (O(1) atomic read).
-    pub fn get_height(&self) -> u64 {
-        self.height.load(Ordering::SeqCst)
+    pub fn get_height(&self) -> BlockHeight {
+        BlockHeight::new(self.height.load(Ordering::SeqCst))
     }
 
-    fn set_height(&self, h: u64) {
-        self.height.store(h, Ordering::SeqCst);
+    fn set_height(&self, h: BlockHeight) {
+        self.height.store(h.get(), Ordering::SeqCst);
     }
 
     // --- Block access ---
 
-    pub fn get_block(&self, height: u64) -> Result<Block> {
+    pub fn get_block(&self, height: BlockHeight) -> Result<Block> {
         self.store.get_block(height).map_err(|e| LinearError::StorageError(e.to_string()))
     }
 
     pub fn get_latest_block(&self) -> Result<Block> {
         let h = self.get_height();
-        if h == 0 {
-            return Err(LinearError::BlockNotFound(0));
+        if h.get() == 0 {
+            return Err(LinearError::BlockNotFound(h));
         }
         self.get_block(h)
     }
@@ -324,7 +325,7 @@ impl CChainState {
         self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).contains_key(coin)
     }
 
-    pub fn is_coin_mature(&self, coin: &CoinCommitment, current_height: u64) -> bool {
+    pub fn is_coin_mature(&self, coin: &CoinCommitment, current_height: BlockHeight) -> bool {
         match self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).get(coin) {
             Some(&created_at) => current_height.saturating_sub(created_at) >= COINBASE_MATURITY,
             None => false,
@@ -336,7 +337,7 @@ impl CChainState {
     }
 
     /// Return the block height at which this nullifier was created, if present.
-    pub fn nullifier_height(&self, nullifier: &Nullifier) -> Option<u64> {
+    pub fn nullifier_height(&self, nullifier: &Nullifier) -> Option<BlockHeight> {
         self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).get(nullifier).copied()
     }
 
@@ -346,7 +347,7 @@ impl CChainState {
     /// are removed from storage and returned. The caller includes them in
     /// the next block's `uncle_merkle_root` and passes them to
     /// `apply_block_with_uncles`.
-    pub fn take_competing_blocks(&self, height: u64) -> Vec<Block> {
+    pub fn take_competing_blocks(&self, height: BlockHeight) -> Vec<Block> {
         let blocks = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner()).remove(&height).unwrap_or_default();
         // Clean dedup set for consumed blocks (H7 follow-up)
         if !blocks.is_empty() {
@@ -375,7 +376,7 @@ impl CChainState {
     /// blocks were destructively removed by `take_competing_blocks()` and
     /// must be restored so the competing miner doesn't lose their uncle
     /// reward opportunity.
-    pub fn put_competing_blocks(&self, height: u64, blocks: Vec<Block>) {
+    pub fn put_competing_blocks(&self, height: BlockHeight, blocks: Vec<Block>) {
         if blocks.is_empty() {
             return;
         }
@@ -390,12 +391,12 @@ impl CChainState {
 
     /// Clean up competing block entries older than MAX_UNCLE_DEPTH (H11).
     /// Called after a canonical block is committed to prevent unbounded growth.
-    fn prune_competing(&self, current_height: u64) {
+    fn prune_competing(&self, current_height: BlockHeight) {
         let max_depth = 6u64; // MAX_UNCLE_DEPTH
-        if current_height <= max_depth {
+        if current_height.get() <= max_depth {
             return;
         }
-        let cutoff = current_height - max_depth;
+        let cutoff = BlockHeight::new(current_height.get() - max_depth);
         let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
         let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
         competing.retain(|&height, blocks| {
@@ -441,9 +442,9 @@ impl CChainState {
         // acquiring any more locks or doing expensive validation. Blocks more
         // than 1 ahead of our tip cannot connect and will fail HeightDiscontinuity.
         // Competing blocks (same height) and next-block (height+1) proceed.
-        if block_height > current_height + 1 {
+        if block_height > current_height.succ() {
             return Err(LinearError::HeightDiscontinuity {
-                expected: current_height + 1,
+                expected: current_height.succ(),
                 got: block_height,
             });
         }
@@ -494,7 +495,7 @@ impl CChainState {
             // matches the canonical parent at current_height - 1.
             // Without this check, unrelated blocks can pollute the
             // competing store.
-            if current_height > 0 {
+            if current_height.get() > 0 {
                 let parent = self.get_block(current_height)?;
                 let parent_vm = self.get_vm(parent.header.randomx_key);
                 let parent_guard = parent_vm.lock().unwrap_or_else(|e| e.into_inner());
@@ -511,10 +512,10 @@ impl CChainState {
             }
             // H6 fix: build recent timestamps for competing-block validation.
             let recent_ts: Vec<u64> = {
-                let start = if block_height > 11 { block_height - 11 } else { 1 };
+                let start = if block_height.get() > 11 { block_height.get() - 11 } else { 1 };
                 let mut ts = Vec::new();
-                for h in start..block_height {
-                    if let Ok(b) = self.get_block(h) {
+                for h in start..block_height.get() {
+                    if let Ok(b) = self.get_block(BlockHeight::new(h)) {
                         ts.push(b.header.timestamp);
                     }
                 }
@@ -559,7 +560,7 @@ impl CChainState {
         // uncle, this is an uncle chain extension — store as competing block
         // at the next height. The uncle chain may grow longer than the
         // canonical chain, triggering reorganization.
-        let tip_hash = if current_height > 0 {
+        let tip_hash = if current_height.get() > 0 {
             let prev = self.get_block(current_height)?;
             let prev_vm = self.get_vm(prev.header.randomx_key);
             let prev_guard = prev_vm.lock().unwrap_or_else(|e| e.into_inner());
@@ -616,10 +617,10 @@ impl CChainState {
                 }
                 // H6 fix: build recent timestamps for uncle chain extension validation.
                 let recent_ts: Vec<u64> = {
-                    let start = if block_height > 11 { block_height - 11 } else { 1 };
+                    let start = if block_height.get() > 11 { block_height.get() - 11 } else { 1 };
                     let mut ts = Vec::new();
-                    for h in start..block_height {
-                        if let Ok(b) = self.get_block(h) {
+                    for h in start..block_height.get() {
+                        if let Ok(b) = self.get_block(BlockHeight::new(h)) {
                             ts.push(b.header.timestamp);
                         }
                     }
@@ -677,9 +678,9 @@ impl CChainState {
         // CRITICAL-4: Timestamp validation (time warp protection + future limit)
         {
             let mut recent_ts: Vec<u64> = Vec::with_capacity(11);
-            let start = if block_height > 11 { block_height - 11 } else { 1 };
-            for h in start..block_height {
-                if let Ok(b) = self.store.get_block(h) {
+            let start = if block_height.get() > 11 { block_height.get() - 11 } else { 1 };
+            for h in start..block_height.get() {
+                if let Ok(b) = self.store.get_block(BlockHeight::new(h)) {
                     recent_ts.push(b.header.timestamp);
                 }
             }
@@ -738,7 +739,7 @@ impl CChainState {
         // r_i = blake3(uncle_hash ‖ u_i ‖ H) → pallas::Scalar
         // Computed before the closure so uncle coin batch is included
         // in the atomic sled transaction (uncle_merkle.md §Coinbase Split).
-        let uncle_coin_entries: Vec<([u8; 32], u64)> = {
+        let uncle_coin_entries: Vec<([u8; 32], BlockHeight)> = {
             let mut entries = Vec::new();
             for uncle in uncles.iter().filter(|u| u.pin_accepted && u.pin_reward > 0) {
                 let r_bytes: [u8; 64] = {
@@ -850,7 +851,7 @@ impl CChainState {
             // produced the contracts and supply_chain batches. Accepting None here silently
             // diverges from mining nodes (Defect 3 regression). Genesis (height 1) is
             // exempt — its cumulative supply starts at identity.
-            if block.header.height > 1 && (contracts_batch.is_none() || supply_chain_batch.is_none()) {
+            if block.header.height > BlockHeight::GENESIS && (contracts_batch.is_none() || supply_chain_batch.is_none()) {
                 return Err(LinearError::StorageError(format!(
                     "connect_block: block {} rejected — {} batch is None (contracts={}, supply={}). \
                      WASM execution MUST precede connect_block for non-genesis blocks.",
@@ -1001,8 +1002,8 @@ impl CChainState {
         // Entries older than COINBASE_MATURITY are pruned — sled is the
         // authoritative source for pre-existing nullifiers on restart.
         const COINBASE_MATURITY: u64 = 100;
-        if height > COINBASE_MATURITY {
-            let prune_h = height - COINBASE_MATURITY;
+        if height.get() > COINBASE_MATURITY {
+            let prune_h = BlockHeight::new(height.get() - COINBASE_MATURITY);
             self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, h| *h >= prune_h);
             // Prune nullifiers older than maturity (sled is authoritative source)
             self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, h| *h >= prune_h);
@@ -1099,21 +1100,22 @@ impl CChainState {
         // Walk uncle chains through competing blocks by parent→child links.
         // Instead of assuming sequential heights, find chains where each
         // block's previous_hash points to the parent block.
-        let mut best_chain: Option<HashMap<u64, Block>> = None;
-        let mut best_max: u64 = 0;
+        let mut best_chain: Option<BTreeMap<BlockHeight, Block>> = None;
+        let mut best_max: BlockHeight = BlockHeight::new(0);
 
         // For each competing block at a height <= current_height + 1,
         // try to build a chain upward by matching previous_hash to parent.
-        let heights: Vec<u64> = competing.keys().copied().collect();
+        let heights: Vec<BlockHeight> = competing.keys().copied().collect();
         for start_h in heights {
-            if start_h > current_height + 1 {
+            if start_h > current_height.succ() {
                 continue;
             }
             for start_block in competing.get(&start_h).into_iter().flatten() {
-                let mut chain: HashMap<u64, Block> = HashMap::new();
+                let mut chain: BTreeMap<BlockHeight, Block> = BTreeMap::new();
 
                 // Build downward: use canonical blocks below start_h
-                for h in 1..start_h {
+                for h in 1..start_h.get() {
+                    let h = BlockHeight::new(h);
                     if let Ok(block) = self.get_block(h) {
                         chain.insert(h, block);
                     }
@@ -1126,7 +1128,7 @@ impl CChainState {
                     let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
                     start_block.hash_with_vm(&*guard)
                 };
-                let mut h = start_h + 1;
+                let mut h = start_h.succ();
 
                 while let Some(blocks) = competing.get(&h) {
                     let child = blocks.iter().find(|b| b.header.previous == prev_hash);
@@ -1135,20 +1137,21 @@ impl CChainState {
                         let child_vm = self.get_vm(child_block.header.randomx_key);
                         let child_guard = child_vm.lock().unwrap_or_else(|e| e.into_inner());
                         prev_hash = child_block.hash_with_vm(&*child_guard);
-                        h += 1;
+                        h = h.succ();
                     } else {
                         break;
                     }
                 }
 
-                let chain_max = chain.keys().max().copied().unwrap_or(0);
+                let chain_max = chain.keys().max().copied().unwrap_or(BlockHeight::new(0));
                 if chain_max > current_height && chain_max > best_max {
                     // Validate chain continuity: every block's previous_hash
                     // must match the hash of the block at height-1
                     let mut valid = true;
-                    for ch in (start_h + 1)..=chain_max {
+                    for ch in start_h.succ().get()..=chain_max.get() {
+                        let ch = BlockHeight::new(ch);
                         if let (Some(block), Some(parent)) =
-                            (chain.get(&ch), chain.get(&(ch - 1)))
+                            (chain.get(&ch), chain.get(&ch.pred().expect("height >= 1")))
                         {
                             let bvm = self.get_vm(parent.header.randomx_key);
                             let bguard = bvm.lock().unwrap_or_else(|e| e.into_inner());
@@ -1200,16 +1203,17 @@ impl CChainState {
     /// the `reorg-enabled` feature flag until the missing implementations are
     /// completed. See doc/src/arch/consensus/hazid-report.md §H-C1.
     #[cfg(feature = "reorg-enabled")]
-    pub fn reorganize_to(&self, peer_blocks: &HashMap<u64, Block>) -> Result<usize> {
+    pub fn reorganize_to(&self, peer_blocks: &BTreeMap<BlockHeight, Block>) -> Result<usize> {
         let _lock = self.connect_lock.lock().unwrap_or_else(|e| e.into_inner());
         let current_height = self.get_height();
 
         // Find peer's max height
-        let peer_max = peer_blocks.keys().max().copied().unwrap_or(0);
+        let peer_max = peer_blocks.keys().max().copied().unwrap_or(BlockHeight::new(0));
 
         // Find common ancestor (highest block both chains share)
-        let mut ancestor: u64 = 0;
-        for h in 1..=current_height {
+        let mut ancestor: BlockHeight = BlockHeight::new(0);
+        for h in 1..=current_height.get() {
+            let h = BlockHeight::new(h);
             if let Ok(our_block) = self.get_block(h) {
                 if let Some(peer_block) = peer_blocks.get(&h) {
                     let vm = self.get_vm(our_block.header.randomx_key);
@@ -1235,8 +1239,8 @@ impl CChainState {
         // NOT total work vs partial work. Both chains share genesis→ancestor.
         {
             let mut peer_work: u64 = 0;
-            for h in (ancestor + 1)..=peer_max {
-                if let Some(block) = peer_blocks.get(&h) {
+            for h in ancestor.succ().get()..=peer_max.get() {
+                if let Some(block) = peer_blocks.get(&BlockHeight::new(h)) {
                     let target = block.header.target;
                     if target > 0 {
                         peer_work = peer_work.saturating_add((u32::MAX as u64) / (target as u64));
@@ -1245,8 +1249,8 @@ impl CChainState {
             }
             // Compute our incremental work from ancestor+1 to current_height
             let mut our_work_delta: u64 = 0;
-            for h in (ancestor + 1)..=current_height {
-                if let Ok(block) = self.get_block(h) {
+            for h in ancestor.succ().get()..=current_height.get() {
+                if let Ok(block) = self.get_block(BlockHeight::new(h)) {
                     let target = block.header.target;
                     if target > 0 {
                         our_work_delta = our_work_delta.saturating_add((u32::MAX as u64) / (target as u64));
@@ -1260,9 +1264,10 @@ impl CChainState {
 
         // CRITICAL-2: Validate peer blocks BEFORE disconnecting ours.
         // Build in-memory temp chain from sled blocks up to ancestor.
-        let mut temp_blocks: HashMap<u64, Block> = HashMap::new();
+        let mut temp_blocks: BTreeMap<BlockHeight, Block> = BTreeMap::new();
         let mut timestamps: Vec<u64> = Vec::with_capacity(20);
-        for h in 1..=ancestor {
+        for h in 1..=ancestor.get() {
+            let h = BlockHeight::new(h);
             if let Ok(block) = self.get_block(h) {
                 timestamps.push(block.header.timestamp);
                 if timestamps.len() > 20 { timestamps.remove(0); }
@@ -1291,12 +1296,13 @@ impl CChainState {
         }
         drop(consensus);
 
-        for h in (ancestor + 1)..=peer_max {
+        for h in ancestor.succ().get()..=peer_max.get() {
+            let h = BlockHeight::new(h);
             if let Some(peer_block) = peer_blocks.get(&h) {
                 let vm = self.get_vm(peer_block.header.randomx_key);
                 let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
                 let expected_target = current_target;
-                let prev_hash = if temp_height > 0 {
+                let prev_hash = if temp_height.get() > 0 {
                     temp_blocks.get(&temp_height).map(|b| {
                         let pvm = self.get_vm(b.header.randomx_key);
                         let pvm_guard = pvm.lock().unwrap_or_else(|e| e.into_inner());
@@ -1349,7 +1355,8 @@ impl CChainState {
         {
             let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
             let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
-            for h in (ancestor + 1)..=peer_max {
+            for h in ancestor.succ().get()..=peer_max.get() {
+                let h = BlockHeight::new(h);
                 if let Some(peer_block) = peer_blocks.get(&h) {
                     if let Some(entries) = competing.get_mut(&h) {
                         let vm = self.get_vm(peer_block.header.randomx_key);
@@ -1376,7 +1383,8 @@ impl CChainState {
         }
 
         // Move our blocks above ancestor to competing (potential uncles).
-        for h in (ancestor + 1)..=current_height {
+        for h in ancestor.succ().get()..=current_height.get() {
+            let h = BlockHeight::new(h);
             if let Ok(block) = self.get_block(h) {
                 self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner())
                     .entry(h)
@@ -1387,12 +1395,13 @@ impl CChainState {
 
         // Build batch: remove old blocks, insert peer blocks
         let mut blocks_batch = sled::Batch::default();
-        for h in (ancestor + 1)..=current_height {
-            blocks_batch.remove(&h.to_le_bytes());
+        for h in ancestor.succ().get()..=current_height.get() {
+            blocks_batch.remove(&BlockHeight::new(h).to_le_bytes());
         }
 
         let mut reorg_count: usize = 0;
-        for h in (ancestor + 1)..=peer_max {
+        for h in ancestor.succ().get()..=peer_max.get() {
+            let h = BlockHeight::new(h);
             if let Some(peer_block) = peer_blocks.get(&h) {
                 let block_value = serde_json::to_vec(peer_block)
                     .map_err(|e| LinearError::SerializationError(e.to_string()))?;
@@ -1429,7 +1438,7 @@ mod tests {
         let db = Arc::new(db);
         let cs = CChainState::new(db, 120, u32::MAX, 1, u32::MAX,
             FinalityConfig::default()).unwrap();
-        assert_eq!(cs.get_height(), 0);
+        assert_eq!(cs.get_height(), BlockHeight::new(0));
         assert_eq!(cs.coin_set_size(), 0);
     }
 

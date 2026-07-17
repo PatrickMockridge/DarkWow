@@ -109,8 +109,8 @@ pub fn dice_house_close_process_instruction_v1(
     let current_block = wasm::util::get_verifying_block_height()?;
 
     // Check if timeout has been reached
-    let blocks_since_creation = current_block.saturating_sub(bet.created_at as u32);
-    let timeout_reached = blocks_since_creation >= roll_timeout;
+    let blocks_since_creation = current_block.get().saturating_sub(bet.created_at);
+    let timeout_reached = blocks_since_creation >= u64::from(roll_timeout);
 
     msg!(
         "[dice::house_close] Timeout: {}, Current: {}, Timeout reached: {}",

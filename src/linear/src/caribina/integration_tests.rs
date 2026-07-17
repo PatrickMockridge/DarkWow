@@ -24,6 +24,8 @@
 
 use std::io::Read;
 
+use dwow_sdk::blockchain::BlockHeight;
+
 use crate::caribina::{
     anchor::{anchor_block, TURBO_UPLOAD_URL},
     data_item::DataItem,
@@ -76,8 +78,8 @@ fn test_multiple_anchors_unique_ids() {
     let mut hash2 = [2u8; 32];
     hash2[0] = 0xBB;
 
-    let id1 = anchor_block(&hash1, ts, 1).expect("first anchor should succeed");
-    let id2 = anchor_block(&hash2, ts, 1).expect("second anchor should succeed");
+    let id1 = anchor_block(&hash1, ts, BlockHeight::new(1)).expect("first anchor should succeed");
+    let id2 = anchor_block(&hash2, ts, BlockHeight::new(1)).expect("second anchor should succeed");
 
     assert_ne!(id1, id2, "different payloads should produce unique TX IDs");
 }
@@ -86,7 +88,7 @@ fn test_multiple_anchors_unique_ids() {
 #[test]
 #[ignore]
 fn test_verify_not_found() {
-    let result = verify_anchor(&[0xFFu8; 32], &[0u8; 32], 0, 0);
+    let result = verify_anchor(&[0xFFu8; 32], &[0u8; 32], 0, BlockHeight::new(0));
     match result {
         Err(VerifyError::NotFound) => {}
         other => panic!("expected NotFound, got {:?}", other),
@@ -97,7 +99,7 @@ fn test_verify_not_found() {
 #[test]
 #[ignore]
 fn test_anchor_block_resilient_on_failure() {
-    let result = anchor_block(&[0u8; 32], 0, 0);
+    let result = anchor_block(&[0u8; 32], 0, BlockHeight::new(0));
     if let Some(id) = result {
         assert_eq!(id.len(), 32);
     }
@@ -208,7 +210,7 @@ fn test_timestamp_tolerance_integration() {
 // ---------------------------------------------------------------------------
 
 /// POST a test anchor to ArDrive Turbo and return (hash, timestamp, height, tx_id).
-fn post_test_anchor() -> ([u8; 32], u64, u64, [u8; 32]) {
+fn post_test_anchor() -> ([u8; 32], u64, BlockHeight, [u8; 32]) {
     let mut hash = [0u8; 32];
     let ts_ns = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -220,7 +222,7 @@ fn post_test_anchor() -> ([u8; 32], u64, u64, [u8; 32]) {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    let height: u64 = 1;
+    let height = BlockHeight::new(1);
 
     let tx_id = anchor_block(&hash, timestamp, height)
         .expect("anchor_block should succeed — network and Turbo must be available");

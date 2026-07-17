@@ -6,6 +6,8 @@
 
 use std::io::Read;
 
+use dwow_sdk::blockchain::BlockHeight;
+
 use super::data_item::DataItem;
 
 /// Default Arweave gateway for verification.
@@ -40,7 +42,7 @@ pub fn verify_anchor(
     tx_id: &[u8; 32],
     expected_hash: &[u8; 32],
     expected_timestamp: u64,
-    expected_height: u64,
+    expected_height: BlockHeight,
 ) -> Result<(), VerifyError> {
     // Fetch from Arweave gateway
     let tx_id_b64 = bytes_to_base64url(tx_id);
@@ -78,7 +80,7 @@ fn verify_payload(
     payload: &[u8],
     expected_hash: &[u8; 32],
     expected_timestamp: u64,
-    expected_height: u64,
+    expected_height: BlockHeight,
 ) -> Result<(), VerifyError> {
     if payload.len() < 48 {
         return Err(VerifyError::DataMismatch);
@@ -89,7 +91,7 @@ fn verify_payload(
         payload[32], payload[33], payload[34], payload[35],
         payload[36], payload[37], payload[38], payload[39],
     ]);
-    let stored_height = u64::from_le_bytes([
+    let stored_height = BlockHeight::from_le_bytes([
         payload[40], payload[41], payload[42], payload[43],
         payload[44], payload[45], payload[46], payload[47],
     ]);
@@ -126,7 +128,7 @@ mod tests {
     fn test_payload_verify_success() {
         let hash = [1u8; 32];
         let ts: u64 = 1000;
-        let height: u64 = 42;
+        let height = BlockHeight::new(42);
         let mut payload = Vec::new();
         payload.extend_from_slice(&hash);
         payload.extend_from_slice(&ts.to_le_bytes());
@@ -139,7 +141,7 @@ mod tests {
         let hash1 = [1u8; 32];
         let hash2 = [2u8; 32];
         let ts: u64 = 1000;
-        let height: u64 = 42;
+        let height = BlockHeight::new(42);
         let mut payload = Vec::new();
         payload.extend_from_slice(&hash1);
         payload.extend_from_slice(&ts.to_le_bytes());
@@ -149,7 +151,7 @@ mod tests {
 
     #[test]
     fn test_payload_verify_too_short() {
-        assert!(verify_payload(b"short", &[0u8; 32], 0, 0).is_err());
+        assert!(verify_payload(b"short", &[0u8; 32], 0, BlockHeight::new(0)).is_err());
     }
 
     #[test]
@@ -166,20 +168,20 @@ mod tests {
     fn test_payload_verify_height_mismatch() {
         let hash = [1u8; 32];
         let ts: u64 = 1000;
-        let height: u64 = 42;
+        let height = BlockHeight::new(42);
         let mut payload = Vec::new();
         payload.extend_from_slice(&hash);
         payload.extend_from_slice(&ts.to_le_bytes());
         payload.extend_from_slice(&height.to_le_bytes());
         // Wrong expected height
-        assert!(verify_payload(&payload, &hash, ts, 99).is_err());
+        assert!(verify_payload(&payload, &hash, ts, BlockHeight::new(99)).is_err());
     }
 
     #[test]
     fn test_payload_verify_timestamp_within_tolerance() {
         let hash = [1u8; 32];
         let ts: u64 = 1000;
-        let height: u64 = 42;
+        let height = BlockHeight::new(42);
         let mut payload = Vec::new();
         payload.extend_from_slice(&hash);
         // 29 minutes later (1740 seconds) — within 30 min tolerance
@@ -193,7 +195,7 @@ mod tests {
     fn test_payload_verify_timestamp_exceeds_tolerance() {
         let hash = [1u8; 32];
         let ts: u64 = 1000;
-        let height: u64 = 42;
+        let height = BlockHeight::new(42);
         let mut payload = Vec::new();
         payload.extend_from_slice(&hash);
         // 31 minutes later (1860 seconds) — exceeds 30 min tolerance

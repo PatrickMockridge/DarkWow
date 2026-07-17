@@ -438,7 +438,7 @@ fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> Co
         fee_config: None,
         min_premium: 0,
         max_members: u64::MAX,
-        created_at: wasm::util::get_verifying_block_height()? as u64,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
         bulla_blind: update.bulla_blind,
         paused: false,
         drain_protection_enabled: false,
@@ -562,7 +562,7 @@ fn pay_premium_apply_v1(cid: ContractId, update: model::PayPremiumUpdateV1) -> C
         value: update.amount,
         token_id: update.token_id,
         expiry: update.expiry,
-        created_at: wasm::util::get_verifying_block_height()? as u64,
+        created_at: wasm::util::get_verifying_block_height()?.get(),
     };
 
     wasm::db::db_set(membership_db, &update.membership_note.to_bytes(), &serialize(&membership))?;
@@ -1037,7 +1037,7 @@ fn verify_proposal_approved(
     }
 
     // Verify execution deadline not passed
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     if current_block > proposal.execution_deadline {
         msg!("[dao_escrow::verify_proposal] ERROR: Execution deadline passed");
         return Err(DaoEscrowError::ClaimExecutionDeadlinePassed.into());
@@ -1223,7 +1223,7 @@ fn propose_claim_v1(
 
     // MultiSig: voting windows and claim limits are group configuration,
     // not contract parameters. Threshold verification via SignV1 + FinalizeV1.
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     let voting_ends_at = current_block + 1000; // default window
     let execution_deadline = voting_ends_at + 1000;
 
@@ -1311,7 +1311,7 @@ fn vote_claim_v1(
     }
 
     // Verify voting window has not expired; if it has, auto-expire the proposal
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     if current_block > proposal.voting_ends_at {
         msg!("[dao_escrow::vote_claim_v1] Voting window expired, auto-expiring proposal");
         let update = model::VoteClaimUpdateV1 {

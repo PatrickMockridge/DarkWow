@@ -110,7 +110,7 @@ pub(crate) fn game_room_deposit_process_instruction_v1(
     }
 
     // Get current block
-    let current_block = wasm::util::get_verifying_block_height()?;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Use player from params (verified by proof/signature)
     let caller = params.player;
@@ -122,10 +122,10 @@ pub(crate) fn game_room_deposit_process_instruction_v1(
         Some(data) => {
             let mut acc: PlayerAccount =
                 dwow_serial::deserialize(&data)?;
-            acc.last_action_block = current_block as u64;
+            acc.last_action_block = current_block;
             acc
         }
-        None => PlayerAccount::new(caller, current_block as u64, params.instance_seed),
+        None => PlayerAccount::new(caller, current_block, params.instance_seed),
     };
 
     msg!("[Deposit] Player account updated at block {}", current_block);

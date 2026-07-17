@@ -55,7 +55,7 @@ pub fn insurance_market_file_claim_process_instruction_v1(
     }
 
     // Verify coverage hasn't expired
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     if current_block >= coverage.expires_at {
         return Err(InsuranceMarketError::CoverageExpired.into())
     }

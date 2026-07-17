@@ -27,6 +27,7 @@ use dwow_serial::{Decodable, Encodable};
 use std::io::Cursor;
 
 use crate::{
+    blockchain::BlockHeight,
     crypto::ContractId,
     error::{ContractError, ContractResult, GenericResult},
     tx::TransactionHash,
@@ -113,6 +114,17 @@ fn parse_retval_u32(ret: i64) -> GenericResult<u32> {
     Ok(obj)
 }
 
+/// Parse a non-negative i64 host return value as a BlockHeight
+/// (type-system.md §2.3: width conversions at FFI edges use `try_from`
+/// with an explicit error path; the lift is via the validating constructor).
+fn parse_retval_height(ret: i64) -> GenericResult<BlockHeight> {
+    if ret < 0 {
+        return Err(ContractError::from(ret))
+    }
+    let height = u64::try_from(ret).map_err(|_| ContractError::SetRetvalError)?;
+    Ok(BlockHeight::new(height))
+}
+
 /// Everyone can call this. Will return runtime configured
 /// verifying block height.
 ///
@@ -120,13 +132,13 @@ fn parse_retval_u32(ret: i64) -> GenericResult<u32> {
 /// block_height = get_verifying_block_height();
 /// ```
 #[cfg(target_arch = "wasm32")]
-pub fn get_verifying_block_height() -> GenericResult<u32> {
+pub fn get_verifying_block_height() -> GenericResult<BlockHeight> {
     let ret = unsafe { get_verifying_block_height_() };
-    parse_retval_u32(ret)
+    parse_retval_height(ret)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn get_verifying_block_height() -> GenericResult<u32> {
+pub fn get_verifying_block_height() -> GenericResult<BlockHeight> {
     Err(ContractError::IoError("wasm host function unavailable".to_string()))
 }
 
@@ -251,7 +263,7 @@ pub fn get_tx(_hash: &TransactionHash) -> GenericResult<Option<Vec<u8>>> {
 /// (block_height, tx_index) = get_tx_location(hash)?;
 /// ```
 #[cfg(target_arch = "wasm32")]
-pub fn get_tx_location(hash: &TransactionHash) -> GenericResult<(u32, u16)> {
+pub fn get_tx_location(hash: &TransactionHash) -> GenericResult<(BlockHeight, u16)> {
     let mut buf = vec![];
     hash.encode(&mut buf)?;
 
@@ -262,7 +274,7 @@ pub fn get_tx_location(hash: &TransactionHash) -> GenericResult<(u32, u16)> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn get_tx_location(_hash: &TransactionHash) -> GenericResult<(u32, u16)> {
+pub fn get_tx_location(_hash: &TransactionHash) -> GenericResult<(BlockHeight, u16)> {
     Err(ContractError::IoError("wasm host function unavailable".to_string()))
 }
 
@@ -273,8 +285,11 @@ pub fn get_tx_location(_hash: &TransactionHash) -> GenericResult<(u32, u16)> {
 /// block_hash = get_block_hash(block_height)?;
 /// ```
 #[cfg(target_arch = "wasm32")]
-pub fn get_block_hash(block_height: u32) -> GenericResult<TransactionHash> {
-    let ret = unsafe { get_block_hash_(block_height as i64) };
+pub fn get_block_hash(block_height: BlockHeight) -> GenericResult<TransactionHash> {
+    // Width conversion at the FFI edge: the import ABI is i64 (§2.3).
+    let height_arg =
+        i64::try_from(block_height.get()).map_err(|_| ContractError::DataTooLarge)?;
+    let ret = unsafe { get_block_hash_(height_arg) };
     let obj = parse_retval_u32(ret)?;
     let mut block_hash_data = [0u8; 32];
     assert_eq!(get_object_size(obj), 32);
@@ -283,7 +298,7 @@ pub fn get_block_hash(block_height: u32) -> GenericResult<TransactionHash> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn get_block_hash(_block_height: u32) -> GenericResult<TransactionHash> {
+pub fn get_block_hash(_block_height: BlockHeight) -> GenericResult<TransactionHash> {
     Err(ContractError::IoError("wasm host function unavailable".to_string()))
 }
 

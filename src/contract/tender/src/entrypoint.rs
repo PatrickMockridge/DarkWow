@@ -214,7 +214,7 @@ fn submit_bid_get_metadata_v1(
         return Err(ContractError::InvalidFunction.into())
     }
 
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     if current_block >= tender.bid_deadline {
         msg!("[tender::submit_bid_get_metadata_v1] ERROR: Bidding period ended");
         return Err(ContractError::InvalidFunction.into())
@@ -264,7 +264,7 @@ fn submit_bid_with_capability_get_metadata_v1(
         return Err(ContractError::InvalidFunction.into())
     }
 
-    let _current_block = wasm::util::get_verifying_block_height()? as u64;
+    let _current_block = wasm::util::get_verifying_block_height()?.get();
     if _current_block >= tender.bid_deadline {
         msg!("[tender::submit_bid_with_capability_get_metadata_v1] ERROR: Bidding period ended");
         return Err(ContractError::InvalidFunction.into())
@@ -486,7 +486,7 @@ fn create_tender_v1(cid: ContractId, params: CreateTenderParamsV1) -> Result<Vec
     }
 
     // Get current block
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Create tender
     let tender = Tender {
@@ -540,7 +540,7 @@ fn submit_bid_v1(cid: ContractId, params: SubmitBidParamsV1) -> Result<Vec<u8>, 
     }
 
     // Get current block and verify deadline
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     if current_block >= tender.bid_deadline {
         msg!("[tender::submit_bid_v1] ERROR: Bidding period ended");
         return Err(ContractError::InvalidFunction.into())
@@ -682,7 +682,7 @@ fn close_tender_v1(cid: ContractId, params: CloseTenderParamsV1) -> Result<Vec<u
     }
 
     // Verify bid deadline has passed
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     if current_block < tender.bid_deadline {
         msg!("[tender::close_tender_v1] ERROR: Bid deadline not yet passed");
         return Err(ContractError::InvalidFunction.into())
@@ -884,7 +884,7 @@ fn create_tender_with_capability_v1(
     }
 
     // Get current block
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Create tender with O-Cap fields
     let tender = Tender {
@@ -941,7 +941,7 @@ fn submit_bid_with_capability_v1(
     }
 
     // Get current block and verify deadline
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
     if current_block >= tender.bid_deadline {
         msg!("[tender::submit_bid_with_capability_v1] ERROR: Bidding period ended");
         return Err(ContractError::InvalidFunction.into())

@@ -185,7 +185,7 @@ impl Explorer {
                     // Deserialize JSON block
                     let block_json = &notification.params[0].get::<String>().unwrap();
                     let block: Block = serde_json::from_str(block_json).unwrap();
-                    let incoming_height = block.header.height;
+                    let incoming_height = block.header.height.get();
 
                     info!(target: "explorer::handle_block_sub", "Height {}", incoming_height);
 
@@ -240,7 +240,7 @@ impl Explorer {
 
                     let req = JsonRequest::new(
                         "blockchain.get_difficulty",
-                        JsonValue::Array(vec![(block.header.height as f64).into()]),
+                        JsonValue::Array(vec![(block.header.height.get() as f64).into()]),
                     );
                     let rep = rpc_client.request(req).await?;
                     rpc_client.stop().await;

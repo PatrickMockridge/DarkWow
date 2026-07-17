@@ -80,8 +80,8 @@ pub struct CapRecord {
     /// BaseBlind — asset blinding factor
     pub asset_blind: BaseBlind,
     pub revoked: bool,
-    pub revoked_at_height: Option<u32>,
-    pub created_at_height: u32,
+    pub revoked_at_height: Option<u64>,
+    pub created_at_height: u64,
     /// Identification record (account index + derivation) that lets the
     /// spend path re-derive the owning secret via AccountManager::resolve_key.
     /// NOT key material — safe to store at rest. None for pre-upgrade caps.
@@ -438,8 +438,8 @@ impl WalletDb {
                         asset_blind,
                         capability_discriminant: capability_discriminant.map(|d| d as u8),
                         revoked: spent_val != 0,
-                        revoked_at_height: revoked_at_height.map(|h| h as u32),
-                        created_at_height: created_at_height as u32,
+                        revoked_at_height: revoked_at_height.map(|h| h as u64),
+                        created_at_height: created_at_height as u64,
                         capability_name,
                         resource,
                         action,
@@ -647,8 +647,8 @@ impl WalletDb {
                         asset_blind,
                         capability_discriminant: capability_discriminant.map(|d| d as u8),
                         revoked: spent_val != 0,
-                        revoked_at_height: revoked_at_height.map(|h| h as u32),
-                        created_at_height: created_at_height as u32,
+                        revoked_at_height: revoked_at_height.map(|h| h as u64),
+                        created_at_height: created_at_height as u64,
                         capability_name,
                         resource,
                         action,
@@ -665,7 +665,7 @@ impl WalletDb {
     }
 
     /// Mark a held capability as revoked (nullifier published on-chain).
-    pub fn mark_revoked(&self, cap_id: &str, block_height: u32) -> WalletDbResult<()> {
+    pub fn mark_revoked(&self, cap_id: &str, block_height: u64) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         conn.execute(
             "UPDATE held_capabilities SET revoked = 1, revoked_at_height = ?1 WHERE cap_id = ?2",
@@ -787,7 +787,7 @@ impl WalletDb {
     }
 
     /// Remove caps after a certain block height.
-    pub fn remove_capabilities_after(&self, height: u32) -> WalletDbResult<()> {
+    pub fn remove_capabilities_after(&self, height: u64) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let height = height as i64;
 
@@ -816,7 +816,7 @@ impl WalletDb {
     /// Retain (un-revoke) capabilities revoked after a given block height.
     /// Used during reorg to restore capabilities that were marked as exercised
     /// on blocks that no longer exist.
-    pub fn retain_capabilities_after(&self, height: u32) -> WalletDbResult<()> {
+    pub fn retain_capabilities_after(&self, height: u64) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let height = height as i64;
         conn.execute(
@@ -850,7 +850,7 @@ pub struct ContractMetadataRecord {
     pub description: Option<String>,
     pub public: bool,
     pub deployer_pubkey: String,
-    pub deploy_height: u32,
+    pub deploy_height: u64,
     pub attestations_json: String,
     pub lock_status: String,
 }
@@ -929,7 +929,7 @@ impl WalletDb {
             description: row.get(4)?,
             public: row.get::<_, i64>(5)? != 0,
             deployer_pubkey: row.get(6)?,
-            deploy_height: row.get::<_, i64>(7)? as u32,
+            deploy_height: row.get::<_, i64>(7)? as u64,
             attestations_json: row.get(8)?,
             lock_status: row.get(9)?,
         })
@@ -959,7 +959,7 @@ impl WalletDb {
                 description: row.get(4)?,
                 public: row.get::<_, i64>(5)? != 0,
                 deployer_pubkey: row.get(6)?,
-                deploy_height: row.get::<_, i64>(7)? as u32,
+                deploy_height: row.get::<_, i64>(7)? as u64,
                 attestations_json: row.get(8)?,
                 lock_status: row.get(9)?,
             });
@@ -986,7 +986,7 @@ impl WalletDb {
                 description: row.get(4)?,
                 public: row.get::<_, i64>(5)? != 0,
                 deployer_pubkey: row.get(6)?,
-                deploy_height: row.get::<_, i64>(7)? as u32,
+                deploy_height: row.get::<_, i64>(7)? as u64,
                 attestations_json: row.get(8)?,
                 lock_status: row.get(9)?,
             });
@@ -1150,7 +1150,7 @@ impl WalletDb {
     }
 
     pub fn insert_scanned_block(
-        &self, height: &u32, hash: &HeaderHash, signing_key: &Option<SecretKey>,
+        &self, height: &u64, hash: &HeaderHash, signing_key: &Option<SecretKey>,
     ) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let hash_str = hash.to_string();
@@ -1165,7 +1165,7 @@ impl WalletDb {
         Ok(())
     }
 
-    pub fn get_scanned_block(&self, height: &u32) -> WalletDbResult<(String, String)> {
+    pub fn get_scanned_block(&self, height: &u64) -> WalletDbResult<(String, String)> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         conn.query_row(
             "SELECT hash, signing_key FROM scanned_blocks WHERE height = ?1",
@@ -1177,7 +1177,7 @@ impl WalletDb {
         })
     }
 
-    pub fn get_scanned_block_records(&self) -> WalletDbResult<Vec<(u32, String, String)>> {
+    pub fn get_scanned_block_records(&self) -> WalletDbResult<Vec<(u64, String, String)>> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let mut stmt = conn.prepare(
             "SELECT height, hash, signing_key FROM scanned_blocks ORDER BY height ASC",
@@ -1192,7 +1192,7 @@ impl WalletDb {
         Ok(scanned)
     }
 
-    pub fn get_last_scanned_block(&self) -> WalletDbResult<(u32, String)> {
+    pub fn get_last_scanned_block(&self) -> WalletDbResult<(u64, String)> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         conn.query_row(
             "SELECT height, hash FROM scanned_blocks ORDER BY height DESC LIMIT 1",
@@ -1211,7 +1211,7 @@ impl WalletDb {
         Ok(())
     }
 
-    pub fn delete_scanned_blocks_above(&self, height: u32) -> WalletDbResult<()> {
+    pub fn delete_scanned_blocks_above(&self, height: u64) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         conn.execute("DELETE FROM scanned_blocks WHERE height > ?1", params![height])
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;

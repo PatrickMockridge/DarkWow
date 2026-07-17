@@ -99,7 +99,7 @@ pub fn dice_reveal_roll_process_instruction_v1(
     }
 
     // Get current block height
-    let current_block = wasm::util::get_verifying_block_height()?;
+    let current_block = wasm::util::get_verifying_block_height()?.get();
 
     // Determine new state
     let new_state = if roll < bet.target { BetState::SettledPlayer } else { BetState::Revealed };
@@ -109,7 +109,7 @@ pub fn dice_reveal_roll_process_instruction_v1(
         bet_id: bet.id,
         roll,
         state: new_state,
-        revealed_at: current_block as u64,
+        revealed_at: current_block,
     };
 
     msg!("[dice::reveal_roll] Roll revealed successfully");

@@ -36,6 +36,7 @@ use std::sync::{
 
 use dwow_chain::{CChainState, FinalityConfig, PoWConfig};
 use dwow_core::Result;
+use dwow_sdk::blockchain::BlockHeight;
 use dwow_sdk::pasta::pallas;
 use dwow_sdk::pasta::group::Group;
 use dwow_sdk::crypto::{
@@ -173,7 +174,7 @@ impl GenesisHarness {
     }
 
     /// Get current block height.
-    pub fn block_height(&self) -> u64 {
+    pub fn block_height(&self) -> BlockHeight {
         self.chain_state.get_height()
     }
 }
@@ -216,9 +217,9 @@ mod tests {
             let mgr = crate::accounts::AccountManager::open(
                 &path, dwow_sdk::crypto::keypair::Network::Testnet, "node0",
             ).expect("open test AccountManager");
-            let recipient1 = crate::accounts::MiningRecipient::from_account(&mgr, 1)
+            let recipient1 = crate::accounts::MiningRecipient::from_account(&mgr, BlockHeight::new(1))
                 .expect("MiningRecipient 1");
-            let recipient2 = crate::accounts::MiningRecipient::from_account(&mgr, 1)
+            let recipient2 = crate::accounts::MiningRecipient::from_account(&mgr, BlockHeight::new(1))
                 .expect("MiningRecipient 2");
             drop(mgr);
             let _ = std::fs::remove_file(&path);
@@ -236,14 +237,14 @@ mod tests {
                  hash1={} hash2={}", hash1, hash2);
 
             // MOC acceptance criteria AC4-AC9
-            assert_eq!(har1.block_height(), 1);
-            assert_eq!(har2.block_height(), 1);
+            assert_eq!(har1.block_height(), BlockHeight::new(1));
+            assert_eq!(har2.block_height(), BlockHeight::new(1));
 
-            let block1 = har1.chain_state.get_block(1).expect("har1 block 1");
-            let block2 = har2.chain_state.get_block(1).expect("har2 block 1");
+            let block1 = har1.chain_state.get_block(BlockHeight::new(1)).expect("har1 block 1");
+            let block2 = har2.chain_state.get_block(BlockHeight::new(1)).expect("har2 block 1");
 
             // AC5: total_reward == expected_reward(1) = INITIAL_REWARD
-            let expected = dwow_sdk::blockchain::expected_reward(1);
+            let expected = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
             assert_eq!(block1.header.total_reward, expected, "AC5: total_reward");
             assert_eq!(block2.header.total_reward, expected, "AC5: total_reward");
 
@@ -264,7 +265,7 @@ mod tests {
             assert_eq!(block2.header.target, u32::MAX, "AC9: target");
 
             // AC2: cumulative supply at height 1 (MoC gap fill)
-            let sc1 = har1.chain_state.supply_chain.get(1)
+            let sc1 = har1.chain_state.supply_chain.get(BlockHeight::new(1))
                 .expect("supply_chain at height 1");
             assert_eq!(sc1.total_supply, expected,
                 "AC2: cumulative supply at genesis");
@@ -308,7 +309,7 @@ mod tests {
             )
             .expect("open test AccountManager");
             let recipient =
-                crate::accounts::MiningRecipient::from_account(&mgr, 1)
+                crate::accounts::MiningRecipient::from_account(&mgr, BlockHeight::new(1))
                     .expect("MiningRecipient");
             let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
 
@@ -316,23 +317,23 @@ mod tests {
             crate::init_genesis(&har.chain_state, recipient.clone(), magic_bytes)
                 .await
                 .expect("init_genesis");
-            assert_eq!(har.block_height(), 1);
+            assert_eq!(har.block_height(), BlockHeight::new(1));
 
             // AC2: cumulative supply at height 1
-            let sc1 = har.chain_state.supply_chain.get(1)
+            let sc1 = har.chain_state.supply_chain.get(BlockHeight::new(1))
                 .expect("supply_chain at height 1");
             assert_eq!(
                 sc1.total_supply,
-                dwow_sdk::blockchain::expected_reward(1),
+                dwow_sdk::blockchain::expected_reward(BlockHeight::new(1)),
                 "AC2: S_1 == INITIAL_REWARD"
             );
 
-            let gen_block = har.chain_state.get_block(1).expect("block 1");
+            let gen_block = har.chain_state.get_block(BlockHeight::new(1)).expect("block 1");
             let gen_hash = har.chain_state.hash_block_with_cached_vm(&gen_block);
 
             // ---- Height 2: coinbase-only block via accept_block ----
-            let height = 2u64;
-            let reward = dwow_sdk::blockchain::expected_reward(height as u32);
+            let height = BlockHeight::new(2);
+            let reward = dwow_sdk::blockchain::expected_reward(height);
 
             let linear_zk =
                 crate::registry::model::LinearPowRewardZk::new(har.chain_state.clone())
@@ -343,7 +344,7 @@ mod tests {
                     recipient,
                     reward,
                     &linear_zk,
-                    height as u32,
+                    height,
                 )
                 .await
                 .expect("coinbase for height 2");
@@ -400,16 +401,16 @@ mod tests {
                 &block,
                 &[],          // no uncles
                 &vm,
-                1,            // current_height = block.height - 1
+                BlockHeight::new(1), // current_height = block.height - 1
                 u32::MAX,     // target
                 None,
             )
             .expect("AC3: accept_block height 2");
 
             // ---- Assertions ----
-            assert_eq!(har.block_height(), 2, "height advanced to 2");
+            assert_eq!(har.block_height(), BlockHeight::new(2), "height advanced to 2");
 
-            let b2 = har.chain_state.get_block(2).expect("block 2 retrievable");
+            let b2 = har.chain_state.get_block(BlockHeight::new(2)).expect("block 2 retrievable");
             assert_eq!(
                 b2.header.previous.as_bytes(),
                 gen_hash.as_bytes(),
@@ -428,10 +429,10 @@ mod tests {
                 "coinbase targets native_token"
             );
 
-            let sc2 = har.chain_state.supply_chain.get(2)
+            let sc2 = har.chain_state.supply_chain.get(BlockHeight::new(2))
                 .expect("supply_chain at height 2");
-            let expected_supply = dwow_sdk::blockchain::expected_reward(1)
-                + dwow_sdk::blockchain::expected_reward(2);
+            let expected_supply = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1))
+                + dwow_sdk::blockchain::expected_reward(BlockHeight::new(2));
             assert_eq!(
                 sc2.total_supply, expected_supply,
                 "AC5: supply bridge — S_2 = S_1 + C_2"
@@ -444,7 +445,7 @@ mod tests {
             );
 
             // AC7: Supply chain non-identity — S_2 commitment must not be identity
-            let supply_entry = har.chain_state.supply_chain.get(2)
+            let supply_entry = har.chain_state.supply_chain.get(BlockHeight::new(2))
                 .expect("supply_chain entry at height 2");
             let identity = pallas::Point::identity();
             assert!(
@@ -454,7 +455,7 @@ mod tests {
 
             // AC8: Nullifier uniqueness — genesis nullifier ≠ block 2 nullifier.
             // ContractCall doesn't derive PartialEq — compare the call data.
-            let b1 = har.chain_state.get_block(1).expect("block 1 retrievable");
+            let b1 = har.chain_state.get_block(BlockHeight::new(1)).expect("block 1 retrievable");
             let empty = vec![];
             let gen_data = b1.transactions[0].contract_calls.first()
                 .map(|c| &c.data).unwrap_or(&empty);

@@ -43,6 +43,7 @@ use dwow_core::{
 };
 
 use dwow_chain::PowSource;
+use dwow_sdk::blockchain::BlockHeight;
 
 use crate::{
     error::{miner_status_response, server_error, RpcError},
@@ -157,7 +158,7 @@ impl DwowNode {
                 "Ignoring stratum login wallet '{}': node mines only to its own declared key (one miner, one key)",
                 wallet);
         }
-        let height = chain_state.get_height().saturating_add(1) as u32;
+        let height = chain_state.get_height().succ();
         let config = match LinearMinerRewardsRecipientConfig::from_account(
             &*self.account_manager.read().await, height,
         ) {
@@ -416,16 +417,17 @@ impl DwowNode {
 
         // Validate job height
         let current_height = chain_state.get_height();
-        let submitted_height: u64 = job_id
+        let submitted_height: BlockHeight = job_id
             .trim_start_matches("linear-job-")
             .parse()
-            .unwrap_or(current_height + 1);
+            .map(BlockHeight::new)
+            .unwrap_or(current_height.succ());
 
-        if submitted_height != current_height + 1 {
+        if submitted_height != current_height.succ() {
             info!(
                 target: "dwowd::rpc::rpc_stratum::stratum_submit",
                 "[RPC-STRATUM] Stale: submitted height {} != expected {}",
-                submitted_height, current_height + 1
+                submitted_height, current_height.succ()
             );
             return miner_status_response(id, "stale")
         }
@@ -437,7 +439,7 @@ impl DwowNode {
         };
 
         // Build previous hash using previous block's RandomX key
-        let previous_hash = if submitted_height == 1 {
+        let previous_hash = if submitted_height == BlockHeight::GENESIS {
             blake3::Hash::from_bytes([0u8; 32])
         } else {
             match chain_state.get_latest_block() {
@@ -708,7 +710,7 @@ impl DwowNode {
                                         ),
                                         (
                                             "height".to_string(),
-                                            JsonValue::from(new_height as f64),
+                                            JsonValue::from(new_height.get() as f64),
                                         ),
                                         (
                                             "target".to_string(),

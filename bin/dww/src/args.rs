@@ -45,7 +45,7 @@ pub enum WalletCommand {
     /// Read a transaction from stdin and broadcast it
     Broadcast,
     /// Scan the blockchain and parse relevant transactions
-    Scan { reset: Option<u32>, porcelain: bool },
+    Scan { reset: Option<u64>, porcelain: bool },
     /// P2P sync management
     Sync { command: SyncSubcmd },
     /// Start wallet daemon — P2P sync + block forever (container mode)
@@ -325,7 +325,7 @@ fn parse_command(tokens: &[&str]) -> Result<WalletCommand, Error> {
         "burn" => Ok(WalletCommand::Burn { cap_ids: tokens[1..].iter().map(|s| s.to_string()).collect() }),
         "broadcast" => Ok(WalletCommand::Broadcast),
         "scan" => {
-            let reset = extract_flag_value(tokens, "--reset").and_then(|v| v.parse::<u32>().ok());
+            let reset = extract_flag_value(tokens, "--reset").and_then(|v| v.parse::<u64>().ok());
             // --porcelain: diagnostic/testing output — frozen contract for the pipeline; do not extend.
             let porcelain = tokens.contains(&"--porcelain");
             Ok(WalletCommand::Scan { reset, porcelain })

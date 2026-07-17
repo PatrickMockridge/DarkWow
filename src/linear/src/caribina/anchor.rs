@@ -7,6 +7,7 @@
 
 use std::time::Duration;
 
+use dwow_sdk::blockchain::BlockHeight;
 use serde::Deserialize;
 
 use super::data_item::DataItem;
@@ -55,7 +56,7 @@ pub enum AnchorError {
 pub fn anchor_block(
     block_hash: &[u8; 32],
     timestamp: u64,
-    height: u64,
+    height: BlockHeight,
 ) -> Option<[u8; 32]> {
     // Build anchor payload: block_hash || timestamp || height
     let mut payload = Vec::with_capacity(48);

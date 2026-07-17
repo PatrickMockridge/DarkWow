@@ -25,6 +25,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use dwow_sdk::blockchain::BlockHeight;
+
 use super::Transaction;
 use crate::monero::MoneroPowData;
 
@@ -59,7 +61,7 @@ pub struct BlockHeader {
     /// Nonce for PoW mining
     pub nonce: u32,
     /// Block height in chain
-    pub height: u64,
+    pub height: BlockHeight,
     /// Merkle root of uncle blocks referenced by this canonical block
     pub uncle_merkle_root: [u8; 32],
     /// Total reward being distributed (canonical + uncle shares)
@@ -483,7 +485,7 @@ pub const MAX_UNCLE_COUNT: usize = 6;
 /// passed from the miner which handles PoW. This creates a placeholder block.
 pub fn create_block(
     previous: blake3::Hash,
-    height: u64,
+    height: BlockHeight,
     transactions: Vec<Transaction>,
     target: u32,
     vm: &randomx::RandomXVM,
@@ -496,7 +498,7 @@ pub fn create_block(
 /// is done by the Miner using that key.
 pub fn create_block_with_uncles(
     previous: blake3::Hash,
-    height: u64,
+    height: BlockHeight,
     transactions: Vec<Transaction>,
     target: u32,
     uncles: &[UncleBlock],
@@ -586,7 +588,7 @@ mod tests {
             timestamp: 0,
             target: 0x0000_FFFF,
             nonce: 0,
-            height: 10,
+            height: BlockHeight::new(10),
             uncle_merkle_root: [0u8; 32],
             total_reward: 0,
             randomx_key: [0u8; 32],
@@ -622,7 +624,7 @@ mod tests {
                 timestamp: i as u64,
                 target: 0x0000_FFFF,
                 nonce: i as u32,
-                height: 10 + i as u64,
+                height: BlockHeight::new(10 + i as u64),
                 uncle_merkle_root: [0u8; 32],
                 total_reward: 0,
                 randomx_key: [0u8; 32],
@@ -664,7 +666,7 @@ mod tests {
                 timestamp: i as u64,
                 target: 0xFFFF_FFFF, // max target — any hash passes
                 nonce: i as u32,
-                height: 10 + i as u64,
+                height: BlockHeight::new(10 + i as u64),
                 uncle_merkle_root: [0u8; 32],
                 total_reward: 0,
                 randomx_key: [0u8; 32],
@@ -717,7 +719,7 @@ mod tests {
             timestamp: 0,
             target: 0x0000_FFFF,
             nonce: 0,
-            height: 10,
+            height: BlockHeight::new(10),
             uncle_merkle_root: [0u8; 32],
             total_reward: 0,
             randomx_key: [0u8; 32],
@@ -751,7 +753,7 @@ mod tests {
             timestamp: 0,
             target: 0x0000_FFFF,
             nonce: 42,
-            height: 10,
+            height: BlockHeight::new(10),
             uncle_merkle_root: [0u8; 32],
             total_reward: 0,
             randomx_key: [0u8; 32],
@@ -789,7 +791,7 @@ mod tests {
         let previous = blake3::hash(b"genesis");
         let block = create_block_with_uncles(
             previous,
-            1,
+            BlockHeight::new(1),
             vec![],
             0x0000_FFFF,
             &[],
@@ -797,10 +799,10 @@ mod tests {
         );
 
         assert_eq!(block.header.previous, previous);
-        assert_eq!(block.header.height, 1);
+        assert_eq!(block.header.height, BlockHeight::new(1));
         assert_eq!(block.header.uncle_merkle_root, [0u8; 32]);
         // With no uncles, total_reward = base_reward = expected_reward(height)
-        assert_eq!(block.header.total_reward, dwow_sdk::blockchain::expected_reward(1));
+        assert_eq!(block.header.total_reward, dwow_sdk::blockchain::expected_reward(BlockHeight::new(1)));
     }
 
     /// Verify the coinbase lifecycle: create blocks at heights 1, 2, 3,
@@ -814,13 +816,13 @@ mod tests {
         // S_1 = identity + C_1 where C_1 commits to INITIAL_REWARD.
         let block1 = create_block_with_uncles(
             blake3::hash(b"genesis"),
-            1,
+            BlockHeight::new(1),
             vec![],
             0x0000_FFFF,
             &[],
             &vm,
         );
-        let reward1 = dwow_sdk::blockchain::expected_reward(1);
+        let reward1 = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
         assert_eq!(block1.header.total_reward, reward1);
         assert_eq!(reward1, dwow_sdk::blockchain::reward::INITIAL_REWARD,
             "genesis height 1 reward should be INITIAL_REWARD");
@@ -828,26 +830,26 @@ mod tests {
         // Height 2: first decay step from INITIAL_REWARD.
         let block2 = create_block_with_uncles(
             block1.hash_with_vm(&vm),
-            2,
+            BlockHeight::new(2),
             vec![],
             0x0000_FFFF,
             &[],
             &vm,
         );
-        let reward2 = dwow_sdk::blockchain::expected_reward(2);
+        let reward2 = dwow_sdk::blockchain::expected_reward(BlockHeight::new(2));
         assert_eq!(block2.header.total_reward, reward2);
         assert!(reward2 > 1_000_000_000, "height 2 reward should be > 1B base units");
 
         // Height 3: slightly less than height 2 (exponential decay)
         let block3 = create_block_with_uncles(
             block2.hash_with_vm(&vm),
-            3,
+            BlockHeight::new(3),
             vec![],
             0x0000_FFFF,
             &[],
             &vm,
         );
-        let reward3 = dwow_sdk::blockchain::expected_reward(3);
+        let reward3 = dwow_sdk::blockchain::expected_reward(BlockHeight::new(3));
         assert_eq!(block3.header.total_reward, reward3);
         assert!(reward3 <= reward2, "reward must decay monotonically");
 
@@ -864,10 +866,10 @@ mod tests {
         let vm = create_test_vm();
         let previous = blake3::hash(b"genesis");
 
-        let block = create_block(previous, 42, vec![], 0x0000_FFFF, &vm);
-        let expected = dwow_sdk::blockchain::expected_reward(42);
+        let block = create_block(previous, BlockHeight::new(42), vec![], 0x0000_FFFF, &vm);
+        let expected = dwow_sdk::blockchain::expected_reward(BlockHeight::new(42));
         assert_eq!(block.header.total_reward, expected);
-        assert_eq!(block.header.height, 42);
+        assert_eq!(block.header.height, BlockHeight::new(42));
     }
 
     /// Caribina: mining blob must exclude anchor_tx_id so PoW hash doesn't
@@ -881,7 +883,7 @@ mod tests {
             timestamp: 1000,
             target: 0x0000_FFFF,
             nonce: 42,
-            height: 1,
+            height: BlockHeight::new(1),
             uncle_merkle_root: [0u8; 32],
             total_reward: 100_000_000,
             randomx_key: [0u8; 32],
@@ -915,7 +917,7 @@ mod tests {
             timestamp: 1000,
             target: 0x0000_FFFF,
             nonce: 0,
-            height: 0,
+            height: BlockHeight::new(0),
             uncle_merkle_root: [0u8; 32],
             total_reward: 0,
             randomx_key: [0u8; 32],
@@ -941,7 +943,7 @@ mod tests {
             timestamp: 1000,
             target: 0x0000_FFFF,
             nonce: 42,
-            height: 1,
+            height: BlockHeight::new(1),
             uncle_merkle_root: [0u8; 32],
             total_reward: 100_000_000,
             randomx_key: [0xAA; 32],
@@ -959,7 +961,7 @@ mod tests {
         let deserialized: BlockHeader = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.anchor_tx_id, [0xBB; 32]);
         assert_eq!(deserialized.nonce, 42);
-        assert_eq!(deserialized.height, 1);
+        assert_eq!(deserialized.height, BlockHeight::new(1));
     }
 
     /// Backward-compatible deserialization: old blocks without the new fields
@@ -975,7 +977,7 @@ mod tests {
             timestamp: 1000,
             target: 0x0000_FFFF,
             nonce: 42,
-            height: 1,
+            height: BlockHeight::new(1),
             uncle_merkle_root: [0u8; 32],
             total_reward: 100_000_000,
             randomx_key: [0xAA; 32],
@@ -1006,7 +1008,7 @@ mod tests {
         let deserialized: BlockHeader = serde_json::from_str(&old_json).unwrap();
         assert_eq!(deserialized.version, 1);
         assert_eq!(deserialized.nonce, 42);
-        assert_eq!(deserialized.height, 1);
+        assert_eq!(deserialized.height, BlockHeight::new(1));
         assert_eq!(deserialized.coin_merkle_root, [0u8; 32]);
         assert_eq!(deserialized.nullifier_root, [0u8; 32]);
         assert_eq!(deserialized.anchor_tx_id, [0u8; 32]);
@@ -1025,7 +1027,7 @@ mod tests {
             timestamp: 1000,
             target: 0x0000_FFFF,
             nonce: 42,
-            height: 1,
+            height: BlockHeight::new(1),
             uncle_merkle_root: [0u8; 32],
             total_reward: 100_000_000,
             randomx_key: [0u8; 32],
@@ -1059,7 +1061,7 @@ mod tests {
             timestamp: 1000,
             target: 0x0000_FFFF,
             nonce: 42,
-            height: 1,
+            height: BlockHeight::new(1),
             uncle_merkle_root: [0u8; 32],
             total_reward: 100_000_000,
             randomx_key: [0xAA; 32],
