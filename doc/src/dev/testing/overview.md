@@ -61,6 +61,61 @@ need faster feedback, use:
 - Python simulations for contract state machine validation
 - Python consensus models for block production and VM testing
 
+## Testing Philosophy: The A/B/C Partition
+
+The testing taxonomy (Levels 1–4) describes *scale*. A second axis of
+classification — *what the test actually witnesses* — is equally important
+and was formalized during the absorber-program MoC review
+([type-system.md §10.5](../type-system.md)):
+
+**A. Statically-proven interior.** Facts the compiler or the Lean proof
+assistant discharge: nominal type distinctions, `BlockHeight` domain
+composition, barb pareto-efficiency, authorization inversion, wallet
+construction soundness, and `bridge_safe` quarantine direction.
+
+Tests SHALL NOT re-verify partition-A facts. A test whose failure condition
+is "the code failed to compile" SHALL be demoted or removed. The compiler IS
+the test for the statically-proven interior. Example of what NOT to test:
+`assert_eq!(block.header.height, 42)` when the compiler already enforces
+`BlockHeight: PartialEq`.
+
+**B. Absorber boundary.** Runtime enforcement at every quote/eval edge
+([type-system.md §10.5](../type-system.md)): the P2P wire, mempool
+admission, contract entrypoints (spend-hook re-lift), wallet manifest
+parsing, persistence lifts (`from_le_bytes`, SQLite rows), WASM host FFI
+(`try_from` edges, ACL, gas), C ABI (null checks, buffer caps), JSON-RPC
+(param lifts). Tests in B are **enforcement witnesses** — they verify the
+declared barb/budget set holds against an adversary who can send arbitrary
+bytes, which phantom types cannot prevent. Every declared SHALL at a boundary
+SHALL have at least one runtime witness test. The P2P ban tests are
+type-system tests in partition B.
+
+Current boundary obligation coverage (MoC review 2026-07-17): 17/36 cells
+witnessed (47%). The five highest-priority gaps are documented in
+type-system.md §10.5.
+
+**C. Dynamic residue.** Genuinely emergent runtime properties: scheduling and
+weak bisimilarity (JoinSet merge barrier), network topology and PEX
+propagation, economics (fees, emission, supply convergence), timing/finality,
+PoW difficulty adjustment, monero merge-mining. Partition C tests depend on
+timing, concurrency, adversary behavior, network topology, or economic
+equilibrium. The Docker pipeline (Levels 3–4) belongs here. "Testing finds a
+balance" between B and C: a boundary that rejects adversaries promptly and
+silently passes honest traffic is well-balanced.
+
+### What changes from the old taxonomy
+
+1. Ban tests ARE type-system tests (partition B), not "P2P infrastructure,
+   not blockchain/type-system, timing-sensitive" — prior classification
+   superseded. CI-gated with `BanPolicy::Strict` + `p2p_local: true` pinned.
+2. Full-suite runs are NOT migration gates for compile-proven changes. The
+   `BlockHeight` migration's correctness is discharged in A; its residual
+   risk — canonical 8-byte sled key width — is a single B witness
+   (`test_block_height_persistence_roundtrip` in chain_state.rs).
+3. The Docker pipeline is the balance-finding arena (partition C, B
+   witnesses collected alongside). Success criterion unchanged: wallet scan
+   + decrypt + DRKW balance.
+
 ## When to Use Each Level
 
 ### Level 1 — Lightweight (Local)

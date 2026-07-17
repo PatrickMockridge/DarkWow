@@ -42,6 +42,13 @@ pub trait Message: 'static + Send + Sync + AsyncDecodable + AsyncEncodable {
     /// Message metering configuration for rate limit.
     /// Use `MeteringConfiguration::default()` for no limit.
     const METERING_CONFIGURATION: MeteringConfiguration;
+    /// Barb set carried by this message (type-system.md §10.5).
+    /// Each message type that crosses the wire boundary SHALL declare the
+    /// barbs its handler exhibits — this is the per-channel declared set
+    /// that makes the absorber measurable. Empty by default for messages
+    /// that have not yet been audited; a cardinality snapshot test gates
+    /// production deploy profiles on audit completeness.
+    const BARBS: &'static [crate::net::barb_trait::BarbId] = &[];
 }
 
 /// Generic serialized message template.
@@ -58,12 +65,18 @@ impl SerializedMessage {
 
 #[macro_export]
 macro_rules! impl_p2p_message {
+    // Classic 5-arg form (backward-compatible; BARBS defaults to &[]).
     ($st:ty, $nm:expr, $mb:expr, $ms:expr, $mc:expr) => {
+        impl_p2p_message!($st, $nm, $mb, $ms, $mc, &[]);
+    };
+    // 6-arg form with explicit barb set.
+    ($st:ty, $nm:expr, $mb:expr, $ms:expr, $mc:expr, $barbs:expr) => {
         impl Message for $st {
             const NAME: &'static str = $nm;
             const MAX_BYTES: u64 = $mb;
             const METERING_SCORE: u64 = $ms;
             const METERING_CONFIGURATION: MeteringConfiguration = $mc;
+            const BARBS: &'static [crate::net::barb_trait::BarbId] = $barbs;
         }
     };
 }

@@ -154,6 +154,12 @@ impl_p2p_message!(TipReq, "EventGraph::TipReq", 0, 0, DEFAULT_METERING_CONFIGURA
 pub struct TipRep(pub BTreeMap<u64, HashSet<blake3::Hash>>);
 impl_p2p_message!(TipRep, "EventGraph::TipRep", 0, 0, DEFAULT_METERING_CONFIGURATION);
 
+// The event-graph barb set (type-system.md §10.4: ↓dag-parent, ↓broadcast,
+// ↓rate-limit, ↓quorum-query) is declared on the ProtocolEventGraph handler's
+// `ExhibitsBarb` impl; the per-message `BARBS` default to &[] because the
+// declarations are per-handler, not per-message, on this path. See
+// src/net/barb_trait.rs §10.4 handler declarations.
+
 #[async_trait]
 impl ProtocolBase for ProtocolEventGraph {
     async fn start(self: Arc<Self>, ex: Arc<Executor<'_>>) -> Result<()> {

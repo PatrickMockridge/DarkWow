@@ -737,12 +737,15 @@ impl Dwowd {
 
         // Initialize P2P network.
         // - chain_state → single source of truth for both sync and broadcast handlers
+        // - sled_database → passed so the event-graph opens its tree inside
+        //   the same physical sled::Db (tree-level quarantine per §10.4).
         let p2p_handler = DwowP2pHandler::init(
             net_settings,
             ex,
             Some(chain_state.clone()),
             Some(chain_state.clone()),
             mempool.clone(),
+            Some(sled_database.clone()),
         ).await?;
 
         // Initialize the miners registry (placeholder for now)
@@ -889,8 +892,15 @@ impl Dwowd {
                         "Broadcasting genesis to connected peers...");
                     crate::proto::linear_broadcast::broadcast_block(
                         &self.node.p2p_handler.p2p,
-                        genesis,
+                        genesis.clone(),
                     ).await;
+                    // Dual-path DAG announce for genesis (§10.4).
+                    #[cfg(feature = "event-graph")]
+                    if let Some(ref eg) = self.node.p2p_handler.event_graph {
+                        crate::proto::linear_broadcast::dag_announce_block(
+                            eg, &genesis,
+                        ).await;
+                    }
                 }
             }
         }
@@ -1394,6 +1404,12 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
 
         // Broadcast
         broadcast_block(&node.p2p_handler.p2p, mined_block).await;
+        // Dual-path DAG announce (§10.4) — the event-graph EventPut
+        // travels alongside the flood for block dissemination.
+        #[cfg(feature = "event-graph")]
+        if let Some(ref eg) = node.p2p_handler.event_graph {
+            crate::proto::linear_broadcast::dag_announce_block(eg, &mined_block).await;
+        }
 
         // Rate-limit: wait for min_block_interval before next block
         let min_interval = node.min_block_interval;

@@ -30,11 +30,15 @@ pub mod blockchain;
 #[cfg(feature = "geode")]
 pub mod geode;
 
-// event-graph: P2P messaging DAG used by darkirc and evgrd for decentralized
-// chat/messaging. Uses sled-overlay for non-deterministic DAG operations.
-// QUARANTINE: sled-overlay is gated behind this feature — it must never be
-// enabled by any blockchain execution-layer feature (blockchain, linear, dwowd).
-// The execution layer is strictly deterministic (plain sled, no overlays).
+// event-graph: P2P messaging DAG used by darkirc, evgrd, and dwowd (0x42
+// blockchain-event DAG-substrate dissemination, type-system.md §10.4).
+// Uses sled-overlay for non-deterministic DAG operations.
+// QUARANTINE: the quarantine IS tree-level, not binary-level (§10.4):
+// sled-overlay writes go to the DAG tree (e.g. "dwowd_dag"), never to
+// blockchain trees ("blocks", "contracts", "coins", "nullifiers", etc.).
+// This feature is intentionally enabled by the dwowd binary for the DAG
+// substrate; the previous binary-level quarantine ("must never be enabled
+// by dwowd") did not match §10.4's own wording.
 #[cfg(feature = "event-graph")]
 pub mod event_graph;
 

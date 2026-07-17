@@ -275,18 +275,27 @@ impl AsyncDecodable for Tip {
 // request/response messages.
 const MAX_SMALL_JSON_BYTES: u64 = 256;
 
-impl_p2p_message!(GetBlocks, "lineargetblocks", MAX_SMALL_JSON_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION);
+macro_rules! sync_barb_decl {
+    () => { &[dwow_core::net::barb_trait::BarbId::Verify] };
+}
+impl_p2p_message!(GetBlocks, "lineargetblocks", MAX_SMALL_JSON_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION,
+    sync_barb_decl!());
 /// Maximum size for a Blocks response: 4 MB (20 blocks @ ~100 KB each + overhead)
 const MAX_BLOCKS_BYTES: u64 = 4 * 1024 * 1024;
 
-impl_p2p_message!(Blocks, "linearblocks", MAX_BLOCKS_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION);
-impl_p2p_message!(GetBlock, "lineargetblock", MAX_SMALL_JSON_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION);
-impl_p2p_message!(BlockResponse, "linearblockresponse", MAX_BLOCKS_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION);
-impl_p2p_message!(GetTip, "lineargettip", 0, 1, LINEAR_SYNC_METERING_CONFIGURATION);
+impl_p2p_message!(Blocks, "linearblocks", MAX_BLOCKS_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION,
+    sync_barb_decl!());
+impl_p2p_message!(GetBlock, "lineargetblock", MAX_SMALL_JSON_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION,
+    sync_barb_decl!());
+impl_p2p_message!(BlockResponse, "linearblockresponse", MAX_BLOCKS_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION,
+    sync_barb_decl!());
+impl_p2p_message!(GetTip, "lineargettip", 0, 1, LINEAR_SYNC_METERING_CONFIGURATION,
+    sync_barb_decl!());
 /// Maximum size for a Tip response: height (u64 as string, max 20 digits)
 /// + hash (64 hex chars) + JSON framing (~50 bytes) ≈ 150 bytes. 256 is generous.
 const MAX_TIP_BYTES: u64 = 256;
-impl_p2p_message!(Tip, "lineartip", MAX_TIP_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION);
+impl_p2p_message!(Tip, "lineartip", MAX_TIP_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION,
+    sync_barb_decl!());
 
 // ============================================================================
 // Handler Implementation

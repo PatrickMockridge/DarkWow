@@ -285,7 +285,8 @@ crate::impl_p2p_message!(
         threshold: 100,
         sleep_step: 500,
         expiry_time: NanoTimestamp::from_secs(5),
-    }
+    },
+    &[crate::net::barb_trait::BarbId::Spend, crate::net::barb_trait::BarbId::Verify]
 );
 
 /// Calls tree bounds definitions

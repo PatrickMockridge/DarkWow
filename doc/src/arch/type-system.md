@@ -674,6 +674,17 @@ through DAG sync instead of flood broadcast. The event graph sled tree
 
 ### Implementation
 
+**Status at revision b58ebdc6c1:** the barb-typed layer
+(`ExhibitsBarb`, `bridge_safe`, `BridgeChannel`) has test fixtures only —
+zero production implementors. The 0x42 blockchain-event wrapping path
+(`src/event_graph/blockchain_bridge.rs`) is uncalled. The P2P wire operates
+as a bytes-level absorber: `impl_p2p_message!` declares per-message budget
+vectors (`MAX_BYTES`, metering), `channel.rs` runtime-enforces
+command-length, message-length, and dispatch (MissingDispatcher → ban) at
+eval. The four obligations (§10.5) are partially discharged — re-lift
+validation and budget declaration exist; violator exclusion is
+feature-flag-latticed; rate discipline is metered but unwitnessed in tests.
+
 The barb system is implemented across three modules:
 
 **BarbId enum** (`src/net/barb_trait.rs`): 22 observable actions — 14
@@ -707,6 +718,116 @@ extracts the payload.
    blockchain barbs from crossing to event-graph channels
 3. **Runtime**: Separate sled trees — blockchain (`contracts`, `blocks`,
    `coins`, `nullifiers`) vs event graph (`dag`)
+
+### 10.5 Channel Boundaries as Barb Absorbers
+
+P2P is one instance of a general principle — every channel with an in and an
+out, a send and a receive per the ρ-calculus (§0), acts as a shock absorber
+where the exponential cost of compositionally verifying every pair of
+process types against the 22-dimensional barb space collapses to a per-channel
+obligation. The collapse is purchased in exchange for four runtime obligations
+at the boundary.
+
+**Definition.** A *boundary* is a `quote(x)`/`eval(x)` edge (§0, §2.2): a
+value carrying barbs is serialized to bytes (which have no behavioral
+constraints — "any process can produce any 32 bytes"), transmitted across a
+wire, and re-lifted at the receiving side through a validating constructor.
+The serialization step is `Channel::send_message`
+(`src/net/channel.rs:333-367`); the re-lift is `main_receive_loop`
+dispatch (`channel.rs:491-613`), keyed on a runtime command name — the
+runtime representation of the ρ-calculus channel name.
+
+**The shock absorber claim (complexity collapse).** In an open network,
+parallel composition `P₁ | … | Pₙ` synchronizes on named channels. Without
+channel-typing, verifying the composite requires reasoning about all pairwise
+interactions against all reachable barb combinations — O(n²) pairs against a
+2^22 space. A channel that declares a barb set S ⊆ B factors this: each
+process is checked once against each channel it uses (does its point lie
+inside S?), and channels are checked once against the quarantine predicate
+(`bridge_safe`). Obligation drops to Σ|Sₖ| — linear in channels, bounded per
+channel. This is exactly the design embodied by the `bridge_chain_evg:
+Channel<BridgeMessage> exhibits {↓commit, ↓verify}` declaration and by every
+`impl_p2p_message!`'s `MAX_BYTES` and metering constants — a declared budget
+vector per channel.
+
+**The four runtime obligations.** Every byte erasure at a boundary creates
+obligations that the compiler alone cannot discharge, because the sender is a
+remote process whose code the local compiler cannot see:
+
+1. **Re-lift validation.** The receiving side SHALL validate every byte
+   sequence through the named constructor of the expected type
+   (`from_bytes` rejecting zero/identity; `from_le_bytes` for consensus
+   numeric domains (§2.3); `try_from` for width conversions at FFI edges).
+   Untrusted bytes SHALL NOT be treated as a typed value without passing
+   through the constructor's validation.
+2. **Violator exclusion.** A process that persistently sends invalid messages
+   (undeclared channels, oversize payloads, decoding failures) SHALL be
+   excluded from further communication. `ban()` → `HostColor::Black` at
+   `src/net/channel.rs:616-669` is the primary mechanism; the `hosts.rs`
+   quarantine gates (`move_host`, `filter_addresses`) provide perimeter
+   enforcement.
+3. **Rate discipline.** Every channel SHALL declare a metering budget, and
+   the receiving side SHALL enforce it to prevent unbounded resource
+   consumption. `MeteringQueue` at `src/net/metering.rs` processes
+   `MeteringScore` per message. The `↓rate-limit` barb SHALL be enforced
+   mechanically at the boundary — the remote peer's behavior determines
+   compliance; the local side detects and responds.
+4. **Budget declaration.** Every channel SHALL declare maximum message
+   sizes (`MAX_BYTES`) and metering configuration at message-definition
+   time. The declaration is a compile-time constant; the enforcement is
+   runtime at the boundary — `MAX_COMMAND_LENGTH = 255` and per-message
+   `MAX_BYTES` budget.
+
+**Static/dynamic split.** The properties in §11.1–11.5 (pareto-efficiency,
+non-unifiability, barb preservation under composition, authorization
+inversion, wallet construction soundness) are discharged by the compiler or
+the Lean proof assistant — they are statements about the interior of a
+process net. The four obligations above are statements about the *boundary*
+and are discharged by runtime enforcement. A test that witnesses a boundary
+obligation is therefore a type-system test — it verifies that the declared
+barb set actually holds against an adversary who can send arbitrary bytes,
+which phantom types cannot prevent. The separation of concerns is NOT
+"P2P infrastructure vs blockchain vs type system" but **statically-proven
+interior ⊆ absorber boundary ⊆ dynamic residue**.
+
+**Per-boundary test obligations.** Every declared SHALL at a boundary SHALL
+have at least one runtime witness test. The boundary families and their
+enforcement mechanisms are:
+
+| Boundary | Re-lift validation | Violator exclusion | Rate/budget | Witnessed by |
+|----------|--------------------|--------------------|-------------|--------------|
+| P2P wire (`channel.rs`) | `from_bytes`/`AsyncDecodable` per message | `ban()` → Black; `hosts` quarantine | `MeteringQueue`; per-message `MAX_BYTES`, `MAX_COMMAND_LENGTH` | `src/net/tests.rs` (command-length, message-length, MissingDispatcher bans; `p2p_test` hostlist) |
+| Mempool admission (`zk_verifier.rs`) | `decode_and_reconcile`; nullifier checks; proof-presence structural check | Transaction dropped on admission failure; blacklist-able peer by caller | Gas-limit equivalent per block | `src/linear/src/zk_verifier.rs` tests |
+| Contract entrypoints (`execution.rs`) | `ContractId::from_bytes`; entrypoint data-length gating; auto-validating `deserialize` on typed params | Call failure reverts to checkpoint; canonical failures reject the block | `BLOCK_GAS_LIMIT` | Contract WASM tests (per-contract) |
+| Wallet manifest (`manifest.rs`) | Closed vocabularies for parameter types, barbs, primitives — unknown name = parse error, not passthrough | Typed error barbs returned to caller; no fallback | TOML length / field count caps; circuit witness binding depth | SDK manifest tests; Lean `walletConstruct_sound` |
+| Persistence (`store.rs`/`walletdb.rs`/`supply_chain.rs`) | `from_le_bytes`/`from_bytes` named constructors; sled key width is canonical 8-byte LE (§2.3) | Write failure returns `Result::Err` — no silent truncation | B-tree key ordering; SQLite `INTEGER` domain | `chain_state.rs` persistence round-trip tests |
+| WASM host FFI (`import/*.rs`) | `acl_allow` section-check; `try_from` width conversions at i64 boundary; return-data len `u32::try_from`; buffer size caps | Access denied for unauthorized sections; negative error codes | `subtract_gas` per operation; host-object count cap | Contract tests (indirect via execution) |
+| C FFI + JSON-RPC (`ffi.rs`; RPC handlers) | Null-pointer checks; buffer-len caps; `catch_unwind` isolation; `BlockHeight::new` param lift | Error buffer return; JSON error response | Output buffer sizes; `MAX_BLOCK_SIZE` | RPC-level tests; wallet FFI integration |
+
+**Tests SHALL NOT re-verify interior facts.** A test whose failure condition
+is "the code failed to compile" (e.g. a type error on `BlockHeight→u64`
+mismatch, a barb-set declaration change that the compiler catches) SHALL be
+demoted or removed. The compiler IS the test for interior facts. The full
+workspace test suite SHALL NOT be run as a gate on a compile-proven type
+change — the residual risk after such a change is bounded to the
+persistence-boundary lift (re-lift of the new bytes via `from_le_bytes`),
+which a targeted boundary witness (§2.3, see `chain_state.rs` persistence
+round-trip) covers.
+
+**Enforcement-symmetry rule.** Every enforcement mechanism at a boundary SHALL
+be explicitly enabled by the test fixture (not left to feature-driven
+defaults). `BanPolicy::Strict` and `p2p_local: true` SHALL be pinned in
+network-layer test `Settings` so enforcement does not silently depend on a
+build-profile feature flag — the `ban-policy` cfg lattice and `BanPolicy`
+default-flip producing a silent no-op for loopback bans is the exhibited
+failure of letting enforcement be a lattice of cfg + default.
+
+The barb-layer wiring onto `impl_p2p_message!` (`const BARBS: &'static [BarbId]`)
+and production `ExhibitsBarb` implementors makes this boundary measurable:
+per-channel barb-set cardinality SHALL be snapshot-tested, and any unreviewed
+increase SHALL fail CI — the alarm for an absorber channel drifting toward
+the union of both path-sets, at which point the composition cost returns to
+exponential.
 
 ## 11. Verified Properties
 

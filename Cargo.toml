@@ -172,7 +172,10 @@ sled = "0.34"
 # QUARANTINED: SledDbOverlay and multi-tree fork diff accumulation MUST NOT be
 # used in blockchain execution-layer code — that layer is strictly deterministic.
 # Single-tree SledTreeOverlay as an atomic write-buffer (execute_block, genesis
-# deployment, event_graph dag_insert) is acceptable and deterministic.
+# deployment, event_graph dag_insert) is acceptable and deterministic. The
+# quarantine is tree-level (§10.4): the dwowd_dag tree SHALL NOT write to
+# blockchain trees, and the blockchain trees SHALL NOT write to the dag tree;
+# both co-exist in the same physical sled::Db, using disjoint tree names.
 sled-overlay = {version = "0.1.20", optional = true}
 
 # Miner

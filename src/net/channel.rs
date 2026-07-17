@@ -556,7 +556,6 @@ impl Channel {
                             message::SEED_ERR_UNKNOWN_MESSAGE,
                             format!("unknown message type: {}", command),
                         ).await;
-                        #[cfg(feature = "ban-policy")]
                         if let BanPolicy::Strict = self.p2p().settings().read().await.ban_policy {
                             self.ban().await;
                             return Err(Error::MissingDispatcher)
@@ -578,7 +577,6 @@ impl Channel {
                             message::SEED_ERR_BAD_REQUEST,
                             format!("invalid message: {} (payload exceeds limit or malformed)", command),
                         ).await;
-                        #[cfg(feature = "ban-policy")]
                         if let BanPolicy::Strict = self.p2p().settings().read().await.ban_policy {
                             self.ban().await;
                             return Err(Error::MessageInvalid)
@@ -594,7 +592,6 @@ impl Channel {
                         target: "net::channel::main_receive_loop",
                         "MeteringLimitExceeded for command={command}, channel={self:?}"
                         );
-                        #[cfg(feature = "ban-policy")]
                         if let BanPolicy::Strict = self.p2p().settings().read().await.ban_policy {
                             self.ban().await;
                             return Err(Error::MeteringLimitExceeded)

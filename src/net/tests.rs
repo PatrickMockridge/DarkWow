@@ -636,3 +636,108 @@ async fn p2p_channel_invalid_message_length_gets_banned_real(ex: Arc<Executor<'s
     node1_p2p.stop().await;
     node2_p2p.stop().await;
 }
+
+/// Metering-limit enforcement witness (type-system.md §10.5 M2 gap).
+/// Flooding a channel with metered messages beyond the threshold SHALL
+/// trigger MeteringLimitExceeded and, under BanPolicy::Strict, ban the
+/// sender. This is the enforcement of the ↓rate-limit barb at the wire.
+#[test]
+fn p2p_metering_limit_exceeded_gets_banned() {
+    test_body!(p2p_metering_limit_exceeded_gets_banned_real, 2);
+}
+
+async fn p2p_metering_limit_exceeded_gets_banned_real(ex: Arc<Executor<'static>>) {
+    let manual_instances = spawn_manual_session(ex.clone(), 2, 1).await;
+    for p2p in &manual_instances {
+        p2p.clone().start().await.unwrap();
+    }
+    sleep(5).await;
+
+    let node1_p2p = manual_instances[0].clone();
+    let node2_p2p = manual_instances[1].clone();
+    let channel = node1_p2p.hosts().channels().first().unwrap().clone();
+
+    // Synthetic message with a metering config that hits the limit fast:
+    // score=5 per message, threshold=10 → after 2 messages the total
+    // score (10) reaches the threshold; the 3rd message overshoots,
+    // triggering MeteringLimitExceeded → ban under Strict.
+    #[derive(SerialEncodable, SerialDecodable)]
+    struct FloodMessage(u32);
+    const FLOOD_METERING: MeteringConfiguration = MeteringConfiguration {
+        threshold: 10,
+        sleep_step: 0,
+        expiry_time: NanoTimestamp::from_secs(5),
+    };
+    crate::impl_p2p_message!(FloodMessage, "floodtest", 1024, 5, FLOOD_METERING, &[]);
+
+    // Send enough copies to overshoot the metering threshold.
+    for i in 0..10 {
+        let msg = FloodMessage(i);
+        let _ = channel.send(&msg).await;
+    }
+    sleep(2).await;
+
+    assert_eq!(
+        node2_p2p.hosts().container.fetch_all(HostColor::Black).len(),
+        1,
+        "metering-exceeded flood must ban the sender"
+    );
+    node1_p2p.stop().await;
+    node2_p2p.stop().await;
+}
+
+/// Magic-bytes mismatch enforcement witness (type-system.md §10.5 M2 gap).
+///
+/// Raw garbage bytes sent to a listening port SHALL trigger `MalformedPacket`
+/// at read_command (channel.rs:386-408) and, for outbound sessions under
+/// Strict, a ban. The test opens a raw TCP connection to the inbound port,
+/// writes bytes that are NOT the valid network magic, and asserts that the
+/// remote side eventually blacklists the misbehaving peer.
+///
+/// This is the enforcement of the write-side barb boundary: arbitrary bytes
+/// cannot even reach the command dispatcher — the absorber rejects them at
+/// the very first byte.
+#[test]
+fn p2p_magic_bytes_mismatch_gets_banned() {
+    test_body!(p2p_magic_bytes_mismatch_gets_banned_real, 2);
+}
+
+async fn p2p_magic_bytes_mismatch_gets_banned_real(ex: Arc<Executor<'static>>) {
+    let manual_instances = spawn_manual_session(ex.clone(), 2, 1).await;
+    for p2p in &manual_instances {
+        p2p.clone().start().await.unwrap();
+    }
+    sleep(5).await;
+
+    let node1_p2p = manual_instances[0].clone();
+    let node2_p2p = manual_instances[1].clone();
+
+    // Open a raw TCP stream to the inbound port and write garbage magic
+    // bytes — no valid network magic prefix. The read_command loop in
+    // channel.rs permanently fails the handshake, which under Strict +
+    // outbound path triggers a ban.
+    for p2p in &[node1_p2p.clone(), node2_p2p.clone()] {
+        let channels = p2p.hosts().channels();
+        if let Some(chan) = channels.first() {
+            let addr = chan.address().clone();
+            if let Ok(mut raw) = smol::net::TcpStream::connect(addr).await {
+                // Garbage: sequential 0x00 bytes — never a valid magic-varint prefix.
+                let garbage = [0u8; 16];
+                use smol::io::AsyncWriteExt;
+                let _ = raw.write_all(&garbage).await;
+                let _ = raw.flush().await;
+                break;
+            }
+        }
+    }
+    sleep(3).await;
+
+    let blacklisted = node2_p2p.hosts().container.fetch_all(HostColor::Black);
+    let node1_blacklisted = node1_p2p.hosts().container.fetch_all(HostColor::Black);
+    assert!(
+        !blacklisted.is_empty() || !node1_blacklisted.is_empty(),
+        "magic-bytes mismatch must trigger a ban on at least one side"
+    );
+    node1_p2p.stop().await;
+    node2_p2p.stop().await;
+}

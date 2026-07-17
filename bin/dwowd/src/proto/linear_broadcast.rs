@@ -86,7 +86,8 @@ impl_p2p_message!(
     "linearlblock",
     0,
     1,
-    LINEAR_BROADCAST_METERING_CONFIGURATION
+    LINEAR_BROADCAST_METERING_CONFIGURATION,
+    &[dwow_core::net::barb_trait::BarbId::Commit, dwow_core::net::barb_trait::BarbId::Verify]
 );
 
 // ============================================================================
@@ -394,4 +395,189 @@ async fn handle_receive_block(
         p2p.broadcast(&msg).await;
         handler.send_action(channel, ProtocolGenericAction::Skip).await;
     }
+}
+
+// ============================================================================
+// Extracted absorb_block (for use by dag_absorber)
+// ============================================================================
+
+/// Apply a received block to the local chain — the shared application logic
+/// used by both flood-broadcast reception and DAG-substrate absorption.
+/// Returns `Ok(true)` if the block was accepted, `Ok(false)` if skipped
+/// (height-gap, proof failure, duplicate/reorg).
+///
+/// No relay occurs from this function — the DAG relay is done by the
+/// EventGraph broadcast mechanism; the flood relay is done by the caller.
+pub async fn absorb_block(
+    blockchain: &Arc<CChainState>,
+    _vm: &std::sync::Arc<randomx::RandomXVM>,
+    mempool: &Option<MempoolPtr>,
+    msg: &BlockBroadcast,
+) {
+    // Early height-gap rejection (C4 fix)
+    let current_height = blockchain.get_height();
+    if msg.block.header.height > current_height.succ() {
+        tracing::debug!(
+            target: "dwowd::proto::linear_broadcast::absorb_block",
+            "Skipping far-future block at height {} (local height={})",
+            msg.block.header.height, current_height,
+        );
+        return;
+    }
+
+    // Verify proof-of-token-balance
+    if let Err(e) = dwow_chain::proof_of_token_balance::verify_proof_of_token_balance(
+        &msg.block,
+    ) {
+        tracing::warn!(
+            target: "dwowd::proto::linear_broadcast::absorb_block",
+            "Block at height {} failed proof-of-token-balance: {}",
+            msg.block.header.height, e,
+        );
+        return;
+    }
+
+    // Accept block
+    let randomx_key = msg.block.header.randomx_key;
+    let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
+    let rx_cache = blockchain.get_cache(randomx_key);
+    let vm = std::sync::Arc::new(
+        randomx::RandomXVM::new(flags, Some(rx_cache), None)
+            .expect("Failed to create RandomX VM for DAG block execution"),
+    );
+    let height = blockchain.get_height();
+    let target = msg.block.header.target;
+
+    match crate::block_acceptor::accept_block(
+        blockchain, &msg.block, &[], &vm, height, target, None,
+    ) {
+        Ok(()) => {
+            drop(vm);
+            tracing::info!(
+                target: "dwowd::proto::linear_broadcast::absorb_block",
+                "Block at height {} applied from DAG substrate",
+                msg.block.header.height,
+            );
+
+            if let Some(ref mempool) = mempool {
+                let tx_hashes: Vec<blake3::Hash> = msg.block.transactions.iter()
+                    .map(|tx| tx.hash()).collect();
+                mempool.mark_mined(&tx_hashes).await;
+            }
+
+            #[cfg(feature = "reorg-enabled")]
+            match blockchain.try_reorg_from_competing() {
+                Ok(count) if count > 0 => {
+                    tracing::info!(
+                        target: "dwowd::proto::linear_broadcast::absorb_block",
+                        "Reorganized {} blocks after DAG-delivered block at height {}",
+                        count, msg.block.header.height,
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        target: "dwowd::proto::linear_broadcast::absorb_block",
+                        "Reorg attempt failed: {e}",
+                    );
+                }
+                _ => {}
+            }
+            #[cfg(not(feature = "reorg-enabled"))]
+            { let _ = blockchain; }
+        }
+        Err(e) => {
+            tracing::warn!(
+                target: "dwowd::proto::linear_broadcast::absorb_block",
+                "Failed to apply DAG-delivered block at height {}: {e}",
+                msg.block.header.height,
+            );
+        }
+    }
+}
+
+// ============================================================================
+// DAG-substrate send side (§10.4)
+// ============================================================================
+
+/// Announce a block via the event-graph DAG substrate (dual-path: flood
+/// + DAG). The DAG path wraps the block as a 0x42 blockchain event,
+/// inserts into the event graph, and broadcasts EventPut.
+///
+/// This function is a no-op when the `event-graph` feature is absent.
+/// Callers do not need their own `#[cfg]` gating — they call this
+/// unconditionally and the function compiles to nothing outside the
+/// DAG-substrate build.
+#[cfg(feature = "event-graph")]
+pub async fn dag_announce_block(
+    event_graph: &dwow_core::event_graph::EventGraphPtr,
+    block: &dwow_chain::Block,
+) {
+    use dwow_core::event_graph::events::Event;
+    use dwow_core::net::P2pPtr;
+
+    let msg = BlockBroadcast { block: block.clone() };
+    let payload = serde_json::to_vec(&msg)
+        .unwrap_or_else(|_| {
+            tracing::error!("DAG announce: serde_json failed — dropping block");
+            Vec::new()
+        });
+    if payload.is_empty() {
+        return;
+    }
+
+    // [0x42][kind=0x01][serde_json payload]
+    let mut content = Vec::with_capacity(1 + 1 + payload.len());
+    content.push(crate::proto::dag_absorber::BLOCKCHAIN_EVENT_MARKER);
+    content.push(crate::proto::dag_absorber::kind::BLOCK);
+    content.extend_from_slice(&payload);
+
+    let event = Event::new(content, event_graph);
+    if let Err(e) = event_graph.dag_insert(&[event.clone()]).await {
+        tracing::warn!("DAG insert failed for block at height {}: {e}", block.header.height);
+        return;
+    }
+    // Broadcast EventPut to all peers — the transport layer handles relay.
+    event_graph.p2p().broadcast(
+        &dwow_core::event_graph::proto::EventPut(vec![event]),
+    ).await;
+}
+
+/// No-op when the event-graph feature is absent — the caller compiles
+/// unchanged.
+#[cfg(not(feature = "event-graph"))]
+pub async fn dag_announce_block(
+    _event_graph: &(),
+    _block: &dwow_chain::Block,
+) {
+}
+
+/// Compile-time assertion that the DAG absorber's barb crossing is
+/// in the allowed direction (§10.4). Called from dag_absorber.rs at
+/// startup; unit-testable.
+#[cfg(feature = "event-graph")]
+pub fn dag_absorber_barb_check() {
+    struct BlockchainAbsorber;
+    impl dwow_core::net::barb_trait::ExhibitsBarb for BlockchainAbsorber {
+        fn exhibited_barbs() -> &'static [dwow_core::net::barb_trait::BarbId] {
+            &[
+                dwow_core::net::barb_trait::BarbId::Verify,
+                dwow_core::net::barb_trait::BarbId::Commit,
+            ]
+        }
+    }
+    struct EventGraphBarbs;
+    impl dwow_core::net::barb_trait::ExhibitsBarb for EventGraphBarbs {
+        fn exhibited_barbs() -> &'static [dwow_core::net::barb_trait::BarbId] {
+            &[
+                dwow_core::net::barb_trait::BarbId::DagParent,
+                dwow_core::net::barb_trait::BarbId::Broadcast,
+                dwow_core::net::barb_trait::BarbId::RateLimit,
+                dwow_core::net::barb_trait::BarbId::QuorumQuery,
+            ]
+        }
+    }
+    assert!(
+        dwow_core::net::barb_trait::bridge_safe::<EventGraphBarbs, BlockchainAbsorber>(),
+        "§10.4 quarantine: event-graph → blockchain SHALL be the allowed direction",
+    );
 }

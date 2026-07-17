@@ -196,10 +196,11 @@ impl Default for Settings {
             disable_greys: false,
             time_with_no_connections: 30,
             blacklist: vec![],
-            #[cfg(feature = "ban-policy")]
+            // Strict is the unconditional default — BanPolicy is always
+            // available (§10.5 enforcement-symmetry rule: enforcement
+            // strength SHALL NOT silently depend on a build-profile cfg).
+            // A node operator may explicitly set Relaxed in their config.
             ban_policy: BanPolicy::Strict,
-            #[cfg(not(feature = "ban-policy"))]
-            ban_policy: BanPolicy::Relaxed,
             profiles: HashMap::new(),
             pow: PowSettings::default(),
         }

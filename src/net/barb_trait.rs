@@ -188,6 +188,61 @@ mod tests {
         }
     }
 
+    struct ProtocolPing;
+    impl ExhibitsBarb for ProtocolPing {
+        fn exhibited_barbs() -> &'static [BarbId] {
+            // PingPong is a pure keepalive — no blockchain or event-graph barbs.
+            &[]
+        }
+    }
+
+    struct ProtocolVersion;
+    impl ExhibitsBarb for ProtocolVersion {
+        fn exhibited_barbs() -> &'static [BarbId] {
+            // Session establishment — no blockchain or event-graph barbs.
+            &[]
+        }
+    }
+
+    struct ProtocolAddress;
+    impl ExhibitsBarb for ProtocolAddress {
+        fn exhibited_barbs() -> &'static [BarbId] {
+            // Address discovery + relay = gossip forwarding. No blockchain
+            // or event-graph barbs (↓gossip-forward is a concurrency barb).
+            &[BarbId::GossipForward]
+        }
+    }
+
+    struct ProtocolSeed;
+    impl ExhibitsBarb for ProtocolSeed {
+        fn exhibited_barbs() -> &'static [BarbId] {
+            // Seed sync is hostlist bootstrapping — gossip forwarding only.
+            &[BarbId::GossipForward]
+        }
+    }
+
+    /// Barb-set cardinality snapshot (type-system.md §10.5 — metric M4).
+    /// An unreviewed change to the declared barb sets of production protocol
+    /// handlers SHALL fail this test. The snapshot is the evidence that the
+    /// 22-dimension space has not drifted toward a degenerate absorber
+    /// (per-channel barb-set cardinality approaching the union of both
+    /// path-sets). When a new handler legitimately declares additional
+    /// barbs, this test is the single point of review — update the expected
+    /// value here with the MoC decision recorded in the commit message.
+    #[test]
+    fn test_notify_on_barb_set_growth() {
+        // ── P2P core handlers (barb_trait.rs test fixtures) ──
+        assert_eq!(BlockchainMiner::exhibited_barbs().len(), 5);
+        assert_eq!(EventGraphNode::exhibited_barbs().len(), 4);
+        assert_eq!(BlockchainObserver::exhibited_barbs().len(), 2);
+        assert_eq!(CommitPublisher::exhibited_barbs().len(), 3);
+        // ── Production protocol handler fixtures ──
+        assert_eq!(ProtocolPing::exhibited_barbs().len(), 0);
+        assert_eq!(ProtocolVersion::exhibited_barbs().len(), 0);
+        assert_eq!(ProtocolAddress::exhibited_barbs().len(), 1);
+        assert_eq!(ProtocolSeed::exhibited_barbs().len(), 1);
+    }
+
     #[test]
     fn test_blockchain_to_eventgraph_blocked() {
         // Blockchain → event-graph: blocked because blockchain has Spend/Nullify/Commit
