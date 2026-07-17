@@ -1301,35 +1301,8 @@ pub extern "C" fn dwow_wallet_manifest(
         Err(_) => return -1,
     };
     let manifest = match wallet.dww.get_contract_manifest(cid_str) {
-        Ok(Some(m)) => m.to_toml(),
+        Ok(Some(m)) => m.to_toml().unwrap_or_else(|e| format!("manifest toml: {e}")),
         Ok(None) => { return 0; }
-        Err(e) => {
-            wallet.last_error.borrow_mut().replace(format!("manifest: {}", e));
-            return -1;
-        }
-    };
-    let cstr = match CString::new(manifest) { Ok(c) => c, Err(_) => return -1 };
-    let bytes = cstr.as_bytes_with_nul();
-    if bytes.len() > buf_len as usize { return -1; }
-    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf as *mut u8, bytes.len()); }
-    (bytes.len() - 1) as i32
-}
-
-// ============================================================================
-// Phase 5 — Write Path / Transaction Construction (continued)
-// ============================================================================
-// Legacy stub — replaced by the real dwow_wallet_invoke_contract above.
-#[allow(dead_code)]
-fn _legacy_manifest_stub_inline() -> i32 { -1 }
-
-// Original manifest function removed — now uses to_toml() above.
-// Original body (pre-fix) accessed below via the legacy comment.
-
-// Was:
-// Ok(Some(m)) => format!("{:?}", m), // debug-format manifest
-// Now uses m.to_toml() above.
-        Ok(Some(m)) => m.to_toml(), // canonical TOML (was Debug fmt: "ContractManifest { ... }")
-        Ok(None) => { return 0; } // no manifest stored
         Err(e) => {
             wallet.last_error.borrow_mut().replace(format!("manifest: {}", e));
             return -1;
