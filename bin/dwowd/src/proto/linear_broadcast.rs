@@ -111,11 +111,28 @@ impl AsyncEncodable for BlockBroadcast {
 #[async_trait]
 impl AsyncDecodable for BlockBroadcast {
     async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> std::io::Result<Self> {
+        // NO read cap: the genesis block carries the 9 contract deployments
+        // (multi-MB WASM as serde_json) and MUST decode — a take(4MB) cap
+        // would silently truncate it. Size discipline is enforced
+        // post-decode: any NON-genesis block over MAX_BLOCK_SIZE is
+        // rejected here (fail-closed) and again by the consensus-level
+        // rule in accept_block. Genesis integrity = pinned genesis hash.
         let mut buf = Vec::new();
-        let mut taken = d.take(MAX_BLOCK_SIZE as u64);
-        FutAsyncReadExt::read_to_end(&mut taken, &mut buf).await?;
-        serde_json::from_slice(&buf)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        FutAsyncReadExt::read_to_end(d, &mut buf).await?;
+        let msg: Self = serde_json::from_slice(&buf)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        if msg.block.header.height != dwow_sdk::blockchain::BlockHeight::GENESIS
+            && buf.len() > MAX_BLOCK_SIZE
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "non-genesis block at height {} is {} bytes — exceeds MAX_BLOCK_SIZE {}",
+                    msg.block.header.height, buf.len(), MAX_BLOCK_SIZE
+                ),
+            ));
+        }
+        Ok(msg)
     }
 }
 

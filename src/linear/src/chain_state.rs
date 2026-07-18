@@ -1481,9 +1481,28 @@ mod tests {
             FinalityConfig::default()).unwrap();
         let h = BlockHeight::new(42);
         // Build a minimal block — only the header matters for the key.
-        let block = crate::create_block(
-            &cs, h, blake3::hash(b""), &[], 0,
-        ).expect("create_block");
+        let block = crate::Block {
+            header: crate::BlockHeader {
+                version: 1,
+                previous: blake3::hash(b""),
+                merkle_root: crate::compute_merkle_root(&[]),
+                timestamp: 0,
+                target: u32::MAX,
+                nonce: 0,
+                height: h,
+                uncle_merkle_root: [0u8; 32],
+                total_reward: 0,
+                randomx_key: crate::Miner::derive_key_from_height(h),
+                coin_merkle_root: [0u8; 32],
+                nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32],
+                anchor_monero_height: 0,
+                anchor_monero_hash: [0u8; 32],
+                finality_flags: 0,
+                pow_source: crate::PowSource::Native,
+            },
+            transactions: vec![],
+        };
         cs.store.insert_block(h, &block).expect("insert_block");
 
         // The sled key MUST be exactly 8 bytes — the canonical encoding

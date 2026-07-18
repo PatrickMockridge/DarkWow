@@ -54,10 +54,8 @@ pub struct GenesisHarness {
 }
 
 impl GenesisHarness {
-    /// Create a new GenesisHarness with temp sled DB and CChainState.
-    /// Deploys NativeToken and Deployooor WASM so the chain is ready
-    /// for contract deployment.
-    pub fn new() -> Result<Self> {
+    /// Create the temp sled DB + CChainState shared by both constructors.
+    fn new_bare() -> Result<Self> {
         static GEN_COUNTER: AtomicU32 = AtomicU32::new(0);
         let n = GEN_COUNTER.fetch_add(1, Ordering::Relaxed);
         let db_dir = std::env::temp_dir()
@@ -88,6 +86,24 @@ impl GenesisHarness {
         .map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         // CChainState::new() already returns Arc<CChainState>.
 
+        Ok(Self { db, chain_state })
+    }
+
+    /// Harness with a completely EMPTY contracts tree — the production
+    /// starting state of every node. Contracts materialize only by executing
+    /// the genesis block (apply_genesis_deployments consensus rule), whether
+    /// created locally via `init_genesis` or accepted from sync via
+    /// `accept_block`. Use this for genesis-path tests.
+    pub fn new_without_contracts() -> Result<Self> {
+        Self::new_bare()
+    }
+
+    /// Create a new GenesisHarness with temp sled DB and CChainState.
+    /// Deploys NativeToken and Deployooor WASM so the chain is ready
+    /// for contract deployment.
+    pub fn new() -> Result<Self> {
+        let harness = Self::new_bare()?;
+        let chain_state = &harness.chain_state;
         // Store WASM bytes directly — no deploy_contract() on CChainState.
         // Pattern from bin/dwowd/src/lib.rs:370-395.
         let deployooor_wasm = include_bytes!(
@@ -164,7 +180,7 @@ impl GenesisHarness {
             multisig_wasm,
         ).map_err(|e| dwow_core::Error::Custom(format!("Failed to store multisig WASM: {}", e)))?;
 
-        Ok(Self { db, chain_state })
+        Ok(harness)
     }
 
     /// Store a WASM contract in the chain state so it can be looked up.
@@ -197,14 +213,11 @@ mod tests {
         dwow_native_token_contract::enable_deterministic_zk();
 
         smol::block_on(async {
-            let har1 = GenesisHarness::new().expect("GenesisHarness 1");
-            let har2 = GenesisHarness::new().expect("GenesisHarness 2");
-
-            // Initialize contracts on both harnesses
-            crate::init_genesis_contracts(&har1.chain_state)
-                .expect("init_genesis_contracts har1: all 9 contracts must init");
-            crate::init_genesis_contracts(&har2.chain_state)
-                .expect("init_genesis_contracts har2: all 9 contracts must init");
+            // Production starting state: EMPTY contracts tree. The genesis
+            // block carries the 9 deployments; init_genesis materializes
+            // them via the apply_genesis_deployments consensus rule.
+            let har1 = GenesisHarness::new_without_contracts().expect("GenesisHarness 1");
+            let har2 = GenesisHarness::new_without_contracts().expect("GenesisHarness 2");
 
             // Build identical MiningRecipient from the same test key.
             // Unique temp file per process to avoid parallel test collisions (Gap 3).
@@ -269,6 +282,41 @@ mod tests {
                 .expect("supply_chain at height 1");
             assert_eq!(sc1.total_supply, expected,
                 "AC2: cumulative supply at genesis");
+
+            // AC10: genesis carries the deployments — exactly 10 txs
+            // (coinbase + 9 contract deployments, positions 1..=9).
+            assert_eq!(block1.transactions.len(), 10,
+                "AC10: genesis block = 1 coinbase + 9 deployment txs");
+            assert_eq!(block2.transactions.len(), 10,
+                "AC10: genesis block = 1 coinbase + 9 deployment txs");
+            for tx in &block1.transactions[1..] {
+                assert!(dwow_chain::execution::is_genesis_deployment_tx(tx),
+                    "AC10: txs 1..=9 are genesis deployment txs");
+            }
+
+            // AC11: all 9 contracts materialized byte-equal to the payloads
+            // the genesis block carries; 7 manifests present.
+            for (i, (cid, name)) in
+                dwow_chain::execution::genesis_contracts().iter().enumerate()
+            {
+                let params: dwow_sdk::deploy::DeployParamsV1 = dwow_serial::deserialize(
+                    &block1.transactions[i + 1].contract_calls[0].data[1..],
+                ).expect("DeployParamsV1 decode");
+                for har in [&har1, &har2] {
+                    let stored = har.chain_state.store
+                        .get_contract_data(&cid.to_bytes())
+                        .expect("get_contract_data");
+                    assert_eq!(stored, params.wasm_bincode,
+                        "AC11: {name} WASM byte-equal to genesis payload");
+                    let mut mkey = Vec::from(cid.to_bytes().as_slice());
+                    mkey.extend_from_slice(b"_manifest");
+                    let manifest = har.chain_state.store
+                        .get_contract_data(&mkey)
+                        .expect("get manifest");
+                    assert_eq!(manifest, params.ix,
+                        "AC11: {name} manifest matches genesis payload");
+                }
+            }
         });
     }
 
@@ -291,10 +339,9 @@ mod tests {
 
         smol::block_on(async {
             // ---- Setup ----
-            let har = GenesisHarness::new().expect("GenesisHarness");
-
-            crate::init_genesis_contracts(&har.chain_state)
-                .expect("init_genesis_contracts");
+            // Empty contracts tree — genesis carries and materializes the
+            // 9 contracts (production path).
+            let har = GenesisHarness::new_without_contracts().expect("GenesisHarness");
 
             let keys_toml = "[node0]\nwallet_secret = \
                 \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
@@ -339,7 +386,7 @@ mod tests {
                 crate::registry::model::LinearPowRewardZk::new(har.chain_state.clone())
                     .await
                     .expect("LinearPowRewardZk");
-            let (_coinbase, _public_inputs, pow_reward_call) =
+            let (_coinbase, _public_inputs, pow_reward_call, _coin_blind) =
                 crate::registry::model::build_linear_coinbase(
                     recipient,
                     reward,
@@ -468,6 +515,182 @@ mod tests {
 
             drop(mgr);
             let _ = std::fs::remove_file(&path);
+        });
+    }
+
+    /// Build a genesis block on a fresh harness via the production
+    /// `init_genesis` path and return (harness, genesis_block, hash).
+    async fn build_genesis() -> (GenesisHarness, dwow_chain::Block, blake3::Hash) {
+        let har = GenesisHarness::new_without_contracts().expect("GenesisHarness");
+        let keys_toml = "[node0]\nwallet_secret = \
+            \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+        static SYNC_COUNTER: AtomicU32 = AtomicU32::new(0);
+        let n = SYNC_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir()
+            .join(format!("dwow_gen_sync_{}_{}.toml", std::process::id(), n));
+        std::fs::write(&path, keys_toml).expect("write test keys");
+        let mgr = crate::accounts::AccountManager::open(
+            &path, dwow_sdk::crypto::keypair::Network::Testnet, "node0",
+        ).expect("open test AccountManager");
+        let recipient = crate::accounts::MiningRecipient::from_account(&mgr, BlockHeight::new(1))
+            .expect("MiningRecipient");
+        drop(mgr);
+        let _ = std::fs::remove_file(&path);
+
+        let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
+        crate::init_genesis(&har.chain_state, recipient, magic_bytes)
+            .await.expect("init_genesis");
+        let block = har.chain_state.get_block(BlockHeight::new(1)).expect("block 1");
+        let hash = har.chain_state.hash_block_with_cached_vm(&block);
+        (har, block, hash)
+    }
+
+    /// RandomX VM keyed for the genesis block — same construction as
+    /// init_genesis and the sync path.
+    fn genesis_vm(block: &dwow_chain::Block) -> std::sync::Arc<randomx::RandomXVM> {
+        let rx_flags = randomx::RandomXFlags::get_recommended_flags()
+            & !randomx::RandomXFlags::JIT;
+        let rx_cache = randomx::RandomXCache::new(rx_flags, &block.header.randomx_key)
+            .expect("RandomX cache");
+        std::sync::Arc::new(
+            randomx::RandomXVM::new(rx_flags, Some(rx_cache), None).expect("RandomX VM"),
+        )
+    }
+
+    /// Witness (a): a syncing node with an EMPTY contracts tree accepts the
+    /// genesis block through the exact sync-path call shape
+    /// (consensus_linear.rs accept_block) and ends with all 9 contracts +
+    /// manifests materialized and the identical block hash. This is the
+    /// one-or-the-other invariant: the syncing node deployed NOTHING at
+    /// startup — the genesis block provided everything.
+    #[test]
+    fn test_genesis_sync_materializes_contracts() {
+        dwow_native_token_contract::enable_deterministic_zk();
+
+        smol::block_on(async {
+            let (har_a, genesis_block, hash_a) = build_genesis().await;
+
+            // Sizing witness: the genesis block (WASM in serde_json byte
+            // arrays) exceeds the non-genesis cap — the height-1 size
+            // exemption in accept_block is load-bearing.
+            let genesis_len = serde_json::to_vec(&genesis_block).expect("serialize").len();
+            assert!(genesis_len > dwow_chain::execution::MAX_BLOCK_SIZE,
+                "genesis block {} bytes should exceed MAX_BLOCK_SIZE {} — \
+                 if not, the size exemption is dead code",
+                genesis_len, dwow_chain::execution::MAX_BLOCK_SIZE);
+
+            // Harness B: the syncing node — empty contracts tree.
+            let har_b = GenesisHarness::new_without_contracts().expect("GenesisHarness B");
+            for (cid, name) in dwow_chain::execution::genesis_contracts() {
+                let stored = har_b.chain_state.store
+                    .get_contract_data(&cid.to_bytes())
+                    .expect("get_contract_data");
+                assert!(stored.is_empty(),
+                    "pre-sync: {name} must NOT exist on the syncing node");
+            }
+
+            // Exact sync-path call shape (consensus_linear.rs).
+            let vm = genesis_vm(&genesis_block);
+            crate::block_acceptor::accept_block(
+                &har_b.chain_state,
+                &genesis_block,
+                &[],
+                &vm,
+                BlockHeight::new(0),
+                u32::MAX,
+                None,
+            ).expect("sync accept_block(genesis) must succeed on empty node");
+
+            assert_eq!(har_b.block_height(), BlockHeight::new(1), "synced to height 1");
+
+            // All 9 contracts + manifests materialized from the block.
+            for (i, (cid, name)) in
+                dwow_chain::execution::genesis_contracts().iter().enumerate()
+            {
+                let params: dwow_sdk::deploy::DeployParamsV1 = dwow_serial::deserialize(
+                    &genesis_block.transactions[i + 1].contract_calls[0].data[1..],
+                ).expect("DeployParamsV1 decode");
+                let stored = har_b.chain_state.store
+                    .get_contract_data(&cid.to_bytes())
+                    .expect("get_contract_data");
+                assert_eq!(stored, params.wasm_bincode,
+                    "post-sync: {name} WASM byte-equal to genesis payload");
+                let mut mkey = Vec::from(cid.to_bytes().as_slice());
+                mkey.extend_from_slice(b"_manifest");
+                let manifest = har_b.chain_state.store
+                    .get_contract_data(&mkey)
+                    .expect("get manifest");
+                assert_eq!(manifest, params.ix,
+                    "post-sync: {name} manifest matches genesis payload");
+            }
+
+            // Supply chain seeded by the coinbase execution.
+            let sc = har_b.chain_state.supply_chain.get(BlockHeight::new(1))
+                .expect("supply_chain at height 1");
+            assert_eq!(sc.total_supply,
+                dwow_sdk::blockchain::expected_reward(BlockHeight::new(1)),
+                "synced node: S_1 == INITIAL_REWARD");
+
+            // Identical chain identity.
+            let hash_b = har_b.chain_state.hash_block_with_cached_vm(&genesis_block);
+            assert_eq!(hash_a, hash_b, "genesis hash identical on creator and syncer");
+        });
+    }
+
+    /// Witness (b): tampering with the genesis deployment payload is
+    /// rejected. (i) A flipped WASM byte without recomputing the merkle
+    /// root fails check_block_header. (ii) With the merkle recomputed the
+    /// block hash differs — the genesis-hash pin / Tip filter rejects it
+    /// network-wide. (iii) Swapped deployment order (merkle recomputed)
+    /// fails the apply_genesis_deployments position binding.
+    #[test]
+    fn test_genesis_tampered_wasm_rejected() {
+        dwow_native_token_contract::enable_deterministic_zk();
+
+        smol::block_on(async {
+            let (_har_a, genesis_block, hash_a) = build_genesis().await;
+
+            // (i) Flip one byte inside deployment 1's WASM payload, merkle
+            // root left stale → merkle mismatch rejects the block.
+            let mut tampered = genesis_block.clone();
+            let data = &mut tampered.transactions[1].contract_calls[0].data;
+            let mid = data.len() / 2;
+            data[mid] ^= 0xFF;
+            let har_i = GenesisHarness::new_without_contracts().expect("harness i");
+            let vm = genesis_vm(&tampered);
+            let res = crate::block_acceptor::accept_block(
+                &har_i.chain_state, &tampered, &[], &vm,
+                BlockHeight::new(0), u32::MAX, None,
+            );
+            assert!(res.is_err(),
+                "(i) tampered WASM with stale merkle root MUST be rejected");
+
+            // (ii) Recompute the merkle root — the block hash now differs
+            // from the authority's, which is exactly what the genesis-hash
+            // pin and the Tip genesis_hash chain-compat filter reject.
+            tampered.header.merkle_root =
+                dwow_chain::compute_merkle_root(&tampered.transactions);
+            let har_ii = GenesisHarness::new_without_contracts().expect("harness ii");
+            let hash_tampered =
+                har_ii.chain_state.hash_block_with_cached_vm(&tampered);
+            assert_ne!(hash_a, hash_tampered,
+                "(ii) tampered genesis has a different hash — pin rejects it");
+
+            // (iii) Swap two deployment txs (Deployooor <-> NativeToken),
+            // merkle recomputed → position binding (singleton_name order)
+            // fails in apply_genesis_deployments.
+            let mut swapped = genesis_block.clone();
+            swapped.transactions.swap(1, 2);
+            swapped.header.merkle_root =
+                dwow_chain::compute_merkle_root(&swapped.transactions);
+            let har_iii = GenesisHarness::new_without_contracts().expect("harness iii");
+            let vm = genesis_vm(&swapped);
+            let res = crate::block_acceptor::accept_block(
+                &har_iii.chain_state, &swapped, &[], &vm,
+                BlockHeight::new(0), u32::MAX, None,
+            );
+            assert!(res.is_err(),
+                "(iii) out-of-order deployments MUST fail position binding");
         });
     }
 }

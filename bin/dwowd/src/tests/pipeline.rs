@@ -53,66 +53,74 @@
 //! ```
 
 use std::env;
+use std::sync::Arc;
 
 use dwow_core::Result;
-use dwow_sdk::crypto::{ContractId, Keypair, SecretKey, DEPLOYOOOR_CONTRACT_ID};
+use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::crypto::{ContractId, Keypair, SecretKey, DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
+use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::deploy::{ContractMetadata, DeployParamsV1};
 use dwow_sdk::pasta::pallas;
 use dwow_serial::Encodable;
 use rand::rngs::OsRng;
 
 use super::genesis::GenesisHarness;
-use super::harness::{build_coinbase_tx, build_contract_tx, build_test_block};
+use super::harness::{build_contract_tx, build_test_block};
+use super::heavyweight_pipeline::build_witness;
+use crate::registry::model::LinearPowRewardZk;
 
-/// Lightweight deployment pipeline — handles build chain and deployment
-/// without generating ZK proofs.
+/// Lightweight deployment pipeline — tests Deployooor deployment through the
+/// production `accept_block` path so Deployooor post-processing (WASM storage +
+/// `__initialize`) actually executes. Uses a real PoWRewardV1 coinbase (same
+/// production path as mining).
 pub struct ContractTestingPipeline {
     genesis: GenesisHarness,
     contract_name: String,
+    zk: Arc<LinearPowRewardZk>,
+    keys_path: std::path::PathBuf,
 }
 
 impl ContractTestingPipeline {
-    /// Create a new lightweight pipeline for the given contract.
-    /// Sets up GenesisHarness (temp sled DB, NativeToken + Deployooor).
+    const TEST_KEY_TOML: &'static str =
+        "[node0]\nwallet_secret = \
+         \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+
+    /// Create a new lightweight pipeline. Initializes genesis (height 1) with
+    /// all 9 contracts deployed, compiles ZK proving keys for coinbases.
     pub async fn new(contract_name: &str) -> Result<Self> {
-        let genesis = GenesisHarness::new()?;
-        Ok(Self { genesis, contract_name: contract_name.to_string() })
+        let genesis = GenesisHarness::new_without_contracts()?;
+        let zk = LinearPowRewardZk::new(genesis.chain_state.clone()).await?;
+        let keys_path = std::env::temp_dir()
+            .join(format!("dwow_lwp_{}_{}.toml", std::process::id(), contract_name));
+        std::fs::write(&keys_path, Self::TEST_KEY_TOML)
+            .map_err(|e| dwow_core::Error::Custom(format!("write test keys: {}", e)))?;
+
+        // Genesis block — deploys all 9 contracts.
+        let mgr = crate::accounts::AccountManager::open(
+            &keys_path, Network::Testnet, "node0",
+        ).map_err(|e| dwow_core::Error::Custom(format!("open test keys for genesis: {}", e)))?;
+        let gen_recipient = crate::accounts::MiningRecipient::from_account(
+            &mgr, BlockHeight::GENESIS,
+        ).map_err(|e| dwow_core::Error::Custom(format!("MiningRecipient for genesis: {}", e)))?;
+        drop(mgr);
+        crate::init_genesis(&genesis.chain_state, gen_recipient, [0xDA, 0x57, 0x01, 0x57]).await?;
+
+        Ok(Self { genesis, contract_name: contract_name.to_string(), zk: Arc::new(zk), keys_path })
     }
 
     /// One-shot: build everything and deploy the contract.
-    /// Returns the deployed ContractId.
     pub async fn ensure_ready_and_deploy(&mut self) -> Result<ContractId> {
-        self.ensure_genesis().await?;
         self.deploy().await
     }
 
-    /// Ensure genesis is ready (NativeToken + Deployooor deployed at construction).
-    pub async fn ensure_genesis(&mut self) -> Result<()> {
-        // GenesisHarness::new() already deploys NativeToken + Deployooor.
-        // Nothing additional needed for linear chain deployment.
-        Ok(())
-    }
-
-    /// Deploy the contract WASM through the Deployooor contract.
-    ///
-    /// This is the real production deployment path:
-    /// 1. Generate a deploy keypair and derive the ContractId from it
-    /// 2. Build a DeployV1 transaction targeting the Deployooor contract
-    /// 3. Submit through `apply_block_with_uncles()` which:
-    ///    a. Routes the call to Deployooor's WASM (validates, records in lock tree)
-    ///    b. Triggers post-processing hook (stores WASM, calls `__initialize`)
-    ///
-    /// This differs from the direct `deploy_contract()` path used by heavyweight
-    /// tests, which bypasses Deployooor entirely.
+    /// Deploy the contract WASM through the Deployooor contract via
+    /// `accept_block` — the real production path. Deployooor post-processing
+    /// in `execute_block` stores WASM and calls `__initialize`.
     pub async fn deploy(&self) -> Result<ContractId> {
         let wasm = self.load_contract_wasm()?;
-
-        // Generate a deploy keypair and derive the ContractId from the public key.
-        // This matches production where the deployer creates a fresh keypair.
         let deploy_keypair = Keypair::new(SecretKey::random(&mut OsRng));
         let contract_id = ContractId::derive_public(deploy_keypair.public);
 
-        // Build DeployV1 call data: function byte 0x00 + encoded DeployParamsV1
         let ix = self.build_init_params()?;
         let deploy_params = DeployParamsV1 {
             wasm_bincode: wasm,
@@ -121,66 +129,94 @@ impl ContractTestingPipeline {
             singleton: false,
             singleton_name: String::new(),
         };
-        let mut call_data = vec![0x00u8]; // DeployFunction::DeployV1
+        let mut call_data = vec![0x00u8];
         deploy_params.encode(&mut call_data)?;
 
-        // Build a transaction targeting the Deployooor contract
-        let contract_tx = build_contract_tx(*DEPLOYOOOR_CONTRACT_ID, call_data);
+        let mut contract_tx = build_contract_tx(*DEPLOYOOOR_CONTRACT_ID, call_data);
+        contract_tx.witness = build_witness(*DEPLOYOOOR_CONTRACT_ID, &contract_tx.contract_calls[0].data, vec![]);
 
-        // Build a coinbase transaction for the block reward
         let height = self.genesis.block_height();
-        let reward = dwow_sdk::blockchain::expected_reward(height.succ());
-        let coinbase = build_coinbase_tx(reward);
+        let next_height = height.succ();
+        let reward = dwow_sdk::blockchain::expected_reward(next_height);
 
-        let block = build_test_block(
-            &self.genesis.chain_state,
-            height.succ(),
-            vec![contract_tx, coinbase],
-        );
+        // Real PoWRewardV1 coinbase.
+        let mgr = crate::accounts::AccountManager::open(
+            &self.keys_path, Network::Testnet, "node0",
+        ).map_err(|e| dwow_core::Error::Custom(format!("open test keys: {}", e)))?;
+        let recipient = crate::accounts::MiningRecipient::from_account(&mgr, next_height)
+            .map_err(|e| dwow_core::Error::Custom(format!("MiningRecipient: {}", e)))?;
+        drop(mgr);
+        let (_cb, _pi, pow_reward_call, _coin_blind) =
+            crate::registry::model::build_linear_coinbase(
+                recipient, reward, &self.zk, next_height,
+            ).await?;
+        let coinbase = dwow_chain::Transaction {
+            version: 1, inputs: vec![], outputs: vec![],
+            contract_calls: vec![pow_reward_call],
+            lock_time: 0, nullifiers: vec![_cb.nullifier], witness: vec![],
+        };
 
-        // Submit via apply_block_with_uncles — a convenience path for contract
-        // testing that bypasses full WASM execution. Production (mining, sync)
-        // routes through accept_block → execute_block.
-        self.genesis.chain_state.apply_block_with_uncles(&block, &[]).await.map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
+        let block = build_test_block(&self.genesis.chain_state, next_height, vec![coinbase, contract_tx]);
+        let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
+        let rx_cache = randomx::RandomXCache::new(rx_flags, &block.header.randomx_key)
+            .map_err(|e| dwow_core::Error::Custom(format!("RandomX cache: {}", e)))?;
+        let vm = Arc::new(randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
+            .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?);
 
+        crate::block_acceptor::accept_block(
+            &self.genesis.chain_state, &block, &[], &vm, height, u32::MAX, None,
+        ).map_err(|e| dwow_core::Error::Custom(format!("accept_block deploy: {}", e)))?;
         Ok(contract_id)
     }
 
-    /// Deploy the contract WASM through the Deployooor contract with
-    /// ContractMetadata as the ix payload. This is the real production
-    /// deployment path — identical to `deploy()` but uses the provided
-    /// metadata for `ix` instead of contract-specific init params.
+    /// Deploy with ContractMetadata as the ix payload. Same production path
+    /// as [`deploy`] — routes through `accept_block`.
     pub async fn deploy_with_metadata(&self, metadata: &ContractMetadata) -> Result<ContractId> {
         let wasm = self.load_contract_wasm()?;
-
         let deploy_keypair = Keypair::new(SecretKey::random(&mut OsRng));
         let contract_id = ContractId::derive_public(deploy_keypair.public);
 
         let ix = metadata.to_ix_bytes();
         let deploy_params = DeployParamsV1 {
-            wasm_bincode: wasm,
-            public_key: deploy_keypair.public,
-            ix,
-            singleton: false,
-            singleton_name: String::new(),
+            wasm_bincode: wasm, public_key: deploy_keypair.public, ix,
+            singleton: false, singleton_name: String::new(),
         };
-        let mut call_data = vec![0x00u8]; // DeployFunction::DeployV1
+        let mut call_data = vec![0x00u8];
         deploy_params.encode(&mut call_data)?;
 
-        let contract_tx = build_contract_tx(*DEPLOYOOOR_CONTRACT_ID, call_data);
+        let mut contract_tx = build_contract_tx(*DEPLOYOOOR_CONTRACT_ID, call_data);
+        contract_tx.witness = build_witness(*DEPLOYOOOR_CONTRACT_ID, &contract_tx.contract_calls[0].data, vec![]);
 
         let height = self.genesis.block_height();
-        let reward = dwow_sdk::blockchain::expected_reward(height.succ());
-        let coinbase = build_coinbase_tx(reward);
+        let next_height = height.succ();
+        let reward = dwow_sdk::blockchain::expected_reward(next_height);
 
-        let block = build_test_block(
-            &self.genesis.chain_state,
-            height.succ(),
-            vec![contract_tx, coinbase],
-        );
+        let mgr = crate::accounts::AccountManager::open(
+            &self.keys_path, Network::Testnet, "node0",
+        ).map_err(|e| dwow_core::Error::Custom(format!("open test keys: {}", e)))?;
+        let recipient = crate::accounts::MiningRecipient::from_account(&mgr, next_height)
+            .map_err(|e| dwow_core::Error::Custom(format!("MiningRecipient: {}", e)))?;
+        drop(mgr);
+        let (_cb, _pi, pow_reward_call, _coin_blind) =
+            crate::registry::model::build_linear_coinbase(
+                recipient, reward, &self.zk, next_height,
+            ).await?;
+        let coinbase = dwow_chain::Transaction {
+            version: 1, inputs: vec![], outputs: vec![],
+            contract_calls: vec![pow_reward_call],
+            lock_time: 0, nullifiers: vec![_cb.nullifier], witness: vec![],
+        };
 
-        self.genesis.chain_state.apply_block_with_uncles(&block, &[]).await.map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
+        let block = build_test_block(&self.genesis.chain_state, next_height, vec![coinbase, contract_tx]);
+        let rx_flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
+        let rx_cache = randomx::RandomXCache::new(rx_flags, &block.header.randomx_key)
+            .map_err(|e| dwow_core::Error::Custom(format!("RandomX cache: {}", e)))?;
+        let vm = Arc::new(randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
+            .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?);
 
+        crate::block_acceptor::accept_block(
+            &self.genesis.chain_state, &block, &[], &vm, height, u32::MAX, None,
+        ).map_err(|e| dwow_core::Error::Custom(format!("accept_block deploy_with_metadata: {}", e)))?;
         Ok(contract_id)
     }
 

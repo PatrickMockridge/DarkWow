@@ -173,7 +173,7 @@ impl PromissoryNoteHarness {
         }
         .build()?;
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x00u8]; // RegisterTypeV1
         token_debris.params.encode(&mut call_data)?;
 
         Ok(TokenCreationResult {
@@ -227,7 +227,7 @@ impl PromissoryNoteHarness {
         }
         .build()?;
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x02u8]; // IssueV1
         debris.params.encode(&mut call_data)?;
 
         Ok(MintResult {
@@ -254,7 +254,7 @@ impl PromissoryNoteHarness {
         }
         .build()?;
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x04u8]; // TransferV1
         debris.params.encode(&mut call_data)?;
 
         Ok(TransferResult {
@@ -280,7 +280,7 @@ impl PromissoryNoteHarness {
         }
         .build()?;
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x05u8]; // OtcSwapV1
         debris.params.encode(&mut call_data)?;
 
         Ok(OtcSwapResult {

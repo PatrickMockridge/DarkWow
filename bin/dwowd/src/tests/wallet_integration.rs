@@ -75,10 +75,9 @@ fn test_wallet_integration() {
         // ================================================================
         // Phase 1: Production Chain Setup
         // ================================================================
+        // Contracts materialize via the genesis block (init_genesis below)
+        // — no startup deployment exists anymore.
         let har = GenesisHarness::new().expect("GenesisHarness");
-
-        crate::init_genesis_contracts(&har.chain_state)
-            .expect("init_genesis_contracts");
 
         // Deterministic test key — same file used by miner and wallet.
         // Both derive sk_H = derive_instance(master_sk, NATIVE_TOKEN_CONTRACT_ID, height),
@@ -109,13 +108,22 @@ fn test_wallet_integration() {
         assert_eq!(har.block_height(), BlockHeight::new(1));
 
         let gen_block = har.chain_state.get_block(BlockHeight::new(1)).expect("genesis block 1");
-        assert_eq!(gen_block.transactions.len(), 1);
+        // Genesis now carries the 9 contract deployments (1 coinbase + 9
+        // deployment txs, positions 1..=9) — materialized by the
+        // apply_genesis_deployments consensus rule.
+        assert_eq!(gen_block.transactions.len(), 10);
+        // Coinbase at position 0 (validate_block_structure requirement).
         assert_eq!(gen_block.transactions[0].contract_calls.len(), 1);
         assert!(
             gen_block.transactions[0].contract_calls[0].contract_id
                 == *NATIVE_TOKEN_CONTRACT_ID,
-            "genesis coinbase must target native_token"
+            "genesis coinbase at position 0 must target native_token"
         );
+        // Positions 1..=9 are genesis deployment txs.
+        for tx in &gen_block.transactions[1..] {
+            assert!(dwow_chain::execution::is_genesis_deployment_tx(tx),
+                "txs 1..=9 must be genesis deployment txs");
+        }
 
         let expected_gen_reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
         let sc1 = har.chain_state.supply_chain.get(BlockHeight::new(1))
@@ -136,7 +144,7 @@ fn test_wallet_integration() {
         let recipient_2 =
             crate::accounts::MiningRecipient::from_account(&miner_mgr, BlockHeight::new(2))
                 .expect("MiningRecipient height 2");
-        let (coinbase_2, _public_inputs, pow_reward_call) =
+        let (coinbase_2, _public_inputs, pow_reward_call, _coin_blind) =
             crate::registry::model::build_linear_coinbase(
                 recipient_2,
                 reward_2,
@@ -155,7 +163,7 @@ fn test_wallet_integration() {
             outputs: vec![],
             contract_calls: vec![pow_reward_call],
             lock_time: 0,
-            nullifiers: vec![],
+            nullifiers: vec![coinbase_2.nullifier],
             witness: vec![],
         };
         let merkle_root = tx.hash();
@@ -300,7 +308,7 @@ fn test_wallet_integration() {
 
         // Scan genesis coinbase — production format
         let genesis_call_data = {
-            let (_, _, call) = crate::registry::model::build_linear_coinbase(
+            let (_, _, call, _coin_blind) = crate::registry::model::build_linear_coinbase(
                 crate::accounts::MiningRecipient::from_account(&miner_mgr, BlockHeight::new(1))
                     .expect("recipient"),
                 expected_gen_reward,

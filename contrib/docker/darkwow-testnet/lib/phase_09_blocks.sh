@@ -7,10 +7,12 @@
 # Everything else is already proven by Rust:
 #   - test_genesis_determinism → genesis correctness + merkle root convergence
 #   - test_block_creation → height-2 acceptance + supply bridge (AC2-AC5)
-#   - init_genesis_contracts → contract initialization
+#   - test_genesis_sync_materializes_contracts → contracts ride in genesis
 #
 # What we test here is irreducible to Rust: did the real Docker deployment
-# actually produce blocks? Single RPC check, retry with 3s sleep, 30s max.
+# actually produce blocks, and did ONLY node0 exercise genesis authority?
+# RPC checks with retry, plus docker-log discriminators for the authority
+# gate (pipeline_model.py L1).
 #
 # Dependencies: output.sh (info, pass, fail, warn),
 #               config.sh (MODE, NODE0, NATIVE_NODES),
@@ -93,6 +95,95 @@ phase_blocks() {
             warn "$node_name: RPC unreachable or height=0"
         fi
     done
+
+    # ══ Genesis authority gate: ONLY node0 creates; everyone else syncs ══
+    # The user directive this measures: "either a node creates its own
+    # genesis on a separate network or it syncs to an existing one, but it
+    # cannot do both." Hard failures — phase_gate stops the pipeline.
+    local AUTHORITY_LOG="Genesis block created at height 1"
+    local SKIP_LOG="Skipping genesis creation"
+    local STARTUP_DEPLOY_LOG="Initializing 9 genesis contracts"   # deleted startup path — must appear NOWHERE
+    local APPLIED_LOG="Genesis deployments applied: 9 contracts"  # block-execution path — must appear EVERYWHERE
+
+    # (a) Positive: node0 is the genesis authority.
+    if docker logs "$NODE0_NAME" 2>&1 | grep -q "$AUTHORITY_LOG"; then
+        pass "node0 is the genesis authority"
+    else
+        fail "node0 did not create genesis (no '$AUTHORITY_LOG' log)"
+    fi
+
+    # Non-authority check list: every NODE_LIST node except node0, plus the
+    # observer (not in NODE_LIST — it has no mining role, but it MUST obey
+    # the same genesis authority rule).
+    local CHECK_LIST=()
+    for node_spec in "${NODE_LIST[@]}"; do
+        [ "${node_spec%%:*}" = "$NODE0_NAME" ] || CHECK_LIST+=("$node_spec")
+    done
+    if container_running "dwow-observer" 2>/dev/null; then
+        CHECK_LIST+=("dwow-observer:31345")
+    fi
+
+    # (b) Negative: no other node created a genesis block; each declared
+    # sync-only genesis.
+    for node_spec in "${CHECK_LIST[@]}"; do
+        local name="${node_spec%%:*}"
+        if docker logs "$name" 2>&1 | grep -q "$AUTHORITY_LOG"; then
+            fail "$name created a genesis block — only node0 may"
+        else
+            pass "$name did not create genesis"
+        fi
+        if docker logs "$name" 2>&1 | grep -q "$SKIP_LOG"; then
+            pass "$name declared sync-only genesis"
+        else
+            fail "$name missing '$SKIP_LOG' log"
+        fi
+    done
+
+    # (c) Deployment provenance: NO node deploys contracts at startup (the
+    # genesis block carries them); EVERY node — node0 included — materializes
+    # them by executing the genesis block (node0 at creation, others at sync).
+    for node_spec in "${NODE0_NAME}:${NODE0_PORT}" "${CHECK_LIST[@]}"; do
+        local name="${node_spec%%:*}"
+        if docker logs "$name" 2>&1 | grep -qi "$STARTUP_DEPLOY_LOG"; then
+            fail "$name deployed contracts at startup — genesis must carry deployments"
+        else
+            pass "$name: no startup contract deployment"
+        fi
+        if docker logs "$name" 2>&1 | grep -q "$APPLIED_LOG"; then
+            pass "$name: genesis deployments applied via block execution"
+        else
+            fail "$name: genesis deployment execution log missing"
+        fi
+    done
+
+    # (d) Cross-node genesis equality: block 1 identical everywhere.
+    # Normalize with jq (.result only, fixed request id) before hashing.
+    local ref_sum
+    ref_sum=$(jsonrpc_get_block "$NODE0_NAME" "$NODE0_PORT" 1 | jq -cS '.result' 2>/dev/null | sha256sum | cut -d' ' -f1)
+    local empty_sum
+    empty_sum=$(printf '' | sha256sum | cut -d' ' -f1)
+    local null_sum
+    null_sum=$(printf 'null\n' | jq -cS '.' | sha256sum | cut -d' ' -f1)
+    if [ -z "$ref_sum" ] || [ "$ref_sum" = "$empty_sum" ] || [ "$ref_sum" = "$null_sum" ]; then
+        fail "node0 genesis block unreadable via RPC — cannot verify convergence"
+    else
+        for node_spec in "${CHECK_LIST[@]}"; do
+            local name="${node_spec%%:*}"
+            local port="${node_spec##*:}"
+            local cmp_sum=""
+            # Allow up to 60s for genesis sync lag on the compared node.
+            for i in $(seq 1 20); do
+                cmp_sum=$(jsonrpc_get_block "$name" "$port" 1 | jq -cS '.result' 2>/dev/null | sha256sum | cut -d' ' -f1)
+                [ -n "$cmp_sum" ] && [ "$cmp_sum" != "$empty_sum" ] && [ "$cmp_sum" != "$null_sum" ] && break
+                sleep 3
+            done
+            if [ "$cmp_sum" = "$ref_sum" ]; then
+                pass "$name genesis block identical to node0"
+            else
+                fail "$name genesis block differs from node0 (ref=${ref_sum:0:16} got=${cmp_sum:0:16})"
+            fi
+        done
+    fi
 }
 
 # ==============================================================================

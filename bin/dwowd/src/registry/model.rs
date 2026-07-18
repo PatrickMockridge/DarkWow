@@ -41,6 +41,7 @@ use dwow_sdk::crypto::{
     pasta_prelude::PrimeField,
     poseidon_hash,
 };
+use dwow_sdk::pasta::pallas;
 use dwow_serial::Encodable;
 
 use crate::error::RpcError;
@@ -144,6 +145,7 @@ pub async fn build_linear_coinbase(
     dwow_chain::CoinbaseTransaction,
     [[u8; 32]; 9],
     dwow_chain::ContractCall,  // pow_reward_v1 contract call data
+    pallas::Base,              // coin_blind — deterministic, same as ZK circuit witness
 )> {
     use dwow_native_token_contract::client::pow_reward_v1::PoWRewardCallBuilder;
     use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine};
@@ -299,7 +301,16 @@ pub async fn build_linear_coinbase(
         data: pow_reward_call_data,
     };
 
-    Ok((coinbase, public_inputs, pow_reward_call))
+    // Deterministic coin_blind — computed from the same formula as the ZK circuit
+    // (PoWRewardCallBuilder, pow_reward_v1.rs:164-167). Exposed so tests can build
+    // fee/burn call_data referencing coinbase coins without decrypting the AEAD note.
+    let coin_blind = poseidon_hash([
+        sk_H.inner(),
+        pallas::Base::from(height.get()),
+        pallas::Base::from(3u64), // DOMAIN_COIN_BLIND
+    ]);
+
+    Ok((coinbase, public_inputs, pow_reward_call, coin_blind))
 }
 
 /// Build the FeeCollectV1 "collection plate" transaction — the final
@@ -575,29 +586,9 @@ pub async fn generate_linear_block_template(
         .as_secs();
 
     // Compute transaction merkle root (included in mining blob).
-    // Must be deterministic and match verify_merkle_root() in block.rs.
-    let merkle_root = {
-        let tx_hashes: Vec<Blake3Hash> = transactions.iter().map(|tx| tx.hash()).collect();
-        if tx_hashes.is_empty() {
-            blake3::hash(&[])
-        } else {
-            let mut layer = tx_hashes.clone();
-            while layer.len() > 1 {
-                if layer.len() % 2 != 0 {
-                    layer.push(*layer.last().unwrap());
-                }
-                layer = layer
-                    .chunks(2)
-                    .map(|pair| {
-                        let mut combined = pair[0].as_bytes().to_vec();
-                        combined.extend_from_slice(pair[1].as_bytes());
-                        blake3::hash(&combined)
-                    })
-                    .collect();
-            }
-            layer[0]
-        }
-    };
+    // Single canonical algorithm — shared with verify_merkle_root() and the
+    // genesis ceremony via dwow_chain::compute_merkle_root.
+    let merkle_root = dwow_chain::compute_merkle_root(&transactions);
 
     // Compute uncle merkle root from collected competing blocks.
     // Must be done BEFORE mining — the root is included in the mining blob
@@ -628,7 +619,7 @@ pub async fn generate_linear_block_template(
             "Coinbase encrypt: recipient_pk={} height={} reward={}",
             hex::encode(recipient_bytes), height, reward,
         );
-        let (coinbase, public_inputs, pow_reward_call) = build_linear_coinbase(
+        let (coinbase, public_inputs, pow_reward_call, _coin_blind) = build_linear_coinbase(
             recipient_config.recipient.clone(),
             reward,
             zk,

@@ -87,6 +87,22 @@ pub fn accept_block(
     dwow_chain::validation::validate_block_structure(block)
         .map_err(|e| dwow_core::Error::Custom(format!("Block structure invalid: {}", e)))?;
 
+    // 0.5 Block size — consensus-level acceptance rule (fail-closed), not
+    // just a wire cap. The genesis block is EXEMPT: it carries the 9 contract
+    // deployments (WASM in transactions), and its integrity check is the
+    // pinned genesis hash, not a size cap.
+    if block.header.height != BlockHeight::GENESIS {
+        let block_len = serde_json::to_vec(block)
+            .map_err(|e| dwow_core::Error::Custom(format!("Block serialization: {}", e)))?
+            .len();
+        if block_len > dwow_chain::execution::MAX_BLOCK_SIZE {
+            return Err(dwow_core::Error::Custom(format!(
+                "Block at height {} is {} bytes — exceeds MAX_BLOCK_SIZE {}",
+                block.header.height, block_len, dwow_chain::execution::MAX_BLOCK_SIZE
+            )));
+        }
+    }
+
     proof_of_token_balance::verify_proof_of_token_balance(block)
         .map_err(|e| dwow_core::Error::Custom(format!("Proof of token balance failed: {}", e)))?;
 
@@ -111,8 +127,18 @@ pub fn accept_block(
     // Full metadata-based VK verification is done inside execute_block.
     for tx in &block.transactions {
         let is_coinbase = tx.contract_calls.first()
-            .map_or(false, |c| c.data.first() == Some(&0x05));
+            .map_or(false, |c| c.data.first() == Some(&0x05)
+                && c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID);
         if is_coinbase {
+            continue;
+        }
+        // Genesis deployment txs are exempt — same soundness argument as the
+        // coinbase exemption above: their authenticity is the pinned genesis
+        // hash + merkle root, and their effect is transparent WASM
+        // re-execution (__initialize) by apply_genesis_deployments.
+        if block.header.height == BlockHeight::GENESIS
+            && dwow_chain::execution::is_genesis_deployment_tx(tx)
+        {
             continue;
         }
         if let Err(e) = dwow_chain::zk_verifier::verify_single_tx(tx) {

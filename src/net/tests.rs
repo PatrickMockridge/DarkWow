@@ -46,6 +46,7 @@ use crate::{
     },
     concurrency::sleep,
     util::logger::{setup_test_logger, Level},
+    util::time::NanoTimestamp,
 };
 
 fn init_logger() {
@@ -719,8 +720,15 @@ async fn p2p_magic_bytes_mismatch_gets_banned_real(ex: Arc<Executor<'static>>) {
     for p2p in &[node1_p2p.clone(), node2_p2p.clone()] {
         let channels = p2p.hosts().channels();
         if let Some(chan) = channels.first() {
-            let addr = chan.address().clone();
-            if let Ok(mut raw) = smol::net::TcpStream::connect(addr).await {
+            // chan.address() is a Url — extract host:port for the raw
+            // TCP connect (AsyncToSocketAddrs is not implemented for Url).
+            let url = chan.address().clone();
+            let (Some(host), Some(port)) = (url.host_str(), url.port()) else {
+                continue;
+            };
+            if let Ok(mut raw) =
+                smol::net::TcpStream::connect((host, port)).await
+            {
                 // Garbage: sequential 0x00 bytes — never a valid magic-varint prefix.
                 let garbage = [0u8; 16];
                 use smol::io::AsyncWriteExt;

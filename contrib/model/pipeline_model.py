@@ -101,6 +101,18 @@ def default_topology() -> Dict[str, Node]:
     }
 
 
+# ── Genesis contract set (consensus order — genesis.md Bootstrap Sequence) ──
+# The genesis block carries these 9 contract deployments as transactions at
+# positions 1..=9 (position 0 is the PoWRewardV1 coinbase). The order is
+# consensus: position i must deploy contract GENESIS_CONTRACTS[i].
+GENESIS_CONTRACTS = [
+    "Deployooor", "NativeToken", "PromissoryNote", "Identity", "Oracle",
+    "Attestation", "Purse", "Box", "MultiSig",
+]
+# 1 coinbase + 9 deployments — exactly, nothing else in genesis.
+GENESIS_TX_COUNT = 1 + len(GENESIS_CONTRACTS)
+
+
 # ── Genesis ceremony ──
 @dataclass
 class GenesisCeremony:
@@ -108,7 +120,14 @@ class GenesisCeremony:
     merkle root. The block hash is a computed method (hash_with_vm()), not
     a serialized JSON field — so merkle_root is used for identity comparison.
     Format in raw TCP JSON-RPC: \"merkle_root\":[b0,...,b31] (serde_json,
-    no spaces). Identical blocks have identical merkle roots."""
+    no spaces). Identical blocks have identical merkle roots.
+
+    The genesis block carries the 9 contract deployments (GENESIS_CONTRACTS)
+    as transactions — P2P sync provides EVERYTHING a syncing node needs.
+    A node either creates genesis (create_genesis=True: builds deployments +
+    coinbase into block 1) or syncs it (create_genesis=False: performs ZERO
+    contract deployment at startup; contracts materialize only by executing
+    the genesis block received via P2P). One or the other, never both."""
 
     authority: str = "node0"
     # node0's merkle root — every other node must match this
@@ -151,6 +170,58 @@ class GenesisCeremony:
                 )
         if not errors and len(node_merkle_roots) > 0:
             pass  # all converged
+        return errors
+
+    @staticmethod
+    def verify_genesis_block_structure(
+        tx_count: int, deployment_names: List[str],
+    ) -> List[str]:
+        """The genesis block carries exactly GENESIS_TX_COUNT transactions:
+        the coinbase at position 0 and the 9 contract deployments at
+        positions 1..=9 in GENESIS_CONTRACTS order. Order is consensus —
+        position i deploys to the well-known ContractId of
+        GENESIS_CONTRACTS[i]."""
+        errors = []
+        if tx_count != GENESIS_TX_COUNT:
+            errors.append(
+                f"Genesis block has {tx_count} txs — must be exactly "
+                f"{GENESIS_TX_COUNT} (1 coinbase + {len(GENESIS_CONTRACTS)} "
+                f"deployments)"
+            )
+        if deployment_names != GENESIS_CONTRACTS:
+            errors.append(
+                f"Genesis deployment order MISMATCH: got {deployment_names}, "
+                f"expected {GENESIS_CONTRACTS}"
+            )
+        return errors
+
+    @staticmethod
+    def verify_deployment_provenance(
+        startup_deployed: Dict[str, bool],
+        genesis_applied: Dict[str, bool],
+    ) -> List[str]:
+        """No node deploys contracts at startup — the deleted
+        init_genesis_contracts path must appear on ZERO nodes. Every node
+        (authority included) materializes contracts exclusively by executing
+        the genesis block: locally created on the authority, received via
+        P2P sync everywhere else.
+        - startup_deployed[name]: node logged startup-time contract deployment
+        - genesis_applied[name]: node logged 'Genesis deployments applied'
+          during genesis block execution"""
+        errors = []
+        for name, deployed in startup_deployed.items():
+            if deployed:
+                errors.append(
+                    f"{name} deployed contracts at startup — genesis must "
+                    f"carry deployments; a node creates genesis OR syncs it, "
+                    f"never both"
+                )
+        for name, applied in genesis_applied.items():
+            if not applied:
+                errors.append(
+                    f"{name} never applied genesis deployments — contracts "
+                    f"did not materialize via genesis block execution"
+                )
         return errors
 
 
@@ -428,6 +499,58 @@ def test_genesis_convergence():
     print("  PASS test_genesis_convergence")
 
 
+def test_genesis_block_structure():
+    """L1: Genesis block = coinbase + 9 deployments in consensus order."""
+    # Correct structure
+    errors = GenesisCeremony.verify_genesis_block_structure(
+        GENESIS_TX_COUNT, list(GENESIS_CONTRACTS),
+    )
+    assert len(errors) == 0, f"Correct genesis rejected: {errors}"
+
+    # Coinbase-only genesis (the old split-genesis defect)
+    errors = GenesisCeremony.verify_genesis_block_structure(1, [])
+    assert len(errors) == 2
+
+    # Wrong deployment order (order is consensus)
+    swapped = list(GENESIS_CONTRACTS)
+    swapped[0], swapped[1] = swapped[1], swapped[0]
+    errors = GenesisCeremony.verify_genesis_block_structure(
+        GENESIS_TX_COUNT, swapped,
+    )
+    assert len(errors) == 1
+    assert "order MISMATCH" in errors[0]
+
+    print("  PASS test_genesis_block_structure")
+
+
+def test_deployment_provenance():
+    """L1: Zero startup deployment; contracts arrive via genesis block only."""
+    # Healthy: nobody deploys at startup, everybody applies via genesis block
+    errors = GenesisCeremony.verify_deployment_provenance(
+        startup_deployed={"node0": False, "node1": False, "observer": False},
+        genesis_applied={"node0": True, "node1": True, "observer": True},
+    )
+    assert len(errors) == 0, f"Healthy provenance rejected: {errors}"
+
+    # Defect: observer deploys contracts at startup (does both)
+    errors = GenesisCeremony.verify_deployment_provenance(
+        startup_deployed={"node0": False, "observer": True},
+        genesis_applied={"node0": True, "observer": True},
+    )
+    assert len(errors) == 1
+    assert "observer" in errors[0] and "startup" in errors[0]
+
+    # Defect: node1 never materialized contracts
+    errors = GenesisCeremony.verify_deployment_provenance(
+        startup_deployed={"node0": False, "node1": False},
+        genesis_applied={"node0": True, "node1": False},
+    )
+    assert len(errors) == 1
+    assert "node1" in errors[0]
+
+    print("  PASS test_deployment_provenance")
+
+
 def test_consensus_verifier():
     """L2: Cross-node merkle root equality at heights 2-5."""
     # All agree
@@ -586,6 +709,8 @@ def test_pipeline_spec():
     test_topology()
     test_genesis_authority()
     test_genesis_convergence()
+    test_genesis_block_structure()
+    test_deployment_provenance()
     test_consensus_verifier()
     test_key_identity()
     test_aead_self_test()

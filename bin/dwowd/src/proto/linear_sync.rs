@@ -280,8 +280,14 @@ macro_rules! sync_barb_decl {
 }
 impl_p2p_message!(GetBlocks, "lineargetblocks", MAX_SMALL_JSON_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION,
     sync_barb_decl!());
-/// Maximum size for a Blocks response: 4 MB (20 blocks @ ~100 KB each + overhead)
-const MAX_BLOCKS_BYTES: u64 = 4 * 1024 * 1024;
+/// Block-carrying responses have NO wire cap (Message trait convention:
+/// 0 = no limit). The genesis block carries the 9 contract deployments
+/// (~multi-MB WASM as serde_json byte arrays) and is exempt from any size
+/// rule — its integrity check is the pinned genesis hash. Every OTHER
+/// block is bounded by the consensus-level MAX_BLOCK_SIZE acceptance rule
+/// in accept_block (fail-closed post-decode), so an oversized non-genesis
+/// block is rejected before it can enter the chain.
+const MAX_BLOCKS_BYTES: u64 = 0;
 
 impl_p2p_message!(Blocks, "linearblocks", MAX_BLOCKS_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION,
     sync_barb_decl!());
@@ -419,7 +425,16 @@ async fn handle_get_blocks(
             request.start_height, request.count, channel
         );
 
-        let count = std::cmp::min(request.count as usize, LINEAR_SYNC_BATCH);
+        // Genesis is always served ALONE: it carries the 9 contract
+        // deployments (multi-MB) — batching it with subsequent blocks
+        // inflates the response for no benefit. The client sync loop
+        // advances per accepted block, so a 1-block response is handled
+        // with zero client changes; the next request starts at height 2.
+        let count = if request.start_height == BlockHeight::GENESIS {
+            1
+        } else {
+            std::cmp::min(request.count as usize, LINEAR_SYNC_BATCH)
+        };
         let mut blocks = Vec::with_capacity(count);
 
         for i in 0..count {
@@ -587,5 +602,13 @@ mod tests {
         assert!(json.len() as u64 <= Tip::MAX_BYTES,
             "Tip MAX_BYTES={} but max-value JSON is {} bytes",
             Tip::MAX_BYTES, json.len());
+
+        // Block-carrying responses are uncapped on the wire (0 = no limit):
+        // the genesis block carries the 9 contract deployments (~multi-MB
+        // JSON) and MUST fit; non-genesis blocks are bounded by the
+        // consensus-level MAX_BLOCK_SIZE rule in accept_block. A future
+        // finite cap here MUST account for the real genesis block size.
+        assert_eq!(Blocks::MAX_BYTES, 0, "Blocks wire cap must be no-limit");
+        assert_eq!(BlockResponse::MAX_BYTES, 0, "BlockResponse wire cap must be no-limit");
     }
 }

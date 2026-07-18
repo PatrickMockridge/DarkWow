@@ -408,9 +408,10 @@ pub async fn consensus_linear_init_task(
                                 }
                             }
                             // Genesis block (height 1) has a full PoWRewardV1 coinbase
-                            // per genesis.md. Skip proof-of-token-balance for genesis:
-                            // target=u32::MAX means any hash passes, and mass balance
-                            // is trivially satisfied (one coinbase tx, no user txs).
+                            // plus the 9 contract-deployment txs per genesis.md. Skip
+                            // proof-of-token-balance for genesis: target=u32::MAX means
+                            // any hash passes, and mass balance is trivially satisfied
+                            // (one coinbase; deployment txs carry no NativeToken calls).
                             if block.header.height > BlockHeight::GENESIS {
                                 if let Err(e) = dwow_chain::proof_of_token_balance::verify_proof_of_token_balance(block) {
                                     tracing::warn!(

@@ -45,11 +45,7 @@ use dwow_core::{
 };
 use dwow_sdk::blockchain::BlockHeight;
 use dwow_sdk::crypto::keypair::Network;
-use dwow_sdk::crypto::{
-    ATTESTATION_CONTRACT_ID, BOX_CONTRACT_ID, DEPLOYOOOR_CONTRACT_ID,
-    IDENTITY_CONTRACT_ID, MULTISIG_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
-    ORACLE_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID, PURSE_CONTRACT_ID,
-};
+use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
 
 #[cfg(test)]
 mod tests;
@@ -302,175 +298,78 @@ pub struct Dwowd {
     db_path: std::path::PathBuf,
 }
 
-/// Initialize all genesis contracts by calling their `__initialize` WASM export.
+/// Build the 9 genesis contract-deployment transactions (hard-coded genesis).
 ///
-/// Each contract's `init_contract` seeds ZK circuits, Merkle trees, nullifier
-/// roots, and info state into the contracts sled tree. Without this, contracts
-/// fail on first use because their trees don't exist.
+/// The genesis block CARRIES the contract deployments — P2P sync provides
+/// EVERYTHING a syncing node needs. The WASM blobs are compiled into the
+/// binary here, but they are only materialized into chain state by the
+/// genesis-deployment consensus rule
+/// (`dwow_chain::execution::apply_genesis_deployments`) when the genesis
+/// block is executed — identically on the authority that builds it and on
+/// every node that syncs it. No node deploys contracts at startup.
 ///
-/// For NativeToken specifically, also seeds TOTAL_SUPPLY with the genesis
-/// reward (expected_reward(1)). The genesis block's coinbase bypasses WASM
-/// execution (connect_block with contracts_batch=None), so the supply was
-/// never recorded in contract state. Without this seed, pow_reward_v1's
-/// cumulative supply check fails for every subsequent block.
-fn init_genesis_contracts(
-    chain_state: &Arc<dwow_chain::CChainState>,
-) -> Result<()> {
-    use dwow_core::runtime::vm_runtime::Runtime;
-    use dwow_sdk::{
-        blockchain::expected_reward,
-        crypto::contract_id::ContractId,
-        tx::TransactionHash,
-    };
-    use dwow_chain::execution::TxBackend;
-    use sled_overlay::SledTreeOverlay;
+/// Transactions are built in `dwow_chain::execution::genesis_contracts()`
+/// order (genesis.md Bootstrap Sequence — order is consensus). Each carries
+/// one `ContractCall` to Deployooor with the DeployV1 selector (`0x00`)
+/// followed by `DeployParamsV1`:
+/// - `wasm_bincode`: the contract WASM
+/// - `ix`: the manifest.toml bytes (wallet-facing metadata; empty for
+///   Deployooor and NativeToken, which have no manifests)
+/// - `public_key`: a fixed deterministic key — the consensus rule binds
+///   deployments to the well-known ContractIds by table position, NOT by
+///   `derive_public`; the key only needs to be deterministic because it is
+///   part of the hash preimage
+/// - `singleton`/`singleton_name`: position binding verified by the rule
+fn build_genesis_deployment_txs() -> Vec<dwow_chain::Transaction> {
+    use dwow_sdk::deploy::DeployParamsV1;
 
-    info!(target: "dwowd::init_genesis_contracts",
-        "Initializing {} genesis contracts via __initialize...", 9);
-
-    // Contracts are initialized per genesis.md Bootstrap Sequence:
-    // consensus-critical first (Deployooor, NativeToken), then ecosystem.
-    let contracts: Vec<(dwow_sdk::crypto::ContractId, &[u8], &str)> = vec![
-        (*DEPLOYOOOR_CONTRACT_ID,    include_bytes!("../../../src/contract/deployooor/dwow_deployooor_contract.wasm"),       "Deployooor"),
-        (*NATIVE_TOKEN_CONTRACT_ID,  include_bytes!("../../../src/contract/native_token/dwow_native_token_contract.wasm"),   "NativeToken"),
-        (*PROMISSORY_NOTE_CONTRACT_ID, include_bytes!("../../../src/contract/promissory_note/dwow_promissory_note_contract.wasm"), "PromissoryNote"),
-        (*IDENTITY_CONTRACT_ID,      include_bytes!("../../../src/contract/identity/dwow_identity_contract.wasm"),           "Identity"),
-        (*ORACLE_CONTRACT_ID,        include_bytes!("../../../src/contract/oracle/dwow_oracle_contract.wasm"),               "Oracle"),
-        (*ATTESTATION_CONTRACT_ID,   include_bytes!("../../../src/contract/attestation/dwow_attestation_contract.wasm"),     "Attestation"),
-        (*PURSE_CONTRACT_ID,         include_bytes!("../../../src/contract/purse/dwow_purse_contract.wasm"),                 "Purse"),
-        (*BOX_CONTRACT_ID,           include_bytes!("../../../src/contract/box/dwow_box_contract.wasm"),                     "Box"),
-        (*MULTISIG_CONTRACT_ID,      include_bytes!("../../../src/contract/multisig/dwow_multisig_contract.wasm"),           "MultiSig"),
+    // WASM + manifest table, in genesis_contracts() order.
+    let contracts: Vec<(&[u8], &[u8], &str)> = vec![
+        (include_bytes!("../../../src/contract/deployooor/dwow_deployooor_contract.wasm"), &[], "Deployooor"),
+        (include_bytes!("../../../src/contract/native_token/dwow_native_token_contract.wasm"), &[], "NativeToken"),
+        (include_bytes!("../../../src/contract/promissory_note/dwow_promissory_note_contract.wasm"), include_bytes!("../../../src/contract/promissory_note/manifest.toml"), "PromissoryNote"),
+        (include_bytes!("../../../src/contract/identity/dwow_identity_contract.wasm"), include_bytes!("../../../src/contract/identity/manifest.toml"), "Identity"),
+        (include_bytes!("../../../src/contract/oracle/dwow_oracle_contract.wasm"), include_bytes!("../../../src/contract/oracle/manifest.toml"), "Oracle"),
+        (include_bytes!("../../../src/contract/attestation/dwow_attestation_contract.wasm"), include_bytes!("../../../src/contract/attestation/manifest.toml"), "Attestation"),
+        (include_bytes!("../../../src/contract/purse/dwow_purse_contract.wasm"), include_bytes!("../../../src/contract/purse/manifest.toml"), "Purse"),
+        (include_bytes!("../../../src/contract/box/dwow_box_contract.wasm"), include_bytes!("../../../src/contract/box/manifest.toml"), "Box"),
+        (include_bytes!("../../../src/contract/multisig/dwow_multisig_contract.wasm"), include_bytes!("../../../src/contract/multisig/manifest.toml"), "MultiSig"),
     ];
 
-    // Build-fingerprinted marker — invalidates across builds.
-    // A stale Docker volume from a different build has a different WASM hash,
-    // so the marker won't match and genesis redeploys correctly.
-    let mut build_hasher = blake3::Hasher::new();
-    for (_, wasm, _) in &contracts {
-        build_hasher.update(wasm);
-    }
-    let marker_key = format!("genesis_contracts_done_{}", build_hasher.finalize().to_hex());
-
-    // Skip entire deployment if already done for THIS build.
-    if chain_state.store.consensus
-        .get(marker_key.as_bytes())
-        .map_err(|e| Error::Custom(e.to_string()))?
-        .is_some()
-    {
-        info!(target: "dwowd::init_genesis_contracts",
-            "Genesis contracts already deployed for this build (marker found). Skipping.");
-        return Ok(());
-    }
-
-    let contracts_tree = chain_state.store.contracts_tree().clone();
-
-    // Create a minimal RandomX VM for the TxBackend. Genesis contracts
-    // only do DB operations during __initialize — the VM is never used
-    // for hashing, but TxBackend requires one. Use pooled zero-key cache.
-    let flags = randomx::RandomXFlags::get_recommended_flags()
-        & !randomx::RandomXFlags::JIT;
-    let genesis_key = [0u8; 32];
-    let rx_cache = chain_state.get_cache(genesis_key);
-    let genesis_vm = std::sync::Arc::new(
-        randomx::RandomXVM::new(flags, Some(rx_cache), None)
-            .map_err(|e| Error::Custom(format!("RandomX VM for genesis: {e}")))?,
+    // Fixed deterministic key — the genesis rule ignores it (binding is by
+    // the hard-coded table), but it sits in the tx hash preimage so it must
+    // be identical on every build.
+    let public_key = dwow_sdk::crypto::PublicKey::from_secret(
+        dwow_sdk::crypto::SecretKey::from(dwow_sdk::pasta::pallas::Base::from(1u64)),
     );
 
-    // Contracts are deployed sequentially through a SINGLE shared overlay
-    // (matching upstream's pattern: one BlockchainOverlay for all native
-    // contracts, one apply() at the end).  Each contract's __initialize
-    // writes into the shared overlay; after all 9 contracts deploy, a
-    // single aggregate() + apply_batch() atomically commits everything.
-    //
-    // This replaces the previous per-contract overlay-create/aggregate/
-    // apply_batch loop, which was 9 separate sled writes with unnecessary
-    // overlay disposal/recreation overhead.
-    let shared_overlay = std::sync::Arc::new(std::sync::Mutex::new(
-        SledTreeOverlay::new(&contracts_tree),
-    ));
-
-    for (contract_id, wasm_bytes, name) in &contracts {
-        let wasm = wasm_bytes.to_vec();
-
-        // Pre-fill WASM bytes into the shared overlay cache so they are
-        // visible to contract_lookup during deployment.
-        shared_overlay.lock().unwrap().state.cache.insert(
-            sled::IVec::from(contract_id.to_bytes().as_slice()),
-            sled::IVec::from(wasm.as_slice()),
-        );
-
-        let backend = std::sync::Arc::new(TxBackend {
-            overlay: std::sync::Arc::clone(&shared_overlay),
-            store: chain_state.store.clone(),
-            height: BlockHeight::new(0),
-            vm: genesis_vm.clone(),
-        });
-
-        let mut runtime = Runtime::new(
-            &wasm,
-            backend.clone(),
-            *contract_id,
-            BlockHeight::new(0), 0,
-            TransactionHash::none(),
-            0,
-        ).map_err(|e| Error::Custom(format!(
-            "Runtime::new for {name}: {e}"
-        )))?;
-
-        runtime.deploy(&[]).map_err(|e| Error::Custom(format!(
-            "init_contract failed for {name}: {e}"
-        )))?;
-        drop(runtime);
-
-        // No per-contract commit — all contracts share the overlay.
-        info!(target: "dwowd::init_genesis_contracts",
-            "{name}: init_contract OK");
-    }
-
-    // Single atomic commit after all contracts deploy.
-    // Cumulative supply state is managed by CumulativeSupplyChain
-    // (src/linear/src/supply_chain.rs) — it starts at 0 (identity)
-    // and is written after the first block commits.
-    let shared_overlay_ref = shared_overlay.lock().unwrap();
-    let batch = shared_overlay_ref.state.aggregate().unwrap_or_default();
-    drop(shared_overlay_ref);
-    contracts_tree.apply_batch(batch).map_err(|e| Error::Custom(format!(
-        "apply_batch for genesis contracts: {e}"
-    )))?;
-    info!(target: "dwowd::init_genesis_contracts",
-        "All 9 genesis contracts committed atomically");
-
-    // Store manifests (keyed by contract_id + b"_manifest").
-    // Manifests are TOML blobs, not WASM — no init_contract needed.
-    macro_rules! store_manifest {
-        ($cid:expr, $path:expr, $name:expr) => {
-            let manifest_bytes = include_bytes!($path);
-            let mut manifest_key = Vec::from($cid.to_bytes().as_slice());
-            manifest_key.extend_from_slice(b"_manifest");
-            chain_state.store.set_contract_data(&manifest_key, manifest_bytes)
-                .map_err(|e| Error::Custom(format!("{} manifest: {}", $name, e)))?;
-        };
-    }
-    store_manifest!(PROMISSORY_NOTE_CONTRACT_ID, "../../../src/contract/promissory_note/manifest.toml", "PromissoryNote");
-    store_manifest!(IDENTITY_CONTRACT_ID,      "../../../src/contract/identity/manifest.toml",      "Identity");
-    store_manifest!(ORACLE_CONTRACT_ID,        "../../../src/contract/oracle/manifest.toml",        "Oracle");
-    store_manifest!(ATTESTATION_CONTRACT_ID,   "../../../src/contract/attestation/manifest.toml",   "Attestation");
-    store_manifest!(PURSE_CONTRACT_ID,         "../../../src/contract/purse/manifest.toml",         "Purse");
-    store_manifest!(BOX_CONTRACT_ID,           "../../../src/contract/box/manifest.toml",           "Box");
-    store_manifest!(MULTISIG_CONTRACT_ID,      "../../../src/contract/multisig/manifest.toml",      "MultiSig");
-    info!(target: "dwowd::init_genesis_contracts",
-        "7 contract manifests stored");
-
-    // Completion marker — written atomically in the consensus tree.
-    // Crash-safe: if the marker exists, all contracts are deployed.
-    // Deployments are idempotent (db_lookup guards in each init_contract),
-    // so re-running is safe but wasteful. The marker prevents that.
-    chain_state.store.consensus.insert(marker_key.as_bytes(), [1u8].as_slice())
-        .map_err(|e| Error::Custom(format!("genesis marker write: {e}")))?;
-
-    info!(target: "dwowd::init_genesis_contracts",
-        "All 9 genesis contracts fully initialized");
-    Ok(())
+    contracts
+        .into_iter()
+        .map(|(wasm, manifest, name)| {
+            let params = DeployParamsV1 {
+                wasm_bincode: wasm.to_vec(),
+                public_key,
+                ix: manifest.to_vec(),
+                singleton: true,
+                singleton_name: name.to_string(),
+            };
+            // DeployV1 selector convention: data[0] == 0x00, then params.
+            let mut data = vec![0x00u8];
+            data.extend_from_slice(&dwow_serial::serialize(&params));
+            dwow_chain::Transaction {
+                version: 1,
+                inputs: vec![],
+                outputs: vec![],
+                contract_calls: vec![dwow_chain::ContractCall {
+                    contract_id: *DEPLOYOOOR_CONTRACT_ID,
+                    data,
+                }],
+                lock_time: 0,
+                nullifiers: vec![],
+                witness: vec![],
+            }
+        })
+        .collect()
 }
 
 /// Create the genesis block with a proper coinbase (Bitcoin-style).
@@ -502,8 +401,9 @@ async fn init_genesis(
     let genesis_reward = expected_reward(genesis_height);
 
     // Load ZK proving materials for Mint_V1 coinbase.
-    // Circuits were compiled into the binary; init_genesis_contracts already
-    // initialized the WASM trees and ZK circuits in sled.
+    // Circuits are compiled into the binary — no contract sled state is
+    // needed to build the coinbase, so the authority can construct the
+    // entire genesis block before any contract exists locally.
     let linear_zk =
         crate::registry::model::LinearPowRewardZk::new(chain_state.clone()).await?;
 
@@ -511,7 +411,7 @@ async fn init_genesis(
     // encrypted note. The recipient's per-block derived secret sk_H is used
     // for nullifier computation: nf = poseidon_hash(sk_H.inner(), C).
     // Same code path as every subsequent block.
-    let (coinbase, _public_inputs, pow_reward_call) =
+    let (coinbase, _public_inputs, pow_reward_call, _coin_blind) =
         crate::registry::model::build_linear_coinbase(
             recipient,
             genesis_reward,
@@ -540,7 +440,16 @@ async fn init_genesis(
         nullifiers: vec![coinbase.nullifier],
         witness: vec![],
     };
-    let genesis_merkle_root = genesis_tx.hash();
+
+    // The genesis block CARRIES the 9 contract deployments (positions 1..=9,
+    // coinbase at 0 per validate_block_structure). P2P sync provides
+    // EVERYTHING — a syncing node materializes contracts by executing this
+    // block via the same apply_genesis_deployments consensus rule that runs
+    // here through accept_block below. The genesis hash now pins the full
+    // contract set (WASM + manifests ride in transactions → merkle root).
+    let mut transactions = vec![genesis_tx];
+    transactions.extend(build_genesis_deployment_txs());
+    let genesis_merkle_root = dwow_chain::compute_merkle_root(&transactions);
 
     // Embed network magic bytes in genesis block anchor field.
     let mut anchor_tx_id = [0u8; 32];
@@ -566,7 +475,7 @@ async fn init_genesis(
         pow_source: PowSource::Native,
     };
 
-    let genesis_block = Block { header, transactions: vec![genesis_tx] };
+    let genesis_block = Block { header, transactions };
 
     // Create RandomX VM for WASM execution.
     // Genesis PoW is a formality: target = u32::MAX → any hash passes.
@@ -690,19 +599,13 @@ impl Dwowd {
         // CChainState is the single authoritative chain state.
         // No second instance. No diverged caches.
 
-        // Deploy native contracts to linear blockchain with full initialization.
-        // Each contract's __initialize WASM export (init_contract) is called to
-        // seed ZK trees, coin roots, nullifier roots, and info state. Without
-        // this, NativeToken's pow_reward_v1 supply check fails for every mined
-        // block after genesis because TOTAL_SUPPLY is never seeded.
-        //
-        // Bug 1 (fixed): init_contract was never called — trees didn't exist.
-        // Bug 2 (fixed): Genesis reward was never recorded in TOTAL_SUPPLY
-        //   because genesis coinbase bypasses WASM execution (connect_block
-        //   with contracts_batch=None). We now seed TOTAL_SUPPLY with
-        //   expected_reward(1) after NativeToken's init_contract.
-        init_genesis_contracts(&chain_state)?;
-        info!(target: "dwowd::Dwowd::init_linear", "All genesis contracts initialized");
+        // NO contract deployment at startup — genesis carries it.
+        // The 9 genesis contracts ride in the genesis block as deployment
+        // transactions (build_genesis_deployment_txs) and are materialized
+        // exclusively by the genesis-deployment consensus rule when the
+        // block executes: on THIS node below if create_genesis=true, or on
+        // first sync from the network otherwise. A node either creates
+        // genesis or syncs it — never both.
 
         // Resolve mining identity from the owner's declaration (keys.toml section),
         // deterministically, on every boot. NO sled cache, NO auto-generation: the
@@ -756,14 +659,45 @@ impl Dwowd {
         // init_genesis. This separates Concern 1 (account management) from
         // Concern 2 (block construction / nullifier signing).
         let linear_genesis_hash: HeaderHash = if create_genesis {
-            let magic_bytes = net_settings.magic_bytes.0;
-            let acct_guard = account_mgr.read().await;
-            let recipient = crate::accounts::MiningRecipient::from_account(
-                &acct_guard, BlockHeight::GENESIS,
-            )
-            .map_err(|e| Error::Custom(format!("MiningRecipient for genesis: {}", e)))?;
-            drop(acct_guard); // release lock before async ZK work
-            init_genesis(&chain_state, recipient, magic_bytes).await?
+            // Authority restart guard: a persistent volume already holds
+            // genesis — verify it against the compile-time pin instead of
+            // re-creating (accept_block would reject a duplicate height 1).
+            if chain_state.get_height() >= BlockHeight::GENESIS {
+                let stored_genesis = chain_state.get_block(BlockHeight::GENESIS)
+                    .map_err(|e| Error::Custom(format!(
+                        "height >= 1 but genesis block unreadable: {e}")))?;
+                let stored_hash = chain_state.hash_block_with_cached_vm(&stored_genesis);
+                let expected_hex = include_str!("../genesis_hash.txt").trim();
+                let is_placeholder = expected_hex.chars().all(|c| c == '0');
+                if !is_placeholder && stored_hash.to_string() != expected_hex {
+                    error!(
+                        target: "dwowd::Dwowd::init_linear",
+                        "GENESIS HASH MISMATCH on restart: stored={} expected={}",
+                        stored_hash, expected_hex
+                    );
+                    return Err(Error::Custom(
+                        "Stored genesis does not match compiled-in constant. \
+                         The database belongs to a different network or build. \
+                         Wipe the datadir or fix genesis_hash.txt."
+                            .into(),
+                    ));
+                }
+                info!(
+                    target: "dwowd::Dwowd::init_linear",
+                    "Genesis already exists (height {}), reusing stored genesis hash={}",
+                    chain_state.get_height(), stored_hash,
+                );
+                HeaderHash(stored_hash.into())
+            } else {
+                let magic_bytes = net_settings.magic_bytes.0;
+                let acct_guard = account_mgr.read().await;
+                let recipient = crate::accounts::MiningRecipient::from_account(
+                    &acct_guard, BlockHeight::GENESIS,
+                )
+                .map_err(|e| Error::Custom(format!("MiningRecipient for genesis: {}", e)))?;
+                drop(acct_guard); // release lock before async ZK work
+                init_genesis(&chain_state, recipient, magic_bytes).await?
+            }
         } else {
             info!(
                 target: "dwowd::Dwowd::init_linear",
@@ -894,13 +828,12 @@ impl Dwowd {
                         &self.node.p2p_handler.p2p,
                         genesis.clone(),
                     ).await;
-                    // Dual-path DAG announce for genesis (§10.4).
-                    #[cfg(feature = "event-graph")]
-                    if let Some(ref eg) = self.node.p2p_handler.event_graph {
-                        crate::proto::linear_broadcast::dag_announce_block(
-                            eg, &genesis,
-                        ).await;
-                    }
+                    // NO DAG announce for genesis: the genesis block carries
+                    // the 9 contract deployments (multi-MB WASM payload) and
+                    // is exempt from the block size cap. Flood broadcast +
+                    // GetBlocks sync are the load-bearing delivery paths for
+                    // genesis; the DAG substrate (§10.4) carries only
+                    // post-genesis blocks.
                 }
             }
         }
@@ -1058,7 +991,7 @@ async fn prepare_block(
     //    Must succeed before any destructive state mutation (take_competing_blocks).
     //    Clone: `recipient` is used again in step 6 (build_fee_collect_tx —
     //    same sk_H for coinbase and fee collection, spec §3.2).
-    let (_, _, pow_reward_call) = build_linear_coinbase(
+    let (_, _, pow_reward_call, _coin_blind) = build_linear_coinbase(
         recipient.clone(),
         base_reward,
         linear_zk,

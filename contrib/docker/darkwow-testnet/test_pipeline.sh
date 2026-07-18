@@ -315,7 +315,10 @@ if ! is_join_mode; then
 
     # Default: one tick then exit. CI and automation need a clean exit code.
     # Set PIPELINE_EXIT_AFTER_SUCCESS=false for continuous monitoring (legacy).
-    local tick=0 max_ticks=1
+    # NOTE: top-level scope — `local` is illegal outside a function and
+    # aborted the pipeline here after all checks passed.
+    tick=0
+    max_ticks=1
     [ "${PIPELINE_EXIT_AFTER_SUCCESS:-true}" = "false" ] && max_ticks=999999
     while [ "$tick" -lt "$max_ticks" ]; do
         echo ""

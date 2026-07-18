@@ -61,7 +61,11 @@ use tracing::{error, info};
 use dwow_core::Error;
 use dwow_serial::Decodable;
 use dwow_sdk::blockchain::BlockHeight;
-use dwow_sdk::crypto::{ContractId, DEPLOYOOOR_CONTRACT_ID};
+use dwow_sdk::crypto::{
+    ContractId, ATTESTATION_CONTRACT_ID, BOX_CONTRACT_ID, DEPLOYOOOR_CONTRACT_ID,
+    IDENTITY_CONTRACT_ID, MULTISIG_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID, ORACLE_CONTRACT_ID,
+    PROMISSORY_NOTE_CONTRACT_ID, PURSE_CONTRACT_ID,
+};
 use dwow_sdk::deploy::DeployParamsV1;
 
 use crate::CChainState;
@@ -144,6 +148,18 @@ pub fn execute_block(
     // Atomicity Layers".
     let canonical_overlay = Arc::new(std::sync::Mutex::new(SledTreeOverlay::new(&contracts_tree)));
 
+    // ---- Genesis-deployment pre-pass (hard-coded genesis rule) ----
+    // At height GENESIS the block carries the 9 contract deployments as
+    // transactions. They are materialized into the canonical overlay BEFORE
+    // any call executes — the coinbase's NativeToken call resolves against
+    // the overlay (lookup below), and everything commits in the block's
+    // single atomic batch. Identical for locally-created and synced genesis.
+    let is_genesis = block.header.height == BlockHeight::GENESIS;
+    if is_genesis {
+        let mut guard = canonical_overlay.lock().unwrap_or_else(|e| e.into_inner());
+        apply_genesis_deployments(&mut guard, (*store).clone(), Arc::clone(vm), block, difficulty)?;
+    }
+
     // ---- Build execution jobs ----
 
     struct CallJob {
@@ -163,18 +179,39 @@ pub fn execute_block(
     // strict mode: a canonical call that cannot execute would silently skip
     // state transitions the block header commits to.
     for tx in &block.transactions {
+        // Genesis deployment txs were consumed by the pre-pass above — they
+        // MUST NOT dispatch through Deployooor WASM (Deployooor itself is
+        // one of the payloads).
+        if is_genesis && is_genesis_deployment_tx(tx) {
+            continue;
+        }
         let tx_hash = tx.hash();
         for (call_idx, call) in tx.contract_calls.iter().enumerate() {
             // Phase 2.1: contract_id is now typed ContractId — no from_bytes needed
             let contract_id = call.contract_id;
-            let wasm_bytes = match store.get_contract_data(&contract_id.to_bytes()) {
-                Ok(b) if !b.is_empty() => b,
-                _ => {
-                    return Err(Error::Custom(format!(
-                        "canonical call {} of tx {} targets unknown contract {}",
-                        call_idx, hex::encode(tx_hash.as_bytes()), contract_id,
-                    )));
+            // At genesis the contracts were just deployed into the canonical
+            // overlay and are not yet committed — resolve overlay-first.
+            // Non-genesis heights keep the committed-state read untouched.
+            let overlay_wasm: Option<Vec<u8>> = if is_genesis {
+                let guard = canonical_overlay.lock().unwrap_or_else(|e| e.into_inner());
+                match guard.get(&contract_id.to_bytes()) {
+                    Ok(Some(iv)) if !iv.is_empty() => Some(iv.to_vec()),
+                    _ => None,
                 }
+            } else {
+                None
+            };
+            let wasm_bytes = match overlay_wasm {
+                Some(b) => b,
+                None => match store.get_contract_data(&contract_id.to_bytes()) {
+                    Ok(b) if !b.is_empty() => b,
+                    _ => {
+                        return Err(Error::Custom(format!(
+                            "canonical call {} of tx {} targets unknown contract {}",
+                            call_idx, hex::encode(tx_hash.as_bytes()), contract_id,
+                        )));
+                    }
+                },
             };
             jobs.push(CallJob {
                 tx_hash,
@@ -417,6 +454,12 @@ pub fn execute_block(
         if is_coinbase {
             continue;
         }
+        // Genesis deployment txs carry no witness or metadata — their
+        // authenticity is the pinned genesis hash + merkle root (verified
+        // by check_block_header on every acceptance path).
+        if is_genesis && is_genesis_deployment_tx(tx) {
+            continue;
+        }
         let tx_hash = tx.hash();
         if let Some(tables) = veri_state.get(&tx_hash) {
             let core_tx = crate::zk_verifier::decode_and_reconcile(tx).map_err(|e| {
@@ -650,6 +693,136 @@ fn deploy_contract_in_overlay(
     // Clone the overlay out of the shared Arc — the deploy runtime may hold
     // an extra reference, so try_unwrap is unreliable here.
     *overlay = deploy_overlay.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    Ok(())
+}
+
+/// The 9 genesis contracts, in canonical bootstrap order (genesis.md
+/// Bootstrap Sequence: consensus-critical first, then ecosystem).
+///
+/// The genesis block carries these deployments as transactions at positions
+/// 1..=9 (position 0 is the PoWRewardV1 coinbase). ORDER IS CONSENSUS:
+/// position i of the genesis block MUST deploy to `genesis_contracts()[i].0`
+/// and declare `singleton_name == genesis_contracts()[i].1`.
+pub fn genesis_contracts() -> [(ContractId, &'static str); 9] {
+    [
+        (*DEPLOYOOOR_CONTRACT_ID, "Deployooor"),
+        (*NATIVE_TOKEN_CONTRACT_ID, "NativeToken"),
+        (*PROMISSORY_NOTE_CONTRACT_ID, "PromissoryNote"),
+        (*IDENTITY_CONTRACT_ID, "Identity"),
+        (*ORACLE_CONTRACT_ID, "Oracle"),
+        (*ATTESTATION_CONTRACT_ID, "Attestation"),
+        (*PURSE_CONTRACT_ID, "Purse"),
+        (*BOX_CONTRACT_ID, "Box"),
+        (*MULTISIG_CONTRACT_ID, "MultiSig"),
+    ]
+}
+
+/// Recognizer for a genesis contract-deployment transaction.
+///
+/// A genesis deployment tx carries exactly one call targeting Deployooor with
+/// the DeployV1 selector (`data[0] == 0x00` followed by `DeployParamsV1`),
+/// and no inputs, outputs, or nullifiers. These txs are consumed by
+/// [`apply_genesis_deployments`] at height GENESIS — they are NOT dispatched
+/// through Deployooor WASM (Deployooor itself is one of the payloads).
+pub fn is_genesis_deployment_tx(tx: &crate::Transaction) -> bool {
+    tx.contract_calls.len() == 1
+        && tx.inputs.is_empty()
+        && tx.outputs.is_empty()
+        && tx.nullifiers.is_empty()
+        && tx.contract_calls[0].contract_id == *DEPLOYOOOR_CONTRACT_ID
+        && tx.contract_calls[0].data.len() > 1
+        && tx.contract_calls[0].data[0] == 0x00
+}
+
+/// Genesis-deployment consensus rule (hard-coded genesis).
+///
+/// At height GENESIS the block carries the 9 contract deployments as
+/// transactions — P2P sync provides EVERYTHING a syncing node needs. This
+/// rule materializes them into the block's overlay BEFORE any call executes,
+/// identically whether the block was built locally (`create_genesis=true`)
+/// or received via sync. A node either creates genesis or syncs it — never
+/// both. Authenticity of the deployment bytes is the pinned genesis hash:
+/// the WASM rides in transactions, so the merkle root (verified by
+/// `check_block_header` on every acceptance path) commits to it.
+///
+/// Validation — ALL failures reject the block:
+/// 1. Exactly 1 coinbase + 9 deployment txs, nothing else.
+/// 2. Each deployment tx at position i decodes `DeployParamsV1` with
+///    `singleton == true` and `singleton_name == genesis_contracts()[i].1`
+///    (position binding — order is consensus) and non-empty WASM.
+/// 3. Deployment lands at the WELL-KNOWN ContractId from the hard-coded
+///    table, NOT `derive_public` — native contracts live at fixed IDs.
+/// 4. `__initialize` runs via `deploy_contract_in_overlay` with `ix = &[]`,
+///    byte-identical to the historical startup deployment semantics.
+///    Manifest bytes (params.ix) are a host-side overlay write.
+pub fn apply_genesis_deployments(
+    overlay: &mut SledTreeOverlay,
+    store: crate::LinearStore,
+    vm: Arc<RandomXVM>,
+    block: &crate::Block,
+    difficulty: u32,
+) -> dwow_core::Result<()> {
+    let table = genesis_contracts();
+
+    // 1 coinbase + 9 deployments — exactly, nothing else in genesis.
+    if block.transactions.len() != 1 + table.len() {
+        return Err(Error::Custom(format!(
+            "genesis block has {} txs — must be exactly {} (1 coinbase + {} deployments)",
+            block.transactions.len(), 1 + table.len(), table.len(),
+        )));
+    }
+
+    for (i, (contract_id, name)) in table.iter().enumerate() {
+        let tx = &block.transactions[i + 1];
+        if !is_genesis_deployment_tx(tx) {
+            return Err(Error::Custom(format!(
+                "genesis tx {} is not a deployment tx (expected {})",
+                i + 1, name,
+            )));
+        }
+        let call = &tx.contract_calls[0];
+        let params = DeployParamsV1::decode(&mut Cursor::new(&call.data[1..]))
+            .map_err(|e| Error::Custom(format!(
+                "genesis deployment {} ({}): DeployParamsV1 decode: {}", i + 1, name, e,
+            )))?;
+        if !params.singleton || params.singleton_name != *name {
+            return Err(Error::Custom(format!(
+                "genesis deployment {} order violation: declared '{}', expected '{}'",
+                i + 1, params.singleton_name, name,
+            )));
+        }
+        if params.wasm_bincode.is_empty() {
+            return Err(Error::Custom(format!(
+                "genesis deployment {} ({}): empty WASM", i + 1, name,
+            )));
+        }
+
+        // Deploy to the WELL-KNOWN id (NOT derive_public) and run
+        // __initialize with ix = &[] — same semantics as the historical
+        // startup deployment (runtime.deploy(&[])).
+        deploy_contract_in_overlay(
+            overlay, store.clone(), vm.clone(),
+            &params.wasm_bincode, *contract_id, &[],
+            BlockHeight::GENESIS, difficulty,
+        )?;
+
+        // Manifest bytes ride in params.ix (host-side metadata write, keyed
+        // contract_id || b"_manifest" — same key as store.set_contract_data
+        // used before). Empty for Deployooor and NativeToken.
+        if !params.ix.is_empty() {
+            let mut manifest_key = Vec::from(contract_id.to_bytes().as_slice());
+            manifest_key.extend_from_slice(b"_manifest");
+            overlay.state.cache.insert(
+                sled_overlay::sled::IVec::from(manifest_key.as_slice()),
+                sled_overlay::sled::IVec::from(params.ix.as_slice()),
+            );
+        }
+    }
+
+    // Pipeline positive discriminator: contracts materialized via genesis
+    // block execution (creation on the authority, sync everywhere else).
+    info!(target: "execution",
+        "Genesis deployments applied: 9 contracts at well-known ContractIds");
     Ok(())
 }
 

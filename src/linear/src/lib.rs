@@ -53,9 +53,9 @@ mod serial;
 pub const COINBASE_MATURITY: u64 = 100;
 
 pub use block::{
-    build_uncle_merkle, compute_reward, create_block, create_block_with_uncles, create_uncle,
-    verify_uncle_proof, Block, BlockHeader, PowSource, UncleBlock, UncleProof,
-    MAX_UNCLE_DEPTH, MAX_UNCLE_COUNT,
+    build_uncle_merkle, compute_merkle_root, compute_reward, create_block,
+    create_block_with_uncles, create_uncle, verify_uncle_proof, Block, BlockHeader, PowSource,
+    UncleBlock, UncleProof, MAX_UNCLE_DEPTH, MAX_UNCLE_COUNT,
 };
 pub use chain_state::CChainState;
 pub use consensus::{PoWConfig, PoWConsensus};

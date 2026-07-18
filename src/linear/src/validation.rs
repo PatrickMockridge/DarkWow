@@ -243,7 +243,8 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
 
     let pow_count = block.transactions.iter()
         .filter(|tx| tx.contract_calls.first()
-            .map_or(false, |c| c.data.first() == Some(&0x05)))
+            .map_or(false, |c| c.data.first() == Some(&0x05)
+                && c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID))
         .count();
     if pow_count != 1 {
         return Err(LinearError::BlockStructure(

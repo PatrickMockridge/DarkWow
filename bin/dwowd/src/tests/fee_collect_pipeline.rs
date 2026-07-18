@@ -194,9 +194,9 @@ fn test_fee_collect_determinism() {
 
     smol::block_on(async {
         // ── Setup ────────────────────────────────────────────────
+        // Contracts materialize via the genesis block (init_genesis below)
+        // — no startup deployment exists anymore.
         let har = GenesisHarness::new().expect("GenesisHarness");
-        crate::init_genesis_contracts(&har.chain_state)
-            .expect("init_genesis_contracts");
 
         let keys_toml = "[node0]\nwallet_secret = \
             \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
@@ -300,9 +300,8 @@ fn test_fee_collect_determinism() {
             "TOTAL_SUPPLY unchanged — fees redistribute, not mint");
 
         // ── Re-exec determinism ──────────────────────────────────
+        // Contracts materialize via init_genesis below — no startup deploy.
         let har2 = GenesisHarness::new().expect("GenesisHarness2");
-        crate::init_genesis_contracts(&har2.chain_state)
-            .expect("init_genesis_contracts");
         let miner_mgr2 = crate::accounts::AccountManager::open(
             &keys_path, Network::Testnet, "node0",
         ).expect("AccountManager2");

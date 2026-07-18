@@ -257,28 +257,36 @@ impl Block {
 
     /// Verify the merkle root matches the transactions
     pub fn verify_merkle_root(&self) -> bool {
-        let tx_hashes: Vec<blake3::Hash> = self.transactions.iter().map(|tx| tx.hash()).collect();
-        let computed_root = if tx_hashes.is_empty() {
-            blake3::hash(&[])
-        } else {
-            // Simple merkle root computation
-            let mut layer = tx_hashes.clone();
-            while layer.len() > 1 {
-                if !layer.len().is_multiple_of(2) {
-                    layer.push(*layer.last().unwrap());
-                }
-                layer = layer
-                    .chunks(2)
-                    .map(|pair| {
-                        let mut combined = pair[0].as_bytes().to_vec();
-                        combined.extend_from_slice(pair[1].as_bytes());
-                        blake3::hash(&combined)
-                    })
-                    .collect();
+        compute_merkle_root(&self.transactions) == self.header.merkle_root
+    }
+}
+
+/// Compute the transaction merkle root — the single canonical algorithm.
+///
+/// Shared by block builders (genesis ceremony, miner template) and
+/// [`Block::verify_merkle_root`]. Odd layers duplicate the last hash;
+/// the empty set hashes to `blake3::hash(&[])`.
+pub fn compute_merkle_root(transactions: &[Transaction]) -> blake3::Hash {
+    let tx_hashes: Vec<blake3::Hash> = transactions.iter().map(|tx| tx.hash()).collect();
+    if tx_hashes.is_empty() {
+        blake3::hash(&[])
+    } else {
+        // Simple merkle root computation
+        let mut layer = tx_hashes;
+        while layer.len() > 1 {
+            if !layer.len().is_multiple_of(2) {
+                layer.push(*layer.last().unwrap());
             }
-            layer[0]
-        };
-        computed_root == self.header.merkle_root
+            layer = layer
+                .chunks(2)
+                .map(|pair| {
+                    let mut combined = pair[0].as_bytes().to_vec();
+                    combined.extend_from_slice(pair[1].as_bytes());
+                    blake3::hash(&combined)
+                })
+                .collect();
+        }
+        layer[0]
     }
 }
 
@@ -504,27 +512,9 @@ pub fn create_block_with_uncles(
     uncles: &[UncleBlock],
     vm: &randomx::RandomXVM,
 ) -> Block {
-    // Calculate merkle root for transactions (uses blake3 for speed)
-    let tx_hashes: Vec<blake3::Hash> = transactions.iter().map(|tx| tx.hash()).collect();
-    let merkle_root = if tx_hashes.is_empty() {
-        blake3::hash(&[])
-    } else {
-        let mut layer = tx_hashes.clone();
-        while layer.len() > 1 {
-            if layer.len() % 2 != 0 {
-                layer.push(layer.last().unwrap().clone());
-            }
-            layer = layer
-                .chunks(2)
-                .map(|pair| {
-                    let mut combined = pair[0].as_bytes().to_vec();
-                    combined.extend_from_slice(pair[1].as_bytes());
-                    blake3::hash(&combined)
-                })
-                .collect();
-        }
-        layer[0]
-    };
+    // Calculate merkle root for transactions — single canonical algorithm
+    // (shared with verify_merkle_root and the genesis ceremony).
+    let merkle_root = compute_merkle_root(&transactions);
 
     // Build uncle merkle and compute rewards (uses blake3 for merkle structure)
     let (uncle_merkle_root, _) = build_uncle_merkle(uncles, vm);

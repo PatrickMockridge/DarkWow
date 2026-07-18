@@ -30,8 +30,9 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{MerkleNode, PublicKey, SecretKey},
+    crypto::{MerkleNode, PublicKey, SecretKey, poseidon_hash},
     crypto::pasta_prelude::Group,
+    crypto::pasta_prelude::PrimeField,
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -126,6 +127,15 @@ impl NativeTokenHarness {
         }
         .build()?;
 
+        // Deterministic coin_blind — same formula as PoWRewardCallBuilder
+        // (pow_reward_v1.rs:164-167, DOMAIN_COIN_BLIND=3). Exposed so tests
+        // can build fee/burn call_data referencing the minted coin.
+        let coin_blind = poseidon_hash([
+            secret.inner(),
+            pallas::Base::from(block_height.get()),
+            pallas::Base::from(3u64),
+        ]);
+
         let mut call_data = vec![0x05];
         debris.params.encode(&mut call_data)?;
 
@@ -133,6 +143,7 @@ impl NativeTokenHarness {
             call_data,
             output: debris.params.output,
             proofs: debris.proofs,
+            coin_blind,
         })
     }
 
@@ -240,6 +251,7 @@ pub struct PoWRewardResult {
     pub call_data: Vec<u8>,
     pub output: Output,
     pub proofs: Vec<dwow_core::zk::Proof>,
+    pub coin_blind: pallas::Base,
 }
 
 /// Result of burn
