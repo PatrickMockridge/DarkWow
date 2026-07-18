@@ -196,7 +196,7 @@ fn test_fee_collect_determinism() {
         // ── Setup ────────────────────────────────────────────────
         // Contracts materialize via the genesis block (init_genesis below)
         // — no startup deployment exists anymore.
-        let har = GenesisHarness::new().expect("GenesisHarness");
+        let har = GenesisHarness::new_without_contracts().expect("GenesisHarness");
 
         let keys_toml = "[node0]\nwallet_secret = \
             \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
@@ -301,7 +301,7 @@ fn test_fee_collect_determinism() {
 
         // ── Re-exec determinism ──────────────────────────────────
         // Contracts materialize via init_genesis below — no startup deploy.
-        let har2 = GenesisHarness::new().expect("GenesisHarness2");
+        let har2 = GenesisHarness::new_without_contracts().expect("GenesisHarness2");
         let miner_mgr2 = crate::accounts::AccountManager::open(
             &keys_path, Network::Testnet, "node0",
         ).expect("AccountManager2");
