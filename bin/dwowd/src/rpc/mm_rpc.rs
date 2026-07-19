@@ -51,7 +51,7 @@ use dwow_chain::{
         fixed_array::FixedByteArray,
         extract_aux_merkle_root_from_block,
         merkle_proof::MerkleProof,
-        monero_block_deserialize,
+        monero_block_deserialize, JobId,
         MoneroPowData,
     },
     PowSource,
@@ -147,11 +147,29 @@ impl DwowNode {
         };
         let aux_hash = aux_hash.to_string();
 
+        // Convert aux_hash to JobId for dedup table lookup.
+        // Monero block hashes are 32-byte Keccak values — any non-zero
+        // 32-byte value is a valid JobId per merge-mining-ffi.md §2.1.
+        let aux_job_id = {
+            let Ok(bytes) = hex::decode(&aux_hash) else {
+                return server_error(RpcError::MinerInvalidAuxHash, id, None)
+            };
+            if bytes.len() != 32 {
+                return server_error(RpcError::MinerInvalidAuxHash, id, None)
+            };
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&bytes);
+            match JobId::from_bytes(arr) {
+                Some(j) => j,
+                None => return server_error(RpcError::MinerInvalidAuxHash, id, None),
+            }
+        };
+
         // Skip duplicate jobs — p2pool polls with the same aux_hash until
         // a solution is found
         {
             let mm_jobs = self.mining_state.mm_jobs.lock().await;
-            if mm_jobs.contains_key(&aux_hash) {
+            if mm_jobs.contains_key(&aux_job_id) {
                 return JsonResponse::new(JsonValue::from(HashMap::new()), id).into()
             }
         }
@@ -296,7 +314,10 @@ impl DwowNode {
         job_hasher.update(&template.height.to_le_bytes());
         job_hasher.update(template.merkle_root.as_bytes());
         job_hasher.update(&template.timestamp.to_le_bytes());
-        let job_id = job_hasher.finalize().to_string();
+        let job_hash = job_hasher.finalize();
+        let job_id = JobId::from_bytes(job_hash.into())
+            .expect("blake3 hash is never zero (probability 2^-256)");
+        let job_id_hex = job_id.to_hex();
 
         // Derive difficulty
         let difficulty = {
@@ -319,7 +340,7 @@ impl DwowNode {
                     mm_jobs.remove(&oldest);
                 }
             }
-            mm_jobs.insert(job_id.clone(), ());
+            mm_jobs.insert(job_id, ());
         }
 
         // Store template in current_linear_template
@@ -327,13 +348,13 @@ impl DwowNode {
 
         info!(
             target: "dwowd::rpc::mm_rpc::mm_get_aux_block",
-            "[RPC-MM] Created new merge mining job: aux_hash={}", job_id,
+            "[RPC-MM] Created new merge mining job: aux_hash={}", job_id_hex,
         );
 
         let response = JsonValue::from(HashMap::from([
             ("aux_blob".to_string(), JsonValue::from(hex::encode(vec![]))),
             ("aux_diff".to_string(), JsonValue::Number(difficulty as f64)),
-            ("aux_hash".to_string(), JsonValue::from(job_id)),
+            ("aux_hash".to_string(), JsonValue::from(job_id_hex)),
         ]));
         JsonResponse::new(response, id).into()
     }
@@ -356,19 +377,33 @@ impl DwowNode {
             return JsonError::new(InvalidParams, None, id).into()
         };
 
-        // Parse aux_hash
+        // Parse aux_hash (our job ID, returned from mm_get_aux_block)
         let Some(aux_hash) = params.get("aux_hash") else {
             return server_error(RpcError::MinerMissingAuxHash, id, None)
         };
-        let Some(aux_hash) = aux_hash.get::<String>() else {
+        let Some(aux_hash_hex) = aux_hash.get::<String>() else {
             return server_error(RpcError::MinerInvalidAuxHash, id, None)
         };
-        let aux_hash = aux_hash.to_string();
+        let aux_hash_hex = aux_hash_hex.to_string();
+
+        // Convert aux_hash to JobId — validates hex and non-zero length.
+        let job_id = {
+            let bytes = match hex::decode(&aux_hash_hex) {
+                Ok(b) if b.len() == 32 => b,
+                _ => return server_error(RpcError::MinerInvalidAuxHash, id, None),
+            };
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&bytes);
+            match JobId::from_bytes(arr) {
+                Some(j) => j,
+                None => return server_error(RpcError::MinerInvalidAuxHash, id, None),
+            }
+        };
 
         // Check we know about this job
         {
             let mm_jobs = self.mining_state.mm_jobs.lock().await;
-            if !mm_jobs.contains_key(&aux_hash) {
+            if !mm_jobs.contains_key(&job_id) {
                 return miner_status_response(id, "rejected")
             }
         }
@@ -376,7 +411,7 @@ impl DwowNode {
         // Check not already submitted
         {
             let submitted = self.mining_state.mm_jobs_submitted.lock().await;
-            if submitted.contains(&aux_hash) {
+            if submitted.contains(&job_id) {
                 return miner_status_response(id, "rejected")
             }
         }
@@ -457,7 +492,7 @@ impl DwowNode {
 
         info!(
             target: "dwowd::rpc::mm_rpc::mm_submit_solution",
-            "[RPC-MM] Got solution submission: aux_hash={}", aux_hash,
+            "[RPC-MM] Got solution submission: aux_hash={}", aux_hash_hex,
         );
 
         // Construct the Merkle proof
@@ -466,11 +501,8 @@ impl DwowNode {
         };
 
         // ── Cryptographic receipt #1: aux_hash committed in Monero coinbase ──
-        // Decode our aux_hash (blake3 hex string → 32 bytes → monero::Hash)
-        let aux_hash_bytes = match hex::decode(&aux_hash) {
-            Ok(b) if b.len() == 32 => b,
-            _ => return server_error(RpcError::MinerInvalidAuxHash, id, None),
-        };
+        // Use the already-validated JobId bytes (blake3 hash → monero::Hash)
+        let aux_hash_bytes = job_id.to_bytes();
         let aux_hash_monero = monero::Hash::from_slice(&aux_hash_bytes);
 
         // Extract the merge mining tag from the Monero coinbase tx_extra
@@ -714,7 +746,7 @@ impl DwowNode {
                             submitted.remove(&oldest);
                         }
                     }
-                    submitted.insert(aux_hash.clone());
+                    submitted.insert(job_id);
                 }
 
                 // Generate new template for next round.

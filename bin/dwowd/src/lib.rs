@@ -43,6 +43,7 @@ use dwow_core::{
     concurrency::{ExecutorPtr, PublisherPtr, StoppableTask, StoppableTaskPtr},
     Error, Result,
 };
+use dwow_chain::monero::JobId;
 use dwow_sdk::blockchain::BlockHeight;
 use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
@@ -153,10 +154,10 @@ pub struct MiningState {
     pub linear_submit_lock: Mutex<()>,
     /// Genesis hash for merge-mining RPC
     pub linear_genesis_hash: Mutex<Option<HeaderHash>>,
-    /// Active merge mining job IDs (aux_hash → ())
-    pub mm_jobs: Mutex<HashMap<String, ()>>,
+    /// Active merge mining job IDs (JobId → ())
+    pub mm_jobs: Mutex<HashMap<JobId, ()>>,
     /// Submitted merge mining job IDs (dedup)
-    pub mm_jobs_submitted: Mutex<HashSet<String>>,
+    pub mm_jobs_submitted: Mutex<HashSet<JobId>>,
     /// Miner block assembly config — fee policy, gas limits, tx count.
     pub miner_config: MinerConfig,
     /// Sync state machine — gates mining until the node is caught up to peers.
