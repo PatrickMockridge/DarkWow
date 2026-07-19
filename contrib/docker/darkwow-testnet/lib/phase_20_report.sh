@@ -57,25 +57,20 @@ phase_join_native_mining() {
         info "xmrig not detected in container logs (diagnostic — may be sync-only node)"
     fi
 
-    echo "  Waiting for block height to advance (up to 360s)..."
-    local advanced=0
-    for i in $(seq 1 72); do
-        sleep 5
-        info=$(jsonrpc "$RPC_PORT" "blockchain.get_height")
-        local current_height
-        current_height=$(echo "$info" | grep -o '"height":[0-9]*' | grep -o '[0-9]*' || echo "0")
-        if [ -n "$current_height" ] && [ "$current_height" -gt "$initial_height" ] 2>/dev/null; then
-            pass "Block height advanced: $initial_height -> $current_height after $((i * 5))s"
-            advanced=1
-            break
-        fi
-    done
-
-    if [ "$advanced" -eq 0 ]; then
+    # Single-shot height check — no retry loop. Block height advancement
+    # depends on external miners on the public network. Not advancing is
+    # an external condition, not a pipeline failure.
+    echo "  Checking block height advancement..."
+    local current_height
+    info=$(jsonrpc "$RPC_PORT" "blockchain.get_height")
+    current_height=$(echo "$info" | grep -o '"height":[0-9]*' | grep -o '[0-9]*' || echo "0")
+    if [ -n "$current_height" ] && [ "$current_height" -gt "$initial_height" ] 2>/dev/null; then
+        pass "Block height advanced: $initial_height -> $current_height"
+    else
         echo "  Note: block height may not advance if there are no other miners on the network"
         echo "  or if this is a new testnet with no blocks yet."
-        echo "  Current height: $(jsonrpc "$RPC_PORT" "blockchain.get_height")"
-        warn "Block height did not advance after 360s (external network condition — not a pipeline failure)"
+        echo "  Current height: $current_height"
+        warn "Block height did not advance (external network condition — not a pipeline failure)"
     fi
 
     # Preserve container on failure for debugging.
@@ -131,8 +126,8 @@ phase_join_merge_mining() {
         MONEROD_RPC_URL="$MONEROD_RPC_URL" \
         docker compose -f "$COMPOSE_FILE" --profile join-merge up -d 2>&1
 
-    echo "  Waiting for containers to initialize (30s)..."
-    sleep 30
+    echo "  Waiting for containers to initialize (3s)..."
+    sleep 3
 
     local all_up=1
     if docker ps --format '{{.Names}}' | grep -q "dwow-node0-join"; then
@@ -192,21 +187,14 @@ phase_join_merge_mining() {
         warn "p2pool not showing expected activity"
     fi
 
-    sleep 10
-    local dwowd_attempt
-    for dwowd_attempt in $(seq 1 6); do
-        if docker exec dwow-node0-join bash -c "exec 3<>/dev/tcp/127.0.0.1/$RPC_PORT 2>/dev/null && echo ok >&3" 2>/dev/null; then
-            pass "dwowd JSON-RPC reachable"
-            break
-        fi
-        if [ "$dwowd_attempt" -lt 6 ]; then
-            echo "  dwowd RPC not ready, waiting (attempt $dwowd_attempt/6)..."
-            sleep 10
-        else
-            echo "  dwowd may still be starting"
-            warn "dwowd JSON-RPC not reachable"
-        fi
-    done
+    sleep 2
+    # Single-shot RPC check — no retry loop.
+    if docker exec dwow-node0-join bash -c "exec 3<>/dev/tcp/127.0.0.1/$RPC_PORT 2>/dev/null && echo ok >&3" 2>/dev/null; then
+        pass "dwowd JSON-RPC reachable"
+    else
+        echo "  dwowd may still be starting"
+        warn "dwowd JSON-RPC not reachable"
+    fi
 
     echo "  Merge stack is running. Leaving it for manual inspection."
     echo "  Run: docker compose -f $COMPOSE_FILE --profile join-merge logs -f"

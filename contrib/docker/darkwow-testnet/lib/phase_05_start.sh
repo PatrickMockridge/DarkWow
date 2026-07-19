@@ -143,37 +143,24 @@ phase_start() {
                 darkwow-wallet:latest 2>&1
             check $? "docker run dwow-wallet-$i"
         done
-        # Readiness probe: loop until wallet responds or container exits.
+        # Single-shot readiness check — no retry loop.
         # wallet initialize compiles genesis contracts (~2-3 min first run).
+        # If not ready yet, warn and continue — phase_10 will check again.
         for i in $(seq 1 "$WITH_WALLET"); do
-            info "  Waiting for wallet-$i readiness (wallet initialize may take several minutes)..."
-            local elapsed=0
-            local max_wallet_timeout=600
-            while true; do
-                if [ "$elapsed" -ge "$max_wallet_timeout" ]; then
-                    echo "  Container logs for dwow-wallet-$i:"
-                    docker logs "dwow-wallet-$i" 2>&1 | tail -40
-                    warn "  wallet-$i did not become ready after ${max_wallet_timeout}s"
-                    break
-                fi
-                # Container must still be running
-                if ! container_running "dwow-wallet-$i"; then
-                    echo "  Container logs for dwow-wallet-$i:"
-                    docker logs "dwow-wallet-$i" 2>&1 | tail -40
-                    warn "  wallet-$i exited before becoming ready"
-                    break
-                fi
-                if docker exec "dwow-wallet-$i" /app/darkwow wallet wallet address 2>/dev/null | grep -q .; then
-                    pass "  wallet-$i ready (${elapsed}s)"
-                    break
-                fi
-                # Status every 60s so we know it's not stuck
-                if [ $((elapsed % 60)) -eq 0 ] && [ "$elapsed" -gt 0 ]; then
-                    info "    wallet-$i still initializing (${elapsed}s elapsed)..."
-                fi
-                sleep 5
-                elapsed=$((elapsed + 5))
-            done
+            info "  Checking wallet-$i readiness..."
+            if ! container_running "dwow-wallet-$i"; then
+                echo "  Container logs for dwow-wallet-$i:"
+                docker logs "dwow-wallet-$i" 2>&1 | tail -40
+                warn "  wallet-$i exited before becoming ready"
+                continue
+            fi
+            if docker exec "dwow-wallet-$i" /app/darkwow wallet wallet address 2>/dev/null | grep -q .; then
+                pass "  wallet-$i ready"
+            else
+                echo "  Container logs for dwow-wallet-$i:"
+                docker logs "dwow-wallet-$i" 2>&1 | tail -20
+                warn "  wallet-$i not ready yet (wallet initialize may still be running)"
+            fi
         done
     fi
 
@@ -210,16 +197,12 @@ phase_join_config() {
 
     _join_docker_run "$JOIN_TEST_DATA"
 
-    # Poll for RPC port instead of fixed sleep
-    echo "  Waiting for RPC port $RPC_PORT to become available..."
+    # Single-shot RPC port check — no retry loop.
+    echo "  Checking RPC port $RPC_PORT..."
     local rpc_ready=0
-    for i in $(seq 1 10); do
-        if docker exec "$CONTAINER_NAME" bash -c "exec 3<>/dev/tcp/127.0.0.1/$RPC_PORT && echo ok >&3" 2>/dev/null; then
-            rpc_ready=1
-            break
-        fi
-        sleep 2
-    done
+    if docker exec "$CONTAINER_NAME" bash -c "exec 3<>/dev/tcp/127.0.0.1/$RPC_PORT && echo ok >&3" 2>/dev/null; then
+        rpc_ready=1
+    fi
 
     if ! container_running "$CONTAINER_NAME"; then
         echo "  Container logs:"

@@ -43,40 +43,28 @@ phase_blocks() {
     local NODE0_PORT=31345
 
     # ── Genesis: did node0 create genesis? ──────────────────────────
-    # ZK keygen for 9 genesis contracts can take several minutes on
-    # first boot (--fresh). The health check no longer gates container
-    # startup, so we wait here with a generous timeout. If genesis
-    # truly never happens, subsequent RPC checks will catch it.
-    local n0_height=0
-    for i in $(seq 1 120); do
-        n0_height=$(jsonrpc_get_height "$NODE0_NAME" "$NODE0_PORT")
-        n0_height=$(echo "$n0_height" | tr -dc '0-9')
-        n0_height="${n0_height:-0}"
-        [ "$n0_height" -ge 1 ] 2>/dev/null && break
-        sleep 5
-    done
+    # Diagnostic only — no timeout. If genesis hasn't happened yet,
+    # subsequent hash-based checks will naturally fail. ZK keygen for
+    # 9 contracts takes minutes on first boot; this is normal.
+    local n0_height
+    n0_height=$(jsonrpc_get_height "$NODE0_NAME" "$NODE0_PORT")
+    n0_height=$(echo "$n0_height" | tr -dc '0-9')
+    n0_height="${n0_height:-0}"
     if [ "${n0_height:-0}" -ge 1 ]; then
         pass "node0 genesis created (height=$n0_height)"
     else
-        warn "node0 has no genesis block after 600s — check docker logs dwow-node0"
+        warn "node0 height=$n0_height — genesis not yet created"
     fi
 
-    # ── Block production: did node0 mine at least block 2? ─────────
-    # Wallet tests (Phase 10) need blocks to scan. If block 2 doesn't
-    # exist, the wallet will find zero coins. This is a soft gate:
-    # warn, don't fail — wallet tests self-validate.
-    local b2_height=0
-    for i in $(seq 1 10); do
-        b2_height=$(jsonrpc_get_height "$NODE0_NAME" "$NODE0_PORT")
-        b2_height=$(echo "$b2_height" | tr -dc '0-9')
-        b2_height="${b2_height:-0}"
-        [ "$b2_height" -ge 2 ] 2>/dev/null && break
-        sleep 3
-    done
+    # ── Block production: diagnostic only — no timeout ─────────────
+    local b2_height
+    b2_height=$(jsonrpc_get_height "$NODE0_NAME" "$NODE0_PORT")
+    b2_height=$(echo "$b2_height" | tr -dc '0-9')
+    b2_height="${b2_height:-0}"
     if [ "${b2_height:-0}" -ge 2 ]; then
         pass "node0 height=$b2_height — block production confirmed"
     else
-        warn "node0 still at height=${b2_height:-?} after 30s — mining may be slow"
+        warn "node0 height=${b2_height:-?} — mining not yet producing blocks"
     fi
 
     # ── Other nodes: alive check, observational only ───────────────
@@ -152,25 +140,18 @@ phase_blocks() {
 
     # (b) Wait for other nodes to sync block 1 (up to 60s retry per node).
     # Sync lag is normal — the observer must sync from node0 before node1
-    # can sync from the observer. This is an infrastructure concern, not
-    # an authority violation.
+    # can sync from the observer. Diagnostic only — no timeout.
     for node_spec in "${CHECK_LIST[@]}"; do
         local name="${node_spec%%:*}"
         local port="${node_spec##*:}"
-        local synced=0
-        for i in $(seq 1 20); do
-            local h
-            h=$(jsonrpc_get_height "$name" "$port")
-            h=$(echo "$h" | tr -dc '0-9')
-            h="${h:-0}"
-            if [ "$h" -ge 1 ] 2>/dev/null; then
-                synced=1
-                break
-            fi
-            sleep 3
-        done
-        if [ "$synced" -eq 0 ]; then
-            warn "$name: sync timeout — height still 0 after 60s (infrastructure issue, not authority violation)"
+        local h
+        h=$(jsonrpc_get_height "$name" "$port")
+        h=$(echo "$h" | tr -dc '0-9')
+        h="${h:-0}"
+        if [ "$h" -ge 1 ] 2>/dev/null; then
+            pass "$name: height=$h (synced)"
+        else
+            warn "$name: height=$h (not synced)"
         fi
     done
 
@@ -210,19 +191,12 @@ phase_join_sync() {
     fi
 
     echo "  Checking blockchain sync..."
-    local synced=0 height=0
-    for i in $(seq 1 60); do
-        height=$(jsonrpc_get_height "$CONTAINER_NAME" "$RPC_PORT")
-        height=$(echo "$height" | tr -dc '0-9')
-        if [ -n "$height" ] && [ "$height" -gt 0 ] 2>/dev/null; then
-            pass "Blockchain synced: height $height after $((i * 5))s"
-            synced=1
-            break
-        fi
-        sleep 5
-    done
-
-    if [ "$synced" -eq 0 ]; then
-        warn "Blockchain height is 0 after 300s (public testnet may not have blocks yet)"
+    local height
+    height=$(jsonrpc_get_height "$CONTAINER_NAME" "$RPC_PORT")
+    height=$(echo "$height" | tr -dc '0-9')
+    if [ -n "$height" ] && [ "$height" -gt 0 ] 2>/dev/null; then
+        pass "Blockchain synced: height $height"
+    else
+        warn "Blockchain height is 0 (public testnet may not have blocks yet)"
     fi
 }

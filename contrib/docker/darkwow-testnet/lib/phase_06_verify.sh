@@ -63,16 +63,12 @@ phase_join_lifecycle() {
     echo "  Starting native mode container..."
     _join_docker_run "$JOIN_TEST_DATA"
 
-    # Poll for RPC port instead of fixed sleep
-    echo "  Waiting for RPC port $RPC_PORT to become available..."
+    # Single-shot RPC port check — no retry loop.
+    echo "  Checking RPC port $RPC_PORT..."
     local rpc_ready=0
-    for i in $(seq 1 10); do
-        if docker exec "$CONTAINER_NAME" bash -c "exec 3<>/dev/tcp/127.0.0.1/$RPC_PORT && echo ok >&3" 2>/dev/null; then
-            rpc_ready=1
-            break
-        fi
-        sleep 2
-    done
+    if docker exec "$CONTAINER_NAME" bash -c "exec 3<>/dev/tcp/127.0.0.1/$RPC_PORT && echo ok >&3" 2>/dev/null; then
+        rpc_ready=1
+    fi
 
     if container_running "$CONTAINER_NAME"; then
         pass "Container is running"

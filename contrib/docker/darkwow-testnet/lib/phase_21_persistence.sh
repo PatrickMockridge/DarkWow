@@ -31,7 +31,7 @@ phase_persistence() {
     echo "  Starting first run..."
     _join_docker_run "$persist_dir"
 
-    sleep 15
+    sleep 2
 
     if ! container_running "$CONTAINER_NAME"; then
         warn "Container failed to start"
@@ -64,7 +64,7 @@ phase_persistence() {
     echo "  Starting second run (same data dir)..."
     _join_docker_run "$persist_dir"
 
-    sleep 10
+    sleep 2
 
     if container_running "$CONTAINER_NAME"; then
         pass "Container restarted successfully with persisted data"

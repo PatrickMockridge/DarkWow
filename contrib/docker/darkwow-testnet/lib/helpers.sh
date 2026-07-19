@@ -65,29 +65,28 @@ jsonrpc() {
     trap 'rm -f "${exec_err:-}"' RETURN
 
     # dwowd JSON-RPC is raw TCP, not HTTP. Use bash /dev/tcp via docker exec.
-    # Retry up to 3 times if the port isn't listening yet.
-    for attempt in 1 2 3; do
-        if container_running "$CONTAINER_NAME"; then
-            local result exec_err
-            exec_err=$(mktemp)
-            result=$(docker exec "$CONTAINER_NAME" bash -c "exec 3<>/dev/tcp/127.0.0.1/$port 2>/dev/null || exit 1; echo '{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":[],\"id\":1}' >&3; timeout 3 cat <&3" 2>"$exec_err") || true
-            if [ -s "$exec_err" ]; then
-                warn "jsonrpc docker exec error: $(cat "$exec_err")"
-            fi
-            rm -f "$exec_err"
-            if [ -n "$result" ] && echo "$result" | grep -q '"result"'; then
-                echo "$result"
-                return
-            fi
-            # If we got a response but it's an error, return it
-            if [ -n "$result" ]; then
-                echo "$result"
-                return
-            fi
+    # Single-shot — transient RPC unavailability is handled by the caller
+    # (warn and continue). Retry loops in phase scripts are forbidden;
+    # every check is a single observation of current state.
+    if container_running "$CONTAINER_NAME"; then
+        local result exec_err
+        exec_err=$(mktemp)
+        result=$(docker exec "$CONTAINER_NAME" bash -c "exec 3<>/dev/tcp/127.0.0.1/$port 2>/dev/null || exit 1; echo '{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":[],\"id\":1}' >&3; timeout 3 cat <&3" 2>"$exec_err") || true
+        if [ -s "$exec_err" ]; then
+            warn "jsonrpc docker exec error: $(cat "$exec_err")"
         fi
-        [ "$attempt" -lt 3 ] && sleep 2
-    done
-    echo '{"error":"RPC unreachable after 3 attempts"}'
+        rm -f "$exec_err"
+        if [ -n "$result" ] && echo "$result" | grep -q '"result"'; then
+            echo "$result"
+            return
+        fi
+        # If we got a response but it's an error, return it
+        if [ -n "$result" ]; then
+            echo "$result"
+            return
+        fi
+    fi
+    echo '{"error":"RPC unreachable"}'
 }
 
 # === END RPC FIREWALL ===
@@ -268,11 +267,12 @@ _join_lilith_run() {
 # Shared helpers — RPC
 # ==============================================================================
 
-# Retry an RPC call up to N times. No timeout — the cat reads whatever the
-# server sends when it sends it. A busy mining node is a healthy node; the
-# retry handles transient unavailability.
+# Single-shot RPC call with one retry for transient TCP unavailability.
+# The retry handles momentary connection-refused while the node is busy
+# (milliseconds), NOT "thing hasn't happened yet" (minutes).
+# Max total wait: 2s.
 rpc_retry() {
-    local container="$1" port="$2" method="$3" params="$4" max_attempts="${5:-5}"
+    local container="$1" port="$2" method="$3" params="$4" max_attempts="${5:-2}"
     local attempt=0
     while [ "$attempt" -lt "$max_attempts" ]; do
         attempt=$((attempt + 1))

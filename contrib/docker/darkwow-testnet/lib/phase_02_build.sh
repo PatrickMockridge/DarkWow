@@ -35,20 +35,15 @@ phase_build() {
     fi
 
     # Pre-flight: verify BUILD_COMMIT exists on origin/linear-master.
-    # Retry: Codeberg propagation can take a few seconds after push.
+    # Single check — no retry loop. If the commit isn't on origin,
+    # the Docker build (which clones from origin) will fail with a clear
+    # git error. This is an early diagnostic, not a measurement.
     local commit_verified=false
-    for i in 1 2 3; do
-        if git ls-remote --heads origin linear-master 2>/dev/null | grep -q "$BUILD_COMMIT"; then
-            commit_verified=true
-            break
-        fi
-        if [ "$i" -lt 3 ]; then
-            warn "BUILD_COMMIT ${BUILD_COMMIT:0:10}... not found on origin (attempt $i/3) — retrying in 5s"
-            sleep 5
-        fi
-    done
+    if git ls-remote --heads origin linear-master 2>/dev/null | grep -q "$BUILD_COMMIT"; then
+        commit_verified=true
+    fi
     if [ "$commit_verified" != true ]; then
-        error "BUILD_COMMIT ${BUILD_COMMIT} not found on origin/linear-master after 3 attempts"
+        error "BUILD_COMMIT ${BUILD_COMMIT} not found on origin/linear-master"
         error "The pipeline clones from origin/linear-master and tests code on that branch."
         error "Your commit may be on a different branch, or hasn't been pushed."
         error ""
