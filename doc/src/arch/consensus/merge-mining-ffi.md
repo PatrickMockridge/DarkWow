@@ -43,9 +43,14 @@ into a `JobId` newtype. Raw merkle proof elements MUST be validated into
 
 Per [type-system.md §4](../type-system.md), merge mining failures MUST be
 distinct typed errors. The caller SHALL be able to distinguish "invalid seed
-hash" from "merkle proof verification failed" from "stale template." The
-current `Error::Custom("rejected")` erases all behavioral distinctions and
-SHALL be replaced.
+hash" from "merkle proof verification failed" from "stale template."
+
+**Implemented.** `bin/dwowd/src/error.rs` defines `RpcError` variants with
+unique numeric codes (-32324..-32343) for each parameter validation failure.
+Submission outcomes use distinct status strings ("accepted" / "rejected" /
+"stale") per P2Pool's expected response format (§6.2). The legacy
+`Error::Custom("rejected")` path was removed in HAZOP cycle 3
+(commit bfa2080071).
 
 ### 1.4 Opaque Handles
 
@@ -181,9 +186,9 @@ fail fast — if any step fails, subsequent steps SHALL NOT execute.
 11. **Block acceptance** — `accept_block()` through the standard path
 12. **Broadcast** — `broadcast_block()` to P2P peers (HAZID H-C2 fix)
 
-On acceptance, the block SHALL be broadcast to all P2P peers. On rejection,
-a "rejected" status SHALL be returned. On rate-limit violation, a "stale"
-status SHALL be returned.
+On acceptance, the block SHALL be broadcast to all P2P peers (HAZID H-C2,
+fixed). On rejection, a "rejected" status SHALL be returned. On rate-limit
+violation, a "stale" status SHALL be returned.
 
 ## 4. Template Lifecycle
 
@@ -283,16 +288,18 @@ The block SHALL then be broadcast to P2P peers via `broadcast_block()`.
 
 ### 6.1 Error Codes
 
-Merge mining errors SHALL be distinct typed errors per [type-system.md §4](../type-system.md):
+Merge mining errors SHALL be distinct typed errors per [type-system.md §4](../type-system.md).
+All error codes are implemented in `bin/dwowd/src/error.rs` (enum `RpcError`).
 
-| Error Barb | Error Code | Condition |
-|-----------|-----------|-----------|
-| `↓bad-input` | -32324..-32341 | Parameter validation (missing, wrong type, invalid hex, wrong length) |
-| `↓bad-proof` | -32342..-32343 | Merkle proof construction/verification failed |
-| `↓bad-nullifier` | — | Duplicate job submission |
-| `↓double-spend` | — | Job already submitted (same job_id) |
-| `↓rate-limit` | — | Submission within min_block_interval |
-| `↓bad-proof` | — | accept_block() rejected the reconstructed block |
+| Error Barb | Error Code | Condition | Status |
+|-----------|-----------|-----------|--------|
+| `↓bad-input` | -32324..-32341 | Parameter validation (missing, wrong type, invalid hex, wrong length) | Implemented |
+| `↓bad-proof` | -32342..-32343 | Merkle proof construction/verification failed | Implemented |
+| `↓bad-nullifier` | — | Duplicate job submission | Status response "rejected" |
+| `↓double-spend` | — | Job already submitted (same job_id) | Status response "rejected" |
+| `↓rate-limit` | — | Submission within min_block_interval | Status response "stale" |
+| `↓bad-proof` | — | accept_block() rejected the reconstructed block | Status response "rejected" |
+| `↓db-fail` | -32350 | Node not synced | Implemented |
 | `↓db-fail` | -32350 | Node not synced |
 
 ### 6.2 Response Format
