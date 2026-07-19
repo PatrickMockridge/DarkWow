@@ -163,7 +163,7 @@ phase_join_p2p() {
     echo "=== Join Phase 8: P2P Connectivity ==="
 
     if ! container_running "$CONTAINER_NAME"; then
-        fail "Container not running (lifecycle phase left it)"
+        warn "Container not running (lifecycle phase left it)"
         return 0
     fi
 

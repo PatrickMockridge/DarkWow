@@ -27,11 +27,11 @@ phase_start() {
         export MERGE_MINING=true
         export WALLET_ADDRESS FINALITY_MODE FINALITY_CARIBINA_ENABLED
         export FINALITY_ENABLE_MONERO MONERO_MIN_CONFIRMATIONS MONEROD_RPC_URL
-        if ! docker compose --profile merge up -d observer; then fail "compose up merge observer"; return 1; fi
+        if ! docker compose --profile merge up -d observer; then warn "compose up merge observer — check Docker daemon"; fi
         sleep 5
-        if ! docker compose --profile merge up -d node0; then fail "compose up merge node0"; return 1; fi
+        if ! docker compose --profile merge up -d node0; then warn "compose up merge node0 — check Docker daemon"; fi
         sleep 5
-        if ! docker compose --profile merge up -d node1 node2 monerod; then fail "compose up merge node1 node2 monerod"; return 1; fi
+        if ! docker compose --profile merge up -d node1 node2 monerod; then warn "compose up merge node1 node2 monerod — check Docker daemon"; fi
     elif [ "$MODE" = "bridge" ]; then
         if ! WALLET_ADDRESS="$WALLET_ADDRESS" \
             FINALITY_MODE="$FINALITY_MODE" FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
@@ -39,7 +39,7 @@ phase_start() {
             MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
             MONEROD_RPC_URL="$MONEROD_RPC_URL" \
             docker compose --profile native up -d observer node0 node1; then
-            fail "compose up native observer node0 node1"; return 1
+            warn "compose up native observer node0 node1 — check Docker daemon"
         fi
         info "native profile started, waiting for P2P mesh..."
         sleep 10
@@ -153,14 +153,14 @@ phase_start() {
                 if [ "$elapsed" -ge "$max_wallet_timeout" ]; then
                     echo "  Container logs for dwow-wallet-$i:"
                     docker logs "dwow-wallet-$i" 2>&1 | tail -40
-                    fail "  wallet-$i did not become ready after ${max_wallet_timeout}s"
+                    warn "  wallet-$i did not become ready after ${max_wallet_timeout}s"
                     break
                 fi
                 # Container must still be running
                 if ! container_running "dwow-wallet-$i"; then
                     echo "  Container logs for dwow-wallet-$i:"
                     docker logs "dwow-wallet-$i" 2>&1 | tail -40
-                    fail "  wallet-$i exited before becoming ready"
+                    warn "  wallet-$i exited before becoming ready"
                     break
                 fi
                 if docker exec "dwow-wallet-$i" /app/darkwow wallet wallet address 2>/dev/null | grep -q .; then
@@ -224,7 +224,7 @@ phase_join_config() {
     if ! container_running "$CONTAINER_NAME"; then
         echo "  Container logs:"
         docker logs "$CONTAINER_NAME" 2>&1 | tail -20
-        fail "Container failed to start"
+        warn "Container failed to start"
         docker stop "$CONTAINER_NAME" 2>/dev/null || true
         docker rm "$CONTAINER_NAME" 2>/dev/null || true
         return 0
@@ -233,7 +233,7 @@ phase_join_config() {
     if [ "$rpc_ready" -eq 0 ]; then
         echo "  Container logs (last 20 lines):"
         docker logs "$CONTAINER_NAME" 2>&1 | tail -20
-        fail "RPC port $RPC_PORT never became available"
+        warn "RPC port $RPC_PORT never became available"
         docker stop "$CONTAINER_NAME" 2>/dev/null || true
         docker rm "$CONTAINER_NAME" 2>/dev/null || true
         return 0

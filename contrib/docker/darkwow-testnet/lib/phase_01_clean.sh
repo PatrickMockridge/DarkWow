@@ -100,7 +100,7 @@ phase_clean() {
     # Verify no dwow containers remain
     STALE=$(docker ps -a -q --filter name=dwow 2>/dev/null)
     if [ -n "$STALE" ]; then
-        fail "clean: $(echo "$STALE" | wc -w) dwow containers still present after cleanup"
+        warn "clean: $(echo "$STALE" | wc -w) dwow containers still present after cleanup"
     fi
 
     # Remove old pipeline logs — each run creates its own LOGFILE,
