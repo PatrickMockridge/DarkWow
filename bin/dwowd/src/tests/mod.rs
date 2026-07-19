@@ -27,4 +27,5 @@ pub mod pipeline;
 pub mod heavyweight_pipeline;
 pub mod wallet_integration;
 pub mod fee_collect_pipeline;
+pub mod merge_mining;
 pub mod tripwire;
