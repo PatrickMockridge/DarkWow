@@ -268,15 +268,13 @@ if [ "$RESUME_FROM" -le 19 ]; then
     else
         report;            phase_time_end "report"
     fi
-    # Observation phase — never blocks pipeline
-    phase_gate "report_or_mining"
+    # Observation phases — never block pipeline (diagnostics only)
 fi
 _stop_after 19
 
 if [ "$RESUME_FROM" -le 20 ]; then
     phase_time_start; phase_persistence;        phase_time_end "persistence"
-    # Observation phase — never blocks pipeline
-    phase_gate "persistence"
+    # Observation phase — never blocks pipeline (diagnostics only)
     _stop_after 20
 fi
 

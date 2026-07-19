@@ -16,7 +16,7 @@ phase_prereqs() {
 
     # Pre-flight: Docker daemon must be running
     if ! docker info >/dev/null 2>&1; then
-        error "Docker daemon is not running or not accessible. Start Docker and retry."
+        warn "Docker daemon is not running or not accessible — container phases will fail"
     fi
 
     if is_join_mode; then

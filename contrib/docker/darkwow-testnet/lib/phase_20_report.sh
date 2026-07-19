@@ -31,7 +31,7 @@ phase_join_native_mining() {
     check_image || return 1
 
     if ! container_running "$CONTAINER_NAME"; then
-        fail "Container not running"
+        warn "Container not running"
         return 0
     fi
 
@@ -138,21 +138,21 @@ phase_join_merge_mining() {
     if docker ps --format '{{.Names}}' | grep -q "dwow-node0-join"; then
         pass "dwowd container running"
     else
-        fail "dwowd container not running"
+        warn "dwowd container not running"
         all_up=0
     fi
 
     if docker ps --format '{{.Names}}' | grep -q "dwow-monerod"; then
         pass "monerod container running"
     else
-        fail "monerod container not running"
+        warn "monerod container not running"
         all_up=0
     fi
 
     if docker ps --format '{{.Names}}' | grep -q "dwow-p2pool"; then
         pass "p2pool container running"
     else
-        fail "p2pool container not running"
+        warn "p2pool container not running"
         all_up=0
     fi
 

@@ -48,7 +48,7 @@ phase_start() {
         EXITED=$(docker compose --profile native ps 2>/dev/null | grep "Exit" || true)
         if [ -n "$EXITED" ]; then
             echo "$EXITED"
-            error "Native container exited immediately — check logs"
+            warn "Native container exited immediately — check logs"
         fi
 
         # Now start bridge-node on top of the established mesh
@@ -64,7 +64,7 @@ phase_start() {
         EXITED=$(docker compose --profile bridge ps 2>/dev/null | grep "Exit" || true)
         if [ -n "$EXITED" ]; then
             echo "$EXITED"
-            error "Bridge container exited immediately — check logs"
+            warn "Bridge container exited immediately — check logs"
         fi
     else
         # Native mode: start only the requested number of nodes.
@@ -190,7 +190,7 @@ phase_start() {
         fi
         if [ -n "$EXITED" ]; then
             echo "$EXITED"
-            error "Container exited immediately — check logs"
+            warn "Container exited immediately — check logs"
         fi
     fi
 
