@@ -33,6 +33,27 @@ proofs by default.
 - **One page to read:** The [Formal Specification](arch/formal-specification.md)
   covers the entire system.
 
+## Reading This Documentation
+
+This book is designed as a **formal intermediate representation** — precise
+enough for Lean4 verification, structured enough for AI to translate on
+demand, and authoritative enough that no simplified explanation can drift
+from it. Every equation, type judgment, and normative statement earns its
+place: it either is verified or is stated as an axiom.
+
+The documentation optimizes for **AI-assisted development**. Formal
+specifications, process-calculus semantics, and cryptographic scheme
+definitions are the source of truth. AI can faithfully render
+ρ-calculus barb semantics into plain language for any audience, but
+precision only flows one direction — you cannot recover a formal
+definition from a paraphrase.
+
+**If you find a section dense:** use an AI tool to translate it into your
+preferred level of abstraction. The formal text is the anchor; the AI is
+your rendering engine. This guarantees no drift from specification,
+formal logic, and architectural fundamentals — the median never becomes
+the spec.
+
 ## What Ships vs. What's Planned
 
 ### [SHIPPING] — Code exists, tests pass
