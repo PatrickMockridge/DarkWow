@@ -159,7 +159,7 @@ phase_blocks() {
     local genesis_raw genesis_tx_count
     genesis_raw=$(jsonrpc_get_block "$NODE0_NAME" "$NODE0_PORT" 1 2>/dev/null || echo "")
     if [ -n "$genesis_raw" ]; then
-        genesis_tx_count=$(echo "$genesis_raw" | jq '.result | fromjson | .body.transactions | length' 2>/dev/null || echo "0")
+        genesis_tx_count=$(echo "$genesis_raw" | jq '.result.body.transactions | length' 2>/dev/null || echo "0")
         if [ "${genesis_tx_count:-0}" -eq 10 ]; then
             pass "genesis block structure: 10 transactions (1 coinbase + 9 deploys)"
         else
