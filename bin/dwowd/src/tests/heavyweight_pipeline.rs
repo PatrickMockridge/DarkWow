@@ -225,7 +225,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
     async fn build_coinbase_for_height(
         &self,
         height: dwow_sdk::blockchain::BlockHeight,
-        reward: u64,
+        reward: BlockReward,
     ) -> Result<CoinbaseResult> {
         let mgr = crate::accounts::AccountManager::open(
             &self.keys_path,
@@ -253,7 +253,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         Ok(CoinbaseResult {
             tx,
             recipient,
-            coin_value: reward,
+            coin_value: reward.get(),
             coin_commitment: coinbase.coin,
             nullifier: coinbase.nullifier,
             coin_blind,
@@ -407,7 +407,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
             &[],
             &vm,
             height,
-            target,
+            BlockTarget::new(target),
             None,
         )
         .map(|_| ())
@@ -434,7 +434,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
             &[],
             &vm,
             height,
-            u32::MAX,
+            BlockTarget::MAX,
             None,
         )
         .map_err(|e| dwow_core::Error::Custom(format!("accept_block exec_coinbase_only: {}", e)))?;
@@ -477,7 +477,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         }
 
         crate::block_acceptor::accept_block(
-            &self.genesis.chain_state, &block, &[uncle], &vm, height, real_target, None,
+            &self.genesis.chain_state, &block, &[uncle], &vm, height, BlockTarget::new(real_target), None,
         )
         .map(|_| ())
         .map_err(|e| dwow_core::Error::Custom(format!("accept_block exec_as_uncle: {}", e)))
@@ -517,7 +517,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         let vm = build_accept_vm(&block)?;
 
         crate::block_acceptor::accept_block(
-            &self.genesis.chain_state, &block, &[uncle], &vm, height, target, None,
+            &self.genesis.chain_state, &block, &[uncle], &vm, height, BlockTarget::new(target), None,
         )
         .map(|_| ())
         .map_err(|e| dwow_core::Error::Custom(format!("accept_block exec_mixed: {}", e)))
@@ -559,7 +559,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         let vm = build_accept_vm(&block)?;
 
         crate::block_acceptor::accept_block(
-            &self.genesis.chain_state, &block, &uncles, &vm, height, target, None,
+            &self.genesis.chain_state, &block, &uncles, &vm, height, BlockTarget::new(target), None,
         )
         .map(|_| ())
         .map_err(|e| dwow_core::Error::Custom(format!("accept_block exec_multi_uncle: {}", e)))
@@ -3019,7 +3019,7 @@ fn test_heavyweight_empty_uncle() -> std::result::Result<(), Box<dyn std::error:
 
         crate::block_acceptor::accept_block(
             &pipeline.genesis.chain_state, &block, &[uncle], &vm,
-            height, target, None,
+            height, BlockTarget::new(target), None,
         ).map_err(|e| dwow_core::Error::Custom(format!("accept_block empty uncle: {}", e)))?;
 
         println!("  Empty uncle at height {} applied OK (no-op gracefully)", next);
@@ -3079,7 +3079,7 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
         // should be added to chain validation (future work).
         let result = crate::block_acceptor::accept_block(
             &pipeline.genesis.chain_state, &block, &[bad_uncle], &vm,
-            height, target, None,
+            height, BlockTarget::new(target), None,
         );
 
         // Currently the uncle merkle proof is not validated during accept_block.
@@ -3269,7 +3269,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             let vm = build_accept_vm(&block1)?;
             crate::block_acceptor::accept_block(
                 &genesis.chain_state, &block1, &[], &vm,
-                start_height, u32::MAX, None,
+                start_height, BlockTarget::MAX, None,
             ).map_err(|e| dwow_core::Error::Custom(format!("accept_block deposit: {}", e)))?;
         }
         assert_eq!(genesis.block_height(), height1, "height must advance after deposit");
@@ -3302,7 +3302,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             let vm = build_accept_vm(&block2)?;
             crate::block_acceptor::accept_block(
                 &genesis.chain_state, &block2, &[], &vm,
-                height1, u32::MAX, None,
+                height1, BlockTarget::MAX, None,
             ).map_err(|e| dwow_core::Error::Custom(format!("accept_block withdraw: {}", e)))?;
         }
         assert_eq!(genesis.block_height(), height2, "height must advance after withdraw");
@@ -3333,7 +3333,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             let vm = build_accept_vm(&block3)?;
             let double_result = crate::block_acceptor::accept_block(
                 &genesis.chain_state, &block3, &[], &vm,
-                height2, u32::MAX, None,
+                height2, BlockTarget::MAX, None,
             );
             assert!(double_result.is_err(), "double-spend must be rejected (nullifier already spent)");
         }
@@ -3372,7 +3372,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             let vm = build_accept_vm(&block4)?;
             crate::block_acceptor::accept_block(
                 &genesis.chain_state, &block4, &[], &vm,
-                height3, u32::MAX, None,
+                height3, BlockTarget::MAX, None,
             ).map_err(|e| dwow_core::Error::Custom(format!("accept_block relayer: {}", e)))?;
         }
         assert_eq!(genesis.block_height(), height4,

@@ -448,7 +448,7 @@ async fn init_genesis(
     let (coinbase, _public_inputs, pow_reward_call, _coin_blind) =
         crate::registry::model::build_linear_coinbase(
             recipient,
-            genesis_reward.get(),
+            genesis_reward,
             &linear_zk,
             genesis_height,
         )
@@ -1036,7 +1036,7 @@ async fn prepare_block(
     //    same sk_H for coinbase and fee collection, spec §3.2).
     let (_, _, pow_reward_call, _coin_blind) = build_linear_coinbase(
         recipient.clone(),
-        base_reward.get(),
+        base_reward,
         linear_zk,
         height,
     ).await?;

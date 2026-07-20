@@ -69,9 +69,9 @@ impl GenesisHarness {
 
         let pow_config = PoWConfig {
             target_block_time: 120,
-            initial_target: BlockTarget::MAX, // matches test block u32::MAX target
+            initial_target: u32::MAX, // PoWConfig uses bare u32 for config layer
             min_target: 1,
-            max_target: BlockTarget::MAX,
+            max_target: u32::MAX,
         };
         let finality_config = FinalityConfig::default();
 
@@ -449,7 +449,7 @@ mod tests {
                 &[],          // no uncles
                 &vm,
                 BlockHeight::new(1), // current_height = block.height - 1
-                u32::MAX,     // target
+                BlockTarget::MAX,     // target
                 None,
             )
             .expect("AC3: accept_block height 2");
@@ -597,7 +597,7 @@ mod tests {
                 &[],
                 &vm,
                 BlockHeight::new(0),
-                u32::MAX,
+                BlockTarget::MAX,
                 None,
             ).expect("sync accept_block(genesis) must succeed on empty node");
 
@@ -660,7 +660,7 @@ mod tests {
             let vm = genesis_vm(&tampered);
             let res = crate::block_acceptor::accept_block(
                 &har_i.chain_state, &tampered, &[], &vm,
-                BlockHeight::new(0), u32::MAX, None,
+                BlockHeight::new(0), BlockTarget::MAX, None,
             );
             assert!(res.is_err(),
                 "(i) tampered WASM with stale merkle root MUST be rejected");
@@ -687,7 +687,7 @@ mod tests {
             let vm = genesis_vm(&swapped);
             let res = crate::block_acceptor::accept_block(
                 &har_iii.chain_state, &swapped, &[], &vm,
-                BlockHeight::new(0), u32::MAX, None,
+                BlockHeight::new(0), BlockTarget::MAX, None,
             );
             assert!(res.is_err(),
                 "(iii) out-of-order deployments MUST fail position binding");

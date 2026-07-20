@@ -836,7 +836,7 @@ mod tests {
             previous: blake3::Hash::from_bytes([0xAA; 32]),
             merkle_root: blake3::Hash::from_bytes([0xBB; 32]),
             timestamp: 1234567890,
-            target: 0x00FFFFFF,
+            target: BlockTarget::new(0x00FFFFFF),
             nonce: 0xDEADBEEF,
             height: BlockHeight::new(42),
             uncle_merkle_root: [0xCC; 32],

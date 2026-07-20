@@ -42,6 +42,7 @@ use dwow_chain::{
 };
 use dwow_core::Result;
 use dwow_sdk::{
+    blockchain::{BlockHeight, BlockReward, BlockTarget},
     blockchain::BlockHeight,
     crypto::{keypair::Network, pasta_prelude::Group, NATIVE_TOKEN_CONTRACT_ID},
     pasta::pallas,
@@ -93,7 +94,7 @@ fn build_test_monero_powdata() -> Result<MoneroPowData> {
 fn build_merge_mined_header(
     prev_hash: blake3::Hash,
     height: BlockHeight,
-    reward: u64,
+    reward: BlockReward,
     merkle_root: blake3::Hash,
     pow_data: MoneroPowData,
 ) -> BlockHeader {
@@ -107,7 +108,7 @@ fn build_merge_mined_header(
         previous: prev_hash,
         merkle_root,
         timestamp: 120 * height.get(),
-        target: u32::MAX,
+        target: BlockTarget::MAX,
         nonce: 0,
         height,
         uncle_merkle_root: [0u8; 32],
@@ -259,7 +260,7 @@ fn test_merge_mined_block_acceptance() {
         let pow_data = build_test_monero_powdata().expect("MoneroPowData");
 
         // Build coinbase + block
-        let coinbase = build_coinbase_tx(&recipient, reward);
+        let coinbase = build_coinbase_tx(&recipient, reward.get());
         let all_txs = vec![coinbase];
         let merkle_root = compute_merkle_root(&all_txs);
 
@@ -292,7 +293,7 @@ fn test_merge_mined_block_acceptance() {
             &[],
             &vm,
             height.pred().expect("height 2 has pred"),
-            u32::MAX,
+            BlockTarget::MAX,
             None,
         )
         .expect("accept_block for merge-mined block");
@@ -361,7 +362,7 @@ fn test_merge_mined_block_deterministic() {
                 .expect("recipient");
         let reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(2));
         let pow_data = build_test_monero_powdata().expect("MoneroPowData");
-        let coinbase = build_coinbase_tx(&recipient, reward);
+        let coinbase = build_coinbase_tx(&recipient, reward.get());
         let txs = vec![coinbase];
         let merkle = compute_merkle_root(&txs);
         let prev = har1.chain_state.get_latest_block().expect("prev");
@@ -395,7 +396,7 @@ fn test_merge_mined_block_deterministic() {
         let recipient2 =
             crate::accounts::MiningRecipient::from_account(&mgr2, BlockHeight::new(2))
                 .expect("recipient2");
-        let coinbase2 = build_coinbase_tx(&recipient2, reward);
+        let coinbase2 = build_coinbase_tx(&recipient2, reward.get());
         let txs2 = vec![coinbase2];
         let merkle2 = compute_merkle_root(&txs2);
         let prev2 = har2.chain_state.get_latest_block().expect("prev2");

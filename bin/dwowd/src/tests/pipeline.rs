@@ -164,7 +164,7 @@ impl ContractTestingPipeline {
             .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?);
 
         crate::block_acceptor::accept_block(
-            &self.genesis.chain_state, &block, &[], &vm, height, u32::MAX, None,
+            &self.genesis.chain_state, &block, &[], &vm, height, BlockTarget::MAX, None,
         ).map_err(|e| dwow_core::Error::Custom(format!("accept_block deploy: {}", e)))?;
         Ok(contract_id)
     }
@@ -215,7 +215,7 @@ impl ContractTestingPipeline {
             .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?);
 
         crate::block_acceptor::accept_block(
-            &self.genesis.chain_state, &block, &[], &vm, height, u32::MAX, None,
+            &self.genesis.chain_state, &block, &[], &vm, height, BlockTarget::MAX, None,
         ).map_err(|e| dwow_core::Error::Custom(format!("accept_block deploy_with_metadata: {}", e)))?;
         Ok(contract_id)
     }

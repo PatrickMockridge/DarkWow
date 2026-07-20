@@ -51,7 +51,7 @@ use crate::tests::genesis::GenesisHarness;
 fn build_block_header(
     prev_hash: blake3::Hash,
     height: BlockHeight,
-    reward: u64,
+    reward: BlockReward,
     txs: &[Transaction],
 ) -> dwow_chain::BlockHeader {
     let merkle_root = {
@@ -119,7 +119,7 @@ fn mine_block(
                 let mut d = vec![0x05u8]; // PoWRewardV1
                 let params = dwow_native_token_contract::model::PoWRewardParamsV1 {
                     input: dwow_native_token_contract::model::ClearInput {
-                        value: reward,
+                        value: reward.get(),
                         token_id: pallas::Base::zero(),
                         value_blind: dwow_sdk::crypto::Blind(pallas::Scalar::zero()),
                         token_blind: dwow_sdk::crypto::BaseBlind::ZERO,
@@ -129,7 +129,7 @@ fn mine_block(
                         value_commit: pallas::Point::identity(),
                         token_commit: pallas::Base::zero(),
                         coin: dwow_native_token_contract::model::Coin::from_attributes(
-                            &recipient.public(), reward,
+                            &recipient.public(), reward.get(),
                             dwow_native_token_contract::model::DRKW_TOKEN_ID,
                             dwow_sdk::crypto::FuncId::none(),
                             pallas::Base::zero(),
@@ -174,7 +174,7 @@ fn mine_block(
         &har.chain_state, &block, &[], &vm,
         height.pred().expect("mine_block is only called for post-genesis heights (h >= 2); \
              the old `height - 1` relied on the same guarantee"),
-        u32::MAX, None,
+        BlockTarget::MAX, None,
     )?;
     Ok(block)
 }

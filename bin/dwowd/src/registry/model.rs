@@ -138,7 +138,7 @@ pub struct LinearBlockTemplate {
 /// 5. AEAD encrypted note containing coin blinds and block signing secret
 pub async fn build_linear_coinbase(
     recipient: crate::accounts::MiningRecipient,
-    value: u64,
+    value: BlockReward,
     linear_zk: &LinearPowRewardZk,
     height: BlockHeight,
 ) -> Result<(
@@ -193,7 +193,7 @@ pub async fn build_linear_coinbase(
         tx_nonce: pallas::Base::zero(),
         tx_commitment: pallas::Base::zero(),
     }
-    .build_with_custom_reward(value)?;
+    .build_with_custom_reward(value.get())?;
 
     // Verify: the ZK proof's new_cumulative_commit matches the cumulative
     // supply chain module's computation. This is the single computation point
@@ -204,7 +204,7 @@ pub async fn build_linear_coinbase(
         &prev_entry,
         debris.params.output.value_commit,
         debris.params.input.value_blind.inner(),
-        value,
+        value.get(),
     );
     if _computed_next.value_commit != debris.params.new_cumulative_commit {
         return Err(Error::Custom(format!(
@@ -643,7 +643,7 @@ pub async fn generate_linear_block_template(
         );
         let (coinbase, public_inputs, pow_reward_call, _coin_blind) = build_linear_coinbase(
             recipient_config.recipient.clone(),
-            reward.get(),
+            reward,
             zk,
             height,
         ).await?;
