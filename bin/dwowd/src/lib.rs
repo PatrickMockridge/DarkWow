@@ -174,6 +174,10 @@ pub struct MiningState {
     pub linear_zk: Mutex<Option<crate::registry::model::LinearPowRewardZk>>,
     /// Current block template for the active mining round
     pub current_linear_template: Mutex<Option<crate::registry::model::LinearBlockTemplate>>,
+    /// Chain height at which the current template was generated.
+    /// Set when a template is stored; checked at submission time to reject
+    /// stale templates before PoW verification (type-system.md §9.3).
+    pub template_height: AtomicU64,
     /// Publisher for pushing stratum job notifications to miners
     pub linear_stratum_publisher: Mutex<Option<PublisherPtr<JsonNotification>>>,
     /// Recipient config for generating new block templates on submit
@@ -199,6 +203,7 @@ impl MiningState {
             last_block_time: AtomicU64::new(0),
             linear_zk: Mutex::new(None),
             current_linear_template: Mutex::new(None),
+            template_height: AtomicU64::new(0),
             linear_stratum_publisher: Mutex::new(None),
             linear_recipient_config: Mutex::new(None),
             linear_submit_lock: Mutex::new(()),

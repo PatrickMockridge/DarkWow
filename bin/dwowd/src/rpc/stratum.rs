@@ -232,6 +232,7 @@ impl DwowNode {
 
         // Store template and config for submit handler
         *self.mining_state.current_linear_template.lock().await = Some(template.clone());
+        self.mining_state.template_height.store(chain_state.get_height().get(), Ordering::SeqCst);
         *self.mining_state.linear_recipient_config.lock().await = Some(config);
 
         // Create or reuse shared publisher for push notifications
@@ -733,6 +734,7 @@ impl DwowNode {
 
                                 *self.mining_state.current_linear_template.lock().await =
                                     Some(new_template);
+                                self.mining_state.template_height.store(chain_state.get_height().get(), Ordering::SeqCst);
 
                                 let notification = dwow_core::rpc::jsonrpc::JsonNotification::new(
                                     "job", job_params,

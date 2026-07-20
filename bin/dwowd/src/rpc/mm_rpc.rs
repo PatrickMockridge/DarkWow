@@ -345,6 +345,7 @@ impl DwowNode {
 
         // Store template in current_linear_template
         *self.mining_state.current_linear_template.lock().await = Some(template);
+        self.mining_state.template_height.store(chain_state.get_height().get(), std::sync::atomic::Ordering::SeqCst);
 
         info!(
             target: "dwowd::rpc::mm_rpc::mm_get_aux_block",
@@ -690,6 +691,22 @@ impl DwowNode {
             None => return miner_status_response(id, "rejected"),
         };
 
+        // Check template staleness before PoW verification.
+        // Per type-system.md §9.3: submissions against stale templates SHALL
+        // be rejected before PoW verification.
+        {
+            let template_h = self.mining_state.template_height.load(std::sync::atomic::Ordering::SeqCst);
+            let chain_h = chain_state.get_height().get();
+            if template_h != 0 && template_h != chain_h {
+                info!(
+                    target: "dwowd::rpc::mm_rpc::mm_submit_solution",
+                    "[RPC-MM] Template height {} != current {} — rejecting stale submission",
+                    template_h, chain_h,
+                );
+                return miner_status_response(id, "rejected");
+            }
+        }
+
         // Set finality flags
         block.header.finality_flags = chain_state.finality_config.mine_flags();
 
@@ -774,6 +791,7 @@ impl DwowNode {
                     {
                         Ok(new_template) => {
                             *self.mining_state.current_linear_template.lock().await = Some(new_template);
+                            self.mining_state.template_height.store(chain_state.get_height().get(), std::sync::atomic::Ordering::SeqCst);
                         }
                         Err(e) => {
                             error!(
