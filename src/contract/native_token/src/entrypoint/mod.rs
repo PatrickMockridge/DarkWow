@@ -813,7 +813,7 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     // at the consensus level (connect_block) via Pedersen mass balance —
     // no pin_deductions needed in the contract.
     let expected = expected_reward(verifying_block_height);
-    if pr.input.value < expected {
+    if pr.input.value < expected.get() {
         msg!("[pow_reward_v1] Error: Reward below schedule: got {}, expected {} at height {}",
              pr.input.value, expected, verifying_block_height);
         return Err(NativeTokenError::ValueMismatch.into())

@@ -151,8 +151,128 @@ impl<'de> serde::Deserialize<'de> for BlockHeight {
     }
 }
 
+/// Nominal block-reward type (type-system.md §2.3, §4.1).
+///
+/// A reward amount and a block height are both representable as `u64`, but
+/// they inhabit different consensus domains and SHALL NOT unify. The newtype
+/// makes the compiler enforce the distinction: `expected_reward(height)` does
+/// not compile.
+///
+/// Follows the exact `BlockHeight` pattern — `#[repr(transparent)]`, named
+/// constructors, no `From<u64>`, manual serde as plain number, dwow-serial
+/// transparent encoding.
+#[repr(transparent)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable,
+)]
+pub struct BlockReward(u64);
+
+impl BlockReward {
+    pub const ZERO: Self = Self(0);
+    pub const fn new(amount: u64) -> Self { Self(amount) }
+    pub const fn get(self) -> u64 { self.0 }
+    pub const fn to_le_bytes(self) -> [u8; 8] { self.0.to_le_bytes() }
+    pub const fn from_le_bytes(bytes: [u8; 8]) -> Self { Self(u64::from_le_bytes(bytes)) }
+}
+
+impl core::fmt::Display for BlockReward {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl serde::Serialize for BlockReward {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u64(self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for BlockReward {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(Self(u64::deserialize(d)?))
+    }
+}
+
+/// Nominal PoW target type (type-system.md §2.3).
+///
+/// Wraps `u32` — PoW comparison is on 4-byte hash prefixes.
+/// `to_le_bytes()` returns `[u8; 4]` (differs from `BlockHeight`'s `[u8; 8]`
+/// due to the underlying scalar width). Pattern is identical otherwise.
+#[repr(transparent)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable,
+)]
+pub struct BlockTarget(u32);
+
+impl BlockTarget {
+    pub const MAX: Self = Self(u32::MAX);
+    pub const fn new(target: u32) -> Self { Self(target) }
+    pub const fn get(self) -> u32 { self.0 }
+    pub const fn to_le_bytes(self) -> [u8; 4] { self.0.to_le_bytes() }
+    pub const fn from_le_bytes(bytes: [u8; 4]) -> Self { Self(u32::from_le_bytes(bytes)) }
+    /// True if a computed hash_u32 meets this target (hash_u32 <= target).
+    pub const fn reached(self, hash_u32: u32) -> bool { hash_u32 <= self.0 }
+}
+
+impl core::fmt::Display for BlockTarget {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl serde::Serialize for BlockTarget {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u32(self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for BlockTarget {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(Self(u32::deserialize(d)?))
+    }
+}
+
+/// Nominal gas type (type-system.md §2.3).
+///
+/// Distinguished from `BlockReward` so gas arithmetic cannot mix with supply
+/// accounting. `compute_fee(gas)` accepts `GasAmount` — passing a bare `u64`
+/// or `BlockReward` is a type error.
+#[repr(transparent)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable,
+)]
+pub struct GasAmount(u64);
+
+impl GasAmount {
+    pub const ZERO: Self = Self(0);
+    pub const fn new(amount: u64) -> Self { Self(amount) }
+    pub const fn get(self) -> u64 { self.0 }
+    pub const fn to_le_bytes(self) -> [u8; 8] { self.0.to_le_bytes() }
+    pub const fn from_le_bytes(bytes: [u8; 8]) -> Self { Self(u64::from_le_bytes(bytes)) }
+}
+
+impl core::fmt::Display for GasAmount {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl serde::Serialize for GasAmount {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u64(self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for GasAmount {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(Self(u64::deserialize(d)?))
+    }
+}
+
 /// Constants for the block reward schedule.
 pub mod reward {
+    use super::BlockReward;
+
     /// Initial block reward at genesis (height 1, in base units: 1 DRKW = 10^8).
     ///
     /// Derived from: R₀ = ⌊total_supply × ln(2) / half_life_blocks⌋
@@ -160,14 +280,14 @@ pub mod reward {
     /// = 1,383,764,049 base units (~13.838 DRKW)
     ///
     /// Rounded down for conservative issuance.
-    pub const INITIAL_REWARD: u64 = 1_383_764_049;
+    pub const INITIAL_REWARD: BlockReward = BlockReward(1_383_764_049);
 
     /// Block reward for genesis block (height 1).
     ///
     /// The genesis block receives the initial reward. Every block from
     /// genesis onward follows the same reward function — no special
     /// bootstrap case with zero reward.
-    pub const GENESIS_REWARD: u64 = INITIAL_REWARD;
+    pub const GENESIS_REWARD: BlockReward = BlockReward(INITIAL_REWARD.0);
 
     /// Half-life in blocks (~4 years at 2-minute blocks).
     pub const HALF_LIFE_BLOCKS: u64 = 1_051_920;
@@ -177,7 +297,7 @@ pub mod reward {
     /// 1% per annum of the 21M cap, rounded down:
     /// = ⌊21,000,000 × 0.01 × 10^8 / 262,980⌋
     /// = 79,853,981 base units (~0.7985 DRK)
-    pub const TAIL_REWARD: u64 = 79_853_981;
+    pub const TAIL_REWARD: BlockReward = BlockReward(79_853_981);
 
     /// Maximum total supply (in DRK).
     pub const MAX_SUPPLY_DRK: u64 = 21_000_000;
@@ -209,10 +329,10 @@ pub fn block_version(_height: BlockHeight) -> u8 {
 /// decay — every block gets a fractionally smaller reward than the previous.
 /// No Bitcoin-style step halvings. The tail emission floor activates when the
 /// decay curve reaches the tail threshold.
-pub fn expected_reward(height: BlockHeight) -> u64 {
+pub fn expected_reward(height: BlockHeight) -> BlockReward {
     let height = height.get();
     if height == 0 {
-        return 0;
+        return BlockReward::ZERO;
     }
     if height == 1 {
         return reward::INITIAL_REWARD;
@@ -220,12 +340,12 @@ pub fn expected_reward(height: BlockHeight) -> u64 {
 
     let exp = height - 1;
     let decay = fixed_pow_decay(exp);
-    let reward = ((reward::INITIAL_REWARD as u128 * decay as u128) >> 32) as u64;
+    let reward = ((reward::INITIAL_REWARD.0 as u128 * decay as u128) >> 32) as u64;
 
-    if reward <= reward::TAIL_REWARD {
+    if reward <= reward::TAIL_REWARD.0 {
         return reward::TAIL_REWARD;
     }
-    reward
+    BlockReward(reward)
 }
 
 /// Closed-form binary exponentiation: compute DECAY_FP^exp / 2^(32*exp) in O(log exp).
@@ -259,12 +379,12 @@ mod reward_tests {
     /// at key points: genesis, half-life, tail.
     #[test]
     fn reward_formula_key_points() {
-        assert_eq!(expected_reward(BlockHeight::new(0)), 0);
+        assert_eq!(expected_reward(BlockHeight::new(0)), BlockReward::ZERO);
         assert_eq!(expected_reward(BlockHeight::GENESIS), reward::INITIAL_REWARD);
         // At half-life, should be approximately R0/2
         let at_half = expected_reward(BlockHeight::new(reward::HALF_LIFE_BLOCKS + 1));
-        let expected_half = reward::INITIAL_REWARD / 2;
-        let diff = at_half.abs_diff(expected_half);
+        let expected_half = reward::INITIAL_REWARD.get() / 2;
+        let diff = at_half.get().abs_diff(expected_half);
         let tolerance = expected_half / 100;
         assert!(diff <= tolerance,
             "At half-life: reward={}, R0/2={}, diff={}", at_half, expected_half, diff);
@@ -302,8 +422,8 @@ mod reward_tests {
 /// for the provided gas.
 ///
 /// Currently we simply divide the gas value by 100.
-pub fn compute_fee(gas: &u64) -> u64 {
-    gas / 100
+pub fn compute_fee(gas: GasAmount) -> u64 {
+    gas.0 / 100
 }
 
 use pasta_curves::{
@@ -316,7 +436,7 @@ use pasta_curves::{
 pub fn expected_cumulative_supply(height: BlockHeight) -> u64 {
     let mut total: u64 = 0;
     for h in 1..=height.get() {
-        total = total.saturating_add(expected_reward(BlockHeight::new(h)));
+        total = total.saturating_add(expected_reward(BlockHeight::new(h)).get());
     }
     total
 }
@@ -400,7 +520,7 @@ pub fn verify_cumulative_supply(
         }
         let reward = expected_reward(*height);
         let blind = coinbase_blind(&prev_coin, *height);
-        let coin_vc = pedersen_commitment_u64(reward, Blind(blind));
+        let coin_vc = pedersen_commitment_u64(reward.get(), Blind(blind));
         expected = expected + coin_vc;
         if expected != *commit {
             return false; // chain break!

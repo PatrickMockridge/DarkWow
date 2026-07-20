@@ -52,6 +52,7 @@ mod serial;
 /// Matches Bitcoin Core's COINBASE_MATURITY.
 pub const COINBASE_MATURITY: u64 = 100;
 
+pub use dwow_sdk::blockchain::{BlockReward, BlockTarget, GasAmount};
 pub use block::{
     build_uncle_merkle, compute_merkle_root, compute_reward, create_block,
     create_block_with_uncles, create_uncle, verify_uncle_proof, Block, BlockHeader, PowSource,

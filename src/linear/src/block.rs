@@ -25,7 +25,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
 
 use super::Transaction;
 use crate::monero::MoneroPowData;
@@ -57,7 +57,7 @@ pub struct BlockHeader {
     /// Block timestamp
     pub timestamp: u64,
     /// PoW target — `hash_u32 <= target` is valid. Higher = easier.
-    pub target: u32,
+    pub target: BlockTarget,
     /// Nonce for PoW mining
     pub nonce: u32,
     /// Block height in chain
@@ -65,7 +65,7 @@ pub struct BlockHeader {
     /// Merkle root of uncle blocks referenced by this canonical block
     pub uncle_merkle_root: [u8; 32],
     /// Total reward being distributed (canonical + uncle shares)
-    pub total_reward: u64,
+    pub total_reward: BlockReward,
     /// RandomX key for PoW mining (key used to create VM for this block)
     pub randomx_key: [u8; 32],
     /// Root of the coin commitment Merkle tree after this block
