@@ -43,7 +43,7 @@ use dwow_core::{
 };
 
 use dwow_chain::PowSource;
-use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::blockchain::{BlockHeight, BlockTarget};
 
 use crate::{
     error::{miner_status_response, server_error, RpcError},
@@ -493,7 +493,7 @@ impl DwowNode {
             previous: previous_hash,
             merkle_root,
             timestamp: template_timestamp,
-            target,
+            target: BlockTarget::new(target),
             nonce,
             height: submitted_height,
             uncle_merkle_root: [0u8; 32],
@@ -514,7 +514,7 @@ impl DwowNode {
             version: 1,
             inputs: vec![],
             outputs: vec![dwow_chain::TxOutput {
-                value: reward,
+                value: reward.get(),
                 script: vec![],
             }],
             contract_calls: if pow_reward_call_data.is_empty() {

@@ -214,6 +214,12 @@ impl BlockTarget {
     pub const fn reached(self, hash_u32: u32) -> bool { hash_u32 <= self.0 }
 }
 
+impl core::fmt::LowerHex for BlockTarget {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::LowerHex::fmt(&self.0, f)
+    }
+}
+
 impl core::fmt::Display for BlockTarget {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.0)

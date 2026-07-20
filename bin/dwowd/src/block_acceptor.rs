@@ -34,7 +34,7 @@ use std::sync::Arc;
 
 use dwow_chain::{Block, BlockConnectOutcome, CChainState, UncleBlock};
 use dwow_core::Result;
-use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::blockchain::{BlockHeight, BlockTarget};
 
 use dwow_chain::execution::execute_block;
 use dwow_chain::proof_of_token_balance;
@@ -76,7 +76,7 @@ pub fn accept_block(
     uncles: &[UncleBlock],
     vm: &Arc<randomx::RandomXVM>,
     _current_height: BlockHeight,
-    target: u32,
+    target: BlockTarget,
     fee_estimator: Option<&std::sync::Arc<dwow_chain::fee_estimator::FeeEstimator>>,
 ) -> Result<BlockConnectOutcome> {
     // 1. Proof of token balance — no hidden darkw minting beyond the coinbase.
@@ -109,7 +109,7 @@ pub fn accept_block(
     if !matches!(block.header.pow_source, dwow_chain::PowSource::Monero(_)) {
         let block_hash = block.hash_with_vm(vm.as_ref());
         let hash_u32 = u32::from_le_bytes(block_hash.as_bytes()[0..4].try_into().unwrap());
-        if hash_u32 > target {
+        if hash_u32 > target.get() {
             return Err(dwow_core::Error::Custom(format!(
                 "Block PoW invalid: hash={:#010x} target={:#010x}",
                 hash_u32, target
@@ -173,7 +173,7 @@ pub fn accept_block(
 
     // 3. WASM execution — runs pow_reward_v1, persists cumulative supply chain
     // to the contracts sled tree via the overlay.
-    let outcome = match execute_block(chain_state, block, uncles, vm, block.header.height, target) {
+    let outcome = match execute_block(chain_state, block, uncles, vm, block.header.height, target.get()) {
         Ok(o) => o,
         Err(e) => {
             // Supply mismatches during bootstrap (heights 1-2) are expected

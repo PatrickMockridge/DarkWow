@@ -452,7 +452,8 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock], _vm: &randomx::RandomXVM) -> ([
 /// Canonical reward = base_reward - sum(uncle pin rewards) (no over-minting)
 /// Invariant: canonical_reward + sum(uncle_rewards) = base_reward
 /// Returns (canonical_reward, uncle_rewards)
-pub fn compute_reward(base_reward: u64, uncles: &[UncleBlock]) -> (u64, Vec<u64>) {
+pub fn compute_reward(base_reward: BlockReward, uncles: &[UncleBlock]) -> (BlockReward, Vec<u64>) {
+    let base = base_reward.get();
     if uncles.is_empty() {
         return (base_reward, vec![]);
     }
@@ -470,14 +471,14 @@ pub fn compute_reward(base_reward: u64, uncles: &[UncleBlock]) -> (u64, Vec<u64>
     // Use checked_sub to surface invariant violations — pin rewards
     // exceeding base is a consensus bug, not a recoverable condition.
     // downstream verify_uncle_split() also catches this at commit time.
-    let canonical_reward = base_reward.checked_sub(total_pin_rewards)
+    let canonical_reward = base.checked_sub(total_pin_rewards)
         .unwrap_or_else(|| {
             tracing::error!(target: "dwow_chain::block",
                 "Invariant violated: pin rewards ({}) exceed base reward ({})",
-                total_pin_rewards, base_reward);
+                total_pin_rewards, base);
             0
         });
-    (canonical_reward, uncle_rewards)
+    (BlockReward::new(canonical_reward), uncle_rewards)
 }
 
 /// Maximum uncle depth allowed (how many generations back an uncle can reference).
@@ -495,7 +496,7 @@ pub fn create_block(
     previous: blake3::Hash,
     height: BlockHeight,
     transactions: Vec<Transaction>,
-    target: u32,
+    target: BlockTarget,
     vm: &randomx::RandomXVM,
 ) -> Block {
     create_block_with_uncles(previous, height, transactions, target, &[], vm)
@@ -508,7 +509,7 @@ pub fn create_block_with_uncles(
     previous: blake3::Hash,
     height: BlockHeight,
     transactions: Vec<Transaction>,
-    target: u32,
+    target: BlockTarget,
     uncles: &[UncleBlock],
     vm: &randomx::RandomXVM,
 ) -> Block {

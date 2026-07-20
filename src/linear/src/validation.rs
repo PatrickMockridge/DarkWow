@@ -32,7 +32,7 @@
 use std::collections::HashSet;
 
 use blake3::Hash as Blake3Hash;
-use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::blockchain::{BlockHeight, BlockTarget};
 use randomx::RandomXVM;
 
 use super::{
@@ -54,7 +54,7 @@ use super::{
 pub fn check_block_header(
     block: &Block,
     vm: &RandomXVM,
-    expected_target: u32,
+    expected_target: BlockTarget,
     current_height: BlockHeight,
     previous_hash: Option<&Blake3Hash>,
 ) -> Result<()> {
@@ -64,7 +64,7 @@ pub fn check_block_header(
     // Monero merge-mined blocks skip native RandomX check.
     if !matches!(block.header.pow_source, PowSource::Monero(_)) {
         let hash_u32 = u32::from_le_bytes(block_hash.as_bytes()[0..4].try_into().unwrap());
-        if hash_u32 > block.header.target {
+        if hash_u32 > block.header.target.get() {
             return Err(LinearError::InvalidPoW(block_hash.to_string()));
         }
     }
@@ -99,8 +99,8 @@ pub fn check_block_header(
     // canonical chain (previous hash matched above).
     if block.header.target != expected_target {
         return Err(LinearError::InvalidTarget {
-            declared: block.header.target,
-            expected: expected_target,
+            declared: block.header.target.get(),
+            expected: expected_target.get(),
             height: block.header.height,
         });
     }

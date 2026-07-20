@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
 use blake3::Hash as Blake3Hash;
-use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::blockchain::{BlockHeight, BlockTarget};
 use randomx::{RandomXFlags, RandomXVM};
 use rand::Rng;
 
@@ -55,7 +55,7 @@ impl Miner {
         previous: Blake3Hash,
         height: BlockHeight,
         txs: Vec<Transaction>,
-        target: u32,
+        target: BlockTarget,
         uncles: &[super::UncleBlock],
     ) -> super::Result<Block> {
         self.running.store(true, Ordering::SeqCst);

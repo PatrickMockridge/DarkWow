@@ -67,7 +67,7 @@ use blake3::Hash as Blake3Hash;
 use randomx::{RandomXCache, RandomXFlags, RandomXVM};
 use sled::transaction::Transactional;
 use tracing::info;
-use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::blockchain::{BlockHeight, BlockTarget};
 use dwow_sdk::crypto::{pedersen_commitment_u64, Blind};
 use dwow_sdk::pasta::pallas;
 use dwow_sdk::pasta::group::{ff::FromUniformBytes, Group, GroupEncoding};
@@ -489,7 +489,7 @@ impl CChainState {
                 let h = block.hash_with_vm(&*guard);
                 u32::from_le_bytes(h.as_bytes()[0..4].try_into().unwrap())
             };
-            if hash_u32 > block.header.target {
+            if hash_u32 > block.header.target.get() {
                 return Err(LinearError::InvalidPoW(
                     block.hash_with_vm(&*guard).to_string()
                 ));
@@ -502,7 +502,7 @@ impl CChainState {
                 let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
                 let min = consensus.min_target();
                 let max = consensus.max_target();
-                if block.header.target < min || block.header.target > max {
+                if block.header.target.get() < min || block.header.target.get() > max {
                     drop(guard);
                     return Err(LinearError::BlockIsInvalid(
                         format!("Competing block target {} outside bounds [{}, {}]",
@@ -616,7 +616,7 @@ impl CChainState {
                     let h = block.hash_with_vm(&*guard);
                     u32::from_le_bytes(h.as_bytes()[0..4].try_into().unwrap())
                 };
-                if hash_u32 > block.header.target {
+                if hash_u32 > block.header.target.get() {
                     return Err(LinearError::InvalidPoW(
                         block.hash_with_vm(&*guard).to_string()
                     ));
@@ -626,7 +626,7 @@ impl CChainState {
                     let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
                     let min = consensus.min_target();
                     let max = consensus.max_target();
-                    if block.header.target < min || block.header.target > max {
+                    if block.header.target.get() < min || block.header.target.get() > max {
                         drop(guard);
                         return Err(LinearError::BlockIsInvalid(
                             format!("Uncle chain target {} outside bounds [{}, {}]",
@@ -683,10 +683,10 @@ impl CChainState {
         }
 
         // --- Stage 1 & 2 PoW validation ---
-        let expected_target = {
+        let expected_target = BlockTarget::new({
             self.consensus.lock().unwrap_or_else(|e| e.into_inner())
                 .get_next_work_required(&self.store, block_height)
-        };
+        });
 
         // Lock the VM for validation hashing — prevents concurrent RandomX FFI
         let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
@@ -749,8 +749,8 @@ impl CChainState {
             .map(|u| u.pin_reward)
             .collect();
         CumulativeSupplyChain::verify_uncle_split(
-            base_reward,
-            block.header.total_reward,
+            base_reward.get(),
+            block.header.total_reward.get(),
             &pin_rewards,
         )?;
 
@@ -854,7 +854,7 @@ impl CChainState {
             }
 
             // Accumulate chain work
-            let block_target = block.header.target;
+            let block_target = block.header.target.get();
             let block_work = if block_target == 0 { 0u64 } else { (u32::MAX as u64) / (block_target as u64) };
             let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
             let accumulated = consensus.accumulated_work.load(Ordering::SeqCst).saturating_add(block_work);

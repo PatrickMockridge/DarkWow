@@ -640,7 +640,7 @@ impl DwowNode {
             version: 1,
             inputs: vec![],
             outputs: vec![dwow_chain::TxOutput {
-                value: reward,
+                value: reward.get(),
                 script: vec![],
             }],
             contract_calls: if pow_reward_call_data.is_empty() {

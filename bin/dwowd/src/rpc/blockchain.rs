@@ -364,7 +364,7 @@ impl DwowNode {
                 [0u8; 32]
             };
             let blind = coinbase_blind(&prev_bytes, BlockHeight::new(h));
-            cumulative = cumulative + pedersen_commitment_u64(reward, Blind(blind));
+            cumulative = cumulative + pedersen_commitment_u64(reward.get(), Blind(blind));
             cumulative_blind += blind;
         }
 

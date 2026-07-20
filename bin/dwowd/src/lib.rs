@@ -44,7 +44,7 @@ use dwow_core::{
     Error, Result,
 };
 use dwow_chain::monero::JobId;
-use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
 use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
 
@@ -448,7 +448,7 @@ async fn init_genesis(
     let (coinbase, _public_inputs, pow_reward_call, _coin_blind) =
         crate::registry::model::build_linear_coinbase(
             recipient,
-            genesis_reward,
+            genesis_reward.get(),
             &linear_zk,
             genesis_height,
         )
@@ -494,7 +494,7 @@ async fn init_genesis(
         previous: blake3::Hash::from_bytes([0u8; 32]),
         merkle_root: genesis_merkle_root,
         timestamp,
-        target,
+        target: BlockTarget::new(target),
         nonce: 0,
         height: genesis_height,
         uncle_merkle_root: [0u8; 32],
@@ -531,7 +531,7 @@ async fn init_genesis(
         &[],
         &vm,
         BlockHeight::new(0), // current_height = 0 (empty chain before genesis)
-        target,
+        BlockTarget::new(target),
         None,
     )
     .map_err(|e| Error::Custom(format!("Genesis block acceptance failed: {}", e)))?;
@@ -1024,7 +1024,7 @@ async fn prepare_block(
     mempool: Option<&Arc<dwow_mempool::Mempool>>,
     recipient: crate::accounts::MiningRecipient,
     height: BlockHeight,
-    base_reward: u64,
+    base_reward: BlockReward,
     linear_zk: &crate::registry::model::LinearPowRewardZk,
 ) -> Result<PreparedBlock> {
     use crate::registry::model::build_linear_coinbase;
@@ -1036,7 +1036,7 @@ async fn prepare_block(
     //    same sk_H for coinbase and fee collection, spec §3.2).
     let (_, _, pow_reward_call, _coin_blind) = build_linear_coinbase(
         recipient.clone(),
-        base_reward,
+        base_reward.get(),
         linear_zk,
         height,
     ).await?;
@@ -1050,7 +1050,7 @@ async fn prepare_block(
         competing_originals.iter().map(|block| {
             let depth = height.saturating_sub(block.header.height)
                 .min(dwow_chain::MAX_UNCLE_DEPTH as u64) as u8;
-            dwow_chain::create_uncle(block.clone(), depth, base_reward)
+            dwow_chain::create_uncle(block.clone(), depth, base_reward.get())
         }).collect()
     };
     if !uncles.is_empty() {
@@ -1292,7 +1292,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         // Mine
         let miner_consensus = dwow_chain::PoWConsensus::new(120, target, 1, u32::MAX);
         let miner = Miner::new(std::sync::Arc::new(miner_consensus));
-        let mined_block = match miner.mine(&vm, previous, height, all_txs, target, &uncles) {
+        let mined_block = match miner.mine(&vm, previous, height, all_txs, BlockTarget::new(target), &uncles) {
             Ok(b) => b,
             Err(e) => {
                 error!(target: "dwowd::miner_task", "Mining failed: {}", e);
@@ -1325,7 +1325,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
             &uncles,
             &vm,
             latest_block.header.height,
-            target,
+            BlockTarget::new(target),
             Some(&node.fee_estimator),
         );
 

@@ -35,7 +35,7 @@ use dwow_chain::Nullifier;
 use dwow_native_token_contract::{
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V1_BIN, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN,
 };
-use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
 use dwow_sdk::crypto::{
     keypair::{SecretKey},
     pasta_prelude::PrimeField,
@@ -82,11 +82,11 @@ pub struct LinearBlockTemplate {
     /// Block height
     pub height: BlockHeight,
     /// Difficulty target
-    pub target: u32,
+    pub target: BlockTarget,
     /// Unix timestamp (seconds) — captured once and reused for mining blob + verification
     pub timestamp: u64,
     /// Coinbase reward value
-    pub value: u64,
+    pub value: BlockReward,
     /// ZK proof for the coinbase transaction
     pub zk_proof: Vec<u8>,
     /// ZK public inputs: [C, nf, vc.x, vc.y, tc, S_H.x, S_H.y, tx_binding, tx_nonce]
@@ -643,7 +643,7 @@ pub async fn generate_linear_block_template(
         );
         let (coinbase, public_inputs, pow_reward_call, _coin_blind) = build_linear_coinbase(
             recipient_config.recipient.clone(),
-            reward,
+            reward.get(),
             zk,
             height,
         ).await?;
@@ -654,7 +654,7 @@ pub async fn generate_linear_block_template(
         return Ok(LinearBlockTemplate {
             previous: previous_hash,
             height,
-            target,
+            target: BlockTarget::new(target),
             timestamp,
             value: reward,
             zk_proof: coinbase.proof,
