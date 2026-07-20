@@ -322,6 +322,18 @@ pub struct LinearSyncHandler {
     chain_state: Arc<dwow_chain::CChainState>,
 }
 
+impl dwow_core::barb::ExhibitsBarb for LinearSyncHandler {
+    fn exhibited_barbs() -> &'static [dwow_core::barb::BarbId] {
+        // Pull-based block synchronization — verifies blocks, gates on
+        // sync barrier (catch-up boundary), propagates network state.
+        &[
+            dwow_core::barb::BarbId::Verify,
+            dwow_core::barb::BarbId::SyncBarrier,
+            dwow_core::barb::BarbId::GossipForward,
+        ]
+    }
+}
+
 impl LinearSyncHandler {
     /// Initialize the linear sync protocol handlers
     pub async fn init(p2p: &P2pPtr, chain_state: Arc<dwow_chain::CChainState>) -> LinearSyncHandlerPtr {

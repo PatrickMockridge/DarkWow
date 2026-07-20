@@ -159,6 +159,19 @@ pub struct LinearBroadcastHandler {
     p2p: P2pPtr,
 }
 
+impl dwow_core::barb::ExhibitsBarb for LinearBroadcastHandler {
+    fn exhibited_barbs() -> &'static [dwow_core::barb::BarbId] {
+        // Receives, validates, applies, and relays blocks. Does NOT mine
+        // — mining occurs in miner_task. Per type-system.md §10.4.
+        &[
+            dwow_core::barb::BarbId::Commit,
+            dwow_core::barb::BarbId::Verify,
+            dwow_core::barb::BarbId::Broadcast,
+            dwow_core::barb::BarbId::GossipForward,
+        ]
+    }
+}
+
 impl LinearBroadcastHandler {
     /// Initialize the broadcast handler with the full-validation blockchain.
     pub async fn init(

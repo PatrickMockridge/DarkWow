@@ -157,6 +157,46 @@ pub fn bridge_safe<Source: ExhibitsBarb, Dest: ExhibitsBarb>() -> bool {
     true
 }
 
+// ── Production protocol handler marker types (type-system.md §10.4) ──
+// Each marker type declares the barb set of its corresponding production
+// protocol handler. The dwowd crate independently implements ExhibitsBarb
+// on the real handler types; these markers serve as the library-level
+// reference and are gated by the cardinality snapshot test below.
+//
+// Per MOC review (Change 8): Mine is excluded from LinearBroadcastMarker
+// because the broadcast handler receives/validates/applies/relays blocks
+// but does not create or mine them — mining occurs in miner_task.
+
+/// Marker for linear blockchain broadcast handler.
+/// Barbs: Commit (block accepted), Verify (PoW + WASM validated),
+/// Broadcast (gossip relay), GossipForward (network propagation).
+pub struct LinearBroadcastMarker;
+impl ExhibitsBarb for LinearBroadcastMarker {
+    fn exhibited_barbs() -> &'static [BarbId] {
+        &[BarbId::Commit, BarbId::Verify, BarbId::Broadcast, BarbId::GossipForward]
+    }
+}
+
+/// Marker for linear blockchain sync handler.
+/// Barbs: Verify (block validation), SyncBarrier (catch-up boundary),
+/// GossipForward (network propagation).
+pub struct LinearSyncMarker;
+impl ExhibitsBarb for LinearSyncMarker {
+    fn exhibited_barbs() -> &'static [BarbId] {
+        &[BarbId::Verify, BarbId::SyncBarrier, BarbId::GossipForward]
+    }
+}
+
+/// Marker for transaction relay protocol handler.
+/// Barbs: Verify (tx validation), Broadcast (gossip relay),
+/// GossipForward (network propagation).
+pub struct ProtocolTxMarker;
+impl ExhibitsBarb for ProtocolTxMarker {
+    fn exhibited_barbs() -> &'static [BarbId] {
+        &[BarbId::Verify, BarbId::Broadcast, BarbId::GossipForward]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,6 +278,10 @@ mod tests {
         assert_eq!(ProtocolVersion::exhibited_barbs().len(), 0);
         assert_eq!(ProtocolAddress::exhibited_barbs().len(), 1);
         assert_eq!(ProtocolSeed::exhibited_barbs().len(), 1);
+        // ── Production marker types (Change 8) ──
+        assert_eq!(LinearBroadcastMarker::exhibited_barbs().len(), 4);
+        assert_eq!(LinearSyncMarker::exhibited_barbs().len(), 3);
+        assert_eq!(ProtocolTxMarker::exhibited_barbs().len(), 3);
     }
 
     #[test]

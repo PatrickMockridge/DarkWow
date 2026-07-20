@@ -57,6 +57,18 @@ pub struct ProtocolTxHandler {
     p2p: P2pPtr,
 }
 
+impl dwow_core::barb::ExhibitsBarb for ProtocolTxHandler {
+    fn exhibited_barbs() -> &'static [dwow_core::barb::BarbId] {
+        // Transaction relay — validates txs at mempool admission, broadcasts
+        // to peers, propagates network state.
+        &[
+            dwow_core::barb::BarbId::Verify,
+            dwow_core::barb::BarbId::Broadcast,
+            dwow_core::barb::BarbId::GossipForward,
+        ]
+    }
+}
+
 impl ProtocolTxHandler {
     /// Initialize a generic protocol handler for transaction messages
     /// and register it with the P2P network.
