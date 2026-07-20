@@ -250,7 +250,8 @@ impl DwowNode {
 
         let linear_zk = {
             let zk_lock = self.mining_state.linear_zk.lock().await;
-            zk_lock.clone()
+            let zk = zk_lock.clone().expect("ZK must be initialized before template generation");
+            zk
         };
 
         let mempool_txs = match &self.mempool {
@@ -282,7 +283,7 @@ impl DwowNode {
         let template = match crate::registry::model::generate_linear_block_template(
             chain_state,
             &recipient_config,
-            linear_zk.as_ref(),
+            &linear_zk,
             mempool_txs,
             uncles,
         )
@@ -772,7 +773,7 @@ impl DwowNode {
                     let effective_recipient = base_config.clone();
                     let linear_zk = {
                         let zk_lock = self.mining_state.linear_zk.lock().await;
-                        zk_lock.clone()
+                        zk_lock.clone().expect("ZK must be initialized")
                     };
 
                     let next_mempool_txs = match &self.mempool {
@@ -783,7 +784,7 @@ impl DwowNode {
                     match crate::registry::model::generate_linear_block_template(
                         chain_state,
                         &effective_recipient,
-                        linear_zk.as_ref(),
+                        &linear_zk,
                         next_mempool_txs,
                         vec![],
                     )

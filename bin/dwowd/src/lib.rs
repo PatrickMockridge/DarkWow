@@ -73,7 +73,7 @@ use proto::{DwowP2pHandler, DwowP2pHandlerPtr};
 /// Miners registry
 mod registry;
 use registry::{DwowMinersRegistry, DwowMinersRegistryPtr};
-use crate::registry::model::LinearMinerRewardsRecipientConfig;
+use crate::registry::model::{LinearMinerRewardsRecipientConfig, RequiredLinearZk};
 
 // execution.rs moved to dwow_chain::execution
 
@@ -171,7 +171,7 @@ pub struct MiningState {
     /// Last block timestamp for rate limiting
     pub last_block_time: AtomicU64,
     /// ZK proving materials for coinbase (lazy initialized)
-    pub linear_zk: Mutex<Option<crate::registry::model::LinearPowRewardZk>>,
+    pub linear_zk: Mutex<Option<crate::registry::model::RequiredLinearZk>>,
     /// Current block template for the active mining round
     pub current_linear_template: Mutex<Option<crate::registry::model::LinearBlockTemplate>>,
     /// Chain height at which the current template was generated.
@@ -1223,7 +1223,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
             let mut zk_lock = node.mining_state.linear_zk.lock().await;
             if zk_lock.is_none() {
                 match LinearPowRewardZk::new(chain_state.clone()).await {
-                    Ok(zk) => *zk_lock = Some(zk),
+                    Ok(zk) => *zk_lock = Some(RequiredLinearZk::new(Some(zk))),
                     Err(e) => {
                         error!(target: "dwowd::miner_task", "ZK init failed: {}", e);
                         smol::Timer::after(std::time::Duration::from_secs(2)).await;
@@ -1251,7 +1251,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         // Unified block preparation — collects uncles, builds coinbase, selects txs
         let prep = match prepare_block(
             &chain_state, &node.mining_state, node.mempool.as_ref(),
-            recipient, height, base_reward, linear_zk.as_ref().unwrap(),
+            recipient, height, base_reward, linear_zk.as_ref().unwrap().as_ref(),
         ).await {
             Ok(p) => p,
             Err(e) => {

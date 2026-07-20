@@ -180,7 +180,7 @@ impl DwowNode {
                 match crate::registry::model::LinearPowRewardZk::new(
                     chain_state.clone(),
                 ).await {
-                    Ok(zk) => *zk_lock = Some(zk),
+                    Ok(zk) => *zk_lock = Some(crate::registry::model::RequiredLinearZk::new(Some(zk))),
                     Err(e) => {
                         tracing::warn!(
                             target: "dwowd::rpc::rpc_stratum::stratum_login",
@@ -191,6 +191,7 @@ impl DwowNode {
             }
             zk_lock.clone()
         };
+        let zk_ref = linear_zk.as_ref().expect("ZK must be initialized before template generation");
 
         // Drain mempool for transaction inclusion in this block template
         let mempool_txs = match &self.mempool {
@@ -218,7 +219,7 @@ impl DwowNode {
 
         // Generate block template with collected uncles
         let template = match generate_linear_block_template(
-            chain_state, &config, linear_zk.as_ref(), mempool_txs, uncles,
+            chain_state, &config, zk_ref, mempool_txs, uncles,
         ).await {
             Ok(t) => t,
             Err(e) => {
@@ -646,6 +647,7 @@ impl DwowNode {
                             let zk_lock = self.mining_state.linear_zk.lock().await;
                             zk_lock.clone()
                         };
+                        let zk_ref = linear_zk.as_ref().expect("ZK must be initialized");
 
                         let effective_recipient = recipient_config.clone();
 
@@ -658,7 +660,7 @@ impl DwowNode {
                         match generate_linear_block_template(
                             chain_state,
                             &effective_recipient,
-                            linear_zk.as_ref(),
+                            zk_ref,
                             next_mempool_txs,
                             vec![],
                         )

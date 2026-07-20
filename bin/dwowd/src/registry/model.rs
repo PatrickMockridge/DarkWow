@@ -496,10 +496,32 @@ impl LinearPowRewardZk {
 /// Otherwise falls back to a transparent coinbase (for development/testing).
 /// `transactions` are drained from the mempool at template generation time
 /// so the merkle root (included in the mining blob) remains fixed.
+/// Required ZK proving materials — wraps Option<LinearPowRewardZk>.
+///
+/// Once constructed (after lazy-init succeeds), access is infallible.
+/// Panics at construction if None — the Option only exists during the
+/// brief initialization window. Per type-system.md §5: a type that
+/// signals "may be absent" but is silently unwrapped SHALL be replaced
+/// with a required-access wrapper.
+#[derive(Clone)]
+pub struct RequiredLinearZk {
+    inner: LinearPowRewardZk,
+}
+
+impl RequiredLinearZk {
+    pub fn new(opt: Option<LinearPowRewardZk>) -> Self {
+        Self { inner: opt.expect("LinearPowRewardZk must be initialized before mining") }
+    }
+
+    pub fn as_ref(&self) -> &LinearPowRewardZk {
+        &self.inner
+    }
+}
+
 pub async fn generate_linear_block_template(
     chain_state: &dwow_chain::CChainState,
     recipient_config: &LinearMinerRewardsRecipientConfig,
-    linear_zk: Option<&LinearPowRewardZk>,
+    linear_zk: &RequiredLinearZk,
     transactions: Vec<dwow_chain::Transaction>,
     uncles: Vec<dwow_chain::UncleBlock>,
 ) -> Result<LinearBlockTemplate> {
@@ -550,7 +572,7 @@ pub async fn generate_linear_block_template(
     // produces downstream-rejected blocks regardless.
     let transactions: Vec<dwow_chain::Transaction> = {
         let mut txs = transactions;
-        if let Some(zk) = linear_zk {
+        { let zk = linear_zk.as_ref();
             if let Some(fee_tx) = build_fee_collect_tx(
                 &recipient_config.recipient,
                 &txs,
@@ -610,7 +632,7 @@ pub async fn generate_linear_block_template(
         (root, proofs)
     };
 
-    if let Some(zk) = linear_zk {
+    { let zk = linear_zk.as_ref();
         // Diagnostic: log exact recipient public key used for AEAD encryption.
         // Cross-reference with wallet's derived_pk from scan diagnostics.
         let recipient_bytes = recipient_config.recipient.public().to_bytes();
@@ -656,51 +678,4 @@ pub async fn generate_linear_block_template(
         });
     }
 
-    // HAZID H-H12: Non-ZK fallback path — all-zero cryptographic material.
-    // This path exists for development/testing only. In production builds,
-    // refusing to produce a template without ZK proof is the correct behavior.
-    // A block with no coinbase proof would be rejected downstream anyway.
-    #[cfg(debug_assertions)]
-    {
-        tracing::warn!(target: "dwowd::registry",
-            "Using non-ZK fallback coinbase template — DEVELOPMENT ONLY");
-        Ok(LinearBlockTemplate {
-            previous: previous_hash,
-            height,
-            target,
-            timestamp,
-            value: reward,
-            zk_proof: vec![],
-            zk_public_inputs: [[0u8; 32]; 9],
-            coin: dwow_chain::CoinCommitment::from_bytes([0u8; 32])
-                .map_err(|e| Error::Custom(format!("Invalid fallback coin: {}", e)))?,
-            value_commit_x: dwow_chain::PedersenCoordinate::from_bytes([0u8; 32])
-                .map_err(|e| Error::Custom(format!("Invalid fallback value_commit_x: {}", e)))?,
-            value_commit_y: dwow_chain::PedersenCoordinate::from_bytes([0u8; 32])
-                .map_err(|e| Error::Custom(format!("Invalid fallback value_commit_y: {}", e)))?,
-            token_commit: dwow_chain::TokenCommitment::from_bytes([0u8; 32])
-                .map_err(|e| Error::Custom(format!("Invalid fallback token_commit: {}", e)))?,
-            nullifier: None,
-            new_cumulative_x: dwow_chain::PedersenCoordinate::from_bytes([0u8; 32])
-                .map_err(|e| Error::Custom(format!("Invalid fallback new_cumulative_x: {}", e)))?,
-            new_cumulative_y: dwow_chain::PedersenCoordinate::from_bytes([0u8; 32])
-                .map_err(|e| Error::Custom(format!("Invalid fallback new_cumulative_y: {}", e)))?,
-            encrypted_note: vec![],
-            pow_reward_call_data: vec![],
-            coin_merkle_root: [0u8; 32],
-            nullifier_root: [0u8; 32],
-            transactions,
-            merkle_root,
-            uncles,
-            uncle_merkle_root,
-            uncle_proofs,
-        })
-    }
-    #[cfg(not(debug_assertions))]
-    {
-        Err(Error::Custom(
-            "Coinbase ZK proof generation failed — no fallback in production builds. \
-             See HAZID H-H12.".into()
-        ))
-    }
 }

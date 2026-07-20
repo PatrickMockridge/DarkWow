@@ -166,7 +166,7 @@ impl DwowNode {
                 )
                 .await
                 {
-                    Ok(zk) => *zk_lock = Some(zk),
+                    Ok(zk) => *zk_lock = Some(crate::registry::model::RequiredLinearZk::new(Some(zk))),
                     Err(e) => {
                         error!(target: "dwowd::rpc::miner", "Failed to init linear ZK: {}", e);
                         return JsonError::new(
@@ -185,7 +185,7 @@ impl DwowNode {
         let cs = chain_state.clone();
         let prep = match crate::prepare_block(
             &cs, &self.mining_state, self.mempool.as_ref(),
-            mining_recipient, height, reward, linear_zk.as_ref().unwrap(),
+            mining_recipient, height, reward, linear_zk.as_ref().unwrap().as_ref(),
         ).await {
             Ok(p) => p,
             Err(e) => {
