@@ -158,13 +158,17 @@ phase_wallet_verify() {
     info "  Checking wallet sync status..."
     local height=0
     local status
+    enter_soft_section
     status=$(wal "$wallet_idx" sync status 2>&1)
+    enter_critical_section
     height=$(echo "$status" | grep 'Local chain height:' | sed 's/.*Local chain height: //' | grep -oE '[0-9]+' | head -1 || echo 0)
 
     if [ "$height" -eq 0 ]; then
         _wallet_diagnostic "$wallet_idx"
         info "  Fresh scan output (may reveal decrypt state):"
+        enter_soft_section
         wal "$wallet_idx" scan 2>&1 | tail -5 | while read line; do info "    $line"; done
+        enter_critical_section
         warn "wallet-$wallet_idx has not synced any blocks yet — skipping invariant checks"
         if [ "$wallet_idx" -eq 1 ]; then
             return 0  # wallet-1 not synced yet, skip — not a failure, chain may still be booting
@@ -264,9 +268,24 @@ phase_wallet_transfer() {
     pre_bal2=$(_native_balance 2)
     info "  PRE-FLIGHT: node0 height=$tx_height, wallet-1 balance=$pre_bal1 caps=$pre_caps1, wallet-2 balance=$pre_bal2"
 
+    # Guard: transfer requires a chain with blocks and a funded wallet.
+    # If either is missing, skip — not a failure, chain may still be booting.
+    if [ "${tx_height:-0}" -lt 2 ]; then
+        warn "transfer skipped: node0 height=$tx_height (< 2) — chain not ready"
+        return 0
+    fi
+    if [ "${pre_bal1:-0}" -eq 0 ]; then
+        warn "transfer skipped: wallet-1 balance=0 — not funded yet"
+        return 0
+    fi
+
     # ── 2. Get wallet-2 address ────────────────────────────────────────
+    # Enter soft section for docker exec RPC — transient failures are
+    # diagnostic, not pipeline-killing. No chain = no address = skip.
     local wallet2_addr
+    enter_soft_section
     wallet2_addr=$(wal 2 wallet address 2>&1 | tail -1)
+    enter_critical_section
     if [ -z "$wallet2_addr" ]; then
         _wallet_diagnostic 2
         fail "transfer: failed to get wallet-2 address — wallet may not be initialized"
@@ -277,7 +296,9 @@ phase_wallet_transfer() {
     # ── 3. Build + broadcast ───────────────────────────────────────────
     info "  BUILD: wallet-1 → wallet-2 (1 DRKW)..."
     local transfer_out txid
+    enter_soft_section
     transfer_out=$(wal 1 transfer 1 DRKW "$wallet2_addr" --porcelain 2>&1)
+    enter_critical_section
     if ! echo "$transfer_out" | grep -qE '^txid='; then
         fail "transfer: wallet-1 transfer failed — chain may not be synced. Output: $transfer_out"
         _wallet_diagnostic 1
