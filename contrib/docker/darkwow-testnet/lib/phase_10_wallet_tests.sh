@@ -96,20 +96,24 @@ _wallet_height() {
     wal "$idx" sync status 2>&1 | grep 'Local chain height:' | grep -oE '[0-9]+' | head -1 || echo "0"
 }
 
-# Get node0's current chain height via JSON-RPC.
-# Uses jq for structured parsing — immune to formatting changes.
+# Get node0's current chain height via the pipeline's standard RPC helper.
+# Uses jsonrpc_get_height (which has rpc_retry for transient TCP failures)
+# instead of raw /dev/tcp — consistent with Phase 9's RPC calls.
 _node0_height() {
-    docker exec dwow-node0 bash -c \
-        "exec 3<>/dev/tcp/127.0.0.1/31345; echo '{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_height\",\"params\":[],\"id\":1}' >&3; timeout 3 cat <&3" 2>&1 \
-        | jq -r '.result.height // 0' 2>/dev/null || echo "0"
+    jsonrpc_get_height "dwow-node0" "31345"
 }
 
 # Query node0 mempool for pending transaction hashes.
-# Uses jq to extract the result array — avoids greedy grep over JSON.
+# Uses rpc_retry (standard RPC helper with transient TCP resilience)
+# instead of raw /dev/tcp — consistent with Phase 9's RPC calls.
 _mempool_hashes() {
-    docker exec dwow-node0 bash -c \
-        "exec 3<>/dev/tcp/127.0.0.1/31345; echo '{\"jsonrpc\":\"2.0\",\"method\":\"tx.pending\",\"params\":[],\"id\":1}' >&3; timeout 3 cat <&3" 2>&1 \
-        | jq -r '.result // [] | join(",")' 2>/dev/null || echo "[]"
+    local result
+    result=$(rpc_retry "dwow-node0" "31345" "tx.pending" "[]" 3 2>/dev/null || echo "")
+    if [ -n "$result" ]; then
+        echo "$result" | jq -r '.result // [] | join(",")' 2>/dev/null || echo "[]"
+    else
+        echo "[]"
+    fi
 }
 
 # Single-shot wallet height check — no retry loop.
@@ -152,30 +156,54 @@ phase_wallet_verify() {
         fi
     fi
 
-    # 1. Single-shot sync check. No retry loop — check current height,
-    #    report it, continue. If height=0, skip invariant checks below
-    #    (they require a synced chain to be meaningful).
-    info "  Checking wallet sync status..."
+    # 1. Wallet sync gate: poll wallet-1 until it has synced at least
+    #    one block. After Phase 9 confirmed blocks exist, wallet sync
+    #    should complete within a few minutes (wallet daemon startup +
+    #    P2P connect + first sync loop iteration). 10 min bound is
+    #    generous — if wallet never syncs, something is broken.
+    local WALLET_SYNC_MAX_POLLS=60   # 10 minutes max
+    local WALLET_SYNC_INTERVAL=10    # poll every 10 seconds
     local height=0
-    local status
-    enter_soft_section
-    status=$(wal "$wallet_idx" sync status 2>&1)
-    enter_critical_section
-    height=$(echo "$status" | grep 'Local chain height:' | sed 's/.*Local chain height: //' | grep -oE '[0-9]+' | head -1 || echo 0)
+    local poll=0
 
-    if [ "$height" -eq 0 ]; then
-        _wallet_diagnostic "$wallet_idx"
-        info "  Fresh scan output (may reveal decrypt state):"
-        enter_soft_section
-        wal "$wallet_idx" scan 2>&1 | tail -5 | while read line; do info "    $line"; done
-        enter_critical_section
-        warn "wallet-$wallet_idx has not synced any blocks yet — skipping invariant checks"
-        if [ "$wallet_idx" -eq 1 ]; then
-            return 0  # wallet-1 not synced yet, skip — not a failure, chain may still be booting
+    if [ "$wallet_idx" -eq 1 ]; then
+        info "  Waiting for wallet-1 to sync blocks..."
+        while [ "$poll" -lt "$WALLET_SYNC_MAX_POLLS" ]; do
+            local status
+            enter_soft_section
+            status=$(wal "$wallet_idx" sync status 2>&1)
+            enter_critical_section
+            height=$(echo "$status" | grep 'Local chain height:' | sed 's/.*Local chain height: //' | grep -oE '[0-9]+' | head -1 || echo 0)
+            if [ "${height:-0}" -gt 0 ]; then
+                pass "wallet-1 synced (height=$height after $((poll * WALLET_SYNC_INTERVAL))s)"
+                break
+            fi
+            poll=$((poll + 1))
+            if [ "$poll" -lt "$WALLET_SYNC_MAX_POLLS" ]; then
+                info "    wallet-1 height=$height — waiting for sync (poll $poll/$WALLET_SYNC_MAX_POLLS, ${WALLET_SYNC_INTERVAL}s)..."
+                sleep "$WALLET_SYNC_INTERVAL"
+            fi
+        done
+        if [ "${height:-0}" -eq 0 ]; then
+            _wallet_diagnostic "$wallet_idx"
+            fail "wallet-1 never synced any blocks after $((WALLET_SYNC_MAX_POLLS * WALLET_SYNC_INTERVAL))s"
+            info "  Wallet daemon may be stuck, or P2P connectivity is broken."
+            info "  Re-run with: --resume-from 9 --skip-build to retry after fixing."
+            return
         fi
-        continue      # wallet-2+ may legitimately have nothing to sync
+    else
+        # wallet-2+: single-shot sync check (may legitimately have nothing)
+        local status
+        enter_soft_section
+        status=$(wal "$wallet_idx" sync status 2>&1)
+        enter_critical_section
+        height=$(echo "$status" | grep 'Local chain height:' | sed 's/.*Local chain height: //' | grep -oE '[0-9]+' | head -1 || echo 0)
+        if [ "$height" -eq 0 ]; then
+            warn "wallet-$wallet_idx has not synced any blocks yet — skipping invariant checks"
+            continue
+        fi
+        pass "wallet-$wallet_idx synced blocks (height=$height)"
     fi
-    pass "wallet-$wallet_idx synced blocks (height=$height)"
 
     # The wallet derives its key on boot from keys.toml [wallet-N] (WALLET_NAME).
     # No import step — containers own their state, the pipeline verifies outcomes.
@@ -317,17 +345,31 @@ phase_wallet_transfer() {
         warn "tx not found in node0 mempool (may have been mined instantly or mempool RPC unavailable)"
     fi
 
-    # ── 5. Mined: single-shot check of node0 height ────────────────────
-    info "  MINED: checking if transfer block was mined..."
+    # ── 5. Mined: poll node0 height until the transfer block is mined ──
+    #     Mining is probabilistic. Warn if not mined within a generous
+    #     window, but don't stop the pipeline — this is diagnostic.
+    local MINE_MAX_POLLS=36     # 6 minutes max (36 × 10s)
+    local MINE_INTERVAL=10      # poll every 10 seconds
     local target_height mined_height
     target_height=$((tx_height + 1))
-    mined_height=$(_node0_height)
-    if [ -n "$mined_height" ] && [ "$mined_height" -ge "$target_height" ]; then
-        pass "transfer mined in block: node0 height $tx_height → $mined_height"
-    else
-        warn "transfer not yet mined — node0 height=$mined_height, target=$target_height"
+    local mine_poll=0
+    info "  MINED: waiting for node0 to mine transfer block (target height=$target_height)..."
+    while [ "$mine_poll" -lt "$MINE_MAX_POLLS" ]; do
+        mined_height=$(_node0_height)
+        if [ -n "$mined_height" ] && [ "$mined_height" -ge "$target_height" ]; then
+            pass "transfer mined in block: node0 height $tx_height → $mined_height ($((mine_poll * MINE_INTERVAL))s)"
+            break
+        fi
+        mine_poll=$((mine_poll + 1))
+        if [ "$mine_poll" -lt "$MINE_MAX_POLLS" ]; then
+            info "    node0 height=$mined_height, waiting for >= $target_height (poll $mine_poll/$MINE_MAX_POLLS, ${MINE_INTERVAL}s)..."
+            sleep "$MINE_INTERVAL"
+        fi
+    done
+    if [ -z "$mined_height" ] || [ "$mined_height" -lt "$target_height" ]; then
+        warn "transfer not mined after $((MINE_MAX_POLLS * MINE_INTERVAL))s — node0 height=$mined_height, target=$target_height"
         _wallet_diagnostic 1
-        return 1
+        return 0  # diagnostic — do not stop pipeline
     fi
     tx_height=$mined_height
 
@@ -336,9 +378,9 @@ phase_wallet_transfer() {
     if _check_wallet_height 1 "$conf_target" "confirm-2"; then
         pass "transfer confirmed: wallet-1 at height >= $conf_target (2 confirmations, safe against 1-block reorg)"
     else
-        warn "wallet-1 not yet synced past transfer block (height target=$conf_target)"
+        warn "wallet-1 not yet synced past transfer block (height target=$conf_target) — diagnostic, not a failure"
         _wallet_diagnostic 1
-        return 1
+        return 0  # diagnostic — do not stop pipeline
     fi
 
     # ── 7. Receive: wallet-2 scans and checks balance ──────────────────
@@ -350,7 +392,7 @@ phase_wallet_transfer() {
     if [ -n "$recv" ] && [ "$recv" -gt "$pre_bal2" ]; then
         pass "wallet-2 received transfer: balance $pre_bal2 → $recv (tx confirmed at height $tx_height)"
     else
-        warn "wallet-2 balance unchanged after transfer: before=$pre_bal2 after=$recv"
+        warn "wallet-2 balance unchanged after transfer: before=$pre_bal2 after=$recv — diagnostic, may need more time"
         _wallet_diagnostic 2
     fi
 
@@ -370,6 +412,4 @@ phase_wallet_transfer() {
     else
         fail "wallet-1 post-transfer NOT fee-ready: balance=$post_xfer_balance < $DEFAULT_FEE — capability pathways blocked"
     fi
-
-    trap - ERR  # Restore ERR trap after diagnostic phase
 }

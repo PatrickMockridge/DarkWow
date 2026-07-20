@@ -11,11 +11,14 @@
 #
 # What we test here is irreducible to Rust: did the real Docker deployment
 # actually produce blocks, and did ONLY node0 exercise genesis authority?
-# Authority is verified via RPC block-1 hash comparison: if a non-node0 node
-# has block 1 AND its hash matches node0's, it MUST have synced (cannot
-# independently create an identical block). Docker-log grepping removed —
-# log format, buffering, and container restarts produced false
-# positives/negatives.
+#
+# SYNCHRONIZATION GATE: Phase 9 is the single synchronization point for the
+# entire pipeline. It polls node0 height until block 2 exists (genesis + first
+# mined block), then runs invariant checks once. The poll bound (20 min) is
+# derived from system constants — ZK keygen (~5 min) + genesis creation (~30s)
+# + block 2 mining (~30s) + P2P mesh (~30s) × 2x safety margin. After this
+# gate, all subsequent phases can run single-shot checks against a known-ready
+# chain.
 #
 # Dependencies: output.sh (info, pass, fail, warn),
 #               config.sh (MODE, NODE0, NATIVE_NODES),
@@ -33,6 +36,19 @@ _build_node_list() {
     fi
 }
 
+# Helper: fetch block 1 canonical hash from a node via RPC.
+# Returns empty string if the block is unreadable.
+_get_block1_hash() {
+    local container="$1" port="$2"
+    local raw
+    raw=$(jsonrpc_get_block "$container" "$port" 1 2>/dev/null || echo "")
+    if [ -z "$raw" ]; then
+        echo ""
+        return
+    fi
+    echo "$raw" | jq -cS '.result' 2>/dev/null | sha256sum | cut -d' ' -f1
+}
+
 phase_blocks() {
     info "Phase 9: Block production gate..."
 
@@ -42,36 +58,55 @@ phase_blocks() {
     NODE0_NAME="${NODE0_NAME%%:*}"
     local NODE0_PORT=31345
 
-    # ── Genesis: did node0 create genesis? ──────────────────────────
-    # Diagnostic only — no timeout. If genesis hasn't happened yet,
-    # subsequent hash-based checks will naturally fail. ZK keygen for
-    # 9 contracts takes minutes on first boot; this is normal.
-    local n0_height
-    n0_height=$(jsonrpc_get_height "$NODE0_NAME" "$NODE0_PORT")
-    n0_height=$(echo "$n0_height" | tr -dc '0-9')
-    n0_height="${n0_height:-0}"
-    if [ "${n0_height:-0}" -ge 1 ]; then
-        pass "node0 genesis created (height=$n0_height)"
-    else
-        warn "node0 height=$n0_height — genesis not yet created"
+    # ═══════════════════════════════════════════════════════════════════
+    # SYNCHRONIZATION GATE: poll node0 until block 2 exists.
+    #
+    # This is the ONE place the pipeline waits for a state transition.
+    # Every check after this gate is a single-shot observation of
+    # invariant vs diagnostic state. The bound is derived from system
+    # constants, not invented:
+    #   ZK keygen (Mint_V1 + FeeCollect_V1):     ~5 min
+    #   Genesis creation (coinbase + 9 deploys): ~30s
+    #   Block 2 mining (3× target_block_time):   ~30s
+    #   P2P mesh formation (observer + node1):    ~30s
+    #   Safety margin: 2× → 20 min (120 × 10s)
+    # ═══════════════════════════════════════════════════════════════════
+    local SYNC_MAX_POLLS=120   # 20 minutes max
+    local SYNC_INTERVAL=10     # poll every 10 seconds
+    local n0_height=0
+    local poll=0
+
+    info "Waiting for node0 to produce block 2 (ZK keygen may take minutes on first boot)..."
+    while [ "$poll" -lt "$SYNC_MAX_POLLS" ]; do
+        n0_height=$(jsonrpc_get_height "$NODE0_NAME" "$NODE0_PORT")
+        n0_height=$(echo "$n0_height" | tr -dc '0-9')
+        n0_height="${n0_height:-0}"
+        if [ "${n0_height:-0}" -ge 2 ]; then
+            pass "node0 reached height=$n0_height after $((poll * SYNC_INTERVAL))s"
+            break
+        fi
+        poll=$((poll + 1))
+        if [ "$poll" -lt "$SYNC_MAX_POLLS" ]; then
+            info "  node0 height=$n0_height — waiting for block 2 (poll $poll/$SYNC_MAX_POLLS, ${SYNC_INTERVAL}s)..."
+            sleep "$SYNC_INTERVAL"
+        fi
+    done
+
+    if [ "${n0_height:-0}" -lt 2 ]; then
+        fail "node0 never produced block 2 after $((SYNC_MAX_POLLS * SYNC_INTERVAL))s (height=$n0_height)"
+        info "  ZK keygen may have failed, or mining is not running."
+        info "  Check: docker logs dwow-node0 | tail -50"
+        return
     fi
 
-    # ── Block production: diagnostic only — no timeout ─────────────
-    local b2_height
-    b2_height=$(jsonrpc_get_height "$NODE0_NAME" "$NODE0_PORT")
-    b2_height=$(echo "$b2_height" | tr -dc '0-9')
-    b2_height="${b2_height:-0}"
-    if [ "${b2_height:-0}" -ge 2 ]; then
-        pass "node0 height=$b2_height — block production confirmed"
-    else
-        warn "node0 height=${b2_height:-?} — mining not yet producing blocks"
-    fi
+    # ── Diagnostic: display current heights ──────────────────────────
+    info "node0 height=$n0_height — chain is ready for wallet testing"
 
-    # ── Other nodes: alive check, observational only ───────────────
+    # ── Other nodes: alive check, observational only ─────────────────
     for node_spec in "${NODE_LIST[@]}"; do
         local node_name="${node_spec%%:*}"
         local node_port="${node_spec##*:}"
-        [ "$node_name" = "$NODE0_NAME" ] && continue  # already checked above
+        [ "$node_name" = "$NODE0_NAME" ] && continue
 
         local h
         h=$(jsonrpc_get_height "$node_name" "$node_port")
@@ -80,37 +115,17 @@ phase_blocks() {
         if [ "$h" -ge 1 ] 2>/dev/null; then
             pass "$node_name: height=$h"
         else
-            warn "$node_name: RPC unreachable or height=0"
+            warn "$node_name: RPC unreachable or height=0 (sync lag is normal)"
         fi
     done
 
-    # ══ Genesis authority gate: ONLY node0 creates; everyone else syncs ══
-    # The user directive this measures: "either a node creates its own
-    # genesis on a separate network or it syncs to an existing one, but it
-    # cannot do both."
+    # ═══════════════════════════════════════════════════════════════════
+    # GENESIS AUTHORITY GATE: ONLY node0 creates; everyone else syncs.
     #
-    # Authority is verified via RPC block-1 hash comparison, NOT docker-log
-    # grepping. If a non-node0 node has block 1 AND its hash matches node0's,
-    # it MUST have synced — it cannot independently create an identical block.
-    # Docker-log grepping produced false positives and false negatives across
-    # multiple pipeline runs (log format varies, buffering loses messages,
-    # container restarts clear logs). RPC is deterministic and always available.
-    #
-    # Hard failures: node0 has no block 1, or a non-node0 node has a DIFFERENT
-    # block 1 (independent genesis = authority violation).
-    # Soft (warn): a non-node0 node has no block 1 (sync incomplete).
-
-    # Helper: fetch block 1 canonical hash from a node via RPC.
-    _get_block1_hash() {
-        local container="$1" port="$2"
-        local raw
-        raw=$(jsonrpc_get_block "$container" "$port" 1 2>/dev/null || echo "")
-        if [ -z "$raw" ]; then
-            echo ""
-            return
-        fi
-        echo "$raw" | jq -cS '.result' 2>/dev/null | sha256sum | cut -d' ' -f1
-    }
+    # Authority is verified via RPC block-1 hash comparison. If a
+    # non-node0 node has block 1 AND its hash matches node0's, it MUST
+    # have synced — it cannot independently create an identical block.
+    # ═══════════════════════════════════════════════════════════════════
 
     # Sentinel values that indicate an empty/unreadable block 1 response.
     local empty_sum
@@ -118,18 +133,45 @@ phase_blocks() {
     local null_sum
     null_sum=$(printf 'null\n' | jq -cS '.' | sha256sum | cut -d' ' -f1)
 
-    # (a) Positive: node0 is the genesis authority — confirmed by RPC height
-    # check above (height >= 1). Now fetch node0's block 1 as the reference.
+    # (a) Fetch node0's block 1 as the reference hash.
+    #     Retry up to 3×2s for transient RPC unavailability (node busy
+    #     mining). If still unreadable, fail — the authority gate cannot
+    #     execute without a reference hash.
     local ref_sum
-    ref_sum=$(_get_block1_hash "$NODE0_NAME" "$NODE0_PORT")
+    local ref_attempt=0
+    while [ "$ref_attempt" -lt 3 ]; do
+        ref_sum=$(_get_block1_hash "$NODE0_NAME" "$NODE0_PORT")
+        if [ -n "$ref_sum" ] && [ "$ref_sum" != "$empty_sum" ] && [ "$ref_sum" != "$null_sum" ]; then
+            break
+        fi
+        ref_attempt=$((ref_attempt + 1))
+        [ "$ref_attempt" -lt 3 ] && sleep 2
+    done
+
     if [ -z "$ref_sum" ] || [ "$ref_sum" = "$empty_sum" ] || [ "$ref_sum" = "$null_sum" ]; then
-        warn "node0 genesis block unreadable via RPC — RPC may not be ready yet"
-    else
+        fail "node0 block 1 unreadable via RPC after 3 attempts — authority gate cannot execute"
+        return
+    fi
     pass "node0 is the genesis authority (block 1 hash=${ref_sum:0:16}...)"
 
-    # Non-authority check list: every NODE_LIST node except node0, plus the
-    # observer (not in NODE_LIST — it has no mining role, but it MUST obey
-    # the same genesis authority rule).
+    # (b) Genesis structure invariant: must carry exactly 10 transactions
+    #     (1 coinbase + 9 contract deployments in consensus order).
+    local genesis_raw genesis_tx_count
+    genesis_raw=$(jsonrpc_get_block "$NODE0_NAME" "$NODE0_PORT" 1 2>/dev/null || echo "")
+    if [ -n "$genesis_raw" ]; then
+        genesis_tx_count=$(echo "$genesis_raw" | jq '.result | fromjson | .body.transactions | length' 2>/dev/null || echo "0")
+        if [ "${genesis_tx_count:-0}" -eq 10 ]; then
+            pass "genesis block structure: 10 transactions (1 coinbase + 9 deploys)"
+        else
+            fail "genesis block has $genesis_tx_count transactions — expected 10 (1 coinbase + 9 deploys)"
+        fi
+    else
+        warn "genesis block unreadable — cannot verify transaction count"
+    fi
+
+    # (c) Build check list: all NODE_LIST nodes except node0, plus the
+    #     observer (not in NODE_LIST — no mining role, but MUST obey the
+    #     same genesis authority rule).
     local CHECK_LIST=()
     for node_spec in "${NODE_LIST[@]}"; do
         [ "${node_spec%%:*}" = "$NODE0_NAME" ] || CHECK_LIST+=("$node_spec")
@@ -138,34 +180,29 @@ phase_blocks() {
         CHECK_LIST+=("dwow-observer:31345")
     fi
 
-    # (b) Wait for other nodes to sync block 1 (up to 60s retry per node).
-    # Sync lag is normal — the observer must sync from node0 before node1
-    # can sync from the observer. Diagnostic only — no timeout.
+    # (d) Authority enforcement: every non-node0 node with block 1 MUST
+    #     have the same block 1 hash as node0. A different hash means the
+    #     node created its own independent genesis — an authority violation.
     for node_spec in "${CHECK_LIST[@]}"; do
         local name="${node_spec%%:*}"
         local port="${node_spec##*:}"
-        local h
-        h=$(jsonrpc_get_height "$name" "$port")
-        h=$(echo "$h" | tr -dc '0-9')
-        h="${h:-0}"
-        if [ "$h" -ge 1 ] 2>/dev/null; then
-            pass "$name: height=$h (synced)"
-        else
-            warn "$name: height=$h (not synced)"
-        fi
-    done
 
-    # (c) Authority enforcement: every non-node0 node with block 1 MUST have
-    # the same block 1 hash as node0. A different hash means the node created
-    # its own independent genesis — an authority violation.
-    for node_spec in "${CHECK_LIST[@]}"; do
-        local name="${node_spec%%:*}"
-        local port="${node_spec##*:}"
+        # Sync check: diagnostic only — sync lag is normal
+        local sync_h
+        sync_h=$(jsonrpc_get_height "$name" "$port")
+        sync_h=$(echo "$sync_h" | tr -dc '0-9')
+        sync_h="${sync_h:-0}"
+        if [ "$sync_h" -ge 1 ] 2>/dev/null; then
+            info "$name: height=$sync_h (synced)"
+        else
+            warn "$name: height=$sync_h (not synced yet — sync lag is normal)"
+        fi
+
+        # Authority: block-1 hash comparison
         local cmp_sum
         cmp_sum=$(_get_block1_hash "$name" "$port")
         if [ -z "$cmp_sum" ] || [ "$cmp_sum" = "$empty_sum" ] || [ "$cmp_sum" = "$null_sum" ]; then
             warn "$name: block 1 unavailable (sync incomplete — not an authority violation)"
-            # Diagnostic: show what this node sees at RPC level
             local diag
             diag=$(jsonrpc_get_height "$name" "$port" 2>/dev/null || echo "RPC unreachable")
             info "  $name diagnostic: get_height=$diag"
@@ -175,7 +212,6 @@ phase_blocks() {
             fail "$name: INDEPENDENT GENESIS — block 1 hash differs from node0 (ref=${ref_sum:0:16} got=${cmp_sum:0:16})"
         fi
     done
-    fi  # else: node0 genesis block readable
 }
 
 # ==============================================================================

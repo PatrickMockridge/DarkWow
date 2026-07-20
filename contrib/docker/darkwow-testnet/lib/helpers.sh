@@ -267,12 +267,12 @@ _join_lilith_run() {
 # Shared helpers — RPC
 # ==============================================================================
 
-# Single-shot RPC call with one retry for transient TCP unavailability.
-# The retry handles momentary connection-refused while the node is busy
+# RPC call with retry for transient TCP unavailability.
+# Retries handle momentary connection-refused while the node is busy
 # (milliseconds), NOT "thing hasn't happened yet" (minutes).
-# Max total wait: 2s.
+# Default 3 attempts × 2s sleep = 6s max.
 rpc_retry() {
-    local container="$1" port="$2" method="$3" params="$4" max_attempts="${5:-2}"
+    local container="$1" port="$2" method="$3" params="$4" max_attempts="${5:-3}"
     local attempt=0
     while [ "$attempt" -lt "$max_attempts" ]; do
         attempt=$((attempt + 1))
