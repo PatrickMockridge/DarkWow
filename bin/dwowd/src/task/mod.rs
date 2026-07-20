@@ -22,4 +22,4 @@
  */
 
 pub mod consensus_linear;
-pub use consensus_linear::{consensus_linear_init_task, ConsensusInitTaskConfig, GenesisValidationMode};
+pub use consensus_linear::{consensus_linear_init_task, ConsensusInitTaskConfig, GenesisAuthority, GenesisValidationMode};

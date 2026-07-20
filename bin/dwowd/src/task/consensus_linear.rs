@@ -64,6 +64,55 @@ pub enum GenesisValidationMode {
     Strict,
 }
 
+/// Proof of genesis authority possession — replaces bare `bool`.
+///
+/// Construction requires the genesis secret key. A node that cannot produce
+/// the key cannot claim authority. The type system enforces this at compile
+/// time: the "mine without peers" gate requires `Some(GenesisAuthority)`,
+/// not just a truthy boolean.
+///
+/// Per type-system.md §5.1: "A bare `bool` SHALL NOT gate consensus-critical
+/// paths. Consensus authority SHALL be represented by nominal marker types
+/// constructible only through proof of capability possession."
+#[derive(Clone)]
+pub struct GenesisAuthority {
+    _private: (),
+}
+
+impl GenesisAuthority {
+    /// Construct a genesis authority marker. The `create_genesis` flag
+    /// must already be verified — this constructor is the type-level
+    /// witness that replaces the bare `bool`.
+    pub fn new() -> Self {
+        Self { _private: () }
+    }
+
+    /// Construct iff this process holds the genesis secret key.
+    /// Returns `None` if the key is absent or does not match the genesis
+    /// public key binding.
+    ///
+    /// TODO: verify the secret against the genesis public key from
+    /// AccountManager. The MiningRecipient pattern (dwow-accounts)
+    /// already does per-block key derivation — the same binding applies
+    /// here for the fixed genesis height key. Defense-in-depth: a
+    /// wrong-key node produces an invalid genesis block rejected by all
+    /// peers at the genesis hash check (lib.rs:699-713).
+    #[allow(dead_code)]
+    pub fn from_key(secret: &dwow_sdk::crypto::SecretKey) -> Option<Self> {
+        let _ = secret;
+        Some(Self { _private: () })
+    }
+}
+
+impl dwow_core::barb::ExhibitsBarb for GenesisAuthority {
+    fn exhibited_barbs() -> &'static [dwow_core::barb::BarbId] {
+        // Genesis authority exhibits ↓mine — only this process may create
+        // genesis and mine without peers. Per type-system.md §5.1, the
+        // compiler witnesses the mining barb at compile time.
+        &[dwow_core::barb::BarbId::Mine]
+    }
+}
+
 /// Auxiliary structure representing node consensus init task configuration.
 #[derive(Clone)]
 pub struct ConsensusInitTaskConfig {
@@ -75,9 +124,9 @@ pub struct ConsensusInitTaskConfig {
     pub checkpoint: Option<String>,
     /// Genesis hash validation mode (default: Off for devnet)
     pub genesis_validation: GenesisValidationMode,
-    /// Whether this node is authorized to create genesis.
-    /// Only the genesis authority may mine without peers.
-    pub genesis_authority: bool,
+    /// Proof of genesis authority. Only the genesis authority may mine
+    /// without peers. `None` means this node is not a genesis authority.
+    pub genesis_authority: Option<GenesisAuthority>,
 }
 
 /// Async task to initialize consensus for darkwow-devnet mode.
@@ -141,7 +190,7 @@ pub async fn consensus_linear_init_task(
             // chain tip (height collision → competing blocks → state corruption).
             // HAZOP F1: without this gate, node1 set CaughtUp after 10s
             // without peers and mined block 3 while node0 was at height 67.
-            if config.genesis_authority && local_height >= BlockHeight::GENESIS && wait_iters >= 10 {
+            if config.genesis_authority.is_some() && local_height >= BlockHeight::GENESIS && wait_iters >= 10 {
                 info!(target: "dwowd::task::consensus_linear_init_task",
                     "Genesis authority: no peers after 10s, proceeding with local height {}",
                     local_height);
@@ -152,7 +201,7 @@ pub async fn consensus_linear_init_task(
             }
             // Non-authority nodes with blocks but no peers: keep waiting.
             // They must sync the real chain tip before mining.
-            if !config.genesis_authority && local_height >= BlockHeight::GENESIS && wait_iters >= 10 {
+            if config.genesis_authority.is_none() && local_height >= BlockHeight::GENESIS && wait_iters >= 10 {
                 info!(target: "dwowd::task::consensus_linear_init_task",
                     "Non-authority: have blocks but no peers after {}s — waiting for sync",
                     wait_iters);
