@@ -410,6 +410,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
             target,
             None,
         )
+        .map(|_| ())
         .map_err(|e| dwow_core::Error::Custom(format!("accept_block exec: {}", e)))
     }
 
@@ -478,6 +479,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         crate::block_acceptor::accept_block(
             &self.genesis.chain_state, &block, &[uncle], &vm, height, real_target, None,
         )
+        .map(|_| ())
         .map_err(|e| dwow_core::Error::Custom(format!("accept_block exec_as_uncle: {}", e)))
     }
 
@@ -517,6 +519,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         crate::block_acceptor::accept_block(
             &self.genesis.chain_state, &block, &[uncle], &vm, height, target, None,
         )
+        .map(|_| ())
         .map_err(|e| dwow_core::Error::Custom(format!("accept_block exec_mixed: {}", e)))
     }
 
@@ -558,6 +561,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         crate::block_acceptor::accept_block(
             &self.genesis.chain_state, &block, &uncles, &vm, height, target, None,
         )
+        .map(|_| ())
         .map_err(|e| dwow_core::Error::Custom(format!("accept_block exec_multi_uncle: {}", e)))
     }
 

@@ -1300,22 +1300,37 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         // RandomX access if a P2P block arrives during the next iteration.
         drop(vm);
         match apply_result {
-            Ok(()) => {
+            Ok(outcome) => {
                 let applied_hash = chain_state.hash_block_with_cached_vm(&mined_block);
-                info!(target: "dwowd::miner_task",
-                    "Block {} mined and applied: {}",
-                    height, applied_hash);
+                match outcome {
+                    dwow_chain::BlockConnectOutcome::CanonicalExtension { new_height: _ } => {
+                        info!(target: "dwowd::miner_task",
+                            "Block {} mined and applied: {}",
+                            height, applied_hash);
 
-                // Fee estimation now recorded in accept_block via the fee_estimator
-                // parameter, using actual WASM execution gas (stats.gas_used) rather
-                // than the ad-hoc calls*400M estimate. No duplicate recording needed.
+                        // Fee estimation now recorded in accept_block via the fee_estimator
+                        // parameter, using actual WASM execution gas (stats.gas_used) rather
+                        // than the ad-hoc calls*400M estimate. No duplicate recording needed.
 
-                // HAZID F5: Remove mined transactions from mempool.
-                // Previously never called — mined txs persisted forever in the pool.
-                if let Some(ref mp) = node.mempool {
-                    let tx_hashes: Vec<blake3::Hash> = mined_block.transactions.iter()
-                        .map(|tx| tx.hash()).collect();
-                    mp.mark_mined(&tx_hashes).await;
+                        // Remove mined transactions from mempool — ONLY for canonical blocks.
+                        // CompetingStored and UncleExtended do NOT advance the canonical
+                        // chain; their transactions remain pending in the mempool.
+                        if let Some(ref mp) = node.mempool {
+                            let tx_hashes: Vec<blake3::Hash> = mined_block.transactions.iter()
+                                .map(|tx| tx.hash()).collect();
+                            mp.mark_mined(&tx_hashes).await;
+                        }
+                    }
+                    dwow_chain::BlockConnectOutcome::CompetingStored => {
+                        info!(target: "dwowd::miner_task",
+                            "Block {} stored as competing (peer beat us) — mempool unchanged",
+                            height);
+                    }
+                    dwow_chain::BlockConnectOutcome::UncleExtended => {
+                        info!(target: "dwowd::miner_task",
+                            "Block {} stored as uncle extension — mempool unchanged",
+                            height);
+                    }
                 }
             }
             Err(e) => {

@@ -232,14 +232,20 @@ impl DwowNode {
             &chain_state, &mined_block, &prep.uncles, &mining_vm,
             latest_block.header.height, latest_block.header.target, None,
         ) {
-            Ok(()) => {
+            Ok(dwow_chain::BlockConnectOutcome::CanonicalExtension { .. }) => {
                 info!(target: "dwowd::rpc::miner", "Mined and applied block {} at height {}", block_hash, height);
                 // HAZID F5: Remove mined transactions from mempool.
+                // ONLY for canonical blocks — competing/uncle blocks do NOT advance the chain.
                 if let Some(ref mp) = self.mempool {
                     let tx_hashes: Vec<blake3::Hash> = mined_block.transactions.iter()
                         .map(|tx| tx.hash()).collect();
                     mp.mark_mined(&tx_hashes).await;
                 }
+            }
+            Ok(outcome) => {
+                info!(target: "dwowd::rpc::miner",
+                    "Block {} stored as {:?} — mempool unchanged",
+                    block_hash, outcome);
             }
             Err(e) => {
                 error!(target: "dwowd::rpc::miner",

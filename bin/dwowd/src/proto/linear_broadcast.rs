@@ -353,19 +353,24 @@ async fn handle_receive_block(
         match crate::block_acceptor::accept_block(
             &blockchain, &msg.block, &[], &vm, height, target, None,
         ) {
-            Ok(()) => {
+            Ok(outcome) => {
                 drop(vm);
+                let is_canonical = matches!(outcome, dwow_chain::BlockConnectOutcome::CanonicalExtension { .. });
                 tracing::info!(
                     target: "dwowd::proto::linear_broadcast",
-                    "Block at height {} applied from P2P",
-                    msg.block.header.height
+                    "Block at height {} {:?} from P2P",
+                    msg.block.header.height, outcome,
                 );
 
-                // Clean confirmed transactions from the mempool (batch)
-                if let Some(ref mempool) = mempool {
-                    let tx_hashes: Vec<blake3::Hash> = msg.block.transactions.iter()
-                        .map(|tx| tx.hash()).collect();
-                    mempool.mark_mined(&tx_hashes).await;
+                // Clean confirmed transactions from the mempool — ONLY for
+                // canonical blocks. Competing/Uncle blocks do NOT advance the
+                // chain; their transactions remain pending in the mempool.
+                if is_canonical {
+                    if let Some(ref mempool) = mempool {
+                        let tx_hashes: Vec<blake3::Hash> = msg.block.transactions.iter()
+                            .map(|tx| tx.hash()).collect();
+                        mempool.mark_mined(&tx_hashes).await;
+                    }
                 }
 
                 // H9 trigger: try chain reorganization from competing blocks.

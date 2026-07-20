@@ -32,7 +32,7 @@
 
 use std::sync::Arc;
 
-use dwow_chain::{Block, CChainState, UncleBlock};
+use dwow_chain::{Block, BlockConnectOutcome, CChainState, UncleBlock};
 use dwow_core::Result;
 use dwow_sdk::blockchain::BlockHeight;
 
@@ -78,7 +78,7 @@ pub fn accept_block(
     _current_height: BlockHeight,
     target: u32,
     fee_estimator: Option<&std::sync::Arc<dwow_chain::fee_estimator::FeeEstimator>>,
-) -> Result<()> {
+) -> Result<BlockConnectOutcome> {
     // 1. Proof of token balance — no hidden darkw minting beyond the coinbase.
     // 0. Phase 0 structural validation — cheapest check first.
     // Per formal guardrail: VALID_COINBASE rejects blocks with missing,
@@ -228,7 +228,7 @@ pub fn accept_block(
 
     // 6. Atomic commit — blocks, contracts, supply_chain, consensus, coins,
     // and nullifiers all committed in a single sled transaction.
-    chain_state.connect_block(block, uncles, Some(contracts_batch), supply_chain_batch)
+    let outcome = chain_state.connect_block(block, uncles, Some(contracts_batch), supply_chain_batch)
         .map_err(|e| dwow_core::Error::Custom(format!("connect_block failed: {}", e)))?;
 
     // 7. Update in-memory cache AFTER the atomic transaction succeeds.
@@ -237,7 +237,7 @@ pub fn accept_block(
         chain_state.supply_chain.update_cache(block.header.height, entry);
     }
 
-    Ok(())
+    Ok(outcome)
 }
 
 /// Read cumulative supply state from the WASM execution overlay and build

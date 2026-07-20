@@ -620,7 +620,7 @@ impl DwowNode {
         match crate::block_acceptor::accept_block(
             &chain_state, &block, &uncles, &exec_vm, current_h, block.header.target, None,
         ) {
-            Ok(()) => {
+            Ok(dwow_chain::BlockConnectOutcome::CanonicalExtension { .. }) => {
                 drop(exec_vm);
                 self.mining_state.last_block_time.store(now, Ordering::SeqCst);
 
@@ -631,6 +631,7 @@ impl DwowNode {
                 );
 
                 // HAZID F5: Remove mined transactions from mempool.
+                // ONLY for canonical blocks — competing/uncle blocks do NOT advance the chain.
                 if let Some(ref mp) = self.mempool {
                     let tx_hashes: Vec<blake3::Hash> = block.transactions.iter()
                         .map(|tx| tx.hash()).collect();
@@ -754,6 +755,16 @@ impl DwowNode {
                     }
                 }
 
+                miner_status_response(id, "OK")
+            }
+            Ok(_outcome) => {
+                // Block was stored as competing or uncle extension —
+                // peer beat us to this height. Mempool unchanged.
+                info!(
+                    target: "dwowd::rpc::rpc_stratum::stratum_submit",
+                    "[RPC-STRATUM] Block at height {} stored as {:?} — peer beat us",
+                    submitted_height, _outcome,
+                );
                 miner_status_response(id, "OK")
             }
             Err(e) => {

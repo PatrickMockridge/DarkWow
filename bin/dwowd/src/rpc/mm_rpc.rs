@@ -712,7 +712,7 @@ impl DwowNode {
             &chain_state, &block, &uncles, &exec_vm,
             template.height.pred().unwrap_or(BlockHeight::new(0)), template.target, None,
         ) {
-            Ok(()) => {
+            Ok(dwow_chain::BlockConnectOutcome::CanonicalExtension { .. }) => {
                 drop(exec_vm);
                 self.mining_state.last_block_time.store(now, Ordering::SeqCst);
 
@@ -723,6 +723,7 @@ impl DwowNode {
                 );
 
                 // HAZID F5: Remove mined transactions from mempool.
+                // ONLY for canonical blocks — competing/uncle blocks do NOT advance the chain.
                 if let Some(ref mp) = self.mempool {
                     let tx_hashes: Vec<blake3::Hash> = block.transactions.iter()
                         .map(|tx| tx.hash()).collect();
@@ -783,6 +784,16 @@ impl DwowNode {
                     }
                 }
 
+                miner_status_response(id, "accepted")
+            }
+            Ok(_outcome) => {
+                // Block was stored as competing or uncle extension —
+                // peer beat us to this height. Mempool unchanged.
+                info!(
+                    target: "dwowd::rpc::mm_rpc::mm_submit_solution",
+                    "[RPC-MM] Merge-mined block at height {} stored as {:?} — peer beat us",
+                    template.height, _outcome,
+                );
                 miner_status_response(id, "accepted")
             }
             Err(e) => {

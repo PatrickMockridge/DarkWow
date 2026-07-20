@@ -482,7 +482,7 @@ pub async fn consensus_linear_init_task(
                                 target,
                                 None,
                             ) {
-                                Ok(()) => {
+                                Ok(_outcome) => {
                                     next_height = block.header.height.succ();
                                     channel_failures.remove(&ch_id);
                                 }

@@ -38,7 +38,27 @@
 //! `take_competing_blocks` and `put_competing_blocks` acquire only
 //! `competing_blocks` + `competing_seen` (never `connect_lock`),
 //! which cannot deadlock with `connect_block` because the latter
-//! holds `connect_lock` before those inner locks.
+
+/// Outcome of connecting a block to the chain.
+///
+/// `connect_block` previously returned `Result<()>` for three semantically
+/// incompatible states — canonical extension, competing block stored, and
+/// uncle chain extension — all collapsed into `Ok(())`. This enum restores
+/// the distinction per type-system.md §9.3 so callers (miner_task, sync,
+/// broadcast, stratum, mm_rpc) can branch on the actual outcome.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BlockConnectOutcome {
+    /// Block extended the canonical chain — height advanced. The new tip
+    /// height is carried so callers can confirm it matches their expectation.
+    CanonicalExtension { new_height: BlockHeight },
+    /// Block was stored as a competing/uncle candidate at the current height.
+    /// Height did NOT advance. Transactions in this block are NOT canonical.
+    CompetingStored,
+    /// Block extended a known uncle chain — stored as competing at the next
+    /// height. Height did NOT advance on the canonical chain.
+    UncleExtended,
+}
+// `connect_lock` is held before those inner locks to prevent deadlocks.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{atomic::{AtomicU64, Ordering}, Arc, Mutex};
@@ -430,7 +450,7 @@ impl CChainState {
         uncles: &[UncleBlock],
         contracts_batch: Option<sled::Batch>,
         supply_chain_batch: Option<sled::Batch>,
-    ) -> Result<()> {
+    ) -> Result<BlockConnectOutcome> {
         // Serialize all block application — prevents concurrent connect_block
         // calls from racing on height, VM cache, sled writes, and RandomX FFI.
         let _lock = self.connect_lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -538,20 +558,20 @@ impl CChainState {
             {
                 let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
                 if seen.contains(&block_hash) {
-                    return Ok(());  // Already stored, silently ignore
+                    return Ok(BlockConnectOutcome::CompetingStored);
                 }
                 seen.insert(block_hash);
             }
             let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
             let entry = competing.entry(block_height).or_default();
             if entry.len() >= MAX_COMPETING_BLOCKS {
-                return Ok(());  // Silent drop — competing store is full
+                return Ok(BlockConnectOutcome::CompetingStored);
             }
             entry.push(block.clone());
             drop(competing);
             info!(target: "chain_state",
                 "Competing block at h={} stored as potential uncle", block_height);
-            return Ok(());
+            return Ok(BlockConnectOutcome::CompetingStored);
         }
 
         // --- Uncle parent lookup ---
@@ -654,7 +674,7 @@ impl CChainState {
                 drop(competing);
                 info!(target: "chain_state",
                     "Uncle chain extension at h={} stored as competing", block_height);
-                return Ok(());
+                return Ok(BlockConnectOutcome::UncleExtended);
             }
             drop(competing);
             // Block doesn't build on tip or known uncle — falls through
@@ -1011,7 +1031,7 @@ impl CChainState {
 
         info!(target: "chain_state", "Block {} at height {} committed",
             block.header.height, height);
-        Ok(())
+        Ok(BlockConnectOutcome::CanonicalExtension { new_height: height })
     }
 
     /// Convenience: apply a block with uncles but no contracts overlay.
@@ -1020,7 +1040,7 @@ impl CChainState {
         &self,
         block: &Block,
         uncles: &[UncleBlock],
-    ) -> Result<()> {
+    ) -> Result<BlockConnectOutcome> {
         self.connect_block(block, uncles, None, None)
     }
 
