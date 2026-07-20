@@ -39,7 +39,7 @@ use dwow_chain::{
     build_uncle_merkle, create_uncle,
 };
 use dwow_core::Result;
-use dwow_sdk::blockchain::{self, BlockHeight};
+use dwow_sdk::blockchain::{self, BlockHeight, BlockTarget};
 
 /// Synthetic timestamp for test blocks, spaced 120s per height so the
 /// consensus target stays at `u32::MAX` (no difficulty drift when blocks
@@ -75,7 +75,7 @@ pub fn build_test_header(
         previous: previous_hash,
         merkle_root,
         timestamp,
-        target: u32::MAX,
+        target: BlockTarget::MAX,
         nonce: 0,
         height,
         uncle_merkle_root: [0u8; 32],
@@ -187,7 +187,7 @@ pub fn build_test_block_with_uncles(
             previous: previous_hash,
             merkle_root,
             timestamp,
-            target: u32::MAX,
+            target: BlockTarget::MAX,
             nonce: 0,
             height,
             uncle_merkle_root,

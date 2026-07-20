@@ -36,7 +36,7 @@ use std::sync::{
 
 use dwow_chain::{CChainState, FinalityConfig, PoWConfig};
 use dwow_core::Result;
-use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
 use dwow_sdk::pasta::pallas;
 use dwow_sdk::pasta::group::Group;
 use dwow_sdk::crypto::{
@@ -69,9 +69,9 @@ impl GenesisHarness {
 
         let pow_config = PoWConfig {
             target_block_time: 120,
-            initial_target: u32::MAX, // matches test block u32::MAX target
+            initial_target: BlockTarget::MAX, // matches test block u32::MAX target
             min_target: 1,
-            max_target: u32::MAX,
+            max_target: BlockTarget::MAX,
         };
         let finality_config = FinalityConfig::default();
 
@@ -412,7 +412,7 @@ mod tests {
                 previous: gen_hash,
                 merkle_root,
                 timestamp: 120, // TARGET_BLOCK_TIME after genesis
-                target: u32::MAX,
+                target: BlockTarget::MAX,
                 nonce: 0,
                 height,
                 uncle_merkle_root: [0u8; 32],
