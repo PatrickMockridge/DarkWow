@@ -51,7 +51,7 @@ phase_prereqs() {
             BRIDGE_HELPER="$BRIDGE_TEST_HELPER_DEBUG"
         else
             info "Building bridge_test_helper..."
-            (cd "$REPO_ROOT" && RAYON_NUM_THREADS=10 cargo build -p bridge_test_helper --release 2>&1)
+            (cd "$REPO_ROOT" && RUST_MIN_STACK=67108864 RAYON_NUM_THREADS=10 cargo build -p bridge_test_helper --release 2>&1)
             if [ -x "$BRIDGE_TEST_HELPER" ]; then
                 BRIDGE_HELPER="$BRIDGE_TEST_HELPER"
             elif [ -x "$BRIDGE_TEST_HELPER_DEBUG" ]; then

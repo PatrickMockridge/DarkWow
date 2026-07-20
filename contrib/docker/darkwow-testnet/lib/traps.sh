@@ -68,11 +68,34 @@ trap cleanup_on_exit EXIT
 #   ./test_pipeline.sh --mode native --phase 1
 # -------------------------------------------------------------------
 cleanup_on_exit() {
+    local exit_code=$?
+
     # Kill the tee process spawned by config.sh's exec redirection.
     # Prevents orphan tee processes accumulating across pipeline runs.
     [ -n "${_TEAD_PID:-}" ] && kill "$_TEAD_PID" 2>/dev/null || true
 
+    # Kill the docker events monitor if it was started.
+    [ -n "${DOCKER_EVENTS_PID:-}" ] && kill "$DOCKER_EVENTS_PID" 2>/dev/null || true
+
     # (Secret-file cleanup removed — keys.toml declaration model, no .secrets files.)
+
+    # ── SIGSEGV / signal-kill diagnostics ──────────────────────────
+    if [ "$exit_code" -ge 128 ] 2>/dev/null; then
+        local sig_num=$((exit_code - 128))
+        echo ""
+        echo "==========================================="
+        echo "  Pipeline exited with code $exit_code (killed by signal $sig_num)."
+        echo ""
+        echo "  To identify which binary crashed:"
+        echo "    dmesg -T | grep -i segfault | tail -20"
+        echo "    docker ps -a --filter status=exited --format '{{.Names}} exit={{.ExitCode}}'"
+        if [ -f /tmp/container-deaths.log ]; then
+            echo ""
+            echo "  Container death events captured during run:"
+            cat /tmp/container-deaths.log
+        fi
+        echo "==========================================="
+    fi
 
     if [ "${FAIL:-0}" -gt 0 ]; then
         echo ""

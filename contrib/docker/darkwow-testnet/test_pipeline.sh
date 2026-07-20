@@ -123,6 +123,14 @@ _stop_after() {
     fi
 }
 
+# Start Docker events monitor — captures container deaths (including SIGSEGV)
+# for post-mortem analysis. Killed in cleanup_on_exit trap.
+docker events --filter type=container --filter event=die \
+    --format '{{.Time}} {{.Actor.Attributes.name}} exit={{.Actor.Attributes.exitCode}}' \
+    > /tmp/container-deaths.log 2>&1 &
+DOCKER_EVENTS_PID=$!
+export DOCKER_EVENTS_PID
+
 # Phase 1: Clean
 if [ "$RESUME_FROM" -le 1 ]; then
     phase_time_start; phase_clean;              phase_time_end "clean"
