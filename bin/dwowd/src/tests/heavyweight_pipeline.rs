@@ -59,7 +59,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use dwow_core::{zk::Proof, Result};
-use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
 use dwow_sdk::crypto::{ContractId, NATIVE_TOKEN_CONTRACT_ID};
 use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
@@ -398,7 +398,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         let cb = self.build_coinbase_for_height(next_height, reward).await?;
         let target = self.expected_target();
         let mut block = build_test_block(&self.genesis.chain_state, next_height, vec![cb.tx, tx]);
-        block.header.target = target;
+        block.header.target = BlockTarget::new(target);
         let vm = build_accept_vm(&block)?;
 
         crate::block_acceptor::accept_block(
@@ -425,7 +425,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         let cb = self.build_coinbase_for_height(next_height, reward).await?;
         let real_target = self.expected_target();
         let mut block = build_test_block(&self.genesis.chain_state, next_height, vec![cb.tx.clone()]);
-        block.header.target = real_target;
+        block.header.target = BlockTarget::new(real_target);
         let vm = build_accept_vm(&block)?;
 
         crate::block_acceptor::accept_block(
@@ -469,7 +469,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         let mut block = build_test_block_with_uncles(
             &self.genesis.chain_state, next, vec![cb.tx], &[uncle.clone()],
         );
-        block.header.target = real_target;
+        block.header.target = BlockTarget::new(real_target);
         let vm = build_accept_vm(&block)?;
         // Mine a valid nonce if target is below u32::MAX (heights > 2).
         if real_target < u32::MAX {
@@ -513,7 +513,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         let mut block = build_test_block_with_uncles(
             &self.genesis.chain_state, next, vec![cb.tx, canon_tx], &[uncle.clone()],
         );
-        block.header.target = target;
+        block.header.target = BlockTarget::new(target);
         let vm = build_accept_vm(&block)?;
 
         crate::block_acceptor::accept_block(
@@ -555,7 +555,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         let mut block = build_test_block_with_uncles(
             &self.genesis.chain_state, next, vec![cb.tx], &uncles,
         );
-        block.header.target = target;
+        block.header.target = BlockTarget::new(target);
         let vm = build_accept_vm(&block)?;
 
         crate::block_acceptor::accept_block(
@@ -3014,7 +3014,7 @@ fn test_heavyweight_empty_uncle() -> std::result::Result<(), Box<dyn std::error:
             vec![cb.tx],
             &[uncle.clone()],
         );
-        block.header.target = target;
+        block.header.target = BlockTarget::new(target);
         let vm = build_accept_vm(&block)?;
 
         crate::block_acceptor::accept_block(
@@ -3070,7 +3070,7 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
             vec![cb.tx],
             &[good_uncle],
         );
-        block.header.target = target;
+        block.header.target = BlockTarget::new(target);
         let vm = build_accept_vm(&block)?;
 
         // Submit bad_uncle — its merkle proof won't match the canonical block.

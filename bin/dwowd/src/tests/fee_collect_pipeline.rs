@@ -35,7 +35,7 @@ use std::sync::Arc;
 
 use dwow_chain::{Block, ContractCall, Transaction};
 use dwow_core::Result;
-use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
 use dwow_sdk::crypto::{
     keypair::Network,
     pasta_prelude::Group,

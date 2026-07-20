@@ -840,7 +840,7 @@ mod tests {
             nonce: 0xDEADBEEF,
             height: BlockHeight::new(42),
             uncle_merkle_root: [0xCC; 32],
-            total_reward: 1000000000,
+            total_reward: BlockReward::new(1000000000),
             randomx_key: [0xDD; 32],
             coin_merkle_root: [0xEE; 32],
             nullifier_root: [0xFF; 32],

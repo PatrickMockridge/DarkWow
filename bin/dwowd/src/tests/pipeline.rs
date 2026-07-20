@@ -56,7 +56,7 @@ use std::env;
 use std::sync::Arc;
 
 use dwow_core::Result;
-use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
 use dwow_sdk::crypto::{ContractId, Keypair, SecretKey, DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
 use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::deploy::{ContractMetadata, DeployParamsV1};
