@@ -67,7 +67,7 @@ use blake3::Hash as Blake3Hash;
 use randomx::{RandomXCache, RandomXFlags, RandomXVM};
 use sled::transaction::Transactional;
 use tracing::info;
-use dwow_sdk::blockchain::{BlockHeight, BlockTarget};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
 use dwow_sdk::crypto::{pedersen_commitment_u64, Blind};
 use dwow_sdk::pasta::pallas;
 use dwow_sdk::pasta::group::{ff::FromUniformBytes, Group, GroupEncoding};
@@ -1507,11 +1507,11 @@ mod tests {
                 previous: blake3::hash(b""),
                 merkle_root: crate::compute_merkle_root(&[]),
                 timestamp: 0,
-                target: u32::MAX,
+                target: BlockTarget::MAX,
                 nonce: 0,
                 height: h,
                 uncle_merkle_root: [0u8; 32],
-                total_reward: 0,
+                total_reward: BlockReward::ZERO,
                 randomx_key: crate::Miner::derive_key_from_height(h),
                 coin_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],

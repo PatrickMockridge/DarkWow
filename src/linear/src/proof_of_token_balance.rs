@@ -47,6 +47,7 @@ use dwow_native_token_contract::{
     NativeTokenFunction,
 };
 use dwow_sdk::{
+    blockchain::{BlockReward, BlockTarget},
     crypto::{
         pasta_prelude::Group,
         pedersen_commitment_u64, poseidon_hash, ScalarBlind,
@@ -303,7 +304,7 @@ fn verify_coinbase(block: &Block) -> Result<(), BalanceError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CoinCommitment, CoinbaseTransaction, Nullifier, PedersenCoordinate, TokenCommitment, ZkPublicInputs};
+    use crate::{CoinCommitment, CoinbaseTransaction, Nullifier, PedersenCoordinate, TokenCommitment, Transaction, ZkPublicInputs};
 
     fn make_header(height: u64) -> crate::BlockHeader {
         crate::BlockHeader {
@@ -311,11 +312,11 @@ mod tests {
             previous: blake3::Hash::from_bytes([0u8; 32]),
             merkle_root: blake3::Hash::from_bytes([0u8; 32]),
             timestamp: 0,
-            target: 0,
+            target: BlockTarget::new(0),
             nonce: 0,
             height: dwow_sdk::blockchain::BlockHeight::new(height),
             uncle_merkle_root: [0u8; 32],
-            total_reward: 0,
+            total_reward: BlockReward::ZERO,
             randomx_key: [0u8; 32],
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],

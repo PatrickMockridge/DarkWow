@@ -32,7 +32,7 @@
 use std::collections::HashSet;
 
 use blake3::Hash as Blake3Hash;
-use dwow_sdk::blockchain::{BlockHeight, BlockTarget};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
 use randomx::RandomXVM;
 
 use super::{
@@ -373,11 +373,11 @@ mod tests {
                 previous: Blake3Hash::from([0u8; 32]),
                 merkle_root: blake3::hash(&[]), // correct for 0 transactions
                 timestamp: 0,
-                target: u32::MAX,
+                target: BlockTarget::MAX,
                 nonce: 0,
                 height: BlockHeight::new(1),
                 uncle_merkle_root: [0u8; 32],
-                total_reward: 0,
+                total_reward: BlockReward::ZERO,
                 randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
@@ -405,7 +405,7 @@ mod tests {
         let err = check_block_header(
             &block,
             &test_vm(),
-            u32::MAX, // expected_target (matches block.header.target = u32::MAX)
+            BlockTarget::MAX, // expected_target (matches block.header.target = u32::MAX)
             BlockHeight::new(0), // current_height
             None,      // no previous (genesis-like)
         ).unwrap_err();
@@ -424,7 +424,7 @@ mod tests {
         let err = check_block_header(
             &block,
             &test_vm(),
-            u32::MAX, // expected_target (must match block.header.target = u32::MAX)
+            BlockTarget::MAX, // expected_target (must match block.header.target = u32::MAX)
             BlockHeight::new(5), // current_height=5, so expected=6, but block says 1
             None,
         ).unwrap_err();
@@ -448,7 +448,7 @@ mod tests {
         let err = check_block_header(
             &block,
             &test_vm(),
-            0x0FFF_FFFF, // expected_target (must differ from block.header.target)
+            BlockTarget::new(0x0FFF_FFFF), // expected_target (must differ from block.header.target)
             BlockHeight::new(0), // current_height=0 (pre-genesis)
             None,
         ).unwrap_err();
@@ -467,7 +467,7 @@ mod tests {
     #[test]
     fn accepts_matching_target_and_pow() {
         let mut block = dummy_block();
-        block.header.target = u32::MAX;
+        block.header.target = BlockTarget::MAX;
         block.header.height = BlockHeight::new(2);
         // expected_target = u32::MAX matches header target → stage 2 passes
         // hash_u32 <= u32::MAX → stage 1 always passes
@@ -475,7 +475,7 @@ mod tests {
         let result = check_block_header(
             &block,
             &test_vm(),
-            u32::MAX,    // expected_target matches block.header.target
+            BlockTarget::MAX,    // expected_target matches block.header.target
             BlockHeight::new(1), // current_height=1, expected height=2
             None,
         );
@@ -489,7 +489,7 @@ mod tests {
     use dwow_native_token_contract::model::{
         ClearInput, Coin, Nullifier as NtNullifier, Output, PoWRewardParamsV1 as PowParams,
     };
-    use dwow_sdk::crypto::pasta_prelude::{Field, Group};
+    use dwow_sdk::crypto::pasta_prelude::Group;
     use dwow_sdk::crypto::{note::AeadEncryptedNote, BaseBlind, Blind, FuncId, Keypair};
     use dwow_sdk::pasta::pallas;
 

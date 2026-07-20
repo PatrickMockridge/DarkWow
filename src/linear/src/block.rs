@@ -577,11 +577,11 @@ mod tests {
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: 0,
-            target: 0x0000_FFFF,
+            target: BlockTarget::new(0x0000_FFFF),
             nonce: 0,
             height: BlockHeight::new(10),
             uncle_merkle_root: [0u8; 32],
-            total_reward: 0,
+            total_reward: BlockReward::ZERO,
             randomx_key: [0u8; 32],
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
@@ -613,11 +613,11 @@ mod tests {
                 previous: blake3::hash(&[i]),
                 merkle_root: blake3::hash(&[i]),
                 timestamp: i as u64,
-                target: 0x0000_FFFF,
+                target: BlockTarget::new(0x0000_FFFF),
                 nonce: i as u32,
                 height: BlockHeight::new(10 + i as u64),
                 uncle_merkle_root: [0u8; 32],
-                total_reward: 0,
+                total_reward: BlockReward::ZERO,
                 randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
@@ -655,11 +655,11 @@ mod tests {
                 previous: blake3::hash(&[i]),
                 merkle_root: blake3::hash(&[i]),
                 timestamp: i as u64,
-                target: 0xFFFF_FFFF, // max target — any hash passes
+                target: BlockTarget::new(0xFFFF_FFFF), // max target — any hash passes
                 nonce: i as u32,
                 height: BlockHeight::new(10 + i as u64),
                 uncle_merkle_root: [0u8; 32],
-                total_reward: 0,
+                total_reward: BlockReward::ZERO,
                 randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
@@ -696,8 +696,8 @@ mod tests {
 
     #[test]
     fn test_compute_reward_no_uncles() {
-        let (canonical, uncles) = compute_reward(100_000_000, &[]);
-        assert_eq!(canonical, 100_000_000);
+        let (canonical, uncles) = compute_reward(BlockReward::new(100_000_000), &[]);
+        assert_eq!(canonical, BlockReward::new(100_000_000));
         assert!(uncles.is_empty());
     }
 
@@ -708,11 +708,11 @@ mod tests {
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: 0,
-            target: 0x0000_FFFF,
+            target: BlockTarget::new(0x0000_FFFF),
             nonce: 0,
             height: BlockHeight::new(10),
             uncle_merkle_root: [0u8; 32],
-            total_reward: 0,
+            total_reward: BlockReward::ZERO,
             randomx_key: [0u8; 32],
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
@@ -727,9 +727,9 @@ mod tests {
         // pin_reward at depth 1 = 50% = 50M
         let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1, pin_offered: true, pin_accepted: true, pin_reward: 50_000_000 };
 
-        let (canonical, uncle_rewards) = compute_reward(100_000_000, &[uncle]);
+        let (canonical, uncle_rewards) = compute_reward(BlockReward::new(100_000_000), &[uncle]);
         // base 100M - pin 50M = 50M canonical (no over-minting)
-        assert_eq!(canonical, 50_000_000);
+        assert_eq!(canonical, BlockReward::new(50_000_000));
         assert_eq!(uncle_rewards.len(), 1);
         assert_eq!(uncle_rewards[0], 50_000_000);
     }
@@ -742,11 +742,11 @@ mod tests {
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: 0,
-            target: 0x0000_FFFF,
+            target: BlockTarget::new(0x0000_FFFF),
             nonce: 42,
             height: BlockHeight::new(10),
             uncle_merkle_root: [0u8; 32],
-            total_reward: 0,
+            total_reward: BlockReward::ZERO,
             randomx_key: [0u8; 32],
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
@@ -784,7 +784,7 @@ mod tests {
             previous,
             BlockHeight::new(1),
             vec![],
-            0x0000_FFFF,
+            BlockTarget::new(0x0000_FFFF),
             &[],
             &vm,
         );
@@ -809,7 +809,7 @@ mod tests {
             blake3::hash(b"genesis"),
             BlockHeight::new(1),
             vec![],
-            0x0000_FFFF,
+            BlockTarget::new(0x0000_FFFF),
             &[],
             &vm,
         );
@@ -823,20 +823,20 @@ mod tests {
             block1.hash_with_vm(&vm),
             BlockHeight::new(2),
             vec![],
-            0x0000_FFFF,
+            BlockTarget::new(0x0000_FFFF),
             &[],
             &vm,
         );
         let reward2 = dwow_sdk::blockchain::expected_reward(BlockHeight::new(2));
         assert_eq!(block2.header.total_reward, reward2);
-        assert!(reward2 > 1_000_000_000, "height 2 reward should be > 1B base units");
+        assert!(reward2 > BlockReward::new(1_000_000_000), "height 2 reward should be > 1B base units");
 
         // Height 3: slightly less than height 2 (exponential decay)
         let block3 = create_block_with_uncles(
             block2.hash_with_vm(&vm),
             BlockHeight::new(3),
             vec![],
-            0x0000_FFFF,
+            BlockTarget::new(0x0000_FFFF),
             &[],
             &vm,
         );
@@ -857,7 +857,7 @@ mod tests {
         let vm = create_test_vm();
         let previous = blake3::hash(b"genesis");
 
-        let block = create_block(previous, BlockHeight::new(42), vec![], 0x0000_FFFF, &vm);
+        let block = create_block(previous, BlockHeight::new(42), vec![], BlockTarget::new(0x0000_FFFF), &vm);
         let expected = dwow_sdk::blockchain::expected_reward(BlockHeight::new(42));
         assert_eq!(block.header.total_reward, expected);
         assert_eq!(block.header.height, BlockHeight::new(42));
@@ -872,11 +872,11 @@ mod tests {
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: 1000,
-            target: 0x0000_FFFF,
+            target: BlockTarget::new(0x0000_FFFF),
             nonce: 42,
             height: BlockHeight::new(1),
             uncle_merkle_root: [0u8; 32],
-            total_reward: 100_000_000,
+            total_reward: BlockReward::new(100_000_000),
             randomx_key: [0u8; 32],
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
@@ -906,11 +906,11 @@ mod tests {
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: 1000,
-            target: 0x0000_FFFF,
+            target: BlockTarget::new(0x0000_FFFF),
             nonce: 0,
             height: BlockHeight::new(0),
             uncle_merkle_root: [0u8; 32],
-            total_reward: 0,
+            total_reward: BlockReward::ZERO,
             randomx_key: [0u8; 32],
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
@@ -932,11 +932,11 @@ mod tests {
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: 1000,
-            target: 0x0000_FFFF,
+            target: BlockTarget::new(0x0000_FFFF),
             nonce: 42,
             height: BlockHeight::new(1),
             uncle_merkle_root: [0u8; 32],
-            total_reward: 100_000_000,
+            total_reward: BlockReward::new(100_000_000),
             randomx_key: [0xAA; 32],
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
@@ -966,11 +966,11 @@ mod tests {
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: 1000,
-            target: 0x0000_FFFF,
+            target: BlockTarget::new(0x0000_FFFF),
             nonce: 42,
             height: BlockHeight::new(1),
             uncle_merkle_root: [0u8; 32],
-            total_reward: 100_000_000,
+            total_reward: BlockReward::new(100_000_000),
             randomx_key: [0xAA; 32],
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
@@ -1016,11 +1016,11 @@ mod tests {
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: 1000,
-            target: 0x0000_FFFF,
+            target: BlockTarget::new(0x0000_FFFF),
             nonce: 42,
             height: BlockHeight::new(1),
             uncle_merkle_root: [0u8; 32],
-            total_reward: 100_000_000,
+            total_reward: BlockReward::new(100_000_000),
             randomx_key: [0u8; 32],
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
@@ -1050,11 +1050,11 @@ mod tests {
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: 1000,
-            target: 0x0000_FFFF,
+            target: BlockTarget::new(0x0000_FFFF),
             nonce: 42,
             height: BlockHeight::new(1),
             uncle_merkle_root: [0u8; 32],
-            total_reward: 100_000_000,
+            total_reward: BlockReward::new(100_000_000),
             randomx_key: [0xAA; 32],
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
@@ -1094,11 +1094,11 @@ mod tests {
             previous: blake3::hash(b"sentinel_parent"),
             merkle_root: blake3::hash(b"sentinel_txs"),
             timestamp: 1_700_000_000,
-            target: 0x1A2B_3C4D,
+            target: BlockTarget::new(0x1A2B_3C4D),
             nonce: 42,
             height: BlockHeight::new(5),
             uncle_merkle_root: [0x11; 32],
-            total_reward: 100_000_000,
+            total_reward: BlockReward::new(100_000_000),
             randomx_key: [0x22; 32],
             coin_merkle_root: [0x33; 32],
             nullifier_root: [0x44; 32],
@@ -1158,11 +1158,11 @@ mod tests {
             previous: blake3::hash(b"sentinel_parent"),
             merkle_root: blake3::hash(b"sentinel_txs"),
             timestamp: 1_700_000_000,
-            target: 0x1A2B_3C4D, // 439,041,101 decimal
+            target: BlockTarget::new(0x1A2B_3C4D), // 439,041,101 decimal
             nonce: 42,
             height: BlockHeight::new(5),
             uncle_merkle_root: [0x11; 32],
-            total_reward: 100_000_000,
+            total_reward: BlockReward::new(100_000_000),
             randomx_key: [0x22; 32],
             coin_merkle_root: [0x33; 32],
             nullifier_root: [0x44; 32],
