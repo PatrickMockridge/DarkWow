@@ -1072,4 +1072,147 @@ mod tests {
         assert_eq!(deserialized.anchor_tx_id, [0xBB; 32]);
         assert_eq!(deserialized.nonce, 42);
     }
+
+    /// Sentinel: mining blob byte-level stability (Change 4 prerequisite).
+    ///
+    /// Constructs a BlockHeader with known field values and verifies
+    /// `to_mining_blob()` produces a 228-byte output matching a hardcoded
+    /// reference. This test gates the consensus newtype migration (BlockTarget,
+    /// BlockReward) — the blob MUST be byte-identical before and after the
+    /// migration. A single-byte difference breaks ALL block hashes, PoW
+    /// verification, and chain history.
+    ///
+    /// Field offsets verified:
+    ///   target (u32 LE): bytes 33..37
+    ///   nonce (u32 LE):   bytes 39..43
+    ///   total_reward (u64 LE): bytes 123..131
+    #[test]
+    fn test_mining_blob_newtype_stability() {
+        let header = BlockHeader {
+            version: 1,
+            previous: blake3::hash(b"sentinel_parent"),
+            merkle_root: blake3::hash(b"sentinel_txs"),
+            timestamp: 1_700_000_000,
+            target: 0x1A2B_3C4D,
+            nonce: 42,
+            height: BlockHeight::new(5),
+            uncle_merkle_root: [0x11; 32],
+            total_reward: 100_000_000,
+            randomx_key: [0x22; 32],
+            coin_merkle_root: [0x33; 32],
+            nullifier_root: [0x44; 32],
+            anchor_tx_id: [0u8; 32],
+            anchor_monero_height: 0,
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
+            pow_source: PowSource::Native,
+        };
+
+        let blob = header.to_mining_blob();
+        assert_eq!(blob.len(), 228, "Mining blob length changed — would fork the chain");
+
+        // Verify specific byte offsets for the fields being migrated to newtypes.
+        // These MUST remain byte-identical after BlockTarget and BlockReward are
+        // introduced. The newtype .get()/.to_le_bytes() must produce identical bytes.
+
+        // target (u32 LE at offset 33..37)
+        let target_bytes: [u8; 4] = blob[33..37].try_into().unwrap();
+        assert_eq!(
+            u32::from_le_bytes(target_bytes), 0x1A2B_3C4D,
+            "target LE bytes at offset 33..37 — newtype must produce identical bytes"
+        );
+
+        // nonce (u32 LE at offset 39..43)
+        let nonce_bytes: [u8; 4] = blob[39..43].try_into().unwrap();
+        assert_eq!(
+            u32::from_le_bytes(nonce_bytes), 42,
+            "nonce at offset 39..43"
+        );
+
+        // total_reward (u64 LE at offset 123..131)
+        let reward_bytes: [u8; 8] = blob[123..131].try_into().unwrap();
+        assert_eq!(
+            u64::from_le_bytes(reward_bytes), 100_000_000,
+            "total_reward LE bytes at offset 123..131 — newtype must produce identical bytes"
+        );
+    }
+
+    /// Sentinel: BlockHeader JSON serde shape stability (Change 4 prerequisite).
+    ///
+    /// Verifies that `target` and `total_reward` serialize as bare JSON numbers,
+    /// NOT as tuple-struct wrappers. After the migration to BlockTarget(u32) and
+    /// BlockReward(u64), the JSON shape MUST remain:
+    ///
+    ///   {"target": 439041101, "total_reward": 100000000, "height": 5, ...}
+    ///
+    /// and NOT:
+    ///
+    ///   {"target": {"0": 439041101}, "total_reward": {"0": 100000000}, ...}
+    ///
+    /// A serde shape change would make ALL sled-stored blocks unreadable.
+    #[test]
+    fn test_block_header_newtype_serde_shape() {
+        let header = BlockHeader {
+            version: 1,
+            previous: blake3::hash(b"sentinel_parent"),
+            merkle_root: blake3::hash(b"sentinel_txs"),
+            timestamp: 1_700_000_000,
+            target: 0x1A2B_3C4D, // 439,041,101 decimal
+            nonce: 42,
+            height: BlockHeight::new(5),
+            uncle_merkle_root: [0x11; 32],
+            total_reward: 100_000_000,
+            randomx_key: [0x22; 32],
+            coin_merkle_root: [0x33; 32],
+            nullifier_root: [0x44; 32],
+            anchor_tx_id: [0u8; 32],
+            anchor_monero_height: 0,
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
+            pow_source: PowSource::Native,
+        };
+
+        let json = serde_json::to_string(&header)
+            .expect("BlockHeader serialization must succeed");
+
+        // Parse to check shape — target and total_reward must be bare numbers
+        let parsed: serde_json::Value = serde_json::from_str(&json)
+            .expect("JSON must be valid");
+
+        // target must be a bare number, NOT an object/tuple-struct
+        let target_val = &parsed["target"];
+        assert!(
+            target_val.is_number(),
+            "target must serialize as bare JSON number, got: {}",
+            target_val
+        );
+        assert_eq!(target_val.as_u64().unwrap(), 439_041_101);
+
+        // total_reward must be a bare number
+        let reward_val = &parsed["total_reward"];
+        assert!(
+            reward_val.is_number(),
+            "total_reward must serialize as bare JSON number, got: {}",
+            reward_val
+        );
+        assert_eq!(reward_val.as_u64().unwrap(), 100_000_000);
+
+        // height must be a bare number (BlockHeight baseline)
+        let height_val = &parsed["height"];
+        assert!(
+            height_val.is_number(),
+            "height must serialize as bare JSON number (BlockHeight pattern), got: {}",
+            height_val
+        );
+        assert_eq!(height_val.as_u64().unwrap(), 5);
+
+        // Full round-trip: deserialize back and verify field equality
+        let deserialized: BlockHeader = serde_json::from_str(&json)
+            .expect("Deserialization must succeed");
+        assert_eq!(deserialized.target, header.target);
+        assert_eq!(deserialized.total_reward, header.total_reward);
+        assert_eq!(deserialized.height, header.height);
+        assert_eq!(deserialized.nonce, header.nonce);
+        assert_eq!(deserialized.timestamp, header.timestamp);
+    }
 }
