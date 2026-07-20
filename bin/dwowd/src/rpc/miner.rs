@@ -26,7 +26,7 @@
 //! WARNING: These methods are ONLY available in localnet mode and should
 //! NEVER be deployed to mainnet or testnet.
 
-use std::{collections::HashMap, sync::atomic::Ordering};
+use std::collections::HashMap;
 
 use dwow_core::{
     rpc::jsonrpc::{
@@ -61,7 +61,7 @@ impl DwowNode {
             .into();
         }
 
-        if self.mining_state.sync_state.load(Ordering::SeqCst) != crate::SYNC_CAUGHT_UP {
+        if crate::SyncState::load(&self.mining_state.sync_state) != crate::SyncState::CaughtUp {
             return server_error(RpcError::NodeNotSynced, id, None);
         }
 

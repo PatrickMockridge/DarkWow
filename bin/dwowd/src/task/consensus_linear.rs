@@ -35,7 +35,7 @@ use smol::Executor;
 use tracing::{error, info, warn};
 
 use crate::proto::linear_sync::{Blocks, GetBlocks, GetTip, Tip, LINEAR_SYNC_BATCH};
-use crate::{DwowNodePtr, Result, SYNC_CAUGHT_UP, SYNC_BEHIND, SYNC_SYNCING};
+use crate::{DwowNodePtr, Result, SyncState};
 
 /// Session type ID for the linear sync protocol.
 /// Must match the registration order in the protocol handler.
@@ -98,7 +98,7 @@ pub async fn consensus_linear_init_task(
     // If skip_sync is set, park immediately (tests, single-node)
     if config.skip_sync {
         info!(target: "dwowd::task::consensus_linear_init_task", "Sync skipped, parking forever");
-        node.mining_state.sync_state.store(SYNC_CAUGHT_UP, Ordering::SeqCst);
+        node.mining_state.sync_state.store(SyncState::CaughtUp as u8, Ordering::SeqCst);
         return std::future::pending().await
     }
 
@@ -108,7 +108,7 @@ pub async fn consensus_linear_init_task(
         None => {
             info!(target: "dwowd::task::consensus_linear_init_task",
                 "No linear blockchain configured, parking forever");
-            node.mining_state.sync_state.store(SYNC_CAUGHT_UP, Ordering::SeqCst);
+            node.mining_state.sync_state.store(SyncState::CaughtUp as u8, Ordering::SeqCst);
             return std::future::pending().await
         }
     };
@@ -139,13 +139,13 @@ pub async fn consensus_linear_init_task(
             // MUST wait for peers before mining — otherwise it mines at a
             // stale height and produces blocks that conflict with the real
             // chain tip (height collision → competing blocks → state corruption).
-            // HAZOP F1: without this gate, node1 set SYNC_CAUGHT_UP after 10s
+            // HAZOP F1: without this gate, node1 set CaughtUp after 10s
             // without peers and mined block 3 while node0 was at height 67.
             if config.genesis_authority && local_height >= BlockHeight::GENESIS && wait_iters >= 10 {
                 info!(target: "dwowd::task::consensus_linear_init_task",
                     "Genesis authority: no peers after 10s, proceeding with local height {}",
                     local_height);
-                node.mining_state.sync_state.store(SYNC_CAUGHT_UP, Ordering::SeqCst);
+                node.mining_state.sync_state.store(SyncState::CaughtUp as u8, Ordering::SeqCst);
                 // Continuous sync: re-poll after delay instead of parking forever
                 smol::Timer::after(std::time::Duration::from_secs(30)).await;
                 continue; // back to outer loop
@@ -355,11 +355,11 @@ pub async fn consensus_linear_init_task(
                 "Behind: local height {} < peer height {}. Syncing...",
                 local_height, max_peer_height);
 
-            // HAZOP F5: set SYNC_SYNCING so the miner can see we're downloading blocks.
+            // HAZOP F5: set Syncing so the miner can see we're downloading blocks.
             // This state was defined but never used — the miner had no visibility into
             // whether sync was in progress. Without this, the miner could start during
-            // a long sync if another code path set SYNC_CAUGHT_UP prematurely.
-            node.mining_state.sync_state.store(SYNC_SYNCING, Ordering::SeqCst);
+            // a long sync if another code path set CaughtUp prematurely.
+            node.mining_state.sync_state.store(SyncState::Syncing as u8, Ordering::SeqCst);
 
             let mut next_height = local_height.succ();
 
@@ -549,7 +549,7 @@ pub async fn consensus_linear_init_task(
             warn!(target: "dwowd::task::consensus_linear_init_task",
                 "Sync attempt failed — still at height 0 with peers at height {}. Retrying...",
                 max_peer_height);
-            node.mining_state.sync_state.store(SYNC_BEHIND, Ordering::SeqCst);
+            node.mining_state.sync_state.store(SyncState::Behind as u8, Ordering::SeqCst);
             smol::Timer::after(std::time::Duration::from_secs(2)).await;
             continue;
         }
@@ -557,7 +557,7 @@ pub async fn consensus_linear_init_task(
             warn!(target: "dwowd::task::consensus_linear_init_task",
                 "Sync incomplete — local height {} but peer has {}. Retrying...",
                 current_height, max_peer_height);
-            node.mining_state.sync_state.store(SYNC_BEHIND, Ordering::SeqCst);
+            node.mining_state.sync_state.store(SyncState::Behind as u8, Ordering::SeqCst);
             smol::Timer::after(std::time::Duration::from_secs(2)).await;
             continue;
         }
@@ -567,7 +567,7 @@ pub async fn consensus_linear_init_task(
 
         // Signal that initial sync is done — miner task can proceed
         // (miner independently waits for genesis, not full sync).
-        node.mining_state.sync_state.store(SYNC_CAUGHT_UP, Ordering::SeqCst);
+        node.mining_state.sync_state.store(SyncState::CaughtUp as u8, Ordering::SeqCst);
 
         // H3.5: Check for longer competing chains while waiting.
         // A fork may have grown past our canonical chain while no

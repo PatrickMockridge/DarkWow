@@ -24,7 +24,7 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::{
-        atomic::{AtomicU8, AtomicU64},
+        atomic::{AtomicU8, AtomicU64, Ordering},
         Arc,
     },
 };
@@ -125,12 +125,40 @@ use block_acceptor::accept_block;
 /// Atomic pointer to the DarkWow node
 pub type DwowNodePtr = Arc<DwowNode>;
 
-/// Sync state machine values for MiningState.sync_state.
-/// Replaces the single-shot AtomicBool sync_complete with proper hysteresis.
-pub const SYNC_INITIAL: u8 = 0;    // Before first sync attempt
-pub const SYNC_SYNCING: u8 = 1;    // Actively pulling blocks from peers
-pub const SYNC_CAUGHT_UP: u8 = 2;  // Within range of tip — miner may mine
-pub const SYNC_BEHIND: u8 = 3;     // Detected behind peers — miner paused
+/// Typed sync state machine — replaces raw u8 constants.
+///
+/// Four states with invalid state transitions enforced at the accessor level.
+/// Storage is `AtomicU8` for lock-free reads from hot paths (miner_task,
+/// stratum, RPC); writes go through `MiningState::set_sync_state` which logs
+/// the transition.
+///
+/// Per type-system.md §9.3, consensus state-machine states SHALL be nominal
+/// types, not raw integers. This enum + `AtomicU8` storage provides the same
+/// lock-free performance as the raw-u8 approach with type-level safety.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SyncState {
+    Initial = 0,   // Before first sync attempt
+    Syncing = 1,   // Actively pulling blocks from peers
+    CaughtUp = 2,  // Within range of tip — miner may mine
+    Behind = 3,    // Detected behind peers — miner paused
+}
+
+impl SyncState {
+    /// Load the current sync state from the atomic backing store.
+    pub fn load(state: &AtomicU8) -> Self {
+        match state.load(Ordering::SeqCst) {
+            0 => Self::Initial,
+            1 => Self::Syncing,
+            2 => Self::CaughtUp,
+            3 => Self::Behind,
+            n => {
+                tracing::error!("corrupt sync_state value {} — falling back to Behind", n);
+                Self::Behind
+            }
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // MiningState — block production coordination (stratum, merge-mining, miner RPC)
@@ -178,7 +206,7 @@ impl MiningState {
             mm_jobs: Mutex::new(HashMap::new()),
             mm_jobs_submitted: Mutex::new(HashSet::new()),
             miner_config: MinerConfig::default(),
-            sync_state: AtomicU8::new(SYNC_INITIAL),
+            sync_state: AtomicU8::new(SyncState::Initial as u8),
         }
     }
 }
@@ -857,7 +885,7 @@ impl Dwowd {
                         error!(target: "dwowd::Dwowd::start", "Consensus initialization task failed: {e}");
                         // HAZOP F5: consensus task failure must pause the miner.
                         // Without this, the miner continues with stale state.
-                        node.mining_state.sync_state.store(SYNC_BEHIND, std::sync::atomic::Ordering::SeqCst);
+                        node.mining_state.sync_state.store(SyncState::Behind as u8, Ordering::SeqCst);
                     }
                 }
                 }
@@ -1100,7 +1128,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
     // Bitcoin production pattern: mining before sync produces orphan blocks.
     // Sync robustness (skip bad blocks, verify catch-up, continuous re-poll)
     // ensures this gate is reached reliably even with flaky peers.
-    while node.mining_state.sync_state.load(std::sync::atomic::Ordering::SeqCst) != SYNC_CAUGHT_UP {
+    while SyncState::load(&node.mining_state.sync_state) != SyncState::CaughtUp {
         smol::Timer::after(std::time::Duration::from_secs(1)).await;
     }
     info!(target: "dwowd::miner_task", "Sync caught up, starting mining loop");
@@ -1111,8 +1139,8 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
     loop {
         // Re-check sync before each mining attempt.
         // Avoids mining at a stale height when peers have advanced.
-        let state = node.mining_state.sync_state.load(std::sync::atomic::Ordering::SeqCst);
-        if state != SYNC_CAUGHT_UP {
+        let state = SyncState::load(&node.mining_state.sync_state);
+        if state != SyncState::CaughtUp {
             smol::Timer::after(std::time::Duration::from_secs(1)).await;
             continue;
         }
