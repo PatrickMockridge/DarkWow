@@ -59,8 +59,13 @@ CChainState {
 }
 ```
 
-Single insertion path: `connect_block()`. Used by genesis, sync, broadcast,
-miner RPC, stratum, and merge mining. Replaces the old dual-instance pattern
+Single insertion path: `connect_block()` returns `BlockConnectOutcome`
+distinguishing canonical extension (`CanonicalExtension{new_height}`),
+competing block storage (`CompetingStored`), and uncle chain extension
+(`UncleExtended`). Used by genesis, sync, broadcast, miner RPC, stratum,
+and merge mining. All callers MUST match on the outcome — `mark_mined` is
+only permitted on `CanonicalExtension` (per `type-system.md` §4.1, §7
+invariant 6). Replaces the old dual-instance pattern
 where `src/linear/src/blockchain.rs` and `bin/dwowd/src/blockchain.rs` held
 independent caches that diverged.
 
@@ -87,6 +92,9 @@ MiningState {
     linear_genesis_hash: Mutex<Option<HeaderHash>>,
     mm_jobs: Mutex<HashMap<String, ()>>,
     mm_jobs_submitted: Mutex<HashSet<String>>,
+    sync_state: AtomicU8,         // SyncState enum (Initial, Syncing, CaughtUp, Behind)
+                                   // with SyncState::load() typed accessor
+                                   // — type-system.md §9.3, consensus.md Type-Level Enforcement
     sync_complete: AtomicBool,
 }
 ```
@@ -124,6 +132,13 @@ pub fn get_next_work_required(&self, height: u64) -> u32 {
 
 This prevents self-declared-target attacks: a peer cannot mine with
 `target = u32::MAX` at height 100 and have it accepted.
+
+Validation failures at each stage SHALL produce phase-typed error barbs
+(`type-system.md` §4.1, `consensus.md` 7-phase validation). The
+`ConsensusPhase` enum (8 variants, phases 0-7) maps each failure to a
+`BarbId` and recovery strategy: `↓bad-proof` (reject block), `↓bad-nullifier`
+(reject block, ban peer), `↓db-fail` (fatal, restart node). Callers match
+on `err.phase()` — no string matching.
 
 ## Built-in Miner
 

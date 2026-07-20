@@ -434,6 +434,69 @@ block validation is fully implemented — canonical and uncle transactions are e
 via `bin/dwowd/src/execution.rs` with deterministic diff merging. Pure validation
 functions live in `src/linear/src/validation.rs`.
 
+## Type-Level Enforcement
+
+The consensus implementation SHALL use Rust's type system to make invalid states
+unrepresentable. This section specifies the four mechanisms and their application
+to consensus safety. The formal specification is `type-system.md` (§2.3, §4.1,
+§5.1, §7, §9.3).
+
+### Nominal Outcome Enums
+
+Functions that can produce semantically different consensus outcomes SHALL
+return a nominal enum. `Result<()>` SHALL NOT be used where the `Ok` variant
+collapses multiple states.
+
+**Applied:** `BlockConnectOutcome` at `src/linear/src/chain_state.rs` replaces
+`Result<()>` with three variants: `CanonicalExtension{new_height}`,
+`CompetingStored`, `UncleExtended`. Every caller MUST match all three —
+the compiler rejects any code path that calls `mark_mined` on a non-canonical
+block. This prevents HAZID H-H7 (mempool transaction loss on competing blocks)
+and H-H8 (competing block permanent loss) at the type level — no runtime
+check, no convention, no code review can override the compiler's exhaustive
+match enforcement.
+
+### Typed State Machines
+
+Consensus state machines crossing module boundaries SHALL be typed enums
+with explicit variants. Raw integer constants (`pub const X: u8 = N`) with
+manual `AtomicU8::load`/`store` SHALL NOT implement a distributed state
+machine.
+
+**Applied:** `SyncState` enum at `bin/dwowd/src/lib.rs` replaces four `u8`
+constants (`SYNC_INITIAL` through `SYNC_BEHIND`) with a `#[repr(u8)]` enum
+and a single `SyncState::load(&AtomicU8)` accessor. States are `Initial`,
+`Syncing`, `CaughtUp`, `Behind`. The miner SHALL check `SyncState::CaughtUp`
+before producing blocks; the sync task SHALL set `SyncState::Syncing` during
+active download. This prevents premature mining on stale tips (HAZOP F1,
+HAZID H-M12).
+
+### Authority Marker Types
+
+Consensus authority SHALL be represented by nominal marker types, not bare
+booleans. A `bool` carries no proof of key possession, no type-level
+distinction from any other `bool`, and no compiler enforcement.
+
+**Applied:** `GenesisAuthority` at `bin/dwowd/src/task/consensus_linear.rs`
+(Change 3 planned) replaces `genesis_authority: bool` with a zero-sized
+marker type constructible only via `from_key(secret)`. The authority gate in
+the sync state machine requires `Some(GenesisAuthority)` — a node that lost
+its genesis key cannot accidentally claim authority. Implements
+`ExhibitsBarb { &[Mine] }` — the `↓mine` barb is witnessed at compile time.
+
+### Nominal Consensus Scalars
+
+Every consensus quantity (height, reward, target, gas, supply) SHALL be a
+distinct nominal type. The compiler SHALL reject `expected_reward(height)`
+where a `BlockHeight` is passed to a `BlockReward` parameter. A bare `as`
+cast on any consensus quantity SHALL NOT pass review.
+
+**Applied:** `BlockHeight(u64)` at `src/sdk/src/blockchain.rs` is the
+canonical nominal consensus scalar. Planned: `BlockReward(u64)`,
+`BlockTarget(u32)`, `GasAmount(u64)` following the same `#[repr(transparent)]`
+pattern — named constructors, no `From<u64>`, manual serde, dwow-serial
+transparent encoding (Change 4).
+
 ## PoWRewardV1 Nullifier Claim — Single-Path Coinbase
 
 ### Rationale

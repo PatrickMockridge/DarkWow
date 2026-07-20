@@ -168,6 +168,22 @@ unify.
   (`BlockHeight::new` / `from_le_bytes`), per §2.2. No code path SHALL
   construct a height by directly accessing a `pub` field.
 
+**Planned newtypes** (Change 4 of consensus type-enforcement plan,
+`src/sdk/src/blockchain.rs`):
+- `BlockReward(u64)` — coinbase reward amounts. Distinguished from
+  `BlockHeight` so `expected_reward(height)` is a type error.
+- `BlockTarget(u32)` — PoW target. Distinguished from bare `u32` so
+  `target < reward` is a type error.
+- `GasAmount(u64)` — WASM gas. Distinguished from `BlockReward` so
+  gas arithmetic cannot mix with supply accounting.
+
+Each SHALL follow the `BlockHeight` pattern: `#[repr(transparent)]`,
+named constructors, no `From<u64>`, no `Add`/`Sub` operators, manual
+serde as plain number, `dwow_serial` transparent encoding. Consensus
+outcome types (§4.1) extend the distinction principle to non-numeric
+domains — the same logic that separates `BlockHeight` from `BlockReward`
+also separates `CanonicalExtension` from `CompetingStored`.
+
 ## 3. Generic Types and Capabilities
 
 A generic parameter `T` abstracts over the behavioral position of a name. This
@@ -211,6 +227,54 @@ appear in any cryptographic path. `.ok()` chains that discard the error reason
 SHALL NOT appear in any cryptographic path. Every `Result` SHALL be propagated
 to a context that can respond appropriately.
 
+### 4.1 Consensus Outcome Types
+
+The distinction principle (§2) applies to consensus outcomes exactly as it
+applies to error barbs and numeric domains. A function that can produce
+semantically different consensus outcomes SHALL return a nominal enum —
+`Result<()>` SHALL NOT be used where the `Ok` variant collapses multiple
+states.
+
+**Applied:** `BlockConnectOutcome` at `src/linear/src/chain_state.rs`.
+`connect_block()` previously returned `Result<()>` for three fundamentally
+different outcomes:
+
+| Outcome | Old Return | New Return | Caller Obligation |
+|---------|-----------|-----------|-------------------|
+| Block extended canonical chain | `Ok(())` | `Ok(CanonicalExtension{new_height})` | `mark_mined` permitted |
+| Block stored as competing | `Ok(())` | `Ok(CompetingStored)` | mempool unchanged |
+| Uncle chain extended | `Ok(())` | `Ok(UncleExtended)` | mempool unchanged |
+
+The type system enforces that callers match all three variants. A caller
+that previously called `mp.mark_mined()` on any `Ok(())` — removing mempool
+transactions for a block that was silently demoted to competing — is now a
+compile-time error. The `mark_mined` call SHALL appear only in the
+`CanonicalExtension` arm.
+
+This prevents HAZID H-H7 (mempool transaction loss on non-canonical blocks)
+and H-H8 (competing block permanent loss) at the type level — no runtime
+check, no convention, no code review can override the compiler's exhaustive
+match enforcement.
+
+**Planned:** `ConsensusPhase` enum (Change 5) extends this pattern to error
+dispatch. Each of the 8 validation phases (0-7 per `consensus.md`) maps to a
+specific `BarbId`:
+
+| Phase | Barb | Recovery Strategy |
+|-------|------|-------------------|
+| 0 (Structural) | `↓bad-proof` | Reject block |
+| 1 (PoW) | `↓bad-proof` | Reject block |
+| 2 (Continuity) | `↓bad-proof` | Reject block |
+| 3 (Nullifier + ZK) | `↓bad-nullifier` | Reject block, ban peer |
+| 4 (WASM execution) | `↓bad-proof` | Reject block |
+| 5 (Transactions) | `↓bad-proof` | Reject block |
+| 6 (Nullifier SMT) | `↓bad-nullifier` | Reject block |
+| 7 (Atomic commit) | `↓db-fail` | Fatal — restart node |
+
+`LinearError::error_barb()` SHALL return `BarbId`, not `&str`. Callers
+match on `err.phase()` for recovery strategy — "ban peer" vs "restart node"
+vs "skip block" — without string matching.
+
 ## 5. Authority
 
 **A process SHALL perform action A if and only if it possesses the name for A.**
@@ -224,6 +288,36 @@ A function that takes no `SecretKey` parameter SHALL NOT sign. A function
 that takes no `Nullifier` parameter SHALL NOT check replay. A function whose
 signature accepts `[u8; 32]` instead of `OwnedSecretKey` SHALL NOT authorize
 mining — the compiler SHALL reject it because `[u8; 32]` is not a capability.
+
+### 5.1 Authority Marker Types
+
+A bare `bool` SHALL NOT gate consensus-critical paths. A `bool` carries no
+proof of key possession, no type-level distinction from any other `bool`,
+and no compiler enforcement. Consensus authority SHALL be represented by
+nominal marker types constructible only through proof of capability
+possession.
+
+**Applied:** `GenesisAuthority` at `bin/dwowd/src/task/consensus_linear.rs`
+(Change 3). Previously `ConsensusInitTaskConfig.genesis_authority: bool` —
+any misconfigured node with a typo'd TOML could claim genesis authority. The
+replacement is a zero-sized marker type:
+
+```rust
+pub struct GenesisAuthority { _private: () }
+impl GenesisAuthority {
+    pub fn from_key(secret: &OwnedSecretKey) -> Option<Self> { ... }
+}
+impl ExhibitsBarb for GenesisAuthority {
+    fn exhibited_barbs() -> &'static [BarbId] { &[BarbId::Mine] }
+}
+```
+
+The `ConsensusInitTaskConfig.genesis_authority` field changes from `bool` to
+`Option<GenesisAuthority>`. The "mine without peers" path in the sync state
+machine requires `Some(authority)` — a node that lost its genesis key cannot
+accidentally claim authority. The `ExhibitsBarb` impl witnesses the `↓mine`
+barb at compile time: only processes possessing `GenesisAuthority` can
+exhibit mining behavior.
 
 ## 6. The Capability Engine: Emergent Types from Sound Primitives
 
@@ -332,6 +426,21 @@ Every program that compiles SHALL satisfy these five invariants:
 5. **Authority-through-possession.** Authority to perform cryptographic
    operations SHALL be represented by possession of the corresponding
    cryptographic key type. No ambient authority.
+
+6. **Consensus outcome distinction.** Every function that can produce
+   semantically different consensus outcomes SHALL return a nominal enum
+   (§4.1). `Result<()>` SHALL NOT be used where the `Ok` variant collapses
+   multiple states — canonical extension, competing block stored, and
+   uncle chain extension are three distinct types of outcome. The compiler
+   SHALL enforce that every caller handles all three.
+
+7. **State machine transition validity.** Consensus state machines crossing
+   module boundaries SHALL be typed enums with explicit variants (§9.3).
+   Raw integer constants (`pub const X: u8 = N`) with manual
+   `AtomicU8::load`/`store` SHALL NOT implement a distributed state machine.
+   The compiler SHALL reject comparisons between states from different
+   domains — `SyncState` and `BlockConnectOutcome` are distinct types with
+   no implicit conversion.
 
 ## 8. Type Namespace
 
@@ -515,14 +624,43 @@ BlockProduction =
   ))
 ```
 
-Where `resolve!(tip, uncles)` implements:
-1. First-seen-wins: the first block at a given height becomes canonical
-2. Competing blocks become uncles: `competing_blocks.lock().insert(height, block)`
-3. Chain reorganization: `try_reorg_from_competing()`
+The three process roles map to the three variants of `BlockConnectOutcome`
+(§4.1, `src/linear/src/chain_state.rs`):
+
+| Process | Outcome Variant | Effect |
+|---------|----------------|--------|
+| M (canonical miner) | `CanonicalExtension{new_height}` | Height advances, `mark_mined` permitted |
+| U_i (competing miner) | `CompetingStored` | Block stored as uncle candidate, height unchanged |
+| C (consensus observer) | `UncleExtended` | Uncle chain extended, height unchanged |
+
+The `connect_block` return type enforces this at compile time: callers that
+previously collapsed all three roles into `Ok(())` and called `mark_mined`
+unconditionally are now a type error (invariant 6, §7).
+
+**Sync State Machine.** The miner SHALL check `SyncState::CaughtUp` before
+producing blocks. The sync task SHALL set `SyncState::Syncing` during active
+download. The four-state machine is modeled as:
+
+```
+SyncMachine =
+  Initial.sync_start.Syncing
+  | Syncing.caught_up.CaughtUp
+  | Syncing.detected_behind.Behind
+  | CaughtUp.peers_ahead.Syncing
+  | CaughtUp.detected_behind.Behind
+  | Behind.retry_sync.Syncing
+```
+
+Previously implemented as four raw `u8` constants (`SYNC_INITIAL: u8 = 0`
+through `SYNC_BEHIND: u8 = 3`) with manual `AtomicU8::load`/`store` across
+5 files. Replaced by `SyncState` enum at `bin/dwowd/src/lib.rs` with
+`#[repr(u8)]` and a single `SyncState::load(&AtomicU8)` accessor (Change 2).
 
 Mapped to: `CChainState` at `src/linear/src/chain_state.rs:64`,
 `competing_blocks: Mutex<HashMap<u64, Vec<Block>>>` at line 105,
 `try_reorg_from_competing()` at line 982.
+`SyncState` at `bin/dwowd/src/lib.rs`,
+`BlockConnectOutcome` at `src/linear/src/chain_state.rs`.
 
 ### 9.4 ExecutionSchedule — Dependency Analysis
 
@@ -674,36 +812,43 @@ through DAG sync instead of flood broadcast. The event graph sled tree
 
 ### Implementation
 
-**Status at revision b58ebdc6c1:** the barb-typed layer
-(`ExhibitsBarb`, `bridge_safe`, `BridgeChannel`) has test fixtures only —
-zero production implementors. The 0x42 blockchain-event wrapping path
-(`src/event_graph/blockchain_bridge.rs`) is uncalled. The P2P wire operates
-as a bytes-level absorber: `impl_p2p_message!` declares per-message budget
-vectors (`MAX_BYTES`, metering), `channel.rs` runtime-enforces
-command-length, message-length, and dispatch (MissingDispatcher → ban) at
-eval. The four obligations (§10.5) are partially discharged — re-lift
-validation and budget declaration exist; violator exclusion is
-feature-flag-latticed; rate discipline is metered but unwitnessed in tests.
+**Status at revision 2938de1549:** the barb-typed layer has its first
+production implementors. `BlockConnectOutcome` (`src/linear/src/chain_state.rs`)
+carries `&[Commit, Verify, SyncBarrier]` — the three consensus outcome
+variants declare their observable barbs at the type level. `SyncState`
+(`bin/dwowd/src/lib.rs`) replaces raw `u8` constants with a `#[repr(u8)]`
+enum. `GenesisAuthority` (`bin/dwowd/src/task/consensus_linear.rs`, Change 3
+planned) replaces bare `bool` with a zero-sized marker type implementing
+`ExhibitsBarb { &[Mine] }`.
+
+The event-graph DAG path (dag_absorber.rs, §10.3) has been removed from
+dwowd — block propagation uses flood broadcast via `net-node`/`net-wallet`
+profiles which are architecturally gated from event-graph. The
+`BridgeChannel` type-translation mechanism remains as future-use vocabulary.
 
 The barb system is implemented across three modules:
 
-**BarbId enum** (`src/net/barb_trait.rs`): 22 observable actions — 14
+**BarbId enum** (`src/barb.rs`): 22 observable actions — 14
 authorization barbs (Spend, View, Nullify, Commit, Prove, Verify, Dispatch,
 Gate, Denominate, ProveInclusion, Encrypt, Derive, Discover, Mine) and 8
 concurrency barbs (Concurrent, Merge, SyncBarrier, Broadcast, RateLimit,
 GossipForward, QuorumQuery, DagParent). Classification predicates:
 `is_blockchain_barb()`, `is_event_graph_barb()`, `is_concurrency_barb()`.
 
-**ExhibitsBarb trait** (`src/net/barb_trait.rs`): Protocol handlers implement
-this marker trait to declare their barb set at compile time. `bridge_safe
-::<Source, Dest>()` provides the static quarantine check — blockchain barbs
-(↓spend, ↓nullify, ↓commit, ↓mine) SHALL NOT cross to event-graph channels.
+**ExhibitsBarb trait** (`src/barb.rs`): Types declare their barb set at
+compile time. First production implementors: `BlockConnectOutcome` and
+`GenesisAuthority`. `bridge_safe::<Source, Dest>()` provides the static
+quarantine check — blockchain barbs (↓spend, ↓nullify, ↓commit, ↓mine)
+SHALL NOT cross to event-graph channels. Planned: wire `ExhibitsBarb` to
+`LinearBlockchainProtocol`, `LinearSyncProtocol`, and `ProtocolTx` (Change 8).
 
 **BridgeChannel** (`src/net/bridge_channel.rs`): Typed channel with
 `BarbWitness<B>` phantom type parameter. `BridgeChannel<T, B>::pair()` creates
 a `BridgeSender`/`BridgeReceiver` pair. The `B` parameter statically enforces
 that a channel declared for blockchain messages cannot receive from an
-event-graph process.
+event-graph process. Currently vocabulary only — zero production channels
+use the typed bridge (the production P2P operates as a bytes-level absorber
+with runtime enforcement per §10.5).
 
 **BlockchainEvent bridge** (`src/event_graph/blockchain_bridge.rs`): Wraps
 blockchain messages in event graph content. `wrap_blockchain_event(data)`
