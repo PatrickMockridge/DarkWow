@@ -282,6 +282,7 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         checkpoint_height: blockchain_config.checkpoint_height,
         checkpoint: blockchain_config.checkpoint,
         genesis_validation: dwowd::task::GenesisValidationMode::Off,
+        genesis_authority: create_genesis,
     };
     daemon
         .start(

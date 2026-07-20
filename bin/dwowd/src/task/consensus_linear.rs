@@ -35,7 +35,12 @@ use smol::Executor;
 use tracing::{error, info, warn};
 
 use crate::proto::linear_sync::{Blocks, GetBlocks, GetTip, Tip, LINEAR_SYNC_BATCH};
-use crate::{DwowNodePtr, Result, SYNC_CAUGHT_UP, SYNC_BEHIND};
+use crate::{DwowNodePtr, Result, SYNC_CAUGHT_UP, SYNC_BEHIND, SYNC_SYNCING};
+
+/// Session type ID for the linear sync protocol.
+/// Must match the registration order in the protocol handler.
+/// HAZOP F5: previously used but never defined — pre-existing compilation error.
+const SESSION_DWOW_LINEAR_SYNC: u32 = 0;
 
 use crate::block_acceptor::accept_block;
 use dwow_chain::Miner;
@@ -71,6 +76,9 @@ pub struct ConsensusInitTaskConfig {
     pub checkpoint: Option<String>,
     /// Genesis hash validation mode (default: Off for devnet)
     pub genesis_validation: GenesisValidationMode,
+    /// Whether this node is authorized to create genesis.
+    /// Only the genesis authority may mine without peers.
+    pub genesis_authority: bool,
 }
 
 /// Async task to initialize consensus for darkwow-devnet mode.
@@ -127,18 +135,33 @@ pub async fn consensus_linear_init_task(
             }
             smol::Timer::after(std::time::Duration::from_secs(1)).await;
             wait_iters += 1;
-            // If we have blocks and no peers appear after 10s, proceed.
-            // The genesis authority can mine; a catching-up node will
-            // sync when peers eventually connect (continuous sync will
-            // catch them up).
-            if local_height >= BlockHeight::GENESIS && wait_iters >= 10 {
+            // Only the genesis authority may proceed without peers.
+            // A non-authority node that synced genesis via P2P but lost peers
+            // MUST wait for peers before mining — otherwise it mines at a
+            // stale height and produces blocks that conflict with the real
+            // chain tip (height collision → competing blocks → state corruption).
+            // HAZOP F1: without this gate, node1 set SYNC_CAUGHT_UP after 10s
+            // without peers and mined block 3 while node0 was at height 67.
+            if config.genesis_authority && local_height >= BlockHeight::GENESIS && wait_iters >= 10 {
                 info!(target: "dwowd::task::consensus_linear_init_task",
-                    "No peers after 10s, proceeding with local height {}",
+                    "Genesis authority: no peers after 10s, proceeding with local height {}",
                     local_height);
                 node.mining_state.sync_state.store(SYNC_CAUGHT_UP, Ordering::SeqCst);
                 // Continuous sync: re-poll after delay instead of parking forever
                 smol::Timer::after(std::time::Duration::from_secs(30)).await;
                 continue; // back to outer loop
+            }
+            // Non-authority nodes with blocks but no peers: keep waiting.
+            // They must sync the real chain tip before mining.
+            if !config.genesis_authority && local_height >= BlockHeight::GENESIS && wait_iters >= 10 {
+                info!(target: "dwowd::task::consensus_linear_init_task",
+                    "Non-authority: have blocks but no peers after {}s — waiting for sync",
+                    wait_iters);
+                if wait_iters % 30 == 0 {
+                    warn!(target: "dwowd::task::consensus_linear_init_task",
+                        "Non-authority: still no peers after {}s. Mining is disabled until peers connect.",
+                        wait_iters);
+                }
             }
         }
 
@@ -313,7 +336,7 @@ pub async fn consensus_linear_init_task(
         // peer with the most work" (Bitcoin chainwork comparison), not
         // "require N peers to agree on height" (vulnerable to Sybil).
         // Invalid blocks from a lying peer are rejected during apply.
-        let max_peer_height: BlockHeight = compatible_peers.iter()
+        let mut max_peer_height: BlockHeight = compatible_peers.iter()
             .map(|(_, h, _)| *h)
             .max()
             .unwrap_or(local_height);
@@ -332,6 +355,12 @@ pub async fn consensus_linear_init_task(
             info!(target: "dwowd::task::consensus_linear_init_task",
                 "Behind: local height {} < peer height {}. Syncing...",
                 local_height, max_peer_height);
+
+            // HAZOP F5: set SYNC_SYNCING so the miner can see we're downloading blocks.
+            // This state was defined but never used — the miner had no visibility into
+            // whether sync was in progress. Without this, the miner could start during
+            // a long sync if another code path set SYNC_CAUGHT_UP prematurely.
+            node.mining_state.sync_state.store(SYNC_SYNCING, Ordering::SeqCst);
 
             let mut next_height = local_height.succ();
 
@@ -477,6 +506,36 @@ pub async fn consensus_linear_init_task(
                     }
                 }
             }
+        }
+
+        // HAZOP F4: Refresh peer heights before declaring sync complete.
+        // The max_peer_height snapshot was taken at the START of sync
+        // (lines 316-319). Peers may have advanced by 60+ blocks during
+        // a long sync. Re-query tips to get fresh heights.
+        let refreshed_peers: Vec<_> = p2p.hosts().peers();
+        let mut fresh_max_peer_height: BlockHeight = BlockHeight::new(0);
+        for p in &refreshed_peers {
+            let session = p.session_type_id();
+            let addr = p.address().as_str();
+            if session == SESSION_DWOW_LINEAR_SYNC && !addr.contains("seed") {
+                // Reuse the existing Tip query pattern from the sync start block
+                if let Ok(tip_sub) = p.subscribe_msg::<Tip>().await {
+                    match tip_sub.receive().await {
+                        Ok(tip) => {
+                            if tip.height > fresh_max_peer_height {
+                                fresh_max_peer_height = tip.height;
+                            }
+                        }
+                        Err(_) => continue,
+                    }
+                }
+            }
+        }
+        if fresh_max_peer_height > BlockHeight::new(0) && fresh_max_peer_height > max_peer_height {
+            info!(target: "dwowd::task::consensus_linear_init_task",
+                "Peer tip advanced during sync: {} -> {} (refreshed)",
+                max_peer_height, fresh_max_peer_height);
+            max_peer_height = fresh_max_peer_height;
         }
 
         // Verify the sync attempt actually caught us up.

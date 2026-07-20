@@ -841,16 +841,25 @@ impl Dwowd {
 
         // Start the consensus protocol (linear mode)
         info!(target: "dwowd::Dwowd::start", "Starting consensus protocol task");
+        let consensus_node = self.node.clone();
         self.consensus_task.clone().start(
             consensus_linear_init_task(
                 self.node.clone(),
                 config.clone(),
                 executor.clone(),
             ),
-            |res| async move {
+            move |res| {
+                let node = consensus_node.clone();
+                async move {
                 match res {
                     Ok(()) | Err(Error::ConsensusTaskStopped) | Err(Error::MinerTaskStopped) => { /* Do nothing */ }
-                    Err(e) => error!(target: "dwowd::Dwowd::start", "Failed starting consensus initialization task: {e}"),
+                    Err(e) => {
+                        error!(target: "dwowd::Dwowd::start", "Consensus initialization task failed: {e}");
+                        // HAZOP F5: consensus task failure must pause the miner.
+                        // Without this, the miner continues with stale state.
+                        node.mining_state.sync_state.store(SYNC_BEHIND, std::sync::atomic::Ordering::SeqCst);
+                    }
+                }
                 }
             },
             Error::ConsensusTaskStopped,
