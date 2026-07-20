@@ -32,7 +32,7 @@ use std::sync::{atomic::Ordering, Arc};
 
 use dwow_core::net::session::SESSION_DEFAULT;
 use smol::Executor;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::proto::linear_sync::{Blocks, GetBlocks, GetTip, Tip, LINEAR_SYNC_BATCH};
 use crate::{DwowNodePtr, Result, SyncState};

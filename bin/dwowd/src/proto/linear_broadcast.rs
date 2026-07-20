@@ -111,14 +111,23 @@ impl AsyncEncodable for BlockBroadcast {
 #[async_trait]
 impl AsyncDecodable for BlockBroadcast {
     async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> std::io::Result<Self> {
-        // NO read cap: the genesis block carries the 9 contract deployments
-        // (multi-MB WASM as serde_json) and MUST decode — a take(4MB) cap
-        // would silently truncate it. Size discipline is enforced
-        // post-decode: any NON-genesis block over MAX_BLOCK_SIZE is
-        // rejected here (fail-closed) and again by the consensus-level
-        // rule in accept_block. Genesis integrity = pinned genesis hash.
+        // Genesis blocks carry contract deployments (multi-MB WASM as
+        // serde_json) and cannot use the MAX_BLOCK_SIZE cap. Apply a
+        // generous upper bound (100 MB — 6x the expected ~15 MB genesis)
+        // to prevent a malicious peer from causing OOM by sending a
+        // multi-GB payload claiming to be genesis.
+        const MAX_GENESIS_SIZE: u64 = 100 * 1024 * 1024; // 100 MB
         let mut buf = Vec::new();
-        FutAsyncReadExt::read_to_end(d, &mut buf).await?;
+        {
+            let mut capped = FutAsyncReadExt::take(d, MAX_GENESIS_SIZE);
+            FutAsyncReadExt::read_to_end(&mut capped, &mut buf).await?;
+        }
+        if buf.len() as u64 >= MAX_GENESIS_SIZE {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("genesis block exceeds MAX_GENESIS_SIZE ({} bytes)", MAX_GENESIS_SIZE),
+            ));
+        }
         let msg: Self = serde_json::from_slice(&buf)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         if msg.block.header.height != dwow_sdk::blockchain::BlockHeight::GENESIS

@@ -202,8 +202,15 @@ phase_wallet_verify() {
     # 2. Scan — the real decrypt signal: `capabilities=<N>` (coinbase/notes). The
     #    old log-grep (Scanning block|Scan complete) didn't assert anything decrypted.
     info "  Scanning blocks..."
-    local caps
-    caps=$(_scan_capabilities "$wallet_idx")
+    local caps=0 retry=0 max_retries=3
+    while [ "$retry" -lt "$max_retries" ] && [ "${caps:-0}" -eq 0 ]; do
+        caps=$(_scan_capabilities "$wallet_idx")
+        if [ "${caps:-0}" -eq 0 ] && [ "$retry" -lt "$((max_retries - 1))" ]; then
+            info "  scan retry $((retry+1))/$max_retries — capabilities=0 (transient?)"
+            sleep 5
+        fi
+        retry=$((retry + 1))
+    done
     if [ -n "$caps" ] && [ "$caps" -gt 0 ]; then
         pass "wallet-$wallet_idx scan (capabilities=$caps — coinbase decrypted)"
     elif [ "$wallet_idx" -eq 1 ]; then
@@ -228,8 +235,15 @@ phase_wallet_verify() {
     # 3. Balance — assert the native token line (not grep for human alias "DRKW",
     #    which the LocalWallet path never prints). wallet-1 must have DRKW > 0;
     #    wallet-2 is 0 pre-transfer.
-    local native_amt
-    native_amt=$(_native_balance "$wallet_idx")
+    local native_amt=0 retry_bal=0 max_retries_bal=3
+    while [ "$retry_bal" -lt "$max_retries_bal" ] && [ "${native_amt:-0}" -eq 0 ]; do
+        native_amt=$(_native_balance "$wallet_idx")
+        if [ "${native_amt:-0}" -eq 0 ] && [ "$retry_bal" -lt "$((max_retries_bal - 1))" ]; then
+            info "  balance retry $((retry_bal+1))/$max_retries_bal — native_amt=0 (transient?)"
+            sleep 5
+        fi
+        retry_bal=$((retry_bal + 1))
+    done
     if [ -n "$native_amt" ] && [ "$native_amt" -gt 0 ]; then
         pass "wallet-$wallet_idx native balance = $native_amt (DRKW)"
     elif [ "$wallet_idx" -eq 1 ]; then

@@ -19,5 +19,16 @@ wal() {
         echo "ERROR: dwow-wallet-$i is not running" >&2
         return 1
     fi
-    docker exec "dwow-wallet-$i" /app/darkwow wallet "$@" 2>&1 || true
+    local outfile="/tmp/wal_out_$$"
+    local errfile="/tmp/wal_err_$$"
+    local rc=0
+    docker exec "dwow-wallet-$i" /app/darkwow wallet "$@" >"$outfile" 2>"$errfile" || rc=$?
+    cat "$outfile"
+    if [ "$rc" -ne 0 ] || [ -s "$errfile" ]; then
+        echo "WAL_ERROR: wallet-$i exit=$rc stderr=$(head -3 "$errfile" 2>/dev/null | tr '\n' ' ')" >&2
+        rm -f "$outfile" "$errfile"
+        return "$rc"
+    fi
+    rm -f "$outfile" "$errfile"
+    return 0
 }
