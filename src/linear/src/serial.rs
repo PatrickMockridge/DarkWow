@@ -145,7 +145,6 @@ impl AsyncEncodable for BlockHeader {
             }
             PowSource::Monero(data) => {
                 len += 1u8.encode_async(s).await?;
-                use dwow_serial::AsyncEncodable;
                 len += data.encode_async(s).await?;
             }
         }
@@ -176,7 +175,6 @@ impl AsyncDecodable for BlockHeader {
         let pow_source = match disc {
             0 => PowSource::Native,
             1 => {
-                use dwow_serial::AsyncDecodable;
                 let data = crate::monero::MoneroPowData::decode_async(d).await?;
                 PowSource::Monero(data)
             }

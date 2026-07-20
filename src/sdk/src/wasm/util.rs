@@ -23,7 +23,9 @@
 
 
 
+#[cfg(target_arch = "wasm32")]
 use dwow_serial::{Decodable, Encodable};
+#[cfg(target_arch = "wasm32")]
 use std::io::Cursor;
 
 use crate::{
@@ -79,6 +81,7 @@ pub fn get_object_size(_object_index: u32) -> i64 {
 /// Auxiliary function to parse db_get return value.
 /// If either of these functions returns a negative integer error code,
 /// convert it into a [`ContractError`].
+#[cfg(target_arch = "wasm32")]
 pub(crate) fn parse_ret(ret: i64) -> GenericResult<Option<Vec<u8>>> {
     // Negative values represent an error code.
     if ret < 0 {
@@ -104,6 +107,7 @@ pub(crate) fn parse_ret(ret: i64) -> GenericResult<Option<Vec<u8>>> {
     Ok(Some(buf))
 }
 
+#[cfg(target_arch = "wasm32")]
 fn parse_retval_u32(ret: i64) -> GenericResult<u32> {
     if ret < 0 {
         return Err(ContractError::from(ret))
@@ -117,6 +121,7 @@ fn parse_retval_u32(ret: i64) -> GenericResult<u32> {
 /// Parse a non-negative i64 host return value as a BlockHeight
 /// (type-system.md §2.3: width conversions at FFI edges use `try_from`
 /// with an explicit error path; the lift is via the validating constructor).
+#[cfg(target_arch = "wasm32")]
 fn parse_retval_height(ret: i64) -> GenericResult<BlockHeight> {
     if ret < 0 {
         return Err(ContractError::from(ret))

@@ -168,16 +168,16 @@ pub async fn build_linear_coinbase(
     // same derived key. The wallet uses it to decrypt the coinbase note and
     // verify the nullifier. No randomness in the key path.
     // Per formal guardrail: CLAIM_COINBASE process, referential transparency.
-    let sk_H: SecretKey = recipient.secret().clone().into();
+    let sk_h: SecretKey = recipient.secret().clone().into();
     // Deterministic ephemeral key derived from sk_H — consensus-coinbase.md §2.7:
     // "no random keys." Domain-separated from the blind derivation domains.
     let ephemeral_secret = SecretKey::from(dwow_sdk::crypto::poseidon_hash([
-        sk_H.inner(),
+        sk_h.inner(),
         pallas::Base::from(0xE7E7_E7E7_E7E7_E7E7u64),
     ]));
 
     let debris = PoWRewardCallBuilder {
-        secret: sk_H,
+        secret: sk_h,
         ephemeral_signature_secret: ephemeral_secret,
         block_height: height,
         fees: 0,
@@ -231,7 +231,7 @@ pub async fn build_linear_coinbase(
     // the coinbase capability by publishing this nullifier.
     // V.7: single canonical path via Nullifier::new() — no bytes round-trip.
     let coin_fp = coin_commitment.inner();
-    let nullifier = Nullifier::new(sk_H, coin_fp);
+    let nullifier = Nullifier::new(sk_h, coin_fp);
 
     // Extract cumulative supply from ZK proof output (S_H = S_{H-1} + C_H).
     // These MUST match what the circuit constrains — [0u8; 32] would break
@@ -305,7 +305,7 @@ pub async fn build_linear_coinbase(
     // (PoWRewardCallBuilder, pow_reward_v1.rs:164-167). Exposed so tests can build
     // fee/burn call_data referencing coinbase coins without decrypting the AEAD note.
     let coin_blind = poseidon_hash([
-        sk_H.inner(),
+        sk_h.inner(),
         pallas::Base::from(height.get()),
         pallas::Base::from(3u64), // DOMAIN_COIN_BLIND
     ]);
@@ -369,9 +369,9 @@ pub fn build_fee_collect_tx(
         return Ok(None);
     }
 
-    let sk_H: SecretKey = recipient.secret().clone().into();
+    let sk_h: SecretKey = recipient.secret().clone().into();
     let debris = FeeCollectCallBuilder {
-        secret: sk_H,
+        secret: sk_h,
         block_height: height,
         total_fees,
         fee_collect_zkbin: (*linear_zk.fee_collect_zkbin).clone(),

@@ -43,7 +43,6 @@ use crate::{DwowNodePtr, Result, SYNC_CAUGHT_UP, SYNC_BEHIND, SYNC_SYNCING};
 const SESSION_DWOW_LINEAR_SYNC: u32 = 0;
 
 use crate::block_acceptor::accept_block;
-use dwow_chain::Miner;
 use dwow_sdk::blockchain::BlockHeight;
 
 /// Genesis hash validation strictness.
@@ -199,7 +198,7 @@ pub async fn consensus_linear_init_task(
 
         // Collect tips: (channel, height, genesis_hash)
         let mut peer_tips: Vec<(dwow_core::net::ChannelPtr, BlockHeight, Option<String>)> = Vec::new();
-        for (i, channel) in peers.iter().enumerate() {
+        for (_i, channel) in peers.iter().enumerate() {
             let sub_result = channel.subscribe_msg::<Tip>().await;
             let Ok(tip_sub) = sub_result else {
                 warn!(target: "dwowd::task::consensus_linear_init_task",

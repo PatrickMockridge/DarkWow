@@ -33,9 +33,7 @@
 //! For the coinbase, verification is *skipped* — coinbase soundness is
 //! transparent WASM re-execution of PoWRewardV1 (genesis.md, HAZOP F3).
 
-use std::io::Cursor;
 
-use crate::execution::TxBackend;
 use crate::Transaction as ChainTransaction;
 
 // ---------------------------------------------------------------------------

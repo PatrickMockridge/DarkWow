@@ -32,13 +32,12 @@
 
 use std::sync::Arc;
 
-use dwow_chain::{Block, CChainState, CumulativeSupplyEntry, UncleBlock};
+use dwow_chain::{Block, CChainState, UncleBlock};
 use dwow_core::Result;
 use dwow_sdk::blockchain::BlockHeight;
 
 use dwow_chain::execution::execute_block;
 use dwow_chain::proof_of_token_balance;
-use sled_overlay::SledTreeOverlay;
 
 /// Accept a fully-validated block into the chain.
 ///
@@ -76,7 +75,7 @@ pub fn accept_block(
     block: &Block,
     uncles: &[UncleBlock],
     vm: &Arc<randomx::RandomXVM>,
-    current_height: BlockHeight,
+    _current_height: BlockHeight,
     target: u32,
     fee_estimator: Option<&std::sync::Arc<dwow_chain::fee_estimator::FeeEstimator>>,
 ) -> Result<()> {

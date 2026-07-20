@@ -455,7 +455,7 @@ impl DwowNode {
         // Timestamp MUST match the mining blob that xmrig hashed.
         let template = self.mining_state.current_linear_template.lock().await.clone();
         let template_timestamp = template.as_ref().map(|t| t.timestamp).unwrap_or(now);
-        let (coinbase, pow_reward_call_data, coin_merkle_root, nullifier_root) = if let Some(ref tmpl) = template {
+        let (_coinbase, pow_reward_call_data, coin_merkle_root, nullifier_root) = if let Some(ref tmpl) = template {
             let call_data = tmpl.pow_reward_call_data.clone();
             if !tmpl.zk_proof.is_empty() {
                 let cb = dwow_chain::CoinbaseTransaction {

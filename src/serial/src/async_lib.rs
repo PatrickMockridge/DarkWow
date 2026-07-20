@@ -34,11 +34,11 @@ pub use futures_lite::{
 
 use crate::{endian, VarInt};
 
-/// Module-level thread-local recursion depth. With all `encode_async`
-/// implementations following the clean DAG (field-by-field or serde_json,
-/// never calling `serialize_async(self)`), depth should never exceed 1.
-/// Threshold of 4 catches any future Pattern C bugs (encode_async that
-/// calls serialize_async on itself).
+// Module-level thread-local recursion depth. With all `encode_async`
+// implementations following the clean DAG (field-by-field or serde_json,
+// never calling `serialize_async(self)`), depth should never exceed 1.
+// Threshold of 4 catches any future Pattern C bugs (encode_async that
+// calls serialize_async on itself).
 std::thread_local! {
     static SERIALIZE_DEPTH: std::cell::Cell<u32> = std::cell::Cell::new(0);
 }

@@ -26,7 +26,6 @@
 //! This handler provides function selectors for Native-Token.
 //! The function selectors match those defined in native_token/src/lib.rs:
 //! - FeeV1 = 0x00
-//! - MintV1 = 0x01
 //! - BurnV1 = 0x02
 //! - TransferV1 = 0x03
 //! - SpendV1 = 0x04
@@ -40,7 +39,6 @@ use crate::contract_registry::{ContractHandler, ContractHandlerError, HandlerRes
 
 /// Native-Token function selectors (matching native_token/src/lib.rs)
 const SELECTOR_FEE_V1: u8 = 0x00;
-const SELECTOR_MINT_V1: u8 = 0x01;
 const SELECTOR_BURN_V1: u8 = 0x02;
 const SELECTOR_TRANSFER_V1: u8 = 0x03;
 const SELECTOR_SPEND_V1: u8 = 0x04;

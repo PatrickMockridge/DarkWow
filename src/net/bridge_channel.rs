@@ -84,9 +84,8 @@ impl<B: ExhibitsBarb> Default for BarbWitness<B> {
 /// rejects code that attempts to route blockchain barbs through event-graph
 /// channels.
 pub struct BridgeChannel<T, B: ExhibitsBarb> {
-    tx: channel::Sender<(T, BarbWitness<B>)>,
-    rx: channel::Receiver<(T, BarbWitness<B>)>,
     _barb: PhantomData<B>,
+    _marker: PhantomData<T>,
 }
 
 impl<T: Send + 'static, B: ExhibitsBarb> BridgeChannel<T, B> {
@@ -201,6 +200,7 @@ mod tests {
 impl<T, B: ExhibitsBarb> BridgeChannel<T, B> {
     /// Return the barb set for messages on this channel.
     /// Used for documentation and runtime verification.
+    #[cfg(test)]
     fn new_channel_barbs() -> Vec<BarbId> {
         B::exhibited_barbs().to_vec()
     }

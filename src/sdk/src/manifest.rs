@@ -10,7 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use dwow_serial::{Decodable, Encodable};
+use dwow_serial::Decodable;
 
 use hex;
 

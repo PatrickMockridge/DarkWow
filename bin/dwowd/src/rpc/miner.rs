@@ -194,7 +194,7 @@ impl DwowNode {
             }
         };
 
-        let competing_originals = prep.competing_originals;
+        let _competing_originals =prep.competing_originals;
         let mut all_txs = prep.mempool_txs.clone();
         all_txs.insert(0, prep.coinbase_tx);
         // FeeCollectV1 closes the merkle tree — final transaction

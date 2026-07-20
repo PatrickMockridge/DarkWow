@@ -41,7 +41,7 @@
 // NOTE: CoinCommitment, CoinbaseTransaction, Nullifier, PedersenCoordinate,
 // TokenCommitment, Transaction, ZkPublicInputs are used in #[cfg(test)] below.
 // Keep them in scope for the test module.
-use crate::{Block, CoinCommitment, CoinbaseTransaction, ContractCall, Nullifier, PedersenCoordinate, TokenCommitment, Transaction, ZkPublicInputs};
+use crate::{Block, ContractCall};
 use dwow_native_token_contract::{
     model::{BurnParamsV1, FeeParamsV1, SpendParamsV1, TransferParamsV1},
     NativeTokenFunction,

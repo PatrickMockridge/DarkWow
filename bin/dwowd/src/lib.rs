@@ -81,7 +81,7 @@ use crate::registry::model::LinearMinerRewardsRecipientConfig;
 pub use dwow_accounts as accounts;
 // fee_estimator → dwow_chain::fee_estimator
 // mempool → dwow_mempool crate
-use dwow_mempool::{create_mempool, FeeExtractor, Mempool, MempoolPtr, MinerConfig, MinerMode};
+use dwow_mempool::{create_mempool, FeeExtractor, MempoolPtr, MinerConfig};
 
 /// NativeToken fee extraction — knows FeeV1 contract ID (selector 0x00) and
 /// PoWRewardV1 (selector 0x05). FeeV1 call data layout: [0x00][fee: u64 LE].
@@ -1089,9 +1089,8 @@ async fn prepare_block(
 // ---------------------------------------------------------------------------
 
 /// Internal mining task — loops indefinitely, mining blocks when sync is complete.
-async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()> {
-    use std::fs;
-    use dwow_chain::{Miner, UncleBlock};
+async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<()> {
+    use dwow_chain::Miner;
     use crate::proto::linear_broadcast::broadcast_block;
     use crate::registry::model::LinearPowRewardZk;
 
@@ -1231,7 +1230,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
 
         let uncles = prep.uncles;
         let competing_originals = prep.competing_originals;
-        let pow_reward_call = prep.pow_reward_call;
+        let _pow_reward_call = prep.pow_reward_call;
         let mempool_txs = prep.mempool_txs.clone(); // cloned for error recovery
         let mut all_txs = vec![prep.coinbase_tx];
         all_txs.extend(prep.mempool_txs); // original moved into all_txs
@@ -1347,12 +1346,6 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
 
         // Broadcast
         broadcast_block(&node.p2p_handler.p2p, mined_block).await;
-        // Dual-path DAG announce (§10.4) — the event-graph EventPut
-        // travels alongside the flood for block dissemination.
-        #[cfg(feature = "event-graph")]
-        if let Some(ref eg) = node.p2p_handler.event_graph {
-            crate::proto::linear_broadcast::dag_announce_block(eg, &mined_block).await;
-        }
 
         // Rate-limit: wait for min_block_interval before next block
         let min_interval = node.min_block_interval;

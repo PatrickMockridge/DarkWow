@@ -22,6 +22,7 @@
  */
 
 
+#[cfg(target_arch = "wasm32")]
 use dwow_serial::{Decodable, Encodable};
 
 use crate::{

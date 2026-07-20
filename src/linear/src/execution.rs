@@ -260,7 +260,6 @@ pub fn execute_block(
     // Uncle call results — canonical calls execute strictly and never
     // produce a tolerated-failure result.
     struct CallResult {
-        tx_hash: Blake3Hash,
         success: bool,
         gas: u64,
         diff: Option<SledTreeOverlayStateDiff>,
@@ -331,7 +330,7 @@ pub fn execute_block(
                         hex::encode(tx_hash.as_bytes()), e,
                     )));
                 }
-                uncle_results.push(CallResult { tx_hash, success: false, gas: 0, diff: None });
+                uncle_results.push(CallResult { success: false, gas: 0, diff: None });
                 continue;
             }
         };
@@ -397,7 +396,7 @@ pub fn execute_block(
                     fail_stage, hex::encode(tx_hash.as_bytes()), job.contract_id,
                 )));
             }
-            uncle_results.push(CallResult { tx_hash, success: false, gas: 0, diff: None });
+            uncle_results.push(CallResult { success: false, gas: 0, diff: None });
             continue;
         }
 
@@ -425,7 +424,7 @@ pub fn execute_block(
                 &contracts_tree,
                 &backend.overlay.lock().unwrap_or_else(|e| e.into_inner()).state,
             ).ok();
-            uncle_results.push(CallResult { tx_hash, success: true, gas, diff });
+            uncle_results.push(CallResult { success: true, gas, diff });
         }
 
         // Deployooor post-processing

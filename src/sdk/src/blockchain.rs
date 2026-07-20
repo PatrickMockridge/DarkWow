@@ -388,10 +388,10 @@ pub fn coinbase_blind(prev_coin: &[u8; 32], height: BlockHeight) -> pallas::Scal
 pub fn verify_cumulative_supply(
     cumulative_commits: &[(BlockHeight, pallas::Point)],  // (height, S_H) pairs
 ) -> bool {
-    use crate::crypto::{pedersen_commitment_u64, ScalarBlind, Blind};
+    use crate::crypto::{pedersen_commitment_u64, Blind};
 
     let mut expected = pallas::Point::identity();
-    let mut prev_coin = [0u8; 32]; // genesis: zero
+    let prev_coin = [0u8; 32]; // genesis: zero
     let mut expected_height = BlockHeight::GENESIS;
 
     for (height, commit) in cumulative_commits {

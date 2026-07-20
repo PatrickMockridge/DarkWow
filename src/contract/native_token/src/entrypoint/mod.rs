@@ -45,16 +45,15 @@
 
 use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
-    blockchain::{expected_reward, reward, BlockHeight},
+    blockchain::{expected_reward, BlockHeight},
     crypto::{
         pasta_prelude::{Curve, CurveAffine, Field, Group, PrimeField}, pedersen_commitment_u64,
         smt::{wasmdb::SmtWasmFp, PoseidonFp, EMPTY_NODES_FP}, ContractId, MerkleNode, MerkleTree,
     },
-    dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
     pasta::pallas,
-    wasm, ContractCall,
+    wasm,
 };
 use dwow_serial::{deserialize, serialize, Encodable, WriteExt};
 

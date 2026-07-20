@@ -36,7 +36,7 @@
 //!   )
 //! ```
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// Key identifier for sled tree writes. A key is a `(tree_name, key_bytes)` pair.
 pub type SledKey = Vec<u8>;
