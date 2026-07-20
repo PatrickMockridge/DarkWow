@@ -59,7 +59,7 @@ pub use block::{
 };
 pub use chain_state::{BlockConnectOutcome, CChainState};
 pub use consensus::{PoWConfig, PoWConsensus};
-pub use error::LinearError;
+pub use error::{ConsensusPhase, LinearError};
 pub use finality::{FinalityConfig, FinalityMode};
 pub use miner::Miner;
 pub use monero::{get_block_by_height, get_block_count, verify_monero_anchor, MonerodError, MoneroVerifyError};

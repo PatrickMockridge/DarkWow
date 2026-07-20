@@ -119,33 +119,73 @@ pub enum LinearError {
     LockPoisoned(String),
 }
 
+/// Validation phase during which an error was detected.
+/// Maps 1:1 to the 7+1 phases in consensus.md:464-505 and type-system.md §4.1.
+/// Each phase implies a specific recovery strategy — callers match on
+/// `err.consensus_phase()` instead of string-matching on error barbs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConsensusPhase {
+    /// Phase 0 — Structural validation (validate_block_structure).
+    /// Recovery: reject block.
+    Phase0Structural,
+    /// Phase 1 — PoW verification.
+    /// Recovery: reject block.
+    Phase1PoW,
+    /// Phase 2 — Chain continuity (height, previous hash).
+    /// Recovery: reject block.
+    Phase2Continuity,
+    /// Phase 3 — Nullifier + ZK proof verification.
+    /// Recovery: reject block, ban peer (↓bad-nullifier).
+    Phase3Nullifier,
+    /// Phase 4 — WASM execution.
+    /// Recovery: reject block.
+    Phase4Execution,
+    /// Phase 5 — Transaction validation.
+    /// Recovery: reject block.
+    Phase5Transactions,
+    /// Phase 6 — Nullifier SMT update.
+    /// Recovery: reject block.
+    Phase6NullifierSMT,
+    /// Phase 7 — Atomic commit (sled write).
+    /// Recovery: fatal — restart node (↓db-fail).
+    Phase7Commit,
+}
+
 impl LinearError {
-    /// Map each error variant to its type-system.md §4 error barb.
-    /// This provides a structured error classification that callers can
-    /// use for logging, metrics, and decision-making without parsing
-    /// human-readable error strings.
-    pub fn error_barb(&self) -> &'static str {
+    /// Map each error variant to the validation phase at which it was
+    /// detected. Replaces the string-returning `error_barb()` with a
+    /// typed enum — callers match on `err.consensus_phase()` for
+    /// recovery strategy dispatch without string matching.
+    pub fn consensus_phase(&self) -> ConsensusPhase {
         match self {
-            // ↓bad-proof — proof/structure/signature failures
+            // Phase 0 — Structural
+            LinearError::BlockStructure(..) => ConsensusPhase::Phase0Structural,
+
+            // Phase 1 — PoW
             LinearError::InvalidPoW(..)
-            | LinearError::InvalidTarget { .. }
-            | LinearError::HeightDiscontinuity { .. }
+            | LinearError::UnclePoWInvalid(..)
+            | LinearError::DifficultyNotMet => ConsensusPhase::Phase1PoW,
+
+            // Phase 2 — Chain continuity
+            LinearError::HeightDiscontinuity { .. }
             | LinearError::InvalidPreviousHash(..)
             | LinearError::MerkleRootMismatch(..)
-            | LinearError::BlockStructure(..)
-            | LinearError::UnclePoWInvalid(..)
+            | LinearError::InvalidTarget { .. }
+            | LinearError::UncleMerkleRootMismatch(..)
             | LinearError::UncleProofInvalid(..)
             | LinearError::TooManyUncles { .. }
-            | LinearError::UncleMerkleRootMismatch(..)
             | LinearError::UncleTooOld { .. }
             | LinearError::InvalidTimestamp { .. }
-            | LinearError::DifficultyNotMet
-            | LinearError::InvalidGenesis => "↓bad-proof",
+            | LinearError::InvalidGenesis => ConsensusPhase::Phase2Continuity,
 
-            // ↓bad-nullifier — duplicate/conflict nullifier
-            LinearError::DuplicateUncle(..) => "↓bad-nullifier",
+            // Phase 3 — Nullifier + ZK
+            LinearError::DuplicateUncle(..)
+            | LinearError::AnchoredBlockConflict => ConsensusPhase::Phase3Nullifier,
 
-            // ↓db-fail — storage/infrastructure failures
+            // Phase 4 — WASM execution
+            | LinearError::BlockIsInvalid(..) => ConsensusPhase::Phase4Execution,
+
+            // Phase 7 — Atomic commit / storage
             LinearError::BlockNotFound(..)
             | LinearError::TransactionNotFound(..)
             | LinearError::StorageError(..)
@@ -154,16 +194,8 @@ impl LinearError {
             | LinearError::LockPoisoned(..)
             | LinearError::MoneroMergeMineError(..)
             | LinearError::MoneroHashingError(..)
-            | LinearError::MoneroNumberOfChainZero => "↓db-fail",
-
-            // ↓double-spend — block-level conflict (anchored block replacement)
-            LinearError::AnchoredBlockConflict => "↓double-spend",
-
-            // Generic invalid block — could be any of the above, default to ↓bad-proof
-            LinearError::BlockIsInvalid(..) => "↓bad-proof",
-
-            // Genesis already exists — configuration error, not runtime
-            LinearError::GenesisExists => "↓db-fail",
+            | LinearError::MoneroNumberOfChainZero
+            | LinearError::GenesisExists => ConsensusPhase::Phase7Commit,
         }
     }
 }
