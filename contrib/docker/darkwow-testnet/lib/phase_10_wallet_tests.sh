@@ -145,17 +145,6 @@ phase_wallet_verify() {
     for wallet_idx in $(seq 1 "${WITH_WALLET:-1}"); do
     info "Phase 10: Verifying wallet container dwow-wallet-${wallet_idx}..."
 
-    # 0. Verify node0 has produced blocks. If the chain is empty, no wallet
-    #    can sync — warn and skip (not a failure, chain may still be booting).
-    if [ "$wallet_idx" -eq 1 ]; then
-        local node0_height
-        node0_height=$(jsonrpc_get_block "$NODE0" "31345" "2" 2>/dev/null | jq -r '.result | fromjson | .header.height // 0' 2>/dev/null || echo 0)
-        if [ "${node0_height:-0}" -eq 0 ]; then
-            warn "node0 has not produced block 2 yet — chain may still be booting, wallet cannot sync"
-            return 0
-        fi
-    fi
-
     # 1. Wallet sync gate: poll wallet-1 until it has synced at least
     #    one block. After Phase 9 confirmed blocks exist, wallet sync
     #    should complete within a few minutes (wallet daemon startup +

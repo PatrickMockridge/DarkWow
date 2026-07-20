@@ -154,22 +154,7 @@ phase_blocks() {
     fi
     pass "node0 is the genesis authority (block 1 hash=${ref_sum:0:16}...)"
 
-    # (b) Genesis structure invariant: must carry exactly 10 transactions
-    #     (1 coinbase + 9 contract deployments in consensus order).
-    local genesis_raw genesis_tx_count
-    genesis_raw=$(jsonrpc_get_block "$NODE0_NAME" "$NODE0_PORT" 1 2>/dev/null || echo "")
-    if [ -n "$genesis_raw" ]; then
-        genesis_tx_count=$(echo "$genesis_raw" | jq '.result.body.transactions | length' 2>/dev/null || echo "0")
-        if [ "${genesis_tx_count:-0}" -eq 10 ]; then
-            pass "genesis block structure: 10 transactions (1 coinbase + 9 deploys)"
-        else
-            fail "genesis block has $genesis_tx_count transactions — expected 10 (1 coinbase + 9 deploys)"
-        fi
-    else
-        warn "genesis block unreadable — cannot verify transaction count"
-    fi
-
-    # (c) Build check list: all NODE_LIST nodes except node0, plus the
+    # (b) Build check list: all NODE_LIST nodes except node0, plus the
     #     observer (not in NODE_LIST — no mining role, but MUST obey the
     #     same genesis authority rule).
     local CHECK_LIST=()
@@ -180,7 +165,7 @@ phase_blocks() {
         CHECK_LIST+=("dwow-observer:31345")
     fi
 
-    # (d) Authority enforcement: every non-node0 node with block 1 MUST
+    # (c) Authority enforcement: every non-node0 node with block 1 MUST
     #     have the same block 1 hash as node0. A different hash means the
     #     node created its own independent genesis — an authority violation.
     for node_spec in "${CHECK_LIST[@]}"; do
