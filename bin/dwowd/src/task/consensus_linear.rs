@@ -37,11 +37,6 @@ use tracing::{error, info, warn};
 use crate::proto::linear_sync::{Blocks, GetBlocks, GetTip, Tip, LINEAR_SYNC_BATCH};
 use crate::{DwowNodePtr, Result, SyncState};
 
-/// Session type ID for the linear sync protocol.
-/// Must match the registration order in the protocol handler.
-/// HAZOP F5: previously used but never defined — pre-existing compilation error.
-const SESSION_DWOW_LINEAR_SYNC: u32 = 0;
-
 use crate::block_acceptor::accept_block;
 use dwow_sdk::blockchain::BlockHeight;
 
@@ -562,14 +557,16 @@ pub async fn consensus_linear_init_task(
         // a long sync. Re-query tips to get fresh heights.
         let refreshed_peers: Vec<_> = p2p.hosts().peers();
         let mut fresh_max_peer_height: BlockHeight = BlockHeight::new(0);
+        let mut refresh_count: usize = 0;
         for p in &refreshed_peers {
             let session = p.session_type_id();
             let addr = p.address().as_str();
-            if session == SESSION_DWOW_LINEAR_SYNC && !addr.contains("seed") {
+            if session & SESSION_DEFAULT != 0 && !addr.contains("seed") {
                 // Reuse the existing Tip query pattern from the sync start block
                 if let Ok(tip_sub) = p.subscribe_msg::<Tip>().await {
                     match tip_sub.receive().await {
                         Ok(tip) => {
+                            refresh_count += 1;
                             if tip.height > fresh_max_peer_height {
                                 fresh_max_peer_height = tip.height;
                             }
@@ -579,6 +576,9 @@ pub async fn consensus_linear_init_task(
                 }
             }
         }
+        debug!(target: "dwowd::task::consensus_linear_init_task",
+            "Peer-height refresh: queried {} peers, {} matched SESSION_DEFAULT",
+            refreshed_peers.len(), refresh_count);
         if fresh_max_peer_height > BlockHeight::new(0) && fresh_max_peer_height > max_peer_height {
             info!(target: "dwowd::task::consensus_linear_init_task",
                 "Peer tip advanced during sync: {} -> {} (refreshed)",

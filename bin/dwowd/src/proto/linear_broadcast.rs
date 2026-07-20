@@ -413,21 +413,22 @@ async fn handle_receive_block(
                     // for uncle rewards only. No chain reorganization occurs.
                     let _ = blockchain; // suppress unused warning
                 }
+                // Relay block to all peers — relay nodes amplify network
+                // propagation. Only relay on successful validation; invalid
+                // blocks are dropped silently. A false-negative (rejecting a
+                // valid block due to local state corruption) is self-correcting
+                // because other honest peers relay the block independently.
+                p2p.broadcast(&msg).await;
             }
             Err(e) => {
                 tracing::warn!(
                     target: "dwowd::proto::linear_broadcast",
-                    "Failed to apply block at height {} from P2P: {e}",
+                    "Failed to apply block at height {} from P2P: {e} — NOT relaying",
                     msg.block.header.height
                 );
             }
         }
 
-        // Relay block to all peers — relay nodes amplify network propagation.
-        // Height-gap rejection in handle_receive_block (C4 fix) means peers
-        // ahead of this block silently skip it. The sender is included in
-        // the broadcast but will also skip (already has the block).
-        p2p.broadcast(&msg).await;
         handler.send_action(channel, ProtocolGenericAction::Skip).await;
     }
 }

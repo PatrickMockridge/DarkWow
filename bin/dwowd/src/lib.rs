@@ -1031,7 +1031,7 @@ async fn prepare_block(
     use dwow_chain::UncleBlock;
 
     // 1. Build ZK coinbase FIRST — fallible operation (ZK proof generation).
-    //    Must succeed before any destructive state mutation (take_competing_blocks).
+    //    No destructive state mutation yet.
     //    Clone: `recipient` is used again in step 6 (build_fee_collect_tx —
     //    same sk_H for coinbase and fee collection, spec §3.2).
     let (_, _, pow_reward_call, _coin_blind) = build_linear_coinbase(
@@ -1041,8 +1041,50 @@ async fn prepare_block(
         height,
     ).await?;
 
-    // 2. Collect uncles with correct pin rewards (create_uncle).
-    //    Only AFTER the fallible coinbase build succeeds — validate-then-mutate.
+    // 2. Select mempool transactions (infallible)
+    let mempool_txs = if let Some(m) = mempool {
+        m.select_for_block(&mining_state.miner_config).await
+    } else {
+        Vec::new()
+    };
+
+    // 3. Filter immature coinbase spends (soft gate, infallible)
+    let mempool_txs: Vec<_> = mempool_txs.into_iter().filter(|tx| {
+        if tx.contract_calls.first().map_or(false, |c| c.data.first() == Some(&0x05)) { return true; }
+        for nullifier in &tx.nullifiers {
+            if let Some(nf_height) = chain_state.nullifier_height(nullifier) {
+                if height.saturating_sub(nf_height) < dwow_chain::COINBASE_MATURITY {
+                    return false;
+                }
+            }
+        }
+        true
+    }).collect();
+
+    // 4. Assemble coinbase transaction (infallible)
+    let coinbase_tx = dwow_chain::Transaction {
+        version: 1,
+        inputs: vec![],
+        outputs: vec![],
+        contract_calls: vec![pow_reward_call.clone()],
+        lock_time: 0,
+        ..Default::default()
+    };
+
+    // 5. Build FeeCollectV1 — the "collection plate" as final transaction
+    //    (consensus-coinbase.md §3.12). Fallible but no destructive mutation
+    //    yet — competing blocks still safe in chain_state.
+    let fee_collect_tx = crate::registry::model::build_fee_collect_tx(
+        &recipient,
+        &mempool_txs,
+        height,
+        linear_zk,
+    )?;
+
+    // 6. Collect uncles with correct pin rewards — the LAST step.
+    //    take_competing_blocks is DESTRUCTIVE. All fallible operations
+    //    (coinbase build, fee_collect_tx) MUST succeed before this point.
+    //    If any prior step fails, competing blocks remain in chain_state.
     let latest_height = chain_state.get_height();
     let competing_originals: Vec<dwow_chain::Block> =
         chain_state.take_competing_blocks(latest_height);
@@ -1057,55 +1099,6 @@ async fn prepare_block(
         info!(target: "dwowd::prepare_block",
             "Including {} uncles at height {}", uncles.len(), height);
     }
-
-    // 3. Select mempool transactions
-    let mempool_txs = if let Some(m) = mempool {
-        m.select_for_block(&mining_state.miner_config).await
-    } else {
-        Vec::new()
-    };
-
-    // 4. Filter immature coinbase spends (soft gate)
-    let mempool_txs: Vec<_> = mempool_txs.into_iter().filter(|tx| {
-        // Coinbase detected via PoWRewardV1 call (0x05) — always allow coinbase txs
-        if tx.contract_calls.first().map_or(false, |c| c.data.first() == Some(&0x05)) { return true; }
-        for nullifier in &tx.nullifiers {
-            // Phase X: typed nullifier height check via public API.
-            // Previously used is_coin_mature(&nullifier.to_bytes()) — but nullifier
-            // bytes ≠ coin commitment bytes, so the lookup always returned false.
-            if let Some(nf_height) = chain_state.nullifier_height(nullifier) {
-                if height.saturating_sub(nf_height) < dwow_chain::COINBASE_MATURITY {
-                    return false;
-                }
-            }
-        }
-        true
-    }).collect();
-
-    // 5. Assemble coinbase transaction
-    let coinbase_tx = dwow_chain::Transaction {
-        version: 1,
-        inputs: vec![],
-        outputs: vec![],
-        contract_calls: vec![pow_reward_call.clone()],
-        lock_time: 0,
-        ..Default::default()
-    };
-
-    // 6. Build FeeCollectV1 — the "collection plate" as final transaction
-    //    (consensus-coinbase.md §3.12). Single source of truth:
-    //    registry::model::build_fee_collect_tx, shared with the stratum and
-    //    mm_rpc template paths. Uses the same sk_H as the coinbase.
-    //    Deterministic: every validator re-executing this block produces
-    //    identical fee coin, nullifier, and merkle tree. A build failure with
-    //    non-zero fees fails block preparation (spec §3.1 — never silently
-    //    omit fee collection).
-    let fee_collect_tx = crate::registry::model::build_fee_collect_tx(
-        &recipient,
-        &mempool_txs,
-        height,
-        linear_zk,
-    )?;
 
     Ok(PreparedBlock {
         uncles, pow_reward_call,
@@ -1296,6 +1289,14 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
             Ok(b) => b,
             Err(e) => {
                 error!(target: "dwowd::miner_task", "Mining failed: {}", e);
+                // Re-insert competing blocks that were destructively consumed
+                // by take_competing_blocks() during prepare_block.
+                if !competing_originals.is_empty() {
+                    info!(target: "dwowd::miner_task",
+                        "Re-inserting {} competing blocks after mining failure",
+                        competing_originals.len());
+                    chain_state.put_competing_blocks(height, competing_originals);
+                }
                 // Re-insert mempool txs — they were consumed by all_txs above.
                 // Matches miner_mine_linear recovery pattern (rpc/miner.rs:206-218).
                 if let Some(ref mp) = node.mempool {
@@ -1311,7 +1312,14 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         // Check again after mining — peer may have sent a block while we hashed
         if chain_state.get_height() >= height {
             info!(target: "dwowd::miner_task",
-                "Peer block arrived at height {} during mining — discarding ours", height);
+                "Peer block arrived at height {} during mining — discarding ours and re-inserting mempool txs", height);
+            // Re-insert mempool transactions — they were consumed into all_txs
+            // at block assembly. The pre-mining race path (above) does the same.
+            if let Some(ref mp) = node.mempool {
+                for tx in &mempool_txs {
+                    let _ = mp.add(tx.clone()).await;
+                }
+            }
             smol::Timer::after(std::time::Duration::from_secs(1)).await;
             continue;
         }
