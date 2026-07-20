@@ -1050,7 +1050,7 @@ async fn prepare_block(
         competing_originals.iter().map(|block| {
             let depth = height.saturating_sub(block.header.height)
                 .min(dwow_chain::MAX_UNCLE_DEPTH as u64) as u8;
-            dwow_chain::create_uncle(block.clone(), depth, base_reward.get())
+            dwow_chain::create_uncle(block.clone(), depth, base_reward)
         }).collect()
     };
     if !uncles.is_empty() {

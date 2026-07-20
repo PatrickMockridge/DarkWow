@@ -152,7 +152,7 @@ pub fn build_test_block(
 }
 
 /// Build an uncle block from a non-canonical block.
-pub fn build_test_uncle(block: Block, depth: u8, base_reward: u64) -> UncleBlock {
+pub fn build_test_uncle(block: Block, depth: u8, base_reward: BlockReward) -> UncleBlock {
     create_uncle(block, depth, base_reward)
 }
 

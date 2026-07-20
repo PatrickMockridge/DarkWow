@@ -274,8 +274,8 @@ mod tests {
             assert_eq!(block2.header.nonce, 0, "AC8: nonce");
 
             // AC9: target == u32::MAX
-            assert_eq!(block1.header.target, u32::MAX, "AC9: target");
-            assert_eq!(block2.header.target, u32::MAX, "AC9: target");
+            assert_eq!(block1.header.target, BlockTarget::MAX, "AC9: target");
+            assert_eq!(block2.header.target, BlockTarget::MAX, "AC9: target");
 
             // AC2: cumulative supply at height 1 (MoC gap fill)
             let sc1 = har1.chain_state.supply_chain.get(BlockHeight::new(1))

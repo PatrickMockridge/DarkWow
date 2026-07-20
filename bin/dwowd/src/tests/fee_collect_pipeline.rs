@@ -81,7 +81,7 @@ fn build_block_header(
         previous: prev_hash,
         merkle_root,
         timestamp: 120 * height.get(), // deterministic per height
-        target: u32::MAX,
+        target: BlockTarget::MAX,
         nonce: 0,
         height,
         uncle_merkle_root: [0u8; 32],
