@@ -39,12 +39,20 @@ mod protocol_tx;
 pub use protocol_tx::{ProtocolTxHandler, ProtocolTxHandlerPtr};
 
 /// Linear blockchain sync protocol
-pub(crate) mod linear_sync;
+pub mod linear_sync;
 pub use linear_sync::{LinearSyncHandler, LinearSyncHandlerPtr};
 
 /// Linear blockchain block broadcast protocol
 pub mod linear_broadcast;
 pub use linear_broadcast::{LinearBroadcastHandler, LinearBroadcastHandlerPtr};
+
+/// Linear blockchain sync client protocol (requester side — net-node tier)
+///
+/// `LinearSyncHandler` serves GetTip/GetBlocks requests FROM peers.
+/// This module provides the CLIENT side: it requests tips and blocks
+/// FROM peers and returns typed results. Consensus code never touches
+/// raw P2P primitives.
+pub mod linear_sync_client;
 
 /// Atomic pointer to the Dwowd P2P protocols handler.
 pub type DwowP2pHandlerPtr = Arc<DwowP2pHandler>;

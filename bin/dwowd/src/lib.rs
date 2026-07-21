@@ -30,7 +30,7 @@ use std::{
 };
 
 use smol::lock::Mutex;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use dwow_core::{
     blockchain::HeaderHash,
@@ -67,11 +67,11 @@ pub mod task;
 use task::{consensus_linear_init_task, ConsensusInitTaskConfig};
 
 /// P2P net protocols
-mod proto;
+pub mod proto;
 use proto::{DwowP2pHandler, DwowP2pHandlerPtr};
 
 /// Miners registry
-mod registry;
+pub mod registry;
 use registry::{DwowMinersRegistry, DwowMinersRegistryPtr};
 use crate::registry::model::{LinearMinerRewardsRecipientConfig, RequiredLinearZk};
 
@@ -127,7 +127,7 @@ pub type DwowNodePtr = Arc<DwowNode>;
 
 /// Typed sync state machine — replaces raw u8 constants.
 ///
-/// Four states with invalid state transitions enforced at the accessor level.
+/// Five states with invalid state transitions enforced at the accessor level.
 /// Storage is `AtomicU8` for lock-free reads from hot paths (miner_task,
 /// stratum, RPC); writes go through `MiningState::set_sync_state` which logs
 /// the transition.
@@ -138,10 +138,11 @@ pub type DwowNodePtr = Arc<DwowNode>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SyncState {
-    Initial = 0,   // Before first sync attempt
-    Syncing = 1,   // Actively pulling blocks from peers
-    CaughtUp = 2,  // Within range of tip — miner may mine
-    Behind = 3,    // Detected behind peers — miner paused
+    Initial = 0,            // Before first sync attempt
+    Syncing = 1,            // Actively pulling blocks from peers
+    CaughtUp = 2,           // Within range of tip — miner may mine
+    Behind = 3,             // Detected behind peers — miner paused
+    WaitingForGenesis = 4,  // Height 0, no peers, no genesis anywhere — mining impossible
 }
 
 impl SyncState {
@@ -152,6 +153,7 @@ impl SyncState {
             1 => Self::Syncing,
             2 => Self::CaughtUp,
             3 => Self::Behind,
+            4 => Self::WaitingForGenesis,
             n => {
                 tracing::error!("corrupt sync_state value {} — falling back to Behind", n);
                 Self::Behind
@@ -888,6 +890,10 @@ impl Dwowd {
                     Ok(()) | Err(Error::ConsensusTaskStopped) | Err(Error::MinerTaskStopped) => { /* Do nothing */ }
                     Err(e) => {
                         error!(target: "dwowd::Dwowd::start", "Consensus initialization task failed: {e}");
+                        error!(target: "dwowd::Dwowd::start",
+                            "CONSENSUS TASK CRASHED — sync_state set to Behind. \
+                             Mining is permanently disabled until node restart. \
+                             This is a terminal error; the node cannot self-recover.");
                         // HAZOP F5: consensus task failure must pause the miner.
                         // Without this, the miner continues with stale state.
                         node.mining_state.sync_state.store(SyncState::Behind as u8, Ordering::SeqCst);
@@ -1126,26 +1132,66 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
     // Bitcoin production pattern: mining before sync produces orphan blocks.
     // Sync robustness (skip bad blocks, verify catch-up, continuous re-poll)
     // ensures this gate is reached reliably even with flaky peers.
+    let mut wait_count = 0u32;
+    const STARTUP_TIMEOUT: u32 = 600; // 10 minutes
     while SyncState::load(&node.mining_state.sync_state) != SyncState::CaughtUp {
+        if wait_count % 30 == 0 {
+            let state = SyncState::load(&node.mining_state.sync_state);
+            if state == SyncState::WaitingForGenesis {
+                info!(target: "dwowd::miner_task",
+                    "Waiting for genesis block — no genesis exists locally or on peers ({}s elapsed)",
+                    wait_count);
+            } else {
+                info!(target: "dwowd::miner_task",
+                    "Waiting for CaughtUp — current sync_state={:?} ({}s elapsed)",
+                    state, wait_count);
+            }
+        }
+        if wait_count == STARTUP_TIMEOUT {
+            error!(target: "dwowd::miner_task",
+                "MINER STARTUP TIMEOUT: sync_state still {:?} after {}s. \
+                 Consensus task may be deadlocked or stuck. \
+                 Check consensus_linear_init_task logs.",
+                SyncState::load(&node.mining_state.sync_state), wait_count);
+        }
         smol::Timer::after(std::time::Duration::from_secs(1)).await;
+        wait_count += 1;
     }
-    info!(target: "dwowd::miner_task", "Sync caught up, starting mining loop");
+    info!(target: "dwowd::miner_task",
+        "Sync caught up after {}s, starting mining loop", wait_count);
 
     // Mining loop — re-checks sync_state each iteration.
     // The consensus init task may set sync_state=Behind if the node
     // falls behind peers during the continuous sync cycle.
+    let mut last_logged_sync_state = SyncState::CaughtUp;
     loop {
         // Re-check sync before each mining attempt.
         // Avoids mining at a stale height when peers have advanced.
         let state = SyncState::load(&node.mining_state.sync_state);
         if state != SyncState::CaughtUp {
+            // HAZOP H1: log state transitions — NOT every 1s spin.
+            // Operator sees WHY mining stopped without log-spam.
+            if last_logged_sync_state != state {
+                warn!(target: "dwowd::miner_task",
+                    "Mining paused: sync_state={:?} (was {:?}, now waiting for CaughtUp)",
+                    state, last_logged_sync_state);
+                last_logged_sync_state = state;
+            }
             smol::Timer::after(std::time::Duration::from_secs(1)).await;
             continue;
+        }
+        // Reset tracking when back to CaughtUp
+        if last_logged_sync_state != SyncState::CaughtUp {
+            info!(target: "dwowd::miner_task",
+                "Mining resumed: sync_state={:?} — miner re-enabled", state);
+            last_logged_sync_state = SyncState::CaughtUp;
         }
 
         let chain_state = match &node.chain_state {
             Some(cs) => cs.clone(),
             None => {
+                error!(target: "dwowd::miner_task",
+                    "chain_state is None — mining cannot proceed. Node may be misconfigured.");
                 smol::Timer::after(std::time::Duration::from_secs(5)).await;
                 continue;
             }
@@ -1203,7 +1249,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         // Chain-derived target: matches Python model's get_next_work_required.
         // Reads timestamps from canonical chain blocks, not accumulator.
         let target = {
-            let consensus = chain_state.consensus.lock().unwrap();
+            let consensus = chain_state.consensus.lock().unwrap_or_else(|e| e.into_inner());
             consensus.get_next_work_required(&chain_state.store, height)
         };
 
@@ -1215,10 +1261,16 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         let linear_zk = {
             let mut zk_lock = node.mining_state.linear_zk.lock().await;
             if zk_lock.is_none() {
+                info!(target: "dwowd::miner_task",
+                    "Starting ZK keygen for block {} — this may take several minutes...", height);
                 match LinearPowRewardZk::new(chain_state.clone()).await {
-                    Ok(zk) => *zk_lock = Some(RequiredLinearZk::new(Some(zk))),
+                    Ok(zk) => {
+                        *zk_lock = Some(RequiredLinearZk::new(Some(zk)));
+                        info!(target: "dwowd::miner_task",
+                            "ZK materials ready for block {}", height);
+                    }
                     Err(e) => {
-                        error!(target: "dwowd::miner_task", "ZK init failed: {}", e);
+                        error!(target: "dwowd::miner_task", "ZK init failed for block {}: {}", height, e);
                         smol::Timer::after(std::time::Duration::from_secs(2)).await;
                         continue;
                     }
@@ -1258,6 +1310,9 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         let competing_originals = prep.competing_originals;
         let _pow_reward_call = prep.pow_reward_call;
         let mempool_txs = prep.mempool_txs.clone(); // cloned for error recovery
+        info!(target: "dwowd::miner_task",
+            "Block {} assembly complete ({} mempool txs, {} uncles)",
+            height, mempool_txs.len(), uncles.len());
         let mut all_txs = vec![prep.coinbase_tx];
         all_txs.extend(prep.mempool_txs); // original moved into all_txs
         // FeeCollectV1 closes the merkle tree — final transaction (spec §3.1).
@@ -1283,10 +1338,17 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         }
 
         // Mine
+        info!(target: "dwowd::miner_task",
+            "Beginning RandomX mining for block {} (target={:#010x}, {} txs)",
+            height, target, all_txs.len());
         let miner_consensus = dwow_chain::PoWConsensus::new(120, target, 1, u32::MAX);
         let miner = Miner::new(std::sync::Arc::new(miner_consensus));
         let mined_block = match miner.mine(&vm, previous, height, all_txs, BlockTarget::new(target), &uncles) {
-            Ok(b) => b,
+            Ok(b) => {
+                info!(target: "dwowd::miner_task",
+                    "Block {} mined with nonce {}", height, b.header.nonce);
+                b
+            }
             Err(e) => {
                 error!(target: "dwowd::miner_task", "Mining failed: {}", e);
                 // Re-insert competing blocks that were destructively consumed
@@ -1401,6 +1463,12 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         }
 
         // Broadcast
+        let peer_count = node.p2p_handler.p2p.hosts().peers().len();
+        if peer_count == 0 {
+            warn!(target: "dwowd::miner_task",
+                "Block {} mined but ZERO peers connected — block will not reach network until peers connect",
+                height);
+        }
         broadcast_block(&node.p2p_handler.p2p, mined_block).await;
 
         // Rate-limit: wait for min_block_interval before next block
@@ -1408,7 +1476,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         let last = node.mining_state.last_block_time.load(std::sync::atomic::Ordering::SeqCst);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
         let elapsed = now.saturating_sub(last);
         if elapsed < min_interval {

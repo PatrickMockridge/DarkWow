@@ -276,7 +276,11 @@ impl AsyncDecodable for Tip {
 const MAX_SMALL_JSON_BYTES: u64 = 256;
 
 macro_rules! sync_barb_decl {
-    () => { &[dwow_core::net::barb_trait::BarbId::Verify] };
+    () => { &[
+        dwow_core::net::barb_trait::BarbId::Verify,
+        dwow_core::net::barb_trait::BarbId::SyncBarrier,
+        dwow_core::net::barb_trait::BarbId::GossipForward,
+    ] };
 }
 impl_p2p_message!(GetBlocks, "lineargetblocks", MAX_SMALL_JSON_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION,
     sync_barb_decl!());

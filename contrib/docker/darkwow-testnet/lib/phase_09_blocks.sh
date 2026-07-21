@@ -88,6 +88,15 @@ phase_blocks() {
         poll=$((poll + 1))
         if [ "$poll" -lt "$SYNC_MAX_POLLS" ]; then
             info "  node0 height=$n0_height — waiting for block 2 (poll $poll/$SYNC_MAX_POLLS, ${SYNC_INTERVAL}s)..."
+            # Periodic diagnostic (every 12 polls = 2 minutes): show recent
+            # miner/sync activity so operators can see WHAT the node is doing,
+            # not just its height. Distinguishes between ZK keygen, CaughtUp
+            # wait, and actual mining.
+            if [ $((poll % 12)) -eq 0 ]; then
+                info "  ── node0 diagnostic (poll $poll, elapsed $((poll * SYNC_INTERVAL))s) ──"
+                docker logs dwow-node0 --tail 20 2>&1 | grep -E 'sync_state|miner_task|consensus_linear|ZK|Mining' | tail -5 | while read line; do info "    $line"; done || true
+                info "  ── end diagnostic ──"
+            fi
             sleep "$SYNC_INTERVAL"
         fi
     done
@@ -95,7 +104,13 @@ phase_blocks() {
     if [ "${n0_height:-0}" -lt 2 ]; then
         fail "node0 never produced block 2 after $((SYNC_MAX_POLLS * SYNC_INTERVAL))s (height=$n0_height)"
         info "  ZK keygen may have failed, or mining is not running."
-        info "  Check: docker logs dwow-node0 | tail -50"
+        info "  ── TIMEOUT DIAGNOSTIC: node0 full log tail ──"
+        docker logs dwow-node0 --tail 100 2>&1 | while read line; do info "    $line"; done || true
+        info "  ── TIMEOUT DIAGNOSTIC: sync_state transitions ──"
+        docker logs dwow-node0 --tail 500 2>&1 | grep -E 'sync_state' | while read line; do info "    $line"; done || info "    (no sync_state transitions found)"
+        info "  ── TIMEOUT DIAGNOSTIC: miner activity ──"
+        docker logs dwow-node0 --tail 500 2>&1 | grep -E 'miner_task|CaughtUp|Mining|ZK' | while read line; do info "    $line"; done || info "    (no miner activity found)"
+        info "  ── END TIMEOUT DIAGNOSTIC ──"
         return
     fi
 

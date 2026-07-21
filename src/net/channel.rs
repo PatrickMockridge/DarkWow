@@ -441,6 +441,20 @@ impl Channel {
             M::NAME, self.display_address().as_str()
         );
 
+        // Reject subscription on a stopped channel. Without this check,
+        // subscribe_msg succeeds on a dead channel, the subscription's
+        // receive() blocks forever (the main loop is dead, no messages
+        // arrive), and the subscriber hangs. HAZOP C2/C4: half-open
+        // channel → zombie subscription.
+        if self.is_stopped() {
+            warn!(
+                target: "net::channel::subscribe_msg",
+                "subscribe_msg::<{}>() on stopped channel {} — returning ChannelStopped",
+                M::NAME, self.display_address().as_str()
+            );
+            return Err(Error::ChannelStopped)
+        }
+
         debug!(
             target: "net::channel::subscribe_msg",
             "TRACE: about to call message_subsystem.subscribe::<{}>()", M::NAME
@@ -459,30 +473,34 @@ impl Channel {
         sub
     }
 
-    /// Handle network errors. Panic if error passes silently, otherwise
-    /// broadcast the error.
+    /// Handle network errors. Broadcast the stop event to all subscribers
+    /// — both stop_publisher and message_subsystem — so blocked receive()
+    /// calls wake up with ChannelStopped. HAZOP C3/C9: graceful disconnect
+    /// MUST also call trigger_error() or subscribers hang forever.
     async fn handle_stop(self: Arc<Self>, result: Result<()>) {
         debug!(target: "net::channel::handle_stop", "[START] {self:?}");
 
         self.stopped.store(true, SeqCst);
 
-        match result {
+        let err = match &result {
             Ok(()) => {
                 info!(
                     target: "net::channel::handle_stop",
-                    "[CHANNEL] Channel {} stopped normally (no error)", self.display_address()
+                    "[CHANNEL] Channel {} stopped normally", self.display_address()
                 );
-                self.stop_publisher.notify(Error::ChannelStopped).await;
+                Error::ChannelStopped
             }
             Err(e) => {
                 info!(
                     target: "net::channel::handle_stop",
                     "[CHANNEL] Channel {} STOPPING with error: {}", self.display_address(), e
                 );
-                self.stop_publisher.notify(Error::ChannelStopped).await;
-                self.message_subsystem.trigger_error(e).await;
+                e.clone()
             }
-        }
+        };
+
+        self.stop_publisher.notify(Error::ChannelStopped).await;
+        self.message_subsystem.trigger_error(err).await;
 
         debug!(target: "net::channel::handle_stop", "[END] {self:?}");
     }

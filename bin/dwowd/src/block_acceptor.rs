@@ -84,7 +84,7 @@ pub fn accept_block(
     // Per formal guardrail: VALID_COINBASE rejects blocks with missing,
     // misplaced, or null coinbase before any expensive validation.
     dwow_chain::validation::validate_block_structure(block)
-        .map_err(|e| dwow_core::Error::Custom(format!("Block structure invalid: {}", e)))?;
+        .map_err(|e| dwow_core::Error::Custom(format!("Block {} structure invalid: {}", block.header.height, e)))?;
 
     // 0.5 Block size — consensus-level acceptance rule (fail-closed), not
     // just a wire cap. The genesis block is EXEMPT: it carries the 9 contract
@@ -103,7 +103,7 @@ pub fn accept_block(
     }
 
     proof_of_token_balance::verify_proof_of_token_balance(block)
-        .map_err(|e| dwow_core::Error::Custom(format!("Proof of token balance failed: {}", e)))?;
+        .map_err(|e| dwow_core::Error::Custom(format!("Block {} proof of token balance failed: {}", block.header.height, e)))?;
 
     // 2. Stage 1 PoW — verify hash meets target BEFORE expensive WASM execution.
     if !matches!(block.header.pow_source, dwow_chain::PowSource::Monero(_)) {
@@ -111,8 +111,8 @@ pub fn accept_block(
         let hash_u32 = u32::from_le_bytes(block_hash.as_bytes()[0..4].try_into().unwrap());
         if hash_u32 > target.get() {
             return Err(dwow_core::Error::Custom(format!(
-                "Block PoW invalid: hash={:#010x} target={:#010x}",
-                hash_u32, target
+                "Block {} PoW invalid: hash={:#010x} target={:#010x}",
+                block.header.height, hash_u32, target
             )));
         }
     }
@@ -146,12 +146,13 @@ pub fn accept_block(
                 // transaction without a witness cannot be authenticated. Coinbase
                 // is exempt (soundness = transparent WASM re-execution).
                 dwow_chain::zk_verifier::VerifyError::NoWitness => {
-                    return Err(dwow_core::Error::Custom(
-                        "Non-coinbase transaction missing witness — per mempool.md §1, witness is load-bearing".into()
-                    ));
+                    return Err(dwow_core::Error::Custom(format!(
+                        "Block {}: non-coinbase transaction missing witness — per mempool.md §1, witness is load-bearing",
+                        block.header.height
+                    )));
                 }
                 _ => return Err(dwow_core::Error::Custom(format!(
-                    "L2 witness verification failed: {}", e
+                    "Block {} L2 witness verification failed: {}", block.header.height, e
                 ))),
             }
         }

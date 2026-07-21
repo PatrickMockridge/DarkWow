@@ -26,6 +26,7 @@ use smol::{
     future::{self, Future},
     Executor,
 };
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tracing::trace;
 
@@ -42,6 +43,12 @@ pub struct StoppableTask {
 
     /// Used so we can keep StoppableTask in HashMap/HashSet
     pub task_id: u32,
+
+    /// Set to true when `start()` is called. Guards against `stop()` deadlock
+    /// when `start()` was never called — the barrier.notify() only fires from
+    /// the spawned task in `start()`. Without this, `stop()` hangs forever
+    /// waiting for a barrier.notify() that can never arrive. HAZOP P2P-3.
+    was_started: AtomicBool,
 }
 
 /// A task that can be prematurely stopped at any time.
@@ -59,7 +66,12 @@ pub struct StoppableTask {
 /// Then at any time we can call `task.stop()` to close the task.
 impl StoppableTask {
     pub fn new() -> Arc<Self> {
-        Arc::new(Self { signal: CondVar::new(), barrier: CondVar::new(), task_id: OsRng.gen() })
+        Arc::new(Self {
+            signal: CondVar::new(),
+            barrier: CondVar::new(),
+            task_id: OsRng.gen(),
+            was_started: AtomicBool::new(false),
+        })
     }
 
     /// Starts the task.
@@ -85,6 +97,7 @@ impl StoppableTask {
         // NOTE: maybe we should disallow this with a panic?
         self.signal.reset();
         self.barrier.reset();
+        self.was_started.store(true, Ordering::SeqCst);
 
         executor
             .spawn(async move {
@@ -118,10 +131,17 @@ impl StoppableTask {
 
     /// Stops the task. On completion, guarantees the process has stopped.
     /// Can be called multiple times. After the first call, this does nothing.
+    ///
+    /// If `start()` was never called, returns immediately — the barrier.notify()
+    /// comes from the spawned task in `start()`, and without it `barrier.wait()`
+    /// would deadlock. HAZOP P2P-3: `P2p::stop()` on a P2P whose `OutboundSession`
+    /// and `DirectSession` were never started would hang forever.
     pub async fn stop(&self) {
         trace!(target: "concurrency::StoppableTask", "Stopping task {}", self.task_id);
         self.signal.notify();
-        self.barrier.wait().await;
+        if self.was_started.load(Ordering::SeqCst) {
+            self.barrier.wait().await;
+        }
         trace!(target: "concurrency::StoppableTask", "Stopped task {}", self.task_id);
     }
 

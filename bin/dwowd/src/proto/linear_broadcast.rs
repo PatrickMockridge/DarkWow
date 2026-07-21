@@ -87,7 +87,12 @@ impl_p2p_message!(
     0,
     1,
     LINEAR_BROADCAST_METERING_CONFIGURATION,
-    &[dwow_core::net::barb_trait::BarbId::Commit, dwow_core::net::barb_trait::BarbId::Verify]
+    &[
+        dwow_core::net::barb_trait::BarbId::Commit,
+        dwow_core::net::barb_trait::BarbId::Verify,
+        dwow_core::net::barb_trait::BarbId::Broadcast,
+        dwow_core::net::barb_trait::BarbId::GossipForward,
+    ]
 );
 
 // ============================================================================

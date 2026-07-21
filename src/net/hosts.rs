@@ -745,6 +745,31 @@ impl Hosts {
             .collect()
     }
 
+    /// Return (filtered_peer_count, total_connected_count).
+    ///
+    /// `filtered` is the count returned by `peers()` — excludes seed and
+    /// refinery sessions. `total` is the count returned by `channels()` —
+    /// all connected channels regardless of session type.
+    ///
+    /// This split is critical for diagnostics: a node with only seed
+    /// connections would report `(0, N)` — the consensus task sees 0 peers
+    /// but the operator can see N active connections. The gap is the
+    /// `SESSION_SEED | SESSION_REFINE` exclusion.
+    pub fn connected_peer_count(&self) -> (usize, usize) {
+        let registry = self.registry.lock();
+        let mut filtered = 0usize;
+        let mut total = 0usize;
+        for state in registry.values() {
+            if let HostState::Connected(c) = state {
+                total += 1;
+                if c.session_type_id() & (SESSION_SEED | SESSION_REFINE) == 0 {
+                    filtered += 1;
+                }
+            }
+        }
+        (filtered, total)
+    }
+
     /// Get a channel by ID.
     pub fn get_channel(&self, id: u32) -> Option<ChannelPtr> {
         self.channels().into_iter().find(|c| c.info.id == id)

@@ -175,7 +175,10 @@ impl<M: Message> MessageSubscription<M> {
     pub async fn receive(&self) -> MessageResult<M> {
         let (message, sleep_time) = match self.recv_queue.recv().await {
             Ok(pair) => pair,
-            Err(e) => panic!("MessageSubscription::receive(): recv_queue failed! {e}"),
+            // HAZOP C7: channel close returns ChannelStopped, not a panic.
+            // trigger_error() on handle_stop() pushes an Err to the queue
+            // so subscribers wake up cleanly instead of hanging forever.
+            Err(_) => return Err(Error::ChannelStopped),
         };
 
         // Check if we need to sleep
@@ -197,9 +200,8 @@ impl<M: Message> MessageSubscription<M> {
 
         let (message, sleep_time) = match res {
             Ok(pair) => pair,
-            Err(e) => {
-                panic!("MessageSubscription::receive_with_timeout(): recv_queue failed! {e}")
-            }
+            // HAZOP C7: channel close returns ChannelStopped, not a panic.
+            Err(_) => return Err(Error::ChannelStopped),
         };
 
         // Check if we need to sleep
@@ -218,7 +220,7 @@ impl<M: Message> MessageSubscription<M> {
             match self.recv_queue.try_recv() {
                 Ok(_) => continue,
                 Err(smol::channel::TryRecvError::Empty) => return Ok(()),
-                Err(e) => panic!("MessageSubscription::receive(): recv_queue failed! {e}"),
+                Err(_) => return Err(Error::ChannelStopped),
             }
         }
     }
@@ -240,6 +242,10 @@ trait MessageDispatcherInterface: Send + Sync {
     async fn trigger_error(&self, err: Error);
 
     async fn metering_score(&self) -> u64;
+
+    /// Return the barb set declared by the message type this dispatcher handles.
+    /// Used for quarantine enforcement at the dispatch boundary (§10.4).
+    fn barbs(&self) -> &'static [crate::barb::BarbId];
 
     fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
 }
@@ -308,6 +314,12 @@ impl<M: Message> MessageDispatcherInterface for MessageDispatcher<M> {
         let mut lock = self.metering_queue.lock().await;
         lock.clean();
         lock.total()
+    }
+
+    /// Return the barb set declared by this dispatcher's message type.
+    /// Used for quarantine enforcement at the dispatch boundary (§10.4).
+    fn barbs(&self) -> &'static [crate::barb::BarbId] {
+        M::BARBS
     }
 
     /// Converts to `Any` trait. Enables the dynamic modification of static types.
