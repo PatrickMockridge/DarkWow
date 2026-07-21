@@ -78,8 +78,15 @@ pub struct GenesisAuthority {
 
 impl GenesisAuthority {
     /// Construct a genesis authority marker. The `create_genesis` flag
-    /// must already be verified — this constructor is the type-level
-    /// witness that replaces the bare `bool`.
+    /// must already be verified in `main.rs` — this constructor is the
+    /// type-level witness that replaces the bare `bool`.
+    ///
+    /// Defense-in-depth (HAZOP F7): genesis hash verification already
+    /// prevents non-genesis miners from producing valid blocks — peers
+    /// reject blocks whose genesis hash doesn't match the compile-time
+    /// constant (lib.rs genesis_hash.txt check). A wrong-key node
+    /// produces an invalid genesis block rejected by all peers.
+    /// Key binding is enforced at the consensus level, not the type level.
     pub fn new() -> Self {
         Self { _private: () }
     }
@@ -88,15 +95,15 @@ impl GenesisAuthority {
     /// Returns `None` if the key is absent or does not match the genesis
     /// public key binding.
     ///
-    /// TODO: verify the secret against the genesis public key from
-    /// AccountManager. The MiningRecipient pattern (dwow-accounts)
-    /// already does per-block key derivation — the same binding applies
-    /// here for the fixed genesis height key. Defense-in-depth: a
-    /// wrong-key node produces an invalid genesis block rejected by all
-    /// peers at the genesis hash check (lib.rs:699-713).
-    #[allow(dead_code)]
-    pub fn from_key(secret: &dwow_sdk::crypto::SecretKey) -> Option<Self> {
-        let _ = secret;
+    /// Defense-in-depth (HAZOP F7): verifies the secret against the
+    /// genesis public key from AccountManager. The MiningRecipient
+    /// pattern (dwow-accounts) already does per-block key derivation —
+    /// the same binding applies here for the fixed genesis height key.
+    pub fn from_key(secret: &dwow_sdk::crypto::SecretKey, genesis_public_key: &dwow_sdk::crypto::PublicKey) -> Option<Self> {
+        let derived_public = dwow_sdk::crypto::PublicKey::from_secret(*secret);
+        if derived_public != *genesis_public_key {
+            return None;
+        }
         Some(Self { _private: () })
     }
 }
