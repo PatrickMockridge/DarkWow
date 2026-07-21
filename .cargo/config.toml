@@ -1,2 +1,7 @@
 [env]
-RUST_MIN_STACK = "16777216"  # 16MB fallback safety net
+# halo2 ZK proof polynomial arithmetic uses deep recursion for FFT and
+# multi-exponentiation. 64MB virtual address space per thread — zero
+# physical memory cost until stack pages are touched. Without this,
+# halo2 operations (VerifyingKey::build, proof.verify, plonk::verify_proof)
+# will SIGSEGV on default ~8MB OS thread stacks.
+RUST_MIN_STACK = "67108864"
