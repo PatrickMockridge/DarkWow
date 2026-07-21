@@ -1,4 +1,4 @@
-/*!
+/-!
 # All Remaining Contract Circuit Instance-Derivation Proofs
 
 Identity/Attestation (18), Labor/Escrow (25), Gaming (15),
@@ -108,6 +108,6 @@ Comprehensive audit confirms:
 This is the formal verification result: no Orchard-class vulnerability
 exists in any DarkFi contract circuit.
 -/
-axiom all_contracts_orchard_safe : Prop
+-- ASSUMPTION (not proven): all_contracts_orchard_safe : Prop
 
 end Circuits

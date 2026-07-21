@@ -1,4 +1,4 @@
-/*!
+/-!
 # HAZOP HIGH Tier — Targeted Vulnerability Proofs (Risk 40-59)
 
 ## HIGH-1/2: burn_v1.zk zero_cond Merkle Bypass (Risk 42/100)

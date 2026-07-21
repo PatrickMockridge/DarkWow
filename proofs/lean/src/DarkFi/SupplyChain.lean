@@ -1,4 +1,4 @@
-/*!
+/-!
 # Cumulative Supply Chain — Multi-Block Inductive Proof
 
 Proves the DarkWow coinbase supply chain invariant across multiple blocks.

@@ -1,4 +1,4 @@
-/*!
+/-!
 # DarkFi Field Arithmetic
 
 Formalization of Pallas field arithmetic for gadget verification.

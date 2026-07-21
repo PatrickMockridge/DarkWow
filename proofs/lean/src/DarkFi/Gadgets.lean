@@ -1,4 +1,4 @@
-/*!
+/-!
 # DarkFi Comparison Gadgets
 
 Formal analysis of DarkFi's comparison opcodes:

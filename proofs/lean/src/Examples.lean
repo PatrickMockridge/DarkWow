@@ -1,4 +1,4 @@
-/*!
+/-!
 # DarkFi Gadget Verification Examples
 
 Run these with: `lake run <target>`

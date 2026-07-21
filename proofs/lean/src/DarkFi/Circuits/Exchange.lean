@@ -1,4 +1,4 @@
-/*!
+/-!
 # Exchange/DEX Circuit Instance-Derivation Proofs
 
 Dex (6), OtcSwap (4), DarkBet (4) — 14 circuits total.
@@ -36,6 +36,6 @@ THEOREM: All exchange circuits are Orchard-class safe.
 No unconstrained constrain_instance calls. All public inputs
 are derived from witnesses in-circuit.
 -/
-axiom exchange_circuits_orchard_safe : Prop
+-- ASSUMPTION (not proven): exchange_circuits_orchard_safe : Prop
 
 end Circuits

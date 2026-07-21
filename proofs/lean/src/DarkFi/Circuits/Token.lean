@@ -1,4 +1,4 @@
-/*!
+/-!
 # Token Contract Circuit Instance-Derivation Proofs
 
 Orchard-class audit: prove that for every circuit in the token contracts
@@ -65,7 +65,7 @@ This is an axiom (host-level property): the constrain_instance binding is
 verified by the Rust host, not by a circuit constraint. The Lean model
 assumes correct host verification.
 -/
-axiom burn_v1_signature_binding (coin_secret nullifier : Int) : Prop
+-- ASSUMPTION (not proven): burn_v1_signature_binding (coin_secret nullifier : Int) : Prop
 
 /--
 AXIOM: BurnV1 nullifier is deterministic for a given (secret, coin) pair.
@@ -77,7 +77,7 @@ Proves: no two distinct (secret, coin) pairs produce the same nullifier
 
 Depends on: poseidon_collision_resistance axiom from HashOps.
 -/
-axiom burn_v1_nullifier_determinism (secret coin : Int) : Prop
+-- ASSUMPTION (not proven): burn_v1_nullifier_determinism (secret coin : Int) : Prop
 
 /--
 ## Promissory Note: MintV1 Circuit Instance-Derivation Binding
@@ -124,14 +124,14 @@ Before fix: prover could set mint_public = stored_auth (read from registry)
 After fix:  prover MUST know backing_secret such that
             poseidon_hash(backing_secret) = mint_public = stored_auth
 -/
-axiom mint_v1_c1_fix (backing_secret mint_public : Int) : Prop
+-- ASSUMPTION (not proven): mint_v1_c1_fix (backing_secret mint_public : Int) : Prop
 
 /--
 AXIOM: MintV1 has zero free instances after C1 fix.
 
 All 7 public inputs are now derived in-circuit. Host-verified.
 -/
-axiom mint_v1_no_free_instances (w : MintV1Witnesses) (pi : MintV1PublicInputs) : Prop
+-- ASSUMPTION (not proven): mint_v1_no_free_instances (w : MintV1Witnesses) (pi : MintV1PublicInputs) : Prop
 
 /--
 ## Promissory Note: TokenMintV1 Circuit Instance-Derivation Binding
@@ -175,7 +175,7 @@ Token creation is permissionless. The mint authority check is at MintV1.
 This is not an Orchard-class vulnerability — it's a deliberate design choice
 that defers authorization to the minting phase.
 -/
-axiom token_mint_v1_auth_parent_free_by_design (w : TokenMintV1Witnesses) : Prop
+-- ASSUMPTION (not proven): token_mint_v1_auth_parent_free_by_design (w : TokenMintV1Witnesses) : Prop
 
 /--
 ## Promissory Note: BlindOutputV1 Circuit Instance-Derivation Binding
@@ -211,7 +211,7 @@ witness whose correctness is enforced by the ZK proof (the host
 verifies the circuit constraints include the spend_hook in the
 coin commitment hash).
 -/
-axiom blind_output_v1_no_free_instances (w : BlindOutputV1Witnesses) (pi : BlindOutputV1PublicInputs) : Prop
+-- ASSUMPTION (not proven): blind_output_v1_no_free_instances (w : BlindOutputV1Witnesses) (pi : BlindOutputV1PublicInputs) : Prop
 
 /--
 ## Promissory Note: RedeemV1 Circuit Instance-Derivation Binding
@@ -257,7 +257,7 @@ host level via the metadata public input.
 
 This is a valid defense-in-depth pattern, not an Orchard-class vulnerability.
 -/
-axiom redeem_v1_coin_value_enforced_by_host (w : RedeemV1Witnesses) (pi : RedeemV1PublicInputs) : Prop
+-- ASSUMPTION (not proven): redeem_v1_coin_value_enforced_by_host (w : RedeemV1Witnesses) (pi : RedeemV1PublicInputs) : Prop
 
 /--
 ## Orchard-Class Summary: Promissory Note (5 circuits)

@@ -1,4 +1,4 @@
-/*!
+/-!
 # HAZOP ELEVATED Tier — Constraint Gap Documentation (Risk 30-39)
 
 Six circuits with confirmed constraint gaps requiring targeted formal proofs.

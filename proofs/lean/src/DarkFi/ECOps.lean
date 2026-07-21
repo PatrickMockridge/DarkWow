@@ -1,4 +1,4 @@
-/*!
+/-!
 # DarkFi EC Operation Soundness Proofs
 
 Orchard-class defense: prove that fixed-base EC multiplications use

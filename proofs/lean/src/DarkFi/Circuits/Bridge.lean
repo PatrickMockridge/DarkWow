@@ -1,4 +1,4 @@
-/*!
+/-!
 # Bridge Contract Circuit Instance-Derivation Proofs
 
 6 circuits: deposit_v1, withdraw_v1, azt_deposit_v1, ltc_deposit_v1,
@@ -62,7 +62,7 @@ The merkle_root_val derivation binds the withdraw proof to a specific
 deposit tree state. The on-chain check (entrypoint) should verify this
 against the stored deposit tree root — this is the H4 residual risk.
 -/
-axiom bridge_withdraw_v1_instance_derivation (w : BridgeWithdrawV1Witnesses) (pi : BridgeWithdrawV1PublicInputs) : Prop
+-- ASSUMPTION (not proven): bridge_withdraw_v1_instance_derivation (w : BridgeWithdrawV1Witnesses) (pi : BridgeWithdrawV1PublicInputs) : Prop
 
 /--
 ## Bridge: DepositV1, AZT, LTC, XMR, ZEC Circuits
@@ -83,6 +83,6 @@ The only residual risk is H4 (metadata/public-input wiring for withdraw_v1).
 
 This is a host-level audit claim, not a circuit-level constraint proof.
 -/
-axiom bridge_circuits_orchard_safe : Prop
+-- ASSUMPTION (not proven): bridge_circuits_orchard_safe : Prop
 
 end Circuits

@@ -93,13 +93,11 @@ structure KeyDisjoint (P Q : ConcurrentProcess) where
   writeSetDisjoint : Bool
   deriving Repr
 
-/- Axiom: parallel execution ≈ sequential execution when keys are disjoint -/
-axiom parallelMerge_correctness
-    (calls : List ConcurrentProcess)
-    (_h_disjoint : pairwise_disjoint_keys calls) :
-    True
-  -- Full statement: parallel_execute(calls) ≈ sequential_execute(calls)
-  -- Requires: Halo2 prover model, sled overlay formalization, WASM execution model
+/- Assumption: parallel execution ≈ sequential execution when keys are disjoint.
+   This is the formal justification for parallel contract execution (type-system.md §1.2).
+   Proving this requires: Halo2 prover model, sled overlay formalization, WASM execution model.
+   Currently assumed as a design invariant — the Rust implementation enforces key disjointness
+   via sled tree isolation. -/
 
 /- ==========================================================================
    Part 5: Concurrency Safety — No Deadlock

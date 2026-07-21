@@ -1,4 +1,4 @@
-/*!
+/-!
 # HAZOP CRITICAL Tier — Formal Vulnerability Proofs (Risk >= 60)
 
 Four circuits with confirmed exploit vectors requiring immediate deeper formal verification.

@@ -1,4 +1,4 @@
-/*!
+/-!
 # DarkFi Field Arithmetic Soundness Proofs
 
 base_add (0x30), base_mul (0x31), base_sub (0x32) operate on

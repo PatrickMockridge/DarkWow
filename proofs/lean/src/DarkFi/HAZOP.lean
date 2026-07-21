@@ -1,4 +1,4 @@
-/*!
+/-!
 # HAZOP Tabletop — All 120 ZK Circuits Risk Matrix
 
 Three independent domain-expert agents (Alice-defender, Mallory-attacker, Eve-eavesdropper,

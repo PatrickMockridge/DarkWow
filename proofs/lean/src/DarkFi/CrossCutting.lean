@@ -1,4 +1,4 @@
-/*!
+/-!
 # Cross-Cutting Theorems — Spanning Multiple Circuits
 
 Value conservation, nullifier determinism, signature binding,

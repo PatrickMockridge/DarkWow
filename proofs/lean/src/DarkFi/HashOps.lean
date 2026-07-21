@@ -1,4 +1,4 @@
-/*!
+/-!
 # DarkFi Hash Operation Soundness Proofs
 
 Merkle tree inclusion, Sparse Merkle tree membership, and Poseidon

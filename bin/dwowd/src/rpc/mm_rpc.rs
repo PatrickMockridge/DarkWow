@@ -573,6 +573,16 @@ impl DwowNode {
             "[RPC-MM] Coinbase merkle proof verified — MoneroPowData is valid",
         );
 
+        // TODO(HAZOP F3): Verify Monero block was accepted by Monero network.
+        // FFI spec §5.2 delegates PoW security to Monero consensus — but
+        // DarkWow never queries monerod to confirm. The security model trusts
+        // p2pool (which runs alongside monerod) to only submit verified blocks.
+        // Defense-in-depth: query monerod get_block_by_hash to confirm the
+        // Monero block exists on the Monero chain before accepting it here.
+        // Requires: monerod_url from FinalityConfig, get_block_by_hash RPC
+        // method in src/linear/src/monero/rpc.rs, Monero block hash computation
+        // from the submitted blob (RandomX over block header).
+
         // Get the block template
         let template = {
             let tmpl = self.mining_state.current_linear_template.lock().await;

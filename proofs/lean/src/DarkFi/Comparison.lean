@@ -1,4 +1,4 @@
-/*!
+/-!
 # DarkFi Comparison Gadget Completeness Proofs
 
 Completes verification of all comparison opcodes (0x50-0x62).
@@ -12,7 +12,7 @@ bug (delta_invert unconstrained when a=b) is the canonical
 example — and IsNotEqual is the fix.
 -/
 
-import Gadgets
+import DarkFi.Gadgets
 
 namespace Comparison
 
