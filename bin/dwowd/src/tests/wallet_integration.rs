@@ -129,7 +129,7 @@ fn test_wallet_integration() {
         let expected_gen_reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
         let sc1 = har.chain_state.supply_chain.get(BlockHeight::new(1))
             .expect("supply_chain at height 1");
-        assert_eq!(sc1.total_supply, expected_gen_reward);
+        assert_eq!(sc1.total_supply, expected_gen_reward.get());
 
         // ================================================================
         // Phase 3: Height-2 Coinbase Block (Path 1, Production accept_block)
@@ -330,7 +330,7 @@ fn test_wallet_integration() {
         );
         let cap_1 = &result_1.native_outputs[0].cap_record;
         assert_eq!(
-            cap_1.value, expected_gen_reward,
+            cap_1.value, expected_gen_reward.get(),
             "Path1: genesis coinbase value must match expected_reward(1)"
         );
         assert_eq!(
@@ -349,7 +349,7 @@ fn test_wallet_integration() {
         );
         let cap_2 = &result_2.native_outputs[0].cap_record;
         assert_eq!(
-            cap_2.value, reward_2,
+            cap_2.value, reward_2.get(),
             "Path1: height-2 coinbase value must match expected_reward(2)"
         );
         assert_eq!(cap_2.created_at_height, 2);
@@ -367,7 +367,7 @@ fn test_wallet_integration() {
         let total_balance: u64 = balances.values().sum();
         assert_eq!(
             total_balance,
-            expected_gen_reward + reward_2,
+            expected_gen_reward.get() + reward_2.get(),
             "Path1: balance must equal sum of coinbase rewards"
         );
 
@@ -705,7 +705,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         let total_after: u64 = balances_after.values().sum();
         assert_eq!(
             total_after,
-            expected_gen_reward + reward_2,
+            expected_gen_reward.get() + reward_2.get(),
             "Path2: foreign caps must not inflate DRKW balance"
         );
 

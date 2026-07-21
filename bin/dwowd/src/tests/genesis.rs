@@ -280,7 +280,7 @@ mod tests {
             // AC2: cumulative supply at height 1 (MoC gap fill)
             let sc1 = har1.chain_state.supply_chain.get(BlockHeight::new(1))
                 .expect("supply_chain at height 1");
-            assert_eq!(sc1.total_supply, expected,
+            assert_eq!(sc1.total_supply, expected.get(),
                 "AC2: cumulative supply at genesis");
 
             // AC10: genesis carries the deployments — exactly 10 txs
@@ -371,7 +371,7 @@ mod tests {
                 .expect("supply_chain at height 1");
             assert_eq!(
                 sc1.total_supply,
-                dwow_sdk::blockchain::expected_reward(BlockHeight::new(1)),
+                dwow_sdk::blockchain::expected_reward(BlockHeight::new(1)).get(),
                 "AC2: S_1 == INITIAL_REWARD"
             );
 
@@ -478,8 +478,8 @@ mod tests {
 
             let sc2 = har.chain_state.supply_chain.get(BlockHeight::new(2))
                 .expect("supply_chain at height 2");
-            let expected_supply = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1))
-                + dwow_sdk::blockchain::expected_reward(BlockHeight::new(2));
+            let expected_supply = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1)).get()
+                + dwow_sdk::blockchain::expected_reward(BlockHeight::new(2)).get();
             assert_eq!(
                 sc2.total_supply, expected_supply,
                 "AC5: supply bridge — S_2 = S_1 + C_2"
@@ -628,7 +628,7 @@ mod tests {
             let sc = har_b.chain_state.supply_chain.get(BlockHeight::new(1))
                 .expect("supply_chain at height 1");
             assert_eq!(sc.total_supply,
-                dwow_sdk::blockchain::expected_reward(BlockHeight::new(1)),
+                dwow_sdk::blockchain::expected_reward(BlockHeight::new(1)).get(),
                 "synced node: S_1 == INITIAL_REWARD");
 
             // Identical chain identity.

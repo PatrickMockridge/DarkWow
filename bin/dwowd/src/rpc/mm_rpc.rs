@@ -56,7 +56,7 @@ use dwow_chain::{
     },
     PowSource,
 };
-use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
 
 use crate::{error::{miner_status_response, server_error, RpcError}, DwowNode};
 

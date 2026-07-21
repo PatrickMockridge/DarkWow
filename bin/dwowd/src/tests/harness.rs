@@ -39,7 +39,7 @@ use dwow_chain::{
     build_uncle_merkle, create_uncle,
 };
 use dwow_core::Result;
-use dwow_sdk::blockchain::{self, BlockHeight, BlockTarget};
+use dwow_sdk::blockchain::{self, BlockHeight, BlockReward, BlockTarget};
 
 /// Synthetic timestamp for test blocks, spaced 120s per height so the
 /// consensus target stays at `u32::MAX` (no difficulty drift when blocks

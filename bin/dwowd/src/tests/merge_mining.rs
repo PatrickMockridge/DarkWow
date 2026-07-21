@@ -43,7 +43,6 @@ use dwow_chain::{
 use dwow_core::Result;
 use dwow_sdk::{
     blockchain::{BlockHeight, BlockReward, BlockTarget},
-    blockchain::BlockHeight,
     crypto::{keypair::Network, pasta_prelude::Group, NATIVE_TOKEN_CONTRACT_ID},
     pasta::pallas,
 };

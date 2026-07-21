@@ -98,7 +98,7 @@ pub(super) fn build_witness(
 }
 
 /// Build a RandomX VM for `accept_block` — used by all `exec*` methods.
-fn build_accept_vm(
+pub(crate) fn build_accept_vm(
     block: &dwow_chain::Block,
 ) -> dwow_core::Result<std::sync::Arc<randomx::RandomXVM>> {
     let rx_flags = randomx::RandomXFlags::get_recommended_flags()
@@ -222,7 +222,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
 
     /// Build a real PoWRewardV1 coinbase tx for `accept_block`.
     /// Requires a test mining key (inline keys.toml) and ZK proving keys.
-    async fn build_coinbase_for_height(
+    pub(crate) async fn build_coinbase_for_height(
         &self,
         height: dwow_sdk::blockchain::BlockHeight,
         reward: BlockReward,
@@ -2877,6 +2877,59 @@ fn test_heavyweight_canonical_exec() -> std::result::Result<(), Box<dyn std::err
         let after = pipeline.genesis.block_height();
         assert!(after > before, "Height should increase (was {} now {})", before, after);
         println!("  Canonical block at height {} applied OK", after);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// test_heavyweight_coinbase_rejects_wrong_reward
+// ---------------------------------------------------------------------------
+/// HAZOP F1 integration: verify that accept_block REJECTS a block where
+/// the coinbase reward does not exactly match expected_reward(height).
+/// The F1 fix changed pow_reward_v1 from lower-bound-only (>= expected)
+/// to exact equality (!= expected), which catches over-minting attempts.
+/// This test uses an over-reward value (expected + 1) that would pass
+/// the old lower-bound check but MUST fail the new exact-equality check.
+#[test]
+fn test_heavyweight_coinbase_rejects_wrong_reward() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    println!("=== Coinbase Wrong Reward Rejection (F1 fix) ===");
+
+    smol::block_on(async {
+        let (pipeline, _keypair) = setup_native_token_pipeline().await?;
+        let height = pipeline.genesis.block_height();
+        let next_height = height.succ();
+        let correct_reward = dwow_sdk::blockchain::expected_reward(next_height);
+
+        // Build coinbase with EXCESS reward (over-mint attempt).
+        // This would pass the old lower-bound-only check but MUST fail
+        // the F1 exact-equality check at entrypoint/mod.rs:818.
+        let over_reward = BlockReward::new(correct_reward.get() + 1);
+        println!("  Height {} expected_reward={}, attempting over_reward={}",
+            next_height, correct_reward.get(), over_reward.get());
+        let cb = pipeline.build_coinbase_for_height(next_height, over_reward).await?;
+
+        let target = pipeline.expected_target();
+        let mut block = build_test_block(
+            &pipeline.genesis.chain_state, next_height, vec![cb.tx.clone()],
+        );
+        block.header.target = BlockTarget::new(target);
+        let vm = build_accept_vm(&block)?;
+
+        let result = crate::block_acceptor::accept_block(
+            &pipeline.genesis.chain_state, &block, &[], &vm,
+            height, BlockTarget::new(target), None,
+        );
+
+        assert!(result.is_err(),
+            "F1 SAFETY: Block with over-reward ({}) was ACCEPTED but must be REJECTED. \
+             The F1 exact-equality fix in pow_reward_v1 is not working.",
+            over_reward.get());
+        let err_msg = format!("{}", result.unwrap_err());
+        println!("  Correctly rejected: {}", err_msg);
+
+        // Verify the chain was NOT corrupted — height must be unchanged
+        assert_eq!(pipeline.genesis.block_height(), height,
+            "Chain height changed despite rejection — state corruption");
         Ok(())
     })
 }

@@ -232,6 +232,7 @@ fn test_fee_collect_determinism() {
         // Verify supply after maturity runway
         let total_supply_after_101: u64 = (1..=101u64)
             .map(|h| dwow_sdk::blockchain::expected_reward(BlockHeight::new(h)))
+            .map(|r| r.get())
             .sum();
         let sc_entry = har.chain_state.supply_chain.get(BlockHeight::new(101))
             .expect("supply_chain at 101");
@@ -295,6 +296,7 @@ fn test_fee_collect_determinism() {
             .expect("supply_chain at 102");
         let total_supply_102: u64 = (1..=102u64)
             .map(|h| dwow_sdk::blockchain::expected_reward(BlockHeight::new(h)))
+            .map(|r| r.get())
             .sum();
         assert_eq!(sc_102.total_supply, total_supply_102,
             "TOTAL_SUPPLY unchanged — fees redistribute, not mint");
