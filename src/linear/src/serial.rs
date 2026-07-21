@@ -230,7 +230,7 @@ impl AsyncEncodable for UncleBlock {
         len += self.depth.encode_async(s).await?;
         len += self.pin_offered.encode_async(s).await?;
         len += self.pin_accepted.encode_async(s).await?;
-        len += self.pin_reward.encode_async(s).await?;
+        len += self.pin_confirmed.encode_async(s).await?;
         Ok(len)
     }
 }
@@ -243,8 +243,8 @@ impl AsyncDecodable for UncleBlock {
         let depth = AsyncDecodable::decode_async(d).await?;
         let pin_offered = AsyncDecodable::decode_async(d).await?;
         let pin_accepted = AsyncDecodable::decode_async(d).await?;
-        let pin_reward = AsyncDecodable::decode_async(d).await?;
-        Ok(Self { header, transactions, depth, pin_offered, pin_accepted, pin_reward })
+        let pin_confirmed = AsyncDecodable::decode_async(d).await?;
+        Ok(Self { header, transactions, depth, pin_offered, pin_accepted, pin_confirmed })
     }
 }
 

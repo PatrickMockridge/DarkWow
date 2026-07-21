@@ -108,12 +108,14 @@ pub struct UncleBlock {
     pub pin_offered: bool,
     /// Uncle chain accepted the pin (use it or lose it - one time decision)
     pub pin_accepted: bool,
-    /// Pin reward amount if accepted (computed from depth: 50% at d1, 25% at d2...)
+    /// Pin confirmed — reward amount computed from depth (50% at d1, 25% at d2...).
+    /// Actual reward payment is computed downstream by `compute_reward()` and
+    /// `verify_uncle_split()`.
     ///
     /// NOTE: `pin_accepted` starts `false` at uncle creation. The uncle miner
     /// may later accept the pin via `accept_pin()` (use-it-or-lose-it).
     /// `compute_reward()` only pays uncles with `pin_accepted == true`.
-    pub pin_reward: u64,
+    pub pin_confirmed: u64,
 }
 
 impl UncleBlock {
@@ -145,7 +147,7 @@ impl UncleBlock {
     }
 
     /// Reject the pin offer (uncle chain gives up reward)
-    /// Note: Rejection is strictly dominated - accepting gives pin_reward, rejecting gives 0
+    /// Note: Rejection is strictly dominated - accepting gives pin_confirmed, rejecting gives 0
     pub fn reject_pin(&mut self) {
         self.pin_accepted = false;
     }
@@ -154,14 +156,14 @@ impl UncleBlock {
 /// Convert a rejected block into an uncle block
 pub fn create_uncle(block: Block, depth: u8, base_reward: BlockReward) -> UncleBlock {
     let depth = depth.min(MAX_UNCLE_DEPTH);
-    let pin_reward = base_reward.get() / (2_u64.pow(depth as u32));
+    let pin_confirmed = base_reward.get() / (2_u64.pow(depth as u32));
     UncleBlock {
         header: block.header,
         transactions: block.transactions,
         depth,
         pin_offered: true,
         pin_accepted: false,
-        pin_reward,
+        pin_confirmed,
     }
 }
 
@@ -461,21 +463,21 @@ pub fn compute_reward(base_reward: BlockReward, uncles: &[UncleBlock]) -> (Block
     let mut uncle_rewards = Vec::with_capacity(uncles.len());
 
     for uncle in uncles {
-        // Uncle only gets pin_reward if they accepted the pin
-        let pin = if uncle.pin_accepted { uncle.pin_reward } else { 0 };
+        // Uncle only gets pin_confirmed if they accepted the pin
+        let pin = if uncle.pin_accepted { uncle.pin_confirmed } else { 0 };
         uncle_rewards.push(pin);
     }
 
-    let total_pin_rewards: u64 = uncle_rewards.iter().sum();
+    let total_pin_confirmed: u64 = uncle_rewards.iter().sum();
     // Canonical reward is base minus what it pays in pins.
     // Use checked_sub to surface invariant violations — pin rewards
     // exceeding base is a consensus bug, not a recoverable condition.
     // downstream verify_uncle_split() also catches this at commit time.
-    let canonical_reward = base.checked_sub(total_pin_rewards)
+    let canonical_reward = base.checked_sub(total_pin_confirmed)
         .unwrap_or_else(|| {
             tracing::error!(target: "dwow_chain::block",
                 "Invariant violated: pin rewards ({}) exceed base reward ({})",
-                total_pin_rewards, base);
+                total_pin_confirmed, base);
             0
         });
     (BlockReward::new(canonical_reward), uncle_rewards)
@@ -592,7 +594,7 @@ mod tests {
             pow_source: PowSource::Native,
 
         };
-        let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_reward: 0 };
+        let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_confirmed: 0 };
 
         let (root, proofs) = build_uncle_merkle(&[uncle], &vm);
         assert_ne!(root, [0u8; 32]);
@@ -628,7 +630,7 @@ mod tests {
             pow_source: PowSource::Native,
 
             };
-            uncles.push(UncleBlock { header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_reward: 0 });
+            uncles.push(UncleBlock { header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_confirmed: 0 });
         }
 
         let (root, proofs) = build_uncle_merkle(&uncles, &vm);
@@ -675,7 +677,7 @@ mod tests {
                 depth: 1,
                 pin_offered: false,
                 pin_accepted: false,
-                pin_reward: 0,
+                pin_confirmed: 0,
             });
         }
         let (root, proofs) = build_uncle_merkle(&uncles, &vm);
@@ -724,8 +726,8 @@ mod tests {
 
         };
         // Pin mechanism: pin_offered=true, pin_accepted=true means uncle accepts the pin
-        // pin_reward at depth 1 = 50% = 50M
-        let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1, pin_offered: true, pin_accepted: true, pin_reward: 50_000_000 };
+        // pin_confirmed at depth 1 = 50% = 50M
+        let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1, pin_offered: true, pin_accepted: true, pin_confirmed: 50_000_000 };
 
         let (canonical, uncle_rewards) = compute_reward(BlockReward::new(100_000_000), &[uncle]);
         // base 100M - pin 50M = 50M canonical (no over-minting)
@@ -757,7 +759,7 @@ mod tests {
             pow_source: PowSource::Native,
 
         };
-        let uncle = UncleBlock { header: header.clone(), transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_reward: 0 };
+        let uncle = UncleBlock { header: header.clone(), transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_confirmed: 0 };
 
         let (_root, proofs) = build_uncle_merkle(&[uncle], &vm);
         // Note: verify_uncle_proof may fail difficulty check since nonce 42 is arbitrary

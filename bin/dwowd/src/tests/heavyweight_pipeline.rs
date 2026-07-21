@@ -2976,7 +2976,7 @@ fn test_heavyweight_uncle_depth() -> std::result::Result<(), Box<dyn std::error:
 
             let after = pipeline.genesis.block_height();
             assert!(after > before, "Height should increase for depth {}", depth);
-            println!("  Depth {} uncle applied OK (pin_reward = reward / 2^{})", depth, depth);
+            println!("  Depth {} uncle applied OK (pin_confirmed = reward / 2^{})", depth, depth);
         }
 
         println!("  Uncle depth tests (depths 1, 2, 3) all applied OK");

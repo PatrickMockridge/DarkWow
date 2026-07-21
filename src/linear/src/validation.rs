@@ -665,4 +665,187 @@ mod tests {
         // No native fees, no FeeCollect → valid zero-fee block.
         assert!(validate_block_structure(&block).is_ok());
     }
+
+    // ================================================================
+    // F2: tx[0] structural — compound coinbase prevention
+    // ================================================================
+
+    /// HAZOP F2: coinbase tx (index 0) must have exactly 1 contract call.
+    /// A compound coinbase would bypass Pedersen mass balance,
+    /// ZK witness, and pre-witness checks.
+    #[test]
+    fn rejects_compound_coinbase_two_calls() {
+        let mut block = dummy_block();
+        let mut tx = coinbase_tx();
+        // Add a second contract call to the coinbase tx
+        let second_call = crate::ContractCall {
+            contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+            data: vec![0x00u8, 1, 0, 0, 0, 0, 0, 0, 0],
+        };
+        tx.contract_calls.push(second_call);
+        block.transactions = vec![tx];
+        let err = validate_block_structure(&block).unwrap_err();
+        match err {
+            LinearError::BlockStructure(msg) => {
+                assert!(
+                    msg.contains("exactly 1 contract call"),
+                    "expected 'exactly 1 contract call', got: {}", msg
+                );
+            }
+            e => panic!("wrong error variant: {:?}", e),
+        }
+    }
+
+    /// HAZOP F2: a valid coinbase with exactly 1 contract call must pass.
+    #[test]
+    fn accepts_coinbase_with_single_call() {
+        let mut block = dummy_block();
+        block.transactions = vec![coinbase_tx()];
+        assert!(validate_block_structure(&block).is_ok());
+    }
+
+    // ================================================================
+    // F5: Uncle validation — check_uncles() integration tests
+    // ================================================================
+
+    /// Build a minimal uncle block for testing. target = u32::MAX ensures
+    /// any RandomX hash passes PoW.
+    fn dummy_uncle(height: u64, nonce: u32) -> UncleBlock {
+        UncleBlock {
+            transactions: vec![],
+            depth: 1,
+            pin_offered: false,
+            pin_accepted: false,
+            pin_confirmed: 0, // not validated by check_uncles — verify_uncle_split handles this downstream
+            header: super::super::BlockHeader {
+                version: 1,
+                previous: Blake3Hash::from([0u8; 32]),
+                merkle_root: blake3::hash(&[]),
+                timestamp: 0,
+                target: BlockTarget::MAX,
+                nonce,
+                height: BlockHeight::new(height),
+                uncle_merkle_root: [0u8; 32],
+                total_reward: BlockReward::ZERO,
+                randomx_key: [0u8; 32],
+                coin_merkle_root: [0u8; 32],
+                nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32],
+                anchor_monero_height: 0,
+                anchor_monero_hash: [0u8; 32],
+                finality_flags: 0,
+                pow_source: PowSource::Native,
+            },
+        }
+    }
+
+    /// B1: 7 uncles → TooManyUncles (MAX_UNCLE_COUNT = 6)
+    #[test]
+    fn check_uncles_rejects_too_many() {
+        let vm = test_vm();
+        let uncles: Vec<UncleBlock> = (0..7).map(|i| dummy_uncle(2, i)).collect();
+        let (root, proofs) = build_uncle_merkle(&uncles, &vm);
+        let err = check_uncles(
+            &uncles, &proofs, &root,
+            BlockHeight::new(10), &vm, u32::MAX, &std::collections::HashSet::new(),
+        ).unwrap_err();
+        match err {
+            LinearError::TooManyUncles { count, max } => {
+                assert_eq!(count, 7);
+                assert_eq!(max, 6);
+            }
+            e => panic!("expected TooManyUncles, got {:?}", e),
+        }
+    }
+
+    /// B2: Duplicate uncle → DuplicateUncle
+    #[test]
+    fn check_uncles_rejects_duplicate() {
+        let vm = test_vm();
+        let uncle = dummy_uncle(8, 42);
+        let (root, proofs) = build_uncle_merkle(&[uncle.clone()], &vm);
+        // check_uncles uses to_mining_blob() for the canonical key
+        let key = *blake3::hash(&uncle.header.to_mining_blob()).as_bytes();
+        let mut existing: std::collections::HashSet<[u8; 32]> = std::collections::HashSet::new();
+        existing.insert(key);
+        let err = check_uncles(
+            &[uncle], &proofs, &root,
+            BlockHeight::new(10), &vm, u32::MAX, &existing,
+        ).unwrap_err();
+        match err {
+            LinearError::DuplicateUncle(_) => {}
+            e => panic!("expected DuplicateUncle, got {:?}", e),
+        }
+    }
+
+    /// B3: Uncle with impossible PoW (target=0, nonce=0) → UnclePoWInvalid
+    #[test]
+    fn check_uncles_rejects_invalid_pow() {
+        let vm = test_vm();
+        let mut uncle = dummy_uncle(8, 0);
+        uncle.header.target = BlockTarget::new(0); // impossible to satisfy
+        let (root, proofs) = build_uncle_merkle(&[uncle.clone()], &vm);
+        let err = check_uncles(
+            &[uncle], &proofs, &root,
+            BlockHeight::new(10), &vm, 0, &std::collections::HashSet::new(),
+        ).unwrap_err();
+        match err {
+            LinearError::UnclePoWInvalid(_) => {}
+            e => panic!("expected UnclePoWInvalid, got {:?}", e),
+        }
+    }
+
+    /// B4: Fabricated uncle (wrong merkle root) → UncleMerkleRootMismatch.
+    /// The merkle root check fires before individual proof verification.
+    #[test]
+    fn check_uncles_rejects_wrong_merkle_root() {
+        let vm = test_vm();
+        let uncle_a = dummy_uncle(8, 100);
+        let uncle_b = dummy_uncle(8, 200);
+        let (_root_a, proofs_a) = build_uncle_merkle(&[uncle_a.clone()], &vm);
+        let (root_b, _) = build_uncle_merkle(&[uncle_b], &vm);
+        // Use proof from tree A with root from tree B → root mismatch
+        let err = check_uncles(
+            &[uncle_a], &proofs_a, &root_b,
+            BlockHeight::new(10), &vm, u32::MAX, &std::collections::HashSet::new(),
+        ).unwrap_err();
+        match err {
+            LinearError::UncleMerkleRootMismatch(_) => {}
+            e => panic!("expected UncleMerkleRootMismatch, got {:?}", e),
+        }
+    }
+
+    /// B5: Uncle depth > MAX_UNCLE_DEPTH (6) → UncleTooOld
+    #[test]
+    fn check_uncles_rejects_too_old() {
+        let vm = test_vm();
+        let uncle = dummy_uncle(2, 42); // uncle at height 2
+        let (root, proofs) = build_uncle_merkle(&[uncle.clone()], &vm);
+        let current = BlockHeight::new(2 + 6 + 1); // depth = 7 > MAX_UNCLE_DEPTH
+        let err = check_uncles(
+            &[uncle], &proofs, &root,
+            current, &vm, u32::MAX, &std::collections::HashSet::new(),
+        ).unwrap_err();
+        match err {
+            LinearError::UncleTooOld { uncle_height, current: cur, max_depth } => {
+                assert_eq!(uncle_height, BlockHeight::new(2));
+                assert_eq!(cur, BlockHeight::new(9));
+                assert_eq!(max_depth, 6);
+            }
+            e => panic!("expected UncleTooOld, got {:?}", e),
+        }
+    }
+
+    /// B6: Valid uncle within bounds → accepted
+    #[test]
+    fn check_uncles_accepts_valid_uncle() {
+        let vm = test_vm();
+        let uncle = dummy_uncle(8, 42);
+        let (root, proofs) = build_uncle_merkle(&[uncle.clone()], &vm);
+        let result = check_uncles(
+            &[uncle], &proofs, &root,
+            BlockHeight::new(10), &vm, u32::MAX, &std::collections::HashSet::new(),
+        );
+        assert!(result.is_ok(), "expected Ok, got {:?}", result);
+    }
 }

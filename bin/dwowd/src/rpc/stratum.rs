@@ -210,7 +210,7 @@ impl DwowNode {
                         depth: 1,
                         pin_offered: false,
                         pin_accepted: false,
-                        pin_reward: 0,
+                        pin_confirmed: 0,
                     }
                 }).collect()
             }
