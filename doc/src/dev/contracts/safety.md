@@ -862,7 +862,7 @@ Looking across every vulnerability identified in the review, the root causes fal
 
 5. **Missing temporal or lifecycle constraints** — Functions accept parameters without validating when an event occurred, whether a lock period has elapsed, or whether state was persisted before the next phase (ATTEST-001, BET-001, POOL-001).
 
-6. **Orchard-class ZK circuit under-constraint** — A `constrain_instance` without an in-circuit derivation constraint is a potential unlimited-mint exploit. The Zcash Orchard bug (May 2024, found by AI-assisted audit) was exactly this: an unconstrained EC base point. Every DarkFi ZK circuit has been formally audited for this class (see below).
+6. **Orchard-class ZK circuit under-constraint** — A `constrain_instance` without an in-circuit derivation constraint is a potential unlimited-mint exploit. The Zcash Orchard bug (May 2024, found by AI-assisted audit) was exactly this: an unconstrained EC base point. Every DarkWow ZK circuit has been formally audited for this class (see below).
 
 ### Formal Verification of the ZK Circuit Surface
 

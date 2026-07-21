@@ -2,7 +2,7 @@ This directory contains native WASM contracts on DarkWow.
 
 ## Unofficial/Experimental Contracts on Dev Branch
 
-The `dev` branch contains additional contracts not yet in official DarkWow master. These are **EXPERIMENTAL** and **NOT AUDITED**.
+The `dev` branch contains additional contracts not yet in official DarkWow main. These are **EXPERIMENTAL** and **NOT AUDITED**.
 
 | Contract | Description | Status |
 |----------|-------------|--------|
@@ -38,7 +38,7 @@ The `dev` branch contains additional contracts not yet in official DarkWow maste
 
 | Contract | Description | Standard |
 |----------|-------------|----------|
-| **money** | Original DarkFi money (v1) - upstream legacy | No |
+| **money** | Removed — upstream legacy contract (directory deleted) | No |
 | **money_v2** | Deprecated — EC heap bugs (directory removed) | No |
 | **promissory_note** | Current — Privacy-first DeFi token contract | **Yes** |
 | **native_token** | Consensus-native token (PoW rewards, fees) | **Yes** |
@@ -69,7 +69,7 @@ See [promissory_note/README.md](promissory_note/README.md) for full details.
 
 | Opcode | Issue |
 |--------|-------|
-| `LessThanOrEqual` (0x55) | Gate soundness vulnerability |
+| `LessThanOrEqual` (0x55) | Gate-level implementation under investigation; opcode spec verified sound in Lean 4 |
 | `IsEqualBase` (0x54) | Delta-invert issue when `a == b` |
 | `NotBase` (0x56) | Unused, experimental |
 | `BaseLtStrict` (0x57) | Unused, experimental |
@@ -134,7 +134,7 @@ less_than_strict(lhs, rhs_1);
 |----------|---------|---------------|--------|
 | dao | `exec.zk` | No | ✅ Safe |
 | dao | `propose-main.zk` | No | ✅ Safe |
-| money (v1) | `burn_v1.zk` | No | ✅ Safe |
+| money (v1) | `burn_v1.zk` | No | ✅ Safe — historical, contract removed |
 | escrow | `refund_v1.zk` | No | ✅ Safe |
 | dao_escrow | `init_v1.zk` | No | ✅ Safe |
 | dao_escrow | `pay_premium_v1.zk` | No | ✅ Safe |
@@ -148,7 +148,7 @@ less_than_strict(lhs, rhs_1);
 ### Key Takeaways
 
 1. **`BaseDiv` is implemented** - Opcode 0x58 using binary exponentiation
-2. **`LessThanOrEqual` is verified sound** - Formally verified via Lean 4
+2. **`LessThanOrEqual` opcode spec is verified sound** - Formally verified via Lean 4 at the specification level; gate-level implementation under active investigation
 3. **`less_than_strict` is safe** - It's constrain-only (no return value manipulation)
 4. **Cross-multiplication is still useful** - For simple ratio assertions without BaseDiv overhead
 5. **stablecoin and identity use safemath** - Assertion gadgets (`assert_lte_u64_v1.zk`) as workaround for LessThanOrEqual
@@ -269,12 +269,16 @@ cargo test --release --package dwowd test_darkbet_exchange_heavyweight
 
 ## Official Contracts
 
-- **Money**: Private token transfers and basic operations
-  - [Documentation](https://darkwow.org/book/dev/darkfi_money_contract/)
-- **DAO**: Decentralized autonomous organization with governance
-  - [Documentation](https://darkwow.org/book/dev/darkfi_dao_contract/)
-- **Deployooor**: Contract deployment and management
-  - [Documentation](https://darkwow.org/book/dev/darkfi_deployooor_contract/)
+DarkWow ships 32 native WASM contracts. See the [contract catalog](../../doc/src/contracts.md) for the authoritative list with maturity labels and crate names.
+
+- **NativeToken**: Consensus-critical native token for block rewards and fees
+- **PromissoryNote**: DeFi token standard (Poseidon-only, zero EC ops)
+- **Deployooor**: Contract deployment and lifecycle management
+- **DAO Escrow**: DAO-governed endowment with three modes
+- **Identity**: Privacy-preserving identity and attestation claims
+- **Bridge**: Cross-chain asset transfers
+- **DEX**: Atomic swap DAO with slippage and fee circuits
+- ...and 25 more. See [contract catalog](../../doc/src/contracts.md) for the full list.
 
 ## Unofficial Contract Documentation
 

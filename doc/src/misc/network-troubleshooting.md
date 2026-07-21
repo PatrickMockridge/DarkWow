@@ -2,7 +2,7 @@
 
 If you're having network issues, refer to this page to debug various 
 issues. If you see inconsistencies in the docs: always trust 
-`${DARKFI_REPO}/bin/darkirc/darkirc_config.toml` or whichever respective 
+`${DARKWOW_REPO}/bin/darkirc/darkirc_config.toml` or whichever respective 
 apps' repo config file. Documentation updates are a current WIP.
 
 The default location for config files is `~/.config/dwow`.
@@ -191,12 +191,12 @@ dnet to gather more network information. dnet displays:
 To install and learn to use dnet, go [here](../learn/dchat/network-tools/using-dnet.md).
 You can use dnet to view the network topology and see how your node 
 interacts within the network. dnet log information is created in 
-`${DARKFI_REPO}/bin/dnet/dnet.log`.
+`${DARKWOW_REPO}/bin/dnet/dnet.log`.
 
 ## Ping tool
 
 You can ping any node to make sure it's online by using the provided
-`ping` tool located at `${DARKFI_REPO}/script/ping`. Select a peer from 
+`ping` tool located at `${DARKWOW_REPO}/script/ping`. Select a peer from 
 your hostlist file. You can now use the `ping` tool by 
 running this command:
 
@@ -213,7 +213,7 @@ to use a separate device to `ping` your external address.
 [You can generate an external address here](nodes/tor-guide.md#inbound-node-settings).
 For example purposes, let's assume your external address is 
 `jamie3vkiwibfiwucd6vxijskbhpjdyajmzeor4mc4i7yopvpo4p7cyd.onion`. In 
-`${DARKFI_REPO}/script/ping` we can attempt to `ping` your external address 
+`${DARKWOW_REPO}/script/ping` we can attempt to `ping` your external address 
 from a separate device. 
 
 ```
@@ -225,7 +225,7 @@ If your external address is reachable, you'll receive a `Connected!` prompt.
 ## Check tor connection
 
 You can verify if your local node is running over Tor. Execute this 
-command in `${DARKFI_REPO}/script`. You'll need to install pysocks 
+command in `${DARKWOW_REPO}/script`. You'll need to install pysocks 
 `pip install pysocks` prior to running `tor-test.py` the first time:
 
 ```
@@ -283,7 +283,7 @@ Check for duplicate variables.
 ### Node information script
 
 If you're looking for information about your node, including inbound, 
-outbound, and seed connections, execute this command in ``${DARKFI_REPO}/script``:
+outbound, and seed connections, execute this command in ``${DARKWOW_REPO}/script``:
 
 ```
 $ python node_get-info.py

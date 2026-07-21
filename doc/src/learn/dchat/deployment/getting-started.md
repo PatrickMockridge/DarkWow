@@ -4,7 +4,7 @@ We'll create a new cargo directory and add DarkWow to our `Cargo.toml`,
 like so:
 
 ```
-{{#include ../../../../../example/dchat/dchatd/Cargo.toml:darkfi}}
+{{#include ../../../../../example/dchat/dchatd/Cargo.toml:darkwow}}
 ```
 
 Be sure to replace the path to DarkWow with the correct path for your

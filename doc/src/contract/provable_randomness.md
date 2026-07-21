@@ -5,7 +5,7 @@ This document analyzes randomness generation and usage in DarkWow smart contract
 ## Table of Contents
 
 1. [The Randomness Problem](#the-randomness-problem)
-2. [DarkWow's Randomness Sources](#darkfis-randomness-sources)
+2. [DarkWow's Randomness Sources](#darkwows-randomness-sources)
 3. [Current DarkToshi Dice Implementation](#current-darktoshi-dice-implementation)
 4. [Leveraging Proof-of-Work for Randomness](#leveraging-proof-of-work-for-randomness)
 5. [VRF-Based Randomness](#vrf-based-randomness)

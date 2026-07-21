@@ -348,7 +348,7 @@ default address:
 ```shell
 dww> wallet address
 
-{YOUR_DARKFI_WALLET_ADDRESS}
+{YOUR_DARKWOW_WALLET_ADDRESS}
 ```
 
 We will also need `dwowd` running with mm_rpc enabled. The default
@@ -367,7 +367,7 @@ Stop `p2pool` if it's running, and re-run it with the merge-mining
 parameters appended:
 
 ```shell
-$ ./p2pool --host 127.0.0.1 --rpc-port 28081 --zmq-port 28083 --wallet {YOUR_MONERO_WALLET_ADDRESS_HERE} --stratum 127.0.0.1:3333 --data-dir ./p2pool-data --no-igd --merge-mine 127.0.0.1:31348 {YOUR_DARKFI_WALLET_ADDRESS}
+$ ./p2pool --host 127.0.0.1 --rpc-port 28081 --zmq-port 28083 --wallet {YOUR_MONERO_WALLET_ADDRESS_HERE} --stratum 127.0.0.1:3333 --data-dir ./p2pool-data --no-igd --merge-mine 127.0.0.1:31348 {YOUR_DARKWOW_WALLET_ADDRESS}
 ```
 
 Now `p2pool` should communicate with both `monerod` and `dwowd` in
@@ -421,7 +421,7 @@ $ ./monerod --testnet --no-igd --data-dir bitmonero --log-level 1 --hide-my-port
 Now start `p2pool`:
 
 ```shell
-$ ./p2pool --host 127.0.0.1 --rpc-port 28081 --zmq-port 28083 --wallet {YOUR_MONERO_WALLET_ADDRESS_HERE} --stratum 127.0.0.1:3333 --data-dir ./p2pool-data --no-igd --merge-mine 127.0.0.1:31348 {YOUR_DARKFI_WALLET_ADDRESS}
+$ ./p2pool --host 127.0.0.1 --rpc-port 28081 --zmq-port 28083 --wallet {YOUR_MONERO_WALLET_ADDRESS_HERE} --stratum 127.0.0.1:3333 --data-dir ./p2pool-data --no-igd --merge-mine 127.0.0.1:31348 {YOUR_DARKWOW_WALLET_ADDRESS}
 ```
 
 And `xmrig` (requires >= 6.22.2, see [Current Status](#current-status)):
@@ -551,7 +551,7 @@ $ curl -X jsonrpc -H "Content-Type: application/json" \
 $ ./p2pool --host 127.0.0.1 --rpc-port 28081 --zmq-port 28083 \
     --wallet {YOUR_MONERO_WALLET_ADDRESS_HERE} --stratum 127.0.0.1:3333 \
     --data-dir ./p2pool-data --no-igd \
-    --merge-mine 127.0.0.1:48348 {YOUR_DARKFI_WALLET_ADDRESS}
+    --merge-mine 127.0.0.1:48348 {YOUR_DARKWOW_WALLET_ADDRESS}
 ```
 
 For full integration testing of the merge mining RPC implementation, use the

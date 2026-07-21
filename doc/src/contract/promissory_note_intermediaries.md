@@ -39,7 +39,7 @@ For the PN contract's internal design (circuits, entrypoints, data model), see
 
 | Role | Description | PN Opcodes Used |
 |------|-------------|-----------------|
-| **Issuer** | Creates tokens, manages supply, redeems | TransferV1 (0x04), RedeemV1 (0x01), BurnV1 (0x03, via spend hook) |
+| **Issuer** | Creates tokens, manages supply, redeems | TransferV1 (0x04), RedeemV1 (0x01), RevokeV1 (0x03, via spend hook) |
 | **OTC** | Atomic peer-to-peer swaps | TransferV1 (0x04), OtcSwapV1 (0x05) |
 | **Token Mover** | Moves existing tokens between participants | TransferV1 (0x04) only |
 
@@ -47,10 +47,10 @@ For the PN contract's internal design (circuits, entrypoints, data model), see
 
 | Opcode | Name | Purpose | Consumers |
 |--------|------|---------|-----------|
-| 0x00 | TokenMintV1 | Create a new token type | None (anyone can call) |
+| 0x00 | RegisterTypeV1 | Create a new token type | None (anyone can call) |
 | 0x01 | RedeemV1 | Redeem coin → zero-value receipt | stablecoin (RedeemStableV1) |
-| 0x02 | MintV1 | Mint tokens of existing type | None (mint authority required) |
-| 0x03 | BurnV1 | Destroy tokens, publish nullifiers | stablecoin (via spend hook callback) |
+| 0x02 | IssueV1 | Mint tokens of existing type | None (mint authority required) |
+| 0x03 | RevokeV1 | Destroy tokens, publish nullifiers | stablecoin (via spend hook callback) |
 | 0x04 | TransferV1 | Private token transfer | **22 contracts** (94% of PN child calls) |
 | 0x05 | OtcSwapV1 | Atomic OTC swap | dex (via swap execution) |
 
@@ -120,7 +120,7 @@ The stablecoin is the sole issuer contract. It implements the complete lifecycle
 | MintStableV1 | TransferV1 (0x04) | contract_id + value_commit |
 | RepayStableV1 | TransferV1 (0x04) | contract_id + value_commit |
 | RedeemStableV1 | RedeemV1 (0x01) | contract_id + receipt validation |
-| Burn (spend hook) | BurnV1 (0x03) callback | caller PN contract_id + nullifier replay |
+| Burn (spend hook) | RevokeV1 (0x03) callback | caller PN contract_id + nullifier replay |
 
 For RedeemV1 specifically, the issuer calls `validate_child_redeem_v1` to extract
 the receipt coin's value_commit and token_commit:
@@ -140,7 +140,7 @@ contract." Token movers are not issuers — they don't restrict how tokens are u
 
 **Issuers set spend_hook to their own contract ID** on minted coins. The
 spend_hook callback mechanism (see below) allows the issuer to track burns
-and redemptions without requiring every token mover to call BurnV1 directly.
+and redemptions without requiring every token mover to call RevokeV1 directly.
 
 ---
 
@@ -155,7 +155,7 @@ The stablecoin is the **reference implementation** for an issuer contract. It de
 - **Minting** via `MintStableV1 (0x04)`: calls PN::TransferV1 as a child, sets `spend_hook = self` on output coins. Collateral is held in the stablecoin contract.
 - **Repayment** via `RepayStableV1 (0x04)`: calls PN::TransferV1 to return stablecoins to the contract.
 - **Redemption** via `RedeemStableV1 (0x0A)`: calls PN::RedeemV1 (0x01) as a child to destroy stablecoins and create a zero-value receipt. Releases proportional collateral. Updates `total_redeemed`.
-- **Burn tracking** via spend hook callback (`SpendHookCallback 0x0B`): receives callbacks from PN::BurnV1, records nullifiers, increments `total_redeemed`.
+- **Burn tracking** via spend hook callback (`SpendHookCallback 0x0B`): receives callbacks from PN::RevokeV1, records nullifiers, increments `total_redeemed`.
 
 The entrypoint uses `define_contract_with_spend_hook!` to export the `__spend_hook`
 WASM function. `SpendHookCallback` is an internal opcode reachable **only** via
@@ -199,7 +199,7 @@ Unlike the stablecoin, the bridge cannot verify collateral coverage on-chain
 since the collateral lives on external chains. The `GovernanceReportV1` proves
 internal accounting consistency only: `outstanding = total_deposited - total_withdrawn`.
 
-**The bridge does not use BurnV1 or RedeemV1.** Its "burns" are simulated by
+**The bridge does not use RevokeV1 or RedeemV1.** Its "burns" are simulated by
 transferring tokens to the bridge contract. The external chain is the source of
 truth for the actual release. This is architecturally correct for a bridge.
 
@@ -286,7 +286,7 @@ know or care what the target contract does with the notification.
    via PN::TransferV1, it sets `spend_hook = stablecoin_contract_id` on the output coin.
    This is exposed as a public input in all output-creating ZK circuits.
 
-2. **Token mover burns tokens** — any holder calls PN::BurnV1. PN checks that all
+2. **Token mover burns tokens** — any holder calls PN::RevokeV1. PN checks that all
    inputs share the same `spend_hook` (rejects with `SpendHookMismatch` if they differ).
 
 3. **PN dispatches callback** — when `spend_hook != 0`, PN builds a
@@ -326,7 +326,7 @@ The stablecoin's `SpendHookCallback (0x0B)` is the canonical example:
 The redemption lifecycle is the complete path from token creation to destruction:
 
 ```
-TokenMintV1 (0x00)     MintV1 (0x02)        TransferV1 (0x04)    RedeemV1 (0x01)
+RegisterTypeV1 (0x00)     IssueV1 (0x02)        TransferV1 (0x04)    RedeemV1 (0x01)
 ─────────────────►  ───────────────►  ...  ──────────────────►  ───────────────►
 Create token type    Mint tokens            Transfer tokens       Redeem → receipt
 (anyone)             (mint authority)       (coin holder)         (issuer)
@@ -353,7 +353,7 @@ The stablecoin's `RedeemStableV1` is the sole consumer of RedeemV1:
 
 ### Redemption via Spend Hook (Burn)
 
-When a token holder directly calls `PN::BurnV1` (0x03), the spend hook mechanism
+When a token holder directly calls `PN::RevokeV1` (0x03), the spend hook mechanism
 notifies the issuer. The issuer increments `total_redeemed` in the callback.
 This path does not release collateral — it is a pure burn. Only `RedeemStableV1`
 releases collateral.
@@ -422,10 +422,10 @@ they need.
 | Issuers | 1 (stablecoin) |
 | Token movers | 20 (+ dex as OTC) |
 | Independent (no PN) | 7 |
-| Using TokenMintV1 (0x00) | 0 |
+| Using RegisterTypeV1 (0x00) | 0 |
 | Using RedeemV1 (0x01) | 1 (stablecoin) |
-| Using MintV1 (0x02) | 0 |
-| Using BurnV1 (0x03) | 1 (stablecoin, via spend hook) |
+| Using IssueV1 (0x02) | 0 |
+| Using RevokeV1 (0x03) | 1 (stablecoin, via spend hook) |
 | Using TransferV1 (0x04) | 22 |
 | Using OtcSwapV1 (0x05) | 1 (dex) |
 | Contracts with redemption support | 1 (stablecoin) |
@@ -446,7 +446,7 @@ the same opcode.
 via Pedersen additive homomorphism: `sum(input value_commits) == sum(output value_commits)`
 per token_commit group. This prevents creating tokens out of thin air within a transfer.
 
-**Unauthorized minting.** MintV1 requires a ZK proof demonstrating knowledge of the
+**Unauthorized minting.** IssueV1 requires a ZK proof demonstrating knowledge of the
 mint backing secret (`mint_public = poseidon_hash(backing_secret)` constrained in-circuit
 at `mint_v1.zk:41-43`). The entrypoint verifies `mint_public == stored_token_auth_parent`
 against the on-chain token registry.
@@ -468,9 +468,9 @@ sheet counters from on-chain config DB, computes outstanding, and enforces
 
 ### Residual Risks
 
-**TokenMintV1 has no authority check.** Anyone can call TokenMintV1 to create a new
+**RegisterTypeV1 has no authority check.** Anyone can call RegisterTypeV1 to create a new
 token type. This is by design — token creation is permissionless. The security boundary
-is at MintV1 (minting tokens of an existing type requires the mint authority).
+is at IssueV1 (minting tokens of an existing type requires the mint authority).
 
 **Same-block double-spend.** Execution overlays are cloned per-call (`execution.rs:147`),
 so two transactions spending the same nullifier in one block would both pass exec-phase

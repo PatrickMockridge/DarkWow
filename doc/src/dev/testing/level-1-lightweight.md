@@ -318,7 +318,7 @@ relayer_endowment, slot, stablecoin, subscription, tender
 ```
 
 6 contracts (baccarat, betting_stake, darkbet_exchange,
-darktoshi_dice, lottery, roulette) have `darkfi_*.wasm` only — their
+darktoshi_dice, lottery, roulette) have `dwow_*.wasm` only — their
 `dwow_*.wasm` has not yet been built. These are tested via heavyweight
 harness proof generation only.
 

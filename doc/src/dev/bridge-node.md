@@ -59,7 +59,7 @@ docker run --network=host \
 ```bash
 docker run --network=host \
     -e MODE=relayer-only \
-    -e DARKFID_URL=tcp://192.168.1.100:31345 \
+    -e DWOWD_URL=tcp://192.168.1.100:31345 \
     -e ETH_ENABLED=true \
     -e ETH_NODE_URL=https://mainnet.infura.io/v3/YOUR_KEY \
     -e ETH_RELAYER_PRIVATE_KEY=0x... \
@@ -73,7 +73,7 @@ docker run --network=host \
 docker compose -f contrib/docker/bridge-node/docker-compose.yml --profile full up -d
 
 # Relayer-only
-DARKFID_URL=tcp://192.168.1.100:31345 \
+DWOWD_URL=tcp://192.168.1.100:31345 \
     docker compose -f contrib/docker/bridge-node/docker-compose.yml --profile relayer-only up -d
 ```
 
@@ -142,7 +142,7 @@ AZT_SEQUENCER_URL=https://aztec.network
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `DARKFID_URL` | `tcp://127.0.0.1:31345` | dwowd JSON-RPC endpoint |
+| `DWOWD_URL` | `tcp://127.0.0.1:31345` | dwowd JSON-RPC endpoint |
 | `POLL_INTERVAL_SECS` | `10` | How often to check for withdrawals |
 | `MAX_CONCURRENT_WITHDRAWALS` | `10` | Max parallel withdrawal executions |
 | `RELAYER_TIMEOUT_BLOCKS` | `100` | Blocks before withdrawal can be cancelled |
@@ -163,8 +163,8 @@ interaction.
 ### Manual Contract Interaction
 
 ```bash
-# List deployed contracts
-docker exec <container> /app/dwow_wallet -n darkwow-testnet contract list
+# Show a deployed contract
+docker exec <container> /app/dwow_wallet -n darkwow-testnet contract show <contract_id>
 
 # Check bridge config
 docker exec <container> /app/dwow_wallet -n darkwow-testnet contract invoke <bridge_id> get_config
@@ -194,7 +194,7 @@ capital to relayers in exchange for a share of bridge fees.
 docker exec <container> ps aux | grep -E 'dwowd|universal_relayer'
 
 # RPC health check
-docker exec <container> bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}\" >&3; timeout 3 cat <&3'
+docker exec <container> bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo '"'"'{"jsonrpc":"2.0","method":"ping","params":[],"id":1}'"'"' >&3; timeout 3 cat <&3'
 
 # Relayer status
 docker exec <container> /app/universal_relayer --config /root/.config/dwow/universal_relayer.toml status

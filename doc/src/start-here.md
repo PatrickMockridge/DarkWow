@@ -33,12 +33,11 @@ to install Rust and necessary dependencies. Then proceed to the
 
 ## Join the Community
 
-Although we have a Telegram, we don't believe in centralized
+Although a community-run Telegram exists, we don't believe in centralized
 proprietary apps, and our core community organizes through our own
 fully anonymous p2p chat system which has support for Tor and i2p.
 
-Every Monday at 14:00 UTC (DST) or 15:00 UTC (ST) in #dev we have our
-main project meeting.
+Developer meetings: TBA for time and venue — check `#dev` on DarkIRC for announcements.
 
 See the guide on [darkirc](misc/darkirc/darkirc.md) for instructions
 on joining the chat.
@@ -68,7 +67,7 @@ Source code is under `src/` subdirectory. Main interesting modules are:
   channels depending on the session. The p2p network is also
   multi-transport with support for TCP (+TLS), Tor and i2p. So you can
   access the p2p fully anonymously (network level privacy).
-* `blockchain/` and `validator/` implement the linear blockchain with
+* `blockchain/` and `linear/` implement the linear blockchain with
   Uncle Merkle consensus. The linear chain provides deterministic
   block production via RandomX Proof of Work.
 * `runtime/` is the WASM smart contract engine. We separate computation
@@ -76,8 +75,9 @@ Source code is under `src/` subdirectory. Main interesting modules are:
   solidity but enforced in the smart contract explicitly. For example
   in the `exec()` phase, you can only read, whereas writes must occur
   in the `apply(update)` phase.
-* `event_graph/` (legacy): the original DAG sync protocol. This has been
-  superseded by the linear blockchain consensus. See [arch/legacy/](arch/legacy/).
+* `event_graph/` (legacy consensus, active P2P DAG): the original DAG sync
+  protocol superseded by the linear blockchain for consensus. It remains
+  active as the P2P messaging DAG used by darkirc. See [arch/legacy/](arch/legacy/).
 * `zk/` is the ZK VM, which simply loads bytecode which is used to
   build the circuits. It's a very simple model rather than the TinyRAM
   computation models. We opted for this because we prefer simplicity in
@@ -102,7 +102,7 @@ Source code is under `src/` subdirectory. Main interesting modules are:
       more attack resistant.
 * `contract/` contains our native smart contracts. Namely:
     * `native_token`, the consensus-first native token for block rewards and fees.
-      Handles PoWRewardV1, FeeV1, TransferV1, and PoWRewardV1 (block rewards).
+      Handles FeeV1, TransferV1, and PoWRewardV1 (block rewards).
     * `deployooor` for deploying WASM smart contracts.
     * `dao_escrow`, a DAO with three modes (Escrow/Treasury/Endowment) for governance.
     * `game_room`, a generalized betting and pot management contract for
@@ -115,13 +115,12 @@ Source code is under `src/` subdirectory. Main interesting modules are:
 
 Inside `bin/` contains utilities and applications:
 
-* `dwowd/` is the main daemon and `dwow_wallet/` is the wallet.
+* `dwowd/` is the main daemon and `dww/` is the wallet.
 * `dnet/` is a viewer to see the p2p traffic of nodes. Used for debugging
   and monitoring the p2p network.
-* `dhtd/` is a distributed hash table, like IPFS, for transferring
-  static data and large files around. Currently just a prototype but
-  we'll use this later for images in the chat or other static content
-  like seller pages on the marketplace.
+* `dht/` is the distributed hash table library, like IPFS, for transferring
+  static data and large files around. Currently used as a library module —
+  there is no standalone `dhtd` binary.
 * `tau/` is an anon p2p task manager which we use. We don't use Github
   issues, and seek to minimize our dependence on centralized services.
   Eventually we want to be fully p2p and attack resistant.

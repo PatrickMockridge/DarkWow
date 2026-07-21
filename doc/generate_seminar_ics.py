@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# DEPRECATED: Last seminar event generated July 2023.
+# The meet.jit.si/darkfi-seminar venue is no longer active.
+# Developer meetings are now held on DarkIRC #dev (TBA for time and venue).
+# This script is retained for historical reference only.
 import uuid
 import hashlib
 from datetime import datetime

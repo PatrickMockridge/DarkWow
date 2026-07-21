@@ -12,7 +12,7 @@
 | Attestation (`src/contract/attestation/`) | v1 (May 2026 hardening) | 2026-05-17 | Internal — Phase 2d integration |
 | Pool Stake (`src/contract/pool_stake/`) | v1 (May 2026 hardening) | 2026-05-17 | Internal — Phase 2d integration |
 
-**Out of scope**: universal_relayer binary, all other 23 contracts in this repository, ZK circuit soundness proofs, external chain integration code.
+**Out of scope**: universal_relayer binary, all other 28 contracts in this repository, ZK circuit soundness proofs, external chain integration code.
 
 ## Methodology
 

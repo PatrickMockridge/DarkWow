@@ -333,6 +333,8 @@ define_contract_function!(DexFunction {
     AcceptSwapV1 = 0x02,
     ExecuteSwapV1 = 0x03,
     CancelSwapV1 = 0x04,
+    // ... 4 additional variants: UpdateConfigV1=0x05, SetTransparencyLevelV1=0x06,
+    //     ExecuteSwapFeeV1=0x07, ExecuteSwapSlippageV1=0x08
 });
 ```
 
@@ -359,10 +361,13 @@ wasm::util::set_return_data(&metadata)?;
 ```rust
 use dwow_sdk::error::{ContractError, ContractResult};
 
-// Valid variants:
-ContractError::IoError("message".to_string())
-ContractError::InvalidFunction
-ContractError::Custom(u32)
+// ContractError has ~18 variants including:
+//   IoError, InvalidFunction, Custom, Internal, SetRetvalError,
+//   NullifierExistCheck, ValidMerkleCheck, UpdateAlreadySet,
+//   DbInitFailed, CallerAccessDenied, DbNotFound, DbSetFailed,
+//   DbDelFailed, DbLookupFailed, DbGetFailed, DbGetEmpty,
+//   DbContainsKeyFailed, ...
+// See src/sdk/src/error.rs for the complete enum definition.
 ```
 
 ## Best Practices

@@ -40,13 +40,13 @@ Contracts no longer need to import `async_trait` at use sites. The generated cod
 ### Feature Flag Propagation
 
 **Common pattern:**
-When a contract enables `client` feature, it typically propagates to `dwow-sdk/async` which enables `darkfi-serial/async`:
+When a contract enables `client` feature, it typically propagates to `dwow-sdk/async` which enables `dwow-serial/async`:
 
 ```toml
 # In contract's Cargo.toml
 [features]
 client = [
-    "dwow-sdk/async",      # This enables darkfi-serial/async
+    "dwow-sdk/async",      # This enables dwow-serial/async
     # ...
 ]
 ```
@@ -59,10 +59,10 @@ Example from a contract's Cargo.toml:
 [features]
 async = ["dwow-sdk/async"]
 client = [
-    "darkfi",
+    "dwow_core",
     "async",                  # client depends on async
     "dwow-sdk/async",
-    "darkfi-serial/async",
+    "dwow-serial/async",
     # ...
 ]
 ```
@@ -79,7 +79,7 @@ error[E0433]: failed to resolve: could not find `async_trait` in the list of imp
 ```
 
 **Cause:**
-When `darkfi-serial/async` is enabled, the `SerialEncodable` and `SerialDecodable` derive macros generate async code that uses `#[async_trait]`. Previously, the generated code used `#[async_trait]` directly, expecting the macro to be in scope at the use site. However, `async_trait` is only available as a transitive dependency through `dwow_serial`, not as a direct import at use sites in `dwow_sdk`.
+When `dwow-serial/async` is enabled, the `SerialEncodable` and `SerialDecodable` derive macros generate async code that uses `#[async_trait]`. Previously, the generated code used `#[async_trait]` directly, expecting the macro to be in scope at the use site. However, `async_trait` is only available as a transitive dependency through `dwow_serial`, not as a direct import at use sites in `dwow_sdk`.
 
 **Fix Applied:**
 The fix was in `src/serial/derive-internal/src/async_derive.rs`:
@@ -91,7 +91,7 @@ This makes the generated code self-contained and doesn't require contracts to im
 
 **Verification:**
 ```bash
-cargo check -p darkfi --features "zk"  # Should compile without async_trait errors
+cargo check -p dwow_core --features "zk"  # Should compile without async_trait errors
 cargo check -p dwowd  # Should compile
 ```
 
@@ -169,7 +169,7 @@ Use `&mut` to pass a mutable reference:
 
 ### PromissoryNote Contract Compilation
 
-The `darkfi_promissory_note_contract` is the current DeFi token contract. If you encounter compilation issues:
+The `dwow_promissory_note_contract` is the current DeFi token contract. If you encounter compilation issues:
 
 **Common issue: Missing ZK circuit binaries**
 ```

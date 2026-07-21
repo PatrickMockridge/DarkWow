@@ -278,7 +278,7 @@
 # P2P API Tutorial
 
 > **Note**: This tutorial teaches the event_graph P2P messaging stack used
-> by darkirc — not the libp2p-based blockchain P2P layer used by dwowd.
+> by darkirc — not the custom blockchain P2P layer used by dwowd.
 > The tutorial and example code remain valuable for darkirc developers.
 
 - [P2P API Tutorial](learn/dchat/dchat.md)

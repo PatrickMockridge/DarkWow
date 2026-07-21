@@ -257,7 +257,7 @@ src/contract/stablecoin/
 │   ├── lib.rs                   # Function enum, constants
 │   └── model/
 │       └── mod.rs               # Data types, InitializeParams
-├── Cargo.toml                   # Depends on darkfi_promissory_note_contract
+├── Cargo.toml                   # Depends on dwow_promissory_note_contract
 ├── Makefile
 └── tests/
 ```

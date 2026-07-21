@@ -231,7 +231,7 @@ DeFi assets are born.
 
 **Parameters:**
 ```rust
-struct RegisterTypeParamsV1 {
+struct TokenMintParamsV1 {
     coin: Coin,                   // Initial coin (first mint)
     value_commit: pallas::Point,  // Pedersen commitment
     token_id: pallas::Base,       // H(auth_parent, user_data, blind)

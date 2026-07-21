@@ -1,7 +1,7 @@
 # Migration Plan: money_v2 → PromissoryNote
 
-> **Date**: 2026-04-16
-> **Status**: Planned
+> **Date**: 2026-04-16 (completed 2026-05)
+> **Status**: Completed — money_v2 directory removed, contracts migrated to promissory_note
 > **Contracts Affected**: dex, dao_escrow, game_room, subscription
 
 ---
@@ -111,7 +111,7 @@ Update Cargo.toml for each contract:
 #### dao_escrow/Cargo.toml
 ```toml
 [dependencies]
-darkfi_promissory_note_contract = { path = "../promissory_note", optional = true }
+dwow_promissory_note_contract = { path = "../promissory_note", optional = true }
 
 [features]
 default = []
@@ -122,7 +122,7 @@ client = [
     "chacha20poly1305",
     "tracing",
     "halo2_proofs",
-    "darkfi_promissory_note_contract/client",  # Add this
+    "dwow_promissory_note_contract/client",  # Add this
 ]
 ```
 
@@ -138,7 +138,7 @@ The client code that constructs child calls must use promissory_note's `Transfer
 
 **Before (money_v2)**:
 ```rust
-use darkfi_money_v2_contract::client::transfer_v1::TransferCallBuilder;
+use dwow_money_v2_contract::client::transfer_v1::TransferCallBuilder;
 // ...
 let child_call = TransferCallBuilder {
     inputs: ...,
@@ -150,7 +150,7 @@ let child_call = TransferCallBuilder {
 
 **After (promissory_note)**:
 ```rust
-use darkfi_promissory_note_contract::client::transfer_v1::TransferCallBuilder;
+use dwow_promissory_note_contract::client::transfer_v1::TransferCallBuilder;
 // ...
 let child_call = TransferCallBuilder {
     inputs: ...,    // Now uses pallas::Base for value_commit
@@ -164,14 +164,14 @@ let child_call = TransferCallBuilder {
 
 ```bash
 # Build each contract
-cargo build --release -p darkfi_dao_escrow_contract
-cargo build --release -p darkfi_game_room_contract
-cargo build --release -p darkfi_subscription_contract
+cargo build --release -p dwow_dao_escrow_contract
+cargo build --release -p dwow_game_room_contract
+cargo build --release -p dwow_subscription_contract
 
 # Run pipeline tests
-CONTRACT_NAME=dao_escrow cargo test --package darkfid test_pipeline
-CONTRACT_NAME=game_room cargo test --package darkfid test_pipeline
-CONTRACT_NAME=subscription cargo test --package darkfid test_pipeline
+CONTRACT_NAME=dao_escrow cargo test --package dwowd test_pipeline
+CONTRACT_NAME=game_room cargo test --package dwowd test_pipeline
+CONTRACT_NAME=subscription cargo test --package dwowd test_pipeline
 ```
 
 ---
@@ -263,7 +263,7 @@ If implementing OtcSwapV1 is too complex, redesign DEX to use hashlock:
 **dex/Cargo.toml**:
 ```toml
 [dependencies]
-darkfi_promissory_note_contract = { path = "../promissory_note", optional = true }
+dwow_promissory_note_contract = { path = "../promissory_note", optional = true }
 
 [features]
 client = [
@@ -273,7 +273,7 @@ client = [
     "chacha20poly1305",
     "tracing",
     "halo2_proofs",
-    "darkfi_promissory_note_contract/client",  # Add this
+    "dwow_promissory_note_contract/client",  # Add this
 ]
 ```
 
@@ -286,8 +286,8 @@ Must use promissory_note's `OtcSwapCallBuilder` (after implementation) instead o
 ### Step 3.3: Verification
 
 ```bash
-cargo build --release -p darkfi_dex_contract
-CONTRACT_NAME=dex cargo test --package darkfid test_pipeline
+cargo build --release -p dwow_dex_contract
+CONTRACT_NAME=dex cargo test --package dwowd test_pipeline
 ```
 
 ---
@@ -355,10 +355,10 @@ Phase 3:  Full integration testing
 
 # Heavyweight tests (full ZK proofs)
 export RUST_MIN_STACK=16777216
-cargo test --package darkfid --release test_dao_escrow_heavyweight
-cargo test --package darkfid --release test_game_room_heavyweight
-cargo test --package darkfid --release test_subscription_heavyweight
-cargo test --package darkfid --release test_dex_heavyweight
+cargo test --package dwowd --release test_dao_escrow_heavyweight
+cargo test --package dwowd --release test_game_room_heavyweight
+cargo test --package dwowd --release test_subscription_heavyweight
+cargo test --package dwowd --release test_dex_heavyweight
 ```
 
 ---
@@ -376,6 +376,6 @@ If issues are found during migration:
 ## Success Criteria
 
 1. All 4 contracts build successfully with promissory_note dependencies
-2. All pipeline tests pass: `CONTRACT_NAME=<contract> cargo test --package darkfid test_pipeline`
+2. All pipeline tests pass: `CONTRACT_NAME=<contract> cargo test --package dwowd test_pipeline`
 3. No references to `money_v2` in contract source code (grep should return empty)
 4. Heavyweight tests pass with real ZK proofs

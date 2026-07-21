@@ -46,7 +46,7 @@ VERBOSE=true ./contrib/docker/testnet-node/native-workflow.sh
 make
 ```
 
-This compiles dwowd, dwow_wallet (wallet CLI), and all 28 contract WASMs.
+This compiles dwowd, dww (wallet CLI), and all 32 contract WASMs.
 
 ### 2. Start dwowd
 
@@ -138,16 +138,10 @@ Promissory Note is deployed at genesis — no need to deploy it. For other
 contracts, use the standard deploy flow:
 
 ```bash
-# Generate deploy authority
-DEPLOY_AUTH=$(./target/release/dwow_wallet -n darkwow-testnet contract generate-deploy)
-
-# Deploy the contract
-./target/release/dwow_wallet -n darkwow-testnet contract deploy "$DEPLOY_AUTH" \
-    ./src/contract/escrow/escrow.wasm | \
-    ./target/release/dwow_wallet -n darkwow-testnet broadcast
-
-# After getting the ContractId from the deploy output, register it:
-./target/release/dwow_wallet -n darkwow-testnet contract register escrow <ContractId>
+# Deploy the contract (deploy authority is auto-generated during deploy)
+./target/release/dww -n darkwow-testnet contract deploy <deploy_auth> \
+    ./src/contract/escrow/dwow_escrow_contract.wasm | \
+    ./target/release/dww -n darkwow-testnet broadcast
 ```
 
 ### 11. Send a Transfer
@@ -170,14 +164,12 @@ Note: Every transaction requires a 42,000,000 DARK fee.
 
 ## Contract Commands Reference
 
-All 28 repo contracts are recognized by the wallet. Commands:
+All 32 repo contracts are recognized by the wallet. Commands:
 
 | Command | Description |
 |---------|-------------|
-| `contract list` | List registered contracts and deploy authorities |
-| `contract generate-deploy` | Generate a new deploy authority |
-| `contract deploy <secret> <wasm>` | Deploy a WASM contract |
-| `contract register <name> <id>` | Register a deployed ContractId |
+| `contract deploy <deploy_auth> <wasm_path>` | Deploy a WASM contract |
+| `contract show <contract_id>` | Show a deployed contract's metadata |
 | `contract invoke <id> <function> [--params <json>]` | Call a contract function |
 | `contract lock <secret>` | Lock a deployed contract (immutable) |
 
@@ -218,7 +210,7 @@ exponential decay from ~13.84 DRKW at height 1. The wallet address must match th
 mining address stored in dwowd's database.
 
 **Contract deploy fails.** The fee is 42,000,000 DARK — ensure your balance covers it.
-Check that `promissory_note.wasm` exists at `src/contract/promissory_note/` (built by `make contracts`).
+Check that `dwow_promissory_note_contract.wasm` exists at `src/contract/promissory_note/` (built by `make contracts`).
 
 **Wallet balance shows zero after mining.** Run `dwow_wallet scan` first — the wallet must
 scan the blockchain to find coins belonging to its keys.

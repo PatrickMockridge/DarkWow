@@ -127,7 +127,7 @@ performed for TransferV1 refunds.
 
 ## ZK Circuits
 
-Six ZK circuits power the DEX:
+Eight ZK circuits power the DEX:
 
 | Circuit | Purpose |
 |---------|---------|
@@ -135,6 +135,8 @@ Six ZK circuits power the DEX:
 | `accept_swap_v1.zk` | Proves acceptor locked matching funds |
 | `execute_swap_v1.zk` | Proves both secrets known, partial fill |
 | `cancel_swap_v1.zk` | Proves ownership for cancellation |
+| `update_config_v1.zk` | Proves authority to update DEX configuration |
+| `set_transparency_level_v1.zk` | Proves authority to set transparency level |
 | `execute_swap_slippage_v1.zk` | Proves slippage tolerance (BaseDiv) |
 | `execute_swap_fee_v1.zk` | Proves fee deduction (BaseDiv) |
 

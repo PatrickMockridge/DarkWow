@@ -1,17 +1,16 @@
 zkas
 ====
 
-zkas is a compiler for the Halo2 zkVM language used in
-[DarkWow](https://codeberg.org/PatrickM123/darkfi-jailbroken).
+zkas is a compiler for the Halo2 zkVM language used in DarkWow.
 
-The current implementation found in the DarkWow repository inside
-[`src/zkas`](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/zkas)
+The current implementation found in the repository at
+[`src/zkas`](../../src/zkas)
 is the reference compiler and language implementation. It is a
 toolchain consisting of a lexer, parser, static and semantic analyzers,
 and a binary code compiler.
 
 The
-[`main.rs`](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/bin/zkas/src/main.rs)
+[`main.rs`](src/main.rs)
 file shows how this toolchain is put together to produce binary code
 from source code.
 
@@ -19,10 +18,44 @@ from source code.
 
 The main part of the compilation happens inside the parser. New opcodes
 can be added by extending
-[`opcode.rs`](https://codeberg.org/PatrickM123/darkfi-jailbroken/src/branch/linear-master/src/zkas/opcode.rs).
+[`opcode.rs`](../../src/zkas/opcode.rs).
 
 ```rust
 {{#include ../../../bin/zkas/src/main.rs:zkas}}
+```
+
+# CLI Usage
+
+Compile a ZK circuit:
+
+```shell
+zkas -o output.zk.bin input.zk
+```
+
+Flags:
+
+| Flag | Description |
+|------|-------------|
+| `-o <FILE>` | Place output into `<FILE>` |
+| `-d` | Include debug symbols (non-deterministic) |
+| `-p` | Preprocess only; do not compile |
+| `-i` | Interactive semantic analysis |
+| `-e` | Examine decoded bytecode |
+
+Subcommands:
+
+| Command | Description |
+|---------|-------------|
+| `validate <BINARY>` | Validate a `.zk.bin` file |
+| `rebuild <DIRECTORY>` | Rebuild `.zk.bin` from `.zk` source files |
+| `prove <CIRCUIT.zk.bin>` | Generate a ZK proof from a compiled circuit |
+
+Examples:
+
+```shell
+zkas validate src/contract/dao_escrow/proof/pay_premium_v1.zk.bin
+zkas rebuild src/contract/dao_escrow/proof/
+zkas prove circuit.zk.bin -w 1,2,3
 ```
 
 # Security: Public Key Derivation

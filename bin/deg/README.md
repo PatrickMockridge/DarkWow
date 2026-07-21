@@ -1,6 +1,6 @@
 # deg (Debugging Event Graph)
 
-A simple tui to explore darkfi's Event Graph state. Displays:
+A simple tui to explore DarkWow's Event Graph state. Displays:
 
 1. List of current events in the DAG.
 2. Minimal graph showing how events are linked.

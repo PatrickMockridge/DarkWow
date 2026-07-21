@@ -185,7 +185,7 @@ The DarkToshi Dice contract was successfully deployed and tested on localnet.
 ```bash
 # Deploy contract
 dwow_wallet contract deploy BNLNkr1DrDLqVE3SovLkqHYukwvin1W93xwTpfsxmwh1 \
-  target/wasm32-unknown-unknown/release/darkfi_darktoshi_dice_contract.wasm \
+  target/wasm32-unknown-unknown/release/dwow_darktoshi_dice_contract.wasm \
   | dwow_wallet broadcast
 
 # Transaction ID: e15a50bae7940593057ca9674f774aaf7f50e107bd4b3483d6e65130e55d8e2f

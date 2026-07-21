@@ -65,5 +65,5 @@ echo '{"jsonrpc": "2.0", "method": "p2p.get_info", "params": [], "id": 1}' | nc 
 ## Implementation
 
 The `p2p.get_info` method is provided by the `HandlerP2p` trait in
-`darkfi::rpc::p2p_method`. It iterates over the P2P node's hosts and collects
+`dwow_core::rpc::p2p_method`. It iterates over the P2P node's hosts and collects
 channel information including addresses, session types, and IDs.

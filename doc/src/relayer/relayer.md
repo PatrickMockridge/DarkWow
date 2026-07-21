@@ -130,7 +130,7 @@ The bridge, relayer_endowment, identity, attestation, and pool_stake contracts u
 | **Fee Schedule Commitments** | `CommitFeeScheduleV1` — relayers publish fees on-chain via attestation; `RegisterFeeScheduleV1` — bridge-side registration | Users discover relayer fees before committing funds |
 | **Slash Attestations** | `AttestSlashV1` ZK circuit records slash events as privacy-preserving attestations | Verifiable reputation without revealing specific withdrawal details |
 
-See [Security Audit(../contract/audit.md) for full findings and residual risks.
+See [Security Audit](../contract/audit.md) for full findings and residual risks.
 
 ## Hardware Requirements
 
@@ -256,8 +256,8 @@ sudo apt install build-essential pkg-config libssl-dev
 Create `universal_relayer_config.toml`:
 
 ```toml
-[darkfi]
-darkfid_url = "http://127.0.0.1:8543"
+[dwow]
+dwowd_url = "http://127.0.0.1:8543"
 poll_interval_secs = 10
 max_concurrent_withdrawals = 10
 
@@ -306,7 +306,7 @@ fee_percentage = 1
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `darkfid_url` | `http://127.0.0.1:8543` | DarkWow node JSON-RPC endpoint |
+| `dwowd_url` | `http://127.0.0.1:8543` | DarkWow node JSON-RPC endpoint |
 | `poll_interval_secs` | 10 | How often to check for new withdrawals |
 | `max_concurrent_withdrawals` | 10 | Max simultaneous withdrawal executions |
 
@@ -616,7 +616,7 @@ Error: Ethereum: insufficient funds for gas
 ## References
 
 - [Bridge Architecture](../contract/bridge.md) - Detailed bridge documentation
-- [Atomic Swaps](../testnet/atomic-swap.md) - How atomic swaps work in DarkWow
+- [Testnet Mining](../testnet/testnet-mining.md) - How to mine on DarkWow testnet
 - [Object Capability Security](https://en.wikipedia.org/wiki/Object-capability_model) - Security model explanation
 - [Monero Documentation](https://www.getmonero.org/get-started/accepting/) - Monero setup
 - [Zcash Documentation](https://zcash.readthedocs.io/) - Zcash setup

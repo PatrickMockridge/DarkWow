@@ -19,21 +19,24 @@ _Relevant code for this section can be found in src/runtime and src/sdk/src/._
 
 ### Smart Contracts
 
-Smart contracts can only interact with Wasm via functions that map to
-one of four 'contract sections' (see also the `ContractSection` enum). They are:
+Smart contracts interact with Wasm via functions that map to
+one of six 'contract sections' (see the `ContractSection` enum in
+`src/runtime/vm_runtime.rs`). They are:
 
-* `initialize`
-* `entrypoint`
-* `update`
-* `metadata`
+* `Deploy` (wasm export: `__initialize`) — Setup function
+* `Exec` (wasm export: `__entrypoint`) — Entrypoint function
+* `Update` (wasm export: `__update`) — Apply function
+* `Metadata` (wasm export: `__metadata`) — Contract metadata
+* `SpendHook` (wasm export: `__spend_hook`) — Spend hook callback from another contract
+* `Null` — Placeholder state before initialization
 
 Business logic for a contract is contained in functions that are accessible
-via the contract's `entrypoint`. Data is sent via the `payload` parameter.
+via the contract's `Exec` section. Data is sent via the `payload` parameter.
 
-All of the functions associated with the contract sections are processed by the `call()`
-function in the runtime. It is this function that acts as the interface between
-lower-level Wasm functionality and the APIs that are provided to contract
-developers.
+The runtime exposes separate public methods that each internally delegate to
+a private `call()` helper: `deploy()`, `exec()`, `apply()`, `metadata()`, and
+`spend_hook()`. These public methods act as the interface between lower-level
+Wasm functionality and the APIs that are provided to contract developers.
 
 ### DarkWow SDK
 
@@ -47,7 +50,7 @@ errors are properly handled.
 
 Relevant code: 
 * `src/sdk/src/util.rs`
-* `src/contracts/`
+* `src/contract/`
 
 ## Exit codes and type casting in the context of the Wasm runtime
 
@@ -58,7 +61,9 @@ be followed to reduce potential bugs.
 
 ### Exit Codes
 The [Wasm functions](https://docs.rs/wasmer/latest/wasmer/#functions) are configured 
-in `src/runtime/vm_runtime.rs` and stored in the Wasmer Instance as function imports. 
+in `src/runtime/vm_runtime.rs` (orchestration) and `src/runtime/import/` submodules 
+(`acl.rs`, `db.rs`, `merkle.rs`, `smt.rs`, `util.rs`), stored in the Wasmer Instance 
+as function imports. 
 
 Exit codes should follow this convention:
 

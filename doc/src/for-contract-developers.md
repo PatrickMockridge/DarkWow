@@ -24,7 +24,7 @@ DarkWow splits the monetary layer into two contracts:
 - **PromissoryNote** — DeFi token operations. Transfer, mint, burn, freeze,
   and token authorization. All user-facing token logic.
 
-Upstream DarkFi has a single monolithic `money` contract with 8 functions
+The upstream project has a single monolithic `money` contract with 8 functions
 in one enum (FeeV1 through BurnV1) sharing 7 database trees. DarkWow's
 split isolates consensus-critical logic from DeFi — a promissory_note bug
 cannot halt the chain, and a native_token bug is contained to coinbase/fees.
@@ -86,7 +86,7 @@ worked example of O-Cap composition.
 5. **Write your circuit** using [zkas](zkas/zkas.md) and the
    [ZK proof writing guide](zkas/writing-zk-proofs.md).
 
-6. **Test** through the [five-level testing pipeline](dev/testing/overview.md):
+6. **Test** through the [four-level testing pipeline](dev/testing/overview.md):
    Level 1 (lightweight) → Level 2 (full ZK) → Level 3 (localnet) → Level 4 (devnet).
 
 7. **Deploy** via the [Deployooor](contract/deployooor.md) contract.

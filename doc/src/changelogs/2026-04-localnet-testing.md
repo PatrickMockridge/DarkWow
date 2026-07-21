@@ -345,7 +345,7 @@ dwow_wallet -c bin/dww/dww_config.toml -n localnet contract deploy $AUTH \
 ```bash
 # darkbet_exchange
 dwow_wallet -c bin/dww/dww_config.toml -n localnet contract deploy $AUTH \
-  target/wasm32-unknown-unknown/release/darkfi_darkbet_exchange_contract.wasm | \
+  target/wasm32-unknown-unknown/release/dwow_darkbet_exchange_contract.wasm | \
  dwow_wallet -c bin/dww/dww_config.toml -n localnet broadcast
 ```
 

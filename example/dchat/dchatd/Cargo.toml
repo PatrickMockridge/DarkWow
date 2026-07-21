@@ -10,10 +10,10 @@ edition = "2021"
 
 # ANCHOR: dependencies
 [dependencies]
-# ANCHOR: darkfi
+# ANCHOR: darkwow
 dwow_core = {path = "../../../", features = ["toml", "async-daemonize", "rpc"]}
 dwow-serial = {path = "../../../src/serial"}
-# ANCHOR_END: darkfi
+# ANCHOR_END: darkwow
 
 # daemon
 easy-parallel = "3.3.1"

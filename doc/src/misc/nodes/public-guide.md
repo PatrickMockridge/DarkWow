@@ -59,7 +59,7 @@ have some of them (for example: IPv6 or domain) remove the values entirely.
 
 A clearnet node routes traffic over `tcp+tls`. It is enabled by adding
 `tcp+tls` to the `active_profiles` list. You can find a complete example config
-file for `darkirc-clearnet.toml` in `${DARKFI_REPO}/bin/darkirc/config`.
+file for `darkirc-clearnet.toml` in `${DARKWOW_REPO}/bin/darkirc/config`.
 
 ```toml
 ## Outbound connection slots
@@ -94,7 +94,7 @@ inbound = ["tcp+tls://0.0.0.0:9600", "tcp+tls://[::]:9600"]
 
 A Tor-enabled node routes traffic over `tor`. It is enabled by adding
 `tor` to the `active_profiles` list. You can find a complete example config
-file for `darkirc-tor.toml` in `${DARKFI_REPO}/bin/darkirc/config`. This node 
+file for `darkirc-tor.toml` in `${DARKWOW_REPO}/bin/darkirc/config`. This node 
 configuration is for users that would like to support `darkirc` over the Tor 
 network. A Tor node provides the best anonymity on the network.
 
@@ -141,7 +141,7 @@ inbound = ["tcp://127.0.0.1:9601"]
 
 An I2p-enabled node routes traffic over `i2p`. It is enabled by adding
 `i2p` to the `active_profiles` list. You can find a complete example config
-file for `darkirc-i2p.toml` in `${DARKFI_REPO}/bin/darkirc/config`. This node
+file for `darkirc-i2p.toml` in `${DARKWOW_REPO}/bin/darkirc/config`. This node
 configuration is for users that would like to support `darkirc` over the I2p
 network.
 
@@ -190,7 +190,7 @@ This provides the most benefit for the health of the network. This is the most
 maximally compatible node for people that wish to support the network. It can
 be enabled by adding multiple profiles to the `active_profiles` list. You can
 find a complete example config file for `darkirc-mixed.toml` in 
-`${DARKFI_REPO}/bin/darkirc/config`. Refer to 
+`${DARKWOW_REPO}/bin/darkirc/config`. Refer to 
 [Tor Nodes](tor-guide.md#inbound-node-settings) to configure Tor.
 
 <!-- TODO: replace the i2p seed address with an official one-->

@@ -106,7 +106,7 @@ for the comparison and [Philosophy](philosophy/philosophy.md) for the design rat
 
 ## Community
 
-Weekly dev chat: Monday 14:00 UTC (DST) / 15:00 UTC (ST) in #dev.
+Weekly dev chat: TBA for time and venue — check `#dev` on DarkIRC for announcements.
 See [DarkIRC Guide](misc/darkirc/darkirc.md) for joining the anonymous p2p chat.
 
 ## Building

@@ -70,7 +70,7 @@ from the deployer's public key.
 | [Roulette](contract/roulette.md) | `dwow_roulette_contract` | ⚠️ Experimental | European/American roulette |
 | [Slot](contract/slot.md) | `dwow_slot_contract` | ⚠️ Experimental | Modular slot machine |
 
-### DAO & Governance (3)
+### DAO & Governance (2)
 
 | Contract | Crate | Maturity | Description |
 |----------|-------|----------|-------------|

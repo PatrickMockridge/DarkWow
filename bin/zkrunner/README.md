@@ -16,6 +16,13 @@ Help text:
 $ ./zkrunner.py -h
 ```
 
+## Flags
+
+| Flag | Description |
+|------|-------------|
+| `--prove` | Create a real proof instead of using MockProver |
+| `--trace` | Enable debug trace (only works with `--prove` enabled) |
+
 Running a demo:
 
 ```

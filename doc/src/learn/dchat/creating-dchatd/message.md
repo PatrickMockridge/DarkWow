@@ -7,8 +7,8 @@ Messages on the p2p network must implement the `Message` trait. `Message` is a
 generic type that standardizes all messages on DarkWow's p2p network.
 
 We define a custom type called `DchatMsg` that implements the
-`Message` trait. We also add `darkfi::util::SerialEncodable` and
-`darkfi::util::SerialDecodable` macros to our struct definition so our
+`Message` trait. We also add `dwow_core::util::SerialEncodable` and
+`dwow_core::util::SerialDecodable` macros to our struct definition so our
 messages can be parsed by the network.
 
 `Message` requires that we implement a method called `name`, which

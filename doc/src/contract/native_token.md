@@ -23,6 +23,7 @@ path in `dwowd`.
 | 0x03 | `TransferV1` | Private transfers |
 | 0x04 | `SpendV1` | Spend with change output |
 | 0x05 | `PoWRewardV1` | Block rewards + cumulative supply chain |
+| 0x06 | `FeeCollectV1` | Fee collection — closes coin merkle tree |
 
 ## Privacy Model
 

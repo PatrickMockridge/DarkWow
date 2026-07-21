@@ -7,9 +7,8 @@ applications with a single daemon.
 ## Usage
 
 ```
-lilith 0.4.1
+lilith
 Daemon that spawns P2P seeds
-
 
 USAGE:
     lilith [FLAGS] [OPTIONS]
@@ -20,13 +19,17 @@ FLAGS:
     -v               Increase verbosity (-vvv supported)
 
 OPTIONS:
-        --accept-addrs <accept-addrs>...    Accept addresses (URL without port)
-    -c, --config <config>                   Configuration file to use
-        --hosts-file <hosts-file>           Hosts .tsv file to use [default: ~/.config/dwow/lilith_hosts.tsv]
-        --rpc-listen <rpc-listen>           JSON-RPC listen URL [default: tcp://127.0.0.1:18927]
+    -c, --config <config>                           Configuration file to use
+    -l, --log <log>                                 Set log file to output into
+        --whitelist-refinery-interval <seconds>     Interval for whitelist peer checks [default: 120]
 ```
 
-On first execution, daemon will create default config file ~/.config/dwow/lilith_config.toml.
+Accept addresses, host files, and RPC listen URLs are configured per-network
+in the TOML config file (`~/.config/dwow/lilith_config.toml`), not via CLI flags.
+The config file defines each network's seed parameters including accept addresses
+and hostlist paths.
+
+On first execution, lilith will create a default config file.
 Configuration must be verified, and application networks should be configured accordingly.
 
 Run lilith as follows:

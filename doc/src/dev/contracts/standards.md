@@ -48,7 +48,7 @@ TRADITIONAL (Pedersen):
   Need: C_change = C_input - C_output
   Prove: C_input = C_output + C_change
 
-DARKFI (burn-mint):
+DARKWOW (burn-mint):
   Burn coin A (emit nullifier)
   Mint coin B (new commitment)
   Value balance checked at contract layer

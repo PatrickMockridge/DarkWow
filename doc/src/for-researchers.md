@@ -50,7 +50,9 @@ DarkWow has 26 Lean4 proof files verifying:
 - `LessThanOrEqual`, `IsNotEqual`, `BaseDiv` opcodes are sound
 - The Authorization Inversion Theorem: `∀a,b. bisimilar(a,b) ⟹ barbs(a) = barbs(b)`
 
-Proofs are at `proofs/lean/src/DarkFi/Capability/`. All proofs verified
+Proofs are in the `proofs/lean/` directory (the `DarkFi` namespace in module
+paths is a historical artifact from the upstream fork — all proofs have been
+extended and verified for DarkWow). All proofs verified
 with zero `sorry` — no admitted axioms, no hand-waving.
 
 ## Supply audit

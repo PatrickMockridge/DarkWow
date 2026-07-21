@@ -37,7 +37,7 @@ information about other nodes it can connect to. If all of these settings
 are enabled, the node is both inbound and outbound, i.e. a full node.
 
 Next, we add `SettingsOpt` to our `Args` struct. This will allow us to
-read the fields specified in TOML as the darkfi `net` type, `Settings`.
+read the fields specified in TOML as the `dwow_core` `net` type, `Settings`.
 
 ```rust
 #[derive(Clone, Debug, Deserialize, StructOpt, StructOptToml)]

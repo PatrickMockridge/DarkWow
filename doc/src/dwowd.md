@@ -64,7 +64,7 @@ caches, and no independent height counters.
 Block execution in `apply_block_with_uncles()` is **atomic**: all contract
 state changes within a block either commit together or not at all. This is
 achieved via the [`sled-overlay`](https://docs.rs/sled-overlay/latest/sled_overlay/)
-crate — the same atomicity mechanism used in upstream DarkFi's fork-aware
+crate — the same atomicity mechanism used in the upstream project's fork-aware
 consensus.
 
 **How it works:**
@@ -114,7 +114,7 @@ apply_block_with_uncles()
 
 Contract execution uses the [`wasmer`](https://wasmer.io/) WebAssembly runtime
 with the **Singlepass** compiler backend by default. Singlepass provides fast
-compilation and predictable stack usage, matching upstream DarkFi's proven
+compilation and predictable stack usage, matching the upstream project's proven
 configuration.
 
 **Cranelift is available as an opt-in performance enhancer** via the
@@ -219,8 +219,8 @@ All concurrent tasks spawned by `Dwowd::start()`:
 | **management JSON-RPC** | Serves `ManagementRpcHandler` — shutdown, status | `listen_and_serve` |
 | **stratum listener** | TCP server for xmrig-compatible stratum protocol | Accept loop |
 | **mm_rpc listener** | TCP server for merge mining (Caribina/p2pool bridge) | Accept loop |
-| **P2P listener** | libp2p transport listener (inbound connections) | libp2p event loop |
-| **P2P dialer** | Outbound connections to seed nodes | libp2p event loop |
+| **P2P listener** | Transport listener (inbound connections via TCP, TLS, Tor, Nym, QUIC, Unix) | Accept loop |
+| **P2P dialer** | Outbound connections to seed nodes | Dial loop |
 | **linear sync** | Block download from peers (GetBlocks/Blocks/GetBlock) | Periodic + on-connect |
 | **linear broadcast** | One-hop block relay to peers on new block | On-block-insert |
 | **consensus** | Placeholder — sleeps forever, mining is entirely RPC-driven | `pending().await` |
@@ -271,7 +271,7 @@ Methods: `merge_mining_get_chain_id`, `merge_mining_get_aux_block`,
 
 ## P2P Layer
 
-libp2p-based with two custom protocols:
+Custom P2P stack (`net`/`transport` crates) with two application-level protocols:
 
 ### Linear Sync Protocol
 
@@ -381,13 +381,13 @@ blocks, a wallet instance with the mining secret can create a standard
 `NativeToken::TransferV1` to the destination address. This is the same pattern
 as Bitcoin pool operators distributing rewards.
 
-2. **When building a block** ([lib.rs:913](../bin/dwowd/src/lib.rs#L913)): If
+1. **When building a block**: If
    `FORWARD_DESTINATION` is set and differs from the miner's own address, the
    coinbase AEAD note is encrypted to the **forwarding address's public key**
    instead of the miner's. The miner never knows the wallet's secret — it only
    knows the wallet's public address.
 
-3. **On the wallet side**: The wallet independently generates its own keypair
+2. **On the wallet side**: The wallet independently generates its own keypair
    and imports its secret. During AEAD scan, every block output is decryption-
    attempted with every stored secret. Only the matching secret decrypts the
    coinbase.
@@ -406,8 +406,8 @@ When unset or matching the mining address, coinbase goes to the miner's own key.
 | `bin/dwowd/src/main.rs` | CLI parsing, config, entrypoint |
 | `bin/dwowd/src/lib.rs` | DwowNode, Dwowd, init_linear, start, stop |
 | `bin/dwowd/src/block_acceptor.rs` | block_acceptor — accept_block(), single block acceptance path |
-| `bin/dwowd/src/execution.rs` | TxBackend, BLOCK_GAS_LIMIT, execute_block() WASM execution |
-| `bin/dwowd/src/mempool.rs` | Mempool (`Vec<Transaction>`) |
+| `src/linear/src/execution.rs` | TxBackend, BLOCK_GAS_LIMIT, execute_block() WASM execution |
+| `crates/dwow-mempool/src/lib.rs` | Mempool (`Vec<Transaction>`) |
 | `bin/dwowd/src/rpc/stratum.rs` | Stratum protocol (login, submit) |
 | `bin/dwowd/src/rpc/miner.rs` | Dev mining RPC (mine_linear) |
 | `bin/dwowd/src/registry/model.rs` | Block template generation, ZK coinbase |

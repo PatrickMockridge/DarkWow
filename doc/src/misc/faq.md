@@ -52,7 +52,7 @@ about the DarkWow consensus process [here](../arch/consensus/consensus.md).
 
 ## How can I chat with DarkWow devs?
 Join [DarkIRC](darkirc/darkirc.md), our peer-to-peer anonymous implementation of 
-an IRC server. There are weekly `#dev` meetings on Mondays.
+an IRC server. There are weekly `#dev` developer meetings (TBA for time and venue — check `#dev` for announcements).
 
 ## How can I contribute to the project or build something on top of DarkWow?
 You can visit [here](../dev/contrib/contrib.md)

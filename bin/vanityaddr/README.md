@@ -19,6 +19,7 @@ Arguments:
 Options:
   -c    Make the search case-sensitive
   -t    Number of threads to use (defaults to number of available CPUs)
+  -n    Network to search (mainnet/testnet, default: mainnet)
   -A    Search for an address
   -C    Search for a Contract ID
   -T    Search for a Token ID

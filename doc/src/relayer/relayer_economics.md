@@ -10,7 +10,7 @@
 
 ## Overview
 
-This document describes the economic layer that enables relayers to operate as a reliable, decentralized service infrastructure. It builds on the [Stake = Coverage(../arch/slashing.md) model and adds:
+This document describes the economic layer that enables relayers to operate as a reliable, decentralized service infrastructure. It builds on the [Stake = Coverage](../arch/slashing.md) model and adds:
 
 1. **On-chain relayer coordination** - Service continuity via smart contracts
 2. **Feed market** - Two-mode pricing for delivery guarantees
@@ -601,7 +601,7 @@ The betting stake creates an additional economic layer:
 
 ## Related Documentation
 
-- [Slashing & Economic Security(../arch/slashing.md) - Stake = Coverage model
+- [Slashing & Economic Security](../arch/slashing.md) - Stake = Coverage model
 - [Betting Stake](../contract/betting_stake.md) - Native betting contract
-- [Bridge Architecture(../contract/bridge.md) - Bridge and relayer integration
+- [Bridge Architecture](../contract/bridge.md) - Bridge and relayer integration
 - [Relayer Documentation](../relayer/relayer.md) - Operational guide

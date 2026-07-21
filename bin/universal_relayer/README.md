@@ -76,7 +76,7 @@ Slash penalties now scale with withdrawal amount: `max(1_000_000, amount * 1000 
 ### Minimal Config
 
 ```toml
-[darkfi]
+[dwow]
 dwowd_url = "http://127.0.0.1:8543"
 poll_interval_secs = 10
 

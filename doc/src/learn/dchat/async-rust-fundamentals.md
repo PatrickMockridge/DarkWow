@@ -187,7 +187,7 @@ impl net::ProtocolBase for ProtocolDchat {
 ### DarkWow Async Serialization
 
 DarkWow provides `SerialEncodable` and `SerialDecodable` derive macros that
-generate async serialization code. When `darkfi-serial/async` is enabled:
+generate async serialization code. When `dwow-serial/async` is enabled:
 
 ```rust
 #[derive(Clone, Debug, Eq, PartialEq, SerialEncodable, SerialDecodable)]

@@ -200,7 +200,7 @@ $ ./dwowd
 
 [INFO] Initializing DarkWow node...
 [INFO] Node is configured to run with fixed PoW difficulty: 1
-[INFO] Initializing a Darkfi daemon...
+[INFO] Initializing a DarkWow daemon...
 [INFO] Initializing Validator
 [INFO] Initializing Blockchain
 [INFO] Deploying native WASM contracts
@@ -281,7 +281,7 @@ address:
 ```shell
 ./dwow_wallet wallet address
 
-{YOUR_DARKFI_WALLET_ADDRESS}
+{YOUR_DARKWOW_WALLET_ADDRESS}
 ```
 
 > **Docker pre-configured wallet**: When running a Docker-based node, you can
@@ -308,7 +308,7 @@ In `dwowd`, you should see a notification like this:
 
 ```shell
 ...
-[INFO] [RPC-STRATUM] Got login from {YOUR_DARKFI_WALLET_ADDRESS} ({AGENT_INFO})
+[INFO] [RPC-STRATUM] Got login from {YOUR_DARKWOW_WALLET_ADDRESS} ({AGENT_INFO})
 ...
 ```
 
@@ -363,7 +363,7 @@ Header {
         Nonce: 0
         Transactions Root: 0x081361c364feba0d28a418e2e20c216ce442d5127036e3491ceaf1996fdb3c3b
         State Root: afc1694dd6b290d8b92c33d3fc746707da9bed857eb9e90f11683d2e243b8047
-        Proof of Work data: Darkfi
+        Proof of Work data: DarkWow
 }
 =======================================
 [scan_block] Iterating over 1 transactions

@@ -95,10 +95,10 @@ All self-contained with their own ZK circuits, tests, and harnesses.
 | Category | Contracts |
 |----------|-----------|
 | **Genesis** | NativeToken, Deployooor, PromissoryNote, Identity, Oracle, Attestation, Purse, Box, MultiSig |
-| **Finance** | Stablecoin, DEX, Escrow, DAO-Escrow, Subscription, Bridge, OTC Swap, BearerBond |
+| **Finance** | Stablecoin, DEX, Escrow, DAO-Escrow, Subscription, Bridge, OTC Swap, Bearer Bond |
 | **Labour** | Labor Market, Tender |
 | **Gaming** | Darktoshi Dice, Baccarat, Roulette, Slot, Lottery, Betting Stake, DarkBet Exchange, Game Room |
-| **Risk** | Insurance Market, Prediction Market, Drain Protection, Pool Stake |
+| **Risk** | Insurance Market, Drain Protection, Pool Stake |
 | **Infrastructure** | Auction, Relayer Endowment |
 
 [Full contract docs →](doc/src/contracts.md)

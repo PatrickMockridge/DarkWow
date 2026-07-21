@@ -1,13 +1,13 @@
 # dnet
 
-A simple tui to explore darkfi p2p network topology. Connects to nodes
-on the darkfi network using RPC and displays the following info:
+A simple tui to explore DarkWow p2p network topology. Connects to nodes
+on the DarkWow network using RPC and displays the following info:
 
 1. Every inbound, outbound and manual connections.
 2. Events such as peer discovery, new connections, disconnections etc.
 3. All messages per connection.
 
-All darkfi node types are supported, i.e. darkfid, darkirc, taud,
+All DarkWow node types are supported, i.e. dwowd, darkirc, tau,
 fud, etc.
 
 `dnet` is based on the design-pattern Model, View, Controller. We create
@@ -65,7 +65,7 @@ specific to your operating system.
 
 To use `dnet` you will need to open the config file and modify it to
 display the individual nodes you want to inspect. By node we mean daemon
-such as darkirc, darkfid, taud etc. Each node in the `dnet` config has
+such as darkirc, dwowd, tau etc. Each node in the `dnet` config has
 the following parameters:
 
 * `name`: An arbitary string (whatever you want to call your node,
