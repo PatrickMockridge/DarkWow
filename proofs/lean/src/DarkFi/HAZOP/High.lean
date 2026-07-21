@@ -1,4 +1,10 @@
 /-!
+MANUAL AUDIT DOCUMENTATION — NOT FORMAL PROOFS
+This file contains structured vulnerability findings / circuit audit
+results. It contains ZERO Lean theorems with non-trivial proofs.
+All defs return String or List values for programmatic consumption.
+-/
+/-!
 # HAZOP HIGH Tier — Targeted Vulnerability Proofs (Risk 40-59)
 
 ## HIGH-1/2: burn_v1.zk zero_cond Merkle Bypass (Risk 42/100)

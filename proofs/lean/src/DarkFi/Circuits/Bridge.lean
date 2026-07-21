@@ -1,4 +1,10 @@
 /-!
+MANUAL AUDIT DOCUMENTATION — NOT FORMAL PROOFS
+This file contains structured vulnerability findings / circuit audit
+results. It contains ZERO Lean theorems with non-trivial proofs.
+All defs return String or List values for programmatic consumption.
+-/
+/-!
 # Bridge Contract Circuit Instance-Derivation Proofs
 
 6 circuits: deposit_v1, withdraw_v1, azt_deposit_v1, ltc_deposit_v1,

@@ -1,4 +1,10 @@
 /-!
+MANUAL AUDIT DOCUMENTATION — NOT FORMAL PROOFS
+This file contains structured vulnerability findings / circuit audit
+results. It contains ZERO Lean theorems with non-trivial proofs.
+All defs return String or List values for programmatic consumption.
+-/
+/-!
 # Exchange/DEX Circuit Instance-Derivation Proofs
 
 Dex (6), OtcSwap (4), DarkBet (4) — 14 circuits total.

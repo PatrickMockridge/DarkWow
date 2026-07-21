@@ -1,4 +1,10 @@
 /-!
+MANUAL AUDIT DOCUMENTATION — NOT FORMAL PROOFS
+This file contains structured vulnerability findings / circuit audit
+results. It contains ZERO Lean theorems with non-trivial proofs.
+All defs return String or List values for programmatic consumption.
+-/
+/-!
 # HAZOP ELEVATED Tier — Constraint Gap Documentation (Risk 30-39)
 
 Six circuits with confirmed constraint gaps requiring targeted formal proofs.

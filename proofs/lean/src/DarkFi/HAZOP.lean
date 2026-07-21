@@ -1,4 +1,10 @@
 /-!
+MANUAL AUDIT DOCUMENTATION — NOT FORMAL PROOFS
+This file contains structured vulnerability findings / circuit audit
+results. It contains ZERO Lean theorems with non-trivial proofs.
+All defs return String or List values for programmatic consumption.
+-/
+/-!
 # HAZOP Tabletop — All 120 ZK Circuits Risk Matrix
 
 Three independent domain-expert agents (Alice-defender, Mallory-attacker, Eve-eavesdropper,

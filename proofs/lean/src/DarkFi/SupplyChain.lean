@@ -103,9 +103,19 @@ structure PedersenPoint where
 /-- Identity element (point at infinity / zero point). -/
 axiom PedersenIdentity : PedersenPoint
 
-/-- Pedersen point addition (EC point addition). -/
-def PedersenPoint.add (a b : PedersenPoint) : PedersenPoint :=
-  { point := a.point + b.point }
+/-- Opaque: Pallas curve group operation (incomplete addition formula).
+-- Making this opaque prevents Lean from reducing it to Nat addition.
+-- The induction proofs in total_supply_theorem and cumulative_commit_theorem
+-- operate on the abstract group structure (commutativity, associativity,
+-- identity) rather than a concrete Nat implementation.
+-- The actual addition is: λ = (y2-y1)/(x2-x1), x3 = λ²-x1-x2, y3 = λ(x1-x3)-y1,
+-- with identity-element handling for the point at infinity. -/
+opaque PedersenPoint.add (a b : PedersenPoint) : PedersenPoint
+
+/-- Group axioms for Pedersen point addition (Pallas curve abelian group). -/
+axiom pedersen_add_comm (a b : PedersenPoint) : a.add b = b.add a
+axiom pedersen_add_assoc (a b c : PedersenPoint) : (a.add b).add c = a.add (b.add c)
+axiom pedersen_add_identity (a : PedersenPoint) : a.add PedersenIdentity = a
 
 instance : Add PedersenPoint where
   add := PedersenPoint.add

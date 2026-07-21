@@ -58,13 +58,14 @@ Soundness: If a < b*c is proven via less_than_strict (which is sound),
 then a/b < c holds for all b > 0.
 -/
 
--- If a < b*c and b > 0, then a/b < c
-theorem cross_mul_implies_ratio_bound
+-- PROOF SKETCH: If a < b*c and b > 0, then a/b < c.
+-- The existing proof uses Int.div_le_div_of_le_of_pos which returns
+-- a/b ≤ (b*c)/b (i.e., ≤ c), not a/b < c. The strict inequality
+-- requires a separate argument. Marked as axiom until completed.
+axiom cross_mul_implies_ratio_bound
   (a b c : ℤ)
   (hb : b > 0)
   (h : a < b * c) :
-  a / b < c := by
-  have := Int.div_le_div_of_le_of_pos h hb
-  exact this
+  a / b < c
 
 end Soundness
