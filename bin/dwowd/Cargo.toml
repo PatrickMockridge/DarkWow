@@ -61,7 +61,6 @@ structopt-toml = "0.5.1"
 [features]
 # Experimental feature gating code paths not yet ready for production.
 # Must be explicitly opted into.
-reorg-enabled = []
 
 [dev-dependencies]
 dwow-contract-test-harness = {path = "../../src/contract/test-harness"}

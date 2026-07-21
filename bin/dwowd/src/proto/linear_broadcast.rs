@@ -400,33 +400,9 @@ async fn handle_receive_block(
                     }
                 }
 
-                // H9 trigger: try chain reorganization from competing blocks.
-                // If a peer has a longer chain, reorganize to it.
-                // HAZID H-C1: reorganize_to() is gated behind reorg-enabled feature.
-                // When disabled, competing blocks are stored for uncle rewards only.
-                #[cfg(feature = "reorg-enabled")]
-                match blockchain.try_reorg_from_competing() {
-                    Ok(count) if count > 0 => {
-                        tracing::info!(
-                            target: "dwowd::proto::linear_broadcast",
-                            "Reorganized {} blocks after receiving block at height {}",
-                            count, msg.block.header.height
-                        );
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            target: "dwowd::proto::linear_broadcast",
-                            "Reorg attempt failed: {e}"
-                        );
-                    }
-                    _ => {} // No reorg needed
-                }
-                #[cfg(not(feature = "reorg-enabled"))]
-                {
-                    // HAZID H-C1: reorg is disabled — competing blocks are stored
-                    // for uncle rewards only. No chain reorganization occurs.
-                    let _ = blockchain; // suppress unused warning
-                }
+                // Reorganization removed — linear blockchain resolves forks
+                // via uncle rewards, not reorg. Competing blocks are stored
+                // for uncle rewards only. No chain reorganization occurs.
                 // Relay block to all peers — relay nodes amplify network
                 // propagation. Only relay on successful validation; invalid
                 // blocks are dropped silently. A false-negative (rejecting a

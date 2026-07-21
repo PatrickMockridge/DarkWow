@@ -12,7 +12,6 @@ async = ["dwow-serial/async"]
 # Enabling reorg with the current implementation silently corrupts chain state.
 # Gate until the missing WASM execution + supply chain update are implemented.
 # See doc/src/arch/consensus/hazid-report.md §H-C1.
-reorg-enabled = []
 
 [dependencies]
 sled = "0.34"

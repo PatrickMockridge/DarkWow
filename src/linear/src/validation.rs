@@ -252,6 +252,18 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
         ));
     }
 
+    // Phase 0.1b compound coinbase prevention (HAZOP F2):
+    // Coinbase tx MUST have exactly 1 contract call (PoWRewardV1 only).
+    // Extra calls in tx[0] would bypass Pedersen mass balance (proof_of_token_balance
+    // skips entire tx[0] when first call is PoWRewardV1), ZK witness verification
+    // (execution.rs skips entire tx[0]), and pre-witness checks (block_acceptor.rs
+    // skips entire tx[0]). Structural fix makes call-level skip fixes defense-in-depth.
+    if block.transactions[0].contract_calls.len() != 1 {
+        return Err(LinearError::BlockStructure(
+            "coinbase (tx[0]) must have exactly 1 contract call (PoWRewardV1 only)".into()
+        ));
+    }
+
     let pow_call = block.transactions[0].contract_calls.first().unwrap();
     if pow_call.data.len() < 2 {
         return Err(LinearError::BlockStructure(

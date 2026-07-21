@@ -813,7 +813,9 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     // at the consensus level (connect_block) via Pedersen mass balance —
     // no pin_deductions needed in the contract.
     let expected = expected_reward(verifying_block_height);
-    if pr.input.value < expected.get() {
+    // HAZOP F1: exact equality — prevents inflationary minting above emission schedule.
+    // Previously lower-bound only (pr.input.value < expected) which allowed unlimited over-minting.
+    if pr.input.value != expected.get() {
         msg!("[pow_reward_v1] Error: Reward below schedule: got {}, expected {} at height {}",
              pr.input.value, expected, verifying_block_height);
         return Err(NativeTokenError::ValueMismatch.into())

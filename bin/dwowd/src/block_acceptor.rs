@@ -86,6 +86,33 @@ pub fn accept_block(
     dwow_chain::validation::validate_block_structure(block)
         .map_err(|e| dwow_core::Error::Custom(format!("Block {} structure invalid: {}", block.header.height, e)))?;
 
+    // 0.2 Uncle validation — HAZOP F5: check_uncles() was dead code (zero
+    // non-test callers). Wire it into the acceptance path after structural
+    // validation, before expensive WASM execution. 6 checks enforced:
+    // max count, merkle root, PoW, proofs, depth, dedup.
+    if !uncles.is_empty() {
+        let (expected_root, proofs) = dwow_chain::build_uncle_merkle(uncles, vm);
+        if expected_root != block.header.uncle_merkle_root {
+            return Err(dwow_core::Error::Custom(format!(
+                "Block {} uncle merkle root mismatch: computed {:?}, header has {:?}",
+                block.header.height, expected_root, block.header.uncle_merkle_root
+            )));
+        }
+        // Collect existing uncle hashes from sled for dedup check
+        let existing_keys: std::collections::HashSet<[u8; 32]> = std::collections::HashSet::new();
+        dwow_chain::validation::check_uncles(
+            uncles,
+            &proofs,
+            &block.header.uncle_merkle_root,
+            block.header.height,
+            vm,
+            block.header.target.get(),
+            &existing_keys,
+        ).map_err(|e| dwow_core::Error::Custom(format!(
+            "Block {} uncle validation failed: {}", block.header.height, e
+        )))?;
+    }
+
     // 0.5 Block size — consensus-level acceptance rule (fail-closed), not
     // just a wire cap. The genesis block is EXEMPT: it carries the 9 contract
     // deployments (WASM in transactions), and its integrity check is the
