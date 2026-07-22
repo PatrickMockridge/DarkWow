@@ -219,9 +219,11 @@ impl BlockReward {
     /// `expected_reward()` for exponential emission schedule.
     /// G11: encapsulates `(reward.0 as u128 * decay >> 32) as u64`.
     pub(crate) const fn mul_fixed_point(self, decay_fp: u64) -> u64 {
+        // G11: u64→u128 is infallible widening. Product ≤ (2^64-1)² < 2^128.
+        // Right-shift by 32 fits in u64 because product >> 96 == 0 per assertion.
         let product = self.0 as u128 * decay_fp as u128;
         debug_assert!(product >> 96 == 0);
-        (product >> 32) as u64
+        (product >> 32) as u64 // G11: narrowing guarded by debug_assert
     }
 
     /// Split this reward for an uncle at the given depth.
@@ -278,6 +280,7 @@ impl BlockTarget {
     /// Result clamped to [min_target, max_target]. Scale is typically 1_000_000.
     /// G11: encapsulates `(current as u64 * SCALE / adjustment) as u32`.
     pub fn adjust(self, scale: u64, adjustment: u64, min_target: u32, max_target: u32) -> BlockTarget {
+        // G11: u32→u64 is infallible widening. Narrowing back to u32 guarded by domain.
         let current = self.0 as u64;
         let new = (current * scale / adjustment) as u32;
         debug_assert!((current as u128 * scale as u128) <= u64::MAX as u128,
@@ -291,7 +294,7 @@ impl BlockTarget {
     /// G11: encapsulates `u32::MAX as u64 / target as u64`.
     pub const fn chain_work(self) -> u64 {
         if self.0 == 0 { return 0; }
-        u32::MAX as u64 / self.0 as u64
+        u32::MAX as u64 / self.0 as u64 // G11: u32→u64 is infallible widening
     }
 
     /// Conventional mining difficulty for display/pool purposes.
@@ -299,7 +302,7 @@ impl BlockTarget {
     /// G11: encapsulates difficulty-as-u64 cast site.
     pub const fn difficulty(self) -> u64 {
         if self.0 == 0 { return u64::MAX; }
-        u32::MAX as u64 / self.0 as u64
+        u32::MAX as u64 / self.0 as u64 // G11: u32→u64 is infallible widening
     }
 }
 
@@ -606,9 +609,9 @@ fn fixed_pow_decay(mut exp: u64) -> u64 {
 
     while exp > 0 {
         if exp & 1 == 1 {
-            result = ((result as u128 * base as u128) >> FP_SHIFT) as u64;
+            result = ((result as u128 * base as u128) >> FP_SHIFT) as u64; // G11: u64→u128 widening, u128→u64 narrowing guarded by domain
         }
-        base = ((base as u128 * base as u128) >> FP_SHIFT) as u64;
+        base = ((base as u128 * base as u128) >> FP_SHIFT) as u64; // G11: u64→u128 widening
         exp >>= 1;
     }
     result
