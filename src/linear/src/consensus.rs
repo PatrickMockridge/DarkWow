@@ -473,6 +473,235 @@ pub struct PoWConfig {
     pub max_target: u32,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =========================================================================
+    // ChainWork tests — G2: consensus-critical function coverage
+    // =========================================================================
+
+    /// Failure mode: chain work accumulation produces wrong total for fork selection.
+    /// Fork selection uses accumulated work to choose the heaviest chain — if
+    /// add_block() produces a different sum than independent computation, nodes
+    /// could converge on the wrong chain.
+    #[test]
+    fn test_chain_work_new_is_zero() {
+        let cw = ChainWork::new();
+        assert_eq!(cw.get(), 0);
+    }
+
+    /// Failure mode: add_block with MAX target (easiest) contributes 1 work unit.
+    /// Lower targets contribute more work — the ratio must be deterministic.
+    #[test]
+    fn test_chain_work_add_block_max_target() {
+        let cw = ChainWork::new();
+        cw.add_block(BlockTarget::MAX);
+        // MAX target = u32::MAX, chain_work = u32::MAX / u32::MAX = 1
+        assert_eq!(cw.get(), 1);
+    }
+
+    /// Failure mode: multiple add_block calls produce cumulative total.
+    #[test]
+    fn test_chain_work_accumulation() {
+        let cw = ChainWork::new();
+        // target = 0x7FFFFFFF → chain_work = 0xFFFFFFFF / 0x7FFFFFFF = 2
+        cw.add_block(BlockTarget::new(0x7FFFFFFF));
+        assert_eq!(cw.get(), 2);
+        cw.add_block(BlockTarget::new(0x7FFFFFFF));
+        assert_eq!(cw.get(), 4);
+    }
+
+    // =========================================================================
+    // PoWConsensus tests — G2: consensus-critical function coverage
+    // =========================================================================
+
+    fn test_consensus() -> PoWConsensus {
+        PoWConsensus::new(120, 0x00FFFFFF, 0x0000FFFF, 0x0FFFFFFF)
+    }
+
+    /// Failure mode: constructor sets initial_target as both the current target
+    /// and the stored initial_target. If these diverge, get_next_work_required
+    /// produces wrong results for chain traversal.
+    #[test]
+    fn test_consensus_new_sets_initial_state() {
+        let c = test_consensus();
+        assert_eq!(c.target(), 0x00FFFFFF);
+        assert_eq!(c.target_block_time(), 120);
+        assert_eq!(c.min_target(), 0x0000FFFF);
+        assert_eq!(c.max_target(), 0x0FFFFFFF);
+        assert_eq!(c.accumulated_work.get(), 0);
+    }
+
+    /// Failure mode: difficulty() returns u64::MAX for zero target (sentinel),
+    /// not panic or garbage. Zero target is degenerate but must be handled.
+    #[test]
+    fn test_difficulty_zero_target_sentinel() {
+        let c = PoWConsensus::new(120, 0x00FFFFFF, 0, 0x0FFFFFFF);
+        c.force_target(0);
+        assert_eq!(c.difficulty(), u64::MAX);
+    }
+
+    /// Failure mode: force_target + target roundtrip must be consistent.
+    #[test]
+    fn test_force_target_roundtrip() {
+        let c = test_consensus();
+        c.force_target(0x0000FFFF);
+        assert_eq!(c.target(), 0x0000FFFF);
+        c.force_target(0x0FFFFFFF);
+        assert_eq!(c.target(), 0x0FFFFFFF);
+    }
+
+    /// Failure mode: timestamp snapshot + restore roundtrip. Used for rollback
+    /// on failed block commit — if restore produces different state, the node's
+    /// difficulty adjustment window is corrupted after a reorg.
+    #[test]
+    fn test_timestamp_snapshot_restore_roundtrip() {
+        let c = test_consensus();
+        c.record_block(1000);
+        c.record_block(1120);
+        c.record_block(1240);
+        let snap = c.snapshot_timestamps();
+        assert_eq!(snap.len(), 3);
+
+        // Mutate state
+        c.record_block(9999);
+        assert_eq!(c.snapshot_timestamps().len(), 4);
+
+        // Restore should bring back exactly the snapshot
+        c.restore_timestamps(snap);
+        let restored = c.snapshot_timestamps();
+        assert_eq!(restored.len(), 3);
+        assert_eq!(restored[0], 1000);
+        assert_eq!(restored[1], 1120);
+        assert_eq!(restored[2], 1240);
+    }
+
+    // =========================================================================
+    // adjust_target tests — G2: difficulty retarget is consensus-critical
+    // =========================================================================
+
+    /// Failure mode: with fewer than 2 timestamps, adjust_target returns
+    /// current target unchanged (not enough data to compute interval).
+    #[test]
+    fn test_adjust_target_insufficient_data_returns_current() {
+        let c = test_consensus();
+        let initial = c.target();
+        // Zero timestamps: no adjustment
+        assert_eq!(c.adjust_target(), initial);
+        // One timestamp: still insufficient
+        c.record_block(1000);
+        assert_eq!(c.adjust_target(), initial);
+    }
+
+    /// Failure mode: adjust_target with exactly-on-target block times produces
+    /// no change. If blocks arrive exactly at target_block_time, the target
+    /// should stay stable — drift here is a consensus fork.
+    #[test]
+    fn test_adjust_target_stable_at_target_rate() {
+        let c = test_consensus();
+        // Record blocks exactly at 120s intervals (on target)
+        for i in 0..11 {
+            c.record_block(i * 120);
+        }
+        let adjusted = c.adjust_target();
+        // With perfect timing, should stay very close to initial
+        let diff = if adjusted > c.target() { adjusted - c.target() } else { c.target() - adjusted };
+        // Allow small rounding variance (< 1% of target)
+        assert!(diff <= c.target() / 100,
+            "target drifted by {} ({}% of initial) at perfect timing", diff, diff * 100 / c.target());
+    }
+
+    /// Failure mode: blocks arriving too fast (half target time) should
+    /// DECREASE target (make it harder). adjust_target must respond in the
+    /// correct direction — a sign error inverts the controller.
+    #[test]
+    fn test_adjust_target_decreases_when_blocks_too_fast() {
+        let c = test_consensus();
+        let initial = c.target();
+        // Record blocks at 60s intervals (half of 120s target = too fast)
+        for i in 0..11 {
+            c.record_block(i * 60);
+        }
+        let adjusted = c.adjust_target();
+        assert!(adjusted < initial,
+            "blocks at 2x speed should DECREASE target (harder), got {} >= {}",
+            adjusted, initial);
+    }
+
+    /// Failure mode: blocks arriving too slow (double target time) should
+    /// INCREASE target (make it easier). A sign error here means the chain
+    /// gets progressively harder during low-hashrate periods, potentially
+    /// stalling permanently.
+    #[test]
+    fn test_adjust_target_increases_when_blocks_too_slow() {
+        let c = test_consensus();
+        let initial = c.target();
+        // Record blocks at 240s intervals (double of 120s target = too slow)
+        for i in 0..11 {
+            c.record_block(i * 240);
+        }
+        let adjusted = c.adjust_target();
+        assert!(adjusted > initial,
+            "blocks at 0.5x speed should INCREASE target (easier), got {} <= {}",
+            adjusted, initial);
+    }
+
+    /// Failure mode: adjust_target result must stay within [min_target, max_target].
+    /// Clamping failure could produce targets outside protocol limits.
+    #[test]
+    fn test_adjust_target_clamped_to_bounds() {
+        let c = test_consensus();
+        let initial = c.target();
+        // Fill window with extreme timestamps to force large adjustment
+        for i in 0..21 {
+            c.record_block(i * 1); // instant blocks
+        }
+        let adjusted = c.adjust_target();
+        assert!(adjusted >= c.min_target(),
+            "adjusted {} below min_target {}", adjusted, c.min_target());
+        assert!(adjusted <= c.max_target(),
+            "adjusted {} above max_target {}", adjusted, c.max_target());
+    }
+
+    // =========================================================================
+    // compute_adjustment tests — pure function, deterministic
+    // =========================================================================
+
+    /// Failure mode: compute_adjustment must be deterministic — same inputs
+    /// produce same output every time. Non-determinism here causes chain forks
+    /// on identical block data.
+    #[test]
+    fn test_compute_adjustment_deterministic() {
+        let timestamps: Vec<u64> = (0..20).map(|i| i * 120).collect();
+        let a = PoWConsensus::compute_adjustment(&timestamps, 0x00FFFFFF, 120, 0x0000FFFF, 0x0FFFFFFF);
+        let b = PoWConsensus::compute_adjustment(&timestamps, 0x00FFFFFF, 120, 0x0000FFFF, 0x0FFFFFFF);
+        assert_eq!(a, b, "compute_adjustment must be deterministic");
+    }
+
+    /// Failure mode: compute_adjustment with decreasing timestamps
+    /// uses checked_sub to avoid panic and substitutes zero.
+    #[test]
+    fn test_compute_adjustment_decreasing_timestamps_no_panic() {
+        // Decreasing timestamps (violate causality) should not panic
+        let timestamps: Vec<u64> = vec![1000, 900, 800, 700, 600, 500, 400, 300, 200, 100, 0];
+        let result = PoWConsensus::compute_adjustment(&timestamps, 0x00FFFFFF, 120, 0x0000FFFF, 0x0FFFFFFF);
+        // Must still produce a valid clamped target
+        assert!(result >= 0x0000FFFF);
+        assert!(result <= 0x0FFFFFFF);
+    }
+
+    /// Failure mode: window-based average with fewer than 11 timestamps uses
+    /// full window — verify it doesn't divide by zero.
+    #[test]
+    fn test_compute_adjustment_minimal_window() {
+        // 3 timestamps → window of 2 intervals
+        let result = PoWConsensus::compute_adjustment(&[0, 120, 240], 0x00FFFFFF, 120, 0x0000FFFF, 0x0FFFFFFF);
+        assert!(result >= 0x0000FFFF);
+        assert!(result <= 0x0FFFFFFF);
+    }
+}
+
 impl Default for PoWConfig {
     fn default() -> Self {
         Self {
