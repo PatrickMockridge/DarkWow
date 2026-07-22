@@ -58,7 +58,7 @@ fn test_deploy_call_builder() -> Result<(), Box<dyn std::error::Error>> {
 
     // Build deploy call
     let debris = DeployCallBuilder {
-        deploy_keypair,
+        deploy_keypair: deploy_keypair.clone(),
         wasm_bincode: wasm_bincode.clone(),
         deploy_ix: deploy_ix.clone(),
         singleton: false,
@@ -72,7 +72,7 @@ fn test_deploy_call_builder() -> Result<(), Box<dyn std::error::Error>> {
 
     // Verify call data via encapsulated build_call_data()
     let call_data = DeployCallBuilder {
-        deploy_keypair,
+        deploy_keypair: deploy_keypair.clone(),
         wasm_bincode: wasm_bincode.clone(),
         deploy_ix: deploy_ix.clone(),
         singleton: false,

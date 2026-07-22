@@ -108,7 +108,7 @@ impl NativeTokenHarness {
         let mint_pk = self.mint_pk.clone();
 
         let debris = PoWRewardCallBuilder {
-            secret,
+            secret: secret.clone(),
             ephemeral_signature_secret,
             block_height,
             fees,
