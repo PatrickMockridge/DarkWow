@@ -158,7 +158,7 @@ impl CreateSwapBuilder {
         let offer_amount = self.offer_amount.ok_or_else(|| DexClientError::MissingField("offer_amount".into()))?;
         let request_token = self.request_token.ok_or_else(|| DexClientError::MissingField("request_token".into()))?;
         let request_amount = self.request_amount.ok_or_else(|| DexClientError::MissingField("request_amount".into()))?;
-        let ephemeral_signature_secret = self.ephemeral_signature_secret.ok_or_else(|| DexClientError::MissingField("ephemeral_signature_secret".into()))?;
+        let ephemeral_signature_secret = self.ephemeral_signature_secret.clone().ok_or_else(|| DexClientError::MissingField("ephemeral_signature_secret".into()))?;
 
         Ok(CreateSwapCallData::new(
             secret,
@@ -262,7 +262,7 @@ impl AcceptSwapBuilder {
         let secret = self.secret.ok_or_else(|| DexClientError::MissingField("secret".into()))?;
         let offer_token = self.offer_token.ok_or_else(|| DexClientError::MissingField("offer_token".into()))?;
         let offer_amount = self.offer_amount.ok_or_else(|| DexClientError::MissingField("offer_amount".into()))?;
-        let ephemeral_signature_secret = self.ephemeral_signature_secret.ok_or_else(|| DexClientError::MissingField("ephemeral_signature_secret".into()))?;
+        let ephemeral_signature_secret = self.ephemeral_signature_secret.clone().ok_or_else(|| DexClientError::MissingField("ephemeral_signature_secret".into()))?;
 
         Ok(AcceptSwapCallData::new(
             swap_id,

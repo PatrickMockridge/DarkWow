@@ -102,7 +102,7 @@ impl CreateSwapCallData {
         request_amount: u64,
         ephemeral_signature_secret: SecretKey,
     ) -> Self {
-        let signature_public = PublicKey::from_secret(ephemeral_signature_secret);
+        let signature_public = PublicKey::from_secret(ephemeral_signature_secret.clone());
         let token_blind = pallas::Base::random(&mut OsRng);
         let amount_blind = pallas::Base::random(&mut OsRng);
 

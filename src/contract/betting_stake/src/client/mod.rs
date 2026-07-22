@@ -163,7 +163,7 @@ impl StakeV1Builder {
             is_active: true,
         };
 
-        let own_stake = OwnStake { note, secret: self.staker_secret };
+        let own_stake = OwnStake { note, secret: self.staker_secret.clone() };
 
         (params, own_stake)
     }
