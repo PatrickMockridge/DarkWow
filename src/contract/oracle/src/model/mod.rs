@@ -160,6 +160,8 @@ pub struct AggregateParamsV1 {
 pub struct RegisterOracleUpdateV1 {
     /// Oracle ID
     pub oracle_id: OracleId,
+    /// Full Oracle to write (constructed in exec)
+    pub oracle: Oracle,
 }
 
 /// Update for PushValueV1
@@ -169,6 +171,8 @@ pub struct PushValueUpdateV1 {
     pub oracle_id: OracleId,
     /// New value pushed by oracle
     pub value: pallas::Base,
+    /// Block height captured in exec for apply (apply cannot call get_verifying_block_height)
+    pub updated_at: u64,
 }
 
 /// Update for AttestValueV1
@@ -196,6 +200,8 @@ pub struct AggregateUpdateV1 {
     pub oracle_id: OracleId,
     /// Aggregated result
     pub result: pallas::Base,
+    /// Block height captured in exec for apply
+    pub updated_at: u64,
 }
 
 /// Parameters for `SetOracleActiveV1`

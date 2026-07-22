@@ -254,10 +254,8 @@ fn register_oracle_v1(cid: ContractId, params: RegisterOracleParamsV1) -> Result
         is_active: true,
     };
 
-    wasm::db::db_set(oracles_db, &serialize(&params.oracle_id), &serialize(&oracle))?;
-
     msg!("[oracle::register_oracle_v1] Oracle registered successfully");
-    Ok(serialize(&RegisterOracleUpdateV1 { oracle_id: params.oracle_id }))
+    Ok(serialize(&RegisterOracleUpdateV1 { oracle_id: params.oracle_id, oracle }))
 }
 
 fn push_value_v1(cid: ContractId, params: PushValueParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -289,10 +287,8 @@ fn push_value_v1(cid: ContractId, params: PushValueParamsV1) -> Result<Vec<u8>, 
     oracle.value = params.value;
     oracle.updated_at = current_block;
 
-    wasm::db::db_set(oracles_db, &serialize(&params.oracle_id), &serialize(&oracle))?;
-
     msg!("[oracle::push_value_v1] Value pushed successfully: {:?}", params.value);
-    Ok(serialize(&PushValueUpdateV1 { oracle_id: params.oracle_id, value: params.value }))
+    Ok(serialize(&PushValueUpdateV1 { oracle_id: params.oracle_id, value: params.value, updated_at: current_block }))
 }
 
 fn attest_value_v1(cid: ContractId, params: AttestValueParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -415,15 +411,13 @@ fn aggregate_v1(cid: ContractId, params: AggregateParamsV1) -> Result<Vec<u8>, C
     oracle.value = params.result;
     oracle.updated_at = current_block;
 
-    wasm::db::db_set(oracles_db, &serialize(&params.oracle_id), &serialize(&oracle))?;
-
     msg!(
         "[oracle::aggregate_v1] Aggregated successfully: result={:?}, min={:?}, max={:?}",
         params.result,
         params.min_result,
         params.max_result
     );
-    Ok(serialize(&AggregateUpdateV1 { oracle_id: params.oracle_id, result: params.result }))
+    Ok(serialize(&AggregateUpdateV1 { oracle_id: params.oracle_id, result: params.result, updated_at: current_block }))
 }
 
 fn set_oracle_active_v1(cid: ContractId, params: SetOracleActiveParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -450,7 +444,6 @@ fn set_oracle_active_v1(cid: ContractId, params: SetOracleActiveParamsV1) -> Res
     }
 
     oracle.is_active = params.is_active;
-    wasm::db::db_set(oracles_db, &serialize(&oracle_id), &serialize(&oracle))?;
 
     msg!("[oracle::set_oracle_active_v1] Oracle {:?} is_active set to {}", oracle_id, params.is_active);
     Ok(serialize(&SetOracleActiveUpdateV1 { oracle_id: OracleId(oracle_id), is_active: params.is_active }))
@@ -460,56 +453,55 @@ fn set_oracle_active_v1(cid: ContractId, params: SetOracleActiveParamsV1) -> Res
 // PROCESS UPDATE
 // ============================================================================
 
-fn process_update(_cid: ContractId, update_data: &[u8]) -> ContractResult {
+fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
+    let oracles_db = wasm::db::db_lookup(cid, ORACLE_CONTRACT_ORACLES_TREE)?;
     match OracleFunction::try_from(update_data[0])? {
         OracleFunction::RegisterOracleV1 => {
             let update: RegisterOracleUpdateV1 = deserialize(&update_data[1..])?;
+            wasm::db::db_set(oracles_db, &serialize(&update.oracle_id), &serialize(&update.oracle))?;
             msg!("[oracle::process_update] RegisterOracle: {:?}", update.oracle_id);
             Ok(())
         }
         OracleFunction::PushValueV1 => {
             let update: PushValueUpdateV1 = deserialize(&update_data[1..])?;
-            msg!(
-                "[oracle::process_update] PushValue: {:?} = {:?}",
-                update.oracle_id,
-                update.value
-            );
+            let data = wasm::db::db_get(oracles_db, &serialize(&update.oracle_id))?
+                .ok_or(ContractError::IoError("oracle not found".to_string()))?;
+            let mut oracle: Oracle = deserialize(&data)?;
+            oracle.value = update.value;
+            oracle.updated_at = update.updated_at;
+            wasm::db::db_set(oracles_db, &serialize(&update.oracle_id), &serialize(&oracle))?;
+            msg!("[oracle::process_update] PushValue: {:?} = {:?}", update.oracle_id, update.value);
             Ok(())
         }
         OracleFunction::AttestValueV1 => {
             let update: AttestValueUpdateV1 = deserialize(&update_data[1..])?;
-            msg!(
-                "[oracle::process_update] AttestValue: oracle={:?}, attestation={:?}",
-                update.oracle_id,
-                update.attestation_id
-            );
+            msg!("[oracle::process_update] AttestValue: oracle={:?}, attestation={:?}", update.oracle_id, update.attestation_id);
             Ok(())
         }
         OracleFunction::PushValueCommitmentV1 => {
             let update: PushValueCommitmentUpdateV1 = deserialize(&update_data[1..])?;
-            msg!(
-                "[oracle::process_update] PushValueCommitment: oracle={:?}, commitment={:?}",
-                update.oracle_id,
-                update.commitment
-            );
+            msg!("[oracle::process_update] PushValueCommitment: oracle={:?}, commitment={:?}", update.oracle_id, update.commitment);
             Ok(())
         }
         OracleFunction::AggregateV1 => {
             let update: AggregateUpdateV1 = deserialize(&update_data[1..])?;
-            msg!(
-                "[oracle::process_update] Aggregate: oracle={:?}, result={:?}",
-                update.oracle_id,
-                update.result
-            );
+            let data = wasm::db::db_get(oracles_db, &serialize(&update.oracle_id))?
+                .ok_or(ContractError::IoError("oracle not found".to_string()))?;
+            let mut oracle: Oracle = deserialize(&data)?;
+            oracle.value = update.result;
+            oracle.updated_at = update.updated_at;
+            wasm::db::db_set(oracles_db, &serialize(&update.oracle_id), &serialize(&oracle))?;
+            msg!("[oracle::process_update] Aggregate: oracle={:?}, result={:?}", update.oracle_id, update.result);
             Ok(())
         }
         OracleFunction::SetOracleActiveV1 => {
             let update: SetOracleActiveUpdateV1 = deserialize(&update_data[1..])?;
-            msg!(
-                "[oracle::process_update] SetOracleActive: oracle={:?}, is_active={}",
-                update.oracle_id,
-                update.is_active
-            );
+            let data = wasm::db::db_get(oracles_db, &serialize(&update.oracle_id))?
+                .ok_or(ContractError::IoError("oracle not found".to_string()))?;
+            let mut oracle: Oracle = deserialize(&data)?;
+            oracle.is_active = update.is_active;
+            wasm::db::db_set(oracles_db, &serialize(&update.oracle_id), &serialize(&oracle))?;
+            msg!("[oracle::process_update] SetOracleActive: {:?}, is_active={}", update.oracle_id, update.is_active);
             Ok(())
         }
     }
