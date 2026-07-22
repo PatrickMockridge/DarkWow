@@ -30,7 +30,7 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{IntentCommitment, BaseBlind, PublicKey},
+    crypto::{pasta_prelude::PrimeField, IntentCommitment, BaseBlind, PublicKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;

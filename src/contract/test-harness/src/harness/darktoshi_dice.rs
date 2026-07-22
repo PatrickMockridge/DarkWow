@@ -39,7 +39,6 @@ use rand::rngs::OsRng;
 
 use dwow_darktoshi_dice_contract::client::{
     commit_bet_v1::{create_commit_bet_v1_proof, CommitBetV1CallData, CommitBetV1PublicInputs},
-    reveal_roll_v1::{create_reveal_roll_proof, RevealRollCallData, RevealRollPublicInputs},
     settle_bet_v1::{create_settle_bet_v1_proof, SettleBetV1CallData, SettleBetV1PublicInputs},
 };
 use dwow_darktoshi_dice_contract::model::{

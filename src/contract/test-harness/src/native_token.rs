@@ -24,7 +24,7 @@
 #![allow(dead_code)]
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::{Field, Group}, BaseBlind, FuncId, SecretKey},
+    crypto::{pasta_prelude::{Field, Group}, SecretKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;

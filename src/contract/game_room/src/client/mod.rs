@@ -26,7 +26,7 @@
 //! This module provides the client-side API for building Game Room contract calls.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId, PublicKey, SecretKey},
+    crypto::{pasta_prelude::Field, poseidon_hash, ContractId, PublicKey, SecretKey},
     error::ContractError,
     pasta::pallas,
 };

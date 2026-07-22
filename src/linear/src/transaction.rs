@@ -235,7 +235,7 @@ pub struct CoinbaseTransaction {
 }
 
 /// Transaction - a transfer of value in the blockchain
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
     /// Transaction version
     pub version: u8,
@@ -264,6 +264,18 @@ pub struct Transaction {
     /// format (no fork, no genesis regen).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub witness: Vec<u8>,
+}
+
+/// Default Transaction has version: 1 (not 0) — a version-0 transaction is
+/// consensus-invalid. The Default derive was removed to prevent silent creation
+/// of invalid state.
+impl Default for Transaction {
+    fn default() -> Self {
+        Self {
+            version: 1, inputs: vec![], outputs: vec![], contract_calls: vec![],
+            lock_time: 0, nullifiers: vec![], witness: vec![],
+        }
+    }
 }
 
 /// `skip_serializing_if` helper for the borrowed `nullifiers` field of the hash
