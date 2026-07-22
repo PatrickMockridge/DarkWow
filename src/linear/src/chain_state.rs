@@ -153,7 +153,7 @@ impl CChainState {
         if let Some(work_bytes) = store.consensus.get("accumulated_work").ok().flatten() {
             if work_bytes.len() == 8 {
                 let work = u64::from_le_bytes(work_bytes[..8].try_into().unwrap_or([0u8; 8]));
-                consensus.accumulated_work.store(work, Ordering::SeqCst);
+                consensus.accumulated_work.store(work, Ordering::SeqCst); // G3: sled persistence boundary
             }
         }
         let height = store.get_height().unwrap_or(BlockHeight::new(0));
@@ -854,10 +854,9 @@ impl CChainState {
             }
 
             // Accumulate chain work
-            let block_work = block.header.target.chain_work();
             let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
-            let accumulated = consensus.accumulated_work.load(Ordering::SeqCst).saturating_add(block_work);
-            consensus.accumulated_work.store(accumulated, Ordering::SeqCst);
+            consensus.accumulated_work.add_block(block.header.target);
+            let accumulated = consensus.accumulated_work.get();
 
             let mut consensus_batch = sled::Batch::default();
             consensus.save_to_batch(&mut consensus_batch);

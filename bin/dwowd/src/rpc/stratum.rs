@@ -233,7 +233,7 @@ impl DwowNode {
 
         // Store template and config for submit handler
         *self.mining_state.current_linear_template.lock().await = Some(template.clone());
-        self.mining_state.template_height.store(chain_state.get_height().get(), Ordering::SeqCst);
+        self.mining_state.template_height.set(chain_state.get_height());
         *self.mining_state.linear_recipient_config.lock().await = Some(config);
 
         // Create or reuse shared publisher for push notifications
@@ -407,7 +407,7 @@ impl DwowNode {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let last_time = self.mining_state.last_block_time.load(Ordering::SeqCst);
+        let last_time = self.mining_state.last_block_time.get().get(); // G3: rate-limit comparison
         if last_time > 0 && now.saturating_sub(last_time) < self.min_block_interval {
             info!(
                 target: "dwowd::rpc::rpc_stratum::stratum_submit",
@@ -624,7 +624,7 @@ impl DwowNode {
         ) {
             Ok(dwow_chain::BlockConnectOutcome::CanonicalExtension { .. }) => {
                 drop(exec_vm);
-                self.mining_state.last_block_time.store(now, Ordering::SeqCst);
+                self.mining_state.last_block_time.set_now();
 
                 info!(
                     target: "dwowd::rpc::rpc_stratum::stratum_submit",
@@ -736,7 +736,7 @@ impl DwowNode {
 
                                 *self.mining_state.current_linear_template.lock().await =
                                     Some(new_template);
-                                self.mining_state.template_height.store(chain_state.get_height().get(), Ordering::SeqCst);
+                                self.mining_state.template_height.set(chain_state.get_height());
 
                                 let notification = dwow_core::rpc::jsonrpc::JsonNotification::new(
                                     "job", job_params,

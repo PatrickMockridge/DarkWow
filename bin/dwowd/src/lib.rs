@@ -168,10 +168,33 @@ impl SyncState {
 // to producing blocks via mining.
 // ---------------------------------------------------------------------------
 
+/// Typed atomic block timestamp for rate limiting.
+/// G3: .get() at atomic boundary — audited.
+/// G12: AtomicU64 internal — public API uses BlockTimestamp.
+pub struct LastBlockTime(AtomicU64);
+
+impl LastBlockTime {
+    pub const fn new() -> Self { Self(AtomicU64::new(0)) }
+    pub fn get(&self) -> dwow_sdk::blockchain::BlockTimestamp { dwow_sdk::blockchain::BlockTimestamp::new(self.0.load(Ordering::Acquire)) }
+    pub fn set_now(&self) { self.0.store(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(), Ordering::Release); }
+}
+
+/// Typed atomic block height for the current mining template.
+/// G3: .get() at atomic boundary — audited.
+/// G12: AtomicU64 internal — public API uses BlockHeight.
+pub struct TemplateHeight(AtomicU64);
+
+impl TemplateHeight {
+    pub const fn new() -> Self { Self(AtomicU64::new(0)) }
+    pub fn get(&self) -> dwow_sdk::blockchain::BlockHeight { dwow_sdk::blockchain::BlockHeight::new(self.0.load(Ordering::Acquire)) }
+    pub fn set(&self, h: dwow_sdk::blockchain::BlockHeight) { self.0.store(h.get(), Ordering::Release); }
+    pub fn reset(&self) { self.0.store(0, Ordering::Release); }
+}
+
 /// Block production state shared between stratum, merge-mining, and miner RPC.
 pub struct MiningState {
     /// Last block timestamp for rate limiting
-    pub last_block_time: AtomicU64,
+    pub last_block_time: LastBlockTime,
     /// ZK proving materials for coinbase (lazy initialized)
     pub linear_zk: Mutex<Option<crate::registry::model::RequiredLinearZk>>,
     /// Current block template for the active mining round
@@ -179,7 +202,7 @@ pub struct MiningState {
     /// Chain height at which the current template was generated.
     /// Set when a template is stored; checked at submission time to reject
     /// stale templates before PoW verification (type-system.md §9.3).
-    pub template_height: AtomicU64,
+    pub template_height: TemplateHeight,
     /// Publisher for pushing stratum job notifications to miners
     pub linear_stratum_publisher: Mutex<Option<PublisherPtr<JsonNotification>>>,
     /// Recipient config for generating new block templates on submit
@@ -202,10 +225,10 @@ pub struct MiningState {
 impl MiningState {
     pub fn new() -> Self {
         Self {
-            last_block_time: AtomicU64::new(0),
+            last_block_time: LastBlockTime::new(),
             linear_zk: Mutex::new(None),
             current_linear_template: Mutex::new(None),
-            template_height: AtomicU64::new(0),
+            template_height: TemplateHeight::new(),
             linear_stratum_publisher: Mutex::new(None),
             linear_recipient_config: Mutex::new(None),
             linear_submit_lock: Mutex::new(()),
@@ -1473,7 +1496,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
 
         // Rate-limit: wait for min_block_interval before next block
         let min_interval = node.min_block_interval;
-        let last = node.mining_state.last_block_time.load(std::sync::atomic::Ordering::SeqCst);
+        let last = node.mining_state.last_block_time.get().get(); // G3: rate-limit comparison uses raw u64
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -1484,6 +1507,6 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                 min_interval.saturating_sub(elapsed)
             )).await;
         }
-        node.mining_state.last_block_time.store(now, std::sync::atomic::Ordering::SeqCst);
+        node.mining_state.last_block_time.set_now();
     }
 }

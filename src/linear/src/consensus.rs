@@ -50,6 +50,25 @@ const TIMESTAMP_WINDOW: usize = 20;
 /// to guarantee deterministic results across CPU architectures.
 const SCALE: u64 = 1_000_000;
 
+/// Accumulated chain work for fork selection (heaviest-chain-wins).
+/// Wraps AtomicU64 for lock-free reads from hot paths (stratum, RPC, miner).
+/// G3: .get() calls are at the hardware atomic boundary.
+/// G12: AtomicU64 internal — public API uses BlockTarget.
+pub struct ChainWork(AtomicU64);
+
+impl ChainWork {
+    pub const fn new() -> Self { Self(AtomicU64::new(0)) }
+    pub fn get(&self) -> u64 { self.0.load(Ordering::SeqCst) }
+    /// Add work from a block at the given target.
+    pub fn add_block(&self, target: BlockTarget) {
+        self.0.fetch_add(target.chain_work(), Ordering::SeqCst);
+    }
+    /// Load from sled persistence. G3: AtomicU64 boundary.
+    pub(crate) fn load(&self, order: Ordering) -> u64 { self.0.load(order) }
+    /// Store to sled persistence. G3: AtomicU64 boundary.
+    pub(crate) fn store(&self, val: u64, order: Ordering) { self.0.store(val, order); }
+}
+
 /// Proof-of-Work consensus engine with dynamic target adjustment.
 ///
 /// `target` is the maximum valid hash value: `u32_le(hash[0..4]) <= target`.
@@ -75,7 +94,8 @@ pub struct PoWConsensus {
     timestamps: Mutex<Vec<u64>>,
     /// Accumulated chain work (sum of u32::MAX / target per block).
     /// Used for fork selection — heaviest chain wins, not just longest.
-    pub accumulated_work: AtomicU64,
+    /// G12: typed wrapper — AtomicU64 is internal implementation detail.
+    pub accumulated_work: ChainWork,
 }
 
 impl Clone for PoWConsensus {
@@ -87,7 +107,7 @@ impl Clone for PoWConsensus {
             max_target: self.max_target,
             initial_target: self.initial_target,
             timestamps: Mutex::new(self.timestamps.lock().unwrap_or_else(|e| e.into_inner()).clone()),
-            accumulated_work: AtomicU64::new(self.accumulated_work.load(Ordering::Acquire)),
+            accumulated_work: ChainWork(AtomicU64::new(self.accumulated_work.get())),
         }
     }
 }
@@ -107,7 +127,7 @@ impl PoWConsensus {
             max_target,
             initial_target,
             timestamps: Mutex::new(Vec::with_capacity(TIMESTAMP_WINDOW)),
-            accumulated_work: AtomicU64::new(0),
+            accumulated_work: ChainWork::new(),
         }
     }
 

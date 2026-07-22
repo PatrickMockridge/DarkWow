@@ -346,7 +346,7 @@ impl DwowNode {
 
         // Store template in current_linear_template
         *self.mining_state.current_linear_template.lock().await = Some(template);
-        self.mining_state.template_height.store(chain_state.get_height().get(), std::sync::atomic::Ordering::SeqCst);
+        self.mining_state.template_height.set(chain_state.get_height());
 
         info!(
             target: "dwowd::rpc::mm_rpc::mm_get_aux_block",
@@ -600,7 +600,7 @@ impl DwowNode {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let last_time = self.mining_state.last_block_time.load(Ordering::SeqCst);
+        let last_time = self.mining_state.last_block_time.get().get(); // G3: rate-limit comparison
         if last_time > 0 && now.saturating_sub(last_time) < self.min_block_interval {
             return miner_status_response(id, "stale")
         }
@@ -706,7 +706,7 @@ impl DwowNode {
         // Per type-system.md §9.3: submissions against stale templates SHALL
         // be rejected before PoW verification.
         {
-            let template_h = self.mining_state.template_height.load(std::sync::atomic::Ordering::SeqCst);
+            let template_h = self.mining_state.template_height.get().get(); // G3: comparison uses raw u64
             let chain_h = chain_state.get_height().get();
             if template_h != 0 && template_h != chain_h {
                 info!(
@@ -742,7 +742,7 @@ impl DwowNode {
         ) {
             Ok(dwow_chain::BlockConnectOutcome::CanonicalExtension { .. }) => {
                 drop(exec_vm);
-                self.mining_state.last_block_time.store(now, Ordering::SeqCst);
+                self.mining_state.last_block_time.set_now();
 
                 info!(
                     target: "dwowd::rpc::mm_rpc::mm_submit_solution",
@@ -802,7 +802,7 @@ impl DwowNode {
                     {
                         Ok(new_template) => {
                             *self.mining_state.current_linear_template.lock().await = Some(new_template);
-                            self.mining_state.template_height.store(chain_state.get_height().get(), std::sync::atomic::Ordering::SeqCst);
+                            self.mining_state.template_height.set(chain_state.get_height());
                         }
                         Err(e) => {
                             error!(
