@@ -723,6 +723,8 @@ pub struct SpendHookCallbackUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
     /// Value commitments of burned coins
     pub value_commits: Vec<[u8; 64]>,
+    /// Pre-computed new total_redeemed value (read in exec, written in apply)
+    pub new_total_redeemed: u64,
 }
 
 // ============================================================================

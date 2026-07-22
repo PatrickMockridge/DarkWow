@@ -753,7 +753,7 @@ fn select_winner_v1(cid: ContractId, params: SelectWinnerParamsV1) -> Result<Vec
     }
 
     // Verify winning amount matches the revealed bid amount
-    if params.winning_amount != winner_bid.revealed_amount.unwrap() {
+    if params.winning_amount != winner_bid.revealed_amount.expect("revealed_amount must be Some for a revealed bid") {
         msg!("[tender::select_winner_v1] ERROR: Winning amount does not match revealed bid");
         return Err(ContractError::InvalidFunction.into())
     }

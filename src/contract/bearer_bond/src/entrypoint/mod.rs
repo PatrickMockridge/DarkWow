@@ -815,11 +815,16 @@ fn pay_interest_v1(
         ..stake_coin
     };
 
+    // Mark claim as Paid in exec so apply is a pure write
+    let mut paid_claim = claim;
+    paid_claim.status = ClaimStatus::Paid;
+
     let update = PayInterestUpdateV1 {
         updated_coin,
         interest_coin: params.interest_coin,
         bond_token_commit: params.bond_token_commit,
         claim_block: params.claim_block,
+        claim: paid_claim,
     };
     wasm::util::set_return_data(&serialize(&(BearerBondFunction::PayInterestV1 as u8, update)))
 }
@@ -1090,13 +1095,9 @@ fn apply_pay_interest(cid: ContractId, update: PayInterestUpdateV1) -> ContractR
         &serialize(&update.interest_coin),
     )?;
 
-    // Mark the claim as Paid
+    // Write the claim with pre-set Paid status (computed in pay_interest_v1 exec phase)
     let claim_key = serialize(&(update.bond_token_commit, update.claim_block));
-    let claim_bytes = wasm::db::db_get(bonds_info_db, &claim_key)?
-        .ok_or(BearerBondError::ClaimNotFound)?;
-    let mut claim: RequestedClaim = deserialize(&claim_bytes)?;
-    claim.status = ClaimStatus::Paid;
-    wasm::db::db_set(bonds_info_db, &claim_key, &serialize(&claim))?;
+    wasm::db::db_set(bonds_info_db, &claim_key, &serialize(&update.claim))?;
 
     msg!("[apply_pay_interest] Payment applied: bond={:?}, block={}, status=Paid",
         update.bond_token_commit, update.claim_block);

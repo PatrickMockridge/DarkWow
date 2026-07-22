@@ -419,6 +419,8 @@ pub struct PayInterestUpdateV1 {
     pub bond_token_commit: pallas::Base,
     /// Block height of the claim
     pub claim_block: u64,
+    /// Full claim record with status pre-set to Paid (set in exec, written in apply)
+    pub claim: RequestedClaim,
 }
 
 // ============================================================================

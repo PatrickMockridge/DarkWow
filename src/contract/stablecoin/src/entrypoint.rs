@@ -611,9 +611,20 @@ fn process_spend_hook(cid: ContractId, payload: &[u8]) -> ContractResult {
         buf
     }).collect();
 
+    // Pre-compute new total_redeemed in exec so apply is a pure write
+    let config_db = wasm::db::db_lookup(cid, "config")?;
+    let total_redeemed_bytes = wasm::db::db_get(config_db, STABLECOIN_CONTRACT_TOTAL_REDEEMED)?
+        .unwrap_or_else(|| vec![0u8; 8]);
+    let total_redeemed = u64::from_le_bytes(
+        total_redeemed_bytes.as_slice().try_into()
+            .expect("total_redeemed value is always 8 bytes"),
+    );
+    let new_total_redeemed = total_redeemed.saturating_add(cb.nullifiers.len() as u64);
+
     let update = SpendHookCallbackUpdateV1 {
         nullifiers: nullifier_bytes.into_iter().map(|n| Nullifier::from_bytes(n).expect("valid nullifier")).collect(),
         value_commits,
+        new_total_redeemed,
     };
 
     msg!("[stablecoin::process_spend_hook] Spend hook callback processed: {} nullifiers",
@@ -721,19 +732,12 @@ fn apply_spend_hook_callback(cid: ContractId, update: SpendHookCallbackUpdateV1)
         total_burned += 1;
     }
 
-    // Increment total_redeemed counter for each burned token
+    // Write pre-computed total_redeemed (computed in process_spend_hook exec phase)
     let config_db = wasm::db::db_lookup(cid, "config")?;
-    let total_redeemed_bytes = wasm::db::db_get(config_db, STABLECOIN_CONTRACT_TOTAL_REDEEMED)?
-        .unwrap_or_else(|| vec![0u8; 8]);
-    let total_redeemed = u64::from_le_bytes(
-        total_redeemed_bytes.as_slice().try_into()
-            .expect("total_redeemed value is always 8 bytes"),
-    );
-    let new_total_redeemed = total_redeemed.saturating_add(total_burned);
-    wasm::db::db_set(config_db, STABLECOIN_CONTRACT_TOTAL_REDEEMED, &new_total_redeemed.to_le_bytes())?;
+    wasm::db::db_set(config_db, STABLECOIN_CONTRACT_TOTAL_REDEEMED, &update.new_total_redeemed.to_le_bytes())?;
 
     msg!("[stablecoin::apply_spend_hook] Recorded {} nullifiers from PN callback, total_redeemed={}",
-        update.nullifiers.len(), new_total_redeemed);
+        update.nullifiers.len(), update.new_total_redeemed);
     Ok(())
 }
 

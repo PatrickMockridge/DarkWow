@@ -209,7 +209,7 @@ pub fn baccarat_commit_bet_process_instruction_v1(
     let update = CommitBetUpdateV1 {
         bet_id,
         player_pub: params.player_pub,
-        bet_type: params.get_bet_type().unwrap(),
+        bet_type: params.get_bet_type().expect("bet_type already validated"),
         bet_value: params.bet_value,
         secret_nonce_commit,
         blind: params.blind,
