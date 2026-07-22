@@ -144,12 +144,10 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let nullifiers_db = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
             wasm::db::db_set(nullifiers_db, &serialize(&update.nullifier), &[])?;
             let boxes_db = wasm::db::db_lookup(cid, BOX_CONTRACT_BOXES_TREE)?;
-            if let Some(data) = wasm::db::db_get(boxes_db, &serialize(&update.box_id))? {
-                let mut bx: BoxRecord = deserialize(&data)?;
-                bx.is_empty = true;
-                bx.contents_commit = pallas::Base::zero();
-                wasm::db::db_set(boxes_db, &serialize(&update.box_id), &serialize(&bx))?;
-            }
+            // Box existence was validated in exec; blind overwrite with taken state
+            let bx = BoxRecord { version: 1, box_id: update.box_id,
+                contents_commit: pallas::Base::zero(), is_empty: true };
+            wasm::db::db_set(boxes_db, &serialize(&update.box_id), &serialize(&bx))?;
             Ok(())
         }
         BoxFunction::InitializeV1 => {

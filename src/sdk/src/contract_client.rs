@@ -317,8 +317,13 @@ impl ContractClient for ManifestContractClient {
                 ))?;
 
             let witness_map = crate::prover::CircuitWitnessMap::from_manifest(
+                circuit.name.clone(),
+                circuit.namespace.clone(),
                 &circuit.witness_map,
-            );
+            ).map_err(|e| format!(
+                "{}: '{}' witness_map error for circuit '{}': {}",
+                self.name, function, circuit_name, e,
+            ))?;
 
             // Load the zkas binary from the wallet's store (§3, §6.4.1 step 3).
             // The contract_id bs58 is resolved by the caller (invoke_contract).

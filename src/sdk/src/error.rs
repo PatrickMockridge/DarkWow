@@ -248,3 +248,18 @@ pub enum DarkTreeError {
     #[error("DarkTree max capacity has been exceeded")]
     MaxCapacityExceeded,
 }
+
+/// Error returned by the generic prover's witness binding.
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum ProverError {
+    /// An unknown witness source was encountered in the manifest's witness_map.
+    #[error("Unknown witness source in manifest: '{0}'")]
+    UnknownWitnessSource(String),
+
+    /// The witness map length does not match the circuit's declared witness count.
+    #[error("Witness map has {witness_count} entries but circuit declares {declared_count}")]
+    WitnessCountMismatch {
+        witness_count: usize,
+        declared_count: usize,
+    },
+}

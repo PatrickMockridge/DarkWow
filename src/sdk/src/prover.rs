@@ -108,7 +108,11 @@ impl CircuitWitnessMap {
     ///
     /// TODO: full parser — maps each string to the correct `WitnessSource`
     /// variant. The binding rule table above is the specification.
-    pub fn from_manifest(entries: &[String]) -> Self {
+    pub fn from_manifest(
+        circuit_name: String,
+        namespace: String,
+        entries: &[String],
+    ) -> Result<Self, crate::error::ProverError> {
         let mut sources = Vec::with_capacity(entries.len());
         for entry in entries {
             sources.push(match entry.as_str() {
@@ -123,13 +127,26 @@ impl CircuitWitnessMap {
                 s if s.starts_with("param:") =>
                     WitnessSource::ParamField(s[6..].to_string()),
                 _ => {
-                    // Unknown source — default to Blind (the most permissive
-                    // interpretation; a typed error barb in production).
-                    WitnessSource::Blind
+                    return Err(crate::error::ProverError::UnknownWitnessSource(entry.clone()))
                 }
             });
         }
-        Self { circuit_name: String::new(), namespace: String::new(), entries: sources }
+        Ok(Self { circuit_name, namespace, entries: sources })
+    }
+
+    /// Validate that the witness map count matches the circuit's declared witness count.
+    ///
+    /// `declared_witness_count` is the number of witness slots decoded from the
+    /// zkas binary (`ZkBinary.witnesses.len()`). A mismatch indicates the manifest
+    /// and circuit are out of sync and proof generation will fail.
+    pub fn validate_count(&self, declared_witness_count: usize) -> Result<(), crate::error::ProverError> {
+        if self.entries.len() != declared_witness_count {
+            return Err(crate::error::ProverError::WitnessCountMismatch {
+                witness_count: self.entries.len(),
+                declared_count: declared_witness_count,
+            });
+        }
+        Ok(())
     }
 }
 
@@ -182,14 +199,19 @@ mod tests {
 
     #[test]
     fn witness_map_parses_known_sources() {
-        let map = CircuitWitnessMap::from_manifest(&[
-            "secret".to_string(),
-            "merkle_path".to_string(),
-            "note:value".to_string(),
-            "param:amount".to_string(),
-            "blind".to_string(),
-            "tx_commitment".to_string(),
-        ]);
+        let map = CircuitWitnessMap::from_manifest(
+            "test".to_string(), "test_ns".to_string(),
+            &[
+                "secret".to_string(),
+                "merkle_path".to_string(),
+                "note:value".to_string(),
+                "param:amount".to_string(),
+                "blind".to_string(),
+                "tx_commitment".to_string(),
+            ],
+        ).unwrap();
+        assert_eq!(map.circuit_name, "test");
+        assert_eq!(map.namespace, "test_ns");
         assert_eq!(map.entries.len(), 6);
         match &map.entries[2] {
             WitnessSource::NoteField(f) => assert_eq!(f, "value"),
@@ -202,12 +224,11 @@ mod tests {
     }
 
     #[test]
-    fn witness_map_defaults_unknown() {
-        let map = CircuitWitnessMap::from_manifest(&[
-            "garbage_source".to_string(),
-        ]);
-        assert_eq!(map.entries.len(), 1);
-        // Unknown sources default to Blind
-        assert!(matches!(map.entries[0], WitnessSource::Blind));
+    fn witness_map_rejects_unknown() {
+        let result = CircuitWitnessMap::from_manifest(
+            "test".to_string(), "test_ns".to_string(),
+            &["garbage_source".to_string()],
+        );
+        assert!(result.is_err());
     }
 }
