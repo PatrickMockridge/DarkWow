@@ -314,11 +314,14 @@ impl Transaction {
             lock_time: self.lock_time,
             nullifiers: &self.nullifiers,
         };
-        let data = serde_json::to_vec(&identity).unwrap_or_else(|e| {
-            tracing::error!(target: "dwow_chain::transaction",
-                "Transaction::hash serialization failed: {}", e);
-            vec![0u8; 32] // deterministic fallback — unreachable with current types
-        });
+        let data = serde_json::to_vec(&identity).expect(
+            "Transaction::hash serialization failed — all TxIdentity fields are \
+             serde-serializable, this indicates a bug in serde_json or a \
+             non-serializable type added to the struct. Crashing to prevent \
+             silent merkle corruption (type-system.md §4.2.3: unwrap_or \
+             default SHALL only appear when semantically correct for ALL \
+             failure modes — vec![0u8; 32] is NEVER a valid tx serialization)."
+        );
         blake3::hash(&data)
     }
 }

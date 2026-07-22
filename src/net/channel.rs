@@ -334,7 +334,7 @@ impl Channel {
         // type-system.md §4, §10.5 obligation 2: malformed messages
         // SHALL return typed errors (↓bad-msg) — not crash the node.
         if message.command.is_empty() {
-            return Err(Error::MessageInvalid("empty command".into()));
+            return Err(Error::MessageInvalid);
         }
 
         let stream = &mut *self.writer.lock().await;

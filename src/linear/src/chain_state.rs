@@ -403,8 +403,16 @@ impl CChainState {
         let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
         let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
         for b in &blocks {
-            let h = blake3::hash(&serde_json::to_vec(&b.header).unwrap_or_else(|e| { tracing::error!(target: "dwow_chain::chain_state", "BlockHeader serialization failed: {}", e); vec![0u8; 32] }));
-            seen.insert(h);
+            let header_bytes = match serde_json::to_vec(&b.header) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::error!(target: "dwow_chain::chain_state",
+                        "BlockHeader serialization failed in put_competing_blocks: {} — skipping block at height {}",
+                        e, b.header.height);
+                    continue;
+                }
+            };
+            seen.insert(blake3::hash(&header_bytes));
         }
         competing.entry(height).or_default().extend(blocks);
     }
@@ -422,8 +430,15 @@ impl CChainState {
         competing.retain(|&height, blocks| {
             if height < cutoff {
                 for b in blocks {
-                    let h = blake3::hash(&serde_json::to_vec(&b.header).unwrap_or_else(|e| { tracing::error!(target: "dwow_chain::chain_state", "BlockHeader serialization failed: {}", e); vec![0u8; 32] }));
-                    seen.remove(&h);
+                    let header_bytes = match serde_json::to_vec(&b.header) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            tracing::error!(target: "dwow_chain::chain_state",
+                                "BlockHeader serialization failed in prune_competing: {} — leaking hash set entry", e);
+                            continue;
+                        }
+                    };
+                    seen.remove(&blake3::hash(&header_bytes));
                 }
                 false
             } else {
@@ -790,8 +805,10 @@ impl CChainState {
 
             let mut uncles_batch = sled::Batch::default();
             for uncle in uncles {
-                let uncle_hash = blake3::hash(&serde_json::to_vec(&uncle.header)
-                    .unwrap_or_else(|e| { tracing::error!(target: "dwow_chain::chain_state", "Uncle header serialization failed: {}", e); vec![0u8; 32] }));
+                let uncle_hash = blake3::hash(
+                    &serde_json::to_vec(&uncle.header)
+                        .map_err(|e| LinearError::SerializationError(e.to_string()))?
+                );
                 let uncle_value = serde_json::to_vec(uncle)
                     .map_err(|e| LinearError::SerializationError(e.to_string()))?;
                 uncles_batch.insert(uncle_hash.as_bytes(), uncle_value);

@@ -30,7 +30,17 @@ pub use fixed_bases::{
 };
 
 /// Domain prefix used for Schnorr signatures, with `hash_to_scalar`.
-pub const DRK_SCHNORR_DOMAIN: &[u8] = b"DarkFi:Schnorr";
+///
+/// Split into separate nonce and challenge domains per type-system.md §2.1:
+/// nonce derivation and challenge derivation are distinct behavioral positions —
+/// they SHALL use distinct domain separators. Sharing a single domain for both
+/// operations is fragile (relies solely on input arity to BLAKE2b for separation).
+///
+/// Nonce derivation (RFC 6979 pattern): `hash_to_scalar(NONCE_DOMAIN, [secret, message])`
+/// Challenge derivation (Fiat-Shamir): `hash_to_scalar(CHALLENGE_DOMAIN, [r, pk, message])`
+pub const DRK_SCHNORR_DOMAIN: &[u8] = b"DarkFi:Schnorr"; // Kept for backward compat — prefer typed domains below
+pub const DRK_SCHNORR_NONCE_DOMAIN: &[u8] = b"DarkFi:Schnorr:nonce";
+pub const DRK_SCHNORR_CHALLENGE_DOMAIN: &[u8] = b"DarkFi:Schnorr:challenge";
 
 /// Domain prefix used for block hashes, with `hash_to_curve`.
 pub const BLOCK_HASH_DOMAIN: &str = "DarkFi:Block";

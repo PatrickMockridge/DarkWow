@@ -29,7 +29,7 @@ use pasta_curves::{
 };
 
 use super::{
-    constants::{NullifierK, DRK_SCHNORR_DOMAIN},
+    constants::{NullifierK, DRK_SCHNORR_CHALLENGE_DOMAIN, DRK_SCHNORR_NONCE_DOMAIN},
     util::{fp_mod_fv, hash_to_scalar},
     PublicKey, SecretKey,
 };
@@ -63,8 +63,9 @@ pub trait SchnorrPublic {
 /// Schnorr signature trait implementations for the stuff in `keypair.rs`
 impl SchnorrSecret for SecretKey {
     fn sign(&self, message: &[u8]) -> Signature {
-        // Derive a deterministic nonce
-        let mask = hash_to_scalar(DRK_SCHNORR_DOMAIN, &[&self.inner().to_repr(), message]);
+        // Derive a deterministic nonce (RFC 6979 pattern).
+        // Uses a distinct domain separator from the challenge per type-system.md §2.1.
+        let mask = hash_to_scalar(DRK_SCHNORR_NONCE_DOMAIN, &[&self.inner().to_repr(), message]);
 
         let commit = NullifierK.generator() * mask;
 
@@ -72,7 +73,7 @@ impl SchnorrSecret for SecretKey {
         let pubkey_bytes = PublicKey::from_secret(*self).to_bytes();
         let transcript = &[&commit_bytes, &pubkey_bytes, message];
 
-        let challenge = hash_to_scalar(DRK_SCHNORR_DOMAIN, transcript);
+        let challenge = hash_to_scalar(DRK_SCHNORR_CHALLENGE_DOMAIN, transcript);
         let response = mask + challenge * fp_mod_fv(self.inner());
 
         Signature { commit, response }
@@ -85,7 +86,7 @@ impl SchnorrPublic for PublicKey {
         let pubkey_bytes = self.to_bytes();
         let transcript = &[&commit_bytes, &pubkey_bytes, message];
 
-        let challenge = hash_to_scalar(DRK_SCHNORR_DOMAIN, transcript);
+        let challenge = hash_to_scalar(DRK_SCHNORR_CHALLENGE_DOMAIN, transcript);
         NullifierK.generator() * signature.response - self.inner() * challenge == signature.commit
     }
 }

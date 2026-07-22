@@ -914,4 +914,76 @@ required_barbs = ["Spend","Mine"]
 // Tripwire — wallet.md §6.4, §9: zero per-contract code in the wallet
 // ---------------------------------------------------------------------------
 
+// T3: Wallet coinbase-only scan — validates Path 1 (NativeToken coinbase
+// discovery) against blocks built through accept_block. Scans genesis + 3
+// post-genesis blocks, verifies wallet discovers capabilities and has
+// non-zero balance. No transfers, no ZK proof generation in the wallet.
+#[test]
+fn test_wallet_coinbase_scan_only() {
+    use dwow_wallet::Dww;
+    dwow_native_token_contract::enable_deterministic_zk();
+
+    smol::block_on(async {
+        let har = GenesisHarness::new().expect("GenesisHarness");
+
+        let keys_toml = "[node0]\nwallet_secret = \
+            \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+        let keys_path = std::env::temp_dir()
+            .join(format!("dwow_wallet_scan_{}.toml", std::process::id()));
+        std::fs::write(&keys_path, keys_toml).expect("write test keys");
+
+        let miner_mgr = crate::accounts::AccountManager::open(
+            &keys_path, Network::Testnet, "node0",
+        ).expect("open miner AccountManager");
+        let recipient = crate::accounts::MiningRecipient::from_account(
+            &miner_mgr, BlockHeight::new(1),
+        ).expect("MiningRecipient");
+        let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
+
+        // Genesis — contracts materialize via apply_genesis_deployments
+        crate::init_genesis(&har.chain_state, recipient.clone(), magic_bytes)
+            .await.expect("init_genesis");
+
+        // Mine post-genesis blocks 2-4
+        for h in 2u64..=4 {
+            crate::tests::fee_collect_pipeline::mine_block(
+                &har, &recipient, BlockHeight::new(h), vec![],
+            ).expect(&format!("mine block {}", h));
+        }
+
+        // Initialize wallet and scan all blocks
+        let wallet_dir = std::env::temp_dir()
+            .join(format!("dwow_wallet_scan_db_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&wallet_dir);
+        let dww = Dww::initialize(&wallet_dir, &keys_path, "testnet")
+            .expect("wallet initialize");
+        dww.initialize_wallet().expect("wallet schema init");
+
+        let mut tree = dww.get_capability_commitment_tree()
+            .expect("capability commitment tree");
+
+        for h in 1u64..=4 {
+            let block = har.chain_state.get_block(BlockHeight::new(h))
+                .expect(&format!("block {}", h));
+            let scan_block = dwow_chain::Block {
+                header: block.header.clone(),
+                transactions: block.transactions.clone(),
+            };
+            let _ = dww.scan_block_linear(&mut tree, &scan_block);
+        }
+
+        let balances = dww.capability_balance().expect("capability balance");
+        assert!(!balances.is_empty(),
+            "T3 FAIL: wallet must discover coinbase capabilities");
+        let drkw = balances.get("DRKW").copied().unwrap_or(0);
+        assert!(drkw > 0,
+            "T3 FAIL: wallet must have non-zero DRKW balance, got {}", drkw);
+
+        // Cleanup
+        drop(miner_mgr);
+        let _ = std::fs::remove_file(&keys_path);
+        let _ = std::fs::remove_dir_all(&wallet_dir);
+    });
+}
+
 // tripwire_no_contract_names_in_wallet moved to tests/tripwire.rs

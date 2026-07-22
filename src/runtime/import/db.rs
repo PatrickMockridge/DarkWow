@@ -506,8 +506,11 @@ pub(crate) fn db_del(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
         return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
-    // Subtract used gas. We make deletion free.
-    env.subtract_gas(&mut store, 1);
+    // Gas is charged AFTER decoding the key (below), proportional to the
+    // size of the data being deleted — symmetric with db_set which charges
+    // proportional to the net data increase. Charging 1 gas for arbitrary-
+    // size deletions enables write-large/delete-small resource exhaustion
+    // (type-system.md §8.6.2: resource bounds SHALL be proportional to work).
 
     // Ensure that it is possible to read from the memory that this function needs
     let memory_view = env.memory_view(&store);
@@ -579,7 +582,11 @@ pub(crate) fn db_del(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
     let db_handle = &db_handles[db_handle_index];
 
     // Validate that the DbHandle matches the contract ID
-    if db_handle.contract_id != cid {
+    let contract_id_ok = db_handle.contract_id == cid;
+    let tree = db_handle.tree; // Copy ([u8; 32]) — extract before dropping borrow
+    drop(db_handles);
+
+    if !contract_id_ok {
         error!(
             target: "runtime::db::db_del",
             "[WASM] [{cid}] db_del(): Unauthorized to write to DbHandle"
@@ -587,8 +594,20 @@ pub(crate) fn db_del(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
         return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
+    // Charge gas proportional to the existing value size BEFORE deletion.
+    // Symmetric with db_set (lines 449-458) which charges proportional to
+    // data increase. Without this, write-large/delete-small loops consume
+    // disproportionate host I/O for negligible gas (type-system.md §8.6.2).
+    let existing_len = env
+        .backend
+        .db_get(&tree, &key)
+        .unwrap_or(None)
+        .map_or(0, |d| d.len());
+    // Floor at 1 gas so deletion always consumes at least something
+    env.subtract_gas(&mut store, std::cmp::max(1, existing_len as u64));
+
     // Remove key-value pair from the database corresponding to this contract
-    if let Err(e) = env.backend.db_remove(&db_handle.tree, &key) {
+    if let Err(e) = env.backend.db_remove(&tree, &key) {
         error!(
             target: "runtime::db::db_del",
             "[WASM] [{cid}] db_del(): Couldn't remove key from db_handle tree: {e}"

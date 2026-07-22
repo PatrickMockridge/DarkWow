@@ -287,13 +287,56 @@ pub fn verify_single_tx(chain_tx: &ChainTransaction) -> Result<(), VerifyError> 
             )));
         }
     }
-    // Structural sig check: every call with calls must have sigs.
+    // ── Signature verification at mempool admission ──────────────────────
+    // type-system.md §8.2, mempool.md §1: the witness SHALL be verified at
+    // BOTH mempool admission AND block acceptance. Signature structure is
+    // checked here; full cryptographic verification (verify_sigs with pubkeys
+    // from metadata()) happens at block accept via verify_core_tx_with_tables.
+    //
+    // ocap.md §6.2: every capability exercise (↓spend) requires BOTH a ZK
+    // proof (↓prove) AND a Schnorr signature (↓verify). A non-empty proof
+    // vector with an empty signature vector is "I proved the predicate but
+    // I claim no authority to exercise" — the authority model rejects this.
+    // A non-empty signature vector with an empty proof vector is "I authorize
+    // something but prove nothing" — also rejected.
+    //
+    // Per-call structural checks:
+    //   (a) signature table length must match call count
+    //   (b) every call MUST have a non-empty signature vector
+    //   (c) proof count and signature count must agree per call
+    //       (both empty = non-capability call, both non-empty = capability exercise)
+
+    // (a) Outer length
     if core_tx.calls.len() != core_tx.signatures.len() {
         return Err(VerifyError::InvalidProof(format!(
             "signature table length mismatch: {} calls vs {} sigs",
             core_tx.calls.len(), core_tx.signatures.len(),
         )));
     }
+
+    // (b) + (c) Per-call checks
+    for (i, ((_call, proofs), sigs)) in core_tx.calls.iter()
+        .zip(core_tx.proofs.iter())
+        .zip(core_tx.signatures.iter())
+        .enumerate()
+    {
+        let has_proofs = !proofs.is_empty();
+        let has_sigs = !sigs.is_empty();
+
+        if has_proofs && !has_sigs {
+            return Err(VerifyError::InvalidProof(format!(
+                "call[{}] has {} proofs but {} signatures — authority requires both (ocap.md §6.2)",
+                i, proofs.len(), sigs.len(),
+            )));
+        }
+        if !has_proofs && has_sigs {
+            return Err(VerifyError::InvalidProof(format!(
+                "call[{}] has {} proofs but {} signatures — proof required for authorization",
+                i, proofs.len(), sigs.len(),
+            )));
+        }
+    }
+
     Ok(())
 }
 

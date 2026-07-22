@@ -29,7 +29,6 @@
 mod block;
 pub mod caribina;
 pub mod chain_state;
-pub mod commit;
 mod consensus;
 mod error;
 pub mod execution;

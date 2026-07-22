@@ -8,6 +8,7 @@ description = "DarkWow mempool — fee-ordered transaction pool with nullifier d
 [dependencies]
 dwow_chain = {path = "../../src/linear"}
 dwow_core = {path = "../.."}
+dwow-sdk = {path = "../../src/sdk"}
 blake3 = {version = "1", features = ["serde"]}
 sled = "0.34"
 smol = "2"
@@ -15,4 +16,3 @@ serde_json = "1"
 tracing = "0.1"
 
 [dev-dependencies]
-dwow-sdk = {path = "../../src/sdk"}

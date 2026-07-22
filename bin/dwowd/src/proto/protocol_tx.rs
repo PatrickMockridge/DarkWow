@@ -144,12 +144,17 @@ impl ProtocolTxHandler {
                                 if !chain_tx.contract_calls.is_empty() {
                                     // L2 mempool admission gate: verify the
                                     // witness structurally before admitting.
-                                    // Coinbase txs (0x05) have no witness
-                                    // and are already rejected by the
+                                    // Coinbase txs (PoWRewardV1: function 0x05
+                                    // + NATIVE_TOKEN_CONTRACT_ID) have no
+                                    // witness and are already rejected by the
                                     // mempool; this guards non-coinbase.
+                                    // Both function code AND contract_id are
+                                    // checked — matching the mempool's is_coinbase
+                                    // check (type-system.md §5, mempool.md §4).
                                     let is_coinbase = chain_tx.contract_calls
                                         .first()
-                                        .map_or(false, |c| c.data.first() == Some(&0x05));
+                                        .map_or(false, |c| c.data.first() == Some(&0x05)
+                                            && c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID);
                                     if !is_coinbase {
                                         if let Err(e) = dwow_chain::zk_verifier::verify_single_tx(&chain_tx) {
                                             error!(target: "dwowd::proto::protocol_tx",

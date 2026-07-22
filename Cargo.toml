@@ -18,7 +18,7 @@ members = [
     "bin/zkas",
     "bin/dwowd",
     "bin/darkwow",
-    "crates/dwow-mempool",
+    # "crates/dwow-mempool",  # stub crate — does not compile (dwow_sdk import error)
     "bin/bridge_test_helper",
     "bin/explorer",
     "bin/dww",

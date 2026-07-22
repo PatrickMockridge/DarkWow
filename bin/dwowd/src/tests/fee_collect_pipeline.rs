@@ -98,7 +98,7 @@ fn build_block_header(
 }
 
 /// Mine a block: coinbase + optional txs, accept via production path.
-fn mine_block(
+pub(crate) fn mine_block(
     har: &GenesisHarness,
     recipient: &crate::accounts::MiningRecipient,
     height: BlockHeight,

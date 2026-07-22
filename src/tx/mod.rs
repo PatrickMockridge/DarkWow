@@ -271,15 +271,20 @@ use crate::{
     util::time::NanoTimestamp,
 };
 
+/// Transaction P2P message size limit.
+/// Per type-system.md §8.6.2: "A generous bound is acceptable; zero (unlimited)
+/// is not." This matches `MAX_BLOCK_SIZE` (4 MiB) — the maximum serialized
+/// block on the P2P wire and on disk. A single transaction cannot be larger
+/// than the block that contains it.
+pub const TX_MAX_BYTES: u64 = 4 * 1024 * 1024;
+
 #[cfg(any(feature = "net", feature = "net-wallet"))]
-// TODO: Fine tune
-// Since messages are asynchronous we will define loose rules to prevent spamming.
 // Each message score will be 1, with a threshold of 100 and expiry time of 5.
-// We are not limiting `Transaction` size.
+// Transaction size is bounded at TX_MAX_BYTES per type-system.md §8.6.2.
 crate::impl_p2p_message!(
     Transaction,
     "tx",
-    0,
+    TX_MAX_BYTES,
     1,
     MeteringConfiguration {
         threshold: 100,

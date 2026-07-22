@@ -251,9 +251,14 @@ impl Mempool {
         let fee_rate = if gas > 0 { fee.saturating_mul(1_000_000) / gas } else { 0 };
         let now = now_secs();
 
-        // Fee minimum (non-coinbase txs — coinbase = PoWRewardV1 call, function 0x05)
+        // Fee minimum (non-coinbase txs — coinbase = PoWRewardV1 call, function 0x05).
+        // type-system.md §5, mempool.md §4: coinbase detection must verify BOTH
+        // the function selector (0x05) AND the ContractId (NATIVE_TOKEN_CONTRACT_ID).
+        // The chain-level structural validation checks both; the mempool must match.
+        // Checking only data[0] == 0x05 allows any contract to bypass the fee minimum.
         let is_coinbase = tx.contract_calls.first()
-            .map_or(false, |c| c.data.first() == Some(&0x05));
+            .map_or(false, |c| c.data.first() == Some(&0x05)
+                && c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID);
         if !is_coinbase && fee < self.config.min_fee {
             return Err(dwow_core::Error::Custom(format!(
                 "Fee too low: {} (minimum: {})", fee, self.config.min_fee

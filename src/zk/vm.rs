@@ -1226,9 +1226,15 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     let computed_root = smt_chip.check_membership(&mut layouter, pos, path, leaf)?;
 
                     // is_member = 1 if computed_root == expected_root, else 0
-                    // Note: isequal_chip.is_eq_with_output has a known bug where
-                    // delta_invert is unconstrained when a == b. With expected_root
-                    // as public input, the prover cannot manipulate the result.
+                    //
+                    // The is_equal chip (src/zk/gadget/is_equal.rs:87) constrains
+                    // delta_invert via a purity gate: `s_is_eq * out * (delta_invert - 1)`
+                    // forces delta_invert = 1 when out = 1 (a == b). This resolves the
+                    // historical concern about delta_invert being unconstrained when a == b.
+                    //
+                    // expected_root is additionally constrained as a public input
+                    // (layouter.constrain_instance above) — defense-in-depth against
+                    // any future regression in the is_equal constraint system.
                     let is_member = isequal_chip
                         .as_ref()
                         .unwrap()
@@ -1362,7 +1368,12 @@ impl Circuit<pallas::Base> for ZkCircuit {
                 }
 
                 Opcode::LessThanStrict => {
-                    debug_assert!(k_table_loaded, "K-table must be loaded before LessThan chip executes");
+                    // NOT debug_assert — the K-table must be loaded for LessThan
+                    // operations to produce correct results. debug_assert is
+                    // stripped in release builds; a missing K-table in production
+                    // produces unconstrained comparisons (type-system.md §4:
+                    // consensus-critical checks SHALL be `assert!`, never `debug_assert!`).
+                    assert!(k_table_loaded, "K-table must be loaded before LessThan chip executes");
                     trace!(target: "zk::vm", "Executing `LessThanStrict{:?}` opcode", opcode.1);
                     let args = &opcode.1;
 
