@@ -104,11 +104,15 @@ pub async fn run_wallet_sync(
 
         // Phase 1: Check peer connectivity
         let dww_r = dww.read().await;
-        // G2/G6: chain_height() still returns u64 until Wave 2 — wrap explicitly.
-        // The .map(|h| h) is a no-op pass-through; the result is still u64.
-        // TODO(Wave2): chain_height() -> Result<BlockHeight, DbError>
-        let local_raw = dww_r.wallet.chain_height().map(|h| h).unwrap_or(0);
-        let local = BlockHeight::new(local_raw);
+        // G2: chain_height() returns Result<BlockHeight> — must handle error explicitly
+        let local = match dww_r.wallet.chain_height() {
+            Ok(h) => h,
+            Err(e) => {
+                error!(target: "dww::wallet::sync",
+                    "chain_height failed: {e} — skipping sync tick");
+                continue;
+            }
+        };
         let peer_count = dww_r.p2p.as_ref()
             .map(|p| p.hosts().peers().len())
             .unwrap_or(0);

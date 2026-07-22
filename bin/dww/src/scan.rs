@@ -815,7 +815,7 @@ impl Dww {
     ) -> WalletDbResult<()> {
         // Grab last scanned block height from the wallet db
         let (last_scanned, _) = self.get_last_scanned_block()?;
-        let mut height: u64 = if last_scanned == 0 {
+        let mut height = dwow_sdk::blockchain::BlockHeight::new(if last_scanned == 0 {
             let mut buf = vec![];
             self.reset(&mut buf)?;
             append_or_print(output, sender, print, buf).await;
@@ -823,7 +823,7 @@ impl Dww {
         } else {
             // Defense-in-depth: always re-scan the last marked block.
             last_scanned
-        };
+        });
 
         // Load tree once (immutable for the scan loop).
         // Secrets come from self.account_mgr directly — single authority per Cornerstone 1.
@@ -857,8 +857,8 @@ impl Dww {
             }
 
             while height <= last_height {
-                let mut buf = vec![format!("Reading block {height} from local store...")];
-                let block = match self.chain_block(height) {
+                let mut buf = vec![format!("Reading block {} from local store...", height.get())];
+                let block = match self.chain_block(height.get()) {
                     Ok(b) => b,
                     Err(e) => {
                         buf.push(format!("[scan_blocks] Local chain read failed: {e}"));
@@ -896,7 +896,7 @@ impl Dww {
                 }
 
                 append_or_print(output, sender, print, buf).await;
-                height += 1;
+                height = height.succ();
             }
         }
     }

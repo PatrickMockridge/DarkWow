@@ -27,7 +27,7 @@ use bs58;
 use hex;
 
 use smol::lock::RwLock;
-use tracing::info;
+use tracing::{error, info};
 
 use dwow_core::{
     net::hosts::HostColor,
@@ -218,7 +218,7 @@ impl Dww {
     }
 
     /// Get the current chain tip height from the local block store.
-    pub fn chain_height(&self) -> Result<u64> {
+    pub fn chain_height(&self) -> Result<dwow_sdk::blockchain::BlockHeight> {
         self.wallet.chain_height()
             .map_err(|e| Error::Custom(format!("chain height: {:?}", e)))
     }
@@ -273,28 +273,29 @@ impl Dww {
     /// Compares local chain height against highest peer tip seen by sync task.
     /// If P2P is not configured, falls back to chain.height > 0.
     pub fn is_synced(&self) -> bool {
+        let zero = dwow_sdk::blockchain::BlockHeight::new(0);
         let local = match self.wallet.chain_height() {
             Ok(h) => h,
             Err(_) => return false,
         };
-        if local == 0 {
+        if local == zero {
             return false;
         }
         // If P2P is not configured, fall back to chain.height > 0
         let Some(ref p2p) = self.p2p else {
-            return local > 0;
+            return local > zero;
         };
         // With P2P: need at least one peer
         if p2p.hosts().peers().is_empty() {
             return false;
         }
         let peer_tip = self.highest_peer_tip.get();
-        if peer_tip > dwow_sdk::blockchain::BlockHeight::new(0) {
-            return local >= peer_tip.get();
+        if peer_tip > zero {
+            return local >= peer_tip;
         }
         // P2P connected but no peer tip yet — sync task hasn't queried tips.
         // Consider synced if we have peers and blocks (tip will arrive).
-        local > 0
+        local > zero
     }
 
     /// Insert a block synced from a P2P peer into the wallet's chain store.
@@ -349,9 +350,15 @@ impl Dww {
 
         // Record chain height before broadcast for confirmation polling
         let start_height = if confirm {
-            self.wallet.chain_height().unwrap_or(0)
+            match self.wallet.chain_height() {
+                Ok(h) => h,
+                Err(e) => {
+                    error!("Failed to read chain height before broadcast: {e}");
+                    dwow_sdk::blockchain::BlockHeight::new(0)
+                }
+            }
         } else {
-            0
+            dwow_sdk::blockchain::BlockHeight::new(0)
         };
 
         // Verify at least one connected peer before broadcasting.
@@ -414,7 +421,7 @@ impl Dww {
     async fn poll_for_confirmation(
         &self,
         txid: &str,
-        start_height: u64,
+        start_height: dwow_sdk::blockchain::BlockHeight,
         timeout_secs: u64,
         interval_secs: u64,
     ) -> Result<String> {
@@ -424,7 +431,13 @@ impl Dww {
 
         loop {
             smol::Timer::after(interval).await;
-            let current_height = self.wallet.chain_height().unwrap_or(0);
+            let current_height = match self.wallet.chain_height() {
+                Ok(h) => h,
+                Err(e) => {
+                    error!("Failed to read chain height during confirmation poll: {e}");
+                    continue;
+                }
+            };
             if current_height > start_height {
                 return Ok(txid.to_string());
             }
@@ -1165,7 +1178,13 @@ impl Dww {
             for capability_id in &transferred {
                 // Use current chain tip as the revoke height; reorg reconciler
                 // will un-revoke if the block is reverted.
-                let current_height = self.chain_height().unwrap_or(0);
+                let current_height = match self.chain_height() {
+                    Ok(h) => h.get(), // G3: persistence boundary — mark_revoked takes u64
+                    Err(e) => {
+                        error!("Failed to read chain height for revoke: {e}");
+                        continue;
+                    }
+                };
                 if let Err(e) = self.wallet.mark_revoked(capability_id, current_height) {
                     output.push(format!(
                         "Failed to mark capability {} as revoked: {:?}", capability_id, e
@@ -1504,7 +1523,7 @@ impl Dww {
     pub fn diagnostic(&self, output: &mut Vec<String>) -> Result<()> {
         output.push("=== Wallet Diagnostic ===".into());
         output.push(format!("Network: {:?}", self.network));
-        output.push(format!("Chain height: {}", self.wallet.chain_height().map(|h| h).unwrap_or(0)));
+        output.push(format!("Chain height: {}", self.wallet.chain_height().map(|h| h.get()).unwrap_or(0)));
 
         if let Some(ref p2p) = self.p2p {
             let peer_count = p2p.hosts().peers().len();

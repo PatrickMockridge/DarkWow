@@ -734,7 +734,7 @@ pub extern "C" fn dwow_wallet_default_address(
 pub extern "C" fn dwow_wallet_chain_height(handle: *const WalletHandle) -> u64 {
     if handle.is_null() { return 0; }
     let wallet = unsafe { &(*handle) };
-    wallet.dww.chain_height().unwrap_or(0)
+    wallet.dww.chain_height().map(|h| h.get()).unwrap_or(0)
 }
 
 /// Run the AEAD encrypt/decrypt self-test.

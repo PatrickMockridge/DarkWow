@@ -1251,14 +1251,14 @@ impl WalletDb {
         })
     }
 
-    pub fn chain_height(&self) -> WalletDbResult<u64> {
+    pub fn chain_height(&self) -> WalletDbResult<dwow_sdk::blockchain::BlockHeight> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let height: i64 = conn.query_row(
             "SELECT COALESCE(MAX(height), 0) FROM chain_blocks",
             [],
             |row| row.get(0),
         )?;
-        Ok(height as u64)
+        Ok(dwow_sdk::blockchain::BlockHeight::new(height as u64))
     }
 }
 

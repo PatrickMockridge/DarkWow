@@ -117,12 +117,13 @@ impl WalletRpcClient {
             .map_err(|e| Error::Custom(format!("parse sync_status: {}", e)))
     }
 
-    pub fn chain_height(&self) -> Result<u64> {
+    pub fn chain_height(&self) -> Result<dwow_sdk::blockchain::BlockHeight> {
         let raw = smol::block_on(self.call("chain.get_height", serde_json::json!({})))?;
         let v: serde_json::Value = serde_json::from_str(&raw)
             .map_err(|e| Error::Custom(format!("parse height: {}", e)))?;
-        v["height"].as_u64()
-            .ok_or_else(|| Error::Custom("missing height field".into()))
+        let h = v["height"].as_u64()
+            .ok_or_else(|| Error::Custom("missing height field".into()))?;
+        Ok(dwow_sdk::blockchain::BlockHeight::new(h))
     }
 
     /// Scan blocks via RPC. Returns scan progress messages from the daemon.

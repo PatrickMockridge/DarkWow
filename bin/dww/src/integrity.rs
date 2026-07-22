@@ -111,7 +111,7 @@ impl WalletDb {
         // Block hash validity requires chain_blocks to be populated —
         // skipped silently if no blocks exist yet.
         if let Ok(h) = self.chain_height() {
-            if h > 0 {
+            if h > dwow_sdk::blockchain::BlockHeight::new(0) {
                 results.extend(self.check_block_hash_validity());
             }
         }
