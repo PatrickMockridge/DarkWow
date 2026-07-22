@@ -229,7 +229,9 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         StablecoinFunction::InitializeV1 => {
-            let params: InitializeParams = deserialize(&self_.data[1..])?;
+            let params: InitializeParams = match deserialize(&self_.data[1..]) {
+                Ok(p) => p, Err(e) => { msg!("[stablecoin::get_metadata] Error: Failed to deserialize InitializeParams: {:?}", e); return Ok(()); }
+            };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_INIT_NS_V1.to_string(),
