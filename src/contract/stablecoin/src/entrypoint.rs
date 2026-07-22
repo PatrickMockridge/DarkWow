@@ -242,7 +242,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::OpenPositionV1 => {
-            let params: DepositCollateralParams = deserialize(&self_.data[1..])?;
+            let params: DepositCollateralParams = match deserialize(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[stablecoin::get_metadata] Error: Failed to deserialize DepositCollateralParams: {:?}", e);
+                    return Ok(());
+                }
+            };
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
@@ -255,7 +261,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::AddCollateralV1 => {
-            let params: DepositCollateralParams = deserialize(&self_.data[1..])?;
+            let params: DepositCollateralParams = match deserialize(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[stablecoin::get_metadata] Error: Failed to deserialize DepositCollateralParams: {:?}", e);
+                    return Ok(());
+                }
+            };
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
@@ -268,7 +280,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::RemoveCollateralV1 => {
-            let params: WithdrawCollateralParams = deserialize(&self_.data[1..])?;
+            let params: WithdrawCollateralParams = match deserialize(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[stablecoin::get_metadata] Error: Failed to deserialize WithdrawCollateralParams: {:?}", e);
+                    return Ok(());
+                }
+            };
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
@@ -281,7 +299,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::MintStableV1 => {
-            let params: MintStableParams = deserialize(&self_.data[1..])?;
+            let params: MintStableParams = match deserialize(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[stablecoin::get_metadata] Error: Failed to deserialize MintStableParams: {:?}", e);
+                    return Ok(());
+                }
+            };
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
@@ -294,7 +318,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::RepayStableV1 => {
-            let params: RepayStableParams = deserialize(&self_.data[1..])?;
+            let params: RepayStableParams = match deserialize(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[stablecoin::get_metadata] Error: Failed to deserialize RepayStableParams: {:?}", e);
+                    return Ok(());
+                }
+            };
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
@@ -307,7 +337,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::LiquidateV1 => {
-            let params: LiquidateParams = deserialize(&self_.data[1..])?;
+            let params: LiquidateParams = match deserialize(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[stablecoin::get_metadata] Error: Failed to deserialize LiquidateParams: {:?}", e);
+                    return Ok(());
+                }
+            };
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
@@ -320,7 +356,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::UpdateConfigV1 => {
-            let params: UpdateConfigParams = deserialize(&self_.data[1..])?;
+            let params: UpdateConfigParams = match deserialize(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[stablecoin::get_metadata] Error: Failed to deserialize UpdateConfigParams: {:?}", e);
+                    return Ok(());
+                }
+            };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V1.to_string(),
@@ -353,7 +395,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::RedeemStableV1 => {
-            let params: RedeemStableParamsV1 = deserialize(&self_.data[1..])?;
+            let params: RedeemStableParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[stablecoin::get_metadata] Error: Failed to deserialize RedeemStableParamsV1: {:?}", e);
+                    return Ok(());
+                }
+            };
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((

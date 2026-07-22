@@ -27,6 +27,7 @@ use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
+    msg,
     pasta::pallas,
     wasm, ContractCall,
 };
@@ -110,19 +111,27 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         InsuranceMarketFunction::UnderwriteWithCapabilityV1 => {
-            let params: UnderwriteWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            let params: UnderwriteWithCapabilityParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to deserialize UnderwriteWithCapabilityParamsV1: {:?}", e); return Ok(()); }
+            };
             underwrite_with_capability_get_metadata_v1(params)?
         }
         InsuranceMarketFunction::PurchaseCoverageV1 => {
-            let params: PurchaseCoverageParamsV1 = deserialize(&self_.data[1..])?;
+            let params: PurchaseCoverageParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to deserialize PurchaseCoverageParamsV1: {:?}", e); return Ok(()); }
+            };
             purchase_coverage_get_metadata_v1(params)?
         }
         InsuranceMarketFunction::PurchaseCoverageWithCapabilityV1 => {
-            let params: PurchaseCoverageWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            let params: PurchaseCoverageWithCapabilityParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to deserialize PurchaseCoverageWithCapabilityParamsV1: {:?}", e); return Ok(()); }
+            };
             purchase_coverage_with_capability_get_metadata_v1(params)?
         }
         InsuranceMarketFunction::PurchaseCoverageWithDAGV1 => {
-            let params: PurchaseCoverageWithDAGParamsV1 = deserialize(&self_.data[1..])?;
+            let params: PurchaseCoverageWithDAGParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to deserialize PurchaseCoverageWithDAGParamsV1: {:?}", e); return Ok(()); }
+            };
             purchase_coverage_with_dag_get_metadata_v1(params)?
         }
         InsuranceMarketFunction::InitializeV1 => vec![],
