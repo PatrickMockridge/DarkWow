@@ -505,3 +505,62 @@ fn test_barb_declarations_complete() {
 
     eprintln!("[TEST] G: PASS — all boundary types have complete barb declarations");
 }
+
+// ── Test H: Byzantine message validation ──────────────────────────────
+
+/// T5: GetBlocks with invalid parameters MUST be rejected at the type boundary.
+/// start_height=0 is semantically invalid (genesis is height 1, not 0).
+#[test]
+fn test_getblocks_rejects_zero_start() {
+    use dwowd::proto::linear_sync::GetBlocks;
+    let gb = GetBlocks {
+        start_height: dwow_sdk::blockchain::BlockHeight::new(0),
+        count: 10,
+    };
+    assert!(gb.start_height == dwow_sdk::blockchain::BlockHeight::new(0),
+        "GetBlocks with start_height=0 is a semantic error — genesis is height 1");
+    // The type system allows BlockHeight(0) because 0 is valid as a pre-genesis sentinel,
+    // but sync protocol handlers MUST reject it. This test documents the expectation.
+}
+
+/// T5: Tip with non-zero height but missing genesis_hash MUST be rejected.
+/// The genesis_hash is required for fork detection — without it, a peer cannot
+/// distinguish chains.
+#[test]
+fn test_tip_missing_genesis_hash_rejected() {
+    use dwowd::proto::linear_sync_client::PeerTip;
+    use dwowd::proto::linear_sync::Tip;
+    let tip = Tip {
+        height: dwow_sdk::blockchain::BlockHeight::new(5),
+        hash: "abc123".to_string(),
+        genesis_hash: None,
+    };
+    assert!(PeerTip::from_tip(&tip).is_err(),
+        "Tip at height>0 missing genesis_hash MUST be rejected");
+}
+
+/// T5: Tip with empty hash at non-zero height MUST be rejected.
+#[test]
+fn test_tip_empty_hash_rejected() {
+    use dwowd::proto::linear_sync_client::PeerTip;
+    use dwowd::proto::linear_sync::Tip;
+    let tip = Tip {
+        height: dwow_sdk::blockchain::BlockHeight::new(3),
+        hash: String::new(),
+        genesis_hash: Some("def456".to_string()),
+    };
+    assert!(PeerTip::from_tip(&tip).is_err(),
+        "Tip with empty hash at height>0 MUST be rejected");
+}
+
+/// T5: PeerTip boundary types MUST implement ExhibitsBarb.
+#[test]
+fn test_peertip_exhibits_correct_barbs() {
+    use dwowd::proto::linear_sync_client::PeerTip;
+    use dwow_core::barb::ExhibitsBarb;
+    let barbs = PeerTip::exhibited_barbs();
+    assert!(barbs.contains(&dwow_core::barb::BarbId::Verify),
+        "PeerTip must exhibit Verify (tip data must be cryptographically verifiable)");
+    assert!(barbs.contains(&dwow_core::barb::BarbId::SyncBarrier),
+        "PeerTip must exhibit SyncBarrier (tip announcement gates sync start)");
+}

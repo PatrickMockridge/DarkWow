@@ -1128,6 +1128,56 @@ mod tests {
         assert_eq!(competing[0].header.nonce, 1, "retrieved competing block must match");
     }
 
+    /// T6: Supply chain audit — cumulative supply MUST be computable from
+    /// the store by iterating blocks and summing expected_reward at each height.
+    /// This is the passive audit that any observer can perform without trust.
+    #[test]
+    fn test_supply_chain_audit() {
+        use dwow_sdk::blockchain::expected_reward;
+
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let db = Arc::new(db);
+        let cs = CChainState::new(db, 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+
+        let mut expected_total = 0u64;
+        for h in 1u64..=5 {
+            let height = BlockHeight::new(h);
+            let reward = expected_reward(height);
+            expected_total = expected_total.saturating_add(reward.get());
+
+            let block = Block {
+                header: BlockHeader {
+                    version: 1,
+                    previous: if h == 1 { blake3::hash(b"genesis") } else { blake3::hash(&h.to_le_bytes()) },
+                    merkle_root: compute_merkle_root(&[]),
+                    timestamp: BlockTimestamp::new(h),
+                    target: BlockTarget::MAX,
+                    nonce: h as u32,
+                    height,
+                    uncle_merkle_root: [0u8; 32],
+                    total_reward: reward,
+                    randomx_key: Miner::derive_key_from_height(height),
+                    coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                    anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
+                    anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
+                },
+                transactions: vec![],
+            };
+            cs.store.insert_block(height, &block).expect("insert_block");
+        }
+
+        // Passive audit: iterate blocks and sum rewards.
+        let mut audit_total = 0u64;
+        for h in 1u64..=5 {
+            let block = cs.store.get_block(BlockHeight::new(h)).expect("get_block");
+            audit_total = audit_total.saturating_add(block.header.total_reward.get());
+        }
+        assert_eq!(audit_total, expected_total,
+            "Supply chain audit: cumulative reward sum must match expected_reward sum");
+        assert!(audit_total > 0, "Supply must be non-zero after 5 blocks");
+    }
+
     /// CChainState::new correctly initializes from empty sled.
     #[test]
     fn test_empty_chain_state() {
