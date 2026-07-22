@@ -664,7 +664,7 @@ pub async fn dispatch_async(
                 .unwrap_or(0);
             println!("Sync status: {}", if synced { "SYNCED" } else { "SYNCING" });
             println!("  Local chain height: {}", height);
-            println!("  Network tip: {}", peer_tip);
+            println!("  Network tip: {}", peer_tip.get());
             println!("  Peers: {}", peer_count);
             println!("  P2P connected: {}", if p2p_up { "yes" } else { "no" });
             if !synced {

@@ -59,7 +59,7 @@ use dwow_core::{
 };
 use dwow_sdk::blockchain::BlockHeight;
 
-use super::linear_sync::{Blocks, GetBlocks, GetTip, Tip};
+use dwow_chain::sync_types::{Blocks, GetBlocks, GetTip, Tip};
 
 // ── Boundary Types ───────────────────────────────────────────────────
 //

@@ -41,6 +41,7 @@ mod miner;
 pub mod monero;
 mod store;
 pub mod supply_chain;
+pub mod sync_types;
 mod transaction;
 pub mod validation;
 pub mod zk_verifier;

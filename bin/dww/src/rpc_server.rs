@@ -213,7 +213,7 @@ impl RpcHandler for DwwRpcHandler {
                     .unwrap_or(0);
                 Ok(serde_json::json!({
                     "height": height,
-                    "peer_tip": peer_tip,
+                    "peer_tip": peer_tip.get(),
                     "peers": peers,
                     "synced": dww.is_synced(),
                 }))

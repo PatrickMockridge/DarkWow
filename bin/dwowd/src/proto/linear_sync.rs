@@ -29,283 +29,30 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
 use dwow_core::{
-    impl_p2p_message,
     net::{
-        metering::MeteringConfiguration,
         protocol::protocol_generic::{
             ProtocolGenericAction, ProtocolGenericHandler, ProtocolGenericHandlerPtr,
         },
         session::SESSION_DEFAULT,
-        Message, P2pPtr,
+        P2pPtr,
     },
     concurrency::ExecutorPtr,
-    util::time::NanoTimestamp,
     Error, Result,
 };
 use dwow_chain::Block;
+use dwow_chain::sync_types::{self, Blocks, GetBlock, BlockResponse, GetBlocks, GetTip, Tip};
 use dwow_sdk::blockchain::BlockHeight;
-use dwow_serial::{AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, FutAsyncReadExt, FutAsyncWriteExt};
 
 /// Constant defining max blocks we send in a single response.
 pub(crate) const LINEAR_SYNC_BATCH: usize = 20;
 
-/// Protocol metering configuration for linear sync
-const LINEAR_SYNC_METERING_CONFIGURATION: MeteringConfiguration = MeteringConfiguration {
-    threshold: 20,
-    sleep_step: 500,
-    expiry_time: NanoTimestamp::from_secs(5),
-};
-
 // ============================================================================
-// Message Types - using serde for serialization via AsyncEncodable/AsyncDecodable
+// Message Types — imported from dwow_chain::sync_types (G1: single definition)
+// Codec + P2P registration — in dwow_chain::sync_types (G1: same crate as types)
 // ============================================================================
-
-/// Request blocks starting from a given height
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GetBlocks {
-    pub start_height: BlockHeight,
-    pub count: u64,
-}
-
-/// Response containing blocks
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Blocks {
-    pub blocks: Vec<Block>,
-}
-
-/// Request a single block by height
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GetBlock {
-    pub height: BlockHeight,
-}
-
-/// Response containing a single block
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BlockResponse {
-    pub block: Option<Block>,
-}
-
-/// Request to get the current chain tip
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GetTip;
-
-/// Response containing chain tip info
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Tip {
-    pub height: BlockHeight,
-    pub hash: String,
-    /// Genesis block hash — allows peers to detect incompatible chains
-    /// before downloading blocks (defense-in-depth, HAZID F7/F26).
-    /// `Option` + `#[serde(default)]` is forward/backward compatible:
-    /// old nodes ignore this field, new nodes treat None as unverified.
-    #[serde(default)]
-    pub genesis_hash: Option<String>,
-}
-
-// ============================================================================
-// Async Serialization for messages using serde_json
-// ============================================================================
-//
-// CRITICAL: NEVER call serialize_async(self) inside an AsyncEncodable::encode_async
-// impl of the SAME type. The dispatch chain is:
-//   serialize_async<T> → T::encode_async() → serialize_async<T> → ...
-// which produces infinite recursion and stack overflow on the smol executor.
-// The smol thread pool names threads "<unknown>", making this hard to spot.
-//
-// Instead, use serde_json::to_vec(self) / serde_json::from_slice(&buf) directly.
-// All message types below derive serde::Serialize + Deserialize, which uses a
-// completely separate codegen path and cannot recurse back into AsyncEncodable.
-//
-// This is the same fix applied to BlockBroadcast in linear_broadcast.rs.
-// The async_lib.rs serialize_async function also has a thread-local recursion
-// depth guard that panics at depth 16 as a defense-in-depth measure.
-// ============================================================================
-
-#[async_trait]
-impl AsyncEncodable for GetBlocks {
-    async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
-        let bytes = serde_json::to_vec(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        let mut len = 0;
-        len += varint_encode(bytes.len(), s).await?;
-        len += s.write(&bytes).await?;
-        Ok(len)
-    }
-}
-
-#[async_trait]
-impl AsyncDecodable for GetBlocks {
-    async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> std::io::Result<Self> {
-        let len = varint_decode(d).await?;
-        let mut buf = vec![0u8; len];
-        d.read_exact(&mut buf).await?;
-        serde_json::from_slice(&buf)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-    }
-}
-
-#[async_trait]
-impl AsyncEncodable for Blocks {
-    async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
-        let bytes = serde_json::to_vec(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        let mut len = 0;
-        len += varint_encode(bytes.len(), s).await?;
-        len += s.write(&bytes).await?;
-        Ok(len)
-    }
-}
-
-#[async_trait]
-impl AsyncDecodable for Blocks {
-    async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> std::io::Result<Self> {
-        let len = varint_decode(d).await?;
-        let mut buf = vec![0u8; len];
-        d.read_exact(&mut buf).await?;
-        serde_json::from_slice(&buf)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-    }
-}
-
-#[async_trait]
-impl AsyncEncodable for GetBlock {
-    async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
-        let bytes = serde_json::to_vec(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        let mut len = 0;
-        len += varint_encode(bytes.len(), s).await?;
-        len += s.write(&bytes).await?;
-        Ok(len)
-    }
-}
-
-#[async_trait]
-impl AsyncDecodable for GetBlock {
-    async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> std::io::Result<Self> {
-        let len = varint_decode(d).await?;
-        let mut buf = vec![0u8; len];
-        d.read_exact(&mut buf).await?;
-        serde_json::from_slice(&buf)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-    }
-}
-
-#[async_trait]
-impl AsyncEncodable for BlockResponse {
-    async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
-        let bytes = serde_json::to_vec(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        let mut len = 0;
-        len += varint_encode(bytes.len(), s).await?;
-        len += s.write(&bytes).await?;
-        Ok(len)
-    }
-}
-
-#[async_trait]
-impl AsyncDecodable for BlockResponse {
-    async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> std::io::Result<Self> {
-        let len = varint_decode(d).await?;
-        let mut buf = vec![0u8; len];
-        d.read_exact(&mut buf).await?;
-        serde_json::from_slice(&buf)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-    }
-}
-
-#[async_trait]
-impl AsyncEncodable for GetTip {
-    async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
-        let bytes = serde_json::to_vec(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        let mut len = 0;
-        len += varint_encode(bytes.len(), s).await?;
-        len += s.write(&bytes).await?;
-        Ok(len)
-    }
-}
-
-#[async_trait]
-impl AsyncDecodable for GetTip {
-    async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> std::io::Result<Self> {
-        let len = varint_decode(d).await?;
-        let mut buf = vec![0u8; len];
-        d.read_exact(&mut buf).await?;
-        serde_json::from_slice(&buf)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-    }
-}
-
-#[async_trait]
-impl AsyncEncodable for Tip {
-    async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
-        let bytes = serde_json::to_vec(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        let mut len = 0;
-        len += varint_encode(bytes.len(), s).await?;
-        len += s.write(&bytes).await?;
-        Ok(len)
-    }
-}
-
-#[async_trait]
-impl AsyncDecodable for Tip {
-    async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> std::io::Result<Self> {
-        let len = varint_decode(d).await?;
-        let mut buf = vec![0u8; len];
-        d.read_exact(&mut buf).await?;
-        serde_json::from_slice(&buf)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-    }
-}
-
-// ============================================================================
-// P2P Message trait registration
-// ============================================================================
-
-// NOTE: MAX_BYTES for JSON-encoded types must account for JSON overhead
-// (field names, quotes, braces, commas, variable-length number strings).
-// A u64 like 18446744073709551615 is 20 ASCII chars. Binary estimates (8 bytes
-// per u64) are incorrect for serde_json encoding. 256 is generous for small
-// request/response messages.
-const MAX_SMALL_JSON_BYTES: u64 = 256;
-
-macro_rules! sync_barb_decl {
-    () => { &[
-        dwow_core::net::barb_trait::BarbId::Verify,
-        dwow_core::net::barb_trait::BarbId::SyncBarrier,
-        dwow_core::net::barb_trait::BarbId::GossipForward,
-    ] };
-}
-impl_p2p_message!(GetBlocks, "lineargetblocks", MAX_SMALL_JSON_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION,
-    sync_barb_decl!());
-/// Block-carrying responses have NO wire cap (Message trait convention:
-/// 0 = no limit). The genesis block carries the 9 contract deployments
-/// (~multi-MB WASM as serde_json byte arrays) and is exempt from any size
-/// rule — its integrity check is the pinned genesis hash. Every OTHER
-/// block is bounded by the consensus-level MAX_BLOCK_SIZE acceptance rule
-/// in accept_block (fail-closed post-decode), so an oversized non-genesis
-/// block is rejected before it can enter the chain.
-const MAX_BLOCKS_BYTES: u64 = 0;
-
-impl_p2p_message!(Blocks, "linearblocks", MAX_BLOCKS_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION,
-    sync_barb_decl!());
-impl_p2p_message!(GetBlock, "lineargetblock", MAX_SMALL_JSON_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION,
-    sync_barb_decl!());
-impl_p2p_message!(BlockResponse, "linearblockresponse", MAX_BLOCKS_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION,
-    sync_barb_decl!());
-impl_p2p_message!(GetTip, "lineargettip", 0, 1, LINEAR_SYNC_METERING_CONFIGURATION,
-    sync_barb_decl!());
-/// Maximum size for a Tip response: height (u64 as string, max 20 digits)
-/// + hash (64 hex chars) + JSON framing (~50 bytes) ≈ 150 bytes. 256 is generous.
-const MAX_TIP_BYTES: u64 = 256;
-impl_p2p_message!(Tip, "lineartip", MAX_TIP_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION,
-    sync_barb_decl!());
 
 // ============================================================================
 // Handler Implementation
@@ -453,12 +200,14 @@ async fn handle_get_blocks(
         };
         let mut blocks = Vec::with_capacity(count);
 
-        for i in 0..count {
-            let height = BlockHeight::new(request.start_height.get() + i as u64);
+        // G7: height advancement via succ(), not .get() + i
+        let mut height = request.start_height;
+        for _ in 0..count {
             match chain_state.get_block(height) {
                 Ok(block) => blocks.push(block),
                 Err(_) => break,
             }
+            height = height.succ();
         }
 
         let response = Blocks { blocks };
@@ -522,8 +271,17 @@ async fn handle_get_tip(
         );
 
         // CChainState.store is the single source of truth — no stale caches.
-        let height = chain_state.store.get_height().unwrap_or(BlockHeight::new(0));
-        let hash = if height.get() > 0 {
+        // G7: Ord comparison, not .get() > 0
+        let height = match chain_state.store.get_height() {
+            Ok(h) => h,
+            Err(e) => {
+                error!(target: "dwowd::proto::linear_sync",
+                    "Failed to read chain height from store: {e}");
+                return Err(dwow_core::Error::Custom(format!("get_height failed: {e}")));
+            }
+        };
+        let zero = BlockHeight::new(0);
+        let hash = if height > zero {
             match chain_state.store.get_block(height) {
                 Ok(tip_block) => {
                     format!("{}", chain_state.hash_block_with_cached_vm(&tip_block))
@@ -553,44 +311,13 @@ async fn handle_get_tip(
 }
 
 // ============================================================================
-// Variable-length integer encoding/decoding
+// Varint encoding — imported from dwow_chain::sync_types (G1: single definition)
 // ============================================================================
-
-async fn varint_encode<W: AsyncWrite + Unpin + Send>(mut value: usize, s: &mut W) -> std::io::Result<usize> {
-    let mut len = 0;
-    loop {
-        let mut byte = (value & 0x7f) as u8;
-        value >>= 7;
-        if value != 0 {
-            byte |= 0x80;
-        }
-        len += FutAsyncWriteExt::write(s, &[byte]).await?;
-        if value == 0 {
-            break;
-        }
-    }
-    Ok(len)
-}
-
-async fn varint_decode<R: AsyncRead + Unpin + Send>(d: &mut R) -> std::io::Result<usize> {
-    let mut result = 0;
-    let mut shift = 0;
-    loop {
-        let mut buf = [0u8; 1];
-        FutAsyncReadExt::read_exact(d, &mut buf).await?;
-        let byte = buf[0];
-        result |= ((byte & 0x7f) as usize) << shift;
-        if byte & 0x80 == 0 {
-            break;
-        }
-        shift += 7;
-    }
-    Ok(result)
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dwow_core::net::Message; // MAX_BYTES comes from Message trait impl in sync_types
 
     /// Verify MAX_BYTES values are sufficient for actual JSON-serialized payloads.
     /// These types use serde_json, so the wire size is much larger than binary

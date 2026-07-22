@@ -242,9 +242,7 @@ fn test_wallet_integration() {
             executor: None,
             p2p_settings: None,
             highest_peer_tip: Arc::new(
-                dwow_wallet::sync_task::HighestPeerTip(
-                    std::sync::atomic::AtomicU64::new(0),
-                ),
+                dwow_wallet::sync_task::HighestPeerTip::new(),
             ),
             last_synced_tip_hash: smol::lock::Mutex::new(None),
             verified_anchor_height: smol::lock::Mutex::new(0),
@@ -852,9 +850,7 @@ required_barbs = ["Spend","Mine"]
             executor: None,
             p2p_settings: None,
             highest_peer_tip: Arc::new(
-                dwow_wallet::sync_task::HighestPeerTip(
-                    std::sync::atomic::AtomicU64::new(0),
-                ),
+                dwow_wallet::sync_task::HighestPeerTip::new(),
             ),
             last_synced_tip_hash: smol::lock::Mutex::new(None),
             verified_anchor_height: smol::lock::Mutex::new(0),

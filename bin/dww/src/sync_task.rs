@@ -20,149 +20,56 @@
 //!
 //! Wire-compatible with dwowd's linear sync. Same messages, same flow:
 //! GetTip → Tip, GetBlocks → Blocks. Uses wallet-owned P2P (p2p_wallet).
-//! Zero dependency on dwow_core::net.
+//!
+//! ## Protocol types (G1: single definition)
+//!
+//! Sync message types are imported from `dwow_chain::sync_types` — the
+//! canonical definition shared by wallet, mining node, and observer nodes.
+//! No node defines its own copy.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn};
 
-use dwow_core::net::{
-    metering::MeteringConfiguration,
-    Message, P2pPtr,
-};
-use crate::wallet_error::Result;
-use dwow_chain::Block;
-use dwow_serial::{AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, FutAsyncReadExt, FutAsyncWriteExt};
+use dwow_core::net::P2pPtr;
+use dwow_sdk::blockchain::BlockHeight;
 
+// G1: Single definition of sync types — import from shared module, never define locally.
+use dwow_chain::sync_types::{self, Blocks, GetBlocks, GetTip, Tip};
+
+use crate::wallet_error::Result;
 use crate::DwwPtr;
 
 /// Fixed batch size for GetBlocks requests — matches dwowd LINEAR_SYNC_BATCH
 const LINEAR_SYNC_BATCH: u64 = 20;
 
 // ============================================================================
-// Message Types — wire-compatible with dwowd (serde_json + varint framing)
+// HighestPeerTip — atomic, monotonic, BlockHeight-typed
 // ============================================================================
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GetBlocks {
-    pub start_height: u64,
-    pub count: u64,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Blocks {
-    pub blocks: Vec<Block>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GetTip;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Tip {
-    pub height: u64,
-    pub hash: String,
-}
-
-// Async codec for serde_json + varint framing
-use async_trait::async_trait;
-
-macro_rules! impl_json_message_codec {
-    ($ty:ty) => {
-        #[async_trait]
-        impl AsyncEncodable for $ty {
-            async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
-                let bytes = serde_json::to_vec(self)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-                let mut len = 0;
-                len += varint_encode(bytes.len(), s).await?;
-                len += s.write(&bytes).await?;
-                Ok(len)
-            }
-        }
-        #[async_trait]
-        impl AsyncDecodable for $ty {
-            async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> std::io::Result<Self> {
-                let len = varint_decode(d).await?;
-                let mut buf = vec![0u8; len];
-                d.read_exact(&mut buf).await?;
-                serde_json::from_slice(&buf)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-            }
-        }
-    };
-}
-
-impl_json_message_codec!(GetBlocks);
-impl_json_message_codec!(Blocks);
-impl_json_message_codec!(GetTip);
-impl_json_message_codec!(Tip);
-
-// Register as P2P messages so dwow_core::net channels can send/receive them
-dwow_core::impl_p2p_message!(
-    GetBlocks, "lineargetblocks", 20 * 1024 * 1024, 10,
-    dwow_core::net::metering::MeteringConfiguration { threshold: 20, sleep_step: 500, expiry_time: dwow_core::util::time::NanoTimestamp::from_secs(5) }
-);
-dwow_core::impl_p2p_message!(
-    Blocks, "linearblocks", 20 * 1024 * 1024, 10,
-    dwow_core::net::metering::MeteringConfiguration { threshold: 20, sleep_step: 500, expiry_time: dwow_core::util::time::NanoTimestamp::from_secs(5) }
-);
-dwow_core::impl_p2p_message!(
-    GetTip, "lineargettip", 1024, 5,
-    dwow_core::net::metering::MeteringConfiguration { threshold: 10, sleep_step: 500, expiry_time: dwow_core::util::time::NanoTimestamp::from_secs(5) }
-);
-dwow_core::impl_p2p_message!(
-    Tip, "lineartip", 1024, 5,
-    dwow_core::net::metering::MeteringConfiguration { threshold: 10, sleep_step: 500, expiry_time: dwow_core::util::time::NanoTimestamp::from_secs(5) }
-);
-
-// ============================================================================
-// Varint encoding (async — used by codec)
-// ============================================================================
-
-async fn varint_encode<W: AsyncWrite + Unpin + Send>(mut value: usize, s: &mut W) -> std::io::Result<usize> {
-    let mut len = 0;
-    loop {
-        let mut byte = (value & 0x7f) as u8;
-        value >>= 7;
-        if value != 0 { byte |= 0x80; }
-        len += FutAsyncWriteExt::write(s, &[byte]).await?;
-        if value == 0 { break; }
-    }
-    Ok(len)
-}
-
-async fn varint_decode<R: AsyncRead + Unpin + Send>(d: &mut R) -> std::io::Result<usize> {
-    let mut result = 0;
-    let mut shift = 0;
-    loop {
-        let mut buf = [0u8; 1];
-        FutAsyncReadExt::read_exact(d, &mut buf).await?;
-        let byte = buf[0];
-        result |= ((byte & 0x7f) as usize) << shift;
-        if byte & 0x80 == 0 { break; }
-        shift += 7;
-    }
-    Ok(result)
-}
-
-// ============================================================================
-// HighestPeerTip — atomic, monotonic
-// ============================================================================
+//
+// G5: Public API exposes BlockHeight. AtomicU64 is an internal detail.
+// G3: The .get() calls inside set_max/get are at the hardware atomic boundary —
+//     the ONE permitted use of .get() outside persistence boundaries.
 
 /// Highest peer tip seen. Updated on each Tip response.
-pub struct HighestPeerTip(pub AtomicU64);
+pub struct HighestPeerTip(AtomicU64);
 
 impl HighestPeerTip {
     pub fn new() -> Self { Self(AtomicU64::new(0)) }
 
-    pub fn get(&self) -> u64 { self.0.load(Ordering::Relaxed) }
+    /// Returns the highest peer tip as a BlockHeight.
+    /// G3: .get() at atomic boundary — audited.
+    pub fn get(&self) -> BlockHeight {
+        BlockHeight::new(self.0.load(Ordering::Relaxed))
+    }
 
-    pub fn set_max(&self, height: u64) {
+    /// Updates the highest peer tip if the given height exceeds the current value.
+    /// G3: .get() at atomic boundary — audited.
+    pub fn set_max(&self, height: BlockHeight) {
         let _ = self.0.fetch_update(Ordering::Release, Ordering::Relaxed, |c| {
-            if height > c { Some(height) } else { None }
+            if height.get() > c { Some(height.get()) } else { None }
         });
     }
 }
@@ -170,6 +77,9 @@ impl HighestPeerTip {
 // ============================================================================
 // Sync loop — uses dwow_core::net P2P channels
 // ============================================================================
+//
+// G4: All height variables use BlockHeight. Counters/batch sizes are u64.
+// G7: Height arithmetic uses named methods (succ, checked_sub, Ord).
 
 /// Run the wallet sync loop using dwow_core::net P2P channels.
 ///
@@ -184,6 +94,8 @@ pub async fn run_wallet_sync(
     dww: DwwPtr,
     highest_peer_tip: Arc<HighestPeerTip>,
 ) -> Result<()> {
+    let zero_height = BlockHeight::new(0); // pre-genesis sentinel (G6)
+
     eprintln!("[sync] Sync task started");
     info!(target: "dww::wallet::sync", "Wallet sync task running — P2p handles peer discovery");
 
@@ -192,15 +104,19 @@ pub async fn run_wallet_sync(
 
         // Phase 1: Check peer connectivity
         let dww_r = dww.read().await;
-        let local = dww_r.wallet.chain_height().map(|h| h).unwrap_or(0);
+        // G2/G6: chain_height() still returns u64 until Wave 2 — wrap explicitly.
+        // The .map(|h| h) is a no-op pass-through; the result is still u64.
+        // TODO(Wave2): chain_height() -> Result<BlockHeight, DbError>
+        let local_raw = dww_r.wallet.chain_height().map(|h| h).unwrap_or(0);
+        let local = BlockHeight::new(local_raw);
         let peer_count = dww_r.p2p.as_ref()
             .map(|p| p.hosts().peers().len())
             .unwrap_or(0);
         let p2p_opt = dww_r.p2p.clone();
 
-        eprintln!("[sync] Tick: local={} peers={}", local, peer_count);
+        eprintln!("[sync] Tick: local={} peers={}", local.get(), peer_count);
         info!(target: "dww::wallet::sync",
-            "Sync tick: local_height={}, peer_count={}", local, peer_count);
+            "Sync tick: local_height={}, peer_count={}", local.get(), peer_count);
 
         // Wait for peers — seed() in init_p2p() handles initial connection.
         // Mining node consensus task polls the same way (consensus_linear.rs:98).
@@ -216,8 +132,9 @@ pub async fn run_wallet_sync(
 
         let channel_list = p2p.hosts().peers();
 
-        let mut best_tip: u64 = 0;
-        let mut tip_votes: std::collections::BTreeMap<String, (u64, u32)> =
+        // G4: best_tip is BlockHeight
+        let mut best_tip = zero_height;
+        let mut tip_votes: std::collections::BTreeMap<String, (BlockHeight, u32)> =
             std::collections::BTreeMap::new();
         for ch in &channel_list {
             // Ensure dispatchers exist for sync message types
@@ -244,7 +161,7 @@ pub async fn run_wallet_sync(
 
             if let Ok(tip) = tip_result {
                 debug!(target: "dww::wallet::sync",
-                    "Peer tip: height={}", tip.height);
+                    "Peer tip: height={}", tip.height.get());
                 highest_peer_tip.set_max(tip.height);
                 if tip.height > best_tip {
                     best_tip = tip.height;
@@ -258,13 +175,12 @@ pub async fn run_wallet_sync(
             }
         }
 
+        // G7: BlockHeight Ord comparison
         if best_tip <= local {
             // ── Reorg detection ──────────────────────────────────────
-            // We're synced. Compare the majority tip hash with our
-            // last known tip hash. A change at the same height
-            // indicates a chain fork — the old chain was reorganized.
             let mut reorg_trigger = false;
-            if local > 0 && !tip_votes.is_empty() {
+            // G7: local > zero_height, not local > 0
+            if local > zero_height && !tip_votes.is_empty() {
                 let majority = tip_votes.iter()
                     .max_by_key(|(_, (_, count))| *count)
                     .map(|(hash, (height, count))| (hash.clone(), *height, *count));
@@ -277,12 +193,12 @@ pub async fn run_wallet_sync(
                                 eprintln!(
                                     "[sync] REORG DETECTED: tip hash changed at height {} \
                                      (was {}, now {}) with {}/{} peer votes — triggering auto-reset",
-                                    local, last, tip_hash, votes, tip_votes.len()
+                                    local.get(), last, tip_hash, votes, tip_votes.len()
                                 );
                                 warn!(target: "dww::wallet::sync",
                                     "REORG DETECTED: tip hash changed at height {} \
                                      (was {}, now {}) — triggering auto-reset",
-                                    local, last, tip_hash);
+                                    local.get(), last, tip_hash);
                             }
                         }
                         *last_hash = Some(tip_hash);
@@ -291,7 +207,7 @@ pub async fn run_wallet_sync(
             }
 
             debug!(target: "dww::wallet::sync",
-                "Already at tip: local={}, peer={}", local, best_tip);
+                "Already at tip: local={}, peer={}", local.get(), best_tip.get());
 
             if reorg_trigger {
                 drop(dww_r);
@@ -313,11 +229,12 @@ pub async fn run_wallet_sync(
         }
 
         // Phase 3: Fetch missing blocks via GetBlocks/Blocks
-        eprintln!("[sync] Behind tip: local={} peer_tip={} — fetching blocks", local, best_tip);
+        eprintln!("[sync] Behind tip: local={} peer_tip={} — fetching blocks", local.get(), best_tip.get());
         info!(target: "dww::wallet::sync",
-            "Behind tip: local={}, peer={} — fetching blocks", local, best_tip);
+            "Behind tip: local={}, peer={} — fetching blocks", local.get(), best_tip.get());
 
-        let mut next_height = local + 1;
+        // G7: height advancement via succ(), not + 1
+        let mut next_height = local.succ();
         'fetch: for ch in &channel_list {
             if next_height > best_tip {
                 break 'fetch;
@@ -331,7 +248,12 @@ pub async fn run_wallet_sync(
                 Err(_) => continue,
             };
 
-            let batch_size = LINEAR_SYNC_BATCH.min(best_tip - next_height + 1);
+            // G7: checked_sub (returns Option<u64> — the count, not a height)
+            // None = next_height > best_tip, which we already guard above
+            let remaining = best_tip.get().checked_sub(next_height.get())
+                .unwrap_or(0)
+                .saturating_add(1);
+            let batch_size = LINEAR_SYNC_BATCH.min(remaining);
             let request = GetBlocks { start_height: next_height, count: batch_size };
 
             if ch.send(&request).await.is_err() {
@@ -354,16 +276,17 @@ pub async fn run_wallet_sync(
 
             let dww_r = dww.read().await;
             for block in &blocks_msg.blocks {
-                let height = block.header.height.get();
+                let height = block.header.height;
                 match dww_r.insert_synced_block(block) {
                     Ok(()) => {
                         info!(target: "dww::wallet::sync",
-                            "Inserted block {}", height);
-                        next_height = height + 1;
+                            "Inserted block {}", height.get());
+                        // G7: height advancement via succ()
+                        next_height = height.succ();
                     }
                     Err(e) => {
                         error!(target: "dww::wallet::sync",
-                            "Failed to insert block {}: {e}", height);
+                            "Failed to insert block {}: {e}", height.get());
                         break 'fetch;
                     }
                 }
@@ -372,7 +295,7 @@ pub async fn run_wallet_sync(
         }
 
         info!(target: "dww::wallet::sync",
-            "Sync cycle complete: local_height={}", next_height - 1);
+            "Sync cycle complete: local_height={}", next_height.get());
     }
 }
 
@@ -383,17 +306,17 @@ mod tests {
     #[test]
     fn test_highest_peer_tip_initial() {
         let tip = HighestPeerTip::new();
-        assert_eq!(tip.get(), 0);
+        assert_eq!(tip.get(), BlockHeight::new(0));
     }
 
     #[test]
     fn test_highest_peer_tip_monotonic() {
         let tip = HighestPeerTip::new();
-        tip.set_max(42);
-        assert_eq!(tip.get(), 42);
-        tip.set_max(10);
-        assert_eq!(tip.get(), 42);
-        tip.set_max(100);
-        assert_eq!(tip.get(), 100);
+        tip.set_max(BlockHeight::new(42));
+        assert_eq!(tip.get(), BlockHeight::new(42));
+        tip.set_max(BlockHeight::new(10));
+        assert_eq!(tip.get(), BlockHeight::new(42));
+        tip.set_max(BlockHeight::new(100));
+        assert_eq!(tip.get(), BlockHeight::new(100));
     }
 }

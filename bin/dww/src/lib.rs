@@ -289,8 +289,8 @@ impl Dww {
             return false;
         }
         let peer_tip = self.highest_peer_tip.get();
-        if peer_tip > 0 {
-            return local >= peer_tip;
+        if peer_tip > dwow_sdk::blockchain::BlockHeight::new(0) {
+            return local >= peer_tip.get();
         }
         // P2P connected but no peer tip yet — sync task hasn't queried tips.
         // Consider synced if we have peers and blocks (tip will arrive).
@@ -1509,7 +1509,7 @@ impl Dww {
         if let Some(ref p2p) = self.p2p {
             let peer_count = p2p.hosts().peers().len();
             output.push(format!("P2P: initialized ({} peers)", peer_count));
-            output.push(format!("Highest peer tip: {}", self.highest_peer_tip.get()));
+            output.push(format!("Highest peer tip: {}", self.highest_peer_tip.get().get()));
             output.push(format!("Is synced: {}", self.is_synced()));
         } else {
             output.push("P2P: NOT INITIALIZED".into());
