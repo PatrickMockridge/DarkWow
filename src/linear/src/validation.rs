@@ -155,7 +155,7 @@ pub fn check_uncles(
     expected_uncle_root: &[u8; 32],
     current_height: BlockHeight,
     vm: &RandomXVM,
-    target: u32,
+    target: BlockTarget,
     existing_uncle_keys: &HashSet<[u8; 32]>,
 ) -> Result<()> {
     // H2.3: Reject blocks with too many uncles — prevents block bloat
@@ -180,7 +180,7 @@ pub fn check_uncles(
 
         // PoW for this uncle
         let hash_u32 = u32::from_le_bytes(uncle_hash.as_bytes()[0..4].try_into().unwrap());
-        if hash_u32 > target {
+        if hash_u32 > target.get() {
             return Err(LinearError::UnclePoWInvalid(uncle_hash.to_string()));
         }
 
@@ -748,7 +748,7 @@ mod tests {
         let (root, proofs) = build_uncle_merkle(&uncles, &vm);
         let err = check_uncles(
             &uncles, &proofs, &root,
-            BlockHeight::new(10), &vm, u32::MAX, &std::collections::HashSet::new(),
+            BlockHeight::new(10), &vm, BlockTarget::MAX, &std::collections::HashSet::new(),
         ).unwrap_err();
         match err {
             LinearError::TooManyUncles { count, max } => {
@@ -788,7 +788,7 @@ mod tests {
         let (root, proofs) = build_uncle_merkle(&[uncle.clone()], &vm);
         let err = check_uncles(
             &[uncle], &proofs, &root,
-            BlockHeight::new(10), &vm, 0, &std::collections::HashSet::new(),
+            BlockHeight::new(10), &vm, BlockTarget::new(0), &std::collections::HashSet::new(),
         ).unwrap_err();
         match err {
             LinearError::UnclePoWInvalid(_) => {}
@@ -808,7 +808,7 @@ mod tests {
         // Use proof from tree A with root from tree B → root mismatch
         let err = check_uncles(
             &[uncle_a], &proofs_a, &root_b,
-            BlockHeight::new(10), &vm, u32::MAX, &std::collections::HashSet::new(),
+            BlockHeight::new(10), &vm, BlockTarget::MAX, &std::collections::HashSet::new(),
         ).unwrap_err();
         match err {
             LinearError::UncleMerkleRootMismatch(_) => {}
@@ -845,7 +845,7 @@ mod tests {
         let (root, proofs) = build_uncle_merkle(&[uncle.clone()], &vm);
         let result = check_uncles(
             &[uncle], &proofs, &root,
-            BlockHeight::new(10), &vm, u32::MAX, &std::collections::HashSet::new(),
+            BlockHeight::new(10), &vm, BlockTarget::MAX, &std::collections::HashSet::new(),
         );
         assert!(result.is_ok(), "expected Ok, got {:?}", result);
     }

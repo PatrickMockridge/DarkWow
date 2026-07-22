@@ -55,7 +55,7 @@ use dwow_chain::{
     },
     PowSource,
 };
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, MoneroBlockHeight};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTimestamp, MoneroBlockHeight};
 
 use crate::{error::{miner_status_response, server_error, RpcError}, DwowNode};
 
@@ -324,7 +324,7 @@ impl DwowNode {
         let difficulty = {
             let consensus = chain_state.consensus.lock().unwrap();
             let target = consensus.target();
-            BlockTarget::new(target).difficulty()
+            target.difficulty()
         };
 
         // Register the job with bounded capacity — prevent unbounded
@@ -839,6 +839,7 @@ impl DwowNode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dwow_sdk::blockchain::BlockTarget;
 
     fn test_header() -> dwow_chain::BlockHeader {
         dwow_chain::BlockHeader {

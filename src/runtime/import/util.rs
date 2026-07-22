@@ -320,7 +320,7 @@ pub(crate) fn get_block_target(mut ctx: FunctionEnvMut<Env>) -> i64 {
     // u32 is 4 bytes.
     env.subtract_gas(&mut store, 4);
 
-    env.block_target as i64
+    env.block_target.get() as i64
 }
 
 /// Will return current runtime configured transaction hash

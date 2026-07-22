@@ -63,12 +63,7 @@ impl ChainWork {
     pub fn add_block(&self, target: BlockTarget) {
         self.0.fetch_add(target.chain_work(), Ordering::SeqCst);
     }
-    /// Load from sled persistence. G3: AtomicU64 boundary.
-    #[allow(dead_code)]
-    pub(crate) fn load(&self, order: Ordering) -> u64 { self.0.load(order) }
-    /// Store to sled persistence. G3: AtomicU64 boundary.
-    #[allow(dead_code)]
-    pub(crate) fn store(&self, val: u64, order: Ordering) { self.0.store(val, order); }
+    // load/store removed — dead code. AtomicU64 access uses .get() and direct load(Ordering).
 }
 
 /// Proof-of-Work consensus engine with dynamic target adjustment.
@@ -86,12 +81,12 @@ pub struct PoWConsensus {
     /// Desired seconds between blocks (configuration constant).
     target_block_time: u64,
     /// Floor — target will never drop below this (hardest possible).
-    min_target: u32,
+    min_target: BlockTarget,
     /// Ceiling — target will never rise above this (easiest possible).
-    max_target: u32,
+    max_target: BlockTarget,
     /// The target value set at construction — never changes.
     /// Used by get_next_work_required as the base for chain-derived computation.
-    initial_target: u32,
+    initial_target: BlockTarget,
     /// Recent block timestamps (newest last). Used by `adjust_target`.
     timestamps: Mutex<Vec<BlockTimestamp>>,
     /// Accumulated chain work (sum of u32::MAX / target per block).
@@ -105,9 +100,9 @@ impl Clone for PoWConsensus {
         Self {
             target: AtomicU32::new(self.target.load(Ordering::Acquire)),
             target_block_time: self.target_block_time,
-            min_target: self.min_target,
-            max_target: self.max_target,
-            initial_target: self.initial_target,
+            min_target: self.min_target,   // BlockTarget is Copy
+            max_target: self.max_target,   // BlockTarget is Copy
+            initial_target: self.initial_target, // BlockTarget is Copy
             timestamps: Mutex::new(self.timestamps.lock().unwrap_or_else(|e| e.into_inner()).clone()),
             accumulated_work: ChainWork(AtomicU64::new(self.accumulated_work.get())),
         }
@@ -118,12 +113,12 @@ impl PoWConsensus {
     /// Create a new PoW consensus with the given parameters.
     pub fn new(
         target_block_time: u64,
-        initial_target: u32,
-        min_target: u32,
-        max_target: u32,
+        initial_target: BlockTarget,
+        min_target: BlockTarget,
+        max_target: BlockTarget,
     ) -> Self {
         Self {
-            target: AtomicU32::new(initial_target),
+            target: AtomicU32::new(initial_target.get()),
             target_block_time,
             min_target,
             max_target,
@@ -134,13 +129,13 @@ impl PoWConsensus {
     }
 
     /// Current target — `hash_u32 <= target` is valid. Higher = easier.
-    pub fn target(&self) -> u32 {
-        self.target.load(Ordering::Acquire)
+    pub fn target(&self) -> BlockTarget {
+        BlockTarget::new(self.target.load(Ordering::Acquire))
     }
 
     /// Force-set the target (used for rollback on failed commit).
-    pub fn force_target(&self, value: u32) {
-        self.target.store(value, Ordering::Release);
+    pub fn force_target(&self, value: BlockTarget) {
+        self.target.store(value.get(), Ordering::Release);
     }
 
     /// Snapshot current timestamps (used for rollback on failed commit).
@@ -165,12 +160,12 @@ impl PoWConsensus {
     }
 
     /// Floor — target will never drop below this (hardest possible).
-    pub fn min_target(&self) -> u32 {
+    pub fn min_target(&self) -> BlockTarget {
         self.min_target
     }
 
     /// Ceiling — target will never rise above this (easiest possible).
-    pub fn max_target(&self) -> u32 {
+    pub fn max_target(&self) -> BlockTarget {
         self.max_target
     }
 
@@ -191,10 +186,10 @@ impl PoWConsensus {
     ///
     /// All arithmetic uses integer fixed-point math (scale = `SCALE`)
     /// to guarantee deterministic results across CPU architectures.
-    pub fn adjust_target(&self) -> u32 {
+    pub fn adjust_target(&self) -> BlockTarget {
         let timestamps = self.timestamps.lock().unwrap_or_else(|e| e.into_inner());
         if timestamps.len() < 2 {
-            return self.target.load(Ordering::Acquire);
+            return BlockTarget::new(self.target.load(Ordering::Acquire));
         }
 
         // Sum intervals between consecutive timestamps in the window
@@ -249,7 +244,7 @@ impl PoWConsensus {
         // ratio_scaled > SCALE (blocks fast) → adjustment > SCALE → target decreases (harder)
         // ratio_scaled < SCALE (blocks slow) → adjustment < SCALE → target increases (easier)
         let current = BlockTarget::new(self.target.load(Ordering::Acquire));
-        let clamped = current.adjust(SCALE, adjustment, self.min_target, self.max_target);
+        let clamped = current.adjust(SCALE, adjustment, self.min_target.get(), self.max_target.get());
 
         debug!(
             target: "consensus",
@@ -258,7 +253,7 @@ impl PoWConsensus {
         );
 
         self.target.store(clamped.get(), Ordering::Release);
-        clamped.get()
+        clamped
     }
 
     /// Persist consensus state to a sled tree so difficulty survives restarts.
@@ -273,8 +268,8 @@ impl PoWConsensus {
     pub fn save_to_batch(&self, batch: &mut sled::Batch) {
         batch.insert(b"target", &self.target.load(Ordering::Acquire).to_le_bytes());
         batch.insert(b"target_block_time", &self.target_block_time.to_le_bytes());
-        batch.insert(b"min_target", &self.min_target.to_le_bytes());
-        batch.insert(b"max_target", &self.max_target.to_le_bytes());
+        batch.insert(b"min_target", &self.min_target.get().to_le_bytes());
+        batch.insert(b"max_target", &self.max_target.get().to_le_bytes());
 
         let ts = self.timestamps.lock().unwrap_or_else(|e| e.into_inner());
         if !ts.is_empty() {
@@ -352,9 +347,9 @@ impl PoWConsensus {
     /// chain history. For height > 1, walks the chain from genesis through
     /// `height - 1`, recomputing the target from each block's timestamp.
     /// Uses the same adjustment algorithm as `adjust_target()`.
-    pub fn get_next_work_required(&self, store: &super::LinearStore, height: BlockHeight) -> u32 {
+    pub fn get_next_work_required(&self, store: &super::LinearStore, height: BlockHeight) -> BlockTarget {
         if height <= BlockHeight::GENESIS {
-            return u32::MAX;
+            return BlockTarget::MAX;
         }
 
         // NOTE: This walks the entire chain from genesis — O(height) per call.
@@ -386,11 +381,11 @@ impl PoWConsensus {
                     target: "consensus",
                     "Chain walk failed at height {h} — block missing from store."
                 );
-                // Return u32::MAX so the caller can detect the anomalous value.
-                // u32::MAX is never a valid target (it means "genesis / any hash")
+                // Return BlockTarget::MAX so the caller can detect the anomalous
+                // value. MAX is never a valid target (it means "genesis / any hash")
                 // except at height <= 1, so callers can distinguish corruption
                 // from normal operation.
-                return u32::MAX;
+                return BlockTarget::MAX;
             }
         }
 
@@ -401,7 +396,7 @@ impl PoWConsensus {
     /// Returns the value set at construction — immutable, never adjusted.
     /// This is the base for chain-derived target computation in get_next_work_required.
     /// Must match the Python model's INITIAL_TARGET for deterministic results.
-    pub fn initial_target(&self) -> u32 {
+    pub fn initial_target(&self) -> BlockTarget {
         self.initial_target
     }
 
@@ -409,11 +404,11 @@ impl PoWConsensus {
     /// Same logic as `adjust_target()` but does not mutate self.
     pub fn compute_adjustment(
         timestamps: &[BlockTimestamp],
-        current_target: u32,
+        current_target: BlockTarget,
         target_block_time: u64,
-        min_target: u32,
-        max_target: u32,
-    ) -> u32 {
+        min_target: BlockTarget,
+        max_target: BlockTarget,
+    ) -> BlockTarget {
         let n = timestamps.len().min(10);
         let start = timestamps.len() - n;
         let mut total_interval = 0u64;
@@ -445,17 +440,17 @@ impl PoWConsensus {
             SCALE
         };
 
-        BlockTarget::new(current_target).adjust(SCALE, adjustment, min_target, max_target).get()
+        current_target.adjust(SCALE, adjustment, min_target.get(), max_target.get())
     }
 }
 
 impl Default for PoWConsensus {
     fn default() -> Self {
         Self::new(
-            120,            // 2-minute target block time
-            0x0FFFFFFF,    // initial target (matches Python model + config)
-            1,              // min target (hardest)
-            u32::MAX,       // max target (easiest)
+            120,                         // 2-minute target block time
+            BlockTarget::new(0x0FFFFFFF), // initial target (matches Python model + config)
+            BlockTarget::new(1),           // min target (hardest)
+            BlockTarget::MAX,              // max target (easiest)
         )
     }
 }
@@ -467,12 +462,12 @@ impl Default for PoWConsensus {
 pub struct PoWConfig {
     /// Desired seconds between blocks.
     pub target_block_time: u64,
-    /// Initial difficulty target (higher = easier, u32::MAX = trivially easy).
-    pub initial_target: u32,
+    /// Initial difficulty target (higher = easier, BlockTarget::MAX = trivially easy).
+    pub initial_target: BlockTarget,
     /// Minimum target — hardest possible (smallest value).
-    pub min_target: u32,
+    pub min_target: BlockTarget,
     /// Maximum target — easiest possible (largest value).
-    pub max_target: u32,
+    pub max_target: BlockTarget,
 }
 
 #[cfg(test)]
@@ -519,7 +514,7 @@ mod tests {
     // =========================================================================
 
     fn test_consensus() -> PoWConsensus {
-        PoWConsensus::new(120, 0x00FFFFFF, 0x0000FFFF, 0x0FFFFFFF)
+        PoWConsensus::new(120, BlockTarget::new(0x00FFFFFF), BlockTarget::new(0x0000FFFF), BlockTarget::new(0x0FFFFFFF))
     }
 
     /// Failure mode: constructor sets initial_target as both the current target
@@ -528,10 +523,10 @@ mod tests {
     #[test]
     fn test_consensus_new_sets_initial_state() {
         let c = test_consensus();
-        assert_eq!(c.target(), 0x00FFFFFF);
+        assert_eq!(c.target(), BlockTarget::new(0x00FFFFFF));
         assert_eq!(c.target_block_time(), 120);
-        assert_eq!(c.min_target(), 0x0000FFFF);
-        assert_eq!(c.max_target(), 0x0FFFFFFF);
+        assert_eq!(c.min_target(), BlockTarget::new(0x0000FFFF));
+        assert_eq!(c.max_target(), BlockTarget::new(0x0FFFFFFF));
         assert_eq!(c.accumulated_work.get(), 0);
     }
 
@@ -539,8 +534,8 @@ mod tests {
     /// not panic or garbage. Zero target is degenerate but must be handled.
     #[test]
     fn test_difficulty_zero_target_sentinel() {
-        let c = PoWConsensus::new(120, 0x00FFFFFF, 0, 0x0FFFFFFF);
-        c.force_target(0);
+        let c = PoWConsensus::new(120, BlockTarget::new(0x00FFFFFF), BlockTarget::new(0), BlockTarget::new(0x0FFFFFFF));
+        c.force_target(BlockTarget::new(0));
         assert_eq!(c.difficulty(), u64::MAX);
     }
 
@@ -548,10 +543,10 @@ mod tests {
     #[test]
     fn test_force_target_roundtrip() {
         let c = test_consensus();
-        c.force_target(0x0000FFFF);
-        assert_eq!(c.target(), 0x0000FFFF);
-        c.force_target(0x0FFFFFFF);
-        assert_eq!(c.target(), 0x0FFFFFFF);
+        c.force_target(BlockTarget::new(0x0000FFFF));
+        assert_eq!(c.target(), BlockTarget::new(0x0000FFFF));
+        c.force_target(BlockTarget::new(0x0FFFFFFF));
+        assert_eq!(c.target(), BlockTarget::new(0x0FFFFFFF));
     }
 
     /// Failure mode: timestamp snapshot + restore roundtrip. Used for rollback
@@ -608,10 +603,10 @@ mod tests {
         }
         let adjusted = c.adjust_target();
         // With perfect timing, should stay very close to initial
-        let diff = if adjusted > c.target() { adjusted - c.target() } else { c.target() - adjusted };
+        let diff = if adjusted > c.target() { adjusted.get() - c.target().get() } else { c.target().get() - adjusted.get() };
         // Allow small rounding variance (< 1% of target)
-        assert!(diff <= c.target() / 100,
-            "target drifted by {} ({}% of initial) at perfect timing", diff, diff * 100 / c.target());
+        assert!(diff <= c.target().get() / 100,
+            "target drifted by {} ({}% of initial) at perfect timing", diff, diff * 100 / c.target().get());
     }
 
     /// Failure mode: blocks arriving too fast (half target time) should
@@ -654,7 +649,6 @@ mod tests {
     #[test]
     fn test_adjust_target_clamped_to_bounds() {
         let c = test_consensus();
-        let initial = c.target();
         // Fill window with extreme timestamps to force large adjustment
         for i in 0..21 {
             c.record_block(BlockTimestamp::new(i * 1)); // instant blocks
@@ -676,8 +670,8 @@ mod tests {
     #[test]
     fn test_compute_adjustment_deterministic() {
         let timestamps: Vec<BlockTimestamp> = (0..20).map(|i| BlockTimestamp::new(i * 120)).collect();
-        let a = PoWConsensus::compute_adjustment(&timestamps, 0x00FFFFFF, 120, 0x0000FFFF, 0x0FFFFFFF);
-        let b = PoWConsensus::compute_adjustment(&timestamps, 0x00FFFFFF, 120, 0x0000FFFF, 0x0FFFFFFF);
+        let a = PoWConsensus::compute_adjustment(&timestamps, BlockTarget::new(0x00FFFFFF), 120, BlockTarget::new(0x0000FFFF), BlockTarget::new(0x0FFFFFFF));
+        let b = PoWConsensus::compute_adjustment(&timestamps, BlockTarget::new(0x00FFFFFF), 120, BlockTarget::new(0x0000FFFF), BlockTarget::new(0x0FFFFFFF));
         assert_eq!(a, b, "compute_adjustment must be deterministic");
     }
 
@@ -692,10 +686,10 @@ mod tests {
             BlockTimestamp::new(400), BlockTimestamp::new(300), BlockTimestamp::new(200),
             BlockTimestamp::new(100), BlockTimestamp::new(0),
         ];
-        let result = PoWConsensus::compute_adjustment(&timestamps, 0x00FFFFFF, 120, 0x0000FFFF, 0x0FFFFFFF);
+        let result = PoWConsensus::compute_adjustment(&timestamps, BlockTarget::new(0x00FFFFFF), 120, BlockTarget::new(0x0000FFFF), BlockTarget::new(0x0FFFFFFF));
         // Must still produce a valid clamped target
-        assert!(result >= 0x0000FFFF);
-        assert!(result <= 0x0FFFFFFF);
+        assert!(result.get() >= 0x0000FFFF);
+        assert!(result.get() <= 0x0FFFFFFF);
     }
 
     /// Failure mode: window-based average with fewer than 11 timestamps uses
@@ -705,9 +699,9 @@ mod tests {
         // 3 timestamps → window of 2 intervals
         let result = PoWConsensus::compute_adjustment(
             &[BlockTimestamp::new(0), BlockTimestamp::new(120), BlockTimestamp::new(240)],
-            0x00FFFFFF, 120, 0x0000FFFF, 0x0FFFFFFF);
-        assert!(result >= 0x0000FFFF);
-        assert!(result <= 0x0FFFFFFF);
+            BlockTarget::new(0x00FFFFFF), 120, BlockTarget::new(0x0000FFFF), BlockTarget::new(0x0FFFFFFF));
+        assert!(result.get() >= 0x0000FFFF);
+        assert!(result.get() <= 0x0FFFFFFF);
     }
 }
 
@@ -715,9 +709,9 @@ impl Default for PoWConfig {
     fn default() -> Self {
         Self {
             target_block_time: 120,
-            initial_target: 0x0FFFFFFF,  // matches PoWConsensus::default() + Docker entrypoints
-            min_target: 1,
-            max_target: u32::MAX,
+            initial_target: BlockTarget::new(0x0FFFFFFF),  // matches PoWConsensus::default() + Docker entrypoints
+            min_target: BlockTarget::new(1),
+            max_target: BlockTarget::MAX,
         }
     }
 }

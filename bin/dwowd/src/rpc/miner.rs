@@ -207,10 +207,10 @@ impl DwowNode {
         }
 
         // Create miner and mine a block
-        let consensus = dwow_chain::PoWConsensus::new(120, target, 1, u32::MAX);
+        let consensus = dwow_chain::PoWConsensus::new(120, target, BlockTarget::new(1), BlockTarget::MAX);
         let miner = dwow_chain::Miner::new(std::sync::Arc::new(consensus));
 
-        let mined_block = match miner.mine(&mining_vm, previous, height, all_txs, BlockTarget::new(target), &prep.uncles) {
+        let mined_block = match miner.mine(&mining_vm, previous, height, all_txs, target, &prep.uncles) {
             Ok(block) => block,
             Err(e) => {
                 error!(target: "dwowd::rpc::miner", "Mining failed: {}", e);

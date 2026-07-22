@@ -106,7 +106,7 @@ pub fn accept_block(
             &block.header.uncle_merkle_root,
             block.header.height,
             vm,
-            block.header.target.get(),
+            block.header.target,
             &existing_keys,
         ).map_err(|e| dwow_core::Error::Custom(format!(
             "Block {} uncle validation failed: {}", block.header.height, e
@@ -201,7 +201,7 @@ pub fn accept_block(
 
     // 3. WASM execution — runs pow_reward_v1, persists cumulative supply chain
     // to the contracts sled tree via the overlay.
-    let outcome = match execute_block(chain_state, block, uncles, vm, block.header.height, target.get()) {
+    let outcome = match execute_block(chain_state, block, uncles, vm, block.header.height, target) {
         Ok(o) => o,
         Err(e) => {
             // Supply mismatches during bootstrap (heights 1-2) are expected

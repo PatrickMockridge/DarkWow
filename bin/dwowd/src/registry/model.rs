@@ -654,7 +654,7 @@ pub async fn generate_linear_block_template(
         return Ok(LinearBlockTemplate {
             previous: previous_hash,
             height,
-            target: BlockTarget::new(target),
+            target,
             timestamp,
             value: reward,
             zk_proof: coinbase.proof,

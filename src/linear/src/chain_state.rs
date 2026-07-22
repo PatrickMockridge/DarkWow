@@ -141,9 +141,9 @@ impl CChainState {
     pub fn new(
         db: Arc<sled::Db>,
         target_block_time: u64,
-        initial_target: u32,
-        min_target: u32,
-        max_target: u32,
+        initial_target: BlockTarget,
+        min_target: BlockTarget,
+        max_target: BlockTarget,
         finality_config: FinalityConfig,
     ) -> Result<Arc<Self>> {
         let store = Arc::new(LinearStore::new(db.clone())?);
@@ -502,7 +502,7 @@ impl CChainState {
                 let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
                 let min = consensus.min_target();
                 let max = consensus.max_target();
-                if block.header.target.get() < min || block.header.target.get() > max {
+                if block.header.target < min || block.header.target > max {
                     drop(guard);
                     return Err(LinearError::BlockIsInvalid(
                         format!("Competing block target {} outside bounds [{}, {}]",
@@ -626,7 +626,7 @@ impl CChainState {
                     let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
                     let min = consensus.min_target();
                     let max = consensus.max_target();
-                    if block.header.target.get() < min || block.header.target.get() > max {
+                    if block.header.target < min || block.header.target > max {
                         drop(guard);
                         return Err(LinearError::BlockIsInvalid(
                             format!("Uncle chain target {} outside bounds [{}, {}]",
@@ -683,10 +683,8 @@ impl CChainState {
         }
 
         // --- Stage 1 & 2 PoW validation ---
-        let expected_target = BlockTarget::new({
-            self.consensus.lock().unwrap_or_else(|e| e.into_inner())
-                .get_next_work_required(&self.store, block_height)
-        });
+        let expected_target = self.consensus.lock().unwrap_or_else(|e| e.into_inner())
+            .get_next_work_required(&self.store, block_height);
 
         // Lock the VM for validation hashing — prevents concurrent RandomX FFI
         let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
@@ -730,7 +728,7 @@ impl CChainState {
         // failure in block serialization would leave consensus updated but
         // block uncommitted — permanent desync.
         let pre_timestamps: Vec<BlockTimestamp>;
-        let pre_target: u32;
+        let pre_target: BlockTarget;
         {
             let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
             pre_target = consensus.target();
@@ -1093,7 +1091,7 @@ mod tests {
     fn test_empty_chain_state() {
         let db = sled::Config::new().temporary(true).open().unwrap();
         let db = Arc::new(db);
-        let cs = CChainState::new(db, 120, u32::MAX, 1, u32::MAX,
+        let cs = CChainState::new(db, 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
             FinalityConfig::default()).unwrap();
         assert_eq!(cs.get_height(), BlockHeight::new(0));
         assert_eq!(cs.coin_set_size(), 0);
@@ -1104,7 +1102,7 @@ mod tests {
     fn test_nullifier_query_empty() {
         let db = sled::Config::new().temporary(true).open().unwrap();
         let db = Arc::new(db);
-        let cs = CChainState::new(db, 120, u32::MAX, 1, u32::MAX,
+        let cs = CChainState::new(db, 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
             FinalityConfig::default()).unwrap();
         let nf = Nullifier::from_bytes([1u8; 32]).unwrap();
         assert!(!cs.has_nullifier(&nf));
@@ -1116,7 +1114,7 @@ mod tests {
     fn test_supply_chain_empty() {
         let db = sled::Config::new().temporary(true).open().unwrap();
         let db = Arc::new(db);
-        let cs = CChainState::new(db, 120, u32::MAX, 1, u32::MAX,
+        let cs = CChainState::new(db, 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
             FinalityConfig::default()).unwrap();
         let entry = cs.supply_chain.get_latest();
         assert_eq!(entry.total_supply, 0);
@@ -1134,7 +1132,7 @@ mod tests {
     fn test_block_height_persistence_roundtrip() {
         let db = sled::Config::new().temporary(true).open().unwrap();
         let db = Arc::new(db);
-        let cs = CChainState::new(db, 120, u32::MAX, 1, u32::MAX,
+        let cs = CChainState::new(db, 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
             FinalityConfig::default()).unwrap();
         let h = BlockHeight::new(42);
         // Build a minimal block — only the header matters for the key.

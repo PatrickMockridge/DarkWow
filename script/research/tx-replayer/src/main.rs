@@ -40,7 +40,7 @@ use dwow_core::{
     zk::VerifyingKey,
 };
 use dwow_sdk::{
-    blockchain::compute_fee,
+    blockchain::{compute_fee, BlockTarget},
     crypto::{ContractId, MerkleTree, PublicKey},
     dark_tree::dark_forest_leaf_vec_integrity_check,
     deploy::DeployParamsV1,
@@ -172,7 +172,7 @@ async fn rollback_database(
 async fn verify_transaction_wasm(
     overlay: &BlockchainOverlayPtr,
     verifying_block_height: u32,
-    block_target: u32,
+    block_target: BlockTarget,
     tx: &Transaction,
     tree: &mut MerkleTree,
     _verifying_keys: &mut HashMap<[u8; 32], HashMap<String, VerifyingKey>>,
@@ -326,7 +326,7 @@ async fn verify_transaction_wasm(
 async fn verify_transaction_zkps(
     overlay: &BlockchainOverlayPtr,
     verifying_block_height: u32,
-    block_target: u32,
+    block_target: BlockTarget,
     tx: &Transaction,
     tree: &mut MerkleTree,
     verifying_keys: &mut HashMap<[u8; 32], HashMap<String, VerifyingKey>>,
@@ -500,7 +500,7 @@ async fn verify_transaction_zkps(
 async fn verify_transaction_signatures(
     overlay: &BlockchainOverlayPtr,
     verifying_block_height: u32,
-    block_target: u32,
+    block_target: BlockTarget,
     tx: &Transaction,
     tree: &mut MerkleTree,
     _verifying_keys: &mut HashMap<[u8; 32], HashMap<String, VerifyingKey>>,

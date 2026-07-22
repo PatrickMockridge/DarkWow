@@ -42,7 +42,7 @@ use dwow_core::{
 };
 
 use dwow_chain::PowSource;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, MoneroBlockHeight};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTimestamp, MoneroBlockHeight};
 
 use crate::{
     error::{miner_status_response, server_error, RpcError},
@@ -492,7 +492,7 @@ impl DwowNode {
             previous: previous_hash,
             merkle_root,
             timestamp: BlockTimestamp::new(template_timestamp),
-            target: BlockTarget::new(target),
+            target,
             nonce,
             height: submitted_height,
             uncle_merkle_root: [0u8; 32],

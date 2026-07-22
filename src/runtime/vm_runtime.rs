@@ -28,7 +28,7 @@ use std::{
 };
 
 use dwow_sdk::{
-    blockchain::BlockHeight,
+    blockchain::{BlockHeight, BlockTarget},
     crypto::contract_id::{
         ContractId, SMART_CONTRACT_MONOTREE_DB_NAME, SMART_CONTRACT_ZKAS_DB_NAME,
     },
@@ -164,7 +164,7 @@ pub struct Env {
     /// For unconfirmed txs, this will be the current max height in the chain.
     pub verifying_block_height: BlockHeight,
     /// Currently configured block time target, in seconds
-    pub block_target: u32,
+    pub block_target: BlockTarget,
     /// The hash for this transaction the runtime is being run against.
     pub tx_hash: TransactionHash,
     /// The index for this call in the transaction
@@ -228,7 +228,7 @@ impl Runtime {
         backend: BackendPtr,
         contract_id: ContractId,
         verifying_block_height: BlockHeight,
-        block_target: u32,
+        block_target: BlockTarget,
         tx_hash: TransactionHash,
         call_idx: u8,
     ) -> Result<Self> {

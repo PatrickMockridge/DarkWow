@@ -60,7 +60,7 @@ use tracing::{error, info};
 
 use dwow_core::Error;
 use dwow_serial::Decodable;
-use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::blockchain::{BlockHeight, BlockTarget};
 use dwow_sdk::crypto::{
     ContractId, ATTESTATION_CONTRACT_ID, BOX_CONTRACT_ID, DEPLOYOOOR_CONTRACT_ID,
     IDENTITY_CONTRACT_ID, MULTISIG_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID, ORACLE_CONTRACT_ID,
@@ -133,7 +133,7 @@ pub fn execute_block(
     uncles: &[crate::UncleBlock],
     vm: &Arc<RandomXVM>,
     current_height: BlockHeight,
-    difficulty: u32,
+    difficulty: BlockTarget,
 ) -> dwow_core::Result<ExecutionOutcome> {
     let store = chain_state.store.clone();
     let contracts_tree = store.contracts_tree().clone();
@@ -640,7 +640,7 @@ fn execute_spend_hook(
     target_cid_bytes: &[u8],
     payload: &[u8],
     current_height: BlockHeight,
-    difficulty: u32,
+    difficulty: BlockTarget,
     tx_hash_bytes: dwow_sdk::tx::TransactionHash,
 ) -> bool {
     let target_wasm_bytes = match store.get_contract_data(target_cid_bytes) {
@@ -682,7 +682,7 @@ fn deploy_contract_in_overlay(
     contract_id: ContractId,
     ix: &[u8],
     current_height: BlockHeight,
-    difficulty: u32,
+    difficulty: BlockTarget,
 ) -> dwow_core::Result<()> {
     overlay.state.cache.insert(
         sled_overlay::sled::IVec::from(contract_id.to_bytes().as_slice()),
@@ -773,7 +773,7 @@ pub fn apply_genesis_deployments(
     store: crate::LinearStore,
     vm: Arc<RandomXVM>,
     block: &crate::Block,
-    difficulty: u32,
+    difficulty: BlockTarget,
 ) -> dwow_core::Result<()> {
     let table = genesis_contracts();
 

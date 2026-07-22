@@ -452,7 +452,7 @@ async fn init_genesis(
     use dwow_sdk::blockchain::expected_reward;
 
     let genesis_height = BlockHeight::GENESIS;
-    let target = u32::MAX;
+    let target = BlockTarget::MAX;
     // Deterministic genesis timestamp — must be identical across all nodes.
     let timestamp = 0u64;
 
@@ -519,7 +519,7 @@ async fn init_genesis(
         previous: blake3::Hash::from_bytes([0u8; 32]),
         merkle_root: genesis_merkle_root,
         timestamp: BlockTimestamp::new(timestamp),
-        target: BlockTarget::new(target),
+        target,
         nonce: 0,
         height: genesis_height,
         uncle_merkle_root: [0u8; 32],
@@ -556,7 +556,7 @@ async fn init_genesis(
         &[],
         &vm,
         BlockHeight::new(0), // current_height = 0 (empty chain before genesis)
-        BlockTarget::new(target),
+        target,
         None,
     )
     .map_err(|e| Error::Custom(format!("Genesis block acceptance failed: {}", e)))?;
@@ -631,16 +631,16 @@ impl Dwowd {
             info!(target: "dwowd::Dwowd::init_linear", "mining_easy=true: using easy mining difficulty");
             dwow_chain::PoWConfig {
                 target_block_time: net_settings.pow.target_block_time.unwrap_or(10),
-                initial_target: net_settings.pow.initial_target.unwrap_or(u32::MAX),
-                min_target: net_settings.pow.min_target.unwrap_or(u32::MAX),
-                max_target: net_settings.pow.max_target.unwrap_or(u32::MAX),
+                initial_target: BlockTarget::new(net_settings.pow.initial_target.unwrap_or(u32::MAX) as u32),
+                min_target: BlockTarget::new(net_settings.pow.min_target.unwrap_or(u32::MAX) as u32),
+                max_target: BlockTarget::new(net_settings.pow.max_target.unwrap_or(u32::MAX) as u32),
             }
         } else {
             dwow_chain::PoWConfig {
                 target_block_time: net_settings.pow.target_block_time.unwrap_or(120),
-                initial_target: net_settings.pow.initial_target.unwrap_or(0x0FFFFFFF) as u32,
-                min_target: net_settings.pow.min_target.unwrap_or(1) as u32,
-                max_target: net_settings.pow.max_target.unwrap_or(u32::MAX) as u32,
+                initial_target: BlockTarget::new(net_settings.pow.initial_target.unwrap_or(0x0FFFFFFF) as u32),
+                min_target: BlockTarget::new(net_settings.pow.min_target.unwrap_or(1) as u32),
+                max_target: BlockTarget::new(net_settings.pow.max_target.unwrap_or(u32::MAX) as u32),
             }
         };
 
@@ -1364,9 +1364,9 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         info!(target: "dwowd::miner_task",
             "Beginning RandomX mining for block {} (target={:#010x}, {} txs)",
             height, target, all_txs.len());
-        let miner_consensus = dwow_chain::PoWConsensus::new(120, target, 1, u32::MAX);
+        let miner_consensus = dwow_chain::PoWConsensus::new(120, target, BlockTarget::new(1), BlockTarget::MAX);
         let miner = Miner::new(std::sync::Arc::new(miner_consensus));
-        let mined_block = match miner.mine(&vm, previous, height, all_txs, BlockTarget::new(target), &uncles) {
+        let mined_block = match miner.mine(&vm, previous, height, all_txs, target, &uncles) {
             Ok(b) => {
                 info!(target: "dwowd::miner_task",
                     "Block {} mined with nonce {}", height, b.header.nonce);
@@ -1418,7 +1418,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
             &uncles,
             &vm,
             latest_block.header.height,
-            BlockTarget::new(target),
+            target,
             Some(&node.fee_estimator),
         );
 

@@ -301,7 +301,7 @@ pub fn verify_uncle_proof(
     uncle: &UncleProof,
     merkle_root: &[u8; 32],
     _vm: &randomx::RandomXVM,
-    target: u32,
+    target: BlockTarget,
 ) -> bool {
     // Step 1: Verify the pow_hash matches re-computed hash from header.
     // Uses to_mining_blob() (same as Block::hash_with_vm) — the uncle
@@ -330,7 +330,7 @@ pub fn verify_uncle_proof(
 
     // Step 2: Verify pow_hash meets difficulty target
     let hash_u32 = u32::from_le_bytes(computed_pow_hash[0..4].try_into().unwrap());
-    if hash_u32 > target {
+    if hash_u32 > target.get() {
         return false;
     }
 
@@ -689,7 +689,7 @@ mod tests {
             // to_mining_blob(), build_uncle_merkle must also use it.
             // With target=u32::MAX, any hash passes difficulty.
             assert!(
-                verify_uncle_proof(proof, &root, &vm, 0xFFFF_FFFF),
+                verify_uncle_proof(proof, &root, &vm, BlockTarget::new(0xFFFF_FFFF)),
                 "Uncle proof at position {} must verify against merkle root",
                 proof.position
             );
@@ -775,7 +775,7 @@ mod tests {
         assert_eq!(proofs[0].pow_hash, expected_pow);
 
         // Verify with wrong root fails (merkle verification)
-        assert!(!verify_uncle_proof(&proofs[0], &[1u8; 32], &vm, 0x0000_FFFF));
+        assert!(!verify_uncle_proof(&proofs[0], &[1u8; 32], &vm, BlockTarget::new(0x0000_FFFF)));
     }
 
     #[test]

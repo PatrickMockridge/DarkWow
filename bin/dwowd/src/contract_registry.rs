@@ -29,12 +29,7 @@
 
 use std::collections::HashMap;
 
-use dwow_sdk::crypto::ContractId;
 use serde_json::Value as JsonValue;
-use tracing::error;
-
-#[allow(unused_imports)]
-use crate::RpcError;
 
 /// Result type for contract handler operations
 pub type HandlerResult<T> = Result<T, ContractHandlerError>;
@@ -111,6 +106,5 @@ impl Default for ContractRegistry {
     }
 }
 
-/// Resolve a contract identifier string to a ContractId.
 // resolve_contract_id removed — dead code, never called.
 // Contract resolution uses the ContractRegistry struct directly via the RPC handler.

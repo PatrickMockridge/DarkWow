@@ -69,9 +69,9 @@ impl GenesisHarness {
 
         let pow_config = PoWConfig {
             target_block_time: 120,
-            initial_target: u32::MAX, // PoWConfig uses bare u32 for config layer
-            min_target: 1,
-            max_target: u32::MAX,
+            initial_target: BlockTarget::MAX,
+            min_target: BlockTarget::new(1),
+            max_target: BlockTarget::MAX,
         };
         let finality_config = FinalityConfig::default();
 
