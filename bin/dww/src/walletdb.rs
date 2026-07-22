@@ -734,7 +734,9 @@ impl WalletDb {
         })();
 
         if result.is_err() {
-            conn.execute("ROLLBACK", []).ok();
+            if let Err(e) = conn.execute("ROLLBACK", []) {
+                tracing::error!("SQLite ROLLBACK failed: {e} — database may be in inconsistent state");
+            }
             return result;
         }
 

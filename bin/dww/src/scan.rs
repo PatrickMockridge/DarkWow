@@ -1072,9 +1072,13 @@ impl Dww {
                 attestations_json: "[]".to_string(),
                 lock_status: "unlocked".to_string(),
             };
-            if self.wallet.insert_contract_metadata(&record).is_ok() {
-                if let Some(ref manifest_json) = dep.manifest_json {
-                    let _ = self.wallet.store_manifest(&contract_id_str, manifest_json);
+            if let Err(e) = self.wallet.insert_contract_metadata(&record) {
+                tracing::error!(target: "dww::scan",
+                    "Failed to insert contract metadata for {}: {e}", &contract_id_str[..8]);
+            } else if let Some(ref manifest_json) = dep.manifest_json {
+                if let Err(e) = self.wallet.store_manifest(&contract_id_str, manifest_json) {
+                    tracing::error!(target: "dww::scan",
+                        "Failed to store manifest for {}: {e}", &contract_id_str[..8]);
                 }
             }
         }

@@ -149,7 +149,10 @@ async fn write_err(reader: &mut BufReader<&mut UnixStream>, id: u16, code: i32, 
 async fn write_raw(reader: &mut BufReader<&mut UnixStream>, body: &impl Serialize) {
     if let Ok(mut json) = serde_json::to_string(body) {
         json.push('\n');
-        let _ = reader.get_mut().write_all(json.as_bytes()).await;
+        if let Err(e) = reader.get_mut().write_all(json.as_bytes()).await {
+            tracing::error!("RPC write_all failed: {e} — client connection likely broken");
+            return;
+        }
     }
 }
 

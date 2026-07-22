@@ -690,7 +690,9 @@ pub async fn dispatch_async(
                     let p2p2 = p2p.clone();
                     let tip2 = dww_r2.highest_peer_tip.clone();
                     smol::spawn(async move {
-                        let _ = crate::sync_task::run_wallet_sync(p2p2, dww2, tip2).await;
+                    if let Err(e) = crate::sync_task::run_wallet_sync(p2p2, dww2, tip2).await {
+                        tracing::error!("Sync task exited with error: {e}");
+                    }
                     }).detach();
                 }
             }
