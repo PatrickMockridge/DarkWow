@@ -38,12 +38,15 @@ witness "CreateClaimV1L1V2" {
 }
 
 circuit "CreateClaimV1L1V2" {
+    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_TX_BINDING = witness_base(3);
+
     # ==========================================================================
     # NULLIFIER VERIFICATION
     # ==========================================================================
 
     # Derive nullifier from credential secret and commitment
-    computed_nullifier = poseidon_hash(credential_secret, commitment);
+    computed_nullifier = poseidon_hash(DOMAIN_NULLIFIER, credential_secret, commitment);
     constrain_instance(computed_nullifier);
 
     # Verify nullifier matches
@@ -78,7 +81,7 @@ circuit "CreateClaimV1L1V2" {
     # This gives Level 1 selective disclosure: the verifier learns
     # the predicate result publicly, but nothing about the actual
     # attribute_value or threshold values beyond what the predicate
-    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
     # result reveals.

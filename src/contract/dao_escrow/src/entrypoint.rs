@@ -105,6 +105,22 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(&verify_member_cap_v1_bincode[..])?;
     wasm::db::zkas_db_set(&resolve_dispute_v1_bincode[..])?;
 
+    // V2 circuits (HAZOP RC3: domain separation)
+    let init_v2_bincode = include_bytes!("../proof/init_v2.zk.bin");
+    wasm::db::zkas_db_set(&init_v2_bincode[..])?;
+    let pay_premium_v2_bincode = include_bytes!("../proof/pay_premium_v2.zk.bin");
+    wasm::db::zkas_db_set(&pay_premium_v2_bincode[..])?;
+    let propose_claim_v2_bincode = include_bytes!("../proof/propose_claim_v2.zk.bin");
+    wasm::db::zkas_db_set(&propose_claim_v2_bincode[..])?;
+    let vote_claim_v2_bincode = include_bytes!("../proof/vote_claim_v2.zk.bin");
+    wasm::db::zkas_db_set(&vote_claim_v2_bincode[..])?;
+    let verify_member_cap_v2_bincode = include_bytes!("../proof/verify_member_capability_v2.zk.bin");
+    wasm::db::zkas_db_set(&verify_member_cap_v2_bincode[..])?;
+    let resolve_dispute_v2_bincode = include_bytes!("../proof/resolve_dispute_v2.zk.bin");
+    wasm::db::zkas_db_set(&resolve_dispute_v2_bincode[..])?;
+    let set_governance_config_v2_bincode = include_bytes!("../proof/set_governance_config_v2.zk.bin");
+    wasm::db::zkas_db_set(&set_governance_config_v2_bincode[..])?;
+
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, DAO_ESCROW_DB_VERSION_KEY, &env!("CARGO_PKG_VERSION").as_bytes())?;
@@ -181,7 +197,7 @@ fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk:
     ]);
 
     let zk_public_inputs = vec![(
-        crate::DAO_ESCROW_ZKAS_INIT_NS.to_string(),
+        crate::DAO_ESCROW_ZKAS_INIT_NS_V2.to_string(),
         vec![
             params.dao_bulla.inner(),
             endowment_bulla,
@@ -208,7 +224,7 @@ fn pay_premium_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk
     let value_coords = value_coords.unwrap();
 
     let zk_public_inputs = vec![(
-        crate::DAO_ESCROW_ZKAS_PREMIUM_NS.to_string(),
+        crate::DAO_ESCROW_ZKAS_PREMIUM_NS_V2.to_string(),
         vec![
             params.dao_escrow_bulla.inner(),
             params.membership_note.inner(),
@@ -1081,7 +1097,7 @@ fn propose_claim_get_metadata(
         .expect("Non-canonical capability_id bytes");
 
     let zk_public_inputs = vec![(
-        crate::DAO_ESCROW_ZKAS_PROPOSE_CLAIM_NS.to_string(),
+        crate::DAO_ESCROW_ZKAS_PROPOSE_CLAIM_NS_V2.to_string(),
         vec![
             params.dao_escrow_bulla.inner(),
             params.claim_id.inner(),
@@ -1112,7 +1128,7 @@ fn vote_claim_get_metadata(
         .expect("Non-canonical capability_id bytes");
 
     let zk_public_inputs = vec![(
-        crate::DAO_ESCROW_ZKAS_VOTE_CLAIM_NS.to_string(),
+        crate::DAO_ESCROW_ZKAS_VOTE_CLAIM_NS_V2.to_string(),
         vec![
             params.claim_id.inner(),
             cap_id_fp,
@@ -1142,7 +1158,7 @@ fn verify_member_cap_get_metadata(
         .expect("Non-canonical capability_id bytes");
 
     let zk_public_inputs = vec![(
-        crate::DAO_ESCROW_ZKAS_VERIFY_MEMBER_CAP_NS.to_string(),
+        crate::DAO_ESCROW_ZKAS_VERIFY_MEMBER_CAP_NS_V2.to_string(),
         vec![
             cap_id_fp,
             params.dao_escrow_bulla.inner(),
@@ -1171,7 +1187,7 @@ fn resolve_dispute_get_metadata(
         .expect("Non-canonical capability_id bytes");
 
     let zk_public_inputs = vec![(
-        crate::DAO_ESCROW_ZKAS_RESOLVE_DISPUTE_NS.to_string(),
+        crate::DAO_ESCROW_ZKAS_RESOLVE_DISPUTE_NS_V2.to_string(),
         vec![
             cap_id_fp,
             params.dao_escrow_bulla.inner(),

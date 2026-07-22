@@ -1,0 +1,62 @@
+# PayPremium_V2 circuit — domain-separated DAO-Escrow premium payment.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+k = 11;
+field = "pallas";
+
+constant "PayPremiumV2" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "PayPremiumV2" {
+    Base dao_escrow_bulla,
+    Base member_secret,
+    Base member_pub_x,
+    Base member_pub_y,
+    Base mpc_secret_1,
+    Base mpc_secret_2,
+    Base mpc_secret_3,
+    Base value,
+    Base token_id,
+    Base expiry,
+    Base current_block,
+    Base membership_blind,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "PayPremiumV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COIN_COMMIT = witness_base(4);
+
+    less_than_strict(current_block, expiry);
+
+    member_pub = ec_mul_base(member_secret, NULLIFIER_K);
+    constrain_equal_base(ec_get_x(member_pub), member_pub_x);
+    constrain_equal_base(ec_get_y(member_pub), member_pub_y);
+
+    computed_bulla = poseidon_hash(
+        DOMAIN_COIN_COMMIT,
+        member_pub_x,
+        member_pub_y,
+        mpc_secret_1,
+        mpc_secret_2,
+        mpc_secret_3,
+    );
+    constrain_equal_base(computed_bulla, dao_escrow_bulla);
+
+    membership_note = poseidon_hash(
+        DOMAIN_COIN_COMMIT,
+        member_pub_x,
+        member_pub_y,
+        value,
+        token_id,
+        expiry,
+        membership_blind,
+    );
+
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+}

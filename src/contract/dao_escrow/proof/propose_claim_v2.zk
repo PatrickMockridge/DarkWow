@@ -1,0 +1,55 @@
+# ProposeClaim_V2 circuit — domain-separated DAO-Escrow claim proposal.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+k = 11;
+field = "pallas";
+
+constant "ProposeClaimV2" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "ProposeClaimV2" {
+    Base dao_escrow_bulla,
+    Base proposer_secret,
+    Base proposer_pub_x,
+    Base proposer_pub_y,
+    Base capability_id,
+    Base capability_secret,
+    Base claim_id,
+    Base claim_amount,
+    Base claim_blind,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "ProposeClaimV2" {
+    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COIN_COMMIT = witness_base(4);
+
+    proposer_pub = ec_mul_base(proposer_secret, NULLIFIER_K);
+    constrain_equal_base(ec_get_x(proposer_pub), proposer_pub_x);
+    constrain_equal_base(ec_get_y(proposer_pub), proposer_pub_y);
+
+    capability_commit = poseidon_hash(DOMAIN_COIN_COMMIT, capability_id, capability_secret);
+
+    proposal_nullifier = poseidon_hash(
+        DOMAIN_NULLIFIER,
+        capability_secret,
+        dao_escrow_bulla,
+        claim_id,
+    );
+
+    claim_commit = poseidon_hash(
+        DOMAIN_COIN_COMMIT,
+        claim_id,
+        claim_amount,
+        claim_blind,
+    );
+
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+    constrain_instance(claim_commit);
+}

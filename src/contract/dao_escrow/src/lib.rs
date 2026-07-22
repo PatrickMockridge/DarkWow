@@ -210,6 +210,22 @@ pub const DAO_ESCROW_ZKAS_RESOLVE_DISPUTE_NS: &str = "ResolveDispute";
 /// ZKAS namespace for governance config
 pub const DAO_ESCROW_ZKAS_SET_GOVERNANCE_CONFIG_NS: &str = "SetGovernanceConfigV1";
 
+// V2 circuit namespaces (HAZOP RC3: domain separation)
+/// ZKAS namespace for initialization V2 (domain-separated)
+pub const DAO_ESCROW_ZKAS_INIT_NS_V2: &str = "InitV2";
+/// ZKAS namespace for premium payment V2 (domain-separated)
+pub const DAO_ESCROW_ZKAS_PREMIUM_NS_V2: &str = "PayPremiumV2";
+/// ZKAS namespace for claim proposal V2 (domain-separated)
+pub const DAO_ESCROW_ZKAS_PROPOSE_CLAIM_NS_V2: &str = "ProposeClaimV2";
+/// ZKAS namespace for claim voting V2 (domain-separated)
+pub const DAO_ESCROW_ZKAS_VOTE_CLAIM_NS_V2: &str = "VoteClaimV2";
+/// ZKAS namespace for member capability V2 (domain-separated)
+pub const DAO_ESCROW_ZKAS_VERIFY_MEMBER_CAP_NS_V2: &str = "VerifyMemberCapabilityV2";
+/// ZKAS namespace for dispute resolution V2 (domain-separated)
+pub const DAO_ESCROW_ZKAS_RESOLVE_DISPUTE_NS_V2: &str = "ResolveDisputeV2";
+/// ZKAS namespace for governance config V2 (domain-separated)
+pub const DAO_ESCROW_ZKAS_SET_GOVERNANCE_CONFIG_NS_V2: &str = "SetGovernanceConfigV2";
+
 // ============================================================================
 // ZK CIRCUIT BINARIES (for client-side proof generation)
 // ============================================================================

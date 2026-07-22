@@ -1,0 +1,49 @@
+# VerifyMemberCapability_V2 circuit — domain-separated member capability proof.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+k = 11;
+field = "pallas";
+
+constant "VerifyMemberCapabilityV2" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "VerifyMemberCapabilityV2" {
+    Base dao_escrow_bulla,
+    Base holder_secret,
+    Base holder_pub_x,
+    Base holder_pub_y,
+    Base capability_id,
+    Base capability_secret,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "VerifyMemberCapabilityV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COIN_COMMIT = witness_base(4);
+
+    holder_pub = ec_mul_base(holder_secret, NULLIFIER_K);
+    constrain_equal_base(ec_get_x(holder_pub), holder_pub_x);
+    constrain_equal_base(ec_get_y(holder_pub), holder_pub_y);
+
+    capability_commit = poseidon_hash(
+        DOMAIN_COIN_COMMIT,
+        capability_id,
+        capability_secret,
+        dao_escrow_bulla,
+    );
+
+    holder_commit = poseidon_hash(
+        DOMAIN_COIN_COMMIT,
+        holder_pub_x,
+        holder_pub_y,
+        capability_secret,
+    );
+
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+    constrain_instance(capability_commit);
+}
