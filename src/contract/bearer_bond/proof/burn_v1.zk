@@ -64,8 +64,13 @@ circuit "Burn_V1" {
     token_commit = poseidon_hash(coin_token_id, token_id_blind);
     constrain_instance(token_commit);
 
-    # Merkle proof - verify coin exists in the Merkle tree
-    # Uses zero_cond trick for dummy zero-value inputs
+    # Merkle proof — guard against zero-value vacuous proofs.
+    # RC2: without less_than_strict(ZERO, coin_value), an attacker sets
+    # coin_value=0, zero_cond returns the tree's zero leaf, and merkle_root
+    # always succeeds. The prover forges ↓prove-inclusion without possessing
+    # the coin. Pattern from promissory_note/burn_v1.zk:74-75.
+    ZERO = witness_base(0);
+    less_than_strict(ZERO, coin_value);
     coin_incl = zero_cond(coin_value, coin);
     root = merkle_root(leaf_pos, path, coin_incl);
     constrain_instance(root);
@@ -77,8 +82,14 @@ circuit "Burn_V1" {
     # Reveal spend hook (can be used for cross-contract composition)
     constrain_instance(coin_spend_hook);
 
+    # Derive per-burn unique signature_secret from coin_secret + nullifier.
+    # RC5: without this binding, an attacker can sign with an arbitrary
+    # signature_secret independent of the coin's secret. Pattern from
+    # promissory_note/burn_v1.zk:87-98 (HAZOP H2 fix).
+    derived_signature_secret = poseidon_hash(coin_secret, nullifier);
+    constrain_equal_base(derived_signature_secret, signature_secret);
+
     # Derive signature public key using Schnorr-style Poseidon hash
-    # signature_public = poseidon_hash(signature_secret)
     signature_public = poseidon_hash(signature_secret);
     constrain_instance(signature_public);
 

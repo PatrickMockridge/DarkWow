@@ -136,6 +136,8 @@ circuit "LtcDepositV1" {
     block_leaf = poseidon_hash(tx_hash_0, tx_hash_1);
 
     # Handle zero case for empty slots
+    ZERO = witness_base(0);
+    less_than_strict(ZERO, amount);
     coin_incl = zero_cond(amount, block_leaf);
 
     # Verify Merkle proof

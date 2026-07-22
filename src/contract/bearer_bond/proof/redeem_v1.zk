@@ -50,8 +50,13 @@ circuit "Redeem_V1" {
     token_commit = poseidon_hash(coin_token_id, token_id_blind);
     constrain_instance(token_commit);
 
-    # Expose coin_value as a public input so the entrypoint verifies it is 0.
-    # For a receipt, value=0 is public information by design.
+    # Constrain coin_value to ZERO in-circuit so the receipt cannot carry
+    # monetary value. RC5: defense-in-depth — the entrypoint also verifies
+    # this, but the circuit-level constraint prevents a compromised entrypoint
+    # from issuing value-bearing receipts. Pattern from
+    # promissory_note/redeem_v1.zk:57-63 (HAZOP ELEV-4 fix).
+    ZERO = witness_base(0);
+    constrain_equal_base(coin_value, ZERO);
     constrain_instance(coin_value);
 
     # Reveal spend_hook so parent contracts verify receipt coin binding

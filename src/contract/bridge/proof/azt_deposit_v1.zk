@@ -158,7 +158,12 @@ circuit "AztDepositV1" {
     # Create leaf from note commitment
     leaf = poseidon_hash(commitment, note_secret);
 
-    # Handle zero case for empty leaf
+    # Guard against zero-value vacuous proofs (RC2).
+    # Without less_than_strict, value=0 makes zero_cond return the tree's
+    # zero leaf, and merkle_root always succeeds. Pattern from
+    # bridge/deposit_v1.zk:170-172.
+    ZERO = witness_base(0);
+    less_than_strict(ZERO, value);
     leaf_incl = zero_cond(value, leaf);
 
     # Verify Merkle proof
