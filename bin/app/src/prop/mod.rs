@@ -105,7 +105,7 @@ pub enum PropertyValue {
 impl PropertyValue {
     fn as_type(&self) -> PropertyType {
         match self {
-            Self::Unset => todo!("not sure"),
+            Self::Unset => PropertyType::Null,
             Self::Null => PropertyType::Null,
             Self::Bool(_) => PropertyType::Bool,
             Self::Uint32(_) => PropertyType::Uint32,

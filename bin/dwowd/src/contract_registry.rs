@@ -112,33 +112,5 @@ impl Default for ContractRegistry {
 }
 
 /// Resolve a contract identifier string to a ContractId.
-///
-/// For native contracts (native_token, deployooor), returns the hardcoded ID.
-/// For WASM contracts (dao_escrow), returns an error indicating it must be deployed first.
-#[allow(dead_code)]
-pub async fn resolve_contract_id(
-    contract_id_str: &str,
-) -> HandlerResult<ContractId> {
-    match contract_id_str {
-        "native_token" => Ok(*dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID),
-        "deployooor" => Ok(*dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID),
-        // dao_escrow is a WASM contract, not native - must be deployed first
-        "dao_escrow" => {
-            error!(target: "contract_registry", "DAO-Escrow is a WASM contract and must be deployed first");
-            Err(ContractHandlerError::ContractNotFound(
-                "DAO-Escrow is a WASM contract and must be deployed first. Native contracts: native_token, deployooor".to_string(),
-            ))
-        }
-        _ => {
-            error!(
-                target: "contract_registry",
-                "Contract lookup not yet implemented for: {}",
-                contract_id_str
-            );
-            Err(ContractHandlerError::ContractNotFound(format!(
-                "Contract '{}' not found. Available: native_token, deployooor",
-                contract_id_str
-            )))
-        }
-    }
-}
+// resolve_contract_id removed — dead code, never called.
+// Contract resolution uses the ContractRegistry struct directly via the RPC handler.
