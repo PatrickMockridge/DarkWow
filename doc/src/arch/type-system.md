@@ -184,6 +184,47 @@ outcome types (§4.1) extend the distinction principle to non-numeric
 domains — the same logic that separates `BlockHeight` from `BlockReward`
 also separates `CanonicalExtension` from `CompetingStored`.
 
+### 2.3.1 Additional Consensus Domains (extends Change 4)
+
+The original Change 4 identified three domains (block reward, PoW target,
+gas amount). The 2026-07-22 audit identified four additional consensus
+domains currently crossing module boundaries as raw `u64`. These SHALL
+be lifted to nominal newtypes following the identical pattern:
+
+**SupplyAmount(u64)** — cumulative and per-block supply in base units.
+Distinguished from `BlockReward` (what is minted per block) because the
+cumulative supply is an audit anchor, not a per-block quantity. Supply
+audit computations (`total_supply + coinbase_reward`) MUST NOT silently
+accept `total_supply + block_height`. The compiler SHALL reject cross-domain
+arithmetic.
+
+**FeeAmount(u64)** — transaction fees in base units. Distinguished from
+`BlockReward` (minted supply) and `GasAmount` (computation measure) because
+`fee = gas * gas_price` is a distinct economic domain. A function returning
+`compute_fee(gas) -> u64` allows callers to add the result to a block reward
+or supply without the compiler noticing. `compute_fee(gas) -> FeeAmount`
+makes the domain visible at every call site.
+
+**BlockTimestamp(u64)** — wall-clock time in seconds since UNIX epoch.
+Distinguished from `BlockHeight` (logical chain position) because the
+difficulty adjustment algorithm feeds timestamps into a sliding window.
+Confusing a height for a timestamp biases the target adjustment. The
+`MiningState` struct fields `last_block_time` and `template_height` are
+both `AtomicU64` — the compiler SHALL reject transposition.
+
+**MoneroBlockHeight(u64)** — a block height on the Monero blockchain.
+Distinguished from our `BlockHeight` because the two chains advance
+independently. The `BlockHeader.anchor_monero_height` field gates
+merge-mining finality — confusing our height for the Monero anchor
+height silently breaks the finality guarantee.
+
+Each SHALL derive `Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd,
+SerialEncodable, SerialDecodable`. Each SHALL implement manual serde as a
+plain JSON number (byte-identical wire format). None SHALL implement
+`From<u64>`, `Default`, `Hash`, or `Add`/`Sub` operators. Construction
+is `new(u64)` at domain entry points; extraction is `.get() -> u64` at
+display/persistence boundaries only (§8.5).
+
 ## 3. Generic Types and Capabilities
 
 A generic parameter `T` abstracts over the behavioral position of a name. This
@@ -274,6 +315,45 @@ specific `BarbId`:
 `LinearError::error_barb()` SHALL return `BarbId`, not `&str`. Callers
 match on `err.phase()` for recovery strategy — "ban peer" vs "restart node"
 vs "skip block" — without string matching.
+
+### 4.2 Error Propagation Audit Requirements
+
+The 2026-07-22 audit identified systematic error suppression patterns across
+the wallet and sync codebase. In response, the following audit requirements
+are codified as specification rules:
+
+**§4.2.1 `let _` prohibition.** `let _ = fallible_call()` SHALL NOT appear in
+any production code path. The `let _` pattern discards the Result without
+inspecting it — the error is invisible to the compiler, the logger, and the
+operator. Every Result SHALL be either:
+
+- Propagated via `?` to the caller,
+- Matched explicitly (`match` / `if let Err(e)` with a log at `warn!` or
+  `error!` level), or
+- Suppressed with `#[allow(unused_results)]` AND a comment explaining why
+  the error is intentionally ignored (e.g., "best-effort migration ALTER
+  TABLE — table may already exist").
+
+**§4.2.2 `.ok()` prohibition.** `.ok()` SHALL NOT appear in any cryptographic
+path or consensus path. `.ok()` converts `Result<T, E>` to `Option<T>`,
+discarding the error reason. This conflates "operation succeeded" with
+"operation failed for an unknown reason." In cryptographic paths (key
+derivation, AEAD decryption, commitment verification, nullifier matching)
+the reason for failure IS the signal.
+
+**§4.2.3 `unwrap_or` audit.** `unwrap_or(default)` on a fallible operation
+SHALL only appear when the default value is semantically correct for ALL
+failure modes of the operation. `chain_height().unwrap_or(0)` is prohibited
+because "database corrupted" is NOT semantically equivalent to "chain is
+empty." The compiler SHALL enforce this where the return type is a nominal
+newtype lacking `From<u64>` and `Default` — `unwrap_or(0)` becomes a type
+error because `0` cannot coerce to the newtype.
+
+**§4.2.4 typed diagnostic counters.** Every pure function that processes data
+through a pipeline of fallible stages SHALL return structured diagnostics
+counting attempts and successes at each stage (§Z: Diagnostic Transparency).
+Callers SHALL be able to distinguish "no results found" from "all attempts
+failed" by inspecting the diagnostics counters.
 
 ## 5. Authority
 
@@ -565,6 +645,35 @@ enforce validation (zero-rejection, canonical encoding, identity rejection).
 Serialization for chain persistence (serde `Serialize`/`Deserialize`) SHALL
 be implemented manually via `to_bytes()`/`from_bytes()` for each type. No
 type SHALL derive serde directly — `pallas::Base` does not implement serde.
+
+### 8.6 Wire-Layer Defense Requirements
+
+The P2P message dispatcher provides two independent defense layers at the
+wire boundary: `MAX_BYTES` (bounds check before deserialization) and
+`METERING_SCORE` (contribution to global rate limiting). A message type
+that sets both to zero has NO wire-layer protection — the payload size is
+unchecked and the message does not count toward rate limits.
+
+**§8.6.1 Layered defense.** Every P2P message type SHALL have at least one
+active wire-layer defense. `MAX_BYTES=0` (unlimited) is permitted ONLY when
+`METERING_SCORE > 0` (the message counts toward the global rate limit).
+`METERING_SCORE=0` (bypasses metering) is permitted ONLY when `MAX_BYTES > 0`
+(the dispatcher enforces a size bound). `MAX_BYTES=0` AND `METERING_SCORE=0`
+simultaneously SHALL NOT appear on any production message type.
+
+**§8.6.2 Per-type bounds.** `MAX_BYTES` SHALL be set to a value that
+accommodates the largest valid payload of that message type plus JSON
+encoding overhead. A generous bound (e.g., 10MB for event batches, 2MB
+for file chunks) is acceptable; zero (unlimited) is not. The bound is a
+defense-in-depth measure — application-level validation catches oversized
+payloads, but the wire layer SHALL reject them before allocation.
+
+**§8.6.3 Channel identity.** Each P2P channel SHALL carry exactly one
+message type. Channel name strings SHALL be sufficiently distinct that
+developer confusion between channels is unlikely. A listener subscribing
+to a channel SHALL be able to exhaustively handle every message that can
+arrive on that channel — the type system SHALL guarantee this by making
+the channel type-parametric.
 
 ## 9. Concurrent Execution Model
 
