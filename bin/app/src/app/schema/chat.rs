@@ -1256,8 +1256,7 @@ pub async fn make(
     layer_node.push_task(editz_text_task);
 }
 
-// Just for testing
-#[allow(dead_code)]
+#[cfg(test)]
 pub(super) fn populate_tree(tree: &sled::Tree) {
     use chrono::{NaiveDate, NaiveDateTime};
     let chat_txt = include_str!("../../../data/chat.txt");

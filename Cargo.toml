@@ -31,11 +31,13 @@ members = [
     "bin/tau/tau_pallas",
     #"bin/vanityaddr",  # on hold — needs Promissory Note ContractId architecture decision
     "bin/lilith",
-    "bin/xmr_relayer",
-    "bin/zcash_relayer",
-    "bin/aztec_relayer",
-    "bin/litecoin_relayer",
-    "bin/universal_relayer",
+    # Relayer binaries excluded from workspace — all stub code (#![allow(dead_code)]).
+    # Re-add when withdrawal execution and slashing are wired.
+    # "bin/xmr_relayer",
+    # "bin/zcash_relayer",
+    # "bin/aztec_relayer",
+    # "bin/litecoin_relayer",
+    # "bin/universal_relayer",
 
     "src/sdk",
     "src/sdk/python",

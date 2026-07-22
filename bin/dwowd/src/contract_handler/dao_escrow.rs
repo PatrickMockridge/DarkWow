@@ -106,19 +106,13 @@ impl ContractHandler for DaoEscrowContractHandler {
     }
 
     fn build_params(&self, function: &str, _params: JsonValue) -> HandlerResult<Vec<u8>> {
-        let selector = self
+        let _selector = self
             .function_selector(function)
             .ok_or_else(|| ContractHandlerError::FunctionNotFound(function.to_string()))?;
 
-        // TODO: Full calldata building requires serializing params structs.
-        // The dao_escrow contract has pre-existing bugs preventing this.
-        // For now, return just the selector.
-        let calldata: Vec<u8> = vec![];
-
-        // Prepend function selector
-        let mut result = vec![selector];
-        result.extend(calldata);
-        Ok(result)
+        Err(ContractHandlerError::NotImplemented(format!(
+            "dao_escrow::{} — parameter serialization not yet implemented", function
+        )))
     }
 
     fn supported_functions(&self) -> Vec<&'static str> {

@@ -80,19 +80,13 @@ impl ContractHandler for NativeTokenContractHandler {
     }
 
     fn build_params(&self, function: &str, _params: JsonValue) -> HandlerResult<Vec<u8>> {
-        let selector = self
+        let _selector = self
             .function_selector(function)
             .ok_or_else(|| ContractHandlerError::FunctionNotFound(function.to_string()))?;
 
-        // Full calldata building requires serializing params structs per function.
-        // The wallet handles ZK proof generation, so we return just the selector
-        // with empty params for now.
-        let calldata: Vec<u8> = vec![];
-
-        // Prepend function selector
-        let mut result = vec![selector];
-        result.extend(calldata);
-        Ok(result)
+        Err(ContractHandlerError::NotImplemented(format!(
+            "native_token::{} — parameter serialization not yet implemented", function
+        )))
     }
 
     fn supported_functions(&self) -> Vec<&'static str> {

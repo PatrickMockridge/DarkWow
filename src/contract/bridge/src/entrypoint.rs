@@ -467,19 +467,12 @@ fn verify_xmr_deposit(_cid: ContractId, proof: &XmrDepositProof) -> ContractResu
         return Err(BridgeError::InvalidCommitment.into())
     }
 
-    // In production: Verify DLEq proof
-    // DLEq proves: the prover knows x such that:
-    // - Y1 = x * G1 (generator on curve 1)
-    // - Y2 = x * G2 (generator on curve 2)
-    //
-    // For Monero one-time addresses, this proves ownership of the private key
-    // without revealing the key.
-    //
-    // The DLEq verification would check:
-    // - challenge = Hash(G1, G2, Y1, Y2, commitment1, commitment2)
-    // - response = secret * G1 - challenge * commitment1
-    // - etc.
-    msg!("[bridge::verify_xmr_deposit] DLEq proof verification (stubbed for v1)");
+    // DLEq proof verification NOT YET IMPLEMENTED.
+    // This is a security-critical gap: without DLEq, one-time address ownership
+    // is not cryptographically verified. Bridge deposits trust the caller.
+    // See doc/src/arch/zk/dleq.md for the planned implementation.
+    // FIXME(dleq): implement DLEq proof verification before any mainnet bridge deployment
+    msg!("[bridge::verify_xmr_deposit] WARNING: DLEq proof verification not implemented — deposit accepted without cryptographic proof of address ownership");
 
     // In production: Verify Merkle proof to coinbase
     // This proves the block is in the main Monero chain

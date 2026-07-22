@@ -48,6 +48,8 @@ pub enum ContractHandlerError {
     SerializationFailed(String),
     #[error("Invalid params: {0}")]
     InvalidParams(String),
+    #[error("Not yet implemented: {0}")]
+    NotImplemented(String),
 }
 
 /// Trait for contract handlers.
