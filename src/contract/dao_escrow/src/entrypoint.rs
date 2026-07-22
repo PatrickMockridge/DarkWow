@@ -1109,7 +1109,7 @@ fn vote_claim_get_metadata(
     };
 
     let cap_id_fp = pallas::Base::from_repr(params.capability_proof.capability_id).into_option()
-        .unwrap_or(pallas::Base::zero());
+        .expect("Non-canonical capability_id bytes");
 
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_VOTE_CLAIM_NS.to_string(),
@@ -1139,7 +1139,7 @@ fn verify_member_cap_get_metadata(
     };
 
     let cap_id_fp = pallas::Base::from_repr(params.capability_proof.capability_id).into_option()
-        .unwrap_or(pallas::Base::zero());
+        .expect("Non-canonical capability_id bytes");
 
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_VERIFY_MEMBER_CAP_NS.to_string(),
@@ -1168,7 +1168,7 @@ fn resolve_dispute_get_metadata(
     };
 
     let cap_id_fp = pallas::Base::from_repr(params.capability_proof.capability_id).into_option()
-        .unwrap_or(pallas::Base::zero());
+        .expect("Non-canonical capability_id bytes");
 
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_RESOLVE_DISPUTE_NS.to_string(),

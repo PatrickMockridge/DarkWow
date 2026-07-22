@@ -153,7 +153,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         AttestationFunction::CreateAttestationV1 => {
-            let params: CreateAttestationParamsV1 = deserialize(&self_.data[1..])?;
+            let params: CreateAttestationParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[attestation::get_metadata] Error: Failed to deserialize CreateAttestationParamsV1: {:?}", e);
+                    return Ok(());
+                }
+            };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V1.to_string(),
                 {
@@ -163,7 +169,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::CreateClaimV1 => {
-            let params: CreateClaimParamsV1 = deserialize(&self_.data[1..])?;
+            let params: CreateClaimParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[attestation::get_metadata] Error: Failed to deserialize CreateClaimParamsV1: {:?}", e);
+                    return Ok(());
+                }
+            };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V1.to_string(),
                 {
@@ -173,7 +185,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::VerifyClaimV1 => {
-            let params: VerifyClaimParamsV1 = deserialize(&self_.data[1..])?;
+            let params: VerifyClaimParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[attestation::get_metadata] Error: Failed to deserialize VerifyClaimParamsV1: {:?}", e);
+                    return Ok(());
+                }
+            };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V1.to_string(),
                 vec![
@@ -185,7 +203,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::ConsumeClaimV1 => {
-            let params: ConsumeClaimParamsV1 = deserialize(&self_.data[1..])?;
+            let params: ConsumeClaimParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[attestation::get_metadata] Error: Failed to deserialize ConsumeClaimParamsV1: {:?}", e);
+                    return Ok(());
+                }
+            };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CONSUME_CLAIM_NS_V1.to_string(),
                 {
@@ -199,14 +223,26 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::CheckNotRevokedV1 => {
-            let params: CheckNotRevokedParamsV1 = deserialize(&self_.data[1..])?;
+            let params: CheckNotRevokedParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[attestation::get_metadata] Error: Failed to deserialize CheckNotRevokedParamsV1: {:?}", e);
+                    return Ok(());
+                }
+            };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CHECK_NOT_REVOKED_NS_V1.to_string(),
                 vec![params.revocation_root, params.nonce],
             ));
         }
         AttestationFunction::DelegateAttestationV1 => {
-            let params: DelegateAttestationParamsV1 = deserialize(&self_.data[1..])?;
+            let params: DelegateAttestationParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[attestation::get_metadata] Error: Failed to deserialize DelegateAttestationParamsV1: {:?}", e);
+                    return Ok(());
+                }
+            };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V1.to_string(),
                 {
@@ -229,7 +265,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::VerifyChainV1 => {
-            let params: VerifyChainParamsV1 = deserialize(&self_.data[1..])?;
+            let params: VerifyChainParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[attestation::get_metadata] Error: Failed to deserialize VerifyChainParamsV1: {:?}", e);
+                    return Ok(());
+                }
+            };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_VERIFY_CHAIN_NS_V1.to_string(),
                 vec![
@@ -242,7 +284,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::UpdateDelegationV1 => {
-            let params: UpdateDelegationParamsV1 = deserialize(&self_.data[1..])?;
+            let params: UpdateDelegationParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[attestation::get_metadata] Error: Failed to deserialize UpdateDelegationParamsV1: {:?}", e);
+                    return Ok(());
+                }
+            };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V1.to_string(),
                 vec![
@@ -257,7 +305,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::AttestSlashV1 => {
-            let params: AttestSlashParamsV1 = deserialize(&self_.data[1..])?;
+            let params: AttestSlashParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[attestation::get_metadata] Error: Failed to deserialize AttestSlashParamsV1: {:?}", e);
+                    return Ok(());
+                }
+            };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V1.to_string(),
                 {
@@ -267,7 +321,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::CommitFeeScheduleV1 => {
-            let params: CommitFeeScheduleParamsV1 = deserialize(&self_.data[1..])?;
+            let params: CommitFeeScheduleParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[attestation::get_metadata] Error: Failed to deserialize CommitFeeScheduleParamsV1: {:?}", e);
+                    return Ok(());
+                }
+            };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V1.to_string(),
                 {
