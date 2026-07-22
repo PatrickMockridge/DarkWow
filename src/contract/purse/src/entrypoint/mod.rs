@@ -55,15 +55,21 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         PurseFunction::DepositV1 => {
-            let params: DepositParamsV1 = deserialize(&self_.data[1..])?;
+            let params: DepositParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p, Err(e) => { msg!("[purse::get_metadata] Error: Failed to deserialize DepositParamsV1: {:?}", e); return Ok(()); }
+            };
             purse_deposit_get_metadata_v1(params)?
         }
         PurseFunction::WithdrawV1 => {
-            let params: WithdrawParamsV1 = deserialize(&self_.data[1..])?;
+            let params: WithdrawParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p, Err(e) => { msg!("[purse::get_metadata] Error: Failed to deserialize WithdrawParamsV1: {:?}", e); return Ok(()); }
+            };
             purse_withdraw_get_metadata_v1(params)?
         }
         PurseFunction::BalanceV1 => {
-            let params: BalanceParamsV1 = deserialize(&self_.data[1..])?;
+            let params: BalanceParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p, Err(e) => { msg!("[purse::get_metadata] Error: Failed to deserialize BalanceParamsV1: {:?}", e); return Ok(()); }
+            };
             purse_balance_get_metadata_v1(params)?
         }
         _ => vec![],
@@ -81,7 +87,11 @@ fn purse_deposit_get_metadata_v1(params: DepositParamsV1) -> Result<Vec<u8>, Con
     }
     let old_coords = old_coords.unwrap();
     let new_coords = new_coords.unwrap();
-    zk_inputs.push((PURSE_CONTRACT_ZKAS_DEPOSIT_NS_V1.to_string(), vec![params.purse_id.inner(), *old_coords.x(), *old_coords.y(), *new_coords.x(), *new_coords.y()]));
+    zk_inputs.push((PURSE_CONTRACT_ZKAS_DEPOSIT_NS_V1.to_string(), vec![
+        params.purse_id.inner(), *old_coords.x(), *old_coords.y(),
+        *new_coords.x(), *new_coords.y(),
+        params.tx_binding, params.tx_nonce,
+    ]));
     let mut metadata = vec![];
     zk_inputs.encode(&mut metadata)?;
     let sigs: Vec<pallas::Base> = vec![];
@@ -98,7 +108,11 @@ fn purse_withdraw_get_metadata_v1(params: WithdrawParamsV1) -> Result<Vec<u8>, C
     }
     let old_coords = old_coords.unwrap();
     let new_coords = new_coords.unwrap();
-    zk_inputs.push((PURSE_CONTRACT_ZKAS_WITHDRAW_NS_V1.to_string(), vec![params.purse_id.inner(), *old_coords.x(), *old_coords.y(), *new_coords.x(), *new_coords.y(), params.nullifier.inner()]));
+    zk_inputs.push((PURSE_CONTRACT_ZKAS_WITHDRAW_NS_V1.to_string(), vec![
+        params.nullifier.inner(), params.purse_id.inner(),
+        *old_coords.x(), *old_coords.y(), *new_coords.x(), *new_coords.y(),
+        params.tx_binding, params.tx_nonce,
+    ]));
     let mut metadata = vec![];
     zk_inputs.encode(&mut metadata)?;
     let sigs: Vec<pallas::Base> = vec![];
@@ -113,7 +127,10 @@ fn purse_balance_get_metadata_v1(params: BalanceParamsV1) -> Result<Vec<u8>, Con
         return Err(ContractError::InvalidFunction);
     }
     let coords = coords.unwrap();
-    zk_inputs.push((PURSE_CONTRACT_ZKAS_BALANCE_NS_V1.to_string(), vec![params.purse_id.inner(), *coords.x(), *coords.y(), params.token_commit]));
+    zk_inputs.push((PURSE_CONTRACT_ZKAS_BALANCE_NS_V1.to_string(), vec![
+        params.purse_id.inner(), *coords.x(), *coords.y(), params.token_commit,
+        params.tx_binding, params.tx_nonce,
+    ]));
     let mut metadata = vec![];
     zk_inputs.encode(&mut metadata)?;
     let sigs: Vec<pallas::Base> = vec![];
@@ -132,7 +149,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: DepositParamsV1 = deserialize(&self_.data.data[1..])?;
             msg!("[purse::deposit_v1] Deposit {} to purse {:?}", params.deposit_amount, params.purse_id);
             let update = DepositUpdateV1 { purse_id: params.purse_id, new_balance_commit: params.new_balance_commit, deposit_amount: params.deposit_amount };
-            let _ = wasm::util::set_return_data(&serialize(&(PurseFunction::DepositV1 as u8, update)));
+            wasm::util::set_return_data(&serialize(&(PurseFunction::DepositV1 as u8, update)))?;
         }
         PurseFunction::WithdrawV1 => {
             let params: WithdrawParamsV1 = deserialize(&self_.data.data[1..])?;
@@ -142,7 +159,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 return Err(PurseError::DuplicateNullifier.into());
             }
             let update = WithdrawUpdateV1 { purse_id: params.purse_id, nullifier: params.nullifier, new_balance_commit: params.new_balance_commit, withdraw_amount: params.withdraw_amount };
-            let _ = wasm::util::set_return_data(&serialize(&(PurseFunction::WithdrawV1 as u8, update)));
+            wasm::util::set_return_data(&serialize(&(PurseFunction::WithdrawV1 as u8, update)))?;
         }
         PurseFunction::BalanceV1 => {
             let _params: BalanceParamsV1 = deserialize(&self_.data.data[1..])?;
@@ -180,6 +197,13 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             }
             Ok(())
         }
-        _ => Ok(()),
+        PurseFunction::BalanceV1 => {
+            // BalanceV1 is read-only; no state updates needed.
+            Ok(())
+        }
+        _ => {
+            msg!("[purse::process_update] Error: Unknown function selector");
+            Err(ContractError::InvalidFunction)
+        }
     }
 }

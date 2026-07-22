@@ -59,7 +59,7 @@ use dwow_sdk::{
 use dwow_serial::{deserialize, serialize, Encodable, WriteExt};
 
 use crate::{
-    error::PromissoryNoteError,
+    error::{ContractError, PromissoryNoteError},
     model::{
         BurnParamsV1, BurnSpendHookPayload, BurnUpdateV1,
         MintParamsV1, MintUpdateV1, OtcSwapParamsV1,
@@ -246,7 +246,7 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 /// Extract (x, y) base-field coordinates from a pallas::Point for ZK public inputs.
 fn point_coords(pt: pallas::Point) -> (pallas::Base, pallas::Base) {
     let affine = pt.to_affine();
-    let coords = affine.coordinates().unwrap();
+    let coords = affine.coordinates().expect("point_coords: identity point — ZK circuit must constrain non-identity for value commitments");
     (*coords.x(), *coords.y())
 }
 
@@ -270,6 +270,8 @@ fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
             vc_x,
             vc_y,
             params.spend_hook.inner(),
+            params.tx_binding,
+            params.tx_nonce,
         ],
     ));
 
@@ -290,7 +292,8 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
 
     let (vc_x, vc_y) = point_coords(params.value_commit);
 
-    // IssueV1 circuit expects: token_root, mint_public, coin, value_commit_x, value_commit_y, token_id, spend_hook
+    // IssueV1 circuit expects: token_root, mint_public, coin, vc_x, vc_y, token_id,
+    //                          spend_hook, tx_binding, tx_nonce
     zk_public_inputs.push((
         PROMISSORY_NOTE_CONTRACT_ZKAS_ISSUE_NS_V1.to_string(),
         vec![
@@ -301,6 +304,8 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
             vc_y,
             params.token_id.inner(),
             params.spend_hook.inner(),
+            params.tx_binding,
+            params.tx_nonce,
         ],
     ));
 
@@ -339,6 +344,8 @@ fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
                 input.user_data_enc,
                 input.spend_hook.inner(),
                 input.signature_public,
+                params.tx_binding,
+                params.tx_nonce,
             ],
         ));
     }
@@ -377,17 +384,20 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
                 input.user_data_enc,
                 input.spend_hook.inner(),
                 input.signature_public,
+                params.tx_binding,
+                params.tx_nonce,
             ],
         ));
     }
 
-    // BlindOutput proofs (one per output) — includes spend_hook
+    // BlindOutput proofs (one per output) — includes spend_hook, tx_binding, tx_nonce
     for output in &params.outputs {
         let (vc_x, vc_y) = point_coords(output.value_commit);
 
         zk_public_inputs.push((
             PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V1.to_string(),
-            vec![output.coin.inner(), vc_x, vc_y, output.token_commit, output.spend_hook.inner()],
+            vec![output.coin.inner(), vc_x, vc_y, output.token_commit,
+                 output.spend_hook.inner(), params.tx_binding, params.tx_nonce],
         ));
     }
 
@@ -550,9 +560,16 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     let info_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_INFO_TREE)?;
     let mut supply_key = PROMISSORY_NOTE_CONTRACT_TOTAL_SUPPLY.to_vec();
     supply_key.extend_from_slice(&serialize(&params.token_id));
-    let current_count: u64 = wasm::db::db_get(info_db, &supply_key)?
-        .map(|data| deserialize(&data).unwrap_or(0))
-        .unwrap_or(0);
+    let current_count: u64 = match wasm::db::db_get(info_db, &supply_key)? {
+        Some(data) => deserialize(&data).map_err(|e| {
+            msg!("[promissory_note::mint_v1] Error: Corrupt state — coin count deserialization failed: {:?}", e);
+            ContractError::IoError("Corrupt state: coin count deserialization failed".to_string())
+        })?,
+        None => {
+            // First mint for this token type — zero coins before first issue.
+            0
+        }
+    };
     let new_coin_count = current_count.saturating_add(1);
 
     let update = MintUpdateV1 {
@@ -907,17 +924,21 @@ fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
             params.input.user_data_enc,
             params.input.spend_hook.inner(),
             params.input.signature_public,
+            params.tx_binding,
+            params.tx_nonce,
         ],
     ));
 
     // Redeem_V1 proof for the receipt coin (value=0).
-    // Public input order: coin, vc_x, vc_y, token_commit, coin_value, spend_hook
+    // Public input order: coin, vc_x, vc_y, token_commit, coin_value,
+    //                      tx_binding, tx_nonce, spend_hook
     let coin_value = pallas::Base::zero();
     let (rvc_x, rvc_y) = point_coords(params.output.value_commit);
 
     zk_public_inputs.push((
         PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V1.to_string(),
-        vec![params.output.coin.inner(), rvc_x, rvc_y, params.output.token_commit, coin_value, params.output.spend_hook.inner()],
+        vec![params.output.coin.inner(), rvc_x, rvc_y, params.output.token_commit,
+             coin_value, params.tx_binding, params.tx_nonce, params.output.spend_hook.inner()],
     ));
 
     let mut metadata = vec![];
@@ -1032,17 +1053,20 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
                 input.user_data_enc,
                 input.spend_hook.inner(),
                 input.signature_public,
+                params.tx_binding,
+                params.tx_nonce,
             ],
         ));
     }
 
-    // BlindOutput proofs (one per output) — includes spend_hook
+    // BlindOutput proofs (one per output) — includes spend_hook, tx_binding, tx_nonce
     for output in &params.outputs {
         let (vc_x, vc_y) = point_coords(output.value_commit);
 
         zk_public_inputs.push((
             PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V1.to_string(),
-            vec![output.coin.inner(), vc_x, vc_y, output.token_commit, output.spend_hook.inner()],
+            vec![output.coin.inner(), vc_x, vc_y, output.token_commit,
+                 output.spend_hook.inner(), params.tx_binding, params.tx_nonce],
         ));
     }
 

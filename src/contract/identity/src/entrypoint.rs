@@ -39,6 +39,7 @@ use dwow_serial::{deserialize, serialize, Encodable};
 use dwow_sdk::pasta::pallas::Base;
 
 use crate::error::IdentityError;
+use dwow_sdk::error::ContractError;
 use crate::model::*;
 use crate::IdentityFunction;
 use crate::{
@@ -888,10 +889,11 @@ fn process_create_claim_dag_instruction(
     // Verify all credentials in the path are valid
     let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
 
-    assert!(
-        params.credentials.len() <= crate::IDENTITY_CONTRACT_MAX_DAG_CREDENTIALS,
-        "Too many DAG credentials"
-    );
+    if params.credentials.len() > crate::IDENTITY_CONTRACT_MAX_DAG_CREDENTIALS {
+        msg!("[identity::create_claim_dag] Error: Too many DAG credentials ({} > max {})",
+            params.credentials.len(), crate::IDENTITY_CONTRACT_MAX_DAG_CREDENTIALS);
+        return Err(ContractError::IoError("Too many DAG credentials".to_string()));
+    }
     for dag_cred in &params.credentials {
         let nullifier_bytes = serialize(&dag_cred.nullifier);
         let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?

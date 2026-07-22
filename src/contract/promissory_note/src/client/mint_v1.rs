@@ -195,6 +195,8 @@ impl MintCallBuilder {
                 token_registry_root,
                 mint_public,
                 spend_hook: FuncId::from(self.input.spend_hook),
+                tx_binding: pallas::Base::zero(),
+                tx_nonce: self.tx_nonce,
             },
             proofs: vec![proof],
         })

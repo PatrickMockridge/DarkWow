@@ -528,7 +528,10 @@ fn process_spend_hook(cid: ContractId, payload: &[u8]) -> ContractResult {
             buf.copy_from_slice(&v);
             buf
         })
-        .unwrap_or([0u8; 32]);
+        .ok_or_else(|| {
+            msg!("[stablecoin::process_spend_hook] Error: Promissory Note ContractId not configured — uninitialized state");
+            ContractError::IoError("Missing state: PN ContractId".to_string())
+        })?;
 
     if cb.caller_contract_id.to_bytes() != stored_pn_cid {
         msg!("[stablecoin::process_spend_hook] Error: Callback from unknown PN contract");

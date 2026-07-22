@@ -50,11 +50,15 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         BoxFunction::PutV1 => {
-            let params: PutParamsV1 = deserialize(&self_.data[1..])?;
+            let params: PutParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p, Err(e) => { msg!("[box::get_metadata] Error: Failed to deserialize PutParamsV1: {:?}", e); return Ok(()); }
+            };
             box_put_get_metadata_v1(params)?
         }
         BoxFunction::TakeV1 => {
-            let params: TakeParamsV1 = deserialize(&self_.data[1..])?;
+            let params: TakeParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p, Err(e) => { msg!("[box::get_metadata] Error: Failed to deserialize TakeParamsV1: {:?}", e); return Ok(()); }
+            };
             box_take_get_metadata_v1(params)?
         }
         _ => vec![],
@@ -65,22 +69,26 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
 fn box_put_get_metadata_v1(params: PutParamsV1) -> Result<Vec<u8>, ContractError> {
     let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    zk_inputs.push((BOX_CONTRACT_ZKAS_PUT_NS_V1.to_string(), vec![params.box_id.inner(), params.old_contents_commit, params.new_contents_commit]));
+    zk_inputs.push((BOX_CONTRACT_ZKAS_PUT_NS_V1.to_string(), vec![
+        params.box_id.inner(), params.old_contents_commit, params.new_contents_commit,
+        params.tx_binding, params.tx_nonce,
+    ]));
     let mut metadata = vec![];
     zk_inputs.encode(&mut metadata)?;
-    let (ox, oy) = params.owner.xy().expect("pk not identity");
-    let sigs: Vec<pallas::Base> = vec![ox, oy];
+    let sigs: Vec<dwow_sdk::crypto::PublicKey> = vec![params.owner];
     sigs.encode(&mut metadata)?;
     Ok(metadata)
 }
 
 fn box_take_get_metadata_v1(params: TakeParamsV1) -> Result<Vec<u8>, ContractError> {
     let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    zk_inputs.push((BOX_CONTRACT_ZKAS_TAKE_NS_V1.to_string(), vec![params.box_id.inner(), params.contents_commit, params.nullifier.inner()]));
+    zk_inputs.push((BOX_CONTRACT_ZKAS_TAKE_NS_V1.to_string(), vec![
+        params.nullifier.inner(), params.box_id.inner(),
+        params.tx_binding, params.tx_nonce, params.contents_commit,
+    ]));
     let mut metadata = vec![];
     zk_inputs.encode(&mut metadata)?;
-    let (ox, oy) = params.owner.xy().expect("pk not identity");
-    let sigs: Vec<pallas::Base> = vec![ox, oy];
+    let sigs: Vec<dwow_sdk::crypto::PublicKey> = vec![params.owner];
     sigs.encode(&mut metadata)?;
     Ok(metadata)
 }
@@ -99,7 +107,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 return Err(BoxError::BoxNotEmpty.into());
             }
             let update = PutUpdateV1 { box_id: params.box_id, new_contents_commit: params.new_contents_commit };
-            let _ = wasm::util::set_return_data(&serialize(&(BoxFunction::PutV1 as u8, update)));
+            wasm::util::set_return_data(&serialize(&(BoxFunction::PutV1 as u8, update)))?;
         }
         BoxFunction::TakeV1 => {
             let params: TakeParamsV1 = deserialize(&self_.data.data[1..])?;
@@ -109,7 +117,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 return Err(BoxError::DuplicateNullifier.into());
             }
             let update = TakeUpdateV1 { box_id: params.box_id, nullifier: params.nullifier };
-            let _ = wasm::util::set_return_data(&serialize(&(BoxFunction::TakeV1 as u8, update)));
+            wasm::util::set_return_data(&serialize(&(BoxFunction::TakeV1 as u8, update)))?;
         }
         _ => return Err(ContractError::InvalidFunction),
     };
@@ -140,6 +148,9 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             }
             Ok(())
         }
-        _ => Ok(()),
+        _ => {
+            msg!("[box::process_update] Error: Unknown function selector");
+            Err(ContractError::InvalidFunction)
+        }
     }
 }

@@ -172,8 +172,10 @@ impl BurnCallBuilder {
             });
         }
 
+        let tx_nonce = inputs.first().map(|i| i.tx_nonce).unwrap_or(pallas::Base::zero());
+
         Ok(BurnCallDebris {
-            params: BurnParamsV1 { inputs },
+            params: BurnParamsV1 { inputs, tx_binding: pallas::Base::zero(), tx_nonce },
             proofs,
         })
     }

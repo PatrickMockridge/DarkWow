@@ -35,6 +35,8 @@ pub struct DepositParamsV1 {
     pub new_balance_commit: pallas::Point,
     pub owner: PublicKey,
     pub proof: Vec<u8>,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 /// Deposit update.
@@ -55,6 +57,8 @@ pub struct WithdrawParamsV1 {
     pub nullifier: Nullifier,
     pub owner: PublicKey,
     pub proof: Vec<u8>,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 /// Withdraw update.
@@ -75,4 +79,6 @@ pub struct BalanceParamsV1 {
     pub token_commit: pallas::Base,
     pub owner: PublicKey,
     pub proof: Vec<u8>,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }

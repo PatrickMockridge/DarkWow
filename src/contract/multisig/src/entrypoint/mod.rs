@@ -56,33 +56,50 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let func = MultiSigFunction::try_from(self_.data[0])?;
     let metadata: Vec<u8> = match func {
         MultiSigFunction::CreateGroupV1 => {
-            let params: CreateGroupParamsV1 = deserialize(&self_.data[1..])?;
+            let params: CreateGroupParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p, Err(e) => { msg!("[multisig::get_metadata] Error: Failed to deserialize CreateGroupParamsV1: {:?}", e); return Ok(()); }
+            };
             let t = pallas::Base::from(params.threshold as u64);
             let n = pallas::Base::from(params.pubkeys.len() as u64);
             let first_pk = params.pubkeys[0];
-            // from_bytes rejects identity, so xy() is always Some
             let (fx, fy) = first_pk.xy().expect("pk not identity");
             let group_id = poseidon_hash([fx, fy, t, n]);
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            zk_inputs.push((MULTISIG_CONTRACT_ZKAS_CREATE_GROUP_NS_V1.to_string(), vec![group_id, t, n]));
+            zk_inputs.push((MULTISIG_CONTRACT_ZKAS_CREATE_GROUP_NS_V1.to_string(), vec![
+                params.tx_binding, params.tx_nonce, group_id, t, n,
+            ]));
+            let sigs: Vec<PublicKey> = params.pubkeys.clone();
             let mut meta = vec![];
             zk_inputs.encode(&mut meta)?;
+            sigs.encode(&mut meta)?;
             meta
         }
         MultiSigFunction::SignV1 => {
-            let params: SignParamsV1 = deserialize(&self_.data[1..])?;
+            let params: SignParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p, Err(e) => { msg!("[multisig::get_metadata] Error: Failed to deserialize SignParamsV1: {:?}", e); return Ok(()); }
+            };
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            zk_inputs.push((MULTISIG_CONTRACT_ZKAS_SIGN_NS_V1.to_string(), vec![params.group_id.inner(), params.message_hash]));
+            zk_inputs.push((MULTISIG_CONTRACT_ZKAS_SIGN_NS_V1.to_string(), vec![
+                params.tx_binding, params.tx_nonce, params.group_id.inner(), params.message_hash,
+            ]));
+            let sigs: Vec<PublicKey> = vec![];
             let mut meta = vec![];
             zk_inputs.encode(&mut meta)?;
+            sigs.encode(&mut meta)?;
             meta
         }
         MultiSigFunction::FinalizeV1 => {
-            let params: FinalizeParamsV1 = deserialize(&self_.data[1..])?;
+            let params: FinalizeParamsV1 = match deserialize(&self_.data[1..]) {
+                Ok(p) => p, Err(e) => { msg!("[multisig::get_metadata] Error: Failed to deserialize FinalizeParamsV1: {:?}", e); return Ok(()); }
+            };
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            zk_inputs.push((MULTISIG_CONTRACT_ZKAS_FINALIZE_NS_V1.to_string(), vec![params.group_id.inner(), params.message_hash]));
+            zk_inputs.push((MULTISIG_CONTRACT_ZKAS_FINALIZE_NS_V1.to_string(), vec![
+                params.tx_binding, params.tx_nonce, params.group_id.inner(), params.message_hash,
+            ]));
+            let sigs: Vec<PublicKey> = vec![];
             let mut meta = vec![];
             zk_inputs.encode(&mut meta)?;
+            sigs.encode(&mut meta)?;
             meta
         }
         _ => vec![],
@@ -111,9 +128,9 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             if wasm::db::db_contains_key(groups_db, &serialize(&group_id))? {
                 return Err(MultiSigError::GroupAlreadyExists.into());
             }
-            let _ = wasm::util::set_return_data(&serialize(&(MultiSigFunction::CreateGroupV1 as u8, CreateGroupUpdateV1 {
+            wasm::util::set_return_data(&serialize(&(MultiSigFunction::CreateGroupV1 as u8, CreateGroupUpdateV1 {
                 group_id, pubkeys, threshold: params.threshold, total_keys: params.pubkeys.len() as u8,
-            })));
+            })))?;
         }
         MultiSigFunction::SignV1 => {
             let params: SignParamsV1 = deserialize(&self_.data.data[1..])?;
@@ -127,10 +144,10 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             if wasm::db::db_contains_key(nullifiers_db, &serialize(&nullifier))? {
                 return Err(MultiSigError::DuplicateNullifier.into());
             }
-            let _ = wasm::util::set_return_data(&serialize(&(MultiSigFunction::SignV1 as u8, SignUpdateV1 {
+            wasm::util::set_return_data(&serialize(&(MultiSigFunction::SignV1 as u8, SignUpdateV1 {
                 group_id: params.group_id, message_hash: params.message_hash,
                 nullifier,
-            })));
+            })))?;
         }
         MultiSigFunction::FinalizeV1 => {
             let params: FinalizeParamsV1 = deserialize(&self_.data.data[1..])?;
@@ -150,11 +167,11 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 return Err(MultiSigError::InsufficientSignatures.into());
             }
             let approval_commit = poseidon_hash([params.group_id.inner(), params.message_hash]);
-            let _ = wasm::util::set_return_data(&serialize(&(MultiSigFunction::FinalizeV1 as u8, FinalizeUpdateV1 {
+            wasm::util::set_return_data(&serialize(&(MultiSigFunction::FinalizeV1 as u8, FinalizeUpdateV1 {
                 group_id: params.group_id, message_hash: params.message_hash,
                 approval_commit,
                 consumed_nullifiers: consumed,
-            })));
+            })))?;
         }
         _ => return Err(ContractError::InvalidFunction),
     };
@@ -195,6 +212,9 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             }
             Ok(())
         }
-        _ => Ok(()),
+        _ => {
+            msg!("[multisig::process_update] Error: Unknown function selector");
+            Err(ContractError::InvalidFunction)
+        },
     }
 }

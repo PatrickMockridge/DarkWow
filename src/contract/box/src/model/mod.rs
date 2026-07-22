@@ -39,6 +39,8 @@ pub struct PutParamsV1 {
     pub new_contents_commit: pallas::Base,
     pub owner: PublicKey,
     pub proof: Vec<u8>,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 /// Put update.
@@ -56,6 +58,8 @@ pub struct TakeParamsV1 {
     pub nullifier: Nullifier,
     pub owner: PublicKey,
     pub proof: Vec<u8>,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 /// Take update.

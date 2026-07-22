@@ -287,8 +287,11 @@ impl TransferCallBuilder {
             });
         }
 
+        let tx_nonce = self.inputs.first().map(|i| i.tx_nonce).unwrap_or(pallas::Base::zero());
+
         Ok(TransferCallDebris {
-            params: TransferParamsV1 { inputs, outputs },
+            params: TransferParamsV1 { inputs, outputs,
+                tx_binding: pallas::Base::zero(), tx_nonce },
             proofs,
         })
     }

@@ -51,6 +51,8 @@ pub struct CreateGroupParamsV1 {
     pub pubkeys: Vec<PublicKey>,
     pub threshold: u8,
     pub proof: Vec<u8>,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -70,6 +72,8 @@ pub struct SignParamsV1 {
     pub group_id: GroupId,
     pub message_hash: pallas::Base,
     pub proof: Vec<u8>,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -88,6 +92,8 @@ pub struct FinalizeParamsV1 {
     pub group_id: GroupId,
     pub message_hash: pallas::Base,
     pub proof: Vec<u8>,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]

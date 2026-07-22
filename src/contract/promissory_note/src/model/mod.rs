@@ -242,6 +242,10 @@ pub struct TokenMintParamsV1 {
     pub token_commit: pallas::Base,
     /// Spend hook for the initial coin
     pub spend_hook: FuncId,
+    /// Transaction binding (poseidon_hash(tx_commitment, tx_nonce))
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce
+    pub tx_nonce: pallas::Base,
 }
 
 /// State update for RegisterTypeV1
@@ -276,6 +280,10 @@ pub struct MintParamsV1 {
     pub mint_public: pallas::Base,
     /// Spend hook for the newly minted coin
     pub spend_hook: FuncId,
+    /// Transaction binding (poseidon_hash(tx_commitment, tx_nonce))
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce
+    pub tx_nonce: pallas::Base,
 }
 
 /// State update for IssueV1
@@ -294,6 +302,10 @@ pub struct MintUpdateV1 {
 pub struct BurnParamsV1 {
     /// Anonymous inputs being burned
     pub inputs: Vec<Input>,
+    /// Transaction binding (poseidon_hash(tx_commitment, tx_nonce))
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce
+    pub tx_nonce: pallas::Base,
 }
 
 /// State update for RevokeV1
@@ -308,6 +320,10 @@ pub struct BurnUpdateV1 {
 pub struct TransferParamsV1 {
     pub inputs: Vec<Input>,
     pub outputs: Vec<Output>,
+    /// Transaction binding (poseidon_hash(tx_commitment, tx_nonce))
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce
+    pub tx_nonce: pallas::Base,
 }
 
 /// State update for TransferV1
@@ -336,6 +352,10 @@ pub struct RedeemParamsV1 {
     pub input: Input,
     /// Receipt coin (blind output proof, value = 0)
     pub output: Output,
+    /// Transaction binding (poseidon_hash(tx_commitment, tx_nonce))
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce
+    pub tx_nonce: pallas::Base,
 }
 
 /// State update for RedeemV1
@@ -352,6 +372,10 @@ pub struct RedeemUpdateV1 {
 pub struct OtcSwapParamsV1 {
     pub inputs: Vec<Input>,
     pub outputs: Vec<Output>,
+    /// Transaction binding (poseidon_hash(tx_commitment, tx_nonce))
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce
+    pub tx_nonce: pallas::Base,
 }
 
 /// State update for OtcSwapV1

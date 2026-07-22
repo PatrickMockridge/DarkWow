@@ -197,7 +197,14 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 /// process_instruction() to validate the state transition.
 fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     // ix = [function_selector] + serialize(params) — individual call dispatched by host
-    let func = NativeTokenFunction::try_from(ix[0])?;
+    if ix.is_empty() {
+        msg!("[native_token::get_metadata] Error: Empty call data");
+        return Ok(());
+    }
+    let func = match NativeTokenFunction::try_from(ix[0]) {
+        Ok(f) => f,
+        Err(_) => return Ok(()),
+    };
     let params = &ix[1..];
 
     let metadata = match func {
@@ -222,9 +229,10 @@ fn fee_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     // the SAME layout `fee_v1` (process) and the block balance checker
     // (proof_of_token_balance::process_fee_call) parse.
     if params.len() < 9 {
+        msg!("[native_token::fee_get_metadata] Error: Params too short ({} bytes, need >= 9)", params.len());
         return vec![];
     }
-    let fee_params: FeeParamsV1 = match deserialize(&params[8..]) { Ok(p) => p, Err(_) => return vec![] };
+    let fee_params: FeeParamsV1 = match deserialize(&params[8..]) { Ok(p) => p, Err(e) => { msg!("[native_token::fee_get_metadata] Error: Failed to deserialize FeeParamsV1: {:?}", e); return vec![]; } };
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -234,11 +242,13 @@ fn fee_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     // Grab the Pedersen commitments and the signature pubkey from the params
     let input_value_coords = fee_params.input.value_commit.to_affine().coordinates();
     if input_value_coords.is_none().into() {
+        msg!("[native_token::fee_get_metadata] Error: Input value commitment is identity (cannot extract coordinates)");
         return vec![];
     }
     let input_value_coords = input_value_coords.unwrap();
     let output_value_coords = fee_params.output.value_commit.to_affine().coordinates();
     if output_value_coords.is_none().into() {
+        msg!("[native_token::fee_get_metadata] Error: Output value commitment is identity (cannot extract coordinates)");
         return vec![];
     }
     let output_value_coords = output_value_coords.unwrap();
@@ -273,7 +283,8 @@ fn fee_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
 
 /// Metadata for BurnV1
 fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
-    let bp: BurnParamsV1 = match deserialize(params) { Ok(p) => p, Err(_) => return vec![] };
+    if params.is_empty() { msg!("[native_token::burn_get_metadata] Error: Empty params"); return vec![]; }
+    let bp: BurnParamsV1 = match deserialize(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to deserialize params: {:?}", e); return vec![]; } };
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -282,6 +293,7 @@ fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     for input in &bp.inputs {
         let value_coords = input.value_commit.to_affine().coordinates();
         if value_coords.is_none().into() {
+            msg!("[native_token] Error: Value commitment is identity (cannot extract coordinates)");
             return vec![];
         }
         let value_coords = value_coords.unwrap();
@@ -314,7 +326,8 @@ fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
 
 /// Metadata for TransferV1
 fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
-    let tp: TransferParamsV1 = match deserialize(params) { Ok(p) => p, Err(_) => return vec![] };
+    if params.is_empty() { msg!("[native_token::transfer_get_metadata] Error: Empty params"); return vec![]; }
+    let tp: TransferParamsV1 = match deserialize(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to deserialize params: {:?}", e); return vec![]; } };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let mut signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
@@ -325,6 +338,7 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
 
         let value_coords = input.value_commit.to_affine().coordinates();
         if value_coords.is_none().into() {
+            msg!("[native_token] Error: Value commitment is identity (cannot extract coordinates)");
             return vec![];
         }
         let value_coords = value_coords.unwrap();
@@ -349,6 +363,7 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     for output in &tp.outputs {
         let value_coords = output.value_commit.to_affine().coordinates();
         if value_coords.is_none().into() {
+            msg!("[native_token] Error: Value commitment is identity (cannot extract coordinates)");
             return vec![];
         }
         let value_coords = value_coords.unwrap();
@@ -382,18 +397,21 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
 
 /// Metadata for SpendV1
 fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
-    let sp: SpendParamsV1 = match deserialize(params) { Ok(p) => p, Err(_) => return vec![] };
+    if params.is_empty() { msg!("[native_token::spend_get_metadata] Error: Empty params"); return vec![]; }
+    let sp: SpendParamsV1 = match deserialize(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to deserialize params: {:?}", e); return vec![]; } };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![sp.input.signature_public];
 
     let input_value_coords = sp.input.value_commit.to_affine().coordinates();
     if input_value_coords.is_none().into() {
+        msg!("[native_token] Error: Input value commitment is identity (cannot extract coordinates)");
         return vec![];
     }
     let input_value_coords = input_value_coords.unwrap();
     let output_value_coords = sp.output.value_commit.to_affine().coordinates();
     if output_value_coords.is_none().into() {
+        msg!("[native_token] Error: Output value commitment is identity (cannot extract coordinates)");
         return vec![];
     }
     let output_value_coords = output_value_coords.unwrap();
@@ -424,8 +442,8 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
             *output_value_coords.x(),           // 3: vc.x
             *output_value_coords.y(),           // 4: vc.y
             sp.output.token_commit,             // 5: tc
-            pallas::Base::zero(),               // 6: S_H.x (identity — non-coinbase mint)
-            pallas::Base::zero(),               // 7: S_H.y
+            *output_value_coords.x(),           // 6: S_H.x (== vc.x — identity + vc = vc, non-coinbase mint)
+            *output_value_coords.y(),           // 7: S_H.y (== vc.y)
             sp.tx_binding,                      // 8: tx_binding
             sp.tx_nonce,                        // 9: tx_nonce
         ],
@@ -442,6 +460,10 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
 // ============================================================================
 
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
+    if ix.is_empty() {
+        msg!("[native_token::process_instruction] Error: Empty call data");
+        return Err(ContractError::IoError("Empty call data".to_string()));
+    }
     let func = NativeTokenFunction::try_from(ix[0])?;
     let params = &ix[1..];
 
@@ -718,7 +740,8 @@ fn burn_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 // ============================================================================
 
 fn pow_reward_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
-    let pr: PoWRewardParamsV1 = match deserialize(params) { Ok(p) => p, Err(_) => return vec![] };
+    if params.is_empty() { msg!("[native_token::pow_reward_get_metadata] Error: Empty params"); return vec![]; }
+    let pr: PoWRewardParamsV1 = match deserialize(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to deserialize params: {:?}", e); return vec![]; } };
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -728,12 +751,17 @@ fn pow_reward_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     // Grab the Pedersen commitment and token commit from the output
     let value_coords = pr.output.value_commit.to_affine().coordinates();
     if value_coords.is_none().into() {
+        msg!("[native_token] Error: Output value commitment is identity (cannot extract coordinates)");
         return vec![];
     }
     let value_coords = value_coords.unwrap();
 
-    let cumcom_coords = pr.new_cumulative_commit.to_affine().coordinates()
-        .expect("Cumulative commitment cannot be identity");
+    let cumcom_coords = pr.new_cumulative_commit.to_affine().coordinates();
+    if cumcom_coords.is_none().into() {
+        msg!("[native_token::pow_reward_get_metadata] Error: Cumulative commitment cannot be identity");
+        return vec![];
+    }
+    let cumcom_coords = cumcom_coords.unwrap();
 
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
@@ -823,9 +851,16 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
     // Enforce supply matches emission schedule (infinity-mint hardening)
     let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
-    let current_supply: u64 = wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY)?
-        .map(|data| deserialize(&data).unwrap_or(0))
-        .unwrap_or(0);
+    let current_supply: u64 = match wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY)? {
+        Some(data) => deserialize(&data).map_err(|e| {
+            msg!("[native_token::pow_reward_v1] Error: Corrupt state — TOTAL_SUPPLY deserialization failed: {:?}", e);
+            ContractError::IoError("Corrupt state: TOTAL_SUPPLY deserialization failed".to_string())
+        })?,
+        None => {
+            // Genesis block: no prior supply exists. Zero is the correct initial value.
+            0
+        }
+    };
     let new_supply = current_supply.saturating_add(pr.input.value);
     if new_supply != pr.expected_cumulative_supply {
         msg!("[pow_reward_v1] Supply mismatch at height={}: current={} + reward={} = {} (expected={})",
@@ -838,14 +873,28 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     // value commitment. This creates a verifiable chain from genesis to tip.
     // The entrypoint verifies that the old cumulative values match on-chain state,
     // and persists the new cumulative values for the next block.
-    let old_cumulative = wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT)?
-        .map(|data| deserialize::<pallas::Point>(&data))
-        .transpose()?
-        .unwrap_or(pallas::Point::identity());
-    let old_blind = wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND)?
-        .map(|data| deserialize::<pallas::Scalar>(&data))
-        .transpose()?
-        .unwrap_or(pallas::Scalar::zero());
+    let old_cumulative = match wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT)? {
+        Some(data) => deserialize::<pallas::Point>(&data).map_err(|e| {
+            msg!("[native_token::pow_reward_v1] Error: Corrupt state — CUMULATIVE_VALUE_COMMIT deserialization failed: {:?}", e);
+            ContractError::IoError("Corrupt state: CUMULATIVE_VALUE_COMMIT".to_string())
+        })?,
+        None => {
+            // Genesis block: no prior cumulative supply commitment exists.
+            // The identity point is the additive identity for Pedersen accumulation:
+            // S_0 = identity, S_1 = identity + C_1 = C_1.
+            pallas::Point::identity()
+        }
+    };
+    let old_blind = match wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND)? {
+        Some(data) => deserialize::<pallas::Scalar>(&data).map_err(|e| {
+            msg!("[native_token::pow_reward_v1] Error: Corrupt state — CUMULATIVE_BLIND deserialization failed: {:?}", e);
+            ContractError::IoError("Corrupt state: CUMULATIVE_BLIND".to_string())
+        })?,
+        None => {
+            // Genesis block: no prior cumulative blind exists.
+            pallas::Scalar::zero()
+        }
+    };
 
     // Verify the old cumulative values match what the prover claims.
     // The ZK circuit reconstructs S_{H-1} from these witnesses and constrains
@@ -889,6 +938,10 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 // ============================================================================
 
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
+    if update_data.is_empty() {
+        msg!("[native_token::process_update] Error: Empty update data");
+        return Err(ContractError::IoError("Empty update data".to_string()));
+    }
     let func = NativeTokenFunction::try_from(update_data[0])?;
 
     match func {
@@ -928,11 +981,13 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 // ============================================================================
 
 fn fee_collect_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
-    let fc: FeeCollectParamsV1 = match deserialize(params) { Ok(p) => p, Err(_) => return vec![] };
+    if params.is_empty() { msg!("[native_token::fee_collect_get_metadata] Error: Empty params"); return vec![]; }
+    let fc: FeeCollectParamsV1 = match deserialize(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to deserialize params: {:?}", e); return vec![]; } };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let value_coords = fc.output.value_commit.to_affine().coordinates();
     if value_coords.is_none().into() {
+        msg!("[native_token] Error: Output value commitment is identity (cannot extract coordinates)");
         return vec![];
     }
     let value_coords = value_coords.unwrap();

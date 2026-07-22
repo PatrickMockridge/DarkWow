@@ -190,6 +190,8 @@ impl TokenMintCallBuilder {
                 token_auth_parent: self.input.token_auth_parent,
                 token_commit,
                 spend_hook: FuncId::from(self.input.spend_hook),
+                tx_binding: pallas::Base::zero(),
+                tx_nonce: self.tx_nonce,
             },
             proofs: vec![proof],
         })
