@@ -1086,6 +1086,48 @@ mod tests {
     use dwow_sdk::crypto::pasta_prelude::Group;
     use dwow_sdk::pasta::pallas;
 
+    /// T2: Competing blocks at the same height — the second block MUST be
+    /// stored in competing_blocks, not dropped. The first block extends the
+    /// canonical chain; the second is stored as an uncle candidate.
+    #[test]
+    fn test_competing_blocks_stored() {
+        use crate::{compute_merkle_root, Miner};
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let db = Arc::new(db);
+        let cs = CChainState::new(db, 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+
+        let h1 = BlockHeight::new(1);
+        let block1 = Block {
+            header: BlockHeader {
+                version: 1, previous: blake3::hash(b"genesis"), merkle_root: compute_merkle_root(&[]),
+                timestamp: BlockTimestamp::new(1), target: BlockTarget::MAX, nonce: 0,
+                height: h1, uncle_merkle_root: [0u8; 32], total_reward: BlockReward::ZERO,
+                randomx_key: Miner::derive_key_from_height(h1),
+                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
+                anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
+            },
+            transactions: vec![],
+        };
+        let outcome1 = cs.connect_block(block1.clone()).expect("first block connects");
+        assert!(matches!(outcome1, BlockConnectOutcome::CanonicalExtension { .. }),
+            "first block must extend canonical chain");
+        assert_eq!(cs.get_height(), h1);
+
+        // Second block at same height — different nonce so different block hash.
+        let mut block2 = block1.clone();
+        block2.header.nonce = 1;
+        let outcome2 = cs.connect_block(block2.clone()).expect("second block connects");
+        assert!(matches!(outcome2, BlockConnectOutcome::CompetingStored),
+            "second block at same height must be stored as competing");
+
+        // Verify competing block can be retrieved.
+        let competing = cs.take_competing_blocks(h1);
+        assert!(!competing.is_empty(), "competing_blocks must contain the second block");
+        assert_eq!(competing[0].header.nonce, 1, "retrieved competing block must match");
+    }
+
     /// CChainState::new correctly initializes from empty sled.
     #[test]
     fn test_empty_chain_state() {
