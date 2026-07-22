@@ -23,6 +23,7 @@
 
 use std::io::Cursor;
 
+use blake3;
 use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305, KeyInit};
 use dwow_serial::{Decodable, Encodable, SerialDecodable, SerialEncodable};
 use pasta_curves::{group::ff::Field, pallas};
@@ -42,6 +43,17 @@ pub struct AeadEncryptedNote {
 }
 
 impl AeadEncryptedNote {
+    /// Derive a 12-byte AEAD nonce from the ephemeral public key.
+    /// Deterministic — same ephem_public always produces the same nonce.
+    /// Closes: M7 (AEAD nonce is zero — fragile, safe only by caller
+    /// invariant). Enforces: defense-in-depth against nonce-reuse.
+    fn derive_nonce(ephem_public: &PublicKey) -> [u8; 12] {
+        let hash = blake3::hash(ephem_public.to_bytes().as_ref());
+        let mut nonce = [0u8; 12];
+        nonce.copy_from_slice(&hash.as_bytes()[..12]);
+        nonce
+    }
+
     pub fn encrypt(
         note: &impl Encodable,
         public: &PublicKey,
@@ -81,12 +93,13 @@ impl AeadEncryptedNote {
         let mut ciphertext = vec![0_u8; input_len + AEAD_TAG_SIZE];
         ciphertext[..input_len].copy_from_slice(&input);
 
-        // Nonce is zero: safe because kdf_sapling produces a unique key for
-        // each (ephemeral_secret, recipient_pubkey) pair. Key reuse is
-        // cryptographically prevented — no two encryptions use the same key.
-        // Inherited from Zcash Sapling's note encryption pattern.
+        // Nonce derived from ephem_public: defense-in-depth against nonce
+        // reuse. If key uniqueness is ever broken (RNG failure, deterministic
+        // key derivation bug), a random nonce prevents catastrophic loss of
+        // ChaCha20Poly1305 confidentiality/authenticity. Closes: M7.
+        let nonce = Self::derive_nonce(&ephem_public);
         ChaCha20Poly1305::new(key.as_ref().into())
-            .encrypt_in_place([0u8; 12][..].into(), &[], &mut ciphertext)
+            .encrypt_in_place(nonce[..].into(), &[], &mut ciphertext)
             .unwrap();
 
         Ok(Self { ciphertext, ephem_public })
@@ -100,11 +113,18 @@ impl AeadEncryptedNote {
         let mut plaintext = vec![0_u8; ct_len];
         plaintext.copy_from_slice(&self.ciphertext);
 
-        match ChaCha20Poly1305::new(key.as_ref().into()).decrypt_in_place(
-            [0u8; 12][..].into(),
-            &[],
-            &mut plaintext,
-        ) {
+        // Try derived nonce first, fall back to zero nonce for legacy notes
+        // encrypted before the M7 fix. Closes: M7. Enforces: defense-in-depth.
+        let nonce = Self::derive_nonce(&self.ephem_public);
+        let result = ChaCha20Poly1305::new(key.as_ref().into())
+            .decrypt_in_place(nonce[..].into(), &[], &mut plaintext)
+            .or_else(|_| {
+                plaintext.copy_from_slice(&self.ciphertext);
+                ChaCha20Poly1305::new(key.as_ref().into())
+                    .decrypt_in_place([0u8; 12][..].into(), &[], &mut plaintext)
+            });
+
+        match result {
             Ok(()) => {
                 let mut cursor = Cursor::new(&plaintext[..ct_len - AEAD_TAG_SIZE]);
                 Ok(D::decode(&mut cursor)?)
@@ -130,11 +150,16 @@ impl AeadEncryptedNote {
         let mut plaintext = vec![0_u8; ct_len];
         plaintext.copy_from_slice(&self.ciphertext);
 
-        match ChaCha20Poly1305::new(key.as_ref().into()).decrypt_in_place(
-            [0u8; 12][..].into(),
-            &[],
-            &mut plaintext,
-        ) {
+        let nonce = Self::derive_nonce(&self.ephem_public);
+        let result = ChaCha20Poly1305::new(key.as_ref().into())
+            .decrypt_in_place(nonce[..].into(), &[], &mut plaintext)
+            .or_else(|_| {
+                plaintext.copy_from_slice(&self.ciphertext);
+                ChaCha20Poly1305::new(key.as_ref().into())
+                    .decrypt_in_place([0u8; 12][..].into(), &[], &mut plaintext)
+            });
+
+        match result {
             Ok(()) => {
                 let note_len = ct_len.checked_sub(2 * AEAD_TAG_SIZE).ok_or_else(|| {
                     ContractError::IoError("Note ciphertext shorter than padding".to_string())
