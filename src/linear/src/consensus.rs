@@ -63,7 +63,8 @@ impl ChainWork {
     pub fn add_block(&self, target: BlockTarget) {
         self.0.fetch_add(target.chain_work(), Ordering::SeqCst);
     }
-    // load/store removed — dead code. AtomicU64 access uses .get() and direct load(Ordering).
+    pub(crate) fn load(&self, order: Ordering) -> u64 { self.0.load(order) }
+    pub(crate) fn store(&self, val: u64, order: Ordering) { self.0.store(val, order); }
 }
 
 /// Proof-of-Work consensus engine with dynamic target adjustment.

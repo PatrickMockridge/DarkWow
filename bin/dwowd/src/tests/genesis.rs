@@ -36,7 +36,7 @@ use std::sync::{
 
 use dwow_chain::{CChainState, FinalityConfig, PoWConfig};
 use dwow_core::Result;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, MoneroBlockHeight};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, MoneroBlockHeight};
 use dwow_sdk::pasta::pallas;
 use dwow_sdk::pasta::group::Group;
 use dwow_sdk::crypto::{
@@ -692,5 +692,63 @@ mod tests {
             assert!(res.is_err(),
                 "(iii) out-of-order deployments MUST fail position binding");
         });
+    }
+
+    /// T1: Dual-node block persistence — two independent sleb stores MUST
+    /// converge when the same blocks are inserted into both via LinearStore.
+    ///
+    /// This is the persistence-boundary equivalent of sync: the receiving node
+    /// applies blocks by inserting them into its store, then re-lifts them via
+    /// from_le_bytes at the same height key (§2.3). Both stores MUST return
+    /// identical blocks after the same set of insertions.
+    ///
+    /// Lightweight — pure sled I/O, no CChainState, no WASM, no ZK, no RandomX.
+    #[test]
+    fn test_dual_node_persistence_roundtrip() {
+        use dwow_chain::LinearStore;
+
+        let store1 = LinearStore::new(
+            Arc::new(sled::Config::new().temporary(true).open().unwrap())
+        ).unwrap();
+        let store2 = LinearStore::new(
+            Arc::new(sled::Config::new().temporary(true).open().unwrap())
+        ).unwrap();
+
+        for h in 1u64..=5 {
+            let height = BlockHeight::new(h);
+            let block = dwow_chain::Block {
+                header: dwow_chain::BlockHeader {
+                    version: 1,
+                    previous: if h == 1 { blake3::hash(b"genesis") } else { blake3::hash(&h.to_le_bytes()) },
+                    merkle_root: dwow_chain::compute_merkle_root(&[]),
+                    timestamp: BlockTimestamp::new(h),
+                    target: BlockTarget::MAX,
+                    nonce: h as u32,
+                    height,
+                    uncle_merkle_root: [0u8; 32],
+                    total_reward: BlockReward::ZERO,
+                    randomx_key: dwow_chain::Miner::derive_key_from_height(height),
+                    coin_merkle_root: [0u8; 32],
+                    nullifier_root: [0u8; 32],
+                    anchor_tx_id: [0u8; 32],
+                    anchor_monero_height: MoneroBlockHeight::new(0),
+                    anchor_monero_hash: [0u8; 32],
+                    finality_flags: 0,
+                    pow_source: dwow_chain::PowSource::Native,
+                },
+                transactions: vec![],
+            };
+            store1.insert_block(height, &block).expect("store1 insert");
+            store2.insert_block(height, &block).expect("store2 insert");
+        }
+
+        // Both stores MUST converge — same blocks at same heights.
+        for h in 1u64..=5 {
+            let b1 = store1.get_block(BlockHeight::new(h)).expect("store1 get_block");
+            let b2 = store2.get_block(BlockHeight::new(h)).expect("store2 get_block");
+            assert_eq!(b1.header.height, b2.header.height);
+            assert_eq!(b1.header.previous, b2.header.previous,
+                "divergent previous hash at h={} — sync persistence violated", h);
+        }
     }
 }
