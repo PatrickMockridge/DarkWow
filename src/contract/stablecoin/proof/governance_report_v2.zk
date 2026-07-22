@@ -47,10 +47,19 @@ circuit "GovernanceReportV2" {
     constrain_instance(total_collateral);
     constrain_instance(total_debt);
 
-    # RC4: base_div still present — to be replaced with cross-multiplication
-    collateral_div_debt = base_div(total_collateral, total_debt);
-    collateral_ratio_bps_check = base_mul(collateral_div_debt, witness_base(10000));
-    constrain_equal_base(collateral_ratio_bps_check, collateral_ratio_bps);
+    # Calculate collateral ratio using quotient-remainder (RC4 FIX)
+    # collateral_ratio_bps = floor(total_collateral / total_debt) * 10000
+    # ⇔ collateral_ratio_bps * total_debt <= total_collateral * 10000
+    #   < (collateral_ratio_bps + 10000) * total_debt
+    ONE = witness_base(1);
+    BPS = witness_base(10000);
+    crb_times_debt = base_mul(collateral_ratio_bps, total_debt);
+    coll_times_bps = base_mul(total_collateral, BPS);
+    lte_check = less_than_or_equal(crb_times_debt, coll_times_bps);
+    constrain_equal_base(lte_check, ONE);
+    crb_plus_bps = base_add(collateral_ratio_bps, BPS);
+    upper = base_mul(crb_plus_bps, total_debt);
+    less_than_strict(coll_times_bps, upper);
 
     # Calculate precise interest accrued
     debt_times_rate = base_mul(total_debt, rate_per_second);

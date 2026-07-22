@@ -77,7 +77,7 @@ all: check-source-hash $(ZK_BINS) $(WASM_BIN)
 $(WASM_BIN): $(ZK_BINS) $(WASM_SRC)
 	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) build --target=$(WASM_TARGET) \
 		--release --package $(PKGNAME)
-	cp -f ../../../target/$(WASM_TARGET)/release/$$@ $$@
+	cp -f ../../../target/$(WASM_TARGET)/release/$@ $@
 	@echo "$(COMPUTE_SOURCE_HASH)" > $(SOURCE_HASH_FILE)
 
 clean:

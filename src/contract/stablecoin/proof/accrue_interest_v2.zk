@@ -51,10 +51,16 @@ circuit "AccrueInterestV2" {
     debt_times_rate = base_mul(old_total_debt, rate_per_second);
     debt_rate_time = base_mul(debt_times_rate, time_elapsed);
 
-    # RC4: base_div still present — to be replaced with quotient-remainder constraints
-    calculated_interest = base_div(debt_rate_time, DENOM);
-
-    constrain_equal_base(calculated_interest, interest_amount);
+    # RC4 FIX: Replace base_div with quotient-remainder.
+    # interest_amount = floor(debt_rate_time / DENOM)
+    # ⇔ interest_amount * DENOM <= debt_rate_time < (interest_amount + 1) * DENOM
+    ONE = witness_base(1);
+    interest_times_denom = base_mul(interest_amount, DENOM);
+    lte_check = less_than_or_equal(interest_times_denom, debt_rate_time);
+    constrain_equal_base(lte_check, ONE);
+    int_plus_one = base_add(interest_amount, ONE);
+    upper = base_mul(int_plus_one, DENOM);
+    less_than_strict(debt_rate_time, upper);
 
     # Verify new_total_debt = old_total_debt + interest_amount
     new_debt_check = base_add(old_total_debt, interest_amount);

@@ -117,11 +117,10 @@ circuit "MilestonePayment" {
     #
     # payment = milestone_payment_amount * elapsed / total
     #
-    # This uses base_div for the division operation
-    # The result is the proportional payment based on time elapsed
-
-    payment_ratio = base_div(elapsed, total);
-    payment = base_mul(milestone_payment_amount, payment_ratio);
+    # RC4 FIX: base_div removed. payment was a dead computation — never
+    # constrained or exposed as a public input. The entrypoint verifies
+    # payment correctness via its own arithmetic. The circuit's job is
+    # to prove employer authorization and milestone deadline compliance.
 
     # ==========================================================================
     # PHASE 7: Compute authorization nullifier

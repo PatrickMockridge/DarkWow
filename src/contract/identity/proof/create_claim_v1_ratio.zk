@@ -58,17 +58,14 @@ circuit "CreateClaimV1Ratio" {
     # Constrain predicate_result to be binary
     bool_check(predicate_result);
 
-    # Calculate ratio: my_value / total_supply
-    # Using BaseDiv for precise ratio
-    ratio = base_div(my_value, total_supply);
-
-    # ==========================================================================
-    # PREDICATE VERIFICATION
-    # ==========================================================================
-
-    # Verify: ratio >= threshold_ratio
-    # i.e., my_value / total_supply >= threshold_ratio
-    is_lte = less_than_or_equal(threshold_ratio, ratio);
+    # Calculate ratio: my_value / total_supply >= threshold_ratio
+    # RC4 FIX: Replace base_div with cross-multiplication.
+    # my_value / total_supply >= threshold_ratio / 10000
+    # ⇔ my_value * 10000 >= threshold_ratio * total_supply
+    BPS = witness_base(10000);
+    my_value_scaled = base_mul(my_value, BPS);
+    threshold_scaled = base_mul(threshold_ratio, total_supply);
+    is_lte = less_than_or_equal(threshold_scaled, my_value_scaled);
     constrain_equal_base(is_lte, predicate_result);
 
     # ==========================================================================

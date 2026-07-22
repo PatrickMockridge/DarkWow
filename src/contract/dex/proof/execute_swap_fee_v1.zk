@@ -105,26 +105,13 @@ circuit "ExecuteSwapFeeV1" {
     less_than_strict(fill_amount, bob_amount);
 
     # ==========================================================================
-    # PHASE 6: Fee calculation using BaseDiv
+    # PHASE 6: Fee calculation
     # ==========================================================================
     #
-    # Fee = fill_amount * fee_bps / 10000
-    # Net received by Alice = fill_amount - fee
-
-    BPS = witness_base(10000);
-
-    # Calculate: fee = fill_amount * fee_bps / 10000
-    fee_numerator = base_mul(fill_amount, fee_bps);
-    fee = base_div(fee_numerator, BPS);
-
-    # Calculate: net_received = fill_amount - fee
-    net_received = base_sub(fill_amount, fee);
-
-    # Verify net_received >= 0 (sanity check)
-    # bool_check removed (RC1-A) — range_check below is sufficient
-
-    # The circuit outputs net_received as public information
-    # This can be verified against the actual transfer amount
+    # RC4 FIX: base_div removed. fee and net_received were dead computations —
+    # never constrained or exposed as public inputs. The entrypoint verifies
+    # fee correctness independently. The circuit's job is swap validity +
+    # fill amount constraints.
 
     # Boolean checks
     # bool_check removed (RC1-A) — range_check below is sufficient

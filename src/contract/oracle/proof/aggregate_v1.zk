@@ -98,10 +98,16 @@ circuit "Aggregate" {
     # base_div computes: a / b = a * b^(p-2) mod p
     # using Fermat's little theorem for field division
 
-    weighted_average = base_div(weighted_sum, sum_weights);
-
-    # Verify the computed average matches the claimed result
-    constrain_equal_base(weighted_average, result);
+    # RC4 FIX: Replace base_div with quotient-remainder.
+    # result = floor(weighted_sum / sum_weights)
+    # ⇔ result * sum_weights <= weighted_sum < (result + 1) * sum_weights
+    ONE = witness_base(1);
+    res_times_sum = base_mul(result, sum_weights);
+    lte_check = less_than_or_equal(res_times_sum, weighted_sum);
+    constrain_equal_base(lte_check, ONE);
+    res_plus_one = base_add(result, ONE);
+    upper = base_mul(res_plus_one, sum_weights);
+    less_than_strict(weighted_sum, upper);
 
     # ==========================================================================
     # PHASE 4: Verify result is within bounds

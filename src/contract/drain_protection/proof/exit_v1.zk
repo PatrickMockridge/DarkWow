@@ -46,6 +46,7 @@ witness "ExitProof" {
     # Contribution details
     Base deposited_at,
     Base contribution_amount,
+    Base contribution_weight,
 
     # DAO-Escrow verification
     Base dao_escrow_bulla,
@@ -105,10 +106,18 @@ circuit "ExitProof" {
 
     # multiplier = 1_000 + min(blocks_held / 10_000, 2_000)
     # This gives up to 3x weight after ~20k blocks
-    time_multiplier = base_div(blocks_held, DIVISOR);
-
-    # Effective weight
-    effective_weight = base_mul(contribution_amount, time_multiplier);
+    # RC4 FIX: Replace base_div with quotient-remainder constraints.
+    # contribution_weight = contribution_amount * floor(blocks_held / DIVISOR)
+    # ⇔ contribution_weight * DIVISOR <= contribution_amount * blocks_held
+    #   < (contribution_weight + contribution_amount) * DIVISOR
+    ONE = witness_base(1);
+    cw_times_div = base_mul(contribution_weight, DIVISOR);
+    ca_times_bh = base_mul(contribution_amount, blocks_held);
+    lte_check = less_than_or_equal(cw_times_div, ca_times_bh);
+    constrain_equal_base(lte_check, ONE);
+    cw_plus_ca = base_add(contribution_weight, contribution_amount);
+    upper_bound = base_mul(cw_plus_ca, DIVISOR);
+    less_than_strict(ca_times_bh, upper_bound);
 
     # ==========================================================================
     # PHASE 3: Verify DAO-Escrow membership via Merkle proof
@@ -139,7 +148,7 @@ circuit "ExitProof" {
 
     # haircut_bps = 3333 (33.33%)
     # exit_multiplier = 10_000 - haircut_bps = 6667
-    exit_value = base_mul(effective_weight, EXIT_MULTIPLIER);
+    exit_value = base_mul(contribution_weight, EXIT_MULTIPLIER);
     # Note: Final division by total_weight and current_funds normalization
     # would be done in the contract or with additional constraints
 
@@ -157,7 +166,7 @@ circuit "ExitProof" {
     # Without constrain_instance, the prover could use ANY Merkle root — the host
     # never verified it against the on-chain DAO-Escrow tree root.
     constrain_instance(dao_escrow_merkle_root);
-    constrain_instance(effective_weight);
+    constrain_instance(contribution_weight);
 
     # ==========================================================================
     # SOUNDNESS NOTES
