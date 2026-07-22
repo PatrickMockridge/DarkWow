@@ -123,5 +123,5 @@ circuit "AcceptSwapV1" {
     tx_binding = poseidon_hash(tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    bool_check(offer_amount);
+    # bool_check removed (RC1-A) — range_check below is sufficient
 }

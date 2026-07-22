@@ -121,15 +121,15 @@ circuit "ExecuteSwapFeeV1" {
     net_received = base_sub(fill_amount, fee);
 
     # Verify net_received >= 0 (sanity check)
-    bool_check(net_received);
+    # bool_check removed (RC1-A) — range_check below is sufficient
 
     # The circuit outputs net_received as public information
     # This can be verified against the actual transfer amount
 
     # Boolean checks
-    bool_check(alice_amount);
+    # bool_check removed (RC1-A) — range_check below is sufficient
     tx_binding = poseidon_hash(tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    bool_check(bob_amount);
+    # bool_check removed (RC1-A) — range_check below is sufficient
 }

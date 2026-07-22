@@ -60,7 +60,7 @@ circuit "MintStableV1" {
 
     # Range check for mint_amount
     range_check(64, mint_amount);
-    bool_check(mint_amount);
+    # bool_check removed (RC1-A)
 
     # Mint amount must be positive (handled by range_check above)
     tx_binding = poseidon_hash(tx_commitment, tx_nonce);

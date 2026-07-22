@@ -42,11 +42,11 @@ circuit "AddCollateralV1" {
 
     # Range check on new collateral (64-bit)
     range_check(64, new_collateral);
-    bool_check(new_collateral);
+    # bool_check removed (RC1-A) — range_check above is sufficient
 
     # Range check on added collateral
     range_check(64, added_collateral);
-    bool_check(added_collateral);
+    # bool_check removed (RC1-A) — range_check above is sufficient
 
     # Create Poseidon commitments for new collateral and existing debt
     # collateral_commit = poseidon_hash(new_collateral, collateral_blind)

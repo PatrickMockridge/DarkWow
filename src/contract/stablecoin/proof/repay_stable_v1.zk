@@ -43,11 +43,11 @@ circuit "RepayStableV1" {
 
     # Range check on new debt (64-bit)
     range_check(64, new_debt);
-    bool_check(new_debt);
+    # bool_check removed (RC1-A) — range_check above is sufficient
 
     # Range check on repaid amount
     range_check(64, repaid_debt);
-    bool_check(repaid_debt);
+    # bool_check removed (RC1-A) — range_check above is sufficient
 
     # Verify repayment doesn't exceed existing debt
     # repaid_debt <= old_debt (implicit in subtraction)

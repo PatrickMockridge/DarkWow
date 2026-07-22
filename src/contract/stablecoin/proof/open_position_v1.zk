@@ -62,8 +62,7 @@ circuit "OpenPositionV1" {
     # Range checks for amounts (64-bit values)
     range_check(64, collateral_amount);
     range_check(64, debt_amount);
-    bool_check(collateral_amount);
-    bool_check(debt_amount);
+    # bool_check removed (RC1-A): constrains u64 to {0,1} — range_check below is sufficient
 
     # Collateralization check: collateral >= 2 * debt (200% minimum collateralization)
     # Using verified LessThanOrEqual

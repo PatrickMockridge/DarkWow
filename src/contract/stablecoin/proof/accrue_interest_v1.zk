@@ -75,5 +75,5 @@ circuit "AccrueInterestV1" {
     tx_binding = poseidon_hash(tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    bool_check(interest_amount);
+    # bool_check removed (RC1-A)
 }

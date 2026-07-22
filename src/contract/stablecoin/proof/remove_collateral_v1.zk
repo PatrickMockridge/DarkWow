@@ -42,11 +42,11 @@ circuit "RemoveCollateralV1" {
 
     # Range check on new collateral (64-bit)
     range_check(64, new_collateral);
-    bool_check(new_collateral);
+    # bool_check removed (RC1-A)
 
     # Range check on removed collateral
     range_check(64, removed_collateral);
-    bool_check(removed_collateral);
+    # bool_check removed (RC1-A)
 
     # Verify removal doesn't exceed existing collateral
     # removed_collateral <= old_collateral (implicit in subtraction)
