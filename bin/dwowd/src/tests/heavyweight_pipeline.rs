@@ -59,7 +59,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use dwow_core::{zk::Proof, Result};
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockVersion};
 use dwow_sdk::crypto::{ContractId, NATIVE_TOKEN_CONTRACT_ID};
 use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
@@ -242,7 +242,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
             ).await?;
 
         let tx = dwow_chain::Transaction {
-            version: 1,
+            version: BlockVersion::CURRENT,
             inputs: vec![],
             outputs: vec![],
             contract_calls: vec![pow_reward_call],
@@ -327,7 +327,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         });
         let mut runtime = Runtime::new(
             wasm, backend, contract_id, BlockHeight::GENESIS,
-            u32::MAX, TransactionHash::none(), 0,
+            BlockTarget::MAX, TransactionHash::none(), 0,
         ).map_err(|e| dwow_core::Error::Custom(format!(
             "Runtime::new for deploy: {}", e,
         )))?;
@@ -1072,7 +1072,7 @@ fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Er
         let buyer_secret = buyer_instance_sk.inner();
         let seller_instance_sk = seller_wallet_sk.derive_instance(&contract_id, &instance_seed).unwrap();
         let seller_pub = PublicKey::from_secret(seller_instance_sk);
-        let seller_secret = seller_instance_sk.inner();
+        let _seller_secret = seller_instance_sk.inner();
 
         // --- create_escrow (ZK proof generation) ---
         println!("  Test: create_escrow");
@@ -2990,7 +2990,7 @@ fn test_heavyweight_multi_uncle() -> std::result::Result<(), Box<dyn std::error:
         let (pipeline, keypair) = setup_native_token_pipeline().await?;
 
         let mut call_datas = Vec::new();
-        for i in 0u32..3 {
+        for _i in 0u32..3 {
             let (call_data, _) = native_token_call(&pipeline, keypair)?;
             call_datas.push(call_data);
         }
@@ -3235,7 +3235,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             let mut runtime = Runtime::new(
                 wasm, backend, contract_id,
                 dwow_sdk::blockchain::BlockHeight::GENESIS,
-                u32::MAX, TransactionHash::none(), 0,
+                BlockTarget::MAX, TransactionHash::none(), 0,
             ).map_err(|e| dwow_core::Error::Custom(format!("Runtime::new: {}", e)))?;
             runtime.deploy(&[]).map_err(|e| dwow_core::Error::Custom(format!(
                 "deploy __initialize: {}", e,
@@ -3266,7 +3266,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
                     recipient, reward, linear_zk, height,
                 ).await?;
             let tx = dwow_chain::Transaction {
-                version: 1, inputs: vec![], outputs: vec![],
+                version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],
                 contract_calls: vec![pow_reward_call],
                 lock_time: 0,
                 nullifiers: vec![coinbase.nullifier],

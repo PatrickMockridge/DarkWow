@@ -25,6 +25,7 @@
 
 use blake3::Hash;
 use dwow_sdk::{
+    blockchain::BlockVersion,
     crypto::ContractId,
     error::ContractError,
     pasta::pallas,
@@ -238,7 +239,7 @@ pub struct CoinbaseTransaction {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
     /// Transaction version
-    pub version: u8,
+    pub version: BlockVersion,
     /// Inputs spent in this transaction
     pub inputs: Vec<TxInput>,
     /// Outputs created by this transaction
@@ -272,7 +273,7 @@ pub struct Transaction {
 impl Default for Transaction {
     fn default() -> Self {
         Self {
-            version: 1, inputs: vec![], outputs: vec![], contract_calls: vec![],
+            version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![], contract_calls: vec![],
             lock_time: 0, nullifiers: vec![], witness: vec![],
         }
     }
@@ -298,7 +299,7 @@ impl Transaction {
     pub fn hash(&self) -> Hash {
         #[derive(Serialize)]
         struct TxIdentity<'a> {
-            version: u8,
+            version: BlockVersion,
             inputs: &'a Vec<TxInput>,
             outputs: &'a Vec<TxOutput>,
             contract_calls: &'a Vec<ContractCall>,
@@ -336,7 +337,7 @@ mod tests {
     #[test]
     fn test_transaction_hash_determinism() {
         let tx = Transaction {
-            version: 1,
+            version: BlockVersion::CURRENT,
             inputs: vec![],
             outputs: vec![],
             contract_calls: vec![],
@@ -360,7 +361,7 @@ mod tests {
     fn test_transaction_with_nullifiers_roundtrip() {
         let nf = Nullifier::from_bytes([1u8; 32]).unwrap();
         let tx = Transaction {
-            version: 1,
+            version: BlockVersion::CURRENT,
             inputs: vec![],
             outputs: vec![],
             contract_calls: vec![],
@@ -379,7 +380,7 @@ mod tests {
     #[test]
     fn test_transaction_empty_nullifiers_omitted_from_json() {
         let tx = Transaction {
-            version: 1,
+            version: BlockVersion::CURRENT,
             inputs: vec![],
             outputs: vec![],
             contract_calls: vec![],
@@ -403,7 +404,7 @@ mod tests {
     fn test_hash_preimage_matches_self_for_witnessless_tx() {
         // Empty case (nullifiers skipped).
         let tx = Transaction {
-            version: 1,
+            version: BlockVersion::CURRENT,
             inputs: vec![],
             outputs: vec![],
             contract_calls: vec![],
@@ -437,7 +438,7 @@ mod tests {
     #[test]
     fn test_witness_excluded_from_hash() {
         let mut tx = Transaction {
-            version: 1,
+            version: BlockVersion::CURRENT,
             inputs: vec![],
             outputs: vec![],
             contract_calls: vec![],
@@ -460,7 +461,7 @@ mod tests {
     #[test]
     fn test_witness_survives_serde_roundtrip() {
         let tx = Transaction {
-            version: 1,
+            version: BlockVersion::CURRENT,
             inputs: vec![],
             outputs: vec![],
             contract_calls: vec![],

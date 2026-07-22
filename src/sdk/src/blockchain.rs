@@ -192,6 +192,50 @@ impl<'de> serde::Deserialize<'de> for BlockHeight {
     }
 }
 
+/// Nominal block-version type (type-system.md §2.3, §6a).
+///
+/// Every block carries a version byte in its header. Without a nominal type,
+/// any `u8` value passes validation — making soft forks impossible and
+/// preventing the compiler from rejecting version/height confusion.
+///
+/// Follows the exact `BlockHeight` pattern — `#[repr(transparent)]`, named
+/// constructors, no `From<u8>`, manual serde as plain number, dwow-serial
+/// transparent encoding. The wire format (mining blob byte 32) is unchanged.
+#[repr(transparent)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable,
+)]
+pub struct BlockVersion(u8);
+
+impl BlockVersion {
+    /// The only block version valid on this network.
+    pub const CURRENT: Self = Self(1);
+
+    /// Construct from the raw version domain.
+    pub const fn new(v: u8) -> Self { Self(v) }
+
+    /// The raw version value — for display and persistence boundaries.
+    pub const fn get(self) -> u8 { self.0 }
+}
+
+impl serde::Serialize for BlockVersion {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u8(self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for BlockVersion {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(Self(u8::deserialize(d)?))
+    }
+}
+
+impl core::fmt::Display for BlockVersion {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// Nominal block-reward type (type-system.md §2.3, §4.1).
 ///
 /// A reward amount and a block height are both representable as `u64`, but
@@ -385,6 +429,19 @@ impl SupplyAmount {
     pub const fn get(self) -> u64 { self.0 }
     pub const fn to_le_bytes(self) -> [u8; 8] { self.0.to_le_bytes() }
     pub const fn from_le_bytes(bytes: [u8; 8]) -> Self { Self(u64::from_le_bytes(bytes)) }
+
+    /// Saturating addition — preserves the type wrapper.
+    /// `supply_a.saturating_add(supply_b)` compiles; `supply + height` does not.
+    pub const fn saturating_add(self, rhs: SupplyAmount) -> SupplyAmount {
+        SupplyAmount(self.0.saturating_add(rhs.0))
+    }
+}
+
+/// Domain-edge conversion: a block reward contributes to cumulative supply.
+/// `BlockReward → SupplyAmount` is a valid domain crossing; `SupplyAmount → BlockReward`
+/// is NOT (cumulative supply cannot be un-minted into a per-block reward).
+impl From<BlockReward> for SupplyAmount {
+    fn from(reward: BlockReward) -> Self { SupplyAmount(reward.get()) }
 }
 
 impl core::fmt::Display for SupplyAmount {
@@ -423,6 +480,15 @@ impl FeeAmount {
     pub const fn get(self) -> u64 { self.0 }
     pub const fn to_le_bytes(self) -> [u8; 8] { self.0.to_le_bytes() }
     pub const fn from_le_bytes(bytes: [u8; 8]) -> Self { Self(u64::from_le_bytes(bytes)) }
+
+    /// Checked addition — preserves the type wrapper, returns None on overflow.
+    /// `fee_a.checked_add(fee_b)` compiles; `fee + gas` does not.
+    pub const fn checked_add(self, rhs: FeeAmount) -> Option<FeeAmount> {
+        match self.0.checked_add(rhs.0) {
+            Some(v) => Some(FeeAmount(v)),
+            None => None,
+        }
+    }
 }
 
 impl core::fmt::Display for FeeAmount {

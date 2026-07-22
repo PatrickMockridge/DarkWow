@@ -308,7 +308,7 @@ mod tests {
 
     fn make_header(height: u64) -> crate::BlockHeader {
         crate::BlockHeader {
-            version: 1,
+            version: BlockVersion::CURRENT,
             previous: blake3::Hash::from_bytes([0u8; 32]),
             merkle_root: blake3::Hash::from_bytes([0u8; 32]),
             timestamp: dwow_sdk::blockchain::BlockTimestamp::new(0),
@@ -330,7 +330,7 @@ mod tests {
 
     fn make_coinbase_tx() -> Transaction {
         Transaction {
-            version: 1,
+            version: BlockVersion::CURRENT,
             inputs: vec![],
             outputs: vec![],
             contract_calls: vec![ContractCall {
@@ -372,7 +372,7 @@ mod tests {
             transactions: vec![
                 make_coinbase_tx(),
                 Transaction {
-                    version: 1,
+                    version: BlockVersion::CURRENT,
                     inputs: vec![],
                     outputs: vec![],
                     contract_calls: vec![],  // no native token calls
@@ -460,7 +460,7 @@ mod tests {
             transactions: vec![
                 make_coinbase_tx(),
                 Transaction {
-                    version: 1,
+                    version: BlockVersion::CURRENT,
                     inputs: vec![],
                     outputs: vec![],
                     contract_calls: vec![contract_call],
@@ -532,7 +532,7 @@ mod tests {
             transactions: vec![
                 make_coinbase_tx(),
                 Transaction {
-                    version: 1, inputs: vec![], outputs: vec![],
+                    version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],
                     contract_calls: vec![ContractCall {
                         contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
                         data: call_data,

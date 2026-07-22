@@ -56,7 +56,7 @@ use std::env;
 use std::sync::Arc;
 
 use dwow_core::Result;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockVersion};
 use dwow_sdk::crypto::{ContractId, Keypair, SecretKey, DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
 use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::deploy::{ContractMetadata, DeployParamsV1};
@@ -151,7 +151,7 @@ impl ContractTestingPipeline {
                 recipient, reward, &self.zk, next_height,
             ).await?;
         let coinbase = dwow_chain::Transaction {
-            version: 1, inputs: vec![], outputs: vec![],
+            version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],
             contract_calls: vec![pow_reward_call],
             lock_time: 0, nullifiers: vec![_cb.nullifier], witness: vec![],
         };
@@ -202,7 +202,7 @@ impl ContractTestingPipeline {
                 recipient, reward, &self.zk, next_height,
             ).await?;
         let coinbase = dwow_chain::Transaction {
-            version: 1, inputs: vec![], outputs: vec![],
+            version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],
             contract_calls: vec![pow_reward_call],
             lock_time: 0, nullifiers: vec![_cb.nullifier], witness: vec![],
         };

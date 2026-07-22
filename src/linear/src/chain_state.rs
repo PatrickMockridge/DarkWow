@@ -1117,7 +1117,7 @@ mod tests {
         let h1 = BlockHeight::new(1);
         let block1 = Block {
             header: BlockHeader {
-                version: 1, previous: blake3::hash(b"genesis"), merkle_root: compute_merkle_root(&[]),
+                version: BlockVersion::CURRENT, previous: blake3::hash(b"genesis"), merkle_root: compute_merkle_root(&[]),
                 timestamp: BlockTimestamp::new(1), target: BlockTarget::MAX, nonce: 0,
                 height: h1, uncle_merkle_root: [0u8; 32], total_reward: BlockReward::ZERO,
                 randomx_key: Miner::derive_key_from_height(h1),
@@ -1165,7 +1165,7 @@ mod tests {
 
             let block = Block {
                 header: BlockHeader {
-                    version: 1,
+                    version: BlockVersion::CURRENT,
                     previous: if h == 1 { blake3::hash(b"genesis") } else { blake3::hash(&h.to_le_bytes()) },
                     merkle_root: compute_merkle_root(&[]),
                     timestamp: BlockTimestamp::new(h),
@@ -1247,7 +1247,7 @@ mod tests {
         // Build a minimal block — only the header matters for the key.
         let block = crate::Block {
             header: crate::BlockHeader {
-                version: 1,
+                version: BlockVersion::CURRENT,
                 previous: blake3::hash(b""),
                 merkle_root: crate::compute_merkle_root(&[]),
                 timestamp: BlockTimestamp::new(0),
@@ -1294,7 +1294,7 @@ mod tests {
             let height = BlockHeight::new(h);
             let block = Block {
                 header: BlockHeader {
-                    version: 1, previous: blake3::hash(&h.to_le_bytes()),
+                    version: BlockVersion::CURRENT, previous: blake3::hash(&h.to_le_bytes()),
                     merkle_root: compute_merkle_root(&[]),
                     timestamp: BlockTimestamp::new(h), target: BlockTarget::MAX,
                     nonce: h as u32, height,
@@ -1339,7 +1339,7 @@ mod tests {
         let h = BlockHeight::new(1);
         let uncle = UncleBlock {
             header: BlockHeader {
-                version: 1, previous: blake3::hash(b"uncle"), merkle_root: compute_merkle_root(&[]),
+                version: BlockVersion::CURRENT, previous: blake3::hash(b"uncle"), merkle_root: compute_merkle_root(&[]),
                 timestamp: BlockTimestamp::new(0), target: BlockTarget::MAX, nonce: 0,
                 height: h, uncle_merkle_root: [0u8; 32], total_reward: BlockReward::ZERO,
                 randomx_key: Miner::derive_key_from_height(h),

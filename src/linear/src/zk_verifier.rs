@@ -368,7 +368,7 @@ mod tests {
         };
 
         let chain_tx = ChainTransaction {
-            version: 1,
+            version: BlockVersion::CURRENT,
             inputs: vec![],
             outputs: vec![],
             contract_calls: vec![ContractCall {
@@ -406,7 +406,7 @@ mod tests {
         };
 
         let chain_tx = ChainTransaction {
-            version: 1,
+            version: BlockVersion::CURRENT,
             inputs: vec![],
             outputs: vec![],
             contract_calls: vec![ContractCall {

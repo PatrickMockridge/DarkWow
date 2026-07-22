@@ -35,7 +35,7 @@ use dwow_chain::Nullifier;
 use dwow_native_token_contract::{
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V1_BIN, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN,
 };
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockVersion, SupplyAmount};
 use dwow_sdk::crypto::{
     keypair::{SecretKey},
     pasta_prelude::PrimeField,
@@ -204,7 +204,7 @@ pub async fn build_linear_coinbase(
         &prev_entry,
         debris.params.output.value_commit,
         debris.params.input.value_blind.inner(),
-        value.get(),
+        SupplyAmount::from(value),
     );
     if _computed_next.value_commit != debris.params.new_cumulative_commit {
         return Err(Error::Custom(format!(
@@ -415,7 +415,7 @@ pub fn build_fee_collect_tx(
     };
 
     Ok(Some(dwow_chain::Transaction {
-        version: 1,
+        version: BlockVersion::CURRENT,
         inputs: vec![],
         outputs: vec![],
         contract_calls: vec![dwow_chain::ContractCall {

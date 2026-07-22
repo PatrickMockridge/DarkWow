@@ -42,7 +42,7 @@ use dwow_core::{
 };
 
 use dwow_chain::PowSource;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTimestamp, MoneroBlockHeight};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTimestamp, BlockVersion, MoneroBlockHeight};
 
 use crate::{
     error::{miner_status_response, server_error, RpcError},
@@ -250,7 +250,7 @@ impl DwowNode {
 
         // Build mining blob from block header (nonce=0 placeholder)
         let mining_header = dwow_chain::BlockHeader {
-            version: 1,
+            version: BlockVersion::CURRENT,
             previous: blake3::Hash::from_bytes(template.previous),
             merkle_root: blake3::hash(&[]),
             timestamp: BlockTimestamp::new(template.timestamp),
@@ -488,7 +488,7 @@ impl DwowNode {
             .unwrap_or_else(|| (blake3::hash(&[]), vec![]));
 
         let header = dwow_chain::BlockHeader {
-            version: 1,
+            version: BlockVersion::CURRENT,
             previous: previous_hash,
             merkle_root,
             timestamp: BlockTimestamp::new(template_timestamp),
@@ -510,7 +510,7 @@ impl DwowNode {
         };
 
         let coinbase_tx = dwow_chain::Transaction {
-            version: 1,
+            version: BlockVersion::CURRENT,
             inputs: vec![],
             outputs: vec![dwow_chain::TxOutput {
                 value: reward.get(),
@@ -673,7 +673,7 @@ impl DwowNode {
                                 let new_seed_hash = hex::encode(new_randomx_key);
 
                                 let new_mining_header = dwow_chain::BlockHeader {
-                                    version: 1,
+                                    version: BlockVersion::CURRENT,
                                     previous: blake3::Hash::from_bytes(new_template.previous),
                                     merkle_root: new_template.merkle_root,
                                     timestamp: BlockTimestamp::new(new_template.timestamp),

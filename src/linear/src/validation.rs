@@ -32,7 +32,7 @@
 use std::collections::HashSet;
 
 use blake3::Hash as Blake3Hash;
-use dwow_sdk::blockchain::{BlockHeight, BlockTarget, BlockTimestamp};
+use dwow_sdk::blockchain::{BlockHeight, BlockTarget, BlockTimestamp, BlockVersion};
 use randomx::RandomXVM;
 
 use super::{
@@ -58,6 +58,17 @@ pub fn check_block_header(
     current_height: BlockHeight,
     previous_hash: Option<&Blake3Hash>,
 ) -> Result<()> {
+    // Phase 0 structural: block version MUST be CURRENT.
+    // Per type-system.md §2.3: BlockVersion is a nominal consensus domain.
+    // Rejecting unknown versions enables future soft forks via version bits.
+    // This is the cheapest possible check — fail before PoW computation.
+    if block.header.version != BlockVersion::CURRENT {
+        return Err(LinearError::BlockIsInvalid(format!(
+            "unsupported block version: {} (current: {})",
+            block.header.version, BlockVersion::CURRENT
+        )));
+    }
+
     let block_hash = block.hash_with_vm(&vm);
 
     // Stage 1: PoW — hash must meet the block header's own target.
@@ -382,7 +393,7 @@ mod tests {
     fn dummy_block() -> Block {
         Block {
             header: super::super::BlockHeader {
-                version: 1,
+                version: BlockVersion::CURRENT,
                 previous: Blake3Hash::from([0u8; 32]),
                 merkle_root: blake3::hash(&[]), // correct for 0 transactions
                 timestamp: BlockTimestamp::new(0),
@@ -544,7 +555,7 @@ mod tests {
         let mut data = vec![0x05u8];
         data.extend(dwow_serial::serialize(&params));
         crate::Transaction {
-            version: 1,
+            version: BlockVersion::CURRENT,
             contract_calls: vec![crate::ContractCall {
                 contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
                 data,
@@ -558,7 +569,7 @@ mod tests {
         let mut data = vec![0x00u8];
         data.extend_from_slice(&fee.to_le_bytes());
         crate::Transaction {
-            version: 1,
+            version: BlockVersion::CURRENT,
             contract_calls: vec![crate::ContractCall {
                 contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
                 data,
@@ -570,7 +581,7 @@ mod tests {
     /// A FeeCollectV1 transaction — Phase 0 only reads the selector.
     fn fee_collect_tx() -> crate::Transaction {
         crate::Transaction {
-            version: 1,
+            version: BlockVersion::CURRENT,
             contract_calls: vec![crate::ContractCall {
                 contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
                 data: vec![0x06u8, 0u8],
@@ -719,7 +730,7 @@ mod tests {
             pin_accepted: false,
             pin_confirmed: BlockReward::new(0), // not validated by check_uncles — verify_uncle_split handles this downstream
             header: super::super::BlockHeader {
-                version: 1,
+                version: BlockVersion::CURRENT,
                 previous: Blake3Hash::from([0u8; 32]),
                 merkle_root: blake3::hash(&[]),
                 timestamp: BlockTimestamp::new(0),

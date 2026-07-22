@@ -286,7 +286,7 @@ let contract_call = dwow_chain::ContractCall {
     };
 
     let tx = dwow_chain::Transaction {
-        version: 1,
+        version: BlockVersion::CURRENT,
         inputs: vec![],
         outputs: vec![],
         contract_calls: vec![contract_call],

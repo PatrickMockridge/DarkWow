@@ -49,7 +49,7 @@ use std::sync::Arc;
 
 use dwow_chain::{ContractCall, Transaction};
 use dwow_core::Result;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, MoneroBlockHeight};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, MoneroBlockHeight, SupplyAmount};
 use dwow_sdk::crypto::{
     keypair::Network,
     pasta_prelude::{CurveAffine, Group},
@@ -129,7 +129,7 @@ fn test_wallet_integration() {
         let expected_gen_reward = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
         let sc1 = har.chain_state.supply_chain.get(BlockHeight::new(1))
             .expect("supply_chain at height 1");
-        assert_eq!(sc1.total_supply, expected_gen_reward.get());
+        assert_eq!(sc1.total_supply, SupplyAmount::new(expected_gen_reward.get()));
 
         // ================================================================
         // Phase 3: Height-2 Coinbase Block (Path 1, Production accept_block)
@@ -159,7 +159,7 @@ fn test_wallet_integration() {
         let pow_reward_call_data = pow_reward_call.data.clone();
 
         let tx = Transaction {
-            version: 1,
+            version: BlockVersion::CURRENT,
             inputs: vec![],
             outputs: vec![],
             contract_calls: vec![pow_reward_call],
@@ -171,10 +171,10 @@ fn test_wallet_integration() {
         let gen_hash = har.chain_state.hash_block_with_cached_vm(&gen_block);
 
         let header = dwow_chain::BlockHeader {
-            version: 1,
+            version: BlockVersion::CURRENT,
             previous: gen_hash,
             merkle_root,
-            timestamp: 120,
+            timestamp: BlockTimestamp::new(120),
             target: BlockTarget::MAX,
             nonce: 0,
             height: height_2,
@@ -269,10 +269,10 @@ fn test_wallet_integration() {
         ) -> dwow_chain::Block {
             dwow_chain::Block {
                 header: dwow_chain::BlockHeader {
-                    version: 1,
+                    version: BlockVersion::CURRENT,
                     previous: blake3::Hash::from_bytes([0u8; 32]),
                     merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                    timestamp: 0,
+                    timestamp: BlockTimestamp::new(0),
                     target: BlockTarget::MAX,
                     nonce: 0,
                     height,
@@ -288,7 +288,7 @@ fn test_wallet_integration() {
                     pow_source: dwow_chain::PowSource::Native,
                 },
                 transactions: vec![Transaction {
-                    version: 1,
+                    version: BlockVersion::CURRENT,
                     inputs: vec![],
                     outputs: vec![],
                     contract_calls: vec![ContractCall {
@@ -580,10 +580,10 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
 
         let synthetic_block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
-                version: 1,
+                version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0,
+                timestamp: BlockTimestamp::new(0),
                 target: BlockTarget::MAX,
                 nonce: 0,
                 height: BlockHeight::new(99),
@@ -599,7 +599,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 pow_source: dwow_chain::PowSource::Native,
             },
             transactions: vec![Transaction {
-                version: 1,
+                version: BlockVersion::CURRENT,
                 inputs: vec![],
                 outputs: vec![],
                 contract_calls: vec![ContractCall {
@@ -774,10 +774,10 @@ required_barbs = ["Spend","Mine"]
 
         let uncovered_block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
-                version: 1,
+                version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0,
+                timestamp: BlockTimestamp::new(0),
                 target: BlockTarget::MAX,
                 nonce: 0,
                 height: BlockHeight::new(98),
@@ -793,7 +793,7 @@ required_barbs = ["Spend","Mine"]
                 pow_source: dwow_chain::PowSource::Native,
             },
             transactions: vec![Transaction {
-                version: 1,
+                version: BlockVersion::CURRENT,
                 inputs: vec![],
                 outputs: vec![],
                 contract_calls: vec![ContractCall {
@@ -955,8 +955,15 @@ fn test_wallet_coinbase_scan_only() {
         let wallet_dir = std::env::temp_dir()
             .join(format!("dwow_wallet_scan_db_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&wallet_dir);
-        let dww = Dww::initialize(&wallet_dir, &keys_path, "testnet")
-            .expect("wallet initialize");
+        let dww = Dww::new(
+            Network::Testnet,
+            Some(&keys_path),
+            "testnet",
+            wallet_dir.to_string_lossy().to_string(),
+            "testnet".to_string(),
+            false,
+            None,
+        ).expect("wallet initialize");
         dww.initialize_wallet().expect("wallet schema init");
 
         let mut tree = dww.get_capability_commitment_tree()

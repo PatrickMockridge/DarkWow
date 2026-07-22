@@ -36,7 +36,7 @@ use std::sync::{
 
 use dwow_chain::{CChainState, FinalityConfig, PoWConfig};
 use dwow_core::Result;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, MoneroBlockHeight};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, MoneroBlockHeight, SupplyAmount};
 use dwow_sdk::pasta::pallas;
 use dwow_sdk::pasta::group::Group;
 use dwow_sdk::crypto::{
@@ -266,8 +266,8 @@ mod tests {
             assert_eq!(block2.header.previous.as_bytes(), &[0u8; 32], "AC6: previous");
 
             // AC7: timestamp == 0
-            assert_eq!(block1.header.timestamp, 0, "AC7: timestamp");
-            assert_eq!(block2.header.timestamp, 0, "AC7: timestamp");
+            assert_eq!(block1.header.timestamp, BlockTimestamp::new(0), "AC7: timestamp");
+            assert_eq!(block2.header.timestamp, BlockTimestamp::new(0), "AC7: timestamp");
 
             // AC8: nonce == 0
             assert_eq!(block1.header.nonce, 0, "AC8: nonce");
@@ -280,7 +280,7 @@ mod tests {
             // AC2: cumulative supply at height 1 (MoC gap fill)
             let sc1 = har1.chain_state.supply_chain.get(BlockHeight::new(1))
                 .expect("supply_chain at height 1");
-            assert_eq!(sc1.total_supply, expected.get(),
+            assert_eq!(sc1.total_supply, SupplyAmount::new(expected.get()),
                 "AC2: cumulative supply at genesis");
 
             // AC10: genesis carries the deployments — exactly 10 txs
@@ -371,7 +371,7 @@ mod tests {
                 .expect("supply_chain at height 1");
             assert_eq!(
                 sc1.total_supply,
-                dwow_sdk::blockchain::expected_reward(BlockHeight::new(1)).get(),
+                SupplyAmount::new(dwow_sdk::blockchain::expected_reward(BlockHeight::new(1)).get()),
                 "AC2: S_1 == INITIAL_REWARD"
             );
 
@@ -397,7 +397,7 @@ mod tests {
                 .expect("coinbase for height 2");
 
             let tx = dwow_chain::Transaction {
-                version: 1,
+                version: BlockVersion::CURRENT,
                 inputs: vec![],
                 outputs: vec![],
                 contract_calls: vec![pow_reward_call],
@@ -408,10 +408,10 @@ mod tests {
             let merkle_root = tx.hash();
 
             let header = dwow_chain::BlockHeader {
-                version: 1,
+                version: BlockVersion::CURRENT,
                 previous: gen_hash,
                 merkle_root,
-                timestamp: 120, // TARGET_BLOCK_TIME after genesis
+                timestamp: BlockTimestamp::new(120), // TARGET_BLOCK_TIME after genesis
                 target: BlockTarget::MAX,
                 nonce: 0,
                 height,
@@ -481,7 +481,7 @@ mod tests {
             let expected_supply = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1)).get()
                 + dwow_sdk::blockchain::expected_reward(BlockHeight::new(2)).get();
             assert_eq!(
-                sc2.total_supply, expected_supply,
+                sc2.total_supply, SupplyAmount::new(expected_supply),
                 "AC5: supply bridge — S_2 = S_1 + C_2"
             );
 
@@ -628,7 +628,7 @@ mod tests {
             let sc = har_b.chain_state.supply_chain.get(BlockHeight::new(1))
                 .expect("supply_chain at height 1");
             assert_eq!(sc.total_supply,
-                dwow_sdk::blockchain::expected_reward(BlockHeight::new(1)).get(),
+                SupplyAmount::new(dwow_sdk::blockchain::expected_reward(BlockHeight::new(1)).get()),
                 "synced node: S_1 == INITIAL_REWARD");
 
             // Identical chain identity.
@@ -718,7 +718,7 @@ mod tests {
             let height = BlockHeight::new(h);
             let block = dwow_chain::Block {
                 header: dwow_chain::BlockHeader {
-                    version: 1,
+                    version: BlockVersion::CURRENT,
                     previous: if h == 1 { blake3::hash(b"genesis") } else { blake3::hash(&h.to_le_bytes()) },
                     merkle_root: dwow_chain::compute_merkle_root(&[]),
                     timestamp: BlockTimestamp::new(h),

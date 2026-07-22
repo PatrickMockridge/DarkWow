@@ -35,7 +35,7 @@ use std::sync::Arc;
 
 use dwow_chain::{Block, ContractCall, Transaction};
 use dwow_core::Result;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, MoneroBlockHeight};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, MoneroBlockHeight, SupplyAmount};
 use dwow_sdk::crypto::{
     keypair::Network,
     pasta_prelude::Group,
@@ -77,10 +77,10 @@ fn build_block_header(
         }
     };
     dwow_chain::BlockHeader {
-        version: 1,
+        version: BlockVersion::CURRENT,
         previous: prev_hash,
         merkle_root,
-        timestamp: 120 * height.get(), // deterministic per height
+        timestamp: BlockTimestamp::new(120 * height.get()), // deterministic per height
         target: BlockTarget::MAX,
         nonce: 0,
         height,
@@ -110,7 +110,7 @@ pub(crate) fn mine_block(
     let reward = dwow_sdk::blockchain::expected_reward(height);
     let mut all_txs = txs;
     all_txs.insert(0, Transaction {
-        version: 1,
+        version: BlockVersion::CURRENT,
         inputs: vec![],
         outputs: vec![],
         contract_calls: vec![ContractCall {
@@ -236,7 +236,7 @@ fn test_fee_collect_determinism() {
             .sum();
         let sc_entry = har.chain_state.supply_chain.get(BlockHeight::new(101))
             .expect("supply_chain at 101");
-        assert_eq!(sc_entry.total_supply, total_supply_after_101);
+        assert_eq!(sc_entry.total_supply, SupplyAmount::new(total_supply_after_101));
 
         // ── Build FeeV1 tx ───────────────────────────────────────
         let recipient_102 = crate::accounts::MiningRecipient::from_account(&miner_mgr, BlockHeight::new(102))
@@ -255,7 +255,7 @@ fn test_fee_collect_determinism() {
             d
         };
         let fee_tx = Transaction {
-            version: 1,
+            version: BlockVersion::CURRENT,
             inputs: vec![],
             outputs: vec![],
             contract_calls: vec![ContractCall {
@@ -298,7 +298,7 @@ fn test_fee_collect_determinism() {
             .map(|h| dwow_sdk::blockchain::expected_reward(BlockHeight::new(h)))
             .map(|r| r.get())
             .sum();
-        assert_eq!(sc_102.total_supply, total_supply_102,
+        assert_eq!(sc_102.total_supply, SupplyAmount::new(total_supply_102),
             "TOTAL_SUPPLY unchanged — fees redistribute, not mint");
 
         // ── Re-exec determinism ──────────────────────────────────
@@ -323,7 +323,7 @@ fn test_fee_collect_determinism() {
                 let zk = crate::registry::model::LinearPowRewardZk::new(har2.chain_state.clone())
                     .await.expect("LinearPowRewardZk2");
                 let ft = Transaction {
-                    version: 1, inputs: vec![], outputs: vec![],
+                    version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],
                     contract_calls: vec![ContractCall {
                         contract_id: *NATIVE_TOKEN_CONTRACT_ID,
                         data: {

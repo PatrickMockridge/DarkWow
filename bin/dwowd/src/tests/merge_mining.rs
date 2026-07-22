@@ -42,7 +42,7 @@ use dwow_chain::{
 };
 use dwow_core::Result;
 use dwow_sdk::{
-    blockchain::{BlockHeight, BlockReward, BlockTarget, MoneroBlockHeight},
+    blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, MoneroBlockHeight},
     crypto::{keypair::Network, pasta_prelude::Group, NATIVE_TOKEN_CONTRACT_ID},
     pasta::pallas,
 };
@@ -103,10 +103,10 @@ fn build_merge_mined_header(
         .expect("SEED_HASH is 32 bytes");
 
     BlockHeader {
-        version: 1,
+        version: BlockVersion::CURRENT,
         previous: prev_hash,
         merkle_root,
-        timestamp: 120 * height.get(),
+        timestamp: BlockTimestamp::new(120 * height.get()),
         target: BlockTarget::MAX,
         nonce: 0,
         height,
@@ -130,7 +130,7 @@ fn build_coinbase_tx(
     reward: u64,
 ) -> Transaction {
     Transaction {
-        version: 1,
+        version: BlockVersion::CURRENT,
         inputs: vec![],
         outputs: vec![],
         contract_calls: vec![ContractCall {

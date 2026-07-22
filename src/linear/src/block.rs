@@ -25,7 +25,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, MoneroBlockHeight};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, MoneroBlockHeight};
 
 use super::Transaction;
 use crate::monero::MoneroPowData;
@@ -49,7 +49,7 @@ impl Default for PowSource {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockHeader {
     /// Block version
-    pub version: u8,
+    pub version: BlockVersion,
     /// Hash of the previous block (only one parent - linear chain)
     pub previous: blake3::Hash,
     /// Merkle root of transactions
@@ -196,7 +196,7 @@ impl BlockHeader {
     pub fn to_mining_blob(&self) -> Vec<u8> {
         let mut blob = Vec::with_capacity(228);
         blob.extend_from_slice(self.previous.as_bytes());            // 0..32
-        blob.push(self.version);                                     // 32
+        blob.push(self.version.get());                                // 32
         blob.extend_from_slice(&self.target.to_le_bytes()); // 33..37
         blob.extend_from_slice(&[0u8; 2]);                           // 37..39 (reserved)
         blob.extend_from_slice(&self.nonce.to_le_bytes());           // 39..43 (nonce)
@@ -526,7 +526,7 @@ pub fn create_block_with_uncles(
 
     Block {
         header: BlockHeader {
-            version: 1,
+            version: BlockVersion::CURRENT,
             previous,
             merkle_root,
             timestamp: BlockTimestamp::new(std::time::SystemTime::now()
@@ -575,7 +575,7 @@ mod tests {
     fn test_build_uncle_merkle_single() {
         let vm = create_test_vm();
         let uncle_header = BlockHeader {
-            version: 1,
+            version: BlockVersion::CURRENT,
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: BlockTimestamp::new(0),
@@ -611,7 +611,7 @@ mod tests {
         let mut uncles = vec![];
         for i in 0..3 {
             let header = BlockHeader {
-                version: 1,
+                version: BlockVersion::CURRENT,
                 previous: blake3::hash(&[i]),
                 merkle_root: blake3::hash(&[i]),
                 timestamp: BlockTimestamp::new(i as u64),
@@ -653,7 +653,7 @@ mod tests {
         let mut uncles = vec![];
         for i in 0..3 {
             let header = BlockHeader {
-                version: 1,
+                version: BlockVersion::CURRENT,
                 previous: blake3::hash(&[i]),
                 merkle_root: blake3::hash(&[i]),
                 timestamp: BlockTimestamp::new(i as u64),
@@ -706,7 +706,7 @@ mod tests {
     #[test]
     fn test_compute_reward_with_uncles() {
         let uncle_header = BlockHeader {
-            version: 1,
+            version: BlockVersion::CURRENT,
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: BlockTimestamp::new(0),
@@ -740,7 +740,7 @@ mod tests {
     fn test_verify_uncle_proof() {
         let vm = create_test_vm();
         let header = BlockHeader {
-            version: 1,
+            version: BlockVersion::CURRENT,
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: BlockTimestamp::new(0),
@@ -870,7 +870,7 @@ mod tests {
     #[test]
     fn test_mining_blob_excludes_anchor() {
         let mut header = BlockHeader {
-            version: 1,
+            version: BlockVersion::CURRENT,
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: BlockTimestamp::new(1000),
@@ -904,7 +904,7 @@ mod tests {
     #[test]
     fn test_anchor_tx_id_default_is_zero() {
         let header = BlockHeader {
-            version: 1,
+            version: BlockVersion::CURRENT,
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: BlockTimestamp::new(1000),
@@ -930,7 +930,7 @@ mod tests {
     #[test]
     fn test_block_header_with_anchor_serde() {
         let header = BlockHeader {
-            version: 1,
+            version: BlockVersion::CURRENT,
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: BlockTimestamp::new(1000),
@@ -964,7 +964,7 @@ mod tests {
     fn test_block_header_deserialize_old_format() {
         // Build a header, serialize it, then remove the new fields from the JSON
         let header = BlockHeader {
-            version: 1,
+            version: BlockVersion::CURRENT,
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: BlockTimestamp::new(1000),
@@ -1014,7 +1014,7 @@ mod tests {
     #[test]
     fn test_mining_blob_excludes_monero_anchor() {
         let mut header = BlockHeader {
-            version: 1,
+            version: BlockVersion::CURRENT,
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: BlockTimestamp::new(1000),
@@ -1048,7 +1048,7 @@ mod tests {
     #[test]
     fn test_monero_anchor_serde_roundtrip() {
         let header = BlockHeader {
-            version: 1,
+            version: BlockVersion::CURRENT,
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
             timestamp: BlockTimestamp::new(1000),
@@ -1092,7 +1092,7 @@ mod tests {
     #[test]
     fn test_mining_blob_newtype_stability() {
         let header = BlockHeader {
-            version: 1,
+            version: BlockVersion::CURRENT,
             previous: blake3::hash(b"sentinel_parent"),
             merkle_root: blake3::hash(b"sentinel_txs"),
             timestamp: BlockTimestamp::new(1_700_000_000),
@@ -1156,7 +1156,7 @@ mod tests {
     #[test]
     fn test_block_header_newtype_serde_shape() {
         let header = BlockHeader {
-            version: 1,
+            version: BlockVersion::CURRENT,
             previous: blake3::hash(b"sentinel_parent"),
             merkle_root: blake3::hash(b"sentinel_txs"),
             timestamp: BlockTimestamp::new(1_700_000_000),

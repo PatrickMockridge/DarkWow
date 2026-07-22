@@ -281,12 +281,12 @@ impl CumulativeSupplyChain {
         prev: &CumulativeSupplyEntry,
         coinbase_value_commit: pallas::Point,
         coinbase_blind: pallas::Scalar,
-        coinbase_value: u64,
+        coinbase_value: SupplyAmount,
     ) -> CumulativeSupplyEntry {
         CumulativeSupplyEntry {
             value_commit: prev.value_commit + coinbase_value_commit,
             blind: prev.blind + coinbase_blind,
-            total_supply: SupplyAmount::new(prev.total_supply.get().saturating_add(coinbase_value)),
+            total_supply: prev.total_supply.saturating_add(coinbase_value),
         }
     }
 

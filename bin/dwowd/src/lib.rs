@@ -44,7 +44,7 @@ use dwow_core::{
     Error, Result,
 };
 use dwow_chain::monero::JobId;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, MoneroBlockHeight};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, MoneroBlockHeight};
 use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
 
@@ -416,7 +416,7 @@ fn build_genesis_deployment_txs() -> Vec<dwow_chain::Transaction> {
             let mut data = vec![0x00u8];
             data.extend_from_slice(&dwow_serial::serialize(&params));
             dwow_chain::Transaction {
-                version: 1,
+                version: BlockVersion::CURRENT,
                 inputs: vec![],
                 outputs: vec![],
                 contract_calls: vec![dwow_chain::ContractCall {
@@ -491,7 +491,7 @@ async fn init_genesis(
     // This IS the block's validity proof — the nullifier proves the miner
     // controls sk_H, the per-block derived secret.
     let genesis_tx = Transaction {
-        version: 1,
+        version: BlockVersion::CURRENT,
         inputs: vec![],
         outputs: vec![],
         contract_calls: vec![pow_reward_call],
@@ -515,7 +515,7 @@ async fn init_genesis(
     anchor_tx_id[0..4].copy_from_slice(&magic_bytes);
 
     let header = BlockHeader {
-        version: 1,
+        version: BlockVersion::CURRENT,
         previous: blake3::Hash::from_bytes([0u8; 32]),
         merkle_root: genesis_merkle_root,
         timestamp: BlockTimestamp::new(timestamp),
@@ -1092,7 +1092,7 @@ async fn prepare_block(
 
     // 4. Assemble coinbase transaction (infallible)
     let coinbase_tx = dwow_chain::Transaction {
-        version: 1,
+        version: BlockVersion::CURRENT,
         inputs: vec![],
         outputs: vec![],
         contract_calls: vec![pow_reward_call.clone()],

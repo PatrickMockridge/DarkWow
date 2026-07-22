@@ -571,7 +571,7 @@ mod tests {
 
     fn make_tx(calls: Vec<ContractCall>, fee: Option<u64>) -> Transaction {
         let mut tx = Transaction {
-            version: 1,
+            version: BlockVersion::CURRENT,
             inputs: vec![],
             outputs: vec![],
             contract_calls: calls,

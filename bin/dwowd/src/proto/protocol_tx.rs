@@ -26,6 +26,7 @@ use std::sync::Arc;
 use tracing::{debug, error, info};
 
 use dwow_chain::Transaction as ChainTransaction;
+use dwow_sdk::blockchain::BlockVersion;
 use dwow_core::{
     net::{
         protocol::protocol_generic::{
@@ -122,7 +123,7 @@ impl ProtocolTxHandler {
                                 // These fields default to empty per the Transaction spec
                                 // (type-system.md §8.2) for wallet-constructed txs.
                                 let chain_tx = ChainTransaction {
-                                    version: 1,       // chain-level, set at block inclusion
+                                    version: BlockVersion::CURRENT,       // chain-level, set at block inclusion
                                     inputs: vec![],   // chain-level value tracking
                                     outputs: vec![],   // chain-level value tracking
                                     contract_calls: core_tx.calls.iter()

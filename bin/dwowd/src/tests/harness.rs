@@ -39,7 +39,7 @@ use dwow_chain::{
     build_uncle_merkle, create_uncle,
 };
 use dwow_core::Result;
-use dwow_sdk::blockchain::{self, BlockHeight, BlockReward, BlockTarget, MoneroBlockHeight};
+use dwow_sdk::blockchain::{self, BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, MoneroBlockHeight};
 
 /// Synthetic timestamp for test blocks, spaced 120s per height so the
 /// consensus target stays at `u32::MAX` (no difficulty drift when blocks
@@ -71,10 +71,10 @@ pub fn build_test_header(
     };
 
     BlockHeader {
-        version: 1,
+        version: BlockVersion::CURRENT,
         previous: previous_hash,
         merkle_root,
-        timestamp,
+        timestamp: BlockTimestamp::new(timestamp),
         target: BlockTarget::MAX,
         nonce: 0,
         height,
@@ -94,7 +94,7 @@ pub fn build_test_header(
 /// Build a coinbase transaction for the given reward value.
 pub fn build_coinbase_tx(reward: u64) -> Transaction {
     Transaction {
-        version: 1,
+        version: BlockVersion::CURRENT,
         inputs: vec![],
         outputs: vec![dwow_chain::TxOutput { value: reward, script: vec![] }],
         contract_calls: vec![],
@@ -107,7 +107,7 @@ pub fn build_coinbase_tx(reward: u64) -> Transaction {
 /// Build a transaction with a single contract call.
 pub fn build_contract_tx(contract_id: dwow_sdk::crypto::ContractId, call_data: Vec<u8>) -> Transaction {
     Transaction {
-        version: 1,
+        version: BlockVersion::CURRENT,
         inputs: vec![],
         outputs: vec![],
         contract_calls: vec![ContractCall { contract_id, data: call_data }],
@@ -183,10 +183,10 @@ pub fn build_test_block_with_uncles(
 
     Block {
         header: BlockHeader {
-            version: 1,
+            version: BlockVersion::CURRENT,
             previous: previous_hash,
             merkle_root,
-            timestamp,
+            timestamp: BlockTimestamp::new(timestamp),
             target: BlockTarget::MAX,
             nonce: 0,
             height,

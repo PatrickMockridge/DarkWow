@@ -1352,7 +1352,7 @@ mod tests {
         // ── Build minimal Block with PoWRewardV1 contract call ──────
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
-                version: 1,
+                version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: 0,
@@ -1371,7 +1371,7 @@ mod tests {
                 pow_source: dwow_chain::PowSource::Native,
             },
             transactions: vec![dwow_chain::Transaction {
-                version: 1,
+                version: BlockVersion::CURRENT,
                 inputs: vec![],
                 outputs: vec![],
                 contract_calls: vec![dwow_chain::ContractCall {
@@ -1499,13 +1499,13 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         dwow_serial::Encodable::encode(&enc_note, &mut call_data).ok();
 
         let tx = Transaction {
-            version: 1, inputs: vec![], outputs: vec![],
+            version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],
             contract_calls: vec![dwow_chain::ContractCall { contract_id: foreign_cid, data: call_data }],
             lock_time: 0, nullifiers: vec![], witness: vec![],
         };
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
-                version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
+                version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
@@ -1590,14 +1590,14 @@ produces = [{ name = "thing" }]
         dwow_serial::Encodable::encode(&enc_note, &mut call_data).ok();
 
         let tx = Transaction {
-            version: 1, inputs: vec![], outputs: vec![],
+            version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],
             contract_calls: vec![dwow_chain::ContractCall { contract_id: foreign_cid, data: call_data }],
             lock_time: 0, nullifiers: vec![], witness: vec![],
         };
         let h = 99u64;
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
-                version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
+                version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(h), uncle_merkle_root: [0u8; 32],
@@ -1671,13 +1671,13 @@ required_barbs = ["Spend","Mine"]
         dwow_serial::Encodable::encode(&enc_note, &mut call_data).ok();
 
         let tx = Transaction {
-            version: 1, inputs: vec![], outputs: vec![],
+            version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],
             contract_calls: vec![dwow_chain::ContractCall { contract_id: foreign_cid, data: call_data }],
             lock_time: 0, nullifiers: vec![], witness: vec![],
         };
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
-                version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
+                version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(101), uncle_merkle_root: [0u8; 32],
@@ -1787,7 +1787,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
 
         // Step 4: build a block with the DeployV1 transaction
         let deploy_tx = ChainTransaction {
-            version: 1, inputs: vec![], outputs: vec![],
+            version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],
             contract_calls: vec![dwow_chain::ContractCall {
                 contract_id: *DEPLOYOOOR_CONTRACT_ID,
                 data: deploy_call_data,
@@ -1796,7 +1796,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         };
         let deploy_block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
-                version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
+                version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height_deploy), uncle_merkle_root: [0u8; 32],
@@ -1860,13 +1860,13 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         dwow_serial::Encodable::encode(&enc_note, &mut call_data).ok();
 
         let call_tx = ChainTransaction {
-            version: 1, inputs: vec![], outputs: vec![],
+            version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],
             contract_calls: vec![dwow_chain::ContractCall { contract_id, data: call_data }],
             lock_time: 0, nullifiers: vec![], witness: vec![],
         };
         let call_block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
-                version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
+                version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height_call), uncle_merkle_root: [0u8; 32],
@@ -2107,7 +2107,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // ── Block with 2 transactions ─────────────────────────────────
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
-                version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
+                version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
@@ -2119,14 +2119,14 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             },
             transactions: vec![
                 Transaction {
-                    version: 1, inputs: vec![], outputs: vec![],
+                    version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],
                     contract_calls: vec![dwow_chain::ContractCall {
                         contract_id: *NATIVE_TOKEN_CONTRACT_ID, data: coinbase_data,
                     }],
                     lock_time: 0, nullifiers: vec![], witness: vec![],
                 },
                 Transaction {
-                    version: 1, inputs: vec![], outputs: vec![],
+                    version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],
                     contract_calls: vec![dwow_chain::ContractCall {
                         contract_id: foreign_cid, data: p2_data,
                     }],
@@ -2210,7 +2210,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
-                version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
+                version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
@@ -2221,7 +2221,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
                 pow_source: dwow_chain::PowSource::Native,
             },
             transactions: vec![dwow_chain::Transaction {
-                version: 1, inputs: vec![], outputs: vec![],
+                version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],
                 contract_calls: vec![dwow_chain::ContractCall {
                     contract_id: *NATIVE_TOKEN_CONTRACT_ID, data: call_data,
                 }],
@@ -2311,7 +2311,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
-                version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
+                version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
@@ -2322,7 +2322,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
                 pow_source: dwow_chain::PowSource::Native,
             },
             transactions: vec![dwow_chain::Transaction {
-                version: 1, inputs: vec![], outputs: vec![],
+                version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],
                 contract_calls: vec![dwow_chain::ContractCall {
                     contract_id: *NATIVE_TOKEN_CONTRACT_ID, data: call_data,
                 }],
@@ -2452,7 +2452,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // ═══════════════════════════════════════════════════════════════
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
-                version: 1,
+                version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: 0,
@@ -2473,7 +2473,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             transactions: vec![
                 // transactions[0] = coinbase (PoWRewardV1, 0x05)
                 dwow_chain::Transaction {
-                    version: 1,
+                    version: BlockVersion::CURRENT,
                     inputs: vec![],
                     outputs: vec![],
                     contract_calls: vec![dwow_chain::ContractCall {
@@ -2486,7 +2486,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
                 },
                 // transactions[1] = FeeCollectV1 (0x06)
                 dwow_chain::Transaction {
-                    version: 1,
+                    version: BlockVersion::CURRENT,
                     inputs: vec![],
                     outputs: vec![],
                     contract_calls: vec![dwow_chain::ContractCall {
