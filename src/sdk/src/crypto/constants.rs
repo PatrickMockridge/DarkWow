@@ -45,6 +45,19 @@ pub const DRK_SCHNORR_CHALLENGE_DOMAIN: &[u8] = b"DarkFi:Schnorr:challenge";
 /// Domain prefix used for block hashes, with `hash_to_curve`.
 pub const BLOCK_HASH_DOMAIN: &str = "DarkFi:Block";
 
+/// Poseidon domain separation constants (type-system.md §8.1, HAZOP H11).
+/// Every semantically distinct `poseidon_hash` invocation SHALL prepend one
+/// of these constants as its first input element. Distinct constants prevent
+/// cross-context collisions: a nullifier hash and a token commitment hash
+/// with the same inputs produce different outputs.
+/// Closes: H11 (no domain separation in Poseidon instances).
+/// Enforces: defense-in-depth against cross-context hash collisions.
+pub const DRK_POSEIDON_DOMAIN_NULLIFIER: pasta_curves::pallas::Base = pasta_curves::pallas::Base::from_raw([1, 0, 0, 0]);
+pub const DRK_POSEIDON_DOMAIN_TOKEN_COMMIT: pasta_curves::pallas::Base = pasta_curves::pallas::Base::from_raw([2, 0, 0, 0]);
+pub const DRK_POSEIDON_DOMAIN_TX_BINDING: pasta_curves::pallas::Base = pasta_curves::pallas::Base::from_raw([3, 0, 0, 0]);
+pub const DRK_POSEIDON_DOMAIN_COIN_COMMIT: pasta_curves::pallas::Base = pasta_curves::pallas::Base::from_raw([4, 0, 0, 0]);
+pub const DRK_POSEIDON_DOMAIN_MERKLE_LEAF: pasta_curves::pallas::Base = pasta_curves::pallas::Base::from_raw([5, 0, 0, 0]);
+
 pub const MERKLE_DEPTH_ORCHARD: usize = 32;
 
 pub const SPARSE_MERKLE_DEPTH: usize = 3;
