@@ -51,19 +51,22 @@ const TIMESTAMP_WINDOW: usize = 20;
 const SCALE: u64 = 1_000_000;
 
 /// Accumulated chain work for fork selection (heaviest-chain-wins).
-/// Wraps AtomicU64 for lock-free reads from hot paths (stratum, RPC, miner).
-/// G3: .get() calls are at the hardware atomic boundary.
-/// G12: AtomicU64 internal — public API uses BlockTarget.
-pub struct ChainWork(AtomicU64);
+/// Closes: M1 (chain work wraps at u64 boundary — 2^64 / u32::MAX ≈ 4.3B
+/// blocks, or ~16,350 years at 120s/block, but an accumulator that CAN
+/// overflow is a ticking time bomb). Enforces: defense-in-depth.
+/// u128 eliminates practical overflow: 2^128 / u32::MAX ≈ 10^29 blocks.
+/// Mutex replaces AtomicU64 (no AtomicU128 on stable).
+pub struct ChainWork(Mutex<u128>);
 
 impl ChainWork {
-    pub const fn new() -> Self { Self(AtomicU64::new(0)) }
-    pub fn get(&self) -> u64 { self.0.load(Ordering::SeqCst) }
+    pub fn new() -> Self { Self(Mutex::new(0)) }
+    pub fn get(&self) -> u128 { *self.0.lock().unwrap_or_else(|e| e.into_inner()) }
     /// Add work from a block at the given target.
     pub fn add_block(&self, target: BlockTarget) {
-        self.0.fetch_add(target.chain_work(), Ordering::SeqCst);
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) += target.chain_work();
     }
-    pub(crate) fn store(&self, val: u64, order: Ordering) { self.0.store(val, order); }
+    pub(crate) fn store(&self, val: u128) { *self.0.lock().unwrap_or_else(|e| e.into_inner()) = val; }
+    pub(crate) fn load(&self, order: std::sync::atomic::Ordering) -> u128 { self.get() }
 }
 
 /// Proof-of-Work consensus engine with dynamic target adjustment.
@@ -104,7 +107,7 @@ impl Clone for PoWConsensus {
             max_target: self.max_target,   // BlockTarget is Copy
             initial_target: self.initial_target, // BlockTarget is Copy
             timestamps: Mutex::new(self.timestamps.lock().unwrap_or_else(|e| e.into_inner()).clone()),
-            accumulated_work: ChainWork(AtomicU64::new(self.accumulated_work.get())),
+            accumulated_work: ChainWork(Mutex::new(self.accumulated_work.get())),
         }
     }
 }

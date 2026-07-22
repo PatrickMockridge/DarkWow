@@ -335,10 +335,10 @@ impl BlockTarget {
     /// Chain work contributed by a block at this target.
     /// `work = u32::MAX / target`. Higher = heavier chain = fork selection prefers.
     /// Returns 0 for zero target (degenerate — never valid).
-    /// G11: encapsulates `u32::MAX as u64 / target as u64`.
-    pub const fn chain_work(self) -> u64 {
+    /// Returns u128 per ChainWork migration (M1) — u64 could wrap at ~4.3B blocks.
+    pub const fn chain_work(self) -> u128 {
         if self.0 == 0 { return 0; }
-        u32::MAX as u64 / self.0 as u64 // G11: u32→u64 is infallible widening
+        u32::MAX as u128 / self.0 as u128
     }
 
     /// Conventional mining difficulty for display/pool purposes.

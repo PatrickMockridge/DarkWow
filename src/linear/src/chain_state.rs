@@ -149,11 +149,12 @@ impl CChainState {
         let store = Arc::new(LinearStore::new(db.clone())?);
         let consensus = PoWConsensus::new(target_block_time, initial_target, min_target, max_target);
         let _ = consensus.load(store.consensus_tree());
-        // Restore accumulated chain work from sled (survives restarts)
+        // Restore accumulated chain work from sled (survives restarts).
+        // Phase 1d: widened to u128 per M1 fix.
         if let Some(work_bytes) = store.consensus.get("accumulated_work").ok().flatten() {
-            if work_bytes.len() == 8 {
-                let work = u64::from_le_bytes(work_bytes[..8].try_into().unwrap_or([0u8; 8]));
-                consensus.accumulated_work.store(work, Ordering::SeqCst); // G3: sled persistence boundary
+            if work_bytes.len() == 16 {
+                let work = u128::from_le_bytes(work_bytes[..16].try_into().unwrap_or([0u8; 16]));
+                consensus.accumulated_work.store(work);
             }
         }
         let height = store.get_height().unwrap_or(BlockHeight::new(0));
