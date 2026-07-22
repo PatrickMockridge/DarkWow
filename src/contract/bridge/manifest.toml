@@ -2,7 +2,7 @@
 name = "bridge"
 category = "Bridge"
 description = "Cross-chain bridge supporting deposits, withdrawals, HTLC swaps, and relayer infrastructure. Governance-signed configuration."
-version = "1.0.0"
+version = "2.0.0"
 dependencies = ["promissory_note", "native_token_v1"]
 
 [[functions]]
@@ -13,13 +13,13 @@ code = 0
 name = "deposit"
 code = 1
 requires_proof = true
-proof_circuit = "Deposit_V1"
+proof_circuit = "Deposit_V2"
 
 [[functions]]
 name = "withdraw"
 code = 2
 requires_proof = true
-proof_circuit = "Withdraw_V1"
+proof_circuit = "Withdraw_V2"
 
 [[functions]]
 name = "update_config"
@@ -123,4 +123,33 @@ namespace = "bridge"
 
 [[circuits]]
 name = "LtcDeposit_V1"
+namespace = "bridge"
+
+# V2 circuits (HAZOP RC3: domain separation)
+[[circuits]]
+name = "Deposit_V2"
+namespace = "bridge"
+
+[[circuits]]
+name = "Withdraw_V2"
+namespace = "bridge"
+
+[[circuits]]
+name = "UpdateConfig_V2"
+namespace = "bridge"
+
+[[circuits]]
+name = "XmrDeposit_V2"
+namespace = "bridge"
+
+[[circuits]]
+name = "ZecDeposit_V2"
+namespace = "bridge"
+
+[[circuits]]
+name = "AztDeposit_V2"
+namespace = "bridge"
+
+[[circuits]]
+name = "LtcDeposit_V2"
 namespace = "bridge"

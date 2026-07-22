@@ -41,7 +41,7 @@ use crate::{
     error::DexError,
     model::{ExecuteSwapFeeParams, ExecuteSwapUpdateV1, Swap, SwapState},
     DEX_CONTRACT_INFO_TREE, DEX_CONTRACT_PARTICIPANTS_TREE, DEX_CONTRACT_SWAPS_TREE,
-    DEX_CONTRACT_ZKAS_EXECUTE_SWAP_FEE_NS_V1, PROMISSORY_NOTE_CONTRACT_ID_KEY,
+    DEX_CONTRACT_ZKAS_EXECUTE_SWAP_FEE_NS_V2, PROMISSORY_NOTE_CONTRACT_ID_KEY,
 };
 
 /// `get_metadata` function for `Dex::ExecuteSwapFeeV1`
@@ -64,7 +64,7 @@ pub(crate) fn dex_execute_swap_fee_get_metadata_v1(
     };
 
     zk_public_inputs.push((
-        DEX_CONTRACT_ZKAS_EXECUTE_SWAP_FEE_NS_V1.to_string(),
+        DEX_CONTRACT_ZKAS_EXECUTE_SWAP_FEE_NS_V2.to_string(),
         vec![alice_nullifier, bob_nullifier, swap_id],
     ));
 

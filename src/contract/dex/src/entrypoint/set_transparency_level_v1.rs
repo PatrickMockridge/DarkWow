@@ -33,7 +33,7 @@ use crate::{
     model::SetTransparencyLevelParams,
     DEX_CONTRACT_CONFIG_TREE, DEX_CONTRACT_GOVERNANCE_PUBKEY_KEY,
     DEX_CONTRACT_NULLIFIERS_TREE, DEX_CONTRACT_TRANSPARENCY_LEVEL_KEY,
-    DEX_CONTRACT_ZKAS_SET_TRANSPARENCY_NS_V1,
+    DEX_CONTRACT_ZKAS_SET_TRANSPARENCY_NS_V2,
 };
 
 /// `process_instruction` function for `Dex::SetTransparencyLevelV1`
@@ -71,7 +71,7 @@ pub(crate) fn dex_set_transparency_get_metadata_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        DEX_CONTRACT_ZKAS_SET_TRANSPARENCY_NS_V1.to_string(),
+        DEX_CONTRACT_ZKAS_SET_TRANSPARENCY_NS_V2.to_string(),
         vec![params.gov_pub_x, params.gov_pub_y, params.gov_nullifier],
     ));
     let mut metadata = vec![];

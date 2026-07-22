@@ -53,7 +53,7 @@ use crate::{
     model::{AcceptSwapParams, AcceptSwapUpdateV1, Swap, SwapState},
     DEX_CONTRACT_CONFIG_TREE, DEX_CONTRACT_INFO_TREE, DEX_CONTRACT_PARTICIPANTS_TREE,
     DEX_CONTRACT_SWAPS_TREE, DEX_CONTRACT_TRUSTED_MONEY_MERKLE_ROOT_KEY,
-    DEX_CONTRACT_ZKAS_ACCEPT_SWAP_NS_V1,
+    DEX_CONTRACT_ZKAS_ACCEPT_SWAP_NS_V2,
 };
 
 /// `get_metadata` function for `Dex::AcceptSwapV1`
@@ -90,7 +90,7 @@ pub(crate) fn dex_accept_swap_get_metadata_v1(
     let (sig_x, sig_y) = params.signature_public.xy().expect("pk not identity");
 
     zk_public_inputs.push((
-        DEX_CONTRACT_ZKAS_ACCEPT_SWAP_NS_V1.to_string(),
+        DEX_CONTRACT_ZKAS_ACCEPT_SWAP_NS_V2.to_string(),
         vec![lock_commitment, nullifier, sig_x, sig_y],
     ));
 

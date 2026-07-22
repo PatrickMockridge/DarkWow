@@ -252,3 +252,21 @@ pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_RATIO: &str = "CreateClaimV1Ratio";
 pub const IDENTITY_CONTRACT_MAX_DAG_CREDENTIALS: usize = 100;
 /// Capability verification circuit namespace
 pub const IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V1: &str = "VerifyCapabilityV1";
+
+// V2 circuit namespaces (HAZOP RC3: domain separation)
+/// Issue credential circuit namespace V2 (domain-separated)
+pub const IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V2: &str = "IssueCredentialV2";
+/// Create claim circuit namespace V2 (domain-separated)
+pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2: &str = "CreateClaimV2";
+/// Create claim L1 circuit namespace V2 (domain-separated)
+pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_L1: &str = "CreateClaimV2L1";
+/// Create claim L1 V2 circuit namespace V2 (domain-separated)
+pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_L1_V2: &str = "CreateClaimV2L1V2";
+/// Create claim DAG circuit namespace V2 (domain-separated)
+pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_DAG: &str = "CreateClaimV2DAG";
+/// Create claim multi circuit namespace V2 (domain-separated)
+pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_MULTI: &str = "CreateClaimV2Multi";
+/// Create claim ratio circuit namespace V2 (domain-separated)
+pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_RATIO: &str = "CreateClaimV2Ratio";
+/// Capability verification circuit namespace V2 (domain-separated)
+pub const IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V2: &str = "VerifyCapabilityV2";

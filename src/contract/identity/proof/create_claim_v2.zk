@@ -1,0 +1,43 @@
+# CreateClaim_V2 circuit — domain-separated credential claim verification.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+k = 11;
+field = "pallas";
+
+constant "CreateClaimV2" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "CreateClaimV2" {
+    Base nullifier,
+    Base claim_type,
+    Base issuer_pub_x,
+    Base issuer_pub_y,
+    Base schema_hash,
+    Base credential_secret,
+    Base attribute_value,
+    Base threshold,
+    Base commitment,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "CreateClaimV2" {
+    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_TX_BINDING = witness_base(3);
+
+    computed_nullifier = poseidon_hash(DOMAIN_NULLIFIER, credential_secret, commitment);
+    constrain_instance(computed_nullifier);
+    constrain_equal_base(computed_nullifier, nullifier);
+
+    range_check(64, attribute_value);
+    range_check(64, threshold);
+
+    ONE = witness_base(1);
+    is_lte = less_than_or_equal(threshold, attribute_value);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+    constrain_equal_base(is_lte, ONE);
+}

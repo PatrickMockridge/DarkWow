@@ -2,7 +2,7 @@
 name = "dex"
 category = "DEX"
 description = "Atomic swap DEX with governance-signed configuration. Supports swap creation, acceptance, execution, and cancellation with configurable timeouts and fees."
-version = "1.0.0"
+version = "2.0.0"
 dependencies = ["promissory_note", "native_token_v1"]
 
 [[functions]]
@@ -15,28 +15,28 @@ name = "create_swap"
 code = 1
 description = "Create a new atomic swap proposal. Proposer locks token funding via child PN::TransferV1 calls."
 requires_proof = true
-proof_circuit = "CreateSwap_V1"
+proof_circuit = "CreateSwap_V2"
 
 [[functions]]
 name = "accept_swap"
 code = 2
 description = "Accept an existing swap proposal. Acceptor locks matching token funding via child PN::TransferV1 calls."
 requires_proof = true
-proof_circuit = "AcceptSwap_V1"
+proof_circuit = "AcceptSwap_V2"
 
 [[functions]]
 name = "execute_swap"
 code = 3
 description = "Execute a funded swap. Both parties' funds are exchanged atomically."
 requires_proof = true
-proof_circuit = "ExecuteSwap_V1"
+proof_circuit = "ExecuteSwap_V2"
 
 [[functions]]
 name = "cancel_swap"
 code = 4
 description = "Cancel a pending swap proposal. Only the proposer can cancel, and only before acceptance."
 requires_proof = true
-proof_circuit = "CancelSwap_V1"
+proof_circuit = "CancelSwap_V2"
 
 [[functions]]
 name = "update_config"
@@ -53,14 +53,14 @@ name = "execute_swap_fee"
 code = 7
 description = "Execute swap with fee deduction."
 requires_proof = true
-proof_circuit = "ExecuteSwapFee_V1"
+proof_circuit = "ExecuteSwapFee_V2"
 
 [[functions]]
 name = "execute_swap_slippage"
 code = 8
 description = "Execute swap with slippage protection."
 requires_proof = true
-proof_circuit = "ExecuteSwapSlippage_V1"
+proof_circuit = "ExecuteSwapSlippage_V2"
 
 [[capabilities]]
 discriminant = 0
@@ -125,4 +125,37 @@ namespace = "dex"
 
 [[circuits]]
 name = "ExecuteSwapSlippage_V1"
+namespace = "dex"
+
+# V2 circuits (HAZOP RC3: domain separation)
+[[circuits]]
+name = "CreateSwap_V2"
+namespace = "dex"
+
+[[circuits]]
+name = "AcceptSwap_V2"
+namespace = "dex"
+
+[[circuits]]
+name = "ExecuteSwap_V2"
+namespace = "dex"
+
+[[circuits]]
+name = "CancelSwap_V2"
+namespace = "dex"
+
+[[circuits]]
+name = "ExecuteSwapFee_V2"
+namespace = "dex"
+
+[[circuits]]
+name = "ExecuteSwapSlippage_V2"
+namespace = "dex"
+
+[[circuits]]
+name = "UpdateConfig_V2"
+namespace = "dex"
+
+[[circuits]]
+name = "SetTransparencyLevel_V2"
 namespace = "dex"

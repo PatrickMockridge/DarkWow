@@ -1,0 +1,79 @@
+# OpenPosition_V2 circuit — opens a new CDP position.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+k = 11;
+field = "pallas";
+
+# No EC constants needed - using Poseidon only
+constant "OpenPositionV2" {
+}
+
+witness "OpenPositionV2" {
+    # Public inputs
+    Base position_commitment,
+    Base owner_pub,         # Poseidon hash of owner_secret (as field element, not EC point)
+    Base collateral_type,
+    Base position_nullifier,
+    Base position_root,
+    Base leaf_index,
+
+    # Private inputs
+    Base owner_secret,
+    Base collateral_amount,
+    Base debt_amount,
+    Base collateral_blind,
+    Base debt_blind,
+    Base merkle_proof_0,
+    Base merkle_proof_1,
+    Base merkle_proof_2,
+    Base merkle_proof_3,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "OpenPositionV2" {
+    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_SIGNATURE_SECRET = witness_base(7);
+
+    # Derive owner public key from secret using Poseidon (no EC)
+    owner_pub_check = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret);
+    constrain_equal_base(owner_pub_check, owner_pub);
+
+    # Create Poseidon commitments for collateral and debt
+    collateral_commit = poseidon_hash(DOMAIN_COIN_COMMIT, collateral_amount, collateral_blind);
+    debt_commit = poseidon_hash(DOMAIN_COIN_COMMIT, debt_amount, debt_blind);
+
+    # Position commitment = Poseidon hash of all components
+    position_check = poseidon_hash(
+        DOMAIN_COIN_COMMIT,
+        collateral_commit,
+        debt_commit,
+        owner_pub,
+        collateral_type
+    );
+    constrain_instance(position_check);
+    constrain_equal_base(position_check, position_commitment);
+
+    # Derive nullifier for this position
+    nullifier_check = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, position_commitment);
+    constrain_instance(nullifier_check);
+    constrain_equal_base(nullifier_check, position_nullifier);
+
+    # Range checks for amounts (64-bit values)
+    range_check(64, collateral_amount);
+    range_check(64, debt_amount);
+    # bool_check removed (RC1-A): constrains u64 to {0,1} — range_check below is sufficient
+
+    # Collateralization check: collateral >= 2 * debt (200% minimum collateralization)
+    two_times_debt = base_add(debt_amount, debt_amount);
+    range_check(64, two_times_debt);
+    ONE = witness_base(1);
+    is_lte = less_than_or_equal(two_times_debt, collateral_amount);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+    constrain_equal_base(is_lte, ONE);
+}

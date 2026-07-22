@@ -1,0 +1,85 @@
+# RemoveCollateral_V2 circuit — removes collateral from an existing CDP position.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+k = 11;
+field = "pallas";
+
+constant "RemoveCollateralV2" {
+}
+
+witness "RemoveCollateralV2" {
+    # Public inputs
+    Base position_commitment,    # New position commitment after removing collateral
+    Base owner_pub,              # Poseidon hash of owner_secret
+    Base collateral_type,        # Collateral type (Xmr=0, Drk=1, Eth=2)
+    Base position_nullifier,     # Nullifier for the position
+    Base position_root,          # Merkle root for position proof
+    Base leaf_index,             # Position of leaf in Merkle tree
+
+    # Private inputs
+    Base owner_secret,           # Owner's secret key
+    Base old_collateral,         # Previous collateral amount
+    Base old_debt,               # Previous debt amount
+    Base removed_collateral,     # Amount of collateral being removed
+    Base collateral_blind,       # Blind factor for new collateral commitment
+    Base debt_blind,             # Blind factor for debt commitment
+    Base merkle_proof_0,        # Merkle proof path element 0
+    Base merkle_proof_1,        # Merkle proof path element 1
+    Base merkle_proof_2,        # Merkle proof path element 2
+    Base merkle_proof_3,         # Merkle proof path element 3
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "RemoveCollateralV2" {
+    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_SIGNATURE_SECRET = witness_base(7);
+
+    # Verify owner public key derived from secret
+    owner_pub_check = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret);
+    constrain_equal_base(owner_pub_check, owner_pub);
+
+    # Compute new total collateral after removal
+    new_collateral = base_sub(old_collateral, removed_collateral);
+
+    # Range check on new collateral (64-bit)
+    range_check(64, new_collateral);
+    # bool_check removed (RC1-A)
+
+    # Range check on removed collateral
+    range_check(64, removed_collateral);
+    # bool_check removed (RC1-A)
+
+    # Create Poseidon commitments for new collateral and existing debt
+    collateral_commit = poseidon_hash(DOMAIN_COIN_COMMIT, new_collateral, collateral_blind);
+    debt_commit = poseidon_hash(DOMAIN_COIN_COMMIT, old_debt, debt_blind);
+
+    # Verify position commitment matches computed values
+    position_check = poseidon_hash(
+        DOMAIN_COIN_COMMIT,
+        collateral_commit,
+        debt_commit,
+        owner_pub,
+        collateral_type
+    );
+    constrain_instance(position_check);
+    constrain_equal_base(position_check, position_commitment);
+
+    # Derive and verify nullifier for this position
+    nullifier_check = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, position_commitment);
+    constrain_instance(nullifier_check);
+    constrain_equal_base(nullifier_check, position_nullifier);
+
+    # Collateralization check: new_collateral >= 2 * old_debt (200% minimum)
+    two_times_debt = base_add(old_debt, old_debt);
+    range_check(64, two_times_debt);
+    ONE = witness_base(1);
+    is_lte = less_than_or_equal(two_times_debt, new_collateral);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+    constrain_equal_base(is_lte, ONE);
+}

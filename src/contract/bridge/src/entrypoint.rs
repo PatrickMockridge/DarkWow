@@ -79,6 +79,8 @@ use crate::{
     BridgeFunction, BRIDGE_CONTRACT_DEPOSITS_TREE, BRIDGE_CONTRACT_GOVERNANCE_PUBKEY_KEY,
     BRIDGE_CONTRACT_GOVERNANCE_REPORTS_TREE, BRIDGE_CONTRACT_INFO_TREE,
     BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V1, BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V1,
+    BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V2, BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V2,
+    BRIDGE_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2,
     BRIDGE_CONTRACT_KEYS_TREE, BRIDGE_CONTRACT_NULLIFIERS_TREE,
     BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE, BRIDGE_CONTRACT_WITHDRAWALS_TREE,
     BRIDGE_CONTRACT_STATE,
@@ -172,6 +174,14 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(&withdraw_v1_bincode[..])?;
     wasm::db::zkas_db_set(&update_config_v1_bincode[..])?;
 
+    // V2 circuits (HAZOP RC3: domain separation)
+    let deposit_v2_bincode = include_bytes!("../proof/deposit_v2.zk.bin");
+    wasm::db::zkas_db_set(&deposit_v2_bincode[..])?;
+    let withdraw_v2_bincode = include_bytes!("../proof/withdraw_v2.zk.bin");
+    wasm::db::zkas_db_set(&withdraw_v2_bincode[..])?;
+    let update_config_v2_bincode = include_bytes!("../proof/update_config_v2.zk.bin");
+    wasm::db::zkas_db_set(&update_config_v2_bincode[..])?;
+
     // NOTE: xmr_deposit_v1.zk, ltc_deposit_v1.zk, zec_deposit_v1.zk, and
     // azt_deposit_v1.zk exist in proof/ but are deferred to v1.1 cross-chain
     // support — they are not loaded or wired to get_metadata yet.
@@ -236,7 +246,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: UpdateConfigParams = deserialize(&self_.data[1..])?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                crate::BRIDGE_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V1.to_string(),
+                BRIDGE_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2.to_string(),
                 vec![params.gov_pub_x, params.gov_pub_y, params.config_nullifier],
             ));
             let mut metadata = vec![];
@@ -270,7 +280,7 @@ fn deposit_get_metadata(data: &[u8]) -> Vec<u8> {
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V1.to_string(),
+        BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V2.to_string(),
         vec![params.commitment.inner()],
     ));
 
@@ -308,7 +318,7 @@ fn withdraw_get_metadata(data: &[u8]) -> Vec<u8> {
     let token_minimum = pallas::Base::from(100_000_000u64);
 
     zk_public_inputs.push((
-        BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V1.to_string(),
+        BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V2.to_string(),
         vec![nullifier, params.deposit_leaf, derived_recipient, token_minimum],
     ));
 

@@ -74,14 +74,13 @@ use crate::{
     STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
     STABLECOIN_CONTRACT_PURSE_CONTRACT_ID,
     STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE, STABLECOIN_CONTRACT_POSITIONS_TREE,
-    STABLECOIN_CONTRACT_STABLECOIN_TREE, STABLECOIN_CONTRACT_TOTAL_REDEEMED, STABLECOIN_CONTRACT_ZKAS_INIT_NS_V1,
-    STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V1, STABLECOIN_CONTRACT_ZKAS_ADD_COLLATERAL_NS_V1,
-    STABLECOIN_CONTRACT_ZKAS_REMOVE_COLLATERAL_NS_V1, STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V1,
-    STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V1, STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V1,
-    STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V1,
-    STABLECOIN_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V1,
-    STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V1,
+    STABLECOIN_CONTRACT_STABLECOIN_TREE, STABLECOIN_CONTRACT_TOTAL_REDEEMED,
     STABLECOIN_CONTRACT_ZKAS_REDEEM_STABLE_NS_V1,
+    STABLECOIN_CONTRACT_ZKAS_INIT_NS_V2, STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V2,
+    STABLECOIN_CONTRACT_ZKAS_ADD_COLLATERAL_NS_V2, STABLECOIN_CONTRACT_ZKAS_REMOVE_COLLATERAL_NS_V2,
+    STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V2, STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V2,
+    STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V2, STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V2,
+    STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V2, STABLECOIN_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2,
     CDP_MIN_COLLATERALIZATION_RATIO, CDP_LIQUIDATION_THRESHOLD, CDP_LIQUIDATION_PENALTY,
     CDP_BASE_RATE, CDP_PI_KP, CDP_PI_KI, CDP_PRICE_FEED_TWAP_WINDOW,
     CDP_PRICE_DEVIATION_THRESHOLD,
@@ -209,6 +208,28 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     let repay_stable_v1_bincode = include_bytes!("../proof/repay_stable_v1.zk.bin");
     wasm::db::zkas_db_set(&repay_stable_v1_bincode[..])?;
 
+    // V2 circuits (HAZOP RC3: domain separation)
+    let init_v2_bincode = include_bytes!("../proof/init_v2.zk.bin");
+    wasm::db::zkas_db_set(&init_v2_bincode[..])?;
+    let open_position_v2_bincode = include_bytes!("../proof/open_position_v2.zk.bin");
+    wasm::db::zkas_db_set(&open_position_v2_bincode[..])?;
+    let add_collateral_v2_bincode = include_bytes!("../proof/add_collateral_v2.zk.bin");
+    wasm::db::zkas_db_set(&add_collateral_v2_bincode[..])?;
+    let remove_collateral_v2_bincode = include_bytes!("../proof/remove_collateral_v2.zk.bin");
+    wasm::db::zkas_db_set(&remove_collateral_v2_bincode[..])?;
+    let mint_stable_v2_bincode = include_bytes!("../proof/mint_stable_v2.zk.bin");
+    wasm::db::zkas_db_set(&mint_stable_v2_bincode[..])?;
+    let repay_stable_v2_bincode = include_bytes!("../proof/repay_stable_v2.zk.bin");
+    wasm::db::zkas_db_set(&repay_stable_v2_bincode[..])?;
+    let liquidate_v2_bincode = include_bytes!("../proof/liquidate_v2.zk.bin");
+    wasm::db::zkas_db_set(&liquidate_v2_bincode[..])?;
+    let governance_report_v2_bincode = include_bytes!("../proof/governance_report_v2.zk.bin");
+    wasm::db::zkas_db_set(&governance_report_v2_bincode[..])?;
+    let accrue_interest_v2_bincode = include_bytes!("../proof/accrue_interest_v2.zk.bin");
+    wasm::db::zkas_db_set(&accrue_interest_v2_bincode[..])?;
+    let update_config_v2_bincode = include_bytes!("../proof/update_config_v2.zk.bin");
+    wasm::db::zkas_db_set(&update_config_v2_bincode[..])?;
+
     Ok(())
 }
 
@@ -233,7 +254,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                STABLECOIN_CONTRACT_ZKAS_INIT_NS_V1.to_string(),
+                STABLECOIN_CONTRACT_ZKAS_INIT_NS_V2.to_string(),
                 vec![params.deployer_auth],
             ));
             let mut metadata = vec![];
@@ -251,7 +272,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V1.to_string(),
+                STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V2.to_string(),
                 params.zk_public_inputs,
             ));
 
@@ -270,7 +291,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                STABLECOIN_CONTRACT_ZKAS_ADD_COLLATERAL_NS_V1.to_string(),
+                STABLECOIN_CONTRACT_ZKAS_ADD_COLLATERAL_NS_V2.to_string(),
                 params.zk_public_inputs,
             ));
 
@@ -289,7 +310,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                STABLECOIN_CONTRACT_ZKAS_REMOVE_COLLATERAL_NS_V1.to_string(),
+                STABLECOIN_CONTRACT_ZKAS_REMOVE_COLLATERAL_NS_V2.to_string(),
                 params.zk_public_inputs,
             ));
 
@@ -308,7 +329,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V1.to_string(),
+                STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V2.to_string(),
                 params.zk_public_inputs,
             ));
 
@@ -327,7 +348,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V1.to_string(),
+                STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V2.to_string(),
                 params.zk_public_inputs,
             ));
 
@@ -346,7 +367,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V1.to_string(),
+                STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V2.to_string(),
                 params.zk_public_inputs,
             ));
 
@@ -364,7 +385,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                STABLECOIN_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V1.to_string(),
+                STABLECOIN_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2.to_string(),
                 vec![params.gov_pub_x, params.gov_pub_y, params.config_nullifier],
             ));
             let mut metadata = vec![];
@@ -374,7 +395,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         StablecoinFunction::GovernanceReportV1 => {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V1.to_string(),
+                STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V2.to_string(),
                 vec![],
             ));
 
@@ -385,7 +406,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         StablecoinFunction::AccrueInterestV1 => {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V1.to_string(),
+                STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V2.to_string(),
                 vec![],
             ));
 

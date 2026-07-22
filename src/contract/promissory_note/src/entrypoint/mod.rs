@@ -83,6 +83,11 @@ use crate::{
     PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V1,
     PROMISSORY_NOTE_CONTRACT_ZKAS_REGISTER_TYPE_NS_V1,
     PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V1,
+    PROMISSORY_NOTE_CONTRACT_ZKAS_REGISTER_TYPE_NS_V2,
+    PROMISSORY_NOTE_CONTRACT_ZKAS_ISSUE_NS_V2,
+    PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V2,
+    PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V2,
+    PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V2,
     EMPTY_COINS_TREE_ROOT, EMPTY_TOKEN_REGISTRY_TREE_ROOT,
 };
 
@@ -113,6 +118,18 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(&burn_v1_bincode[..])?;
     wasm::db::zkas_db_set(&blind_output_v1_bincode[..])?;
     wasm::db::zkas_db_set(&redeem_v1_bincode[..])?;
+
+    // V2 circuits (HAZOP RC3: domain separation)
+    let token_mint_v2_bincode = include_bytes!("../../proof/token_mint_v2.zk.bin");
+    let mint_v2_bincode = include_bytes!("../../proof/mint_v2.zk.bin");
+    let burn_v2_bincode = include_bytes!("../../proof/burn_v2.zk.bin");
+    let blind_output_v2_bincode = include_bytes!("../../proof/blind_output_v2.zk.bin");
+    let redeem_v2_bincode = include_bytes!("../../proof/redeem_v2.zk.bin");
+    wasm::db::zkas_db_set(&token_mint_v2_bincode[..])?;
+    wasm::db::zkas_db_set(&mint_v2_bincode[..])?;
+    wasm::db::zkas_db_set(&burn_v2_bincode[..])?;
+    wasm::db::zkas_db_set(&blind_output_v2_bincode[..])?;
+    wasm::db::zkas_db_set(&redeem_v2_bincode[..])?;
 
     let tx_hash = wasm::util::get_tx_hash()?;
     let call_idx = wasm::util::get_call_index()?;
@@ -262,7 +279,7 @@ fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
     let (vc_x, vc_y) = point_coords(params.value_commit);
 
     zk_public_inputs.push((
-        PROMISSORY_NOTE_CONTRACT_ZKAS_REGISTER_TYPE_NS_V1.to_string(),
+        PROMISSORY_NOTE_CONTRACT_ZKAS_REGISTER_TYPE_NS_V2.to_string(),
         vec![
             params.token_id.inner(),
             params.token_auth_parent,
@@ -295,7 +312,7 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
     // IssueV1 circuit expects: token_root, mint_public, coin, vc_x, vc_y, token_id,
     //                          spend_hook, tx_binding, tx_nonce
     zk_public_inputs.push((
-        PROMISSORY_NOTE_CONTRACT_ZKAS_ISSUE_NS_V1.to_string(),
+        PROMISSORY_NOTE_CONTRACT_ZKAS_ISSUE_NS_V2.to_string(),
         vec![
             params.token_registry_root.inner(),
             params.mint_public,
@@ -334,7 +351,7 @@ fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
         let (vc_x, vc_y) = point_coords(input.value_commit);
 
         zk_public_inputs.push((
-            PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V1.to_string(),
+            PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V2.to_string(),
             vec![
                 input.nullifier.inner(),
                 vc_x,
@@ -374,7 +391,7 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         let (vc_x, vc_y) = point_coords(input.value_commit);
 
         zk_public_inputs.push((
-            PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V1.to_string(),
+            PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V2.to_string(),
             vec![
                 input.nullifier.inner(),
                 vc_x,
@@ -395,7 +412,7 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         let (vc_x, vc_y) = point_coords(output.value_commit);
 
         zk_public_inputs.push((
-            PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V1.to_string(),
+            PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V2.to_string(),
             vec![output.coin.inner(), vc_x, vc_y, output.token_commit,
                  output.spend_hook.inner(), params.tx_binding, params.tx_nonce],
         ));
@@ -914,7 +931,7 @@ fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
     let (vc_x, vc_y) = point_coords(params.input.value_commit);
 
     zk_public_inputs.push((
-        PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V1.to_string(),
+        PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V2.to_string(),
         vec![
             params.input.nullifier.inner(),
             vc_x,
@@ -936,7 +953,7 @@ fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
     let (rvc_x, rvc_y) = point_coords(params.output.value_commit);
 
     zk_public_inputs.push((
-        PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V1.to_string(),
+        PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V2.to_string(),
         vec![params.output.coin.inner(), rvc_x, rvc_y, params.output.token_commit,
              coin_value, params.tx_binding, params.tx_nonce, params.output.spend_hook.inner()],
     ));
@@ -1043,7 +1060,7 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         let (vc_x, vc_y) = point_coords(input.value_commit);
 
         zk_public_inputs.push((
-            PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V1.to_string(),
+            PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V2.to_string(),
             vec![
                 input.nullifier.inner(),
                 vc_x,
@@ -1064,7 +1081,7 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         let (vc_x, vc_y) = point_coords(output.value_commit);
 
         zk_public_inputs.push((
-            PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V1.to_string(),
+            PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V2.to_string(),
             vec![output.coin.inner(), vc_x, vc_y, output.token_commit,
                  output.spend_hook.inner(), params.tx_binding, params.tx_nonce],
         ));

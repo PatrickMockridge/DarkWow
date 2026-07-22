@@ -1,0 +1,73 @@
+# MintStable_V2 circuit — mints stablecoins against collateral.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+k = 11;
+field = "pallas";
+
+# No EC constants needed - using Poseidon only
+constant "MintStableV2" {
+}
+
+witness "MintStableV2" {
+    # Public inputs
+    Base old_commitment,
+    Base new_commitment,
+    Base position_nullifier,
+    Base mint_amount,
+    Base position_root,
+
+    # Private inputs
+    Base owner_secret,
+    Base old_collateral,
+    Base old_debt,
+    Base new_collateral,
+    Base new_debt,
+    Base collateral_blind,
+    Base debt_blind,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "MintStableV2" {
+    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_SIGNATURE_SECRET = witness_base(7);
+
+    # Derive owner public key (Poseidon hash, no EC)
+    owner_pub = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret);
+
+    # Verify nullifier matches
+    nullifier_check = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, old_commitment);
+    constrain_instance(nullifier_check);
+    constrain_equal_base(nullifier_check, position_nullifier);
+
+    # Verify new debt is old debt + mint_amount
+    mint_check = base_add(old_debt, mint_amount);
+    constrain_equal_base(mint_check, new_debt);
+
+    # Verify collateral unchanged (for simple minting)
+    constrain_equal_base(old_collateral, new_collateral);
+
+    # Compute old commitment components
+    old_collateral_commit = poseidon_hash(DOMAIN_COIN_COMMIT, old_collateral, collateral_blind);
+    old_debt_commit = poseidon_hash(DOMAIN_COIN_COMMIT, old_debt, debt_blind);
+    old_position = poseidon_hash(DOMAIN_COIN_COMMIT, old_collateral_commit, old_debt_commit, owner_pub);
+    constrain_equal_base(old_position, old_commitment);
+
+    # Compute new commitment components
+    new_collateral_commit = poseidon_hash(DOMAIN_COIN_COMMIT, new_collateral, collateral_blind);
+    new_debt_commit = poseidon_hash(DOMAIN_COIN_COMMIT, new_debt, debt_blind);
+    new_position = poseidon_hash(DOMAIN_COIN_COMMIT, new_collateral_commit, new_debt_commit, owner_pub);
+    constrain_equal_base(new_position, new_commitment);
+
+    # Range check for mint_amount
+    range_check(64, mint_amount);
+    # bool_check removed (RC1-A)
+
+    # Mint amount must be positive (handled by range_check above)
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+}

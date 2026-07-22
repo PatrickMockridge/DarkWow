@@ -208,6 +208,18 @@ pub const PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V1: &str = "Transfer_V1";
 /// zkas redeem circuit namespace (receipt coin formation, value=0 via is_notequal)
 pub const PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V1: &str = "Redeem_V1";
 
+// V2 circuit namespaces (HAZOP RC3: domain separation)
+/// zkas register type circuit namespace V2 (domain-separated)
+pub const PROMISSORY_NOTE_CONTRACT_ZKAS_REGISTER_TYPE_NS_V2: &str = "RegisterType_V2";
+/// zkas issue circuit namespace V2 (domain-separated)
+pub const PROMISSORY_NOTE_CONTRACT_ZKAS_ISSUE_NS_V2: &str = "Issue_V2";
+/// zkas revoke circuit namespace V2 (domain-separated)
+pub const PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V2: &str = "Revoke_V2";
+/// zkas transfer circuit namespace V2 (domain-separated)
+pub const PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V2: &str = "Transfer_V2";
+/// zkas redeem circuit namespace V2 (domain-separated)
+pub const PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V2: &str = "Redeem_V2";
+
 // ============================================================================
 // ZK CIRCUIT BINARIES (for client-side proof generation)
 // ============================================================================

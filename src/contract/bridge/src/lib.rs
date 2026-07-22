@@ -118,6 +118,14 @@ pub const BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V1: &str = "WithdrawV1";
 /// zkas update config circuit namespace
 pub const BRIDGE_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V1: &str = "UpdateConfigV1";
 
+// V2 circuit namespaces (HAZOP RC3: domain separation)
+/// zkas deposit circuit namespace V2 (domain-separated)
+pub const BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V2: &str = "DepositV2";
+/// zkas withdrawal circuit namespace V2 (domain-separated)
+pub const BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V2: &str = "WithdrawV2";
+/// zkas update config circuit namespace V2 (domain-separated)
+pub const BRIDGE_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2: &str = "UpdateConfigV2";
+
 // XMR (Monero) specific constants
 /// Number of block confirmations required for XMR deposits
 pub const BRIDGE_CONTRACT_XMR_CONFIRMATIONS: u64 = 10;

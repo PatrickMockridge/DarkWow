@@ -1,0 +1,79 @@
+# Issue_V2 circuit — mints tokens of an existing token type.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+# CONSENSUS CRITICAL: irreversible once deployed. Must match Python model.
+k = 11;
+field = "pallas";
+
+constant "Issue_V2" {
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+}
+
+witness "Issue_V2" {
+    # Backing capability proof (mint_public = poseidon_hash(backing_secret))
+    Base backing_secret,
+    Base mint_public,
+    # Token registry Merkle proof (proves token_id exists in registry)
+    Uint32 token_leaf_pos,
+    MerklePath token_path,
+    # Coin attributes
+    Base coin_public,
+    Base coin_value,
+    Base coin_token_id,
+    Base coin_spend_hook,
+    Base coin_user_data,
+    Base coin_blind,
+    # Value commitment blind
+    Scalar value_blind,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "Issue_V2" {
+    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_TOK_COMMIT = witness_base(2);
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_SIGNATURE_SECRET = witness_base(7);
+
+    # Verify token_id exists in the token registry via Merkle proof
+    token_root = merkle_root(token_leaf_pos, token_path, coin_token_id);
+    constrain_instance(token_root);
+
+    # Bind mint_public to backing_secret
+    derived_mint_public = poseidon_hash(DOMAIN_SIGNATURE_SECRET, backing_secret);
+    constrain_equal_base(derived_mint_public, mint_public);
+    constrain_instance(mint_public);
+
+    # RC1-B: bind coin_public to mint_public
+    constrain_equal_base(coin_public, mint_public);
+
+    # Create the coin with the given token_id
+    coin = poseidon_hash(
+        DOMAIN_COIN_COMMIT,
+        coin_public,
+        coin_value,
+        coin_token_id,
+        coin_spend_hook,
+        coin_user_data,
+        coin_blind,
+    );
+    constrain_instance(coin);
+
+    # Value commitment - Pedersen (additively homomorphic)
+    vcv = ec_mul_short(coin_value, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+    coin_value_commit = ec_add(vcv, vcr);
+    constrain_instance(ec_get_x(coin_value_commit));
+    constrain_instance(ec_get_y(coin_value_commit));
+
+    constrain_instance(coin_token_id);
+    constrain_instance(coin_spend_hook);
+
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+    range_check(64, coin_value);
+}

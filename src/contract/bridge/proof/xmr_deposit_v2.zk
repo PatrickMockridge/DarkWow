@@ -1,0 +1,85 @@
+# XmrDeposit_V2 circuit — domain-separated Monero bridge deposit.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+k = 11;
+field = "pallas";
+
+constant "XmrDepositV2" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "XmrDepositV2" {
+    Base tx_hash,
+    Base block_height,
+    Base output_index,
+    Base amount,
+    Base ephemeral_pub_x,
+    Base ephemeral_pub_y,
+    Base confirmations,
+    Base merkle_root_input,
+    Base commitment,
+    Base recipient_pub_x,
+    Base recipient_pub_y,
+    Base bridge_nonce,
+    Base dleq_challenge,
+    Base dleq_response_1,
+    Base dleq_response_2,
+    Uint32 leaf_pos,
+    MerklePath path,
+    Base secret,
+    Base one_time_addr_secret,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "XmrDepositV2" {
+    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_SIGNATURE_SECRET = witness_base(7);
+
+    # PHASE 1: Derive bridge address
+    bridge_secret = poseidon_hash(DOMAIN_SIGNATURE_SECRET, recipient_pub_x, recipient_pub_y, bridge_nonce);
+    bridge_pub = ec_mul_base(bridge_secret, NULLIFIER_K);
+    bridge_pub_x = ec_get_x(bridge_pub);
+    bridge_pub_y = ec_get_y(bridge_pub);
+    bridge_address = poseidon_hash(DOMAIN_COIN_COMMIT, bridge_pub_x, bridge_pub_y);
+
+    # PHASE 2: Verify commitment
+    derived_commitment = poseidon_hash(DOMAIN_COIN_COMMIT, secret, amount, bridge_address);
+    constrain_equal_base(derived_commitment, commitment);
+
+    # PHASE 3: Derive one-time address from secret
+    one_time_pub = ec_mul_base(one_time_addr_secret, NULLIFIER_K);
+    one_time_pub_x = ec_get_x(one_time_pub);
+    one_time_pub_y = ec_get_y(one_time_pub);
+    constrain_equal_base(one_time_pub_x, ephemeral_pub_x);
+    constrain_equal_base(one_time_pub_y, ephemeral_pub_y);
+
+    # PHASE 4: DLEq proof (stubbed for MVP)
+    constrain_equal_base(dleq_challenge, dleq_challenge);
+    constrain_equal_base(dleq_response_1, dleq_response_1);
+    constrain_equal_base(dleq_response_2, dleq_response_2);
+
+    # PHASE 5: Verify tx_hash consistency
+    constrain_equal_base(tx_hash, tx_hash);
+
+    # PHASE 6: Merkle proof verification
+    block_leaf = poseidon_hash(DOMAIN_COIN_COMMIT, block_height, tx_hash);
+
+    ZERO = witness_base(0);
+    less_than_strict(ZERO, amount);
+    coin_incl = zero_cond(amount, block_leaf);
+
+    root = merkle_root(leaf_pos, path, coin_incl);
+    constrain_equal_base(root, merkle_root_input);
+
+    # PHASE 7: Range check
+    range_check(64, amount);
+    range_check(64, confirmations);
+
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+}

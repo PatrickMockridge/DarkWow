@@ -183,6 +183,28 @@ pub const STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V1: &str = "AccrueInterest
 pub const STABLECOIN_CONTRACT_ZKAS_REDEEM_STABLE_NS_V1: &str = "RedeemStableV1";
 pub const STABLECOIN_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V1: &str = "UpdateConfigV1";
 
+// V2 circuit namespaces (HAZOP RC3: domain separation)
+/// zkas init circuit namespace V2 (domain-separated)
+pub const STABLECOIN_CONTRACT_ZKAS_INIT_NS_V2: &str = "InitV2";
+/// zkas open position circuit namespace V2 (domain-separated)
+pub const STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V2: &str = "OpenPositionV2";
+/// zkas add collateral circuit namespace V2 (domain-separated)
+pub const STABLECOIN_CONTRACT_ZKAS_ADD_COLLATERAL_NS_V2: &str = "AddCollateralV2";
+/// zkas remove collateral circuit namespace V2 (domain-separated)
+pub const STABLECOIN_CONTRACT_ZKAS_REMOVE_COLLATERAL_NS_V2: &str = "RemoveCollateralV2";
+/// zkas mint stablecoin circuit namespace V2 (domain-separated)
+pub const STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V2: &str = "MintStableV2";
+/// zkas repay stablecoin circuit namespace V2 (domain-separated)
+pub const STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V2: &str = "RepayStableV2";
+/// zkas liquidate circuit namespace V2 (domain-separated)
+pub const STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V2: &str = "LiquidateV2";
+/// zkas governance report circuit namespace V2 (domain-separated, uses BaseDiv)
+pub const STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V2: &str = "GovernanceReportV2";
+/// zkas interest accrual circuit namespace V2 (domain-separated, uses BaseDiv)
+pub const STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V2: &str = "AccrueInterestV2";
+/// zkas update config circuit namespace V2 (domain-separated)
+pub const STABLECOIN_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2: &str = "UpdateConfigV2";
+
 // ============================================================================
 // XMR Collateral Constants
 // ============================================================================

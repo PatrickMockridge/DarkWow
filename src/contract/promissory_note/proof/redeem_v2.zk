@@ -1,0 +1,66 @@
+# Redeem_V2 circuit — proves receipt coin is well-formed with value=0.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+k = 11;
+field = "pallas";
+
+constant "Redeem_V2" {
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+}
+
+witness "Redeem_V2" {
+    Base coin_public,
+    Base coin_value,
+    Base coin_token_id,
+    Base coin_spend_hook,
+    Base coin_user_data,
+    Base coin_blind,
+    Scalar value_blind,
+    Base token_id_blind,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "Redeem_V2" {
+    DOMAIN_TOK_COMMIT = witness_base(2);
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COIN_COMMIT = witness_base(4);
+
+    # Coin commitment
+    coin = poseidon_hash(
+        DOMAIN_COIN_COMMIT,
+        coin_public,
+        coin_value,
+        coin_token_id,
+        coin_spend_hook,
+        coin_user_data,
+        coin_blind,
+    );
+    constrain_instance(coin);
+
+    # Value commitment - Pedersen
+    vcv = ec_mul_short(coin_value, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+    coin_value_commit = ec_add(vcv, vcr);
+    constrain_instance(ec_get_x(coin_value_commit));
+    constrain_instance(ec_get_y(coin_value_commit));
+
+    # Token ID commitment
+    token_commit = poseidon_hash(DOMAIN_TOK_COMMIT, coin_token_id, token_id_blind);
+    constrain_instance(token_commit);
+
+    # Expose coin_value as a public input — entrypoint verifies it is 0
+    constrain_instance(coin_value);
+
+    # HAZOP ELEV-4 FIX: Enforce coin_value = 0 in-circuit
+    ZERO = witness_base(0);
+    constrain_equal_base(coin_value, ZERO);
+
+    # Reveal spend_hook
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+    constrain_instance(coin_spend_hook);
+}

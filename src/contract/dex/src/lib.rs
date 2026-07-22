@@ -123,3 +123,21 @@ pub const DEX_CONTRACT_ZKAS_EXECUTE_SWAP_FEE_NS_V1: &str = "ExecuteSwapFeeV1";
 pub const DEX_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V1: &str = "UpdateConfigV1";
 /// Set transparency level circuit namespace
 pub const DEX_CONTRACT_ZKAS_SET_TRANSPARENCY_NS_V1: &str = "SetTransparencyLevelV1";
+
+// V2 circuit namespaces (HAZOP RC3: domain separation)
+/// Create swap circuit namespace V2 (domain-separated)
+pub const DEX_CONTRACT_ZKAS_CREATE_SWAP_NS_V2: &str = "CreateSwapV2";
+/// Accept swap circuit namespace V2 (domain-separated)
+pub const DEX_CONTRACT_ZKAS_ACCEPT_SWAP_NS_V2: &str = "AcceptSwapV2";
+/// Execute swap circuit namespace V2 (domain-separated)
+pub const DEX_CONTRACT_ZKAS_EXECUTE_SWAP_NS_V2: &str = "ExecuteSwapV2";
+/// Cancel swap circuit namespace V2 (domain-separated)
+pub const DEX_CONTRACT_ZKAS_CANCEL_SWAP_NS_V2: &str = "CancelSwapV2";
+/// Execute swap slippage circuit namespace V2 (domain-separated)
+pub const DEX_CONTRACT_ZKAS_EXECUTE_SWAP_SLIPPAGE_NS_V2: &str = "ExecuteSwapSlippageV2";
+/// Execute swap fee circuit namespace V2 (domain-separated)
+pub const DEX_CONTRACT_ZKAS_EXECUTE_SWAP_FEE_NS_V2: &str = "ExecuteSwapFeeV2";
+/// Update config circuit namespace V2 (domain-separated)
+pub const DEX_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2: &str = "UpdateConfigV2";
+/// Set transparency level circuit namespace V2 (domain-separated)
+pub const DEX_CONTRACT_ZKAS_SET_TRANSPARENCY_NS_V2: &str = "SetTransparencyLevelV2";

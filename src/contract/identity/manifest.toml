@@ -5,7 +5,7 @@
 name = "identity"
 category = "Identity"
 description = "Identity and credential management — issue credentials, create claims, register capabilities, verify."
-version = "1.0.0"
+version = "2.0.0"
 dependencies = ["promissory_note", "native_token_v1"]
 
 [[functions]]
@@ -16,7 +16,7 @@ code = 0
 name = "issue_credential"
 code = 1
 requires_proof = true
-proof_circuit = "IssueCredential_V1"
+proof_circuit = "IssueCredential_V2"
 
 [[functions]]
 name = "revoke_credential"
@@ -26,7 +26,7 @@ code = 2
 name = "create_claim"
 code = 3
 requires_proof = true
-proof_circuit = "CreateClaim_V1"
+proof_circuit = "CreateClaim_V2"
 
 [[functions]]
 name = "verify_claim"
@@ -36,25 +36,25 @@ code = 4
 name = "create_claim_l1"
 code = 5
 requires_proof = true
-proof_circuit = "CreateClaim_V1_L1"
+proof_circuit = "CreateClaim_V2_L1"
 
 [[functions]]
 name = "create_claim_l1_v2"
 code = 6
 requires_proof = true
-proof_circuit = "CreateClaim_V1_L1_V2"
+proof_circuit = "CreateClaim_V2_L1_V2"
 
 [[functions]]
 name = "create_claim_multi"
 code = 7
 requires_proof = true
-proof_circuit = "CreateClaim_V1_Multi"
+proof_circuit = "CreateClaim_V2_Multi"
 
 [[functions]]
 name = "create_claim_ratio"
 code = 8
 requires_proof = true
-proof_circuit = "CreateClaim_V1_Ratio"
+proof_circuit = "CreateClaim_V2_Ratio"
 
 [[functions]]
 name = "register_capability"
@@ -68,7 +68,7 @@ code = 10
 name = "verify_capability"
 code = 11
 requires_proof = true
-proof_circuit = "VerifyCapability_V1"
+proof_circuit = "VerifyCapability_V2"
 
 [[functions]]
 name = "revoke_capability"
@@ -78,7 +78,7 @@ code = 12
 name = "create_claim_dag"
 code = 13
 requires_proof = true
-proof_circuit = "CreateClaim_V1_DAG"
+proof_circuit = "CreateClaim_V2_DAG"
 
 [[functions]]
 name = "register_issuer"
@@ -213,4 +213,37 @@ namespace = "identity"
 
 [[circuits]]
 name = "VerifyCapability_V1"
+namespace = "identity"
+
+# V2 circuits (HAZOP RC3: domain separation)
+[[circuits]]
+name = "IssueCredential_V2"
+namespace = "identity"
+
+[[circuits]]
+name = "CreateClaim_V2"
+namespace = "identity"
+
+[[circuits]]
+name = "CreateClaim_V2_L1"
+namespace = "identity"
+
+[[circuits]]
+name = "CreateClaim_V2_L1_V2"
+namespace = "identity"
+
+[[circuits]]
+name = "CreateClaim_V2_DAG"
+namespace = "identity"
+
+[[circuits]]
+name = "CreateClaim_V2_Multi"
+namespace = "identity"
+
+[[circuits]]
+name = "CreateClaim_V2_Ratio"
+namespace = "identity"
+
+[[circuits]]
+name = "VerifyCapability_V2"
 namespace = "identity"

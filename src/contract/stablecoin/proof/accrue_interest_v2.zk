@@ -1,0 +1,67 @@
+# AccrueInterest_V2 circuit — precise interest accrual with domain separation.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+k = 11;
+field = "pallas";
+
+constant "AccrueInterestV2" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "AccrueInterestV2" {
+    # Public inputs
+    Base old_total_debt,
+    Base new_total_debt,
+    Base interest_amount,
+    Base rate_per_second,
+    Base time_elapsed,
+    Base accumulator_pub_x,
+    Base accumulator_pub_y,
+
+    # Private inputs
+    Base accumulator_secret,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "AccrueInterestV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+
+    # Verify accumulator is authorized
+    accumulator_public = ec_mul_base(accumulator_secret, NULLIFIER_K);
+    accumulator_public_x = ec_get_x(accumulator_public);
+    accumulator_public_y = ec_get_y(accumulator_public);
+    constrain_equal_base(accumulator_public_x, accumulator_pub_x);
+    constrain_equal_base(accumulator_public_y, accumulator_pub_y);
+
+    # Expose old_total_debt as public input
+    constrain_instance(old_total_debt);
+
+    # Range checks
+    range_check(64, old_total_debt);
+    range_check(64, new_total_debt);
+    range_check(64, rate_per_second);
+    range_check(64, time_elapsed);
+    range_check(64, interest_amount);
+
+    # Calculate: interest = old_total_debt * rate_per_second * time_elapsed / DENOM
+    DENOM = witness_base(315360000000);
+
+    debt_times_rate = base_mul(old_total_debt, rate_per_second);
+    debt_rate_time = base_mul(debt_times_rate, time_elapsed);
+
+    # RC4: base_div still present — to be replaced with quotient-remainder constraints
+    calculated_interest = base_div(debt_rate_time, DENOM);
+
+    constrain_equal_base(calculated_interest, interest_amount);
+
+    # Verify new_total_debt = old_total_debt + interest_amount
+    new_debt_check = base_add(old_total_debt, interest_amount);
+    constrain_equal_base(new_debt_check, new_total_debt);
+
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+    # bool_check removed (RC1-A)
+}

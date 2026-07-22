@@ -62,7 +62,7 @@ use crate::{
     error::DexError,
     model::{CancelSwapParams, CancelSwapUpdateV1, Swap, SwapState},
     DEX_CONTRACT_INFO_TREE, DEX_CONTRACT_PARTICIPANTS_TREE, DEX_CONTRACT_SWAPS_TREE,
-    DEX_CONTRACT_ZKAS_CANCEL_SWAP_NS_V1, PROMISSORY_NOTE_CONTRACT_ID_KEY,
+    DEX_CONTRACT_ZKAS_CANCEL_SWAP_NS_V2, PROMISSORY_NOTE_CONTRACT_ID_KEY,
 };
 
 /// `get_metadata` function for `Dex::CancelSwapV1`
@@ -96,7 +96,7 @@ pub(crate) fn dex_cancel_swap_get_metadata_v1(
     };
 
     zk_public_inputs.push((
-        DEX_CONTRACT_ZKAS_CANCEL_SWAP_NS_V1.to_string(),
+        DEX_CONTRACT_ZKAS_CANCEL_SWAP_NS_V2.to_string(),
         vec![nullifier, swap_id],
     ));
 
