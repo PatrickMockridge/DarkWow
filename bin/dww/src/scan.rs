@@ -1220,7 +1220,7 @@ mod tests {
     #[test]
     fn test_wallet_miner_coinbase_symmetry() {
         let height: u64 = 42;
-        let value: u64 = 50_000_000;
+        let coinbase_reward: u64 = 50_000_000;
 
         // ── Setup: AccountManager from test key ─────────────────────
         let temp_dir = std::env::temp_dir();
@@ -1257,7 +1257,7 @@ mod tests {
 
         // ── Build NativeToken note ──────────────────────────────────
         let nt = dwow_native_token_contract::client::NativeToken {
-            value,
+            value: coinbase_reward,
             token_id: pallas::Base::zero(), // DRKW_TOKEN_ID
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
@@ -1284,11 +1284,11 @@ mod tests {
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: 0,
-                target: u32::MAX,
+                target: dwow_sdk::blockchain::BlockTarget::MAX,
                 nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height),
                 uncle_merkle_root: [0u8; 32],
-                total_reward: value,
+                total_reward: dwow_sdk::blockchain::BlockReward::new(coinbase_reward),
                 randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
@@ -1320,7 +1320,7 @@ mod tests {
         assert!(!result.native_outputs.is_empty(),
             "SYM FAIL: wallet must discover miner's coinbase output");
         let cap = &result.native_outputs[0].cap_record;
-        assert_eq!(cap.value, value,
+        assert_eq!(cap.value, coinbase_reward,
             "SYM FAIL: decrypted value must match miner's value");
         assert_eq!(cap.asset_id.inner(), pallas::Base::zero(),
             "SYM FAIL: asset_id must be DRKW_TOKEN_ID");
@@ -1331,7 +1331,7 @@ mod tests {
         let coin_attrs = dwow_native_token_contract::model::CoinAttributes {
             version: 0,
             public_key: pk_H,
-            value,
+            value: coinbase_reward,
             token_id: TokenId(pallas::Base::zero()),
             spend_hook: FuncId::from(pallas::Base::zero()),
             user_data: pallas::Base::zero(),
@@ -1435,9 +1435,9 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             header: dwow_chain::BlockHeader {
                 version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0, target: u32::MAX, nonce: 0,
+                timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
-                total_reward: 0, randomx_key: [0u8; 32],
+                total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
@@ -1527,9 +1527,9 @@ produces = [{ name = "thing" }]
             header: dwow_chain::BlockHeader {
                 version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0, target: u32::MAX, nonce: 0,
+                timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(h), uncle_merkle_root: [0u8; 32],
-                total_reward: 0, randomx_key: [0u8; 32],
+                total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
@@ -1607,9 +1607,9 @@ required_barbs = ["Spend","Mine"]
             header: dwow_chain::BlockHeader {
                 version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0, target: u32::MAX, nonce: 0,
+                timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(101), uncle_merkle_root: [0u8; 32],
-                total_reward: 0, randomx_key: [0u8; 32],
+                total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
@@ -1726,9 +1726,9 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             header: dwow_chain::BlockHeader {
                 version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0, target: u32::MAX, nonce: 0,
+                timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height_deploy), uncle_merkle_root: [0u8; 32],
-                total_reward: 0, randomx_key: [0u8; 32],
+                total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
@@ -1796,9 +1796,9 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             header: dwow_chain::BlockHeader {
                 version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0, target: u32::MAX, nonce: 0,
+                timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height_call), uncle_merkle_root: [0u8; 32],
-                total_reward: 0, randomx_key: [0u8; 32],
+                total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
@@ -2037,9 +2037,9 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             header: dwow_chain::BlockHeader {
                 version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0, target: u32::MAX, nonce: 0,
+                timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
-                total_reward: value, randomx_key: [0u8; 32],
+                total_reward: dwow_sdk::blockchain::BlockReward::new(value), randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
@@ -2140,9 +2140,9 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             header: dwow_chain::BlockHeader {
                 version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0, target: u32::MAX, nonce: 0,
+                timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
-                total_reward: 0, randomx_key: [0u8; 32],
+                total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
@@ -2208,9 +2208,9 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         let token_blind = Blind(poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(11u64)]));
 
         // ── Build the fee coin note (identical structure to coinbase) ──
-        let value: u64 = 42_000_000;
+        let total_fees: u64 = 42_000_000;
         let note = NativeToken {
-            value, token_id: pallas::Base::zero(),
+            value: total_fees, token_id: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
             coin_blind: coin_blind.inner(),
             value_blind: value_blind.inner(),
@@ -2228,7 +2228,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             nullifier: pallas::Base, tx_binding: pallas::Base, tx_nonce: pallas::Base }
 
         let fc_params = FcParams {
-            total_fees: value,
+            total_fees,
             output: FcOutput { value_commit: vec![], token_commit: pallas::Base::zero(),
                 coin: pallas::Base::zero(), nullifier: pallas::Base::zero(), note: enc_note },
             nullifier: pallas::Base::zero(),
@@ -2241,9 +2241,9 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             header: dwow_chain::BlockHeader {
                 version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0, target: u32::MAX, nonce: 0,
+                timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
-                total_reward: 0, randomx_key: [0u8; 32],
+                total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
@@ -2265,11 +2265,194 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         assert!(!result.native_outputs.is_empty(),
             "P12: FeeCollectV1 fee coin must be discovered (function_code 0x06)");
         let cap = &result.native_outputs[0].cap_record;
-        assert_eq!(cap.value, value,
+        assert_eq!(cap.value, total_fees,
             "P12: FeeCollectV1 fee coin value must match");
         assert_eq!(cap.asset_id.inner(), pallas::Base::zero(),
             "P12: FeeCollectV1 fee coin must carry DRKW asset_id");
         assert_eq!(cap.created_at_height, height,
             "P12: FeeCollectV1 fee coin created_at_height must match");
+    }
+
+    /// P13: Combined PoWRewardV1 (0x05) + FeeCollectV1 (0x06) in the same block.
+    /// A real block has coinbase at transactions[0] and FeeCollect at transactions[last].
+    /// The wallet scan must discover both native token outputs in a single scan_block call.
+    #[test]
+    fn test_coinbase_and_feecollect_in_same_block() {
+        use dwow_native_token_contract::client::NativeToken;
+
+        let height: u64 = 42;
+        let coinbase_reward: u64 = 50_000_000;
+        let total_fees: u64 = 42_000_000;
+
+        // ── Setup: AccountManager from test key ─────────────────────
+        let temp_dir = std::env::temp_dir();
+        let keys_path = temp_dir.join("dwow_test_p13.toml");
+        std::fs::write(&keys_path,
+            "[wallet]\nwallet_secret = \"0100000000000000000000000000000000000000000000000000000000000000\"\n").ok();
+        let account_mgr = dwow_accounts::AccountManager::open(
+            &keys_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet",
+        ).expect("AccountManager::open");
+        let _ = std::fs::remove_file(&keys_path);
+
+        let master_sk = account_mgr.secrets().into_iter().next()
+            .expect("AccountManager must have at least one secret");
+
+        // ── Per-block key (shared by coinbase and FeeCollect) ──────
+        let sk_H = master_sk.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes())
+            .expect("valid test derive_instance");
+        let pk_H = PublicKey::from_secret(sk_H);
+        let h_base = pallas::Base::from(height as u64);
+
+        // ═══════════════════════════════════════════════════════════════
+        // Transaction 0: PoWRewardV1 (0x05) — domains 1-3
+        // ═══════════════════════════════════════════════════════════════
+        let ephem_05 = SecretKey::from(poseidon_hash([
+            sk_H.inner(), pallas::Base::from(0xE7E7_E7E7_E7E7_E7E7u64),
+        ]));
+        let coin_blind_05 = Blind(poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(3u64)]));
+        let value_blind_05 = Blind(pallas::Scalar::from_repr(
+            poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(1u64)]).to_repr(),
+        ).unwrap());
+        let token_blind_05 = Blind(poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(2u64)]));
+
+        let nt_05 = NativeToken {
+            value: coinbase_reward,
+            token_id: pallas::Base::zero(),
+            spend_hook: pallas::Base::zero(),
+            user_data: pallas::Base::zero(),
+            coin_blind: coin_blind_05.inner(),
+            value_blind: value_blind_05.inner(),
+            token_blind: token_blind_05.inner(),
+            memo: vec![],
+        };
+        let aes_05 = AeadEncryptedNote::encrypt_deterministic(&nt_05, &pk_H, ephem_05)
+            .expect("deterministic encrypt 0x05");
+        let mut aes_bytes_05 = vec![];
+        dwow_serial::Encodable::encode(&aes_05, &mut aes_bytes_05).ok();
+        let mut call_data_05 = vec![0x05u8];
+        call_data_05.extend(&aes_bytes_05);
+
+        // ═══════════════════════════════════════════════════════════════
+        // Transaction 1: FeeCollectV1 (0x06) — domains 10-13
+        // ═══════════════════════════════════════════════════════════════
+        let ephem_06 = SecretKey::from(poseidon_hash([
+            sk_H.inner(), h_base, pallas::Base::from(13u64),
+        ]));
+        let coin_blind_06 = Blind(poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(12u64)]));
+        let value_blind_06 = Blind(pallas::Scalar::from_repr(
+            poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(10u64)]).to_repr(),
+        ).unwrap());
+        let token_blind_06 = Blind(poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(11u64)]));
+
+        let nt_06 = NativeToken {
+            value: total_fees,
+            token_id: pallas::Base::zero(),
+            spend_hook: pallas::Base::zero(),
+            user_data: pallas::Base::zero(),
+            coin_blind: coin_blind_06.inner(),
+            value_blind: value_blind_06.inner(),
+            token_blind: token_blind_06.inner(),
+            memo: vec![],
+        };
+        let aes_06 = AeadEncryptedNote::encrypt_deterministic(&nt_06, &pk_H, ephem_06)
+            .expect("deterministic encrypt 0x06");
+
+        // ── FeeCollectParamsV1 wrapper (same structure as P12) ──
+        #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
+        struct FcOutput { value_commit: Vec<u8>, token_commit: pallas::Base,
+            coin: pallas::Base, nullifier: pallas::Base, note: AeadEncryptedNote }
+        #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
+        struct FcParams { total_fees: u64, output: FcOutput,
+            nullifier: pallas::Base, tx_binding: pallas::Base, tx_nonce: pallas::Base }
+
+        let fc_params = FcParams {
+            total_fees,
+            output: FcOutput { value_commit: vec![], token_commit: pallas::Base::zero(),
+                coin: pallas::Base::zero(), nullifier: pallas::Base::zero(), note: aes_06 },
+            nullifier: pallas::Base::zero(),
+            tx_binding: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
+        };
+        let mut call_data_06 = vec![0x06u8];
+        dwow_serial::Encodable::encode(&fc_params, &mut call_data_06).ok();
+
+        // ═══════════════════════════════════════════════════════════════
+        // Build Block with BOTH transactions
+        // ═══════════════════════════════════════════════════════════════
+        let block = dwow_chain::Block {
+            header: dwow_chain::BlockHeader {
+                version: 1,
+                previous: blake3::Hash::from_bytes([0u8; 32]),
+                merkle_root: blake3::Hash::from_bytes([0u8; 32]),
+                timestamp: 0,
+                target: dwow_sdk::blockchain::BlockTarget::MAX,
+                nonce: 0,
+                height: dwow_sdk::blockchain::BlockHeight::new(height),
+                uncle_merkle_root: [0u8; 32],
+                total_reward: dwow_sdk::blockchain::BlockReward::new(coinbase_reward),
+                randomx_key: [0u8; 32],
+                coin_merkle_root: [0u8; 32],
+                nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32],
+                anchor_monero_height: 0,
+                anchor_monero_hash: [0u8; 32],
+                finality_flags: 0,
+                pow_source: dwow_chain::PowSource::Native,
+            },
+            transactions: vec![
+                // transactions[0] = coinbase (PoWRewardV1, 0x05)
+                dwow_chain::Transaction {
+                    version: 1,
+                    inputs: vec![],
+                    outputs: vec![],
+                    contract_calls: vec![dwow_chain::ContractCall {
+                        contract_id: *NATIVE_TOKEN_CONTRACT_ID,
+                        data: call_data_05,
+                    }],
+                    lock_time: 0,
+                    nullifiers: vec![],
+                    witness: vec![],
+                },
+                // transactions[1] = FeeCollectV1 (0x06)
+                dwow_chain::Transaction {
+                    version: 1,
+                    inputs: vec![],
+                    outputs: vec![],
+                    contract_calls: vec![dwow_chain::ContractCall {
+                        contract_id: *NATIVE_TOKEN_CONTRACT_ID,
+                        data: call_data_06,
+                    }],
+                    lock_time: 0,
+                    nullifiers: vec![],
+                    witness: vec![],
+                },
+            ],
+        };
+
+        // ── Wallet side: scan_block ─────────────────────────────────
+        let mut tree = MerkleTree::new(32);
+        let result = scan_block(&mut tree, &account_mgr, &BTreeMap::new(), &block);
+
+        // Must have discovered BOTH native token outputs
+        assert_eq!(result.native_outputs.len(), 2,
+            "P13 FAIL: expected 2 native outputs (coinbase + FeeCollect), got {}",
+            result.native_outputs.len());
+
+        // Output 0: coinbase (PoWRewardV1)
+        let cap0 = &result.native_outputs[0].cap_record;
+        assert_eq!(cap0.value, coinbase_reward,
+            "P13 FAIL: coinbase value mismatch");
+        assert_eq!(cap0.asset_id.inner(), pallas::Base::zero(),
+            "P13 FAIL: coinbase asset_id must be DRKW_TOKEN_ID");
+        assert_eq!(cap0.created_at_height, height,
+            "P13 FAIL: coinbase created_at_height must match block height");
+
+        // Output 1: FeeCollectV1
+        let cap1 = &result.native_outputs[1].cap_record;
+        assert_eq!(cap1.value, total_fees,
+            "P13 FAIL: FeeCollect fee value mismatch");
+        assert_eq!(cap1.asset_id.inner(), pallas::Base::zero(),
+            "P13 FAIL: FeeCollect asset_id must be DRKW_TOKEN_ID");
+        assert_eq!(cap1.created_at_height, height,
+            "P13 FAIL: FeeCollect created_at_height must match block height");
     }
 }
