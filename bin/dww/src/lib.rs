@@ -21,6 +21,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+// ── Compile-time enforcement (Wave 5) ──────────────────────────────────
+// Enforcement is via CI clippy gate (to be added):
+//   cargo clippy -p dwow_wallet -- -D clippy::let_underscore_must_use
+//   cargo clippy -p dwow_wallet -- -D clippy::unwrap_used
+// Built-in Rust lints like `unused_results` are too broad (80+ violations
+// from write! macros, etc.) — clippy provides the focused checks we need.
+
 use std::{collections::HashMap, fs::create_dir_all, sync::Arc, time::{Duration, Instant}};
 
 use bs58;

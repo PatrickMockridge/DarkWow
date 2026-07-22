@@ -190,6 +190,24 @@ pub struct BlockScanResult {
     /// in zkas_binaries for the generic prover (§6.4.1 step 3).
     pub zkas_binaries: Vec<ZkasBinaryDiscovery>,
     pub messages: Vec<String>,
+    /// Per-barrier diagnostic counters (type-system.md §Z: Diagnostic Transparency).
+    /// Distinguishes "nothing to report" from "everything failed."
+    pub diagnostics: BlockScanDiagnostics,
+}
+
+/// Per-barrier diagnostic counters. Every attempt at each scan pipeline stage
+/// is counted. Operators can distinguish "block has no wallet-relevant data"
+/// from "all decrypt/construct attempts failed."
+#[derive(Debug, Clone, Default)]
+pub struct BlockScanDiagnostics {
+    pub aead_decode_attempts: usize,
+    pub aead_decrypt_attempts: usize,
+    pub aead_decrypt_successes: usize,
+    pub capability_construct_attempts: usize,
+    pub capability_construct_successes: usize,
+    pub nullifiers_matched: usize,
+    pub manifest_misses: usize,
+    pub derivation_failures: usize,
 }
 
 impl BlockScanResult {
@@ -201,6 +219,7 @@ impl BlockScanResult {
             deployments: vec![],
             zkas_binaries: vec![],
             messages: vec![],
+            diagnostics: BlockScanDiagnostics::default(),
         }
     }
 }
@@ -393,6 +412,7 @@ fn discover_native_token_outputs(
     data: &[u8],
     height: u64,
     function_code: u8,
+    diagnostics: &mut BlockScanDiagnostics,
 ) -> std::result::Result<(Vec<(CapRecord, MerkleProof)>, Vec<String>), String> {
     let mut results = vec![];
     let mut messages = vec![];
@@ -434,21 +454,26 @@ fn discover_native_token_outputs(
             off += 1;
             continue;
         };
+        diagnostics.aead_decode_attempts += 1;
         tracing::info!(target: "dww::scan",
             "[NATIVE_TOKEN] step=2 aead_decode status=OK offset={}", off);
         let consumed = (cursor.position() - pos_before) as usize;
 
         let mut decrypted = false;
         for secret in &trial_secrets {
+            diagnostics.aead_decrypt_attempts += 1;
             if let Ok(decrypted_note) = generic_note.decrypt::<NativeToken>(secret) {
                 tracing::info!(target: "dww::scan",
                     "[NATIVE_TOKEN] step=3 aead_decrypt status=OK");
+                diagnostics.aead_decrypt_successes += 1;
                 decrypted = true;
+                diagnostics.capability_construct_attempts += 1;
                 match build_native_token_cap_record(
                     tree, secret, &decrypted_note, height, &source,
                     *NATIVE_TOKEN_CONTRACT_ID, None, None,
                 ) {
                     Ok((cap_record, merkle_proof, msg)) => {
+                        diagnostics.capability_construct_successes += 1;
                         tracing::info!(target: "dww::scan",
                             "[NATIVE_TOKEN] step=4 coin_reconstruct status=OK coin=0x{}",
                             hex::encode(&cap_record.commitment.to_bytes()));
@@ -493,6 +518,7 @@ fn scan_native_token_contract_calls(
     tree: &mut MerkleTree,
     tx: &dwow_chain::Transaction,
     height: u64,
+    diagnostics: &mut BlockScanDiagnostics,
 ) -> (Vec<NativeTokenDiscovery>, Vec<NullifierRecord>, Vec<String>) {
     let mut outputs = vec![];
     let mut nullifiers = vec![];
@@ -546,7 +572,7 @@ fn scan_native_token_contract_calls(
         // FeeV1        (0x00): change output
         if matches!(function_code, 0x00 | 0x03 | 0x04 | 0x05 | 0x06) {
             let (caps, msgs) = match discover_native_token_outputs(
-                account_mgr, tree, &call.data, height, function_code,
+                account_mgr, tree, &call.data, height, function_code, diagnostics,
             ) {
                 Ok(result) => result,
                 Err(e) => {
@@ -588,7 +614,7 @@ fn scan_block(
     for tx in block.transactions.iter() {
         // ── Path 1: Native Token (sole special citizen) ──────
         let (native_outputs, nullifiers, mut msgs) =
-            scan_native_token_contract_calls(account_mgr, tree, tx, height);
+            scan_native_token_contract_calls(account_mgr, tree, tx, height, &mut result.diagnostics);
         result.native_outputs.extend(native_outputs);
         result.published_nullifiers.extend(nullifiers);
         result.messages.append(&mut msgs);
@@ -1191,6 +1217,7 @@ mod tests {
         // Positive: AccountManager has the correct secret
         let (caps, _) = discover_native_token_outputs(
             &account_mgr, &mut tree, &call_data, height, 0x05,
+            &mut BlockScanDiagnostics::default(),
         ).expect("F2 FAIL: discover_native_token_outputs must succeed with correct key");
         assert!(!caps.is_empty(),
             "F2 FAIL: discover should find output when key matches. \
@@ -1204,6 +1231,7 @@ mod tests {
         let _ = std::fs::remove_file(&wrong_path);
         let (caps2, _) = discover_native_token_outputs(
             &wrong_mgr, &mut MerkleTree::new(32), &call_data, height, 0x05,
+            &mut BlockScanDiagnostics::default(),
         ).expect("F2 FAIL: discover must succeed (returns empty with wrong key)");
         assert!(caps2.is_empty(),
             "F2 FAIL: discover should find nothing when key doesn't match");
@@ -1212,6 +1240,7 @@ mod tests {
         let mut tree2 = MerkleTree::new(32);
         let (caps3, _) = discover_native_token_outputs(
             &account_mgr, &mut tree2, &call_data, height, 0x05,
+            &mut BlockScanDiagnostics::default(),
         ).expect("F2 FAIL: discover must be deterministic on second call");
         assert_eq!(caps.len(), caps3.len(),
             "F2 FAIL: discover must be deterministic — different result on second call");
