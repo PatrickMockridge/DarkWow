@@ -1,0 +1,19 @@
+# Call_V2 circuit — domain-separated game room player identity proof.
+# V2 changes from V1 (HAZOP RC3): domain separation on poseidon_hash
+k = 11; field = "pallas";
+constant "CallV2" { EcFixedPointBase NULLIFIER_K, }
+witness "CallV2" {
+    Base room_id, Base player_secret, Base player_pub_x, Base player_pub_y,
+    Base player_nullifier, Base tx_commitment, Base tx_nonce, Base tx_binding,
+}
+circuit "CallV2" {
+    DOMAIN_NULLIFIER = witness_base(1); DOMAIN_TX_BINDING = witness_base(3);
+    player_pub = ec_mul_base(player_secret, NULLIFIER_K);
+    constrain_equal_base(ec_get_x(player_pub), player_pub_x);
+    constrain_equal_base(ec_get_y(player_pub), player_pub_y);
+    computed = poseidon_hash(DOMAIN_NULLIFIER, room_id, player_secret);
+    constrain_equal_base(computed, player_nullifier);
+    constrain_instance(player_pub_x); constrain_instance(player_pub_y);
+    constrain_instance(player_nullifier); tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding); constrain_instance(tx_nonce);
+}

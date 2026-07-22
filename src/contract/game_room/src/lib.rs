@@ -105,6 +105,13 @@ pub const GAME_ROOM_ZKAS_SETTLE_POT_NS: &str = "SettlePot";
 /// ZK namespace for Claim circuit
 pub const GAME_ROOM_ZKAS_CLAIM_NS: &str = "Claim";
 
+// V2 circuit namespaces (HAZOP RC3: domain separation)
+pub const GAME_ROOM_ZKAS_CREATE_ROOM_NS_V2: &str = "CreateRoomV2";
+pub const GAME_ROOM_ZKAS_DEPOSIT_NS_V2: &str = "DepositV2";
+pub const GAME_ROOM_ZKAS_PLACE_BET_NS_V2: &str = "PlaceBetV2";
+pub const GAME_ROOM_ZKAS_SETTLE_POT_NS_V2: &str = "SettlePotV2";
+pub const GAME_ROOM_ZKAS_CLAIM_NS_V2: &str = "ClaimV2";
+
 impl TryFrom<u8> for GameRoomFunction {
     type Error = GameRoomError;
 
@@ -185,6 +192,30 @@ pub fn init_contract(cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractR
     let settle_pot_v1_bincode = include_bytes!("../proof/settle_pot_v1.zk.bin");
     wasm::db::zkas_db_set(&settle_pot_v1_bincode[..])?;
 
+    // V2 circuits (HAZOP RC3: domain separation)
+    let call_v2_bincode = include_bytes!("../proof/call_v2.zk.bin");
+    wasm::db::zkas_db_set(&call_v2_bincode[..])?;
+    let claim_v2_bincode = include_bytes!("../proof/claim_v2.zk.bin");
+    wasm::db::zkas_db_set(&claim_v2_bincode[..])?;
+    let close_pot_v2_bincode = include_bytes!("../proof/close_pot_v2.zk.bin");
+    wasm::db::zkas_db_set(&close_pot_v2_bincode[..])?;
+    let contribute_entropy_v2_bincode = include_bytes!("../proof/contribute_entropy_v2.zk.bin");
+    wasm::db::zkas_db_set(&contribute_entropy_v2_bincode[..])?;
+    let create_room_v2_bincode = include_bytes!("../proof/create_room_v2.zk.bin");
+    wasm::db::zkas_db_set(&create_room_v2_bincode[..])?;
+    let deposit_v2_bincode = include_bytes!("../proof/deposit_v2.zk.bin");
+    wasm::db::zkas_db_set(&deposit_v2_bincode[..])?;
+    let fold_v2_bincode = include_bytes!("../proof/fold_v2.zk.bin");
+    wasm::db::zkas_db_set(&fold_v2_bincode[..])?;
+    let place_bet_v2_bincode = include_bytes!("../proof/place_bet_v2.zk.bin");
+    wasm::db::zkas_db_set(&place_bet_v2_bincode[..])?;
+    let raise_v2_bincode = include_bytes!("../proof/raise_v2.zk.bin");
+    wasm::db::zkas_db_set(&raise_v2_bincode[..])?;
+    let settle_pot_v2_bincode = include_bytes!("../proof/settle_pot_v2.zk.bin");
+    wasm::db::zkas_db_set(&settle_pot_v2_bincode[..])?;
+    let withdraw_v2_bincode = include_bytes!("../proof/withdraw_v2.zk.bin");
+    wasm::db::zkas_db_set(&withdraw_v2_bincode[..])?;
+
     Ok(())
 }
 
@@ -242,7 +273,7 @@ fn create_room_get_metadata_v1(
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs
-        .push((GAME_ROOM_ZKAS_CREATE_ROOM_NS.to_string(), vec![derived_room_id]));
+        .push((GAME_ROOM_ZKAS_CREATE_ROOM_NS_V2.to_string(), vec![derived_room_id]));
 
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -261,7 +292,7 @@ fn deposit_get_metadata_v1(
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        GAME_ROOM_ZKAS_DEPOSIT_NS.to_string(),
+        GAME_ROOM_ZKAS_DEPOSIT_NS_V2.to_string(),
         vec![derived_account_key, derived_player_key],
     ));
 
@@ -293,7 +324,7 @@ fn place_bet_get_metadata_v1(
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        GAME_ROOM_ZKAS_PLACE_BET_NS.to_string(),
+        GAME_ROOM_ZKAS_PLACE_BET_NS_V2.to_string(),
         vec![derived_bet_id, derived_commitment],
     ));
 
@@ -320,7 +351,7 @@ fn settle_pot_get_metadata_v1(
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        GAME_ROOM_ZKAS_SETTLE_POT_NS.to_string(),
+        GAME_ROOM_ZKAS_SETTLE_POT_NS_V2.to_string(),
         vec![derived_room_id, derived_pot_id],
     ));
 
@@ -348,7 +379,7 @@ fn claim_get_metadata_v1(
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        GAME_ROOM_ZKAS_CLAIM_NS.to_string(),
+        GAME_ROOM_ZKAS_CLAIM_NS_V2.to_string(),
         vec![derived_claim_id, derived_winner_key],
     ));
 

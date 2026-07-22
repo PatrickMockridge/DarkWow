@@ -2,7 +2,7 @@
 name = "game_room"
 category = "Gaming"
 description = "Multi-game room — create room, deposit, bet, raise, call, fold, settle pot, claim."
-version = "1.0.0"
+version = "2.0.0"
 dependencies = ["promissory_note", "native_token_v1"]
 
 [[functions]]
@@ -112,4 +112,49 @@ namespace = "game_room"
 
 [[circuits]]
 name = "Claim_V1"
+namespace = "game_room"
+
+# V2 circuits (HAZOP RC3: domain separation)
+[[circuits]]
+name = "CreateRoom_V2"
+namespace = "game_room"
+
+[[circuits]]
+name = "Deposit_V2"
+namespace = "game_room"
+
+[[circuits]]
+name = "PlaceBet_V2"
+namespace = "game_room"
+
+[[circuits]]
+name = "SettlePot_V2"
+namespace = "game_room"
+
+[[circuits]]
+name = "Claim_V2"
+namespace = "game_room"
+
+[[circuits]]
+name = "Call_V2"
+namespace = "game_room"
+
+[[circuits]]
+name = "ClosePot_V2"
+namespace = "game_room"
+
+[[circuits]]
+name = "ContributeEntropy_V2"
+namespace = "game_room"
+
+[[circuits]]
+name = "Fold_V2"
+namespace = "game_room"
+
+[[circuits]]
+name = "Raise_V2"
+namespace = "game_room"
+
+[[circuits]]
+name = "Withdraw_V2"
 namespace = "game_room"

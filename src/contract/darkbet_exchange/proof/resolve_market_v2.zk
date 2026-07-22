@@ -1,0 +1,18 @@
+# ResolveMarket_V2 — domain-separated market resolution.
+# V2 changes from V1 (HAZOP RC3): domain separation on poseidon_hash
+k = 11; field = "pallas";
+constant "ResolveMarketV2" { EcFixedPointBase NULLIFIER_K, }
+witness "ResolveMarketV2" {
+    Base market_id, Base oracle_secret, Base oracle_pub_x, Base oracle_pub_y,
+    Base oracle_nullifier, Base tx_commitment, Base tx_nonce, Base tx_binding,
+}
+circuit "ResolveMarketV2" {
+    DOMAIN_NULLIFIER = witness_base(1); DOMAIN_TX_BINDING = witness_base(3);
+    oracle_pub = ec_mul_base(oracle_secret, NULLIFIER_K);
+    constrain_equal_base(ec_get_x(oracle_pub), oracle_pub_x); constrain_equal_base(ec_get_y(oracle_pub), oracle_pub_y);
+    computed = poseidon_hash(DOMAIN_NULLIFIER, market_id, oracle_secret);
+    constrain_equal_base(computed, oracle_nullifier);
+    constrain_instance(oracle_pub_x); constrain_instance(oracle_pub_y); constrain_instance(oracle_nullifier);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding); constrain_instance(tx_nonce);
+}

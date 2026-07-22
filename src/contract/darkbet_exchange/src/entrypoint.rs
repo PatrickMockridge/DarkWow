@@ -110,6 +110,28 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let create_market_v1_bincode = include_bytes!("../proof/create_market_v1.zk.bin");
     wasm::db::zkas_db_set(&create_market_v1_bincode[..])?;
 
+    // V2 circuits (HAZOP RC3: domain separation)
+    let add_liquidity_v2_bincode = include_bytes!("../proof/add_liquidity_v2.zk.bin");
+    wasm::db::zkas_db_set(&add_liquidity_v2_bincode[..])?;
+    let buy_position_v2_bincode = include_bytes!("../proof/buy_position_v2.zk.bin");
+    wasm::db::zkas_db_set(&buy_position_v2_bincode[..])?;
+    let cancel_order_v2_bincode = include_bytes!("../proof/cancel_order_v2.zk.bin");
+    wasm::db::zkas_db_set(&cancel_order_v2_bincode[..])?;
+    let claim_winnings_v2_bincode = include_bytes!("../proof/claim_winnings_v2.zk.bin");
+    wasm::db::zkas_db_set(&claim_winnings_v2_bincode[..])?;
+    let create_market_v2_bincode = include_bytes!("../proof/create_market_v2.zk.bin");
+    wasm::db::zkas_db_set(&create_market_v2_bincode[..])?;
+    let match_orders_v2_bincode = include_bytes!("../proof/match_orders_v2.zk.bin");
+    wasm::db::zkas_db_set(&match_orders_v2_bincode[..])?;
+    let place_back_v2_bincode = include_bytes!("../proof/place_back_v2.zk.bin");
+    wasm::db::zkas_db_set(&place_back_v2_bincode[..])?;
+    let place_lay_v2_bincode = include_bytes!("../proof/place_lay_v2.zk.bin");
+    wasm::db::zkas_db_set(&place_lay_v2_bincode[..])?;
+    let remove_liquidity_v2_bincode = include_bytes!("../proof/remove_liquidity_v2.zk.bin");
+    wasm::db::zkas_db_set(&remove_liquidity_v2_bincode[..])?;
+    let resolve_market_v2_bincode = include_bytes!("../proof/resolve_market_v2.zk.bin");
+    wasm::db::zkas_db_set(&resolve_market_v2_bincode[..])?;
+
     Ok(())
 }
 
@@ -134,7 +156,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ]);
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                crate::DARKBET_EXCHANGE_ZKAS_CREATE_MARKET_NS.to_string(),
+                crate::DARKBET_EXCHANGE_ZKAS_CREATE_MARKET_NS_V2.to_string(),
                 vec![market_id],
             ));
             let mut metadata = vec![];
@@ -159,7 +181,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let vc_coords = coords.unwrap();
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                crate::DARKBET_EXCHANGE_ZKAS_ADD_LIQUIDITY_NS.to_string(),
+                crate::DARKBET_EXCHANGE_ZKAS_ADD_LIQUIDITY_NS_V2.to_string(),
                 vec![lp_share_id, *vc_coords.x(), *vc_coords.y()],
             ));
             let mut metadata = vec![];
@@ -186,7 +208,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let vc_coords = coords.unwrap();
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                crate::DARKBET_EXCHANGE_ZKAS_BUY_POSITION_NS.to_string(),
+                crate::DARKBET_EXCHANGE_ZKAS_BUY_POSITION_NS_V2.to_string(),
                 vec![position_id, *vc_coords.x(), *vc_coords.y()],
             ));
             let mut metadata = vec![];
@@ -207,7 +229,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ]);
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                crate::DARKBET_EXCHANGE_ZKAS_CLAIM_WINNINGS_NS.to_string(),
+                crate::DARKBET_EXCHANGE_ZKAS_CLAIM_WINNINGS_NS_V2.to_string(),
                 vec![claim_id],
             ));
             let mut metadata = vec![];

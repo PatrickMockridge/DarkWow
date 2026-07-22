@@ -180,6 +180,12 @@ pub const DARKBET_EXCHANGE_ZKAS_CLAIM_WINNINGS_NS: &str = "ClaimWinnings";
 /// ZK namespace for AddLiquidity circuit
 pub const DARKBET_EXCHANGE_ZKAS_ADD_LIQUIDITY_NS: &str = "AddLiquidity";
 
+// V2 circuit namespaces (HAZOP RC3: domain separation)
+pub const DARKBET_EXCHANGE_ZKAS_CREATE_MARKET_NS_V2: &str = "CreateMarketV2";
+pub const DARKBET_EXCHANGE_ZKAS_BUY_POSITION_NS_V2: &str = "BuyPositionV2";
+pub const DARKBET_EXCHANGE_ZKAS_CLAIM_WINNINGS_NS_V2: &str = "ClaimWinningsV2";
+pub const DARKBET_EXCHANGE_ZKAS_ADD_LIQUIDITY_NS_V2: &str = "AddLiquidityV2";
+
 // ============================================================================
 // COMPOSED CONTRACTS
 // ============================================================================

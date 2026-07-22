@@ -1,0 +1,17 @@
+# AddLiquidity_V2 — domain-separated liquidity provision.
+# V2 changes from V1 (HAZOP RC3): domain separation on poseidon_hash
+k = 11; field = "pallas";
+constant "AddLiquidityV2" { EcFixedPointBase NULLIFIER_K, }
+witness "AddLiquidityV2" {
+    Base market_id, Base provider_pub_x, Base provider_pub_y, Base provider_secret,
+    Base amount, Base block_height, Base tx_commitment, Base tx_nonce, Base tx_binding,
+}
+circuit "AddLiquidityV2" {
+    DOMAIN_NULLIFIER = witness_base(1); DOMAIN_TX_BINDING = witness_base(3); DOMAIN_COIN_COMMIT = witness_base(4);
+    derived_lp_share_id = poseidon_hash(DOMAIN_COIN_COMMIT, market_id, provider_pub_x, provider_pub_y, amount, block_height);
+    constrain_instance(derived_lp_share_id);
+    computed_nullifier = poseidon_hash(DOMAIN_NULLIFIER, derived_lp_share_id, provider_secret);
+    constrain_instance(computed_nullifier);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding); constrain_instance(tx_nonce);
+}
