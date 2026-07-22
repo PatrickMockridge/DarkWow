@@ -526,7 +526,7 @@ produces = [{ name = "badge" }]
 required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","ProveInclusion"]
 "#;
 
-        let wallet_pk = PublicKey::from_secret(master_sk_wallet);
+        let wallet_pk = PublicKey::from_secret(master_sk_wallet.clone());
         let foreign_cid_str = bs58::encode(foreign_cid.to_bytes()).into_string();
         let deployer_pubkey_str =
             bs58::encode(wallet_pk.to_bytes()).into_string();
@@ -570,7 +570,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         let enc_note = AeadEncryptedNote::encrypt_deterministic(
             &badge_note,
             &wallet_pk,
-            ephem,
+            ephem.clone(),
         )
         .expect("encrypt badge note");
 

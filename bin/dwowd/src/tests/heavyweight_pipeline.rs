@@ -710,7 +710,7 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
 
         // --- create_swap ---
         println!("  Test: create_swap");
-        let create = harness.create_swap(secret, offer_token, 1000, request_token, 500, sig_secret)?;
+        let create = harness.create_swap(secret, offer_token, 1000, request_token, 500, sig_secret.clone())?;
         assert!(!create.call_data.is_empty());
         println!("    call_data={}B", create.call_data.len());
 
@@ -778,7 +778,7 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
 
         let harness = &pipeline.harness;
         let secret = SecretKey::from_bytes([2u8; 32]).unwrap();
-        let public = PublicKey::from_secret(secret);
+        let public = PublicKey::from_secret(secret.clone());
         let keypair = Keypair { secret, public };
 
         // --- mint_pow_reward ---
@@ -787,10 +787,11 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
         // must match current_supply + reward, but the harness hardcodes 0).
         // The accept_block path is tested via exec_coinbase_only() below.
         println!("  Test: mint_pow_reward");
+        let sk = keypair.secret.clone();
         let ephem_secret = SecretKey::from_bytes([9u8; 32]).unwrap();
         let block_height = dwow_sdk::blockchain::BlockHeight::new(2);
         let reward = harness.mint_pow_reward(
-            keypair.secret, ephem_secret, block_height, 1000, None,
+            sk.clone(), ephem_secret.clone(), block_height, 1000, None,
         )?;
         assert!(!reward.call_data.is_empty());
         println!("    call_data={}B coin_blind={:?}", reward.call_data.len(), reward.coin_blind);
@@ -805,7 +806,7 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
             coin_blind: reward.coin_blind,
             leaf_position: 0u64,
             merkle_path: vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
-            secret: keypair.secret,
+            secret: sk.clone(),
             ephemeral_signature_secret: ephem_secret,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
@@ -825,8 +826,8 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
             reward.coin_blind,
             0,
             vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
-            keypair.secret,
-            keypair.secret,
+            sk.clone(),
+            sk,
             recipient,
             pallas::Base::from(0u64),
             pallas::Base::from(0u64),
@@ -961,10 +962,10 @@ fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Erro
 
         // Derive instance-scoped keys — same wallet, different instance = different key
         let buyer_instance_sk = buyer_wallet_sk.derive_instance(&contract_id, &instance_seed).unwrap();
-        let buyer_pub = PublicKey::from_secret(buyer_instance_sk);
+        let buyer_pub = PublicKey::from_secret(buyer_instance_sk.clone());
         let buyer_secret = buyer_instance_sk.inner();
         let seller_instance_sk = seller_wallet_sk.derive_instance(&contract_id, &instance_seed).unwrap();
-        let seller_pub = PublicKey::from_secret(seller_instance_sk);
+        let seller_pub = PublicKey::from_secret(seller_instance_sk.clone());
         let seller_secret = seller_instance_sk.inner();
 
         // --- create_escrow ---
@@ -1068,10 +1069,10 @@ fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Er
         };
 
         let buyer_instance_sk = buyer_wallet_sk.derive_instance(&contract_id, &instance_seed).unwrap();
-        let buyer_pub = PublicKey::from_secret(buyer_instance_sk);
+        let buyer_pub = PublicKey::from_secret(buyer_instance_sk.clone());
         let buyer_secret = buyer_instance_sk.inner();
         let seller_instance_sk = seller_wallet_sk.derive_instance(&contract_id, &instance_seed).unwrap();
-        let seller_pub = PublicKey::from_secret(seller_instance_sk);
+        let seller_pub = PublicKey::from_secret(seller_instance_sk.clone());
         let _seller_secret = seller_instance_sk.inner();
 
         // --- create_escrow (ZK proof generation) ---
@@ -1749,12 +1750,12 @@ fn test_heavyweight_deployooor() -> std::result::Result<(), Box<dyn std::error::
 
         let harness = &pipeline.harness;
         let secret = SecretKey::from_bytes([9u8; 32]).unwrap();
-        let public = PublicKey::from_secret(secret);
+        let public = PublicKey::from_secret(secret.clone());
         let keypair = Keypair { secret, public };
 
         // --- build_deploy_call ---
         println!("  Test: build_deploy_call");
-        let deploy = harness.build_deploy_call(keypair, b"dummy wasm".to_vec(), vec![0x00])?;
+        let deploy = harness.build_deploy_call(keypair.clone(), b"dummy wasm".to_vec(), vec![0x00])?;
         assert!(!deploy.params.wasm_bincode.is_empty());
         println!("    wasm_bincode={}B", deploy.params.wasm_bincode.len());
 
@@ -1946,7 +1947,7 @@ fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Er
         let player_secret = pallas::Base::from(10u64);
         let player_pub = PublicKey::from_secret(player_secret.into());
         let house_secret = SecretKey::from_bytes([11u8; 32]).unwrap();
-        let house_pub = PublicKey::from_secret(house_secret);
+        let house_pub = PublicKey::from_secret(house_secret.clone());
 
         // --- commit_bet ---
         println!("  Test: commit_bet");
@@ -1998,7 +1999,7 @@ fn test_heavyweight_betting_stake() -> std::result::Result<(), Box<dyn std::erro
 
         let harness = &pipeline.harness;
         let staker_secret = SecretKey::from_bytes([12u8; 32]).unwrap();
-        let staker_pub = PublicKey::from_secret(staker_secret);
+        let staker_pub = PublicKey::from_secret(staker_secret.clone());
         let table_id = pallas::Base::from(100u64);
 
         // --- initialize ---
@@ -2009,14 +2010,14 @@ fn test_heavyweight_betting_stake() -> std::result::Result<(), Box<dyn std::erro
 
         // --- stake ---
         println!("  Test: stake");
-        let stake = harness.stake(table_id, staker_pub, staker_secret, 10000, pallas::Base::from(0u64), pallas::Base::from(0u64))?;
+        let stake = harness.stake(table_id, staker_pub, staker_secret.clone(), 10000, pallas::Base::from(0u64), pallas::Base::from(0u64))?;
         assert!(!stake.call_data.is_empty());
         println!("    call_data={}B", stake.call_data.len());
 
         // --- unstake ---
         println!("  Test: unstake");
         let unstake_info = UnstakeStakeInfo::new(table_id, staker_pub, 10000, 10000, 0, pallas::Base::from(1u64), 0);
-        let unstake = harness.unstake(pallas::Base::from(200u64), &unstake_info, staker_secret, pallas::Base::from(0u64), pallas::Base::from(0u64))?;
+        let unstake = harness.unstake(pallas::Base::from(200u64), &unstake_info, staker_secret.clone(), pallas::Base::from(0u64), pallas::Base::from(0u64))?;
         assert!(!unstake.call_data.is_empty());
         println!("    call_data={}B", unstake.call_data.len());
 
@@ -2848,7 +2849,7 @@ fn native_token_call(
         dwow_sdk::pasta::pallas::Base::from(0u64),
         0,
         vec![dwow_sdk::crypto::MerkleNode::new(dwow_sdk::pasta::pallas::Base::from(0u64)); 32],
-        keypair.secret,
+        keypair.secret.clone(),
         keypair.secret,
         recipient,
         dwow_sdk::pasta::pallas::Base::from(0u64),
@@ -2991,7 +2992,7 @@ fn test_heavyweight_multi_uncle() -> std::result::Result<(), Box<dyn std::error:
 
         let mut call_datas = Vec::new();
         for _i in 0u32..3 {
-            let (call_data, _) = native_token_call(&pipeline, keypair)?;
+            let (call_data, _) = native_token_call(&pipeline, keypair.clone())?;
             call_datas.push(call_data);
         }
         let before = pipeline.genesis.block_height();
@@ -3022,7 +3023,7 @@ fn test_heavyweight_uncle_depth() -> std::result::Result<(), Box<dyn std::error:
         let (pipeline, keypair) = setup_native_token_pipeline().await?;
 
         for depth in [1u8, 2, 3] {
-            let (call_data, proofs) = native_token_call(&pipeline, keypair)?;
+            let (call_data, proofs) = native_token_call(&pipeline, keypair.clone())?;
             let before = pipeline.genesis.block_height();
 
             pipeline.exec_as_uncle(&call_data, proofs, depth).await?;
