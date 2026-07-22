@@ -32,7 +32,7 @@
 use std::collections::HashSet;
 
 use blake3::Hash as Blake3Hash;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp};
 use randomx::RandomXVM;
 
 use super::{
@@ -120,9 +120,9 @@ pub fn check_block_header(
 /// timestamp MUST be strictly greater than the median of the last
 /// MEDIAN_BLOCK_COUNT (11) block timestamps.
 pub fn check_block_timestamp(
-    timestamp: u64,
+    timestamp: BlockTimestamp,
     height: BlockHeight,
-    recent_timestamps: &[u64],
+    recent_timestamps: &[BlockTimestamp],
 ) -> Result<()> {
     const MEDIAN_BLOCK_COUNT: usize = 11;
 
@@ -130,12 +130,12 @@ pub fn check_block_timestamp(
     // This is the deterministic portion of Bitcoin Core's CheckBlockTimestamp.
     // The non-deterministic future-timestamp check is a P2P policy, not a consensus rule.
     if height > BlockHeight::GENESIS && recent_timestamps.len() >= MEDIAN_BLOCK_COUNT {
-        let mut sorted: Vec<u64> = recent_timestamps.to_vec();
+        let mut sorted: Vec<BlockTimestamp> = recent_timestamps.to_vec();
         sorted.sort_unstable();
         let median = sorted[sorted.len() / 2];
         if timestamp <= median {
             return Err(LinearError::InvalidTimestamp {
-                timestamp,
+                timestamp: timestamp.get(),
                 reason: format!("timestamp must be > median of last {} blocks", MEDIAN_BLOCK_COUNT),
             });
         }
@@ -384,7 +384,7 @@ mod tests {
                 version: 1,
                 previous: Blake3Hash::from([0u8; 32]),
                 merkle_root: blake3::hash(&[]), // correct for 0 transactions
-                timestamp: 0,
+                timestamp: BlockTimestamp::new(0),
                 target: BlockTarget::MAX,
                 nonce: 0,
                 height: BlockHeight::new(1),
@@ -721,7 +721,7 @@ mod tests {
                 version: 1,
                 previous: Blake3Hash::from([0u8; 32]),
                 merkle_root: blake3::hash(&[]),
-                timestamp: 0,
+                timestamp: BlockTimestamp::new(0),
                 target: BlockTarget::MAX,
                 nonce,
                 height: BlockHeight::new(height),

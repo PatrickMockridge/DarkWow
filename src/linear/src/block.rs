@@ -25,7 +25,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp};
 
 use super::Transaction;
 use crate::monero::MoneroPowData;
@@ -55,7 +55,7 @@ pub struct BlockHeader {
     /// Merkle root of transactions
     pub merkle_root: blake3::Hash,
     /// Block timestamp
-    pub timestamp: u64,
+    pub timestamp: BlockTimestamp,
     /// PoW target — `hash_u32 <= target` is valid. Higher = easier.
     pub target: BlockTarget,
     /// Nonce for PoW mining
@@ -529,10 +529,10 @@ pub fn create_block_with_uncles(
             version: 1,
             previous,
             merkle_root,
-            timestamp: std::time::SystemTime::now()
+            timestamp: BlockTimestamp::new(std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_secs(),
+                .as_secs()),
             target,
             nonce: 0,
             height,
@@ -578,7 +578,7 @@ mod tests {
             version: 1,
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
-            timestamp: 0,
+            timestamp: BlockTimestamp::new(0),
             target: BlockTarget::new(0x0000_FFFF),
             nonce: 0,
             height: BlockHeight::new(10),
@@ -614,7 +614,7 @@ mod tests {
                 version: 1,
                 previous: blake3::hash(&[i]),
                 merkle_root: blake3::hash(&[i]),
-                timestamp: i as u64,
+                timestamp: BlockTimestamp::new(i as u64),
                 target: BlockTarget::new(0x0000_FFFF),
                 nonce: i as u32,
                 height: BlockHeight::new(10 + i as u64),
@@ -656,7 +656,7 @@ mod tests {
                 version: 1,
                 previous: blake3::hash(&[i]),
                 merkle_root: blake3::hash(&[i]),
-                timestamp: i as u64,
+                timestamp: BlockTimestamp::new(i as u64),
                 target: BlockTarget::new(0xFFFF_FFFF), // max target — any hash passes
                 nonce: i as u32,
                 height: BlockHeight::new(10 + i as u64),
@@ -709,7 +709,7 @@ mod tests {
             version: 1,
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
-            timestamp: 0,
+            timestamp: BlockTimestamp::new(0),
             target: BlockTarget::new(0x0000_FFFF),
             nonce: 0,
             height: BlockHeight::new(10),
@@ -743,7 +743,7 @@ mod tests {
             version: 1,
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
-            timestamp: 0,
+            timestamp: BlockTimestamp::new(0),
             target: BlockTarget::new(0x0000_FFFF),
             nonce: 42,
             height: BlockHeight::new(10),
@@ -873,7 +873,7 @@ mod tests {
             version: 1,
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
-            timestamp: 1000,
+            timestamp: BlockTimestamp::new(1000),
             target: BlockTarget::new(0x0000_FFFF),
             nonce: 42,
             height: BlockHeight::new(1),
@@ -907,7 +907,7 @@ mod tests {
             version: 1,
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
-            timestamp: 1000,
+            timestamp: BlockTimestamp::new(1000),
             target: BlockTarget::new(0x0000_FFFF),
             nonce: 0,
             height: BlockHeight::new(0),
@@ -933,7 +933,7 @@ mod tests {
             version: 1,
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
-            timestamp: 1000,
+            timestamp: BlockTimestamp::new(1000),
             target: BlockTarget::new(0x0000_FFFF),
             nonce: 42,
             height: BlockHeight::new(1),
@@ -967,7 +967,7 @@ mod tests {
             version: 1,
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
-            timestamp: 1000,
+            timestamp: BlockTimestamp::new(1000),
             target: BlockTarget::new(0x0000_FFFF),
             nonce: 42,
             height: BlockHeight::new(1),
@@ -1017,7 +1017,7 @@ mod tests {
             version: 1,
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
-            timestamp: 1000,
+            timestamp: BlockTimestamp::new(1000),
             target: BlockTarget::new(0x0000_FFFF),
             nonce: 42,
             height: BlockHeight::new(1),
@@ -1051,7 +1051,7 @@ mod tests {
             version: 1,
             previous: blake3::hash(b"parent"),
             merkle_root: blake3::hash(b"txs"),
-            timestamp: 1000,
+            timestamp: BlockTimestamp::new(1000),
             target: BlockTarget::new(0x0000_FFFF),
             nonce: 42,
             height: BlockHeight::new(1),
@@ -1095,7 +1095,7 @@ mod tests {
             version: 1,
             previous: blake3::hash(b"sentinel_parent"),
             merkle_root: blake3::hash(b"sentinel_txs"),
-            timestamp: 1_700_000_000,
+            timestamp: BlockTimestamp::new(1_700_000_000),
             target: BlockTarget::new(0x1A2B_3C4D),
             nonce: 42,
             height: BlockHeight::new(5),
@@ -1159,7 +1159,7 @@ mod tests {
             version: 1,
             previous: blake3::hash(b"sentinel_parent"),
             merkle_root: blake3::hash(b"sentinel_txs"),
-            timestamp: 1_700_000_000,
+            timestamp: BlockTimestamp::new(1_700_000_000),
             target: BlockTarget::new(0x1A2B_3C4D), // 439,041,101 decimal
             nonce: 42,
             height: BlockHeight::new(5),

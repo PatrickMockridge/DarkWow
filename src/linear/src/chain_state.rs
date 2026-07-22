@@ -67,7 +67,7 @@ use blake3::Hash as Blake3Hash;
 use randomx::{RandomXCache, RandomXFlags, RandomXVM};
 use sled::transaction::Transactional;
 use tracing::info;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp};
 use dwow_sdk::crypto::{pedersen_commitment_u64, Blind};
 use dwow_sdk::pasta::pallas;
 use dwow_sdk::pasta::group::{ff::FromUniformBytes, Group, GroupEncoding};
@@ -531,7 +531,7 @@ impl CChainState {
                 }
             }
             // H6 fix: build recent timestamps for competing-block validation.
-            let recent_ts: Vec<u64> = {
+            let recent_ts: Vec<BlockTimestamp> = {
                 let start = if block_height.get() > 11 { block_height.get() - 11 } else { 1 };
                 let mut ts = Vec::new();
                 for h in start..block_height.get() {
@@ -636,7 +636,7 @@ impl CChainState {
                     drop(consensus);
                 }
                 // H6 fix: build recent timestamps for uncle chain extension validation.
-                let recent_ts: Vec<u64> = {
+                let recent_ts: Vec<BlockTimestamp> = {
                     let start = if block_height.get() > 11 { block_height.get() - 11 } else { 1 };
                     let mut ts = Vec::new();
                     for h in start..block_height.get() {
@@ -697,7 +697,7 @@ impl CChainState {
 
         // CRITICAL-4: Timestamp validation (time warp protection + future limit)
         {
-            let mut recent_ts: Vec<u64> = Vec::with_capacity(11);
+            let mut recent_ts: Vec<BlockTimestamp> = Vec::with_capacity(11);
             let start = if block_height.get() > 11 { block_height.get() - 11 } else { 1 };
             for h in start..block_height.get() {
                 if let Ok(b) = self.store.get_block(BlockHeight::new(h)) {
@@ -729,7 +729,7 @@ impl CChainState {
         // the sled commit, not just TransactionError. Previously, a serde
         // failure in block serialization would leave consensus updated but
         // block uncommitted — permanent desync.
-        let pre_timestamps: Vec<u64>;
+        let pre_timestamps: Vec<BlockTimestamp>;
         let pre_target: u32;
         {
             let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
@@ -1143,7 +1143,7 @@ mod tests {
                 version: 1,
                 previous: blake3::hash(b""),
                 merkle_root: crate::compute_merkle_root(&[]),
-                timestamp: 0,
+                timestamp: BlockTimestamp::new(0),
                 target: BlockTarget::MAX,
                 nonce: 0,
                 height: h,

@@ -311,7 +311,7 @@ mod tests {
             version: 1,
             previous: blake3::Hash::from_bytes([0u8; 32]),
             merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-            timestamp: 0,
+            timestamp: dwow_sdk::blockchain::BlockTimestamp::new(0),
             target: BlockTarget::new(0),
             nonce: 0,
             height: dwow_sdk::blockchain::BlockHeight::new(height),

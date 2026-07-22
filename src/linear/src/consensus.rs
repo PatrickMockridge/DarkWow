@@ -37,7 +37,7 @@
 use std::sync::{atomic::{AtomicU32, AtomicU64, Ordering}, Mutex};
 
 use blake3::Hash as Blake3Hash;
-use dwow_sdk::blockchain::{BlockHeight, BlockTarget};
+use dwow_sdk::blockchain::{BlockHeight, BlockTarget, BlockTimestamp};
 use tracing::debug;
 
 use super::{Block, LinearError, UncleBlock, Result};
@@ -91,7 +91,7 @@ pub struct PoWConsensus {
     /// Used by get_next_work_required as the base for chain-derived computation.
     initial_target: u32,
     /// Recent block timestamps (newest last). Used by `adjust_target`.
-    timestamps: Mutex<Vec<u64>>,
+    timestamps: Mutex<Vec<BlockTimestamp>>,
     /// Accumulated chain work (sum of u32::MAX / target per block).
     /// Used for fork selection — heaviest chain wins, not just longest.
     /// G12: typed wrapper — AtomicU64 is internal implementation detail.
@@ -142,12 +142,12 @@ impl PoWConsensus {
     }
 
     /// Snapshot current timestamps (used for rollback on failed commit).
-    pub fn snapshot_timestamps(&self) -> Vec<u64> {
+    pub fn snapshot_timestamps(&self) -> Vec<BlockTimestamp> {
         self.timestamps.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Restore timestamps from snapshot (used for rollback on failed commit).
-    pub fn restore_timestamps(&self, ts: Vec<u64>) {
+    pub fn restore_timestamps(&self, ts: Vec<BlockTimestamp>) {
         let mut timestamps = self.timestamps.lock().unwrap_or_else(|e| e.into_inner());
         *timestamps = ts;
     }
@@ -173,7 +173,7 @@ impl PoWConsensus {
     }
 
     /// Record a block timestamp for target tracking.
-    pub fn record_block(&self, timestamp: u64) {
+    pub fn record_block(&self, timestamp: BlockTimestamp) {
         let mut timestamps = self.timestamps.lock().unwrap_or_else(|e| e.into_inner());
         if timestamps.len() >= TIMESTAMP_WINDOW {
             timestamps.remove(0);
@@ -205,7 +205,7 @@ impl PoWConsensus {
                 // the violation rather than silently masking it as zero-interval.
                 // A zero interval is substituted (same behavior as before) but the
                 // anomaly is logged so operators can detect timestamp manipulation.
-                timestamps[i].checked_sub(timestamps[i - 1]).unwrap_or_else(|| {
+                timestamps[i].get().checked_sub(timestamps[i - 1].get()).unwrap_or_else(|| {
                     tracing::warn!(target: "dwow_chain::consensus",
                         "Decreasing timestamp in adjustment window: {} < {}",
                         timestamps[i], timestamps[i - 1]);
@@ -306,7 +306,7 @@ impl PoWConsensus {
             for chunk in bytes.chunks_exact(8) {
                 let mut arr = [0u8; 8];
                 arr.copy_from_slice(chunk);
-                timestamps.push(u64::from_le_bytes(arr));
+                timestamps.push(BlockTimestamp::from_le_bytes(arr));
             }
         }
         debug!(
@@ -361,7 +361,7 @@ impl PoWConsensus {
         // only. For testnet chains under 10,000 blocks, the current approach is
         // acceptable. A full fix requires a schema migration (store target per block).
         let mut target = self.initial_target();
-        let mut timestamps: Vec<u64> = Vec::with_capacity(TIMESTAMP_WINDOW);
+        let mut timestamps: Vec<BlockTimestamp> = Vec::with_capacity(TIMESTAMP_WINDOW);
 
         for h in 1..height.get() {
             if let Ok(block) = store.get_block(BlockHeight::new(h)) {
@@ -406,7 +406,7 @@ impl PoWConsensus {
     /// Pure function: compute the adjusted target from a timestamp window.
     /// Same logic as `adjust_target()` but does not mutate self.
     pub fn compute_adjustment(
-        timestamps: &[u64],
+        timestamps: &[BlockTimestamp],
         current_target: u32,
         target_block_time: u64,
         min_target: u32,
@@ -416,7 +416,7 @@ impl PoWConsensus {
         let start = timestamps.len() - n;
         let mut total_interval = 0u64;
         for i in (start + 1)..timestamps.len() {
-            total_interval += timestamps[i].saturating_sub(timestamps[i - 1]);
+            total_interval += timestamps[i].get().saturating_sub(timestamps[i - 1].get());
         }
         let count = (n - 1) as u64;
         let avg_interval = if count > 0 {
@@ -558,23 +558,23 @@ mod tests {
     #[test]
     fn test_timestamp_snapshot_restore_roundtrip() {
         let c = test_consensus();
-        c.record_block(1000);
-        c.record_block(1120);
-        c.record_block(1240);
+        c.record_block(BlockTimestamp::new(1000));
+        c.record_block(BlockTimestamp::new(1120));
+        c.record_block(BlockTimestamp::new(1240));
         let snap = c.snapshot_timestamps();
         assert_eq!(snap.len(), 3);
 
         // Mutate state
-        c.record_block(9999);
+        c.record_block(BlockTimestamp::new(9999));
         assert_eq!(c.snapshot_timestamps().len(), 4);
 
         // Restore should bring back exactly the snapshot
         c.restore_timestamps(snap);
         let restored = c.snapshot_timestamps();
         assert_eq!(restored.len(), 3);
-        assert_eq!(restored[0], 1000);
-        assert_eq!(restored[1], 1120);
-        assert_eq!(restored[2], 1240);
+        assert_eq!(restored[0], BlockTimestamp::new(1000));
+        assert_eq!(restored[1], BlockTimestamp::new(1120));
+        assert_eq!(restored[2], BlockTimestamp::new(1240));
     }
 
     // =========================================================================
@@ -590,7 +590,7 @@ mod tests {
         // Zero timestamps: no adjustment
         assert_eq!(c.adjust_target(), initial);
         // One timestamp: still insufficient
-        c.record_block(1000);
+        c.record_block(BlockTimestamp::new(1000));
         assert_eq!(c.adjust_target(), initial);
     }
 
@@ -602,7 +602,7 @@ mod tests {
         let c = test_consensus();
         // Record blocks exactly at 120s intervals (on target)
         for i in 0..11 {
-            c.record_block(i * 120);
+            c.record_block(BlockTimestamp::new(i * 120));
         }
         let adjusted = c.adjust_target();
         // With perfect timing, should stay very close to initial
@@ -621,7 +621,7 @@ mod tests {
         let initial = c.target();
         // Record blocks at 60s intervals (half of 120s target = too fast)
         for i in 0..11 {
-            c.record_block(i * 60);
+            c.record_block(BlockTimestamp::new(i * 60));
         }
         let adjusted = c.adjust_target();
         assert!(adjusted < initial,
@@ -639,7 +639,7 @@ mod tests {
         let initial = c.target();
         // Record blocks at 240s intervals (double of 120s target = too slow)
         for i in 0..11 {
-            c.record_block(i * 240);
+            c.record_block(BlockTimestamp::new(i * 240));
         }
         let adjusted = c.adjust_target();
         assert!(adjusted > initial,
@@ -655,7 +655,7 @@ mod tests {
         let initial = c.target();
         // Fill window with extreme timestamps to force large adjustment
         for i in 0..21 {
-            c.record_block(i * 1); // instant blocks
+            c.record_block(BlockTimestamp::new(i * 1)); // instant blocks
         }
         let adjusted = c.adjust_target();
         assert!(adjusted >= c.min_target(),
@@ -673,7 +673,7 @@ mod tests {
     /// on identical block data.
     #[test]
     fn test_compute_adjustment_deterministic() {
-        let timestamps: Vec<u64> = (0..20).map(|i| i * 120).collect();
+        let timestamps: Vec<BlockTimestamp> = (0..20).map(|i| BlockTimestamp::new(i * 120)).collect();
         let a = PoWConsensus::compute_adjustment(&timestamps, 0x00FFFFFF, 120, 0x0000FFFF, 0x0FFFFFFF);
         let b = PoWConsensus::compute_adjustment(&timestamps, 0x00FFFFFF, 120, 0x0000FFFF, 0x0FFFFFFF);
         assert_eq!(a, b, "compute_adjustment must be deterministic");
@@ -684,7 +684,12 @@ mod tests {
     #[test]
     fn test_compute_adjustment_decreasing_timestamps_no_panic() {
         // Decreasing timestamps (violate causality) should not panic
-        let timestamps: Vec<u64> = vec![1000, 900, 800, 700, 600, 500, 400, 300, 200, 100, 0];
+        let timestamps: Vec<BlockTimestamp> = vec![
+            BlockTimestamp::new(1000), BlockTimestamp::new(900), BlockTimestamp::new(800),
+            BlockTimestamp::new(700), BlockTimestamp::new(600), BlockTimestamp::new(500),
+            BlockTimestamp::new(400), BlockTimestamp::new(300), BlockTimestamp::new(200),
+            BlockTimestamp::new(100), BlockTimestamp::new(0),
+        ];
         let result = PoWConsensus::compute_adjustment(&timestamps, 0x00FFFFFF, 120, 0x0000FFFF, 0x0FFFFFFF);
         // Must still produce a valid clamped target
         assert!(result >= 0x0000FFFF);
@@ -696,7 +701,9 @@ mod tests {
     #[test]
     fn test_compute_adjustment_minimal_window() {
         // 3 timestamps → window of 2 intervals
-        let result = PoWConsensus::compute_adjustment(&[0, 120, 240], 0x00FFFFFF, 120, 0x0000FFFF, 0x0FFFFFFF);
+        let result = PoWConsensus::compute_adjustment(
+            &[BlockTimestamp::new(0), BlockTimestamp::new(120), BlockTimestamp::new(240)],
+            0x00FFFFFF, 120, 0x0000FFFF, 0x0FFFFFFF);
         assert!(result >= 0x0000FFFF);
         assert!(result <= 0x0FFFFFFF);
     }
