@@ -45,3 +45,17 @@ pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN: &[u8] =
 /// FeeCollect_V1 zkas circuit binary
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V1_BIN: &[u8] =
     include_bytes!("../../proof/fee_collect_v1.zk.bin");
+
+// ── V2 circuits (HAZOP H11: domain separation, M8: coin_public binding) ──
+/// Mint_V2 zkas circuit binary
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN: &[u8] =
+    include_bytes!("../../proof/mint_v2.zk.bin");
+/// Burn_V2 zkas circuit binary
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V2_BIN: &[u8] =
+    include_bytes!("../../proof/burn_v2.zk.bin");
+/// Fee_V2 zkas circuit binary
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN: &[u8] =
+    include_bytes!("../../proof/fee_v2.zk.bin");
+/// FeeCollect_V2 zkas circuit binary
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V2_BIN: &[u8] =
+    include_bytes!("../../proof/fee_collect_v2.zk.bin");

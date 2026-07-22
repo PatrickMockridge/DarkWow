@@ -71,9 +71,9 @@ use crate::{
     NATIVE_TOKEN_CONTRACT_LATEST_NULLIFIER_ROOT, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE,
     NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE, NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
     NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT, NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,
-    NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1, NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1,
-    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V1,
-    NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1, EMPTY_COINS_TREE_ROOT,
+    NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2, NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2,
+    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V2,
+    NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2, EMPTY_COINS_TREE_ROOT,
 };
 
 // Generate WASM entrypoints
@@ -104,6 +104,16 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(&burn_v1_bincode[..])?;
     wasm::db::zkas_db_set(&fee_v1_bincode[..])?;
     wasm::db::zkas_db_set(&fee_collect_v1_bincode[..])?;
+
+    // V2 circuits (HAZOP H11: domain separation, M8: coin_public binding)
+    let mint_v2_bincode = include_bytes!("../../proof/mint_v2.zk.bin");
+    let burn_v2_bincode = include_bytes!("../../proof/burn_v2.zk.bin");
+    let fee_v2_bincode = include_bytes!("../../proof/fee_v2.zk.bin");
+    let fee_collect_v2_bincode = include_bytes!("../../proof/fee_collect_v2.zk.bin");
+    wasm::db::zkas_db_set(&mint_v2_bincode[..])?;
+    wasm::db::zkas_db_set(&burn_v2_bincode[..])?;
+    wasm::db::zkas_db_set(&fee_v2_bincode[..])?;
+    wasm::db::zkas_db_set(&fee_collect_v2_bincode[..])?;
 
     let tx_hash = wasm::util::get_tx_hash()?;
     let call_idx = wasm::util::get_call_index()?;
@@ -255,7 +265,7 @@ fn fee_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     let (sig_x, sig_y) = fee_params.input.signature_public.xy().expect("pk not identity");
 
     zk_public_inputs.push((
-        NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1.to_string(),
+        NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2.to_string(),
         vec![
             fee_params.input.nullifier.inner(),     // 1
             *input_value_coords.x(),                // 2
@@ -301,7 +311,7 @@ fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
         signature_pubkeys.push(input.signature_public);
 
         zk_public_inputs.push((
-            NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
+            NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
             vec![
                 input.nullifier.inner(),        // 1
                 *value_coords.x(),              // 2
@@ -343,7 +353,7 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
         }
         let value_coords = value_coords.unwrap();
         zk_public_inputs.push((
-            NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
+            NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
             vec![
                 input.nullifier.inner(),        // 1
                 *value_coords.x(),              // 2
@@ -374,7 +384,7 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
         // coordinates were incorrect — the proof reveals value_commit, and the
         // metadata MUST match for L2 verification to pass.
         zk_public_inputs.push((
-            NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
+            NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2.to_string(),
             vec![
                 output.coin.inner(),            // 1: C
                 output.nullifier.inner(),       // 2: nf
@@ -418,7 +428,7 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     let (sig_x, sig_y) = sp.input.signature_public.xy().expect("pk not identity");
 
     zk_public_inputs.push((
-        NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
+        NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
         vec![
             sp.input.nullifier.inner(),         // 1
             *input_value_coords.x(),            // 2
@@ -435,7 +445,7 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     ));
 
     zk_public_inputs.push((
-        NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
+        NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2.to_string(),
         vec![
             sp.output.coin.inner(),             // 1: C
             sp.output.nullifier.inner(),        // 2: nf
@@ -764,7 +774,7 @@ fn pow_reward_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     let cumcom_coords = cumcom_coords.unwrap();
 
     zk_public_inputs.push((
-        NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
+        NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2.to_string(),
         vec![
             pr.output.coin.inner(),         // 1: C
             pr.nullifier.inner(),           // 2: nf
@@ -996,7 +1006,7 @@ fn fee_collect_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     // (spec §3.5). Fees are redistribution, not minting: the circuit has no
     // S_H constraint and the supply chain is untouched (spec §3.10).
     zk_public_inputs.push((
-        NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V1.to_string(),
+        NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V2.to_string(),
         vec![
             fc.output.coin.inner(),         // 1: C
             fc.nullifier.inner(),           // 2: nf

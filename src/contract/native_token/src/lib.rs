@@ -175,6 +175,12 @@ pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1: &str = "Fee_V1";
 /// inputs, no cumulative supply chain.
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V1: &str = "FeeCollect_V1";
 
+/// V2 circuit namespaces (HAZOP H11: domain separation, M8: coin_public binding)
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2: &str = "Mint_V2";
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2: &str = "Burn_V2";
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2: &str = "Fee_V2";
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V2: &str = "FeeCollect_V2";
+
 // ============================================================================
 // ZK CIRCUIT BINARIES (for client-side proof generation)
 // ============================================================================
@@ -187,6 +193,10 @@ pub use crate::client::zkbins::{
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V1_BIN,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN,
+    NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V2_BIN,
+    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V2_BIN,
+    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN,
+    NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN,
 };
 
 // ============================================================================

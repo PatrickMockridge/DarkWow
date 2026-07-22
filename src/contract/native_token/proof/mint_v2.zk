@@ -1,0 +1,110 @@
+# Mint_V2 circuit — proves new coins are valid (genesis, PoW rewards, transfer outputs).
+# V2 changes from V1 (HAZOP H11, M8):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+#   - M8 fix: coin_public constrained to coin_secret * NULLIFIER_K (FeeCollect_V1 pattern)
+# CONSENSUS CRITICAL: irreversible once deployed. Must match Python model.
+k = 11;
+field = "pallas";
+
+constant "Mint_V2" {
+    EcFixedPointShort VALUE_COMMIT_VALUE,   # G_v for Pedersen value commitment
+    EcFixedPoint VALUE_COMMIT_RANDOM,       # G_r for blinding
+    EcFixedPointBase NULLIFIER_K,           # For deriving public keys from secrets
+}
+
+witness "Mint_V2" {
+    # CoinAttributes (recipient info)
+    Base coin_public_x,      # Recipient public key X
+    Base coin_public_y,      # Recipient public key Y
+    Base coin_value,         # Coin value (hidden in commitment)
+    Base coin_token_id,      # Token ID (DARK is token_id = 0)
+    Base coin_spend_hook,    # Spend hook (0 for simple transfers)
+    Base coin_user_data,     # User data field
+    Base coin_blind,         # Blinding factor for coin commitment
+
+    # Coin secret — the per-block derived key sk_H.
+    # Proves the miner knows the secret corresponding to coin_public_(x,y).
+    # Required for nullifier computation: nf = poseidon_hash(coin_secret, C).
+    Base coin_secret,
+
+    # Blinding factors for commitments
+    Scalar value_blind,      # Blinding for value commitment
+    Base token_id_blind,     # Blinding for token ID commitment
+
+    # Cumulative supply chain witnesses (Pedersen commitment chain)
+    # S_H = S_{H-1} + C_H  where C_H is this coinbase's value commitment
+    Base old_cumulative_value,   # Cumulative supply at height H-1 (matches TOTAL_SUPPLY)
+    Scalar old_cumulative_blind, # Cumulative blind at height H-1 (matches aggregate_blind)
+    Base new_cumulative_x,       # New cumulative commitment x-coordinate (public input)
+    Base new_cumulative_y,       # New cumulative commitment y-coordinate (public input)
+    Base tx_commitment,
+    Base tx_nonce,
+}
+
+circuit "Mint_V2" {
+    # Domain constants: witness_base(N) creates a Base field element N.
+    # These match DRK_POSEIDON_DOMAIN_* in src/sdk/src/crypto/constants.rs.
+    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_TOKEN_COMMIT = witness_base(2);
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COIN_COMMIT = witness_base(4);
+
+    # C1: Derive pk from coin_secret — proves knowledge of secret key.
+    # Closes: M8 (Mint_V1 coin_public not bound to coin_secret).
+    # Pattern from fee_collect_v1.zk:44-51 — same derivation as Rust's
+    # PublicKey::from_secret: pk = sk * NULLIFIER_K.
+    pk = ec_mul_base(coin_secret, NULLIFIER_K);
+    pk_x = ec_get_x(pk);
+    pk_y = ec_get_y(pk);
+
+    # C2: Bind derived pk to witness values
+    constrain_equal_base(pk_x, coin_public_x);
+    constrain_equal_base(pk_y, coin_public_y);
+
+    # Coin commitment — poseidon hash of all 7 coin attributes + domain.
+    C = poseidon_hash(
+        DOMAIN_COIN_COMMIT,
+        coin_public_x,
+        coin_public_y,
+        coin_value,
+        coin_token_id,
+        coin_spend_hook,
+        coin_user_data,
+        coin_blind,
+    );
+    constrain_instance(C);
+
+    # Nullifier — capability claim.
+    nf = poseidon_hash(DOMAIN_NULLIFIER, coin_secret, C);
+    constrain_instance(nf);
+
+    # Value commitment - Pedersen commitment of the value
+    vcv = ec_mul_short(coin_value, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+    coin_value_commit = ec_add(vcv, vcr);
+    constrain_instance(ec_get_x(coin_value_commit));
+    constrain_instance(ec_get_y(coin_value_commit));
+
+    # Token ID commitment
+    coin_token_id_commit = poseidon_hash(DOMAIN_TOKEN_COMMIT, coin_token_id, token_id_blind);
+    constrain_instance(coin_token_id_commit);
+
+    # Cumulative supply chain: S_H = S_{H-1} + C_H
+    old_cum_vcv = ec_mul_short(old_cumulative_value, VALUE_COMMIT_VALUE);
+    old_cum_vcr = ec_mul(old_cumulative_blind, VALUE_COMMIT_RANDOM);
+    old_cumulative = ec_add(old_cum_vcv, old_cum_vcr);
+    new_cumulative = ec_add(old_cumulative, coin_value_commit);
+    new_cum_x = ec_get_x(new_cumulative);
+    new_cum_y = ec_get_y(new_cumulative);
+    constrain_equal_base(new_cum_x, new_cumulative_x);
+    constrain_equal_base(new_cum_y, new_cumulative_y);
+    constrain_instance(new_cumulative_x);
+    constrain_instance(new_cumulative_y);
+
+    # Range proof for value
+    range_check(64, coin_value);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+    range_check(64, old_cumulative_value);
+}
