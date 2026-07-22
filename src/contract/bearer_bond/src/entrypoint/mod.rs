@@ -1001,14 +1001,21 @@ fn prove_coverage_v1(
 
 /// Read the latest coverage report for a series — no state changes.
 fn verify_coverage_v1(
-    cid: ContractId, _call_idx: usize, _calls: Vec<DarkLeaf<ContractCall>>,
+    cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
-    let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
-    // The caller passes the series_token_id as raw bytes; we return the latest report
-    // Look up by iterating over the bonds_info tree for the given series
-    // For now, return an empty result — the caller reads the DB directly
-    let _ = bonds_info_db;
-    Ok(())
+    let self_ = &calls[call_idx].data;
+    if self_.data.len() < 2 {
+        msg!("[bearer_bond::verify_coverage_v1] Error: Empty call data");
+        return Err(BearerBondError::StakeNotFound.into());
+    }
+    let _series_token_id: pallas::Base = deserialize(&self_.data[1..])?;
+    let _bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
+    // FIXME: implement coverage lookup using a sentinel key pattern:
+    // On ProveCoverageV1, store the latest report under key (series_token_id, u64::MAX)
+    // in addition to the normal (series_token_id, report_block) key.
+    // Then this function can look up the latest report directly without iteration.
+    msg!("[bearer_bond::verify_coverage_v1] Coverage lookup not yet implemented — returning empty");
+    wasm::util::set_return_data(&vec![])
 }
 
 // ============================================================================
