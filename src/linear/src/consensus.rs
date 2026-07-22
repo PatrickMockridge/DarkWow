@@ -64,8 +64,10 @@ impl ChainWork {
         self.0.fetch_add(target.chain_work(), Ordering::SeqCst);
     }
     /// Load from sled persistence. G3: AtomicU64 boundary.
+    #[allow(dead_code)]
     pub(crate) fn load(&self, order: Ordering) -> u64 { self.0.load(order) }
     /// Store to sled persistence. G3: AtomicU64 boundary.
+    #[allow(dead_code)]
     pub(crate) fn store(&self, val: u64, order: Ordering) { self.0.store(val, order); }
 }
 

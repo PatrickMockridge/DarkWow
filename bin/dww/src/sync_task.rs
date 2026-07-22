@@ -37,7 +37,7 @@ use dwow_core::net::P2pPtr;
 use dwow_sdk::blockchain::BlockHeight;
 
 // G1: Single definition of sync types — import from shared module, never define locally.
-use dwow_chain::sync_types::{self, Blocks, GetBlocks, GetTip, Tip};
+use dwow_chain::sync_types::{Blocks, GetBlocks, GetTip, Tip};
 
 use crate::wallet_error::Result;
 use crate::DwwPtr;

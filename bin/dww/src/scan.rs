@@ -32,7 +32,6 @@ use dwow_chain::CoinCommitment;
 use std::collections::BTreeMap;
 
 use dwow_sdk::{
-    blockchain::MoneroBlockHeight,
     bridgetree::Position,
     crypto::{
         poseidon_hash,
@@ -133,13 +132,13 @@ pub struct CapabilityDiscovery {
 /// Per V.2: nullifier is now typed Nullifier (↓nullify barb, zero-rejection
 /// enforced at construction), not raw pallas::Base.
 #[derive(Debug, Clone)]
-pub(crate) struct NullifierRecord {
+pub struct NullifierRecord {
     pub(crate) nullifier: dwow_chain::Nullifier,
 }
 
 /// A contract deployment discovered during block scan.
 #[derive(Debug, Clone)]
-pub(crate) struct DeploymentDiscovery {
+pub struct DeploymentDiscovery {
     pub(crate) contract_id: ContractId,
     pub(crate) deployer_pubkey: PublicKey,
     pub(crate) metadata: Option<ContractMetadata>,
@@ -150,7 +149,7 @@ pub(crate) struct DeploymentDiscovery {
 /// A zkas circuit binary discovered during deploy-scan.
 /// Extracted from the DeployV1 WASM blob — stored in zkas_binaries (§3).
 #[derive(Debug, Clone)]
-pub(crate) struct ZkasBinaryDiscovery {
+pub struct ZkasBinaryDiscovery {
     pub contract_id: ContractId,
     pub namespace: String,
     pub circuit_name: String,
@@ -1019,7 +1018,7 @@ impl Dww {
         }
 
         // ── Pure scan: no DB access ──────────────────────────
-        let mut result = scan_block(tree, &self.account_mgr, &manifests, block);
+        let result = scan_block(tree, &self.account_mgr, &manifests, block);
 
         // ── Persist results ──────────────────────────────────
         // Insertions are FATAL on failure: if a cap can't be inserted, the

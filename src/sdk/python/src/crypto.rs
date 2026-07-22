@@ -66,15 +66,6 @@ pub fn pedersen_commitment_u64(value: u64, blind: &Bound<Fq>) -> Ep {
     Ep(crypto::pedersen::pedersen_commitment_u64(value, crypto::Blind(blind.borrow().deref().0)))
 }
 
-/// Calculate a Pedersen commitment with an Fp value.
-#[pyfunction]
-pub fn pedersen_commitment_base(value: &Bound<Fp>, blind: &Bound<Fq>) -> Ep {
-    Ep(crypto::pedersen::pedersen_commitment_base(
-        value.borrow().deref().0,
-        crypto::Blind(blind.borrow().deref().0),
-    ))
-}
-
 /// [`crypto::schnorr::Signature`] python binding
 #[pyclass]
 pub struct Signature(pub crypto::schnorr::Signature);

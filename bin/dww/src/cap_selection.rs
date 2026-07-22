@@ -29,9 +29,7 @@
 use crate::wallet_error::{Error, Result};
 use crate::walletdb::CapRecord;
 use crate::contract_imports::NATIVE_TOKEN_CONTRACT_ID;
-use dwow_chain::CoinCommitment;
-use dwow_sdk::crypto::{BaseBlind, Blind, TokenId};
-use dwow_sdk::pasta::pallas;
+use dwow_sdk::crypto::TokenId;
 
 /// Minimum value for a change output. Outputs below this are dust
 /// and are added to the fee instead of creating an uneconomical output.
@@ -170,6 +168,7 @@ pub fn select_fee_cap(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dwow_sdk::crypto::BaseBlind;
 
     /// Test helper: label → TokenId
     fn tid(label: &str) -> TokenId {

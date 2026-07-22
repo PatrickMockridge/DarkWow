@@ -30,7 +30,7 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, IntentCommitment, IntentNullifier, BaseBlind, PublicKey},
+    crypto::{IntentCommitment, BaseBlind, PublicKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -49,6 +49,7 @@ fn to_intent_commitment(base: pallas::Base) -> IntentCommitment {
 }
 
 /// Helper to convert pallas::Base to [u8; 32]
+#[allow(dead_code)]
 fn base_to_bytes(base: pallas::Base) -> [u8; 32] {
     base.to_repr()
 }
@@ -373,7 +374,7 @@ impl StablecoinHarness {
         // Build GovernanceReportParams
         // Use reporter public key from secret
         let reporter_pub = PublicKey::from_secret(dwow_sdk::crypto::SecretKey::from_bytes(reporter_secret.to_repr()).unwrap());
-        let (reporter_pub_x, reporter_pub_y) = reporter_pub.xy().expect("pk not identity");
+        let (_reporter_pub_x, _reporter_pub_y) = reporter_pub.xy().expect("pk not identity");
 
         let params = GovernanceReportParams {
             token_id: pallas::Base::zero(),
@@ -423,7 +424,7 @@ impl StablecoinHarness {
         // Build AccrueInterestParams
         // Use accumulator public key from secret
         let accumulator_pub = PublicKey::from_secret(dwow_sdk::crypto::SecretKey::from_bytes(accumulator_secret.to_repr()).unwrap());
-        let (accumulator_pub_x, accumulator_pub_y) = accumulator_pub.xy().expect("pk not identity");
+        let (_accumulator_pub_x, _accumulator_pub_y) = accumulator_pub.xy().expect("pk not identity");
 
         let params = AccrueInterestParams {
             old_total_debt,

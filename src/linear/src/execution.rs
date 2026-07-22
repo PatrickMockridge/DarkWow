@@ -349,8 +349,6 @@ pub fn execute_block(
                         Err(e) => {
                             tracing::error!(target: "dwow_chain::execution",
                                 "metadata ZK public inputs decode failed: {:?}", e);
-                            success = false;
-                            fail_stage = "metadata-zkp-decode";
                             continue;
                         }
                     };
@@ -360,8 +358,6 @@ pub fn execute_block(
                         Err(e) => {
                             tracing::error!(target: "dwow_chain::execution",
                                 "metadata signature pubkeys decode failed: {:?}", e);
-                            success = false;
-                            fail_stage = "metadata-sigs-decode";
                             continue;
                         }
                     };

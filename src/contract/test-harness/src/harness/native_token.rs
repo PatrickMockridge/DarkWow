@@ -32,7 +32,6 @@ use dwow_core::{
 use dwow_sdk::{
     crypto::{MerkleNode, PublicKey, SecretKey, poseidon_hash},
     crypto::pasta_prelude::Group,
-    crypto::pasta_prelude::PrimeField,
     pasta::pallas,
 };
 use dwow_serial::Encodable;

@@ -44,7 +44,6 @@ pub fn cn_fast_hash2(hash1: &Hash, hash2: &Hash) -> Hash {
 /// Round down to power of two.
 /// Should error for count < 3 or if the count is unreasonably large
 /// for tree hash calculations.
-#[allow(unused)]
 fn tree_hash_count(count: usize) -> Result<usize> {
     if count < 3 {
         return Err(LinearError::MoneroHashingError(format!(
@@ -68,7 +67,8 @@ fn tree_hash_count(count: usize) -> Result<usize> {
 }
 
 /// Tree hash algorithm in Monero
-#[allow(unused)]
+// Kept for completeness — Monero tree hashing reference implementation
+#[allow(dead_code)]
 pub fn tree_hash(hashes: &[Hash]) -> Result<Hash> {
     if hashes.is_empty() {
         return Err(LinearError::MoneroHashingError(

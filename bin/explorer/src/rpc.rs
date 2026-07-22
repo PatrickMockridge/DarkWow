@@ -246,7 +246,7 @@ impl ExplBlock {
             version: block.header.version,
             previous_hash: block.header.previous.to_string(),
             nonce: block.header.nonce as u64,
-            timestamp: block.header.timestamp,
+            timestamp: block.header.timestamp.get(),
             transactions_root: block.header.merkle_root.to_string(),
             state_root: hex::encode(block.header.nullifier_root),
             size: serialize_async(block).await.len() as u64,
@@ -371,7 +371,7 @@ impl Explorer {
                 ("height".to_string(), JsonValue::Number(header.height.get() as f64)),
                 ("size".to_string(), JsonValue::Number(size as f64)),
                 ("n_txs".to_string(), JsonValue::Number(tx_count as f64)),
-                ("timestamp".to_string(), JsonValue::Number(header.timestamp as f64)),
+                ("timestamp".to_string(), JsonValue::Number(header.timestamp.get() as f64)),
                 ("powtype".to_string(), JsonValue::String(powtype)),
                 ("hash".to_string(), JsonValue::String(header_display_hash(&header))),
             ])));
@@ -515,7 +515,7 @@ impl Explorer {
             return JsonError::new(InternalError, None, id).into()
         };
 
-        let time_diff = end_header.timestamp as f64 - start_header.timestamp as f64;
+        let time_diff = end_header.timestamp.get() as f64 - start_header.timestamp.get() as f64;
         let blocks_mined = (height - start_height) as f64;
 
         if time_diff <= 0.0 || blocks_mined <= 0.0 {

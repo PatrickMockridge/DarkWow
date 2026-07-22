@@ -280,8 +280,8 @@ impl RpcHandler for DwwRpcHandler {
                 let recipient = params.get("recipient")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| err(-32602, "missing 'recipient' param"))?;
-                let spend_hook = params.get("spend_hook").and_then(|v| v.as_str());
-                let user_data = params.get("user_data").and_then(|v| v.as_str());
+                let _spend_hook = params.get("spend_hook").and_then(|v| v.as_str());
+                let _user_data = params.get("user_data").and_then(|v| v.as_str());
 
                 // Two paths, by law (wallet.md §6.4, §9): DRKW = the native
                 // token = the ONE bespoke write-path citizen, built by the

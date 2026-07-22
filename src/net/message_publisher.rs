@@ -243,9 +243,8 @@ trait MessageDispatcherInterface: Send + Sync {
 
     async fn metering_score(&self) -> u64;
 
-    /// Return the barb set declared by the message type this dispatcher handles.
-    /// Used for quarantine enforcement at the dispatch boundary (§10.4).
-    fn barbs(&self) -> &'static [crate::barb::BarbId];
+    // fn barbs(&self) -> &'static [crate::barb::BarbId];
+    // ^ reinstated when quarantine boundary enforcement is activated (§10.4)
 
     fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
 }
@@ -316,11 +315,8 @@ impl<M: Message> MessageDispatcherInterface for MessageDispatcher<M> {
         lock.total()
     }
 
-    /// Return the barb set declared by this dispatcher's message type.
-    /// Used for quarantine enforcement at the dispatch boundary (§10.4).
-    fn barbs(&self) -> &'static [crate::barb::BarbId] {
-        M::BARBS
-    }
+    // fn barbs(&self) -> &'static [crate::barb::BarbId] { M::BARBS }
+    // ^ reinstated when quarantine boundary enforcement is activated (§10.4)
 
     /// Converts to `Any` trait. Enables the dynamic modification of static types.
     fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {

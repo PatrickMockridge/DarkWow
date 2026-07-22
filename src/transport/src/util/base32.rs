@@ -16,6 +16,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg(feature = "nym")]
+
 //! Base32 encoding as specified by RFC4648
 //! Vendored from src/util/encoding/base32.rs
 

@@ -40,7 +40,6 @@ use dwow_core::{
     net::hosts::HostColor,
     tx::{ContractCallLeaf, Transaction},
     zk::Proof,
-    zkas::ZkBinary,
 };
 use crate::wallet_error::{Error, Result};
 use crate::wallet_util::expand_path;

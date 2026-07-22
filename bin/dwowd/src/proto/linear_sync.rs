@@ -42,8 +42,7 @@ use dwow_core::{
     concurrency::ExecutorPtr,
     Error, Result,
 };
-use dwow_chain::Block;
-use dwow_chain::sync_types::{self, Blocks, GetBlock, BlockResponse, GetBlocks, GetTip, Tip};
+use dwow_chain::sync_types::{Blocks, GetBlock, BlockResponse, GetBlocks, GetTip, Tip};
 use dwow_sdk::blockchain::BlockHeight;
 
 /// Constant defining max blocks we send in a single response.

@@ -190,14 +190,6 @@ where
     TupleIterStruct4 { idx: 0, i1, i2, i3, i4 }
 }
 
-#[allow(dead_code)]
-pub fn enumerate<X>(v: Vec<X>) -> impl Iterator<Item = (usize, X)> {
-    v.into_iter().enumerate()
-}
-#[allow(dead_code)]
-pub fn enumerate_ref<X>(v: &Vec<X>) -> impl Iterator<Item = (usize, &X)> {
-    v.iter().enumerate()
-}
 pub fn enumerate_mut<X>(v: &mut Vec<X>) -> impl Iterator<Item = (usize, &mut X)> {
     v.iter_mut().enumerate()
 }

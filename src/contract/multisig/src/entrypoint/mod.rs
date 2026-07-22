@@ -12,7 +12,7 @@ use crate::{
     error::MultiSigError,
     model::{
         CreateGroupParamsV1, CreateGroupUpdateV1, FinalizeParamsV1, FinalizeUpdateV1,
-        GroupId, MultiSigGroup, PartialSignature, SignParamsV1, SignUpdateV1,
+        MultiSigGroup, PartialSignature, SignParamsV1, SignUpdateV1,
     },
     MultiSigFunction,
     MULTISIG_CONTRACT_GROUPS_TREE, MULTISIG_CONTRACT_INFO_TREE,
@@ -177,7 +177,6 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             msg!("[multisig::process_instruction] Error: InitializeV1 must be called via init");
             return Err(ContractError::InvalidFunction);
         }
-        _ => return Err(ContractError::InvalidFunction),
     };
     Ok(())
 }
@@ -218,10 +217,6 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         }
         MultiSigFunction::InitializeV1 => {
             msg!("[multisig::process_update] Error: InitializeV1 must be called via init");
-            Err(ContractError::InvalidFunction)
-        },
-        _ => {
-            msg!("[multisig::process_update] Error: Unknown function selector");
             Err(ContractError::InvalidFunction)
         },
     }

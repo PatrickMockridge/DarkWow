@@ -67,6 +67,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(deprecated)]
     fn pedersen_commitment() {
         let a_value = pallas::Base::from(10);
         let a_blind = ScalarBlind::from(11);

@@ -859,7 +859,7 @@ fn apply_verify_capability_update(_cid: ContractId, _update: VerifyCapabilityUpd
 // ============================================================================
 
 fn process_revoke_capability_instruction(
-    cid: ContractId,
+    _cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
@@ -880,7 +880,7 @@ fn process_revoke_capability_instruction(
     wasm::util::set_return_data(&serialize(&update))
 }
 
-fn apply_revoke_capability_update(cid: ContractId, update: RevokeCapabilityUpdateV1) -> ContractResult {
+fn apply_revoke_capability_update(_cid: ContractId, _update: RevokeCapabilityUpdateV1) -> ContractResult {
     // Capability possession tracked via Box; revocation via nullifier.
     msg!("[identity::revoke_capability::update] Capability revoked");
     Ok(())
@@ -967,11 +967,8 @@ fn compute_issuer_key(issuer_pub: &PublicKey) -> Vec<u8> {
     poseidon_hash([x, y, Base::zero(), Base::zero()]).to_repr().to_vec()
 }
 
-/// Compute issuance key from capability ID and holder pub.
-fn compute_issuance_key(capability_id: CapabilityId, holder_pub: PublicKey) -> Vec<u8> {
-    let (hx, hy) = holder_pub.xy().expect("pk not identity");
-    poseidon_hash([capability_id.inner(), hx, hy, Base::zero()]).to_repr().to_vec()
-}
+// fn compute_issuance_key removed — dead code, never called.
+// Reinstated when capability issuance tracking requires it.
 
 // ============================================================================
 // REGISTER ISSUER (Phase 2d hardening)

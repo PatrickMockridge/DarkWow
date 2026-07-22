@@ -40,7 +40,6 @@
 use dwow_sdk::{
     crypto::{
         pasta_prelude::{Curve, CurveAffine, PrimeField},
-        schnorr::SchnorrPublic,
         ContractId, IntentNullifier, Nullifier, poseidon_hash, PublicKey, PURSE_CONTRACT_ID, SecretKey,
     },
     dark_tree::DarkLeaf,
@@ -726,10 +725,8 @@ fn apply_config_update(cid: ContractId, update: UpdateConfigUpdateV1) -> Contrac
 fn apply_spend_hook_callback(cid: ContractId, update: SpendHookCallbackUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE)?;
 
-    let mut total_burned: u64 = 0;
     for n in &update.nullifiers {
         wasm::db::db_set(nullifiers_db, &serialize(n), &vec![])?;
-        total_burned += 1;
     }
 
     // Write pre-computed total_redeemed (computed in process_spend_hook exec phase)

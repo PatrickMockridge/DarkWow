@@ -58,7 +58,6 @@ use crate::Dww;
 // ============================================================================
 
 pub struct AccountManagerHandle(dwow_accounts::AccountManager);
-pub struct WalletDbHandle(WalletPtr);
 pub struct CapRecordHandle {
     cap_record: crate::walletdb::CapRecord,
     merkle_proof: crate::walletdb::MerkleProof,
@@ -831,7 +830,7 @@ pub extern "C" fn dwow_encode_params_by_schema(
     };
     let encoded = match dwow_sdk::manifest::encode_params_by_schema(&schema, params_str) {
         Ok(e) => e,
-        Err(e) => {
+        Err(_e) => {
             // No wallet handle here — use a thread-local error or just return -1.
             // The caller can validate the schema beforehand.
             // Static function — no wallet handle to store error. Return -1;

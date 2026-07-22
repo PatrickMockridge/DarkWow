@@ -47,7 +47,6 @@ use dwow_native_token_contract::{
     NativeTokenFunction,
 };
 use dwow_sdk::{
-    blockchain::{BlockReward, BlockTarget, MoneroBlockHeight},
     crypto::{
         pasta_prelude::Group,
         pedersen_commitment_u64, poseidon_hash, ScalarBlind,
@@ -304,6 +303,7 @@ fn verify_coinbase(block: &Block) -> Result<(), BalanceError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dwow_sdk::blockchain::{BlockReward, BlockTarget, MoneroBlockHeight};
     use crate::{CoinCommitment, CoinbaseTransaction, Nullifier, PedersenCoordinate, TokenCommitment, Transaction, ZkPublicInputs};
 
     fn make_header(height: u64) -> crate::BlockHeader {

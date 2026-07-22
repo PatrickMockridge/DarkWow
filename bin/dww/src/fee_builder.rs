@@ -32,7 +32,7 @@ use dwow_core::{
 };
 use crate::wallet_error::{Error, Result};
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, BaseBlind, PublicKey, SecretKey, MerkleNode},
+    crypto::{BaseBlind, PublicKey, SecretKey, MerkleNode},
     pasta::pallas,
     tx::ContractCall,
 };

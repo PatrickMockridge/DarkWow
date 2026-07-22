@@ -172,7 +172,7 @@ impl Dialer {
     /// `datastore` is an already-expanded path (caller resolves `~` etc.)
     pub async fn new(
         endpoint: Url,
-        datastore: Option<PathBuf>,
+        _datastore: Option<PathBuf>,
         localnet: bool,
     ) -> io::Result<Self> {
         match endpoint.scheme().to_lowercase().as_str() {
@@ -380,7 +380,7 @@ impl Listener {
     /// `datastore` is an already-expanded path (caller resolves `~` etc.)
     pub async fn new(
         endpoint: Url,
-        datastore: Option<PathBuf>,
+        _datastore: Option<PathBuf>,
         localnet: bool,
     ) -> io::Result<Self> {
         match endpoint.scheme().to_lowercase().as_str() {

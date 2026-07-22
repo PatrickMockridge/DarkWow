@@ -24,7 +24,6 @@
 #![allow(dead_code)]
 
 use dwow_sdk::{crypto::{Keypair, SecretKey}, deploy::DeployParamsV1, pasta::pallas};
-use dwow_serial::Encodable;
 use tracing::info;
 
 use dwow_deployooor_contract::{

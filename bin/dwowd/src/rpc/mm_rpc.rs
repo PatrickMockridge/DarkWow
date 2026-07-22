@@ -29,7 +29,6 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::atomic::Ordering,
 };
 
 use async_trait::async_trait;
@@ -273,7 +272,7 @@ impl DwowNode {
                         depth: 1,
                         pin_offered: false,
                         pin_accepted: false,
-                        pin_confirmed: 0,
+                        pin_confirmed: BlockReward::ZERO,
                     }
                 }).collect();
                 (uncle_blocks, competing)

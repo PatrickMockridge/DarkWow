@@ -469,7 +469,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
         // (The promissory_note hardcoding below is the fired agent's A1
         // violation — ripped out and replaced by generic routing in the
         // capability-side remediation phase.)
-        WalletCommand::Transfer { amount, token_id, recipient, spend_hook, user_data, half_split: _, porcelain } => {
+        WalletCommand::Transfer { amount, token_id, recipient, spend_hook: _, user_data: _, half_split: _, porcelain } => {
             let is_drkw = token_id == "DRKW" || token_id == "drkw";
             smol::block_on(async {
                 let tx = if is_drkw {

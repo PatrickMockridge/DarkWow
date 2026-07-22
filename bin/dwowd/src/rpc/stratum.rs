@@ -23,7 +23,6 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::atomic::Ordering,
 };
 
 use async_trait::async_trait;
@@ -43,7 +42,7 @@ use dwow_core::{
 };
 
 use dwow_chain::PowSource;
-use dwow_sdk::blockchain::{BlockHeight, BlockTarget, BlockTimestamp, MoneroBlockHeight};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, MoneroBlockHeight};
 
 use crate::{
     error::{miner_status_response, server_error, RpcError},
@@ -210,7 +209,7 @@ impl DwowNode {
                         depth: 1,
                         pin_offered: false,
                         pin_accepted: false,
-                        pin_confirmed: 0,
+                        pin_confirmed: BlockReward::ZERO,
                     }
                 }).collect()
             }

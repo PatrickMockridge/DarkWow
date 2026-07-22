@@ -24,7 +24,7 @@
 //! PurchaseCoverageV1 Implementation
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::{Curve, CurveAffine}, poseidon_hash, schnorr::SchnorrPublic, ContractId},
+    crypto::{pasta_prelude::{Curve, CurveAffine}, poseidon_hash, ContractId},
     error::ContractError,
     msg,
     pasta::pallas,
@@ -138,7 +138,7 @@ pub fn insurance_market_purchase_coverage_process_instruction_v1(
     if vc_coords.is_none().into() {
         return Err(InsuranceMarketError::InvalidParameter("Invalid value commit".to_string()).into())
     }
-    let vc_coords = vc_coords.unwrap();
+    let _vc_coords = vc_coords.unwrap();
     // Verify buyer nullifier hasn't been used (ZK proof verifies identity)
     let nullifiers_db = wasm::db::db_lookup(cid, INSURANCE_MARKET_NULLIFIERS_TREE)?;
     if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.buyer_nullifier))? {

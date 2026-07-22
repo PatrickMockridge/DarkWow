@@ -21,7 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::io::{self, Cursor, Error, Read, Write};
+use std::io::{self, Error, Read, Write};
+#[cfg(feature = "async")]
+use std::io::Cursor;
 
 #[cfg(feature = "async")]
 use dwow_serial::{

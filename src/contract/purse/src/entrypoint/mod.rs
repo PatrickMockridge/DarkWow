@@ -169,7 +169,6 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             msg!("[purse::process_instruction] Error: InitializeV1 must be called via init");
             return Err(ContractError::InvalidFunction);
         }
-        _ => return Err(ContractError::InvalidFunction),
     };
 
     Ok(())
@@ -207,10 +206,6 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         }
         PurseFunction::InitializeV1 => {
             msg!("[purse::process_update] Error: InitializeV1 must be called via init");
-            Err(ContractError::InvalidFunction)
-        }
-        _ => {
-            msg!("[purse::process_update] Error: Unknown function selector");
             Err(ContractError::InvalidFunction)
         }
     }

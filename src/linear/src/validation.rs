@@ -32,7 +32,7 @@
 use std::collections::HashSet;
 
 use blake3::Hash as Blake3Hash;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, MoneroBlockHeight};
+use dwow_sdk::blockchain::{BlockHeight, BlockTarget, BlockTimestamp};
 use randomx::RandomXVM;
 
 use super::{
@@ -375,6 +375,7 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dwow_sdk::blockchain::{BlockReward, MoneroBlockHeight};
 
     /// A block with correct defaults for empty transactions.
     /// merkle_root for 0 txs is blake3::hash(&[]).

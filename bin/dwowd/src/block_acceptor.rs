@@ -34,7 +34,7 @@ use std::sync::Arc;
 
 use dwow_chain::{Block, BlockConnectOutcome, CChainState, UncleBlock};
 use dwow_core::Result;
-use dwow_sdk::blockchain::{BlockHeight, BlockTarget};
+use dwow_sdk::blockchain::{BlockHeight, BlockTarget, SupplyAmount};
 
 use dwow_chain::execution::execute_block;
 use dwow_chain::proof_of_token_balance;
@@ -344,7 +344,7 @@ fn read_cumulative_from_overlay(
     let entry = CumulativeSupplyEntry {
         value_commit,
         blind,
-        total_supply,
+        total_supply: SupplyAmount::new(total_supply),
     };
 
     // Build the supply_chain batch for atomic commit

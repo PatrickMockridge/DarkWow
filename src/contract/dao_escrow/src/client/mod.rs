@@ -73,7 +73,7 @@ pub mod verify_member_capability_v1;
 pub mod vote_claim_v1;
 
 use dwow_sdk::{
-    crypto::{schnorr::Signature, PublicKey, SecretKey},
+    crypto::{PublicKey, SecretKey},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};

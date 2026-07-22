@@ -199,7 +199,7 @@ impl Explorer {
         // Update stats
         let block_size = header_data.len() as u64 + (current_tx_offset - tx_blob_offset);
         self.update_stats_for_block(
-            block.header.timestamp,
+            block.header.timestamp.get(),
             block.transactions.len() as u64,
             block_size,
         )
@@ -795,7 +795,7 @@ impl Explorer {
 
             let block_size = block_idx.length + tx_size;
 
-            self.update_stats_for_block(header.timestamp, block_idx.tx_count, block_size)
+            self.update_stats_for_block(header.timestamp.get(), block_idx.tx_count, block_size)
                 .await?;
         }
 

@@ -35,7 +35,6 @@
 //! 3. Oracle creates attestations for specific values
 //! 4. Other contracts verify and consume attestations
 
-use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
     crypto::ContractId,
     dark_tree::DarkLeaf,
@@ -48,8 +47,7 @@ use dwow_serial::{deserialize, serialize, Encodable};
 use crate::{
     error::OracleError,
     model::{
-        AggregateParamsV1, AttestValueParamsV1, AggregateUpdateV1, AttestValueUpdateV1,
-        AttestationId, Oracle, OracleId,
+        AggregateParamsV1, AttestValueParamsV1, AggregateUpdateV1, AttestValueUpdateV1, Oracle, OracleId,
         PushValueCommitmentParamsV1, PushValueCommitmentUpdateV1, PushValueParamsV1,
         PushValueUpdateV1, RegisterOracleParamsV1, RegisterOracleUpdateV1,
         SetOracleActiveParamsV1, SetOracleActiveUpdateV1,

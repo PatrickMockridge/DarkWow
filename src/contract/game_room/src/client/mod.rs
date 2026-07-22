@@ -26,7 +26,7 @@
 //! This module provides the client-side API for building Game Room contract calls.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::Field, poseidon_hash, ContractId, PublicKey, SecretKey},
+    crypto::{poseidon_hash, ContractId, PublicKey, SecretKey},
     error::ContractError,
     pasta::pallas,
 };
@@ -76,7 +76,9 @@ pub struct OwnBet {
 
 /// Builder for creating room calls
 pub struct CreateRoomV1Builder {
+    #[allow(dead_code)]
     wallet_secret: SecretKey,
+    #[allow(dead_code)]
     contract_id: ContractId,
     owner: PublicKey,
     token_id: pallas::Base,
@@ -178,7 +180,9 @@ impl CreateRoomV1Builder {
 
 /// Builder for deposit calls
 pub struct DepositV1Builder {
+    #[allow(dead_code)]
     wallet_secret: SecretKey,
+    #[allow(dead_code)]
     contract_id: ContractId,
     room_id: RoomId,
     player: PublicKey,
@@ -223,7 +227,9 @@ impl WithdrawV1Builder {
 
 /// Builder for place bet calls
 pub struct PlaceBetV1Builder {
+    #[allow(dead_code)]
     wallet_secret: SecretKey,
+    #[allow(dead_code)]
     contract_id: ContractId,
     room_id: RoomId,
     pot_id: PotId,
@@ -232,6 +238,7 @@ pub struct PlaceBetV1Builder {
     bet_type: BetType,
     nonce: pallas::Base,
     block_height: pallas::Base,
+    #[allow(dead_code)]
     instance_seed: [u8; 32],
 }
 

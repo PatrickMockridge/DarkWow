@@ -384,7 +384,7 @@ impl DwowNode {
 
         let result = JsonValue::from(std::collections::HashMap::from([
             ("height".to_string(), JsonValue::String(format!("{}", height))),
-            ("total_supply".to_string(), JsonValue::Number(total_supply as f64)),
+            ("total_supply".to_string(), JsonValue::Number(total_supply.get() as f64)),
             ("cumulative_value_commit".to_string(), JsonValue::String(base64::encode(&commit_bytes))),
             ("cumulative_blind".to_string(), JsonValue::String(base64::encode(&blind_bytes))),
         ]));

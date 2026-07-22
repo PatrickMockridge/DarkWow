@@ -71,7 +71,7 @@
 //! to the single pool.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, BaseBlind, FuncId, IntentNullifier, PublicKey, ScalarBlind, TokenId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, BaseBlind, IntentNullifier, PublicKey, ScalarBlind, TokenId},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};

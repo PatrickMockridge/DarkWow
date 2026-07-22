@@ -24,7 +24,7 @@
 #![allow(dead_code)]
 
 use dwow_sdk::{
-    crypto::{keypair::Keypair, pasta_prelude::{Field, Group}, BaseBlind, FuncId, SecretKey},
+    crypto::{pasta_prelude::{Field, Group}, BaseBlind, FuncId, SecretKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -36,7 +36,6 @@ use dwow_native_token_contract::{
         burn_v1::{BurnCallBuilder, BurnCallInput},
         pow_reward_v1::PoWRewardCallBuilder,
     },
-    model::Coin,
     NativeTokenFunction,
 };
 

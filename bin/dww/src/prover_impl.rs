@@ -120,7 +120,7 @@ pub fn create_generic_proof(
                 Value::known(provider.secret().inner())
             }
             WitnessSource::MerklePath => {
-                let path = provider.merkle_path();
+                let _path = provider.merkle_path();
                 // Merkle path is variable-length; bind each element as a
                 // separate witness. The manifest's witness_map must declare
                 // one `merkle_path` entry per path element, OR the circuit

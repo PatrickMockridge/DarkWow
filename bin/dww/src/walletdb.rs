@@ -114,10 +114,10 @@ pub struct MerkleProof {
 /// Helper: convert a 32-byte array into a typed crypto wrapper.
 /// Used by SELECT readers to reconstruct CapRecord from stored BLOBs.
 fn bytes_to_asset_id(bytes: [u8; 32]) -> WalletDbResult<TokenId> {
-    TokenId::from_bytes(bytes).map_err(|e| WalletDbError::QueryExecutionFailed)
+    TokenId::from_bytes(bytes).map_err(|_e| WalletDbError::QueryExecutionFailed)
 }
 fn bytes_to_contract_id(bytes: [u8; 32]) -> WalletDbResult<ContractId> {
-    ContractId::from_bytes(bytes).map_err(|e| WalletDbError::QueryExecutionFailed)
+    ContractId::from_bytes(bytes).map_err(|_e| WalletDbError::QueryExecutionFailed)
 }
 fn bytes_to_func_id(bytes: [u8; 32]) -> FuncId {
     FuncId::from_bytes(bytes).unwrap_or_else(|_| FuncId::from(pallas::Base::zero()))
@@ -285,6 +285,8 @@ impl WalletDb {
         const C_ASSETBLIND_TEXT: usize = 16;
         const C_CONTRACT_BLOB: usize = 17;
         const C_FUNC_BLOB: usize = 18;
+        // Capability discriminant — referenced by external tooling
+        #[allow(dead_code)]
         const C_DISCRIMINANT: usize = 19;
 
         /// Read a [u8; 32] from a BLOB column, falling back to bs58 decode from a TEXT column.
@@ -495,6 +497,8 @@ impl WalletDb {
         const C_ASSETBLIND_TEXT: usize = 16;
         const C_CONTRACT_BLOB: usize = 17;
         const C_FUNC_BLOB: usize = 18;
+        // Capability discriminant — referenced by external tooling
+        #[allow(dead_code)]
         const C_DISCRIMINANT: usize = 19;
 
         /// Read a [u8; 32] from a BLOB column, falling back to bs58 decode from a TEXT column.
