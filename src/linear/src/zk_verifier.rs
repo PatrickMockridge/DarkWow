@@ -269,6 +269,16 @@ pub fn verify_core_tx_with_tables(
 /// are silently ok — the mempool already rejects them before this call.
 pub fn verify_single_tx(chain_tx: &ChainTransaction) -> Result<(), VerifyError> {
     let core_tx = decode_and_reconcile(chain_tx)?;
+    // Proof vec length guard: Rust's zip silently truncates to the shortest
+    // iterator. If proofs.len() < calls.len(), per-call validation below only
+    // inspects the first proofs.len() calls. Reject before any iteration.
+    // Closes: H3 (zip truncation bypass). Enforces: type-system.md §8.2.
+    if core_tx.proofs.len() != core_tx.calls.len() {
+        return Err(VerifyError::InvalidProof(format!(
+            "proof vec length {} != calls {}",
+            core_tx.proofs.len(), core_tx.calls.len(),
+        )));
+    }
     // Every proof-requiring call must carry at least one ZK proof. At the
     // structural stage only the native token's value-bearing selectors are
     // knowably proof-requiring (the mempool already hardcodes native
