@@ -617,9 +617,11 @@ fn transfer_stake_v1(
     let params: TransferStakeParamsV1 = deserialize(&self_.data[1..])?;
 
     if params.inputs.is_empty() {
+        msg!("[bearer_bond::transfer_stake_v1] Error: Missing inputs");
         return Err(BearerBondError::MissingInputs.into());
     }
     if params.outputs.is_empty() {
+        msg!("[bearer_bond::transfer_stake_v1] Error: Missing outputs");
         return Err(BearerBondError::MissingOutputs.into());
     }
 
@@ -643,6 +645,8 @@ fn transfer_stake_v1(
             return Err(BearerBondError::StakeAlreadyExists.into());
         }
         if output.last_claim_block >= output.maturity_block {
+            msg!("[bearer_bond::transfer_stake_v1] Error: Output stake already matured (last_claim={}, maturity={})",
+                output.last_claim_block, output.maturity_block);
             return Err(BearerBondError::StakeAlreadyMatured.into());
         }
     }
@@ -652,6 +656,7 @@ fn transfer_stake_v1(
     let total_input: pallas::Point = params.inputs.iter().map(|i| i.value_commit).sum();
     let total_output: pallas::Point = params.outputs.iter().map(|o| o.value_commit).sum();
     if total_input != total_output {
+        msg!("[bearer_bond::transfer_stake_v1] Error: Value conservation failed (input sum != output sum)");
         return Err(BearerBondError::ValueMismatch.into());
     }
 
@@ -671,6 +676,7 @@ fn request_interest_v1(
     let params: RequestInterestParamsV1 = deserialize(&self_.data[1..])?;
 
     if params.claim_block == 0 {
+        msg!("[bearer_bond::request_interest_v1] Error: Claim block is zero");
         return Err(BearerBondError::InvalidBlockHeight.into());
     }
 
@@ -683,6 +689,8 @@ fn request_interest_v1(
 
     // Verify the claim block is after the last claim block
     if params.claim_block <= stake_coin.last_claim_block {
+        msg!("[bearer_bond::request_interest_v1] Error: Invalid interest claim: claim_block={} <= last_claim_block={}",
+            params.claim_block, stake_coin.last_claim_block);
         return Err(BearerBondError::InvalidInterestClaim {
             last: stake_coin.last_claim_block,
             current: params.claim_block,
@@ -911,6 +919,7 @@ fn burn_stake_v1(
     let params: BurnStakeParamsV1 = deserialize(&self_.data[1..])?;
 
     if params.inputs.is_empty() {
+        msg!("[bearer_bond::burn_stake_v1] Error: Missing inputs");
         return Err(BearerBondError::MissingInputs.into());
     }
 
@@ -944,12 +953,15 @@ fn prove_coverage_v1(
     let params: ProveCoverageParamsV1 = deserialize(&self_.data[1..])?;
 
     if params.total_outstanding == 0 {
+        msg!("[bearer_bond::prove_coverage_v1] Error: Total outstanding is zero");
         return Err(BearerBondError::InvalidPrincipal.into());
     }
     if params.reserve_amount == 0 {
+        msg!("[bearer_bond::prove_coverage_v1] Error: Reserve amount is zero");
         return Err(BearerBondError::InvalidPrincipal.into());
     }
     if params.report_block == 0 {
+        msg!("[bearer_bond::prove_coverage_v1] Error: Report block is zero");
         return Err(BearerBondError::InvalidBlockHeight.into());
     }
 

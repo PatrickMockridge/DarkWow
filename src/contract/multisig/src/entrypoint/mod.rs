@@ -102,7 +102,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             sigs.encode(&mut meta)?;
             meta
         }
-        _ => vec![],
+        MultiSigFunction::InitializeV1 => vec![],
     };
 
     wasm::util::set_return_data(&metadata)
@@ -173,6 +173,10 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 consumed_nullifiers: consumed,
             })))?;
         }
+        MultiSigFunction::InitializeV1 => {
+            msg!("[multisig::process_instruction] Error: InitializeV1 must be called via init");
+            return Err(ContractError::InvalidFunction);
+        }
         _ => return Err(ContractError::InvalidFunction),
     };
     Ok(())
@@ -212,6 +216,10 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             }
             Ok(())
         }
+        MultiSigFunction::InitializeV1 => {
+            msg!("[multisig::process_update] Error: InitializeV1 must be called via init");
+            Err(ContractError::InvalidFunction)
+        },
         _ => {
             msg!("[multisig::process_update] Error: Unknown function selector");
             Err(ContractError::InvalidFunction)

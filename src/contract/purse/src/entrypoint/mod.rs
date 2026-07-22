@@ -72,7 +72,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             purse_balance_get_metadata_v1(params)?
         }
-        _ => vec![],
+        PurseFunction::InitializeV1 => vec![],
     };
 
     wasm::util::set_return_data(&metadata)
@@ -165,6 +165,10 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let _params: BalanceParamsV1 = deserialize(&self_.data.data[1..])?;
             msg!("[purse::balance_v1] Balance check");
         }
+        PurseFunction::InitializeV1 => {
+            msg!("[purse::process_instruction] Error: InitializeV1 must be called via init");
+            return Err(ContractError::InvalidFunction);
+        }
         _ => return Err(ContractError::InvalidFunction),
     };
 
@@ -200,6 +204,10 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         PurseFunction::BalanceV1 => {
             // BalanceV1 is read-only; no state updates needed.
             Ok(())
+        }
+        PurseFunction::InitializeV1 => {
+            msg!("[purse::process_update] Error: InitializeV1 must be called via init");
+            Err(ContractError::InvalidFunction)
         }
         _ => {
             msg!("[purse::process_update] Error: Unknown function selector");

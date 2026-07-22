@@ -61,7 +61,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             box_take_get_metadata_v1(params)?
         }
-        _ => vec![],
+        BoxFunction::InitializeV1 => vec![],
     };
 
     wasm::util::set_return_data(&metadata)
@@ -119,6 +119,10 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let update = TakeUpdateV1 { box_id: params.box_id, nullifier: params.nullifier };
             wasm::util::set_return_data(&serialize(&(BoxFunction::TakeV1 as u8, update)))?;
         }
+        BoxFunction::InitializeV1 => {
+            msg!("[box::process_instruction] Error: InitializeV1 must be called via init");
+            return Err(ContractError::InvalidFunction);
+        }
         _ => return Err(ContractError::InvalidFunction),
     };
 
@@ -147,6 +151,10 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
                 wasm::db::db_set(boxes_db, &serialize(&update.box_id), &serialize(&bx))?;
             }
             Ok(())
+        }
+        BoxFunction::InitializeV1 => {
+            msg!("[box::process_update] Error: InitializeV1 must be called via init");
+            Err(ContractError::InvalidFunction)
         }
         _ => {
             msg!("[box::process_update] Error: Unknown function selector");

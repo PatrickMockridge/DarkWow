@@ -125,8 +125,18 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: PurchaseCoverageWithDAGParamsV1 = deserialize(&self_.data[1..])?;
             purchase_coverage_with_dag_get_metadata_v1(params)?
         }
-        // All other functions are non-ZK
-        _ => vec![],
+        InsuranceMarketFunction::InitializeV1 => vec![],
+        InsuranceMarketFunction::RegisterRiskTypeV1 => vec![],
+        InsuranceMarketFunction::CreateMarketV1 => vec![],
+        InsuranceMarketFunction::UnderwriteV1 => vec![],
+        InsuranceMarketFunction::FileClaimV1 => vec![],
+        InsuranceMarketFunction::ResolveClaimV1 => vec![],
+        InsuranceMarketFunction::WithdrawPremiumV1 => vec![],
+        InsuranceMarketFunction::UpdatePremiumV1 => vec![],
+        InsuranceMarketFunction::ResolveClaimWithCapabilityV1 => vec![],
+        InsuranceMarketFunction::DeactivateUnderwriterV1 => vec![],
+        InsuranceMarketFunction::CloseMarketV1 => vec![],
+        InsuranceMarketFunction::RetireRiskTypeV1 => vec![],
     };
 
     wasm::util::set_return_data(&metadata)
