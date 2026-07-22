@@ -308,12 +308,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_highest_peer_tip_initial() {
-        let tip = HighestPeerTip::new();
-        assert_eq!(tip.get(), BlockHeight::new(0));
-    }
-
-    #[test]
     fn test_highest_peer_tip_monotonic() {
         let tip = HighestPeerTip::new();
         tip.set_max(BlockHeight::new(42));

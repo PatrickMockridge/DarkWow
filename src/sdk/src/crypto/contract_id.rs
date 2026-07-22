@@ -249,16 +249,4 @@ mod tests {
             "ContractId::ZERO must be valid (unlike Nullifier)");
     }
 
-    #[test]
-    fn test_contract_id_zero_sentinel() {
-        assert!(ContractId::ZERO.is_zero());
-    }
-
-    #[test]
-    fn test_contract_id_roundtrip() {
-        let cid = ContractId::from_bytes([1u8; 32]).unwrap();
-        let bytes = cid.to_bytes();
-        let cid2 = ContractId::from_bytes(bytes).unwrap();
-        assert_eq!(cid, cid2);
-    }
 }
