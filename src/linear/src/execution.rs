@@ -344,9 +344,27 @@ pub fn execute_block(
             Ok(m) => {
                 let mut c = Cursor::new(&m);
                 let zkp: Vec<(String, Vec<dwow_sdk::pasta::pallas::Base>)> =
-                    dwow_serial::Decodable::decode(&mut c).unwrap_or_default();
+                    match dwow_serial::Decodable::decode(&mut c) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            tracing::error!(target: "dwow_chain::execution",
+                                "metadata ZK public inputs decode failed: {:?}", e);
+                            success = false;
+                            fail_stage = "metadata-zkp-decode";
+                            continue;
+                        }
+                    };
                 let sigs: Vec<dwow_sdk::crypto::PublicKey> =
-                    dwow_serial::Decodable::decode(&mut c).unwrap_or_default();
+                    match dwow_serial::Decodable::decode(&mut c) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            tracing::error!(target: "dwow_chain::execution",
+                                "metadata signature pubkeys decode failed: {:?}", e);
+                            success = false;
+                            fail_stage = "metadata-sigs-decode";
+                            continue;
+                        }
+                    };
                 let entry = veri_state.entry(job.tx_hash).or_insert_with(|| {
                     TxVeriTables { zkp: vec![], pubkeys: vec![] }
                 });
