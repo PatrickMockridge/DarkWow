@@ -276,7 +276,7 @@ impl RedeemCallBuilder {
 
         Ok(RedeemCallDebris {
             params: RedeemParamsV1 { input, output,
-                tx_binding: pallas::Base::zero(), tx_nonce: self.input.tx_nonce },
+                tx_binding: pallas::Base::zero(), tx_nonce: pallas::Base::zero() },
             proofs,
         })
     }

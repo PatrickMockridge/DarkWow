@@ -425,11 +425,11 @@ impl WalletDb {
                     caps.push(CapRecord {
                         cap_id,
                         key_coords,
-                        value: value as u64,
+                        value: u64::try_from(value).unwrap_or(0),
                         asset_id,
                         spend_hook,
                         user_data,
-                        leaf_position: leaf_position as u64,
+                        leaf_position: u64::try_from(leaf_position).unwrap_or(0),
                         commitment,
                         contract_id,
                         func_id,
@@ -438,8 +438,8 @@ impl WalletDb {
                         asset_blind,
                         capability_discriminant: capability_discriminant.map(|d| d as u8),
                         revoked: spent_val != 0,
-                        revoked_at_height: revoked_at_height.map(|h| h as u64),
-                        created_at_height: created_at_height as u64,
+                        revoked_at_height: revoked_at_height.map(|h| u64::try_from(h).unwrap_or(0)),
+                        created_at_height: u64::try_from(created_at_height).unwrap_or(0),
                         capability_name,
                         resource,
                         action,
@@ -634,11 +634,11 @@ impl WalletDb {
                     caps.push(CapRecord {
                         cap_id,
                         key_coords,
-                        value: value as u64,
+                        value: u64::try_from(value).unwrap_or(0),
                         asset_id: asset_id_val,
                         spend_hook,
                         user_data,
-                        leaf_position: leaf_position as u64,
+                        leaf_position: u64::try_from(leaf_position).unwrap_or(0),
                         commitment,
                         contract_id,
                         func_id,
@@ -647,8 +647,8 @@ impl WalletDb {
                         asset_blind,
                         capability_discriminant: capability_discriminant.map(|d| d as u8),
                         revoked: spent_val != 0,
-                        revoked_at_height: revoked_at_height.map(|h| h as u64),
-                        created_at_height: created_at_height as u64,
+                        revoked_at_height: revoked_at_height.map(|h| u64::try_from(h).unwrap_or(0)),
+                        created_at_height: u64::try_from(created_at_height).unwrap_or(0),
                         capability_name,
                         resource,
                         action,
@@ -669,7 +669,7 @@ impl WalletDb {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         conn.execute(
             "UPDATE held_capabilities SET revoked = 1, revoked_at_height = ?1 WHERE cap_id = ?2",
-            params![block_height as i64, cap_id],
+            params![i64::try_from(block_height).unwrap_or(i64::MAX), cap_id],
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
         Ok(())
@@ -699,11 +699,11 @@ impl WalletDb {
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
                 params![
                     cap.cap_id,
-                    cap.value as i64,
+                    i64::try_from(cap.value).unwrap_or(i64::MAX),
                     cap.asset_id.to_bytes().to_vec(),
                     cap.spend_hook.map(|f| f.to_bytes().to_vec()),
                     cap.user_data.map(|b| b.to_vec()),
-                    cap.leaf_position as i64,
+                    i64::try_from(cap.leaf_position).unwrap_or(i64::MAX),
                     cap.commitment.to_bytes().to_vec(),
                     cap.contract_id.to_bytes().to_vec(),
                     cap.func_id.map(|f| f.to_bytes().to_vec()),
@@ -712,8 +712,8 @@ impl WalletDb {
                     cap.value_blind.inner().to_repr().to_vec(),
                     cap.asset_blind.inner().to_repr().to_vec(),
                     if cap.revoked { 1 } else { 0 },
-                    cap.revoked_at_height.map(|h| h as i64),
-                    cap.created_at_height as i64,
+                    cap.revoked_at_height.map(|h| i64::try_from(h).unwrap_or(i64::MAX)),
+                    i64::try_from(cap.created_at_height).unwrap_or(i64::MAX),
                     cap.capability_name,
                     cap.resource,
                     cap.action,
@@ -791,7 +791,7 @@ impl WalletDb {
     /// Remove caps after a certain block height.
     pub fn remove_capabilities_after(&self, height: u64) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        let height = height as i64;
+        let height = i64::try_from(height).unwrap_or(i64::MAX);
 
         // Delete capability_proofs for caps being deleted (only those CREATED
         // above the reorg target — revocation is handled by retain_capabilities_after).
@@ -820,7 +820,7 @@ impl WalletDb {
     /// on blocks that no longer exist.
     pub fn retain_capabilities_after(&self, height: u64) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        let height = height as i64;
+        let height = i64::try_from(height).unwrap_or(i64::MAX);
         conn.execute(
             "UPDATE held_capabilities SET revoked = 0, revoked_at_height = NULL
              WHERE revoked = 1 AND revoked_at_height > ?1",
@@ -876,7 +876,7 @@ impl WalletDb {
                 record.description,
                 if record.public { 1 } else { 0 },
                 record.deployer_pubkey,
-                record.deploy_height as i64,
+                i64::try_from(record.deploy_height).unwrap_or(i64::MAX),
                 record.attestations_json,
                 record.lock_status,
             ],
@@ -931,7 +931,7 @@ impl WalletDb {
             description: row.get(4)?,
             public: row.get::<_, i64>(5)? != 0,
             deployer_pubkey: row.get(6)?,
-            deploy_height: row.get::<_, i64>(7)? as u64,
+            deploy_height: u64::try_from(row.get::<_, i64>(7)?).unwrap_or(0),
             attestations_json: row.get(8)?,
             lock_status: row.get(9)?,
         })
@@ -961,7 +961,7 @@ impl WalletDb {
                 description: row.get(4)?,
                 public: row.get::<_, i64>(5)? != 0,
                 deployer_pubkey: row.get(6)?,
-                deploy_height: row.get::<_, i64>(7)? as u64,
+                deploy_height: u64::try_from(row.get::<_, i64>(7)?).unwrap_or(0),
                 attestations_json: row.get(8)?,
                 lock_status: row.get(9)?,
             });
@@ -988,7 +988,7 @@ impl WalletDb {
                 description: row.get(4)?,
                 public: row.get::<_, i64>(5)? != 0,
                 deployer_pubkey: row.get(6)?,
-                deploy_height: row.get::<_, i64>(7)? as u64,
+                deploy_height: u64::try_from(row.get::<_, i64>(7)?).unwrap_or(0),
                 attestations_json: row.get(8)?,
                 lock_status: row.get(9)?,
             });
@@ -1229,7 +1229,7 @@ impl WalletDb {
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;
         conn.execute(
             "INSERT OR REPLACE INTO chain_blocks (height, block_json) VALUES (?1, ?2)",
-            params![height as i64, block_json],
+            params![i64::try_from(height).unwrap_or(i64::MAX), block_json],
         ).map_err(|_| WalletDbError::QueryExecutionFailed)?;
         Ok(())
     }
@@ -1239,7 +1239,7 @@ impl WalletDb {
         let mut stmt = conn.prepare(
             "SELECT block_json FROM chain_blocks WHERE height = ?1",
         )?;
-        stmt.query_row(params![height as i64], |row| {
+        stmt.query_row(params![i64::try_from(height).unwrap_or(i64::MAX)], |row| {
             let json: String = row.get(0)?;
             Ok(json)
         })
@@ -1260,7 +1260,7 @@ impl WalletDb {
             [],
             |row| row.get(0),
         )?;
-        Ok(dwow_sdk::blockchain::BlockHeight::new(height as u64))
+        Ok(dwow_sdk::blockchain::BlockHeight::from_sqlite_i64(height).unwrap_or(dwow_sdk::blockchain::BlockHeight::new(0)))
     }
 }
 

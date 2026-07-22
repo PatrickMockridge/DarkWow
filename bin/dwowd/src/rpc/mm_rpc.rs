@@ -195,6 +195,7 @@ impl DwowNode {
         let Some(height) = height.get::<f64>() else {
             return server_error(RpcError::MinerInvalidHeight, id, None)
         };
+        // json! macro can't express u64 natively. This value is unused.
         let _height = *height as u64;
 
         // Parse prev_id (Monero previous block hash)

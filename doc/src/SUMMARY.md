@@ -30,6 +30,7 @@
   - [Observer (Relay Node)](arch/observer.md)
   - [O-Cap & Composable Privacy](arch/ocap.md)
   - [Type System](arch/type-system.md) ← ρ-calculus + Authorization Inversion Theorem
+  - [Contract WASM Type System](arch/contract-wasm-type-system.md) ← Entrypoint types, barbs, state system
   - [Capability Composition](arch/composition.md)
   - [Anonymous Assets](arch/anonymous_assets.md)
   - [Quantum-OS & Promissory Note Bridge](arch/quantum-os.md)

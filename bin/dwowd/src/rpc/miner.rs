@@ -76,6 +76,8 @@ impl DwowNode {
         }
 
         let recipient = params[0].get::<String>().unwrap();
+        // json! macro can't express u64, so this goes through f64.
+        // The value is unused. Caller reward below 2^53 is precise in f64.
         let _caller_reward = *params[1].get::<f64>().unwrap() as u64;
 
         info!(target: "dwowd::rpc::miner", "miner.mine_linear called for recipient {}", recipient);
@@ -301,7 +303,7 @@ impl DwowNode {
         // Return block hash
         let result = JsonValue::from(HashMap::from([
             ("block_hash".to_string(), JsonValue::String(block_hash)),
-            ("height".to_string(), JsonValue::Number(height.get() as f64)),
+            ("height".to_string(), JsonValue::String(format!("{}", height))),
         ]));
         JsonResponse::new(result, id).into()
     }

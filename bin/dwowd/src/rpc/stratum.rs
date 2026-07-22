@@ -714,7 +714,7 @@ impl DwowNode {
                                         ),
                                         (
                                             "height".to_string(),
-                                            JsonValue::from(new_height.get() as f64),
+                                            JsonValue::String(format!("{}", new_height)),
                                         ),
                                         (
                                             "target".to_string(),

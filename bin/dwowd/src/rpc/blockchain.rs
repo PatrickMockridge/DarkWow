@@ -71,7 +71,7 @@ impl DwowNode {
         let height = chain.get_height();
 
         let result = JsonValue::from(std::collections::HashMap::from([
-            ("height".to_string(), JsonValue::Number(height.get() as f64)),
+            ("height".to_string(), JsonValue::String(format!("{}", height))),
         ]));
 
         JsonResponse::new(result, id).into()
@@ -110,7 +110,7 @@ impl DwowNode {
         };
 
         let result = JsonValue::Array(vec![
-            JsonValue::Number(height.get() as f64),
+            JsonValue::String(format!("{}", height)),
             JsonValue::String(hash),
         ]);
 
@@ -151,7 +151,7 @@ impl DwowNode {
         let target = chain.consensus.lock().unwrap().target();
 
         let result = JsonValue::from(std::collections::HashMap::from([
-            ("target".to_string(), JsonValue::Number(target as f64)),
+            ("target".to_string(), JsonValue::String(format!("{}", target))),
         ]));
 
         JsonResponse::new(result, id).into()
@@ -177,7 +177,12 @@ impl DwowNode {
             return JsonError::new(InvalidParams, None, id).into()
         }
 
-        let height = dwow_sdk::blockchain::BlockHeight::new(*params[0].get::<f64>().unwrap() as u64);
+        let height_raw = *params[0].get::<f64>().unwrap();
+        // Guard against f64 precision loss: reject NaN, negative, >2^53, and fractional
+        if height_raw < 0.0 || height_raw > (1u64 << 53) as f64 || height_raw.fract() != 0.0 {
+            return JsonError::new(InvalidParams, Some("Height out of range".to_string()), id).into()
+        }
+        let height = dwow_sdk::blockchain::BlockHeight::new(height_raw as u64);
 
         let chain = match &self.chain_state {
             Some(lb) => lb.clone(),
@@ -378,7 +383,7 @@ impl DwowNode {
         blind_bytes.copy_from_slice(&cumulative_blind.to_repr());
 
         let result = JsonValue::from(std::collections::HashMap::from([
-            ("height".to_string(), JsonValue::Number(height.get() as f64)),
+            ("height".to_string(), JsonValue::String(format!("{}", height))),
             ("total_supply".to_string(), JsonValue::Number(total_supply as f64)),
             ("cumulative_value_commit".to_string(), JsonValue::String(base64::encode(&commit_bytes))),
             ("cumulative_blind".to_string(), JsonValue::String(base64::encode(&blind_bytes))),
