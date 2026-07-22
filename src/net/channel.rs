@@ -331,7 +331,11 @@ impl Channel {
     /// Sends the encoded payload of provided `SerializedMessage` by writing
     /// the data to the channel async stream.
     async fn send_message(&self, message: &SerializedMessage) -> Result<()> {
-        assert!(!message.command.is_empty());
+        // type-system.md §4, §10.5 obligation 2: malformed messages
+        // SHALL return typed errors (↓bad-msg) — not crash the node.
+        if message.command.is_empty() {
+            return Err(Error::MessageInvalid("empty command".into()));
+        }
 
         let stream = &mut *self.writer.lock().await;
         let mut written: usize = 0;

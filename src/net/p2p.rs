@@ -361,7 +361,15 @@ async fn broadcast_serialized_to<M: Message>(
                     );
                     // If the channel is stopped then it should automatically die
                     // and the session will remove it from p2p.
-                    assert!(channel.is_stopped());
+                    // type-system.md §4, §10.5 obligation 2: network errors
+                    // SHALL produce typed barbs — not crash the node.
+                    if !channel.is_stopped() {
+                        tracing::warn!(
+                            target: "net::p2p::broadcast",
+                            "[P2P] channel send failed but is_stopped=false (race) — dropping message to {}",
+                            channel.display_address()
+                        );
+                    }
                 }),
         );
     }

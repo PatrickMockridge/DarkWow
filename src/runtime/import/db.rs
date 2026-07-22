@@ -252,7 +252,7 @@ pub(crate) fn db_lookup(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len:
     let mut buf_reader = Cursor::new(buf);
 
     // Decode ContractId from memory
-    let cid: ContractId = match Decodable::decode(&mut buf_reader) {
+    let requested_cid: ContractId = match Decodable::decode(&mut buf_reader) {
         Ok(v) => v,
         Err(e) => {
             error!(
@@ -284,6 +284,19 @@ pub(crate) fn db_lookup(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len:
         return dwow_sdk::error::DB_LOOKUP_FAILED
     }
 
+    // Cross-contract access prevention (type-system.md §5, §7 invariant 3):
+    // A contract SHALL only open databases that belong to its own ContractId.
+    // The caller-provided ContractId must match the executing contract's identity.
+    // This check is symmetric with the equivalent checks in db_set (line 436),
+    // db_del (line 569), and db_init (line 155).
+    if requested_cid != cid {
+        error!(
+            target: "runtime::db::db_lookup",
+            "[WASM] [{cid}] db_lookup(): Unauthorized ContractId — cross-contract access denied"
+        );
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
+    }
+
     if db_name == SMART_CONTRACT_ZKAS_DB_NAME {
         error!(
             target: "runtime::db::db_lookup",
@@ -301,10 +314,10 @@ pub(crate) fn db_lookup(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len:
     }
 
     // Lookup contract state - compute tree handle directly from hash
-    let tree_handle = cid.hash_state_id(&db_name);
+    let tree_handle = requested_cid.hash_state_id(&db_name);
 
     // Create the DbHandle
-    let db_handle = DbHandle::new(cid, tree_handle);
+    let db_handle = DbHandle::new(requested_cid, tree_handle);
     let mut db_handles = env.db_handles.borrow_mut();
 
     // Make sure we don't duplicate the DbHandle in the vec
@@ -682,6 +695,19 @@ pub(crate) fn db_get(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
     // Get DbHandle using db_handle_index
     let db_handle = &db_handles[db_handle_index];
 
+    // Cross-contract access prevention (type-system.md §5, §7 invariant 3):
+    // Verify the DbHandle belongs to this contract before reading.
+    // This check is symmetric with db_set:436-444 and db_del:569.
+    // Prior to 2026-07-22, db_get lacked this check while db_set and db_del
+    // both had it — asymmetric ACL enabled cross-contract state reads (C1).
+    if db_handle.contract_id != cid {
+        error!(
+            target: "runtime::db::db_get",
+            "[WASM] [{cid}] db_get(): Unauthorized to read from DbHandle — cross-contract access denied"
+        );
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
+    }
+
     // Retrieve data using the `key`
     let ret = match env.backend.db_get(&db_handle.tree, &key) {
             Ok(v) => v,
@@ -817,6 +843,17 @@ pub(crate) fn db_contains_key(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, pt
 
     // Retrieve DbHandle using the index
     let db_handle = &db_handles[db_handle_index];
+
+    // Cross-contract access prevention (type-system.md §5, §7 invariant 3):
+    // Verify the DbHandle belongs to this contract before reading.
+    // This check is symmetric with db_set:436-444, db_del:569, and db_get:695.
+    if db_handle.contract_id != cid {
+        error!(
+            target: "runtime::db::db_contains_key",
+            "[WASM] [{cid}] db_contains_key(): Unauthorized to read from DbHandle — cross-contract access denied"
+        );
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
+    }
 
     // Lookup key parameter in the database
     match env.backend.db_contains_key(&db_handle.tree, &key) {
@@ -1055,7 +1092,7 @@ pub(crate) fn db_lookup_local(
 
     let mut buf_reader = Cursor::new(buf);
 
-    let cid: ContractId = match Decodable::decode(&mut buf_reader) {
+    let requested_cid: ContractId = match Decodable::decode(&mut buf_reader) {
         Ok(v) => v,
         Err(e) => {
             error!(
@@ -1085,6 +1122,17 @@ pub(crate) fn db_lookup_local(
         return dwow_sdk::error::DB_LOOKUP_FAILED
     }
 
+    // Cross-contract access prevention (type-system.md §5, §7 invariant 3):
+    // Same check as db_lookup — a contract SHALL only open local databases
+    // that belong to its own ContractId.
+    if requested_cid != cid {
+        error!(
+            target: "runtime::db::db_lookup_local",
+            "[WASM] [{cid}] db_lookup_local(): Unauthorized ContractId — cross-contract access denied"
+        );
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
+    }
+
     if db_name == SMART_CONTRACT_ZKAS_DB_NAME {
         error!(
             target: "runtime::db::db_lookup_local",
@@ -1101,8 +1149,8 @@ pub(crate) fn db_lookup_local(
         return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
-    let tree_handle = cid.hash_state_id(&db_name);
-    let db_handle = DbHandle::new(cid, tree_handle);
+    let tree_handle = requested_cid.hash_state_id(&db_name);
+    let db_handle = DbHandle::new(requested_cid, tree_handle);
     let mut local_db_handles = env.local_db_handles.borrow_mut();
 
     if let Some(index) = local_db_handles.iter().position(|x| x == &db_handle) {

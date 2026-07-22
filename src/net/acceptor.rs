@@ -301,7 +301,19 @@ impl Acceptor {
     /// to all channel publishers.
     async fn handle_stop(self: Arc<Self>, result: Result<()>) {
         match result {
-            Ok(()) => panic!("Acceptor task should never complete without error status"),
+            // type-system.md §4, §10.5 obligation 2: a task that exits
+            // unexpectedly SHALL emit a typed error barb (↓service-stop),
+            // not panic. The error is broadcast to channel publishers for
+            // graceful shutdown.
+            Ok(()) => {
+                tracing::error!(
+                    target: "net::acceptor",
+                    "Acceptor task completed unexpectedly without error — broadcasting stop"
+                );
+                self.channel_publisher
+                    .notify(Err(Error::NetworkServiceStopped))
+                    .await;
+            }
             Err(err) => self.channel_publisher.notify(Err(err)).await,
         }
     }

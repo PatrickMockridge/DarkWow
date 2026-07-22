@@ -63,7 +63,6 @@ impl ChainWork {
     pub fn add_block(&self, target: BlockTarget) {
         self.0.fetch_add(target.chain_work(), Ordering::SeqCst);
     }
-    pub(crate) fn load(&self, order: Ordering) -> u64 { self.0.load(order) }
     pub(crate) fn store(&self, val: u64, order: Ordering) { self.0.store(val, order); }
 }
 

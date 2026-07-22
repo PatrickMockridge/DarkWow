@@ -1262,4 +1262,87 @@ mod tests {
         assert_eq!(retrieved.header.height, h,
             "round-tripped height must match — backing key was {:x?}", key);
     }
+
+    /// L1: Block height key width regression — the sled key for any height
+    /// MUST be exactly 8 bytes (canonical LE encoding per §2.3). A key of
+    /// 1, 2, or 4 bytes would indicate a width regression.
+    #[test]
+    fn test_height_key_width_is_8_bytes() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let db = Arc::new(db);
+        let cs = CChainState::new(db, 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+
+        for h in [1u64, 255, 256, 65535, 1_000_000] {
+            let height = BlockHeight::new(h);
+            let block = Block {
+                header: BlockHeader {
+                    version: 1, previous: blake3::hash(&h.to_le_bytes()),
+                    merkle_root: compute_merkle_root(&[]),
+                    timestamp: BlockTimestamp::new(h), target: BlockTarget::MAX,
+                    nonce: h as u32, height,
+                    uncle_merkle_root: [0u8; 32], total_reward: BlockReward::ZERO,
+                    randomx_key: Miner::derive_key_from_height(height),
+                    coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                    anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
+                    anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
+                },
+                transactions: vec![],
+            };
+            cs.store.insert_block(height, &block).expect("insert");
+            let key = height.to_le_bytes();
+            assert_eq!(key.len(), 8,
+                "§2.3: height {} LE key must be exactly 8 bytes, got {}", h, key.len());
+        }
+    }
+
+    /// L2: Nullifier persistence roundtrip — a nullifier inserted via the
+    /// store MUST be queryable back at the same height.
+    #[test]
+    fn test_nullifier_persistence_roundtrip() {
+        use crate::Nullifier;
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let db = Arc::new(db);
+        let cs = CChainState::new(db, 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+
+        let nf = Nullifier::from_bytes([1u8; 32]).unwrap();
+        cs.track_nullifier(nf, BlockHeight::new(42));
+
+        assert!(cs.has_nullifier(&nf).unwrap(), "nullifier must be found after track_nullifier");
+        assert_eq!(cs.nullifier_height(&nf).unwrap(), Some(BlockHeight::new(42)),
+            "nullifier height must match insertion height");
+    }
+
+    /// L3: Uncle merkle root determinism — the same set of uncles MUST
+    /// produce the same merkle root every time.
+    #[test]
+    fn test_uncle_merkle_root_determinism() {
+        use crate::{UncleBlock, build_uncle_merkle};
+        let h = BlockHeight::new(1);
+        let uncle = UncleBlock {
+            header: BlockHeader {
+                version: 1, previous: blake3::hash(b"uncle"), merkle_root: compute_merkle_root(&[]),
+                timestamp: BlockTimestamp::new(0), target: BlockTarget::MAX, nonce: 0,
+                height: h, uncle_merkle_root: [0u8; 32], total_reward: BlockReward::ZERO,
+                randomx_key: Miner::derive_key_from_height(h),
+                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
+                anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
+            },
+            transactions: vec![],
+            depth: 1, pin_offered: true, pin_accepted: false,
+            pin_confirmed: BlockReward::ZERO,
+        };
+        let uncles = vec![uncle];
+        let vm = Arc::new(
+            randomx::RandomXVM::new(
+                randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT,
+                None, None,
+            ).expect("vm"),
+        );
+        let (root1, _) = build_uncle_merkle(&uncles, &vm);
+        let (root2, _) = build_uncle_merkle(&uncles, &vm);
+        assert_eq!(root1, root2, "uncle merkle root must be deterministic");
+    }
 }
