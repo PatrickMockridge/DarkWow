@@ -957,9 +957,9 @@ fn test_wallet_coinbase_scan_only() {
         let dww = Dww::new(
             Network::Testnet,
             Some(&keys_path),
-            "testnet",
+            "node0",
             wallet_dir.to_string_lossy().to_string(),
-            "testnet".to_string(),
+            "".to_string(),
             false,
             None,
         ).expect("wallet initialize");
