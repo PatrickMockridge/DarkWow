@@ -44,7 +44,7 @@ use dwow_core::{
     Error, Result,
 };
 use dwow_chain::monero::JobId;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, MoneroBlockHeight};
 use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
 
@@ -518,7 +518,7 @@ async fn init_genesis(
         version: 1,
         previous: blake3::Hash::from_bytes([0u8; 32]),
         merkle_root: genesis_merkle_root,
-        timestamp,
+        timestamp: BlockTimestamp::new(timestamp),
         target: BlockTarget::new(target),
         nonce: 0,
         height: genesis_height,
@@ -528,7 +528,7 @@ async fn init_genesis(
         coin_merkle_root: [0u8; 32],
         nullifier_root: [0u8; 32],
         anchor_tx_id,
-        anchor_monero_height: 0,
+        anchor_monero_height: MoneroBlockHeight::new(0),
         anchor_monero_hash: [0u8; 32],
         finality_flags: 0,
         pow_source: PowSource::Native,

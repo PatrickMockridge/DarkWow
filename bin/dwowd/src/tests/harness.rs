@@ -39,7 +39,7 @@ use dwow_chain::{
     build_uncle_merkle, create_uncle,
 };
 use dwow_core::Result;
-use dwow_sdk::blockchain::{self, BlockHeight, BlockReward, BlockTarget};
+use dwow_sdk::blockchain::{self, BlockHeight, BlockReward, BlockTarget, MoneroBlockHeight};
 
 /// Synthetic timestamp for test blocks, spaced 120s per height so the
 /// consensus target stays at `u32::MAX` (no difficulty drift when blocks
@@ -84,7 +84,7 @@ pub fn build_test_header(
         coin_merkle_root: [0u8; 32],
         nullifier_root: [0u8; 32],
         anchor_tx_id: [0u8; 32],
-        anchor_monero_height: 0,
+        anchor_monero_height: MoneroBlockHeight::new(0),
         anchor_monero_hash: [0u8; 32],
         finality_flags: 0,
         pow_source: PowSource::Native,
@@ -196,7 +196,7 @@ pub fn build_test_block_with_uncles(
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
-            anchor_monero_height: 0,
+            anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: PowSource::Native,

@@ -49,7 +49,7 @@ use std::sync::Arc;
 
 use dwow_chain::{ContractCall, Transaction};
 use dwow_core::Result;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, MoneroBlockHeight};
 use dwow_sdk::crypto::{
     keypair::Network,
     pasta_prelude::{CurveAffine, Group},
@@ -184,7 +184,7 @@ fn test_wallet_integration() {
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
-            anchor_monero_height: 0,
+            anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: dwow_chain::PowSource::Native,
@@ -282,7 +282,7 @@ fn test_wallet_integration() {
                     coin_merkle_root: [0u8; 32],
                     nullifier_root: [0u8; 32],
                     anchor_tx_id: [0u8; 32],
-                    anchor_monero_height: 0,
+                    anchor_monero_height: MoneroBlockHeight::new(0),
                     anchor_monero_hash: [0u8; 32],
                     finality_flags: 0,
                     pow_source: dwow_chain::PowSource::Native,
@@ -593,7 +593,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 coin_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
-                anchor_monero_height: 0,
+                anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,
@@ -787,7 +787,7 @@ required_barbs = ["Spend","Mine"]
                 coin_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
-                anchor_monero_height: 0,
+                anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,

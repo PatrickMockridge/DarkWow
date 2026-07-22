@@ -36,7 +36,7 @@ use std::sync::{
 
 use dwow_chain::{CChainState, FinalityConfig, PoWConfig};
 use dwow_core::Result;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, MoneroBlockHeight};
 use dwow_sdk::pasta::pallas;
 use dwow_sdk::pasta::group::Group;
 use dwow_sdk::crypto::{
@@ -421,7 +421,7 @@ mod tests {
                 coin_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
-                anchor_monero_height: 0,
+                anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,

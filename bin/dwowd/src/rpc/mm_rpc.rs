@@ -56,7 +56,7 @@ use dwow_chain::{
     },
     PowSource,
 };
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, MoneroBlockHeight};
 
 use crate::{error::{miner_status_response, server_error, RpcError}, DwowNode};
 
@@ -631,7 +631,7 @@ impl DwowNode {
             version: 1,
             previous: blake3::Hash::from_bytes(template.previous),
             merkle_root: template.merkle_root,
-            timestamp: template.timestamp,
+            timestamp: BlockTimestamp::new(template.timestamp),
             target: template.target,
             nonce: 0,
             height: template.height,
@@ -641,7 +641,7 @@ impl DwowNode {
             coin_merkle_root,
             nullifier_root,
             anchor_tx_id: [0u8; 32],
-            anchor_monero_height: 0,
+            anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: PowSource::Monero(monero_pow_data),
@@ -856,7 +856,7 @@ mod tests {
             coin_merkle_root: [0xEE; 32],
             nullifier_root: [0xFF; 32],
             anchor_tx_id: [0u8; 32],
-            anchor_monero_height: 0,
+            anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: PowSource::Native,

@@ -47,7 +47,7 @@ use dwow_native_token_contract::{
     NativeTokenFunction,
 };
 use dwow_sdk::{
-    blockchain::{BlockReward, BlockTarget},
+    blockchain::{BlockReward, BlockTarget, MoneroBlockHeight},
     crypto::{
         pasta_prelude::Group,
         pedersen_commitment_u64, poseidon_hash, ScalarBlind,
@@ -321,7 +321,7 @@ mod tests {
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
-            anchor_monero_height: 0,
+            anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: crate::PowSource::Native,

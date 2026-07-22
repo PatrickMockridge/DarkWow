@@ -67,7 +67,7 @@ use blake3::Hash as Blake3Hash;
 use randomx::{RandomXCache, RandomXFlags, RandomXVM};
 use sled::transaction::Transactional;
 use tracing::info;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, MoneroBlockHeight};
 use dwow_sdk::crypto::{pedersen_commitment_u64, Blind};
 use dwow_sdk::pasta::pallas;
 use dwow_sdk::pasta::group::{ff::FromUniformBytes, Group, GroupEncoding};
@@ -256,7 +256,7 @@ impl CChainState {
 
     pub fn get_latest_block(&self) -> Result<Block> {
         let h = self.get_height();
-        if h.get() == 0 {
+        if h == BlockHeight::new(0) {
             return Err(LinearError::BlockNotFound(h));
         }
         self.get_block(h)
@@ -416,7 +416,7 @@ impl CChainState {
         if current_height.get() <= max_depth {
             return;
         }
-        let cutoff = BlockHeight::new(current_height.get() - max_depth);
+        let cutoff = current_height.saturating_sub_blocks(max_depth);
         let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
         let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
         competing.retain(|&height, blocks| {
@@ -515,7 +515,7 @@ impl CChainState {
             // matches the canonical parent at current_height - 1.
             // Without this check, unrelated blocks can pollute the
             // competing store.
-            if current_height.get() > 0 {
+            if current_height > BlockHeight::new(0) {
                 let parent = self.get_block(current_height)?;
                 let parent_vm = self.get_vm(parent.header.randomx_key);
                 let parent_guard = parent_vm.lock().unwrap_or_else(|e| e.into_inner());
@@ -532,7 +532,7 @@ impl CChainState {
             }
             // H6 fix: build recent timestamps for competing-block validation.
             let recent_ts: Vec<BlockTimestamp> = {
-                let start = if block_height.get() > 11 { block_height.get() - 11 } else { 1 };
+                let start = if block_height > BlockHeight::new(11) { block_height.saturating_sub_blocks(11).get() } else { 1 };
                 let mut ts = Vec::new();
                 for h in start..block_height.get() {
                     if let Ok(b) = self.get_block(BlockHeight::new(h)) {
@@ -580,7 +580,7 @@ impl CChainState {
         // uncle, this is an uncle chain extension — store as competing block
         // at the next height. The uncle chain may grow longer than the
         // canonical chain, triggering reorganization.
-        let tip_hash = if current_height.get() > 0 {
+        let tip_hash = if current_height > BlockHeight::new(0) {
             let prev = self.get_block(current_height)?;
             let prev_vm = self.get_vm(prev.header.randomx_key);
             let prev_guard = prev_vm.lock().unwrap_or_else(|e| e.into_inner());
@@ -713,7 +713,7 @@ impl CChainState {
         if let Ok(existing) = self.store.get_block(block_height) {
             if self.finality_config.should_enforce(existing.header.finality_flags)
                 && (existing.header.anchor_tx_id != [0u8; 32]
-                    || existing.header.anchor_monero_height != 0)
+                    || existing.header.anchor_monero_height != MoneroBlockHeight::new(0))
             {
                 return Err(LinearError::AnchoredBlockConflict);
             }
@@ -1020,8 +1020,8 @@ impl CChainState {
         // Entries older than COINBASE_MATURITY are pruned — sled is the
         // authoritative source for pre-existing nullifiers on restart.
         const COINBASE_MATURITY: u64 = 100;
-        if height.get() > COINBASE_MATURITY {
-            let prune_h = BlockHeight::new(height.get() - COINBASE_MATURITY);
+        if height > BlockHeight::new(COINBASE_MATURITY) {
+            let prune_h = height.saturating_sub_blocks(COINBASE_MATURITY);
             self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, h| *h >= prune_h);
             // Prune nullifiers older than maturity (sled is authoritative source)
             self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, h| *h >= prune_h);
@@ -1153,7 +1153,7 @@ mod tests {
                 coin_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
-                anchor_monero_height: 0,
+                anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
                 pow_source: crate::PowSource::Native,

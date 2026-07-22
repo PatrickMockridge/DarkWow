@@ -25,7 +25,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, MoneroBlockHeight};
 
 use super::Transaction;
 use crate::monero::MoneroPowData;
@@ -79,8 +79,8 @@ pub struct BlockHeader {
     #[serde(default)]
     pub anchor_tx_id: [u8; 32],
     /// Monero p2pool anchor block height (0 = no anchor)
-    #[serde(default)]
-    pub anchor_monero_height: u64,
+    #[serde(default = "MoneroBlockHeight::serde_default")]
+    pub anchor_monero_height: MoneroBlockHeight,
     /// Monero p2pool anchor block hash ([0u8; 32] = no anchor)
     #[serde(default)]
     pub anchor_monero_hash: [u8; 32],
@@ -542,7 +542,7 @@ pub fn create_block_with_uncles(
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32], // No Caribina anchor (set by miner after anchoring)
-            anchor_monero_height: 0, // No Monero anchor (set by miner after anchoring)
+            anchor_monero_height: MoneroBlockHeight::new(0), // No Monero anchor (set by miner after anchoring)
             anchor_monero_hash: [0u8; 32], // No Monero anchor
             finality_flags: 0, // Set by miner after anchoring
             pow_source: PowSource::Native,
@@ -588,7 +588,7 @@ mod tests {
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
-            anchor_monero_height: 0,
+            anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: PowSource::Native,
@@ -624,7 +624,7 @@ mod tests {
                 coin_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
-                anchor_monero_height: 0,
+                anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
             pow_source: PowSource::Native,
@@ -666,7 +666,7 @@ mod tests {
                 coin_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
-                anchor_monero_height: 0,
+                anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
                 pow_source: PowSource::Native,
@@ -719,7 +719,7 @@ mod tests {
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
-            anchor_monero_height: 0,
+            anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: PowSource::Native,
@@ -753,7 +753,7 @@ mod tests {
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
-            anchor_monero_height: 0,
+            anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: PowSource::Native,
@@ -883,7 +883,7 @@ mod tests {
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
-            anchor_monero_height: 0,
+            anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: PowSource::Native,
@@ -917,7 +917,7 @@ mod tests {
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
-            anchor_monero_height: 0,
+            anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: PowSource::Native,
@@ -943,7 +943,7 @@ mod tests {
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0xBB; 32],
-            anchor_monero_height: 0,
+            anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: PowSource::Native,
@@ -977,7 +977,7 @@ mod tests {
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
-            anchor_monero_height: 0,
+            anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: PowSource::Native,
@@ -1005,7 +1005,7 @@ mod tests {
         assert_eq!(deserialized.coin_merkle_root, [0u8; 32]);
         assert_eq!(deserialized.nullifier_root, [0u8; 32]);
         assert_eq!(deserialized.anchor_tx_id, [0u8; 32]);
-        assert_eq!(deserialized.anchor_monero_height, 0);
+        assert_eq!(deserialized.anchor_monero_height, MoneroBlockHeight::new(0));
         assert_eq!(deserialized.anchor_monero_hash, [0u8; 32]);
         assert_eq!(deserialized.finality_flags, 0);
     }
@@ -1027,7 +1027,7 @@ mod tests {
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0u8; 32],
-            anchor_monero_height: 0,
+            anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: PowSource::Native,
@@ -1037,7 +1037,7 @@ mod tests {
         let blob1 = header.to_mining_blob();
 
         // Setting Monero anchor fields must not change the mining blob
-        header.anchor_monero_height = 3_500_000;
+        header.anchor_monero_height = MoneroBlockHeight::new(3_500_000);
         header.anchor_monero_hash = [0xCD; 32];
         header.finality_flags = 0xFF;
         let blob2 = header.to_mining_blob();
@@ -1061,7 +1061,7 @@ mod tests {
             coin_merkle_root: [0u8; 32],
             nullifier_root: [0u8; 32],
             anchor_tx_id: [0xBB; 32],
-            anchor_monero_height: 3_500_000,
+            anchor_monero_height: MoneroBlockHeight::new(3_500_000),
             anchor_monero_hash: [0xCC; 32],
             finality_flags: 0x02, // FINALITY_MONERO
             pow_source: PowSource::Native,
@@ -1069,7 +1069,7 @@ mod tests {
 
         let json = serde_json::to_string(&header).unwrap();
         let deserialized: BlockHeader = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.anchor_monero_height, 3_500_000);
+        assert_eq!(deserialized.anchor_monero_height, MoneroBlockHeight::new(3_500_000));
         assert_eq!(deserialized.anchor_monero_hash, [0xCC; 32]);
         assert_eq!(deserialized.finality_flags, 0x02);
         assert_eq!(deserialized.anchor_tx_id, [0xBB; 32]);
@@ -1105,7 +1105,7 @@ mod tests {
             coin_merkle_root: [0x33; 32],
             nullifier_root: [0x44; 32],
             anchor_tx_id: [0u8; 32],
-            anchor_monero_height: 0,
+            anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: PowSource::Native,
@@ -1169,7 +1169,7 @@ mod tests {
             coin_merkle_root: [0x33; 32],
             nullifier_root: [0x44; 32],
             anchor_tx_id: [0u8; 32],
-            anchor_monero_height: 0,
+            anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
             pow_source: PowSource::Native,

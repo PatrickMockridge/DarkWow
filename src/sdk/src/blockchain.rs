@@ -498,6 +498,8 @@ impl MoneroBlockHeight {
     pub const fn get(self) -> u64 { self.0 }
     pub const fn to_le_bytes(self) -> [u8; 8] { self.0.to_le_bytes() }
     pub const fn from_le_bytes(bytes: [u8; 8]) -> Self { Self(u64::from_le_bytes(bytes)) }
+    /// Serde default for backward-compatible deserialization (missing field → 0)
+    pub const fn serde_default() -> Self { Self(0) }
 }
 
 impl core::fmt::Display for MoneroBlockHeight {

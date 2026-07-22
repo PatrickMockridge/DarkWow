@@ -35,7 +35,7 @@ use std::sync::Arc;
 
 use dwow_chain::{Block, ContractCall, Transaction};
 use dwow_core::Result;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, MoneroBlockHeight};
 use dwow_sdk::crypto::{
     keypair::Network,
     pasta_prelude::Group,
@@ -90,7 +90,7 @@ fn build_block_header(
         coin_merkle_root: [0u8; 32],
         nullifier_root: [0u8; 32],
         anchor_tx_id: [0u8; 32],
-        anchor_monero_height: 0,
+        anchor_monero_height: MoneroBlockHeight::new(0),
         anchor_monero_hash: [0u8; 32],
         finality_flags: 0,
         pow_source: dwow_chain::PowSource::Native,

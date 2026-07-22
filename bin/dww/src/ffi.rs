@@ -1066,7 +1066,9 @@ pub extern "C" fn dwow_wallet_generate_proof(
     let cid = match unsafe { CStr::from_ptr(contract_id) }.to_str() { Ok(s) => s, Err(_) => return -1 };
     let wm_str = match unsafe { CStr::from_ptr(witness_map_json) }.to_str() { Ok(s) => s, Err(_) => return -1 };
     let entries: Vec<String> = match serde_json::from_str(wm_str) { Ok(e) => e, Err(_) => return -1 };
-    let witness_map = dwow_sdk::prover::CircuitWitnessMap::from_manifest(&entries);
+    let witness_map = match dwow_sdk::prover::CircuitWitnessMap::from_manifest(
+        cid.to_string(), "ffi".to_string(), &entries,
+    ) { Ok(m) => m, Err(_) => return -1 };
     let zkas = unsafe { std::slice::from_raw_parts(zkas_bytes, zkas_len as usize) };
     let seed_arr: [u8; 32] = if seed.is_null() {
         [0u8; 32]

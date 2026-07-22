@@ -285,7 +285,7 @@ impl DwowNode {
             let anchor_block_hash = block_hash.clone();
             smol::spawn(async move {
                 match smol::unblock(move || {
-                    anchor_block(&block_hash_bytes, anchor_ts, anchor_height)
+                    anchor_block(&block_hash_bytes, anchor_ts.get(), anchor_height)
                 }).await {
                     Some(tx_id) => {
                         info!(target: "dwowd::rpc::miner",

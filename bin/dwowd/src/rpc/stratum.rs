@@ -43,7 +43,7 @@ use dwow_core::{
 };
 
 use dwow_chain::PowSource;
-use dwow_sdk::blockchain::{BlockHeight, BlockTarget};
+use dwow_sdk::blockchain::{BlockHeight, BlockTarget, BlockTimestamp, MoneroBlockHeight};
 
 use crate::{
     error::{miner_status_response, server_error, RpcError},
@@ -254,7 +254,7 @@ impl DwowNode {
             version: 1,
             previous: blake3::Hash::from_bytes(template.previous),
             merkle_root: blake3::hash(&[]),
-            timestamp: template.timestamp,
+            timestamp: BlockTimestamp::new(template.timestamp),
             target: template.target,
             nonce: 0,
             height: template.height,
@@ -264,7 +264,7 @@ impl DwowNode {
             coin_merkle_root: template.coin_merkle_root,
             nullifier_root: template.nullifier_root,
             anchor_tx_id: [0u8; 32],
-            anchor_monero_height: 0,
+            anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
 
@@ -492,7 +492,7 @@ impl DwowNode {
             version: 1,
             previous: previous_hash,
             merkle_root,
-            timestamp: template_timestamp,
+            timestamp: BlockTimestamp::new(template_timestamp),
             target: BlockTarget::new(target),
             nonce,
             height: submitted_height,
@@ -502,7 +502,7 @@ impl DwowNode {
             coin_merkle_root,
             nullifier_root,
             anchor_tx_id: [0u8; 32],
-            anchor_monero_height: 0,
+            anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
 
@@ -583,7 +583,7 @@ impl DwowNode {
                 let block_hash = chain_state.hash_block_with_cached_vm(&block);
                 let mut block_hash_bytes = [0u8; 32];
                 block_hash_bytes.copy_from_slice(block_hash.as_bytes());
-                match anchor_block(&block_hash_bytes, block.header.timestamp, block.header.height) {
+                match anchor_block(&block_hash_bytes, block.header.timestamp.get(), block.header.height) {
                     Some(tx_id) => {
                         block.header.anchor_tx_id = tx_id;
                         block.header.finality_flags = fc.mine_flags();
@@ -677,7 +677,7 @@ impl DwowNode {
                                     version: 1,
                                     previous: blake3::Hash::from_bytes(new_template.previous),
                                     merkle_root: new_template.merkle_root,
-                                    timestamp: new_template.timestamp,
+                                    timestamp: BlockTimestamp::new(new_template.timestamp),
                                     target: new_template.target,
                                     nonce: 0,
                                     height: new_height,
@@ -687,7 +687,7 @@ impl DwowNode {
                                     coin_merkle_root: new_template.coin_merkle_root,
                                     nullifier_root: new_template.nullifier_root,
                                     anchor_tx_id: [0u8; 32],
-                                    anchor_monero_height: 0,
+                                    anchor_monero_height: MoneroBlockHeight::new(0),
                                     anchor_monero_hash: [0u8; 32],
                                     finality_flags: 0,
                         

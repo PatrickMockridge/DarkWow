@@ -42,7 +42,7 @@ use dwow_chain::{
 };
 use dwow_core::Result;
 use dwow_sdk::{
-    blockchain::{BlockHeight, BlockReward, BlockTarget},
+    blockchain::{BlockHeight, BlockReward, BlockTarget, MoneroBlockHeight},
     crypto::{keypair::Network, pasta_prelude::Group, NATIVE_TOKEN_CONTRACT_ID},
     pasta::pallas,
 };
@@ -116,7 +116,7 @@ fn build_merge_mined_header(
         coin_merkle_root: [0u8; 32],
         nullifier_root: [0u8; 32],
         anchor_tx_id: [0u8; 32],
-        anchor_monero_height: 0,
+        anchor_monero_height: MoneroBlockHeight::new(0),
         anchor_monero_hash: [0u8; 32],
         finality_flags: 0,
         pow_source: PowSource::Monero(pow_data),
