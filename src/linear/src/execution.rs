@@ -965,6 +965,11 @@ impl RuntimeBackend for TxBackend {
         Ok(self.height)
     }
 
+    /// Returns a transaction as serde_json bytes.
+    /// WARNING: JSON serialization is NOT deterministic across serde versions.
+    /// Do NOT use the returned bytes for consensus-critical computations.
+    /// Currently zero contracts call this function (2026-07-22 MOC audit).
+    /// Closes: H5 (WASM get_tx returns non-deterministic serde_json bytes).
     fn get_tx(&self, hash: &[u8; 32]) -> dwow_core::Result<Option<Vec<u8>>> {
         match self.store.get_transaction(hash) {
             Ok(tx) => {

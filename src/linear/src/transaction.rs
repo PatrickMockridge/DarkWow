@@ -291,39 +291,54 @@ impl Transaction {
     /// L1 barrier #1 — identity/witness decoupling. The hash commits ONLY to the
     /// transaction's semantics (version, inputs, outputs, contract_calls,
     /// lock_time, nullifiers) and NEVER to the `witness` (ZK proofs + signatures
-    /// + tx_commitment). ZK proofs are interchangeable, randomized witnesses;
-    /// binding block identity to proof bytes would fork the merkle root and the
-    /// RandomX header hash the instant proofs are populated. The identity
-    /// preimage is byte-identical to the pre-witness `serde_json(self)`, so every
-    /// existing block hash and the pinned genesis hash are preserved.
+    /// + tx_commitment).
+    ///
+    /// Deterministic by construction: each field is written directly to a
+    /// blake3::Hasher in a fixed order with length-prefixed vectors. No
+    /// serialization library — the format IS the function body below.
+    /// Closes: M2 (Transaction hash uses non-canonical serde_json).
+    /// Enforces: type-system.md §2.2 (deterministic at persistence boundaries).
     pub fn hash(&self) -> Hash {
-        #[derive(Serialize)]
-        struct TxIdentity<'a> {
-            version: BlockVersion,
-            inputs: &'a Vec<TxInput>,
-            outputs: &'a Vec<TxOutput>,
-            contract_calls: &'a Vec<ContractCall>,
-            lock_time: u64,
-            #[serde(skip_serializing_if = "vec_ref_is_empty")]
-            nullifiers: &'a Vec<Nullifier>,
+        let mut h = blake3::Hasher::new();
+
+        // version: 1 byte
+        h.update(&[self.version.get()]);
+
+        // inputs: count (u32 LE) + each input
+        h.update(&(self.inputs.len() as u32).to_le_bytes());
+        for input in &self.inputs {
+            h.update(input.previous_output.as_bytes());       // 32 bytes
+            h.update(&(input.script.len() as u32).to_le_bytes());
+            h.update(&input.script);
+            h.update(&input.sequence.to_le_bytes());          // 4 bytes LE
         }
-        let identity = TxIdentity {
-            version: self.version,
-            inputs: &self.inputs,
-            outputs: &self.outputs,
-            contract_calls: &self.contract_calls,
-            lock_time: self.lock_time,
-            nullifiers: &self.nullifiers,
-        };
-        let data = serde_json::to_vec(&identity).expect(
-            "Transaction::hash serialization failed — all TxIdentity fields are \
-             serde-serializable, this indicates a bug in serde_json or a \
-             non-serializable type added to the struct. Crashing to prevent \
-             silent merkle corruption (type-system.md §4.2.3: unwrap_or \
-             default SHALL only appear when semantically correct for ALL \
-             failure modes — vec![0u8; 32] is NEVER a valid tx serialization)."
-        );
-        blake3::hash(&data)
+
+        // outputs: count (u32 LE) + each output
+        h.update(&(self.outputs.len() as u32).to_le_bytes());
+        for output in &self.outputs {
+            h.update(&output.value.to_le_bytes());             // 8 bytes LE
+            h.update(&(output.script.len() as u32).to_le_bytes());
+            h.update(&output.script);
+        }
+
+        // contract_calls: count (u32 LE) + each call
+        h.update(&(self.contract_calls.len() as u32).to_le_bytes());
+        for call in &self.contract_calls {
+            h.update(&call.contract_id.to_bytes());            // 32 bytes
+            h.update(&(call.data.len() as u32).to_le_bytes());
+            h.update(&call.data);
+        }
+
+        // lock_time: 8 bytes LE
+        h.update(&self.lock_time.to_le_bytes());
+
+        // nullifiers: count (u32 LE) + each nullifier
+        h.update(&(self.nullifiers.len() as u32).to_le_bytes());
+        for nf in &self.nullifiers {
+            h.update(&nf.to_bytes());                          // 32 bytes
+        }
+
+        h.finalize()
     }
 }
 

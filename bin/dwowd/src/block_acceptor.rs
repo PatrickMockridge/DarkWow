@@ -121,10 +121,19 @@ pub fn accept_block(
         let block_len = serde_json::to_vec(block)
             .map_err(|e| dwow_core::Error::Custom(format!("Block serialization: {}", e)))?
             .len();
-        if block_len > dwow_chain::execution::MAX_BLOCK_SIZE {
+        // Closes: M5 (block size check uses non-canonical serde_json —
+        // different serde versions can produce different byte lengths).
+        // A 1% safety margin prevents a block whose JSON size straddles
+        // MAX_BLOCK_SIZE across serde versions from causing a chain split.
+        // MAX_BLOCK_SIZE is a DOS gate, not a consensus rule — a generous
+        // margin is acceptable per type-system.md §8.6.2.
+        let max = dwow_chain::execution::MAX_BLOCK_SIZE;
+        // Reject if within 1% of max (floor: at least 1 byte margin)
+        let soft_limit = max.saturating_sub(max / 100).max(1);
+        if block_len > soft_limit {
             return Err(dwow_core::Error::Custom(format!(
-                "Block at height {} is {} bytes — exceeds MAX_BLOCK_SIZE {}",
-                block.header.height, block_len, dwow_chain::execution::MAX_BLOCK_SIZE
+                "Block at height {} is {} bytes — within 1% of MAX_BLOCK_SIZE {} (soft limit {})",
+                block.header.height, block_len, max, soft_limit
             )));
         }
     }
