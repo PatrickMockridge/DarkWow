@@ -1479,7 +1479,7 @@ pub extern "C" fn dwow_wallet_get_block(
 ) -> i32 {
     if handle.is_null() || out_buf.is_null() || buf_len <= 0 { return -1; }
     let wallet = unsafe { &(*handle) };
-    let block = match wallet.dww.chain_block(height) {
+    let block = match wallet.dww.chain_block(dwow_sdk::blockchain::BlockHeight::new(height)) {
         Ok(b) => b,
         Err(e) => {
             wallet.last_error.borrow_mut().replace(format!("get_block: {}", e));

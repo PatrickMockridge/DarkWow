@@ -231,9 +231,9 @@ impl Dww {
     }
 
     /// Get a block by height from the local block store.
-    pub fn chain_block(&self, height: u64) -> Result<dwow_chain::Block> {
-        self.wallet.get_block(height)
-            .map_err(|e| Error::Custom(format!("chain block {}: {:?}", height, e)))
+    pub fn chain_block(&self, height: dwow_sdk::blockchain::BlockHeight) -> Result<dwow_chain::Block> {
+        self.wallet.get_block(height.get()) // G3: persistence boundary — walletdb uses u64
+            .map_err(|e| Error::Custom(format!("chain block {}: {:?}", height.get(), e)))
     }
 
     /// Initialize P2P networking. Connects to seeds, discovers peers via

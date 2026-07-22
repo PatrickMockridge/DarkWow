@@ -923,7 +923,7 @@ impl Dww {
 
             while height <= last_height {
                 let mut buf = vec![format!("Reading block {} from local store...", height.get())];
-                let block = match self.chain_block(height.get()) {
+                let block = match self.chain_block(height) {
                     Ok(b) => b,
                     Err(e) => {
                         buf.push(format!("[scan_blocks] Local chain read failed: {e}"));
