@@ -40,6 +40,9 @@ circuit "Claim" {
     constrain_equal_base(ec_get_x(staker_pub), staker_pub_x);
     constrain_equal_base(ec_get_y(staker_pub), staker_pub_y);
 
+    # RC1-E: Range proof for u64 claim amount
+    range_check(64, current_amount);
+
     # Derive stake_id from parameters
     derived_stake_id = poseidon_hash(table_id, staker_pub_x, staker_pub_y, current_amount, nonce);
     constrain_instance(derived_stake_id);

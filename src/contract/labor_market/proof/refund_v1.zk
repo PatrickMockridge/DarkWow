@@ -65,6 +65,11 @@ circuit "Refund" {
     ZERO = witness_base(0);
     ONE = witness_base(1);
 
+    # RC1-E: Range proofs for u64 payment values
+    range_check(64, completed_payment);
+    range_check(64, refund_amount);
+    range_check(64, total_payment);
+
     # ==========================================================================
     # PHASE 1: Derive employer public key from secret
     # ==========================================================================

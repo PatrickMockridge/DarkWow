@@ -26,6 +26,11 @@ witness "UpdateRisk" {
 }
 
 circuit "UpdateRisk" {
+    # RC1-E: Range proofs for u64 risk parameters
+    range_check(64, total_stake);
+    range_check(64, accumulated_losses);
+    range_check(64, house_edge_bp);
+
     # Derive table_id from betting_contract_id and nonce (must match contract logic)
     derived_table_id = poseidon_hash(
         betting_contract_id,

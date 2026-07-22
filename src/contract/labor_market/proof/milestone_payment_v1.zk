@@ -102,6 +102,9 @@ circuit "MilestonePayment" {
     total = base_sub(deadline_block, last_milestone_block);
 
     # ==========================================================================
+    # RC1-E: Range proof for u64 payment value
+    range_check(64, milestone_payment_amount);
+
     # PHASE 5: Verify elapsed <= total (using less_than_or_equal - verified sound!)
     # ==========================================================================
     #

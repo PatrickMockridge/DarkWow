@@ -57,6 +57,9 @@ circuit "RevealBid" {
     constrain_equal_base(derived_pub_x, bidder_pub_x);
     constrain_equal_base(derived_pub_y, bidder_pub_y);
 
+    # RC1-E: Range proof for u64 bid amount
+    range_check(64, revealed_amount);
+
     # ==========================================================================
     # PHASE 2: Expose public inputs
     # ==========================================================================
