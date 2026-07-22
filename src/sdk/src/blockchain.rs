@@ -130,6 +130,18 @@ impl BlockHeight {
         Self(u64::from_le_bytes(bytes))
     }
 
+    /// True if this is the pre-genesis sentinel (height 0).
+    pub const fn is_zero(self) -> bool { self.0 == 0 }
+
+    /// True if this is the genesis block height (height 1).
+    pub const fn is_genesis(self) -> bool { self.0 == 1 }
+
+    /// Saturating subtraction of a number of blocks.
+    /// G17: named method replaces `.get() - n` arithmetic.
+    pub const fn saturating_sub_blocks(self, n: u64) -> Self {
+        Self(self.0.saturating_sub(n))
+    }
+
     /// Convert to a pallas::Base field element for deterministic blind
     /// derivation (consensus-coinbase.md §2.2). Height domain-separates
     /// poseidon hash inputs. For canonical encoding use `to_le_bytes()`.
@@ -158,26 +170,6 @@ impl BlockHeight {
         if self.0 > i64::MAX as u64 { i64::MAX } else { self.0 as i64 }
     }
 
-    /// Parse from untrusted JSON f64. Rejects negative, fractional, NaN,
-    /// infinite, and out-of-range values.
-    /// G11: encapsulates `f64 as u64` at RPC boundary.
-    pub fn try_from_f64(n: f64) -> Option<Self> {
-        if n.is_nan() || n.is_infinite() || n < 0.0 || n > u64::MAX as f64 {
-            return None;
-        }
-        let truncated = n.trunc();
-        if truncated != n { return None; }
-        Some(Self(truncated as u64))
-    }
-
-    /// Convert to f64 for JSON output. Lossy above 2^53 (chain won't reach).
-    pub fn to_f64_lossy(self) -> f64 { self.0 as f64 }
-
-    /// Exact checked conversion to f64. None if > 2^53.
-    pub fn to_f64(self) -> Option<f64> {
-        if self.0 > (1u64 << 53) { return None; }
-        Some(self.0 as f64)
-    }
 }
 
 impl core::fmt::Display for BlockHeight {
@@ -277,7 +269,10 @@ impl BlockTarget {
     pub const fn to_le_bytes(self) -> [u8; 4] { self.0.to_le_bytes() }
     pub const fn from_le_bytes(bytes: [u8; 4]) -> Self { Self(u32::from_le_bytes(bytes)) }
     /// True if a computed hash_u32 meets this target (hash_u32 <= target).
+    /// G17: named method replaces `.get()` in PoW validation.
     pub const fn reached(self, hash_u32: u32) -> bool { hash_u32 <= self.0 }
+    /// Alias for reached() — semantically clearer at PoW check sites.
+    pub const fn hash_is_valid(self, hash_u32: u32) -> bool { self.reached(hash_u32) }
 
     /// Adjust this target by a fixed-point ratio: `self * (scale / adjustment)`.
     /// Result clamped to [min_target, max_target]. Scale is typically 1_000_000.
@@ -666,6 +661,135 @@ mod reward_tests {
         let product = (fp_a as u128 * fp_b as u128) >> 32;
         let diff = (fp_ab as u128).abs_diff(product);
         assert!(diff <= 5, "Multiplicative property: diff={} (accumulated rounding)", diff);
+    }
+}
+
+/// Wave D+E method boundary + serde transparency tests.
+/// G4: every new newtype must have a serde transparency test.
+#[cfg(test)]
+mod newtype_tests {
+    use super::*;
+
+    // =====================================================================
+    // BlockReward::split_for_uncle — G2: consensus-critical function
+    // =====================================================================
+
+    /// Failure mode: uncle reward split produces wrong amounts. Must satisfy
+    /// reward * 2^depth == original for each depth 0-6.
+    #[test]
+    fn test_split_for_uncle_all_depths() {
+        let reward = BlockReward::new(1_000_000_000);
+        for depth in 0..=6u8 {
+            let split = reward.split_for_uncle(depth);
+            let reconstructed = split * (1u64 << depth);
+            assert_eq!(reconstructed, reward.get(),
+                "split_for_uncle({}) = {}; {} * 2^{} = {} != {}",
+                depth, split, split, depth, reconstructed, reward.get());
+        }
+    }
+
+    // =====================================================================
+    // BlockHeight::to_sqlite_i64 / from_sqlite_i64 — G2: persistence boundary
+    // =====================================================================
+
+    #[test]
+    fn test_from_sqlite_i64_rejects_negative() {
+        assert_eq!(BlockHeight::from_sqlite_i64(-1), None);
+        assert_eq!(BlockHeight::from_sqlite_i64(i64::MIN), None);
+    }
+
+    #[test]
+    fn test_from_sqlite_i64_accepts_valid() {
+        assert_eq!(BlockHeight::from_sqlite_i64(0), Some(BlockHeight::new(0)));
+        assert_eq!(BlockHeight::from_sqlite_i64(42), Some(BlockHeight::new(42)));
+        assert_eq!(BlockHeight::from_sqlite_i64(i64::MAX), Some(BlockHeight::new(i64::MAX as u64)));
+    }
+
+    #[test]
+    fn test_to_sqlite_i64_roundtrip() {
+        let h = BlockHeight::new(42);
+        let stored = h.to_sqlite_i64().unwrap();
+        let recovered = BlockHeight::from_sqlite_i64(stored).unwrap();
+        assert_eq!(h, recovered);
+    }
+
+    #[test]
+    fn test_to_sqlite_i64_overflow_returns_none() {
+        assert_eq!(BlockHeight::new(u64::MAX).to_sqlite_i64(), None);
+    }
+
+    #[test]
+    fn test_to_sqlite_i64_saturating_clamps() {
+        assert_eq!(BlockHeight::new(42).to_sqlite_i64_saturating(), 42);
+        assert_eq!(BlockHeight::new(u64::MAX).to_sqlite_i64_saturating(), i64::MAX);
+    }
+
+    // =====================================================================
+    // BlockTarget::chain_work / difficulty — G2: zero-target sentinel
+    // =====================================================================
+
+    #[test]
+    fn test_chain_work_zero_target_returns_zero() {
+        assert_eq!(BlockTarget::new(0).chain_work(), 0);
+    }
+
+    #[test]
+    fn test_difficulty_zero_target_returns_u64_max() {
+        assert_eq!(BlockTarget::new(0).difficulty(), u64::MAX);
+    }
+
+    // =====================================================================
+    // BlockTarget::adjust — G2: boundary clamping
+    // =====================================================================
+
+    #[test]
+    fn test_block_target_adjust_clamped_to_min() {
+        // Scale=1_000_000, adjustment=10_000_000 → ratio shrinks target 10x
+        // Result should be clamped to min_target
+        let t = BlockTarget::new(100);
+        let result = t.adjust(1_000_000, 10_000_000, 50, 1000);
+        assert_eq!(result.get(), 50, "should clamp to min_target=50");
+    }
+
+    #[test]
+    fn test_block_target_adjust_clamped_to_max() {
+        // Scale=10_000_000, adjustment=1_000_000 → ratio grows target 10x
+        // Result should be clamped to max_target
+        let t = BlockTarget::new(100);
+        let result = t.adjust(10_000_000, 1_000_000, 0, 500);
+        assert_eq!(result.get(), 500, "should clamp to max_target=500");
+    }
+
+    // =====================================================================
+    // Serde transparency — G4: newtypes serialize as bare JSON numbers
+    // =====================================================================
+
+    #[test]
+    fn test_supply_amount_serde_is_transparent_number() {
+        let v = serde_json::to_value(SupplyAmount::new(42)).unwrap();
+        assert!(v.is_number(), "SupplyAmount must be bare number, got {:?}", v);
+        assert_eq!(v.as_u64().unwrap(), 42);
+    }
+
+    #[test]
+    fn test_fee_amount_serde_is_transparent_number() {
+        let v = serde_json::to_value(FeeAmount::new(42)).unwrap();
+        assert!(v.is_number(), "FeeAmount must be bare number, got {:?}", v);
+        assert_eq!(v.as_u64().unwrap(), 42);
+    }
+
+    #[test]
+    fn test_block_timestamp_serde_is_transparent_number() {
+        let v = serde_json::to_value(BlockTimestamp::new(42)).unwrap();
+        assert!(v.is_number(), "BlockTimestamp must be bare number, got {:?}", v);
+        assert_eq!(v.as_u64().unwrap(), 42);
+    }
+
+    #[test]
+    fn test_monero_block_height_serde_is_transparent_number() {
+        let v = serde_json::to_value(MoneroBlockHeight::new(42)).unwrap();
+        assert!(v.is_number(), "MoneroBlockHeight must be bare number, got {:?}", v);
+        assert_eq!(v.as_u64().unwrap(), 42);
     }
 }
 
