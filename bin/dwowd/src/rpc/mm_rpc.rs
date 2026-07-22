@@ -324,7 +324,7 @@ impl DwowNode {
         let difficulty = {
             let consensus = chain_state.consensus.lock().unwrap();
             let target = consensus.target();
-            u32::MAX as u64 / target as u64
+            BlockTarget::new(target).difficulty()
         };
 
         // Register the job with bounded capacity — prevent unbounded

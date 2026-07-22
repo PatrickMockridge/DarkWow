@@ -156,7 +156,7 @@ impl UncleBlock {
 /// Convert a rejected block into an uncle block
 pub fn create_uncle(block: Block, depth: u8, base_reward: BlockReward) -> UncleBlock {
     let depth = depth.min(MAX_UNCLE_DEPTH);
-    let pin_confirmed = base_reward.get() / (2_u64.pow(depth as u32));
+    let pin_confirmed = base_reward.split_for_uncle(depth);
     UncleBlock {
         header: block.header,
         transactions: block.transactions,

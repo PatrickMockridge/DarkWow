@@ -129,6 +129,55 @@ impl BlockHeight {
     pub const fn from_le_bytes(bytes: [u8; 8]) -> Self {
         Self(u64::from_le_bytes(bytes))
     }
+
+    /// Convert to a pallas::Base field element for deterministic blind
+    /// derivation (consensus-coinbase.md §2.2). Height domain-separates
+    /// poseidon hash inputs. For canonical encoding use `to_le_bytes()`.
+    /// G11: encapsulates `pallas::Base::from(height as u64)`.
+    pub fn to_field_element(self) -> pallas::Base {
+        pallas::Base::from(self.0)
+    }
+
+    /// Lift from SQLite i64 storage. Rejects negative values (corruption).
+    /// G11: encapsulates `height as u64` at persistence boundary.
+    pub const fn from_sqlite_i64(n: i64) -> Option<Self> {
+        if n < 0 { return None; }
+        Some(Self(n as u64))
+    }
+
+    /// Lower to SQLite i64 storage. Returns None if height exceeds i64::MAX.
+    /// G11: encapsulates `height as i64` at persistence boundary.
+    pub const fn to_sqlite_i64(self) -> Option<i64> {
+        if self.0 > i64::MAX as u64 { return None; }
+        Some(self.0 as i64)
+    }
+
+    /// Lower to SQLite with saturating clamp. For non-consensus-critical
+    /// metadata (created_at_height, revoked_at_height).
+    pub const fn to_sqlite_i64_saturating(self) -> i64 {
+        if self.0 > i64::MAX as u64 { i64::MAX } else { self.0 as i64 }
+    }
+
+    /// Parse from untrusted JSON f64. Rejects negative, fractional, NaN,
+    /// infinite, and out-of-range values.
+    /// G11: encapsulates `f64 as u64` at RPC boundary.
+    pub fn try_from_f64(n: f64) -> Option<Self> {
+        if n.is_nan() || n.is_infinite() || n < 0.0 || n > u64::MAX as f64 {
+            return None;
+        }
+        let truncated = n.trunc();
+        if truncated != n { return None; }
+        Some(Self(truncated as u64))
+    }
+
+    /// Convert to f64 for JSON output. Lossy above 2^53 (chain won't reach).
+    pub fn to_f64_lossy(self) -> f64 { self.0 as f64 }
+
+    /// Exact checked conversion to f64. None if > 2^53.
+    pub fn to_f64(self) -> Option<f64> {
+        if self.0 > (1u64 << 53) { return None; }
+        Some(self.0 as f64)
+    }
 }
 
 impl core::fmt::Display for BlockHeight {
@@ -173,6 +222,23 @@ impl BlockReward {
     pub const fn get(self) -> u64 { self.0 }
     pub const fn to_le_bytes(self) -> [u8; 8] { self.0.to_le_bytes() }
     pub const fn from_le_bytes(bytes: [u8; 8]) -> Self { Self(u64::from_le_bytes(bytes)) }
+
+    /// Multiply by a 32-bit fixed-point decay factor. Used by
+    /// `expected_reward()` for exponential emission schedule.
+    /// G11: encapsulates `(reward.0 as u128 * decay >> 32) as u64`.
+    pub(crate) const fn mul_fixed_point(self, decay_fp: u64) -> u64 {
+        let product = self.0 as u128 * decay_fp as u128;
+        debug_assert!(product >> 96 == 0);
+        (product >> 32) as u64
+    }
+
+    /// Split this reward for an uncle at the given depth.
+    /// Returns `self / 2^depth`. Depth must be <= MAX_UNCLE_DEPTH (6).
+    /// G11: encapsulates `base_reward.get() / (2_u64.pow(depth as u32))`.
+    pub const fn split_for_uncle(self, depth: u8) -> u64 {
+        debug_assert!(depth <= 6);
+        self.0 / (1u64 << depth)
+    }
 }
 
 impl core::fmt::Display for BlockReward {
@@ -212,6 +278,34 @@ impl BlockTarget {
     pub const fn from_le_bytes(bytes: [u8; 4]) -> Self { Self(u32::from_le_bytes(bytes)) }
     /// True if a computed hash_u32 meets this target (hash_u32 <= target).
     pub const fn reached(self, hash_u32: u32) -> bool { hash_u32 <= self.0 }
+
+    /// Adjust this target by a fixed-point ratio: `self * (scale / adjustment)`.
+    /// Result clamped to [min_target, max_target]. Scale is typically 1_000_000.
+    /// G11: encapsulates `(current as u64 * SCALE / adjustment) as u32`.
+    pub fn adjust(self, scale: u64, adjustment: u64, min_target: u32, max_target: u32) -> BlockTarget {
+        let current = self.0 as u64;
+        let new = (current * scale / adjustment) as u32;
+        debug_assert!((current as u128 * scale as u128) <= u64::MAX as u128,
+            "target adjustment overflow: {} * {}", current, scale);
+        BlockTarget::new(new.clamp(min_target, max_target))
+    }
+
+    /// Chain work contributed by a block at this target.
+    /// `work = u32::MAX / target`. Higher = heavier chain = fork selection prefers.
+    /// Returns 0 for zero target (degenerate — never valid).
+    /// G11: encapsulates `u32::MAX as u64 / target as u64`.
+    pub const fn chain_work(self) -> u64 {
+        if self.0 == 0 { return 0; }
+        u32::MAX as u64 / self.0 as u64
+    }
+
+    /// Conventional mining difficulty for display/pool purposes.
+    /// Returns u64::MAX if target is zero.
+    /// G11: encapsulates difficulty-as-u64 cast site.
+    pub const fn difficulty(self) -> u64 {
+        if self.0 == 0 { return u64::MAX; }
+        u32::MAX as u64 / self.0 as u64
+    }
 }
 
 impl core::fmt::LowerHex for BlockTarget {
@@ -444,7 +538,7 @@ pub mod reward {
     /// The genesis block receives the initial reward. Every block from
     /// genesis onward follows the same reward function — no special
     /// bootstrap case with zero reward.
-    pub const GENESIS_REWARD: BlockReward = BlockReward(INITIAL_REWARD.0);
+    pub const GENESIS_REWARD: BlockReward = BlockReward(INITIAL_REWARD.get());
 
     /// Half-life in blocks (~4 years at 2-minute blocks).
     pub const HALF_LIFE_BLOCKS: u64 = 1_051_920;
@@ -497,7 +591,7 @@ pub fn expected_reward(height: BlockHeight) -> BlockReward {
 
     let exp = height - 1;
     let decay = fixed_pow_decay(exp);
-    let reward = ((reward::INITIAL_REWARD.0 as u128 * decay as u128) >> 32) as u64;
+    let reward = reward::INITIAL_REWARD.mul_fixed_point(decay);
 
     if reward <= reward::TAIL_REWARD.0 {
         return reward::TAIL_REWARD;

@@ -854,8 +854,7 @@ impl CChainState {
             }
 
             // Accumulate chain work
-            let block_target = block.header.target.get();
-            let block_work = if block_target == 0 { 0u64 } else { (u32::MAX as u64) / (block_target as u64) };
+            let block_work = block.header.target.chain_work();
             let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
             let accumulated = consensus.accumulated_work.load(Ordering::SeqCst).saturating_add(block_work);
             consensus.accumulated_work.store(accumulated, Ordering::SeqCst);

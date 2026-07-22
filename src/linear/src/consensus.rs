@@ -37,7 +37,7 @@
 use std::sync::{atomic::{AtomicU32, AtomicU64, Ordering}, Mutex};
 
 use blake3::Hash as Blake3Hash;
-use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::blockchain::{BlockHeight, BlockTarget};
 use tracing::debug;
 
 use super::{Block, LinearError, UncleBlock, Result};
@@ -134,11 +134,7 @@ impl PoWConsensus {
 
     /// Conventional difficulty (higher = harder), derived from target.
     pub fn difficulty(&self) -> u64 {
-        let t = self.target.load(Ordering::Acquire);
-        if t == 0 {
-            return u64::MAX;
-        }
-        u32::MAX as u64 / t as u64
+        BlockTarget::new(self.target.load(Ordering::Acquire)).difficulty()
     }
 
     /// Desired block interval in seconds.
@@ -230,9 +226,8 @@ impl PoWConsensus {
 
         // ratio_scaled > SCALE (blocks fast) → adjustment > SCALE → target decreases (harder)
         // ratio_scaled < SCALE (blocks slow) → adjustment < SCALE → target increases (easier)
-        let current = self.target.load(Ordering::Acquire) as u64;
-        let new_target = (current * SCALE / adjustment) as u32;
-        let clamped = new_target.clamp(self.min_target, self.max_target);
+        let current = BlockTarget::new(self.target.load(Ordering::Acquire));
+        let clamped = current.adjust(SCALE, adjustment, self.min_target, self.max_target);
 
         debug!(
             target: "consensus",
@@ -240,8 +235,8 @@ impl PoWConsensus {
             current, clamped, avg_interval, ratio_scaled, adjustment
         );
 
-        self.target.store(clamped, Ordering::Release);
-        clamped
+        self.target.store(clamped.get(), Ordering::Release);
+        clamped.get()
     }
 
     /// Persist consensus state to a sled tree so difficulty survives restarts.
@@ -428,9 +423,7 @@ impl PoWConsensus {
             SCALE
         };
 
-        let current = current_target as u64;
-        let new_target = (current * SCALE / adjustment) as u32;
-        new_target.clamp(min_target, max_target)
+        BlockTarget::new(current_target).adjust(SCALE, adjustment, min_target, max_target).get()
     }
 }
 
