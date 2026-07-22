@@ -62,7 +62,7 @@ impl CapabilityProvider for ResolvedCapProvider {
     }
 
     fn secret(&self) -> dwow_sdk::crypto::SecretKey {
-        self.secret
+        self.secret.clone()
     }
 
     fn merkle_path(&self) -> Vec<pallas::Base> {

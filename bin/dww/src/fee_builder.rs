@@ -138,7 +138,7 @@ pub fn build_fee_and_finalize_tx(
             )))?;
         let owned = account_mgr.resolve_key(coords)
             .map_err(|e| Error::Custom(format!("resolve_key fee cap: {}", e)))?;
-        *owned.expose_secret()
+        owned.expose_secret().clone()
     };
 
     // Get DRKW Merkle proof
@@ -187,7 +187,7 @@ pub fn build_fee_and_finalize_tx(
         coin_blind: fee_cap_blind,
         leaf_position: fee_cap.leaf_position,
         merkle_path: dark_merkle_path,
-        secret: dark_secret,
+        secret: dark_secret.clone(),
         ephemeral_signature_secret: SecretKey::random(&mut rng),
         tx_commitment,
         tx_nonce: pallas::Base::zero(),

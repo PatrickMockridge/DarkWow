@@ -66,7 +66,7 @@ impl Dww {
     ) -> Result<Transaction> {
         // Create deploy call builder
         let builder = DeployCallBuilder {
-            deploy_keypair: *deploy_keypair,
+            deploy_keypair: deploy_keypair.clone(),
             wasm_bincode,
             deploy_ix,
             singleton: false,
@@ -101,7 +101,7 @@ impl Dww {
 
         // Per-call signature rows, in call order (calls[0] = deploy,
         // calls[1] = fee). Mempool admission rejects any other layout.
-        let deploy_sigs = tx.create_sigs(&[deploy_keypair.secret])
+        let deploy_sigs = tx.create_sigs(&[deploy_keypair.secret.clone()])
             .map_err(|e| Error::Custom(format!("create_sigs deploy: {}", e)))?;
         let fee_sigs = tx.create_sigs(&fee_ephemeral)
             .map_err(|e| Error::Custom(format!("create_sigs fee: {}", e)))?;

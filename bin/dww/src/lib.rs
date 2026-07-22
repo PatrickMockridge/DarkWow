@@ -648,8 +648,8 @@ impl Dww {
         // §0.1.3: resolve via AccountManager delegation, never raw index.
         let owned = self.account_mgr.default_owned()
             .map_err(|e| Error::Custom(format!("default_owned: {}", e)))?;
-        let secret = *owned.expose_secret();
-        let public = dwow_sdk::crypto::keypair::PublicKey::from_secret(secret);
+        let secret = owned.expose_secret().clone();
+        let public = dwow_sdk::crypto::keypair::PublicKey::from_secret(secret.clone());
         let test_plaintext: Vec<u8> =
             b"DarkWow AEAD pipeline self-test vector 2026".to_vec();
 
@@ -714,7 +714,7 @@ impl Dww {
         let secrets = self.account_mgr.secrets();
         let mut result: Vec<(u64, PublicKey, SecretKey, u64)> = vec![];
         for (i, secret) in secrets.into_iter().enumerate() {
-            let public = PublicKey::from_secret(secret);
+            let public = PublicKey::from_secret(secret.clone());
             result.push((i as u64, public, secret, 0));
         }
         Ok(result)
@@ -805,7 +805,7 @@ impl WalletStateProvider for Dww {
         // hardcoding accounts[0], matching default_address() semantics.
         let account = self.account_mgr.default_account()
             .map_err(|e| format!("{e}"))?;
-        let secret = account.keypair.secret;
+        let secret = account.keypair.secret.clone();
         Ok(bs58::encode(secret.inner().to_repr()).into_string())
     }
 
@@ -842,7 +842,7 @@ impl WalletStateProvider for Dww {
         let owned_secret = cap.key_coords.as_ref()
             .and_then(|coords| self.account_mgr.resolve_key(coords).ok())
             .ok_or_else(|| "no stored key coordinates — cannot resolve secret".to_string())?;
-        let secret: dwow_sdk::crypto::SecretKey = *owned_secret.expose_secret();
+        let secret: dwow_sdk::crypto::SecretKey = owned_secret.expose_secret().clone();
         let merkle_proof_info = self.get_merkle_proof(&cap.cap_id)?;
         let merkle_path: Vec<pallas::Base> = merkle_proof_info.siblings.iter()
             .map(|s| {
@@ -970,7 +970,7 @@ impl Dww {
             )))?;
         let owned = self.account_mgr.resolve_key(coords)
             .map_err(|e| Error::Custom(format!("resolve_key: {}", e)))?;
-        let cap_secret = *owned.expose_secret();
+        let cap_secret = owned.expose_secret().clone();
 
         // wallet.md §6.1 shell: Merkle proof from DB
         let merkle_proof = self.wallet.get_merkle_proof(&selected.cap_id)
@@ -1073,7 +1073,7 @@ impl Dww {
                     derivation: dwow_accounts::KeyDerivation::Master,
                 },
             ).map_err(|e| Error::Custom(format!("resolve_key change: {}", e)))?;
-            let change_secret = *change_owned.expose_secret();
+            let change_secret = change_owned.expose_secret().clone();
             builder.outputs.push(TransferCallOutput {
                 version: 0,
                 public_key: PublicKey::from_secret(change_secret),
@@ -1274,7 +1274,7 @@ impl Dww {
         key_bytes.copy_from_slice(&secret_bytes);
         let deploy_key = dwow_sdk::crypto::SecretKey::from_bytes(key_bytes)
             .map_err(|e| Error::Custom(format!("Invalid deploy key: {}", e)))?;
-        let keypair = dwow_sdk::crypto::Keypair::new(deploy_key);
+        let keypair = dwow_sdk::crypto::Keypair::new(deploy_key.clone());
         let public_key_bs58 = bs58::encode(keypair.public.to_bytes()).into_string();
 
         // Build LockV1 params — just the deployer's public key

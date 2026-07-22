@@ -300,7 +300,7 @@ fn build_native_token_cap_record(
     func_id: Option<FuncId>,
     capability_discriminant: Option<u8>,
 ) -> std::result::Result<(CapRecord, MerkleProof, String), ScanError> {
-    let public_key = PublicKey::from_secret(*secret);
+    let public_key = PublicKey::from_secret(secret.clone());
     let coin_attrs = CoinAttributes {
         version: 0,
         public_key,
@@ -483,7 +483,7 @@ fn discover_native_token_outputs(
                         cap_record.key_coords = account_mgr.find_owner(
                             &*NATIVE_TOKEN_CONTRACT_ID,
                             &height.to_le_bytes(),
-                            &PublicKey::from_secret(*secret),
+                            &PublicKey::from_secret(secret.clone()),
                         );
                         results.push((cap_record, merkle_proof));
                         messages.push(msg);
@@ -802,7 +802,7 @@ fn scan_block(
                         let key_coords = account_mgr.find_owner(
                             &call.contract_id,
                             &height.to_le_bytes(),
-                            &PublicKey::from_secret(*secret),
+                            &PublicKey::from_secret(secret.clone()),
                         );
 
                         let cap_record = CapRecord {
