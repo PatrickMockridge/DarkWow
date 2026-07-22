@@ -275,6 +275,157 @@ impl<'de> serde::Deserialize<'de> for GasAmount {
     }
 }
 
+/// Nominal supply-amount type (type-system.md §2.3.1).
+///
+/// Distinguished from `BlockReward` (per-block minted amount) because
+/// cumulative supply is an audit anchor. `total_supply + coinbase_reward`
+/// crosses two distinct domains — the compiler SHALL reject
+/// `total_supply + block_height`.
+#[repr(transparent)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable,
+)]
+pub struct SupplyAmount(u64);
+
+impl SupplyAmount {
+    pub const ZERO: Self = Self(0);
+    pub const fn new(amount: u64) -> Self { Self(amount) }
+    pub const fn get(self) -> u64 { self.0 }
+    pub const fn to_le_bytes(self) -> [u8; 8] { self.0.to_le_bytes() }
+    pub const fn from_le_bytes(bytes: [u8; 8]) -> Self { Self(u64::from_le_bytes(bytes)) }
+}
+
+impl core::fmt::Display for SupplyAmount {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl serde::Serialize for SupplyAmount {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u64(self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for SupplyAmount {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(Self(u64::deserialize(d)?))
+    }
+}
+
+/// Nominal fee-amount type (type-system.md §2.3.1).
+///
+/// Distinguished from `BlockReward` (minted supply) and `GasAmount`
+/// (computation measure). `fee = gas * gas_price` is a distinct economic
+/// domain. `compute_fee(gas) -> FeeAmount` makes the domain visible at
+/// every call site.
+#[repr(transparent)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable,
+)]
+pub struct FeeAmount(u64);
+
+impl FeeAmount {
+    pub const ZERO: Self = Self(0);
+    pub const fn new(amount: u64) -> Self { Self(amount) }
+    pub const fn get(self) -> u64 { self.0 }
+    pub const fn to_le_bytes(self) -> [u8; 8] { self.0.to_le_bytes() }
+    pub const fn from_le_bytes(bytes: [u8; 8]) -> Self { Self(u64::from_le_bytes(bytes)) }
+}
+
+impl core::fmt::Display for FeeAmount {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl serde::Serialize for FeeAmount {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u64(self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for FeeAmount {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(Self(u64::deserialize(d)?))
+    }
+}
+
+/// Nominal block-timestamp type (type-system.md §2.3.1).
+///
+/// Wall-clock time in seconds since UNIX epoch. Distinguished from
+/// `BlockHeight` (logical chain position) because difficulty adjustment
+/// feeds timestamps into a sliding window. Confusing a height for a
+/// timestamp biases the target adjustment.
+#[repr(transparent)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable,
+)]
+pub struct BlockTimestamp(u64);
+
+impl BlockTimestamp {
+    pub const fn new(seconds: u64) -> Self { Self(seconds) }
+    pub const fn get(self) -> u64 { self.0 }
+    pub const fn to_le_bytes(self) -> [u8; 8] { self.0.to_le_bytes() }
+    pub const fn from_le_bytes(bytes: [u8; 8]) -> Self { Self(u64::from_le_bytes(bytes)) }
+}
+
+impl core::fmt::Display for BlockTimestamp {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl serde::Serialize for BlockTimestamp {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u64(self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for BlockTimestamp {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(Self(u64::deserialize(d)?))
+    }
+}
+
+/// Nominal Monero block-height type (type-system.md §2.3.1).
+///
+/// A block height on the Monero blockchain. Distinguished from our
+/// `BlockHeight` because the two chains advance independently. The
+/// `BlockHeader.anchor_monero_height` field gates merge-mining finality —
+/// confusing our height for the Monero anchor height silently breaks
+/// the finality guarantee.
+#[repr(transparent)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable,
+)]
+pub struct MoneroBlockHeight(u64);
+
+impl MoneroBlockHeight {
+    pub const fn new(height: u64) -> Self { Self(height) }
+    pub const fn get(self) -> u64 { self.0 }
+    pub const fn to_le_bytes(self) -> [u8; 8] { self.0.to_le_bytes() }
+    pub const fn from_le_bytes(bytes: [u8; 8]) -> Self { Self(u64::from_le_bytes(bytes)) }
+}
+
+impl core::fmt::Display for MoneroBlockHeight {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl serde::Serialize for MoneroBlockHeight {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u64(self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for MoneroBlockHeight {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(Self(u64::deserialize(d)?))
+    }
+}
+
 /// Constants for the block reward schedule.
 pub mod reward {
     use super::BlockReward;
