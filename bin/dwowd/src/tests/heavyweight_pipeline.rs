@@ -2822,7 +2822,7 @@ async fn setup_native_token_pipeline(
     pipeline.deploy(wasm).await?;
 
     let secret = SecretKey::from_bytes([2u8; 32])?;
-    let public = PublicKey::from_secret(secret);
+    let public = PublicKey::from_secret(secret.clone());
     let keypair = Keypair { secret, public };
 
     Ok((pipeline, keypair))

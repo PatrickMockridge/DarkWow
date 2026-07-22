@@ -45,6 +45,12 @@ circuit "Issue_V1" {
     constrain_equal_base(derived_mint_public, mint_public);
     constrain_instance(mint_public);
 
+    # RC1-B: bind coin_public to mint_public — the minted coin MUST go to
+    # the minter's own key. Without this, a prover who knows backing_secret
+    # can mint coins to arbitrary keys they don't control, making rewards
+    # permanently unspendable (same class as native_token Mint_V1 M8).
+    constrain_equal_base(coin_public, mint_public);
+
     # Create the coin with the given token_id
     coin = poseidon_hash(
         coin_public,
