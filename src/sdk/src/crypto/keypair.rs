@@ -38,8 +38,9 @@ use rand_core::{CryptoRng, RngCore};
 use super::{constants::NullifierK, util::fp_mod_fv, poseidon_hash, ContractId};
 use crate::error::ContractError;
 
-/// Keypair structure holding a `SecretKey` and its respective `PublicKey`
-#[derive(Copy, Clone, PartialEq, Eq, Debug, SerialEncodable, SerialDecodable)]
+/// Keypair structure holding a `SecretKey` and its respective `PublicKey`.
+/// Copy removed per C3 — key material SHALL NOT be implicitly duplicated.
+#[derive(Clone, PartialEq, Eq, Debug, SerialEncodable, SerialDecodable)]
 pub struct Keypair {
     pub secret: SecretKey,
     pub public: PublicKey,
@@ -48,7 +49,8 @@ pub struct Keypair {
 impl Keypair {
     /// Instantiate a new `Keypair` given a `SecretKey`
     pub fn new(secret: SecretKey) -> Self {
-        Self { secret, public: PublicKey::from_secret(secret) }
+        let public = PublicKey::from_secret(secret.clone());
+        Self { secret, public }
     }
 
     /// Generate a new `Keypair` object given a source of randomness
@@ -66,8 +68,29 @@ impl Keypair {
 // explicitly and never relied on this impl.
 
 /// Structure holding a secret key, wrapping a `pallas::Base` element.
-#[derive(Copy, Clone, PartialEq, Eq, Debug, SerialEncodable, SerialDecodable)]
+/// Copy removed per C3 — key material SHALL NOT be implicitly duplicated.
+/// Drop zeroizes the inner field element's raw memory.
+/// Closes: C3 (no secure memory for key material).
+/// Enforces: type-system.md §5 (authority-through-possession — Copy
+/// enables ambient duplication of authority).
+#[derive(Clone, PartialEq, Eq, Debug, SerialEncodable, SerialDecodable)]
 pub struct SecretKey(pallas::Base);
+
+impl Drop for SecretKey {
+    fn drop(&mut self) {
+        // Zeroize the raw limb representation of the pallas::Base field
+        // element, not just its byte repr (which would zeroize a copy).
+        // write_bytes sets each byte to 0x00 — the compiler cannot
+        // optimize this away because it goes through a raw pointer.
+        unsafe {
+            core::ptr::write_bytes(
+                &mut self.0 as *mut pallas::Base as *mut u8,
+                0,
+                core::mem::size_of::<pallas::Base>(),
+            );
+        }
+    }
+}
 
 impl SecretKey {
     /// Get the inner object wrapped by `SecretKey`

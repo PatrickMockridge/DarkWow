@@ -211,7 +211,7 @@ impl Transaction {
         for secret in secret_keys {
             debug!(
                 target: "tx::create_sigs",
-                "[TX] Creating signature with public key: {}", PublicKey::from_secret(*secret),
+                "[TX] Creating signature with public key: {}", PublicKey::from_secret(secret.clone()),
             );
             let signature = secret.sign(&data_hash.as_bytes()[..]);
             sigs.push(signature);

@@ -102,7 +102,7 @@ pub fn verify_received_capability(output: &Output, secret: &SecretKey) -> Result
     //    The coin commitment uses poseidon_hash([public_key_x]) as the "public_key" field,
     //    not the EC point itself — promissory_note keeps public keys as Poseidon-derived elements
     //    for ZK circuit simplicity.
-    let recipient_pub = PublicKey::from_secret(*secret);
+    let recipient_pub = PublicKey::from_secret(secret.clone());
     let recipient_address = poseidon_hash([recipient_pub.x().expect("pk not identity")]);
 
     // 3. Verify coin commitment matches the decrypted attributes.

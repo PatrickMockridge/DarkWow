@@ -171,11 +171,11 @@ impl TransferCallBuilder {
             let call_input = crate::model::Input {
                 value_commit,
                 token_commit,
-                nullifier: Nullifier::new(*secret, pallas::Base::zero()), // proof fills in
+                nullifier: Nullifier::new(secret.clone(), pallas::Base::zero()), // proof fills in
                 merkle_root: MerkleNode::from(pallas::Base::zero()),      // proof fills in
                 user_data_enc,
                 spend_hook: FuncId::from(*spend_hook),
-                signature_public: PublicKey::from_secret(*secret),
+                signature_public: PublicKey::from_secret(secret.clone()),
             };
 
             let (burn_proof, revealed, sig_secret) = proof::create_transfer_burn_proof(
@@ -186,7 +186,7 @@ impl TransferCallBuilder {
                 value_blind,
                 token_blind,
                 user_data_blind,
-                *secret,
+                secret.clone(),
                 self.tx_commitment,
                 self.tx_nonce,
             )?;
@@ -222,7 +222,7 @@ impl TransferCallBuilder {
             // Use the first input's secret for output nullifier derivation
             // (mirrors FeeCallBuilder at fee_v1.rs:416).
             let coin_secret = self.inputs.first()
-                .map(|(_, s, _)| *s)
+                .map(|(_, s, _)| s.clone())
                 .unwrap_or(SecretKey::random(rng));
 
             let (mint_proof, revealed) = proof::create_transfer_mint_proof(

@@ -164,8 +164,8 @@ pub fn create_fee_proof(
     _tx_commitment: pallas::Base,
 ) -> Result<(Proof, FeeRevealed)> {
     // Derive public key from secret using EC (Schnorr-style)
-    let public_key = PublicKey::from_secret(input.secret);
-    let signature_public = PublicKey::from_secret(input.ephemeral_signature_secret);
+    let public_key = PublicKey::from_secret(input.secret.clone());
+    let signature_public = PublicKey::from_secret(input.ephemeral_signature_secret.clone());
     let sig_coords = signature_public.inner().to_affine().coordinates().expect("Value commitment cannot be the identity element");
 
     // Create input coin attributes
@@ -181,7 +181,7 @@ pub fn create_fee_proof(
     let input_coin = input_coin_attrs.to_coin();
 
     // Calculate nullifier
-    let nullifier = Nullifier::new(input.secret, input_coin.inner());
+    let nullifier = Nullifier::new(input.secret.clone(), input_coin.inner());
 
     // Calculate merkle root
     let merkle_root = {
@@ -314,7 +314,7 @@ impl FeeCallBuilder {
         }
 
         let mut proofs = vec![];
-        let signature_secrets = vec![self.input.ephemeral_signature_secret];
+        let signature_secrets = vec![self.input.ephemeral_signature_secret.clone()];
 
         // Generate blinds. token_blind MUST be zero: the fee entrypoint
         // pins the native token_commit to poseidon([0, 0]) (entrypoint/mod.rs
@@ -364,7 +364,7 @@ impl FeeCallBuilder {
         // Build the input for params
         let input_coin_attrs = CoinAttributes {
             version: 0,
-            public_key: PublicKey::from_secret(self.input.secret),
+            public_key: PublicKey::from_secret(self.input.secret.clone()),
             value: self.input.value,
             token_id: TokenId(self.input.token_id),
             spend_hook: FuncId::from(self.input.spend_hook),
@@ -386,8 +386,8 @@ impl FeeCallBuilder {
             current
         };
 
-        let nullifier = Nullifier::new(self.input.secret, input_coin.inner());
-        let signature_public = PublicKey::from_secret(self.input.ephemeral_signature_secret);
+        let nullifier = Nullifier::new(self.input.secret.clone(), input_coin.inner());
+        let signature_public = PublicKey::from_secret(self.input.ephemeral_signature_secret.clone());
         let input_user_data_enc = poseidon_hash([self.input.user_data, pallas::Base::zero()]);
         let input_value_commit = pedersen_commitment_u64(self.input.value, input_value_blind);
         let output_value_commit = pedersen_commitment_u64(output_value, output_value_blind);
@@ -433,7 +433,7 @@ impl FeeCallBuilder {
             .map_err(|e| ContractError::IoError(format!(
                 "fee change note encryption: {:?}", e)))?;
 
-        let output_nullifier = Nullifier::new(self.input.secret, output_coin.inner());
+        let output_nullifier = Nullifier::new(self.input.secret.clone(), output_coin.inner());
 
         let params_output = crate::model::Output {
             value_commit: output_value_commit,

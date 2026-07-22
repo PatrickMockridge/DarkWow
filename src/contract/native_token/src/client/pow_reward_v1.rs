@@ -170,7 +170,7 @@ impl PoWRewardCallBuilder {
             token_id,
             value_blind,
             token_blind,
-            signature_public: PublicKey::from_secret(self.ephemeral_signature_secret),
+            signature_public: PublicKey::from_secret(self.ephemeral_signature_secret.clone()),
         };
 
         // Grab the spend hook and user data to use in the output
@@ -180,7 +180,7 @@ impl PoWRewardCallBuilder {
         // Building the anonymous output using CoinAttributes (TransferCallOutput)
         let output = CoinAttributes {
             version: 0,
-            public_key: self.recipient.unwrap_or(PublicKey::from_secret(self.secret)),
+            public_key: self.recipient.unwrap_or(PublicKey::from_secret(self.secret.clone())),
             value,
             token_id: TokenId(token_id),
             spend_hook: FuncId::from(spend_hook),
@@ -193,7 +193,7 @@ impl PoWRewardCallBuilder {
             &self.mint_zkbin,
             &self.mint_pk,
             &output,
-            self.secret,          // sk_H — per-block derived coin secret for nullifier
+            self.secret.clone(),          // sk_H — per-block derived coin secret for nullifier
             value_blind,
             token_blind,
             spend_hook,
@@ -223,10 +223,10 @@ impl PoWRewardCallBuilder {
         let encrypted_note = AeadEncryptedNote::encrypt_deterministic(
             &note,
             &output.public_key,
-            self.ephemeral_signature_secret,
+            self.ephemeral_signature_secret.clone(),
         )?;
 
-        let nf = Nullifier::new(self.secret, public_inputs.coin.inner());
+        let nf = Nullifier::new(self.secret.clone(), public_inputs.coin.inner());
 
         let c_output = Output {
             value_commit: public_inputs.value_commit,

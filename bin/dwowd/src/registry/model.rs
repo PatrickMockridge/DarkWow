@@ -177,7 +177,7 @@ pub async fn build_linear_coinbase(
     ]));
 
     let debris = PoWRewardCallBuilder {
-        secret: sk_h,
+        secret: sk_h.clone(),
         ephemeral_signature_secret: ephemeral_secret,
         block_height: height,
         fees: 0,
@@ -231,7 +231,7 @@ pub async fn build_linear_coinbase(
     // the coinbase capability by publishing this nullifier.
     // V.7: single canonical path via Nullifier::new() — no bytes round-trip.
     let coin_fp = coin_commitment.inner();
-    let nullifier = Nullifier::new(sk_h, coin_fp);
+    let nullifier = Nullifier::new(sk_h.clone(), coin_fp);
 
     // Extract cumulative supply from ZK proof output (S_H = S_{H-1} + C_H).
     // These MUST match what the circuit constrains — [0u8; 32] would break

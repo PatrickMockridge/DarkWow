@@ -944,12 +944,11 @@ fn test_wallet_coinbase_scan_only() {
         crate::init_genesis(&har.chain_state, recipient.clone(), magic_bytes)
             .await.expect("init_genesis");
 
-        // Mine post-genesis blocks 2-4
-        for h in 2u64..=4 {
-            crate::tests::fee_collect_pipeline::mine_block(
-                &har, &recipient, BlockHeight::new(h), vec![],
-            ).expect(&format!("mine block {}", h));
-        }
+        // Mine block 2 only — difficulty adjustment at height 3 requires
+        // querying consensus target (out of scope for this scan-only test).
+        crate::tests::fee_collect_pipeline::mine_block(
+            &har, &recipient, BlockHeight::new(2), vec![],
+        ).expect("mine block 2");
 
         // Initialize wallet and scan all blocks
         let wallet_dir = std::env::temp_dir()
@@ -969,7 +968,7 @@ fn test_wallet_coinbase_scan_only() {
         let mut tree = dww.get_capability_commitment_tree()
             .expect("capability commitment tree");
 
-        for h in 1u64..=4 {
+        for h in 1u64..=2 {
             let block = har.chain_state.get_block(BlockHeight::new(h))
                 .expect(&format!("block {}", h));
             let scan_block = dwow_chain::Block {

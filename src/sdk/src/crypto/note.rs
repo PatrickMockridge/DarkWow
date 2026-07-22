@@ -82,8 +82,8 @@ impl AeadEncryptedNote {
         public: &PublicKey,
         ephem_secret: SecretKey,
     ) -> Result<Self, ContractError> {
-        let ephem_public = PublicKey::from_secret(ephem_secret);
         let shared_secret = diffie_hellman::sapling_ka_agree(&ephem_secret, public)?;
+        let ephem_public = PublicKey::from_secret(ephem_secret);
         let key = diffie_hellman::kdf_sapling(&shared_secret, &ephem_public);
 
         let mut input = Vec::new();
@@ -197,7 +197,7 @@ impl<const N: usize> ElGamalEncryptedNote<N> {
         public: &PublicKey,
     ) -> Result<Self, ContractError> {
         // Derive shared secret using DH
-        let ephem_public = PublicKey::from_secret(*ephem_secret);
+        let ephem_public = PublicKey::from_secret(ephem_secret.clone());
         let (ss_x, ss_y) =
             PublicKey::try_from(public.inner() * fp_mod_fv(ephem_secret.inner()))?
                 .xy().ok_or_else(|| ContractError::IoError(

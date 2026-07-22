@@ -206,7 +206,7 @@ impl FeeCollectCallBuilder {
 
         let token_id = DRKW_TOKEN_ID.inner();
         // Circuit-enforced: fee coin recipient is pk_H (spec §3.3).
-        let public_key = PublicKey::from_secret(self.secret);
+        let public_key = PublicKey::from_secret(self.secret.clone());
 
         // Deterministic blinds — spec §3.6, domains 10-12.
         let sk_base = self.secret.inner();
@@ -237,7 +237,7 @@ impl FeeCollectCallBuilder {
             &self.fee_collect_zkbin,
             &self.fee_collect_pk,
             &output,
-            self.secret,
+            self.secret.clone(),
             value_blind,
             token_blind,
             self.block_height,
@@ -268,7 +268,7 @@ impl FeeCollectCallBuilder {
                     dwow_core::Error::Custom(format!("fee collect note encryption: {:?}", e))
                 })?;
 
-        let nullifier = Nullifier::new(self.secret, public_inputs.coin.inner());
+        let nullifier = Nullifier::new(self.secret.clone(), public_inputs.coin.inner());
 
         Ok(FeeCollectCallDebris {
             params: FeeCollectParamsV1 {

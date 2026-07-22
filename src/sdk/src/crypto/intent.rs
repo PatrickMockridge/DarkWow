@@ -189,7 +189,7 @@ impl PrivateIntent {
         &self,
         owner_secret: SecretKey,
     ) -> Result<IntentNullifier, ContractError> {
-        if PublicKey::from_secret(owner_secret) != self.owner {
+        if PublicKey::from_secret(owner_secret.clone()) != self.owner {
             return Err(ContractError::IoError(
                 "Intent nullifier derivation failed: owner secret mismatch".to_string(),
             ))

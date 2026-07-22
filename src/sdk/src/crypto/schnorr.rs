@@ -70,7 +70,7 @@ impl SchnorrSecret for SecretKey {
         let commit = NullifierK.generator() * mask;
 
         let commit_bytes = commit.to_bytes();
-        let pubkey_bytes = PublicKey::from_secret(*self).to_bytes();
+        let pubkey_bytes = PublicKey::from_secret(self.clone()).to_bytes();
         let transcript = &[&commit_bytes, &pubkey_bytes, message];
 
         let challenge = hash_to_scalar(DRK_SCHNORR_CHALLENGE_DOMAIN, transcript);

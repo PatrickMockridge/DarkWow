@@ -236,7 +236,7 @@ pub fn create_transfer_burn_proof(
     tx_commitment: pallas::Base,
     tx_nonce: pallas::Base,
 ) -> Result<(Proof, TransferBurnRevealed, SecretKey)> {
-    let public_key = PublicKey::from_secret(secret);
+    let public_key = PublicKey::from_secret(secret.clone());
 
     // Reconstruct coin from the witness data
     let coin = CoinAttributes {
@@ -251,13 +251,13 @@ pub fn create_transfer_burn_proof(
     .to_coin();
 
     // Calculate nullifier: poseidon_hash(secret, coin)
-    let nullifier = Nullifier::new(secret, coin.inner());
+    let nullifier = Nullifier::new(secret.clone(), coin.inner());
 
     // Derive per-burn unique signature_secret from coin_secret + nullifier.
     // This binds the signer to the coin owner (fixes H2) while keeping
     // signature_public unlinkable across burns (nullifier is unique per coin).
     let signature_secret = SecretKey::from(poseidon_hash([secret.inner(), nullifier.inner()]));
-    let signature_public = PublicKey::from_secret(signature_secret);
+    let signature_public = PublicKey::from_secret(signature_secret.clone());
 
     // Calculate merkle root from coin and merkle path
     let merkle_root = {

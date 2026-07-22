@@ -133,7 +133,7 @@ impl CommitBetV1Builder {
     /// Build the commit bet parameters
     pub fn build(&self) -> Result<(CommitBetParamsV1, OwnBet), ContractError> {
         let instance_secret = self.wallet_secret.derive_instance(&self.contract_id, &self.instance_seed)?;
-        let player_pub = PublicKey::from_secret(instance_secret);
+        let player_pub = PublicKey::from_secret(instance_secret.clone());
 
         let bet_id = derive_bet_id(
             &player_pub,

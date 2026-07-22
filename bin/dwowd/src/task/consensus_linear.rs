@@ -100,7 +100,7 @@ impl GenesisAuthority {
     /// pattern (dwow-accounts) already does per-block key derivation —
     /// the same binding applies here for the fixed genesis height key.
     pub fn from_key(secret: &dwow_sdk::crypto::SecretKey, genesis_public_key: &dwow_sdk::crypto::PublicKey) -> Option<Self> {
-        let derived_public = dwow_sdk::crypto::PublicKey::from_secret(*secret);
+        let derived_public = dwow_sdk::crypto::PublicKey::from_secret(secret.clone());
         if derived_public != *genesis_public_key {
             return None;
         }

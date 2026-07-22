@@ -423,7 +423,7 @@ impl AccountManager {
     /// to `derive_instance` for per-contract unlinkable keys. The caller gets
     /// the compile-time guarantee that this key was declared, not random.
     pub fn default_owned(&self) -> Result<OwnedSecretKey, String> {
-        Ok(OwnedSecretKey::from_declared(self.default_account()?.keypair.secret))
+        Ok(OwnedSecretKey::from_declared(self.default_account()?.keypair.secret.clone()))
     }
 
     /// Derived secrets for a specific (contract, instance) pair, from every
@@ -433,7 +433,7 @@ impl AccountManager {
         &self, cid: &ContractId, instance_seed: &[u8],
     ) -> Result<Vec<SecretKey>, ContractError> {
         let owned = self.accounts.iter().map(|a| {
-            OwnedSecretKey::from_declared(a.keypair.secret)
+            OwnedSecretKey::from_declared(a.keypair.secret.clone())
         });
         owned
             .map(|o| o.derive_instance(cid, instance_seed).map(SecretKey::from))
@@ -449,7 +449,7 @@ impl AccountManager {
     }
 
     pub fn secrets(&self) -> Vec<SecretKey> {
-        self.accounts.iter().map(|a| a.keypair.secret).collect()
+        self.accounts.iter().map(|a| a.keypair.secret.clone()).collect()
     }
 
     // ========================================================================
@@ -479,9 +479,9 @@ impl AccountManager {
         pubkey: &PublicKey,
     ) -> Option<KeyCoordinates> {
         for (idx, acc) in self.accounts.iter().enumerate() {
-            let owned = OwnedSecretKey::from_declared(acc.keypair.secret);
+            let owned = OwnedSecretKey::from_declared(acc.keypair.secret.clone());
             // Master
-            if PublicKey::from_secret(acc.keypair.secret) == *pubkey {
+            if PublicKey::from_secret(acc.keypair.secret.clone()) == *pubkey {
                 return Some(KeyCoordinates {
                     account_index: idx,
                     derivation: KeyDerivation::Master,
@@ -489,7 +489,7 @@ impl AccountManager {
             }
             // Per-instance
             if let Ok(derived) = owned.derive_instance(cid, instance_seed) {
-                if PublicKey::from_secret(*derived.expose_secret()) == *pubkey {
+                if PublicKey::from_secret(derived.expose_secret().clone()) == *pubkey {
                     return Some(KeyCoordinates {
                         account_index: idx,
                         derivation: KeyDerivation::PerInstance {
@@ -519,7 +519,7 @@ impl AccountManager {
             ));
         }
         let acc = &self.accounts[coords.account_index];
-        let owned = OwnedSecretKey::from_declared(acc.keypair.secret);
+        let owned = OwnedSecretKey::from_declared(acc.keypair.secret.clone());
         match &coords.derivation {
             KeyDerivation::Master => Ok(owned),
             KeyDerivation::PerInstance { contract_id, instance_seed } => {
@@ -1176,7 +1176,8 @@ fn bip32_derive(seed: &[u8; 64], path: &str) -> Result<SecretKey, String> {
 /// derivation (`derive_instance`). `AccountManager` hands this out for
 /// mining/wallet identity, so an identity key can never originate from randomness
 /// — that path does not exist on this type.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+// Copy removed per C3 cascade — SecretKey is no longer Copy.
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct OwnedSecretKey(SecretKey);
 
 impl OwnedSecretKey {
@@ -1213,7 +1214,7 @@ impl OwnedSecretKey {
 
     /// The public key derived from this identity secret.
     pub fn public(&self) -> PublicKey {
-        PublicKey::from_secret(self.0)
+        PublicKey::from_secret(self.0.clone())
     }
 }
 

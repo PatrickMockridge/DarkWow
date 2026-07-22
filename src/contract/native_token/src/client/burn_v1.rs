@@ -87,7 +87,7 @@ pub fn create_burn_proof(
     user_data_blind: BaseBlind,
     secret: SecretKey,
 ) -> Result<(Proof, BurnRevealed)> {
-    let public_key = PublicKey::from_secret(secret);
+    let public_key = PublicKey::from_secret(secret.clone());
 
     // Reconstruct coin from the input
     let coin = CoinAttributes {
@@ -102,13 +102,13 @@ pub fn create_burn_proof(
     .to_coin();
 
     // Calculate nullifier: poseidon_hash(secret, coin)
-    let nullifier = Nullifier::new(secret, coin.inner());
+    let nullifier = Nullifier::new(secret.clone(), coin.inner());
 
     // Derive per-burn unique signature_secret from coin_secret + nullifier.
     // This binds the signer to the coin owner (fixes H2) while keeping
     // signature_public unlinkable across burns (nullifier is unique per coin).
     let signature_secret = SecretKey::from(poseidon_hash([secret.inner(), nullifier.inner()]));
-    let signature_public = PublicKey::from_secret(signature_secret);
+    let signature_public = PublicKey::from_secret(signature_secret.clone());
 
     // Calculate merkle root from coin and merkle path
     let merkle_root = {
@@ -239,8 +239,8 @@ impl BurnCallBuilder {
         let mut inputs = vec![];
 
         for input in self.inputs.into_iter() {
-            let secret = input.secret;
-            let signature_secret = input.ephemeral_signature_secret;
+            let secret = input.secret.clone();
+            let signature_secret = input.ephemeral_signature_secret.clone();
 
             // Generate burn proof
             let value_blind = ScalarBlind::random(&mut OsRng);
@@ -254,16 +254,16 @@ impl BurnCallBuilder {
                 value_blind,
                 token_blind,
                 user_data_blind,
-                secret,
+                secret.clone(),
             )?;
 
             proofs.push(proof);
-            signature_secrets.push(signature_secret);
+            signature_secrets.push(signature_secret.clone());
 
             // Create the Input model for params
             let coin = CoinAttributes {
             version: 0,
-                public_key: PublicKey::from_secret(secret),
+                public_key: PublicKey::from_secret(secret.clone()),
                 value: input.value,
                 token_id: TokenId(input.token_id),
                 spend_hook: FuncId::from(input.spend_hook),
@@ -274,7 +274,7 @@ impl BurnCallBuilder {
 
             let value_commit = pedersen_commitment_u64(input.value, value_blind);
             let token_commit = poseidon_hash([input.token_id, token_blind.inner()]);
-            let nullifier = Nullifier::new(secret, coin.inner());
+            let nullifier = Nullifier::new(secret.clone(), coin.inner());
 
             // Calculate merkle root
             let merkle_root = {
@@ -300,7 +300,7 @@ impl BurnCallBuilder {
                 merkle_root,
                 user_data_enc,
                 spend_hook: input.spend_hook.into(),
-                signature_public: PublicKey::from_secret(signature_secret),
+                signature_public: PublicKey::from_secret(signature_secret.clone()),
             });
         }
 
