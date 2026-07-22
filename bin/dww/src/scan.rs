@@ -156,6 +156,28 @@ pub(crate) struct ZkasBinaryDiscovery {
     pub zkas_bytes: Vec<u8>,
 }
 
+/// Typed scan errors replacing silent `Option` returns (Wave 3).
+/// Each variant carries enough context to produce a distinct diagnostic.
+#[derive(Debug, Clone)]
+pub enum ScanError {
+    /// Merkle tree witness operation failed — capability cannot be recorded.
+    MerkleWitness { position: u64, reason: String },
+    /// Merkle tree root(0) returned None — tree in inconsistent state.
+    MerkleRoot,
+    /// wallet_construct returned None — primitives do not cover required barbs.
+    WalletConstructFailed { resource: String, action: String },
+    /// account_mgr.find_owner() returned None — key not in accounts.
+    KeyNotFound { public_key: String },
+    /// Per-contract key derivation failed.
+    KeyDerivation { contract_id: String, height: u64, reason: String },
+    /// Manifest store/load failure.
+    Manifest { contract_id: String, reason: String },
+    /// Nullifier detection skipped (DB error loading held caps).
+    NullifierDetectionSkipped,
+    /// Parameter decode failure (nullifiers from transfer/spend/burn).
+    ParamDecode { function_code: u8, reason: String },
+}
+
 /// Result of scanning a single block — pure computation, no side effects.
 /// The caller persists these results to the database.
 #[derive(Debug, Clone)]
@@ -205,12 +227,16 @@ fn try_extract_instance_seed(_cid: &ContractId, data: &[u8]) -> Option<Vec<u8>> 
 /// Append a leaf (poseidon coin commitment as `pallas::Base`) to a Merkle tree
 /// and produce its inclusion proof. Note-type-agnostic — the generic engine and
 /// the native path share the same tree-append/witness/root workflow.
-fn append_leaf_and_prove(tree: &mut MerkleTree, leaf: pallas::Base) -> Option<(u64, MerkleProof)> {
+fn append_leaf_and_prove(tree: &mut MerkleTree, leaf: pallas::Base) -> std::result::Result<(u64, MerkleProof), ScanError> {
     let leaf_pos = tree.current_position().map(u64::from).unwrap_or(0);
     let cap_leaf = MerkleNode::new(leaf);
     tree.append(cap_leaf);
     tree.mark();
-    let siblings: Vec<MerkleNode> = tree.witness(Position::from(leaf_pos), 0).ok()?;
+    let siblings: Vec<MerkleNode> = tree.witness(Position::from(leaf_pos), 0)
+        .map_err(|e| ScanError::MerkleWitness {
+            position: leaf_pos,
+            reason: format!("{:?}", e),
+        })?;
     let mut sibling_strings: Vec<String> = siblings
         .iter()
         .map(|n| bs58::encode(n.inner().to_repr()).into_string())
@@ -221,8 +247,10 @@ fn append_leaf_and_prove(tree: &mut MerkleTree, leaf: pallas::Base) -> Option<(u
             bs58::encode(dwow_sdk::crypto::smt::EMPTY_NODES_FP[lvl].to_repr()).into_string(),
         );
     }
-    let root = tree.root(0)?.inner().to_repr();
-    Some((leaf_pos, MerkleProof {
+    let root = tree.root(0)
+        .ok_or(ScanError::MerkleRoot)?
+        .inner().to_repr();
+    Ok((leaf_pos, MerkleProof {
         siblings: sibling_strings,
         root: bs58::encode(root).into_string(),
     }))
@@ -252,7 +280,7 @@ fn build_native_token_cap_record(
     contract_id: ContractId,
     func_id: Option<FuncId>,
     capability_discriminant: Option<u8>,
-) -> Option<(CapRecord, MerkleProof, String)> {
+) -> std::result::Result<(CapRecord, MerkleProof, String), ScanError> {
     let public_key = PublicKey::from_secret(*secret);
     let coin_attrs = CoinAttributes {
         version: 0,
@@ -280,7 +308,10 @@ fn build_native_token_cap_record(
         ],
         &[Barb::Spend, Barb::Nullify, Barb::Commit, Barb::Dispatch,
           Barb::Gate, Barb::Denominate, Barb::Mine],
-    );
+    ).ok_or_else(|| ScanError::WalletConstructFailed {
+        resource: "native_token_coinbase".into(),
+        action: "reward".into(),
+    })?;
 
     let cap_record = CapRecord {
         cap_id: cap_id.clone(),
@@ -296,13 +327,11 @@ fn build_native_token_cap_record(
         value_blind: Blind(note.value_blind),
         asset_blind: Blind(note.token_blind),
         capability_discriminant,
-        capability_name: native_typed.as_ref().map(|_| "coin".to_string()),
-        resource: native_typed.as_ref().map(|ct| ct.resource.clone()),
-        action: native_typed.as_ref().map(|ct| ct.action.clone()),
-        primitives: native_typed.as_ref()
-            .map(|ct| ct.primitives.clone()).unwrap_or_default(),
-        barbs: native_typed.as_ref()
-            .map(|ct| ct.barbs.clone()).unwrap_or_default(),
+        capability_name: Some("coin".to_string()),
+        resource: Some(native_typed.resource.clone()),
+        action: Some(native_typed.action.clone()),
+        primitives: native_typed.primitives.clone(),
+        barbs: native_typed.barbs.clone(),
         revoked: false,
         revoked_at_height: None,
         created_at_height: height,
@@ -316,7 +345,7 @@ fn build_native_token_cap_record(
         height
     );
 
-    Some((cap_record, merkle_proof, msg))
+    Ok((cap_record, merkle_proof, msg))
 }
 
 /// Match published nullifiers against existing held capabilities.
@@ -415,25 +444,29 @@ fn discover_native_token_outputs(
                 tracing::info!(target: "dww::scan",
                     "[NATIVE_TOKEN] step=3 aead_decrypt status=OK");
                 decrypted = true;
-                if let Some((cap_record, merkle_proof, msg)) =
-                    build_native_token_cap_record(
-                        tree, secret, &decrypted_note, height, &source,
-                        *NATIVE_TOKEN_CONTRACT_ID, None, None,
-                    )
-                {
-                    tracing::info!(target: "dww::scan",
-                        "[NATIVE_TOKEN] step=4 coin_reconstruct status=OK coin=0x{}",
-                        hex::encode(&cap_record.commitment.to_bytes()));
-                    // P1b: populate key_coords so the spend path can recover
-                    // the owning secret via AccountManager::resolve_key.
-                    let mut cap_record = cap_record;
-                    cap_record.key_coords = account_mgr.find_owner(
-                        &*NATIVE_TOKEN_CONTRACT_ID,
-                        &height.to_le_bytes(),
-                        &PublicKey::from_secret(*secret),
-                    );
-                    results.push((cap_record, merkle_proof));
-                    messages.push(msg);
+                match build_native_token_cap_record(
+                    tree, secret, &decrypted_note, height, &source,
+                    *NATIVE_TOKEN_CONTRACT_ID, None, None,
+                ) {
+                    Ok((cap_record, merkle_proof, msg)) => {
+                        tracing::info!(target: "dww::scan",
+                            "[NATIVE_TOKEN] step=4 coin_reconstruct status=OK coin=0x{}",
+                            hex::encode(&cap_record.commitment.to_bytes()));
+                        // P1b: populate key_coords so the spend path can recover
+                        // the owning secret via AccountManager::resolve_key.
+                        let mut cap_record = cap_record;
+                        cap_record.key_coords = account_mgr.find_owner(
+                            &*NATIVE_TOKEN_CONTRACT_ID,
+                            &height.to_le_bytes(),
+                            &PublicKey::from_secret(*secret),
+                        );
+                        results.push((cap_record, merkle_proof));
+                        messages.push(msg);
+                    }
+                    Err(e) => {
+                        tracing::error!(target: "dww::scan",
+                            "[NATIVE_TOKEN] step=4 coin_reconstruct status=FAIL error={:?}", e);
+                    }
                 }
                 off += consumed; // advance past this note only on successful decrypt
                 break; // found match for this note → next note
@@ -726,8 +759,14 @@ fn scan_block(
                         // of type pallas_base. Absent or wrong type → drop.
                         let Some(leaf) = dwow_sdk::manifest::note_field(&fields, "commitment")
                             .and_then(|v| v.as_base()) else { break };
-                        let Some((leaf_pos, merkle_proof)) =
-                            append_leaf_and_prove(tree, leaf) else { break };
+                        let (leaf_pos, merkle_proof) = match append_leaf_and_prove(tree, leaf) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                tracing::error!(target: "dww::scan",
+                                    "Path 2: merkle tree failure: {:?}", e);
+                                break;
+                            }
+                        };
                         // merkle_proof is consumed in CapabilityDiscovery below
 
                         // §0.1.3: resolve key coordinates via AccountManager
