@@ -85,7 +85,7 @@
 
 use std::sync::Mutex;
 
-use dwow_sdk::blockchain::BlockHeight;
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, SupplyAmount};
 use dwow_sdk::pasta::{
     group::Group,
     pallas,
@@ -109,7 +109,7 @@ pub struct CumulativeSupplyEntry {
     /// sum of all coinbase blinds from genesis to height H
     pub blind: pallas::Scalar,
     /// plaintext total DRKW supply at height H
-    pub total_supply: u64,
+    pub total_supply: SupplyAmount,
 }
 
 impl CumulativeSupplyEntry {
@@ -118,7 +118,7 @@ impl CumulativeSupplyEntry {
         Self {
             value_commit: pallas::Point::identity(),
             blind: pallas::Scalar::zero(),
-            total_supply: 0,
+            total_supply: SupplyAmount::new(0),
         }
     }
 
@@ -155,7 +155,7 @@ impl CumulativeSupplyEntry {
         let blind: pallas::Scalar =
             deserialize(&data[scalar_offset..supply_offset])
                 .map_err(|e| LinearError::SerializationError(e.to_string()))?;
-        let total_supply = u64::from_le_bytes(
+        let total_supply = SupplyAmount::from_le_bytes(
             data[supply_offset..supply_offset + 8].try_into().unwrap(),
         );
         Ok(Self { value_commit, blind, total_supply })
@@ -286,7 +286,7 @@ impl CumulativeSupplyChain {
         CumulativeSupplyEntry {
             value_commit: prev.value_commit + coinbase_value_commit,
             blind: prev.blind + coinbase_blind,
-            total_supply: prev.total_supply.saturating_add(coinbase_value),
+            total_supply: SupplyAmount::new(prev.total_supply.get().saturating_add(coinbase_value)),
         }
     }
 
@@ -299,12 +299,12 @@ impl CumulativeSupplyChain {
     /// Returns `Ok(())` if the invariant holds, or an error describing
     /// the violation. Called from `connect_block` during block acceptance.
     pub fn verify_uncle_split(
-        base_reward: u64,
-        canonical_reward: u64,
-        uncle_pin_confirmed: &[u64],
+        base_reward: BlockReward,
+        canonical_reward: BlockReward,
+        uncle_pin_confirmed: &[BlockReward],
     ) -> Result<(), LinearError> {
-        let total_pin: u64 = uncle_pin_confirmed.iter().sum();
-        if canonical_reward + total_pin != base_reward {
+        let total_pin: u64 = uncle_pin_confirmed.iter().map(|r| r.get()).sum();
+        if canonical_reward.get() + total_pin != base_reward.get() {
             return Err(LinearError::BlockIsInvalid(format!(
                 "Supply invariant violated: canonical({}) + uncles({}) != base_reward({})",
                 canonical_reward, total_pin, base_reward

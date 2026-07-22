@@ -229,9 +229,9 @@ impl BlockReward {
     /// Split this reward for an uncle at the given depth.
     /// Returns `self / 2^depth`. Depth must be <= MAX_UNCLE_DEPTH (6).
     /// G11: encapsulates `base_reward.get() / (2_u64.pow(depth as u32))`.
-    pub const fn split_for_uncle(self, depth: u8) -> u64 {
+    pub const fn split_for_uncle(self, depth: u8) -> BlockReward {
         debug_assert!(depth <= 6);
-        self.0 / (1u64 << depth)
+        BlockReward::new(self.0 / (1u64 << depth))
     }
 }
 
@@ -802,8 +802,8 @@ mod newtype_tests {
 /// for the provided gas.
 ///
 /// Currently we simply divide the gas value by 100.
-pub fn compute_fee(gas: GasAmount) -> u64 {
-    gas.0 / 100
+pub fn compute_fee(gas: GasAmount) -> FeeAmount {
+    FeeAmount::new(gas.0 / 100)
 }
 
 use pasta_curves::{
@@ -813,12 +813,12 @@ use pasta_curves::{
 
 /// Compute the expected cumulative total supply at a given block height.
 /// Sum of expected_reward(h) for h = 1..=height.
-pub fn expected_cumulative_supply(height: BlockHeight) -> u64 {
+pub fn expected_cumulative_supply(height: BlockHeight) -> SupplyAmount {
     let mut total: u64 = 0;
     for h in 1..=height.get() {
         total = total.saturating_add(expected_reward(BlockHeight::new(h)).get());
     }
-    total
+    SupplyAmount::new(total)
 }
 
 /// Derive the deterministic coinbase blind for a block at the given height.

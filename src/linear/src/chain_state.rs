@@ -744,13 +744,13 @@ impl CChainState {
         // A block with violated supply invariant must never reach disk.
         let height = block_height;
         let base_reward = dwow_sdk::blockchain::expected_reward(height);
-        let pin_confirmed: Vec<u64> = uncles.iter()
-            .filter(|u| u.pin_accepted && u.pin_confirmed > 0)
+        let pin_confirmed: Vec<BlockReward> = uncles.iter()
+            .filter(|u| u.pin_accepted && u.pin_confirmed > BlockReward::new(0))
             .map(|u| u.pin_confirmed)
             .collect();
         CumulativeSupplyChain::verify_uncle_split(
-            base_reward.get(),
-            block.header.total_reward.get(),
+            base_reward,
+            block.header.total_reward,
             &pin_confirmed,
         )?;
 
@@ -761,7 +761,7 @@ impl CChainState {
         // in the atomic sled transaction (uncle_merkle.md §Coinbase Split).
         let uncle_coin_entries: Vec<([u8; 32], BlockHeight)> = {
             let mut entries = Vec::new();
-            for uncle in uncles.iter().filter(|u| u.pin_accepted && u.pin_confirmed > 0) {
+            for uncle in uncles.iter().filter(|u| u.pin_accepted && u.pin_confirmed > BlockReward::new(0)) {
                 let r_bytes: [u8; 64] = {
                     let h = blake3::hash(&uncle.header.to_mining_blob());
                     let mut out = [0u8; 64];
@@ -770,7 +770,7 @@ impl CChainState {
                     out
                 };
                 let r_i = pallas::Scalar::from_uniform_bytes(&r_bytes);
-                let c_uncle = pedersen_commitment_u64(uncle.pin_confirmed, Blind(r_i));
+                let c_uncle = pedersen_commitment_u64(uncle.pin_confirmed.get(), Blind(r_i));
                 debug_assert!(!bool::from(c_uncle.is_identity()),
                     "Uncle Pedersen commitment must not be identity");
                 let c_bytes: [u8; 32] = c_uncle.to_bytes().as_ref().try_into()

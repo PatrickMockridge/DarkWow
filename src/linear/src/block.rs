@@ -115,7 +115,7 @@ pub struct UncleBlock {
     /// NOTE: `pin_accepted` starts `false` at uncle creation. The uncle miner
     /// may later accept the pin via `accept_pin()` (use-it-or-lose-it).
     /// `compute_reward()` only pays uncles with `pin_accepted == true`.
-    pub pin_confirmed: u64,
+    pub pin_confirmed: BlockReward,
 }
 
 impl UncleBlock {
@@ -464,7 +464,7 @@ pub fn compute_reward(base_reward: BlockReward, uncles: &[UncleBlock]) -> (Block
 
     for uncle in uncles {
         // Uncle only gets pin_confirmed if they accepted the pin
-        let pin = if uncle.pin_accepted { uncle.pin_confirmed } else { 0 };
+        let pin = if uncle.pin_accepted { uncle.pin_confirmed.get() } else { 0 };
         uncle_rewards.push(pin);
     }
 

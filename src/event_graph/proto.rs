@@ -160,9 +160,9 @@ impl_p2p_message!(TipRep, "EventGraph::TipRep", 0, 0, DEFAULT_METERING_CONFIGURA
 // declarations are per-handler, not per-message, on this path. See
 // src/net/barb_trait.rs §10.4 handler declarations.
 
-impl dwow_core::barb::ExhibitsBarb for ProtocolEventGraph {
-    fn exhibited_barbs() -> &'static [dwow_core::barb::BarbId] {
-        use dwow_core::barb::BarbId;
+impl crate::barb::ExhibitsBarb for ProtocolEventGraph {
+    fn exhibited_barbs() -> &'static [crate::barb::BarbId] {
+        use crate::barb::BarbId;
         &[
             BarbId::DagParent,
             BarbId::Broadcast,

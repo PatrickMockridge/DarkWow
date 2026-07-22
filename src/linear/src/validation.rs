@@ -716,7 +716,7 @@ mod tests {
             depth: 1,
             pin_offered: false,
             pin_accepted: false,
-            pin_confirmed: 0, // not validated by check_uncles — verify_uncle_split handles this downstream
+            pin_confirmed: BlockReward::new(0), // not validated by check_uncles — verify_uncle_split handles this downstream
             header: super::super::BlockHeader {
                 version: 1,
                 previous: Blake3Hash::from([0u8; 32]),
