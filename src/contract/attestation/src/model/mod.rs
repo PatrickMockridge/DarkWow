@@ -280,6 +280,10 @@ pub struct CreateAttestationParamsV1 {
 pub struct CreateAttestationUpdateV1 {
     /// The created attestation ID
     pub attestation_id: AttestationId,
+    /// The full attestation to store
+    pub attestation: Attestation,
+    /// Index key for attestor-based lookup
+    pub index_key: pallas::Base,
 }
 
 /// Parameters for revoking an attestation
@@ -336,6 +340,12 @@ pub struct CreateClaimParamsV1 {
 pub struct CreateClaimUpdateV1 {
     /// The created claim ID
     pub claim_id: ClaimId,
+    /// The full claim to store
+    pub claim: Claim,
+    /// Rate limit key for claimant+attestation tracking
+    pub rate_limit_key: pallas::Base,
+    /// Current block at claim creation
+    pub current_block: u64,
 }
 
 /// Parameters for verifying a claim
@@ -382,6 +392,10 @@ pub struct ConsumeClaimParamsV1 {
 pub struct ConsumeClaimUpdateV1 {
     /// The consumed claim ID
     pub claim_id: ClaimId,
+    /// Block height when claim was consumed
+    pub consumed_at: u64,
+    /// Nullifier to prevent double-consumption
+    pub nullifier: pallas::Base,
 }
 
 /// Parameters for validating a claim (verify without consuming)
@@ -442,6 +456,8 @@ pub struct DelegateAttestationUpdateV1 {
     pub delegation_id: pallas::Base,
     /// Whether delegation was successful
     pub success: bool,
+    /// Delegation parameters to store
+    pub delegation_params: DelegateAttestationParamsV1,
 }
 
 /// Parameters for checking not revoked
@@ -460,6 +476,8 @@ pub struct CheckNotRevokedParamsV1 {
 pub struct CheckNotRevokedUpdateV1 {
     /// Whether the nonce is not revoked
     pub is_not_revoked: bool,
+    /// Hash of (nonce, revocation_root) for replay protection
+    pub proof_hash: pallas::Base,
 }
 
 /// Parameters for verifying a delegation chain
@@ -512,6 +530,10 @@ pub struct UpdateDelegationParamsV1 {
 pub struct UpdateDelegationUpdateV1 {
     /// Whether the update was successful
     pub success: bool,
+    /// Original attestation ID being updated
+    pub original_attestation_id: pallas::Base,
+    /// Updated delegation parameters to store
+    pub updated_params: UpdateDelegationParamsV1,
 }
 
 // ============================================================================
@@ -538,6 +560,12 @@ pub struct AttestSlashUpdateV1 {
     pub slash_amount: u64,
     pub withdrawal_id: pallas::Base,
     pub block_height: u64,
+    /// The full attestation to store
+    pub attestation: Attestation,
+    /// Serialized index key for lookup
+    pub index_key_bytes: Vec<u8>,
+    /// Whether this is a newly created attestation
+    pub is_new: bool,
 }
 
 // ============================================================================
@@ -569,4 +597,8 @@ pub struct CommitFeeScheduleUpdateV1 {
     pub guaranteed_premium_bp: u64,
     pub max_amount: u64,
     pub min_amount: u64,
+    /// The full attestation to store
+    pub attestation: Attestation,
+    /// Serialized index key for lookup
+    pub index_key_bytes: Vec<u8>,
 }

@@ -361,7 +361,6 @@ fn create_attestation_v1(cid: ContractId, params: CreateAttestationParamsV1) -> 
     msg!("[attestation::create_attestation_v1] Creating attestation: {:?}", params.attestation_id);
 
     let attestations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
-    let index_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_INDEX_TREE)?;
 
     // Check if attestation already exists
     let existing: Option<Attestation> =
@@ -391,24 +390,16 @@ fn create_attestation_v1(cid: ContractId, params: CreateAttestationParamsV1) -> 
         expires_at: params.expires_at,
     };
 
-    // Store attestation
-    wasm::db::db_set(
-        attestations_db,
-        &serialize(&params.attestation_id),
-        &serialize(&attestation),
-    )?;
-
-    // Index by attestor for lookup
+    // Index by attestor for lookup (compute for update)
     let (ax, ay) = params.attestor_pub.xy().expect("pk not identity");
     let index_key = poseidon_hash([ax, ay]);
-    wasm::db::db_set(
-        index_db,
-        &serialize(&index_key),
-        &serialize(&params.attestation_id),
-    )?;
 
     msg!("[attestation::create_attestation_v1] Attestation created successfully");
-    Ok(serialize(&CreateAttestationUpdateV1 { attestation_id: params.attestation_id }))
+    Ok(serialize(&CreateAttestationUpdateV1 {
+        attestation_id: params.attestation_id,
+        attestation,
+        index_key,
+    }))
 }
 
 fn revoke_attestation_v1(cid: ContractId, params: RevokeAttestationParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -438,13 +429,8 @@ fn revoke_attestation_v1(cid: ContractId, params: RevokeAttestationParamsV1) -> 
         return Err(ContractError::InvalidFunction.into())
     }
 
-    // Update state to revoked
-    attestation.state = AttestationState::Revoked;
-    wasm::db::db_set(
-        attestations_db,
-        &serialize(&params.attestation_id),
-        &serialize(&attestation),
-    )?;
+    // State update handled in process_update — just validate here
+    let _ = attestation; // read for validation only
 
     msg!("[attestation::revoke_attestation_v1] Attestation revoked successfully");
     Ok(serialize(&RevokeAttestationUpdateV1 { attestation_id: params.attestation_id }))

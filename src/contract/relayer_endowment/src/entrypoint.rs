@@ -389,9 +389,10 @@ fn process_deploy_capital_instruction(
 
     // Validate child transfer amount using value_commit comparison
     let relayer_key = compute_relayer_key(&params.relayer_pub);
-    let relayer_base = pallas::Base::from_repr(
-        <[u8; 32]>::try_from(&relayer_key[..32]).unwrap_or([0u8; 32])
-    ).unwrap_or(pallas::Base::zero());
+    let key_arr: [u8; 32] = relayer_key[..32].try_into()
+        .expect("poseidon_hash output is always 32 bytes");
+    let relayer_base = pallas::Base::from_repr(key_arr)
+        .expect("poseidon hash output is always a canonical field element");
     let value_blind = poseidon_hash([
         pallas::Base::from(params.amount),
         relayer_base,

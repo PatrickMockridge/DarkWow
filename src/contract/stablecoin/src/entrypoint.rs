@@ -726,7 +726,8 @@ fn apply_spend_hook_callback(cid: ContractId, update: SpendHookCallbackUpdateV1)
     let total_redeemed_bytes = wasm::db::db_get(config_db, STABLECOIN_CONTRACT_TOTAL_REDEEMED)?
         .unwrap_or_else(|| vec![0u8; 8]);
     let total_redeemed = u64::from_le_bytes(
-        total_redeemed_bytes.as_slice().try_into().unwrap_or([0u8; 8]),
+        total_redeemed_bytes.as_slice().try_into()
+            .expect("total_redeemed value is always 8 bytes"),
     );
     let new_total_redeemed = total_redeemed.saturating_add(total_burned);
     wasm::db::db_set(config_db, STABLECOIN_CONTRACT_TOTAL_REDEEMED, &new_total_redeemed.to_le_bytes())?;
@@ -1586,8 +1587,11 @@ fn process_redeem_stable_instruction(
     wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &new_total_collateral.to_le_bytes())?;
     wasm::db::db_set(config_db, STABLECOIN_CONTRACT_TOTAL_REDEEMED, &new_total_redeemed.to_le_bytes())?;
 
-    let receipt_coin: [u8; 32] = receipt_coin_bytes.as_slice().try_into()
-        .unwrap_or([0u8; 32]);
+    let receipt_coin: [u8; 32] = receipt_coin_bytes.as_slice().try_into().map_err(|_| {
+        msg!("[stablecoin::process_redeem_stable_instruction] Error: receipt_coin serialization produced {} bytes, expected 32",
+            receipt_coin_bytes.len());
+        ContractError::IoError("receipt_coin serialization size mismatch".to_string())
+    })?;
 
     let update = RedeemStableUpdateV1 {
         redeem_nullifier,
