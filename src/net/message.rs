@@ -24,7 +24,7 @@
 use std::net::Ipv6Addr;
 
 use dwow_serial::{
-    serialize_async, AsyncDecodable, AsyncEncodable, SerialDecodable, SerialEncodable,
+    serialize_async, async_trait, AsyncDecodable, AsyncEncodable, SerialDecodable, SerialEncodable,
 };
 use url::{Host, Url};
 
@@ -47,7 +47,7 @@ use crate::{net::metering::MeteringConfiguration, util::time::NanoTimestamp};
 pub trait BoundaryCodec: dwow_serial::Encodable + dwow_serial::Decodable + Sized {
     /// §10.5 quote: typed value → bytes. Erases barbs — output has no
     /// behavioral constraints (§2.2). Default: encode to Vec<u8>.
-    fn quote(&self) -> Result<Vec<u8>, dwow_serial::Error> {
+    fn quote(&self) -> std::io::Result<Vec<u8>> {
         let mut buf = Vec::new();
         self.encode(&mut buf)?;
         Ok(buf)
@@ -55,8 +55,9 @@ pub trait BoundaryCodec: dwow_serial::Encodable + dwow_serial::Decodable + Sized
 
     /// §10.5 eval: bytes → typed value via validating constructor.
     /// SHALL reject invalid bytes. Default: deserialize from slice.
-    fn eval(bytes: &[u8]) -> Result<Self, dwow_serial::Error> {
+    fn eval(bytes: &[u8]) -> std::io::Result<Self> {
         dwow_serial::deserialize(bytes)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
     }
 
     /// Maximum wire size in bytes (§8.6.2). Zero only when METERING_SCORE > 0.
@@ -351,14 +352,20 @@ impl SeedErrorCode {
     }
 }
 
+impl std::fmt::Display for SeedErrorCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", *self as u32)
+    }
+}
+
 // Wire-identical: encode/decode as u32. Delegates to u32's Encodable/Decodable.
 impl dwow_serial::Encodable for SeedErrorCode {
-    fn encode<W: std::io::Write>(&self, e: &mut W) -> Result<usize, dwow_serial::Error> {
+    fn encode<W: std::io::Write>(&self, e: &mut W) -> Result<usize, std::io::Error> {
         (*self as u32).encode(e)
     }
 }
 impl dwow_serial::Decodable for SeedErrorCode {
-    fn decode<D: std::io::Read>(d: &mut D) -> Result<Self, dwow_serial::Error> {
+    fn decode<D: std::io::Read>(d: &mut D) -> Result<Self, std::io::Error> {
         let code = u32::decode(d)?;
         Ok(match code {
             400 => Self::BadRequest,
@@ -370,7 +377,41 @@ impl dwow_serial::Decodable for SeedErrorCode {
             500 => Self::Internal,
             503 => Self::HostlistEmpty,
             504 => Self::UpstreamTimeout,
-            n => return Err(dwow_serial::Error::ParseFailed(
+            n => return Err(std::io::Error::other(
+                format!("unknown SeedErrorCode: {}", n),
+            )),
+        })
+    }
+}
+
+// Async bridge — delegates to u32's async impls. Minimal upstream compatibility
+// shim. Per Phase D plan: removed when BoundaryCodec replaces AsyncEncodable/
+// AsyncDecodable on the Message trait (Phase D.3).
+#[async_trait]
+impl dwow_serial::AsyncEncodable for SeedErrorCode {
+    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(
+        &self, w: &mut W,
+    ) -> std::io::Result<usize> {
+        (*self as u32).encode_async(w).await
+    }
+}
+#[async_trait]
+impl dwow_serial::AsyncDecodable for SeedErrorCode {
+    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(
+        d: &mut D,
+    ) -> std::io::Result<Self> {
+        let code = u32::decode_async(d).await?;
+        Ok(match code {
+            400 => Self::BadRequest,
+            401 => Self::VersionMismatch,
+            403 => Self::Forbidden,
+            404 => Self::UnknownMessage,
+            406 => Self::NoMatchingTransports,
+            429 => Self::RateLimited,
+            500 => Self::Internal,
+            503 => Self::HostlistEmpty,
+            504 => Self::UpstreamTimeout,
+            n => return Err(std::io::Error::other(
                 format!("unknown SeedErrorCode: {}", n),
             )),
         })
