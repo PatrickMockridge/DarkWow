@@ -1,0 +1,12 @@
+# ClaimWinnings_V2 — domain-separated auction winnings claim.
+k = 11; field = "pallas";
+constant "ClaimWinningsV2" { EcFixedPointBase NULLIFIER_K, }
+witness "ClaimWinningsV2" { Base auction_id, Base winner_pub_x, Base winner_pub_y, Base winner_secret, Base tx_commitment, Base tx_nonce, Base tx_binding, }
+circuit "ClaimWinningsV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+    winner_pub = ec_mul_base(winner_secret, NULLIFIER_K);
+    constrain_equal_base(ec_get_x(winner_pub), winner_pub_x);
+    constrain_equal_base(ec_get_y(winner_pub), winner_pub_y);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding); constrain_instance(tx_nonce);
+}

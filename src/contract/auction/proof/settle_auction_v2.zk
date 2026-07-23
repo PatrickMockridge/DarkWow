@@ -1,0 +1,14 @@
+# SettleAuction_V2 — domain-separated auction settlement.
+k = 11; field = "pallas";
+constant "SettleAuctionV2" { EcFixedPointBase NULLIFIER_K, }
+witness "SettleAuctionV2" { Base auction_id, Base seller_pub_x, Base seller_pub_y, Base seller_secret, Base tx_commitment, Base tx_nonce, Base tx_binding, }
+circuit "SettleAuctionV2" {
+    DOMAIN_NULLIFIER = witness_base(1); DOMAIN_TX_BINDING = witness_base(3);
+    seller_pub = ec_mul_base(seller_secret, NULLIFIER_K);
+    constrain_equal_base(ec_get_x(seller_pub), seller_pub_x);
+    constrain_equal_base(ec_get_y(seller_pub), seller_pub_y);
+    settlement_nullifier = poseidon_hash(DOMAIN_NULLIFIER, auction_id, seller_secret);
+    constrain_instance(settlement_nullifier);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding); constrain_instance(tx_nonce);
+}

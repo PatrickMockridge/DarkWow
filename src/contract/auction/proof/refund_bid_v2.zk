@@ -1,0 +1,14 @@
+# RefundBid_V2 — domain-separated auction bid refund.
+k = 11; field = "pallas";
+constant "RefundBidV2" { EcFixedPointBase NULLIFIER_K, }
+witness "RefundBidV2" { Base bid_id, Base bidder_pub_x, Base bidder_pub_y, Base bidder_secret, Base tx_commitment, Base tx_nonce, Base tx_binding, }
+circuit "RefundBidV2" {
+    DOMAIN_NULLIFIER = witness_base(1); DOMAIN_TX_BINDING = witness_base(3);
+    bidder_pub = ec_mul_base(bidder_secret, NULLIFIER_K);
+    constrain_equal_base(ec_get_x(bidder_pub), bidder_pub_x);
+    constrain_equal_base(ec_get_y(bidder_pub), bidder_pub_y);
+    refund_nullifier = poseidon_hash(DOMAIN_NULLIFIER, bid_id, bidder_secret);
+    constrain_instance(refund_nullifier);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding); constrain_instance(tx_nonce);
+}
