@@ -948,7 +948,9 @@ impl Dww {
                 // Advance verified anchor height if this block has a
                 // verified Caribina (Arweave) anchor.
                 if block.header.anchor_tx_id != [0u8; 32] {
-                    let anchor_height = block.header.height.get();
+                    // §8.1: BlockHeight nominal type — comparison and assignment
+                    // use the newtype, not bare u64.
+                    let anchor_height = block.header.height;
                     let mut current = self.verified_anchor_height.lock().await;
                     if anchor_height > *current {
                         *current = anchor_height;

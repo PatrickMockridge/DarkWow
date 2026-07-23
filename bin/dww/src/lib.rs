@@ -44,6 +44,7 @@ use dwow_core::{
 use crate::wallet_error::{Error, Result};
 use crate::wallet_util::expand_path;
 use dwow_sdk::{
+    blockchain::BlockHeight,
     crypto::{
         keypair::{Address, Network, PublicKey, SecretKey},
         pasta_prelude::PrimeField, ContractId, MerkleTree,
@@ -172,7 +173,8 @@ pub struct Dww {
     /// Highest block height with a verified Caribina (Arweave) anchor.
     /// Blocks below this height are cryptographically final — cannot be reorged.
     /// The chain state rejects AnchoredBlockConflict for anchored blocks.
-    pub verified_anchor_height: smol::lock::Mutex<u64>,
+    /// §8.1: Block heights SHALL be BlockHeight, never bare u64.
+    pub verified_anchor_height: smol::lock::Mutex<BlockHeight>,
     /// Cached burn proving key — built once from the embedded zkas binary.
     /// Depends only on the compile-time constant BURN_V1_BIN.
     pub burn_pk_cache: smol::lock::Mutex<Option<dwow_core::zk::proof::ProvingKey>>,
@@ -220,7 +222,7 @@ impl Dww {
             }
         }
 
-        Ok(Self { network, account_mgr, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), last_synced_tip_hash: smol::lock::Mutex::new(None), verified_anchor_height: smol::lock::Mutex::new(0), burn_pk_cache: smol::lock::Mutex::new(None), mint_pk_cache: smol::lock::Mutex::new(None) })
+        Ok(Self { network, account_mgr, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), last_synced_tip_hash: smol::lock::Mutex::new(None), verified_anchor_height: smol::lock::Mutex::new(BlockHeight::new(0)), burn_pk_cache: smol::lock::Mutex::new(None), mint_pk_cache: smol::lock::Mutex::new(None) })
     }
 
     /// Get the current chain tip height from the local block store.
@@ -1567,7 +1569,16 @@ impl Dww {
     pub fn diagnostic(&self, output: &mut Vec<String>) -> Result<()> {
         output.push("=== Wallet Diagnostic ===".into());
         output.push(format!("Network: {:?}", self.network));
-        output.push(format!("Chain height: {}", self.wallet.chain_height().map(|h| h.get()).unwrap_or(0)));
+        // §4.2.3: chain_height().unwrap_or(0) is prohibited — "database
+        // corrupted" is NOT semantically equivalent to "chain is empty."
+        let height = match self.wallet.chain_height() {
+            Ok(h) => h.get(),
+            Err(e) => {
+                output.push(format!("Chain height: ERROR ({})", e));
+                0
+            }
+        };
+        output.push(format!("Chain height: {}", height));
 
         if let Some(ref p2p) = self.p2p {
             let peer_count = p2p.hosts().peers().len();

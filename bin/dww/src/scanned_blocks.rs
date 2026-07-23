@@ -58,7 +58,8 @@ impl Dww {
     ) -> WalletDbResult<()> {
         output.push(format!("Resetting wallet state to block: {height}"));
 
-        let anchor_height = *smol::block_on(self.verified_anchor_height.lock());
+        // §8.1: verified_anchor_height is BlockHeight — compare via .get().
+        let anchor_height = smol::block_on(self.verified_anchor_height.lock()).get();
         if height < anchor_height {
             return Err(WalletDbError::GenericError);
         }

@@ -121,9 +121,17 @@ pub async fn run_wallet_sync(
                     continue;
                 }
             };
-            let peer_count = dww_r.p2p.as_ref()
-                .map(|p| p.hosts().peers().len())
-                .unwrap_or(0);
+            // §2.3: "No unwrap_or(0)" — P2P-not-initialized (None) is NOT
+            // semantically equivalent to "0 peers" (Some(0)). Distinguish.
+            let peer_count = match dww_r.p2p.as_ref() {
+                Some(p2p) => p2p.hosts().peers().len(),
+                None => {
+                    warn!(target: "dww::wallet::sync",
+                        "P2P not initialized — sync task cannot run. \
+                         The daemon should have called init_p2p() before spawning this task.");
+                    continue;
+                }
+            };
             let p2p_opt = dww_r.p2p.clone();
             (local, peer_count, p2p_opt)
         }; // D6: read lock DROPPED here — network I/O below does not hold it
@@ -290,9 +298,10 @@ pub async fn run_wallet_sync(
             };
 
             // G7: checked_sub (returns Option<u64> — the count, not a height)
-            // None = next_height > best_tip, which we already guard above
+            // Guard at line 280 ensures next_height <= best_tip, so None is impossible.
+            // §2.3: No unwrap_or(0) — use expect to document the invariant.
             let remaining = best_tip.get().checked_sub(next_height.get())
-                .unwrap_or(0)
+                .expect("next_height <= best_tip enforced by 'fetch loop guard")
                 .saturating_add(1);
             let batch_size = LINEAR_SYNC_BATCH.min(remaining);
             let request = GetBlocks { start_height: next_height, count: batch_size };
