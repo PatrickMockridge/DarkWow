@@ -33,26 +33,42 @@ DEFAULT_FEE=42000000
 # Prints the native-token amount (0 if none). Path-independent (RPC or local CLI).
 _native_balance() {
     local idx="$1"
+    local outfile="/tmp/wallet_balance_out_$$"
     local errfile="/tmp/wallet_balance_err_$$"
-    wal "$idx" wallet balance --porcelain 2>"$errfile" \
-        | awk -F'\t' -v t="$NATIVE_TOKEN_ID" '$1==t {print $2; f=1} END{if(!f) print 0}'
-    if [ -s "$errfile" ]; then
-        info "  wallet-$idx balance stderr: $(head -1 "$errfile")"
+    local wal_rc=0
+    wal "$idx" wallet balance --porcelain >"$outfile" 2>"$errfile" || wal_rc=$?
+    if [ "$wal_rc" -ne 0 ]; then
+        echo "  wallet-$idx balance RPC error (exit=$wal_rc): $(head -1 "$errfile" 2>/dev/null)" >&2
+        rm -f "$outfile" "$errfile"
+        echo "-1"  # sentinel: docker exec failure (distinct from 0 = empty, >0 = balance)
+        return 1
     fi
-    rm -f "$errfile"
+    if [ -s "$errfile" ]; then
+        echo "  wallet-$idx balance stderr: $(head -1 "$errfile")" >&2
+    fi
+    awk -F'\t' -v t="$NATIVE_TOKEN_ID" '$1==t {print $2; f=1} END{if(!f) print 0}' "$outfile"
+    rm -f "$outfile" "$errfile"
 }
 
 # Held-capability count for a wallet via `scan --porcelain` ("capabilities=<N>\tblocks=<M>").
 # This is the real decrypt signal (coinbase/notes decrypted), not a log-grep proxy.
 _scan_capabilities() {
     local idx="$1"
+    local outfile="/tmp/wallet_scan_out_$$"
     local errfile="/tmp/wallet_scan_err_$$"
-    wal "$idx" scan --porcelain 2>"$errfile" \
-        | sed -n 's/^capabilities=\([0-9][0-9]*\).*/\1/p' | head -1
-    if [ -s "$errfile" ]; then
-        info "  wallet-$idx scan stderr: $(head -1 "$errfile")"
+    local wal_rc=0
+    wal "$idx" scan --porcelain >"$outfile" 2>"$errfile" || wal_rc=$?
+    if [ "$wal_rc" -ne 0 ]; then
+        echo "  wallet-$idx scan RPC error (exit=$wal_rc): $(head -1 "$errfile" 2>/dev/null)" >&2
+        rm -f "$outfile" "$errfile"
+        echo "0"
+        return 1
     fi
-    rm -f "$errfile"
+    if [ -s "$errfile" ]; then
+        echo "  wallet-$idx scan stderr: $(head -1 "$errfile")" >&2
+    fi
+    sed -n 's/^capabilities=\([0-9][0-9]*\).*/\1/p' "$outfile" | head -1
+    rm -f "$outfile" "$errfile"
 }
 
 # ── Diagnostic helper: dump wallet state on failure ──────────────────────
@@ -119,14 +135,19 @@ _mempool_hashes() {
 # Single-shot wallet height check — no retry loop.
 # Returns 0 when height >= target, 1 if not (caller warns and decides).
 _check_wallet_height() {
-    local wallet_idx="$1" target_height="$2" label="${3:-sync}"
-    local height
-    height=$(_wallet_height "$wallet_idx")
-    if [ -n "$height" ] && [ "$height" -gt 0 ] && [ "$height" -ge "$target_height" ]; then
-        info "  wallet-$wallet_idx $label: height=$height >= target=$target_height"
-        return 0
-    fi
-    warn "wallet-$wallet_idx $label: height=$height, target=$target_height — not synced yet"
+    local wallet_idx="$1" target_height="$2" label="${3:-sync}" max_retries="${4:-3}" sleep_secs="${5:-5}"
+    local height attempt=0
+    while [ "$attempt" -lt "$max_retries" ]; do
+        height=$(_wallet_height "$wallet_idx")
+        if [ -n "$height" ] && [ "$height" -gt 0 ] && [ "$height" -ge "$target_height" ]; then
+            [ "$attempt" -gt 0 ] && info "  wallet-$wallet_idx $label: height=$height >= target=$target_height (attempt $((attempt+1))/$max_retries)"
+            [ "$attempt" -eq 0 ] && info "  wallet-$wallet_idx $label: height=$height >= target=$target_height"
+            return 0
+        fi
+        attempt=$((attempt + 1))
+        [ "$attempt" -lt "$max_retries" ] && sleep "$sleep_secs"
+    done
+    warn "wallet-$wallet_idx $label: height=$height, target=$target_height — not synced after $max_retries attempts"
     return 1
 }
 
@@ -401,6 +422,15 @@ phase_wallet_transfer() {
     # ── 6. Confirmed: wallet-1 sync check ──────────────────────────────
     local conf_target=$((tx_height + 2))
     if _check_wallet_height 1 "$conf_target" "confirm-2"; then
+        # REORG GAP (Docker-only, P2#19): Between mining confirmation and wallet
+        # sync, a block reorganization could theoretically replace the transfer
+        # block. This cannot happen in single-process cargo tests where
+        # chain+wallet are co-located. The txid verification in step 5b provides
+        # partial protection (wallet-1's history includes the tx), but a reorg
+        # after wallet-1 synced could invalidate wallet-2's receipt.
+        # Mitigation: 2-confirmation target height makes reorg beyond 1 block
+        # extremely unlikely at this depth. For P3: add block-hash pinning.
+        info "  REORG GAP (Docker-only): transfer confirmed at height $tx_height. A reorg between mining and wallet sync could theoretically remove this block — not observable in single-process cargo test."
         pass "transfer confirmed: wallet-1 at height >= $conf_target (2 confirmations, safe against 1-block reorg)"
     else
         fail "wallet-1 not synced past transfer block after mining confirmation (height target=$conf_target) — sync stalled"

@@ -79,6 +79,24 @@ cleanup_on_exit() {
 
     # (Secret-file cleanup removed — keys.toml declaration model, no .secrets files.)
 
+    # ── Container death diagnostics ─────────────────────────────────
+    # Inspect exited dwow containers for ExitCode, OOMKilled, and host OOM log.
+    _container_death_diagnostics() {
+        local died
+        died=$(docker ps -a --filter status=exited --filter name=dwow --format '{{.Names}}' 2>/dev/null)
+        if [ -n "$died" ]; then
+            echo ""
+            echo "  ── Exited container diagnostics ──"
+            for c in $died; do
+                echo "  Container $c:"
+                docker inspect "$c" --format '    ExitCode={{.State.ExitCode}} OOMKilled={{.State.OOMKilled}} Error={{.State.Error}}' 2>/dev/null
+            done
+            echo "  ── Host OOM killer log (last 10 entries) ──"
+            dmesg -T 2>/dev/null | grep -i 'oom\|out of memory\|killed process' | tail -10 || echo "    (dmesg unavailable or no OOM entries)"
+            echo ""
+        fi
+    }
+
     # ── SIGSEGV / signal-kill diagnostics ──────────────────────────
     if [ "$exit_code" -ge 128 ] 2>/dev/null; then
         local sig_num=$((exit_code - 128))
@@ -95,12 +113,14 @@ cleanup_on_exit() {
             cat /tmp/container-deaths.log
         fi
         echo "==========================================="
+        _container_death_diagnostics
     fi
 
     if [ "${FAIL:-0}" -gt 0 ]; then
         echo ""
         echo "==========================================="
         echo "  Pipeline failed — containers preserved."
+        _container_death_diagnostics
         echo ""
         echo "  Inspect logs:"
         for c in $(docker ps -q --filter name=dwow 2>/dev/null); do

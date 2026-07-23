@@ -75,17 +75,29 @@ phase_blocks() {
     local SYNC_INTERVAL=10     # poll every 10 seconds
     local n0_height=0
     local poll=0
+    local transient_failures=0
+    local valid_polls=0
+    local TRANSIENT_WARN_THRESHOLD=3
 
     info "Waiting for node0 to produce block 2 (ZK keygen may take minutes on first boot)..."
     while [ "$poll" -lt "$SYNC_MAX_POLLS" ]; do
         n0_height=$(jsonrpc_get_height "$NODE0_NAME" "$NODE0_PORT")
         n0_height=$(echo "$n0_height" | tr -dc '0-9')
         n0_height="${n0_height:-0}"
+        if [ "${n0_height:-0}" -eq 0 ]; then
+            transient_failures=$((transient_failures + 1))
+        else
+            valid_polls=$((valid_polls + 1))
+        fi
         if [ "${n0_height:-0}" -ge 2 ]; then
             pass "node0 reached height=$n0_height after $((poll * SYNC_INTERVAL))s"
+            [ "$transient_failures" -gt 0 ] && info "  node0 RPC recovered after $transient_failures transient failures (valid=$valid_polls)"
             break
         fi
         poll=$((poll + 1))
+        if [ "$transient_failures" -ge "$TRANSIENT_WARN_THRESHOLD" ] && [ $((transient_failures % 6)) -eq 0 ]; then
+            warn "  node0 RPC: $transient_failures transient failures (height=0) out of $poll polls — node may be struggling to start"
+        fi
         if [ "$poll" -lt "$SYNC_MAX_POLLS" ]; then
             info "  node0 height=$n0_height — waiting for block 2 (poll $poll/$SYNC_MAX_POLLS, ${SYNC_INTERVAL}s)..."
             # Periodic diagnostic (every 12 polls = 2 minutes): show recent
