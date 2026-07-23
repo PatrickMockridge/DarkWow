@@ -1,0 +1,13 @@
+# ConsumeClaim_V2 — domain-separated claim consumption.
+# V2 changes from V1 (HAZOP RC3): domain separation on poseidon_hash
+k = 11; field = "pallas";
+constant "ConsumeClaimV2" { EcFixedPointBase NULLIFIER_K, }
+witness "ConsumeClaimV2" {
+    Base claim_id, Base consumer_secret, Base consumer_pub_x, Base consumer_pub_y,
+    Base tx_commitment, Base tx_nonce, Base tx_binding,
+}
+circuit "ConsumeClaimV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding); constrain_instance(tx_nonce);
+}

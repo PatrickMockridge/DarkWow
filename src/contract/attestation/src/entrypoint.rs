@@ -67,6 +67,16 @@ use crate::{
     ATTESTATION_CONTRACT_NULLIFIERS_TREE, ATTESTATION_CONTRACT_RATE_LIMIT_TREE,
     ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V1,
     ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V1,
+    ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V2,
+    ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V2,
+    ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V2,
+    ATTESTATION_CONTRACT_ZKAS_CONSUME_CLAIM_NS_V2,
+    ATTESTATION_CONTRACT_ZKAS_CHECK_NOT_REVOKED_NS_V2,
+    ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V2,
+    ATTESTATION_CONTRACT_ZKAS_VERIFY_CHAIN_NS_V2,
+    ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V2,
+    ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V2,
+    ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V2,
     ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V1,
     ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V1,
     ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V1,
@@ -113,6 +123,28 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(&verify_claim_v1_bincode[..])?;
     wasm::db::zkas_db_set(&attest_slash_v1_bincode[..])?;
     wasm::db::zkas_db_set(&commit_fee_schedule_v1_bincode[..])?;
+
+    // V2 circuits (HAZOP RC3: domain separation)
+    let attest_slash_v2_bincode = include_bytes!("../proof/attest_slash_v2.zk.bin");
+    wasm::db::zkas_db_set(&attest_slash_v2_bincode[..])?;
+    let check_not_revoked_v2_bincode = include_bytes!("../proof/check_not_revoked_v2.zk.bin");
+    wasm::db::zkas_db_set(&check_not_revoked_v2_bincode[..])?;
+    let commit_fee_schedule_v2_bincode = include_bytes!("../proof/commit_fee_schedule_v2.zk.bin");
+    wasm::db::zkas_db_set(&commit_fee_schedule_v2_bincode[..])?;
+    let consume_claim_v2_bincode = include_bytes!("../proof/consume_claim_v2.zk.bin");
+    wasm::db::zkas_db_set(&consume_claim_v2_bincode[..])?;
+    let create_attestation_v2_bincode = include_bytes!("../proof/create_attestation_v2.zk.bin");
+    wasm::db::zkas_db_set(&create_attestation_v2_bincode[..])?;
+    let create_claim_v2_bincode = include_bytes!("../proof/create_claim_v2.zk.bin");
+    wasm::db::zkas_db_set(&create_claim_v2_bincode[..])?;
+    let delegate_attestation_v2_bincode = include_bytes!("../proof/delegate_attestation_v2.zk.bin");
+    wasm::db::zkas_db_set(&delegate_attestation_v2_bincode[..])?;
+    let update_delegation_v2_bincode = include_bytes!("../proof/update_delegation_v2.zk.bin");
+    wasm::db::zkas_db_set(&update_delegation_v2_bincode[..])?;
+    let verify_chain_v2_bincode = include_bytes!("../proof/verify_chain_v2.zk.bin");
+    wasm::db::zkas_db_set(&verify_chain_v2_bincode[..])?;
+    let verify_claim_v2_bincode = include_bytes!("../proof/verify_claim_v2.zk.bin");
+    wasm::db::zkas_db_set(&verify_claim_v2_bincode[..])?;
 
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, ATTESTATION_CONTRACT_INDEX_TREE)?;
@@ -161,7 +193,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 }
             };
             zk_public_inputs.push((
-                ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V1.to_string(),
+                ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V2.to_string(),
                 {
                     let (ax, ay) = params.attestor_pub.xy().expect("pk not identity");
                     vec![ax, ay]
@@ -177,7 +209,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 }
             };
             zk_public_inputs.push((
-                ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V1.to_string(),
+                ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V2.to_string(),
                 {
                     let (cx, cy) = params.claimant_pub.xy().expect("pk not identity");
                     vec![params.attestation_id.inner(), cx, cy]
@@ -193,7 +225,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 }
             };
             zk_public_inputs.push((
-                ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V1.to_string(),
+                ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V2.to_string(),
                 vec![
                     params.claim_id.inner(),
                     params.revealed_result,
@@ -211,7 +243,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 }
             };
             zk_public_inputs.push((
-                ATTESTATION_CONTRACT_ZKAS_CONSUME_CLAIM_NS_V1.to_string(),
+                ATTESTATION_CONTRACT_ZKAS_CONSUME_CLAIM_NS_V2.to_string(),
                 {
                     let (cx, cy) = params.claimant_pub.xy().expect("pk not identity");
                     vec![
@@ -231,7 +263,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 }
             };
             zk_public_inputs.push((
-                ATTESTATION_CONTRACT_ZKAS_CHECK_NOT_REVOKED_NS_V1.to_string(),
+                ATTESTATION_CONTRACT_ZKAS_CHECK_NOT_REVOKED_NS_V2.to_string(),
                 vec![params.revocation_root, params.nonce],
             ));
         }
@@ -244,7 +276,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 }
             };
             zk_public_inputs.push((
-                ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V1.to_string(),
+                ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V2.to_string(),
                 {
                     let (dx, dy) = params.delegator_pub.xy().expect("pk not identity");
                     let (ex, ey) = params.delegatee_pub.xy().expect("pk not identity");
@@ -273,7 +305,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 }
             };
             zk_public_inputs.push((
-                ATTESTATION_CONTRACT_ZKAS_VERIFY_CHAIN_NS_V1.to_string(),
+                ATTESTATION_CONTRACT_ZKAS_VERIFY_CHAIN_NS_V2.to_string(),
                 vec![
                     params.delegation_id,
                     params.parent_id,
@@ -292,7 +324,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 }
             };
             zk_public_inputs.push((
-                ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V1.to_string(),
+                ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V2.to_string(),
                 vec![
                     params.original_attestation_id,
                     pallas::Base::from(params.delegation_type as u64),
@@ -313,7 +345,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 }
             };
             zk_public_inputs.push((
-                ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V1.to_string(),
+                ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V2.to_string(),
                 {
                     let (rx, ry) = params.relayer_pub.xy().expect("pk not identity");
                     vec![rx, ry]
@@ -329,7 +361,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 }
             };
             zk_public_inputs.push((
-                ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V1.to_string(),
+                ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V2.to_string(),
                 {
                     let (ax, ay) = params.attestor_pub.xy().expect("pk not identity");
                     vec![ax, ay]

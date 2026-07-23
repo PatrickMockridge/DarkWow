@@ -1,0 +1,13 @@
+# CreateClaim_V2 — domain-separated claim creation.
+# V2 changes from V1 (HAZOP RC3): domain separation on poseidon_hash
+k = 11; field = "pallas";
+constant "CreateClaimV2" { EcFixedPointBase NULLIFIER_K, }
+witness "CreateClaimV2" {
+    Base claim_data, Base creator_secret, Base creator_pub_x, Base creator_pub_y,
+    Base tx_commitment, Base tx_nonce, Base tx_binding,
+}
+circuit "CreateClaimV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding); constrain_instance(tx_nonce);
+}

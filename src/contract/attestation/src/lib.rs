@@ -104,3 +104,15 @@ pub const ATTESTATION_CONTRACT_ZKAS_VERIFY_CHAIN_NS_V1: &str = "VerifyChain";
 pub const ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V1: &str = "UpdateDelegation";
 pub const ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V1: &str = "AttestSlashV1";
 pub const ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V1: &str = "CommitFeeScheduleV1";
+
+// V2 circuit namespaces (HAZOP RC3: domain separation)
+pub const ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V2: &str = "CreateAttestationV2";
+pub const ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V2: &str = "CreateClaimV2";
+pub const ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V2: &str = "VerifyClaimV2";
+pub const ATTESTATION_CONTRACT_ZKAS_CONSUME_CLAIM_NS_V2: &str = "ConsumeClaimV2";
+pub const ATTESTATION_CONTRACT_ZKAS_CHECK_NOT_REVOKED_NS_V2: &str = "CheckNotRevokedV2";
+pub const ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V2: &str = "DelegateAttestationV2";
+pub const ATTESTATION_CONTRACT_ZKAS_VERIFY_CHAIN_NS_V2: &str = "VerifyChainV2";
+pub const ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V2: &str = "UpdateDelegationV2";
+pub const ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V2: &str = "AttestSlashV2";
+pub const ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V2: &str = "CommitFeeScheduleV2";
