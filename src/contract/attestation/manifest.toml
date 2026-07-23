@@ -84,21 +84,21 @@ proof_circuit = "CommitFeeSchedule_V1"
 discriminant = 0
 name = "attestation"
 description = "An on-chain attestation from a trusted issuer. Non-consumable."
-primitives = ["SecretKey", "ContractId", "FuncId"]
+primitives = ["SecretKey", "Commitment", "ContractId", "FuncId"]
 note_schema = []
 
 [[capabilities]]
 discriminant = 1
 name = "claim"
 description = "A claim against an attestation. Consumable on verify."
-primitives = ["SecretKey", "Nullifier", "ContractId", "FuncId"]
+primitives = ["SecretKey", "Commitment", "Nullifier", "ContractId", "FuncId"]
 note_schema = []
 
 [[capabilities]]
 discriminant = 2
 name = "delegation"
 description = "A delegated attestation authority. Non-consumable, revocable."
-primitives = ["SecretKey", "ContractId", "FuncId"]
+primitives = ["SecretKey", "Commitment", "ContractId", "FuncId"]
 note_schema = []
 
 [[actions]]

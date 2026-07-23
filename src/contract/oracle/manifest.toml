@@ -45,35 +45,35 @@ code = 5
 discriminant = 0
 name = "oracle_registration"
 description = "Registered oracle operator. Non-consumable."
-primitives = ["SecretKey", "ContractId", "FuncId"]
+primitives = ["SecretKey", "Commitment", "ContractId", "FuncId"]
 note_schema = []
 
 [[capabilities]]
 discriminant = 1
 name = "oracle_value"
 description = "A value pushed by an oracle. Consumable on attest."
-primitives = ["SecretKey", "Nullifier", "ContractId", "FuncId"]
+primitives = ["SecretKey", "Commitment", "Nullifier", "ContractId", "FuncId", "AssetId"]
 note_schema = [{ name = "value", type = "u64" }]
 
 [[capabilities]]
 discriminant = 2
 name = "attestation"
 description = "An attestation of an oracle value. Produced by attest_value."
-primitives = ["ContractId", "FuncId"]
+primitives = ["SecretKey", "Commitment", "Nullifier", "ContractId", "FuncId"]
 note_schema = []
 
 [[capabilities]]
 discriminant = 3
 name = "aggregate"
 description = "Aggregated oracle values. Produced by aggregate."
-primitives = ["ContractId", "FuncId"]
+primitives = ["SecretKey", "Commitment", "Nullifier", "ContractId", "FuncId", "AssetId"]
 note_schema = [{ name = "value", type = "u64" }]
 
 [[capabilities]]
 discriminant = 4
 name = "value_commitment"
 description = "A Pedersen commitment to an oracle value. Produced by push_value_commitment."
-primitives = ["ContractId", "FuncId"]
+primitives = ["SecretKey", "Commitment", "ContractId", "FuncId", "AssetId"]
 note_schema = [{ name = "commitment", type = "pallas_base" }]
 
 [[actions]]

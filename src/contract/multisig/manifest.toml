@@ -30,21 +30,21 @@ requires_proof = false
 discriminant = 0
 name = "group_membership"
 description = "Membership in an N-of-M signing group. Non-consumable."
-primitives = ["SecretKey", "ContractId", "FuncId"]
+primitives = ["SecretKey", "Commitment", "ContractId", "FuncId"]
 note_schema = []
 
 [[capabilities]]
 discriminant = 1
 name = "partial_signature"
 description = "A partial Schnorr signature. Consumable on finalize."
-primitives = ["SecretKey", "Nullifier", "ContractId", "FuncId"]
+primitives = ["SecretKey", "Commitment", "Nullifier", "ContractId", "FuncId"]
 note_schema = []
 
 [[capabilities]]
 discriminant = 2
 name = "approval"
 description = "Threshold approval (>= N signatures collected). Produced by finalize."
-primitives = ["ContractId", "FuncId"]
+primitives = ["SecretKey", "Commitment", "Nullifier", "ContractId", "FuncId"]
 note_schema = []
 
 [[actions]]

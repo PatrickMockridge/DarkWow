@@ -157,11 +157,11 @@ def tenderResource : Resource :=
 def bidAction : Action := { name := "submit_bid" }
 
 def tenderBidType : CapabilityType tenderResource bidAction :=
-  { primitives := [secretKey, coin, nullifier, contractId, funcId, tokenId, merkleNode]
+  { primitives := [secretKey, coin, nullifier, contractId, funcId, tokenId, merkleNode, dleqProof]
   , coversBarbs := by
       intro b h
       simp [tenderResource, Finset.mem_insert, Finset.mem_singleton] at h
-      rcases h with (rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl)
+      rcases h with (rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl)
       · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, coin, Finset.mem_insert, Finset.mem_singleton]
@@ -169,8 +169,7 @@ def tenderBidType : CapabilityType tenderResource bidAction :=
       · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, tokenId, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, merkleNode, Finset.mem_insert, Finset.mem_singleton]
-      · -- ↓prove: the identity credential sub-capability's ZK proof
-        simp [compose, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, dleqProof, Finset.mem_insert, Finset.mem_singleton]
   }
 
 /- ==========================================================================
@@ -371,7 +370,7 @@ def bridgeDepositType : CapabilityType bridgeDepositResource bridgeDepositAction
                    merkleNode, publicKey, bridgeAddress, chainDepositProof]
   , coversBarbs := by
       intro b h
-      simp [bridgeDepositResource] at h
+      simp [bridgeDepositResource, Finset.mem_insert, Finset.mem_singleton] at h
       rcases h with (rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl)
       · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, coin, Finset.mem_insert, Finset.mem_singleton]
@@ -395,11 +394,11 @@ def bridgeWithdrawAction : Action := { name := "withdraw" }
 
 def bridgeWithdrawType : CapabilityType bridgeWithdrawResource bridgeWithdrawAction :=
   { primitives := [secretKey, nullifier, contractId, funcId, tokenId,
-                   bridgeAddress, bridgeCapNullifier, relayerCap]
+                   bridgeAddress, bridgeCapNullifier, dleqProof]
   , coversBarbs := by
       intro b h
-      simp [bridgeWithdrawResource] at h
-      rcases h with (rfl|rfl|rfl|rfl|rfl|rfl|rfl)
+      simp [bridgeWithdrawResource, Finset.mem_insert, Finset.mem_singleton] at h
+      rcases h with (rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl)
       · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
@@ -407,6 +406,7 @@ def bridgeWithdrawType : CapabilityType bridgeWithdrawResource bridgeWithdrawAct
       · simp [compose, tokenId, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, bridgeAddress, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, bridgeCapNullifier, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, dleqProof, Finset.mem_insert, Finset.mem_singleton]
   }
 
 #eval do

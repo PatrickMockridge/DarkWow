@@ -231,6 +231,73 @@ capability type, and vice versa, by adding or removing the zero-knowledge
 wrapper. This is type refinement: the same behavioral position at different
 levels of disclosure.
 
+### 5.1 Defined Privilege Containment
+
+The capability type system proves **defined privilege containment**, not
+least privilege. This is a deliberate trade-off for privacy.
+
+**What IS Proved**
+
+1. **Coverage** (soundness): `requiredBarbs ⊆ compose(primitives)`. The
+   capability holder possesses AT LEAST the barbs the action requires. No
+   action can execute with fewer barbs than it declares.
+
+2. **Barb preservation** (monotonicity): `compose` is a union — it cannot
+   manufacture a barb no primitive carries. Every composed barb traces to
+   a specific primitive the holder possesses.
+
+3. **Containment**: The blast radius of any capability is bounded by its
+   declared primitives. An action requiring `[Commit, Dispatch, Gate]`
+   CANNOT exercise `Spend` or `Nullify` unless those barbs are present
+   in the composed primitives. This prevents whole classes of authority-
+   escalation exploits.
+
+4. **Pareto-efficiency**: Every primitive has a distinct barb set; no two
+   primitives are interchangeable. You cannot substitute one primitive for
+   another without changing the composed barb set.
+
+**What Is NOT Proved**
+
+1. **Least privilege** (completeness): The system does NOT prove
+   `compose(primitives) ⊆ requiredBarbs` — that the composed barb set is
+   exactly what the action needs and nothing more. A capability MAY carry
+   barbs beyond those the action requires.
+
+2. **Compositional minimality**: Given `N` primitives covering required
+   barbs, there MAY exist a strict subset that also covers them. The
+   system does not enforce that you use the smallest possible set.
+
+**Why This Trade-Off?**
+
+In a **reference-mode o-cap system** (Agoric), least authority is enforced
+by the object system: an object reference IS the exact authority to invoke
+specific methods. You cannot hold "extra" authority because the reference
+is typed and unforgeable.
+
+In a **ZK-mode o-cap system** (DarkWow), privacy requires that the
+verifier learns nothing about the holder beyond the predicate result.
+The predicate P_{r,s} depends ONLY on resource and action, never on
+principal identity. This means the system cannot distinguish "holder has
+exactly barbs {X, Y}" from "holder has barbs {X, Y, Z}" — both produce
+identical proofs. The ZK wrapper hides the extra barbs.
+
+**If proven least authority is your primary concern, Agoric's reference
+mode provides it. If privacy is your primary concern — the verifier learns
+only that the predicate was satisfied, not who satisfied it or what else
+they could do — DarkWow's ZK mode provides it.** The two modes are
+bisimulation-equivalent (§5) but optimize for different properties.
+
+**What This Means in Practice**
+
+The containment is still meaningful:
+- A multisig approval capability carrying `{Spend}` cannot exercise that
+  `Spend` unless the action's `required_barbs` include `Spend`.
+- Authority escalation requires collusion between a contract that declares
+  broad `required_barbs` AND a capability that carries extra barbs.
+- The coverage gate (`wallet_construct` → `resolve_capability_type`)
+  enforces this at runtime: uncovered compositions drop the note.
+- Every barb traces to a declared primitive; no barb appears from nowhere.
+
 ## 6. Capability Lifecycle: Generic Grammar and DarkWow Instantiation
 
 Every object-capability system implements the same lifecycle. The capability
@@ -334,33 +401,34 @@ in the Lean4 calculus of constructions at `proofs/lean/src/DarkFi/Capability/`.
 | Construction | § | Lean4 Module | Theorem | Status |
 |-------------|---|-------------|---------|--------|
 | Native token transfer | §2.1 | `Composition.lean` | `nativeTokenTransferType` | PROVED |
+| Native token coinbase | — | `Composition.lean` | `nativeTokenCoinbaseType` | PROVED |
 | DAO vote | §2.2 | `Composition.lean` | `daoVoteType` | PROVED |
-| Tender bid | — | `Composition.lean` | `tenderBidType` | PROVED |
+| Tender bid | §2.3 | `Composition.lean` | `tenderBidType` | PROVED |
+| Purse balance | — | `Composition.lean` | `purseBalanceType` | PROVED |
+| Purse withdrawal | — | `Composition.lean` | `purseWithdrawType` | PROVED |
+| Identity credential | — | `Composition.lean` | `identityCredentialType` | PROVED |
+| Box capability | — | `Composition.lean` | `boxCapType` | PROVED |
+| Multisig approval | — | `Composition.lean` | `multisigApprovalType` | PROVED |
+| Attestation | — | `Composition.lean` | `attestationType` | PROVED |
+| Bridge deposit | — | `Composition.lean` | `bridgeDepositType` | PROVED |
+| Bridge withdrawal | — | `Composition.lean` | `bridgeWithdrawType` | PROVED |
 
 Each construction's `coversBarbs` proof is verified by case analysis: every
 required barb is shown to be present in the composition of its constituent
-primitives. The composed barb sets are:
-
-- Native token transfer: `{↓spend, ↓derive, ↓commit, ↓nullify, ↓dispatch, ↓gate, ↓denominate, ↓proveInclusion}`
-- DAO vote: `{↓spend, ↓derive, ↓commit, ↓nullify, ↓dispatch, ↓gate, ↓denominate, ↓proveInclusion}`
-- Tender bid: `{↓spend, ↓derive, ↓commit, ↓nullify, ↓dispatch, ↓gate, ↓denominate, ↓proveInclusion}` (plus `↓prove` for identity credential sub-capability)
-
-The DAO vote and native token transfer compose the same seven primitive types,
-producing identical composed barb sets from the primitives. They are
-distinguished by their Actions (different names: "transfer" vs "vote") and
-by which subset of the composed barbs each Action declares as required.
-Same primitive composition, different behavioral positions — the Action
-determines what subset of the composed barbs the predicate language must
-cover.
+primitives. The `dleqProof` primitive (carrying `{↓prove}`) covers the
+`↓prove` requirement in `tenderBidType` and `bridgeWithdrawType`. Compositions
+that share the same primitive set (e.g., native token transfer and DAO vote)
+are distinguished by their Actions and by which subset of the composed barbs
+each Action declares as required.
 
 ### 9.2 Capability Type Existence
 
 `proofs/lean/src/DarkFi/Capability/Inversion.lean`:
 
-- `nativeTokenTransferExists`: The native token transfer capability type
-  is inhabited (constructively).
-- `daoVoteExists`: The DAO vote capability type is inhabited.
-- `tenderBidExists`: The tender bid capability type is inhabited.
+All 12 capability types are proved inhabited (constructively). The
+`authorizationInversion_TypeLevel` theorem states the bidirectional:
+a capability type exists iff there exist primitives whose composition
+covers the resource's required barbs.
 
 ### 9.3 Wallet Constructibility
 

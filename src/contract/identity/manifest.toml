@@ -92,21 +92,21 @@ code = 15
 discriminant = 0
 name = "credential"
 description = "A credential issued by a trusted issuer. Proves the holder possesses an attribute satisfying a threshold. Non-consumable, non-transferable."
-primitives = ["SecretKey", "Nullifier", "ContractId", "FuncId", "MerkleNode"]
+primitives = ["SecretKey", "Commitment", "Nullifier", "ContractId", "FuncId", "MerkleNode"]
 note_schema = []
 
 [[capabilities]]
 discriminant = 1
 name = "capability"
 description = "A registered capability derived from credentials (e.g., can_merge_pr). Consumable on verify."
-primitives = ["SecretKey", "Nullifier", "ContractId", "FuncId"]
+primitives = ["SecretKey", "Commitment", "Nullifier", "ContractId", "FuncId"]
 note_schema = []
 
 [[capabilities]]
 discriminant = 2
 name = "dag_claim"
 description = "A composite claim proving one path through a competency DAG (OR across paths, AND within each path). Non-consumable."
-primitives = ["SecretKey", "Nullifier", "ContractId", "FuncId"]
+primitives = ["SecretKey", "Commitment", "Nullifier", "ContractId", "FuncId"]
 note_schema = []
 
 [[actions]]

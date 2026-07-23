@@ -24,7 +24,7 @@ requires_proof = false
 discriminant = 0
 name = "box_capability"
 description = "A capability stored in a Box. Linear consumption via nullifier on Take."
-primitives = ["SecretKey", "Nullifier", "ContractId", "FuncId"]
+primitives = ["SecretKey", "Commitment", "Nullifier", "ContractId", "FuncId"]
 note_schema = []
 
 [[actions]]

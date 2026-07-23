@@ -109,6 +109,40 @@ authorization requirement back to a type is
 yielding a `ResolvedCapability { discriminant, name, function, primitives,
 consumable }` (`manifest.rs:143-155`).
 
+### 1.5 Manifest Type-Checking Specification
+
+A contract manifest SHALL declare capabilities and actions. The runtime
+type-checking algorithm is:
+
+1. For each action `a` with non-empty `required_barbs`:
+   a. Resolve the produced capability `c` (from `a.produces[0].name`).
+   b. Look up `c.primitives` from the capability declaration.
+   c. Compute `composed = union_{p in c.primitives} p.barbs`.
+   d. Assert: `a.required_barbs ⊆ composed`.
+   e. If assertion fails: the manifest is ill-typed — the capability's
+      primitives do not cover the action's required barbs.
+
+2. Invariants that SHALL hold:
+   a. **No barb manufacture**: Every barb in `composed` MUST be carried by
+      some primitive in `c.primitives`. `compose` adds structure, never authority.
+   b. **Composition order irrelevance**: `composed` is a SET (deduplicated,
+      sorted). Declaration order of primitives is irrelevant.
+   c. **Fail closed**: An unknown primitive or barb name SHALL cause the
+      capability to be None (untyped), never a partial type with dropped barbs.
+   d. **Coverage, not least privilege**: The check proves `required ⊆ composed`
+      (you have AT LEAST the needed authority). It does NOT prove
+      `composed ⊆ required` (you have AT MOST the needed authority).
+      See ocap.md §5.1 "Defined Privilege Containment" for the trade-off.
+
+3. Cross-reference to Lean: The Lean4 `CapabilityType r s` structure
+   (`proofs/lean/src/DarkFi/Capability/Composition.lean:80-84`) defines
+   `coversBarbs : r.requiredBarbs ⊆ compose primitives` — the exact property
+   this algorithm checks at runtime. The Rust executable form is
+   `wallet_construct()` → `resolve_capability_type()` → `covers()`.
+   The exhaustive test `test_all_shipped_manifests_pass_coverage_gate`
+   (`src/sdk/src/manifest.rs`) mechanically enforces this for every shipped
+   manifest.
+
 ## 2. The invariants that make composition "follow its own logic"
 
 1. **Barb preservation under composition** — §10.3, `barbPreservation`
@@ -254,20 +288,15 @@ capability-composition plan.
 These are places where "composition follows its own logic" is not yet fully
 closed. They are recorded so they are tracked, not silently assumed.
 
-1. **`↓prove` is emergent, but `compose` is a pure union.** §6 / `Inversion.lean:127-129`
-   describe `↓prove` as a *composite* barb that emerges from a ZK circuit
-   context, with no single primitive carrying it. Yet `compose` can only yield
-   barbs some primitive already carries (§1.2). The Rust kernel resolves this by
-   **never requiring `↓prove`**: `test_identity_credential_constructible`
-   (`capability.rs:453-465`) explicitly comments "↓prove is emergent from the ZK
-   circuit … not a primitive barb" and requires only `[Spend, Dispatch, Gate,
-   ProveInclusion]`. But Lean's `tenderBidType` *does* put `Barb.prove` in
-   `requiredBarbs` while composing primitives that lack it (`Composition.lean:151-174`),
-   and closes the `coversBarbs` case with `simp` plus a comment rather than a
-   prove-carrying primitive. Under the stated algebra that case looks unprovable.
-   Either the Lean must model `↓prove` outside the union (as the Rust does), or
-   `tenderResource` must drop `↓prove` from its requirement. To be resolved by
-   building the proofs; the Rust side is already consistent.
+1. **`↓prove` is now carried by the `dleqProof` primitive** — RESOLVED.
+   `dleqProof` (`Types.lean:185-188`) carries `{Barb.prove}` and was added to
+   both `tenderBidType` and `bridgeWithdrawType` (`Composition.lean:159-174,
+   396-410`). The Lean now models `↓prove` as a primitive barb carried by the
+   DLEq proof primitive, matching the physical model where a discrete-log
+   equality proof IS a discrete cryptographic primitive. The Rust kernel also
+   carries `Barb::Prove` in its capability-type barb set and `Primitive::from_name`
+   parses `"Prove"` as a valid barb. The emergent-barb tension (§1.2 consequence)
+   is closed: `compose` yields `↓prove` because `dleqProof` carries it.
 
 2. **Composition-level distinctness is unproved.** `compositionalDistinction`
    (`Pareto.lean:108-110`) is a `trivial`/`True` stub. Pareto-efficiency is

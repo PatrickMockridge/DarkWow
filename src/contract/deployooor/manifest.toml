@@ -25,7 +25,7 @@ requires_proof = false
 discriminant = 0
 name = "deployment_right"
 description = "Right to deploy and lock a contract. Consumable — consumed on deploy."
-primitives = ["SecretKey", "ContractId", "FuncId"]
+primitives = ["SecretKey", "Commitment", "ContractId", "FuncId"]
 note_schema = []
 
 [[actions]]

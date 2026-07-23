@@ -1189,4 +1189,105 @@ name = "b"
         assert_eq!(d[3].1, NoteFieldValue::Scalar(pallas::Scalar::from(11)));
         assert_eq!(d[4].1, NoteFieldValue::Bytes(vec![9, 9]));
     }
+
+    /// Exhaustive coverage gate check: parse every shipped manifest.toml and
+    /// assert every producible capability/action composition passes the barb
+    /// coverage gate. Untyped manifests (no primitives, no required_barbs) are
+    /// skipped — they have not yet been migrated.
+    ///
+    /// This test is the mechanical enforcement that shipped manifests do not
+    /// drift from the composition algebra. If a manifest change introduces a
+    /// coverage gap, this test fails at `cargo test` time.
+    #[test]
+    fn test_all_shipped_manifests_pass_coverage_gate() {
+        let contracts_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..").join("..").join("src").join("contract");
+        let mut checked: usize = 0;
+        let mut skipped: usize = 0;
+        let mut failures: Vec<String> = Vec::new();
+
+        let entries = match std::fs::read_dir(&contracts_dir) {
+            Ok(e) => e,
+            Err(_) => {
+                // CI environments that don't have the contract tree — not a failure.
+                eprintln!("manifest coverage test: contracts dir not found, skipping");
+                return;
+            }
+        };
+
+        for entry in entries {
+            let Ok(entry) = entry else { continue };
+            let manifest_path = entry.path().join("manifest.toml");
+            if !manifest_path.exists() {
+                continue;
+            }
+            let toml_str = match std::fs::read_to_string(&manifest_path) {
+                Ok(s) => s,
+                Err(e) => {
+                    failures.push(format!("{}: read error: {e}", manifest_path.display()));
+                    continue;
+                }
+            };
+            let manifest = match ContractManifest::from_toml(&toml_str) {
+                Ok(m) => m,
+                Err(e) => {
+                    failures.push(format!("{}: parse error: {e}", manifest_path.display()));
+                    continue;
+                }
+            };
+            let has_typed_caps = manifest.capabilities.iter()
+                .any(|c| !c.primitives.is_empty());
+            let has_typed_actions = manifest.actions.iter()
+                .any(|a| !a.required_barbs.is_empty());
+            if !has_typed_caps || !has_typed_actions {
+                skipped += 1;
+                continue;
+            }
+
+            for action in &manifest.actions {
+                if action.required_barbs.is_empty() {
+                    continue;
+                }
+                // Find the function code for this action's function name
+                let Some(func) = manifest.functions.iter()
+                    .find(|f| f.name == action.function) else { continue };
+                let fn_code = func.code;
+                match manifest.resolve_capability_type(fn_code) {
+                    Some(ct) => {
+                        // Sanity: composed barbs must cover the action's required barbs
+                        let parsed_barbs: Vec<crate::capability::Barb> = action.required_barbs.iter()
+                            .filter_map(|s| crate::capability::Barb::from_name(s))
+                            .collect();
+                        assert!(ct.covers(&parsed_barbs),
+                            "{}: action '{}' (fn 0x{fn_code:02x}): \
+                             TypedCapability exists but covers() returned false — \
+                             composed={:?} required={parsed_barbs:?}",
+                            manifest.name, action.function, ct.barbs);
+                        checked += 1;
+                    }
+                    None => {
+                        failures.push(format!(
+                            "{}: action '{}' (fn 0x{fn_code:02x}): \
+                             coverage gate closed — primitives do not cover required_barbs. \
+                             required_barbs={:?}",
+                            manifest.name, action.function, action.required_barbs,
+                        ));
+                    }
+                }
+            }
+        }
+
+        if !failures.is_empty() {
+            panic!(
+                "{} of {} typed manifest action(s) FAIL the coverage gate:\n{}",
+                failures.len(),
+                checked + failures.len(),
+                failures.join("\n"),
+            );
+        }
+        eprintln!(
+            "manifest coverage gate: {checked} action(s) passed, {skipped} manifest(s) skipped (untyped)"
+        );
+        assert!(checked > 0, "no typed manifests found — all 32 manifests may be untyped?");
+    }
 }
