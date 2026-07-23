@@ -427,7 +427,7 @@ impl DirectSession {
 #[async_trait]
 impl Session for DirectSession {
     fn p2p(&self) -> P2pPtr {
-        self.p2p.upgrade().unwrap()
+        self.p2p.upgrade().expect("P2p dropped while DirectSession active")
     }
 
     fn type_id(&self) -> SessionBitFlag {
@@ -445,7 +445,7 @@ struct ChannelTask {
 
 impl Drop for ChannelTask {
     fn drop(&mut self) {
-        let session = self.session.upgrade().unwrap();
+        let session = self.session.upgrade().expect("DirectSession dropped while Slot active");
         let addr = self.addr.clone();
         session
             .p2p()
@@ -663,7 +663,7 @@ impl PeerDiscovery {
     }
 
     fn session(&self) -> DirectSessionPtr {
-        self.session.upgrade().unwrap()
+        self.session.upgrade().expect("DirectSession dropped while Slot active")
     }
 
     fn p2p(&self) -> P2pPtr {

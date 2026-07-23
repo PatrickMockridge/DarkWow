@@ -735,7 +735,7 @@ impl Channel {
     }
 
     fn session(&self) -> Arc<dyn Session> {
-        self.session.upgrade().unwrap()
+        self.session.upgrade().expect("Session dropped while Channel active")
     }
 
     pub fn session_type_id(&self) -> SessionBitFlag {

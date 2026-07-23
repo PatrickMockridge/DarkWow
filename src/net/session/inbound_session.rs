@@ -219,7 +219,7 @@ impl InboundSession {
 #[async_trait]
 impl Session for InboundSession {
     fn p2p(&self) -> P2pPtr {
-        self.p2p.upgrade().unwrap()
+        self.p2p.upgrade().expect("P2p dropped while InboundSession active")
     }
 
     fn type_id(&self) -> SessionBitFlag {

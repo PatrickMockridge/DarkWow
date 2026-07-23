@@ -107,7 +107,7 @@ impl ManualSession {
 #[async_trait]
 impl Session for ManualSession {
     fn p2p(&self) -> P2pPtr {
-        self.p2p.upgrade().unwrap()
+        self.p2p.upgrade().expect("P2p dropped while ManualSession active")
     }
 
     fn type_id(&self) -> SessionBitFlag {
@@ -243,7 +243,7 @@ impl Slot {
     }
 
     fn session(&self) -> ManualSessionPtr {
-        self.session.upgrade().unwrap()
+        self.session.upgrade().expect("ManualSession dropped while Slot active")
     }
 
     fn p2p(&self) -> P2pPtr {

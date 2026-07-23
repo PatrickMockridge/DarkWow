@@ -201,7 +201,7 @@ impl OutboundSession {
 #[async_trait]
 impl Session for OutboundSession {
     fn p2p(&self) -> P2pPtr {
-        self.p2p.upgrade().unwrap()
+        self.p2p.upgrade().expect("P2p dropped while OutboundSession active")
     }
 
     fn type_id(&self) -> SessionBitFlag {
@@ -226,7 +226,7 @@ struct Slot {
 
 impl Slot {
     fn new(session: Weak<OutboundSession>, slot: u32) -> Arc<Self> {
-        let settings = session.upgrade().unwrap().p2p().settings();
+        let settings = session.upgrade().expect("OutboundSession dropped").p2p().settings();
 
         Arc::new(Self {
             slot,
@@ -521,7 +521,7 @@ impl Slot {
     }
 
     fn session(&self) -> OutboundSessionPtr {
-        self.session.upgrade().unwrap()
+        self.session.upgrade().expect("OutboundSession dropped while Slot active")
     }
     fn p2p(&self) -> P2pPtr {
         self.session().p2p()
@@ -740,7 +740,7 @@ impl PeerDiscoveryBase for PeerDiscovery {
     }
 
     fn session(&self) -> OutboundSessionPtr {
-        self.session.upgrade().unwrap()
+        self.session.upgrade().expect("OutboundSession dropped while Slot active")
     }
 
     fn p2p(&self) -> P2pPtr {

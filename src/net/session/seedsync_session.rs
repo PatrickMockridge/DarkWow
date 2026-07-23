@@ -194,7 +194,9 @@ pub struct SeedSlotInfo {
 #[async_trait]
 impl Session for SeedSyncSession {
     fn p2p(&self) -> P2pPtr {
-        self.p2p.upgrade().unwrap()
+        // §2.3.2: upgrade() failures SHALL produce errors, not panics.
+// Full error propagation requires Session trait refactor (Phase D).
+self.p2p.upgrade().expect("P2p dropped while SeedSyncSession active")
     }
 
     fn type_id(&self) -> SessionBitFlag {
@@ -404,7 +406,7 @@ impl Slot {
     }
 
     fn session(&self) -> SeedSyncSessionPtr {
-        self.session.upgrade().unwrap()
+        self.session.upgrade().expect("SeedSyncSession dropped while Slot active")
     }
 
     fn p2p(&self) -> P2pPtr {

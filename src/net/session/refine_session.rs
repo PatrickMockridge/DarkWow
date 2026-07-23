@@ -178,7 +178,7 @@ impl RefineSession {
 #[async_trait]
 impl Session for RefineSession {
     fn p2p(&self) -> P2pPtr {
-        self.p2p.upgrade().unwrap()
+        self.p2p.upgrade().expect("P2p dropped while RefineSession active")
     }
 
     fn type_id(&self) -> SessionBitFlag {
@@ -323,7 +323,7 @@ impl GreylistRefinery {
     }
 
     fn session(&self) -> RefineSessionPtr {
-        self.session.upgrade().unwrap()
+        self.session.upgrade().expect("RefineSession dropped while Slot active")
     }
 
     fn p2p(&self) -> P2pPtr {
