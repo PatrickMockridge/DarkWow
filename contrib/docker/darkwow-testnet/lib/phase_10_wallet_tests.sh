@@ -330,23 +330,21 @@ phase_wallet_transfer() {
     enter_soft_section
     transfer_out=$(wal 1 transfer 1 DRKW "$wallet2_addr" --porcelain)
     enter_critical_section
-    if ! echo "$transfer_out" | grep -qE '^txid='; then
-        fail "transfer: wallet-1 transfer failed — chain may not be synced. Output: $transfer_out"
+    # P0#7: extract txid first, then validate non-empty — prevents empty
+    # string from matching all subsequent grep checks.
+    txid=$(echo "$transfer_out" | grep -oE 'txid=[0-9a-f]+' | head -1)
+    if [ -z "$txid" ]; then
+        fail "transfer: wallet-1 transfer failed — no txid in output: $transfer_out"
         _wallet_diagnostic 1
         return 1
     fi
-    txid=$(echo "$transfer_out" | grep -oE '^txid=[0-9a-f]+' | head -1)
     pass "transfer tx built and broadcast ($txid)"
 
-    # ── 4. Mempool: verify tx appears in node0 mempool ─────────────────
-    info "  MEMPOOL: checking node0 mempool for $txid..."
-    local mempool
-    mempool=$(_mempool_hashes)
-    if echo "$mempool" | grep -q "$txid"; then
-        pass "tx found in node0 mempool (pending acceptance)"
-    else
-        warn "tx not found in node0 mempool (may have been mined instantly or mempool RPC unavailable)"
-    fi
+    # ── 4. Mempool check REMOVED (P0#4) ──────────────────────────────
+    # tx.pending RPC method does not exist in the daemon RPC registry.
+    # The check was dead code — always returned "[]". Replaced by
+    # wallet-level txid verification in step 5b below.
+    info "  MEMPOOL: skipped (tx.pending RPC not implemented — wallet-level txid verification in step 5b)"
 
     # ── 5. Mined: poll node0 height until the transfer block is mined ──
     #     Mining is probabilistic. Warn if not mined within a generous
@@ -370,33 +368,67 @@ phase_wallet_transfer() {
         fi
     done
     if [ -z "$mined_height" ] || [ "$mined_height" -lt "$target_height" ]; then
-        warn "transfer not mined after $((MINE_MAX_POLLS * MINE_INTERVAL))s — node0 height=$mined_height, target=$target_height"
+        fail "transfer not mined after $((MINE_MAX_POLLS * MINE_INTERVAL))s — node0 height=$mined_height, target=$target_height. Mining stalled or tx rejected."
         _wallet_diagnostic 1
-        return 0  # diagnostic — do not stop pipeline
+        return 1
     fi
     tx_height=$mined_height
+
+    # ── 5b. TXID-VERIFIED: wallet-1 must see the confirmed transfer ────
+    # P0#2: blockchain.get_tx is a stub (always returns null). Verify
+    # via wallet-level transaction history instead — proves end-to-end
+    # that wallet decrypted AND persisted its own transfer.
+    local TXVERIFY_MAX_POLLS=12  # 2 minutes max
+    local TXVERIFY_INTERVAL=10
+    local tx_verified=0 tx_poll=0
+    local txid_hex="${txid#txid=}"
+    info "  TXID-VERIFIED: checking wallet-1 transaction history for $txid_hex..."
+    while [ "$tx_poll" -lt "$TXVERIFY_MAX_POLLS" ]; do
+        if wal 1 wallet transactions 2>/dev/null | grep -qF "$txid_hex"; then
+            pass "transfer txid confirmed in wallet-1 transaction history ($((tx_poll * TXVERIFY_INTERVAL))s)"
+            tx_verified=1
+            break
+        fi
+        tx_poll=$((tx_poll + 1))
+        [ "$tx_poll" -lt "$TXVERIFY_MAX_POLLS" ] && sleep "$TXVERIFY_INTERVAL"
+    done
+    if [ "$tx_verified" -eq 0 ]; then
+        fail "transfer txid NOT found in wallet-1 after $((TXVERIFY_MAX_POLLS * TXVERIFY_INTERVAL))s — transfer may not have been mined or wallet failed to decrypt"
+        _wallet_diagnostic 1
+        return 1
+    fi
 
     # ── 6. Confirmed: wallet-1 sync check ──────────────────────────────
     local conf_target=$((tx_height + 2))
     if _check_wallet_height 1 "$conf_target" "confirm-2"; then
         pass "transfer confirmed: wallet-1 at height >= $conf_target (2 confirmations, safe against 1-block reorg)"
     else
-        warn "wallet-1 not yet synced past transfer block (height target=$conf_target) — diagnostic, not a failure"
+        fail "wallet-1 not synced past transfer block after mining confirmation (height target=$conf_target) — sync stalled"
         _wallet_diagnostic 1
-        return 0  # diagnostic — do not stop pipeline
+        return 1
     fi
 
-    # ── 7. Receive: wallet-2 scans and checks balance ──────────────────
+    # ── 7. Receive: wallet-2 scans, checks capabilities AND balance ────
+    # P0#6: verify BOTH capability construction (decryption proof) AND
+    # balance increase (coinbase reward could produce false PASS on
+    # balance alone). Capability count > 0 proves wallet-2 decrypted
+    # the transfer note with its own key.
     info "  RECEIVE: wallet-2 scanning for incoming transfer..."
     _check_wallet_height 2 "$conf_target" "sync" || true
     wal 2 scan >/dev/null || true
-    local recv
+    local recv recv_caps
     recv=$(_native_balance 2)
-    if [ -n "$recv" ] && [ "$recv" -gt "$pre_bal2" ]; then
-        pass "wallet-2 received transfer: balance $pre_bal2 → $recv (tx confirmed at height $tx_height)"
-    else
-        warn "wallet-2 balance unchanged after transfer: before=$pre_bal2 after=$recv — diagnostic, may need more time"
+    recv_caps=$(_scan_capabilities 2)
+    if [ -n "$recv" ] && [ "$recv" -gt "$pre_bal2" ] && [ "${recv_caps:-0}" -gt 0 ]; then
+        pass "wallet-2 received transfer: balance $pre_bal2 → $recv, capabilities=$recv_caps (tx confirmed at height $tx_height)"
+    elif [ -n "$recv" ] && [ "$recv" -gt "$pre_bal2" ] && [ "${recv_caps:-0}" -eq 0 ]; then
+        fail "wallet-2 balance increased ($pre_bal2 → $recv) but capabilities=0 — balance may be from coinbase, not transfer. Decryption failed."
         _wallet_diagnostic 2
+        return 1
+    else
+        fail "wallet-2 did not receive transfer: balance before=$pre_bal2 after=$recv, capabilities=$recv_caps"
+        _wallet_diagnostic 2
+        return 1
     fi
 
     # ── 8. Revocation: wallet-1 detects its own spent nullifier ────────
