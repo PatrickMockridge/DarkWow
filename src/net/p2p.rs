@@ -171,7 +171,15 @@ impl P2p {
         Ok(())
     }
 
-    /// Reseed the P2P network.
+    /// Bootstrap the P2P network from known peers.
+    ///
+    /// ── Terminology ──────────────────────────────────────────────────
+    /// Named `seed()` per upstream convention. In DarkWow's flat P2P
+    /// mesh, this activates the BootstrapSyncSession to connect to known
+    /// peers, exchange hostlists, and populate the outbound session's
+    /// greylist. There is no seed/node hierarchy — every node is a full
+    /// peer. See SeedSyncSession for the full architectural context.
+    /// ─────────────────────────────────────────────────────────────────
     #[cfg(feature = "seed-sync-session")]
     pub async fn seed(self: Arc<Self>) {
         debug!(target: "net::p2p::seed", "P2P::seed() [BEGIN]");

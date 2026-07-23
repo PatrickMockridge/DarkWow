@@ -21,6 +21,17 @@ P2P_PORT="${P2P_PORT:-31342}"
 RPC_PORT="${RPC_PORT:-31345}"
 STRATUM_PORT="${STRATUM_PORT:-31347}"
 MANAGEMENT_PORT="${MANAGEMENT_PORT:-31346}"
+# ── Terminology ──────────────────────────────────────────────────────
+# SEED_ADDR: Known bootstrap peers for initial P2P mesh entry. DarkWow's
+# blockchain network is a flat P2P mesh — these are NOT "seed nodes" in a
+# hierarchy. They are simply peers you connect to first for hostlist
+# discovery. NOT to be confused with lilith seeds (bin/lilith/) which are
+# external P2P seeds for tau/darkirc/dchat overlay networks.
+#
+# IS_SEED: Set to "true" for the observer role — a full node that serves
+# as a known entry point for other nodes but does not mine. "Seed" here is
+# legacy terminology; the observer is a full P2P peer, not a seed server.
+# ──────────────────────────────────────────────────────────────────────
 SEED_ADDR="${SEED_ADDR:-}"
 PEER_ADDR="${PEER_ADDR:-}"
 EXTERNAL_ADDR="${EXTERNAL_ADDR:-}"

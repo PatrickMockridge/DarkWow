@@ -16,27 +16,41 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Seed sync session creates a connection to the seed nodes specified in settings.
+//! Bootstrap sync session — connects to known peers for initial hostlist discovery.
 //!
-//! A new seed sync session is created every time we call [`P2p::start()`]. The
-//! seed sync session loops through all the configured seeds and creates a corresponding
-//! `Slot`. `Slot`'s are started, but sit in a suspended state until they are activated
-//! by a call to notify (see: `p2p.seed()`).
+//! ── Terminology ──────────────────────────────────────────────────────────
+//! "Seed" in this module means: blockchain bootstrap peer. DarkWow has a flat
+//! P2P mesh — every node is a full peer. There is no seed/node hierarchy in
+//! the blockchain network. A "seed" in this context is simply a known peer
+//! you connect to first, to discover other peers via hostlist exchange.
 //!
-//! When a `Slot` has been activated by a call to `notify()`, it will try to connect
-//! to the given seed address using a [`Connector`]. This will either connect successfully
-//! or fail with a warning. With gather the results of each `Slot` in an `AtomicBool`
-//! so that we can handle the error elsewhere in the code base.
+//! NOT to be confused with: lilith seed — an external P2P seed for the
+//! tau/darkirc/dchat overlay networks. Lilith seeds ARE genuine seed nodes
+//! in the traditional P2P sense. See bin/lilith/.
+//! ─────────────────────────────────────────────────────────────────────────
 //!
-//! If a seed node connects successfully, it runs a version exchange protocol,
-//! stores the channel in the p2p list of channels, and disconnects, removing
-//! the channel from the channel list.
+//! A new bootstrap sync session is created every time we call [`P2p::start()`].
+//! The session loops through all the configured bootstrap peers and creates a
+//! corresponding `Slot`. Slots are started, but sit in a suspended state until
+//! they are activated by a call to notify (see: `p2p.seed()` — named for the
+//! upstream convention; in DarkWow this is "bootstrap from known peers").
+//!
+//! When a `Slot` has been activated by a call to `notify()`, it will try to
+//! connect to the given peer address using a [`Connector`]. This will either
+//! connect successfully or fail with a warning. Results of each `Slot` are
+//! gathered in an `AtomicBool` so that we can handle the error elsewhere.
+//!
+//! If a bootstrap peer connects successfully, it runs a version exchange
+//! protocol, stores the channel in the p2p list of channels, and disconnects,
+//! removing the channel from the channel list. The peer's hostlist populates
+//! the outbound session's greylist, enabling connection to additional peers.
 //!
 //! The channel is registered using the [`Session::register_channel()`] trait
 //! method. This invokes the Protocol Registry method `attach()`. Usually this
 //! returns a list of protocols that we loop through and start. In this case,
-//! `attach()` uses the bitflag selector to identify seed sessions and exclude
-//! them.
+//! `attach()` uses the bitflag selector to identify bootstrap sessions and
+//! exclude them from the regular peer list (bootstrap connections are transient
+//! — they exist only for hostlist exchange, not for ongoing sync).
 //!
 //! The version exchange occurs inside `register_channel()`. We create a handshake
 //! task that runs the version exchange with the `perform_handshake_protocols()`
@@ -73,7 +87,15 @@ use crate::{
 
 pub type SeedSyncSessionPtr = Arc<SeedSyncSession>;
 
-/// Defines seed connections session
+/// Manages transient connections to known bootstrap peers for hostlist discovery.
+///
+/// ── Terminology ──────────────────────────────────────────────────────
+/// Despite the name, this is NOT a "seed server" in the traditional P2P
+/// sense. DarkWow's blockchain network is a flat P2P mesh — every node is
+/// a full peer. This session connects to configured known peers, exchanges
+/// hostlists, then disconnects. The outbound session then connects to the
+/// discovered peers for ongoing block sync.
+/// ─────────────────────────────────────────────────────────────────────
 pub struct SeedSyncSession {
     pub(in crate::net) p2p: Weak<P2p>,
     slots: AsyncMutex<Vec<Arc<Slot>>>,

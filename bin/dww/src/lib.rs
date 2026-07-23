@@ -235,11 +235,21 @@ impl Dww {
             .map_err(|e| Error::Custom(format!("chain block {}: {:?}", height.get(), e)))
     }
 
-    /// Initialize P2P networking. Connects to seeds, discovers peers via
-    /// hostlist. Must be called before scan/broadcast.
     /// Initialize P2P networking using dwow_core::net::P2p.
-    /// Same stack as the mining nodes: P2p::new() → start() → seed().
-    /// Connects to seeds, exchanges hostlist, discovers mining peers.
+    ///
+    /// ── Topology ────────────────────────────────────────────────────
+    /// DarkWow's blockchain network is a flat P2P mesh. "Seed" here means
+    /// "known bootstrap peer" — the first peer you connect to for hostlist
+    /// discovery. There is no seed/node hierarchy. Every node (miner,
+    /// observer, wallet) is a full P2P peer.
+    ///
+    /// In the pipeline, wallets connect via PEER_ADDR (observer + mining
+    /// nodes) — the bootstrap/seed step is optional when peers are already
+    /// configured. The SEED_ADDR is provided for external/lilith seed
+    /// compatibility but is not required for wallet block sync.
+    /// ────────────────────────────────────────────────────────────────
+    /// Same stack as the mining nodes: P2p::new() → start() → seed()
+    /// (seed() = bootstrap from known peers for hostlist discovery).
     /// Idempotent — returns immediately if P2P is already initialized.
     pub async fn init_p2p(
         &mut self,

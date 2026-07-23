@@ -140,6 +140,9 @@ pub enum Error {
     #[error("Channel timed out")]
     ChannelTimeout,
 
+    /// All configured bootstrap peers are unreachable.
+    /// ── Terminology: "seed" = blockchain bootstrap peer (flat P2P mesh).
+    /// NOT a lilith seed (external tau/darkirc/dchat P2P seed). ──
     #[error("Failed to reach any seeds")]
     SeedFailed,
 

@@ -18,6 +18,18 @@ WALLET_PASS="${WALLET_PASS:-walletpass}"
 PRODUCTION="${PRODUCTION:-false}"
 
 P2P_PORT="${P2P_PORT:-31360}"
+# ── Terminology ──────────────────────────────────────────────────────
+# SEED_ADDR: Known bootstrap peers for initial P2P mesh entry. DarkWow's
+# blockchain network is a flat P2P mesh — these are NOT "seed nodes" in a
+# hierarchy. They are simply peers you connect to first for hostlist
+# discovery. NOT to be confused with lilith seeds (external P2P seeds for
+# tau/darkirc/dchat — those ARE genuine seed nodes).
+#
+# The wallet connects to PEER_ADDR directly for block sync — SEED_ADDR is
+# optional. In the pipeline, SEED_ADDR is empty because PEER_ADDR already
+# lists the observer and mining nodes. A non-empty SEED_ADDR enables the
+# SeedSyncSession (transient hostlist-only connections).
+# ──────────────────────────────────────────────────────────────────────
 SEED_ADDR="${SEED_ADDR:-}"
 PEER_ADDR="${PEER_ADDR:-tcp+tls://observer:31340,tcp+tls://node0:31342}"
 MAGIC_BYTES="${MAGIC_BYTES:-68,82,75,87}"

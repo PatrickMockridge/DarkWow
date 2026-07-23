@@ -53,7 +53,12 @@ endpoint = "tcp://127.0.0.1:18345"
 # Path to interactive shell history file
 history_path = "~/.local/share/dwow/dww/testnet/history.txt"
 
-## P2P network settings — wallet participates as a full node
+## P2P network settings — wallet participates as a full node.
+## "seeds" here are known bootstrap peers for initial P2P mesh entry.
+## DarkWow's blockchain network is a flat P2P mesh — these are NOT
+## seed nodes in a hierarchical sense. They are simply peers you connect
+## to first for hostlist discovery. (The addresses happen to be lilith
+## nodes, which also serve as external P2P seeds for tau/darkirc/dchat.)
 [network_config."testnet".net]
 seeds = [{ url = "tcp+tls://lilith0.dark.fi:18340" }, { url = "tcp+tls://lilith1.dark.fi:18340" }]
 magic_bytes = [163, 139, 113, 101]

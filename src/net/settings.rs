@@ -62,8 +62,18 @@ pub struct Settings {
     pub external_addrs: Vec<Url>,
     /// Peer nodes to manually connect to
     pub peers: Vec<Url>,
-    /// Seed nodes to connect to for peer discovery and/or advertising our
-    /// own external addresses
+    /// Known bootstrap peers for initial P2P mesh entry.
+    ///
+    /// ── Terminology ──────────────────────────────────────────────────
+    /// DarkWow has a flat P2P mesh — every node is a full peer. These are
+    /// NOT "seed nodes" in the traditional hierarchical sense. They are
+    /// simply known peers you connect to first, to discover other peers
+    /// via hostlist exchange (see SeedSyncSession).
+    ///
+    /// NOT to be confused with: lilith seeds (bin/lilith/) — external
+    /// P2P seeds for the tau/darkirc/dchat overlay networks. Those ARE
+    /// genuine seed nodes.
+    /// ─────────────────────────────────────────────────────────────────
     pub seeds: Vec<Url>,
     /// Magic bytes should be unique per P2P network.
     /// Avoid bleeding of networks.
