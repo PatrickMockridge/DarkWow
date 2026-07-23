@@ -24,10 +24,15 @@ wal() {
     local rc=0
     docker exec "dwow-wallet-$i" /app/darkwow wallet "$@" >"$outfile" 2>"$errfile" || rc=$?
     cat "$outfile"
-    if [ "$rc" -ne 0 ] || [ -s "$errfile" ]; then
+    if [ "$rc" -ne 0 ]; then
         echo "WAL_ERROR: wallet-$i exit=$rc stderr=$(head -3 "$errfile" 2>/dev/null | tr '\n' ' ')" >&2
         rm -f "$outfile" "$errfile"
         return "$rc"
+    fi
+    # stderr on success is normal (Rust diagnostics, progress messages).
+    # Log it for visibility but don't treat it as an error.
+    if [ -s "$errfile" ]; then
+        echo "WAL_DIAG: wallet-$i stderr=$(head -3 "$errfile" 2>/dev/null | tr '\n' ' ')" >&2
     fi
     rm -f "$outfile" "$errfile"
     return 0

@@ -67,11 +67,11 @@ _wallet_diagnostic() {
     info "  P2P config from container:"
     docker exec "$container" cat /root/.config/dwow/dww_config.toml 2>/dev/null | while read line; do info "    $line"; done || info "    (could not read config)"
     info "  Sync status:"
-    wal "$wallet_idx" sync status 2>&1 | while read line; do info "    $line"; done
+    wal "$wallet_idx" sync status | while read line; do info "    $line"; done
     info "  Fresh scan:"
-    wal "$wallet_idx" scan 2>&1 | tail -10 | while read line; do info "    $line"; done
+    wal "$wallet_idx" scan | tail -10 | while read line; do info "    $line"; done
     info "  Fresh balance:"
-    wal "$wallet_idx" wallet balance 2>&1 | tail -5 | while read line; do info "    $line"; done
+    wal "$wallet_idx" wallet balance | tail -5 | while read line; do info "    $line"; done
     info "  ── End diagnostic ──"
 }
 
@@ -93,7 +93,7 @@ _check_container_healthy() {
 # Get wallet's current synced chain height.
 _wallet_height() {
     local idx="$1"
-    wal "$idx" sync status 2>&1 | grep 'Local chain height:' | grep -oE '[0-9]+' | head -1 || echo "0"
+    wal "$idx" sync status | grep 'Local chain height:' | grep -oE '[0-9]+' | head -1 || echo "0"
 }
 
 # Get node0's current chain height via the pipeline's standard RPC helper.
@@ -160,7 +160,7 @@ phase_wallet_verify() {
         while [ "$poll" -lt "$WALLET_SYNC_MAX_POLLS" ]; do
             local status
             enter_soft_section
-            status=$(wal "$wallet_idx" sync status 2>&1)
+            status=$(wal "$wallet_idx" sync status)
             enter_critical_section
             height=$(echo "$status" | grep 'Local chain height:' | sed 's/.*Local chain height: //' | grep -oE '[0-9]+' | head -1 || echo 0)
             if [ "${height:-0}" -gt 0 ]; then
@@ -184,7 +184,7 @@ phase_wallet_verify() {
         # wallet-2+: single-shot sync check (may legitimately have nothing)
         local status
         enter_soft_section
-        status=$(wal "$wallet_idx" sync status 2>&1)
+        status=$(wal "$wallet_idx" sync status)
         enter_critical_section
         height=$(echo "$status" | grep 'Local chain height:' | sed 's/.*Local chain height: //' | grep -oE '[0-9]+' | head -1 || echo 0)
         if [ "$height" -eq 0 ]; then
@@ -225,7 +225,7 @@ phase_wallet_verify() {
     #     Absence means the capability model is not discovering anything — possible
     #     configuration issue or empty block with no contract calls (expected early).
     local cap_diag
-    cap_diag=$(wal "$wallet_idx" scan 2>&1 | grep -c "\[CAPABILITY\] Stage" || true)
+    cap_diag=$(wal "$wallet_idx" scan | grep -c "\[CAPABILITY\] Stage" || true)
     if [ "${cap_diag:-0}" -gt 0 ]; then
         info "  wallet-$wallet_idx capability path: $cap_diag diagnostic stages found (pipeline active)"
     else
@@ -266,7 +266,7 @@ phase_wallet_verify() {
     # 4. Show wallet address
     info "  Verifying wallet address..."
     local wallet_addr
-    wallet_addr=$(wal "$wallet_idx" wallet address 2>&1 | tail -1)
+    wallet_addr=$(wal "$wallet_idx" wallet address | tail -1)
     info "  wallet-$wallet_idx address: ${wallet_addr:0:16}..."
 
     done  # end wallet loop
@@ -315,7 +315,7 @@ phase_wallet_transfer() {
     # diagnostic, not pipeline-killing. No chain = no address = skip.
     local wallet2_addr
     enter_soft_section
-    wallet2_addr=$(wal 2 wallet address 2>&1 | tail -1)
+    wallet2_addr=$(wal 2 wallet address | tail -1)
     enter_critical_section
     if [ -z "$wallet2_addr" ]; then
         _wallet_diagnostic 2
@@ -328,7 +328,7 @@ phase_wallet_transfer() {
     info "  BUILD: wallet-1 → wallet-2 (1 DRKW)..."
     local transfer_out txid
     enter_soft_section
-    transfer_out=$(wal 1 transfer 1 DRKW "$wallet2_addr" --porcelain 2>&1)
+    transfer_out=$(wal 1 transfer 1 DRKW "$wallet2_addr" --porcelain)
     enter_critical_section
     if ! echo "$transfer_out" | grep -qE '^txid='; then
         fail "transfer: wallet-1 transfer failed — chain may not be synced. Output: $transfer_out"
@@ -389,7 +389,7 @@ phase_wallet_transfer() {
     # ── 7. Receive: wallet-2 scans and checks balance ──────────────────
     info "  RECEIVE: wallet-2 scanning for incoming transfer..."
     _check_wallet_height 2 "$conf_target" "sync" || true
-    wal 2 scan >/dev/null 2>&1 || true
+    wal 2 scan >/dev/null || true
     local recv
     recv=$(_native_balance 2)
     if [ -n "$recv" ] && [ "$recv" -gt "$pre_bal2" ]; then
