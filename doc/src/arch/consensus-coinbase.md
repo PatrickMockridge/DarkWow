@@ -828,12 +828,6 @@ function is implemented at [`src/sdk/src/blockchain.rs:121`](../../src/sdk/src/b
 (`expected_reward()`) using integer-only fixed-point arithmetic. Floating point
 MUST NOT be used.
 
-> **Historical note (HAZID H-C3 — RESOLVED):** A prior version of the code
-> implemented a linear approximation `R(h) = R_tail + (R₀ - R_tail) × (1 - (h-1)/H)`.
-> This was replaced by the closed-form exponential on 2026-07-16 (commits
-> `d6c78eb5b9` and `d1e062fa8f`). The linear approximation underpaid by ~8.7×
-> at the half-life.
-
 ### 4.3 Cumulative Supply Bootstrap
 
 The cumulative supply chain `S_H` tracks the Pedersen commitment to total

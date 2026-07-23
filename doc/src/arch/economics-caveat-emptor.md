@@ -327,20 +327,15 @@ redemption never happens on-chain for most token types.
 
 **Actor:** Malicious holder attempting early unstaking.
 
-**Mechanism (historical):** A prior version of the `unstake_v1` entrypoint did not
-check the `maturity_block` field on `BondCoin`, relying solely on wallet-level
-capability resolution to prevent early unstaking. A holder could theoretically
-construct the UnstakeV1 call manually, bypassing wallet checks.
-
-**Current status (July 2026):** The `unstake_v1` entrypoint at
-`src/contract/bearer_bond/src/entrypoint/mod.rs:878` now enforces maturity
+Maturity is enforced at the entrypoint level — not just the wallet.
+The `unstake_v1` entrypoint at
+`src/contract/bearer_bond/src/entrypoint/mod.rs:878` enforces maturity
 on-chain:
 ```rust
 if params.current_block < stake_coin.maturity_block {
     return Err(BearerBondError::StakeNotMatured { ... }.into());
 }
 ```
-Maturity is enforced at the entrypoint level — not just the wallet.
 
 **Impact:** Resolved. On-chain maturity enforcement prevents early unstaking
 regardless of how the transaction is constructed (wallet or manual).

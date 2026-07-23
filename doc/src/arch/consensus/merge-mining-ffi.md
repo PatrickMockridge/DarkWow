@@ -48,9 +48,7 @@ hash" from "merkle proof verification failed" from "stale template."
 **Implemented.** `bin/dwowd/src/error.rs` defines `RpcError` variants with
 unique numeric codes (-32324..-32343) for each parameter validation failure.
 Submission outcomes use distinct status strings ("accepted" / "rejected" /
-"stale") per P2Pool's expected response format (§6.2). The legacy
-`Error::Custom("rejected")` path was removed in HAZOP cycle 3
-(commit bfa2080071).
+"stale") per P2Pool's expected response format (§6.2).
 
 ### 1.4 Opaque Handles
 

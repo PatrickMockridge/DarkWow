@@ -136,7 +136,7 @@ connection errors that are happening from peers. See the
 
 You may get an error like this:
 ```
-[WARN] darError reportingkfi::net::transport::tor: error: tor: Onion Service not found: Failed to obtain hidden service circuit to ????.onion: Unable to download hidden service descriptor
+[WARN] darkfi::net::transport::tor: error: tor: Onion Service not found: Failed to obtain hidden service circuit to ????.onion: Unable to download hidden service descriptor
 ```
 This happens when [Arti](https://gitlab.torproject.org/tpo/core/arti/-/blob/main/README.md) 
 gets corrupted due to internet downtime or other triggers. To fix this, 

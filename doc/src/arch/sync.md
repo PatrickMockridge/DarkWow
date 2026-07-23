@@ -315,14 +315,6 @@ Blocks must now be accompanied by circuit data during synchronization via `Exten
 src/zk/
 └── verifier.rs          # Pure ZK verification (verify_zkp, ZkVerifyResult)
 
-## File Layout (pre-migration, for historical reference)
-
-src/validator/sync/  *(archived — migrated to src/linear/ + bin/dwowd/)*
-├── mod.rs               # Module exports
-├── types.rs             # ZkBinEntry, SyncBlock, VerifyResult, SyncState
-├── verify.rs            # verify_header, verify_block
-└── apply.rs             # accept_block — full block acceptance with WASM execution
-
 bin/dwowd/src/proto/
 └── protocol_proposal.rs  # ExtendedProposalMessage, handle_receive_proposal
 
