@@ -185,6 +185,20 @@ pub struct Dww {
     pub mint_pk_cache: smol::lock::Mutex<Option<dwow_core::zk::proof::ProvingKey>>,
 }
 
+// §1.3: The wallet process SHALL declare its composite barb set.
+// Each barb corresponds to an observable action the wallet may exhibit
+// during its lifecycle (scan, spend, sync, broadcast, decrypt, derive).
+impl dwow_core::barb::ExhibitsBarb for Dww {
+    fn exhibited_barbs() -> &'static [dwow_core::barb::BarbId] {
+        use dwow_core::barb::BarbId;
+        &[
+            BarbId::Discover, BarbId::Spend, BarbId::Verify,
+            BarbId::Encrypt, BarbId::Derive, BarbId::Broadcast,
+            BarbId::SyncBarrier, BarbId::Gate, BarbId::Denominate,
+        ]
+    }
+}
+
 impl Dww {
     pub fn new(
         network: Network,
