@@ -202,7 +202,10 @@ mod p2p_impls {
 
     const MAX_SMALL: u64 = 256;
     const MAX_TIP: u64 = 512;
-    const MAX_UNLIMITED: u64 = 0;
+    // §8.6.2: MAX_BYTES=0 (unlimited) SHALL NOT appear on any message type.
+    // 10 MiB accommodates genesis block JSON (~multi-MB) with 2.5x headroom
+    // over MAX_BLOCK_SIZE (4 MiB). Metering is not a substitute for size bounds.
+    const MAX_BLOCK_BATCH: u64 = 10 * 1024 * 1024; // 10 MiB
 
     const SYNC_METERING: MeteringConfiguration = MeteringConfiguration {
         threshold: 20,
@@ -219,9 +222,9 @@ mod p2p_impls {
     }
 
     impl_p2p_message!(GetBlocks, "lineargetblocks", MAX_SMALL, 1, SYNC_METERING, sync_barbs!());
-    impl_p2p_message!(Blocks, "linearblocks", MAX_UNLIMITED, 1, SYNC_METERING, sync_barbs!());
+    impl_p2p_message!(Blocks, "linearblocks", MAX_BLOCK_BATCH, 1, SYNC_METERING, sync_barbs!());
     impl_p2p_message!(GetBlock, "lineargetblock", MAX_SMALL, 1, SYNC_METERING, sync_barbs!());
-    impl_p2p_message!(BlockResponse, "linearblockresponse", MAX_UNLIMITED, 1, SYNC_METERING, sync_barbs!());
+    impl_p2p_message!(BlockResponse, "linearblockresponse", MAX_BLOCK_BATCH, 1, SYNC_METERING, sync_barbs!());
     impl_p2p_message!(GetTip, "lineargettip", MAX_SMALL, 1, SYNC_METERING, sync_barbs!());
     impl_p2p_message!(Tip, "lineartip", MAX_TIP, 1, SYNC_METERING, sync_barbs!());
 }
