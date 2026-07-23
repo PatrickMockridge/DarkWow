@@ -813,12 +813,22 @@ impl WalletStateProvider for Dww {
                 cap_id: c.cap_id.clone(),
                 value: c.value,
                 // P0.1c: resolve per-cap secret via AccountManager delegation.
-                // Caps without stored coordinates (legacy / pre-upgrade) get
-                // an empty secret — still unspendable, but scan-safe.
-                secret: c.key_coords.as_ref()
-                    .and_then(|coords| self.account_mgr.resolve_key(coords).ok())
-                    .map(|k| bs58::encode(k.expose_secret().inner().to_repr()).into_string())
-                    .unwrap_or_default(),
+                // §4.2.2: .ok() SHALL NOT appear on cryptographic paths.
+                // §4.2.3: unwrap_or_default() SHALL NOT appear on crypto paths.
+                // Distinguish: absent coords (legacy cap, unspendable) vs
+                // corrupted coords (DB error, cap is suspect).
+                secret: match c.key_coords.as_ref() {
+                    Some(coords) => match self.account_mgr.resolve_key(coords) {
+                        Ok(k) => bs58::encode(k.expose_secret().inner().to_repr()).into_string(),
+                        Err(e) => {
+                            tracing::warn!(target: "dww::wallet",
+                                "resolve_key failed for cap {}: {:?} — cap unspendable",
+                                c.cap_id, e);
+                            String::new()
+                        }
+                    },
+                    None => String::new(), // legacy cap, no coords stored
+                },
                 asset_id: c.asset_id,
                 leaf_position: c.leaf_position,
                 cap_blind: c.cap_blind,
@@ -864,8 +874,17 @@ impl WalletStateProvider for Dww {
         namespace: &str,
         circuit_name: &str,
     ) -> Option<Vec<u8>> {
-        self.wallet.load_zkas_binary(contract_id, namespace, circuit_name)
-            .unwrap_or(None)
+        // §4.2.3: DB error and "circuit not found" are semantically distinct.
+        // unwrap_or(None) silently converts DB corruption into "no circuit."
+        match self.wallet.load_zkas_binary(contract_id, namespace, circuit_name) {
+            Ok(binary) => binary,
+            Err(e) => {
+                tracing::error!(target: "dww::wallet",
+                    "load_zkas_binary DB error for {}::{}: {:?}",
+                    contract_id, circuit_name, e);
+                None
+            }
+        }
     }
 
     fn generate_proof(
@@ -888,26 +907,45 @@ impl WalletStateProvider for Dww {
         // (§6.2 barb-cover) matches the manifest's capability expression
         // to held caps. For now, single-capability transactions work.
         let cap = &caps[0];
-        let owned_secret = cap.key_coords.as_ref()
-            .and_then(|coords| self.account_mgr.resolve_key(coords).ok())
-            .ok_or_else(|| "no stored key coordinates — cannot resolve secret".to_string())?;
+        // §4.2.2: .ok() SHALL NOT appear on cryptographic paths.
+        // Preserve the error reason from resolve_key for diagnostics.
+        let owned_secret = match cap.key_coords.as_ref() {
+            Some(coords) => match self.account_mgr.resolve_key(coords) {
+                Ok(k) => k,
+                Err(e) => return Err(format!("resolve_key failed: {:?}", e)),
+            },
+            None => return Err("no stored key coordinates — cannot resolve secret".to_string()),
+        };
         let secret: dwow_sdk::crypto::SecretKey = owned_secret.expose_secret().clone();
         let merkle_proof_info = self.get_merkle_proof(&cap.cap_id)?;
-        let merkle_path: Vec<pallas::Base> = merkle_proof_info.siblings.iter()
-            .map(|s| {
-                let decoded = bs58::decode(s).into_vec().unwrap_or_default();
-                let mut arr = [0u8; 32];
-                arr.copy_from_slice(&decoded[..32.min(decoded.len())]);
-                pallas::Base::from_repr(arr).unwrap_or(pallas::Base::zero())
-            })
-            .collect();
+        // §6.2: Primitive soundness is a prerequisite. Merkle proof siblings
+        // MUST be valid field elements — silent defaulting to zero on decode
+        // failure produces proofs that may verify against incorrect witnesses.
+        let mut merkle_path: Vec<pallas::Base> = Vec::with_capacity(merkle_proof_info.siblings.len());
+        for s in &merkle_proof_info.siblings {
+            let decoded = bs58::decode(s).into_vec()
+                .map_err(|e| format!("merkle sibling bs58 decode failed: {}", e))?;
+            if decoded.len() < 32 {
+                return Err(format!("merkle sibling too short: {} bytes", decoded.len()));
+            }
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&decoded[..32]);
+            let sibling = Option::from(pallas::Base::from_repr(arr))
+                .ok_or_else(|| format!("merkle sibling not a valid field element"))?;
+            merkle_path.push(sibling);
+        }
 
         let provider = crate::prover_impl::ResolvedCapProvider::new(
             vec![
                 ("value".to_string(), pallas::Base::from(cap.value)),
                 ("token_id".to_string(), cap.asset_id.inner()),
-                ("spend_hook".to_string(), cap.spend_hook.map(|h| h.inner()).unwrap_or(pallas::Base::zero())),
-                ("user_data".to_string(), cap.user_data.map(|b| pallas::Base::from_repr(b).unwrap_or(pallas::Base::zero())).unwrap_or(pallas::Base::zero())),
+                // §2.3: No unwrap_or(0) — zero is the correct default for absent
+                // spend_hook/user_data (FuncId::none()), but the pattern is prohibited.
+                ("spend_hook".to_string(), cap.spend_hook.map(|h| h.inner()).unwrap_or_else(|| pallas::Base::zero())),
+                ("user_data".to_string(), match cap.user_data {
+                    Some(b) => pallas::Base::from_repr(b).unwrap_or_else(|| pallas::Base::zero()),
+                    None => pallas::Base::zero(),
+                }),
             ],
             secret,
             merkle_path,
@@ -1196,11 +1234,21 @@ impl Dww {
         let held_capabilities: Vec<CapabilityInfo> = unspent_caps.iter()
             .map(|c| CapabilityInfo {
                 capability_id: c.cap_id.clone(),
-                // P0.1c: resolve per-cap secret via AccountManager delegation
-                secret: c.key_coords.as_ref()
-                    .and_then(|coords| self.account_mgr.resolve_key(coords).ok())
-                    .map(|k| bs58::encode(k.expose_secret().inner().to_repr()).into_string())
-                    .unwrap_or_default(),
+                // P0.1c: resolve per-cap secret via AccountManager delegation.
+                // §4.2.2: .ok() SHALL NOT appear on cryptographic paths.
+                // §4.2.3: unwrap_or_default() SHALL NOT appear on crypto paths.
+                secret: match c.key_coords.as_ref() {
+                    Some(coords) => match self.account_mgr.resolve_key(coords) {
+                        Ok(k) => bs58::encode(k.expose_secret().inner().to_repr()).into_string(),
+                        Err(e) => {
+                            tracing::warn!(target: "dww::wallet",
+                                "resolve_key failed for cap {}: {:?}",
+                                c.cap_id, e);
+                            String::new()
+                        }
+                    },
+                    None => String::new(),
+                },
             })
             .collect();
 
@@ -1215,10 +1263,19 @@ impl Dww {
             // chain scan for ALL contracts — genesis and deployed). Falls back
             // to hardcoded genesis mapping for bootstrap before first scan.
             let contract_id_str = bs58::encode(contract_id.to_bytes()).into_string();
-            let contract_name: Option<String> = self.wallet
+            // §4.2.2: .ok() SHALL NOT appear in cryptographic paths.
+            // DB error and "not found" are semantically distinct.
+            let contract_name: Option<String> = match self.wallet
                 .get_contract_name_by_id(&contract_id_str)
-                .ok()
-                .flatten();
+            {
+                Ok(name) => name,
+                Err(e) => {
+                    tracing::warn!(target: "dww::wallet",
+                        "mark_tx_exercise: DB error looking up contract {}: {:?}",
+                        contract_id_str, e);
+                    None
+                }
+            };
 
             let Some(name) = contract_name else { continue; };
             let Some(client) = client_registry.get(&name) else { continue; };
@@ -1392,7 +1449,15 @@ impl Dww {
                 // proofs are built by the generic prover, wallet.md §6.4.1).
                 let cid = crate::contract_imports::get_contract_id(contract_id_or_name)?;
                 let cid_str = bs58::encode(cid.to_bytes()).into_string();
-                let m = self.wallet.get_contract_manifest(&cid_str).ok()??;
+                // §4.2.3: DB error and "not found" are semantically distinct.
+                let m = match self.wallet.get_contract_manifest(&cid_str) {
+                    Ok(manifest) => manifest,
+                    Err(e) => {
+                        tracing::warn!(target: "dww::wallet",
+                            "get_contract_manifest DB error for {}: {:?}", cid_str, e);
+                        None
+                    }
+                }?;
                 let f = m.functions.iter().find(|f| f.name == function)?;
                 let name: &'static str = Box::leak(f.name.clone().into_boxed_str());
                 _manifest_full = Some(m.clone());
