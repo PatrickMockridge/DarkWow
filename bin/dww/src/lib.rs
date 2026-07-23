@@ -169,6 +169,9 @@ pub struct Dww {
     pub highest_peer_tip: Arc<crate::sync_task::HighestPeerTip>,
     /// Last known tip hash from peers. Used for reorg detection: if the
     /// majority tip hash changes at the same height, a chain fork occurred.
+    /// §8.2.1: Block hashes SHALL be BlockHash, not bare String.
+    /// Currently String for wire compatibility (Tip.hash is String per Finding 22).
+    /// Migration to BlockHash pending P2P wire protocol update.
     pub last_synced_tip_hash: smol::lock::Mutex<Option<String>>,
     /// Highest block height with a verified Caribina (Arweave) anchor.
     /// Blocks below this height are cryptographically final — cannot be reorged.
@@ -505,6 +508,8 @@ impl Dww {
         // whose column is still named token_id. On a fresh DB the table does
         // not exist yet and each ALTER fails harmlessly (best-effort, same
         // pattern as the ADD COLUMN migrations below). Requires SQLite ≥3.25.
+        // §4.2.1: let _ = fallible_call() annotated to document best-effort intent.
+        #[allow(unused_results)]
         let _ = self.wallet.exec_batch_sql(
             "ALTER TABLE held_capabilities RENAME COLUMN token_id_blob TO asset_id_blob;"
         );
@@ -590,9 +595,11 @@ impl Dww {
                     attestations_json: String::new(),
                     lock_status: "unlocked".into(),
                 };
-                let _ = self.wallet.insert_contract_metadata_with_manifest(
+                // §4.2.1: Manifest seeding is NOT best-effort — a wallet
+                // without genesis manifests cannot construct capabilities.
+                self.wallet.insert_contract_metadata_with_manifest(
                     &record, Some(&manifest_json),
-                );
+                )?;
             }
         }
 
@@ -609,7 +616,9 @@ impl Dww {
                 ("FeeCollect_V1", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V1_BIN),
             ];
             for (name, zkas_bytes) in circuits {
-                let _ = self.wallet.store_zkas_binary(&cid_str, name, name, zkas_bytes);
+                // §4.2.1: ZK circuit binary seeding is NOT best-effort —
+                // a wallet without circuit binaries cannot generate proofs.
+                self.wallet.store_zkas_binary(&cid_str, name, name, zkas_bytes)?;
             }
         }
 
