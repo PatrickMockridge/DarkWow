@@ -156,3 +156,7 @@ pub const POOL_STAKE_ZKAS_CREATE_POOL_NS_V1: &str = "CreatePool";
 pub const POOL_STAKE_ZKAS_JOIN_POOL_NS_V1: &str = "JoinPool";
 pub const POOL_STAKE_ZKAS_ALLOCATE_COVERAGE_NS_V1: &str = "AllocateCoverage";
 pub const POOL_STAKE_ZKAS_SLASH_COVERAGE_NS_V1: &str = "SlashCoverage";
+pub const POOL_STAKE_ZKAS_CREATE_POOL_NS_V2: &str = "CreatePoolV2";
+pub const POOL_STAKE_ZKAS_JOIN_POOL_NS_V2: &str = "JoinPoolV2";
+pub const POOL_STAKE_ZKAS_ALLOCATE_COVERAGE_NS_V2: &str = "AllocateCoverageV2";
+pub const POOL_STAKE_ZKAS_SLASH_COVERAGE_NS_V2: &str = "SlashCoverageV2";

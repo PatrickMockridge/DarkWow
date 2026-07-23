@@ -168,3 +168,8 @@ pub const BETTING_STAKE_ZKAS_UNSTAKE_NS: &str = "Unstake";
 pub const BETTING_STAKE_ZKAS_CLAIM_NS: &str = "Claim";
 /// ZK namespace for UpdateRisk circuit
 pub const BETTING_STAKE_ZKAS_UPDATE_RISK_NS: &str = "UpdateRisk";
+pub const BETTING_STAKE_ZKAS_INIT_NS_V2: &str = "InitV2";
+pub const BETTING_STAKE_ZKAS_STAKE_NS_V2: &str = "StakeV2";
+pub const BETTING_STAKE_ZKAS_UNSTAKE_NS_V2: &str = "UnstakeV2";
+pub const BETTING_STAKE_ZKAS_CLAIM_NS_V2: &str = "ClaimV2";
+pub const BETTING_STAKE_ZKAS_UPDATE_RISK_NS_V2: &str = "UpdateRiskV2";

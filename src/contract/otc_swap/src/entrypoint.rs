@@ -69,6 +69,8 @@ use crate::{
     OTC_SWAP_CONTRACT_SWAPS_TREE, OTC_SWAP_CONTRACT_ZKAS_CANCEL_NS_V1,
     OTC_SWAP_CONTRACT_ZKAS_CREATE_NS_V1, OTC_SWAP_CONTRACT_ZKAS_EXECUTE_NS_V1,
     OTC_SWAP_CONTRACT_ZKAS_FUND_NS_V1,
+    OTC_SWAP_CONTRACT_ZKAS_CREATE_NS_V2, OTC_SWAP_CONTRACT_ZKAS_FUND_NS_V2,
+    OTC_SWAP_CONTRACT_ZKAS_EXECUTE_NS_V2, OTC_SWAP_CONTRACT_ZKAS_CANCEL_NS_V2,
 };
 
 // ============================================================================
@@ -181,7 +183,7 @@ fn swap_create_get_metadata_v1(
     ]);
 
     zk_public_inputs.push((
-        OTC_SWAP_CONTRACT_ZKAS_CREATE_NS_V1.to_string(),
+        OTC_SWAP_CONTRACT_ZKAS_CREATE_NS_V2.to_string(),
         vec![commitment, bob_commitment],
     ));
 
@@ -210,7 +212,7 @@ fn swap_fund_get_metadata_v1(
     // - swap_id
     // - merkle_root
     zk_public_inputs.push((
-        OTC_SWAP_CONTRACT_ZKAS_FUND_NS_V1.to_string(),
+        OTC_SWAP_CONTRACT_ZKAS_FUND_NS_V2.to_string(),
         vec![
             *value_coords.x(),
             *value_coords.y(),
@@ -241,7 +243,7 @@ fn swap_execute_get_metadata_v1(
     //   constrain_instance(bob_commitment) — H(bob_pub)
     //   constrain_instance(spent_nullifier)
     zk_public_inputs.push((
-        OTC_SWAP_CONTRACT_ZKAS_EXECUTE_NS_V1.to_string(),
+        OTC_SWAP_CONTRACT_ZKAS_EXECUTE_NS_V2.to_string(),
         vec![
             params.swap_id,
             bob_commitment,
@@ -273,7 +275,7 @@ fn swap_cancel_get_metadata_v1(
     //   constrain_instance(alice_y)
     //   constrain_instance(spent_nullifier)
     zk_public_inputs.push((
-        OTC_SWAP_CONTRACT_ZKAS_CANCEL_NS_V1.to_string(),
+        OTC_SWAP_CONTRACT_ZKAS_CANCEL_NS_V2.to_string(),
         vec![
             params.swap_id,
             pallas::Base::from(params.timeout),

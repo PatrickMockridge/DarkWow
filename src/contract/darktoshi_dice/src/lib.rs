@@ -123,6 +123,10 @@ pub const DICE_CONTRACT_ZKAS_REVEAL_NS: &str = "RevealRoll_V1";
 pub const DICE_CONTRACT_ZKAS_HOUSE_CLOSE_NS: &str = "HouseClose_V1";
 /// zkas settle bet circuit namespace
 pub const DICE_CONTRACT_ZKAS_SETTLE_NS: &str = "SettleBet_V1";
+pub const DICE_CONTRACT_ZKAS_COMMIT_NS_V2: &str = "CommitBet_V2";
+pub const DICE_CONTRACT_ZKAS_REVEAL_NS_V2: &str = "RevealRoll_V2";
+pub const DICE_CONTRACT_ZKAS_HOUSE_CLOSE_NS_V2: &str = "HouseClose_V2";
+pub const DICE_CONTRACT_ZKAS_SETTLE_NS_V2: &str = "SettleBet_V2";
 
 // ============================================================================
 // CONSTANTS

@@ -46,6 +46,8 @@ use crate::{
     POOL_STAKE_PURSE_CONTRACT_ID,
     POOL_STAKE_ZKAS_CREATE_POOL_NS_V1, POOL_STAKE_ZKAS_JOIN_POOL_NS_V1,
     POOL_STAKE_ZKAS_ALLOCATE_COVERAGE_NS_V1, POOL_STAKE_ZKAS_SLASH_COVERAGE_NS_V1,
+    POOL_STAKE_ZKAS_CREATE_POOL_NS_V2, POOL_STAKE_ZKAS_JOIN_POOL_NS_V2,
+    POOL_STAKE_ZKAS_ALLOCATE_COVERAGE_NS_V2, POOL_STAKE_ZKAS_SLASH_COVERAGE_NS_V2,
 };
 
 dwow_sdk::define_contract!(
@@ -131,7 +133,7 @@ fn create_pool_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Only constrain_instance value: derived_pool_id
     zk_public_inputs.push((
-        POOL_STAKE_ZKAS_CREATE_POOL_NS_V1.to_string(),
+        POOL_STAKE_ZKAS_CREATE_POOL_NS_V2.to_string(),
         vec![params.derived_pool_id],
     ));
     let mut metadata = vec![];
@@ -145,7 +147,7 @@ fn join_pool_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Only constrain_instance values: derived_member_id, value_commit_x, value_commit_y
     zk_public_inputs.push((
-        POOL_STAKE_ZKAS_JOIN_POOL_NS_V1.to_string(),
+        POOL_STAKE_ZKAS_JOIN_POOL_NS_V2.to_string(),
         vec![params.derived_member_id, params.value_commit_x, params.value_commit_y],
     ));
     let mut metadata = vec![];
@@ -159,7 +161,7 @@ fn allocate_coverage_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Only constrain_instance value: derived_allocation_id
     zk_public_inputs.push((
-        POOL_STAKE_ZKAS_ALLOCATE_COVERAGE_NS_V1.to_string(),
+        POOL_STAKE_ZKAS_ALLOCATE_COVERAGE_NS_V2.to_string(),
         vec![params.derived_allocation_id],
     ));
     let mut metadata = vec![];
@@ -173,7 +175,7 @@ fn slash_coverage_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Only constrain_instance value: derived_slash_id
     zk_public_inputs.push((
-        POOL_STAKE_ZKAS_SLASH_COVERAGE_NS_V1.to_string(),
+        POOL_STAKE_ZKAS_SLASH_COVERAGE_NS_V2.to_string(),
         vec![params.derived_slash_id],
     ));
     let mut metadata = vec![];

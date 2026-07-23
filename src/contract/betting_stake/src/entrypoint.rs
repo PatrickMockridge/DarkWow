@@ -98,7 +98,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let table_id = poseidon_hash([params.betting_contract_id, params.nonce]);
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                crate::BETTING_STAKE_ZKAS_INIT_NS.to_string(),
+                crate::BETTING_STAKE_ZKAS_INIT_NS_V2.to_string(),
                 vec![table_id],
             ));
             let mut metadata = vec![];
@@ -124,7 +124,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let vc_coords = coords.unwrap();
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                crate::BETTING_STAKE_ZKAS_STAKE_NS.to_string(),
+                crate::BETTING_STAKE_ZKAS_STAKE_NS_V2.to_string(),
                 vec![stake_id, *vc_coords.x(), *vc_coords.y(), params.staker_nullifier, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
@@ -137,7 +137,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let table_id = poseidon_hash([params.betting_contract_id, params.nonce]);
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                crate::BETTING_STAKE_ZKAS_UPDATE_RISK_NS.to_string(),
+                crate::BETTING_STAKE_ZKAS_UPDATE_RISK_NS_V2.to_string(),
                 vec![table_id],
             ));
             let mut metadata = vec![];
@@ -163,7 +163,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let vc_coords = coords.unwrap();
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                crate::BETTING_STAKE_ZKAS_UNSTAKE_NS.to_string(),
+                crate::BETTING_STAKE_ZKAS_UNSTAKE_NS_V2.to_string(),
                 vec![stake_id, *vc_coords.x(), *vc_coords.y(), params.staker_nullifier, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
@@ -190,7 +190,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let vc_coords = coords.unwrap();
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                crate::BETTING_STAKE_ZKAS_CLAIM_NS.to_string(),
+                crate::BETTING_STAKE_ZKAS_CLAIM_NS_V2.to_string(),
                 vec![stake_id, *vc_coords.x(), *vc_coords.y(), params.staker_nullifier, pallas::Base::zero()],
             ));
             let mut metadata = vec![];

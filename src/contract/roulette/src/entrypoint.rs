@@ -95,7 +95,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             // verifies the proof.
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                crate::ROULETTE_CONTRACT_ZKAS_PLACE_BET_NS_V1.to_string(),
+                crate::ROULETTE_CONTRACT_ZKAS_PLACE_BET_NS_V2.to_string(),
                 vec![],
             ));
             let mut metadata = vec![];
@@ -106,7 +106,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: SpinWheelParamsV1 = deserialize(&self_.data[1..])?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                crate::ROULETTE_CONTRACT_ZKAS_SPIN_WHEEL_NS_V1.to_string(),
+                crate::ROULETTE_CONTRACT_ZKAS_SPIN_WHEEL_NS_V2.to_string(),
                 vec![params.table_id, params.house_pub_x, params.house_pub_y, params.spin_nullifier],
             ));
             let mut metadata = vec![];
@@ -117,7 +117,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: HouseCloseParamsV1 = deserialize(&self_.data[1..])?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                crate::ROULETTE_CONTRACT_ZKAS_HOUSE_CLOSE_NS_V1.to_string(),
+                crate::ROULETTE_CONTRACT_ZKAS_HOUSE_CLOSE_NS_V2.to_string(),
                 vec![params.table_id, params.house_pub_x, params.house_pub_y, params.close_nullifier],
             ));
             let mut metadata = vec![];
@@ -128,7 +128,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: SettleBetsParamsV1 = deserialize(&self_.data[1..])?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                crate::ROULETTE_CONTRACT_ZKAS_SETTLE_BET_NS_V1.to_string(),
+                crate::ROULETTE_CONTRACT_ZKAS_SETTLE_BET_NS_V2.to_string(),
                 vec![pallas::Base::from(params.payout)],
             ));
             let mut metadata = vec![];

@@ -58,6 +58,7 @@ use crate::SlotFunction;
 use crate::{
     SLOT_CONTRACT_INFO_TREE, SLOT_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
     SLOT_CONTRACT_ZKAS_COMMIT_NS, SLOT_CONTRACT_ZKAS_REVEAL_NS, SLOT_CONTRACT_ZKAS_SETTLE_NS,
+    SLOT_CONTRACT_ZKAS_COMMIT_NS_V2, SLOT_CONTRACT_ZKAS_REVEAL_NS_V2, SLOT_CONTRACT_ZKAS_SETTLE_NS_V2,
 };
 
 // Database trees
@@ -142,7 +143,7 @@ fn slot_commit_bet_get_metadata_v1(
     let vc_coords = coords.unwrap();
     let (vc_x, vc_y) = (*vc_coords.x(), *vc_coords.y());
     zk_public_inputs.push((
-        SLOT_CONTRACT_ZKAS_COMMIT_NS.to_string(),
+        SLOT_CONTRACT_ZKAS_COMMIT_NS_V2.to_string(),
         vec![spin_id, vc_x, vc_y],
     ));
     let mut metadata = vec![];
@@ -157,7 +158,7 @@ fn slot_reveal_spin_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
     let secret_nonce_commit = poseidon_hash([params.secret_nonce]);
     zk_public_inputs.push((
-        SLOT_CONTRACT_ZKAS_REVEAL_NS.to_string(),
+        SLOT_CONTRACT_ZKAS_REVEAL_NS_V2.to_string(),
         vec![params.spin_id, secret_nonce_commit],
     ));
     let mut metadata = vec![];
@@ -170,7 +171,7 @@ fn slot_settle_bet_get_metadata_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
     zk_public_inputs.push((
-        SLOT_CONTRACT_ZKAS_SETTLE_NS.to_string(),
+        SLOT_CONTRACT_ZKAS_SETTLE_NS_V2.to_string(),
         vec![params.spin_id, Base::from(params.payout)],
     ));
     let mut metadata = vec![];

@@ -79,3 +79,7 @@ pub const OTC_SWAP_CONTRACT_ZKAS_CREATE_NS_V1: &str = "CreateSwap";
 pub const OTC_SWAP_CONTRACT_ZKAS_FUND_NS_V1: &str = "FundSwap";
 pub const OTC_SWAP_CONTRACT_ZKAS_EXECUTE_NS_V1: &str = "ExecuteSwap";
 pub const OTC_SWAP_CONTRACT_ZKAS_CANCEL_NS_V1: &str = "CancelSwap";
+pub const OTC_SWAP_CONTRACT_ZKAS_CREATE_NS_V2: &str = "CreateSwapV2";
+pub const OTC_SWAP_CONTRACT_ZKAS_FUND_NS_V2: &str = "FundSwapV2";
+pub const OTC_SWAP_CONTRACT_ZKAS_EXECUTE_NS_V2: &str = "ExecuteSwapV2";
+pub const OTC_SWAP_CONTRACT_ZKAS_CANCEL_NS_V2: &str = "CancelSwapV2";

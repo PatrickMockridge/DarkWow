@@ -70,6 +70,9 @@ use crate::{
     SUBSCRIPTION_CONTRACT_NULLIFIERS_TREE, SUBSCRIPTION_CONTRACT_PLANS_TREE,
     SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE, SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V1,
     SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V1, SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V1,
+    SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V2, SUBSCRIPTION_CONTRACT_ZKAS_RENEW_NS_V2,
+    SUBSCRIPTION_CONTRACT_ZKAS_CANCEL_NS_V2, SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_ACCESS_NS_V2, SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V2,
+    SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V2,
 };
 
 // ============================================================================
@@ -147,13 +150,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     match func {
         SubscriptionFunction::SubscribeV1 => {
             zk_public_inputs.push((
-                SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V1.to_string(),
+                SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V2.to_string(),
                 vec![],
             ));
         }
         SubscriptionFunction::VerifyAccessV1 => {
             zk_public_inputs.push((
-                SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V1.to_string(),
+                SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V2.to_string(),
                 vec![],
             ));
         }
@@ -167,7 +170,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 params.nonce,
             ]);
             zk_public_inputs.push((
-                SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V1.to_string(),
+                SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V2.to_string(),
                 vec![derived_id],
             ));
         }

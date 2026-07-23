@@ -105,7 +105,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let vc_coords = coords.unwrap();
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                crate::DICE_CONTRACT_ZKAS_COMMIT_NS.to_string(),
+                crate::DICE_CONTRACT_ZKAS_COMMIT_NS_V2.to_string(),
                 vec![bet_id, *vc_coords.x(), *vc_coords.y()],
             ));
             let mut metadata = vec![];
@@ -118,7 +118,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             let secret_nonce_commit = poseidon_hash([params.secret_nonce]);
             zk_public_inputs.push((
-                crate::DICE_CONTRACT_ZKAS_REVEAL_NS.to_string(),
+                crate::DICE_CONTRACT_ZKAS_REVEAL_NS_V2.to_string(),
                 vec![params.bet_id, secret_nonce_commit],
             ));
             let mut metadata = vec![];
@@ -129,7 +129,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: crate::model::HouseCloseParamsV1 = deserialize(&self_.data[1..])?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                crate::DICE_CONTRACT_ZKAS_HOUSE_CLOSE_NS.to_string(),
+                crate::DICE_CONTRACT_ZKAS_HOUSE_CLOSE_NS_V2.to_string(),
                 vec![params.bet_id, params.house_pub_x, params.house_pub_y, params.close_nullifier],
             ));
             let mut metadata = vec![];
@@ -140,7 +140,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: crate::model::SettleBetParamsV1 = deserialize(&self_.data[1..])?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                crate::DICE_CONTRACT_ZKAS_SETTLE_NS.to_string(),
+                crate::DICE_CONTRACT_ZKAS_SETTLE_NS_V2.to_string(),
                 vec![params.bet_id, params.roll_hash],
             ));
             let mut metadata = vec![];

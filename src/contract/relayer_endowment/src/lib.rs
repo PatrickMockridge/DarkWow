@@ -139,3 +139,6 @@ pub const RELAYER_ENDOWMENT_MAX_ALLOCATIONS: usize = 100;
 pub const RELAYER_ENDOWMENT_ZKAS_INIT_NS_V1: &str = "Initialize";
 pub const RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V1: &str = "DeployCapital";
 pub const RELAYER_ENDOWMENT_ZKAS_CLAIM_FEES_NS_V1: &str = "ClaimFees";
+pub const RELAYER_ENDOWMENT_ZKAS_INIT_NS_V2: &str = "InitializeV2";
+pub const RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V2: &str = "DeployCapitalV2";
+pub const RELAYER_ENDOWMENT_ZKAS_CLAIM_FEES_NS_V2: &str = "ClaimFeesV2";

@@ -140,3 +140,7 @@ pub const ROULETTE_CONTRACT_ZKAS_PLACE_BET_NS_V1: &str = "PlaceBet_V1";
 pub const ROULETTE_CONTRACT_ZKAS_SPIN_WHEEL_NS_V1: &str = "SpinWheel_V1";
 pub const ROULETTE_CONTRACT_ZKAS_HOUSE_CLOSE_NS_V1: &str = "HouseClose_V1";
 pub const ROULETTE_CONTRACT_ZKAS_SETTLE_BET_NS_V1: &str = "SettleBet_V1";
+pub const ROULETTE_CONTRACT_ZKAS_PLACE_BET_NS_V2: &str = "PlaceBet_V2";
+pub const ROULETTE_CONTRACT_ZKAS_SPIN_WHEEL_NS_V2: &str = "SpinWheel_V2";
+pub const ROULETTE_CONTRACT_ZKAS_HOUSE_CLOSE_NS_V2: &str = "HouseClose_V2";
+pub const ROULETTE_CONTRACT_ZKAS_SETTLE_BET_NS_V2: &str = "SettleBet_V2";

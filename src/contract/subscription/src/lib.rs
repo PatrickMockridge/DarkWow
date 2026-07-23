@@ -123,3 +123,9 @@ pub const SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V1: &str = "Subscribe";
 pub const SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V1: &str = "VerifyAccess";
 /// Update usage circuit namespace
 pub const SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V1: &str = "UpdateUsage";
+pub const SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V2: &str = "SubscribeV2";
+pub const SUBSCRIPTION_CONTRACT_ZKAS_RENEW_NS_V2: &str = "RenewV2";
+pub const SUBSCRIPTION_CONTRACT_ZKAS_CANCEL_NS_V2: &str = "CancelV2";
+pub const SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_ACCESS_NS_V2: &str = "VerifyAccessV2";
+pub const SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V2: &str = "VerifyAccessV2";
+pub const SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V2: &str = "UpdateUsageV2";

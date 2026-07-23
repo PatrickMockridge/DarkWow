@@ -46,6 +46,8 @@ use crate::{
     RELAYER_ENDOWMENT_PROMISSORY_NOTE_CONTRACT_ID,
     RELAYER_ENDOWMENT_ZKAS_INIT_NS_V1, RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V1,
     RELAYER_ENDOWMENT_ZKAS_CLAIM_FEES_NS_V1,
+    RELAYER_ENDOWMENT_ZKAS_INIT_NS_V2, RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V2,
+    RELAYER_ENDOWMENT_ZKAS_CLAIM_FEES_NS_V2,
     RELAYER_ENDOWMENT_FORCE_SETTLEMENT_TIMEOUT,
 };
 
@@ -145,7 +147,7 @@ fn relayer_endowment_initialize_get_metadata_v1(
     let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()?.get());
     let endowment_id = poseidon_hash([rx, ry, config_hash, nonce]);
     zk_public_inputs.push((
-        RELAYER_ENDOWMENT_ZKAS_INIT_NS_V1.to_string(),
+        RELAYER_ENDOWMENT_ZKAS_INIT_NS_V2.to_string(),
         vec![endowment_id],
     ));
     let mut metadata = vec![];
@@ -178,7 +180,7 @@ fn relayer_endowment_deploy_capital_get_metadata_v1(
     } else {
     let vc_coords = coords.unwrap();
     zk_public_inputs.push((
-        RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V1.to_string(),
+        RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V2.to_string(),
         vec![deployment_id, *vc_coords.x(), *vc_coords.y()],
     ));
     let mut metadata = vec![];
@@ -205,7 +207,7 @@ fn relayer_endowment_claim_fees_get_metadata_v1(
         nonce,
     ]);
     zk_public_inputs.push((
-        RELAYER_ENDOWMENT_ZKAS_CLAIM_FEES_NS_V1.to_string(),
+        RELAYER_ENDOWMENT_ZKAS_CLAIM_FEES_NS_V2.to_string(),
         vec![claim_id],
     ));
     let mut metadata = vec![];

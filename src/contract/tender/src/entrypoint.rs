@@ -53,6 +53,9 @@ use crate::{
     TENDER_CONTRACT_ZKAS_CREATE_NS_V1, TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V1,
     TENDER_CONTRACT_ZKAS_SELECT_WINNER_NS_V1, TENDER_CONTRACT_ZKAS_SUBMIT_BID_NS_V1,
     TENDER_CONTRACT_ZKAS_SUBMIT_BID_WITH_CAP_NS_V1,
+    TENDER_CONTRACT_ZKAS_CREATE_TENDER_NS_V2, TENDER_CONTRACT_ZKAS_CREATE_NS_V2, TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V2,
+    TENDER_CONTRACT_ZKAS_SUBMIT_BID_NS_V2, TENDER_CONTRACT_ZKAS_SUBMIT_BID_WITH_CAP_NS_V2,
+    TENDER_CONTRACT_ZKAS_SELECT_WINNER_NS_V2,
 };
 
 use crate::{
@@ -176,7 +179,7 @@ fn create_tender_get_metadata_v1(
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        TENDER_CONTRACT_ZKAS_CREATE_NS_V1.to_string(),
+        TENDER_CONTRACT_ZKAS_CREATE_NS_V2.to_string(),
         vec![params.requester_pub_x, params.requester_pub_y],
     ));
 
@@ -222,7 +225,7 @@ fn submit_bid_get_metadata_v1(
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        TENDER_CONTRACT_ZKAS_SUBMIT_BID_NS_V1.to_string(),
+        TENDER_CONTRACT_ZKAS_SUBMIT_BID_NS_V2.to_string(),
         vec![
             params.bidder_pub_x,
             params.bidder_pub_y,
@@ -279,7 +282,7 @@ fn submit_bid_with_capability_get_metadata_v1(
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        TENDER_CONTRACT_ZKAS_SUBMIT_BID_WITH_CAP_NS_V1.to_string(),
+        TENDER_CONTRACT_ZKAS_SUBMIT_BID_WITH_CAP_NS_V2.to_string(),
         vec![
             params.bidder_pub_x,
             params.bidder_pub_y,
@@ -331,7 +334,7 @@ fn reveal_bid_get_metadata_v1(
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V1.to_string(),
+        TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V2.to_string(),
         vec![
             params.tender_id,
             params.bid_id,
@@ -403,7 +406,7 @@ fn select_winner_get_metadata_v1(
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        TENDER_CONTRACT_ZKAS_SELECT_WINNER_NS_V1.to_string(),
+        TENDER_CONTRACT_ZKAS_SELECT_WINNER_NS_V2.to_string(),
         vec![
             params.tender_id,
             params.winner_bid_id,
