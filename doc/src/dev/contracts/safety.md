@@ -775,6 +775,216 @@ those who use it.
 
 ---
 
+## HAZOP Circuit Hardening Program (2026-07)
+
+In July 2026, a cross-contract adversarial security audit examined all 181 ZK circuits
+across 31 contracts through the ρ-calculus object-capability model — where the circuit
+IS the type, the predicate language IS the capability, and every vulnerability is a
+capability exhibited without possessing the required name (type-system.md §5, ocap.md §3).
+
+A HAZOP (Hazard and Operability) analysis traced every finding to its root cause in the
+type system, grouped findings into five root cause classes, and prescribed remediation
+through cryptographic constraint addition. The meta-cause: **"The ZK circuit's constraint
+system is not mechanically verified against the declared predicate language"**
+(`circuitSoundnessBridge` axiom, type-system.md §11.4).
+
+### Methodology
+
+The HAZOP examined each circuit through the lens of the ρ-calculus type system:
+
+1. **Name possession** (type-system.md §5): "A process SHALL perform action A if and
+   only if it possesses the name for A." A circuit that accepts a proof from a prover
+   who does not possess the declared secret exhibits the barb without the name.
+
+2. **Type distinction** (type-system.md §2): "Two types SHALL NOT be unified."
+   `poseidon_hash` erases type distinctions at its output boundary — a nullifier and
+   a token commitment produce the same `pallas::Base` type.
+
+3. **Canonical encoding** (type-system.md §2.2): Numeric values crossing the
+   circuit/entrypoint boundary must use their declared domain representation. Field
+   arithmetic applied to u64 values is a type error.
+
+4. **Cryptographic primitive types** (type-system.md §8.1): Every primitive name
+   (SecretKey, Commitment, Nullifier) must be cryptographically bound to the secret
+   that authorizes its use. A `constrain_instance` without an in-circuit derivation
+   constraint is a free witness — an Orchard-class vulnerability (Lesson 16).
+
+### Root Cause Summary
+
+| RC | Class | Circuits | Exploitability | Mechanism |
+|----|-------|----------|----------------|-----------|
+| **RC1** | Witness Non-Binding | 21 circuits | CRITICAL | `constrain_instance` on unconstrained witnesses; `bool_check` on u64 amounts; missing `range_check` |
+| **RC2** | Vacuous Proof Acceptance | 6 circuits | CRITICAL | `zero_cond` feeds `merkle_root` without `less_than_strict(ZERO, value)` guard |
+| **RC3** | Missing Domain Separation | 177 circuits | MEDIUM-HIGH | `poseidon_hash` type erasure — nullifier hash indistinguishable from commitment hash |
+| **RC4** | Arithmetic Domain Confusion | 8 circuits | HIGH | `base_div` (field division via Fermat) applied to u64 integer division |
+| **RC5** | Fix Propagation Failure | 2 circuits | CRITICAL | Copied circuits lack provenance tracking — fixes to origin not propagated to derivatives |
+
+### Finding RC1: Witness Non-Binding
+
+**Sub-class A — `bool_check` on u64 amounts (11 circuits, stablecoin + DEX)**:
+`bool_check(value)` constrains a field element to {0, 1} using `small_range_check` with
+range=2. Applied to u64 coin values and swap amounts, it limited all operations to 0 or 1
+token unit. The `range_check(64, value)` already present alongside it was correct;
+`bool_check` was redundant and destructive. **Fix**: Remove `bool_check` calls; the
+existing `range_check` provides the correct u64 bound.
+
+**Sub-class B — `coin_public` unbound to `coin_secret` (1 circuit, promissory_note)**:
+`MintV1` accepted `coin_public` as an independent witness — the prover could mint coins
+to keys they don't control, making rewards permanently unspendable. **Fix**:
+`constrain_equal_base(coin_public, mint_public)` where `mint_public` is bound to
+`backing_secret` via `poseidon_hash`. This is the same class as native_token M8
+(see Lesson 16).
+
+**Sub-class E — Missing `range_check(64, value)` (9 circuits, labor_market + tender +
+betting_stake)**: u64-valued witnesses (`amount`, `payment`, `stake`, `fee`) without
+range proofs. Field overflow could produce incorrect arithmetic results. **Fix**: Add
+`range_check(64, value)` for every u64 witness before it enters arithmetic operations.
+
+### Finding RC2: Vacuous Proof Acceptance — The Zero-Condition Merkle Bypass
+
+The `zero_cond(value, leaf)` gadget returns the tree's zero leaf when `value == 0`.
+Without a `less_than_strict(ZERO, value)` guard, setting `value=0` makes `merkle_root`
+always succeed — the zero leaf exists at every position in every Merkle tree. The prover
+forges `↓prove-inclusion` without possessing a real coin.
+
+**Affected**: bearer_bond burn, bridge azt/xmr/zec/ltc deposit (5 circuits).
+**Already fixed in**: promissory_note burn, native_token burn V2, bridge deposit_v1.
+**Fix**: Add `less_than_strict(ZERO, value)` before every `zero_cond(value, leaf)` that
+feeds into `merkle_root`. This is a constrain-only guard — it enforces the inequality
+but returns no value, so the circuit structure is unchanged.
+
+**Type-system rule**: "Every conditional gadget whose output feeds into a cryptographic
+verifier SHALL have its branch condition constrained. `zero_cond` feeding `merkle_root`
+SHALL be preceded by `less_than_strict(ZERO, value)`."
+
+### Finding RC3: Missing Domain Separation — The Poseidon Type Erasure Boundary
+
+`poseidon_hash` is a type erasure boundary. Typed inputs (`Nullifier`, `Commitment`,
+`AssetId`) produce the same output type (`pallas::Base`). Without domain separation, a
+nullifier hash in circuit A is bitwise-identical to a token commitment hash in circuit B
+given the same inputs — the hash output loses its behavioral position. Per type-system.md
+§2, two distinct types SHALL NOT be unified; `poseidon_hash` unifies them at the output.
+
+**Scope**: 177 circuits across 31 contracts. Every `poseidon_hash` invocation needed a
+domain separator prepended as its first input.
+
+**Fix**: Each circuit declares domain constants via `witness_base(N)` and prepends the
+appropriate constant to every `poseidon_hash` call:
+
+```
+circuit "ExampleV2" {
+    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_TOK_COMMIT = witness_base(2);
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_USER_DATA_ENC = witness_base(6);
+    DOMAIN_SIGNATURE_SECRET = witness_base(7);
+
+    nf = poseidon_hash(DOMAIN_NULLIFIER, coin_secret, C);
+    C  = poseidon_hash(DOMAIN_COIN_COMMIT, pub_x, pub_y, value, token_id, ...);
+    tb = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+}
+```
+
+Each circuit was migrated to a V2 namespace (`XxxV1` → `XxxV2`), compiled, registered
+in the entrypoint's `init_contract`, and activated in `get_metadata`. V1 circuits are
+preserved alongside V2 for backward compatibility; only `get_metadata` switches to V2.
+
+**Domain constant vocabulary** (7 values, cross-circuit):
+1 = NULLIFIER, 2 = TOKEN_COMMIT, 3 = TX_BINDING, 4 = COIN_COMMIT,
+5 = MERKLE_LEAF, 6 = USER_DATA_ENC, 7 = SIGNATURE_SECRET
+
+**Verification**: `grep -rn "poseidon_hash(" proof/*_v2.zk | grep -v "DOMAIN_"` returns
+zero results. Every `poseidon_hash` call in every V2 circuit has a domain constant as its
+first argument. 31 contracts, all 177 circuits, all compile clean.
+
+### Finding RC4: Arithmetic Domain Confusion — base_div on u64 Values
+
+`base_div(a, b)` computes `a * b^(p-2) mod p` using Fermat's little theorem — this is
+**field** division producing a field element, not **integer** division producing a u64.
+Applied to fee calculation (`fee = amount * bps / 10000`), interest accrual, and oracle
+price aggregation, it produces a modular inverse rather than a truncated quotient. For
+integers that don't divide evenly in the field, the result is a large field element
+bearing no relationship to the intended integer quotient.
+
+**Fix**: Replace `base_div(a, b)` with quotient-remainder constraints:
+```
+# floor(a/b) = q  ⇔  q*b <= a < (q+1)*b
+ONE = witness_base(1);
+q_times_b = base_mul(q, b);
+lte_check = less_than_or_equal(q_times_b, a);
+constrain_equal_base(lte_check, ONE);
+q_plus_1 = base_add(q, ONE);
+upper = base_mul(q_plus_1, b);
+less_than_strict(a, upper);
+```
+
+For ratio comparisons (`a/b >= threshold`), cross-multiplication eliminates division:
+`a * 10000 >= threshold * b`.
+
+**Affected**: 8 circuits across 7 contracts (stablecoin accrue_interest +
+governance_report, dex execute_swap_fee, oracle aggregate, identity create_claim_ratio,
+bearer_bond prove_coverage, labor_market milestone_payment, drain_protection exit).
+
+**Type-system rule**: "`base_div` SHALL NOT appear in any ZK circuit that declares
+u64-valued witnesses. Integer division SHALL be implemented via quotient-remainder
+constraints."
+
+### Finding RC5: Fix Propagation Failure
+
+bearer_bond circuits (`burn_v1.zk`, `redeem_v1.zk`, `blind_output_v1.zk`) are copies of
+promissory_note circuits but lacked promissory_note's security fixes:
+- `redeem_v1.zk` missing `constrain_equal_base(coin_value, ZERO)` (Lesson 16 pattern)
+- `burn_v1.zk` missing per-burn `signature_secret` derivation (Lesson 18 pattern)
+
+**Root cause**: Copied circuits are not tracked as derivatives. No provenance chain
+exists. Fixes to the original are not propagated to copies — a configuration management
+failure where the fix EXISTS but isn't applied.
+
+**Fix**: Applied promissory_note fixes to bearer_bond copies following the established
+patterns. **Type-system rule**: "Every ZK circuit file SHALL declare its provenance.
+CI SHALL enforce that fixes to origin circuits propagate to all derived circuits."
+
+### The ρ-Calculus O-Cap Framework for Circuit Security
+
+The HAZOP program validated a framework for reasoning about ZK circuit security through
+the object-capability model. The framework applies to every circuit, existing and future:
+
+1. **Every `constrain_instance(X)` must have an in-circuit derivation** `X = f(witnesses)`.
+   A `constrain_instance` without a derivation constraint is a free witness — the prover
+   can set X to any value that passes the entrypoint check (Orchard-class, Lesson 16).
+
+2. **Every `poseidon_hash` must include a domain separator** identifying its semantic
+   purpose. The hash output type (`pallas::Base`) erases the input type distinction.
+   Domain constants restore it (RC3).
+
+3. **Every u64-valued witness must have `range_check(64, value)`** before entering
+   arithmetic. Field arithmetic on unbounded values can overflow the u64 domain (RC1-E).
+
+4. **Field division (`base_div`) must not appear in circuits with u64 witnesses.**
+   Integer division requires quotient-remainder constraints; field division produces
+   modular inverses (RC4).
+
+5. **Every conditional gadget feeding a cryptographic verifier must constrain its
+   branch condition.** `zero_cond` before `merkle_root` must be guarded by
+   `less_than_strict(ZERO, value)` (RC2).
+
+6. **Copied circuits must declare provenance.** When a security fix is applied to an
+   origin circuit, all derivatives must receive the same fix (RC5).
+
+### Audit Heuristic Addendum
+
+When reviewing ZK circuits, add these checks to the existing audit checklist:
+
+- [ ] Every `constrain_instance(X)` has a derivation constraint `X = f(witnesses)` in the circuit
+- [ ] Every `poseidon_hash(...)` call prepends a domain constant as its first argument
+- [ ] Every `Base` witness representing a u64 value has `range_check(64, value)`
+- [ ] No `base_div` appears in circuits with u64-valued witnesses
+- [ ] Every `zero_cond(value, leaf)` before `merkle_root` is preceded by `less_than_strict(ZERO, value)`
+- [ ] Circuit files that are copies of other circuits declare their provenance and have all origin fixes applied
+
+---
+
 ## Flakey Patterns: Recognition and Prevention
 
 A **flakey pattern** is a solution that passes functional tests but violates a core architectural invariant. It looks correct in isolation — the code compiles, the tests pass, the immediate problem is solved — but it undermines the very property the system exists to provide. These are the most dangerous bugs because they survive code review and automated testing.
