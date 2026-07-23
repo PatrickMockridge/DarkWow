@@ -666,6 +666,12 @@ pub async fn dispatch_async(
             println!("  Local chain height: {}", height);
             println!("  Network tip: {}", peer_tip.get());
             println!("  Peers: {}", peer_count);
+            // D3: Per-peer visibility — show which hosts are connected
+            if let Some(ref p2p) = dww_r.p2p {
+                for ch in p2p.hosts().peers() {
+                    println!("    - {}", ch.address());
+                }
+            }
             println!("  P2P connected: {}", if p2p_up { "yes" } else { "no" });
             if !synced {
                 if peer_count == 0 && p2p_up {

@@ -312,6 +312,34 @@ impl Dww {
         // Chain seam: lower the nominal height to the wallet's persistence
         // domain (SQLite chain store keys are u64 — type-system.md §2.3).
         let height = block.header.height.get();
+
+        // D8: Chain continuity check — for heights > genesis, verify the
+        // previous block exists. Catches malicious peers sending blocks at
+        // arbitrary heights without the full chain.
+        if height > 1 {
+            match self.wallet.get_block(height - 1) {
+                Ok(prev) => {
+                    let prev_hash = prev.header.previous;
+                    // Verify previous-hash chain link: block N claims to build
+                    // on block N-1. A hash mismatch means the peer sent a fork.
+                    if block.header.previous != blake3::Hash::from_bytes(*prev_hash.as_bytes()) {
+                        return Err(Error::Custom(format!(
+                            "Block {} previous-hash chain broken: expected hash of block {}, \
+                             got previous={:?}. Peer may be on a fork.",
+                            height, height - 1, block.header.previous
+                        )));
+                    }
+                }
+                Err(_) => {
+                    return Err(Error::Custom(format!(
+                        "Block {} cannot be inserted: previous block {} not in wallet DB. \
+                         Peer sent block at height {} but wallet is missing the preceding block.",
+                        height, height - 1, height
+                    )));
+                }
+            }
+        }
+
         self.wallet.insert_block(height, block)
             .map_err(|e| Error::Custom(format!("insert block {}: {:?}", height, e)))?;
         // Defense in depth: verify the write by reading it back.
