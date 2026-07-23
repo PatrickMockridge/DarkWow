@@ -115,8 +115,23 @@ _wallet_height() {
 # Get node0's current chain height via the pipeline's standard RPC helper.
 # Uses jsonrpc_get_height (which has rpc_retry for transient TCP failures)
 # instead of raw /dev/tcp — consistent with Phase 9's RPC calls.
+# Sets _NODE0_RPC_STATUS global: "ok" | "unreachable" | "invalid_response"
 _node0_height() {
-    jsonrpc_get_height "dwow-node0" "31345"
+    local raw height
+    raw=$(rpc_retry "dwow-node0" "31345" "blockchain.get_height" "[]" 5 2>/dev/null || echo "")
+    if [ -z "$raw" ]; then
+        _NODE0_RPC_STATUS="unreachable"
+        echo "0"
+        return
+    fi
+    height=$(echo "$raw" | jq -r '.result.height // -1' 2>/dev/null | head -1 | tr -d '[:space:]')
+    if [ "$height" = "-1" ] || [ -z "$height" ]; then
+        _NODE0_RPC_STATUS="invalid_response"
+        echo "0"
+        return
+    fi
+    _NODE0_RPC_STATUS="ok"
+    echo "$height"
 }
 
 # Query node0 mempool for pending transaction hashes.
@@ -315,6 +330,10 @@ phase_wallet_transfer() {
     # ── 1. Pre-flight: snapshot state ──────────────────────────────────
     local tx_height pre_bal1 pre_caps1 pre_bal2
     tx_height=$(_node0_height)
+    if [ "$_NODE0_RPC_STATUS" != "ok" ]; then
+        warn "transfer pre-flight: node0 RPC $_NODE0_RPC_STATUS — cannot determine chain height. Skipping transfer."
+        return 0
+    fi
     pre_bal1=$(_native_balance 1)
     pre_caps1=$(_scan_capabilities 1)
     pre_bal2=$(_native_balance 2)
