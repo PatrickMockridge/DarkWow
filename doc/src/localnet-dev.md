@@ -219,9 +219,3 @@ dwow_wallet contract list <contract>  # Shows history for specific contract
 ```
 
 The history lookup requires the deployment transaction hash (tx-hash), not the contract ID.
-
-
-## Historical Testing Logs
-
-Dated contract deployment and debugging records from April 2026 have been
-moved to [Localnet Contract Testing Logs](changelogs/2026-04-localnet-testing.md).

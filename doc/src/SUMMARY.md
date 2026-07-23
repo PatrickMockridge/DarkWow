@@ -324,7 +324,3 @@
 
 - [Event Graph](arch/legacy/event_graph.md) *(active — P2P messaging layer)*
   - [Event Graph Network Protocol](arch/legacy/event_graph_network_protocol.md) *(active)*
-
-# Changelogs
-
-- [Localnet Testing (April 2026)](changelogs/2026-04-localnet-testing.md)
