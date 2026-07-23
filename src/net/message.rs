@@ -30,7 +30,64 @@ use url::{Host, Url};
 
 use crate::{net::metering::MeteringConfiguration, util::time::NanoTimestamp};
 
+// ═══════════════════════════════════════════════════════════════════════
+// BoundaryCodec — DarkWow-native absorber boundary (type-system.md §10.5)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// Replaces upstream AsyncEncodable/AsyncDecodable for message serialization.
+// Delegates to Encodable/Decodable for wire format (byte-identical). Adds
+// quote/eval semantics and per-type defense constants.
+//
+// Phase 1 (this commit): Trait definition + pilot on PingMessage.
+// Phase 2: All P2P message types. Phase 3: Message trait drops async bounds.
+
+/// A type that crosses the P2P wire boundary via the ρ-calculus
+/// quote/eval pattern (§10.5). Thin semantic layer over Encodable/Decodable
+/// — same wire format, with boundary semantics and defense constants attached.
+pub trait BoundaryCodec: dwow_serial::Encodable + dwow_serial::Decodable + Sized {
+    /// §10.5 quote: typed value → bytes. Erases barbs — output has no
+    /// behavioral constraints (§2.2). Default: encode to Vec<u8>.
+    fn quote(&self) -> Result<Vec<u8>, dwow_serial::Error> {
+        let mut buf = Vec::new();
+        self.encode(&mut buf)?;
+        Ok(buf)
+    }
+
+    /// §10.5 eval: bytes → typed value via validating constructor.
+    /// SHALL reject invalid bytes. Default: deserialize from slice.
+    fn eval(bytes: &[u8]) -> Result<Self, dwow_serial::Error> {
+        dwow_serial::deserialize(bytes)
+    }
+
+    /// Maximum wire size in bytes (§8.6.2). Zero only when METERING_SCORE > 0.
+    const MAX_BYTES: u64;
+
+    /// Metering contribution for rate limiting (§8.6.1).
+    const METERING_SCORE: u64;
+
+    /// Barb set carried across this boundary (§10.5). Empty by default
+    /// for types not yet audited.
+    const BARBS: &'static [crate::barb::BarbId] = &[];
+}
+
+/// Shorthand for implementing BoundaryCodec on P2P message types.
+/// Types must already derive SerialEncodable/SerialDecodable.
+macro_rules! impl_boundary_codec {
+    ($ty:ty, $max_bytes:expr, $metering_score:expr) => {
+        impl_boundary_codec!($ty, $max_bytes, $metering_score, &[]);
+    };
+    ($ty:ty, $max_bytes:expr, $metering_score:expr, $barbs:expr) => {
+        impl $crate::net::message::BoundaryCodec for $ty {
+            const MAX_BYTES: u64 = $max_bytes;
+            const METERING_SCORE: u64 = $metering_score;
+            const BARBS: &'static [$crate::barb::BarbId] = $barbs;
+        }
+    };
+}
+pub(crate) use impl_boundary_codec;
+
 /// Generic message template.
+/// Phase 2: AsyncDecodable + AsyncEncodable bound shifted to net-full only.
 pub trait Message: 'static + Send + Sync + AsyncDecodable + AsyncEncodable {
     const NAME: &'static str;
     /// Message bytes vector length limit.
@@ -106,6 +163,8 @@ pub struct PingMessage {
     pub nonce: u16,
 }
 impl_p2p_message!(PingMessage, "ping", PING_PONG_MAX_BYTES, 1, PING_PONG_METERING_CONFIGURATION);
+// Phase D.1 pilot: BoundaryCodec for PingMessage — same constants as Message.
+impl_boundary_codec!(PingMessage, PING_PONG_MAX_BYTES, 1);
 
 /// Inbound keepalive message.
 #[derive(Debug, Copy, Clone, SerialEncodable, SerialDecodable)]
@@ -113,6 +172,8 @@ pub struct PongMessage {
     pub nonce: u16,
 }
 impl_p2p_message!(PongMessage, "pong", PING_PONG_MAX_BYTES, 1, PING_PONG_METERING_CONFIGURATION);
+// Phase D.1 pilot: BoundaryCodec for PongMessage.
+impl_boundary_codec!(PongMessage, PING_PONG_MAX_BYTES, 1);
 
 /// Requests address of outbound connection.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -286,15 +347,15 @@ impl SeedErrorCode {
     }
 }
 
-// Wire-identical SerialEncodable/SerialDecodable: encode/decode as u32.
-impl dwow_serial::SerialEncodable for SeedErrorCode {
-    fn encode(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
-        (*self as u32).encode(writer)
+// Wire-identical: encode/decode as u32. Delegates to u32's Encodable/Decodable.
+impl dwow_serial::Encodable for SeedErrorCode {
+    fn encode<W: std::io::Write>(&self, e: &mut W) -> Result<usize, dwow_serial::Error> {
+        (*self as u32).encode(e)
     }
 }
-impl dwow_serial::SerialDecodable for SeedErrorCode {
-    fn decode(reader: &mut impl std::io::Read) -> std::io::Result<Self> {
-        let code = u32::decode(reader)?;
+impl dwow_serial::Decodable for SeedErrorCode {
+    fn decode<D: std::io::Read>(d: &mut D) -> Result<Self, dwow_serial::Error> {
+        let code = u32::decode(d)?;
         Ok(match code {
             400 => Self::BadRequest,
             401 => Self::VersionMismatch,
@@ -305,12 +366,9 @@ impl dwow_serial::SerialDecodable for SeedErrorCode {
             500 => Self::Internal,
             503 => Self::HostlistEmpty,
             504 => Self::UpstreamTimeout,
-            n => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("unknown SeedErrorCode: {}", n),
-                ));
-            }
+            n => return Err(dwow_serial::Error::ParseFailed(
+                format!("unknown SeedErrorCode: {}", n),
+            )),
         })
     }
 }
