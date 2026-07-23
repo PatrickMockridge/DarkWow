@@ -4282,7 +4282,7 @@ def test_database_crud():
     assert db.get_token("Test") is not None
 
     # aliases
-    db.insert_alias("DRK", "token_drk")
+    db.insert_alias("DRKW", "token_drkw")
     aliases = db.get_aliases()
     assert len(aliases) == 1
 
@@ -4827,7 +4827,7 @@ def test_transaction_building():
     import base58
     # Use valid bs58 token IDs
     test_token_id = base58.b58encode(b"test_token__valid_bs58_id_!!").decode('ascii')
-    db.insert_alias("DRK", DRKW_TOKEN_ID_STR)
+    db.insert_alias("DRKW", DRKW_TOKEN_ID_STR)
 
     # Add a PN token coin
     pn_coin = CapRecord(
@@ -4988,7 +4988,7 @@ def test_end_to_end():
     db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
 
     import base58
-    db.insert_alias("DRK", DRKW_TOKEN_ID_STR)
+    db.insert_alias("DRKW", DRKW_TOKEN_ID_STR)
 
     # 2. Scan PoWRewardV1 block
     cache = ScanCache(secrets=[sk])
@@ -5052,7 +5052,7 @@ def test_token_id_universal_encoding():
     db = WalletDb()
     db.insert_secret(sk.to_bs58(), "")
     db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
-    db.insert_alias("DRK", DRKW_TOKEN_ID_STR)
+    db.insert_alias("DRKW", DRKW_TOKEN_ID_STR)
 
     # Mine 3 PoWRewardV1 blocks
     cache = ScanCache(secrets=[sk])

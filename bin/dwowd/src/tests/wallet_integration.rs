@@ -914,16 +914,31 @@ required_barbs = ["Spend","Mine"]
 // Tripwire — wallet.md §6.4, §9: zero per-contract code in the wallet
 // ---------------------------------------------------------------------------
 
-// T3: Wallet coinbase-only scan — validates Path 1 (NativeToken coinbase
-// discovery) against blocks built through accept_block. Scans genesis + 3
-// post-genesis blocks, verifies wallet discovers capabilities and has
-// non-zero balance. No transfers, no ZK proof generation in the wallet.
+// T3: Wallet coinbase-only scan — pre-production integration test.
+//
+// Exercises the EXACT production code path for:
+//   1. build_linear_coinbase  — real ZK proof + AEAD encryption (↓mine, ↓encrypt)
+//   2. accept_block           — WASM execution + state commit (↓verify, ↓commit)
+//   3. scan_block_linear      — AEAD decryption + capability construction (↓discover)
+//   4. capability_balance     — DRKW balance aggregation (↓denominate)
+//
+// Production diffs (documented, intentional, covered by Docker pipeline):
+//   - BlockTarget::MAX (no real PoW — pre-devnet ceiling)
+//   - enable_deterministic_zk() (no OsRng — reproducible tests)
+//   - No mempool txs / FeeCollectV1 (scan test only needs coinbase)
+//   - No P2P sync (direct get_block — same data, different transport)
+//   - Height 2 max (multi-block chain growth → Docker pipeline)
+//   - Fixed test key (real BIP39 seeds → Docker pipeline)
+//
+// Per MoC boundary: doc/src/dev/testing/overview.md §"MoC Test Boundaries".
+// Remaining coverage: test_pipeline.sh --mode wallet.
 #[test]
 fn test_wallet_coinbase_scan_only() {
     use dwow_wallet::Dww;
     dwow_native_token_contract::enable_deterministic_zk();
 
     smol::block_on(async {
+        // ── Setup: harness + keys ──────────────────────────
         let har = GenesisHarness::new().expect("GenesisHarness");
 
         let keys_toml = "[node0]\nwallet_secret = \
@@ -935,22 +950,92 @@ fn test_wallet_coinbase_scan_only() {
         let miner_mgr = crate::accounts::AccountManager::open(
             &keys_path, Network::Testnet, "node0",
         ).expect("open miner AccountManager");
-        let recipient = crate::accounts::MiningRecipient::from_account(
-            &miner_mgr, BlockHeight::new(1),
-        ).expect("MiningRecipient");
         let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
 
-        // Genesis — contracts materialize via apply_genesis_deployments
-        crate::init_genesis(&har.chain_state, recipient.clone(), magic_bytes)
+        // ── Block 1: Genesis (production path) ─────────────
+        // init_genesis → build_linear_coinbase → accept_block.
+        // Uses real ZK proof, real AEAD encryption, real nullifier.
+        let recipient_1 = crate::accounts::MiningRecipient::from_account(
+            &miner_mgr, BlockHeight::new(1),
+        ).expect("MiningRecipient height 1");
+        crate::init_genesis(&har.chain_state, recipient_1, magic_bytes)
             .await.expect("init_genesis");
 
-        // Mine block 2 only — difficulty adjustment at height 3 requires
-        // querying consensus target (out of scope for this scan-only test).
-        crate::tests::fee_collect_pipeline::mine_block(
-            &har, &recipient, BlockHeight::new(2), vec![],
-        ).expect("mine block 2");
+        // ── Block 2: Post-genesis coinbase (production path) ──
+        // Same production path as miner_task → prepare_block →
+        // build_linear_coinbase → accept_block, exactly as init_genesis.
+        use dwow_chain::{Block, BlockHeader, Miner, PowSource, Transaction,
+            compute_merkle_root};
+        use dwow_sdk::blockchain::expected_reward;
+        use std::sync::Arc;
 
-        // Initialize wallet and scan all blocks
+        let height_2 = BlockHeight::new(2);
+        let reward_2 = expected_reward(height_2);
+        let recipient_2 = crate::accounts::MiningRecipient::from_account(
+            &miner_mgr, height_2,
+        ).expect("MiningRecipient height 2");
+
+        let linear_zk = crate::registry::model::LinearPowRewardZk::new(
+            har.chain_state.clone(),
+        ).await.expect("LinearPowRewardZk");
+
+        let (coinbase_2, _pi_2, pow_reward_call_2, _blind_2) =
+            crate::registry::model::build_linear_coinbase(
+                recipient_2, reward_2, &linear_zk, height_2,
+            ).await.expect("build_linear_coinbase height 2");
+
+        let coinbase_tx_2 = Transaction {
+            version: BlockVersion::CURRENT,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![pow_reward_call_2],
+            lock_time: 0,
+            nullifiers: vec![coinbase_2.nullifier],
+            witness: vec![],
+        };
+
+        let prev = har.chain_state.get_latest_block()
+            .expect("get_latest_block");
+        let prev_hash = har.chain_state.hash_block_with_cached_vm(&prev);
+
+        let header_2 = BlockHeader {
+            version: BlockVersion::CURRENT,
+            previous: prev_hash,
+            merkle_root: compute_merkle_root(&[coinbase_tx_2.clone()]),
+            timestamp: BlockTimestamp::new(120),
+            target: BlockTarget::MAX,
+            nonce: 0,
+            height: height_2,
+            uncle_merkle_root: [0u8; 32],
+            total_reward: reward_2,
+            randomx_key: Miner::derive_key_from_height(height_2),
+            coin_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32],
+            anchor_monero_height: MoneroBlockHeight::new(0),
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
+            pow_source: PowSource::Native,
+        };
+
+        let block_2 = Block { header: header_2, transactions: vec![coinbase_tx_2] };
+
+        let rx_flags = randomx::RandomXFlags::get_recommended_flags()
+            & !randomx::RandomXFlags::JIT;
+        let rx_cache = randomx::RandomXCache::new(
+            rx_flags, &block_2.header.randomx_key,
+        ).expect("RandomXCache height 2");
+        let vm = Arc::new(
+            randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
+                .expect("RandomXVM height 2"),
+        );
+
+        crate::block_acceptor::accept_block(
+            &har.chain_state, &block_2, &[], &vm,
+            BlockHeight::new(1), BlockTarget::MAX, None,
+        ).expect("accept_block height 2");
+
+        // ── Wallet: initialize, scan, verify ──────────────
         let wallet_dir = std::env::temp_dir()
             .join(format!("dwow_wallet_scan_db_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&wallet_dir);
@@ -968,6 +1053,8 @@ fn test_wallet_coinbase_scan_only() {
         let mut tree = dww.get_capability_commitment_tree()
             .expect("capability commitment tree");
 
+        // Scan both blocks — each coinbase built via build_linear_coinbase
+        // SHALL produce exactly one decryptable AEAD note.
         for h in 1u64..=2 {
             let block = har.chain_state.get_block(BlockHeight::new(h))
                 .expect(&format!("block {}", h));
@@ -975,15 +1062,27 @@ fn test_wallet_coinbase_scan_only() {
                 header: block.header.clone(),
                 transactions: block.transactions.clone(),
             };
-            let _ = dww.scan_block_linear(&mut tree, &scan_block);
+            let scan_result = dww.scan_block_linear(&mut tree, &scan_block)
+                .expect(&format!("scan block {}", h));
+
+            assert!(scan_result.native_outputs.len() > 0,
+                "T3 FAIL block={}: no native outputs discovered — \
+                 coinbase note was not decrypted", h);
+            assert!(scan_result.diagnostics.aead_decrypt_successes > 0,
+                "T3 FAIL block={}: AEAD decryption failed — \
+                 wallet key cannot decrypt miner's note (DH commutativity broken)", h);
+            assert!(scan_result.diagnostics.capability_construct_successes > 0,
+                "T3 FAIL block={}: capability construction failed after decryption", h);
         }
 
+        // Balance key: capability_balance() keys by bs58::encode(asset_id.to_bytes()).
+        // TokenId::DRKW = TokenId(pallas::Base::zero()) → bs58(32 zero bytes).
         let balances = dww.capability_balance().expect("capability balance");
-        assert!(!balances.is_empty(),
-            "T3 FAIL: wallet must discover coinbase capabilities");
-        let drkw = balances.get("DRKW").copied().unwrap_or(0);
+        let drkw_key = bs58::encode(&[0u8; 32]).into_string();
+        let drkw = balances.get(&drkw_key).copied().unwrap_or(0);
         assert!(drkw > 0,
-            "T3 FAIL: wallet must have non-zero DRKW balance, got {}", drkw);
+            "T3 FAIL: wallet must have non-zero DRKW balance, got {} (key={})",
+            drkw, drkw_key);
 
         // Cleanup
         drop(miner_mgr);

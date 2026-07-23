@@ -426,7 +426,7 @@ fn discover_native_token_outputs(
         &NATIVE_TOKEN_CONTRACT_ID, &height_bytes,
     ).map_err(|e| {
         tracing::error!(target: "dww::scan",
-            "[NATIVE_TOKEN] step=1 derive_instance status=FAIL reason=\"per-block key derivation failed for height {}: {}\"", height, e);
+            "[native_token] step=1 derive_instance status=FAIL reason=\"per-block key derivation failed for height {}: {}\"", height, e);
         format!("per-block key derivation failed for height {}: {}", height, e)
     })?;
     let master_secrets = account_mgr.secrets();
@@ -456,7 +456,7 @@ fn discover_native_token_outputs(
         };
         diagnostics.aead_decode_attempts += 1;
         tracing::info!(target: "dww::scan",
-            "[NATIVE_TOKEN] step=2 aead_decode status=OK offset={}", off);
+            "[native_token] step=2 aead_decode status=OK offset={}", off);
         let consumed = (cursor.position() - pos_before) as usize;
 
         let mut decrypted = false;
@@ -464,7 +464,7 @@ fn discover_native_token_outputs(
             diagnostics.aead_decrypt_attempts += 1;
             if let Ok(decrypted_note) = generic_note.decrypt::<NativeToken>(secret) {
                 tracing::info!(target: "dww::scan",
-                    "[NATIVE_TOKEN] step=3 aead_decrypt status=OK");
+                    "[native_token] step=3 aead_decrypt status=OK");
                 diagnostics.aead_decrypt_successes += 1;
                 decrypted = true;
                 diagnostics.capability_construct_attempts += 1;
@@ -475,7 +475,7 @@ fn discover_native_token_outputs(
                     Ok((cap_record, merkle_proof, msg)) => {
                         diagnostics.capability_construct_successes += 1;
                         tracing::info!(target: "dww::scan",
-                            "[NATIVE_TOKEN] step=4 coin_reconstruct status=OK coin=0x{}",
+                            "[native_token] step=4 coin_reconstruct status=OK coin=0x{}",
                             hex::encode(&cap_record.commitment.to_bytes()));
                         // P1b: populate key_coords so the spend path can recover
                         // the owning secret via AccountManager::resolve_key.
@@ -490,7 +490,7 @@ fn discover_native_token_outputs(
                     }
                     Err(e) => {
                         tracing::error!(target: "dww::scan",
-                            "[NATIVE_TOKEN] step=4 coin_reconstruct status=FAIL error={:?}", e);
+                            "[native_token] step=4 coin_reconstruct status=FAIL error={:?}", e);
                     }
                 }
                 off += consumed; // advance past this note only on successful decrypt
@@ -499,13 +499,13 @@ fn discover_native_token_outputs(
         }
         if !decrypted {
             tracing::debug!(target: "dww::scan",
-                "[NATIVE_TOKEN] step=3 aead_decrypt status=FAIL reason=\"no key matched — wallet key differs from miner\"");
+                "[native_token] step=3 aead_decrypt status=FAIL reason=\"no key matched — wallet key differs from miner\"");
             off += 1; // false-positive decode: advance 1 byte, don't skip the real note
         }
     }
 
     tracing::info!(target: "dww::scan",
-        "[NATIVE_TOKEN] step=5 caprecord_build status=OK count={}", results.len());
+        "[native_token] step=5 caprecord_build status=OK count={}", results.len());
     Ok((results, messages))
 }
 
@@ -577,7 +577,7 @@ fn scan_native_token_contract_calls(
                 Ok(result) => result,
                 Err(e) => {
                     tracing::error!(target: "dww::scan",
-                        "[NATIVE_TOKEN] discover_native_token_outputs failed: {}", e);
+                        "[native_token] discover_native_token_outputs failed: {}", e);
                     (vec![], vec![e])
                 }
             };

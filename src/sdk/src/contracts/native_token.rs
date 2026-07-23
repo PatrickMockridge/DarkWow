@@ -24,7 +24,7 @@
 //! Native Token Contract SDK
 //!
 //! This module provides the SDK for the Native Token contract, which handles
-//! the DARK token for consensus (block rewards, fees, transfers).
+//! the DRKW token for consensus (block rewards, fees, transfers).
 //!
 //! ## Design Philosophy
 //!

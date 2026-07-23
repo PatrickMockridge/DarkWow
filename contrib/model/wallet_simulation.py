@@ -141,7 +141,7 @@ def test_single_wallet_mining():
     import base58
     db.insert_address(sk.to_public().to_string(), sk.to_bs58(), 1, 0)
     db.insert_secret(sk.to_bs58(), "")
-    db.insert_alias("DRK", base58.b58encode(b'\x00' * 32).decode('ascii'))
+    db.insert_alias("DRKW", base58.b58encode(b'\x00' * 32).decode('ascii'))
 
     chain = SimulationChain([sk])
     total_reward = 0
@@ -182,7 +182,7 @@ def test_multi_wallet_mining():
         import base58
         dbs[i].insert_address(sk.to_public().to_string(), sk.to_bs58(), 1, 0)
         dbs[i].insert_secret(sk.to_bs58(), "")
-        dbs[i].insert_alias("DRK", base58.b58encode(b'\x00' * 32).decode('ascii'))
+        dbs[i].insert_alias("DRKW", base58.b58encode(b'\x00' * 32).decode('ascii'))
 
     chain = SimulationChain(secrets)
     rewards = [0, 0, 0]
@@ -222,7 +222,7 @@ def test_capability_resolution_after_mining():
     import base58
     db.insert_address(sk.to_public().to_string(), sk.to_bs58(), 1, 0)
     db.insert_secret(sk.to_bs58(), "")
-    db.insert_alias("DRK", base58.b58encode(b'\x00' * 32).decode('ascii'))
+    db.insert_alias("DRKW", base58.b58encode(b'\x00' * 32).decode('ascii'))
 
     chain = SimulationChain([sk])
     for i in range(5):
@@ -260,7 +260,7 @@ def test_generic_aead_path_2():
     db = wm.WalletDb()
     import base58
     db.insert_secret(sk.to_bs58(), "")
-    db.insert_alias("DRK", base58.b58encode(b'\x00' * 32).decode('ascii'))
+    db.insert_alias("DRKW", base58.b58encode(b'\x00' * 32).decode('ascii'))
 
     # Mine a coinbase block first (Path 1)
     chain = SimulationChain([sk])
@@ -322,7 +322,7 @@ def test_reorg_handling():
     db = wm.WalletDb()
     db.insert_address(sk.to_public().to_string(), sk.to_bs58(), 1, 0)
     db.insert_secret(sk.to_bs58(), "")
-    db.insert_alias("DRK", base58.b58encode(b'\x00' * 32).decode('ascii'))
+    db.insert_alias("DRKW", base58.b58encode(b'\x00' * 32).decode('ascii'))
     cache = wm.ScanCache(secrets=[sk])
 
     blocks_a = chain_to_wallet_blocks(chain_a.blocks, [sk])
@@ -368,7 +368,7 @@ def test_full_pipeline():
     db = wm.WalletDb()
     db.insert_address(sk.to_public().to_string(), sk.to_bs58(), 1, 0)
     db.insert_secret(sk.to_bs58(), "")
-    db.insert_alias("DRK", drkw_token)
+    db.insert_alias("DRKW", drkw_token)
 
     # Mine 3 blocks
     chain = SimulationChain([sk])
@@ -450,7 +450,7 @@ def _setup_wallet_with_secret(sk: wm.SecretKey) -> wm.WalletDb:
     db = wm.WalletDb()
     db.insert_address(sk.to_public().to_string(), sk.to_bs58(), 1, 0)
     db.insert_secret(sk.to_bs58(), "")
-    db.insert_alias("DRK", base58.b58encode(b'\x00' * 32).decode('ascii'))
+    db.insert_alias("DRKW", base58.b58encode(b'\x00' * 32).decode('ascii'))
     return db
 
 

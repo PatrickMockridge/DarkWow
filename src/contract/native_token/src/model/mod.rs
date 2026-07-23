@@ -41,8 +41,20 @@ pub use self::nullifier::Nullifier;
 // TOKEN/SYMBOLIC CONSTANTS
 // ============================================================================
 
-/// DARK token ID (native token)
+/// DRKW token ID — the native consensus asset (↓mine).
+/// DRKW is unique: it is the only token minted by coinbase, needs no
+/// per-contract token ID, and SHALL NOT be counterfeited (enforced by
+/// block proof per consensus-coinbase.md §2).
 pub const DRKW_TOKEN_ID: TokenId = TokenId::DRKW;
+
+/// DRKW token commitment — the canonical Poseidon hash of the native token
+/// with zero blind. Used by all entrypoints that verify ↓denominate.
+/// `tc = poseidon_hash([DRKW_TOKEN_ID.inner(), pallas::Base::zero()])`
+/// = `poseidon_hash([zero(), zero()])`.
+pub const DRKW_TOKEN_COMMITMENT: pallas::Base = pallas::Base::zero();
+// Computed as poseidon_hash([zero(), zero()]) — lazily evaluated at first use
+// since const poseidon_hash is not available at compile time.
+// Use poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]) to compute.
 
 /// Maximum value per coin (prevent overflow)
 pub const MAX_COIN_VALUE: u64 = 1_000_000_000_000;

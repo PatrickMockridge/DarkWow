@@ -506,7 +506,7 @@ fn fee_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
     let coin_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
 
-    // Token must be DARK (native token)
+    // Token must be DRKW (native consensus asset, ↓denominate)
     let token_commit = poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]);
     if fee_val.input.token_commit != token_commit {
         msg!("[fee_v1] Error: Input token commitment is not the native token");
@@ -664,7 +664,7 @@ fn spend_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     let sp: SpendParamsV1 = deserialize(params)?;
     msg!("[native_token::spend_v1] Processing spend");
 
-    // Validate DARK token
+    // Validate DRKW token (↓denominate — only native asset permitted)
     let token_commit = poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]);
     if sp.input.token_commit != token_commit {
         msg!("[spend_v1] Error: Input token commitment is not the native token");
@@ -802,7 +802,7 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     // Access the necessary databases
     let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
 
-    // Verify input token is DARK (native token)
+    // Verify input token is DRKW (native consensus asset, ↓denominate)
     if pr.input.token_id != DRKW_TOKEN_ID.inner() {
         msg!("[pow_reward_v1] Error: Clear input used non-native token");
         return Err(NativeTokenError::TokenMismatch.into())
@@ -1066,7 +1066,7 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::DuplicateNullifier.into())
     }
 
-    // Check 5 (spec §3.7): token must be DARK (native token)
+    // Check 5 (spec §3.7): token must be DRKW (native consensus asset)
     let token_commit = poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]);
     if fc.output.token_commit != token_commit {
         msg!("[fee_collect_v1] Non-native token in fee collection");

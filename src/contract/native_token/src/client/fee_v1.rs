@@ -57,7 +57,7 @@ pub struct FeeRevealed {
     pub nullifier: Nullifier,
     /// Input's value commitment
     pub input_value_commit: pallas::Point,
-    /// Token commitment (DARK token = zero)
+    /// Token commitment (DRKW token = zero, ↓denominate)
     pub token_commit: pallas::Base,
     /// Merkle root for input coin
     pub merkle_root: MerkleNode,
@@ -205,7 +205,7 @@ pub fn create_fee_proof(
     let input_value_commit = pedersen_commitment_u64(input.value, input_value_blind);
     let output_value_commit = pedersen_commitment_u64(output.value, output_value_blind);
 
-    // Token commitment (DARK token = zero)
+    // Token commitment (DRKW token = zero, ↓denominate)
     let token_commit = poseidon_hash([input.token_id, token_blind.inner()]);
 
     // Create output coin
@@ -318,7 +318,7 @@ impl FeeCallBuilder {
 
         // Generate blinds. token_blind MUST be zero: the fee entrypoint
         // pins the native token_commit to poseidon([0, 0]) (entrypoint/mod.rs
-        // fee_v1, "Token must be DARK") with TokenId::DRKW = zero — a random
+        // fee_v1, "Token must be DRKW") with TokenId::DRKW = zero — a random
         // blind fails consensus with TokenMismatch.
         // Gated: deterministic when enable_deterministic_zk() is set
         // (MOC item 10 bug-3 — matching transfer_v1/proof.rs gating pattern).

@@ -35,7 +35,7 @@
 //!
 //! ## Token Model
 //!
-//! Unlike NativeToken which has a single native token (DARK),
+//! Unlike NativeToken which has a single native token (DRKW),
 //! PromissoryNote supports MULTIPLE tokens via token registration.
 //!
 //! ## Key Differences from NativeToken
@@ -43,7 +43,7 @@
 //! | Aspect | NativeToken | PromissoryNote |
 //! |--------|-------------|---------|
 //! | Purpose | Consensus (PoW rewards, fees) | DeFi tokens |
-//! | Tokens | Single (DARK) | Multiple (via TokenMint) |
+//! | Tokens | Single (DRKW) | Multiple (via TokenMint) |
 //! | Authorization | None | Backing capability proof |
 //! | Privacy | Full privacy | Full privacy |
 //!

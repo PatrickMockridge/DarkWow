@@ -98,6 +98,11 @@ fn build_block_header(
 }
 
 /// Mine a block: coinbase + optional txs, accept via production path.
+#[deprecated = "use build_linear_coinbase + accept_block for production-path testing. \
+    This function uses fake AEAD notes (ciphertext: vec![0u8; 32]), fake value \
+    commitments (Point::identity()), and fake nullifiers ([1u8; 32]) — wallet \
+    scan will always return zero native outputs. See T3 (test_wallet_coinbase_scan_only) \
+    for the correct production-path test pattern."]
 pub(crate) fn mine_block(
     har: &GenesisHarness,
     recipient: &crate::accounts::MiningRecipient,

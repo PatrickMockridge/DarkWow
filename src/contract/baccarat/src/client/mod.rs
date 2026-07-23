@@ -87,7 +87,7 @@ impl CommitBetV1Builder {
             bet_type,
             secret_nonce: pallas::Base::random(&mut rand::thread_rng()),
             blind: pallas::Base::random(&mut rand::thread_rng()),
-            token_id: pallas::Base::zero(), // DARK token for now
+            token_id: pallas::Base::zero(), // DRKW token — native consensus asset
             house_edge: crate::DEFAULT_HOUSE_EDGE,
             confirmation_depth: 3, // Default 3 blocks for confirmation
             instance_seed,

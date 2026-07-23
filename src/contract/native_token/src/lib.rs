@@ -51,7 +51,7 @@
 //! | PoWRewardV1 | 0x05 | Coinbase — opens the coin merkle tree | CONSENSUS |
 //! | FeeCollectV1 | 0x06 | Fee collection plate — closes the coin merkle tree | CONSENSUS |
 
-use dwow_sdk::{crypto::TokenId, error::ContractError};
+use dwow_sdk::error::ContractError;
 
 /// Functions available in the contract
 #[repr(u8)]
@@ -203,8 +203,9 @@ pub use crate::client::zkbins::{
 // CONSTANTS
 // ============================================================================
 
-/// DARK token ID (native token = 0)
-pub const DRKW_TOKEN_ID: TokenId = TokenId::DRKW;
+/// DRKW token ID — canonical re-export from model.
+/// DRKW is the native consensus asset (↓mine) — the only coinbase token.
+pub use crate::model::DRKW_TOKEN_ID;
 
 /// Maximum coins per transaction
 pub const NATIVE_TOKEN_MAX_COINS_PER_TX: usize = 16;
