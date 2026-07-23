@@ -252,44 +252,67 @@ pub const MAX_SEED_ERRORS_PER_CONNECTION: u64 = 3;
 //
 // 4xx — Client Error: the requester did something wrong.
 //       Do NOT retry without changing the request.
-//   400 — Bad Request (malformed message, payload too large, encoding failure)
-//   401 — Protocol Version Mismatch (app_name or app_version incompatible)
-//   403 — Forbidden (banned peer, blacklisted, magic bytes mismatch)
-//   404 — Unknown Message Type (no dispatcher registered for command)
-//   406 — No Matching Transports (all requested transports filtered out)
-//   429 — Rate Limited (metering limit exceeded; DEFINED but NEVER sent on-wire
-//          — sending to a rate-limited peer amplifies DoS, so drop silently)
-//
 // 5xx — Server Error: the request is valid but the seed cannot fulfill.
 //       MAY retry with backoff.
-//   500 — Internal Seed Error (unexpected/unhandled failure)
-//   503 — Hostlist Empty (no peers to share; seed has no Gold/White/Dark entries)
-//   504 — Upstream Timeout (version exchange timed out)
-//
 // 2xx — Success: NOT sent as SeedErrorMessage (implicit in success messages)
-//   200 — OK (AddrsMessage with peers)
-//   201 — Version Accepted (VerackMessage)
 
-pub const SEED_ERR_BAD_REQUEST: u32 = 400;
-pub const SEED_ERR_VERSION_MISMATCH: u32 = 401;
-pub const SEED_ERR_FORBIDDEN: u32 = 403;
-pub const SEED_ERR_UNKNOWN_MESSAGE: u32 = 404;
-pub const SEED_ERR_NO_MATCHING_TRANSPORTS: u32 = 406;
-pub const SEED_ERR_RATE_LIMITED: u32 = 429;
-pub const SEED_ERR_INTERNAL: u32 = 500;
-pub const SEED_ERR_HOSTLIST_EMPTY: u32 = 503;
-pub const SEED_ERR_UPSTREAM_TIMEOUT: u32 = 504;
-
-/// Returns true if the error code is in the 4xx client error range.
-/// Client errors should NOT be retried without changing the request.
-pub fn seed_error_is_client_error(code: u32) -> bool {
-    (400..500).contains(&code)
+/// §4.3: Seed error vocabulary SHALL be a #[repr(u32)] enum, not raw u32
+/// constants. Every error variant IS a barb (§4). Wire-identical encoding
+/// to the prior raw u32 constants.
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SeedErrorCode {
+    BadRequest = 400,
+    VersionMismatch = 401,
+    Forbidden = 403,
+    UnknownMessage = 404,
+    NoMatchingTransports = 406,
+    RateLimited = 429,
+    Internal = 500,
+    HostlistEmpty = 503,
+    UpstreamTimeout = 504,
 }
 
-/// Returns true if the error code is in the 5xx server error range.
-/// Server errors MAY be retried with backoff.
-pub fn seed_error_is_server_error(code: u32) -> bool {
-    (500..600).contains(&code)
+impl SeedErrorCode {
+    /// Returns true for 4xx client errors — do NOT retry without changing request.
+    pub fn is_client_error(self) -> bool {
+        matches!(self, Self::BadRequest | Self::VersionMismatch | Self::Forbidden
+            | Self::UnknownMessage | Self::NoMatchingTransports | Self::RateLimited)
+    }
+
+    /// Returns true for 5xx server errors — MAY retry with backoff.
+    pub fn is_server_error(self) -> bool {
+        matches!(self, Self::Internal | Self::HostlistEmpty | Self::UpstreamTimeout)
+    }
+}
+
+// Wire-identical SerialEncodable/SerialDecodable: encode/decode as u32.
+impl dwow_serial::SerialEncodable for SeedErrorCode {
+    fn encode(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+        (*self as u32).encode(writer)
+    }
+}
+impl dwow_serial::SerialDecodable for SeedErrorCode {
+    fn decode(reader: &mut impl std::io::Read) -> std::io::Result<Self> {
+        let code = u32::decode(reader)?;
+        Ok(match code {
+            400 => Self::BadRequest,
+            401 => Self::VersionMismatch,
+            403 => Self::Forbidden,
+            404 => Self::UnknownMessage,
+            406 => Self::NoMatchingTransports,
+            429 => Self::RateLimited,
+            500 => Self::Internal,
+            503 => Self::HostlistEmpty,
+            504 => Self::UpstreamTimeout,
+            n => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("unknown SeedErrorCode: {}", n),
+                ));
+            }
+        })
+    }
 }
 
 /// Error response sent by seed nodes when a request cannot be fulfilled.
@@ -302,8 +325,8 @@ pub fn seed_error_is_server_error(code: u32) -> bool {
 /// same reason).
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct SeedErrorMessage {
-    /// HTTP-style numeric error code (see `SEED_ERR_*` constants)
-    pub code: u32,
+    /// HTTP-style numeric error code (§4.3 SeedErrorCode)
+    pub code: SeedErrorCode,
     /// Human-readable reason string
     pub reason: String,
 }

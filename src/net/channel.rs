@@ -222,7 +222,7 @@ impl Channel {
     /// Enforces [`message::MAX_SEED_ERRORS_PER_CONNECTION`] to prevent DoS
     /// amplification. If the per-connection error limit has been reached,
     /// the message is silently dropped (no error is returned to the caller).
-    pub async fn send_seed_error(&self, code: u32, reason: impl Into<String>) {
+    pub async fn send_seed_error(&self, code: message::SeedErrorCode, reason: impl Into<String>) {
         let count = self.seed_error_count.fetch_add(1, SeqCst);
         if count >= message::MAX_SEED_ERRORS_PER_CONNECTION {
             debug!(
@@ -394,7 +394,7 @@ impl Channel {
             // Magic bytes identify the P2P network — mismatch means the peer
             // is on the wrong network (or probing).
             self.send_seed_error(
-                message::SEED_ERR_FORBIDDEN,
+                message::SeedErrorCode::Forbidden,
                 format!(
                     "magic bytes mismatch: expected {:?}, got {:?} — wrong network",
                     magic_bytes, magic,
@@ -575,7 +575,7 @@ impl Channel {
                         "MissingDispatcher for command={command}, channel={self:?}"
                         );
                         self.send_seed_error(
-                            message::SEED_ERR_UNKNOWN_MESSAGE,
+                            message::SeedErrorCode::UnknownMessage,
                             format!("unknown message type: {}", command),
                         ).await;
                         if let BanPolicy::Strict = self.p2p().settings().read().await.ban_policy {
@@ -596,7 +596,7 @@ impl Channel {
                          (payload exceeds MAX_BYTES or failed deserialization)"
                         );
                         self.send_seed_error(
-                            message::SEED_ERR_BAD_REQUEST,
+                            message::SeedErrorCode::BadRequest,
                             format!("invalid message: {} (payload exceeds limit or malformed)", command),
                         ).await;
                         if let BanPolicy::Strict = self.p2p().settings().read().await.ban_policy {

@@ -37,7 +37,7 @@ use tracing::{debug, error, info};
 
 use super::super::{
     channel::ChannelPtr,
-    message::{VerackMessage, VersionMessage, SEED_ERR_UPSTREAM_TIMEOUT, SEED_ERR_VERSION_MISMATCH},
+    message::{VerackMessage, VersionMessage, SeedErrorCode},
     message_publisher::MessageSubscription,
     settings::Settings,
 };
@@ -127,7 +127,7 @@ impl ProtocolVersion {
                 // Send structured error so the peer knows it was a timeout,
                 // not a version mismatch or other rejection.
                 self.channel.send_seed_error(
-                    SEED_ERR_UPSTREAM_TIMEOUT,
+                    SeedErrorCode::UpstreamTimeout,
                     "version exchange timed out — seed may be overloaded or unreachable",
                 ).await;
 
@@ -262,7 +262,7 @@ impl ProtocolVersion {
             );
 
             // Send structured error to the peer before disconnecting
-            self.channel.send_seed_error(SEED_ERR_VERSION_MISMATCH, reason).await;
+            self.channel.send_seed_error(SeedErrorCode::VersionMismatch, reason).await;
 
             // If it is outbound, ban the host so we don't share it with other nodes
             if self.channel.session_type_id() & SESSION_OUTBOUND != 0 {
@@ -345,7 +345,7 @@ impl ProtocolVersion {
                 reason,
             );
 
-            self.channel.send_seed_error(SEED_ERR_VERSION_MISMATCH, reason).await;
+            self.channel.send_seed_error(SeedErrorCode::VersionMismatch, reason).await;
             self.channel.stop().await;
             return Err(Error::ChannelStopped)
         }
