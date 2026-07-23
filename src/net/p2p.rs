@@ -309,6 +309,13 @@ impl P2p {
         self.session_seedsync.clone()
     }
 
+    /// D5: Per-seed-slot diagnostic state. The wallet's sync status uses
+    /// this to report which seeds are connected, stuck, or completed.
+    #[cfg(feature = "seed-sync-session")]
+    pub async fn seed_slot_info(&self) -> Vec<crate::net::session::seedsync_session::SeedSlotInfo> {
+        self.session_seedsync.slot_states().await
+    }
+
     /// Get pointer to direct session
     pub fn session_direct(&self) -> DirectSessionPtr {
         self.session_direct.clone()

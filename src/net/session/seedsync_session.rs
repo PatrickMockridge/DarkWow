@@ -47,11 +47,12 @@ use std::sync::{
     atomic::{AtomicBool, Ordering::SeqCst},
     Arc, Weak,
 };
+use std::time::Instant;
 
 use async_trait::async_trait;
 use futures::stream::{FuturesUnordered, StreamExt};
 use smol::lock::{Mutex as AsyncMutex, RwLock as AsyncRwLock};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 use url::Url;
 
 use super::{
@@ -146,6 +147,26 @@ impl SeedSyncSession {
         }
         Ok(())
     }
+
+    /// D5: Per-slot diagnostic state for wallet sync status.
+    pub async fn slot_states(&self) -> Vec<SeedSlotInfo> {
+        let slots = self.slots.lock().await;
+        slots.iter().map(|s| SeedSlotInfo {
+            addr: s.addr.to_string(),
+            failed: s._failed(),
+            completed: s.completed.load(SeqCst),
+            inactive_secs: s.last_activity.lock().unwrap().elapsed().as_secs(),
+        }).collect()
+    }
+}
+
+/// D5: Public diagnostic info for a single seed slot.
+#[derive(Debug, Clone)]
+pub struct SeedSlotInfo {
+    pub addr: String,
+    pub failed: bool,
+    pub completed: bool,
+    pub inactive_secs: u64,
 }
 
 #[async_trait]
@@ -168,6 +189,11 @@ struct Slot {
     session: Weak<SeedSyncSession>,
     connector: Connector,
     failed: AtomicBool,
+    /// D5: Tracks last lifecycle event for liveness watchdog.
+    last_activity: std::sync::Mutex<Instant>,
+    /// D5: True when slot exited due to HostStateBlocked (outbound session
+    /// already connected the same address — not a failure, job done).
+    completed: AtomicBool,
 }
 
 impl Slot {
@@ -183,16 +209,48 @@ impl Slot {
             session: session.clone(),
             connector: Connector::new(settings, session),
             failed: AtomicBool::new(false),
+            last_activity: std::sync::Mutex::new(Instant::now()),
+            completed: AtomicBool::new(false),
         })
+    }
+
+    fn touch_activity(&self) {
+        *self.last_activity.lock().unwrap() = Instant::now();
     }
 
     async fn start(self: Arc<Self>) {
         let ex = self.p2p().executor();
 
+        // D5: Watchdog task — checks slot liveness every 60s.
+        // A slot stuck in wait() with no notify() signal for >60s
+        // emits ERROR and appears in wallet diagnostic output.
+        let slot_weak = Arc::downgrade(&self);
+        ex.spawn(async move {
+            loop {
+                smol::Timer::after(std::time::Duration::from_secs(60)).await;
+                let slot = match slot_weak.upgrade() {
+                    Some(s) => s,
+                    None => break,
+                };
+                if slot.completed.load(SeqCst) {
+                    break;
+                }
+                let elapsed = slot.last_activity.lock().unwrap().elapsed();
+                if elapsed > std::time::Duration::from_secs(60) {
+                    error!(target: "net::seedsync_session",
+                        "SEED SLOT LIVENESS: {} inactive for {}s. \
+                         Slot is waiting for next notify() cycle and may be stuck.",
+                        slot.addr, elapsed.as_secs());
+                    eprintln!("[P2P] SEED SLOT STUCK: {} inactive for {}s", slot.addr, elapsed.as_secs());
+                }
+            }
+        }).detach();
+
         self.process.clone().start(
             async move {
                 self.run().await;
-                unreachable!();
+                // D5: Slot loop now exits on HostStateBlocked.
+                Ok(())
             },
             // Ignore stop handler
             |_| async {},
@@ -218,15 +276,28 @@ impl Slot {
             );
 
             if let Err(e) = hosts.try_register(self.addr.clone(), HostState::Connect) {
+                // D5: HostStateBlocked means the outbound session already connected
+                // this address — the seed slot has done its job. Exit cleanly.
+                if matches!(&e, crate::Error::HostStateBlocked(_, _)) {
+                    info!(target: "net::seedsync_session",
+                        "[P2P] Seed slot {}: host already connected via outbound session — job complete", &self.addr);
+                    eprintln!("[P2P] Seed slot {}: host already connected — exiting (job done)", &self.addr);
+                    self.completed.store(true, SeqCst);
+                    self.touch_activity();
+                    break;
+                }
+
                 warn!(target: "net::seedsync_session",
                     "[P2P] Cannot connect to seed={}, err={e}", &self.addr);
                 eprintln!("[P2P] Seed slot: cannot register {}: {e}", &self.addr);
 
                 // Reset the CondVar for future use.
+                self.touch_activity();
                 self.reset();
 
                 continue
             }
+            self.touch_activity();
 
             match self.connector.connect(&self.addr).await {
                 Ok((_, ch)) => {
