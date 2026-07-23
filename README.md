@@ -109,6 +109,7 @@ All self-contained with their own ZK circuits, tests, and harnesses.
 
 ```bash
 git clone https://codeberg.org/PatrickM123/darkwow
+# Mirror: git clone https://github.com/PatrickMockridge/DarkWow
 cd darkwow
 rustup target add wasm32-unknown-unknown
 make

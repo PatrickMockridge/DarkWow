@@ -31,6 +31,7 @@ A privacy-first blockchain rebuilt around six design commitments. Originally for
 
 ```shell
 git clone https://codeberg.org/PatrickM123/darkwow
+# Mirror: git clone https://github.com/PatrickMockridge/DarkWow
 cd darkwow
 rustup target add wasm32-unknown-unknown
 make

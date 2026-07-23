@@ -113,6 +113,7 @@ See [DarkIRC Guide](misc/darkirc/darkirc.md) for joining the anonymous p2p chat.
 
 ```bash
 git clone https://codeberg.org/PatrickM123/darkwow
+# Mirror: git clone https://github.com/PatrickMockridge/DarkWow
 cd darkwow
 make
 ```

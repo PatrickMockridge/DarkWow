@@ -9,6 +9,7 @@ and all users will have synced tasks.
 
 ```shell
 % git clone https://codeberg.org/PatrickM123/darkwow
+% # Mirror: git clone https://github.com/PatrickMockridge/DarkWow
 % cd dwow
 % make taud
 ```

@@ -120,6 +120,7 @@ See [Testing Overview](../dev/testing/overview.md) for the full taxonomy.
 ```
 # Clone and build
 git clone https://codeberg.org/PatrickM123/darkwow
+# Mirror: git clone https://github.com/PatrickMockridge/DarkWow
 cd darkwow
 cargo build --release -p dwowd -p dwow_wallet
 
