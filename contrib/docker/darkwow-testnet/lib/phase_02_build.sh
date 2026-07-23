@@ -39,7 +39,7 @@ phase_build() {
     # the Docker build (which clones from origin) will fail with a clear
     # git error. This is an early diagnostic, not a measurement.
     local commit_verified=false
-    if git ls-remote --heads origin linear-master 2>/dev/null | grep -q "$BUILD_COMMIT"; then
+    if git ls-remote --heads https://codeberg.org/PatrickM123/darkwow.git linear-master 2>/dev/null | grep -q "$BUILD_COMMIT"; then
         commit_verified=true
     fi
     if [ "$commit_verified" != true ]; then
