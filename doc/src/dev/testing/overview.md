@@ -20,6 +20,7 @@ public-facing (LAN/internet).
 | 1 | Lightweight | Unit tests, integration tests, **Deployooor-based deployment** (real production path, no ZK) | Seconds | `cargo test`, `cargo test -p dwowd test_pipeline` |
 | — | **Python Simulations** | **Contract state machines, authorization flows, business rules, edge cases** (no ZK, no crypto — pure logic) | Milliseconds | `python3 -c "from sim.contracts..."` |
 | — | **Python Consensus Models** | **Block production, PoW, uncle-merkle, chain reorg, VM concurrency, finality, merge mining** (1:1 Rust specification, 34/34 tests, 8 VM scenarios) | Milliseconds | `python3 contrib/model/chain_validation_model.py`, `python3 contrib/model/vm_state_model.py`, `python3 contrib/model/merge_mining_model.py` |
+| 1.5 | **Pre-Production Bridge** | **Production-path integration: real ZK proofs, real AEAD encryption, real accept_block, real wallet scan** (BlockTarget::MAX, deterministic ZK). Enforces MoC gate before Docker pipeline. | ~2-7 min | `cargo test --release -p dwowd --lib -- test_wallet_coinbase_scan_only test_canonical_call_failure_rejects_block test_merge_mined_block_acceptance test_merge_mined_block_deterministic` |
 | 2 | Heavyweight | Contract **functions, ZK proofs, uncle-merkle block execution** (deployment not tested — uses direct path for setup) | Minutes | `cargo test --release -p dwowd test_<contract>_heavyweight` |
 | 3 | Containerized Localnet | Multi-node Docker testnet (seed + mining nodes), P2P, RandomX, bridge lifecycle, wallet, 6 modes, 21 phases, composable flags | Persistent | `./test_pipeline.sh --mode native\|merge\|bridge\|wallet\|join-native\|join-merge` in `contrib/docker/darkwow-testnet/` |
 | 4 | Containerized Devnet | Public-facing mining node for shared devnets over LAN/internet | Persistent | `docker run --network=host -e IS_SEED=true darkwow-devnet` |
@@ -292,6 +293,11 @@ See [Level 4: Containerized Devnet Node](level-4-devnet.md).
 ```
 Level 1 (Lightweight)        Fast, no ZK, no P2P, single process
     │
+    ├──► Level 1.5 (Bridge)  Production-path integration: real ZK proofs,
+    │         real AEAD encryption, real accept_block, real wallet scan.
+    │         BlockTarget::MAX, deterministic ZK. ~2-7 min.
+    │         Enforces MoC gate — MUST pass before Docker pipeline.
+    │
     └──► Level 2 (Heavyweight)  Adds ZK proofs, real execution, still single process
             │
             └──► Level 3 (Localnet)    Adds P2P networking, Docker, multiple nodes
@@ -341,11 +347,19 @@ block creation, and WASM execution) without multi-node networking.
 **Key tests:** `test_genesis_determinism` and `test_block_creation` in
 [`bin/dwowd/src/tests/genesis.rs`](../../../bin/dwowd/src/tests/genesis.rs).
 
+**Bridge tests:** `test_wallet_coinbase_scan_only`,
+`test_canonical_call_failure_rejects_block`,
+`test_merge_mined_block_acceptance`, and
+`test_merge_mined_block_deterministic` exercise the exact production code path
+(`build_linear_coinbase` → `accept_block` → `scan_block_linear`) at
+`BlockTarget::MAX` with deterministic ZK. See "Pre-Production Integration
+Tests" above for the full specification.
+
 **Pre-devnet tests enforce the MoC gate:** A contract that fails
 `test_block_creation` (height-2 block with PoWRewardV1 coinbase through
-`accept_block`) must not proceed to the Docker pipeline. The pre-devnet
-tests are the last deterministic, single-process checkpoint before real
-networking and real PoW are introduced.
+`accept_block`) or any bridge test must not proceed to the Docker pipeline.
+The pre-devnet tests are the last deterministic, single-process checkpoint
+before real networking and real PoW are introduced.
 
 ### Docker Pipeline (Multi-Block / Multi-Node)
 
@@ -392,6 +406,57 @@ block retrievability.
 Must run after Phase 1 and before `init_genesis()` (which creates the genesis
 block with PoWRewardV1 coinbase).
 
+### Pre-Production Integration Tests (the Bridge)
+
+Four tests exercise the **EXACT production code path** — `build_linear_coinbase`
+(real ZK proof + AEAD encryption), `accept_block` (full WASM execution),
+`scan_block_linear` (wallet production scan), and `capability_balance`. They
+use `BlockTarget::MAX` (instant PoW) and deterministic ZK for reproducibility.
+They are the last deterministic, single-process checkpoint before the Docker
+pipeline introduces real networking and real RandomX.
+
+**`test_wallet_coinbase_scan_only`** (`wallet_integration.rs`) — Production
+coinbase → wallet scan → decryption → DRKW balance. Exercises the full
+ρ-calculus coinbase lifecycle: ↓mine (coinbase commitment), ↓encrypt (AEAD
+note), ↓verify (ZK proof), ↓commit (WASM state write), ↓discover (wallet
+trial decryption), ↓denominate (DRKW asset identification), ↓derive
+(per-block key derivation). Both genesis and post-genesis blocks use
+`build_linear_coinbase` + `accept_block`. DH commutativity validated:
+`sapling_ka_agree(sk_H, epk) == sapling_ka_agree(esk, pk_H)`.
+
+**`test_canonical_call_failure_rejects_block`** (`wallet_integration.rs`) —
+Gap 14 closure. A canonical call to a non-existent contract MUST reject the
+entire block (strict mode, `execution.rs:408-411`). Chain height MUST NOT
+advance. This is the primary defense against partially-applied state from
+mixed success/failure blocks.
+
+**`test_merge_mined_block_acceptance`** (`merge_mining.rs`) — Merge-mined
+block with real `build_linear_coinbase` coinbase through `accept_block`.
+Verifies Monero-merge-mining blocks enter the standard acceptance path
+(`PowSource::Monero`), skip native RandomX PoW, and are stored with real
+nullifier tracking.
+
+**`test_merge_mined_block_deterministic`** (`merge_mining.rs`) — Two
+independent harnesses with real coinbases produce identical merge-mined
+block hashes. Validates the determinism invariant: same MoneroPowData +
+same chain state + same key → same block hash.
+
+Command:
+```
+RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 \
+  cargo test --release -p dwowd --lib -- \
+  test_wallet_coinbase_scan_only \
+  test_canonical_call_failure_rejects_block \
+  test_merge_mined_block_acceptance \
+  test_merge_mined_block_deterministic \
+  --nocapture
+```
+
+These tests SHALL pass before any code proceeds to the Docker pipeline.
+They enforce the MoC gate: a contract or consensus change that breaks
+these tests has introduced a regression in the production coinbase, WASM
+execution, wallet scan, merge-mining, or strict-mode rejection paths.
+
 ## File Map
 
 | Component | Path |
@@ -402,7 +467,13 @@ block with PoWRewardV1 coinbase).
 | Relayer unit tests (Level 1) | `bin/universal_relayer/src/` |
 | Relayer lightweight test runner | `bin/universal_relayer/test_relayer_lightweight.sh` |
 | Daemon integration tests | `bin/dwowd/src/tests/` |
-| Bridge lifecycle test (Level 2) | `bin/dwowd/src/tests/heavyweight_pipeline.rs` |
+| **Pre-production bridge tests** | `bin/dwowd/src/tests/wallet_integration.rs` (T3, canonical call failure), `bin/dwowd/src/tests/merge_mining.rs` (merge-mined block acceptance + determinism) |
+| Genesis determinism + sync tests | `bin/dwowd/src/tests/genesis.rs` |
+| Lightweight deployment tests | `bin/dwowd/src/tests/pipeline.rs` |
+| Block execution tests (Level 2) | `bin/dwowd/src/tests/heavyweight_pipeline.rs` |
+| Fee collect determinism (Level 2) | `bin/dwowd/src/tests/fee_collect_pipeline.rs` |
+| Consensus coordination tests | `bin/dwowd/tests/consensus_coordination.rs` |
+| Tripwire guardrails | `bin/dwowd/src/tests/tripwire.rs` |
 | Relayer heavyweight test runner | `bin/universal_relayer/test_relayer_heavyweight.sh` |
 | Docker base image (shared by all images) | `contrib/docker/darkwow-testnet/Dockerfile.base` |
 | Docker localnet (modular pipeline) | `contrib/docker/darkwow-testnet/` (18 `lib/*.sh` modules + `test_pipeline.sh` orchestrator + `pipeline_spec.py` spec) |

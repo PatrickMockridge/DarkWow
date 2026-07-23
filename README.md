@@ -176,12 +176,15 @@ Minimum Rust: **1.87.0**.
 
 | Scope | Command |
 |-------|---------|
+| Pre-production bridge | `RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd --lib` |
 | Lightweight (deployment) | `cargo test -p dwowd test_all_contracts_deploy` |
 | Heavyweight (ZK proofs) | `RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd test_heavyweight` |
 | Localnet (Docker) | `./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native` |
 | Wallet spec (Python) | `python3 contrib/model/wallet_model.py` |
 | Wallet unit | `RAYON_NUM_THREADS=10 cargo test -p dwow_wallet --lib` |
 | Wallet integration (Docker) | `RAYON_NUM_THREADS=10 bash contrib/docker/darkwow-testnet/test-wallet.sh` |
+
+> See [Testing Overview](doc/src/dev/testing/overview.md) for test taxonomy, bridge test specifications, and MoC boundaries.
 
 > **USE AT YOUR OWN RISK.** No third-party audit. See [Smart Contract Safety](doc/src/dev/contracts/safety.md).
 
