@@ -206,6 +206,7 @@ impl_p2p_message!(
     1,
     GET_ADDRS_METERING_CONFIGURATION
 );
+impl_boundary_codec!(GetAddrsMessage, GET_ADDRS_MAX_BYTES, 1);
 
 /// Sends address information to inbound connection.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -225,6 +226,7 @@ pub const ADDRS_METERING_CONFIGURATION: MeteringConfiguration = MeteringConfigur
 pub const ADDRS_MAX_BYTES: u64 = 65281;
 
 impl_p2p_message!(AddrsMessage, "addr", ADDRS_MAX_BYTES, 1, ADDRS_METERING_CONFIGURATION);
+impl_boundary_codec!(AddrsMessage, ADDRS_MAX_BYTES, 1);
 
 /// Requests version information of outbound connection.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -267,6 +269,7 @@ pub const VERSION_METERING_CONFIGURATION: MeteringConfiguration = MeteringConfig
 pub const VERSION_MAX_BYTES: u64 = 2043;
 
 impl_p2p_message!(VersionMessage, "version", VERSION_MAX_BYTES, 1, VERSION_METERING_CONFIGURATION);
+impl_boundary_codec!(VersionMessage, VERSION_MAX_BYTES, 1);
 
 impl VersionMessage {
     pub(in crate::net) fn get_ipv6_addr(&self) -> Option<Ipv6Addr> {
@@ -301,6 +304,7 @@ pub const VERACK_METERING_CONFIGURATION: MeteringConfiguration = MeteringConfigu
 pub const VERACK_MAX_BYTES: u64 = 128;
 
 impl_p2p_message!(VerackMessage, "verack", VERACK_MAX_BYTES, 1, VERACK_METERING_CONFIGURATION);
+impl_boundary_codec!(VerackMessage, VERACK_MAX_BYTES, 1);
 
 /// Maximum number of error responses per connection to prevent DoS
 /// amplification. After this limit is reached, further errors are
@@ -407,3 +411,4 @@ impl_p2p_message!(
     1,
     SEED_ERROR_METERING_CONFIGURATION
 );
+impl_boundary_codec!(SeedErrorMessage, SEED_ERROR_MAX_BYTES, 1);
