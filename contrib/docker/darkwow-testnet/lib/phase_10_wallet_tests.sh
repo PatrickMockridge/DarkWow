@@ -437,7 +437,7 @@ phase_wallet_transfer() {
     # is never observable even when revocation works correctly. Deferred to
     # the per-cap revoked-status query (P3). For now, the DEBIT balance
     # check (step 5) already proves the spend was recognised.
-    info "  REVOCATION: skipped (deferred to P3 per-cap query — DEBIT balance check covers spend detection)"
+    warn "  REVOCATION: skipped — per-cap revoked-status query deferred to P3. The DEBIT balance check (step 5) proves spend detection. P3 will add: wal N capability status <cap_id> to verify individual nullifier revocation."
 
     # ── 9. Post-transfer: wallet-1 fee readiness check ─────────────────
     local post_xfer_balance

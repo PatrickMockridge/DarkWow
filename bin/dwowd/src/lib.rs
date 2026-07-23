@@ -160,6 +160,19 @@ impl SyncState {
             }
         }
     }
+
+    /// Human-readable label for the sync state. Used by the
+    /// `blockchain.get_sync_state` RPC and pipeline diagnostics.
+    pub fn label(code: u8) -> &'static str {
+        match code {
+            0 => "Initial",
+            1 => "Syncing",
+            2 => "CaughtUp",
+            3 => "Behind",
+            4 => "WaitingForGenesis",
+            _ => "Unknown",
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

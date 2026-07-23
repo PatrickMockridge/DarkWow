@@ -920,8 +920,8 @@ pub async fn dispatch_async(
             // Retry: if not synced, poll for up to 25s before giving up.
             // Transient P2P drops should not cause pipeline failures (HAZID RC6.3).
             if !dww_r.is_synced() {
-                println!("Wallet not yet synced — polling for blocks (retry 5×5s)...");
-                for attempt in 1..=5 {
+                println!("Wallet not yet synced — polling for blocks (retry 3×5s)...");
+                for attempt in 1..=3 {
                     smol::Timer::after(std::time::Duration::from_secs(5)).await;
                     if dww_r.is_synced() {
                         println!("Sync detected on retry {}", attempt);

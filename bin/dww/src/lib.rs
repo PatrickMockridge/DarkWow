@@ -383,22 +383,22 @@ impl Dww {
         // the P2P layer's responsibility. We check peer connectivity as a
         // best-effort health signal — if peers drop during broadcast, retry.
         let mut broadcast_ok = false;
-        for attempt in 1..=3 {
+        for attempt in 1..=2 {
             p2p.broadcast(tx).await;
             if p2p.hosts().peers().len() > 0 {
                 broadcast_ok = true;
                 break;
             }
-            if attempt < 3 {
+            if attempt < 2 {
                 output.push(format!(
-                    "Broadcast attempt {}/3: no peers after send, retrying...", attempt));
+                    "Broadcast attempt {}/2: no peers after send, retrying...", attempt));
                 smol::Timer::after(std::time::Duration::from_secs(2)).await;
             }
         }
 
         if !broadcast_ok {
             return Err(Error::Custom(
-                "Transaction broadcast failed after 3 attempts — all peers disconnected. \
+                "Transaction broadcast failed after 2 attempts — all peers disconnected. \
                  Transaction NOT stored as broadcasted. Retry when P2P reconnects.".into()
             ));
         }

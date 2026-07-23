@@ -45,7 +45,7 @@ phase_clean() {
         STALE=$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep "^dwow-" || true)
         if [ -n "$STALE" ]; then
             warn "Removing stale containers..."
-            echo "$STALE" | xargs -r docker rm -f 2>/dev/null || true
+            echo "$STALE" | xargs docker rm -f 2>/dev/null || true
         fi
         if [ "$FRESH" = "true" ]; then
             for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^darkwow-testnet" || true); do
@@ -78,7 +78,7 @@ phase_clean() {
     done
     STALE=$(docker ps -a -q --filter name=dwow 2>/dev/null)
     if [ -n "$STALE" ]; then
-        echo "$STALE" | xargs -r docker rm -f 2>/dev/null || true
+        echo "$STALE" | xargs docker rm -f 2>/dev/null || true
     fi
 
     # ── Step 3: Prune (always, not just FRESH) ──

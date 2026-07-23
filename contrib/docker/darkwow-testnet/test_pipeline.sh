@@ -216,7 +216,14 @@ if [ "$RESUME_FROM" -le 8 ]; then
 fi
 
 # Wallet verification — only when --with-wallet is used.
+# P2#16: Docker daemon liveness gate before wallet phases that depend on
+# docker exec. Prevents "container missing" from being misinterpreted as
+# daemon failure vs container crash.
 if [ "${WITH_WALLET:-0}" -gt 0 ] && ! is_join_mode; then
+    if ! docker info >/dev/null 2>&1; then
+        fail "Docker daemon is not reachable before wallet phases — cannot proceed"
+        report; exit 1
+    fi
     if [ "$RESUME_FROM" -le 9 ]; then
         phase_time_start; phase_wallet_verify;   phase_time_end "wallet_verify"
         phase_gate "wallet_verify"

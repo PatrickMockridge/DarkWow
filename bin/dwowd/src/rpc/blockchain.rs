@@ -78,6 +78,30 @@ impl DwowNode {
     }
 
     // RPCAPI:
+    // Returns the current sync state of the node.
+    // Reads SyncState from AtomicU8 — no chain state dependency.
+    // Scripts use this to query sync readiness instead of inferring from height.
+    //
+    // --> {"jsonrpc": "2.0", "method": "blockchain.get_sync_state", "params": [], "id": 1}
+    // <-- {"jsonrpc": "2.0", "result": {"sync_state":"CaughtUp","sync_state_code":2}, "id": 1}
+    pub async fn blockchain_get_sync_state(&self, id: u16, params: JsonValue) -> JsonResult {
+        if !params.get::<Vec<JsonValue>>().map(|a| a.is_empty()).unwrap_or(false) {
+            return JsonError::new(InvalidParams, None, id).into()
+        }
+
+        let state = crate::SyncState::load(&self.mining_state.sync_state);
+        let code = state as u8;
+        let label = crate::SyncState::label(code);
+
+        let result = JsonValue::from(std::collections::HashMap::from([
+            ("sync_state".to_string(), JsonValue::String(label.to_string())),
+            ("sync_state_code".to_string(), JsonValue::Number(code as f64)),
+        ]));
+
+        JsonResponse::new(result, id).into()
+    }
+
+    // RPCAPI:
     // Returns the last confirmed block height and hash.
     // Matches the format the wallet expects: [height_f64, hash_string].
     //
