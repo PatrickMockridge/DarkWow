@@ -17,7 +17,7 @@ per-block Pedersen mass balance for supply audit. It ships 32 deployable
 smart contracts, nine deployed at genesis, all built on the same o-cap +
 ZK substrate with a five-level deterministic test pipeline.
 
-Built on a proven chassis — Satoshi's supply model (21M DRKW hard cap),
+Built on a proven chassis — Satoshi's 21M DRKW supply target with perpetual tail emission,
 Monero's RandomX mining, continuous exponential decay — plus a novel zkVM
 that proves WASM contract execution. Every smart contract runs inside ZK
 proofs by default.

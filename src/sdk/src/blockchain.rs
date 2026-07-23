@@ -26,7 +26,7 @@
 //! # Block Reward Design
 //!
 //! DarkWow uses a **continuous exponential decay** reward schedule with a
-//! permanent tail emission — merging Bitcoin's 21M hard cap with Monero's
+//! permanent tail emission — merging Bitcoin's 21M supply target with Monero's
 //! fair CPU mining and tail subsidy. The reward decreases every block;
 //! there are no step-function halvings.
 //!
@@ -37,7 +37,7 @@
 //! | Parameter | Value | Notes |
 //! |-----------|-------|-------|
 //! | Block time | 120 seconds | 262,980 blocks/year |
-//! | Supply cap | 21,000,000 DRKW| 2.1 × 10^15 base units |
+//! | Reference supply | 21,000,000 DRKW | 2.1 × 10^15 base units (tail onset) |
 //! | Half-life (H) | 1,051,920 blocks | ~4 years |
 //! | Tail emission | 1% per annum | 210,000 DRK/year |
 //! | Initial reward (R₀) | 1,383,764,049 | ~13.838 DRKW|
@@ -53,9 +53,11 @@
 //!
 //! ## Supply Convergence
 //!
-//! The main emission asymptotically approaches 21M DRKWthrough the
-//! geometric decay. Tail emission begins when the exponential reward
-//! drops below the per-block tail threshold (~16.5 years after launch).
+//! The main emission asymptotically approaches the reference supply of
+//! 21M DRKW through the geometric decay. Tail emission (1% per annum)
+//! begins when the exponential reward drops below the per-block tail
+//! threshold (~16.5 years after launch) and continues permanently —
+//! there is no supply cap.
 
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
@@ -611,16 +613,28 @@ pub mod reward {
 
     /// Tail emission reward per block (in base units).
     ///
-    /// 1% per annum of the 21M cap, rounded down:
+    /// 1% per annum of the 21M DRK reference supply, rounded down:
     /// = ⌊21,000,000 × 0.01 × 10^8 / 262,980⌋
     /// = 79,853,981 base units (~0.7985 DRK)
+    ///
+    /// This reward continues **permanently** — there is no supply cap.
+    /// The 21M figure is the approximate supply at which the exponential
+    /// decay curve reaches the tail floor (~16.5 years after launch).
     pub const TAIL_REWARD: BlockReward = BlockReward(79_853_981);
 
-    /// Maximum total supply (in DRK).
-    pub const MAX_SUPPLY_DRK: u64 = 21_000_000;
+    /// Reference supply at tail emission onset (in DRK).
+    ///
+    /// This is NOT a hard cap. It is the approximate total supply at which
+    /// the main exponential emission curve reaches the tail floor. After
+    /// this point, tail emission (1% per annum) continues permanently.
+    /// Used as the base for tail emission calculation.
+    pub const TAIL_EMISSION_REFERENCE_SUPPLY_DRK: u64 = 21_000_000;
 
-    /// Maximum total supply (in base units).
-    pub const MAX_SUPPLY: u64 = MAX_SUPPLY_DRK * 100_000_000; // 2.1 × 10^15
+    /// Reference supply at tail emission onset (in base units).
+    ///
+    /// This is NOT a hard cap. See [`TAIL_EMISSION_REFERENCE_SUPPLY_DRK`].
+    pub const TAIL_EMISSION_REFERENCE_SUPPLY: u64 =
+        TAIL_EMISSION_REFERENCE_SUPPLY_DRK * 100_000_000; // 2.1 × 10^15
 
     /// Blocks per year at 2-minute block time (365.25 × 24 × 3600 / 120).
     pub const BLOCKS_PER_YEAR: u64 = 262_980;

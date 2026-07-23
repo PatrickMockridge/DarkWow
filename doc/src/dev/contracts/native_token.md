@@ -152,7 +152,7 @@ cumulative commitment as a public input. This is not a separate mechanism
 bolted onto the side — it is part of how minting works. Every coinbase proof
 carries the cumulative chain forward by exactly the expected reward.
 
-The emission schedule follows Bitcoin's model: 21 million DRKW hard cap,
+The emission schedule begins with Bitcoin's 21M DRKW supply target, after which perpetual 1% tail emission takes over — there is no supply cap.
 continuous exponential decay with a 4-year half-life, and a permanent tail
 emission for long-term security.
 

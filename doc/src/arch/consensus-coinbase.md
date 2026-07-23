@@ -13,7 +13,7 @@ DarkWow's tokenomics are assembled from proven, battle-tested parts:
 
 | Component | Source | Status |
 |-----------|--------|--------|
-| **21M DRKW supply cap** | Satoshi / Bitcoin | Deployed 2009, untouched since |
+| **21M DRKW reference supply** | Satoshi / Bitcoin | Tail emission onset target (~16.5y), perpetual 1% thereafter |
 | **RandomX PoW** | Monero | CPU-mining since 2019 |
 | **Permanent tail emission** | Monero | 1% per annum, secures chain forever |
 | **Fair launch** | Satoshi | No premine, no SAFT, no insider allocation |
@@ -26,9 +26,13 @@ have worked for a combined 30+ years. The novel pieces — ZK nullifier claim an
 Uncle Merkle — are the minimum necessary innovation to achieve deterministic,
 user-verifiable coinbase rewards.
 
-### 21M Cap (Satoshi)
+### 21M Reference Supply (Satoshi)
 
-Same hard cap as Bitcoin. No inflation beyond what the tail emission adds.
+The 21M DRKW figure is the approximate total supply at which the main
+exponential emission curve reaches the tail floor (~16.5 years after
+launch). It is **not a hard cap** — tail emission adds 1% per annum
+permanently after this point, ensuring a minimum security budget forever.
+
 Supply is deterministic from genesis — there are no governance knobs, no
 minting authorizations, no token-holder votes that can change issuance.
 
@@ -41,7 +45,7 @@ farms.
 
 ### Tail Emission (Monero)
 
-1% per annum of the 21M cap, permanently. This works out to 79,853,981 base
+1% per annum of the 21M reference supply, permanently. This works out to 79,853,981 base
 units per block (~0.80 DRKW), or 210,000 DRKW/year. Monero's tail exists for
 the same reason: when the main emission curve approaches zero, you need a floor
 on the security budget. Without it, miners rely entirely on fees, and fee
@@ -820,7 +824,7 @@ where 2^(-h/H) is computed via integer binary exponentiation:
 Constants:
     R₀ = 1,383,764,049 base units (~13.84 DRKW)
     H  = 1,051,920 blocks (half-life, ~4 years at 2-min blocks)
-    R_tail = 79,853,981 base units (~0.80 DRKW, 1% per annum of 21M cap)
+    R_tail = 79,853,981 base units (~0.80 DRKW, 1% per annum of 21M reference supply)
 ```
 
 This is the production-default formula — there is no feature gate. The exponential
@@ -862,7 +866,7 @@ R₀ = ⌊total_supply × ln(2) / half_life_blocks⌋
 Genesis (height 1) receives INITIAL_REWARD. Height 2 is the first decay step:
 `R(2) = max(R₀ × 2^(-2/H), R_tail)`.
 
-Tail emission (1% per annum of 21M cap):
+Tail emission (1% per annum of 21M reference supply):
 
 ```
 R_tail = ⌊21,000,000 × 0.01 × 10^8 / 262,980⌋
@@ -1293,7 +1297,7 @@ for the full comparison.
 
 | | Bitcoin | Monero | DarkWow |
 |---|---------|--------|---------|
-| Supply cap | 21M (fixed) | ~18.4M + tail | 21M cap + tail |
+| Supply | 21M ref + perpetual tail | ~18.4M + tail | 21M ref + perpetual tail |
 | Halving | 4-year step | 4-year step → tail | Continuous exponential → tail |
 | Premine | 0 | 0 | 0 |
 | PoW | SHA-256 (ASIC) | RandomX (CPU) | RandomX (CPU) |
