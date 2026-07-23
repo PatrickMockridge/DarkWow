@@ -83,8 +83,9 @@ use dwow_chain::sync_types::{Blocks, GetBlocks, GetTip, Tip};
 #[derive(Clone, Debug)]
 pub struct PeerTip {
     pub height: BlockHeight,
-    #[allow(dead_code)]
-    pub hash: String,
+    /// §8.2.1: BlockHash — nominal type for P2P boundary. Re-lifted from
+    /// the wire `Tip.hash: String` via hex decode in `from_tip()`.
+    pub hash: dwow_chain::sync_types::BlockHash,
     pub genesis_hash: Option<String>,
 }
 
@@ -104,17 +105,19 @@ impl PeerTip {
             ));
         }
 
-        // 2. Hash must be non-empty. A peer with blocks but no hash is
-        //    in an inconsistent state — reject at the boundary.
-        if tip.hash.is_empty() && tip.height.get() > 0 {
-            return Err(crate::Error::Custom(
-                "PeerTip::from_tip: empty hash from peer with height > 0".into()
-            ));
-        }
+        // 2. Hash: at height 0, empty string is valid (genesis sentinel).
+        //    At height > 0, must be a valid blake3 hex string (32 bytes = 64 hex chars).
+        //    §8.2.1: BlockHash re-lift — validate at the boundary.
+        let hash = if tip.height.get() == 0 && tip.hash.is_empty() {
+            dwow_chain::sync_types::BlockHash::zero()
+        } else {
+            dwow_chain::sync_types::BlockHash::from_hex_str(&tip.hash)
+                .ok_or_else(|| crate::Error::Custom(
+                    format!("PeerTip::from_tip: invalid hash '{}' -- expected 64-char hex", tip.hash)
+                ))?
+        };
 
         // 3. Genesis hash must be present if the peer has blocks.
-        //    A peer claiming height > 0 but no genesis hash cannot be
-        //    trusted for sync (can't verify chain compatibility).
         if tip.height.get() > 0 && tip.genesis_hash.is_none() {
             return Err(crate::Error::Custom(
                 format!("PeerTip::from_tip: missing genesis hash at height {}", tip.height)
@@ -123,7 +126,7 @@ impl PeerTip {
 
         Ok(PeerTip {
             height: tip.height,
-            hash: tip.hash.clone(),
+            hash,
             genesis_hash: tip.genesis_hash.clone(),
         })
     }

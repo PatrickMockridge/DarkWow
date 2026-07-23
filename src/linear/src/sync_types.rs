@@ -77,6 +77,40 @@ pub struct BlockResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetTip;
 
+/// §8.2.1: BlockHash — nominal blake3 hash for P2P boundary types.
+/// Wire-level `Tip.hash` is still `String` for backward compatibility.
+/// BlockHash is used at the boundary re-lift step (PeerTip).
+#[repr(transparent)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BlockHash(pub(crate) blake3::Hash);
+
+impl BlockHash {
+    /// Construct from a hex string (the wire format for Tip.hash).
+    /// Returns None if the string is empty (genesis sentinel) or not valid hex.
+    pub fn from_hex_str(s: &str) -> Option<Self> {
+        if s.is_empty() {
+            return None;
+        }
+        let bytes = hex::decode(s).ok()?;
+        if bytes.len() != 32 {
+            return None;
+        }
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&bytes);
+        Some(Self(blake3::Hash::from_bytes(arr)))
+    }
+
+    /// Zero-hash sentinel for height-0 peers with no blocks.
+    pub fn zero() -> Self {
+        Self(blake3::Hash::from_bytes([0u8; 32]))
+    }
+
+    /// Hex representation for display/comparison.
+    pub fn to_hex(&self) -> String {
+        hex::encode(self.0.as_bytes())
+    }
+}
+
 /// Response containing chain tip info.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Tip {

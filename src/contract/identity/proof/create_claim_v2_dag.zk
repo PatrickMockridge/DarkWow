@@ -1,0 +1,44 @@
+# CreateClaimV1DAG_V2 circuit — domain-separated DAG-based credential claim.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+k = 11;
+field = "pallas";
+
+constant "CreateClaimV2DAG" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "CreateClaimV2DAG" {
+    Base nullifier,
+    Base claim_type,
+    Base issuer_pub_x,
+    Base issuer_pub_y,
+    Base schema_hash,
+    Base credential_secret,
+    Base attribute_value,
+    Base threshold,
+    Base commitment,
+    Base path_index,
+    Base num_credentials,
+    Base is_lte_1,
+    Base is_lte_2,
+    Base is_lte_3,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "CreateClaimV2DAG" {
+    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COIN_COMMIT = witness_base(4);
+
+    computed_path_hash = poseidon_hash(DOMAIN_COIN_COMMIT, path_index, num_credentials);
+    computed_path_hash = poseidon_hash(DOMAIN_COIN_COMMIT, computed_path_hash, is_lte_1);
+    computed_path_hash = poseidon_hash(DOMAIN_COIN_COMMIT, computed_path_hash, is_lte_2);
+    computed_path_hash = poseidon_hash(DOMAIN_COIN_COMMIT, computed_path_hash, is_lte_3);
+
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+}

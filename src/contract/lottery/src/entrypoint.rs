@@ -56,6 +56,11 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(&commit_ticket_bincode[..])?;
     wasm::db::zkas_db_set(&reveal_ticket_bincode[..])?;
 
+    let commit_ticket_v2_bincode = include_bytes!("../proof/commit_ticket_v2.zk.bin");
+    wasm::db::zkas_db_set(&commit_ticket_v2_bincode[..])?;
+    let reveal_ticket_v2_bincode = include_bytes!("../proof/reveal_ticket_v2.zk.bin");
+    wasm::db::zkas_db_set(&reveal_ticket_v2_bincode[..])?;
+
     // Initialize database trees
     wasm::db::db_init(cid, crate::LOTTERY_CONTRACT_LOTTERIES_TREE)?;
     wasm::db::db_init(cid, crate::LOTTERY_CONTRACT_TICKETS_TREE)?;
@@ -100,7 +105,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let vc_coords = coords.unwrap();
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                crate::LOTTERY_CONTRACT_ZKAS_COMMIT_NS.to_string(),
+                crate::LOTTERY_CONTRACT_ZKAS_COMMIT_NS_V2.to_string(),
                 vec![ticket_id, *vc_coords.x(), *vc_coords.y()],
             ));
             let mut metadata = vec![];
@@ -112,7 +117,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: crate::model::RevealTicketParamsV1 = deserialize(&self_.data[1..])?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                crate::LOTTERY_CONTRACT_ZKAS_REVEAL_NS.to_string(),
+                crate::LOTTERY_CONTRACT_ZKAS_REVEAL_NS_V2.to_string(),
                 vec![params.revealed_commitment, pallas::Base::from(params.matches as u64)],
             ));
             let mut metadata = vec![];

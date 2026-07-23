@@ -99,6 +99,13 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let purchase_coverage_with_dag_v1_bincode = include_bytes!("../proof/purchase_coverage_with_dag_v1.zk.bin");
     wasm::db::zkas_db_set(&purchase_coverage_with_dag_v1_bincode[..])?;
 
+    let underwrite_with_capability_v2_bincode =
+        include_bytes!("../proof/underwrite_with_capability_v2.zk.bin");
+    wasm::db::zkas_db_set(&underwrite_with_capability_v2_bincode[..])?;
+    let purchase_coverage_with_capability_v2_bincode =
+        include_bytes!("../proof/purchase_coverage_with_capability_v2.zk.bin");
+    wasm::db::zkas_db_set(&purchase_coverage_with_capability_v2_bincode[..])?;
+
     Ok(())
 }
 
@@ -165,7 +172,7 @@ fn underwrite_with_capability_get_metadata_v1(
     let cap = Option::from(pallas::Base::from_repr(params.capability_secret))
         .ok_or(InsuranceMarketError::InvalidCapability)?;
     zk_public_inputs.push((
-        crate::INSURANCE_MARKET_ZKAS_UNDERWRITE_WITH_CAPABILITY_NS_V1.to_string(),
+        crate::INSURANCE_MARKET_ZKAS_UNDERWRITE_WITH_CAPABILITY_NS_V2.to_string(),
         vec![ux, uy, cap],
     ));
     let mut metadata = vec![];
@@ -187,7 +194,7 @@ fn purchase_coverage_with_capability_get_metadata_v1(
     let cap = Option::from(pallas::Base::from_repr(params.capability_secret))
         .ok_or(InsuranceMarketError::InvalidCapability)?;
     zk_public_inputs.push((
-        crate::INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_CAPABILITY_NS_V1.to_string(),
+        crate::INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_CAPABILITY_NS_V2.to_string(),
         vec![bx, by, cap],
     ));
     let mut metadata = vec![];

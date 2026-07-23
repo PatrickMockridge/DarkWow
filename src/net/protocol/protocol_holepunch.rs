@@ -88,6 +88,7 @@ pub struct HolepunchRequest {
 }
 
 impl_p2p_message!(HolepunchRequest, "hpreq", HOLEPUNCH_MAX_BYTES, 1, HOLEPUNCH_METERING);
+impl_boundary_codec!(HolepunchRequest, HOLEPUNCH_MAX_BYTES, 1);
 
 /// Instruction to attempt a holepunch connection
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -99,6 +100,7 @@ pub struct HolepunchConnect {
 }
 
 impl_p2p_message!(HolepunchConnect, "hpconn", HOLEPUNCH_MAX_BYTES, 1, HOLEPUNCH_METERING);
+impl_boundary_codec!(HolepunchConnect, HOLEPUNCH_MAX_BYTES, 1);
 
 /// Result of a holepunch attempt
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -109,6 +111,7 @@ pub struct HolepunchResult {
 }
 
 impl_p2p_message!(HolepunchResult, "hpres", HOLEPUNCH_MAX_BYTES, 1, HOLEPUNCH_METERING);
+impl_boundary_codec!(HolepunchResult, HOLEPUNCH_MAX_BYTES, 1);
 
 /// Tracks nonces for active `initiate_punch()` calls.
 static INITIATOR_NONCES: LazyLock<AsyncMutex<HashSet<u64>>> =

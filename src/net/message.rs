@@ -73,6 +73,7 @@ pub trait BoundaryCodec: dwow_serial::Encodable + dwow_serial::Decodable + Sized
 
 /// Shorthand for implementing BoundaryCodec on P2P message types.
 /// Types must already derive SerialEncodable/SerialDecodable.
+#[macro_export]
 macro_rules! impl_boundary_codec {
     ($ty:ty, $max_bytes:expr, $metering_score:expr) => {
         impl_boundary_codec!($ty, $max_bytes, $metering_score, &[]);

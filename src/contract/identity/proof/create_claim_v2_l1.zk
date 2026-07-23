@@ -1,0 +1,45 @@
+# CreateClaimV1L1_V2 circuit — domain-separated L1 (selective disclosure) claim.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+k = 11;
+field = "pallas";
+
+constant "CreateClaimV2L1" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "CreateClaimV2L1" {
+    Base nullifier,
+    Base claim_type,
+    Base issuer_pub_x,
+    Base issuer_pub_y,
+    Base schema_hash,
+    Base credential_secret,
+    Base attribute_value,
+    Base threshold,
+    Base commitment,
+    Base predicate_result,
+    Base delta,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "CreateClaimV2L1" {
+    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_TX_BINDING = witness_base(3);
+
+    computed_nullifier = poseidon_hash(DOMAIN_NULLIFIER, credential_secret, commitment);
+    constrain_instance(computed_nullifier);
+
+    range_check(64, attribute_value);
+    range_check(64, threshold);
+    bool_check(predicate_result);
+
+    is_lte = less_than_or_equal(threshold, attribute_value);
+    constrain_equal_base(is_lte, predicate_result);
+
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+}

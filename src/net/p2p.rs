@@ -177,7 +177,7 @@ impl P2p {
     /// Named `seed()` per upstream convention. In DarkWow's flat P2P
     /// mesh, this activates the BootstrapSyncSession to connect to known
     /// peers, exchange hostlists, and populate the outbound session's
-    /// greylist. There is no seed/node hierarchy — every node is a full
+    /// greylist. There is no seed/node hierarchy -- every node is a full
     /// peer. See SeedSyncSession for the full architectural context.
     /// ─────────────────────────────────────────────────────────────────
     #[cfg(feature = "seed-sync-session")]
@@ -228,7 +228,6 @@ impl P2p {
             return
         }
 
-        // Serialize the provided message
         let message = SerializedMessage::new(message).await;
 
         // Spawn a detached task to actually send the message to the channels,
@@ -377,11 +376,11 @@ async fn broadcast_serialized_to<M: Message>(
                     // If the channel is stopped then it should automatically die
                     // and the session will remove it from p2p.
                     // type-system.md §4, §10.5 obligation 2: network errors
-                    // SHALL produce typed barbs — not crash the node.
+                    // SHALL produce typed barbs -- not crash the node.
                     if !channel.is_stopped() {
                         tracing::warn!(
                             target: "net::p2p::broadcast",
-                            "[P2P] channel send failed but is_stopped=false (race) — dropping message to {}",
+                            "[P2P] channel send failed but is_stopped=false (race) -- dropping message to {}",
                             channel.display_address()
                         );
                     }
