@@ -59,7 +59,7 @@ phase_start() {
             MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
             MONEROD_RPC_URL="$MONEROD_RPC_URL" \
             docker compose --profile bridge up -d; check $? "compose up bridge"
-        sleep 5
+        _wait_for_rpc "dwow-bridge" "31345" 30 || warn "bridge RPC not ready — P2P mesh may be incomplete"
 
         EXITED=$(docker compose --profile bridge ps 2>/dev/null | grep "Exit" || true)
         if [ -n "$EXITED" ]; then

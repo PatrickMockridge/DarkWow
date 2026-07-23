@@ -306,6 +306,32 @@ jsonrpc_get_height() {
     fi
 }
 
+# Wait for a container's RPC to become reachable via /dev/tcp ping.
+# Replaces fixed `sleep N` between container starts with bounded readiness
+# polling. Uses the same /dev/tcp pattern as jsonrpc().
+# Args: container_name port [max_wait_seconds=30] [sleep_interval=2]
+# Returns: 0 when RPC responds, 1 on timeout
+_wait_for_rpc() {
+    local container="$1" port="$2" max_wait="${3:-30}" interval="${4:-2}"
+    local elapsed=0
+    while [ "$elapsed" -lt "$max_wait" ]; do
+        if container_running "$container" 2>/dev/null; then
+            # Single-shot RPC ping via /dev/tcp — same pattern as jsonrpc()
+            if docker exec "$container" bash -c \
+                "exec 3<>/dev/tcp/127.0.0.1/$port 2>/dev/null && \
+                 echo '{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}' >&3 && \
+                 timeout 2 cat <&3 | grep -q 'result'" 2>/dev/null; then
+                info "  $container RPC ready after ${elapsed}s"
+                return 0
+            fi
+        fi
+        sleep "$interval"
+        elapsed=$((elapsed + interval))
+    done
+    warn "  $container RPC not ready after ${max_wait}s — proceeding anyway"
+    return 1
+}
+
 poll_until() {
     local max_attempts="$1" sleep_secs="$2"
     shift 2
