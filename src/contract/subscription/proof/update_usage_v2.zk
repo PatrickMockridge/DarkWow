@@ -1,0 +1,37 @@
+k = 11;
+field = "pallas";
+
+# update_usage_V2 — domain-separated circuit.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+
+constant "UpdateUsageV2" {
+}
+
+witness "UpdateUsageV2" {
+    Base subscription_id,
+    Base subscriber_pub_x,
+    Base subscriber_pub_y,
+    Base usage_timestamp,
+    Base nonce,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "UpdateUsageV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COIN_COMMIT = witness_base(4);
+
+    derived_id = poseidon_hash(DOMAIN_COIN_COMMIT, 
+        subscription_id,
+        subscriber_pub_x,
+        subscriber_pub_y,
+        usage_timestamp,
+        nonce
+    );
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+    constrain_instance(derived_id);
+}

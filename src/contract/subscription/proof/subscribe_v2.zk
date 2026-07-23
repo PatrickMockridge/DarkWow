@@ -1,0 +1,64 @@
+k = 11;
+field = "pallas";
+
+# subscribe_V2 — domain-separated circuit.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+
+constant "SubscribeV2" {
+    EcFixedPointBase NULLIFIER_K,
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+}
+
+witness "SubscribeV2" {
+    Base subscription_id,
+    Base subscriber_pub_x,
+    Base subscriber_pub_y,
+    Base plan_id,
+    Base deposit,
+    Base token_id,
+    Base lock_until_block,
+    Base value_commit_x,
+    Base value_commit_y,
+    Base subscriber_secret,
+    Base nonce,
+    Scalar value_blind,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "SubscribeV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COIN_COMMIT = witness_base(4);
+
+    derived_subscriber_pub = ec_mul_base(subscriber_secret, NULLIFIER_K);
+    derived_sub_x = ec_get_x(derived_subscriber_pub);
+    derived_sub_y = ec_get_y(derived_subscriber_pub);
+    constrain_equal_base(derived_sub_x, subscriber_pub_x);
+    constrain_equal_base(derived_sub_y, subscriber_pub_y);
+
+    derived_id = poseidon_hash(DOMAIN_COIN_COMMIT, 
+        subscriber_pub_x,
+        subscriber_pub_y,
+        plan_id,
+        deposit,
+        token_id,
+        lock_until_block,
+        subscriber_secret,
+        nonce
+    );
+    constrain_equal_base(derived_id, subscription_id);
+
+    vcv = ec_mul_short(deposit, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+    value_commit_computed = ec_add(vcv, vcr);
+    computed_x = ec_get_x(value_commit_computed);
+    computed_y = ec_get_y(value_commit_computed);
+    constrain_equal_base(computed_x, value_commit_x);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+    constrain_equal_base(computed_y, value_commit_y);
+}

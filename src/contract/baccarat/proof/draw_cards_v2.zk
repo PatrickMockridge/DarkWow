@@ -1,0 +1,51 @@
+# Baccarat Draw Cards Circuit (Version 1)
+#
+# This circuit proves that a player knows the secret_nonce used
+# to commit a baccarat bet, without revealing it on-chain.
+#
+# Replaces plaintext secret_nonce comparison.
+#
+# Public Inputs (constrain_instance):
+#   - bet_id: The bet identifier
+#   - secret_nonce_commit: Poseidon hash of the secret nonce
+#   - tx_commitment: C-4 cross-circuit binding
+#
+# Witnesses:
+#   - secret_nonce: The player's secret nonce
+
+k = 11;
+field = "pallas";
+
+# draw_cards_V2 — domain-separated circuit.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+
+constant "DrawCards_V2" {
+}
+
+witness "DrawCards_V2" {
+    Base bet_id,
+    Base secret_nonce,
+    Base secret_nonce_commit,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "DrawCards_V2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_SIGNATURE_SECRET = witness_base(7);
+
+    # Compute commitment: H(secret_nonce)
+    computed_commit = poseidon_hash(DOMAIN_SIGNATURE_SECRET, secret_nonce);
+
+    # Verify computed commitment matches stored commitment
+    constrain_equal_base(computed_commit, secret_nonce_commit);
+
+    # Expose public inputs
+    constrain_instance(bet_id);
+    constrain_instance(secret_nonce_commit);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+}

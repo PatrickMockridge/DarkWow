@@ -1,0 +1,34 @@
+# MultiSig CreateGroup Circuit — verifies group creation parameters
+k = 11;
+field = "pallas";
+
+# create_group_V2 — domain-separated circuit.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+
+constant "CreateGroupV2" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "CreateGroupV2" {
+    Base group_id,
+    Base threshold,
+    Base total_keys,
+
+    Base tx_commitment,
+    Base tx_nonce,
+}
+
+circuit "CreateGroupV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+
+    range_check(64, threshold);
+
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+
+    constrain_instance(group_id);
+    constrain_instance(threshold);
+    constrain_instance(total_keys);
+}

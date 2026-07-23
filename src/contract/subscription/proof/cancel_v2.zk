@@ -1,0 +1,19 @@
+# Subscription Cancel Circuit — proves sub owner knows secret (ZK nullifier).
+k = 11; field = "pallas";
+constant "CancelV2" { }
+witness "CancelV2" {
+    Base subscription_id, Base subscriber_secret, Base spent_nullifier, Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+circuit "CancelV2" {
+    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_TX_BINDING = witness_base(3);
+
+    computed_nullifier = poseidon_hash(DOMAIN_NULLIFIER, subscription_id, subscriber_secret);
+    constrain_equal_base(computed_nullifier, spent_nullifier);
+    constrain_instance(subscription_id); constrain_instance(spent_nullifier);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+}

@@ -1,0 +1,88 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# select_winner_V2 — domain-separated circuit.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+
+# Tender Select Winner Circuit (Version 1)
+#
+# This circuit proves:
+# - Requester knows their secret key
+# - Requester public key is correctly derived
+# - Winner selection is authorized
+#
+# Public Inputs (constrain_instance):
+#   - tender_id: The tender
+#   - winner_bid_id: The winning bid
+#   - requester_pub_x, requester_pub_y: Requester's public key
+#
+# Witnesses:
+#   - requester_secret: Requester's secret key
+
+constant "SelectWinnerV2" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "SelectWinnerV2" {
+    # Tender being settled
+    Base tender_id,
+
+    # Winner's bid ID
+    Base winner_bid_id,
+
+    # Requester's secret (for key derivation)
+    Base requester_secret,
+
+    # Requester's public key coordinates (public input - must match derived)
+    Base requester_pub_x,
+    Base requester_pub_y,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "SelectWinnerV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+
+    # ==========================================================================
+    # PHASE 1: Derive requester public key from secret
+    # ==========================================================================
+
+    requester_pub = ec_mul_base(requester_secret, NULLIFIER_K);
+    derived_pub_x = ec_get_x(requester_pub);
+    derived_pub_y = ec_get_y(requester_pub);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the requester_secret to the requester_pubkey
+    constrain_equal_base(derived_pub_x, requester_pub_x);
+    constrain_equal_base(derived_pub_y, requester_pub_y);
+
+    # ==========================================================================
+    # PHASE 2: Expose public inputs
+    # ==========================================================================
+
+    constrain_instance(tender_id);
+    constrain_instance(winner_bid_id);
+    constrain_instance(requester_pub_x);
+    constrain_instance(requester_pub_y);
+
+    # ==========================================================================
+    # SOUNDNESS NOTES
+    # ==========================================================================
+    #
+    # This circuit uses ONLY proven opcodes:
+    #   - ec_mul_base: standard EC operations
+    #   - ec_get_x, ec_get_y: standard EC operations
+    #   - constrain_instance: public input exposure
+    #
+    # The contract layer verifies:
+    # 1. Tender is in Revealed state
+    # 2. Winner bid was properly revealed
+    # 3. Requester is the tender creator
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+    # 4. Winner meets competency requirements
+}

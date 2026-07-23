@@ -1,0 +1,54 @@
+# Box Take Circuit — takes a capability from a Box
+# Proves knowledge of box_secret, consumes the Box via nullifier
+k = 11;
+field = "pallas";
+
+# take_V2 — domain-separated circuit.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+
+constant "TakeV2" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "TakeV2" {
+    # Box identity
+    Base box_id,
+    # Current contents commitment
+    Base contents_commit,
+    # Box ownership
+    Base owner_secret,
+    Base owner_pub_x,
+    Base owner_pub_y,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "TakeV2" {
+    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_TX_BINDING = witness_base(3);
+
+    ONE = witness_base(1);
+
+    # Verify box ownership via Schnorr public key
+    owner_pub = ec_mul_base(owner_secret, NULLIFIER_K);
+    derived_pub_x = ec_get_x(owner_pub);
+    derived_pub_y = ec_get_y(owner_pub);
+    constrain_equal_base(derived_pub_x, owner_pub_x);
+    constrain_equal_base(derived_pub_y, owner_pub_y);
+
+    # Verify the Box is not empty
+    less_than_strict(witness_base(0), contents_commit);
+
+    # Nullifier: box_secret + box_id — consumed on open, prevents double-take
+    nullifier = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id);
+    constrain_instance(nullifier);
+
+    # Expose public inputs
+    constrain_instance(box_id);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+    constrain_instance(contents_commit);
+}

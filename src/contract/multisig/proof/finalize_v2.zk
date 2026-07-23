@@ -1,0 +1,39 @@
+# MultiSig Finalize Circuit — threshold signature finalization
+k = 11;
+field = "pallas";
+
+# finalize_V2 — domain-separated circuit.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+
+constant "FinalizeV2" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "FinalizeV2" {
+    Base group_id,
+    Base message_hash,
+
+    Base threshold,
+    Base signature_count,
+
+    Base approval_commit,
+
+    Base tx_commitment,
+    Base tx_nonce,
+}
+
+circuit "FinalizeV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COIN_COMMIT = witness_base(4);
+
+    computed_approval = poseidon_hash(DOMAIN_COIN_COMMIT, group_id, message_hash);
+    constrain_equal_base(computed_approval, approval_commit);
+
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+
+    constrain_instance(group_id);
+    constrain_instance(message_hash);
+}

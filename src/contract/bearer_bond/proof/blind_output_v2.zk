@@ -1,0 +1,67 @@
+# BlindOutput circuit - proves output coin is correctly formed without revealing values
+# Uses Pedersen commitments for additively homomorphic value conservation.
+# Constrains token_commit so entrypoint can group inputs/outputs per token type.
+k = 11;
+field = "pallas";
+
+# blind_output_V2 — domain-separated circuit.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+
+constant "BlindOutput_V2" {
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+}
+
+witness "BlindOutput_V2" {
+    Base coin_public,
+    Base coin_value,
+    Base coin_token_id,
+    Base coin_spend_hook,
+    Base coin_user_data,
+    Base coin_blind,
+    Scalar value_blind,
+    Base token_id_blind,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "BlindOutput_V2" {
+    DOMAIN_TOK_COMMIT = witness_base(2);
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COIN_COMMIT = witness_base(4);
+
+    # Coin commitment
+    coin = poseidon_hash(DOMAIN_COIN_COMMIT, 
+        coin_public,
+        coin_value,
+        coin_token_id,
+        coin_spend_hook,
+        coin_user_data,
+        coin_blind,
+    );
+    constrain_instance(coin);
+
+    # Value commitment - Pedersen (additively homomorphic)
+    # C = v * G_v + r * G_r
+    vcv = ec_mul_short(coin_value, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+    coin_value_commit = ec_add(vcv, vcr);
+    constrain_instance(ec_get_x(coin_value_commit));
+    constrain_instance(ec_get_y(coin_value_commit));
+
+    # Token ID commitment - constrains the token type of the output coin
+    # so the entrypoint can enforce per-token value conservation.
+    token_commit = poseidon_hash(DOMAIN_TOK_COMMIT, coin_token_id, token_id_blind);
+    constrain_instance(token_commit);
+
+    # Reveal spend_hook so parent contracts verify output coin binding
+    constrain_instance(coin_spend_hook);
+
+    # Range proof for value
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+    range_check(64, coin_value);
+}

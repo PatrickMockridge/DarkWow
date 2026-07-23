@@ -1,0 +1,94 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# reveal_bid_V2 — domain-separated circuit.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+
+# Tender Reveal Bid Circuit (Version 1)
+#
+# This circuit proves:
+# - Bidder knows their secret key
+# - Bidder public key is correctly derived
+# - The bid was submitted before the deadline
+#
+# Public Inputs (constrain_instance):
+#   - tender_id: The tender
+#   - bid_id: The bid being revealed
+#   - revealed_amount: The actual bid amount
+#
+# Witnesses:
+#   - bidder_secret: Bidder's secret key
+#   - bid_deadline: When bidding closed
+
+constant "RevealBidV2" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "RevealBidV2" {
+    # Tender
+    Base tender_id,
+
+    # Bid being revealed
+    Base bid_id,
+
+    # Bidder's secret (for key derivation)
+    Base bidder_secret,
+
+    # Bidder's public key coordinates (public input - must match derived)
+    Base bidder_pub_x,
+    Base bidder_pub_y,
+
+    # The revealed amount
+    Base revealed_amount,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "RevealBidV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+
+    # ==========================================================================
+    # PHASE 1: Derive bidder public key from secret
+    # ==========================================================================
+
+    bidder_pub = ec_mul_base(bidder_secret, NULLIFIER_K);
+    derived_pub_x = ec_get_x(bidder_pub);
+    derived_pub_y = ec_get_y(bidder_pub);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the bidder_secret to the bidder_pubkey
+    constrain_equal_base(derived_pub_x, bidder_pub_x);
+    constrain_equal_base(derived_pub_y, bidder_pub_y);
+
+    # RC1-E: Range proof for u64 bid amount
+    range_check(64, revealed_amount);
+
+    # ==========================================================================
+    # PHASE 2: Expose public inputs
+    # ==========================================================================
+
+    constrain_instance(tender_id);
+    constrain_instance(bid_id);
+    constrain_instance(revealed_amount);
+    constrain_instance(bidder_pub_x);
+    constrain_instance(bidder_pub_y);
+
+    # ==========================================================================
+    # SOUNDNESS NOTES
+    # ==========================================================================
+    #
+    # This circuit uses ONLY proven opcodes:
+    #   - ec_mul_base: standard EC operations
+    #   - ec_get_x, ec_get_y: standard EC operations
+    #   - constrain_instance: public input exposure
+    #
+    # The contract layer verifies:
+    # 1. Bid was submitted before deadline
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+    # 2. Revealed amount matches the sealed bid
+}

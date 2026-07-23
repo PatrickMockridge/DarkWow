@@ -1,0 +1,73 @@
+# Betting Stake Claim Earnings Circuit
+#
+# Proves staker knows secret key matching staker_pubkey,
+# and that the stake ID and there are claimable earnings.
+#
+# Public inputs:
+# - stake_id: The stake ID to claim earnings for
+# - value_commit_x/y: Pedersen commitment coordinates
+# - staker_nullifier: H(stake_id, staker_secret) for replay protection
+# - tx_commitment: C-4 cross-circuit binding
+
+k = 11;
+field = "pallas";
+
+# claim_V2 — domain-separated circuit.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+
+constant "ClaimV2" {
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "ClaimV2" {
+    Base table_id,
+    Base staker_secret,
+    Base staker_pub_x,
+    Base staker_pub_y,
+    Base current_amount,
+    Base accumulated_earnings,
+    Base token_id,
+    Base nonce,
+    Base staker_nullifier,
+    Scalar value_blind,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "ClaimV2" {
+    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COIN_COMMIT = witness_base(4);
+
+    # Verify staker knows secret matching pubkey
+    staker_pub = ec_mul_base(staker_secret, NULLIFIER_K);
+    constrain_equal_base(ec_get_x(staker_pub), staker_pub_x);
+    constrain_equal_base(ec_get_y(staker_pub), staker_pub_y);
+
+    # RC1-E: Range proof for u64 claim amount
+    range_check(64, current_amount);
+
+    # Derive stake_id from parameters
+    derived_stake_id = poseidon_hash(DOMAIN_COIN_COMMIT, table_id, staker_pub_x, staker_pub_y, current_amount, nonce);
+    constrain_instance(derived_stake_id);
+
+    # Verify the value commitment
+    vcv = ec_mul_short(current_amount, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+    value_commit = ec_add(vcv, vcr);
+    constrain_instance(ec_get_x(value_commit));
+    constrain_instance(ec_get_y(value_commit));
+
+    # Compute and verify staker nullifier
+    computed_nullifier = poseidon_hash(DOMAIN_NULLIFIER, derived_stake_id, staker_secret);
+    constrain_equal_base(computed_nullifier, staker_nullifier);
+    constrain_instance(staker_nullifier);
+
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+}

@@ -1,0 +1,70 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# fund_swap_V2 — domain-separated circuit.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+
+# OTC Swap Fund Circuit (Version 1)
+#
+# This circuit proves:
+# - The swap exists and is in Created state
+# - A Pedersen commitment to Alice's value is correctly formed
+# - The value commitment matches what was declared at creation
+#
+# Public Inputs (constrain_instance):
+#   - swap_id: The swap commitment from creation
+#   - value_commit.x, value_commit.y: Pedersen commitment coordinates
+#   - merkle_root: Root of the swaps Merkle tree
+#
+# Witnesses:
+#   - value: The value Alice locks
+#   - value_blind: Blinding factor for Pedersen commitment
+#   - merkle_leaf_pos: Position in Merkle tree
+#   - merkle_path: Merkle proof path
+
+constant "FundSwapV2" {
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+}
+
+witness "FundSwapV2" {
+    # Swap ID (commitment from CreateSwap)
+    Base swap_id,
+
+    # Value being locked
+    Base value,
+    Scalar value_blind,
+
+    # Merkle proof witnesses
+    Uint32 merkle_leaf_pos,
+    MerklePath merkle_path,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "FundSwapV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+
+    # Verify value commitment is correctly formed
+    # C = value * G + value_blind * H
+    vcv = ec_mul_short(value, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+    value_commit = ec_add(vcv, vcr);
+
+    # Expose commitment coordinates as public inputs
+    constrain_instance(ec_get_x(value_commit));
+    constrain_instance(ec_get_y(value_commit));
+
+    # Expose swap_id as public input
+    constrain_instance(swap_id);
+
+    # Merkle proof verification
+    # Verify swap_id exists in the swaps Merkle tree
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+    constrain_instance(merkle_root(merkle_leaf_pos, merkle_path, swap_id));
+}

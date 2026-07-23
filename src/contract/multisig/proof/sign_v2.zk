@@ -1,0 +1,40 @@
+# MultiSig Sign Circuit — proves signer knows the secret key for a pubkey
+k = 11;
+field = "pallas";
+
+# sign_V2 — domain-separated circuit.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+
+constant "SignV2" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "SignV2" {
+    Base group_id,
+    Base message_hash,
+
+    Base signer_secret,
+    Base signer_pub_x,
+    Base signer_pub_y,
+
+    Base tx_commitment,
+    Base tx_nonce,
+}
+
+circuit "SignV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+
+    signer_pub = ec_mul_base(signer_secret, NULLIFIER_K);
+    derived_pub_x = ec_get_x(signer_pub);
+    derived_pub_y = ec_get_y(signer_pub);
+    constrain_equal_base(derived_pub_x, signer_pub_x);
+    constrain_equal_base(derived_pub_y, signer_pub_y);
+
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+
+    constrain_instance(group_id);
+    constrain_instance(message_hash);
+}

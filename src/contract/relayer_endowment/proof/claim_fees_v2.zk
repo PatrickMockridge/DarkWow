@@ -1,0 +1,37 @@
+k = 11;
+field = "pallas";
+
+# claim_fees_V2 — domain-separated circuit.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+
+constant "ClaimFeesV2" {
+}
+
+witness "ClaimFeesV2" {
+    Base deployment_id,
+    Base backer_pub_x,
+    Base backer_pub_y,
+    Base fee_share,
+    Base nonce,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "ClaimFeesV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COIN_COMMIT = witness_base(4);
+
+    derived_claim_id = poseidon_hash(DOMAIN_COIN_COMMIT, 
+        deployment_id,
+        backer_pub_x,
+        backer_pub_y,
+        fee_share,
+        nonce
+    );
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+    constrain_instance(derived_claim_id);
+}

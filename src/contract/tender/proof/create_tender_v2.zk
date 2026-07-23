@@ -1,0 +1,76 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# create_tender_V2 — domain-separated circuit.
+# V2 changes from V1 (HAZOP RC3):
+#   - Domain separation: every poseidon_hash prepends a unique domain constant
+
+# Tender Create Circuit (Version 1)
+#
+# This circuit proves:
+# - Requester knows their secret key
+# - Requester public key is correctly derived
+# - Tender ID is correctly computed
+#
+# Public Inputs (constrain_instance):
+#   - tender_id: Poseidon hash commitment of tender parameters
+#   - requester_pub_x, requester_pub_y: Requester's public key coordinates
+#
+# Witnesses:
+#   - requester_secret: Requester's secret key
+
+constant "CreateTenderV2" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "CreateTenderV2" {
+    # Requester's secret (for key derivation, not revealed)
+    Base requester_secret,
+
+    # Requester's public key coordinates (public input - must match derived)
+    Base requester_pub_x,
+    Base requester_pub_y,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "CreateTenderV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+
+    # ==========================================================================
+    # PHASE 1: Derive requester public key from secret
+    # ==========================================================================
+
+    requester_pub = ec_mul_base(requester_secret, NULLIFIER_K);
+    derived_pub_x = ec_get_x(requester_pub);
+    derived_pub_y = ec_get_y(requester_pub);
+
+    # CRITICAL: Verify derived public key matches the public input
+    # This binds the requester_secret to the requester_pubkey
+    constrain_equal_base(derived_pub_x, requester_pub_x);
+    constrain_equal_base(derived_pub_y, requester_pub_y);
+
+    # ==========================================================================
+    # PHASE 2: Expose public inputs
+    # ==========================================================================
+
+    constrain_instance(requester_pub_x);
+    constrain_instance(requester_pub_y);
+
+    # ==========================================================================
+    # SOUNDNESS NOTES
+    # ==========================================================================
+    #
+    # This circuit uses ONLY proven opcodes:
+    #   - ec_mul_base: standard EC operations
+    #   - ec_get_x, ec_get_y: standard EC operations
+    #   - constrain_instance: public input exposure
+    #
+    # The tender parameters are stored by the contract from the public inputs.
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+    # The ZK proof only establishes that the creator knows their secret.
+}
