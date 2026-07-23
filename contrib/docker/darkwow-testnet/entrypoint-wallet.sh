@@ -68,6 +68,23 @@ if [ -n "$PEER_ADDR" ]; then
     echo "  Peers: ${PEER_LIST}"
 fi
 
+# D4: Config lint — seed addresses in peer list cause HostStateBlocked race.
+# The seed slot tries try_register(Connect) on an address already Connected
+# from the outbound session, triggering "Invalid state transition" errors.
+if [ -n "$SEED_ADDR" ] && [ -n "$PEER_ADDR" ]; then
+    IFS=',' read -ra SEED_ARR <<< "$SEED_ADDR"
+    IFS=',' read -ra PEER_ARR <<< "$PEER_ADDR"
+    for seed in "${SEED_ARR[@]}"; do
+        seed=$(echo "$seed" | xargs)
+        for peer in "${PEER_ARR[@]}"; do
+            peer=$(echo "$peer" | xargs)
+            if [ "$seed" = "$peer" ]; then
+                echo "  WARN: $seed is both a seed AND a peer — this causes HostStateBlocked race in seed slot. Remove from PEER_ADDR."
+            fi
+        done
+    done
+fi
+
 # --- Write single config WITH [net] ---
 # The [net] section is optional — local commands (wallet address, keygen)
 # ignore it. P2P commands (sync, scan, transfer) use it. One config for

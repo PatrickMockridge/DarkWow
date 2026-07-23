@@ -99,28 +99,56 @@ pub async fn run_wallet_sync(
     eprintln!("[sync] Sync task started");
     info!(target: "dww::wallet::sync", "Wallet sync task running — P2p handles peer discovery");
 
+    // D1: Stuck-sync watchdog — if we have peers but never advance past height 0,
+    // the sync protocol is not exchanging data. Emit FATAL after 6 consecutive ticks (60s).
+    let mut stuck_ticks: u32 = 0;
+    const STUCK_TICK_LIMIT: u32 = 6;
+
     loop {
         smol::Timer::after(Duration::from_secs(10)).await;
 
-        // Phase 1: Check peer connectivity
-        let dww_r = dww.read().await;
-        // G2: chain_height() returns Result<BlockHeight> — must handle error explicitly
-        let local = match dww_r.wallet.chain_height() {
-            Ok(h) => h,
-            Err(e) => {
-                error!(target: "dww::wallet::sync",
-                    "chain_height failed: {e} — skipping sync tick");
-                continue;
-            }
-        };
-        let peer_count = dww_r.p2p.as_ref()
-            .map(|p| p.hosts().peers().len())
-            .unwrap_or(0);
-        let p2p_opt = dww_r.p2p.clone();
+        // Phase 1: Check peer connectivity — extract data, then DROP the read lock.
+        // D6: Read lock was held across the entire tick body (GetTip 5s×N + GetBlocks 30s),
+        // blocking any future write path. Extract only what we need and drop explicitly.
+        let (local, peer_count, p2p_opt) = {
+            let dww_r = dww.read().await;
+            // G2: chain_height() returns Result<BlockHeight> — must handle error explicitly
+            let local = match dww_r.wallet.chain_height() {
+                Ok(h) => h,
+                Err(e) => {
+                    error!(target: "dww::wallet::sync",
+                        "chain_height failed: {e} — skipping sync tick");
+                    continue;
+                }
+            };
+            let peer_count = dww_r.p2p.as_ref()
+                .map(|p| p.hosts().peers().len())
+                .unwrap_or(0);
+            let p2p_opt = dww_r.p2p.clone();
+            (local, peer_count, p2p_opt)
+        }; // D6: read lock DROPPED here — network I/O below does not hold it
 
         eprintln!("[sync] Tick: local={} peers={}", local.get(), peer_count);
         info!(target: "dww::wallet::sync",
             "Sync tick: local_height={}, peer_count={}", local.get(), peer_count);
+
+        // D1: Stuck-sync watchdog
+        if peer_count > 0 && local == zero_height {
+            stuck_ticks += 1;
+            if stuck_ticks >= STUCK_TICK_LIMIT {
+                error!(target: "dww::wallet::sync",
+                    "FATAL: Wallet has {} peers but zero chain height after {} consecutive ticks ({}s). \
+                     P2P connected but sync protocol is not exchanging data. \
+                     Peer LinearSyncHandlers may not be ready, or version mismatch.",
+                    peer_count, stuck_ticks, stuck_ticks * 10);
+                eprintln!(
+                    "[sync] FATAL: Wallet has {} peers but zero chain height after {} consecutive ticks ({}s). \
+                     P2P connected but sync protocol is not exchanging data.",
+                    peer_count, stuck_ticks, stuck_ticks * 10);
+            }
+        } else if local > zero_height {
+            stuck_ticks = 0; // Reset — we're making progress
+        }
 
         // Wait for peers — seed() in init_p2p() handles initial connection.
         // Mining node consensus task polls the same way (consensus_linear.rs:98).
@@ -138,6 +166,7 @@ pub async fn run_wallet_sync(
 
         // G4: best_tip is BlockHeight
         let mut best_tip = zero_height;
+        let mut tip_timeouts: u32 = 0;
         let mut tip_votes: std::collections::BTreeMap<String, (BlockHeight, u32)> =
             std::collections::BTreeMap::new();
         for ch in &channel_list {
@@ -176,6 +205,15 @@ pub async fn run_wallet_sync(
                         .or_insert((tip.height, 0));
                     entry.1 += 1;
                 }
+            } else {
+                // D7: Tip response timeout — track consecutive failures
+                tip_timeouts += 1;
+                if tip_timeouts % 3 == 0 {
+                    warn!(target: "dww::wallet::sync",
+                        "Tip response timeout: {} peers failed to respond in this tick ({} total consecutive timeouts across {} peers). \
+                         Peers may not have LinearSyncHandler running.",
+                        tip_timeouts, tip_timeouts, channel_list.len());
+                }
             }
         }
 
@@ -189,24 +227,24 @@ pub async fn run_wallet_sync(
                     .max_by_key(|(_, (_, count))| *count)
                     .map(|(hash, (height, count))| (hash.clone(), *height, *count));
                 if let Some((tip_hash, tip_height, votes)) = majority {
-                    {
-                        let mut last_hash = dww_r.last_synced_tip_hash.lock().await;
-                        if let Some(ref last) = *last_hash {
-                            if last != &tip_hash && tip_height == local {
-                                reorg_trigger = true;
-                                eprintln!(
-                                    "[sync] REORG DETECTED: tip hash changed at height {} \
-                                     (was {}, now {}) with {}/{} peer votes — triggering auto-reset",
-                                    local.get(), last, tip_hash, votes, tip_votes.len()
-                                );
-                                warn!(target: "dww::wallet::sync",
-                                    "REORG DETECTED: tip hash changed at height {} \
-                                     (was {}, now {}) — triggering auto-reset",
-                                    local.get(), last, tip_hash);
-                            }
+                    let dww_r = dww.read().await;
+                    let mut last_hash = dww_r.last_synced_tip_hash.lock().await;
+                    if let Some(ref last) = *last_hash {
+                        if last != &tip_hash && tip_height == local {
+                            reorg_trigger = true;
+                            eprintln!(
+                                "[sync] REORG DETECTED: tip hash changed at height {} \
+                                 (was {}, now {}) with {}/{} peer votes — triggering auto-reset",
+                                local.get(), last, tip_hash, votes, tip_votes.len()
+                            );
+                            warn!(target: "dww::wallet::sync",
+                                "REORG DETECTED: tip hash changed at height {} \
+                                 (was {}, now {}) — triggering auto-reset",
+                                local.get(), last, tip_hash);
                         }
-                        *last_hash = Some(tip_hash);
                     }
+                    *last_hash = Some(tip_hash);
+                    drop(last_hash);
                 }
             }
 
@@ -214,7 +252,6 @@ pub async fn run_wallet_sync(
                 "Already at tip: local={}, peer={}", local.get(), best_tip.get());
 
             if reorg_trigger {
-                drop(dww_r);
                 let dww_w = dww.write().await;
                 let mut output = vec![];
                 if let Err(e) = dww_w.reset(&mut output) {
