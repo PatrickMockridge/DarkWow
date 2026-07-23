@@ -69,6 +69,9 @@ use crate::{
     ESCROW_CONTRACT_ZKAS_CLAIM_NS_V1, ESCROW_CONTRACT_ZKAS_CREATE_NS_V1,
     ESCROW_CONTRACT_ZKAS_CANCEL_NS_V1, ESCROW_CONTRACT_ZKAS_FUND_NS_V1,
     ESCROW_CONTRACT_ZKAS_REFUND_NS_V1,
+    ESCROW_CONTRACT_ZKAS_CREATE_NS_V2, ESCROW_CONTRACT_ZKAS_FUND_NS_V2,
+    ESCROW_CONTRACT_ZKAS_CLAIM_NS_V2, ESCROW_CONTRACT_ZKAS_REFUND_NS_V2,
+    ESCROW_CONTRACT_ZKAS_CANCEL_NS_V2,
 };
 
 // ============================================================================
@@ -191,7 +194,7 @@ fn escrow_create_get_metadata_v1(
     ]);
 
     zk_public_inputs.push((
-        ESCROW_CONTRACT_ZKAS_CREATE_NS_V1.to_string(),
+        ESCROW_CONTRACT_ZKAS_CREATE_NS_V2.to_string(),
         vec![commitment, seller_commitment],
     ));
 
@@ -222,7 +225,7 @@ fn escrow_fund_get_metadata_v1(
     // - escrow_id
     // - merkle_root
     zk_public_inputs.push((
-        ESCROW_CONTRACT_ZKAS_FUND_NS_V1.to_string(),
+        ESCROW_CONTRACT_ZKAS_FUND_NS_V2.to_string(),
         vec![
             *value_coords.x(),
             *value_coords.y(),
@@ -254,7 +257,7 @@ fn escrow_claim_get_metadata_v1(
     let escrow_seller_commitment = poseidon_hash([seller_x, seller_y]);
 
     zk_public_inputs.push((
-        ESCROW_CONTRACT_ZKAS_CLAIM_NS_V1.to_string(),
+        ESCROW_CONTRACT_ZKAS_CLAIM_NS_V2.to_string(),
         vec![
             params.escrow_id,
             escrow_seller_commitment,
@@ -287,7 +290,7 @@ fn escrow_refund_get_metadata_v1(
     let (buyer_x, buyer_y) = params.recipient_pubkey.xy().expect("pk not identity");
 
     zk_public_inputs.push((
-        ESCROW_CONTRACT_ZKAS_REFUND_NS_V1.to_string(),
+        ESCROW_CONTRACT_ZKAS_REFUND_NS_V2.to_string(),
         vec![
             params.escrow_id,
             pallas::Base::from(params.timeout),
@@ -321,7 +324,7 @@ fn escrow_cancel_get_metadata_v1(
     let (buyer_x, buyer_y) = params.buyer_pubkey.xy().expect("pk not identity");
 
     zk_public_inputs.push((
-        ESCROW_CONTRACT_ZKAS_CANCEL_NS_V1.to_string(),
+        ESCROW_CONTRACT_ZKAS_CANCEL_NS_V2.to_string(),
         vec![
             params.escrow_id,
             buyer_x,

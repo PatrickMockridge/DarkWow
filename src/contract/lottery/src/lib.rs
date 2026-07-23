@@ -126,6 +126,8 @@ pub const LOTTERY_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID: &[u8] = b"promissory_not
 pub const LOTTERY_CONTRACT_ZKAS_COMMIT_NS: &str = "CommitTicket_V1";
 /// zkas reveal ticket circuit namespace
 pub const LOTTERY_CONTRACT_ZKAS_REVEAL_NS: &str = "RevealTicket_V1";
+pub const LOTTERY_CONTRACT_ZKAS_COMMIT_NS_V2: &str = "CommitTicketV2";
+pub const LOTTERY_CONTRACT_ZKAS_REVEAL_NS_V2: &str = "RevealTicketV2";
 
 // ============================================================================
 // CONSTANTS

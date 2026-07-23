@@ -1,0 +1,19 @@
+# ClaimPrize_V2 — domain-separated lottery prize claim.
+k = 11; field = "pallas";
+constant "ClaimPrizeV2" { EcFixedPointBase NULLIFIER_K, }
+witness "ClaimPrizeV2" {
+    Base ticket_id, Base ticket_secret, Base ticket_pub_x, Base ticket_pub_y,
+    Base tx_commitment, Base tx_nonce, Base tx_binding,
+}
+circuit "ClaimPrizeV2" {
+    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_COIN_COMMIT = witness_base(4);
+    ticket_pub = ec_mul_base(ticket_secret, NULLIFIER_K);
+    constrain_equal_base(ec_get_x(ticket_pub), ticket_pub_x);
+    constrain_equal_base(ec_get_y(ticket_pub), ticket_pub_y);
+    computed_commit = poseidon_hash(DOMAIN_COIN_COMMIT, ticket_id, ticket_secret);
+    constrain_instance(computed_commit);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding); constrain_instance(tx_nonce);
+}

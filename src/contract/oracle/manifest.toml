@@ -5,7 +5,7 @@
 name = "oracle"
 category = "Oracle"
 description = "Oracle data feed — register oracle, push values, attest, aggregate, set active. ZK-proof authenticated at host level."
-version = "1.0.0"
+version = "2.0.0"
 
 [[functions]]
 name = "register_oracle"

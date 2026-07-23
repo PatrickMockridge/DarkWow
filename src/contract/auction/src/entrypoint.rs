@@ -70,6 +70,9 @@ use crate::{
     AUCTION_CONTRACT_ZKAS_CREATE_NS_V1, AUCTION_CONTRACT_ZKAS_PLACE_BID_NS_V1,
     AUCTION_CONTRACT_ZKAS_CLOSE_NS_V1, AUCTION_CONTRACT_ZKAS_CLAIM_WINNINGS_NS_V1,
     AUCTION_CONTRACT_ZKAS_SETTLE_NS_V1, AUCTION_CONTRACT_ZKAS_REFUND_BID_NS_V1,
+    AUCTION_CONTRACT_ZKAS_CREATE_NS_V2, AUCTION_CONTRACT_ZKAS_PLACE_BID_NS_V2,
+    AUCTION_CONTRACT_ZKAS_CLOSE_NS_V2, AUCTION_CONTRACT_ZKAS_CLAIM_WINNINGS_NS_V2,
+    AUCTION_CONTRACT_ZKAS_SETTLE_NS_V2, AUCTION_CONTRACT_ZKAS_REFUND_BID_NS_V2,
     PROMISSORY_NOTE_CONTRACT_ID_KEY,
 };
 
@@ -175,7 +178,7 @@ fn create_auction_get_metadata_v1(params: CreateAuctionParamsV1) -> Result<Vec<u
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        AUCTION_CONTRACT_ZKAS_CREATE_NS_V1.to_string(),
+        AUCTION_CONTRACT_ZKAS_CREATE_NS_V2.to_string(),
         vec![params.auction_id, params.seller_commitment],
     ));
 
@@ -190,7 +193,7 @@ fn place_bid_get_metadata_v1(params: PlaceBidParamsV1) -> Result<Vec<u8>, Contra
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        AUCTION_CONTRACT_ZKAS_PLACE_BID_NS_V1.to_string(),
+        AUCTION_CONTRACT_ZKAS_PLACE_BID_NS_V2.to_string(),
         vec![
             params.auction_id,
             params.bid_id,
@@ -210,7 +213,7 @@ fn close_auction_get_metadata_v1(params: CloseAuctionParamsV1) -> Result<Vec<u8>
     let (sx, sy) = params.seller_pubkey.xy().expect("pk not identity");
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        AUCTION_CONTRACT_ZKAS_CLOSE_NS_V1.to_string(),
+        AUCTION_CONTRACT_ZKAS_CLOSE_NS_V2.to_string(),
         vec![params.auction_id, params.winner_bid_id, sx, sy],
     ));
 
@@ -226,7 +229,7 @@ fn claim_winnings_get_metadata_v1(params: ClaimWinningsParamsV1) -> Result<Vec<u
     let (wx, wy) = params.winner_pubkey.xy().expect("pk not identity");
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        AUCTION_CONTRACT_ZKAS_CLAIM_WINNINGS_NS_V1.to_string(),
+        AUCTION_CONTRACT_ZKAS_CLAIM_WINNINGS_NS_V2.to_string(),
         vec![params.auction_id, params.winner_bid_id, wx, wy],
     ));
 
@@ -242,7 +245,7 @@ fn settle_auction_get_metadata_v1(params: SettleAuctionParamsV1) -> Result<Vec<u
     let (sx, sy) = params.seller_pubkey.xy().expect("pk not identity");
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        AUCTION_CONTRACT_ZKAS_SETTLE_NS_V1.to_string(),
+        AUCTION_CONTRACT_ZKAS_SETTLE_NS_V2.to_string(),
         vec![params.auction_id, sx, sy, params.settlement_nullifier],
     ));
 
@@ -258,7 +261,7 @@ fn refund_bid_get_metadata_v1(params: RefundBidParamsV1) -> Result<Vec<u8>, Cont
     let (bx, by) = params.bidder_pubkey.xy().expect("pk not identity");
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        AUCTION_CONTRACT_ZKAS_REFUND_BID_NS_V1.to_string(),
+        AUCTION_CONTRACT_ZKAS_REFUND_BID_NS_V2.to_string(),
         vec![params.bid_id, bx, by, params.refund_nullifier],
     ));
 

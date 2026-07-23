@@ -2,7 +2,7 @@
 name = "lottery"
 category = "Gaming"
 description = "On-chain lottery — buy tickets, draw winners, reveal, claim prizes."
-version = "1.0.0"
+version = "2.0.0"
 dependencies = ["promissory_note", "native_token_v1"]
 
 [[functions]]

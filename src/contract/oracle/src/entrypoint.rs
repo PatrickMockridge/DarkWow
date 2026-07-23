@@ -59,6 +59,11 @@ use crate::{
     ORACLE_CONTRACT_ZKAS_ATTEST_VALUE_NS_V1,
     ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V1,
     ORACLE_CONTRACT_ZKAS_AGGREGATE_NS_V1,
+    ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V2,
+    ORACLE_CONTRACT_ZKAS_PUSH_VALUE_NS_V2,
+    ORACLE_CONTRACT_ZKAS_ATTEST_VALUE_NS_V2,
+    ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V2,
+    ORACLE_CONTRACT_ZKAS_AGGREGATE_NS_V2,
 };
 
 dwow_sdk::define_contract!(
@@ -123,7 +128,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             // Circuit constrain_instance: oracle_pub_x, oracle_pub_y
             zk_public_inputs.push((
-                ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V1.to_string(),
+                ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V2.to_string(),
                 {
                     let (ox, oy) = params.oracle_pub.xy().expect("pk not identity");
                     vec![ox, oy]
@@ -135,7 +140,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize PushValueParamsV1: {:?}", e); return Ok(()); }
             };
             zk_public_inputs.push((
-                ORACLE_CONTRACT_ZKAS_PUSH_VALUE_NS_V1.to_string(),
+                ORACLE_CONTRACT_ZKAS_PUSH_VALUE_NS_V2.to_string(),
                 vec![params.oracle_id.inner(), params.value],
             ));
         }
@@ -145,7 +150,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             // Circuit constrain_instance: oracle_id, attestation_id, predicate, threshold
             zk_public_inputs.push((
-                ORACLE_CONTRACT_ZKAS_ATTEST_VALUE_NS_V1.to_string(),
+                ORACLE_CONTRACT_ZKAS_ATTEST_VALUE_NS_V2.to_string(),
                 vec![
                     params.oracle_id.inner(),
                     params.attestation_id.inner(),
@@ -160,7 +165,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             // Circuit constrain_instance: oracle_id, commitment, data_root
             zk_public_inputs.push((
-                ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V1.to_string(),
+                ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V2.to_string(),
                 vec![params.oracle_id.inner(), params.commitment, params.data_root],
             ));
         }
@@ -170,7 +175,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             // Circuit constrain_instance: oracle_id, result, min_result, max_result
             zk_public_inputs.push((
-                ORACLE_CONTRACT_ZKAS_AGGREGATE_NS_V1.to_string(),
+                ORACLE_CONTRACT_ZKAS_AGGREGATE_NS_V2.to_string(),
                 vec![
                     params.oracle_id.inner(),
                     params.result,

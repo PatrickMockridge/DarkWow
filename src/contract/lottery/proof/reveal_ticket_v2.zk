@@ -1,0 +1,12 @@
+# RevealTicket_V2 — domain-separated lottery ticket reveal.
+k = 11; field = "pallas";
+constant "RevealTicketV2" { EcFixedPointBase NULLIFIER_K, }
+witness "RevealTicketV2" {
+    Base lottery_id, Base ticket_secret, Base ticket_pub_x, Base ticket_pub_y,
+    Base ticket_number, Base tx_commitment, Base tx_nonce, Base tx_binding,
+}
+circuit "RevealTicketV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding); constrain_instance(tx_nonce);
+}

@@ -2,7 +2,7 @@
 name = "escrow"
 category = "Finance"
 description = "Simple escrow contract — create, fund, claim, refund. Timeout-based refund protection."
-version = "1.0.0"
+version = "2.0.0"
 dependencies = ["promissory_note", "native_token_v1"]
 
 [[functions]]

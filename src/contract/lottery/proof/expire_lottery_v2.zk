@@ -1,0 +1,19 @@
+# ExpireLottery_V2 — domain-separated lottery expiry.
+k = 11; field = "pallas";
+constant "ExpireLotteryV2" { EcFixedPointBase NULLIFIER_K, }
+witness "ExpireLotteryV2" {
+    Base lottery_id, Base house_secret, Base house_pub_x, Base house_pub_y,
+    Base house_nullifier, Base tx_commitment, Base tx_nonce, Base tx_binding,
+}
+circuit "ExpireLotteryV2" {
+    DOMAIN_NULLIFIER = witness_base(1); DOMAIN_TX_BINDING = witness_base(3);
+    house_pub = ec_mul_base(house_secret, NULLIFIER_K);
+    constrain_equal_base(ec_get_x(house_pub), house_pub_x);
+    constrain_equal_base(ec_get_y(house_pub), house_pub_y);
+    computed = poseidon_hash(DOMAIN_NULLIFIER, lottery_id, house_secret);
+    constrain_equal_base(computed, house_nullifier);
+    constrain_instance(house_pub_x); constrain_instance(house_pub_y);
+    constrain_instance(house_nullifier);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding); constrain_instance(tx_nonce);
+}
