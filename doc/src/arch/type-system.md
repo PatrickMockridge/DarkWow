@@ -107,6 +107,31 @@ justification for parallel contract execution. `P | Q ≅ Q | P` (commutativity 
 parallel composition). `(P | Q) | R ≅ P | (Q | R)` (associativity of parallel
 composition).
 
+### 1.3 Composite Barb Sets — The Wallet
+
+The top-level wallet process (`Dww`) SHALL implement `ExhibitsBarb` with barb
+set `[Discover, Spend, Verify, Encrypt, Decrypt, Derive, Broadcast,
+SyncBarrier, Gate, Denominate]`. Each barb corresponds to an observable action
+the wallet process may exhibit:
+
+| Barb | Observable Action |
+|------|-------------------|
+| `↓discover` | Scans blocks for capabilities (Path 1 coinbase + Path 2 manifest) |
+| `↓spend` | Constructs and broadcasts a transaction exercising a capability |
+| `↓verify` | Validates chain continuity on synced blocks (previous-hash link) |
+| `↓encrypt` | Produces AEAD-encrypted notes for contract calls |
+| `↓decrypt` | Trial-decrypts AEAD notes to discover held capabilities |
+| `↓derive` | Derives per-contract instance keys from declared identity |
+| `↓broadcast` | Publishes transactions to the P2P network |
+| `↓sync-barrier` | Synchronizes chain state from peers via GetTip/GetBlocks |
+| `↓gate` | Routes contract calls to the correct ContractId + function selector |
+| `↓denominate` | Identifies capability asset class (TokenId / AssetId) |
+
+This is the composite barb set of the capability type construction engine
+(wallet.md §0). Every wallet operation SHALL exhibit at least one of these
+barbs. An operation that exhibits none is an unobservable τ-transition and
+SHALL NOT have side effects.
+
 ## 2. Type Distinction Principle
 
 **Two types SHALL NOT be unified if there exists any context where a process
@@ -167,6 +192,24 @@ unify.
 - Persistence boundaries lift heights via the validating constructor
   (`BlockHeight::new` / `from_le_bytes`), per §2.2. No code path SHALL
   construct a height by directly accessing a `pub` field.
+
+### 2.3.2 No `unwrap()` on P2P Critical Path
+
+`unwrap()` SHALL NOT appear on the P2P critical path. `Weak::upgrade().unwrap()`
+in session lifecycles and `UNIX_EPOCH.elapsed().unwrap()` in channel dispatch
+convert infrastructure failures into panics. Per the ρ-calculus, a process that
+encounters a dead parent SHALL transition to 0 (inaction) with a logged error,
+not crash the runtime.
+
+`Weak::upgrade()` failures SHALL produce `ChannelStopped` or `SessionStopped`
+errors. `UNIX_EPOCH.elapsed()` SHALL use `.unwrap_or(Duration::ZERO)` with
+explicit comment explaining that a pre-epoch system clock is a fatal
+configuration error detectable at the observable barb level.
+
+This extends §2.3's prohibition against `unwrap_or(0)` and bare casts to the
+signal path: processes communicate via typed channels, and a process death
+signal is semantically distinct from a successful process completion.
+Conflating them via `unwrap()` erases the `↓process-death` barb.
 
 **Planned newtypes** (Change 4 of consensus type-enforcement plan,
 `src/sdk/src/blockchain.rs`):
@@ -354,6 +397,31 @@ through a pipeline of fallible stages SHALL return structured diagnostics
 counting attempts and successes at each stage (§Z: Diagnostic Transparency).
 Callers SHALL be able to distinguish "no results found" from "all attempts
 failed" by inspecting the diagnostics counters.
+
+### 4.3 Seed Error Vocabulary
+
+Seed error codes crossing the P2P wire SHALL be a `#[repr(u32)]` enum
+`SeedErrorCode`, not raw `u32` constants. Every error variant IS a barb
+(§4). A `match` on a `SeedErrorCode` is exhaustive; a range check on a
+`u32` is not.
+
+```
+SeedErrorCode SHALL implement ExhibitsBarb with barb set [Gate].
+```
+
+Variants:
+- `BadRequest = 400` — client error, request malformed
+- `VersionMismatch = 401` — protocol version incompatible
+- `Forbidden = 403` — peer not authorized
+- `UnknownMessage = 404` — unrecognized message type
+- `NoMatchingTransports = 405` — no compatible transport
+- `RateLimited = 429` — sender exceeded rate budget
+- `Internal = 500` — server error, retry may succeed
+- `HostlistEmpty = 501` — no peers to share
+- `UpstreamTimeout = 502` — upstream seed unreachable
+
+The classification functions `seed_error_is_client_error()` and
+`seed_error_is_server_error()` SHALL operate on the enum, not on raw `u32`.
 
 ## 5. Authority
 
@@ -581,6 +649,31 @@ The `nullifiers` field carries pre-extracted nullifiers for the mempool's
 double-spend detection ([mempool.md §2](mempool.md)). When empty, it SHALL be
 omitted from the serialized form to preserve hash determinism across code versions.
 
+### 8.2.1 BlockHash — Nominal Hash on the Wire
+
+Block hashes crossing the P2P wire SHALL be the nominal type `BlockHash`, never
+bare `String`. The `Tip.hash` field and `Tip.genesis_hash` field SHALL be
+`BlockHash`. The wallet's `last_synced_tip_hash` SHALL be `Option<BlockHash>`.
+
+```rust
+#[repr(transparent)]
+pub struct BlockHash(blake3::Hash);
+
+impl ExhibitsBarb for BlockHash {
+    fn exhibited_barbs() -> &'static [Barb] {
+        &[Barb::Verify]
+    }
+}
+```
+
+`BlockHash` exhibits `↓verify` — a process holding a `BlockHash` can prove
+it knows a specific chain position. A bare `String` exhibits no cryptographic
+barbs. The reorg detection process at `sync_task.rs` SHALL compare `BlockHash`
+values, not `String` values. The P2P absorber boundary (§10.5) SHALL enforce
+this: `Tip` arriving on the wire SHALL deserialize `hash` as `[u8; 32]` (the
+canonical blake3 output) and the `eval` step SHALL construct `BlockHash` via
+`from_bytes`, rejecting invalid lengths.
+
 Transaction construction — the exercise of a held capability — is specified in
 [wallet.md §6](wallet.md). The Rust implementation is at
 `src/linear/src/transaction.rs`.
@@ -655,18 +748,20 @@ that sets both to zero has NO wire-layer protection — the payload size is
 unchecked and the message does not count toward rate limits.
 
 **§8.6.1 Layered defense.** Every P2P message type SHALL have at least one
-active wire-layer defense. `MAX_BYTES=0` (unlimited) is permitted ONLY when
-`METERING_SCORE > 0` (the message counts toward the global rate limit).
-`METERING_SCORE=0` (bypasses metering) is permitted ONLY when `MAX_BYTES > 0`
-(the dispatcher enforces a size bound). `MAX_BYTES=0` AND `METERING_SCORE=0`
-simultaneously SHALL NOT appear on any production message type.
+active wire-layer defense. `METERING_SCORE=0` (bypasses metering) is permitted
+ONLY when `MAX_BYTES > 0` (the dispatcher enforces a size bound).
+`MAX_BYTES=0` AND `METERING_SCORE=0` simultaneously SHALL NOT appear on any
+production message type.
 
 **§8.6.2 Per-type bounds.** `MAX_BYTES` SHALL be set to a value that
 accommodates the largest valid payload of that message type plus JSON
 encoding overhead. A generous bound (e.g., 10MB for event batches, 2MB
-for file chunks) is acceptable; zero (unlimited) is not. The bound is a
-defense-in-depth measure — application-level validation catches oversized
-payloads, but the wire layer SHALL reject them before allocation.
+for file chunks) is acceptable; zero (unlimited) is not — metering is not
+a substitute for size bounds. The bound is a defense-in-depth measure —
+application-level validation catches oversized payloads, but the wire layer
+SHALL reject them before allocation. The `Blocks` and `BlockResponse` sync
+message types SHALL declare a generous but finite `MAX_BYTES` proportional
+to the maximum block size plus encoding overhead.
 
 **§8.6.3 Channel identity.** Each P2P channel SHALL carry exactly one
 message type. Channel name strings SHALL be sufficiently distinct that
@@ -674,6 +769,60 @@ developer confusion between channels is unlikely. A listener subscribing
 to a channel SHALL be able to exhaustively handle every message that can
 arrive on that channel — the type system SHALL guarantee this by making
 the channel type-parametric.
+
+### 8.6.4 ChannelId — Nominal P2P Channel Identity
+
+`ChannelId(u32)` SHALL be the nominal type for P2P channel identities. A P2P
+channel SHALL be identified by a `ChannelId`, never by a bare `u32`. The
+`ChannelInfo.id: u32` field SHALL be `ChannelId`. The `ProtocolGenericHandler`
+sender/receiver routing keyed on `u32` SHALL be keyed on `ChannelId`.
+
+```rust
+#[repr(transparent)]
+pub struct ChannelId(u32);
+
+impl ExhibitsBarb for ChannelId {
+    fn exhibited_barbs() -> &'static [Barb] {
+        &[Barb::Gate, Barb::GossipForward]
+    }
+}
+```
+
+A bare `u32` channel identity exhibits no barbs. Per §0: "Every type SHALL
+define the barbs that processes at that type may exhibit." A channel identity,
+as the name on which synchronization occurs, is the most fundamental ρ-calculus
+name in the P2P system.
+
+### 8.6.5 SessionSelector — Nominal Session Topology
+
+`SessionSelector` SHALL be a `#[repr(u32)]` enum replacing the bare
+`SessionBitFlag = u32` type alias. Variants SHALL be: `Inbound = 0b000001`,
+`Outbound = 0b000010`, `Manual = 0b000100`, `Seed = 0b001000`,
+`Refine = 0b010000`, `Direct = 0b100000`.
+
+```rust
+#[repr(u32)]
+pub enum SessionSelector {
+    Inbound  = 0b000001,
+    Outbound = 0b000010,
+    Manual   = 0b000100,
+    Seed     = 0b001000,
+    Refine   = 0b010000,
+    Direct   = 0b100000,
+}
+
+impl ExhibitsBarb for SessionSelector {
+    fn exhibited_barbs() -> &'static [Barb] {
+        &[Barb::Gate]
+    }
+}
+```
+
+The `Session::type_id()` method SHALL return `SessionSelector`. The
+`ProtocolRegistry::attach()` and `register()` methods SHALL accept
+`SessionSelector`. Bitmask operations on bare `u32` SHALL NOT appear
+outside the `SessionSelector` impl. This follows the `SyncState` pattern
+(§7.7) which replaced raw `u8` constants with a `#[repr(u8)]` enum.
 
 ## 9. Concurrent Execution Model
 
@@ -1082,6 +1231,23 @@ per-channel barb-set cardinality SHALL be snapshot-tested, and any unreviewed
 increase SHALL fail CI — the alarm for an absorber channel drifting toward
 the union of both path-sets, at which point the composition cost returns to
 exponential.
+
+### 10.5.1 Sender Rate Discipline
+
+Every P2P process that sends messages SHALL declare an outbound rate budget.
+The wallet sync loop SHALL self-limit `GetTip` and `GetBlocks` request rates
+per peer. The `↓rate-limit` barb SHALL be exhibited on outbound sync channels.
+Rate discipline at the sender boundary is the dual of metering at the receiver
+boundary (§8.6.1): the receiver enforces a budget for inbound messages; the
+sender SHALL NOT exceed a declared budget for outbound messages.
+
+The wallet's sync loop at `sync_task.rs` SHALL track per-peer `GetTip` and
+`GetBlocks` send rates. A peer that has received `N` sync requests in the
+current rate window SHALL be deferred to the next tick. The rate limit is
+a self-imposed constraint, not a network-enforced one — a wallet that
+violates its own budget is a bug, and the `↓rate-limit` barb SHALL be
+observable in structured diagnostics (§4.2.4) to distinguish "waiting for
+peers" from "self-throttled."
 
 ## 11. Verified Properties
 
