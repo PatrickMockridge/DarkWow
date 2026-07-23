@@ -1,0 +1,6 @@
+# AcceptJob_V2 — domain-separated job acceptance.
+# V2 (HAZOP RC3): domain separation on poseidon_hash
+k = 14; field = "pallas";
+constant "AcceptJobV2" { EcFixedPointBase NULLIFIER_K, }
+witness "AcceptJobV2" { Base job_id, Base worker_secret, Base worker_pub_x, Base worker_pub_y, Base tx_commitment, Base tx_nonce, Base tx_binding, }
+circuit "AcceptJobV2" { DOMAIN_TX_BINDING = witness_base(3); tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce); constrain_instance(tx_binding); constrain_instance(tx_nonce); }

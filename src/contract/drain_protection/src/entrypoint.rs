@@ -127,6 +127,26 @@ pub fn init_contract(cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractR
     let exit_v1_bincode = include_bytes!("../proof/exit_v1.zk.bin");
     wasm::db::zkas_db_set(&exit_v1_bincode[..])?;
 
+    // V2 circuits (HAZOP RC3: domain separation)
+    let execute_v2_bincode = include_bytes!("../proof/execute_v2.zk.bin");
+    wasm::db::zkas_db_set(&execute_v2_bincode[..])?;
+    let exit_v2_bincode = include_bytes!("../proof/exit_v2.zk.bin");
+    wasm::db::zkas_db_set(&exit_v2_bincode[..])?;
+    let initialize_v2_bincode = include_bytes!("../proof/initialize_v2.zk.bin");
+    wasm::db::zkas_db_set(&initialize_v2_bincode[..])?;
+    let lock_v2_bincode = include_bytes!("../proof/lock_v2.zk.bin");
+    wasm::db::zkas_db_set(&lock_v2_bincode[..])?;
+    let propose_v2_bincode = include_bytes!("../proof/propose_v2.zk.bin");
+    wasm::db::zkas_db_set(&propose_v2_bincode[..])?;
+    let transfer_v2_bincode = include_bytes!("../proof/transfer_v2.zk.bin");
+    wasm::db::zkas_db_set(&transfer_v2_bincode[..])?;
+    let unlock_v2_bincode = include_bytes!("../proof/unlock_v2.zk.bin");
+    wasm::db::zkas_db_set(&unlock_v2_bincode[..])?;
+    let update_config_v2_bincode = include_bytes!("../proof/update_config_v2.zk.bin");
+    wasm::db::zkas_db_set(&update_config_v2_bincode[..])?;
+    let vote_v2_bincode = include_bytes!("../proof/vote_v2.zk.bin");
+    wasm::db::zkas_db_set(&vote_v2_bincode[..])?;
+
     Ok(())
 }
 
@@ -158,7 +178,7 @@ fn drain_protection_exit_get_metadata_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        crate::DRAIN_PROTECTION_CONTRACT_ZKAS_EXIT_NS_V1.to_string(),
+        crate::DRAIN_PROTECTION_CONTRACT_ZKAS_EXIT_NS_V2.to_string(),
         vec![
             params.fund_id,
             params.member_pubkey.x().expect("pk not identity"),

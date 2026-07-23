@@ -1,0 +1,6 @@
+# CreateJob_V2 — domain-separated job creation.
+# V2 (HAZOP RC3): domain separation on poseidon_hash
+k = 14; field = "pallas";
+constant "CreateJobV2" { EcFixedPointBase NULLIFIER_K, }
+witness "CreateJobV2" { Base employer_secret, Base employer_pub_x, Base employer_pub_y, Base tx_commitment, Base tx_nonce, Base tx_binding, }
+circuit "CreateJobV2" { DOMAIN_TX_BINDING = witness_base(3); tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce); constrain_instance(tx_binding); constrain_instance(tx_nonce); }

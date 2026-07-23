@@ -1,0 +1,6 @@
+# ExitProof_V2 — domain-separated drain protection exit.
+# V2 (HAZOP RC3): domain separation on poseidon_hash
+k = 11; field = "pallas";
+constant "ExitProofV2" { EcFixedPointBase NULLIFIER_K, }
+witness "ExitProofV2" { Base fund_id, Base current_block, Base member_secret, Base member_pub_x, Base member_pub_y, Base deposited_at, Base contribution_amount, Base contribution_weight, Base dao_escrow_bulla, Base dao_membership_note, Base DIVISOR, Base EXIT_MULTIPLIER, Uint32 dao_leaf_pos, MerklePath dao_path, Base dao_escrow_merkle_root, Base tx_commitment, Base tx_nonce, Base tx_binding, }
+circuit "ExitProofV2" { DOMAIN_TX_BINDING = witness_base(3); tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce); constrain_instance(tx_binding); constrain_instance(tx_nonce); }

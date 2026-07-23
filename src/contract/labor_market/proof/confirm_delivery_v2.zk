@@ -1,0 +1,6 @@
+# ConfirmDelivery_V2 — domain-separated delivery confirmation.
+# V2 (HAZOP RC3): domain separation on poseidon_hash
+k = 14; field = "pallas";
+constant "ConfirmDeliveryV2" { EcFixedPointBase NULLIFIER_K, }
+witness "ConfirmDeliveryV2" { Base job_id, Base employer_secret, Base employer_pub_x, Base employer_pub_y, Base tx_commitment, Base tx_nonce, Base tx_binding, }
+circuit "ConfirmDeliveryV2" { DOMAIN_NULLIFIER = witness_base(1); DOMAIN_TX_BINDING = witness_base(3); CONFIRM_TAG = witness_base(4); spent_nullifier = poseidon_hash(DOMAIN_NULLIFIER, CONFIRM_TAG, job_id, employer_secret); constrain_instance(spent_nullifier); tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce); constrain_instance(tx_binding); constrain_instance(tx_nonce); }

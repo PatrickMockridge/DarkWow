@@ -135,6 +135,26 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let milestone_payment_v1_bincode = include_bytes!("../proof/milestone_payment_v1.zk.bin");
     wasm::db::zkas_db_set(&milestone_payment_v1_bincode[..])?;
 
+    // V2 circuits (HAZOP RC3: domain separation)
+    let accept_job_v2_bincode = include_bytes!("../proof/accept_job_v2.zk.bin");
+    wasm::db::zkas_db_set(&accept_job_v2_bincode[..])?;
+    let accept_job_with_capability_v2_bincode = include_bytes!("../proof/accept_job_with_capability_v2.zk.bin");
+    wasm::db::zkas_db_set(&accept_job_with_capability_v2_bincode[..])?;
+    let confirm_delivery_v2_bincode = include_bytes!("../proof/confirm_delivery_v2.zk.bin");
+    wasm::db::zkas_db_set(&confirm_delivery_v2_bincode[..])?;
+    let create_job_v2_bincode = include_bytes!("../proof/create_job_v2.zk.bin");
+    wasm::db::zkas_db_set(&create_job_v2_bincode[..])?;
+    let dispute_v2_bincode = include_bytes!("../proof/dispute_v2.zk.bin");
+    wasm::db::zkas_db_set(&dispute_v2_bincode[..])?;
+    let milestone_payment_v2_bincode = include_bytes!("../proof/milestone_payment_v2.zk.bin");
+    wasm::db::zkas_db_set(&milestone_payment_v2_bincode[..])?;
+    let refund_v2_bincode = include_bytes!("../proof/refund_v2.zk.bin");
+    wasm::db::zkas_db_set(&refund_v2_bincode[..])?;
+    let submit_deliverable_v2_bincode = include_bytes!("../proof/submit_deliverable_v2.zk.bin");
+    wasm::db::zkas_db_set(&submit_deliverable_v2_bincode[..])?;
+    let submit_git_deliverable_v2_bincode = include_bytes!("../proof/submit_git_deliverable_v2.zk.bin");
+    wasm::db::zkas_db_set(&submit_git_deliverable_v2_bincode[..])?;
+
     Ok(())
 }
 
@@ -156,7 +176,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: CreateJobParamsV1 = deserialize(&self_.data[1..])?;
             // Circuit constrain_instance (3): employer_pub_x, employer_pub_y, attestation_id
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
-                crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V1.to_string(),
+                crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V2.to_string(),
                 vec![
                     params.employer_pub_x,
                     params.employer_pub_y,
@@ -170,7 +190,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         LaborMarketFunction::AcceptJobV1 => {
             let params: AcceptJobParamsV1 = deserialize(&self_.data[1..])?;
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
-                crate::LABOR_CONTRACT_ZKAS_ACCEPT_JOB_NS_V1.to_string(),
+                crate::LABOR_CONTRACT_ZKAS_ACCEPT_JOB_NS_V2.to_string(),
                 vec![
                     params.job_id,
                     params.worker_pub_x,
@@ -184,7 +204,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         LaborMarketFunction::SubmitDeliverableV1 => {
             let params: SubmitDeliverableParamsV1 = deserialize(&self_.data[1..])?;
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
-                crate::LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V1.to_string(),
+                crate::LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V2.to_string(),
                 vec![
                     params.job_id,
                     params.claim_id,
@@ -200,7 +220,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         LaborMarketFunction::SubmitGitDeliverableV1 => {
             let params: SubmitGitDeliverableParamsV1 = deserialize(&self_.data[1..])?;
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
-                crate::LABOR_CONTRACT_ZKAS_SUBMIT_GIT_DELIVERABLE_NS_V1.to_string(),
+                crate::LABOR_CONTRACT_ZKAS_SUBMIT_GIT_DELIVERABLE_NS_V2.to_string(),
                 vec![
                     params.job_id,
                     params.claim_id,
@@ -216,7 +236,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         LaborMarketFunction::ConfirmDeliveryV1 => {
             let params: ConfirmDeliveryParamsV1 = deserialize(&self_.data[1..])?;
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
-                crate::LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V1.to_string(),
+                crate::LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V2.to_string(),
                 vec![
                     params.job_id,
                     params.employer_pub_x,
@@ -231,7 +251,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         LaborMarketFunction::DisputeV1 => {
             let params: DisputeParamsV1 = deserialize(&self_.data[1..])?;
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
-                crate::LABOR_CONTRACT_ZKAS_DISPUTE_NS_V1.to_string(),
+                crate::LABOR_CONTRACT_ZKAS_DISPUTE_NS_V2.to_string(),
                 vec![
                     params.job_id,
                     params.disputer_pub_x,
@@ -249,7 +269,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             // Circuit constrain_instance (7): job_id, employer_pub_x, employer_pub_y,
             //   milestone_count, completed_payment, refund_amount, spent_nullifier
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
-                crate::LABOR_CONTRACT_ZKAS_REFUND_NS_V1.to_string(),
+                crate::LABOR_CONTRACT_ZKAS_REFUND_NS_V2.to_string(),
                 vec![
                     params.job_id,
                     params.employer_pub_x,
@@ -272,7 +292,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: CreateJobWithMilestonesParamsV1 = deserialize(&self_.data[1..])?;
             // Circuit constrain_instance (3): employer_pub_x, employer_pub_y, attestation_id
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
-                crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V1.to_string(),
+                crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V2.to_string(),
                 vec![
                     params.employer_pub_x,
                     params.employer_pub_y,
@@ -286,7 +306,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         LaborMarketFunction::SubmitMilestoneV1 => {
             let params: SubmitMilestoneDeliverableParamsV1 = deserialize(&self_.data[1..])?;
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
-                crate::LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V1.to_string(),
+                crate::LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V2.to_string(),
                 vec![
                     params.job_id,
                     params.claim_id,
@@ -302,7 +322,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         LaborMarketFunction::ConfirmMilestoneV1 => {
             let params: ConfirmMilestoneParamsV1 = deserialize(&self_.data[1..])?;
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
-                crate::LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V1.to_string(),
+                crate::LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V2.to_string(),
                 vec![
                     params.job_id,
                     params.employer_pub_x,
@@ -317,7 +337,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         LaborMarketFunction::InitiateDisputeV1 => {
             let params: InitiateDisputeParamsV1 = deserialize(&self_.data[1..])?;
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
-                crate::LABOR_CONTRACT_ZKAS_DISPUTE_NS_V1.to_string(),
+                crate::LABOR_CONTRACT_ZKAS_DISPUTE_NS_V2.to_string(),
                 vec![
                     params.job_id,
                     params.disputer_pub_x,
@@ -339,7 +359,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: AcceptJobWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
             // Circuit constrain_instance (4): job_id, worker_pub_x, worker_pub_y, required_capability_id
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
-                crate::LABOR_CONTRACT_ZKAS_ACCEPT_JOB_WITH_CAPABILITY_NS_V1.to_string(),
+                crate::LABOR_CONTRACT_ZKAS_ACCEPT_JOB_WITH_CAPABILITY_NS_V2.to_string(),
                 vec![
                     params.job_id,
                     params.worker_pub_x,

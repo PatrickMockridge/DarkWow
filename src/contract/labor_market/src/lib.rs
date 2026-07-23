@@ -106,3 +106,14 @@ pub const LABOR_CONTRACT_ZKAS_ACCEPT_JOB_WITH_CAPABILITY_NS_V1: &str = "AcceptJo
 pub const LABOR_CONTRACT_ZKAS_MILESTONE_PAYMENT_NS_V1: &str = "MilestonePayment";
 pub const LABOR_CONTRACT_ZKAS_CREATE_JOB_WITH_MILESTONES_NS_V1: &str = "CreateJobWithMilestones";
 pub const LABOR_CONTRACT_ZKAS_CREATE_JOB_WITH_MILESTONES_AND_CAPABILITY_NS_V1: &str = "CreateJobWithMilestonesAndCapability";
+
+// V2 circuit namespaces (HAZOP RC3: domain separation)
+pub const LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V2: &str = "CreateJobV2";
+pub const LABOR_CONTRACT_ZKAS_ACCEPT_JOB_NS_V2: &str = "AcceptJobV2";
+pub const LABOR_CONTRACT_ZKAS_ACCEPT_JOB_WITH_CAPABILITY_NS_V2: &str = "AcceptJobWithCapabilityV2";
+pub const LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V2: &str = "SubmitDeliverableV2";
+pub const LABOR_CONTRACT_ZKAS_SUBMIT_GIT_DELIVERABLE_NS_V2: &str = "SubmitGitDeliverableV2";
+pub const LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V2: &str = "ConfirmDeliveryV2";
+pub const LABOR_CONTRACT_ZKAS_DISPUTE_NS_V2: &str = "DisputeV2";
+pub const LABOR_CONTRACT_ZKAS_REFUND_NS_V2: &str = "RefundV2";
+pub const LABOR_CONTRACT_ZKAS_MILESTONE_PAYMENT_NS_V2: &str = "MilestonePaymentV2";

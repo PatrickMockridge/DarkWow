@@ -2,7 +2,7 @@
 name = "drain_protection"
 category = "DAO"
 description = "Drain protection contract — fund locking, transfer proposals, member voting, exit mechanism."
-version = "1.0.0"
+version = "2.0.0"
 dependencies = ["promissory_note", "native_token_v1"]
 
 [[functions]]

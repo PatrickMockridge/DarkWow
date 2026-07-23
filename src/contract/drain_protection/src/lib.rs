@@ -121,3 +121,14 @@ pub const DRAIN_PROTECTION_CONTRACT_MULTISIG_CONTRACT_ID: &[u8] = b"multisig_cid
 
 /// ZK proof namespaces
 pub const DRAIN_PROTECTION_CONTRACT_ZKAS_EXIT_NS_V1: &str = "ExitProof";
+
+// V2 circuit namespaces (HAZOP RC3: domain separation)
+pub const DRAIN_PROTECTION_CONTRACT_ZKAS_EXECUTE_NS_V2: &str = "ExecuteV2";
+pub const DRAIN_PROTECTION_CONTRACT_ZKAS_EXIT_NS_V2: &str = "ExitProofV2";
+pub const DRAIN_PROTECTION_CONTRACT_ZKAS_INITIALIZE_NS_V2: &str = "InitializeV2";
+pub const DRAIN_PROTECTION_CONTRACT_ZKAS_LOCK_NS_V2: &str = "LockV2";
+pub const DRAIN_PROTECTION_CONTRACT_ZKAS_PROPOSE_NS_V2: &str = "ProposeV2";
+pub const DRAIN_PROTECTION_CONTRACT_ZKAS_TRANSFER_NS_V2: &str = "TransferV2";
+pub const DRAIN_PROTECTION_CONTRACT_ZKAS_UNLOCK_NS_V2: &str = "UnlockV2";
+pub const DRAIN_PROTECTION_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2: &str = "UpdateConfigV2";
+pub const DRAIN_PROTECTION_CONTRACT_ZKAS_VOTE_NS_V2: &str = "VoteV2";

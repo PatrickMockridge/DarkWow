@@ -4,7 +4,7 @@
 name = "labor_market"
 category = "Labor"
 description = "Labor marketplace — create jobs, accept, submit deliverables, confirm delivery, dispute, refund, milestones."
-version = "1.0.0"
+version = "2.0.0"
 dependencies = ["promissory_note", "native_token_v1"]
 
 [[functions]]

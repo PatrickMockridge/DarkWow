@@ -1,0 +1,6 @@
+# Initialize_V2 — domain-separated drain protection init.
+# V2 (HAZOP RC3): domain separation on poseidon_hash
+k = 11; field = "pallas";
+constant "InitializeV2" { EcFixedPointBase NULLIFIER_K, }
+witness "InitializeV2" { Base fund_id, Base authority_secret, Base authority_pub_x, Base authority_pub_y, Base authority_nullifier, Base tx_commitment, Base tx_nonce, Base tx_binding, }
+circuit "InitializeV2" { DOMAIN_NULLIFIER = witness_base(1); DOMAIN_TX_BINDING = witness_base(3); authority_pub = ec_mul_base(authority_secret, NULLIFIER_K); constrain_equal_base(ec_get_x(authority_pub), authority_pub_x); constrain_equal_base(ec_get_y(authority_pub), authority_pub_y); computed = poseidon_hash(DOMAIN_NULLIFIER, fund_id, authority_secret); constrain_equal_base(computed, authority_nullifier); constrain_instance(authority_pub_x); constrain_instance(authority_pub_y); constrain_instance(authority_nullifier); tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce); constrain_instance(tx_binding); constrain_instance(tx_nonce); }
