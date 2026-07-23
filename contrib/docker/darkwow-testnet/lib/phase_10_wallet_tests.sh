@@ -394,9 +394,20 @@ phase_wallet_transfer() {
     local target_height mined_height
     target_height=$((tx_height + 1))
     local mine_poll=0
+    local mine_rpc_dead=0
     info "  MINED: waiting for node0 to mine transfer block (target height=$target_height)..."
     while [ "$mine_poll" -lt "$MINE_MAX_POLLS" ]; do
         mined_height=$(_node0_height)
+        if [ "$_NODE0_RPC_STATUS" != "ok" ]; then
+            mine_rpc_dead=$((mine_rpc_dead + 1))
+            if [ "$mine_rpc_dead" -ge 6 ]; then
+                fail "transfer mining poll aborted: node0 RPC $_NODE0_RPC_STATUS for $mine_rpc_dead consecutive polls — node may have crashed"
+                _wallet_diagnostic 1
+                return 1
+            fi
+        else
+            mine_rpc_dead=0
+        fi
         if [ -n "$mined_height" ] && [ "$mined_height" -ge "$target_height" ]; then
             pass "transfer mined in block: node0 height $tx_height → $mined_height ($((mine_poll * MINE_INTERVAL))s)"
             break

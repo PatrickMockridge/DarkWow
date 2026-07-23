@@ -89,7 +89,7 @@ cleanup_on_exit() {
             echo "  ── Exited container diagnostics ──"
             for c in $died; do
                 echo "  Container $c:"
-                docker inspect "$c" --format '    ExitCode={{.State.ExitCode}} OOMKilled={{.State.OOMKilled}} Error={{.State.Error}}' 2>/dev/null
+                docker inspect "$c" --format '    ExitCode={{.State.ExitCode}} OOMKilled={{.State.OOMKilled}} Error={{.State.Error}}' 2>/dev/null || true
             done
             echo "  ── Host OOM killer log (last 10 entries) ──"
             dmesg -T 2>/dev/null | grep -i 'oom\|out of memory\|killed process' | tail -10 || echo "    (dmesg unavailable or no OOM entries)"
