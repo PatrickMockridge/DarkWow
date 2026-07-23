@@ -174,20 +174,23 @@ phase_blocks() {
     # chain but does NOT verify the chain started from the correct genesis.
     # Two nodes with identically corrupted code could produce matching block-1
     # hashes from different genesis blocks. This check catches that.
+    # GATE: Genesis determinism — verifies the chain started from the correct
+    # genesis. Two nodes with identically corrupted code could produce matching
+    # block-1 hashes from different genesis blocks. This check catches that.
     local GENESIS_HASH_FILE="${REPO_ROOT}/genesis_hash.txt"
     if [ -f "$GENESIS_HASH_FILE" ]; then
         local expected_genesis_hash
         expected_genesis_hash=$(tr -d '[:space:]' < "$GENESIS_HASH_FILE")
         local actual_genesis_hash
         actual_genesis_hash=$(jsonrpc_get_block "dwow-node0" "$RPC_PORT" 0 \
-            | jq -cS '.result' | sha256sum | awk '{print $1}')
+            | jq -cS '.result' | openssl sha256 | awk '{print $2}')
         if [ "$actual_genesis_hash" = "$expected_genesis_hash" ]; then
             pass "Genesis block 0 hash matches precomputed constant (determinism verified at runtime)"
         else
             fail "GENESIS DETERMINISM VIOLATED: expected $expected_genesis_hash, got $actual_genesis_hash"
         fi
     else
-        info "  genesis_hash.txt not found — skipping runtime determinism check"
+        fail "GENESIS DETERMINISM CHECK IMPOSSIBLE: genesis_hash.txt not found at $GENESIS_HASH_FILE. Build the project first (make) or run from repo root."
     fi
 
     # (b) Build check list: all NODE_LIST nodes except node0, plus the
