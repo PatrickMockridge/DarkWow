@@ -270,6 +270,23 @@ composition is not a valid capability type and the note is dropped — the
 contract's declaration is at fault, never the wallet
 ([wallet.md §9](wallet.md), [type-system.md §13](type-system.md)).
 
+**Action subject resolution.** The capability whose primitives are composed is
+the **subject** of the action — the name the action operates on. The subject
+is determined by the action's ρ-calculus structure:
+
+| Action structure | ρ-calculus process | Subject capability |
+|------------------|-------------------|--------------------|
+| produces non-empty | `νx.(action!(x) \| Q)` — creates fresh name `x` | `produces[0]` — the produced capability |
+| produces empty, consumes non-empty | `x?(y).(nullify!(y) \| 0)` — receives and destroys `y` | `consumes[0]` — the consumed capability |
+| both empty | `x?(y).(observe!(y) \| x!(y))` — receives, observes, passes on | `requires.capabilities[0]` — the required capability |
+
+For actions that both produce and consume DIFFERENT capabilities (Pattern C₂:
+`x?(old).νnew.(y!(new) \| ...)`), the primitives are the UNION of all produced
+and consumed capabilities' primitives. The action exercises authority over both
+names simultaneously — the composed type must reflect the barbs of both. The
+union degenerates to a single capability's primitives when the produced and
+consumed capabilities are the same type.
+
 **`[[circuits]].witness_map`** — the ordered witness-binding declaration for
 the generic prover ([wallet.md §6.4.1](wallet.md)). A zkas binary's witness
 section is an ordered, typed, unnamed list; `witness_map` names the source of

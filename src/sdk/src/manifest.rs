@@ -474,19 +474,47 @@ impl ContractManifest {
         let function = self.function_by_code(function_code)?;
         let action = self.action_for_function(&function.name)?;
 
-        // Take the first produced capability (most actions produce exactly one).
-        let output = action.produces.first()?;
-        let cap = self.capability_by_name(&output.name)?;
+        // Resolve the subject capability per manifest.md § "Action subject
+        // resolution". The ρ-calculus structure of the action determines which
+        // capability's primitives are composed:
+        //   Pattern A (produce):     νx.(action!(x) | ...)        → produces[0]
+        //   Pattern B (consume):     x?(y).(nullify!(y) | 0)      → consumes[0]
+        //   Pattern D (observe):     x?(y).(observe!(y) | x!(y))  → requires[0]
+        // Pattern C₂ (P≠C) primitives are the union of all involved capabilities
+        // (see below).
+        let cap_name = action.produces.first()
+            .map(|o| o.name.as_str())
+            .or_else(|| action.consumes.first().map(|s| s.as_str()))
+            .or_else(|| action.requires.capabilities.first().map(|s| s.as_str()))?;
 
-        // Primitives are declared on the capability (a property of the TYPE);
-        // required barbs on the action (a property of the action). Fail CLOSED:
-        // if ANY declared name is unknown to this SDK version, the capability is
-        // left untyped (None) rather than composing a partial/weakened type —
-        // silently dropping a required barb would loosen the coverage predicate
-        // (unsound), and dropping a primitive would under-declare the type.
-        let mut primitives: Vec<Primitive> = Vec::with_capacity(cap.primitives.len());
-        for s in &cap.primitives {
-            primitives.push(Primitive::from_name(s)?);
+        // Collect involved capability names for primitive collection.
+        // Pattern C₂ (produce+consume, P≠C): union of both capabilities'
+        // primitives per type-system.md §6.1 — the action exercises authority
+        // over both names simultaneously. All other patterns: exactly one name.
+        let mut involved_names: Vec<&str> = Vec::new();
+        for output in &action.produces {
+            involved_names.push(output.name.as_str());
+        }
+        for consumed_name in &action.consumes {
+            involved_names.push(consumed_name.as_str());
+        }
+        if involved_names.is_empty() {
+            involved_names.push(cap_name);
+        }
+        involved_names.sort();
+        involved_names.dedup();
+
+        // Collect primitives from all involved capabilities. Fail CLOSED: if
+        // ANY declared primitive name is unknown to this SDK version, or any
+        // capability name is not declared, the entire capability is left
+        // untyped (None) — silently dropping a primitive under-declares the
+        // type and weakens the coverage predicate (unsound).
+        let mut primitives: Vec<Primitive> = Vec::new();
+        for name in &involved_names {
+            let cap = self.capability_by_name(name)?;
+            for s in &cap.primitives {
+                primitives.push(Primitive::from_name(s)?);
+            }
         }
         let mut barbs: Vec<Barb> = Vec::with_capacity(action.required_barbs.len());
         for s in &action.required_barbs {
@@ -499,8 +527,16 @@ impl ContractManifest {
         barbs.sort();
         barbs.dedup();
 
-        // A capability is consumable if any action lists it in `consumes`.
-        let consumable = self.actions.iter().any(|a| a.consumes.contains(&cap.name));
+        // A capability is consumable if any action lists any involved
+        // capability name in its `consumes`.
+        let consumable = self.actions.iter().any(|a| {
+            involved_names.iter().any(|n| a.consumes.contains(&(*n).to_string()))
+        });
+
+        // The first involved capability provides the discriminant and name for
+        // the ResolvedCapability (for single-capability actions this is the
+        // only one; for union actions the first is canonical).
+        let cap = self.capability_by_name(involved_names[0])?;
 
         Some(ResolvedCapability {
             discriminant: cap.discriminant,

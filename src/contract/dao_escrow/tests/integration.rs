@@ -118,7 +118,7 @@ fn test_fee_config_encoding() {
 fn test_dao_escrow_derive_bulla() {
     let dao_bulla = DaoEscrowBulla(pallas::Base::from(42u64));
     let owner_pubkey = make_pubkey(1);
-    let pool_token_id = TokenId(pallas::Base::one());
+    let pool_token_id = TokenId::from_base(pallas::Base::one());
     let bulla_blind = make_blind(42);
 
     let bulla = DaoEscrow::derive_bulla(
@@ -197,7 +197,7 @@ fn test_dao_escrow_encoding() {
         bulla: DaoEscrowBulla(pallas::Base::from(1)),
         mode: DaoEscrowMode::TreasuryEndowment,
         owner_pubkey: make_pubkey(1),
-        pool_token_id: TokenId(pallas::Base::one()),
+        pool_token_id: TokenId::from_base(pallas::Base::one()),
         multisig_group_id: pallas::Base::zero(),
         pool_purse_id: pallas::Base::from(100000),
         treasury_purse_id: pallas::Base::from(70000),
@@ -230,7 +230,7 @@ fn test_membership_encoding() {
         dao_escrow_bulla: DaoEscrowBulla(pallas::Base::from(2)),
         member_pubkey: make_pubkey(1),
         value: 1000,
-        token_id: TokenId(pallas::Base::one()),
+        token_id: TokenId::from_base(pallas::Base::one()),
         expiry: 100000,
         created_at: 50000,
     };
@@ -249,7 +249,7 @@ fn test_initialize_params_encoding() {
         instance_seed: [0u8; 32],
         dao_bulla: DaoEscrowBulla(pallas::Base::from(1)),
         owner_pubkey: make_pubkey(1),
-        endowment_token_id: TokenId(pallas::Base::one()),
+        endowment_token_id: TokenId::from_base(pallas::Base::one()),
         bulla_blind: make_blind(42),
         enable_drain_protection: true,
     };
@@ -305,7 +305,7 @@ fn test_pay_premium_params_encoding() {
         membership_note: MembershipNote(pallas::Base::from(2)),
         value_commit: Group::identity(),
         value: 500,
-        token_id: TokenId(pallas::Base::one()),
+        token_id: TokenId::from_base(pallas::Base::one()),
         expiry: 100000,
         membership_blind: make_blind(42),
         value_blind: ScalarBlind::from(43u64),
@@ -329,7 +329,7 @@ fn test_pay_premium_update_encoding() {
         amount: 10500,
         member_count: 11,
         member_pubkey: make_pubkey(1),
-        token_id: TokenId(pallas::Base::one()),
+        token_id: TokenId::from_base(pallas::Base::one()),
         expiry: 100000,
     };
 

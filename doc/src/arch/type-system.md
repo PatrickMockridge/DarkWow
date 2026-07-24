@@ -509,6 +509,28 @@ Capability(can_transfer_100_native_tokens) ≡
     )
 ```
 
+**Multi-capability composition.** When an action involves multiple capabilities
+— producing one type while consuming a different type — the capability type is
+the composition of the UNION of primitives from all involved capabilities:
+
+```
+Capability(withdraw_from_purse) ≡
+    compose(
+        SecretKey(↓spend, ν-restricted),      // purse_balance ∩ purse_withdrawal
+        Nullifier(↓nullify),                   // purse_withdrawal only
+        Commitment(↓commit),                   // purse_balance only
+        AssetId(↓denominate),                  // both
+        FuncId(↓gate),                         // both
+        ContractId(↓dispatch)                  // both
+    )
+```
+
+This follows from the ρ-calculus: `x?(old).νnew.(y!(new) | Q)` — both `old`
+(consumed) and `new` (produced) are in scope during the action. The composed
+type must carry the barbs of both names because the action exercises authority
+over both simultaneously. When the produced and consumed capabilities are the
+same type, the union is identity and a single-capability composition suffices.
+
 The wallet, as a capability engine, constructs these emergent types at scan
 time: it discovers a commitment via AEAD decryption, resolves the contract
 via its manifest, and derives the capability's type from the composition of

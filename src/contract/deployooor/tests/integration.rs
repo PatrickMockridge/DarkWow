@@ -48,7 +48,7 @@ fn deploy_integration() {
     // Build a deploy call
     info!(target: "deploy", "Building deploy call");
     let deploy_result = harness.build_deploy_call(
-        deploy_keypair,
+        deploy_keypair.clone(),
         wasm_bincode.clone(),
         vec![0x00, 0x01, 0x02, 0x03],
     );
@@ -57,7 +57,7 @@ fn deploy_integration() {
     // Build another deploy call (simulates replacing the deployed contract)
     info!(target: "deploy", "Building second deploy call (replacement)");
     let deploy_result2 = harness.build_deploy_call(
-        deploy_keypair,
+        deploy_keypair.clone(),
         wasm_bincode.clone(),
         vec![0x00, 0x01, 0x02, 0x03],
     );
@@ -65,13 +65,13 @@ fn deploy_integration() {
 
     // Build a lock call
     info!(target: "deploy", "Building lock call");
-    let lock_result = harness.build_lock_call(deploy_keypair);
+    let lock_result = harness.build_lock_call(deploy_keypair.clone());
     assert!(lock_result.is_ok(), "Lock call should build successfully");
 
     // Negative: building a deploy call with empty WASM must fail
     info!(target: "deploy", "Verifying empty WASM is rejected");
     let empty_wasm_result = harness.build_deploy_call(
-        deploy_keypair,
+        deploy_keypair.clone(),
         vec![],
         vec![0x00, 0x01, 0x02, 0x03],
     );
@@ -83,7 +83,7 @@ fn deploy_integration() {
     // Negative: building a deploy call with empty WASM and empty deploy_ix
     info!(target: "deploy", "Verifying empty WASM with empty deploy_ix is rejected");
     let empty_both_result = harness.build_deploy_call(
-        deploy_keypair,
+        deploy_keypair.clone(),
         vec![],
         vec![],
     );
