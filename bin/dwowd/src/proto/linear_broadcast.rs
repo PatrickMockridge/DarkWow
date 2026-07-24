@@ -37,7 +37,7 @@ use tracing::info;
 
 use rand::seq::SliceRandom;
 use dwow_core::{
-    impl_p2p_message,
+    impl_p2p_message, impl_boundary_codec,
     net::{
         metering::MeteringConfiguration,
         protocol::protocol_generic::{
@@ -87,6 +87,35 @@ impl_p2p_message!(
     0,
     1,
     LINEAR_BROADCAST_METERING_CONFIGURATION,
+    &[
+        dwow_core::net::barb_trait::BarbId::Commit,
+        dwow_core::net::barb_trait::BarbId::Verify,
+        dwow_core::net::barb_trait::BarbId::Broadcast,
+        dwow_core::net::barb_trait::BarbId::GossipForward,
+    ]
+);
+
+// JSON-based sync Encodable/Decodable — BoundaryCodec requires these
+// supertraits (§10.5). Wire format matches the async codec above.
+// MAX_BYTES=4 MiB (MAX_BLOCK_SIZE), METERING_SCORE=5 (blocks are
+// expensive to validate).
+impl dwow_serial::Encodable for BlockBroadcast {
+    fn encode<W: std::io::Write>(&self, e: &mut W) -> std::io::Result<usize> {
+        let json = serde_json::to_vec(&self.block)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        e.write(&json)
+    }
+}
+impl dwow_serial::Decodable for BlockBroadcast {
+    fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> {
+        let mut buf = Vec::new();
+        d.read_to_end(&mut buf)?;
+        let block = serde_json::from_slice(&buf)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        Ok(Self { block })
+    }
+}
+impl_boundary_codec!(BlockBroadcast, 4 * 1024 * 1024, 5,
     &[
         dwow_core::net::barb_trait::BarbId::Commit,
         dwow_core::net::barb_trait::BarbId::Verify,
