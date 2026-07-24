@@ -201,7 +201,7 @@ fn create_burn_stake_proof(
 
     let merkle_root = {
         let position: u64 = input.leaf_position;
-        let mut current = MerkleNode::from(coin);
+        let mut current = MerkleNode::from_base(coin);
         for (level, sibling) in input.merkle_path.iter().enumerate() {
             let level = level as u8;
             current = if position & (1 << level) == 0 {

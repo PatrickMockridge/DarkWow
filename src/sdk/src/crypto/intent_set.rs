@@ -245,7 +245,7 @@ mod tests {
         new_count: u64,
     ) -> IntentPostTransitionV1 {
         IntentPostTransitionV1 {
-            commitment: IntentCommitment(pallas::Base::from(commitment)),
+            commitment: IntentCommitment::from_base(pallas::Base::from(commitment)),
             old_commitments_root: pallas::Base::from(old_root),
             new_commitments_root: pallas::Base::from(new_root),
             old_commitments_count: old_count,
@@ -261,7 +261,7 @@ mod tests {
         new_null_root: u64,
     ) -> IntentConsumeTransitionV1 {
         IntentConsumeTransitionV1 {
-            nullifier: IntentNullifier(pallas::Base::from(nullifier)),
+            nullifier: IntentNullifier::from_base(pallas::Base::from(nullifier)),
             old_commitments_root: pallas::Base::from(old_commit_root),
             new_commitments_root: pallas::Base::from(new_commit_root),
             old_nullifiers_root: pallas::Base::from(old_null_root),

@@ -137,7 +137,7 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
                 action: DeadManAction::DisableMinting,
                 last_action_block: 0,
             },
-            token_authority_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::zero())),
+            token_authority_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::zero())),
             create_token: false,
             token_symbol: [0u8; 32],
             deployer_auth: pallas::Base::zero(),

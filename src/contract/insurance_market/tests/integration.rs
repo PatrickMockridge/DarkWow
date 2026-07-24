@@ -44,7 +44,7 @@ use dwow_sdk::{
 
 /// Helper to create PublicKey from a numeric seed
 fn make_pubkey(seed: u64) -> PublicKey {
-    let secret = SecretKey::from(pallas::Base::from(seed));
+    let secret = SecretKey::from_base(pallas::Base::from(seed));
     PublicKey::from_secret(secret)
 }
 

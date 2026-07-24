@@ -183,7 +183,7 @@ impl PoWRewardCallBuilder {
             public_key: self.recipient.unwrap_or(PublicKey::from_secret(self.secret.clone())),
             value,
             token_id: TokenId::from_base(token_id),
-            spend_hook: FuncId::from(spend_hook),
+            spend_hook: FuncId::from_base(spend_hook),
             user_data,
             blind: coin_blind,
         };

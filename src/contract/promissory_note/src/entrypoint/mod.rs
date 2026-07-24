@@ -193,7 +193,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
             // Create Merkle tree for coins
             let mut coin_tree = MerkleTree::new(1);
-            coin_tree.append(MerkleNode::from(pallas::Base::ZERO));
+            coin_tree.append(MerkleNode::from_base(pallas::Base::ZERO));
             let mut coin_tree_data = vec![];
             coin_tree_data.write_u32(0)?;
             coin_tree.encode(&mut coin_tree_data)?;
@@ -201,7 +201,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
             // Create Merkle tree for token registry
             let mut token_registry_tree = MerkleTree::new(1);
-            token_registry_tree.append(MerkleNode::from(pallas::Base::ZERO));
+            token_registry_tree.append(MerkleNode::from_base(pallas::Base::ZERO));
             let mut token_registry_tree_data = vec![];
             token_registry_tree_data.write_u32(0)?;
             token_registry_tree.encode(&mut token_registry_tree_data)?;
@@ -798,7 +798,7 @@ fn apply_token_mint(cid: ContractId, update: TokenMintUpdateV1) -> ContractResul
         wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE)?,
         PROMISSORY_NOTE_CONTRACT_LATEST_COIN_ROOT,
         PROMISSORY_NOTE_CONTRACT_COIN_MERKLE_TREE,
-        &[MerkleNode::from(update.coin.inner())],
+        &[MerkleNode::from_base(update.coin.inner())],
     )?;
 
     // Store token authority key in registry (capability datum for rotation)
@@ -810,7 +810,7 @@ fn apply_token_mint(cid: ContractId, update: TokenMintUpdateV1) -> ContractResul
         wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_ROOTS_TREE)?,
         PROMISSORY_NOTE_CONTRACT_LATEST_TOKEN_REGISTRY_ROOT,
         PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_MERKLE_TREE,
-        &[MerkleNode::from(update.token_id.inner())],
+        &[MerkleNode::from_base(update.token_id.inner())],
     )?;
 
     // Initialize coin count for this token type (infinity-mint hardening).
@@ -836,7 +836,7 @@ fn apply_mint(cid: ContractId, update: MintUpdateV1) -> ContractResult {
         wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE)?,
         PROMISSORY_NOTE_CONTRACT_LATEST_COIN_ROOT,
         PROMISSORY_NOTE_CONTRACT_COIN_MERKLE_TREE,
-        &[MerkleNode::from(update.coin.inner())],
+        &[MerkleNode::from_base(update.coin.inner())],
     )?;
 
     // Persist updated coin count for this token (infinity-mint hardening)
@@ -894,7 +894,7 @@ fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
     let mut new_coins = Vec::new();
     for coin in &update.coins {
         wasm::db::db_set(coins_db, &serialize(coin), &[])?;
-        new_coins.push(MerkleNode::from(coin.inner()));
+        new_coins.push(MerkleNode::from_base(coin.inner()));
     }
 
     // Update Merkle tree
@@ -1034,7 +1034,7 @@ fn apply_redeem(cid: ContractId, update: RedeemUpdateV1) -> ContractResult {
         wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE)?,
         PROMISSORY_NOTE_CONTRACT_LATEST_COIN_ROOT,
         PROMISSORY_NOTE_CONTRACT_COIN_MERKLE_TREE,
-        &[MerkleNode::from(update.coin.inner())],
+        &[MerkleNode::from_base(update.coin.inner())],
     )?;
 
     Ok(())
@@ -1196,7 +1196,7 @@ fn apply_otc_swap(cid: ContractId, update: OtcSwapUpdateV1) -> ContractResult {
     let mut new_coins = Vec::new();
     for coin in &update.coins {
         wasm::db::db_set(coins_db, &serialize(coin), &[])?;
-        new_coins.push(MerkleNode::from(coin.inner()));
+        new_coins.push(MerkleNode::from_base(coin.inner()));
     }
 
     // Update Merkle tree

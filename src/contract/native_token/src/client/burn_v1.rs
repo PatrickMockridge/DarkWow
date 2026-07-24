@@ -95,7 +95,7 @@ pub fn create_burn_proof(
         public_key,
         value: input.value,
         token_id: TokenId::from_base(input.token_id),
-        spend_hook: FuncId::from(input.spend_hook),
+        spend_hook: FuncId::from_base(input.spend_hook),
         user_data: input.user_data,
         blind: Blind(input.coin_blind),
     }
@@ -107,13 +107,13 @@ pub fn create_burn_proof(
     // Derive per-burn unique signature_secret from coin_secret + nullifier.
     // This binds the signer to the coin owner (fixes H2) while keeping
     // signature_public unlinkable across burns (nullifier is unique per coin).
-    let signature_secret = SecretKey::from(poseidon_hash([secret.inner(), nullifier.inner()]));
+    let signature_secret = SecretKey::from_base(poseidon_hash([secret.inner(), nullifier.inner()]));
     let signature_public = PublicKey::from_secret(signature_secret.clone());
 
     // Calculate merkle root from coin and merkle path
     let merkle_root = {
         let position: u64 = input.leaf_position.into();
-        let mut current = MerkleNode::from(coin.inner());
+        let mut current = MerkleNode::from_base(coin.inner());
         for (level, sibling) in input.merkle_path.iter().enumerate() {
             let level = level as u8;
             current = if position & (1 << level) == 0 {
@@ -266,7 +266,7 @@ impl BurnCallBuilder {
                 public_key: PublicKey::from_secret(secret.clone()),
                 value: input.value,
                 token_id: TokenId::from_base(input.token_id),
-                spend_hook: FuncId::from(input.spend_hook),
+                spend_hook: FuncId::from_base(input.spend_hook),
                 user_data: input.user_data,
                 blind: Blind(input.coin_blind),
             }
@@ -279,7 +279,7 @@ impl BurnCallBuilder {
             // Calculate merkle root
             let merkle_root = {
                 let position: u64 = input.leaf_position.into();
-                let mut current = MerkleNode::from(coin.inner());
+                let mut current = MerkleNode::from_base(coin.inner());
                 for (level, sibling) in input.merkle_path.iter().enumerate() {
                     let level = level as u8;
                     current = if position & (1 << level) == 0 {
@@ -299,7 +299,7 @@ impl BurnCallBuilder {
                 nullifier,
                 merkle_root,
                 user_data_enc,
-                spend_hook: input.spend_hook.into(),
+                spend_hook: FuncId::from_base(input.spend_hook),
                 signature_public: PublicKey::from_secret(signature_secret.clone()),
             });
         }

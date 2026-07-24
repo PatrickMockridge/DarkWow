@@ -139,13 +139,13 @@ impl PayInterestCallBuilder {
             value_commit: revealed.value_commit,
             token_commit: revealed.token_commit,
             nullifier: crate::model::Nullifier::from_base(pallas::Base::zero()),
-            merkle_root: dwow_sdk::crypto::MerkleNode::from(pallas::Base::zero()),
+            merkle_root: dwow_sdk::crypto::MerkleNode::from_base(pallas::Base::zero()),
             user_data_enc: pallas::Base::zero(),
             spend_hook: self.input.spend_hook,
             signature_public: self.input.payment_key,
             last_claim_block: 0,
             maturity_block: 0,
-            issuer_contract: dwow_sdk::crypto::ContractId::from(pallas::Base::zero()),
+            issuer_contract: dwow_sdk::crypto::ContractId::from_base(pallas::Base::zero()),
         };
 
         Ok(PayInterestCallDebris {

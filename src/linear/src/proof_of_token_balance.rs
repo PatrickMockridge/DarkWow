@@ -418,7 +418,7 @@ mod tests {
         let input_nullifier = Nullifier::new(secret, output_coin.inner());
         let output_nullifier = Nullifier::new(secret, output_coin.inner());
         // MerkleNode via From<pallas::Base>
-        let merkle_root = MerkleNode::from(pallas::Base::from(9999u64));
+        let merkle_root = MerkleNode::from_base(pallas::Base::from(9999u64));
 
         let input = Input {
             value_commit: input_commit,
@@ -426,7 +426,7 @@ mod tests {
             nullifier: input_nullifier,
             merkle_root,
             user_data_enc: pallas::Base::zero(),
-            spend_hook: FuncId::from(pallas::Base::zero()),
+            spend_hook: FuncId::none(),
             signature_public: pubkey,
         };
         let output = Output {
@@ -501,7 +501,7 @@ mod tests {
             FuncId::none(), pallas::Base::zero(), BaseBlind::from(99u64),
         );
         let nullifier = Nullifier::new(secret, coin.inner());
-        let merkle_root = MerkleNode::from(pallas::Base::from(9999u64));
+        let merkle_root = MerkleNode::from_base(pallas::Base::from(9999u64));
 
         let params = TransferParamsV1 {
             inputs: vec![Input {
@@ -510,7 +510,7 @@ mod tests {
                 nullifier,
                 merkle_root,
                 user_data_enc: pallas::Base::zero(),
-                spend_hook: FuncId::from(pallas::Base::zero()),
+                spend_hook: FuncId::none(),
                 signature_public: pubkey,
             }],
             outputs: vec![Output {

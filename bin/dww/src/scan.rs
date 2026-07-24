@@ -315,7 +315,7 @@ fn build_native_token_cap_record(
         public_key,
         value: note.value,
         token_id: TokenId::from_base(note.token_id),
-        spend_hook: FuncId::from(note.spend_hook),
+        spend_hook: FuncId::from_base(note.spend_hook),
         user_data: note.user_data,
         blind: Blind(note.coin_blind),
     };
@@ -823,7 +823,7 @@ fn scan_block(
                             leaf_position: leaf_pos,
                             commitment: CoinCommitment::from_base(leaf),
                             contract_id: call.contract_id,  // foreign — balance gate excludes it
-                            func_id: Some(FuncId::from(pallas::Base::from(fn_code as u64))),
+                            func_id: Some(FuncId::from_base(pallas::Base::from(fn_code as u64))),
                             cap_blind: Blind(pallas::Base::zero()),
                             value_blind: Blind(pallas::Scalar::zero()),
                             asset_blind: Blind(pallas::Base::zero()),
@@ -1330,7 +1330,7 @@ mod tests {
         let pk_H = PublicKey::from_secret(sk_H.clone());
 
         // Deterministic ephemeral key (model.rs:168)
-        let ephemeral = SecretKey::from(dwow_sdk::crypto::poseidon_hash([
+        let ephemeral = SecretKey::from_base(dwow_sdk::crypto::poseidon_hash([
             sk_H.inner(), pallas::Base::from(0xE7E7_E7E7_E7E7_E7E7u64),
         ]));
 
@@ -1420,7 +1420,7 @@ mod tests {
             public_key: pk_H,
             value: coinbase_reward,
             token_id: TokenId::DRKW,
-            spend_hook: FuncId::from(pallas::Base::zero()),
+            spend_hook: FuncId::none(),
             user_data: pallas::Base::zero(),
             blind: coin_blind,
         };
@@ -1961,7 +1961,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 let attrs = dwow_native_token_contract::model::CoinAttributes {
                     version: 0, public_key: _pk, value,
                     token_id: TokenId::DRKW,
-                    spend_hook: FuncId::from(pallas::Base::zero()),
+                    spend_hook: FuncId::none(),
                     user_data: pallas::Base::zero(), blind: coin_blind,
                 };
                 let coin = attrs.to_coin();
@@ -2284,7 +2284,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         let pk_H = PublicKey::from_secret(sk_H.clone());
         let h_base = pallas::Base::from(height as u64);
         // Deterministic ephemeral key (domain 13 per spec §3.6)
-        let ephem = SecretKey::from(poseidon_hash([
+        let ephem = SecretKey::from_base(poseidon_hash([
             sk_H.inner(), h_base, pallas::Base::from(13u64),
         ]));
         // Deterministic blinds (domains 10-12 per spec §3.6)
@@ -2393,7 +2393,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // ═══════════════════════════════════════════════════════════════
         // Transaction 0: PoWRewardV1 (0x05) — domains 1-3
         // ═══════════════════════════════════════════════════════════════
-        let ephem_05 = SecretKey::from(poseidon_hash([
+        let ephem_05 = SecretKey::from_base(poseidon_hash([
             sk_H.inner(), pallas::Base::from(0xE7E7_E7E7_E7E7_E7E7u64),
         ]));
         let coin_blind_05 = Blind(poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(3u64)]));
@@ -2422,7 +2422,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // ═══════════════════════════════════════════════════════════════
         // Transaction 1: FeeCollectV1 (0x06) — domains 10-13
         // ═══════════════════════════════════════════════════════════════
-        let ephem_06 = SecretKey::from(poseidon_hash([
+        let ephem_06 = SecretKey::from_base(poseidon_hash([
             sk_H.inner(), h_base, pallas::Base::from(13u64),
         ]));
         let coin_blind_06 = Blind(poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(12u64)]));

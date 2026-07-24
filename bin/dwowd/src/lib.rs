@@ -412,7 +412,7 @@ fn build_genesis_deployment_txs() -> Vec<dwow_chain::Transaction> {
     // the hard-coded table), but it sits in the tx hash preimage so it must
     // be identical on every build.
     let public_key = dwow_sdk::crypto::PublicKey::from_secret(
-        dwow_sdk::crypto::SecretKey::from(dwow_sdk::pasta::pallas::Base::from(1u64)),
+        dwow_sdk::crypto::SecretKey::from_base(dwow_sdk::pasta::pallas::Base::from(1u64)),
     );
 
     contracts

@@ -227,7 +227,7 @@ impl FeeCollectCallBuilder {
             public_key,
             value: self.total_fees,
             token_id: TokenId::from_base(token_id),
-            spend_hook: FuncId::from(pallas::Base::ZERO),
+            spend_hook: FuncId::none(),
             user_data: pallas::Base::ZERO,
             blind: coin_blind,
         };
@@ -259,7 +259,7 @@ impl FeeCollectCallBuilder {
 
         // Deterministic AEAD encryption — spec §3.6 requirement 2, domain 13.
         // Ephemeral secret derived from (sk_H, height, domain) — never reused.
-        let ephem_secret = SecretKey::from(poseidon_hash([
+        let ephem_secret = SecretKey::from_base(poseidon_hash([
             sk_base, h_base, pallas::Base::from(DOMAIN_AEAD_EPHEMERAL),
         ]));
         let encrypted_note =

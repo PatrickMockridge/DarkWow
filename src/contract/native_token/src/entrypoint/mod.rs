@@ -173,7 +173,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     if !wasm::db::db_contains_key(info_db, version_key)? {
         // Create Merkle tree for coins
         let mut coin_tree = MerkleTree::new(1);
-        coin_tree.append(MerkleNode::from(pallas::Base::ZERO));
+        coin_tree.append(MerkleNode::from_base(pallas::Base::ZERO));
         let mut coin_tree_data = vec![];
         coin_tree_data.write_u32(0)?;
         coin_tree.encode(&mut coin_tree_data)?;
@@ -1112,7 +1112,7 @@ fn apply_fee_collect(cid: ContractId, update: FeeCollectUpdateV1) -> ContractRes
         wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?,
         NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
         NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE,
-        &[MerkleNode::from(update.coin.inner())],
+        &[MerkleNode::from_base(update.coin.inner())],
     )?;
 
     // Zero out the fee pot for this height (prevents double-claim)
@@ -1141,7 +1141,7 @@ fn apply_fee(cid: ContractId, update: FeeUpdateV1) -> ContractResult {
         wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?,
         NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
         NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE,
-        &[MerkleNode::from(update.coin.inner())],
+        &[MerkleNode::from_base(update.coin.inner())],
     )?;
 
     // Update fee accumulator per block height
@@ -1173,7 +1173,7 @@ fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
     let mut new_coins = Vec::new();
     for coin in &update.coins {
         wasm::db::db_set(coins_db, &serialize(coin), &[])?;
-        new_coins.push(MerkleNode::from(coin.inner()));
+        new_coins.push(MerkleNode::from_base(coin.inner()));
     }
 
     // Update Merkle tree
@@ -1261,7 +1261,7 @@ fn apply_pow_reward(cid: ContractId, update: PoWRewardUpdateV1) -> ContractResul
 
     // Update Merkle tree
     msg!("[PoWRewardV1] Adding new coin to the Merkle tree");
-    let coins = vec![MerkleNode::from(update.coin.inner())];
+    let coins = vec![MerkleNode::from_base(update.coin.inner())];
     wasm::merkle::merkle_add(
         info_db,
         coin_roots_db,

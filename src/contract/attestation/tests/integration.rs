@@ -90,7 +90,7 @@ fn test_predicate_from_u8() {
 
 #[test]
 fn test_attestation_derive_id() {
-    let attestor_pub = PublicKey::from_secret(SecretKey::from(pallas::Base::from(1)));
+    let attestor_pub = PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(1)));
     let claim_type = Predicate::Matches;
     let claim_data = vec![pallas::Base::from(1), pallas::Base::from(2)];
     let attestor_secret = pallas::Base::from(42);
@@ -111,7 +111,7 @@ fn test_attestation_encoding() {
     let attestation = Attestation {
 
         version: 0,        id: AttestationId(pallas::Base::from(1)),
-        attestor_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(2))),
+        attestor_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(2))),
         attestor_secret: pallas::Base::from(4),
         claim_type: Predicate::Matches,
         claim_data: vec![pallas::Base::from(1), pallas::Base::from(2)],
@@ -137,7 +137,7 @@ fn test_claim_encoding() {
 
         version: 0,        id: ClaimId(pallas::Base::from(1)),
         attestation_id: AttestationId(pallas::Base::from(2)),
-        claimant_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(3))),
+        claimant_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(3))),
         claimant_secret: pallas::Base::from(5),
         predicate: Predicate::GreaterOrEqual,
         evidence_commitment: vec![1, 2, 3],
@@ -163,7 +163,7 @@ fn test_create_attestation_params_encoding() {
     let params = CreateAttestationParamsV1 {
         proof: vec![1, 2, 3],
         attestation_id: AttestationId(pallas::Base::from(1)),
-        attestor_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(2))),
+        attestor_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(2))),
         claim_type: Predicate::Matches,
         claim_data: vec![pallas::Base::from(4)],
         metadata: vec![5, 6],
@@ -193,7 +193,7 @@ fn test_create_attestation_update_encoding() {
 fn test_revoke_attestation_params_encoding() {
     let params = RevokeAttestationParamsV1 {
         attestation_id: AttestationId(pallas::Base::from(1)),
-        attestor_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(2))),
+        attestor_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(2))),
     };
 
     let encoded = serialize(&params);
@@ -244,7 +244,7 @@ fn test_create_claim_params_encoding() {
         proof: vec![1, 2, 3],
         claim_id: ClaimId(pallas::Base::from(1)),
         attestation_id: AttestationId(pallas::Base::from(2)),
-        claimant_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(3))),
+        claimant_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(3))),
         predicate: Predicate::LessOrEqual,
         evidence_commitment: vec![5, 6, 7],
         revealed_result: vec![8, 9],
@@ -310,7 +310,7 @@ fn test_consume_claim_params_encoding() {
     let params = ConsumeClaimParamsV1 {
         claim_id: ClaimId(pallas::Base::from(1)),
         attestation_id: AttestationId(pallas::Base::from(2)),
-        claimant_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(3))),
+        claimant_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(3))),
         nullifier: pallas::Base::from(5),
     };
 

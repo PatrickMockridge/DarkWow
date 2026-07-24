@@ -171,7 +171,7 @@ pub async fn build_linear_coinbase(
     let sk_h: SecretKey = recipient.secret().clone().into();
     // Deterministic ephemeral key derived from sk_H — consensus-coinbase.md §2.7:
     // "no random keys." Domain-separated from the blind derivation domains.
-    let ephemeral_secret = SecretKey::from(dwow_sdk::crypto::poseidon_hash([
+    let ephemeral_secret = SecretKey::from_base(dwow_sdk::crypto::poseidon_hash([
         sk_h.inner(),
         pallas::Base::from(0xE7E7_E7E7_E7E7_E7E7u64),
     ]));

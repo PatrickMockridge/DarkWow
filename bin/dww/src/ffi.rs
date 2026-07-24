@@ -1090,7 +1090,7 @@ pub extern "C" fn dwow_wallet_generate_proof(
         ),
         &crate::prover_impl::ResolvedCapProvider::new(
             vec![], // caller provides pre-resolved caps
-            dwow_sdk::crypto::SecretKey::from(pallas::Base::zero()),
+            dwow_sdk::crypto::SecretKey::from_base(pallas::Base::zero()),
             vec![],
             0,
         ),

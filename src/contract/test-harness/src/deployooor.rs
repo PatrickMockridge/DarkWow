@@ -51,7 +51,7 @@ fn test_deploy_call_builder() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     // Create a deploy keypair (fixed, explicitly-declared test key)
-    let deploy_keypair = Keypair::new(SecretKey::from(pallas::Base::from(42)));
+    let deploy_keypair = Keypair::new(SecretKey::from_base(pallas::Base::from(42)));
 
     // Create deployment instruction
     let deploy_ix = vec![0x00, 0x01, 0x02, 0x03];

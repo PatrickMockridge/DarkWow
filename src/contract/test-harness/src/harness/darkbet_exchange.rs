@@ -227,7 +227,7 @@ impl DarkbetExchangeHarness {
         let (proof, public_inputs) = create_market_v1_proof(&self.create_market_zkbin, &self.create_market_pk, &input)?;
 
         // Build CreateMarketParamsV1 for call_data
-        let creator_secret = SecretKey::from(pallas::Base::from(creator_pub_x));
+        let creator_secret = SecretKey::from_base(pallas::Base::from(creator_pub_x));
         let creator_pub = PublicKey::from_secret(creator_secret);
         let params = CreateMarketParamsV1 {
             description: "Test Market".to_string(),
@@ -276,7 +276,7 @@ impl DarkbetExchangeHarness {
         let (proof, public_inputs) = buy_position_v1_proof(&self.buy_position_zkbin, &self.buy_position_pk, &input)?;
 
         // Build BuyPositionParamsV1 for call_data
-        let owner_secret = SecretKey::from(pallas::Base::from(owner_pub_x));
+        let owner_secret = SecretKey::from_base(pallas::Base::from(owner_pub_x));
         let owner = PublicKey::from_secret(owner_secret);
         let params = BuyPositionParamsV1 {
             market_id,
@@ -320,7 +320,7 @@ impl DarkbetExchangeHarness {
         let (proof, public_inputs) = claim_winnings_v1_proof(&self.claim_winnings_zkbin, &self.claim_winnings_pk, &input)?;
 
         // Build ClaimWinningsParamsV1 for call_data
-        let owner_secret = SecretKey::from(pallas::Base::from(owner_pub_x));
+        let owner_secret = SecretKey::from_base(pallas::Base::from(owner_pub_x));
         let owner = PublicKey::from_secret(owner_secret);
         let params = ClaimWinningsParamsV1 {
             position_id,
@@ -361,7 +361,7 @@ impl DarkbetExchangeHarness {
         let (proof, public_inputs) = add_liquidity_v1_proof(&self.add_liquidity_zkbin, &self.add_liquidity_pk, &input)?;
 
         // Build AddLiquidityParamsV1 for call_data
-        let provider_secret = SecretKey::from(pallas::Base::from(provider_pub_x));
+        let provider_secret = SecretKey::from_base(pallas::Base::from(provider_pub_x));
         let provider = PublicKey::from_secret(provider_secret);
         let params = AddLiquidityParamsV1 {
             market_id,

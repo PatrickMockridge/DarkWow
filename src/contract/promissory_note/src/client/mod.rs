@@ -111,7 +111,7 @@ pub fn verify_received_capability(output: &Output, secret: &SecretKey) -> Result
         recipient_address,
         note.value,
         TokenId::from_base(note.token_id),
-        FuncId::from(note.spend_hook),
+        FuncId::from_base(note.spend_hook),
         note.user_data,
         Blind(note.coin_blind),
     );

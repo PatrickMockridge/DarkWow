@@ -219,7 +219,7 @@ impl PlaceBetV1Builder {
             placed_at: 0, // Filled by contract
         };
 
-        let own_bet = OwnRouletteBet { note, secret: SecretKey::from(self.secret_nonce) };
+        let own_bet = OwnRouletteBet { note, secret: SecretKey::from_base(self.secret_nonce) };
 
         Ok((params, own_bet))
     }

@@ -1149,7 +1149,7 @@ impl Dww {
             public_key: recipient_pk,
             value: amount,
             token_id: DRKW_TOKEN_ID,
-            spend_hook: FuncId::from(spend_hook),
+            spend_hook: FuncId::from_base(spend_hook),
             user_data,
             blind: Blind(BaseBlind::random(&mut rng).inner()),
         };
@@ -1185,7 +1185,7 @@ impl Dww {
                 public_key: PublicKey::from_secret(change_secret),
                 value: change_value,
                 token_id: DRKW_TOKEN_ID,
-                spend_hook: FuncId::from(spend_hook),
+                spend_hook: FuncId::from_base(spend_hook),
                 user_data,
                 blind: Blind(BaseBlind::random(&mut rng).inner()),
             });

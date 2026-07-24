@@ -84,15 +84,15 @@ impl MerkleNode {
         }
     }
 
+    /// Construct a MerkleNode from a pallas::Base field element.
+    /// Named constructor per §8.5 — no From<pallas::Base> impl.
+    pub fn from_base(x: pallas::Base) -> Self {
+        Self(x)
+    }
+
     /// Convert the `MerkleNode` type into 32 raw bytes
     pub fn to_bytes(&self) -> [u8; 32] {
         self.0.to_repr()
-    }
-}
-
-impl From<pallas::Base> for MerkleNode {
-    fn from(x: pallas::Base) -> Self {
-        Self(x)
     }
 }
 
@@ -182,7 +182,7 @@ mod tests {
         let mut roots = vec![];
 
         for id in 0..MAX_CHECKPOINTS {
-            let leaf = MerkleNode::from(pallas::Base::random(&mut OsRng));
+            let leaf = MerkleNode::from_base(pallas::Base::random(&mut OsRng));
             tree.append(leaf);
             roots.push(tree.root(0).unwrap());
             tree.checkpoint(id);

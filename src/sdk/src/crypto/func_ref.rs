@@ -57,6 +57,12 @@ impl FuncId {
         self.0
     }
 
+    /// Construct a FuncId from a pallas::Base field element.
+    /// Named constructor per §8.5 — no From<pallas::Base> impl.
+    pub fn from_base(x: pallas::Base) -> Self {
+        Self(x)
+    }
+
     /// Create a `FuncId` object from given bytes, erroring if the
     /// input bytes are noncanonical.
     pub fn from_bytes(x: [u8; 32]) -> Result<Self, ContractError> {
@@ -76,7 +82,6 @@ impl FuncId {
 
 fp_from_bs58!(FuncId);
 fp_to_bs58!(FuncId);
-ty_from_fp!(FuncId);
 
 #[cfg(test)]
 mod tests {

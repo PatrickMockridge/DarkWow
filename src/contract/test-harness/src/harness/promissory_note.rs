@@ -200,7 +200,7 @@ impl PromissoryNoteHarness {
     ) -> Result<MintResult> {
         // Build same Merkle tree structure as used in create_token
         let mut tree = MerkleTree::new(1);
-        tree.append(MerkleNode::from(token_id));
+        tree.append(MerkleNode::from_base(token_id));
         let leaf_pos_mark = tree.mark().unwrap();
 
         // Get Merkle path for the token leaf

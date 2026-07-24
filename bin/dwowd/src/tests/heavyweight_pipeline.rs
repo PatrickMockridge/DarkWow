@@ -582,7 +582,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         for b in self.contract_name.as_bytes() {
             hash = hash.wrapping_mul(31).wrapping_add(*b as u64);
         }
-        ContractId::from(pallas::Base::from(hash))
+        ContractId::from_base(pallas::Base::from(hash))
     }
 }
 
@@ -948,8 +948,8 @@ fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Erro
         let contract_id = pipeline.deploy(wasm).await?;
         println!("Contract deployed");
 
-        let buyer_wallet_sk = SecretKey::from(pallas::Base::from(10u64));
-        let seller_wallet_sk = SecretKey::from(pallas::Base::from(20u64));
+        let buyer_wallet_sk = SecretKey::from_base(pallas::Base::from(10u64));
+        let seller_wallet_sk = SecretKey::from_base(pallas::Base::from(20u64));
         let token_id = pallas::Base::from(1u64);
         let value_blind = pallas::Scalar::from(123u64);
 
@@ -1058,8 +1058,8 @@ fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Er
         assert!(decoded.attestations.is_empty());
 
         // --- Exercise contract functions with ZK proofs ---
-        let buyer_wallet_sk = SecretKey::from(pallas::Base::from(10u64));
-        let seller_wallet_sk = SecretKey::from(pallas::Base::from(20u64));
+        let buyer_wallet_sk = SecretKey::from_base(pallas::Base::from(10u64));
+        let seller_wallet_sk = SecretKey::from_base(pallas::Base::from(20u64));
         let token_id = pallas::Base::from(1u64);
 
         let instance_seed: [u8; 32] = {
@@ -3279,14 +3279,14 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         // --- Deploy bridge contract ---
         let bridge_wasm =
             include_bytes!("../../../../src/contract/bridge/dwow_bridge_contract.wasm");
-        let bridge_id = ContractId::from(pallas::Base::from(0xB0_B1_B2_B3u64));
+        let bridge_id = ContractId::from_base(pallas::Base::from(0xB0_B1_B2_B3u64));
         deploy_wasm(&genesis.chain_state, bridge_wasm, bridge_id).await?;
         println!("Bridge deployed at {:?}", bridge_id.to_bytes());
 
         // --- Deploy relayer_endowment contract ---
         let relayer_wasm =
             include_bytes!("../../../../src/contract/relayer_endowment/dwow_relayer_endowment_contract.wasm");
-        let relayer_id = ContractId::from(pallas::Base::from(0xE0_E1_E2_E3u64));
+        let relayer_id = ContractId::from_base(pallas::Base::from(0xE0_E1_E2_E3u64));
         deploy_wasm(&genesis.chain_state, relayer_wasm, relayer_id).await?;
         println!("RelayerEndowment deployed at {:?}", relayer_id.to_bytes());
 

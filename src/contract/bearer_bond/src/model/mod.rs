@@ -204,13 +204,13 @@ impl Default for BondCoin {
             value_commit: pallas::Point::identity(),
             token_commit: pallas::Base::zero(),
             nullifier: Nullifier::from_base(pallas::Base::zero()),
-            merkle_root: MerkleNode::from(pallas::Base::zero()),
+            merkle_root: MerkleNode::from_base(pallas::Base::zero()),
             user_data_enc: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(),
             signature_public: pallas::Base::zero(),
             last_claim_block: 0,
             maturity_block: 0,
-            issuer_contract: ContractId::from(pallas::Base::zero()),
+            issuer_contract: ContractId::from_base(pallas::Base::zero()),
         }
     }
 }

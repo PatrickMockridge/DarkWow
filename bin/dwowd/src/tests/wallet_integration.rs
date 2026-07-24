@@ -552,7 +552,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             .expect("store synthetic manifest in wallet DB");
 
         // Deterministic ephemeral key for AEAD encryption
-        let ephem = SecretKey::from(poseidon_hash([
+        let ephem = SecretKey::from_base(poseidon_hash([
             master_sk_wallet.inner(),
             pallas::Base::from(0xBEEF_BEEF_BEEF_BEEFu64),
         ]));

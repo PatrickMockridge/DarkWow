@@ -182,8 +182,8 @@ impl CommitSpinV1Builder {
 
         let own_spin = OwnSpin {
             note,
-            secret_nonce: SecretKey::from(self.secret_nonce),
-            blind: SecretKey::from(self.blind),
+            secret_nonce: SecretKey::from_base(self.secret_nonce),
+            blind: SecretKey::from_base(self.blind),
         };
 
         Ok((params, own_spin))

@@ -42,7 +42,7 @@ use dwow_otc_swap_contract::{
 /// Helper to create a test PublicKey
 fn make_pubkey(seed: u64) -> dwow_sdk::crypto::PublicKey {
     use dwow_sdk::crypto::{PublicKey, SecretKey};
-    let secret = SecretKey::from(pallas::Base::from(seed));
+    let secret = SecretKey::from_base(pallas::Base::from(seed));
     PublicKey::from_secret(secret)
 }
 
@@ -131,7 +131,7 @@ fn test_fund_swap_params_encoding() {
         swap_id: pallas::Base::from(1),
         value_commit: pallas::Point::identity(),
         merkle_proof: vec![pallas::Base::from(1), pallas::Base::from(2)],
-        merkle_root: MerkleNode::from(pallas::Base::from(99)),
+        merkle_root: MerkleNode::from_base(pallas::Base::from(99)),
     };
 
     let encoded = serialize(&params);

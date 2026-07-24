@@ -45,7 +45,7 @@ use dwow_slot_contract::{
 /// Helper to create a test PublicKey
 fn make_pubkey(seed: u64) -> dwow_sdk::crypto::PublicKey {
     use dwow_sdk::crypto::{PublicKey, SecretKey};
-    let secret = SecretKey::from(pallas::Base::from(seed));
+    let secret = SecretKey::from_base(pallas::Base::from(seed));
     PublicKey::from_secret(secret)
 }
 

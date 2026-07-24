@@ -231,7 +231,7 @@ impl TransferCallBuilder {
                 nullifier: revealed.nullifier,
                 merkle_root: revealed.merkle_root,
                 user_data_enc: revealed.user_data_enc,
-                spend_hook: FuncId::from(input.spend_hook),
+                spend_hook: FuncId::from_base(input.spend_hook),
                 signature_public: revealed.signature_public,
             });
         }
@@ -283,7 +283,7 @@ impl TransferCallBuilder {
                 token_commit: revealed.token_commit,
                 coin: revealed.coin,
                 note: encrypted_note,
-                spend_hook: FuncId::from(output.spend_hook),
+                spend_hook: FuncId::from_base(output.spend_hook),
             });
         }
 
@@ -313,7 +313,7 @@ fn create_transfer_burn_proof(
         public_key,
         value: input.value,
         token_id: TokenId::from_base(input.token_id),
-        spend_hook: FuncId::from(input.spend_hook),
+        spend_hook: FuncId::from_base(input.spend_hook),
         user_data: input.user_data,
         blind: Blind(input.coin_blind),
     }
@@ -325,7 +325,7 @@ fn create_transfer_burn_proof(
     // Calculate merkle root
     let merkle_root = {
         let position: u64 = input.leaf_position.into();
-        let mut current = MerkleNode::from(coin.inner());
+        let mut current = MerkleNode::from_base(coin.inner());
         for (level, sibling) in input.merkle_path.iter().enumerate() {
             let level = level as u8;
             current = if position & (1 << level) == 0 {
@@ -406,7 +406,7 @@ fn create_transfer_blind_output_proof(
         public_key: output.recipient,
         value: output.value,
         token_id: TokenId::from_base(output.token_id),
-        spend_hook: FuncId::from(output.spend_hook),
+        spend_hook: FuncId::from_base(output.spend_hook),
         user_data: output.user_data,
         blind: Blind(output.coin_blind),
     };

@@ -52,7 +52,7 @@ fn test_oracle_encoding() {
     let oracle = Oracle {
         version: 0,
         id: OracleId(dwow_sdk::pasta::pallas::Base::from(1)),
-        oracle_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(2))),
+        oracle_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(2))),
         name: "BTC/USD Price Feed".to_string(),
         data_type: "price".to_string(),
         value: dwow_sdk::pasta::pallas::Base::from(50000),
@@ -74,7 +74,7 @@ fn test_register_oracle_params_encoding() {
     let params = RegisterOracleParamsV1 {
         proof: vec![1, 2, 3],
         oracle_id: OracleId(pallas::Base::from(1)),
-        oracle_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(2))),
+        oracle_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(2))),
         name: "BTC/USD Price Feed".to_string(),
         data_type: "price".to_string(),
     };

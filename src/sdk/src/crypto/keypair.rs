@@ -144,8 +144,13 @@ impl SecretKey {
     }
 }
 
-impl From<pallas::Base> for SecretKey {
-    fn from(x: pallas::Base) -> Self {
+impl SecretKey {
+    /// Construct a SecretKey from a pallas::Base field element.
+    /// Named constructor per §8.5 — no From<pallas::Base> impl.
+    /// Per §5: SecretKey exhibits ↓spend and ↓derive. Any field element
+    /// can be a secret key — validation is at the constructor call site,
+    /// not in the type conversion.
+    pub fn from_base(x: pallas::Base) -> Self {
         Self(x)
     }
 }

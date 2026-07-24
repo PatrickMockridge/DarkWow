@@ -38,7 +38,7 @@ fn deploy_integration() {
     info!(target: "deploy", "Starting Deployooor integration test");
 
     let harness = DeployooorHarness::spawn();
-    let deploy_keypair = Keypair::new(SecretKey::from(pallas::Base::from(42)));
+    let deploy_keypair = Keypair::new(SecretKey::from_base(pallas::Base::from(42)));
 
     let wasm_bincode = vec![
         0x00, 0x61, 0x73, 0x6d, // magic number

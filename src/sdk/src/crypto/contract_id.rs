@@ -48,7 +48,7 @@ lazy_static! {
     ///
     /// `EJs7oEjKkvCeEVCmpRsd6fEoTGCFJ7WKUBfmAjwaegN`
     pub static ref DEPLOYOOOR_CONTRACT_ID: ContractId =
-        ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(2)]));
+        ContractId::from_base(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(2)]));
 
     /// Contract ID for the Promissory Note contract (hardcoded at genesis).
     ///
@@ -62,7 +62,7 @@ lazy_static! {
     /// genesis purely as ecosystem infrastructure, like ERC-20 pre-deploys on
     /// Ethereum testnets or the bank module in Cosmos SDK.
     pub static ref PROMISSORY_NOTE_CONTRACT_ID: ContractId =
-        ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(3)]));
+        ContractId::from_base(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(3)]));
 
     /// Legacy alias — Promissory Note was previously called "Money" in upstream.
     pub static ref MONEY_TOKEN_CONTRACT_ID: ContractId = *PROMISSORY_NOTE_CONTRACT_ID;
@@ -70,7 +70,7 @@ lazy_static! {
     /// Contract ID for the Native Token contract (hardcoded at genesis).
     /// Native Token handles ONLY consensus-critical operations: block rewards and fees.
     pub static ref NATIVE_TOKEN_CONTRACT_ID: ContractId =
-        ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(4)]));
+        ContractId::from_base(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(4)]));
 
     /// Contract ID for the Identity contract (hardcoded at genesis).
     ///
@@ -79,7 +79,7 @@ lazy_static! {
     /// As genesis infrastructure, it has a canonical well-known ContractId that every
     /// node can rely on from block 1.
     pub static ref IDENTITY_CONTRACT_ID: ContractId =
-        ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(5)]));
+        ContractId::from_base(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(5)]));
 
     /// Contract ID for the Oracle contract (hardcoded at genesis).
     ///
@@ -87,7 +87,7 @@ lazy_static! {
     /// It is a core dependency of the contract manifest trust model — attestations
     /// depend on oracle data for predicate verification.
     pub static ref ORACLE_CONTRACT_ID: ContractId =
-        ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(6)]));
+        ContractId::from_base(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(6)]));
 
     /// Contract ID for the Attestation contract (hardcoded at genesis).
     ///
@@ -95,7 +95,7 @@ lazy_static! {
     /// It is the core of Layer 3 of the contract manifest trust model — without it,
     /// contracts cannot verify that other contracts' binaries match their claims.
     pub static ref ATTESTATION_CONTRACT_ID: ContractId =
-        ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(7)]));
+        ContractId::from_base(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(7)]));
 
     /// Contract ID for the Purse contract (hardcoded at genesis).
     ///
@@ -104,7 +104,7 @@ lazy_static! {
     /// and hidden token types (Poseidon). It is the primitive that PN token balances are
     /// measured in, and every wallet depends on it for balance tracking.
     pub static ref PURSE_CONTRACT_ID: ContractId =
-        ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(8)]));
+        ContractId::from_base(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(8)]));
 
     /// Contract ID for the Box contract (hardcoded at genesis).
     ///
@@ -113,7 +113,7 @@ lazy_static! {
     /// (linear use via nullifier). Contents are hidden — the chain sees only that SOMETHING
     /// was transferred, not what.
     pub static ref BOX_CONTRACT_ID: ContractId =
-        ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(9)]));
+        ContractId::from_base(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(9)]));
 
     /// Contract ID for the MultiSig contract (hardcoded at genesis).
     ///
@@ -122,7 +122,7 @@ lazy_static! {
     /// approval capability via Box::Take or direct capability checks. Extracted from
     /// duplicated threshold logic in DAO-Escrow and DrainProtection.
     pub static ref MULTISIG_CONTRACT_ID: ContractId =
-        ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(10)]));
+        ContractId::from_base(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(10)]));
 
     /// Consensus-critical native contract IDs (Deployooor + NativeToken only).
     /// Promissory Note is deliberately excluded — it is ecosystem infrastructure,
@@ -176,6 +176,12 @@ impl ContractId {
     /// Get the inner `pallas::Base` element.
     pub fn inner(&self) -> pallas::Base {
         self.0
+    }
+
+    /// Construct a ContractId from a pallas::Base field element.
+    /// Named constructor per §8.5 — no From<pallas::Base> impl.
+    pub fn from_base(x: pallas::Base) -> Self {
+        Self(x)
     }
 
     /// Create a `ContractId` object from given bytes.
@@ -237,7 +243,6 @@ impl ContractId {
 use core::str::FromStr;
 crate::fp_from_bs58!(ContractId);
 crate::fp_to_bs58!(ContractId);
-crate::ty_from_fp!(ContractId);
 
 #[cfg(test)]
 mod tests {

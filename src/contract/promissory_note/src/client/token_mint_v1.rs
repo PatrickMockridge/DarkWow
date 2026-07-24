@@ -141,7 +141,7 @@ impl TokenMintCallBuilder {
             public_key: self.input.recipient,
             value: self.input.value,
             token_id: TokenId::from_base(token_id),
-            spend_hook: FuncId::from(self.input.spend_hook),
+            spend_hook: FuncId::from_base(self.input.spend_hook),
             user_data: self.input.user_data,
             blind: Blind(self.input.coin_blind),
         };
@@ -189,7 +189,7 @@ impl TokenMintCallBuilder {
                 token_id: TokenId::from_base(token_id),
                 token_auth_parent: self.input.token_auth_parent,
                 token_commit,
-                spend_hook: FuncId::from(self.input.spend_hook),
+                spend_hook: FuncId::from_base(self.input.spend_hook),
                 tx_binding: pallas::Base::zero(),
                 tx_nonce: self.tx_nonce,
             },

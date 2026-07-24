@@ -214,9 +214,15 @@ impl PrivateIntent {
 
 /// Commitment to a `PrivateIntent`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, SerialEncodable, SerialDecodable)]
-pub struct IntentCommitment(pub pallas::Base);
+pub struct IntentCommitment(pallas::Base);
 
 impl IntentCommitment {
+    /// Construct an IntentCommitment from a pallas::Base field element.
+    /// Named constructor per §8.5 — no From<pallas::Base> impl.
+    pub fn from_base(x: pallas::Base) -> Self {
+        Self(x)
+    }
+
     /// Get the inner pallas::Base value.
     pub fn inner(&self) -> pallas::Base {
         self.0
@@ -240,13 +246,18 @@ impl IntentCommitment {
 
 fp_from_bs58!(IntentCommitment);
 fp_to_bs58!(IntentCommitment);
-ty_from_fp!(IntentCommitment);
 
 /// Nullifier for a `PrivateIntent`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, SerialEncodable, SerialDecodable)]
-pub struct IntentNullifier(pub pallas::Base);
+pub struct IntentNullifier(pallas::Base);
 
 impl IntentNullifier {
+    /// Construct an IntentNullifier from a pallas::Base field element.
+    /// Named constructor per §8.5 — no From<pallas::Base> impl.
+    pub fn from_base(x: pallas::Base) -> Self {
+        Self(x)
+    }
+
     /// Get the inner pallas::Base value.
     pub fn inner(&self) -> pallas::Base {
         self.0
@@ -270,7 +281,6 @@ impl IntentNullifier {
 
 fp_from_bs58!(IntentNullifier);
 fp_to_bs58!(IntentNullifier);
-ty_from_fp!(IntentNullifier);
 
 #[cfg(test)]
 mod tests {

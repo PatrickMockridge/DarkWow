@@ -84,7 +84,7 @@ fn test_bond_series_info_serializable() {
         interest_rate_bps: 500,
         maturity_block: 1000,
         status: SeriesStatus::Active,
-        issuer_contract: ContractId::from(pallas::Base::from(99)),
+        issuer_contract: ContractId::from_base(pallas::Base::from(99)),
         total_staked: 10000,
     };
     let encoded = serialize(&info);

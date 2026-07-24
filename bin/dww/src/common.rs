@@ -77,7 +77,7 @@ pub fn prettytable_held_capabilities(
         };
 
         let spend_hook = match cap.spend_hook {
-            Some(hook) if hook != FuncId::from(pallas::Base::zero()) =>
+            Some(hook) if hook != FuncId::none() =>
                 bs58::encode(&hook.to_bytes()).into_string(),
             _ => String::from("-"),
         };

@@ -123,7 +123,7 @@ impl MintCallBuilder {
             public_key: self.input.recipient,
             value: self.input.value,
             token_id: TokenId::from_base(self.input.token_id),
-            spend_hook: FuncId::from(self.input.spend_hook),
+            spend_hook: FuncId::from_base(self.input.spend_hook),
             user_data: self.input.user_data,
             blind: Blind(self.input.coin_blind),
         };
@@ -137,7 +137,7 @@ impl MintCallBuilder {
         // Calculate token_registry_root from Merkle path
         let token_registry_root = {
             let position: u64 = self.input.token_leaf_pos.into();
-            let mut current = MerkleNode::from(self.input.token_id);
+            let mut current = MerkleNode::from_base(self.input.token_id);
             for (level, sibling) in self.input.token_path.iter().enumerate() {
                 let level = level as u8;
                 current = if position & (1 << level) == 0 {
@@ -194,7 +194,7 @@ impl MintCallBuilder {
                 token_id: TokenId::from_base(self.input.token_id),
                 token_registry_root,
                 mint_public,
-                spend_hook: FuncId::from(self.input.spend_hook),
+                spend_hook: FuncId::from_base(self.input.spend_hook),
                 tx_binding: pallas::Base::zero(),
                 tx_nonce: self.tx_nonce,
             },

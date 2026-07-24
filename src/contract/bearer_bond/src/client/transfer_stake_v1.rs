@@ -275,7 +275,7 @@ impl TransferStakeCallBuilder {
                 value_commit: revealed.value_commit,
                 token_commit: revealed.token_commit,
                 nullifier: Nullifier::from_base(pallas::Base::zero()),
-                merkle_root: MerkleNode::from(pallas::Base::zero()),
+                merkle_root: MerkleNode::from_base(pallas::Base::zero()),
                 user_data_enc: pallas::Base::zero(),
                 spend_hook: output.spend_hook,
                 signature_public: output.recipient,
@@ -343,7 +343,7 @@ fn create_transfer_burn_proof(
 
     let merkle_root = {
         let position: u64 = input.leaf_position;
-        let mut current = MerkleNode::from(coin);
+        let mut current = MerkleNode::from_base(coin);
         for (level, sibling) in input.merkle_path.iter().enumerate() {
             let level = level as u8;
             current = if position & (1 << level) == 0 {

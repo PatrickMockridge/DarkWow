@@ -174,7 +174,7 @@ pub fn create_fee_proof(
         public_key,
         value: input.value,
         token_id: TokenId::from_base(input.token_id),
-        spend_hook: FuncId::from(input.spend_hook),
+        spend_hook: FuncId::from_base(input.spend_hook),
         user_data: input.user_data,
         blind: Blind(input.coin_blind),
     };
@@ -186,7 +186,7 @@ pub fn create_fee_proof(
     // Calculate merkle root
     let merkle_root = {
         let position: u64 = input.leaf_position.into();
-        let mut current = MerkleNode::from(input_coin.inner());
+        let mut current = MerkleNode::from_base(input_coin.inner());
         for (level, sibling) in input.merkle_path.iter().enumerate() {
             let level = level as u8;
             current = if position & (1 << level) == 0 {
@@ -214,7 +214,7 @@ pub fn create_fee_proof(
         public_key: output.recipient,
         value: output.value,
         token_id: TokenId::from_base(input.token_id), // Same token
-        spend_hook: FuncId::from(output_spend_hook),
+        spend_hook: FuncId::from_base(output_spend_hook),
         user_data: output_user_data,
         blind: Blind(output_coin_blind),
     };
@@ -367,14 +367,14 @@ impl FeeCallBuilder {
             public_key: PublicKey::from_secret(self.input.secret.clone()),
             value: self.input.value,
             token_id: TokenId::from_base(self.input.token_id),
-            spend_hook: FuncId::from(self.input.spend_hook),
+            spend_hook: FuncId::from_base(self.input.spend_hook),
             user_data: self.input.user_data,
             blind: Blind(self.input.coin_blind),
         };
         let input_coin = input_coin_attrs.to_coin();
         let merkle_root = {
             let position: u64 = self.input.leaf_position.into();
-            let mut current = MerkleNode::from(input_coin.inner());
+            let mut current = MerkleNode::from_base(input_coin.inner());
             for (level, sibling) in self.input.merkle_path.iter().enumerate() {
                 let level = level as u8;
                 current = if position & (1 << level) == 0 {
@@ -397,7 +397,7 @@ impl FeeCallBuilder {
             public_key: self.output.recipient,
             value: output_value,
             token_id: TokenId::from_base(self.input.token_id),
-            spend_hook: FuncId::from(self.output.spend_hook),
+            spend_hook: FuncId::from_base(self.output.spend_hook),
             user_data: self.output.user_data,
             blind: output_coin_blind,
         }
@@ -409,7 +409,7 @@ impl FeeCallBuilder {
             nullifier,
             merkle_root,
             user_data_enc: input_user_data_enc,
-            spend_hook: self.input.spend_hook.into(),
+            spend_hook: FuncId::from_base(self.input.spend_hook),
             signature_public,
         };
 

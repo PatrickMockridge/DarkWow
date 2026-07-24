@@ -172,9 +172,9 @@ impl TransferCallBuilder {
                 value_commit,
                 token_commit,
                 nullifier: Nullifier::new(secret.clone(), pallas::Base::zero()), // proof fills in
-                merkle_root: MerkleNode::from(pallas::Base::zero()),      // proof fills in
+                merkle_root: MerkleNode::from_base(pallas::Base::zero()),      // proof fills in
                 user_data_enc,
-                spend_hook: FuncId::from(*spend_hook),
+                spend_hook: FuncId::from_base(*spend_hook),
                 signature_public: PublicKey::from_secret(secret.clone()),
             };
 
@@ -200,7 +200,7 @@ impl TransferCallBuilder {
                 nullifier: revealed.nullifier,  // TransferBurnRevealed: Nullifier type
                 merkle_root: revealed.merkle_root,
                 user_data_enc: revealed.user_data_enc,
-                spend_hook: FuncId::from(*spend_hook),
+                spend_hook: FuncId::from_base(*spend_hook),
                 signature_public: revealed.signature_public,
             });
         }

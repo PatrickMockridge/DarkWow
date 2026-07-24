@@ -470,9 +470,9 @@ mod tests {
 
     #[test]
     fn test_tx_from_calls_mapped() {
-        let contract0 = ContractId::from(pallas::Base::random(&mut OsRng));
-        let contract1 = ContractId::from(pallas::Base::random(&mut OsRng));
-        let contract2 = ContractId::from(pallas::Base::random(&mut OsRng));
+        let contract0 = ContractId::from_base(pallas::Base::random(&mut OsRng));
+        let contract1 = ContractId::from_base(pallas::Base::random(&mut OsRng));
+        let contract2 = ContractId::from_base(pallas::Base::random(&mut OsRng));
         let call0 = ContractCallImport::new(
             ContractCall { contract_id: contract0, data: vec![] },
             vec![],

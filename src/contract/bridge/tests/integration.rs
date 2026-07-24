@@ -68,7 +68,7 @@ fn test_external_chain_encoding() {
 fn test_deposit_params_encoding() {
     let params = DepositParams {
         commitment: make_commitment(1),
-        recipient_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(1))),
+        recipient_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(1))),
         bridge_nonce: 5,
         chain: ExternalChain::Monero,
         external_block_hash: [3u8; 32],
@@ -98,7 +98,7 @@ fn test_deposit_params_empty_merkle_proof() {
     // Verify serialization handles empty merkle proof
     let params = DepositParams {
         commitment: make_commitment(1),
-        recipient_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::from(1))),
+        recipient_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(1))),
         bridge_nonce: 0,
         chain: ExternalChain::Ethereum,
         external_block_hash: [0u8; 32],
