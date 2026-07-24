@@ -43,6 +43,8 @@ use smol::{lock::Mutex as AsyncMutex, Executor};
 use tracing::{debug, info, warn};
 use url::Url;
 
+use crate::impl_boundary_codec;
+
 use crate::{
     impl_p2p_message,
     net::{

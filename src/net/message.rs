@@ -76,7 +76,7 @@ pub trait BoundaryCodec: dwow_serial::Encodable + dwow_serial::Decodable + Sized
 #[macro_export]
 macro_rules! impl_boundary_codec {
     ($ty:ty, $max_bytes:expr, $metering_score:expr) => {
-        impl_boundary_codec!($ty, $max_bytes, $metering_score, &[]);
+        $crate::impl_boundary_codec!($ty, $max_bytes, $metering_score, &[]);
     };
     ($ty:ty, $max_bytes:expr, $metering_score:expr, $barbs:expr) => {
         impl $crate::net::message::BoundaryCodec for $ty {
@@ -86,7 +86,6 @@ macro_rules! impl_boundary_codec {
         }
     };
 }
-pub(crate) use impl_boundary_codec;
 
 /// Generic message template.
 /// Phase 2: AsyncDecodable + AsyncEncodable bound shifted to net-full only.

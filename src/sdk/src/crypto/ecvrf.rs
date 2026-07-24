@@ -152,15 +152,15 @@ mod tests {
         // VRF secret key
         let secret_key = SecretKey::random(&mut OsRng);
         // VRF public key
-        let public_key = PublicKey::from_secret(secret_key);
+        let public_key = PublicKey::from_secret(secret_key.clone());
         // VRF input
         let input = [0xde, 0xad, 0xbe, 0xef];
 
-        let proof = VrfProof::prove(secret_key, &input);
+        let proof = VrfProof::prove(secret_key.clone(), &input);
         assert!(proof.verify(public_key, &input));
 
         // Verify and consume to get the VRF output
-        let verified = VrfProof::prove(secret_key, &input)
+        let verified = VrfProof::prove(secret_key.clone(), &input)
             .verify_and_consume(public_key, &input)
             .expect("valid proof should verify");
         let _output = verified.hash_output();

@@ -294,6 +294,13 @@ crate::impl_p2p_message!(
     &[crate::net::barb_trait::BarbId::Spend, crate::net::barb_trait::BarbId::Verify]
 );
 
+crate::impl_boundary_codec!(
+    Transaction,
+    TX_MAX_BYTES,
+    1,
+    &[crate::barb::BarbId::Spend, crate::barb::BarbId::Verify]
+);
+
 /// Calls tree bounds definitions
 // TODO: increase min to 2 when fees are implement
 pub const MIN_TX_CALLS: usize = 1;

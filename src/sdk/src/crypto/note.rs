@@ -299,7 +299,7 @@ mod tests {
         ];
         let sk = SecretKey::from_bytes(test_secret_bytes)
             .expect("test key 0x01 must be valid");
-        let pk = PublicKey::from_secret(sk);
+        let pk = PublicKey::from_secret(sk.clone());
 
         // Known plaintext
         let plaintext: Vec<u8> = (0..200u8).collect();

@@ -315,7 +315,7 @@ mod tests {
             pallas::Base::from(44),
         );
 
-        let nullifier1 = intent1.derive_nullifier(keypair.secret).unwrap();
+        let nullifier1 = intent1.derive_nullifier(keypair.secret.clone()).unwrap();
         let nullifier2 = intent2.derive_nullifier(keypair.secret).unwrap();
 
         assert_ne!(nullifier1, nullifier2);

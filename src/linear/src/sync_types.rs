@@ -180,7 +180,7 @@ pub async fn varint_decode<R: AsyncRead + Unpin + Send>(
 mod p2p_impls {
     use async_trait::async_trait;
     use dwow_core::{
-        impl_p2p_message,
+        impl_p2p_message, impl_boundary_codec,
         net::{Message, metering::MeteringConfiguration},
         util::time::NanoTimestamp,
     };
@@ -247,20 +247,53 @@ mod p2p_impls {
         expiry_time: NanoTimestamp::from_secs(5),
     };
 
-    macro_rules! sync_barbs {
-        () => { &[
-            dwow_core::net::barb_trait::BarbId::Verify,
-            dwow_core::net::barb_trait::BarbId::SyncBarrier,
-            dwow_core::net::barb_trait::BarbId::GossipForward,
-        ] };
+    const SYNC_BARBS: &'static [dwow_core::net::barb_trait::BarbId] = &[
+        dwow_core::net::barb_trait::BarbId::Verify,
+        dwow_core::net::barb_trait::BarbId::SyncBarrier,
+        dwow_core::net::barb_trait::BarbId::GossipForward,
+    ];
+
+    impl_p2p_message!(GetBlocks, "lineargetblocks", MAX_SMALL, 1, SYNC_METERING, SYNC_BARBS);
+    impl_p2p_message!(Blocks, "linearblocks", MAX_BLOCK_BATCH, 1, SYNC_METERING, SYNC_BARBS);
+    impl_p2p_message!(GetBlock, "lineargetblock", MAX_SMALL, 1, SYNC_METERING, SYNC_BARBS);
+    impl_p2p_message!(BlockResponse, "linearblockresponse", MAX_BLOCK_BATCH, 1, SYNC_METERING, SYNC_BARBS);
+    impl_p2p_message!(GetTip, "lineargettip", MAX_SMALL, 1, SYNC_METERING, SYNC_BARBS);
+    impl_p2p_message!(Tip, "lineartip", MAX_TIP, 1, SYNC_METERING, SYNC_BARBS);
+
+    // ── BoundaryCodec with JSON encoding ───────────────────────────────
+    //
+    // These types use serde_json for wire encoding (matching the async
+    // codec at impl_sync_codec! above). BoundaryCodec requires Encodable +
+    // Decodable supertraits (§10.5), so we provide JSON-based impls instead
+    // of deriving SerialEncodable/SerialDecodable (which would use
+    // dwow_serial's binary format and break wire compatibility).
+    macro_rules! impl_sync_boundary_codec {
+        ($ty:ty, $max_bytes:expr, $metering_score:expr) => {
+            impl dwow_serial::Encodable for $ty {
+                fn encode<W: std::io::Write>(&self, e: &mut W) -> std::io::Result<usize> {
+                    let json = serde_json::to_vec(self)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                    e.write(&json)
+                }
+            }
+            impl dwow_serial::Decodable for $ty {
+                fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> {
+                    let mut buf = Vec::new();
+                    d.read_to_end(&mut buf)?;
+                    serde_json::from_slice(&buf)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+                }
+            }
+            dwow_core::impl_boundary_codec!($ty, $max_bytes, $metering_score, SYNC_BARBS);
+        };
     }
 
-    impl_p2p_message!(GetBlocks, "lineargetblocks", MAX_SMALL, 1, SYNC_METERING, sync_barbs!());
-    impl_p2p_message!(Blocks, "linearblocks", MAX_BLOCK_BATCH, 1, SYNC_METERING, sync_barbs!());
-    impl_p2p_message!(GetBlock, "lineargetblock", MAX_SMALL, 1, SYNC_METERING, sync_barbs!());
-    impl_p2p_message!(BlockResponse, "linearblockresponse", MAX_BLOCK_BATCH, 1, SYNC_METERING, sync_barbs!());
-    impl_p2p_message!(GetTip, "lineargettip", MAX_SMALL, 1, SYNC_METERING, sync_barbs!());
-    impl_p2p_message!(Tip, "lineartip", MAX_TIP, 1, SYNC_METERING, sync_barbs!());
+    impl_sync_boundary_codec!(GetBlocks, MAX_SMALL, 1);
+    impl_sync_boundary_codec!(Blocks, MAX_BLOCK_BATCH, 1);
+    impl_sync_boundary_codec!(GetBlock, MAX_SMALL, 1);
+    impl_sync_boundary_codec!(BlockResponse, MAX_BLOCK_BATCH, 1);
+    impl_sync_boundary_codec!(GetTip, MAX_SMALL, 1);
+    impl_sync_boundary_codec!(Tip, MAX_TIP, 1);
 }
 
 #[cfg(test)]

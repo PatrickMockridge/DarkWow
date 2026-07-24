@@ -38,9 +38,9 @@ pub use fixed_bases::{
 ///
 /// Nonce derivation (RFC 6979 pattern): `hash_to_scalar(NONCE_DOMAIN, [secret, message])`
 /// Challenge derivation (Fiat-Shamir): `hash_to_scalar(CHALLENGE_DOMAIN, [r, pk, message])`
-pub const DRK_SCHNORR_DOMAIN: &[u8] = b"DarkFi:Schnorr"; // Kept for backward compat — prefer typed domains below
-pub const DRK_SCHNORR_NONCE_DOMAIN: &[u8] = b"DarkFi:Schnorr:nonce";
-pub const DRK_SCHNORR_CHALLENGE_DOMAIN: &[u8] = b"DarkFi:Schnorr:challenge";
+pub const DRK_SCHNORR_DOMAIN: &[u8] = b"DarkFi_Schnorr_d";  // 16 bytes — blake2b personalization bound
+pub const DRK_SCHNORR_NONCE_DOMAIN: &[u8] = b"DarkFi_Schnorr_n";   // 16 bytes — blake2b personalization bound
+pub const DRK_SCHNORR_CHALLENGE_DOMAIN: &[u8] = b"DarkFi_Schnorr_c"; // 16 bytes — blake2b personalization bound
 
 /// Domain prefix used for block hashes, with `hash_to_curve`.
 pub const BLOCK_HASH_DOMAIN: &str = "DarkFi:Block";

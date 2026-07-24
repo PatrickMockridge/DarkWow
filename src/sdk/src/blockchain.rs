@@ -766,10 +766,10 @@ mod newtype_tests {
         let reward = BlockReward::new(1_000_000_000);
         for depth in 0..=6u8 {
             let split = reward.split_for_uncle(depth);
-            let reconstructed = split * (1u64 << depth);
+            let reconstructed = split.get() * (1u64 << depth);
             assert_eq!(reconstructed, reward.get(),
                 "split_for_uncle({}) = {}; {} * 2^{} = {} != {}",
-                depth, split, split, depth, reconstructed, reward.get());
+                depth, split.get(), split.get(), depth, reconstructed, reward.get());
         }
     }
 
