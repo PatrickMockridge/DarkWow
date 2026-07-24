@@ -33,11 +33,17 @@ use serde::{Deserialize, Serialize};
 use crate::error::ContractError;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
-pub struct TokenId(pub pallas::Base);
+pub struct TokenId(pallas::Base);
 
 impl TokenId {
     /// Native DRKW token identifier = zero.
-    pub const DRKW: Self = TokenId(pallas::Base::zero());
+    pub const DRKW: Self = Self(pallas::Base::zero());
+
+    /// Construct a TokenId from a pallas::Base field element.
+    /// Named constructor per §8.5 — no From<pallas::Base> impl.
+    pub fn from_base(x: pallas::Base) -> Self {
+        Self(x)
+    }
 
     /// Reference the raw inner base field element.
     pub fn inner(&self) -> pallas::Base {

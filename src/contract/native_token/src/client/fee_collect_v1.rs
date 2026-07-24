@@ -226,7 +226,7 @@ impl FeeCollectCallBuilder {
             version: 0,
             public_key,
             value: self.total_fees,
-            token_id: TokenId(token_id),
+            token_id: TokenId::from_base(token_id),
             spend_hook: FuncId::from(pallas::Base::ZERO),
             user_data: pallas::Base::ZERO,
             blind: coin_blind,

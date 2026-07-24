@@ -313,7 +313,7 @@ fn build_native_token_cap_record(
         version: 0,
         public_key,
         value: note.value,
-        token_id: TokenId(note.token_id),
+        token_id: TokenId::from_base(note.token_id),
         spend_hook: FuncId::from(note.spend_hook),
         user_data: note.user_data,
         blind: Blind(note.coin_blind),
@@ -343,7 +343,7 @@ fn build_native_token_cap_record(
     let cap_record = CapRecord {
         cap_id: cap_id.clone(),
         value: note.value,
-        asset_id: TokenId(note.token_id),
+        asset_id: TokenId::from_base(note.token_id),
         spend_hook: None,
         user_data: None,
         leaf_position: leaf_pos,
@@ -816,7 +816,7 @@ fn scan_block(
                         let cap_record = CapRecord {
                             cap_id: derive_cap_id(secret, &leaf.to_repr()),
                             value: 0,
-                            asset_id: TokenId(pallas::Base::zero()),
+                            asset_id: TokenId::DRKW,
                             spend_hook: None,
                             user_data: None,
                             leaf_position: leaf_pos,
@@ -1418,7 +1418,7 @@ mod tests {
             version: 0,
             public_key: pk_H,
             value: coinbase_reward,
-            token_id: TokenId(pallas::Base::zero()),
+            token_id: TokenId::DRKW,
             spend_hook: FuncId::from(pallas::Base::zero()),
             user_data: pallas::Base::zero(),
             blind: coin_blind,
@@ -1959,7 +1959,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             if let Ok(decrypted) = enc_note.decrypt::<dwow_native_token_contract::client::NativeToken>(trial_sk) {
                 let attrs = dwow_native_token_contract::model::CoinAttributes {
                     version: 0, public_key: _pk, value,
-                    token_id: TokenId(pallas::Base::zero()),
+                    token_id: TokenId::DRKW,
                     spend_hook: FuncId::from(pallas::Base::zero()),
                     user_data: pallas::Base::zero(), blind: coin_blind,
                 };
@@ -1980,7 +1980,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         let cap_id = super::derive_cap_id(&sk, &commitment.to_bytes());
         let record = super::CapRecord {
             cap_id: cap_id.clone(), value,
-            asset_id: TokenId(pallas::Base::zero()),
+            asset_id: TokenId::DRKW,
             spend_hook: None, user_data: None,
             leaf_position: 0,
             commitment: CoinCommitment::from_base(commitment.inner()),

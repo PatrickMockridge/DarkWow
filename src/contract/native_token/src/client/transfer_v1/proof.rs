@@ -243,7 +243,7 @@ pub fn create_transfer_burn_proof(
             version: 0,
         public_key,
         value: witness.value,
-        token_id: TokenId(witness.token_id),
+        token_id: TokenId::from_base(witness.token_id),
         spend_hook: FuncId::from(input.spend_hook),
         user_data: witness.user_data,
         blind: witness.coin_blind,
