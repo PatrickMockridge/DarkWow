@@ -119,11 +119,11 @@ fn bytes_to_asset_id(bytes: [u8; 32]) -> WalletDbResult<TokenId> {
 fn bytes_to_contract_id(bytes: [u8; 32]) -> WalletDbResult<ContractId> {
     ContractId::from_bytes(bytes).map_err(|_e| WalletDbError::QueryExecutionFailed)
 }
-fn bytes_to_func_id(bytes: [u8; 32]) -> FuncId {
-    FuncId::from_bytes(bytes).unwrap_or_else(|_| FuncId::from(pallas::Base::zero()))
+fn bytes_to_func_id(bytes: [u8; 32]) -> WalletDbResult<FuncId> {
+    FuncId::from_bytes(bytes).map_err(|_| WalletDbError::QueryExecutionFailed)
 }
-fn bytes_to_commitment(bytes: [u8; 32]) -> CoinCommitment {
-    CoinCommitment::from_bytes(bytes).unwrap_or_else(|_| CoinCommitment::from_base(pallas::Base::zero()))
+fn bytes_to_commitment(bytes: [u8; 32]) -> WalletDbResult<CoinCommitment> {
+    CoinCommitment::from_bytes(bytes).map_err(|_| WalletDbError::QueryExecutionFailed)
 }
 fn bytes_to_base_blind(bytes: [u8; 32]) -> WalletDbResult<BaseBlind> {
     match pallas::Base::from_repr(bytes).into() {
@@ -367,7 +367,7 @@ impl WalletDb {
                     let spend_hook: Option<FuncId> = match read_opt_blob32_text_fallback(&row, C_SPEND_BLOB, C_SPEND_TEXT)
                         .map_err(|_| WalletDbError::QueryExecutionFailed)?
                     {
-                        Some(bytes) => Some(bytes_to_func_id(bytes)),
+                        Some(bytes) => Some(bytes_to_func_id(bytes)?),
                         None => None,
                     };
                     let user_data: Option<[u8; 32]> = read_opt_blob32_text_fallback(&row, C_USER_BLOB, C_USER_TEXT)
@@ -376,7 +376,7 @@ impl WalletDb {
                     let commitment = bytes_to_commitment(
                         read_blob32_text_fallback(&row, C_COMMIT_BLOB, C_COMMIT_TEXT)
                             .map_err(|_| WalletDbError::QueryExecutionFailed)?
-                    );
+                    )?;
                     let cap_blind = bytes_to_base_blind(
                         read_blob32_text_fallback(&row, C_CAPBLIND_BLOB, C_CAPBLIND_TEXT)
                             .map_err(|_| WalletDbError::QueryExecutionFailed)?
@@ -395,13 +395,19 @@ impl WalletDb {
                             arr.copy_from_slice(&v);
                             bytes_to_contract_id(arr)?
                         }
-                        _ => ContractId::ZERO,
+                        _ => {
+                            tracing::warn!(
+                                "CapRecord missing/invalid contract_id_blob — using ZERO sentinel. \
+                                 Legacy rows must be re-scanned to populate contract_id."
+                            );
+                            ContractId::ZERO
+                        }
                     };
                     let func_id: Option<FuncId> = match row.get::<_, Option<Vec<u8>>>(C_FUNC_BLOB) {
                         Ok(Some(v)) if v.len() == 32 => {
                             let mut arr = [0u8; 32];
                             arr.copy_from_slice(&v);
-                            Some(bytes_to_func_id(arr))
+                            Some(bytes_to_func_id(arr)?)
                         }
                         _ => None,
                     };
@@ -578,7 +584,7 @@ impl WalletDb {
                     let spend_hook: Option<FuncId> = match read_opt_blob32_text_fallback(&row, C_SPEND_BLOB, C_SPEND_TEXT)
                         .map_err(|_| WalletDbError::QueryExecutionFailed)?
                     {
-                        Some(bytes) => Some(bytes_to_func_id(bytes)),
+                        Some(bytes) => Some(bytes_to_func_id(bytes)?),
                         None => None,
                     };
                     let user_data: Option<[u8; 32]> = read_opt_blob32_text_fallback(&row, C_USER_BLOB, C_USER_TEXT)
@@ -587,7 +593,7 @@ impl WalletDb {
                     let commitment = bytes_to_commitment(
                         read_blob32_text_fallback(&row, C_COMMIT_BLOB, C_COMMIT_TEXT)
                             .map_err(|_| WalletDbError::QueryExecutionFailed)?
-                    );
+                    )?;
                     let cap_blind = bytes_to_base_blind(
                         read_blob32_text_fallback(&row, C_CAPBLIND_BLOB, C_CAPBLIND_TEXT)
                             .map_err(|_| WalletDbError::QueryExecutionFailed)?
@@ -606,13 +612,19 @@ impl WalletDb {
                             arr.copy_from_slice(&v);
                             bytes_to_contract_id(arr)?
                         }
-                        _ => ContractId::ZERO,
+                        _ => {
+                            tracing::warn!(
+                                "CapRecord missing/invalid contract_id_blob — using ZERO sentinel. \
+                                 Legacy rows must be re-scanned to populate contract_id."
+                            );
+                            ContractId::ZERO
+                        }
                     };
                     let func_id: Option<FuncId> = match row.get::<_, Option<Vec<u8>>>(C_FUNC_BLOB) {
                         Ok(Some(v)) if v.len() == 32 => {
                             let mut arr = [0u8; 32];
                             arr.copy_from_slice(&v);
-                            Some(bytes_to_func_id(arr))
+                            Some(bytes_to_func_id(arr)?)
                         }
                         _ => None,
                     };
@@ -1264,7 +1276,14 @@ impl WalletDb {
             [],
             |row| row.get(0),
         )?;
-        Ok(dwow_sdk::blockchain::BlockHeight::from_sqlite_i64(height).unwrap_or(dwow_sdk::blockchain::BlockHeight::new(0)))
+        dwow_sdk::blockchain::BlockHeight::from_sqlite_i64(height)
+            .ok_or_else(|| {
+                tracing::error!(
+                    "chain_height: corrupt DB — negative height {} in chain_blocks",
+                    height
+                );
+                WalletDbError::QueryExecutionFailed
+            })
     }
 }
 
@@ -1506,7 +1525,7 @@ mod tests {
         let cap_id = "test_cap_idempotent_01";
         let record = super::CapRecord {
             cap_id: cap_id.to_string(), value: 100,
-            asset_id: dwow_sdk::crypto::TokenId(dwow_sdk::pasta::pallas::Base::zero()),
+            asset_id: dwow_sdk::crypto::TokenId::DRKW,
             spend_hook: None, user_data: None,
             leaf_position: 0,
             commitment: CoinCommitment::from_base(dwow_sdk::pasta::pallas::Base::from(42)),
