@@ -283,12 +283,14 @@ async fn handle_get_tip(
         let hash = if height > zero {
             match chain_state.store.get_block(height) {
                 Ok(tip_block) => {
-                    format!("{}", chain_state.hash_block_with_cached_vm(&tip_block))
+                    dwow_chain::sync_types::BlockHash::from_hash(
+                        chain_state.hash_block_with_cached_vm(&tip_block)
+                    )
                 }
-                Err(_) => String::new(),
+                Err(_) => dwow_chain::sync_types::BlockHash::zero(),
             }
         } else {
-            String::new()
+            dwow_chain::sync_types::BlockHash::zero()
         };
 
         // Include genesis hash so peers can detect incompatible chains
@@ -296,7 +298,9 @@ async fn handle_get_tip(
         let genesis_hash = if height >= BlockHeight::GENESIS {
             match chain_state.store.get_block(BlockHeight::GENESIS) {
                 Ok(genesis_block) => {
-                    Some(format!("{}", chain_state.hash_block_with_cached_vm(&genesis_block)))
+                    Some(dwow_chain::sync_types::BlockHash::from_hash(
+                        chain_state.hash_block_with_cached_vm(&genesis_block)
+                    ))
                 }
                 Err(_) => None,
             }

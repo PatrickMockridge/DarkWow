@@ -196,7 +196,7 @@ pub fn create_burn_proof(
     let coin = CoinAttributes {
         public_key,
         value: input.value,
-        token_id: TokenId(input.token_id),
+        token_id: TokenId::from_base(input.token_id),
         spend_hook: FuncId::from(input.spend_hook),
         user_data: input.user_data,
         blind: Blind(input.coin_blind),

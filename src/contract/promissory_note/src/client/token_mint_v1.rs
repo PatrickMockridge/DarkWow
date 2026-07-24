@@ -140,7 +140,7 @@ impl TokenMintCallBuilder {
         let attrs = CoinAttributes {
             public_key: self.input.recipient,
             value: self.input.value,
-            token_id: TokenId(token_id),
+            token_id: TokenId::from_base(token_id),
             spend_hook: FuncId::from(self.input.spend_hook),
             user_data: self.input.user_data,
             blind: Blind(self.input.coin_blind),
@@ -186,7 +186,7 @@ impl TokenMintCallBuilder {
             params: TokenMintParamsV1 {
                 coin,
                 value_commit,
-                token_id: TokenId(token_id),
+                token_id: TokenId::from_base(token_id),
                 token_auth_parent: self.input.token_auth_parent,
                 token_commit,
                 spend_hook: FuncId::from(self.input.spend_hook),

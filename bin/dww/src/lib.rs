@@ -170,9 +170,7 @@ pub struct Dww {
     /// Last known tip hash from peers. Used for reorg detection: if the
     /// majority tip hash changes at the same height, a chain fork occurred.
     /// §8.2.1: Block hashes SHALL be BlockHash, not bare String.
-    /// Currently String for wire compatibility (Tip.hash is String per Finding 22).
-    /// Migration to BlockHash pending P2P wire protocol update.
-    pub last_synced_tip_hash: smol::lock::Mutex<Option<String>>,
+    pub last_synced_tip_hash: smol::lock::Mutex<Option<dwow_chain::sync_types::BlockHash>>,
     /// Highest block height with a verified Caribina (Arweave) anchor.
     /// Blocks below this height are cryptographically final — cannot be reorged.
     /// The chain state rejects AnchoredBlockConflict for anchored blocks.

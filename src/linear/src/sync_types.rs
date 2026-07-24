@@ -78,13 +78,30 @@ pub struct BlockResponse {
 pub struct GetTip;
 
 /// §8.2.1: BlockHash — nominal blake3 hash for P2P boundary types.
-/// Wire-level `Tip.hash` is still `String` for backward compatibility.
-/// BlockHash is used at the boundary re-lift step (PeerTip).
+/// Serializes as hex string on the wire for backward compatibility;
+/// re-lifts through validating `from_hex_str` constructor.
 #[repr(transparent)]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BlockHash(pub(crate) blake3::Hash);
 
+// blake3::Hash doesn't implement Ord — compare by bytes.
+impl PartialOrd for BlockHash {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for BlockHash {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.as_bytes().cmp(other.0.as_bytes())
+    }
+}
+
 impl BlockHash {
+    /// Construct from a blake3::Hash.
+    pub fn from_hash(h: blake3::Hash) -> Self {
+        Self(h)
+    }
+
     /// Construct from a hex string (the wire format for Tip.hash).
     /// Returns None if the string is empty (genesis sentinel) or not valid hex.
     pub fn from_hex_str(s: &str) -> Option<Self> {
@@ -109,19 +126,57 @@ impl BlockHash {
     pub fn to_hex(&self) -> String {
         hex::encode(self.0.as_bytes())
     }
+
+    /// Whether this is the zero sentinel (height-0 empty hash).
+    pub fn is_zero(&self) -> bool {
+        self.0 == blake3::Hash::from_bytes([0u8; 32])
+    }
+}
+
+impl std::fmt::Display for BlockHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(&self.to_hex())
+    }
+}
+
+// §8.5: serde serialization as hex string — wire-compatible with the
+// existing String format. Deserialization validates through from_hex_str.
+impl Serialize for BlockHash {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.to_hex().serialize(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for BlockHash {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let hex_str = String::deserialize(d)?;
+        BlockHash::from_hex_str(&hex_str)
+            .ok_or_else(|| serde::de::Error::custom(format!(
+                "invalid BlockHash hex string: '{}'", hex_str
+            )))
+    }
+}
+
+// §8.2.1: BlockHash exhibits ↓verify — a process holding a BlockHash can
+// prove it knows a specific chain position.
+impl dwow_core::net::barb_trait::ExhibitsBarb for BlockHash {
+    fn exhibited_barbs() -> &'static [dwow_core::net::barb_trait::BarbId] {
+        &[dwow_core::net::barb_trait::BarbId::Verify]
+    }
 }
 
 /// Response containing chain tip info.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Tip {
     pub height: BlockHeight,
-    pub hash: String,
+    /// §8.2.1: block hash on the wire SHALL be BlockHash, never bare String.
+    pub hash: BlockHash,
     /// Genesis block hash — allows peers to detect incompatible chains
     /// before downloading blocks (defense-in-depth, HAZID F1/F7).
     /// `Option` + `#[serde(default)]` is forward/backward compatible:
     /// old nodes ignore this field, new nodes treat None as unverified.
     #[serde(default)]
-    pub genesis_hash: Option<String>,
+    pub genesis_hash: Option<BlockHash>,
 }
 
 // ============================================================================

@@ -283,9 +283,11 @@ pub async fn consensus_linear_init_task(
             _ => {
                 // Relaxed and Strict both use the same filtering logic,
                 // but Relaxed falls back to all peers if no compatible ones found.
-                let our_genesis_hash = if local_height >= BlockHeight::GENESIS {
+                let our_genesis_hash: Option<dwow_chain::sync_types::BlockHash> = if local_height >= BlockHeight::GENESIS {
                     match blockchain.get_block(BlockHeight::GENESIS) {
-                        Ok(genesis) => Some(blockchain.hash_block_with_cached_vm(&genesis).to_string()),
+                        Ok(genesis) => Some(dwow_chain::sync_types::BlockHash::from_hash(
+                            blockchain.hash_block_with_cached_vm(&genesis)
+                        )),
                         Err(_) => None,
                     }
                 } else {
@@ -308,7 +310,7 @@ pub async fn consensus_linear_init_task(
                     // genesis yet). A peer with a known genesis is inherently
                     // more trustworthy than one still at height 0.
                     use std::collections::HashMap;
-                    let mut genesis_votes: HashMap<Option<String>, usize> = HashMap::new();
+                    let mut genesis_votes: HashMap<Option<dwow_chain::sync_types::BlockHash>, usize> = HashMap::new();
                     for (_, pt) in peer_tips.iter() {
                         *genesis_votes.entry(pt.genesis_hash.clone()).or_default() += 1;
                     }
@@ -333,8 +335,8 @@ pub async fn consensus_linear_init_task(
                     }
                     peer_tips.iter()
                         .filter(|(_, pt)| {
-                            if majority_genesis.is_some() {
-                                &pt.genesis_hash == majority_genesis.as_ref().unwrap()
+                            if let Some(ref majority) = majority_genesis {
+                                &pt.genesis_hash == majority
                             } else {
                                 true // all peers disagree — accept all
                             }

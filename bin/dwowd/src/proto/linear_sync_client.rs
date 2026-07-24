@@ -86,7 +86,7 @@ pub struct PeerTip {
     /// §8.2.1: BlockHash — nominal type for P2P boundary. Re-lifted from
     /// the wire `Tip.hash: String` via hex decode in `from_tip()`.
     pub hash: dwow_chain::sync_types::BlockHash,
-    pub genesis_hash: Option<String>,
+    pub genesis_hash: Option<dwow_chain::sync_types::BlockHash>,
 }
 
 impl PeerTip {
@@ -105,16 +105,13 @@ impl PeerTip {
             ));
         }
 
-        // 2. Hash: at height 0, empty string is valid (genesis sentinel).
-        //    At height > 0, must be a valid blake3 hex string (32 bytes = 64 hex chars).
-        //    §8.2.1: BlockHash re-lift — validate at the boundary.
-        let hash = if tip.height.get() == 0 && tip.hash.is_empty() {
+        // 2. Hash: §8.2.1 re-lift is now performed by serde deserialization
+        //    (BlockHash::Deserialize calls from_hex_str). At height 0, the zero
+        //    sentinel is valid. No additional validation needed.
+        let hash = if tip.height.get() == 0 && tip.hash.is_zero() {
             dwow_chain::sync_types::BlockHash::zero()
         } else {
-            dwow_chain::sync_types::BlockHash::from_hex_str(&tip.hash)
-                .ok_or_else(|| crate::Error::Custom(
-                    format!("PeerTip::from_tip: invalid hash '{}' -- expected 64-char hex", tip.hash)
-                ))?
+            tip.hash.clone()
         };
 
         // 3. Genesis hash must be present if the peer has blocks.
@@ -438,7 +435,7 @@ impl LinearSyncClient {
             "Peer {}: height={} genesis={}",
             channel.address().as_str(),
             tip.height,
-            tip.genesis_hash.as_deref().unwrap_or("unknown"),
+            tip.genesis_hash.as_ref().map(|h| h.to_hex()).unwrap_or_else(|| "unknown".to_string()),
         );
 
         // Re-lift through validating constructor (obligation #1, §10.5).

@@ -122,7 +122,7 @@ impl MintCallBuilder {
         let attrs = CoinAttributes {
             public_key: self.input.recipient,
             value: self.input.value,
-            token_id: TokenId(self.input.token_id),
+            token_id: TokenId::from_base(self.input.token_id),
             spend_hook: FuncId::from(self.input.spend_hook),
             user_data: self.input.user_data,
             blind: Blind(self.input.coin_blind),
@@ -191,7 +191,7 @@ impl MintCallBuilder {
             params: MintParamsV1 {
                 coin,
                 value_commit,
-                token_id: TokenId(self.input.token_id),
+                token_id: TokenId::from_base(self.input.token_id),
                 token_registry_root,
                 mint_public,
                 spend_hook: FuncId::from(self.input.spend_hook),

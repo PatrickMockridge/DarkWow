@@ -179,7 +179,7 @@ pub async fn run_wallet_sync(
         // G4: best_tip is BlockHeight
         let mut best_tip = zero_height;
         let mut tip_timeouts: u32 = 0;
-        let mut tip_votes: std::collections::BTreeMap<String, (BlockHeight, u32)> =
+        let mut tip_votes: std::collections::BTreeMap<dwow_chain::sync_types::BlockHash, (BlockHeight, u32)> =
             std::collections::BTreeMap::new();
         for ch in &channel_list {
             // Ensure dispatchers exist for sync message types
@@ -212,7 +212,7 @@ pub async fn run_wallet_sync(
                     best_tip = tip.height;
                 }
                 // Track hash votes at each height for reorg detection
-                if !tip.hash.is_empty() {
+                if !tip.hash.is_zero() {
                     let entry = tip_votes.entry(tip.hash.clone())
                         .or_insert((tip.height, 0));
                     entry.1 += 1;

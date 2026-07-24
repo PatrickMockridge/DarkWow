@@ -110,7 +110,7 @@ pub fn verify_received_capability(output: &Output, secret: &SecretKey) -> Result
     let expected_coin = Coin::from_attributes(
         recipient_address,
         note.value,
-        TokenId(note.token_id),
+        TokenId::from_base(note.token_id),
         FuncId::from(note.spend_hook),
         note.user_data,
         Blind(note.coin_blind),
