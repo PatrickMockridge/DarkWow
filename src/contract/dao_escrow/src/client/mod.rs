@@ -73,7 +73,7 @@ pub mod verify_member_capability_v1;
 pub mod vote_claim_v1;
 
 use dwow_sdk::{
-    crypto::{PublicKey, SecretKey},
+    crypto::{IntentNullifier, PublicKey, SecretKey},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -222,7 +222,7 @@ impl ProposeClaimBuilder {
             capability_proof: CapabilityProof {
                 capability_id: [0u8; 32],
                 capability_secret: [0u8; 32],
-                nullifier: pallas::Base::zero().into(),
+                nullifier: IntentNullifier::from_base(pallas::Base::zero()),
                 issuer_pub: [0u8; 32],
                 predicate_result: [0u8; 32],
                 proof: vec![],
@@ -305,7 +305,7 @@ impl VoteClaimBuilder {
             capability_proof: CapabilityProof {
                 capability_id: [0u8; 32],
                 capability_secret: [0u8; 32],
-                nullifier: pallas::Base::zero().into(),
+                nullifier: IntentNullifier::from_base(pallas::Base::zero()),
                 issuer_pub: [0u8; 32],
                 predicate_result: [0u8; 32],
                 proof: vec![],
@@ -691,7 +691,7 @@ impl VerifyMemberCapabilityBuilder {
             capability_proof: CapabilityProof {
                 capability_id: [0u8; 32],
                 capability_secret: [0u8; 32],
-                nullifier: pallas::Base::zero().into(),
+                nullifier: IntentNullifier::from_base(pallas::Base::zero()),
                 issuer_pub: [0u8; 32],
                 predicate_result: [0u8; 32],
                 proof: vec![],
@@ -745,7 +745,7 @@ impl ResolveDisputeBuilder {
             capability_proof: CapabilityProof {
                 capability_id: [0u8; 32],
                 capability_secret: [0u8; 32],
-                nullifier: pallas::Base::zero().into(),
+                nullifier: IntentNullifier::from_base(pallas::Base::zero()),
                 issuer_pub: [0u8; 32],
                 predicate_result: [0u8; 32],
                 proof: vec![],

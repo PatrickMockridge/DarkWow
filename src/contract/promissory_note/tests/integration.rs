@@ -134,7 +134,7 @@ mod tests {
     fn test_coin_from_attributes() {
         let public_key = pallas::Base::from(1);
         let value = 1000u64;
-        let token_id = TokenId(pallas::Base::from(2));
+        let token_id = TokenId::from_base(pallas::Base::from(2));
         let spend_hook = FuncId::none();
         let user_data = pallas::Base::zero();
         let blind = Blind(pallas::Base::from(3));
@@ -158,7 +158,7 @@ mod tests {
         let coin = Coin::from_attributes(
             base,
             100,
-            TokenId(pallas::Base::zero()),
+            TokenId::from_base(pallas::Base::zero()),
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -172,7 +172,7 @@ mod tests {
         let coin = Coin::from_attributes(
             public_key,
             1000,
-            TokenId(pallas::Base::from(2)),
+            TokenId::from_base(pallas::Base::from(2)),
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -190,7 +190,7 @@ mod tests {
         let attrs = CoinAttributes {
             public_key: pallas::Base::from(1),
             value: 500,
-            token_id: TokenId(pallas::Base::from(2)),
+            token_id: TokenId::from_base(pallas::Base::from(2)),
             spend_hook: FuncId::none(),
             user_data: pallas::Base::zero(),
             blind: Blind(pallas::Base::from(3)),
@@ -225,7 +225,7 @@ mod tests {
         let coin = Coin::from_attributes(
             pallas::Base::from(1),
             1000,
-            TokenId(pallas::Base::from(2)),
+            TokenId::from_base(pallas::Base::from(2)),
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -241,13 +241,13 @@ mod tests {
             coin: Coin::from_attributes(
                 pallas::Base::from(1),
                 1000,
-                TokenId(pallas::Base::from(2)),
+                TokenId::from_base(pallas::Base::from(2)),
                 FuncId::none(),
                 pallas::Base::zero(),
                 Blind(pallas::Base::zero()),
             ),
             value_commit: pallas::Point::generator(),
-            token_id: TokenId(pallas::Base::from(4)),
+            token_id: TokenId::from_base(pallas::Base::from(4)),
             token_auth_parent: pallas::Base::from(0),
             token_commit: pallas::Base::from(5),
             spend_hook: FuncId::none(),
@@ -266,13 +266,13 @@ mod tests {
             coin: Coin::from_attributes(
                 pallas::Base::from(4),
                 500,
-                TokenId(pallas::Base::from(5)),
+                TokenId::from_base(pallas::Base::from(5)),
                 FuncId::none(),
                 pallas::Base::zero(),
                 Blind(pallas::Base::zero()),
             ),
             value_commit: pallas::Point::generator(),
-            token_id: TokenId(pallas::Base::from(5)),
+            token_id: TokenId::from_base(pallas::Base::from(5)),
             token_registry_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
             mint_public: pallas::Base::from(3),
             spend_hook: FuncId::none(),
@@ -319,7 +319,7 @@ mod tests {
             coin: Coin::from_attributes(
                 pallas::Base::from(8),
                 50,
-                TokenId(pallas::Base::from(5)),
+                TokenId::from_base(pallas::Base::from(5)),
                 FuncId::none(),
                 pallas::Base::zero(),
                 Blind(pallas::Base::zero()),
@@ -347,11 +347,11 @@ mod tests {
     #[test]
     fn test_token_mint_update_serialization() {
         let update = TokenMintUpdateV1 {
-            token_id: TokenId(pallas::Base::from(1)),
+            token_id: TokenId::from_base(pallas::Base::from(1)),
             coin: Coin::from_attributes(
                 pallas::Base::from(2),
                 100,
-                TokenId(pallas::Base::from(3)),
+                TokenId::from_base(pallas::Base::from(3)),
                 FuncId::none(),
                 pallas::Base::zero(),
                 Blind(pallas::Base::zero()),
@@ -370,12 +370,12 @@ mod tests {
             coin: Coin::from_attributes(
                 pallas::Base::from(1),
                 500,
-                TokenId(pallas::Base::from(2)),
+                TokenId::from_base(pallas::Base::from(2)),
                 FuncId::none(),
                 pallas::Base::zero(),
                 Blind(pallas::Base::zero()),
             ),
-            token_id: TokenId(pallas::Base::from(2)),
+            token_id: TokenId::from_base(pallas::Base::from(2)),
             new_coin_count: 1,
         };
         let encoded = serialize(&update);
@@ -407,7 +407,7 @@ mod tests {
                 Coin::from_attributes(
                     pallas::Base::from(3),
                     50,
-                    TokenId(pallas::Base::from(4)),
+                    TokenId::from_base(pallas::Base::from(4)),
                     FuncId::none(),
                     pallas::Base::zero(),
                     Blind(pallas::Base::zero()),
@@ -427,7 +427,7 @@ mod tests {
             coins: vec![Coin::from_attributes(
                 pallas::Base::from(3),
                 100,
-                TokenId(pallas::Base::from(4)),
+                TokenId::from_base(pallas::Base::from(4)),
                 FuncId::none(),
                 pallas::Base::zero(),
                 Blind(pallas::Base::zero()),

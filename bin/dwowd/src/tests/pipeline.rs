@@ -263,7 +263,7 @@ impl ContractTestingPipeline {
                         last_action_block: 0,
                     },
                     token_authority_pub: dwow_sdk::crypto::PublicKey::from_secret(
-                        dwow_sdk::pasta::pallas::Base::from(1u64).into(),
+                        dwow_sdk::crypto::SecretKey::from_base(dwow_sdk::pasta::pallas::Base::from(1u64)),
                     ),
                     create_token: false,
                     token_symbol: [0u8; 32],

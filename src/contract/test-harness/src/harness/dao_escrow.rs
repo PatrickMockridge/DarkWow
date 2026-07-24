@@ -171,7 +171,7 @@ impl DaoEscrowHarness {
         let params = InitializeParamsV1 {
             dao_bulla: DaoEscrowBulla(dao_bulla),
             owner_pubkey: owner_pub,
-            endowment_token_id: dwow_sdk::crypto::TokenId(endowment_token_id),
+            endowment_token_id: dwow_sdk::crypto::TokenId::from_base(endowment_token_id),
             bulla_blind: dwow_sdk::crypto::Blind(bulla_blind),
             enable_drain_protection: false,
             instance_seed: [0u8; 32],
@@ -230,7 +230,7 @@ impl DaoEscrowHarness {
             membership_note: MembershipNote(public_inputs.membership_note),
             value_commit,
             value,
-            token_id: dwow_sdk::crypto::TokenId(token_id),
+            token_id: dwow_sdk::crypto::TokenId::from_base(token_id),
             expiry,
             membership_blind: dwow_sdk::crypto::Blind(membership_blind),
             value_blind: dwow_sdk::crypto::Blind(value_blind),
@@ -254,7 +254,7 @@ impl DaoEscrowHarness {
         let params = InitializeParamsV1 {
             dao_bulla: DaoEscrowBulla(dao_bulla),
             owner_pubkey,
-            endowment_token_id: dwow_sdk::crypto::TokenId(endowment_token_id),
+            endowment_token_id: dwow_sdk::crypto::TokenId::from_base(endowment_token_id),
             bulla_blind: dwow_sdk::crypto::Blind(bulla_blind),
             enable_drain_protection: false,
             instance_seed: [0u8; 32],

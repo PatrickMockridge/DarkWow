@@ -245,7 +245,7 @@ fn test_wallet_integration() {
                 dwow_wallet::sync_task::HighestPeerTip::new(),
             ),
             last_synced_tip_hash: smol::lock::Mutex::new(None),
-            verified_anchor_height: smol::lock::Mutex::new(0),
+            verified_anchor_height: smol::lock::Mutex::new(BlockHeight::new(0)),
             burn_pk_cache: smol::lock::Mutex::new(None),
             mint_pk_cache: smol::lock::Mutex::new(None),
         };
@@ -853,7 +853,7 @@ required_barbs = ["Spend","Mine"]
                 dwow_wallet::sync_task::HighestPeerTip::new(),
             ),
             last_synced_tip_hash: smol::lock::Mutex::new(None),
-            verified_anchor_height: smol::lock::Mutex::new(0),
+            verified_anchor_height: smol::lock::Mutex::new(BlockHeight::new(0)),
             burn_pk_cache: smol::lock::Mutex::new(None),
             mint_pk_cache: smol::lock::Mutex::new(None),
         };

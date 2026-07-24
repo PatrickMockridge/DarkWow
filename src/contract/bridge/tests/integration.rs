@@ -43,13 +43,13 @@ use dwow_sdk::pasta::pallas;
 /// Helper to create an IntentCommitment from bytes
 fn make_commitment(seed: u64) -> IntentCommitment {
     let base = pallas::Base::from(seed);
-    IntentCommitment(base)
+    IntentCommitment::from_base(base)
 }
 
 /// Helper to create an IntentNullifier from bytes
 fn make_nullifier(seed: u64) -> IntentNullifier {
     let base = pallas::Base::from(seed);
-    IntentNullifier(base)
+    IntentNullifier::from_base(base)
 }
 
 #[test]

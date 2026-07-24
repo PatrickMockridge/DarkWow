@@ -411,7 +411,7 @@ mod tests {
 
         // Use Coin::from_attributes (public API) to construct the output coin
         let output_coin = Coin::from_attributes(
-            &pubkey, 1_000_000, dwow_sdk::crypto::TokenId(pallas::Base::zero()),
+            &pubkey, 1_000_000, dwow_sdk::crypto::TokenId::DRKW,
             FuncId::none(), pallas::Base::zero(), BaseBlind::from(99u64),
         );
         // Use Nullifier::new (public API)
@@ -497,7 +497,7 @@ mod tests {
             dwow_sdk::crypto::ScalarBlind::from(out_blind));
 
         let coin = Coin::from_attributes(
-            &pubkey, out_value, dwow_sdk::crypto::TokenId(pallas::Base::zero()),
+            &pubkey, out_value, dwow_sdk::crypto::TokenId::DRKW,
             FuncId::none(), pallas::Base::zero(), BaseBlind::from(99u64),
         );
         let nullifier = Nullifier::new(secret, coin.inner());

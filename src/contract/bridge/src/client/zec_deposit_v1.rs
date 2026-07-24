@@ -148,7 +148,7 @@ impl ZecDepositCallData {
     pub fn derive_bridge_address(&self) -> pallas::Base {
         let (pub_x, pub_y) = self.recipient_public.xy().expect("pk not identity");
         let bridge_secret = poseidon_hash([pub_x, pub_y, pallas::Base::from(self.bridge_nonce)]);
-        let bridge_pub = PublicKey::from_secret(SecretKey::from(bridge_secret));
+        let bridge_pub = PublicKey::from_secret(SecretKey::from_base(bridge_secret));
         let (bridge_pub_x, bridge_pub_y) = bridge_pub.xy().expect("pk not identity");
         poseidon_hash([bridge_pub_x, bridge_pub_y])
     }

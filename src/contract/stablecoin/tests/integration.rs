@@ -107,7 +107,7 @@ fn test_debt_share_encoding() {
     let share = DebtShare {
         owner_pub: PublicKey::from_bytes([1u8;32]).unwrap(),
         debt_amount: 10000,
-        commitment: pallas::Base::zero().into(),
+        commitment: IntentCommitment::from_base(pallas::Base::zero()),
         created_at: 1000,
         updated_at: 2000,
     };
