@@ -1123,9 +1123,13 @@ impl Dww {
 mod tests {
     use super::*;
     use dwow_chain::Nullifier;
+    use dwow_sdk::blockchain::{BlockVersion, BlockTimestamp, MoneroBlockHeight};
     use dwow_sdk::crypto::keypair::SecretKey;
     use dwow_sdk::crypto::PublicKey;
     use dwow_sdk::crypto::note::AeadEncryptedNote;
+    use dwow_sdk::crypto::Blind;
+    use dwow_sdk::pasta::pallas;
+    use dwow_sdk::pasta::group::ff::PrimeField;
 
     /// F2: discover_native_token_outputs is deterministic.
     /// Invariant: AEAD decrypt is deterministic for given key + ciphertext.
@@ -1145,12 +1149,12 @@ mod tests {
         // Get the master secret from AccountManager — single authority.
         let master_sk = account_mgr.secrets().into_iter().next()
             .expect("AccountManager must have at least one secret");
-        let pk = PublicKey::from_secret(master_sk);
+        let pk = PublicKey::from_secret(master_sk.clone());
 
         // Per-block derived key from the same master.
         let per_block_sk = master_sk.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes())
             .expect("valid test derive_instance");
-        let per_block_pk = PublicKey::from_secret(per_block_sk);
+        let per_block_pk = PublicKey::from_secret(per_block_sk.clone());
 
         // Create a minimal encrypted note (AeadEncryptedNote + NativeToken encoding)
         use dwow_sdk::pasta::group::ff::PrimeField;
@@ -1316,13 +1320,13 @@ mod tests {
 
         let master_sk = account_mgr.secrets().into_iter().next()
             .expect("AccountManager must have at least one secret");
-        let pk = PublicKey::from_secret(master_sk);
+        let pk = PublicKey::from_secret(master_sk.clone());
 
         // ── Miner side: replicate PoWRewardCallBuilder determinism ──
         // consensus-coinbase.md §2.2: sk_H = derive_instance(sk_owner, cid, H)
         let sk_H = master_sk.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes())
             .expect("valid test derive_instance");
-        let pk_H = PublicKey::from_secret(sk_H);
+        let pk_H = PublicKey::from_secret(sk_H.clone());
 
         // Deterministic ephemeral key (model.rs:168)
         let ephemeral = SecretKey::from(dwow_sdk::crypto::poseidon_hash([
@@ -1365,7 +1369,7 @@ mod tests {
                 version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0,
+                timestamp: BlockTimestamp::new(0),
                 target: dwow_sdk::blockchain::BlockTarget::MAX,
                 nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height),
@@ -1517,7 +1521,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             header: dwow_chain::BlockHeader {
                 version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
+                timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
                 total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
@@ -1609,7 +1613,7 @@ produces = [{ name = "thing" }]
             header: dwow_chain::BlockHeader {
                 version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
+                timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(h), uncle_merkle_root: [0u8; 32],
                 total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
@@ -1689,7 +1693,7 @@ required_barbs = ["Spend","Mine"]
             header: dwow_chain::BlockHeader {
                 version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
+                timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(101), uncle_merkle_root: [0u8; 32],
                 total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
@@ -1808,7 +1812,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             header: dwow_chain::BlockHeader {
                 version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
+                timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height_deploy), uncle_merkle_root: [0u8; 32],
                 total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
@@ -1878,7 +1882,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             header: dwow_chain::BlockHeader {
                 version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
+                timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height_call), uncle_merkle_root: [0u8; 32],
                 total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
@@ -1928,7 +1932,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         ).expect("AccountManager::open");
         let _ = std::fs::remove_file(&keys_path);
         let sk = account_mgr.secrets().into_iter().next().expect("secrets");
-        let _pk = PublicKey::from_secret(sk);
+        let _pk = PublicKey::from_secret(sk.clone());
 
         // Build a NativeToken output using deterministic values so the wallet
         // can decrypt it via trial decryption with its master key.
@@ -1967,7 +1971,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         let commitment = found_commitment.expect("P9: must decrypt note to get commitment");
 
         // Derive nullifier: nf = poseidon_hash(secret, coin)
-        let nullifier = Nullifier::new(sk, commitment.inner());
+        let nullifier = Nullifier::new(sk.clone(), commitment.inner());
 
         // Insert a CapRecord into the wallet DB representing this held coin
         let wallet = crate::walletdb::WalletDb::new(None, None, false)
@@ -2119,7 +2123,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             header: dwow_chain::BlockHeader {
                 version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
+                timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
                 total_reward: dwow_sdk::blockchain::BlockReward::new(value), randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
@@ -2222,7 +2226,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             header: dwow_chain::BlockHeader {
                 version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
+                timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
                 total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
@@ -2276,7 +2280,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // ── Miner side: per-block key + deterministic FeeCollectV1 blinds ──
         let sk_H = sk.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes())
             .expect("valid test derive_instance");
-        let pk_H = PublicKey::from_secret(sk_H);
+        let pk_H = PublicKey::from_secret(sk_H.clone());
         let h_base = pallas::Base::from(height as u64);
         // Deterministic ephemeral key (domain 13 per spec §3.6)
         let ephem = SecretKey::from(poseidon_hash([
@@ -2323,7 +2327,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             header: dwow_chain::BlockHeader {
                 version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0, target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
+                timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height), uncle_merkle_root: [0u8; 32],
                 total_reward: dwow_sdk::blockchain::BlockReward::ZERO, randomx_key: [0u8; 32],
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
@@ -2382,7 +2386,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // ── Per-block key (shared by coinbase and FeeCollect) ──────
         let sk_H = master_sk.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes())
             .expect("valid test derive_instance");
-        let pk_H = PublicKey::from_secret(sk_H);
+        let pk_H = PublicKey::from_secret(sk_H.clone());
         let h_base = pallas::Base::from(height as u64);
 
         // ═══════════════════════════════════════════════════════════════
@@ -2465,7 +2469,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
                 version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0,
+                timestamp: BlockTimestamp::new(0),
                 target: dwow_sdk::blockchain::BlockTarget::MAX,
                 nonce: 0,
                 height: dwow_sdk::blockchain::BlockHeight::new(height),

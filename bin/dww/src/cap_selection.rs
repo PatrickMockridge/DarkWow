@@ -168,7 +168,10 @@ pub fn select_fee_cap(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dwow_chain::CoinCommitment;
     use dwow_sdk::crypto::BaseBlind;
+    use dwow_sdk::crypto::Blind;
+    use dwow_sdk::pasta::pallas;
 
     /// Test helper: label → TokenId
     fn tid(label: &str) -> TokenId {
