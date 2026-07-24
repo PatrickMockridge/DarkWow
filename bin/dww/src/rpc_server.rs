@@ -327,7 +327,10 @@ impl RpcHandler for DwwRpcHandler {
                 let mut output = vec![];
                 let txid = dww.broadcast_tx(&tx, &mut output, false, None, None).await
                     .map_err(|e| err(-32000, &format!("broadcast failed: {}", e)))?;
-                let _ = dww.mark_tx_exercise(&tx, &mut output);
+                if let Err(e) = dww.mark_tx_exercise(&tx, &mut output) {
+                    tracing::error!("mark_tx_exercise failed for txid {}: {}", txid, e);
+                    output.push(format!("WARNING: failed to mark tx as exercised: {}", e));
+                }
                 Ok(serde_json::json!({"txid": txid, "output": output}))
             }
 

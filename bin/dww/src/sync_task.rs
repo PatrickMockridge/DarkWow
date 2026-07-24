@@ -67,6 +67,10 @@ impl HighestPeerTip {
 
     /// Updates the highest peer tip if the given height exceeds the current value.
     /// G3: .get() at atomic boundary — audited.
+    /// §4.2.1: fetch_update returns Err when height <= current, which is the
+    /// expected outcome (another peer already reported a higher tip). Annotated
+    /// per the exception clause.
+    #[allow(unused_results)]
     pub fn set_max(&self, height: BlockHeight) {
         let _ = self.0.fetch_update(Ordering::Release, Ordering::Relaxed, |c| {
             if height.get() > c { Some(height.get()) } else { None }
@@ -297,12 +301,18 @@ pub async fn run_wallet_sync(
                 Err(_) => continue,
             };
 
-            // G7: checked_sub (returns Option<u64> — the count, not a height)
-            // Guard at line 280 ensures next_height <= best_tip, so None is impossible.
-            // §2.3: No unwrap_or(0) — use expect to document the invariant.
-            let remaining = best_tip.get().checked_sub(next_height.get())
-                .expect("next_height <= best_tip enforced by 'fetch loop guard")
-                .saturating_add(1);
+            // G7: checked_sub on P2P critical path — handle None explicitly
+            // per §2.3.2: no unwrap/expect on the sync path.
+            let remaining = match best_tip.get().checked_sub(next_height.get()) {
+                Some(n) => n.saturating_add(1),
+                None => {
+                    tracing::warn!(
+                        "sync: next_height {} exceeds best_tip {} — resetting fetch window",
+                        next_height.get(), best_tip.get()
+                    );
+                    break 'fetch;
+                }
+            };
             let batch_size = LINEAR_SYNC_BATCH.min(remaining);
             let request = GetBlocks { start_height: next_height, count: batch_size };
 
