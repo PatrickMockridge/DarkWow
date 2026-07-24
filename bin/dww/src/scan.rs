@@ -32,6 +32,7 @@ use dwow_chain::CoinCommitment;
 use std::collections::BTreeMap;
 
 use dwow_sdk::{
+    blockchain::BlockHeight,
     bridgetree::Position,
     crypto::{
         poseidon_hash,
@@ -302,7 +303,7 @@ fn build_native_token_cap_record(
     tree: &mut MerkleTree,
     secret: &SecretKey,
     note: &NativeToken,
-    height: u64,
+    height: BlockHeight,
     source: &NativeTokenSource,
     contract_id: ContractId,
     func_id: Option<FuncId>,
@@ -361,7 +362,7 @@ fn build_native_token_cap_record(
         barbs: native_typed.barbs.clone(),
         revoked: false,
         revoked_at_height: None,
-        created_at_height: height,
+        created_at_height: height.get(),
         key_coords: None, // P0.1b: caller should populate via account_mgr.find_owner()
     };
 
@@ -382,7 +383,7 @@ fn match_nullifiers(
     existing_caps: &[CapRecord],
     secrets: &[SecretKey],
     published: &[NullifierRecord],
-    height: u64,
+    height: BlockHeight,
 ) -> Vec<(String, u64)> {
     if published.is_empty() {
         return vec![];
@@ -402,7 +403,7 @@ fn match_nullifiers(
         for secret in secrets {
             let nullifier = poseidon_hash([secret.inner(), commitment]);
             if published_fps.contains(&&nullifier) {
-                revoked.push((cap.cap_id.clone(), height));
+                revoked.push((cap.cap_id.clone(), height.get()));
                 break;
             }
         }
@@ -418,7 +419,7 @@ fn discover_native_token_outputs(
     account_mgr: &dwow_accounts::AccountManager,
     tree: &mut MerkleTree,
     data: &[u8],
-    height: u64,
+    height: BlockHeight,
     function_code: u8,
     diagnostics: &mut BlockScanDiagnostics,
 ) -> std::result::Result<(Vec<(CapRecord, MerkleProof)>, Vec<String>), String> {
@@ -525,7 +526,7 @@ fn scan_native_token_contract_calls(
     account_mgr: &dwow_accounts::AccountManager,
     tree: &mut MerkleTree,
     tx: &dwow_chain::Transaction,
-    height: u64,
+    height: BlockHeight,
     diagnostics: &mut BlockScanDiagnostics,
 ) -> (Vec<NativeTokenDiscovery>, Vec<NullifierRecord>, Vec<String>) {
     let mut outputs = vec![];
@@ -609,9 +610,9 @@ fn scan_block(
     block: &dwow_chain::Block,
 ) -> BlockScanResult {
     let mut result = BlockScanResult::new();
-    // Chain seam: lower the nominal height once; wallet-side scan and
-    // persistence run in the u64 domain (type-system.md §2.3 boundary).
-    let height = block.header.height.get();
+    // §2.3: BlockHeight propagates through scan pipeline; lowered to u64
+    // only at persistence boundaries (CapRecord, SQLite, display).
+    let height = block.header.height;
 
     result.messages.push(format!("[linear] Block height: {}", block.header.height));
     result.messages.push(format!(
@@ -667,7 +668,7 @@ fn scan_block(
                             deployer_pubkey: params.public_key,
                             metadata,
                             manifest_json,
-                            height,
+                            height: height.get(),
                         });
 
                         result.messages.push(format!(
@@ -834,7 +835,7 @@ fn scan_block(
                             barbs: typed.barbs.clone(),
                             revoked: false,
                             revoked_at_height: None,
-                            created_at_height: height,
+                            created_at_height: height.get(),
                             key_coords, // resolved via find_owner
                         };
                         result.capabilities.push(CapabilityDiscovery { cap_record, merkle_proof });
@@ -1054,7 +1055,7 @@ impl Dww {
 
         // Apply nullifier revocations
         let secrets = self.account_mgr.secrets();
-        let revoked = match_nullifiers(&existing_caps, &secrets, &result.published_nullifiers, height);
+        let revoked = match_nullifiers(&existing_caps, &secrets, &result.published_nullifiers, BlockHeight::new(height));
         for (cap_id, h) in &revoked {
             if let Err(e) = self.wallet.mark_revoked(cap_id, *h) {
                 tracing::error!(target: "dww::scan",
@@ -1234,7 +1235,7 @@ mod tests {
 
         // Positive: AccountManager has the correct secret
         let (caps, _) = discover_native_token_outputs(
-            &account_mgr, &mut tree, &call_data, height, 0x05,
+            &account_mgr, &mut tree, &call_data, BlockHeight::new(height), 0x05,
             &mut BlockScanDiagnostics::default(),
         ).expect("F2 FAIL: discover_native_token_outputs must succeed with correct key");
         assert!(!caps.is_empty(),
@@ -1248,7 +1249,7 @@ mod tests {
             .expect("wrong AccountManager::open");
         let _ = std::fs::remove_file(&wrong_path);
         let (caps2, _) = discover_native_token_outputs(
-            &wrong_mgr, &mut MerkleTree::new(32), &call_data, height, 0x05,
+            &wrong_mgr, &mut MerkleTree::new(32), &call_data, BlockHeight::new(height), 0x05,
             &mut BlockScanDiagnostics::default(),
         ).expect("F2 FAIL: discover must succeed (returns empty with wrong key)");
         assert!(caps2.is_empty(),
@@ -1257,7 +1258,7 @@ mod tests {
         // Determinism: same inputs twice = same outputs
         let mut tree2 = MerkleTree::new(32);
         let (caps3, _) = discover_native_token_outputs(
-            &account_mgr, &mut tree2, &call_data, height, 0x05,
+            &account_mgr, &mut tree2, &call_data, BlockHeight::new(height), 0x05,
             &mut BlockScanDiagnostics::default(),
         ).expect("F2 FAIL: discover must be deterministic on second call");
         assert_eq!(caps.len(), caps3.len(),
@@ -2016,7 +2017,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         let published: Vec<super::NullifierRecord> =
             published_nfs.values().cloned().collect();
         let revoked_matches = super::match_nullifiers(
-            &existing, &secrets, &published, height,
+            &existing, &secrets, &published, BlockHeight::new(height),
         );
         assert_eq!(revoked_matches.len(), 1,
             "P9: match_nullifiers must detect the published nullifier");
