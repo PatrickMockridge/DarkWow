@@ -435,7 +435,7 @@ fn test_sync_decision_type_is_exhaustive() {
 #[test]
 fn test_peertip_rejects_invalid() {
     use dwowd::proto::linear_sync_client::PeerTip;
-    use dwowd::proto::linear_sync::Tip;
+    use dwow_chain::sync_types::Tip;
 
     fn assert_rejects(desc: &str, tip: &Tip) {
         match PeerTip::from_tip(tip) {
@@ -453,23 +453,23 @@ fn test_peertip_rejects_invalid() {
 
     assert_rejects("u64::MAX height", &Tip {
         height: BlockHeight::new(u64::MAX),
-        hash: "abc".to_string(), genesis_hash: Some("def".to_string()),
-    });
-    assert_rejects("empty hash at height > 0", &Tip {
-        height: BlockHeight::new(5),
-        hash: String::new(), genesis_hash: Some("def".to_string()),
+        hash: dwow_chain::sync_types::BlockHash::zero(),
+        genesis_hash: Some(dwow_chain::sync_types::BlockHash::zero()),
     });
     assert_rejects("missing genesis hash at height > 0", &Tip {
         height: BlockHeight::new(5),
-        hash: "abc".to_string(), genesis_hash: None,
+        hash: dwow_chain::sync_types::BlockHash::zero(),
+        genesis_hash: None,
     });
-    assert_accepts("valid tip", &Tip {
+    assert_accepts("valid tip with genesis", &Tip {
         height: BlockHeight::new(5),
-        hash: "abc".to_string(), genesis_hash: Some("def".to_string()),
+        hash: dwow_chain::sync_types::BlockHash::zero(),
+        genesis_hash: Some(dwow_chain::sync_types::BlockHash::zero()),
     });
-    assert_accepts("height 0 empty hash valid", &Tip {
+    assert_accepts("height 0 zero hash valid", &Tip {
         height: BlockHeight::new(0),
-        hash: String::new(), genesis_hash: None,
+        hash: dwow_chain::sync_types::BlockHash::zero(),
+        genesis_hash: None,
     });
 
     eprintln!("[TEST] E: PASS — PeerTip::from_tip correctly rejects all invalid inputs");
@@ -512,7 +512,7 @@ fn test_barb_declarations_complete() {
 /// start_height=0 is semantically invalid (genesis is height 1, not 0).
 #[test]
 fn test_getblocks_rejects_zero_start() {
-    use dwowd::proto::linear_sync::GetBlocks;
+    use dwow_chain::sync_types::GetBlocks;
     let gb = GetBlocks {
         start_height: dwow_sdk::blockchain::BlockHeight::new(0),
         count: 10,
@@ -529,28 +529,30 @@ fn test_getblocks_rejects_zero_start() {
 #[test]
 fn test_tip_missing_genesis_hash_rejected() {
     use dwowd::proto::linear_sync_client::PeerTip;
-    use dwowd::proto::linear_sync::Tip;
+    use dwow_chain::sync_types::Tip;
     let tip = Tip {
         height: dwow_sdk::blockchain::BlockHeight::new(5),
-        hash: "abc123".to_string(),
+        hash: dwow_chain::sync_types::BlockHash::zero(),
         genesis_hash: None,
     };
     assert!(PeerTip::from_tip(&tip).is_err(),
         "Tip at height>0 missing genesis_hash MUST be rejected");
 }
 
-/// T5: Tip with empty hash at non-zero height MUST be rejected.
+/// T5: Tip with u64::MAX height MUST be rejected (sentinel for uninitialized).
+/// Hash-level validation (empty/zero hash, invalid hex) is now performed by
+/// serde deserialization in the BlockHash type itself (§8.2.1 re-lift).
 #[test]
-fn test_tip_empty_hash_rejected() {
+fn test_tip_max_height_rejected() {
     use dwowd::proto::linear_sync_client::PeerTip;
-    use dwowd::proto::linear_sync::Tip;
+    use dwow_chain::sync_types::Tip;
     let tip = Tip {
-        height: dwow_sdk::blockchain::BlockHeight::new(3),
-        hash: String::new(),
-        genesis_hash: Some("def456".to_string()),
+        height: dwow_sdk::blockchain::BlockHeight::new(u64::MAX),
+        hash: dwow_chain::sync_types::BlockHash::zero(),
+        genesis_hash: None,
     };
     assert!(PeerTip::from_tip(&tip).is_err(),
-        "Tip with empty hash at height>0 MUST be rejected");
+        "Tip with u64::MAX height MUST be rejected");
 }
 
 /// T5: PeerTip boundary types MUST implement ExhibitsBarb.

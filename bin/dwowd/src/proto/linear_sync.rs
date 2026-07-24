@@ -343,7 +343,7 @@ mod tests {
             GetBlock::MAX_BYTES, json.len());
 
         // Tip: {"height":18446744073709551615,"hash":"<64 hex>"} ≈ 104 bytes + varint
-        let tip = Tip { height: BlockHeight::new(u64::MAX), hash: "f".repeat(64), genesis_hash: None };
+        let tip = Tip { height: BlockHeight::new(u64::MAX), hash: dwow_chain::sync_types::BlockHash::from_hex_str(&"f".repeat(64)).unwrap_or_else(|| dwow_chain::sync_types::BlockHash::zero()), genesis_hash: None };
         let json = serde_json::to_vec(&tip).unwrap();
         assert!(json.len() as u64 <= Tip::MAX_BYTES,
             "Tip MAX_BYTES={} but max-value JSON is {} bytes",

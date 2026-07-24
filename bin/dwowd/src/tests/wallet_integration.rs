@@ -1433,7 +1433,7 @@ fn test_canonical_call_failure_rejects_block() {
         // A canonical call to a non-existent contract (random ContractId).
         // execute_block's strict mode MUST reject the entire block when this
         // call fails at WASM resolution (no contract WASM in sled).
-        let bad_contract_id = dwow_sdk::crypto::ContractId::from(
+        let bad_contract_id = dwow_sdk::crypto::ContractId::from_base(
             dwow_sdk::pasta::pallas::Base::from(u64::MAX),
         );
         let bad_call = ContractCall {
