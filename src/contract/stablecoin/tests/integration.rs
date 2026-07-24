@@ -24,7 +24,7 @@
 //! Stablecoin contract integration tests
 
 use dwow_serial::{deserialize, serialize};
-use dwow_sdk::crypto::PublicKey;
+use dwow_sdk::crypto::{IntentCommitment, PublicKey, SecretKey};
 use dwow_sdk::pasta::pallas;
 use dwow_stablecoin_contract::{
     model::{
@@ -105,7 +105,7 @@ fn test_collateral_pool_encoding() {
 #[test]
 fn test_debt_share_encoding() {
     let share = DebtShare {
-        owner_pub: PublicKey::from_bytes([1u8;32]).unwrap(),
+        owner_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(42))),
         debt_amount: 10000,
         commitment: IntentCommitment::from_base(pallas::Base::zero()),
         created_at: 1000,

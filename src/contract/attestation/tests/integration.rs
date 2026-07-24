@@ -181,6 +181,19 @@ fn test_create_attestation_params_encoding() {
 fn test_create_attestation_update_encoding() {
     let update = CreateAttestationUpdateV1 {
         attestation_id: AttestationId(pallas::Base::from(1)),
+        attestation: Attestation {
+            version: 0,
+            id: AttestationId(pallas::Base::from(1)),
+            attestor_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(2))),
+            attestor_secret: pallas::Base::from(4),
+            claim_type: Predicate::Matches,
+            claim_data: vec![pallas::Base::from(1), pallas::Base::from(2)],
+            metadata: vec![1, 2, 3],
+            state: AttestationState::Active,
+            created_at: 50000,
+            expires_at: Some(100000),
+        },
+        index_key: pallas::Base::from(1),
     };
 
     let encoded = serialize(&update);
@@ -261,6 +274,22 @@ fn test_create_claim_params_encoding() {
 fn test_create_claim_update_encoding() {
     let update = CreateClaimUpdateV1 {
         claim_id: ClaimId(pallas::Base::from(1)),
+        claim: Claim {
+            version: 0,
+            id: ClaimId(pallas::Base::from(1)),
+            attestation_id: AttestationId(pallas::Base::from(2)),
+            claimant_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(3))),
+            claimant_secret: pallas::Base::from(5),
+            predicate: Predicate::GreaterOrEqual,
+            evidence_commitment: vec![1, 2, 3],
+            revealed_result: vec![4, 5, 6],
+            proof: vec![7, 8, 9],
+            state: ClaimState::Pending,
+            created_at: 50000,
+            consumed_at: None,
+        },
+        rate_limit_key: pallas::Base::from(1),
+        current_block: 50000,
     };
 
     let encoded = serialize(&update);
@@ -325,6 +354,8 @@ fn test_consume_claim_params_encoding() {
 fn test_consume_claim_update_encoding() {
     let update = ConsumeClaimUpdateV1 {
         claim_id: ClaimId(pallas::Base::from(1)),
+        consumed_at: 50000,
+        nullifier: pallas::Base::from(5),
     };
 
     let encoded = serialize(&update);

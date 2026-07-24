@@ -33,7 +33,7 @@ use dwow_dex_contract::{
 };
 use dwow_serial::{deserialize, serialize};
 use dwow_sdk::{
-    crypto::{schnorr::Signature, PublicKey, SecretKey},
+    crypto::{schnorr::Signature, IntentCommitment, IntentNullifier, PublicKey, SecretKey},
     pasta::pallas,
 };
 
@@ -103,8 +103,8 @@ fn test_create_swap_params_encoding() {
         offer_amount: 1000,
         request_token: make_bytes32(3),
         request_amount: 500,
-        lock_commitment: pallas::Base::zero().into(),
-        nullifier: pallas::Base::zero().into(),
+        lock_commitment: IntentCommitment::from_base(pallas::Base::zero()),
+        nullifier: IntentNullifier::from_base(pallas::Base::zero()),
         lock_proof: vec![],
         signature_public: make_pubkey(1),
         fee: 100,
@@ -125,8 +125,8 @@ fn test_create_swap_params_encoding() {
 fn test_accept_swap_params_encoding() {
     let params = AcceptSwapParams {
         swap_id: make_bytes32(1),
-        lock_commitment: pallas::Base::zero().into(),
-        nullifier: pallas::Base::zero().into(),
+        lock_commitment: IntentCommitment::from_base(pallas::Base::zero()),
+        nullifier: IntentNullifier::from_base(pallas::Base::zero()),
         lock_proof: vec![],
         signature_public: make_pubkey(2),
         fee: 50,
@@ -147,10 +147,10 @@ fn test_execute_swap_params_encoding() {
         swap_id: make_bytes32(1),
         alice_secret: make_bytes32(2),
         bob_secret: make_bytes32(3),
-        alice_lock: pallas::Base::zero().into(),
-        bob_lock: pallas::Base::zero().into(),
-        alice_nullifier: pallas::Base::zero().into(),
-        bob_nullifier: pallas::Base::zero().into(),
+        alice_lock: IntentCommitment::from_base(pallas::Base::zero()),
+        bob_lock: IntentCommitment::from_base(pallas::Base::zero()),
+        alice_nullifier: IntentNullifier::from_base(pallas::Base::zero()),
+        bob_nullifier: IntentNullifier::from_base(pallas::Base::zero()),
         proof: vec![1, 2, 3],
         fee: 25,
     };
@@ -167,7 +167,7 @@ fn test_cancel_swap_params_encoding() {
     let params = CancelSwapParams {
         swap_id: make_bytes32(1),
         secret: make_bytes32(2),
-        nullifier: pallas::Base::zero().into(),
+        nullifier: IntentNullifier::from_base(pallas::Base::zero()),
         proof: vec![4, 5, 6],
         fee: 10,
     };

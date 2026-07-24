@@ -67,7 +67,7 @@ fn test_relayer_endowment_function_enum_valid() {
 fn test_relayer_endowment_function_enum_invalid() {
     // Test that invalid function IDs return errors
     assert!(RelayerEndowmentFunction::try_from(0xFF).is_err());
-    assert!(RelayerEndowmentFunction::try_from(0x07).is_err());
+    assert!(RelayerEndowmentFunction::try_from(0x08).is_err());
     assert!(RelayerEndowmentFunction::try_from(0x10).is_err());
 }
 

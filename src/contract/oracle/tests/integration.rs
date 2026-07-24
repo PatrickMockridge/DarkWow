@@ -43,7 +43,7 @@ fn test_oracle_function_enum_valid() {
 #[test]
 fn test_oracle_function_enum_invalid() {
     assert!(OracleFunction::try_from(0xFF).is_err());
-    assert!(OracleFunction::try_from(0x05).is_err());
+    assert!(OracleFunction::try_from(0x06).is_err());
     assert!(OracleFunction::try_from(0x10).is_err());
 }
 

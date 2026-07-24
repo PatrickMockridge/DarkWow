@@ -251,6 +251,8 @@ mod tests {
             token_auth_parent: pallas::Base::from(0),
             token_commit: pallas::Base::from(5),
             spend_hook: FuncId::none(),
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
         let encoded = serialize(&params);
         let decoded: TokenMintParamsV1 = deserialize(&encoded).unwrap();
@@ -276,6 +278,8 @@ mod tests {
             token_registry_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
             mint_public: pallas::Base::from(3),
             spend_hook: FuncId::none(),
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
         let encoded = serialize(&params);
         let decoded: MintParamsV1 = deserialize(&encoded).unwrap();
@@ -294,7 +298,11 @@ mod tests {
             spend_hook: FuncId::none(),
             signature_public: pallas::Base::zero(),
         };
-        let params = BurnParamsV1 { inputs: vec![input] };
+        let params = BurnParamsV1 {
+            inputs: vec![input],
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        };
         let encoded = serialize(&params);
         let decoded: BurnParamsV1 = deserialize(&encoded).unwrap();
         assert_eq!(decoded.inputs.len(), 1);
@@ -333,7 +341,12 @@ mod tests {
             spend_hook: FuncId::none(),
         };
 
-        let params = TransferParamsV1 { inputs: vec![input], outputs: vec![output] };
+        let params = TransferParamsV1 {
+            inputs: vec![input],
+            outputs: vec![output],
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        };
         let encoded = serialize(&params);
         let decoded: TransferParamsV1 = deserialize(&encoded).unwrap();
         assert_eq!(decoded.inputs.len(), 1);

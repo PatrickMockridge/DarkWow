@@ -64,7 +64,7 @@ fn test_insurance_market_function_enum_valid() {
 #[test]
 fn test_insurance_market_function_enum_invalid() {
     assert!(InsuranceMarketFunction::try_from(0xFF).is_err());
-    assert!(InsuranceMarketFunction::try_from(0x0d).is_err());
+    assert!(InsuranceMarketFunction::try_from(0x10).is_err());
     assert!(InsuranceMarketFunction::try_from(0x10).is_err());
 }
 
