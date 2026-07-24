@@ -275,11 +275,19 @@ fn append_leaf_and_prove(tree: &mut MerkleTree, leaf: pallas::Base) -> std::resu
     }))
 }
 
+/// Personalization for capability ID derivation via blake2b.
+/// SHALL be exactly 16 bytes (BLAKE2B_PERSONALBYTES).
+/// Null-padded from the original 13-byte "DarkFi_CoinId" to make the
+/// zero-padding explicit — produces byte-identical hashes.
+/// FIXME: update Python model and eliminate null padding when the spec
+/// adopts a canonical 16-byte persona.
+const COIN_ID_PERSONALIZATION: &[u8] = b"DarkFi_CoinId\0\0\0";
+
 /// Derive a deterministic capability id: `bs58(blake2b(secret || commitment, "DarkFi_CoinId"))`.
 fn derive_cap_id(secret: &SecretKey, commitment_bytes: &[u8; 32]) -> String {
     let mut hasher = blake2b_simd::Params::new()
         .hash_length(32)
-        .personal(b"DarkFi_CoinId")
+        .personal(COIN_ID_PERSONALIZATION)
         .to_state();
     hasher.update(&secret.inner().to_repr());
     hasher.update(commitment_bytes);
@@ -1268,7 +1276,7 @@ mod tests {
 
         let mut hasher = blake2b_simd::Params::new()
             .hash_length(32)
-            .personal(b"DarkFi_CoinId")
+            .personal(COIN_ID_PERSONALIZATION)
             .to_state();
         hasher.update(&secret_bytes);
         hasher.update(&commitment_bytes);
@@ -1278,7 +1286,7 @@ mod tests {
         // Expected value from Python model:
         //   secret = bytes([0x42] + [0x00]*31)
         //   commitment = bytes([0x99]*32)
-        //   cap_id = bs58(blake2b(secret || commitment, person=b"DarkFi_CoinId"))
+        //   cap_id = bs58(blake2b(secret || commitment, person=COIN_ID_PERSONALIZATION))
         assert_eq!(cap_id, "bbT1qqNUBXnwRuxZgmhQHTr9HiZrbuWpsCWJJAEiLij",
             "G5 FAIL: cap_id doesn't match Python model — cross-language determinism broken");
     }

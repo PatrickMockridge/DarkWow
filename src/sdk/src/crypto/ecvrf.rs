@@ -41,8 +41,9 @@ use super::{
     PublicKey, SecretKey,
 };
 
-/// Prefix domain used for `hash_to_curve` calls
-const VRF_DOMAIN: &str = "DarkFi_ECVRF";
+/// Prefix domain used for `hash_to_curve` calls and `hash_to_scalar` nonce
+/// derivation. SHALL be exactly 16 bytes (blake2b BLAKE2B_PERSONALBYTES).
+const VRF_DOMAIN: &str = "DarkFi_ECVRF_v01";
 
 /// VRF Proof
 #[derive(Copy, Clone, Debug, SerialEncodable, SerialDecodable)]

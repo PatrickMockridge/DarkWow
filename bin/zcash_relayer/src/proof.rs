@@ -94,7 +94,7 @@ pub fn derive_nullifier(
 
     let mut h = Params::new()
         .hash_length(32)
-        .personal(b"ZcashNoteNf")
+        .personal(b"ZNoteNf_") // 8 bytes — blake2s PERSONALBYTES
         .to_state();
     h.update(b"n");
     h.update(commitment);
@@ -125,7 +125,7 @@ pub fn derive_commitment(
 
     let mut h = Params::new()
         .hash_length(32)
-        .personal(b"ZcashNoteCm")
+        .personal(b"ZNoteCm_") // 8 bytes — blake2s PERSONALBYTES
         .to_state();
     h.update(&value.to_le_bytes());
     h.update(randomness);
