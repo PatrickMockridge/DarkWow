@@ -185,10 +185,13 @@ pub fn open_wallet(config: &WalletConfig) -> Result<Dww> {
 pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
     // Deploy/transfer/broadcast require synced chain to confirm balances
     // and capabilities. Standard for all full-node wallets.
-    if requires_sync(cmd) && dww.wallet.chain_height().map(|h| h == dwow_sdk::blockchain::BlockHeight::new(0)).unwrap_or(true) {
-        return Err(Error::Custom(
-            "No blocks in local chain — wallet has not synced yet. Wait for sync.".into()
-        ));
+    if requires_sync(cmd) {
+        let height = dww.wallet.chain_height()?; // §4.2.3: propagate DB error, don't conflate with "chain empty"
+        if height == dwow_sdk::blockchain::BlockHeight::new(0) {
+            return Err(Error::Custom(
+                "No blocks in local chain — wallet has not synced yet. Wait for sync.".into()
+            ));
+        }
     }
     match cmd {
         // === Wallet commands (most are sync local) ===
@@ -655,7 +658,13 @@ pub async fn dispatch_async(
     let dww_r = dww.read().await;
     match cmd {
         WalletCommand::Sync { command: SyncSubcmd::Status } => {
-            let height = dww_r.wallet.chain_height().map(|h| h.get()).unwrap_or(0);
+            let height = match dww_r.wallet.chain_height() {
+                Ok(h) => h.get(),
+                Err(ref e) => {
+                    println!("Chain height: ERROR ({})", e);
+                    0
+                }
+            };
             let peer_tip = dww_r.highest_peer_tip.get();
             let synced = dww_r.is_synced();
             let p2p_up = dww_r.p2p.is_some();
@@ -823,14 +832,26 @@ pub async fn dispatch_async(
                                         let last = dww_r.get_last_scanned_block()
                                             .map(|(h, _)| h as u64)
                                             .unwrap_or(0);
-                                        let chain = dww_r.chain_height().map(|h| h.get()).unwrap_or(0);
+                                        let chain = match dww_r.chain_height() {
+                                            Ok(h) => h.get(),
+                                            Err(e) => {
+                                                tracing::error!("auto-scan: chain_height failed: {}", e);
+                                                u64::MAX // force scan on error rather than silently skip
+                                            }
+                                        };
                                         last < chain
                                     };
                                     if should_scan {
                                         let dww_r = dww_scan.read().await;
                                         let (last_h, _) = dww_r.get_last_scanned_block()
                                             .unwrap_or((0, String::new()));
-                                        let chain_h = dww_r.chain_height().map(|h| h.get()).unwrap_or(0);
+                                        let chain_h = match dww_r.chain_height() {
+                                            Ok(h) => h.get(),
+                                            Err(e) => {
+                                                tracing::error!("auto-scan: chain_height failed: {}", e);
+                                                0
+                                            }
+                                        };
                                         tracing::info!(target: "dww::wallet::autoscan",
                                             "Scanning blocks {}-{}",
                                             last_h as u64 + 1, chain_h);
@@ -937,7 +958,10 @@ pub async fn dispatch_async(
                 }
                 if !dww_r.is_synced() {
                     println!("Wallet still not synced after 25s. P2P connected — waiting for blocks.");
-                    println!("Chain height: {}", dww_r.wallet.chain_height().map(|h| h.get()).unwrap_or(0));
+                    println!("Chain height: {}", match dww_r.wallet.chain_height() {
+                        Ok(h) => h.get(),
+                        Err(ref e) => { println!("Chain height: ERROR ({})", e); 0 }
+                    });
                     println!("Run 'scan' again once synced.");
                     return Ok(());
                 }

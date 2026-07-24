@@ -957,7 +957,14 @@ impl WalletStateProvider for Dww {
                 // spend_hook/user_data (FuncId::none()), but the pattern is prohibited.
                 ("spend_hook".to_string(), cap.spend_hook.map(|h| h.inner()).unwrap_or_else(|| pallas::Base::zero())),
                 ("user_data".to_string(), match cap.user_data {
-                    Some(b) => pallas::Base::from_repr(b).unwrap_or_else(|| pallas::Base::zero()),
+                    Some(b) => pallas::Base::from_repr(b).unwrap_or_else(|| {
+                        tracing::error!(
+                            "build_native_transfer: corrupt user_data blob for cap {} — \
+                             invalid field element, using zero",
+                            cap.cap_id
+                        );
+                        pallas::Base::zero()
+                    }),
                     None => pallas::Base::zero(),
                 }),
             ],
@@ -1444,11 +1451,22 @@ impl Dww {
             .or_else(|| {
                 // Path B: Parse as Base58 ContractId, then reverse-lookup
                 // the contract name from the runtime OnceLock registry.
+                // §4.2.2: replace .ok() chain with logged fallback — the
+                // fallback to the next strategy is intentional, but the error
+                // reason must not be silently discarded.
                 let cid = bs58::decode(contract_id_or_name)
                     .into_vec()
+                    .map_err(|e| tracing::debug!("bs58 decode failed for '{}': {}", contract_id_or_name, e))
                     .ok()
-                    .and_then(|v| v.try_into().ok())
-                    .and_then(|bytes: [u8; 32]| ContractId::from_bytes(bytes).ok());
+                    .and_then(|v| {
+                        let v_len = v.len();
+                        v.try_into().map_err(|_| {
+                            tracing::debug!("ContractId length mismatch for '{}': {} bytes (expected 32)", contract_id_or_name, v_len)
+                        }).ok()
+                    })
+                    .and_then(|bytes: [u8; 32]| ContractId::from_bytes(bytes).map_err(|e| {
+                        tracing::debug!("ContractId::from_bytes failed for '{}': {:?}", contract_id_or_name, e)
+                    }).ok());
                 cid.and_then(|id| {
                     registry.find_by_contract_id(&id)
                 })
