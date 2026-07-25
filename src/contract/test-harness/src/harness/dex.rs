@@ -26,7 +26,7 @@
 //! Provides isolated testing for DEX atomic swap contract.
 
 use dwow_core::{
-    zk::{ProvingKey, ZkCircuit},
+    zk::{Proof, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
 use dwow_sdk::{
@@ -452,6 +452,28 @@ impl DexHarness {
 
         Ok(ExecuteSwapSlippageResult { call_data, proof, public_inputs })
     }
+
+    /// Set transparency level (function code 0x06)
+    pub fn set_transparency_level(
+        &self, level: u8,
+    ) -> Result<SetTransparencyLevelResult, Box<dyn std::error::Error>> {
+        let w = dwow_core::zk::empty_witnesses(&self.set_transparency_level_zkbin)?;
+        let c = ZkCircuit::new(w, &self.set_transparency_level_zkbin);
+        let proof = Proof::create(&self.set_transparency_level_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        Ok(SetTransparencyLevelResult { call_data: vec![0x06], proof })
+    }
+
+    /// Update DEX configuration (function code 0x05)
+    pub fn update_config(
+        &self, timeout: u64, fee: u64,
+    ) -> Result<UpdateConfigDexResult, Box<dyn std::error::Error>> {
+        let w = dwow_core::zk::empty_witnesses(&self.update_config_zkbin)?;
+        let c = ZkCircuit::new(w, &self.update_config_zkbin);
+        let proof = Proof::create(&self.update_config_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        Ok(UpdateConfigDexResult { call_data: vec![0x05], proof })
+    }
 }
 
 impl Default for DexHarness {
@@ -551,3 +573,6 @@ pub struct ExecuteSwapSlippageResult {
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: ExecuteSwapSlippagePublicInputs,
 }
+
+pub struct SetTransparencyLevelResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct UpdateConfigDexResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }

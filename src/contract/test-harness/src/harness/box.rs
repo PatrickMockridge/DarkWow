@@ -26,7 +26,7 @@
 //! Provides isolated testing for the Box contract (put/take circuits).
 
 use dwow_core::{
-    zk::{ProvingKey, ZkCircuit},
+    zk::{Proof, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
 
@@ -68,6 +68,22 @@ impl BoxHarness {
             take_pk,
         }
     }
+
+    pub fn put(&self) -> dwow_core::Result<BoxPutResult> {
+        let w = dwow_core::zk::empty_witnesses(&self.put_zkbin)?;
+        let c = ZkCircuit::new(w, &self.put_zkbin);
+        let proof = Proof::create(&self.put_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        Ok(BoxPutResult { call_data: vec![0x01], proof })
+    }
+
+    pub fn take(&self) -> dwow_core::Result<BoxTakeResult> {
+        let w = dwow_core::zk::empty_witnesses(&self.take_zkbin)?;
+        let c = ZkCircuit::new(w, &self.take_zkbin);
+        let proof = Proof::create(&self.take_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        Ok(BoxTakeResult { call_data: vec![0x02], proof })
+    }
 }
 
 impl super::ContractHarness for BoxHarness {
@@ -95,3 +111,6 @@ impl super::ContractHarness for BoxHarness {
         }
     }
 }
+
+pub struct BoxPutResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct BoxTakeResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }

@@ -158,6 +158,34 @@ impl InsuranceMarketHarness {
 
         Ok(PurchaseCoverageResult { call_data, proof, public_inputs })
     }
+
+    /// Purchase coverage v1 (function code 0x04)
+    pub fn purchase_coverage_v1(
+        &self,
+        params: &dwow_insurance_market_contract::model::PurchaseCoverageParamsV1,
+    ) -> Result<PurchaseCoverageV1Result> {
+        let w = dwow_core::zk::empty_witnesses(&self.purchase_coverage_v1_zkbin)?;
+        let c = ZkCircuit::new(w, &self.purchase_coverage_v1_zkbin);
+        let proof = Proof::create(&self.purchase_coverage_v1_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let mut call_data = vec![0x04];
+        params.encode(&mut call_data)?;
+        Ok(PurchaseCoverageV1Result { call_data, proof })
+    }
+
+    /// Purchase coverage with DAG (function code 0x0b)
+    pub fn purchase_coverage_dag(
+        &self,
+        params: &dwow_insurance_market_contract::model::PurchaseCoverageParamsV1,
+    ) -> Result<PurchaseCoverageDagResult> {
+        let w = dwow_core::zk::empty_witnesses(&self.purchase_coverage_dag_zkbin)?;
+        let c = ZkCircuit::new(w, &self.purchase_coverage_dag_zkbin);
+        let proof = Proof::create(&self.purchase_coverage_dag_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let mut call_data = vec![0x0b];
+        params.encode(&mut call_data)?;
+        Ok(PurchaseCoverageDagResult { call_data, proof })
+    }
 }
 
 impl super::ContractHarness for InsuranceMarketHarness {
@@ -203,3 +231,6 @@ pub struct PurchaseCoverageResult {
     pub proof: Proof,
     pub public_inputs: PurchaseCoverageWithCapabilityV1PublicInputs,
 }
+
+pub struct PurchaseCoverageV1Result { pub call_data: Vec<u8>, pub proof: Proof }
+pub struct PurchaseCoverageDagResult { pub call_data: Vec<u8>, pub proof: Proof }
