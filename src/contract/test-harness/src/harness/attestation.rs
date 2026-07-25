@@ -26,7 +26,7 @@
 //! Provides isolated testing for Attestation contract.
 
 use dwow_core::{
-    zk::{ProvingKey, ZkCircuit},
+    zk::{Proof, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
 use dwow_sdk::{crypto::{pasta_prelude::PrimeField, PublicKey}, pasta::pallas};
@@ -57,9 +57,10 @@ use dwow_attestation_contract::client::{
     },
 };
 use dwow_attestation_contract::model::{
-    AttestationId, CheckNotRevokedParamsV1, ClaimId, ConsumeClaimParamsV1,
-    CreateAttestationParamsV1, CreateClaimParamsV1, DelegateAttestationParamsV1,
-    UpdateDelegationParamsV1, VerifyClaimParamsV1, Predicate,
+    AttestSlashParamsV1, AttestationId, CheckNotRevokedParamsV1, ClaimId,
+    CommitFeeScheduleParamsV1, ConsumeClaimParamsV1, CreateAttestationParamsV1,
+    CreateClaimParamsV1, DelegateAttestationParamsV1, Predicate,
+    UpdateDelegationParamsV1, VerifyClaimParamsV1,
 };
 
 /// Attestation Harness for isolated testing
@@ -497,6 +498,62 @@ impl AttestationHarness {
 
         Ok(UpdateDelegationResult { call_data, proof, public_inputs })
     }
+
+    /// Slash an attestation (function code 0x0b)
+    pub fn attest_slash(
+        &self,
+        relayer_pub: PublicKey,
+        slash_amount: u64,
+        withdrawal_id: pallas::Base,
+        block_height: u64,
+    ) -> Result<AttestSlashResult, Box<dyn std::error::Error>> {
+        let witnesses = dwow_core::zk::empty_witnesses(&self.attest_slash_zkbin)?;
+        let circuit = ZkCircuit::new(witnesses, &self.attest_slash_zkbin);
+        let proof = Proof::create(&self.attest_slash_pk, &[circuit], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+
+        let params = AttestSlashParamsV1 {
+            relayer_pub,
+            slash_amount,
+            withdrawal_id,
+            block_height,
+        };
+
+        let mut call_data = vec![0x0b];
+        params.encode(&mut call_data)?;
+
+        Ok(AttestSlashResult { call_data, proof })
+    }
+
+    /// Commit a fee schedule (function code 0x0c)
+    pub fn commit_fee_schedule(
+        &self,
+        attestor_pub: PublicKey,
+        base_fee_bp: u64,
+        guaranteed_premium_bp: u64,
+        max_amount: u64,
+        min_amount: u64,
+        metadata: Vec<u8>,
+    ) -> Result<CommitFeeScheduleResult, Box<dyn std::error::Error>> {
+        let witnesses = dwow_core::zk::empty_witnesses(&self.commit_fee_schedule_zkbin)?;
+        let circuit = ZkCircuit::new(witnesses, &self.commit_fee_schedule_zkbin);
+        let proof = Proof::create(&self.commit_fee_schedule_pk, &[circuit], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+
+        let params = CommitFeeScheduleParamsV1 {
+            attestor_pub,
+            base_fee_bp,
+            guaranteed_premium_bp,
+            max_amount,
+            min_amount,
+            metadata,
+        };
+
+        let mut call_data = vec![0x0c];
+        params.encode(&mut call_data)?;
+
+        Ok(CommitFeeScheduleResult { call_data, proof })
+    }
 }
 
 impl super::ContractHarness for AttestationHarness {
@@ -593,4 +650,16 @@ pub struct UpdateDelegationResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: UpdateDelegationV1PublicInputs,
+}
+
+/// Result of attest_slash
+pub struct AttestSlashResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+}
+
+/// Result of commit_fee_schedule
+pub struct CommitFeeScheduleResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
 }

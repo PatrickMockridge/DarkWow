@@ -1850,6 +1850,36 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
         assert!(pipeline.genesis.block_height() > h_before);
         println!("    accept_block height OK");
 
+        // --- attest_slash ---
+        println!("  Test: attest_slash");
+        let slash = harness.attest_slash(
+            attestor_pub, 500, pallas::Base::from(999u64), 42,
+        )?;
+        assert!(!slash.call_data.is_empty());
+        println!("    call_data={}B", slash.call_data.len());
+
+        // --- attest_slash through accept_block ---
+        println!("  Exec: AttestSlashV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&slash.call_data, vec![slash.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- commit_fee_schedule ---
+        println!("  Test: commit_fee_schedule");
+        let cfs = harness.commit_fee_schedule(
+            attestor_pub, 100, 50, 1000000, 1000, vec![],
+        )?;
+        assert!(!cfs.call_data.is_empty());
+        println!("    call_data={}B", cfs.call_data.len());
+
+        // --- commit_fee_schedule through accept_block ---
+        println!("  Exec: CommitFeeScheduleV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&cfs.call_data, vec![cfs.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         println!("=== All Attestation endpoints OK ===");
         Ok(())
     })
