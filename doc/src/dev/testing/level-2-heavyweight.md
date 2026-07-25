@@ -69,14 +69,13 @@ deploy step fails with a descriptive error.
 
 ### strict_zk Mode
 
-`HeavyweightPipeline` has an opt-in `strict_zk: bool` field (default:
-`false`). When enabled, `exec()` rejects empty proofs for ZK contracts
-with a hard error. In default mode, empty proofs produce a warning to
-stderr but do not fail the test.
+`HeavyweightPipeline` has a `strict_zk: bool` field (default: `true`).
+When enabled, `with_call()` rejects empty proofs for ZK contracts with a
+hard error. ZK contracts SHALL have proofs.
 
 ```rust
-let mut pipeline = HeavyweightPipeline::new(harness, "dex").await?;
-pipeline.strict_zk = true;  // fail on missing proofs
+let pipeline = HeavyweightPipeline::new().await?;
+// strict_zk defaults to true — empty proofs on ZK contracts are a hard error
 ```
 
 ### CI ZK Audit Test
@@ -109,59 +108,79 @@ cargo test -p dwow_contract_test_harness --test zk_audit test_all_zk_binaries_de
 cargo test -p dwow_contract_test_harness --test zk_audit test_harness_circuits_match_zkbins -- --ignored
 ```
 
-## HeavyweightPipeline
+## HeavyweightPipeline (v2)
 
-The `HeavyweightPipeline<H: ContractHarness>` provides full ZK-aware contract
-function/endpoint testing. It owns a `GenesisHarness` directly and provides
-`exec()`, `exec_as_uncle()`, `exec_mixed()`, and `exec_multi_uncle()` for
-on-chain contract calls with real proofs and uncle-merkle block formation.
+`HeavyweightPipeline` is a shared test environment. It owns chain state,
+cached ZK coinbase keys, and a deterministic test mining key. It is NOT
+generic — any contract harness can use it. Created once per test, shared
+by all harnesses.
+
+Every block built through `HeavyweightBlock` includes the full production
+block lifecycle:
+
+1. **PoWRewardV1** (coinbase) — opens the merkle tree, distributes reward
+2. **Contract calls** — user transactions, any number, any contracts, any order
+3. **FeeCollectV1** — closes the merkle tree, collects and distributes fees
+
+This matches production block structure. Every block in every test exercises
+the full block lifecycle — coinbase open, contract execution, fee close.
 
 ### Usage
 
 ```rust
 use dwow_contract_test_harness::harness::{DexHarness, ContractHarness};
 
-let harness = DexHarness::new();
-let mut pipeline = HeavyweightPipeline::new(harness, "dex").await?;
+// One pipeline for the whole test
+let pipeline = HeavyweightPipeline::new().await?;
+pipeline.init_genesis().await?;
 
-// Deploy contract via direct path (setup convenience — not testing deployment)
+let harness = DexHarness::spawn();
 let wasm = include_bytes!("../../../../src/contract/dex/dwow_dex_contract.wasm");
-let contract_id = pipeline.deploy(wasm).await?;
+let contract_id = pipeline.deploy(&harness, "dex", wasm).await?;
 
-// Execute contract calls with ZK proofs through apply_block_with_uncles()
+// Generate proofs once, then batch into blocks
 let result = harness.create_swap(/* params */)?;
-pipeline.exec(&result.call_data).await?;
+
+// Every block: coinbase + contract calls + FeeCollect
+let block = pipeline.block()?;
+block.with_call(contract_id, &harness, &result.call_data, vec![result.proof])?;
+block.with_fee_collect()?;
+block.submit().await?;
 ```
 
-### Block Execution Modes
+### Multi-Contract Blocks
+
+Any number of contracts, any order, in a single block:
 
 ```rust
-// Canonical block execution
-pipeline.exec(&call_data).await?;
+let block = pipeline.block()?;
+block.with_call(dex_id, &dex_harness, &swap.call_data, vec![swap.proof])?;
+block.with_call(pn_id, &pn_harness, &token.call_data, token.token_proofs)?;
+block.with_fee_collect()?;
+block.submit().await?;
+```
 
-// Execute as an uncle block
-pipeline.exec_as_uncle(&call_data).await?;
+Calls within a block execute sequentially against a shared overlay — call N
+observes writes of calls 1..N-1. State-dependent calls can share a block.
 
-// Mixed canonical + uncle in one block
-pipeline.exec_mixed(&canonical_data, &uncle_data).await?;
+### Uncle Block Support
 
-// Multiple uncles in one block
-pipeline.exec_multi_uncle(&canonical_data, &[uncle1, uncle2, uncle3]).await?;
+```rust
+let block = pipeline.block()?;
+block.with_uncle(uncle_block)?;
+block.with_fee_collect()?;
+block.submit().await?;
 ```
 
 ### Running Heavyweight Tests
 
 ```bash
-# All 36 heavyweight tests (requires --release for halo2 proving keys)
+# All 40 heavyweight tests (requires --release for halo2 proving keys)
 RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd -- test_heavyweight_
 
 # Individual tests
 cargo test --release -p dwowd -- test_heavyweight_dao_escrow
 cargo test --release -p dwowd -- test_heavyweight_identity
-
-# Contract metadata: deploy with metadata + ZK proofs + state transitions
-RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd \
-    test_heavyweight_metadata
 ```
 
 ### Why Stack Overflow Occurs
@@ -174,10 +193,13 @@ through hundreds of consecutive runs with zero SIGSEGV.
 
 ### Test Coverage
 
-37 tests total: 29 contract-specific tests (22 with WASM deploy + 7
-harness-only for non-WASM contracts) + 1 cross-contract integration test
-(recruitment_pipeline) + 7 block-execution infrastructure tests (canonical,
-uncle, mixed, multi-uncle, depth, empty-uncle, invalid-uncle-proof).
+40 tests total: 29 contract-specific tests + 1 cross-contract integration
+test (recruitment_pipeline) + 7 block-execution infrastructure tests
+(canonical, uncle, mixed, multi-uncle, depth, empty-uncle, invalid-uncle-proof)
++ 1 coinbase rejection test + 1 metadata test + 1 relayer lifecycle test.
+
+Every block in every test includes PoWRewardV1 + FeeCollectV1, exercising
+the full merkle tree open/close lifecycle.
 
 ## Lightweight vs Heavyweight
 
