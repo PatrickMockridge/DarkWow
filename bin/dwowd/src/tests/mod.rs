@@ -21,6 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+pub mod blockchain;
 pub mod genesis;
 pub mod harness;
 pub mod pipeline;

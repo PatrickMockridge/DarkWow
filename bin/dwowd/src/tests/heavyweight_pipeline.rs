@@ -77,7 +77,7 @@ static KEY_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// the provided proofs. Required by `accept_block` step 2.6 and
 /// `execute_block` step 3d — both call `decode_and_reconcile` which returns
 /// `NoWitness` on an empty witness.
-pub(super) fn build_witness(
+pub(crate) fn build_witness(
     contract_id: ContractId,
     call_data: &[u8],
     proofs: Vec<Proof>,
@@ -114,7 +114,7 @@ pub(crate) fn build_accept_vm(
 /// Find a nonce that makes the block hash ≤ target. Used for test blocks
 /// at heights > 2 where the expected target is lower than u32::MAX.
 /// Returns the valid nonce.
-fn mine_test_nonce(block: &dwow_chain::Block, vm: &randomx::RandomXVM, target: BlockTarget) -> u32 {
+pub(crate) fn mine_test_nonce(block: &dwow_chain::Block, vm: &randomx::RandomXVM, target: BlockTarget) -> u32 {
     for nonce in 0u32..1_000_000 {
         let mut b = block.clone();
         b.header.nonce = nonce;
@@ -2594,42 +2594,42 @@ fn test_heavyweight_deployooor() -> std::result::Result<(), Box<dyn std::error::
 #[test]
 fn test_heavyweight_drain_protection() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::DrainProtectionHarness;
-    use dwow_sdk::crypto::{PublicKey, SecretKey};
-    use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::BlockChain;
 
     println!("=== DrainProtection Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = BlockChain::new().await?;
+        chain.init_genesis().await?;
         let harness = DrainProtectionHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "drain_protection").await?;
         let wasm = include_bytes!("../../../../src/contract/drain_protection/dwow_drain_protection_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let contract_id = chain.deploy(&harness, "drain_protection", wasm).await?;
         println!("Contract deployed");
 
-        let harness = &pipeline.harness;
+        // Generate all proofs once
+        let r0 = harness.initialize()?;
+        let r1 = harness.propose()?;
+        let r2 = harness.vote()?;
+        let r3 = harness.execute()?;
+        let r4 = harness.exit()?;
+        let r5 = harness.transfer()?;
+        let r6 = harness.lock()?;
+        let r7 = harness.unlock()?;
+        let r8 = harness.update_config()?;
 
-        macro_rules! exec_dp {
-            ($method:ident, $label:expr) => {
-                let r = harness.$method()?;
-                println!("  Exec: {} through accept_block", $label);
-                let hb = pipeline.genesis.block_height();
-                pipeline.exec(&r.call_data, vec![r.proof]).await?;
-                assert!(pipeline.genesis.block_height() > hb);
-                println!("    accept_block height OK");
-            };
-        }
-
-        exec_dp!(initialize, "InitializeV1");
-        exec_dp!(propose, "ProposeV1");
-        exec_dp!(vote, "VoteV1");
-        exec_dp!(execute, "ExecuteV1");
-        exec_dp!(exit, "ExitV1");
-        exec_dp!(transfer, "TransferV1");
-        exec_dp!(lock, "LockV1");
-        exec_dp!(unlock, "UnlockV1");
-        exec_dp!(update_config, "UpdateConfigV1");
+        // All 9 ZK endpoints in ONE block
+        chain.block()?
+            .with_call(contract_id, &harness, &r0.call_data, vec![r0.proof])?
+            .with_call(contract_id, &harness, &r1.call_data, vec![r1.proof])?
+            .with_call(contract_id, &harness, &r2.call_data, vec![r2.proof])?
+            .with_call(contract_id, &harness, &r3.call_data, vec![r3.proof])?
+            .with_call(contract_id, &harness, &r4.call_data, vec![r4.proof])?
+            .with_call(contract_id, &harness, &r5.call_data, vec![r5.proof])?
+            .with_call(contract_id, &harness, &r6.call_data, vec![r6.proof])?
+            .with_call(contract_id, &harness, &r7.call_data, vec![r7.proof])?
+            .with_call(contract_id, &harness, &r8.call_data, vec![r8.proof])?
+            .submit().await?;
 
         println!("=== All DrainProtection endpoints OK ===");
         Ok(())
