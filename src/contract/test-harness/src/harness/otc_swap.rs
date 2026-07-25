@@ -24,8 +24,24 @@
 //! OTC Swap Test Harness
 
 use dwow_core::{
-    zk::{empty_witnesses, ProvingKey, ZkCircuit},
+    zk::{empty_witnesses, Proof, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
+};
+use dwow_sdk::{
+    crypto::{MerkleNode, PublicKey},
+    crypto::pasta_prelude::Group,
+    pasta::pallas,
+};
+use dwow_serial::Encodable;
+
+use dwow_otc_swap_contract::client::{
+    cancel_swap_v1::{cancel_swap_proof, CancelSwapCallData, CancelSwapPublicInputs},
+    create_swap_v1::{create_swap_proof, CreateSwapCallData, CreateSwapPublicInputs},
+    execute_swap_v1::{execute_swap_proof, ExecuteSwapCallData, ExecuteSwapPublicInputs},
+    fund_swap_v1::{fund_swap_proof, FundSwapCallData, FundSwapPublicInputs},
+};
+use dwow_otc_swap_contract::model::{
+    CancelSwapParamsV1, CreateSwapParamsV1, ExecuteSwapParamsV1, FundSwapParamsV1,
 };
 
 /// OTC Swap Harness for isolated testing
@@ -62,6 +78,135 @@ impl OtcSwapHarness {
 
         Self { create_zkbin, create_pk, fund_zkbin, fund_pk, execute_zkbin, execute_pk, cancel_zkbin, cancel_pk }
     }
+
+    /// Create an OTC swap (function code 0x00)
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_swap(
+        &self,
+        alice_secret: pallas::Base,
+        alice_pubkey: PublicKey,
+        bob_pubkey: PublicKey,
+        send_value: u64,
+        send_token_id: pallas::Base,
+        recv_value: u64,
+        recv_token_id: pallas::Base,
+        timeout: u64,
+    ) -> Result<CreateSwapResult, Box<dyn std::error::Error>> {
+        let input = CreateSwapCallData::new(
+            alice_secret, alice_pubkey, bob_pubkey,
+            send_value, send_token_id, recv_value, recv_token_id, timeout,
+        );
+        let (proof, public_inputs) =
+            create_swap_proof(&self.create_zkbin, &self.create_pk, &input)?;
+
+        let params = CreateSwapParamsV1 {
+            alice_pubkey,
+            bob_pubkey,
+            send_value,
+            send_token_id,
+            recv_value,
+            recv_token_id,
+            timeout,
+            commitment: public_inputs.commitment,
+            instance_seed: [0u8; 32],
+        };
+
+        let mut call_data = vec![0x00];
+        params.encode(&mut call_data)?;
+
+        Ok(CreateSwapResult { call_data, proof, swap_id: public_inputs.commitment })
+    }
+
+    /// Fund an OTC swap (function code 0x01)
+    pub fn fund_swap(
+        &self,
+        value: u64,
+        value_blind: pallas::Scalar,
+        swap_id: pallas::Base,
+        merkle_leaf_pos: u32,
+        merkle_path: Vec<MerkleNode>,
+    ) -> Result<FundSwapResult, Box<dyn std::error::Error>> {
+        let input = FundSwapCallData::new(
+            value, value_blind, swap_id, merkle_leaf_pos, merkle_path.clone(),
+        );
+        let (proof, public_inputs) =
+            fund_swap_proof(&self.fund_zkbin, &self.fund_pk, &input)?;
+
+        let merkle_root = MerkleNode::new(public_inputs.merkle_root);
+        let merkle_proof: Vec<pallas::Base> = merkle_path.iter().map(|n| n.inner()).collect();
+
+        let params = FundSwapParamsV1 {
+            swap_id: public_inputs.swap_id,
+            value_commit: dwow_sdk::pasta::pallas::Point::identity(),
+            merkle_proof,
+            merkle_root,
+        };
+
+        let mut call_data = vec![0x01];
+        params.encode(&mut call_data)?;
+
+        Ok(FundSwapResult { call_data, proof })
+    }
+
+    /// Execute an OTC swap (function code 0x02)
+    pub fn execute_swap(
+        &self,
+        swap_id: pallas::Base,
+        bob_secret: pallas::Base,
+        bob_pubkey: PublicKey,
+        alice_recipient: PublicKey,
+        bob_recipient: PublicKey,
+    ) -> Result<ExecuteSwapResult, Box<dyn std::error::Error>> {
+        let input = ExecuteSwapCallData::new(
+            swap_id, bob_secret, bob_pubkey, alice_recipient, bob_recipient,
+        );
+        let (proof, public_inputs) =
+            execute_swap_proof(&self.execute_zkbin, &self.execute_pk, &input)?;
+
+        let params = ExecuteSwapParamsV1 {
+            swap_id: public_inputs.swap_id,
+            bob_secret,
+            spent_nullifier: public_inputs.spent_nullifier,
+            alice_recipient,
+            bob_recipient,
+        };
+
+        let mut call_data = vec![0x02];
+        params.encode(&mut call_data)?;
+
+        Ok(ExecuteSwapResult { call_data, proof })
+    }
+
+    /// Cancel an OTC swap (function code 0x03)
+    pub fn cancel_swap(
+        &self,
+        swap_id: pallas::Base,
+        alice_secret: pallas::Base,
+        alice_pubkey: PublicKey,
+        timeout: u64,
+        current_block: u64,
+        recipient_pubkey: PublicKey,
+    ) -> Result<CancelSwapResult, Box<dyn std::error::Error>> {
+        let input = CancelSwapCallData::new(
+            swap_id, alice_secret, alice_pubkey, timeout, current_block, recipient_pubkey,
+        );
+        let (proof, public_inputs) =
+            cancel_swap_proof(&self.cancel_zkbin, &self.cancel_pk, &input)?;
+
+        let params = CancelSwapParamsV1 {
+            swap_id: public_inputs.swap_id,
+            alice_secret,
+            spent_nullifier: public_inputs.spent_nullifier,
+            current_block,
+            timeout,
+            recipient_pubkey,
+        };
+
+        let mut call_data = vec![0x03];
+        params.encode(&mut call_data)?;
+
+        Ok(CancelSwapResult { call_data, proof })
+    }
 }
 
 impl super::ContractHarness for OtcSwapHarness {
@@ -92,4 +237,29 @@ impl super::ContractHarness for OtcSwapHarness {
             _ => None,
         }
     }
+}
+
+/// Result of create_swap
+pub struct CreateSwapResult {
+    pub call_data: Vec<u8>,
+    pub proof: Proof,
+    pub swap_id: pallas::Base,
+}
+
+/// Result of fund_swap
+pub struct FundSwapResult {
+    pub call_data: Vec<u8>,
+    pub proof: Proof,
+}
+
+/// Result of execute_swap
+pub struct ExecuteSwapResult {
+    pub call_data: Vec<u8>,
+    pub proof: Proof,
+}
+
+/// Result of cancel_swap
+pub struct CancelSwapResult {
+    pub call_data: Vec<u8>,
+    pub proof: Proof,
 }

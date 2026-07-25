@@ -39,6 +39,8 @@ dwow_lottery_contract = {path = "../lottery", features = ["client", "no-entrypoi
 dwow_drain_protection_contract = {path = "../drain_protection", features = ["client", "no-entrypoint"]}
 dwow_insurance_market_contract = {path = "../insurance_market", features = ["client", "no-entrypoint"]}
 dwow_game_room_contract = {path = "../game_room", features = ["client", "no-entrypoint"]}
+dwow_otc_swap_contract = {path = "../otc_swap", features = ["client", "no-entrypoint"]}
+dwow_bearer_bond_contract = {path = "../bearer_bond", features = ["client", "no-entrypoint"]}
 
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", default-features = false, features = ["fmt"] }

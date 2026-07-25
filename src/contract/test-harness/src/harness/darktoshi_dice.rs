@@ -39,10 +39,11 @@ use rand::rngs::OsRng;
 
 use dwow_darktoshi_dice_contract::client::{
     commit_bet_v1::{create_commit_bet_v1_proof, CommitBetV1CallData, CommitBetV1PublicInputs},
+    house_close_v1::{create_house_close_proof, HouseCloseCallData, HouseClosePublicInputs},
     settle_bet_v1::{create_settle_bet_v1_proof, SettleBetV1CallData, SettleBetV1PublicInputs},
 };
 use dwow_darktoshi_dice_contract::model::{
-    CommitBetParamsV1, RevealRollParamsV1, SettleBetParamsV1,
+    CommitBetParamsV1, HouseCloseParamsV1, RevealRollParamsV1, SettleBetParamsV1,
 };
 
 /// DarkToshiDice Harness for isolated testing
@@ -250,6 +251,48 @@ impl DarkToshiDiceHarness {
 
         Ok(SettleBetResult { call_data, public_inputs, proof })
     }
+
+    /// Close a bet (house close, function code 0x02)
+    pub fn house_close(
+        &self,
+        bet_id: pallas::Base,
+        house_secret: pallas::Base,
+        house_pub_x: pallas::Base,
+        house_pub_y: pallas::Base,
+        close_nullifier: pallas::Base,
+    ) -> Result<HouseCloseResult> {
+        let input = HouseCloseCallData {
+            bet_id,
+            house_secret,
+            house_pub_x,
+            house_pub_y,
+            close_nullifier,
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        };
+
+        let (proof, public_inputs) =
+            create_house_close_proof(&self.house_close_zkbin, &self.house_close_pk, &input)?;
+
+        let params = HouseCloseParamsV1 {
+            bet_id,
+            house_pub_x: public_inputs.house_pub_x,
+            house_pub_y: public_inputs.house_pub_y,
+            close_nullifier: public_inputs.close_nullifier,
+        };
+
+        let mut call_data = vec![0x02];
+        params.encode(&mut call_data)?;
+
+        Ok(HouseCloseResult { call_data, public_inputs, proof })
+    }
+}
+
+/// Result of house_close
+pub struct HouseCloseResult {
+    pub call_data: Vec<u8>,
+    pub public_inputs: HouseClosePublicInputs,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of commit_bet
