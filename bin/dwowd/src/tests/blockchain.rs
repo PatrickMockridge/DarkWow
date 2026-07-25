@@ -389,6 +389,47 @@ impl<'c> HeavyweightBlock<'c> {
         self
     }
 
+    /// Append a FeeCollectV1 transaction to close the merkle tree.
+    ///
+    /// Scans accumulated contract_txs for FeeV1 calls (NATIVE_TOKEN_CONTRACT_ID,
+    /// selector 0x00). If any are found, builds a FeeCollectV1 transaction using
+    /// the pipeline's cached ZK proving key and appends it to contract_txs.
+    /// Returns `&mut Self` for chaining. If no FeeV1 calls exist, does nothing.
+    ///
+    /// Every production block includes FeeCollectV1 as the final transaction.
+    /// Heavyweight v2 tests mirror this: every block in every test calls
+    /// `with_fee_collect()` to exercise the full merkle tree open/close lifecycle.
+    pub fn with_fee_collect(&mut self) -> Result<&mut Self> {
+        let fee_txs: Vec<&dwow_chain::Transaction> = self.contract_txs.iter()
+            .filter(|tx| tx.contract_calls.iter().any(|c|
+                c.contract_id == *NATIVE_TOKEN_CONTRACT_ID
+                && c.data.first() == Some(&0x00)
+            ))
+            .collect();
+
+        if fee_txs.is_empty() {
+            return Ok(self);
+        }
+
+        let mgr = crate::accounts::AccountManager::open(
+            &self.chain.keys_path,
+            dwow_sdk::crypto::keypair::Network::Testnet,
+            "node0",
+        ).map_err(|e| dwow_core::Error::Custom(format!("open test keys: {}", e)))?;
+        let recipient = crate::accounts::MiningRecipient::from_account(&mgr, self.height)
+            .map_err(|e| dwow_core::Error::Custom(format!("MiningRecipient: {}", e)))?;
+        drop(mgr);
+
+        let fee_collect_tx = crate::registry::model::build_fee_collect_tx(
+            &recipient, &fee_txs, self.height, &self.chain.linear_zk,
+        ).map_err(|e| dwow_core::Error::Custom(format!("build_fee_collect_tx: {}", e)))?;
+
+        if let Some(tx) = fee_collect_tx {
+            self.contract_txs.push(tx);
+        }
+        Ok(self)
+    }
+
     /// Build just the coinbase for this block (without submitting).
     ///
     /// Needed when contract calls reference coinbase coin parameters
