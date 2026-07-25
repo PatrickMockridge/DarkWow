@@ -899,6 +899,13 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
         assert!(!reward.call_data.is_empty());
         println!("    call_data={}B coin_blind={:?}", reward.call_data.len(), reward.coin_blind);
 
+        // --- mint_pow_reward through accept_block ---
+        println!("  Exec: MintPoWRewardV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&reward.call_data, reward.proofs.clone()).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- burn ---
         println!("  Test: burn");
         let burn_input = BurnCallInput {
@@ -1330,11 +1337,25 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
         assert!(!mint.call_data.is_empty());
         println!("    call_data={}B", mint.call_data.len());
 
+        // --- mint_stable through accept_block ---
+        println!("  Exec: MintStableV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&mint.call_data, vec![mint.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- liquidate ---
         println!("  Test: liquidate");
         let liq = harness.liquidate(owner_secret, 10000, 6000, 500, 90, 100, collateral_blind, debt_blind, pos.position_commitment)?;
         assert!(!liq.call_data.is_empty());
         println!("    call_data={}B", liq.call_data.len());
+
+        // --- liquidate through accept_block ---
+        println!("  Exec: LiquidateV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&liq.call_data, vec![liq.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         // --- governance_report ---
         println!("  Test: governance_report");
@@ -1342,11 +1363,25 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
         assert!(!gov.call_data.is_empty());
         println!("    call_data={}B", gov.call_data.len());
 
+        // --- governance_report through accept_block ---
+        println!("  Exec: GovernanceReportV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&gov.call_data, vec![gov.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- accrue_interest ---
         println!("  Test: accrue_interest");
         let accrue = harness.accrue_interest(owner_secret, 5000, 100, 3600)?;
         assert!(!accrue.call_data.is_empty());
         println!("    call_data={}B", accrue.call_data.len());
+
+        // --- accrue_interest through accept_block ---
+        println!("  Exec: AccrueInterestV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&accrue.call_data, vec![accrue.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         // --- add_collateral ---
         println!("  Test: add_collateral");
@@ -2722,17 +2757,38 @@ fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Er
         assert!(!commit.call_data.is_empty());
         println!("    call_data={}B", commit.call_data.len());
 
+        // --- commit_bet through accept_block ---
+        println!("  Exec: CommitBetV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&commit.call_data, vec![commit.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- draw_cards ---
         println!("  Test: draw_cards");
         let draw = harness.draw_cards(commit.bet_id, pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64), pallas::Base::from(4u64))?;
         assert!(!draw.call_data.is_empty());
         println!("    call_data={}B", draw.call_data.len());
 
+        // --- draw_cards through accept_block ---
+        println!("  Exec: DrawCardsV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&draw.call_data, vec![draw.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- settle_bet ---
         println!("  Test: settle_bet");
         let settle = harness.settle_bet(commit.bet_id, pallas::Base::from(1u64), player_pub, 100, dwow_baccarat_contract::model::BetType::Player, pallas::Base::from(3u64), pallas::Base::from(2u64))?;
         assert!(!settle.call_data.is_empty());
         println!("    call_data={}B", settle.call_data.len());
+
+        // --- settle_bet through accept_block ---
+        println!("  Exec: SettleBetV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&settle.call_data, vec![settle.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         // --- house_close ---
         println!("  Test: house_close");
@@ -2784,11 +2840,25 @@ fn test_heavyweight_betting_stake() -> std::result::Result<(), Box<dyn std::erro
         assert!(!init.call_data.is_empty());
         println!("    call_data={}B", init.call_data.len());
 
+        // --- initialize through accept_block ---
+        println!("  Exec: InitializeV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&init.call_data, vec![init.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- stake ---
         println!("  Test: stake");
         let stake = harness.stake(table_id, staker_pub, staker_secret.clone(), 10000, pallas::Base::from(0u64), pallas::Base::from(0u64))?;
         assert!(!stake.call_data.is_empty());
         println!("    call_data={}B", stake.call_data.len());
+
+        // --- stake through accept_block ---
+        println!("  Exec: StakeV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&stake.call_data, vec![stake.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         // --- unstake ---
         println!("  Test: unstake");
@@ -2797,12 +2867,26 @@ fn test_heavyweight_betting_stake() -> std::result::Result<(), Box<dyn std::erro
         assert!(!unstake.call_data.is_empty());
         println!("    call_data={}B", unstake.call_data.len());
 
+        // --- unstake through accept_block ---
+        println!("  Exec: UnstakeV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&unstake.call_data, vec![unstake.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- claim_earnings ---
         println!("  Test: claim_earnings");
         let claim_info = ClaimStakeInfo::new(table_id, staker_pub, 10000, 500, pallas::Base::from(1u64), 0);
         let claim = harness.claim_earnings(pallas::Base::from(200u64), &claim_info, staker_secret)?;
         assert!(!claim.call_data.is_empty());
         println!("    call_data={}B", claim.call_data.len());
+
+        // --- claim_earnings through accept_block ---
+        println!("  Exec: ClaimEarningsV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&claim.call_data, vec![claim.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         // --- update_risk ---
         println!("  Test: update_risk");
