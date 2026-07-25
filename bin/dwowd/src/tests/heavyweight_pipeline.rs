@@ -2478,18 +2478,22 @@ fn test_heavyweight_darktoshi_dice() -> std::result::Result<(), Box<dyn std::err
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
 
-    println!("=== DarkToshiDice Heavyweight: All Endpoints (no WASM) ===");
+    println!("=== DarkToshiDice Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
         let harness = DarkToshiDiceHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
 
-        let pipeline = HeavyweightPipeline::new(harness, "darktoshi_dice").await?;
-        println!("(skipping deploy — WASM not yet built)");
+        let mut pipeline = HeavyweightPipeline::new(harness, "darktoshi_dice").await?;
+        let wasm = include_bytes!("../../../../src/contract/darktoshi_dice/dwow_darktoshi_dice_contract.wasm");
+        let _contract_id = pipeline.deploy(wasm).await?;
+        println!("Contract deployed");
 
         let harness = &pipeline.harness;
         let player_secret = pallas::Base::from(10u64);
         let player_pub = PublicKey::from_secret(SecretKey::from_base(player_secret));
+        let house_secret = pallas::Base::from(30u64);
+        let house_pub = PublicKey::from_secret(SecretKey::from_base(house_secret));
 
         // --- commit_bet ---
         println!("  Test: commit_bet");
@@ -2497,7 +2501,14 @@ fn test_heavyweight_darktoshi_dice() -> std::result::Result<(), Box<dyn std::err
         assert!(!commit.call_data.is_empty());
         println!("    call_data={}B", commit.call_data.len());
 
-        // --- reveal_roll ---
+        // --- commit_bet through accept_block ---
+        println!("  Exec: CommitBetV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&commit.call_data, vec![commit.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- reveal_roll (non-ZK, harness-only) ---
         println!("  Test: reveal_roll");
         let reveal = harness.reveal_roll(pallas::Base::from(100u64), pallas::Base::from(1u64))?;
         assert!(!reveal.call_data.is_empty());
@@ -2508,6 +2519,31 @@ fn test_heavyweight_darktoshi_dice() -> std::result::Result<(), Box<dyn std::err
         let settle = harness.settle_bet(pallas::Base::from(100u64), pallas::Base::from(1u64), player_pub.x().expect("pk not identity"), player_pub.y().expect("pk not identity"), pallas::Base::from(100u64), pallas::Base::from(50u64), pallas::Base::from(3u64), pallas::Base::from(2u64))?;
         assert!(!settle.call_data.is_empty());
         println!("    call_data={}B", settle.call_data.len());
+
+        // --- settle_bet through accept_block ---
+        println!("  Exec: SettleBetV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&settle.call_data, vec![settle.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- house_close ---
+        println!("  Test: house_close");
+        let hx = house_pub.x().expect("pk not identity");
+        let hy = house_pub.y().expect("pk not identity");
+        let close = harness.house_close(
+            pallas::Base::from(100u64), house_secret, hx, hy,
+            pallas::Base::from(999u64),
+        )?;
+        assert!(!close.call_data.is_empty());
+        println!("    call_data={}B", close.call_data.len());
+
+        // --- house_close through accept_block ---
+        println!("  Exec: HouseCloseV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&close.call_data, vec![close.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         println!("=== All DarkToshiDice endpoints OK ===");
         Ok(())
@@ -3911,8 +3947,10 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
 #[test]
 fn test_heavyweight_otc_swap() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::OtcSwapHarness;
+    use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
+    use dwow_sdk::pasta::pallas;
 
-    println!("=== OtcSwap Heavyweight: Deploy + ZK Circuits ===");
+    println!("=== OtcSwap Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
         let harness = OtcSwapHarness::spawn();
@@ -3920,11 +3958,76 @@ fn test_heavyweight_otc_swap() -> std::result::Result<(), Box<dyn std::error::Er
 
         let mut pipeline = HeavyweightPipeline::new(harness, "otc_swap").await?;
         let wasm = include_bytes!("../../../../src/contract/otc_swap/dwow_otc_swap_contract.wasm");
-        let contract_id = pipeline.deploy(wasm).await?;
-        println!("Contract deployed: {:?}", contract_id.to_bytes());
+        let _contract_id = pipeline.deploy(wasm).await?;
+        println!("Contract deployed");
 
-        pipeline.harness.verify_zk_coverage()?;
-        println!("All 4 circuits verified OK");
+        let harness = &pipeline.harness;
+        let alice_secret = pallas::Base::from(10u64);
+        let alice_pub = PublicKey::from_secret(SecretKey::from_base(alice_secret));
+        let bob_secret = pallas::Base::from(20u64);
+        let bob_pub = PublicKey::from_secret(SecretKey::from_base(bob_secret));
+        let empty_path: Vec<MerkleNode> = vec![MerkleNode::new(pallas::Base::from(0u64)); 32];
+
+        // --- create_swap ---
+        println!("  Test: create_swap");
+        let create = harness.create_swap(
+            alice_secret, alice_pub, bob_pub,
+            1000, pallas::Base::from(1u64), 500, pallas::Base::from(2u64), 10000,
+        )?;
+        assert!(!create.call_data.is_empty());
+        println!("    call_data={}B", create.call_data.len());
+
+        // --- create_swap through accept_block ---
+        println!("  Exec: CreateSwapV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&create.call_data, vec![create.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- fund_swap ---
+        println!("  Test: fund_swap");
+        let fund = harness.fund_swap(
+            1000, pallas::Scalar::from(123u64), create.swap_id, 0, empty_path,
+        )?;
+        assert!(!fund.call_data.is_empty());
+        println!("    call_data={}B", fund.call_data.len());
+
+        // --- fund_swap through accept_block ---
+        println!("  Exec: FundSwapV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&fund.call_data, vec![fund.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- execute_swap ---
+        println!("  Test: execute_swap");
+        let exec = harness.execute_swap(
+            create.swap_id, bob_secret, bob_pub, alice_pub, bob_pub,
+        )?;
+        assert!(!exec.call_data.is_empty());
+        println!("    call_data={}B", exec.call_data.len());
+
+        // --- execute_swap through accept_block ---
+        println!("  Exec: ExecuteSwapV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&exec.call_data, vec![exec.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- cancel_swap ---
+        println!("  Test: cancel_swap");
+        let cancel = harness.cancel_swap(
+            create.swap_id, alice_secret, alice_pub, 10000, 10, alice_pub,
+        )?;
+        assert!(!cancel.call_data.is_empty());
+        println!("    call_data={}B", cancel.call_data.len());
+
+        // --- cancel_swap through accept_block ---
+        println!("  Exec: CancelSwapV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&cancel.call_data, vec![cancel.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         println!("=== OtcSwap Heavyweight: PASSED ===");
         Ok(())
