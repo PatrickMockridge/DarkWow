@@ -869,6 +869,14 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
         assert!(!burn.proofs.is_empty() || !burn.inputs.is_empty());
         println!("    inputs={} proofs={}", burn.inputs.len(), burn.proofs.len());
 
+        // --- burn through accept_block ---
+        println!("  Exec: BurnV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&burn.inputs, burn.proofs.clone()).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after BurnV1");
+        println!("    accept_block height OK");
+
         // --- fee ---
         println!("  Test: fee");
         let recipient = PublicKey::from_secret(SecretKey::from_bytes([5u8; 32]).unwrap());
@@ -890,13 +898,18 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
         assert!(!fee.call_data.is_empty());
         println!("    call_data={}B", fee.call_data.len());
 
-        // Prove accept_block path with a coinbase-only block.
-        println!("  Exec: coinbase-only accept_block");
-        let before = pipeline.genesis.block_height();
-        pipeline.exec_coinbase_only().await?;
-        let after = pipeline.genesis.block_height();
-        assert!(after > before, "Height should increase");
-        println!("    coinbase-only block at height {} accepted OK", after);
+        // --- fee through accept_block ---
+        println!("  Exec: FeeV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&fee.call_data, fee.proofs.clone()).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after FeeV1");
+        println!("    accept_block height OK");
+
+        // mint_pow_reward (PoWRewardV1) is exercised via the coinbase in
+        // every exec() call — exec() builds a real PoWRewardV1 coinbase
+        // with ZK proof + AEAD encryption through the production path.
+        // No separate exec_coinbase_only() needed.
 
         println!("=== All NativeToken endpoints OK ===");
         Ok(())
@@ -938,11 +951,27 @@ fn test_heavyweight_auction() -> std::result::Result<(), Box<dyn std::error::Err
         assert!(!create.call_data.is_empty());
         println!("    call_data={}B", create.call_data.len());
 
+        // --- create_auction through accept_block ---
+        println!("  Exec: CreateAuctionV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&create.call_data, vec![create.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after CreateAuctionV1");
+        println!("    accept_block height OK");
+
         // --- place_bid ---
         println!("  Test: place_bid");
         let bid = harness.place_bid(create.auction_id, bidder_secret, 1500, pallas::Base::from(1u64), 500, 10, 0, bidder_pub)?;
         assert!(!bid.call_data.is_empty());
         println!("    call_data={}B", bid.call_data.len());
+
+        // --- place_bid through accept_block ---
+        println!("  Exec: PlaceBidV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&bid.call_data, vec![bid.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after PlaceBidV1");
+        println!("    accept_block height OK");
 
         // --- close_auction ---
         println!("  Test: close_auction");
@@ -950,11 +979,27 @@ fn test_heavyweight_auction() -> std::result::Result<(), Box<dyn std::error::Err
         assert!(!close.call_data.is_empty());
         println!("    call_data={}B", close.call_data.len());
 
+        // --- close_auction through accept_block ---
+        println!("  Exec: CloseAuctionV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&close.call_data, vec![close.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after CloseAuctionV1");
+        println!("    accept_block height OK");
+
         // --- claim_winnings ---
         println!("  Test: claim_winnings");
         let claim = harness.claim_winnings(create.auction_id, bid.bid_id, winner_secret, winner_pub).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         assert!(!claim.call_data.is_empty());
         println!("    call_data={}B", claim.call_data.len());
+
+        // --- claim_winnings through accept_block ---
+        println!("  Exec: ClaimWinningsV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&claim.call_data, vec![claim.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after ClaimWinningsV1");
+        println!("    accept_block height OK");
 
         // --- settle_auction ---
         println!("  Test: settle_auction");
@@ -962,19 +1007,27 @@ fn test_heavyweight_auction() -> std::result::Result<(), Box<dyn std::error::Err
         assert!(!settle.call_data.is_empty());
         println!("    call_data={}B", settle.call_data.len());
 
+        // --- settle_auction through accept_block ---
+        println!("  Exec: SettleAuctionV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&settle.call_data, vec![settle.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after SettleAuctionV1");
+        println!("    accept_block height OK");
+
         // --- refund_bid ---
         println!("  Test: refund_bid");
         let refund = harness.refund_bid(bid.bid_id, bidder_secret, bidder_pub).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         assert!(!refund.call_data.is_empty());
         println!("    call_data={}B", refund.call_data.len());
 
-        // Prove accept_block path with a coinbase-only block.
-        println!("  Exec: coinbase-only accept_block");
-        let before = pipeline.genesis.block_height();
-        pipeline.exec_coinbase_only().await?;
-        let after = pipeline.genesis.block_height();
-        assert!(after > before, "Height should increase");
-        println!("    block at height {} accepted OK", after);
+        // --- refund_bid through accept_block ---
+        println!("  Exec: RefundBidV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&refund.call_data, vec![refund.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after RefundBidV1");
+        println!("    accept_block height OK");
 
         println!("=== All Auction endpoints OK ===");
         Ok(())
@@ -1028,11 +1081,27 @@ fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Erro
         assert!(!create.call_data.is_empty());
         println!("    call_data={}B", create.call_data.len());
 
+        // --- create_escrow through accept_block ---
+        println!("  Exec: CreateEscrowV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&create.call_data, vec![create.proof.clone()]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after CreateEscrowV1");
+        println!("    accept_block height OK");
+
         // --- fund_escrow ---
         println!("  Test: fund_escrow");
         let fund = pipeline.harness.fund_escrow(create.public_inputs.commitment, 5000, value_blind).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         assert!(!fund.call_data.is_empty());
         println!("    call_data={}B", fund.call_data.len());
+
+        // --- fund_escrow through accept_block ---
+        println!("  Exec: FundV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&fund.call_data, vec![fund.proof.clone()]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after FundV1");
+        println!("    accept_block height OK");
 
         // --- claim_escrow ---
         println!("  Test: claim_escrow");
@@ -1040,19 +1109,27 @@ fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Erro
         assert!(!claim.call_data.is_empty());
         println!("    call_data={}B", claim.call_data.len());
 
+        // --- claim_escrow through accept_block ---
+        println!("  Exec: ClaimV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&claim.call_data, vec![claim.proof.clone()]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after ClaimV1");
+        println!("    accept_block height OK");
+
         // --- refund_escrow ---
         println!("  Test: refund_escrow");
         let refund = pipeline.harness.refund_escrow(create.public_inputs.commitment, 1000, 1001, buyer_secret, buyer_pub, buyer_pub.x().expect("pk not identity"), buyer_pub.y().expect("pk not identity"), buyer_pub)?;
         assert!(!refund.call_data.is_empty());
         println!("    call_data={}B", refund.call_data.len());
 
-        // Prove accept_block path with a coinbase-only block.
-        println!("  Exec: coinbase-only accept_block");
-        let before = pipeline.genesis.block_height();
-        pipeline.exec_coinbase_only().await?;
-        let after = pipeline.genesis.block_height();
-        assert!(after > before, "Height should increase");
-        println!("    block at height {} accepted OK", after);
+        // --- refund_escrow through accept_block ---
+        println!("  Exec: RefundV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&refund.call_data, vec![refund.proof.clone()]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after RefundV1");
+        println!("    accept_block height OK");
 
         println!("=== All Escrow endpoints OK ===");
         Ok(())
