@@ -1214,10 +1214,10 @@ fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Er
         assert!(!create.call_data.is_empty());
         println!("    call_data={}B", create.call_data.len());
 
-        // Prove accept_block path with a coinbase-only block.
+        // Route through accept_block for production path verification
         let height_before = pipeline.genesis.block_height();
-        println!("  Exec: coinbase-only accept_block (height={})", height_before);
-        pipeline.exec_coinbase_only().await?;
+        println!("  Exec: CreateEscrowV1 through accept_block (height={})", height_before);
+        pipeline.exec(&create.call_data, vec![create.proof.clone()]).await?;
 
         let height_after = pipeline.genesis.block_height();
         assert!(
@@ -2652,12 +2652,11 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
         let commitment = pallas::Base::from(40u64);
         let claim_type = pallas::Base::from(50u64);
 
-        // --- 0x00: InitializeV1 ---
+        // --- 0x00: InitializeV1 (non-ZK — no proof, harness-only) ---
         println!("  Test 0x00: InitializeV1");
         let init_result = harness.initialize()?;
         assert!(!init_result.call_data.is_empty());
-        println!("    call_data={}B", init_result.call_data.len());        println!("  Exec: coinbase-only accept_block");
-        pipeline.exec_coinbase_only().await?;
+        println!("    call_data={}B", init_result.call_data.len());
 
         // --- 0x01: IssueCredentialV1 (ZK) ---
         println!("  Test 0x01: IssueCredentialV1");
@@ -2665,11 +2664,27 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
         assert!(!issue_result.call_data.is_empty());
         println!("    call_data={}B proof created", issue_result.call_data.len());
 
+        // --- IssueCredentialV1 through accept_block ---
+        println!("  Exec: IssueCredentialV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&issue_result.call_data, vec![issue_result.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after IssueCredentialV1");
+        println!("    accept_block height OK");
+
         // --- 0x03: CreateClaimV1 (ZK) ---
         println!("  Test 0x03: CreateClaimV1");
         let claim_result = harness.create_claim(credential_secret, pallas::Base::from(100u64), pallas::Base::from(50u64), commitment, issuer_pub, schema_hash, claim_type)?;
         assert!(!claim_result.call_data.is_empty());
         println!("    call_data={}B proof created", claim_result.call_data.len());
+
+        // --- CreateClaimV1 through accept_block ---
+        println!("  Exec: CreateClaimV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&claim_result.call_data, vec![claim_result.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after CreateClaimV1");
+        println!("    accept_block height OK");
 
         // --- CreateClaimL1 ---
         println!("  Test: CreateClaimL1");
@@ -2677,11 +2692,27 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
         assert!(!l1_result.call_data.is_empty());
         println!("    call_data={}B proof created", l1_result.call_data.len());
 
+        // --- CreateClaimL1 through accept_block ---
+        println!("  Exec: CreateClaimL1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&l1_result.call_data, vec![l1_result.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after CreateClaimL1");
+        println!("    accept_block height OK");
+
         // --- CreateClaimL1V2 ---
         println!("  Test: CreateClaimL1V2");
         let l1v2_result = harness.create_claim_l1_v2(credential_secret, pallas::Base::from(100u64), pallas::Base::from(50u64), commitment, issuer_pub, schema_hash, claim_type, true)?;
         assert!(!l1v2_result.call_data.is_empty());
         println!("    call_data={}B proof created", l1v2_result.call_data.len());
+
+        // --- CreateClaimL1V2 through accept_block ---
+        println!("  Exec: CreateClaimL1V2 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&l1v2_result.call_data, vec![l1v2_result.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after CreateClaimL1V2");
+        println!("    accept_block height OK");
 
         // --- CreateClaimMulti ---
         println!("  Test: CreateClaimMulti");
@@ -2689,11 +2720,27 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
         assert!(!multi_result.call_data.is_empty());
         println!("    call_data={}B proof created", multi_result.call_data.len());
 
+        // --- CreateClaimMulti through accept_block ---
+        println!("  Exec: CreateClaimMulti through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&multi_result.call_data, vec![multi_result.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after CreateClaimMulti");
+        println!("    accept_block height OK");
+
         // --- CreateClaimRatio ---
         println!("  Test: CreateClaimRatio");
         let ratio_result = harness.create_claim_ratio(credential_secret, commitment, pallas::Base::from(1000u64), pallas::Base::from(10000u64), pallas::Base::from(10u64), issuer_pub, schema_hash, claim_type, true)?;
         assert!(!ratio_result.call_data.is_empty());
         println!("    call_data={}B proof created", ratio_result.call_data.len());
+
+        // --- CreateClaimRatio through accept_block ---
+        println!("  Exec: CreateClaimRatio through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&ratio_result.call_data, vec![ratio_result.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after CreateClaimRatio");
+        println!("    accept_block height OK");
 
         // --- CreateClaimDAG ---
         println!("  Test: CreateClaimDAG (skipped — pre-existing circuit bug)");
@@ -2705,6 +2752,14 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
         let verify_result = harness.verify_capability(credential_secret, commitment, pallas::Base::from(100u64), pallas::Base::from(50u64), capability_secret, issuer_pub, schema_hash, capability_id, true)?;
         assert!(!verify_result.call_data.is_empty());
         println!("    call_data={}B proof created", verify_result.call_data.len());
+
+        // --- VerifyCapability through accept_block ---
+        println!("  Exec: VerifyCapability through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&verify_result.call_data, vec![verify_result.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after VerifyCapability");
+        println!("    accept_block height OK");
 
         // --- RegisterCapability ---
         println!("  Test: RegisterCapability");
