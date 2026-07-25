@@ -26,7 +26,7 @@
 //! Provides isolated testing for Bridge contract.
 
 use dwow_core::{
-    zk::{ProvingKey, ZkCircuit},
+    zk::{Proof, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
 use dwow_sdk::{
@@ -43,7 +43,7 @@ use dwow_bridge_contract::client::{
     xmr_deposit_v1::{XmrDepositCallData, XmrDepositPublicInputs, create_xmr_deposit_proof},
     zec_deposit_v1::{ZecDepositCallData, ZecDepositPublicInputs, create_zec_deposit_proof},
 };
-use dwow_bridge_contract::model::{DepositParams, ExternalChain, ExternalChainProof, WithdrawParams};
+use dwow_bridge_contract::model::{DepositParams, ExternalChain, ExternalChainProof, UpdateConfigParams, WithdrawParams};
 
 /// Bridge Harness for isolated testing
 pub struct BridgeHarness {
@@ -375,6 +375,40 @@ impl BridgeHarness {
         call_data.extend_from_slice(&proof.as_ref());
         Ok(ZecDepositResult { call_data, proof, public_inputs })
     }
+
+    /// Update bridge configuration (function code 0x03)
+    pub fn update_config(
+        &self,
+        deposit_fee: u64,
+        withdrawal_fee: u64,
+        min_confirmations: u32,
+        max_deposit: u64,
+        max_withdrawal: u64,
+        gov_pub_x: pallas::Base,
+        gov_pub_y: pallas::Base,
+        config_nullifier: pallas::Base,
+    ) -> Result<UpdateConfigResult, Box<dyn std::error::Error>> {
+        let witnesses = dwow_core::zk::empty_witnesses(&self.update_config_zkbin)?;
+        let circuit = ZkCircuit::new(witnesses, &self.update_config_zkbin);
+        let proof = Proof::create(&self.update_config_pk, &[circuit], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+
+        let params = UpdateConfigParams {
+            deposit_fee,
+            withdrawal_fee,
+            min_confirmations,
+            max_deposit,
+            max_withdrawal,
+            gov_pub_x,
+            gov_pub_y,
+            config_nullifier,
+        };
+
+        let mut call_data = vec![0x03];
+        params.encode(&mut call_data)?;
+
+        Ok(UpdateConfigResult { call_data, proof })
+    }
 }
 
 impl super::ContractHarness for BridgeHarness {
@@ -453,4 +487,10 @@ pub struct ZecDepositResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: ZecDepositPublicInputs,
+}
+
+/// Result of update_config
+pub struct UpdateConfigResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
 }

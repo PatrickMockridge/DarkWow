@@ -1536,6 +1536,23 @@ fn test_heavyweight_bridge() -> std::result::Result<(), Box<dyn std::error::Erro
             Err(e) => println!("    zec_deposit proof skipped: {}", e),
         }
 
+        // --- update_config ---
+        println!("  Test: update_config");
+        let uc = harness.update_config(
+            100, 50, 3, 1000000, 500000,
+            pallas::Base::from(1u64), pallas::Base::from(2u64),
+            pallas::Base::from(3u64),
+        )?;
+        assert!(!uc.call_data.is_empty());
+        println!("    call_data={}B", uc.call_data.len());
+
+        // --- update_config through accept_block ---
+        println!("  Exec: UpdateConfigV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&uc.call_data, vec![uc.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         println!("=== All Bridge endpoints OK ===");
         Ok(())
     })
@@ -1958,18 +1975,72 @@ fn test_heavyweight_subscription() -> std::result::Result<(), Box<dyn std::error
         assert!(!sub.call_data.is_empty());
         println!("    call_data={}B", sub.call_data.len());
 
+        // --- subscribe through accept_block ---
+        println!("  Exec: SubscribeV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&sub.call_data, vec![sub.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- verify_access ---
         println!("  Test: verify_access");
         let verify = harness.verify_access(subscriber_secret, pallas::Base::from(1u64), 1, 0, empty_path.clone(), pallas::Base::from(2u64), pallas::Base::from(3u64), pallas::Base::from(4u64), pallas::Base::from(5u64), 100, subscriber_pub.x().expect("pk not identity"), subscriber_pub.y().expect("pk not identity"), 1, 500, 10, 3600, 5, 100, 5, pallas::Base::from(6u64))?;
         assert!(!verify.call_data.is_empty());
         println!("    call_data={}B", verify.call_data.len());
 
+        // --- verify_access through accept_block ---
+        println!("  Exec: VerifyAccessV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&verify.call_data, vec![verify.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- update_usage ---
         println!("  Test: update_usage");
         let usage = harness.update_usage(pallas::Base::from(1u64), subscriber_pub.x().expect("pk not identity"), subscriber_pub.y().expect("pk not identity"), pallas::Base::from(2u64), pallas::Base::from(3u64), subscriber_secret, 100, pallas::Base::from(4u64), vec![pallas::Base::from(0u64)])?;
         assert!(!usage.call_data.is_empty());
-        println!("    call_data={}B", usage.call_data.len());        println!("  Exec: coinbase-only accept_block");
-        pipeline.exec_coinbase_only().await?;
+        println!("    call_data={}B", usage.call_data.len());
+
+        // --- update_usage through accept_block ---
+        println!("  Exec: UpdateUsageV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&usage.call_data, vec![usage.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- cancel ---
+        println!("  Test: cancel");
+        let cancel = harness.cancel(
+            pallas::Base::from(1u64), subscriber_secret,
+            pallas::Base::from(100u64), 500, subscriber_pub,
+        )?;
+        assert!(!cancel.call_data.is_empty());
+        println!("    call_data={}B", cancel.call_data.len());
+
+        // --- cancel through accept_block ---
+        println!("  Exec: CancelV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&cancel.call_data, vec![cancel.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- renew ---
+        println!("  Test: renew");
+        let renew = harness.renew(
+            pallas::Base::from(1u64), subscriber_secret,
+            10000, pallas::Base::from(200u64),
+            dwow_sdk::crypto::pasta_prelude::Group::identity(),
+            vec![pallas::Base::from(0u64)],
+        )?;
+        assert!(!renew.call_data.is_empty());
+        println!("    call_data={}B", renew.call_data.len());
+
+        // --- renew through accept_block ---
+        println!("  Exec: RenewV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&renew.call_data, vec![renew.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         println!("=== All Subscription endpoints OK ===");
         Ok(())

@@ -26,7 +26,7 @@
 //! Provides isolated testing for Subscription contract.
 
 use dwow_core::{
-    zk::{ProvingKey, ZkCircuit},
+    zk::{Proof, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
 use dwow_sdk::{
@@ -47,7 +47,8 @@ use dwow_subscription_contract::client::{
     },
 };
 use dwow_subscription_contract::model::{
-    SubscribeParamsV1, SubscriptionId, UpdateUsageParamsV1, VerifyAccessParamsV1,
+    CancelParamsV1, RenewParamsV1, SubscribeParamsV1, SubscriptionId,
+    UpdateUsageParamsV1, VerifyAccessParamsV1,
 };
 
 /// Subscription Harness for isolated testing
@@ -333,6 +334,64 @@ impl SubscriptionHarness {
 
         Ok(UpdateUsageResult { call_data, proof, public_inputs })
     }
+
+    /// Cancel a subscription (function code 0x02)
+    pub fn cancel(
+        &self,
+        subscription_id: pallas::Base,
+        subscriber_secret: pallas::Base,
+        spent_nullifier: pallas::Base,
+        current_block: u64,
+        recipient_pubkey: PublicKey,
+    ) -> Result<CancelResult, Box<dyn std::error::Error>> {
+        let witnesses = dwow_core::zk::empty_witnesses(&self.cancel_zkbin)?;
+        let circuit = ZkCircuit::new(witnesses, &self.cancel_zkbin);
+        let proof = Proof::create(&self.cancel_pk, &[circuit], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+
+        let params = CancelParamsV1 {
+            subscription_id: SubscriptionId(subscription_id),
+            subscriber_secret,
+            spent_nullifier,
+            current_block,
+            recipient_pubkey,
+        };
+
+        let mut call_data = vec![0x02];
+        params.encode(&mut call_data)?;
+
+        Ok(CancelResult { call_data, proof })
+    }
+
+    /// Renew a subscription (function code 0x03)
+    pub fn renew(
+        &self,
+        subscription_id: pallas::Base,
+        subscriber_secret: pallas::Base,
+        new_lock_until_block: u64,
+        spent_nullifier: pallas::Base,
+        value_commit: pallas::Point,
+        merkle_proof: Vec<pallas::Base>,
+    ) -> Result<RenewResult, Box<dyn std::error::Error>> {
+        let witnesses = dwow_core::zk::empty_witnesses(&self.renew_zkbin)?;
+        let circuit = ZkCircuit::new(witnesses, &self.renew_zkbin);
+        let proof = Proof::create(&self.renew_pk, &[circuit], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+
+        let params = RenewParamsV1 {
+            subscription_id: SubscriptionId(subscription_id),
+            subscriber_secret,
+            new_lock_until_block,
+            spent_nullifier,
+            value_commit,
+            merkle_proof,
+        };
+
+        let mut call_data = vec![0x03];
+        params.encode(&mut call_data)?;
+
+        Ok(RenewResult { call_data, proof })
+    }
 }
 
 impl super::ContractHarness for SubscriptionHarness {
@@ -386,4 +445,16 @@ pub struct UpdateUsageResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: UpdateUsagePublicInputs,
+}
+
+/// Result of cancel
+pub struct CancelResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+}
+
+/// Result of renew
+pub struct RenewResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
 }
