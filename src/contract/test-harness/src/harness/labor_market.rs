@@ -37,11 +37,18 @@ use dwow_serial::Encodable;
 
 use dwow_labor_market_contract::client::{
     accept_job_v1::{AcceptJobV1CallData, AcceptJobV1PublicInputs, accept_job_v1_proof},
+    accept_job_with_capability_v1::{
+        AcceptJobWithCapabilityV1CallData, AcceptJobWithCapabilityV1PublicInputs,
+        accept_job_with_capability_v1_proof,
+    },
     confirm_delivery_v1::{
         ConfirmDeliveryV1CallData, ConfirmDeliveryV1PublicInputs, confirm_delivery_v1_proof,
     },
     create_job_v1::{CreateJobV1CallData, CreateJobV1PublicInputs, create_job_v1_proof},
     dispute_v1::{DisputeV1CallData, DisputeV1PublicInputs, dispute_v1_proof},
+    milestone_payment_v1::{
+        MilestonePaymentV1CallData, MilestonePaymentV1PublicInputs, milestone_payment_v1_proof,
+    },
     refund_v1::{RefundV1CallData, RefundV1PublicInputs, refund_v1_proof},
     submit_deliverable_v1::{
         SubmitDeliverableV1CallData, SubmitDeliverableV1PublicInputs, submit_deliverable_v1_proof,
@@ -52,8 +59,9 @@ use dwow_labor_market_contract::client::{
     },
 };
 use dwow_labor_market_contract::model::{
-    AcceptJobParamsV1, ConfirmDeliveryParamsV1, CreateJobParamsV1, DisputeParamsV1,
-    RefundParamsV1, SubmitDeliverableParamsV1, SubmitGitDeliverableParamsV1,
+    AcceptJobParamsV1, AcceptJobWithCapabilityParamsV1, ConfirmDeliveryParamsV1,
+    ConfirmMilestoneParamsV1, CreateJobParamsV1, DisputeParamsV1, RefundParamsV1,
+    SubmitDeliverableParamsV1, SubmitGitDeliverableParamsV1,
 };
 
 /// LaborMarket Harness for isolated testing
@@ -450,6 +458,94 @@ impl LaborMarketHarness {
 
         Ok(RefundResult { call_data, proof, public_inputs })
     }
+
+    /// Accept a job with capability requirement (function code 0x0d)
+    #[allow(clippy::too_many_arguments)]
+    pub fn accept_job_with_capability(
+        &self,
+        worker_secret: pallas::Base,
+        worker_public: PublicKey,
+        job_id: pallas::Base,
+        required_capability_id: pallas::Base,
+        capability_nullifier: pallas::Base,
+        capability_predicate_result: pallas::Base,
+        capability_proof: Vec<u8>,
+        capability_secret: [u8; 32],
+    ) -> Result<AcceptJobWithCapabilityResult, Box<dyn std::error::Error>> {
+        let input = AcceptJobWithCapabilityV1CallData::new(
+            worker_secret,
+            worker_public,
+            job_id,
+            required_capability_id,
+            capability_nullifier,
+            capability_predicate_result,
+        );
+        let (proof, public_inputs) = accept_job_with_capability_v1_proof(
+            &self.accept_job_with_capability_zkbin,
+            &self.accept_job_with_capability_pk,
+            &input,
+        )?;
+
+        let params = AcceptJobWithCapabilityParamsV1 {
+            proof: proof.as_ref().to_vec(),
+            job_id: public_inputs.job_id,
+            worker_pub_x: public_inputs.worker_pub_x,
+            worker_pub_y: public_inputs.worker_pub_y,
+            required_capability_id: public_inputs.required_capability_id,
+            capability_proof,
+            capability_secret,
+        };
+
+        let mut call_data = vec![0x0d];
+        params.encode(&mut call_data)?;
+
+        Ok(AcceptJobWithCapabilityResult { call_data, proof, public_inputs })
+    }
+
+    /// Confirm a milestone payment (function code 0x0a)
+    #[allow(clippy::too_many_arguments)]
+    pub fn confirm_milestone(
+        &self,
+        employer_secret: pallas::Base,
+        employer_public: PublicKey,
+        job_id: pallas::Base,
+        milestone_index: u32,
+        milestone_payment_amount: u64,
+        payment_release: u64,
+        last_milestone_block: pallas::Base,
+        current_block: pallas::Base,
+        deadline_block: pallas::Base,
+    ) -> Result<ConfirmMilestoneResult, Box<dyn std::error::Error>> {
+        let input = MilestonePaymentV1CallData::new(
+            job_id,
+            pallas::Base::from(milestone_payment_amount),
+            employer_secret,
+            employer_public,
+            last_milestone_block,
+            current_block,
+            deadline_block,
+        );
+        let (proof, public_inputs) = milestone_payment_v1_proof(
+            &self.milestone_payment_zkbin,
+            &self.milestone_payment_pk,
+            &input,
+        )?;
+
+        let params = ConfirmMilestoneParamsV1 {
+            proof: proof.as_ref().to_vec(),
+            job_id: public_inputs.job_id,
+            milestone_index,
+            employer_pub_x: public_inputs.employer_pub_x,
+            employer_pub_y: public_inputs.employer_pub_y,
+            payment_release,
+            spent_nullifier: public_inputs.spent_nullifier,
+        };
+
+        let mut call_data = vec![0x0a];
+        params.encode(&mut call_data)?;
+
+        Ok(ConfirmMilestoneResult { call_data, proof, public_inputs })
+    }
 }
 
 impl super::ContractHarness for LaborMarketHarness {
@@ -550,4 +646,18 @@ pub struct RefundResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: RefundV1PublicInputs,
+}
+
+/// Result of accept_job_with_capability
+pub struct AcceptJobWithCapabilityResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: AcceptJobWithCapabilityV1PublicInputs,
+}
+
+/// Result of confirm_milestone (MilestonePayment circuit)
+pub struct ConfirmMilestoneResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: MilestonePaymentV1PublicInputs,
 }

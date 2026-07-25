@@ -29,13 +29,25 @@ use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use dwow_sdk::{crypto::PublicKey, pasta::pallas};
+use dwow_sdk::{crypto::{MerkleNode, PublicKey}, pasta::pallas};
 use dwow_serial::Encodable;
 
-use dwow_oracle_contract::client::register_oracle_v1::{
-    RegisterOracleV1CallData, register_oracle_v1_proof,
+use dwow_oracle_contract::client::{
+    aggregate_v1::{AggregateV1CallData, AggregateV1PublicInputs, aggregate_v1_proof},
+    attest_value_v1::{AttestValueV1CallData, AttestValueV1PublicInputs, attest_value_v1_proof},
+    push_value_commitment_v1::{
+        PushValueCommitmentV1CallData, PushValueCommitmentV1PublicInputs,
+        push_value_commitment_v1_proof,
+    },
+    push_value_v1::{PushValueV1CallData, PushValueV1PublicInputs, push_value_v1_proof},
+    register_oracle_v1::{
+        RegisterOracleV1CallData, register_oracle_v1_proof,
+    },
 };
-use dwow_oracle_contract::model::RegisterOracleParamsV1;
+use dwow_oracle_contract::model::{
+    AggregateParamsV1, AttestValueParamsV1, PushValueCommitmentParamsV1, PushValueParamsV1,
+    RegisterOracleParamsV1, OracleId, AttestationId,
+};
 
 /// Oracle Harness for isolated testing
 pub struct OracleHarness {
@@ -163,6 +175,136 @@ impl OracleHarness {
             proof,
         })
     }
+
+    /// Push a value to an oracle (function code 0x01)
+    pub fn push_value(
+        &self,
+        oracle_id: pallas::Base,
+        oracle_secret: pallas::Base,
+        oracle_public: PublicKey,
+        value: pallas::Base,
+    ) -> Result<PushValueResult, Box<dyn std::error::Error>> {
+        let input = PushValueV1CallData::new(oracle_id, oracle_secret, oracle_public, value);
+        let (proof, public_inputs) = push_value_v1_proof(
+            &self.push_value_zkbin, &self.push_value_pk, &input,
+        )?;
+
+        let params = PushValueParamsV1 {
+            proof: proof.as_ref().to_vec(),
+            oracle_id: OracleId(public_inputs.oracle_id),
+            value: public_inputs.value,
+        };
+
+        let mut call_data = vec![0x01];
+        params.encode(&mut call_data)?;
+
+        Ok(PushValueResult { call_data, proof, public_inputs })
+    }
+
+    /// Attest to a value with a predicate (function code 0x02)
+    #[allow(clippy::too_many_arguments)]
+    pub fn attest_value(
+        &self,
+        oracle_id: pallas::Base,
+        attestation_id: pallas::Base,
+        oracle_secret: pallas::Base,
+        predicate: pallas::Base,
+        threshold: pallas::Base,
+        value: pallas::Base,
+        oracle_public: PublicKey,
+    ) -> Result<AttestValueResult, Box<dyn std::error::Error>> {
+        let input = AttestValueV1CallData::new(
+            oracle_id, attestation_id, oracle_secret, predicate, threshold, value, oracle_public,
+        );
+        let (proof, public_inputs) = attest_value_v1_proof(
+            &self.attest_value_zkbin, &self.attest_value_pk, &input,
+        )?;
+
+        let params = AttestValueParamsV1 {
+            proof: proof.as_ref().to_vec(),
+            oracle_id: OracleId(public_inputs.oracle_id),
+            attestation_id: AttestationId(public_inputs.attestation_id),
+            predicate: 0, // Matches
+            threshold: public_inputs.threshold,
+        };
+
+        let mut call_data = vec![0x02];
+        params.encode(&mut call_data)?;
+
+        Ok(AttestValueResult { call_data, proof, public_inputs })
+    }
+
+    /// Push a value commitment (function code 0x03)
+    #[allow(clippy::too_many_arguments)]
+    pub fn push_value_commitment(
+        &self,
+        oracle_id: pallas::Base,
+        staker_secret: pallas::Base,
+        pos: u64,
+        path: Vec<MerkleNode>,
+        value: pallas::Base,
+        nonce: pallas::Base,
+        staker_public: PublicKey,
+        commitment: pallas::Base,
+        data_root: pallas::Base,
+    ) -> Result<PushValueCommitmentResult, Box<dyn std::error::Error>> {
+        let input = PushValueCommitmentV1CallData::new(
+            oracle_id, staker_secret, pos, path.clone(), value, nonce, staker_public, commitment, data_root,
+        );
+        let (proof, public_inputs) = push_value_commitment_v1_proof(
+            &self.push_value_commitment_zkbin, &self.push_value_commitment_pk, &input,
+        )?;
+
+        let params = PushValueCommitmentParamsV1 {
+            proof: proof.as_ref().to_vec(),
+            oracle_id: OracleId(public_inputs.oracle_id),
+            commitment: public_inputs.commitment,
+            data_root: public_inputs.data_root,
+            pos: pallas::Base::from(pos),
+            path: path.iter().map(|n| n.inner()).collect(),
+        };
+
+        let mut call_data = vec![0x03];
+        params.encode(&mut call_data)?;
+
+        Ok(PushValueCommitmentResult { call_data, proof, public_inputs })
+    }
+
+    /// Aggregate values from multiple oracles (function code 0x04)
+    #[allow(clippy::too_many_arguments)]
+    pub fn aggregate(
+        &self,
+        oracle_id: pallas::Base,
+        values: [pallas::Base; 4],
+        weights: [pallas::Base; 4],
+        sum_weights: pallas::Base,
+        result: pallas::Base,
+        min_result: pallas::Base,
+        max_result: pallas::Base,
+    ) -> Result<AggregateResult, Box<dyn std::error::Error>> {
+        let input = AggregateV1CallData::new(
+            oracle_id,
+            values[0], values[1], values[2], values[3],
+            weights[0], weights[1], weights[2], weights[3],
+            sum_weights, result, min_result, max_result,
+        );
+        let (proof, public_inputs) = aggregate_v1_proof(
+            &self.aggregate_zkbin, &self.aggregate_pk, &input,
+        )?;
+
+        let params = AggregateParamsV1 {
+            proof: proof.as_ref().to_vec(),
+            oracle_id: OracleId(public_inputs.oracle_id),
+            result: public_inputs.result,
+            min_result: public_inputs.min_result,
+            max_result: public_inputs.max_result,
+        };
+
+        let mut call_data = vec![0x04];
+        params.encode(&mut call_data)?;
+
+        Ok(AggregateResult { call_data, proof, public_inputs })
+    }
 }
 
 impl super::ContractHarness for OracleHarness {
@@ -203,4 +345,32 @@ pub struct RegisterOracleResult {
     pub oracle_pub_x: pallas::Base,
     pub oracle_pub_y: pallas::Base,
     pub proof: dwow_core::zk::Proof,
+}
+
+/// Result of push_value
+pub struct PushValueResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: PushValueV1PublicInputs,
+}
+
+/// Result of attest_value
+pub struct AttestValueResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: AttestValueV1PublicInputs,
+}
+
+/// Result of push_value_commitment
+pub struct PushValueCommitmentResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: PushValueCommitmentV1PublicInputs,
+}
+
+/// Result of aggregate
+pub struct AggregateResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: AggregateV1PublicInputs,
 }
