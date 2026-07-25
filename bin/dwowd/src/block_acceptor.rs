@@ -85,6 +85,7 @@ pub fn accept_block(
     // misplaced, or null coinbase before any expensive validation.
     dwow_chain::validation::validate_block_structure(block)
         .map_err(|e| dwow_core::Error::Custom(format!("Block {} structure invalid: {}", block.header.height, e)))?;
+    eprintln!("[accept_block] structure validated");
 
     // 0.2 Uncle validation — HAZOP F5: check_uncles() was dead code (zero
     // non-test callers). Wire it into the acceptance path after structural
@@ -140,6 +141,7 @@ pub fn accept_block(
 
     proof_of_token_balance::verify_proof_of_token_balance(block)
         .map_err(|e| dwow_core::Error::Custom(format!("Block {} proof of token balance failed: {}", block.header.height, e)))?;
+    eprintln!("[accept_block] token balance verified");
 
     // 2. Stage 1 PoW — verify hash meets target BEFORE expensive WASM execution.
     if !matches!(block.header.pow_source, dwow_chain::PowSource::Monero(_)) {
@@ -210,6 +212,8 @@ pub fn accept_block(
 
     // 3. WASM execution — runs pow_reward_v1, persists cumulative supply chain
     // to the contracts sled tree via the overlay.
+    eprintln!("[accept_block] executing WASM ({} txs)...", block.transactions.len());
+    let t0 = std::time::Instant::now();
     let outcome = match execute_block(chain_state, block, uncles, vm, block.header.height, target) {
         Ok(o) => o,
         Err(e) => {
@@ -225,6 +229,7 @@ pub fn accept_block(
             return Err(e);
         }
     };
+    eprintln!("[accept_block] WASM execution complete ({:.1}s)", t0.elapsed().as_secs_f64());
 
     // Fee estimator sampling — every accepted block contributes its actual
     // gas usage to the rolling window (MOC close-out item 10.3). Previously
@@ -265,8 +270,10 @@ pub fn accept_block(
 
     // 6. Atomic commit — blocks, contracts, supply_chain, consensus, coins,
     // and nullifiers all committed in a single sled transaction.
+    eprintln!("[accept_block] committing to chain...");
     let outcome = chain_state.connect_block(block, uncles, Some(contracts_batch), supply_chain_batch)
         .map_err(|e| dwow_core::Error::Custom(format!("connect_block failed: {}", e)))?;
+    eprintln!("[accept_block] committed");
 
     // 7. Update in-memory cache AFTER the atomic transaction succeeds.
     // The sled write was atomic; now the cache must reflect the new state.

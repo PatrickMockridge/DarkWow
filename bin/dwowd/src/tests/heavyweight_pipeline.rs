@@ -402,13 +402,20 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         let height = self.genesis.block_height();
         let next_height = height.succ();
         let reward = dwow_sdk::blockchain::expected_reward(next_height);
+        eprintln!("[exec] building coinbase for height {} (ZK proof)...", next_height);
+        let t0 = std::time::Instant::now();
         let cb = self.build_coinbase_for_height(next_height, reward).await?;
+        eprintln!("[exec] coinbase built ({:.1}s), constructing block...", t0.elapsed().as_secs_f64());
         let target = self.expected_target();
         let mut block = build_test_block(&self.genesis.chain_state, next_height, vec![cb.tx, tx]);
         block.header.target = target;
+        eprintln!("[exec] building RandomX VM...");
+        let t0 = std::time::Instant::now();
         let vm = build_accept_vm(&block)?;
+        eprintln!("[exec] RandomX VM ready ({:.1}s), submitting to accept_block...", t0.elapsed().as_secs_f64());
 
-        crate::block_acceptor::accept_block(
+        let t0 = std::time::Instant::now();
+        let outcome = crate::block_acceptor::accept_block(
             &self.genesis.chain_state,
             &block,
             &[],
@@ -417,8 +424,17 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
             target,
             None,
         )
-        .map(|_| ())
-        .map_err(|e| dwow_core::Error::Custom(format!("accept_block exec: {}", e)))
+        .map_err(|e| dwow_core::Error::Custom(format!("accept_block exec: {}", e)))?;
+        match outcome {
+            dwow_chain::BlockConnectOutcome::CanonicalExtension { new_height } => {
+                eprintln!("[exec] block accepted at height {} ({:.1}s)",
+                    new_height, t0.elapsed().as_secs_f64());
+            }
+            _ => {
+                eprintln!("[exec] block processed ({:.1}s, non-canonical)",
+                    t0.elapsed().as_secs_f64());
+            }
+        }
     }
 
     /// Mine a coinbase-only block and return the coin's parameters so the

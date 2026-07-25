@@ -383,7 +383,11 @@ pub fn execute_block(
         if success {
             match runtime.exec(&job.call_data) {
                 Ok(u) => update = u,
-                Err(_) => { success = false; fail_stage = "exec"; }
+                Err(e) => {
+                    eprintln!("exec() failed for contract {} (tx {}): {:?}",
+                        job.contract_id, job.tx_hash, e);
+                    success = false; fail_stage = "exec";
+                }
             }
         }
 
