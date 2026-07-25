@@ -2083,7 +2083,7 @@ fn test_heavyweight_subscription() -> std::result::Result<(), Box<dyn std::error
     use dwow_contract_test_harness::harness::SubscriptionHarness;
     use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
-    use crate::tests::blockchain::BlockChain;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== Subscription Heavyweight: All Endpoints ===");
 
@@ -2129,7 +2129,7 @@ fn test_heavyweight_oracle() -> std::result::Result<(), Box<dyn std::error::Erro
     use dwow_contract_test_harness::harness::OracleHarness;
     use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
-    use crate::tests::blockchain::BlockChain;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== Oracle Heavyweight: All Endpoints ===");
 
@@ -2467,7 +2467,7 @@ fn test_heavyweight_deployooor() -> std::result::Result<(), Box<dyn std::error::
 #[test]
 fn test_heavyweight_drain_protection() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::DrainProtectionHarness;
-    use crate::tests::blockchain::BlockChain;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== DrainProtection Heavyweight: All Endpoints ===");
 
@@ -2516,7 +2516,7 @@ fn test_heavyweight_drain_protection() -> std::result::Result<(), Box<dyn std::e
 #[test]
 fn test_heavyweight_game_room() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::GameRoomHarness;
-    use crate::tests::blockchain::BlockChain;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== GameRoom Heavyweight: All Endpoints ===");
 

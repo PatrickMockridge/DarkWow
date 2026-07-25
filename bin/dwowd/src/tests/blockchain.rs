@@ -21,20 +21,20 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! BlockChain + BlockAssembler — Modular multi-contract block builder.
+//! HeavyweightPipeline + HeavyweightBlock — Modular multi-contract block builder.
 //!
 //! Replaces the single-contract `HeavyweightPipeline<H>` with a two-layer
 //! architecture:
 //!
-//! - `BlockChain` — shared chain state with cached ZK coinbase keys.
+//! - `HeavyweightPipeline` — shared chain state with cached ZK coinbase keys.
 //!   Created once per test. Multiple harnesses share one chain.
-//! - `BlockAssembler` — fluent per-block builder. Created by
+//! - `HeavyweightBlock` — fluent per-block builder. Created by
 //!   `chain.block()`. Accepts contract calls from any harness.
 //!
 //! ## Usage
 //!
 //! ```ignore
-//! let chain = BlockChain::new().await?;
+//! let chain = HeavyweightPipeline::new().await?;
 //! chain.init_genesis().await?;
 //! let h = DexHarness::spawn();
 //! let cid = chain.deploy(&h, "dex", DEX_WASM).await?;
@@ -66,13 +66,13 @@ pub struct CoinbaseResult {
     pub coin_blind: dwow_sdk::pasta::pallas::Base,
 }
 
-// ── BlockChain ───────────────────────────────────────────────────────────
+// ── HeavyweightPipeline ───────────────────────────────────────────────────────────
 
 /// Shared chain state for multi-harness tests.
 ///
 /// Owns the sled DB, CChainState, and cached ZK proving keys for coinbase
-/// construction. Multiple harnesses share one BlockChain.
-pub struct BlockChain {
+/// construction. Multiple harnesses share one HeavyweightPipeline.
+pub struct HeavyweightPipeline {
     /// Temp sled database
     pub db: Arc<sled::Db>,
     /// Single authoritative chain state
@@ -86,13 +86,13 @@ pub struct BlockChain {
     pub strict_zk: bool,
 }
 
-impl BlockChain {
+impl HeavyweightPipeline {
     /// Deterministic test mining key (secret = 0x01...)
     const TEST_KEY_TOML: &'static str =
         "[node0]\nwallet_secret = \
          \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
 
-    /// Create a new BlockChain with an empty contracts tree.
+    /// Create a new HeavyweightPipeline with an empty contracts tree.
     ///
     /// Creates a temp sled DB + CChainState, compiles ZK proving keys for
     /// coinbase construction, and writes a temp keys.toml. After construction,
@@ -261,11 +261,11 @@ impl BlockChain {
     }
 
     /// Start building a new block at the next height.
-    pub fn block(&self) -> Result<BlockAssembler> {
+    pub fn block(&self) -> Result<HeavyweightBlock> {
         let h = self.height();
         let next = h.succ();
         let reward = dwow_sdk::blockchain::expected_reward(next);
-        Ok(BlockAssembler {
+        Ok(HeavyweightBlock {
             chain: self,
             height: next,
             reward,
@@ -321,21 +321,21 @@ impl BlockChain {
     }
 }
 
-// ── BlockAssembler ───────────────────────────────────────────────────────
+// ── HeavyweightBlock ───────────────────────────────────────────────────────
 
 /// Fluent per-block builder. Accumulates contract calls, then seals and
 /// submits through `accept_block`. Consumed by `submit()`.
 ///
-/// Created by `BlockChain::block()`.
-pub struct BlockAssembler<'c> {
-    chain: &'c BlockChain,
+/// Created by `HeavyweightPipeline::block()`.
+pub struct HeavyweightBlock<'c> {
+    chain: &'c HeavyweightPipeline,
     height: BlockHeight,
     reward: BlockReward,
     contract_txs: Vec<dwow_chain::Transaction>,
     uncles: Vec<dwow_chain::UncleBlock>,
 }
 
-impl<'c> BlockAssembler<'c> {
+impl<'c> HeavyweightBlock<'c> {
     /// Add one contract call to this block.
     ///
     /// Takes the contract_id and the raw outputs of a harness method.
