@@ -671,6 +671,14 @@ fn test_heavyweight_promissory_note() -> std::result::Result<(), Box<dyn std::er
         assert!(!mint.call_data.is_empty());
         println!("    call_data={}B", mint.call_data.len());
 
+        // --- mint through accept_block ---
+        println!("  Exec: IssueV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&mint.call_data, mint.proofs.clone()).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after IssueV1");
+        println!("    accept_block height OK");
+
         // --- transfer ---
         println!("  Test: transfer");
         let inputs = vec![TransferCallInput {
@@ -700,24 +708,27 @@ fn test_heavyweight_promissory_note() -> std::result::Result<(), Box<dyn std::er
         assert!(!transfer.call_data.is_empty());
         println!("    call_data={}B", transfer.call_data.len());
 
+        // --- transfer through accept_block ---
+        println!("  Exec: TransferV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&transfer.call_data, transfer.proofs.clone()).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after TransferV1");
+        println!("    accept_block height OK");
+
         // --- otc_swap ---
         println!("  Test: otc_swap");
         let swap = harness.otc_swap(inputs, outputs)?;
         assert!(!swap.call_data.is_empty());
         println!("    call_data={}B", swap.call_data.len());
 
-        // Prove accept_block path with a coinbase-only block.
-        // On-chain execution of TransferV1 through WASM requires the client
-        // builder's params (which include ZK witness data) to match the
-        // contract model's TransferParamsV1 — those are separate types and
-        // the serialized forms may differ. ZK proof generation is verified
-        // by the harness methods above.
-        println!("  Exec: coinbase-only accept_block");
-        let before = pipeline.genesis.block_height();
-        pipeline.exec_coinbase_only().await?;
-        let after = pipeline.genesis.block_height();
-        assert!(after > before, "Height should increase");
-        println!("    coinbase-only block at height {} accepted OK", after);
+        // --- otc_swap through accept_block ---
+        println!("  Exec: OtcSwapV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&swap.call_data, swap.proofs.clone()).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after OtcSwapV1");
+        println!("    accept_block height OK");
 
         println!("=== All PromissoryNote endpoints OK ===");
         Ok(())
