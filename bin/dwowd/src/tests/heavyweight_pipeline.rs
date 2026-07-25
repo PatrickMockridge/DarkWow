@@ -2440,8 +2440,8 @@ fn test_heavyweight_insurance_market() -> std::result::Result<(), Box<dyn std::e
 
         let harness = &pipeline.harness;
 
-        // --- build_underwrite_call_data ---
-        println!("  Test: build_underwrite_call_data");
+        // --- underwrite ---
+        println!("  Test: underwrite");
         let uw_params = dwow_insurance_market_contract::model::UnderwriteParamsV1 {
             market_id: pallas::Base::from(1u64),
             bond_amount: 10000,
@@ -2450,12 +2450,19 @@ fn test_heavyweight_insurance_market() -> std::result::Result<(), Box<dyn std::e
                 SecretKey::from_bytes([3u8; 32]).unwrap(),
             ),
         };
-        let uw = harness.build_underwrite_call_data(&uw_params)?;
-        assert!(!uw.is_empty());
-        println!("    call_data={}B", uw.len());
+        let uw = harness.underwrite(&uw_params)?;
+        assert!(!uw.call_data.is_empty());
+        println!("    call_data={}B", uw.call_data.len());
 
-        // --- build_purchase_coverage_call_data ---
-        println!("  Test: build_purchase_coverage_call_data");
+        // --- underwrite through accept_block ---
+        println!("  Exec: UnderwriteV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&uw.call_data, vec![uw.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- purchase_coverage ---
+        println!("  Test: purchase_coverage");
         let pc_params = dwow_insurance_market_contract::model::PurchaseCoverageParamsV1 {
             market_id: pallas::Base::from(1u64),
             underwriter_id: pallas::Base::from(2u64),
@@ -2466,10 +2473,16 @@ fn test_heavyweight_insurance_market() -> std::result::Result<(), Box<dyn std::e
             value_commit: pallas::Point::identity(),
             buyer_nullifier: pallas::Base::zero(),
         };
-        let pc = harness.build_purchase_coverage_call_data(&pc_params)?;
-        assert!(!pc.is_empty());
-        println!("    call_data={}B", pc.len());        println!("  Exec: coinbase-only accept_block");
-        pipeline.exec_coinbase_only().await?;
+        let pc = harness.purchase_coverage(&pc_params)?;
+        assert!(!pc.call_data.is_empty());
+        println!("    call_data={}B", pc.call_data.len());
+
+        // --- purchase_coverage through accept_block ---
+        println!("  Exec: PurchaseCoverageV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&pc.call_data, vec![pc.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         println!("=== All InsuranceMarket endpoints OK ===");
         Ok(())

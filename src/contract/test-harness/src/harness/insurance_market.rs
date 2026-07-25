@@ -26,9 +26,21 @@
 //! Provides isolated testing for InsuranceMarket contract.
 
 use dwow_core::{
-    zk::{ProvingKey, ZkCircuit},
+    zk::{Proof, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
+};
+use dwow_serial::Encodable;
+
+use dwow_insurance_market_contract::client::{
+    underwrite_with_capability_v1::{
+        UnderwriteWithCapabilityV1CallData, UnderwriteWithCapabilityV1PublicInputs,
+        underwrite_with_capability_v1_proof,
+    },
+    purchase_coverage_with_capability_v1::{
+        PurchaseCoverageWithCapabilityV1CallData, PurchaseCoverageWithCapabilityV1PublicInputs,
+        purchase_coverage_with_capability_v1_proof,
+    },
 };
 
 /// InsuranceMarket Harness for isolated testing
@@ -107,26 +119,44 @@ impl InsuranceMarketHarness {
         }
     }
 
-    /// Build underwrite call data
-    pub fn build_underwrite_call_data(
+    /// Underwrite with ZK proof (function code 0x00)
+    pub fn underwrite(
         &self,
         params: &dwow_insurance_market_contract::model::UnderwriteParamsV1,
-    ) -> Result<Vec<u8>> {
-        use dwow_serial::Encodable;
-        let mut call_data = vec![];
+    ) -> Result<UnderwriteResult> {
+        use dwow_sdk::pasta::pallas;
+        let input = UnderwriteWithCapabilityV1CallData::new(
+            pallas::Scalar::from(1u64), pallas::Base::from(1u64),
+            params.underwriter, pallas::Base::from(1u64), pallas::Base::from(1u64),
+        );
+        let (proof, public_inputs) = underwrite_with_capability_v1_proof(
+            &self.underwrite_zkbin, &self.underwrite_pk, &input,
+        )?;
+
+        let mut call_data = vec![0x00];
         params.encode(&mut call_data)?;
-        Ok(call_data)
+
+        Ok(UnderwriteResult { call_data, proof, public_inputs })
     }
 
-    /// Build purchase coverage call data
-    pub fn build_purchase_coverage_call_data(
+    /// Purchase coverage with ZK proof (function code 0x01)
+    pub fn purchase_coverage(
         &self,
         params: &dwow_insurance_market_contract::model::PurchaseCoverageParamsV1,
-    ) -> Result<Vec<u8>> {
-        use dwow_serial::Encodable;
-        let mut call_data = vec![];
+    ) -> Result<PurchaseCoverageResult> {
+        use dwow_sdk::pasta::pallas;
+        let input = PurchaseCoverageWithCapabilityV1CallData::new(
+            pallas::Scalar::from(1u64), pallas::Base::from(1u64),
+            params.buyer, pallas::Base::from(1u64), pallas::Base::from(1u64),
+        );
+        let (proof, public_inputs) = purchase_coverage_with_capability_v1_proof(
+            &self.purchase_coverage_zkbin, &self.purchase_coverage_pk, &input,
+        )?;
+
+        let mut call_data = vec![0x01];
         params.encode(&mut call_data)?;
-        Ok(call_data)
+
+        Ok(PurchaseCoverageResult { call_data, proof, public_inputs })
     }
 }
 
@@ -158,4 +188,18 @@ impl super::ContractHarness for InsuranceMarketHarness {
             _ => None,
         }
     }
+}
+
+/// Result of underwrite
+pub struct UnderwriteResult {
+    pub call_data: Vec<u8>,
+    pub proof: Proof,
+    pub public_inputs: UnderwriteWithCapabilityV1PublicInputs,
+}
+
+/// Result of purchase_coverage
+pub struct PurchaseCoverageResult {
+    pub call_data: Vec<u8>,
+    pub proof: Proof,
+    pub public_inputs: PurchaseCoverageWithCapabilityV1PublicInputs,
 }
