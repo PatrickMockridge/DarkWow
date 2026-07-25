@@ -68,7 +68,8 @@ use crate::tests::genesis::GenesisHarness;
 /// Phase 8: Coverage gate — uncovered barbs drop the note.
 /// Phases 9-10: Wrong-key negative + determinism.
 #[test]
-#[ignore = "pre-existing halo2 plonk synthesis error in build_native_transfer, unrelated to genesis changes"]
+#[ignore = "pre-existing halo2 plonk synthesis error in build_native_transfer \
+    (per §2.6: tracking issue TBD, silences write-path test suite)"]
 fn test_wallet_integration() {
     dwow_native_token_contract::enable_deterministic_zk();
 
