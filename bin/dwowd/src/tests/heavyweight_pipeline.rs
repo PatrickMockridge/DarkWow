@@ -2083,95 +2083,37 @@ fn test_heavyweight_subscription() -> std::result::Result<(), Box<dyn std::error
     use dwow_contract_test_harness::harness::SubscriptionHarness;
     use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::BlockChain;
 
     println!("=== Subscription Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = BlockChain::new().await?;
+        chain.init_genesis().await?;
         let harness = SubscriptionHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "subscription").await?;
         let wasm = include_bytes!("../../../../src/contract/subscription/dwow_subscription_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "subscription", wasm).await?;
         println!("Contract deployed");
 
-        let harness = &pipeline.harness;
-        let subscriber_secret = pallas::Base::from(10u64);
-        let subscriber_pub = PublicKey::from_secret(SecretKey::from_base(subscriber_secret));
-        let empty_path = vec![MerkleNode::new(pallas::Base::from(0u64))];
+        let sub_secret = pallas::Base::from(10u64);
+        let sub_pub = PublicKey::from_secret(SecretKey::from_base(sub_secret));
+        let ep: Vec<MerkleNode> = vec![MerkleNode::new(pallas::Base::from(0u64))];
 
-        // --- subscribe ---
-        println!("  Test: subscribe");
-        let sub = harness.subscribe(subscriber_secret, pallas::Base::from(1u64), empty_path.clone(), pallas::Scalar::from(2u64), pallas::Base::from(3u64), pallas::Base::from(4u64), 1000, pallas::Base::from(5u64), 0, empty_path.clone(), 0, empty_path.clone(), pallas::Base::from(6u64), subscriber_pub, 1, 5000, pallas::Base::from(7u64), 500, pallas::Base::from(8u64), 100, pallas::Base::from(9u64), pallas::Base::from(10u64), pallas::Base::from(11u64), pallas::Base::from(12u64), pallas::Base::from(13u64))?;
-        assert!(!sub.call_data.is_empty());
-        println!("    call_data={}B", sub.call_data.len());
+        let sub = harness.subscribe(sub_secret, pallas::Base::from(1u64), ep.clone(), pallas::Scalar::from(2u64), pallas::Base::from(3u64), pallas::Base::from(4u64), 1000, pallas::Base::from(5u64), 0, ep.clone(), 0, ep.clone(), pallas::Base::from(6u64), sub_pub, 1, 5000, pallas::Base::from(7u64), 500, pallas::Base::from(8u64), 100, pallas::Base::from(9u64), pallas::Base::from(10u64), pallas::Base::from(11u64), pallas::Base::from(12u64), pallas::Base::from(13u64))?;
+        let vfy = harness.verify_access(sub_secret, pallas::Base::from(1u64), 1, 0, ep.clone(), pallas::Base::from(2u64), pallas::Base::from(3u64), pallas::Base::from(4u64), pallas::Base::from(5u64), 100, sub_pub.x().unwrap(), sub_pub.y().unwrap(), 1, 500, 10, 3600, 5, 100, 5, pallas::Base::from(6u64))?;
+        let usage = harness.update_usage(pallas::Base::from(1u64), sub_pub.x().unwrap(), sub_pub.y().unwrap(), pallas::Base::from(2u64), pallas::Base::from(3u64), sub_secret, 100, pallas::Base::from(4u64), vec![pallas::Base::from(0u64)])?;
+        let cancel = harness.cancel(pallas::Base::from(1u64), sub_secret, pallas::Base::from(100u64), 500, sub_pub)?;
+        let renew = harness.renew(pallas::Base::from(1u64), sub_secret, 10000, pallas::Base::from(200u64), dwow_sdk::crypto::pasta_prelude::Group::identity(), vec![pallas::Base::from(0u64)])?;
 
-        // --- subscribe through accept_block ---
-        println!("  Exec: SubscribeV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&sub.call_data, vec![sub.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
-        println!("    accept_block height OK");
-
-        // --- verify_access ---
-        println!("  Test: verify_access");
-        let verify = harness.verify_access(subscriber_secret, pallas::Base::from(1u64), 1, 0, empty_path.clone(), pallas::Base::from(2u64), pallas::Base::from(3u64), pallas::Base::from(4u64), pallas::Base::from(5u64), 100, subscriber_pub.x().expect("pk not identity"), subscriber_pub.y().expect("pk not identity"), 1, 500, 10, 3600, 5, 100, 5, pallas::Base::from(6u64))?;
-        assert!(!verify.call_data.is_empty());
-        println!("    call_data={}B", verify.call_data.len());
-
-        // --- verify_access through accept_block ---
-        println!("  Exec: VerifyAccessV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&verify.call_data, vec![verify.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
-        println!("    accept_block height OK");
-
-        // --- update_usage ---
-        println!("  Test: update_usage");
-        let usage = harness.update_usage(pallas::Base::from(1u64), subscriber_pub.x().expect("pk not identity"), subscriber_pub.y().expect("pk not identity"), pallas::Base::from(2u64), pallas::Base::from(3u64), subscriber_secret, 100, pallas::Base::from(4u64), vec![pallas::Base::from(0u64)])?;
-        assert!(!usage.call_data.is_empty());
-        println!("    call_data={}B", usage.call_data.len());
-
-        // --- update_usage through accept_block ---
-        println!("  Exec: UpdateUsageV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&usage.call_data, vec![usage.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
-        println!("    accept_block height OK");
-
-        // --- cancel ---
-        println!("  Test: cancel");
-        let cancel = harness.cancel(
-            pallas::Base::from(1u64), subscriber_secret,
-            pallas::Base::from(100u64), 500, subscriber_pub,
-        )?;
-        assert!(!cancel.call_data.is_empty());
-        println!("    call_data={}B", cancel.call_data.len());
-
-        // --- cancel through accept_block ---
-        println!("  Exec: CancelV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&cancel.call_data, vec![cancel.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
-        println!("    accept_block height OK");
-
-        // --- renew ---
-        println!("  Test: renew");
-        let renew = harness.renew(
-            pallas::Base::from(1u64), subscriber_secret,
-            10000, pallas::Base::from(200u64),
-            dwow_sdk::crypto::pasta_prelude::Group::identity(),
-            vec![pallas::Base::from(0u64)],
-        )?;
-        assert!(!renew.call_data.is_empty());
-        println!("    call_data={}B", renew.call_data.len());
-
-        // --- renew through accept_block ---
-        println!("  Exec: RenewV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&renew.call_data, vec![renew.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
-        println!("    accept_block height OK");
+        // All 5 endpoints in ONE block
+        chain.block()?
+            .with_call(cid, &harness, &sub.call_data, vec![sub.proof])?
+            .with_call(cid, &harness, &vfy.call_data, vec![vfy.proof])?
+            .with_call(cid, &harness, &usage.call_data, vec![usage.proof])?
+            .with_call(cid, &harness, &cancel.call_data, vec![cancel.proof])?
+            .with_call(cid, &harness, &renew.call_data, vec![renew.proof])?
+            .submit().await?;
 
         println!("=== All Subscription endpoints OK ===");
         Ok(())
@@ -2185,108 +2127,39 @@ fn test_heavyweight_subscription() -> std::result::Result<(), Box<dyn std::error
 #[test]
 fn test_heavyweight_oracle() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::OracleHarness;
-    use dwow_sdk::crypto::{PublicKey, SecretKey};
+    use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::BlockChain;
 
     println!("=== Oracle Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = BlockChain::new().await?;
+        chain.init_genesis().await?;
         let harness = OracleHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "oracle").await?;
         let wasm = include_bytes!("../../../../src/contract/oracle/dwow_oracle_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "oracle", wasm).await?;
         println!("Contract deployed");
 
-        let harness = &pipeline.harness;
         let oracle_secret = pallas::Base::from(10u64);
         let oracle_pub = PublicKey::from_secret(SecretKey::from_base(oracle_secret));
-
-        // --- register_oracle ---
-        println!("  Test: register_oracle");
-        let reg = harness.register_oracle(oracle_secret, oracle_pub, pallas::Base::from(1u64), "price_feed".to_string(), "u64".to_string())?;
-        assert!(!reg.call_data.is_empty());
-        println!("    call_data={}B", reg.call_data.len());
-
-        // --- register_oracle through accept_block ---
-        println!("  Exec: RegisterOracleV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&reg.call_data, vec![reg.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
-        println!("    accept_block height OK");
-
-        // --- push_value ---
-        println!("  Test: push_value");
-        let pv = harness.push_value(
-            pallas::Base::from(1u64), oracle_secret, oracle_pub, pallas::Base::from(42u64),
-        )?;
-        assert!(!pv.call_data.is_empty());
-        println!("    call_data={}B", pv.call_data.len());
-
-        // --- push_value through accept_block ---
-        println!("  Exec: PushValueV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&pv.call_data, vec![pv.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
-        println!("    accept_block height OK");
-
-        // --- attest_value ---
-        println!("  Test: attest_value");
-        let av = harness.attest_value(
-            pallas::Base::from(1u64), pallas::Base::from(100u64),
-            oracle_secret, pallas::Base::from(0u64), pallas::Base::from(42u64),
-            pallas::Base::from(42u64), oracle_pub,
-        )?;
-        assert!(!av.call_data.is_empty());
-        println!("    call_data={}B", av.call_data.len());
-
-        // --- attest_value through accept_block ---
-        println!("  Exec: AttestValueV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&av.call_data, vec![av.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
-        println!("    accept_block height OK");
-
-        // --- push_value_commitment ---
-        println!("  Test: push_value_commitment");
-        use dwow_sdk::crypto::MerkleNode;
         let empty_path: Vec<MerkleNode> = vec![MerkleNode::new(pallas::Base::from(0u64)); 32];
-        let pvc = harness.push_value_commitment(
-            pallas::Base::from(1u64), oracle_secret, 0, empty_path,
-            pallas::Base::from(42u64), pallas::Base::from(99u64), oracle_pub,
-            pallas::Base::from(100u64), pallas::Base::from(200u64),
-        )?;
-        assert!(!pvc.call_data.is_empty());
-        println!("    call_data={}B", pvc.call_data.len());
 
-        // --- push_value_commitment through accept_block ---
-        println!("  Exec: PushValueCommitmentV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&pvc.call_data, vec![pvc.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
-        println!("    accept_block height OK");
+        let reg = harness.register_oracle(oracle_secret, oracle_pub, pallas::Base::from(1u64), "price_feed".to_string(), "u64".to_string())?;
+        let pv = harness.push_value(pallas::Base::from(1u64), oracle_secret, oracle_pub, pallas::Base::from(42u64))?;
+        let av = harness.attest_value(pallas::Base::from(1u64), pallas::Base::from(100u64), oracle_secret, pallas::Base::from(0u64), pallas::Base::from(42u64), pallas::Base::from(42u64), oracle_pub)?;
+        let pvc = harness.push_value_commitment(pallas::Base::from(1u64), oracle_secret, 0, empty_path, pallas::Base::from(42u64), pallas::Base::from(99u64), oracle_pub, pallas::Base::from(100u64), pallas::Base::from(200u64))?;
+        let agg = harness.aggregate(pallas::Base::from(1u64), [pallas::Base::from(10u64); 4], [pallas::Base::from(1u64); 4], pallas::Base::from(4u64), pallas::Base::from(10u64), pallas::Base::from(0u64), pallas::Base::from(100u64))?;
 
-        // --- aggregate ---
-        println!("  Test: aggregate");
-        let agg = harness.aggregate(
-            pallas::Base::from(1u64),
-            [pallas::Base::from(10u64); 4],
-            [pallas::Base::from(1u64); 4],
-            pallas::Base::from(4u64),
-            pallas::Base::from(10u64),
-            pallas::Base::from(0u64),
-            pallas::Base::from(100u64),
-        )?;
-        assert!(!agg.call_data.is_empty());
-        println!("    call_data={}B", agg.call_data.len());
-
-        // --- aggregate through accept_block ---
-        println!("  Exec: AggregateV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&agg.call_data, vec![agg.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
-        println!("    accept_block height OK");
+        // All 5 endpoints in ONE block
+        chain.block()?
+            .with_call(cid, &harness, &reg.call_data, vec![reg.proof])?
+            .with_call(cid, &harness, &pv.call_data, vec![pv.proof])?
+            .with_call(cid, &harness, &av.call_data, vec![av.proof])?
+            .with_call(cid, &harness, &pvc.call_data, vec![pvc.proof])?
+            .with_call(cid, &harness, &agg.call_data, vec![agg.proof])?
+            .submit().await?;
 
         println!("=== All Oracle endpoints OK ===");
         Ok(())
@@ -2643,42 +2516,45 @@ fn test_heavyweight_drain_protection() -> std::result::Result<(), Box<dyn std::e
 #[test]
 fn test_heavyweight_game_room() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::GameRoomHarness;
+    use crate::tests::blockchain::BlockChain;
 
     println!("=== GameRoom Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = BlockChain::new().await?;
+        chain.init_genesis().await?;
         let harness = GameRoomHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "game_room").await?;
         let wasm = include_bytes!("../../../../src/contract/game_room/dwow_game_room_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "game_room", wasm).await?;
         println!("Contract deployed");
 
-        let harness = &pipeline.harness;
+        // All 11 ZK endpoints in ONE block
+        let r0 = harness.create_room()?;
+        let r1 = harness.deposit()?;
+        let r2 = harness.withdraw()?;
+        let r3 = harness.place_bet()?;
+        let r4 = harness.raise()?;
+        let r5 = harness.call()?;
+        let r6 = harness.fold()?;
+        let r7 = harness.close_pot()?;
+        let r8 = harness.settle_pot()?;
+        let r9 = harness.contribute_entropy()?;
+        let ra = harness.claim()?;
 
-        macro_rules! exec_gr {
-            ($method:ident, $label:expr) => {
-                let r = harness.$method()?;
-                println!("  Exec: {} through accept_block", $label);
-                let hb = pipeline.genesis.block_height();
-                pipeline.exec(&r.call_data, vec![r.proof]).await?;
-                assert!(pipeline.genesis.block_height() > hb);
-                println!("    accept_block height OK");
-            };
-        }
-
-        exec_gr!(create_room, "CreateRoomV1");
-        exec_gr!(deposit, "DepositV1");
-        exec_gr!(withdraw, "WithdrawV1");
-        exec_gr!(place_bet, "PlaceBetV1");
-        exec_gr!(raise, "RaiseV1");
-        exec_gr!(call, "CallV1");
-        exec_gr!(fold, "FoldV1");
-        exec_gr!(close_pot, "ClosePotV1");
-        exec_gr!(settle_pot, "SettlePotV1");
-        exec_gr!(contribute_entropy, "ContributeEntropyV1");
-        exec_gr!(claim, "ClaimV1");
+        chain.block()?
+            .with_call(cid, &harness, &r0.call_data, vec![r0.proof])?
+            .with_call(cid, &harness, &r1.call_data, vec![r1.proof])?
+            .with_call(cid, &harness, &r2.call_data, vec![r2.proof])?
+            .with_call(cid, &harness, &r3.call_data, vec![r3.proof])?
+            .with_call(cid, &harness, &r4.call_data, vec![r4.proof])?
+            .with_call(cid, &harness, &r5.call_data, vec![r5.proof])?
+            .with_call(cid, &harness, &r6.call_data, vec![r6.proof])?
+            .with_call(cid, &harness, &r7.call_data, vec![r7.proof])?
+            .with_call(cid, &harness, &r8.call_data, vec![r8.proof])?
+            .with_call(cid, &harness, &r9.call_data, vec![r9.proof])?
+            .with_call(cid, &harness, &ra.call_data, vec![ra.proof])?
+            .submit().await?;
 
         println!("=== All GameRoom endpoints OK ===");
         Ok(())
