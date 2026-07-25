@@ -152,8 +152,8 @@ pub struct HeavyweightPipeline<H: ContractHarness> {
     /// ContractId after deployment
     pub contract_id: Option<ContractId>,
     /// When true, `exec()` requires non-empty proofs for ZK contracts.
-    /// Default: false (warn-only) until harness methods are updated to
-    /// return proofs alongside call_data.
+    /// Default: true (hard error on empty proofs). ZK contracts SHALL have
+    /// proofs — per production-test-standard.md §2.3.
     pub strict_zk: bool,
     /// Cached ZK proving keys for coinbase construction (built eagerly in
     /// `new()` — `exec()` is `&self`, no lazy init needed).
@@ -215,7 +215,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
 
         Ok(Self {
             genesis, harness, contract_name: contract_name.to_string(),
-            contract_id: None, strict_zk: false,
+            contract_id: None, strict_zk: true,
             linear_zk: Arc::new(zk), keys_path,
         })
     }
@@ -389,8 +389,15 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
             );
         }
 
-        let mut tx = build_contract_tx(contract_id, call_data.to_vec());
-        tx.witness = build_witness(contract_id, call_data, proofs);
+        // Wrap call_data in Vec<DarkLeaf<ContractCall>> format for non-NativeToken
+        // contracts. NativeToken uses raw [fn_code]+params format — skip wrapping.
+        let call_data_wrapped = if contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID {
+            call_data.to_vec()
+        } else {
+            super::harness::wrap_call_data(contract_id, call_data.to_vec())
+        };
+        let mut tx = build_contract_tx(contract_id, call_data_wrapped.clone());
+        tx.witness = build_witness(contract_id, &call_data_wrapped, proofs);
 
         let height = self.genesis.block_height();
         let next_height = height.succ();
@@ -621,6 +628,19 @@ fn test_heavyweight_promissory_note() -> std::result::Result<(), Box<dyn std::er
         let token = harness.create_token(auth_parent, user_data, blind, recipient, 1000, spend_hook, user_data, coin_blind)?;
         assert!(!token.call_data.is_empty());
         println!("    call_data={}B token_id={:?}", token.call_data.len(), token.token_id);
+
+        // --- create_token through accept_block (production path) ---
+        // Routes RegisterTypeV1 through the full production accept_block path
+        // with DarkLeaf-wrapped call_data + witness + ZK proof verification.
+        // This is the smoke test for the DarkLeaf+accept_block infrastructure
+        // (production-test-standard.md §1).
+        println!("  Exec: RegisterTypeV1 through accept_block");
+        let height_before = pipeline.genesis.block_height();
+        pipeline.exec(&token.call_data, token.token_proofs.clone()).await?;
+        let height_after = pipeline.genesis.block_height();
+        assert!(height_after > height_before,
+            "accept_block must advance height after RegisterTypeV1");
+        println!("    accept_block height {} -> {} OK", height_before, height_after);
 
         // --- mint ---
         println!("  Test: mint");

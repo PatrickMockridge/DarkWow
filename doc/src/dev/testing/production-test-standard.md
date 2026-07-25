@@ -1,0 +1,329 @@
+# Production Test Standard
+
+This document defines the standard that ALL tests in the DarkWow repository SHALL meet
+when testing contract functions, consensus operations, and wallet capability construction.
+It is normative — every test SHALL conform. A test that does not conform is a HAZOP
+finding and SHALL be remediated.
+
+This standard derives from a HAZOP review of 55 test functions across 7 test files and
+28 contract integration test suites (July 2026). The review found that 40 of 55 tests
+are false positives — they appear to test contract functions but never exercise them
+through the production execution path.
+
+## 1. The Production Path
+
+Every test that claims to exercise a contract function SHALL follow this path. A test
+that skips any numbered step is not a test — it is a false positive.
+
+```
+1. Genesis:         init_genesis() — all contracts deployed via production path
+2. Coinbase:        build_linear_coinbase() — real ZK proof + AEAD encryption
+3. Contract call:   harness convenience method — proof + call_data
+4. Format bridge:   wrap_call_data(contract_id, raw_call_data)
+                    → Vec<DarkLeaf<ContractCall>>
+5. Witness:         build_witness(contract_id, &call_data, proofs)
+                    → core tx serialized into witness bytes
+6. Transaction:     build_contract_tx(contract_id, call_data)
+                    .witness = witness_bytes
+7. Block:           Block { header, transactions: vec![coinbase_tx, contract_tx] }
+8. accept_block:    validate_block_structure
+                    → execute_block (metadata → exec → apply)
+                    → verify_core_tx_with_tables (ZK proof + signature verification)
+                    → commit state
+9. State check:     Query sled store for expected state change
+```
+
+### 1.1 Contract Function Test Template
+
+```rust
+#[test]
+fn test_<contract>_<function>_through_accept_block() {
+    dwow_native_token_contract::enable_deterministic_zk();
+
+    smol::block_on(async {
+        // 1. Genesis — production path
+        let har = GenesisHarness::new_without_contracts().unwrap();
+        let keys_toml = "[node0]\nwallet_secret = \"0100...\"\n";
+        let keys_path = /* tempfile */;
+        let miner_mgr = AccountManager::open(&keys_path, Network::Testnet, "node0").unwrap();
+        let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
+        let recipient_1 = MiningRecipient::from_account(&miner_mgr, BlockHeight::new(1)).unwrap();
+        init_genesis(&har.chain_state, recipient_1, magic_bytes).await.unwrap();
+
+        // 2. Build coinbase — production path
+        let height = BlockHeight::new(2);
+        let reward = expected_reward(height);
+        let recipient = MiningRecipient::from_account(&miner_mgr, height).unwrap();
+        let linear_zk = LinearPowRewardZk::new(har.chain_state.clone()).await.unwrap();
+        let (coinbase, _pi, pow_call, _blind) =
+            build_linear_coinbase(recipient, reward, &linear_zk, height).await.unwrap();
+
+        let coinbase_tx = Transaction {
+            contract_calls: vec![pow_call],
+            nullifiers: vec![coinbase.nullifier],
+            ..Default::default()
+        };
+
+        // 3. Build contract call via harness
+        let harness = ContractHarness::spawn();
+        let result = harness.some_function(/* params */).unwrap();
+
+        // 4. Wrap call_data in production format
+        let call_data = wrap_call_data(CONTRACT_ID, result.call_data.clone());
+
+        // 5-6. Build tx with witness
+        let mut contract_tx = build_contract_tx(CONTRACT_ID, call_data.clone());
+        contract_tx.witness = build_witness(CONTRACT_ID, &call_data, result.proofs.clone());
+
+        // 7. Assemble block
+        let txs = vec![coinbase_tx, contract_tx];
+        let prev = har.chain_state.get_latest_block().unwrap();
+        let prev_hash = har.chain_state.hash_block_with_cached_vm(&prev);
+        let header = BlockHeader {
+            previous: prev_hash,
+            merkle_root: compute_merkle_root(&txs),
+            height,
+            total_reward: reward,
+            randomx_key: Miner::derive_key_from_height(height),
+            target: BlockTarget::MAX,
+            ..Default::default()
+        };
+        let block = Block { header, transactions: txs };
+
+        // 8. accept_block — production path
+        let vm = build_accept_vm(&block).unwrap();
+        accept_block(&har.chain_state, &block, &[], &vm,
+            BlockHeight::new(1), BlockTarget::MAX, None)
+            .expect("accept_block must succeed");
+
+        // 9. Verify state change
+        let key = /* contract-specific sled key */;
+        let stored = har.chain_state.get_contract_data(&key).unwrap();
+        assert!(/* state changed as expected */);
+    });
+}
+```
+
+## 2. What SHALL NOT Appear in Any Test
+
+### 2.1 Coinbase-only accept_block for contract function tests
+
+If a test exercises a contract function, that function SHALL execute through
+accept_block's WASM runtime. `exec_coinbase_only()` is valid ONLY for tests that
+verify coinbase behavior — not for tests whose name or documentation claims to
+test contract functions.
+
+**Rationale:** 24 heavyweight tests call harness endpoint methods to generate
+call_data, assert the call_data is non-empty, then call `exec_coinbase_only()`.
+The contract function's call_data is never submitted to accept_block. The harness
+method's ZK proof is never verified by the production verifier. The test proves
+the harness compiles — nothing about the contract.
+
+### 2.2 Proof-only verification
+
+`assert!(!call_data.is_empty())` is not a test of contract function behavior.
+Proofs SHALL be verified by the production verifier (`verify_core_tx_with_tables`).
+Structural checks on proof size or presence are partition-A concerns (the compiler
+proves the proof type is inhabited) and SHALL be removed.
+
+### 2.3 strict_zk: false as default
+
+`HeavyweightPipeline::strict_zk` SHALL default to `true`. ZK contracts SHALL have
+proofs. Empty proofs against ZK circuits SHALL be a hard error. The current default
+of `false` was transitional scaffolding that was never removed.
+
+### 2.4 Synthetic manifests for production-path tests
+
+A test that stores a hand-crafted manifest TOML string directly into the wallet DB
+tests the manifest parser, not the production pipeline. Production tests that claim
+to witness the manifest-driven capability engine SHALL use manifests from genesis
+seeding or from contract deployment — the same path the wallet uses in production.
+
+Tests of the manifest parser itself (unit tests in `manifest.rs`) MAY use synthetic
+TOML strings. This restriction applies to integration tests, not unit tests.
+
+### 2.5 Format shortcuts
+
+call_data SHALL be in the format the WASM entrypoint expects:
+
+- **Non-NativeToken contracts:** `Vec<DarkLeaf<ContractCall>>` — use
+  `wrap_call_data(contract_id, raw_call_data)`.
+- **NativeToken:** Raw `[fn_code] + params`.
+
+The harness produces raw `[fn_code] + params` format. The `wrap_call_data()` bridge
+in `wallet_integration.rs` converts this to the WASM entrypoint format. Every test
+that submits non-NativeToken contract calls through accept_block SHALL use this
+bridge.
+
+### 2.6 #[ignore] for pre-existing bugs
+
+A test disabled due to a known bug SHALL have a tracking issue and a remediation
+timeline. `#[ignore]` without a fix plan is acceptance of the bug.
+
+**Current violation:** `test_wallet_integration` is `#[ignore]` due to a halo2
+plonk synthesis error in `build_native_transfer`. The error is documented in a
+comment but has no tracking issue and no remediation timeline. This silences the
+entire write-path test suite.
+
+## 3. Test Classification
+
+Every test SHALL declare its partition per the A/B/C taxonomy
+(testing/overview.md §"A/B/C Partition"):
+
+### Partition A: Statically-proven interior
+
+Facts the compiler or Lean proof assistant discharge. Tests here SHALL be removed —
+the compiler IS the test. Examples:
+
+- `assert_eq!(block.header.height, 42)` when `BlockHeight: PartialEq` is already
+  compile-proven
+- Checking that a `Proof` is non-empty when the type system already distinguishes
+  `Proof` from `Option<Proof>`
+- Testing that `u64::from(BlockHeight)` compiles — the compiler already enforces
+  the `From` impl
+
+### Partition B: Runtime enforcement at boundaries
+
+The test SHALL exercise the production code path and verify that the boundary holds
+against adversarial input. Every declared SHALL at a boundary SHALL have at least
+one runtime witness test.
+
+**This is where most contract function tests belong.** accept_block is the primary
+boundary: bytes arrive from the network, the WASM runtime deserializes and executes
+them, and the state is committed. A partition-B contract test verifies that this
+boundary correctly enforces the contract's declared barbs.
+
+### Partition C: Dynamic residue
+
+Emergent runtime properties (timing, concurrency, economics, network topology).
+These belong in the Docker pipeline (`test_pipeline.sh`). Partition C tests depend
+on timing, concurrency, adversary behavior, or network topology. They SHALL NOT be
+included in `cargo test` runs.
+
+## 4. Wallet Capability Test Standard
+
+The wallet is a generic capability engine (wallet.md §0). It constructs typed
+capabilities at scan time from primitives + manifest + barb composition. A test
+that claims to witness this engine SHALL verify ALL of:
+
+1. **accept_block:** A contract function executes through accept_block with
+   production WASM execution.
+2. **Wallet scan:** The resulting block is scanned by `scan_block_linear` through
+   the production scan path.
+3. **Typed capability:** The wallet discovers a typed capability — manifest
+   resolution succeeded and `resolve_capability_type` returned `Some`.
+4. **Field verification:** The discovered capability has the correct:
+   - `capability_name` (matches manifest `[[capabilities]].name`)
+   - `capability_discriminant` (matches manifest declaration)
+   - `resource` and `action` (set from manifest `[[actions]]`)
+   - `primitives` (exact set matching manifest `[[capabilities]].primitives`)
+   - `barbs` (exact union matching the primitive-to-barb composition table in
+     `capability.rs`)
+   - `contract_id` (matches the deployed contract's ID)
+
+**What is insufficient:**
+
+- `assert!(!barbs.is_empty())` — passes if ANY capability was discovered, even a
+  native token output or a misconfigured manifest. Does not verify typed
+  construction.
+- `assert_eq!(contract_id, expected)` — verifies routing but not typing. A
+  native token output to the wrong contract would fail, but a correctly-routed
+  untyped capability would pass.
+- Checking only `capabilities.len()` — confirms discovery count but not
+  structure. Zero typed capabilities and one native fallback would pass.
+
+### 4.1 Wallet capability test template
+
+```rust
+// Find capability by contract_id
+let cap = scan_result.capabilities.iter()
+    .find(|c| c.cap_record.contract_id == CONTRACT_ID)
+    .expect("wallet must discover capability for contract");
+
+let rec = &cap.cap_record;
+
+// Manifest-driven type construction
+assert_eq!(rec.capability_name.as_deref(), Some("coin"),
+    "capability_name must match manifest declaration");
+assert_eq!(rec.capability_discriminant, Some(0),
+    "discriminant must match manifest declaration");
+assert!(rec.resource.is_some(),
+    "resource must be set from manifest [[actions]]");
+assert!(rec.action.is_some(),
+    "action must be set from manifest [[actions]]");
+
+// Primitive composition
+let expected_primitives: Vec<Primitive> = vec![
+    Primitive::SecretKey, Primitive::Commitment, Primitive::Nullifier,
+    Primitive::ContractId, Primitive::FuncId, Primitive::AssetId,
+    Primitive::MerkleNode,
+];
+for p in &expected_primitives {
+    assert!(rec.primitives.contains(p),
+        "capability must contain primitive {:?}", p);
+}
+assert_eq!(rec.primitives.len(), expected_primitives.len(),
+    "capability must have exactly {} primitives", expected_primitives.len());
+
+// Barb composition — union of primitive barbs
+let expected_barbs: Vec<Barb> = vec![
+    Barb::Spend, Barb::Derive, Barb::Commit, Barb::Nullify,
+    Barb::Dispatch, Barb::Gate, Barb::Denominate, Barb::ProveInclusion,
+];
+for b in &expected_barbs {
+    assert!(rec.barbs.contains(b),
+        "capability must contain barb {:?}", b);
+}
+assert_eq!(rec.barbs.len(), expected_barbs.len(),
+    "capability must have exactly {} barbs", expected_barbs.len());
+
+// Inflation guard
+assert_eq!(rec.value, 0,
+    "non-native capability must have zero DRKW value");
+```
+
+## 5. Harness Completeness Standard
+
+A contract harness SHALL provide at minimum:
+
+1. One convenience method per ZK circuit that produces `(call_data, Vec<Proof>)`
+2. `call_data` in the `[fn_code] + params` format (raw — the test wraps it)
+3. Proofs built using the contract's production client code (CallBuilder pattern)
+
+A harness with zero proof methods (TIER C) is not a harness — it is a circuit
+loader. Contracts with TIER C harnesses SHALL be upgraded to TIER A before any
+test claims to exercise that contract's functions through accept_block.
+
+### 5.1 Harness classification
+
+| Tier | Proof methods | Encode-only | Verdict |
+|------|--------------|-------------|---------|
+| A | >= 1 per circuit | optional | Production-ready |
+| B | Some circuits | some | Needs upgrade before accept_block testing |
+| C | Zero | any | Circuit loader — not a harness |
+
+## 6. Correctly-Scoped Tests (Preserve)
+
+The following tests are correctly scoped and SHALL NOT be modified as part of
+remediation. They may be extended but their existing assertions SHALL NOT be
+weakened:
+
+- **Genesis tests** (`genesis.rs`): determinism, block creation, sync
+  materialization, tamper rejection, persistence roundtrip
+- **Pipeline deployment tests** (`pipeline.rs`): Deployooor-based deployment,
+  no ZK claimed
+- **Merge mining tests** (`merge_mining.rs`): PowSource::Monero acceptance,
+  determinism
+- **Tripwire test** (`tripwire.rs`): architectural invariant enforcement
+- **`test_wallet_coinbase_scan_only`** (`wallet_integration.rs`): Path 1
+  coinbase production path, correctly scoped
+- **`test_canonical_call_failure_rejects_block`** (`wallet_integration.rs`):
+  strict-mode rejection, correctly scoped
+
+## 7. References
+
+- [Testing Overview](overview.md) — testing levels and MoC boundaries
+- [Type System Specification](../type-system.md) — barb definitions, type rules
+- [O-Cap: Emergent Types](../ocap.md) — capability composition
+- [Wallet Architecture](../wallet.md) — capability engine design
+- [Manifest Specification](../manifest.md) — manifest format and resolution

@@ -399,7 +399,13 @@ pub fn execute_block(
             }
         }
 
-        if success && runtime.apply(&update).is_err() { success = false; fail_stage = "apply"; }
+        if success {
+            if let Err(e) = runtime.apply(&update) {
+                eprintln!("apply() failed for contract {} (tx {}): {:?}",
+                    job.contract_id, job.tx_hash, e);
+                success = false; fail_stage = "apply";
+            }
+        }
 
         if !success {
             backend.overlay.lock().unwrap_or_else(|e| e.into_inner()).revert_to_checkpoint();

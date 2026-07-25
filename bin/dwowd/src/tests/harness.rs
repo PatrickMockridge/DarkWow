@@ -117,6 +117,28 @@ pub fn build_contract_tx(contract_id: dwow_sdk::crypto::ContractId, call_data: V
     }
 }
 
+/// Wrap harness-produced raw call_data in `Vec<DarkLeaf<ContractCall>>`
+/// format expected by WASM entrypoints. All non-NativeToken contracts use
+/// this format — their entrypoints deserialize `ix` as `Vec<DarkLeaf<ContractCall>>`
+/// and index by `call_idx`.
+///
+/// Harness methods produce `[fn_code] + params`. The WASM entrypoint expects
+/// `dwow_serial::serialize(&vec![DarkLeaf { data: ContractCall { contract_id, data: [fn_code] + params } }])`.
+/// This bridge converts between the two formats.
+pub fn wrap_call_data(
+    contract_id: dwow_sdk::crypto::ContractId,
+    raw_call_data: Vec<u8>,
+) -> Vec<u8> {
+    use dwow_sdk::tx::ContractCall;
+    let inner = ContractCall { contract_id, data: raw_call_data };
+    let leaf = dwow_sdk::dark_tree::DarkLeaf {
+        data: inner,
+        parent_index: None,
+        children_indexes: vec![],
+    };
+    dwow_serial::serialize(&vec![leaf])
+}
+
 /// Compute Merkle root from transactions (same as Block::verify_merkle_root).
 pub fn compute_merkle_root(txs: &[Transaction]) -> blake3::Hash {
     let tx_hashes: Vec<blake3::Hash> = txs.iter().map(|tx| tx.hash()).collect();
