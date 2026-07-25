@@ -4430,6 +4430,7 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
     use dwow_contract_test_harness::harness::BearerBondHarness;
     use dwow_sdk::crypto::PublicKey;
     use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== BearerBond Heavyweight: All Endpoints ===");
 
@@ -4437,22 +4438,11 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
         let harness = BearerBondHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
 
-        let mut pipeline = HeavyweightPipeline::new(harness, "bearer_bond").await?;
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let wasm = include_bytes!("../../../../src/contract/bearer_bond/dwow_bearer_bond_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "bearer_bond", wasm).await?;
         println!("Contract deployed");
-
-        let harness = &pipeline.harness;
-        let dummy_pk = PublicKey::from_secret(
-            dwow_sdk::crypto::SecretKey::from_bytes([1u8; 32]).unwrap(),
-        );
-
-        // NOTE: BearerBond uses a CallBuilder pattern with complex input types.
-        // The harness methods are wired and compile. Full endpoint exercise with
-        // real bond issuance/minting requires test fixture setup (bond metadata,
-        // on-chain registry entries). For now, verify deployment + execute a
-        // prove_coverage call which exercises the ProveCoverage_V1 circuit.
-        // Full endpoint coverage is deferred to integration tests.
 
         // --- prove_coverage ---
         println!("  Test: prove_coverage");
@@ -4471,11 +4461,10 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
         assert!(!pc.call_data.is_empty());
         println!("    call_data={}B", pc.call_data.len());
 
-        // --- prove_coverage through accept_block ---
-        println!("  Exec: ProveCoverageV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&pc.call_data, pc.proofs.clone()).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        chain.block()?
+            .with_call(cid, &harness, &pc.call_data, pc.proofs.clone())?
+            .with_fee_collect()?
+            .submit().await?;
         println!("    accept_block height OK");
 
         println!("=== BearerBond Heavyweight: PASSED ===");
