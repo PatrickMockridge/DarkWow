@@ -1315,8 +1315,14 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
         println!("  Test: open_position");
         let pos = harness.open_position(owner_secret, 10000, 5000, pallas::Base::from(1u64))?;
         assert!(!pos.call_data.is_empty());
-        println!("    call_data={}B", pos.call_data.len());        println!("  Exec: coinbase-only accept_block");
-        pipeline.exec_coinbase_only().await?;
+        println!("    call_data={}B", pos.call_data.len());
+
+        // --- open_position through accept_block ---
+        println!("  Exec: OpenPositionV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&pos.call_data, vec![pos.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         // --- mint_stable ---
         println!("  Test: mint_stable");
@@ -1342,7 +1348,7 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
         assert!(!accrue.call_data.is_empty());
         println!("    call_data={}B", accrue.call_data.len());
 
-        // --- add_collateral (builder) ---
+        // --- add_collateral ---
         println!("  Test: add_collateral");
         let ac_params = dwow_stablecoin_contract::model::DepositCollateralParams {
             deposit_commitment: dwow_sdk::crypto::IntentCommitment::from_bytes([0u8; 32]).unwrap(),
@@ -1352,11 +1358,18 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
             fee: 0,
             zk_public_inputs: vec![],
         };
-        let ac = harness.build_add_collateral_call_data(&ac_params).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
-        assert!(!ac.is_empty());
-        println!("    call_data={}B", ac.len());
+        let ac = harness.add_collateral(&ac_params).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
+        assert!(!ac.call_data.is_empty());
+        println!("    call_data={}B", ac.call_data.len());
 
-        // --- remove_collateral (builder) ---
+        // --- add_collateral through accept_block ---
+        println!("  Exec: AddCollateralV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&ac.call_data, vec![ac.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- remove_collateral ---
         println!("  Test: remove_collateral");
         let rc_params = dwow_stablecoin_contract::model::WithdrawCollateralParams {
             withdrawal_nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes([0u8; 32]).unwrap(),
@@ -1366,11 +1379,18 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
             fee: 0,
             zk_public_inputs: vec![],
         };
-        let rc = harness.build_remove_collateral_call_data(&rc_params).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
-        assert!(!rc.is_empty());
-        println!("    call_data={}B", rc.len());
+        let rc = harness.remove_collateral(&rc_params).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
+        assert!(!rc.call_data.is_empty());
+        println!("    call_data={}B", rc.call_data.len());
 
-        // --- repay_stable (builder) ---
+        // --- remove_collateral through accept_block ---
+        println!("  Exec: RemoveCollateralV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&rc.call_data, vec![rc.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- repay_stable ---
         println!("  Test: repay_stable");
         let rs_params = dwow_stablecoin_contract::model::RepayStableParams {
             repay_commitment: dwow_sdk::crypto::IntentCommitment::from_bytes([0u8; 32]).unwrap(),
@@ -1379,9 +1399,39 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
             fee: 0,
             zk_public_inputs: vec![],
         };
-        let rs = harness.build_repay_stable_call_data(&rs_params).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
-        assert!(!rs.is_empty());
-        println!("    call_data={}B", rs.len());
+        let rs = harness.repay_stable(&rs_params).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
+        assert!(!rs.call_data.is_empty());
+        println!("    call_data={}B", rs.call_data.len());
+
+        // --- repay_stable through accept_block ---
+        println!("  Exec: RepayStableV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&rs.call_data, vec![rs.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- update_config ---
+        println!("  Test: update_config");
+        let uc_params = dwow_stablecoin_contract::model::UpdateConfigParams {
+            min_collateralization_ratio: 15000,
+            liquidation_threshold: 8000,
+            liquidation_penalty: 500,
+            base_rate: 100,
+            pi_kp: 50,
+            pi_ki: 10,
+            twap_window: 3600,
+            price_deviation_threshold: 500,
+        };
+        let uc = harness.update_config(&uc_params).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
+        assert!(!uc.call_data.is_empty());
+        println!("    call_data={}B", uc.call_data.len());
+
+        // --- update_config through accept_block ---
+        println!("  Exec: UpdateConfigV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&uc.call_data, vec![uc.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         println!("=== All Stablecoin endpoints OK ===");
         Ok(())

@@ -26,7 +26,7 @@
 //! Provides isolated testing for Stablecoin contract.
 
 use dwow_core::{
-    zk::{ProvingKey, ZkCircuit},
+    zk::{Proof, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
 use dwow_sdk::{
@@ -447,40 +447,84 @@ impl StablecoinHarness {
         })
     }
 
-    /// Build add collateral call data
-    ///
-    /// Client proof module not yet implemented for AddCollateralV1.
-    /// Construct `DepositCollateralParams` from `dwow_stablecoin_contract::model`.
-    pub fn build_add_collateral_call_data(
+    /// Initialize the stablecoin contract (function code 0x00)
+    pub fn initialize(
+        &self,
+        params: &dwow_stablecoin_contract::model::InitializeParams,
+    ) -> Result<InitializeResult, Box<dyn std::error::Error>> {
+        let witnesses = dwow_core::zk::empty_witnesses(&self.init_zkbin)?;
+        let circuit = ZkCircuit::new(witnesses, &self.init_zkbin);
+        let proof = Proof::create(&self.init_pk, &[circuit], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+
+        let mut call_data = vec![0x00];
+        params.encode(&mut call_data)?;
+
+        Ok(InitializeResult { call_data, proof })
+    }
+
+    /// Add collateral with ZK proof (function code 0x02)
+    pub fn add_collateral(
         &self,
         params: &dwow_stablecoin_contract::model::DepositCollateralParams,
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        use dwow_serial::Encodable;
-        let mut call_data = vec![0x02]; // AddCollateralV1
+    ) -> Result<AddCollateralResult, Box<dyn std::error::Error>> {
+        let witnesses = dwow_core::zk::empty_witnesses(&self.add_collateral_zkbin)?;
+        let circuit = ZkCircuit::new(witnesses, &self.add_collateral_zkbin);
+        let proof = Proof::create(&self.add_collateral_pk, &[circuit], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+
+        let mut call_data = vec![0x02];
         params.encode(&mut call_data)?;
-        Ok(call_data)
+
+        Ok(AddCollateralResult { call_data, proof })
     }
 
-    /// Build remove collateral call data
-    pub fn build_remove_collateral_call_data(
+    /// Remove collateral with ZK proof (function code 0x03)
+    pub fn remove_collateral(
         &self,
         params: &dwow_stablecoin_contract::model::WithdrawCollateralParams,
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        use dwow_serial::Encodable;
-        let mut call_data = vec![0x03]; // RemoveCollateralV1
+    ) -> Result<RemoveCollateralResult, Box<dyn std::error::Error>> {
+        let witnesses = dwow_core::zk::empty_witnesses(&self.remove_collateral_zkbin)?;
+        let circuit = ZkCircuit::new(witnesses, &self.remove_collateral_zkbin);
+        let proof = Proof::create(&self.remove_collateral_pk, &[circuit], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+
+        let mut call_data = vec![0x03];
         params.encode(&mut call_data)?;
-        Ok(call_data)
+
+        Ok(RemoveCollateralResult { call_data, proof })
     }
 
-    /// Build repay stable call data
-    pub fn build_repay_stable_call_data(
+    /// Repay stable debt with ZK proof (function code 0x05)
+    pub fn repay_stable(
         &self,
         params: &dwow_stablecoin_contract::model::RepayStableParams,
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        use dwow_serial::Encodable;
-        let mut call_data = vec![0x05]; // RepayStableV1
+    ) -> Result<RepayStableResult, Box<dyn std::error::Error>> {
+        let witnesses = dwow_core::zk::empty_witnesses(&self.repay_stable_zkbin)?;
+        let circuit = ZkCircuit::new(witnesses, &self.repay_stable_zkbin);
+        let proof = Proof::create(&self.repay_stable_pk, &[circuit], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+
+        let mut call_data = vec![0x05];
         params.encode(&mut call_data)?;
-        Ok(call_data)
+
+        Ok(RepayStableResult { call_data, proof })
+    }
+
+    /// Update configuration (function code 0x07)
+    pub fn update_config(
+        &self,
+        params: &dwow_stablecoin_contract::model::UpdateConfigParams,
+    ) -> Result<UpdateConfigResult, Box<dyn std::error::Error>> {
+        let witnesses = dwow_core::zk::empty_witnesses(&self.update_config_zkbin)?;
+        let circuit = ZkCircuit::new(witnesses, &self.update_config_zkbin);
+        let proof = Proof::create(&self.update_config_pk, &[circuit], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+
+        let mut call_data = vec![0x07];
+        params.encode(&mut call_data)?;
+
+        Ok(UpdateConfigResult { call_data, proof })
     }
 }
 
@@ -574,4 +618,34 @@ pub struct AccrueInterestResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: AccrueInterestPublicInputs,
+}
+
+/// Result of initialize
+pub struct InitializeResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+}
+
+/// Result of add_collateral
+pub struct AddCollateralResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+}
+
+/// Result of remove_collateral
+pub struct RemoveCollateralResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+}
+
+/// Result of repay_stable
+pub struct RepayStableResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+}
+
+/// Result of update_config
+pub struct UpdateConfigResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
 }
