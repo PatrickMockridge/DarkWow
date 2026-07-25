@@ -153,7 +153,7 @@ impl HeavyweightPipeline {
             .map_err(|e| dwow_core::Error::Custom(format!("MiningRecipient: {}", e)))?;
         drop(mgr);
         let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
-        crate::init_genesis(&self.chain_state, recipient, magic_bytes).await
+        crate::init_genesis(&self.chain_state, recipient, magic_bytes).await.map(|_| ())
     }
 
     /// Deploy a contract WASM into the chain state.
@@ -274,6 +274,24 @@ impl HeavyweightPipeline {
         })
     }
 
+    /// Build a coinbase at a specific height with a specific reward.
+    /// Needed by uncle tests that need to construct coinbases with custom
+    /// rewards (e.g., over-reward rejection tests).
+    pub async fn build_coinbase_for_height(
+        &self,
+        height: BlockHeight,
+        reward: BlockReward,
+    ) -> Result<CoinbaseResult> {
+        self.build_coinbase_inner(height, reward).await
+    }
+
+    /// Get the expected PoW target for the next block from chain consensus.
+    pub fn expected_target(&self, next_height: BlockHeight) -> BlockTarget {
+        self.chain_state.consensus.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get_next_work_required(&self.chain_state.store, next_height)
+    }
+
     // ── Internal helpers ─────────────────────────────────────────────
 
     async fn build_coinbase_inner(
@@ -314,11 +332,6 @@ impl HeavyweightPipeline {
         })
     }
 
-    fn expected_target(&self, next_height: BlockHeight) -> BlockTarget {
-        self.chain_state.consensus.lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get_next_work_required(&self.chain_state.store, next_height)
-    }
 }
 
 // ── HeavyweightBlock ───────────────────────────────────────────────────────
@@ -400,11 +413,12 @@ impl<'c> HeavyweightBlock<'c> {
     /// Heavyweight v2 tests mirror this: every block in every test calls
     /// `with_fee_collect()` to exercise the full merkle tree open/close lifecycle.
     pub fn with_fee_collect(&mut self) -> Result<&mut Self> {
-        let fee_txs: Vec<&dwow_chain::Transaction> = self.contract_txs.iter()
+        let fee_txs: Vec<dwow_chain::Transaction> = self.contract_txs.iter()
             .filter(|tx| tx.contract_calls.iter().any(|c|
                 c.contract_id == *NATIVE_TOKEN_CONTRACT_ID
                 && c.data.first() == Some(&0x00)
             ))
+            .cloned()
             .collect();
 
         if fee_txs.is_empty() {
@@ -444,7 +458,7 @@ impl<'c> HeavyweightBlock<'c> {
     ///
     /// Builds the coinbase, assembles all transactions, constructs the
     /// block, builds RandomX VM, and calls `accept_block`.
-    pub async fn submit(self) -> Result<BlockHeight> {
+    pub async fn submit(&mut self) -> Result<BlockHeight> {
         eprintln!("[blockchain] building coinbase for height {}...", self.height);
         let t0 = std::time::Instant::now();
         let cb = self.chain.build_coinbase_inner(self.height, self.reward).await?;
@@ -454,27 +468,30 @@ impl<'c> HeavyweightBlock<'c> {
 
     /// Submit with a pre-built coinbase (for tests that needed coinbase
     /// parameters before constructing contract calls).
-    pub async fn submit_with_coinbase(self, coinbase_tx: dwow_chain::Transaction) -> Result<BlockHeight> {
+    pub async fn submit_with_coinbase(&mut self, coinbase_tx: dwow_chain::Transaction) -> Result<BlockHeight> {
         self.submit_inner(coinbase_tx).await
     }
 
-    async fn submit_inner(self, coinbase_tx: dwow_chain::Transaction) -> Result<BlockHeight> {
+    async fn submit_inner(&mut self, coinbase_tx: dwow_chain::Transaction) -> Result<BlockHeight> {
         use super::harness::{build_test_block, build_test_block_with_uncles};
         use super::heavyweight_pipeline::{build_accept_vm, mine_test_nonce};
 
-        let mut all_txs = Vec::with_capacity(1 + self.contract_txs.len());
+        let tx_count = self.contract_txs.len();
+        let uncle_count = self.uncles.len();
+        let mut all_txs = Vec::with_capacity(1 + tx_count);
         all_txs.push(coinbase_tx);
-        all_txs.extend(self.contract_txs);
+        all_txs.extend(std::mem::take(&mut self.contract_txs));
 
         eprintln!("[blockchain] assembling block height {} ({} txs, {} uncles)...",
-            self.height, all_txs.len(), self.uncles.len());
+            self.height, tx_count + 1, uncle_count);
 
         let target = self.chain.expected_target(self.height);
-        let mut block = if self.uncles.is_empty() {
+        let uncles = std::mem::take(&mut self.uncles);
+        let mut block = if uncles.is_empty() {
             build_test_block(&self.chain.chain_state, self.height, all_txs)
         } else {
             build_test_block_with_uncles(
-                &self.chain.chain_state, self.height, all_txs, &self.uncles,
+                &self.chain.chain_state, self.height, all_txs, &uncles,
             )
         };
         block.header.target = target;
@@ -495,7 +512,7 @@ impl<'c> HeavyweightBlock<'c> {
         let outcome = crate::block_acceptor::accept_block(
             &self.chain.chain_state,
             &block,
-            &self.uncles,
+            &uncles,
             &vm,
             current_height,
             target,
@@ -507,7 +524,7 @@ impl<'c> HeavyweightBlock<'c> {
         match outcome {
             dwow_chain::BlockConnectOutcome::CanonicalExtension { new_height } => {
                 eprintln!("[blockchain] block accepted at height {} ({:.1}s, {} txs)",
-                    new_height, t0.elapsed().as_secs_f64(), all_txs.len());
+                    new_height, t0.elapsed().as_secs_f64(), tx_count + 1);
                 Ok(new_height)
             }
             _ => {
