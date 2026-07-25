@@ -24,7 +24,7 @@
 //! coin is correctly created, the pot is zeroed, supply is unchanged, mass
 //! balance passes, and re-execution from genesis produces identical state.
 //!
-//! Heavyweight — runs in ~10-25 min. Gated behind `#[ignore]`.
+//! Heavyweight — runs in ~10-25 min.
 //!
 //! ```bash
 //! RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 \
@@ -193,7 +193,7 @@ pub(crate) fn mine_block(
 /// 4. Assert: final tx is 0x06, pot zeroed, supply unchanged, PoT clean
 /// 5. Re-exec from genesis in a fresh harness — assert identical hashes
 #[test]
-#[ignore] // heavyweight — ~10-25 min, gated
+// heavyweight — ~10-25 min
 fn test_fee_collect_determinism() {
     dwow_native_token_contract::enable_deterministic_zk();
 

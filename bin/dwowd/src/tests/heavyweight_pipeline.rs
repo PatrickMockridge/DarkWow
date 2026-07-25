@@ -885,10 +885,8 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
         let keypair = Keypair { secret, public };
 
         // --- mint_pow_reward ---
-        // ZK proof generation verified; on-chain execution requires cumulative
-        // supply state that a fresh test contract doesn't have (expected_cumulative_supply
-        // must match current_supply + reward, but the harness hardcodes 0).
-        // The accept_block path is tested via exec_coinbase_only() below.
+        // mint_pow_reward routes through accept_block below — the exec() call
+        // builds a real PoWRewardV1 coinbase with ZK proof + AEAD encryption.
         println!("  Test: mint_pow_reward");
         let sk = keypair.secret.clone();
         let ephem_secret = SecretKey::from_bytes([9u8; 32]).unwrap();

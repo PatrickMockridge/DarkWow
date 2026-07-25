@@ -385,7 +385,7 @@ async fn eventgraph_propagation_real(ex: Arc<Executor<'static>>) {
 }
 
 #[test]
-#[ignore] // heavyweight — creates 100k events, runs 5-15 min
+// heavyweight — creates 100k events, runs 5-15 min
 fn eventgraph_chaotic_propagation() {
     test_body!(eventgraph_chaotic_propagation_real);
 }

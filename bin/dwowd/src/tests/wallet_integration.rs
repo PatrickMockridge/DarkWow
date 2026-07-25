@@ -68,8 +68,7 @@ use crate::tests::genesis::GenesisHarness;
 /// Phase 8: Coverage gate — uncovered barbs drop the note.
 /// Phases 9-10: Wrong-key negative + determinism.
 #[test]
-#[ignore = "pre-existing halo2 plonk synthesis error in build_native_transfer \
-    (per §2.6: tracking issue TBD, silences write-path test suite)"]
+#[test]
 fn test_wallet_integration() {
     dwow_native_token_contract::enable_deterministic_zk();
 
@@ -914,9 +913,8 @@ required_barbs = ["Spend","Mine"]
 // ─────────────────────────────────────────────────────────────────────────
 // Wallet manifest-driven capability scan — extracted from
 // test_wallet_integration Phases 6-10 to unblock Path 2 coverage.
-// Does NOT call build_native_transfer — the halo2 plonk synthesis
-// error in that path is the sole reason test_wallet_integration is
-// #[ignore] per §2.6.
+// Does NOT call build_native_transfer — tests the manifest-driven
+// capability engine independently of the native transfer write path.
 // ─────────────────────────────────────────────────────────────────────────
 
 #[test]

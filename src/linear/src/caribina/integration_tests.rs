@@ -1,11 +1,7 @@
 //! Integration tests for Caribina Arweave anchoring.
 //!
 //! These tests hit the real ArDrive Turbo upload endpoint and ardrive.net
-//! gateway. They are `#[ignore]`d by default — run explicitly with:
-//!
-//! ```bash
-//! cargo test -p dwow_chain -- --ignored
-//! ```
+//! gateway. They require network access.
 //!
 //! ## Test categories
 //!
@@ -39,7 +35,7 @@ use crate::caribina::{
 
 /// Validate that unfunded wallets are accepted (winc = "0" in response).
 #[test]
-#[ignore]
+
 fn test_anchor_with_unfunded_wallet() {
     let wallet = CaribinaWallet::generate();
     let mut item = DataItem::new(b"caribina integration test -- unfunded wallet");
@@ -66,7 +62,7 @@ fn test_anchor_with_unfunded_wallet() {
 
 /// Wallet cycling produces unique TX IDs for different payloads.
 #[test]
-#[ignore]
+
 fn test_multiple_anchors_unique_ids() {
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -86,7 +82,7 @@ fn test_multiple_anchors_unique_ids() {
 
 /// Querying a non-existent TX ID returns NotFound.
 #[test]
-#[ignore]
+
 fn test_verify_not_found() {
     let result = verify_anchor(&[0xFFu8; 32], &[0u8; 32], 0, BlockHeight::new(0));
     match result {
@@ -97,7 +93,7 @@ fn test_verify_not_found() {
 
 /// anchor_block returns gracefully (None or valid id) instead of panicking.
 #[test]
-#[ignore]
+
 fn test_anchor_block_resilient_on_failure() {
     let result = anchor_block(&[0u8; 32], 0, BlockHeight::new(0));
     if let Some(id) = result {
@@ -115,7 +111,7 @@ fn test_anchor_block_resilient_on_failure() {
 /// NOTE: Turbo bundles are submitted to Arweave periodically. The DataItem
 /// may take minutes to hours to appear on the gateway. This test retries.
 #[test]
-#[ignore]
+
 fn test_end_to_end_anchor_and_verify() {
     let (hash, timestamp, height, tx_id) = post_test_anchor();
 
@@ -144,7 +140,7 @@ fn test_end_to_end_anchor_and_verify() {
 /// Tampering with the owner field makes the DataItem signature invalid.
 /// Fetches a real DataItem from the gateway, tampers with the owner bytes.
 #[test]
-#[ignore]
+
 fn test_verify_bad_signature() {
     let (_hash, _timestamp, _height, tx_id) = post_test_anchor();
 
@@ -168,7 +164,7 @@ fn test_verify_bad_signature() {
 
 /// A wrong expected hash produces DataMismatch on verification.
 #[test]
-#[ignore]
+
 fn test_verify_data_mismatch() {
     let (_hash, timestamp, height, tx_id) = post_test_anchor();
 
@@ -185,7 +181,7 @@ fn test_verify_data_mismatch() {
 
 /// Timestamp tolerance: 29 min apart succeeds, 31 min apart fails.
 #[test]
-#[ignore]
+
 fn test_timestamp_tolerance_integration() {
     let (hash, timestamp, height, tx_id) = post_test_anchor();
 
