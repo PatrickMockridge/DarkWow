@@ -2251,8 +2251,29 @@ fn test_heavyweight_slot() -> std::result::Result<(), Box<dyn std::error::Error>
         println!("  Test: reveal_spin");
         let reveal = harness.reveal_spin(pallas::Base::from(100u64), pallas::Base::from(1u64))?;
         assert!(!reveal.call_data.is_empty());
-        println!("    call_data={}B", reveal.call_data.len());        println!("  Exec: coinbase-only accept_block");
-        pipeline.exec_coinbase_only().await?;
+        println!("    call_data={}B", reveal.call_data.len());
+
+        // --- reveal_spin through accept_block ---
+        println!("  Exec: RevealSpinV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&reveal.call_data, vec![reveal.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- settle_bet ---
+        println!("  Test: settle_bet");
+        let settle = harness.settle_bet(
+            player_pub, 100, 5, pallas::Base::from(1u64),
+            pallas::Base::from(2u64), pallas::Base::from(3u64),
+        )?;
+        println!("    call_data={}B", settle.call_data.len());
+
+        // --- settle_bet through accept_block ---
+        println!("  Exec: SettleBetV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&settle.call_data, vec![settle.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         println!("=== All Slot endpoints OK ===");
         Ok(())

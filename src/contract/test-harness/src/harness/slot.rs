@@ -36,7 +36,14 @@ use dwow_sdk::{
 };
 use dwow_serial::Encodable;
 
-use dwow_slot_contract::model::{CommitSpinParamsV1, RevealSpinParamsV1};
+use dwow_slot_contract::client::{
+    commit_bet_v1::{CommitBetV1CallData, CommitBetV1PublicInputs, create_commit_bet_v1_proof},
+    settle_bet_v1::{SettleBetV1CallData, SettleBetV1PublicInputs, create_settle_bet_v1_proof},
+    reveal_spin_v1::{RevealSpinCallData, RevealSpinPublicInputs, create_reveal_spin_proof},
+};
+use dwow_slot_contract::model::{
+    CommitSpinParamsV1, RevealSpinParamsV1,
+};
 
 /// Slot Harness for isolated testing
 pub struct SlotHarness {
@@ -59,31 +66,117 @@ impl SlotHarness {
     pub fn spawn() -> Self {
         let commit_bet_bin = include_bytes!("../../../slot/proof/commit_bet_v1.zk.bin");
         let settle_bet_bin = include_bytes!("../../../slot/proof/settle_bet_v1.zk.bin");
+        let reveal_spin_bin = include_bytes!("../../../slot/proof/reveal_spin_v1.zk.bin");
 
         let commit_bet_zkbin = ZkBinary::decode(commit_bet_bin, false).unwrap();
         let settle_bet_zkbin = ZkBinary::decode(settle_bet_bin, false).unwrap();
-
-        let commit_bet_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&commit_bet_zkbin).unwrap(),
-            &commit_bet_zkbin,
-        );
-        let settle_bet_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&settle_bet_zkbin).unwrap(),
-            &settle_bet_zkbin,
-        );
-
-        let commit_bet_pk = ProvingKey::build(commit_bet_zkbin.k, &commit_bet_circuit).expect("ProvingKey::build failed");
-        let settle_bet_pk = ProvingKey::build(settle_bet_zkbin.k, &settle_bet_circuit).expect("ProvingKey::build failed");
-
-        let reveal_spin_bin = include_bytes!("../../../slot/proof/reveal_spin_v1.zk.bin");
         let reveal_spin_zkbin = ZkBinary::decode(reveal_spin_bin, false).unwrap();
-        let reveal_spin_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&reveal_spin_zkbin).unwrap(),
-            &reveal_spin_zkbin,
-        );
-        let reveal_spin_pk = ProvingKey::build(reveal_spin_zkbin.k, &reveal_spin_circuit).expect("ProvingKey::build failed");
 
-        Self { commit_bet_zkbin, commit_bet_pk, settle_bet_zkbin, settle_bet_pk, reveal_spin_zkbin, reveal_spin_pk }
+        let commit_bet_pk = ProvingKey::build(
+            commit_bet_zkbin.k,
+            &ZkCircuit::new(dwow_core::zk::empty_witnesses(&commit_bet_zkbin).unwrap(), &commit_bet_zkbin),
+        ).expect("ProvingKey::build failed");
+        let settle_bet_pk = ProvingKey::build(
+            settle_bet_zkbin.k,
+            &ZkCircuit::new(dwow_core::zk::empty_witnesses(&settle_bet_zkbin).unwrap(), &settle_bet_zkbin),
+        ).expect("ProvingKey::build failed");
+        let reveal_spin_pk = ProvingKey::build(
+            reveal_spin_zkbin.k,
+            &ZkCircuit::new(dwow_core::zk::empty_witnesses(&reveal_spin_zkbin).unwrap(), &reveal_spin_zkbin),
+        ).expect("ProvingKey::build failed");
+
+        Self {
+            commit_bet_zkbin, commit_bet_pk,
+            settle_bet_zkbin, settle_bet_pk,
+            reveal_spin_zkbin, reveal_spin_pk,
+        }
+    }
+
+    /// Initialize the slot machine (non-ZK, function code 0x00)
+    pub fn initialize(&self) -> Result<InitializeResult> {
+        let call_data = vec![];
+        Ok(InitializeResult { call_data })
+    }
+
+    /// Commit a spin with ZK proof (function code 0x01)
+    pub fn commit_spin(
+        &self,
+        player_pub: PublicKey,
+        bet_value: u64,
+        paylines_played: u32,
+        secret_nonce: pallas::Base,
+        blind: pallas::Base,
+        house_edge: u32,
+        confirmation_depth: u8,
+        token_id: pallas::Base,
+        value_commit: pallas::Point,
+    ) -> Result<CommitSpinResult> {
+        let input = CommitBetV1CallData::new(
+            player_pub, bet_value, paylines_played, secret_nonce,
+            blind, token_id, house_edge,
+        );
+        let (proof, public_inputs) = create_commit_bet_v1_proof(
+            &self.commit_bet_zkbin, &self.commit_bet_pk, &input,
+        )?;
+
+        let params = CommitSpinParamsV1 {
+            player_pub,
+            bet_value,
+            paylines_played,
+            secret_nonce,
+            blind,
+            house_edge,
+            confirmation_depth,
+            token_id,
+            value_commit,
+            instance_seed: [0u8; 32],
+        };
+        let mut call_data = vec![0x01];
+        params.encode(&mut call_data)?;
+
+        Ok(CommitSpinResult { call_data, proof, public_inputs })
+    }
+
+    /// Reveal a spin with ZK proof (function code 0x02)
+    pub fn reveal_spin(
+        &self,
+        spin_id: pallas::Base,
+        secret_nonce: pallas::Base,
+    ) -> Result<RevealSpinResult> {
+        let input = RevealSpinCallData::new();
+        let (proof, public_inputs) = create_reveal_spin_proof(
+            &self.reveal_spin_zkbin, &self.reveal_spin_pk, &input,
+        )?;
+
+        let params = RevealSpinParamsV1 { spin_id, secret_nonce };
+        let mut call_data = vec![0x02];
+        params.encode(&mut call_data)?;
+
+        Ok(RevealSpinResult { call_data, proof, public_inputs })
+    }
+
+    /// Settle a bet with ZK proof (function code 0x03)
+    pub fn settle_bet(
+        &self,
+        player_pub: PublicKey,
+        bet_value: u64,
+        paylines: u32,
+        secret_nonce: pallas::Base,
+        blind: pallas::Base,
+        token_id: pallas::Base,
+    ) -> Result<SettleBetResult> {
+        let input = SettleBetV1CallData::new(
+            player_pub, bet_value, paylines, secret_nonce, blind, token_id,
+        );
+        let (proof, public_inputs) = create_settle_bet_v1_proof(
+            &self.settle_bet_zkbin, &self.settle_bet_pk, &input,
+        )?;
+
+        // Build minimal call_data for settle_bet
+        let mut call_data = vec![0x03];
+        call_data.extend_from_slice(bet_value.to_le_bytes().as_ref());
+
+        Ok(SettleBetResult { call_data, proof, public_inputs })
     }
 }
 
@@ -115,59 +208,6 @@ impl super::ContractHarness for SlotHarness {
     }
 }
 
-impl SlotHarness {
-    /// Initialize the slot contract
-    pub fn initialize(&self) -> Result<InitializeResult> {
-        // InitializeV1 takes no params, just empty call_data
-        let call_data = vec![];
-        Ok(InitializeResult { call_data })
-    }
-
-    /// Commit a spin
-    pub fn commit_spin(
-        &self,
-        player_pub: PublicKey,
-        bet_value: u64,
-        paylines_played: u32,
-        secret_nonce: pallas::Base,
-        blind: pallas::Base,
-        house_edge: u32,
-        confirmation_depth: u8,
-        token_id: pallas::Base,
-        value_commit: pallas::Point,
-    ) -> Result<CommitSpinResult> {
-        let params = CommitSpinParamsV1 {
-            player_pub,
-            bet_value,
-            paylines_played,
-            secret_nonce,
-            blind,
-            house_edge,
-            confirmation_depth,
-            token_id,
-            value_commit,
-            instance_seed: [0u8; 32],
-        };
-        let mut call_data = vec![];
-        params.encode(&mut call_data)?;
-
-        Ok(CommitSpinResult { call_data })
-    }
-
-    /// Reveal a spin
-    pub fn reveal_spin(
-        &self,
-        spin_id: pallas::Base,
-        secret_nonce: pallas::Base,
-    ) -> Result<RevealSpinResult> {
-        let params = RevealSpinParamsV1 { spin_id, secret_nonce };
-        let mut call_data = vec![];
-        params.encode(&mut call_data)?;
-
-        Ok(RevealSpinResult { call_data })
-    }
-}
-
 /// Result of initialize
 pub struct InitializeResult {
     pub call_data: Vec<u8>,
@@ -176,9 +216,20 @@ pub struct InitializeResult {
 /// Result of commit_spin
 pub struct CommitSpinResult {
     pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: CommitBetV1PublicInputs,
 }
 
 /// Result of reveal_spin
 pub struct RevealSpinResult {
     pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: RevealSpinPublicInputs,
+}
+
+/// Result of settle_bet
+pub struct SettleBetResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: SettleBetV1PublicInputs,
 }
