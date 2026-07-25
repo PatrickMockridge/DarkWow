@@ -1585,11 +1585,27 @@ fn test_heavyweight_tender() -> std::result::Result<(), Box<dyn std::error::Erro
         assert!(!create.call_data.is_empty());
         println!("    call_data={}B", create.call_data.len());
 
+        // --- create_tender through accept_block ---
+        println!("  Exec: CreateTenderV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&create.call_data, vec![create.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after CreateTenderV1");
+        println!("    accept_block height OK");
+
         // --- submit_bid ---
         println!("  Test: submit_bid");
         let submit = harness.submit_bid(create.tender_id, bidder_pub, bidder_secret, 5000, pallas::Base::from(3u64), pallas::Base::from(4u64), b"encrypted".to_vec())?;
         assert!(!submit.call_data.is_empty());
         println!("    call_data={}B", submit.call_data.len());
+
+        // --- submit_bid through accept_block ---
+        println!("  Exec: SubmitBidV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&submit.call_data, vec![submit.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after SubmitBidV1");
+        println!("    accept_block height OK");
 
         // --- reveal_bid ---
         println!("  Test: reveal_bid");
@@ -1597,12 +1613,27 @@ fn test_heavyweight_tender() -> std::result::Result<(), Box<dyn std::error::Erro
         assert!(!reveal.call_data.is_empty());
         println!("    call_data={}B", reveal.call_data.len());
 
+        // --- reveal_bid through accept_block ---
+        println!("  Exec: RevealBidV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&reveal.call_data, vec![reveal.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after RevealBidV1");
+        println!("    accept_block height OK");
+
         // --- select_winner ---
         println!("  Test: select_winner");
         let select = harness.select_winner(create.tender_id, submit.public_inputs.bid_id, requester_pub, requester_secret, bidder_pub, 5000)?;
         assert!(!select.call_data.is_empty());
-        println!("    call_data={}B", select.call_data.len());        println!("  Exec: coinbase-only accept_block");
-        pipeline.exec_coinbase_only().await?;
+        println!("    call_data={}B", select.call_data.len());
+
+        // --- select_winner through accept_block ---
+        println!("  Exec: SelectWinnerV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&select.call_data, vec![select.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after SelectWinnerV1");
+        println!("    accept_block height OK");
 
         println!("=== All Tender endpoints OK ===");
         Ok(())
@@ -1729,13 +1760,29 @@ fn test_heavyweight_pool_stake() -> std::result::Result<(), Box<dyn std::error::
         assert!(!create.call_data.is_empty());
         println!("    call_data={}B", create.call_data.len());
 
+        // --- create_pool through accept_block ---
+        println!("  Exec: CreatePoolV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&create.call_data, vec![create.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after CreatePoolV1");
+        println!("    accept_block height OK");
+
         // --- join_pool ---
         println!("  Test: join_pool");
         let join = harness.join_pool(create.pool_id, 10000, [0u8; 32], member_pub)?;
         assert!(!join.call_data.is_empty());
         println!("    call_data={}B", join.call_data.len());
 
-        // --- leave_pool ---
+        // --- join_pool through accept_block ---
+        println!("  Exec: JoinPoolV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&join.call_data, vec![join.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after JoinPoolV1");
+        println!("    accept_block height OK");
+
+        // --- leave_pool (non-ZK endpoint — harness-only verification) ---
         println!("  Test: leave_pool");
         let leave = harness.leave_pool(join.stake_id)?;
         assert!(!leave.call_data.is_empty());
@@ -1747,12 +1794,27 @@ fn test_heavyweight_pool_stake() -> std::result::Result<(), Box<dyn std::error::
         assert!(!alloc.call_data.is_empty());
         println!("    call_data={}B", alloc.call_data.len());
 
+        // --- allocate_coverage through accept_block ---
+        println!("  Exec: AllocateCoverageV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&alloc.call_data, vec![alloc.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after AllocateCoverageV1");
+        println!("    accept_block height OK");
+
         // --- slash_coverage ---
         println!("  Test: slash_coverage");
         let slash = harness.slash_coverage(alloc.allocation_id, 1000, owner_pub, member_pub)?;
         assert!(!slash.call_data.is_empty());
-        println!("    call_data={}B", slash.call_data.len());        println!("  Exec: coinbase-only accept_block");
-        pipeline.exec_coinbase_only().await?;
+        println!("    call_data={}B", slash.call_data.len());
+
+        // --- slash_coverage through accept_block ---
+        println!("  Exec: SlashCoverageV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&slash.call_data, vec![slash.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after SlashCoverageV1");
+        println!("    accept_block height OK");
 
         println!("=== All PoolStake endpoints OK ===");
         Ok(())
@@ -1792,18 +1854,41 @@ fn test_heavyweight_relayer_endowment() -> std::result::Result<(), Box<dyn std::
         assert!(!init.call_data.is_empty());
         println!("    call_data={}B", init.call_data.len());
 
+        // --- initialize through accept_block ---
+        println!("  Exec: InitializeV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&init.call_data, vec![init.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after InitializeV1");
+        println!("    accept_block height OK");
+
         // --- deploy_capital ---
         println!("  Test: deploy_capital");
         let deploy = harness.deploy_capital(pallas::Base::from(1u64), backer_pub, 10000, pallas::Base::from(2u64), 0, pallas::Scalar::from(3u64), relayer_pub, 500)?;
         assert!(!deploy.call_data.is_empty());
         println!("    call_data={}B", deploy.call_data.len());
 
+        // --- deploy_capital through accept_block ---
+        println!("  Exec: DeployCapitalV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&deploy.call_data, vec![deploy.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after DeployCapitalV1");
+        println!("    accept_block height OK");
+
         // --- claim_fees ---
         println!("  Test: claim_fees");
         let claim = harness.claim_fees(pallas::Base::from(1u64), backer_pub, 100, 0)?;
         assert!(!claim.call_data.is_empty());
-        println!("    call_data={}B", claim.call_data.len());        println!("  Exec: coinbase-only accept_block");
-        pipeline.exec_coinbase_only().await?;
+        println!("    call_data={}B", claim.call_data.len());
+
+        // --- claim_fees through accept_block ---
+        println!("  Exec: ClaimFeesV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&claim.call_data, vec![claim.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before,
+            "accept_block must advance height after ClaimFeesV1");
+        println!("    accept_block height OK");
 
         println!("=== All RelayerEndowment endpoints OK ===");
         Ok(())
