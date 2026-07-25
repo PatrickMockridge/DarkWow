@@ -2486,14 +2486,16 @@ fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Er
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
 
-    println!("=== Baccarat Heavyweight: All Endpoints (no WASM) ===");
+    println!("=== Baccarat Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
         let harness = BaccaratHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
 
-        let pipeline = HeavyweightPipeline::new(harness, "baccarat").await?;
-        println!("(skipping deploy — WASM not yet built)");
+        let mut pipeline = HeavyweightPipeline::new(harness, "baccarat").await?;
+        let wasm = include_bytes!("../../../../src/contract/baccarat/dwow_baccarat_contract.wasm");
+        let _contract_id = pipeline.deploy(wasm).await?;
+        println!("Contract deployed");
 
         let harness = &pipeline.harness;
         let player_secret = pallas::Base::from(10u64);
@@ -2525,6 +2527,13 @@ fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Er
         assert!(!close.call_data.is_empty());
         println!("    call_data={}B", close.call_data.len());
 
+        // --- house_close through accept_block ---
+        println!("  Exec: HouseCloseV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&close.call_data, vec![close.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         println!("=== All Baccarat endpoints OK ===");
         Ok(())
     })
@@ -2540,14 +2549,16 @@ fn test_heavyweight_betting_stake() -> std::result::Result<(), Box<dyn std::erro
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
 
-    println!("=== BettingStake Heavyweight: All Endpoints (no WASM) ===");
+    println!("=== BettingStake Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
         let harness = BettingStakeHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
 
-        let pipeline = HeavyweightPipeline::new(harness, "betting_stake").await?;
-        println!("(skipping deploy — WASM not yet built)");
+        let mut pipeline = HeavyweightPipeline::new(harness, "betting_stake").await?;
+        let wasm = include_bytes!("../../../../src/contract/betting_stake/dwow_betting_stake_contract.wasm");
+        let _contract_id = pipeline.deploy(wasm).await?;
+        println!("Contract deployed");
 
         let harness = &pipeline.harness;
         let staker_secret = SecretKey::from_bytes([12u8; 32]).unwrap();
@@ -2585,6 +2596,13 @@ fn test_heavyweight_betting_stake() -> std::result::Result<(), Box<dyn std::erro
         let risk = harness.update_risk(table_id, pallas::Base::from(1u64), 10000, 0, 200, 1)?;
         assert!(!risk.call_data.is_empty());
         println!("    call_data={}B", risk.call_data.len());
+
+        // --- update_risk through accept_block ---
+        println!("  Exec: UpdateRiskV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&risk.call_data, vec![risk.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         println!("=== All BettingStake endpoints OK ===");
         Ok(())
@@ -2805,14 +2823,16 @@ fn test_heavyweight_roulette() -> std::result::Result<(), Box<dyn std::error::Er
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
 
-    println!("=== Roulette Heavyweight: All Endpoints (no WASM) ===");
+    println!("=== Roulette Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
         let harness = RouletteHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
 
-        let pipeline = HeavyweightPipeline::new(harness, "roulette").await?;
-        println!("(skipping deploy — WASM not yet built)");
+        let mut pipeline = HeavyweightPipeline::new(harness, "roulette").await?;
+        let wasm = include_bytes!("../../../../src/contract/roulette/dwow_roulette_contract.wasm");
+        let _contract_id = pipeline.deploy(wasm).await?;
+        println!("Contract deployed");
 
         let harness = &pipeline.harness;
         let house_secret = pallas::Base::from(10u64);
@@ -2821,7 +2841,7 @@ fn test_heavyweight_roulette() -> std::result::Result<(), Box<dyn std::error::Er
         let player_pub = PublicKey::from_secret(SecretKey::from_base(player_secret));
         let table_id = pallas::Base::from(100u64);
 
-        // --- initialize ---
+        // --- initialize (non-ZK) ---
         println!("  Test: initialize");
         let init = harness.initialize(house_pub, false, 100000, 5000, 1000)?;
         assert!(!init.call_data.is_empty());
@@ -2833,11 +2853,25 @@ fn test_heavyweight_roulette() -> std::result::Result<(), Box<dyn std::error::Er
         assert!(!bet.call_data.is_empty());
         println!("    call_data={}B", bet.call_data.len());
 
+        // --- place_bet through accept_block ---
+        println!("  Exec: PlaceBetV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&bet.call_data, vec![bet.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- spin_wheel ---
         println!("  Test: spin_wheel");
         let spin = harness.spin_wheel(table_id, house_pub, pallas::Base::from(2u64))?;
         assert!(!spin.call_data.is_empty());
         println!("    call_data={}B", spin.call_data.len());
+
+        // --- spin_wheel through accept_block ---
+        println!("  Exec: SpinWheelV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&spin.call_data, vec![spin.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         // --- settle_bets ---
         println!("  Test: settle_bets");
@@ -2845,11 +2879,25 @@ fn test_heavyweight_roulette() -> std::result::Result<(), Box<dyn std::error::Er
         assert!(!settle.call_data.is_empty());
         println!("    call_data={}B", settle.call_data.len());
 
+        // --- settle_bets through accept_block ---
+        println!("  Exec: SettleBetsV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&settle.call_data, vec![settle.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- house_close ---
         println!("  Test: house_close");
         let close = harness.house_close(table_id, house_pub)?;
         assert!(!close.call_data.is_empty());
         println!("    call_data={}B", close.call_data.len());
+
+        // --- house_close through accept_block ---
+        println!("  Exec: HouseCloseV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&close.call_data, vec![close.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         println!("=== All Roulette endpoints OK ===");
         Ok(())
