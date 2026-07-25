@@ -469,7 +469,12 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         let reward = dwow_sdk::blockchain::expected_reward(next);
 
         let cb = self.build_coinbase_for_height(next, reward).await?;
-        let contract_tx = build_contract_tx(contract_id, call_data.to_vec());
+        let call_data_wrapped = if contract_id == *NATIVE_TOKEN_CONTRACT_ID {
+            call_data.to_vec()
+        } else {
+            super::harness::wrap_call_data(contract_id, call_data.to_vec())
+        };
+        let contract_tx = build_contract_tx(contract_id, call_data_wrapped);
         let uncle_raw = build_test_block(&self.genesis.chain_state, next, vec![contract_tx]);
         let uncle = build_test_uncle(uncle_raw, depth, reward);
         let real_target = self.expected_target();
@@ -509,11 +514,24 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         let reward = dwow_sdk::blockchain::expected_reward(next);
 
         let cb = self.build_coinbase_for_height(next, reward).await?;
+        // Wrap call_data for non-NativeToken contracts.
+        // Canonical txs go through decode_and_reconcile; uncle txs bypass
+        // it but still execute through WASM — both need the DarkLeaf wrapper.
+        let canonical_wrapped = if contract_id == *NATIVE_TOKEN_CONTRACT_ID {
+            canonical_data.to_vec()
+        } else {
+            super::harness::wrap_call_data(contract_id, canonical_data.to_vec())
+        };
+        let uncle_wrapped = if contract_id == *NATIVE_TOKEN_CONTRACT_ID {
+            uncle_data.to_vec()
+        } else {
+            super::harness::wrap_call_data(contract_id, uncle_data.to_vec())
+        };
         // Canonical contract tx — must carry a witness for accept_block step 2.6.
-        let mut canon_tx = build_contract_tx(contract_id, canonical_data.to_vec());
-        canon_tx.witness = build_witness(contract_id, canonical_data, vec![]);
+        let mut canon_tx = build_contract_tx(contract_id, canonical_wrapped.clone());
+        canon_tx.witness = build_witness(contract_id, &canonical_wrapped, vec![]);
         // Uncle contract tx — no witness needed (uncle txs bypass L2 verification).
-        let uncle_tx = build_contract_tx(contract_id, uncle_data.to_vec());
+        let uncle_tx = build_contract_tx(contract_id, uncle_wrapped);
         let uncle_raw = build_test_block(&self.genesis.chain_state, next, vec![uncle_tx]);
         let uncle = build_test_uncle(uncle_raw, 1, reward);
         let target = self.expected_target();
@@ -552,7 +570,12 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         let mut uncles = Vec::new();
 
         for call_data in &call_datas {
-            let uncle_tx = build_contract_tx(contract_id, call_data.clone());
+            let call_data_wrapped = if contract_id == *NATIVE_TOKEN_CONTRACT_ID {
+                call_data.clone()
+            } else {
+                super::harness::wrap_call_data(contract_id, call_data.clone())
+            };
+            let uncle_tx = build_contract_tx(contract_id, call_data_wrapped);
             let uncle_raw = build_test_block(&self.genesis.chain_state, next, vec![uncle_tx]);
             let uncle = build_test_uncle(uncle_raw, depth, reward);
             uncles.push(uncle);
