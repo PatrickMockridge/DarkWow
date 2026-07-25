@@ -2477,7 +2477,7 @@ fn test_heavyweight_insurance_market() -> std::result::Result<(), Box<dyn std::e
 }
 
 // ============================================================================
-// baccarat (no WASM — harness proof generation only)
+// baccarat
 // ============================================================================
 
 #[test]
@@ -2531,7 +2531,7 @@ fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Er
 }
 
 // ============================================================================
-// betting_stake (no WASM — harness proof generation only)
+// betting_stake
 // ============================================================================
 
 #[test]
@@ -2592,7 +2592,7 @@ fn test_heavyweight_betting_stake() -> std::result::Result<(), Box<dyn std::erro
 }
 
 // ============================================================================
-// darkbet_exchange (no WASM — harness proof generation only)
+// darkbet_exchange
 // ============================================================================
 
 #[test]
@@ -2600,14 +2600,16 @@ fn test_heavyweight_darkbet_exchange() -> std::result::Result<(), Box<dyn std::e
     use dwow_contract_test_harness::harness::DarkbetExchangeHarness;
     use dwow_sdk::pasta::pallas;
 
-    println!("=== DarkbetExchange Heavyweight: All Endpoints (no WASM) ===");
+    println!("=== DarkbetExchange Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
         let harness = DarkbetExchangeHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
 
-        let pipeline = HeavyweightPipeline::new(harness, "darkbet_exchange").await?;
-        println!("(skipping deploy — WASM not yet built)");
+        let mut pipeline = HeavyweightPipeline::new(harness, "darkbet_exchange").await?;
+        let wasm = include_bytes!("../../../../src/contract/darkbet_exchange/dwow_darkbet_exchange_contract.wasm");
+        let _contract_id = pipeline.deploy(wasm).await?;
+        println!("Contract deployed");
 
         let harness = &pipeline.harness;
         let owner_x = pallas::Base::from(10u64);
@@ -2619,11 +2621,25 @@ fn test_heavyweight_darkbet_exchange() -> std::result::Result<(), Box<dyn std::e
         assert!(!market.call_data.is_empty());
         println!("    call_data={}B", market.call_data.len());
 
+        // --- create_market through accept_block ---
+        println!("  Exec: CreateMarketV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&market.call_data, vec![market.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- buy_position ---
         println!("  Test: buy_position");
         let buy = harness.buy_position(pallas::Base::from(1u64), owner_x, owner_y, 0, 1000, 10, pallas::Scalar::from(1u64))?;
         assert!(!buy.call_data.is_empty());
         println!("    call_data={}B", buy.call_data.len());
+
+        // --- buy_position through accept_block ---
+        println!("  Exec: BuyPositionV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&buy.call_data, vec![buy.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         // --- claim_winnings ---
         println!("  Test: claim_winnings");
@@ -2631,11 +2647,25 @@ fn test_heavyweight_darkbet_exchange() -> std::result::Result<(), Box<dyn std::e
         assert!(!claim.call_data.is_empty());
         println!("    call_data={}B", claim.call_data.len());
 
+        // --- claim_winnings through accept_block ---
+        println!("  Exec: ClaimWinningsV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&claim.call_data, vec![claim.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- add_liquidity ---
         println!("  Test: add_liquidity");
         let liq = harness.add_liquidity(pallas::Base::from(1u64), owner_x, owner_y, 5000, 10, pallas::Scalar::from(2u64))?;
         assert!(!liq.call_data.is_empty());
         println!("    call_data={}B", liq.call_data.len());
+
+        // --- add_liquidity through accept_block ---
+        println!("  Exec: AddLiquidityV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&liq.call_data, vec![liq.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         println!("=== All DarkbetExchange endpoints OK ===");
         Ok(())
@@ -2643,7 +2673,7 @@ fn test_heavyweight_darkbet_exchange() -> std::result::Result<(), Box<dyn std::e
 }
 
 // ============================================================================
-// darktoshi_dice (no WASM — harness proof generation only)
+// darktoshi_dice
 // ============================================================================
 
 #[test]
@@ -2725,7 +2755,7 @@ fn test_heavyweight_darktoshi_dice() -> std::result::Result<(), Box<dyn std::err
 }
 
 // ============================================================================
-// lottery (no WASM — harness proof generation only)
+// lottery
 // ============================================================================
 
 #[test]
@@ -2766,7 +2796,7 @@ fn test_heavyweight_lottery() -> std::result::Result<(), Box<dyn std::error::Err
 }
 
 // ============================================================================
-// roulette (no WASM — harness proof generation only)
+// roulette
 // ============================================================================
 
 #[test]
