@@ -2545,11 +2545,26 @@ fn test_heavyweight_deployooor() -> std::result::Result<(), Box<dyn std::error::
         let deploy = harness.build_deploy_call(keypair.clone(), b"dummy wasm".to_vec(), vec![0x00])?;
         assert!(!deploy.params.wasm_bincode.is_empty());
         println!("    wasm_bincode={}B", deploy.params.wasm_bincode.len());
+        use dwow_serial::Encodable;
+        let mut deploy_cd = vec![0x00];
+        deploy.params.encode(&mut deploy_cd)?;
+        println!("  Exec: DeployV1 through accept_block (0 ZK circuits)");
+        let hb = pipeline.genesis.block_height();
+        pipeline.exec(&deploy_cd, vec![]).await?;
+        assert!(pipeline.genesis.block_height() > hb);
+        println!("    accept_block height OK");
 
         // --- build_lock_call ---
         println!("  Test: build_lock_call");
-        let _lock = harness.build_lock_call(keypair)?;
+        let lock = harness.build_lock_call(keypair)?;
         println!("    public_key OK");
+        let mut lock_cd = vec![0x01];
+        lock.params.encode(&mut lock_cd)?;
+        println!("  Exec: LockV1 through accept_block (0 ZK circuits)");
+        let hb = pipeline.genesis.block_height();
+        pipeline.exec(&lock_cd, vec![]).await?;
+        assert!(pipeline.genesis.block_height() > hb);
+        println!("    accept_block height OK");
 
         println!("=== All Deployooor endpoints OK ===");
         Ok(())
@@ -2579,39 +2594,26 @@ fn test_heavyweight_drain_protection() -> std::result::Result<(), Box<dyn std::e
 
         let harness = &pipeline.harness;
 
-        // --- build_initialize_call_data ---
-        println!("  Test: build_initialize_call_data");
-        let init_params = dwow_drain_protection_contract::model::InitializeParamsV1 {
-            instance_seed: [0u8; 32],
-            fund_id: pallas::Base::from(1u64),
-            spend_authority: PublicKey::from_secret(
-                SecretKey::from_bytes([1u8; 32]).unwrap(),
-            ),
-            dao_escrow_bulla: pallas::Base::from(2u64),
-            drain_config: dwow_drain_protection_contract::model::DrainConfig::default(),
-        };
-        let init = harness.build_initialize_call_data(&init_params)?;
-        assert!(!init.is_empty());
-        println!("    call_data={}B", init.len());
+        macro_rules! exec_dp {
+            ($method:ident, $label:expr) => {
+                let r = harness.$method()?;
+                println!("  Exec: {} through accept_block", $label);
+                let hb = pipeline.genesis.block_height();
+                pipeline.exec(&r.call_data, vec![r.proof]).await?;
+                assert!(pipeline.genesis.block_height() > hb);
+                println!("    accept_block height OK");
+            };
+        }
 
-        // --- build_exit_call_data ---
-        println!("  Test: build_exit_call_data");
-        let exit_params = dwow_drain_protection_contract::model::ExitParamsV1 {
-            fund_id: pallas::Base::from(100u64),
-            member_pubkey: PublicKey::from_secret(
-                SecretKey::from_bytes([2u8; 32]).unwrap(),
-            ),
-            contribution_weight: 1000,
-            current_block: 42,
-            dao_escrow_bulla: pallas::Base::from(2u64),
-            dao_membership_note: pallas::Base::from(3u64),
-            effective_weight: pallas::Base::from(4u64),
-            proof: vec![],
-        };
-        let exit = harness.build_exit_call_data(&exit_params)?;
-        assert!(!exit.is_empty());
-        println!("    call_data={}B", exit.len());        println!("  Exec: coinbase-only accept_block");
-        pipeline.exec_coinbase_only().await?;
+        exec_dp!(initialize, "InitializeV1");
+        exec_dp!(propose, "ProposeV1");
+        exec_dp!(vote, "VoteV1");
+        exec_dp!(execute, "ExecuteV1");
+        exec_dp!(exit, "ExitV1");
+        exec_dp!(transfer, "TransferV1");
+        exec_dp!(lock, "LockV1");
+        exec_dp!(unlock, "UnlockV1");
+        exec_dp!(update_config, "UpdateConfigV1");
 
         println!("=== All DrainProtection endpoints OK ===");
         Ok(())
@@ -2626,28 +2628,43 @@ fn test_heavyweight_drain_protection() -> std::result::Result<(), Box<dyn std::e
 fn test_heavyweight_game_room() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::GameRoomHarness;
 
-    println!("=== GameRoom Heavyweight: Circuit Verification ===");
+    println!("=== GameRoom Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
         let harness = GameRoomHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-        assert_eq!(harness.circuits().len(), 5, "GameRoom should have 5 circuits");
 
         let mut pipeline = HeavyweightPipeline::new(harness, "game_room").await?;
         let wasm = include_bytes!("../../../../src/contract/game_room/dwow_game_room_contract.wasm");
         let _contract_id = pipeline.deploy(wasm).await?;
         println!("Contract deployed");
 
-        // Verify all circuits have ZK binaries and proving keys
-        for circuit in pipeline.harness.circuits() {
-            let zkbin = pipeline.harness.get_zkbin(circuit);
-            let pk = pipeline.harness.get_pk(circuit);
-            assert!(zkbin.is_some(), "Missing ZK binary for {circuit}");
-            assert!(pk.is_some(), "Missing proving key for {circuit}");
-            println!("  Circuit {circuit}: zkbin+pk OK");
+        let harness = &pipeline.harness;
+
+        macro_rules! exec_gr {
+            ($method:ident, $label:expr) => {
+                let r = harness.$method()?;
+                println!("  Exec: {} through accept_block", $label);
+                let hb = pipeline.genesis.block_height();
+                pipeline.exec(&r.call_data, vec![r.proof]).await?;
+                assert!(pipeline.genesis.block_height() > hb);
+                println!("    accept_block height OK");
+            };
         }
 
-        println!("=== All GameRoom circuits OK ===");
+        exec_gr!(create_room, "CreateRoomV1");
+        exec_gr!(deposit, "DepositV1");
+        exec_gr!(withdraw, "WithdrawV1");
+        exec_gr!(place_bet, "PlaceBetV1");
+        exec_gr!(raise, "RaiseV1");
+        exec_gr!(call, "CallV1");
+        exec_gr!(fold, "FoldV1");
+        exec_gr!(close_pot, "ClosePotV1");
+        exec_gr!(settle_pot, "SettlePotV1");
+        exec_gr!(contribute_entropy, "ContributeEntropyV1");
+        exec_gr!(claim, "ClaimV1");
+
+        println!("=== All GameRoom endpoints OK ===");
         Ok(())
     })
 }
