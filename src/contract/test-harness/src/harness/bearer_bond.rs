@@ -24,8 +24,21 @@
 //! Bearer Bond Test Harness
 
 use dwow_core::{
-    zk::{empty_witnesses, ProvingKey, ZkCircuit},
+    zk::{Proof, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
+};
+use dwow_sdk::crypto::MerkleNode;
+use dwow_serial::Encodable;
+
+use dwow_bearer_bond_contract::client::{
+    burn_stake_v1::{BurnStakeCallBuilder, BurnStakeCallInput},
+    emergency_unstake_v1::{EmergencyUnstakeCallBuilder, EmergencyUnstakeCallInput, EmergencyUnstakeCallOutput},
+    issue_stake_v1::{IssueStakeCallBuilder, IssueStakeCallInput},
+    pay_interest_v1::{PayInterestCallBuilder, PayInterestCallInput},
+    prove_coverage_v1::{ProveCoverageCallBuilder, ProveCoverageCallInput},
+    request_interest_v1::{RequestInterestCallBuilder, RequestInterestCallInput},
+    transfer_stake_v1::{TransferStakeCallBuilder, TransferStakeCallInput, TransferStakeCallOutput},
+    unstake_v1::{UnstakeCallBuilder, UnstakeCallInput, UnstakeCallOutput},
 };
 
 /// Bearer Bond Harness for isolated testing
@@ -48,17 +61,29 @@ impl BearerBondHarness {
         let prove_coverage_bin = include_bytes!("../../../bearer_bond/proof/prove_coverage_v1.zk.bin");
 
         let blind_output_zkbin = ZkBinary::decode(blind_output_bin, false).unwrap();
-        let blind_output_circuit = ZkCircuit::new(empty_witnesses(&blind_output_zkbin).unwrap(), &blind_output_zkbin);
-        let blind_output_pk = ProvingKey::build(blind_output_zkbin.k, &blind_output_circuit).expect("ProvingKey::build failed");
+        let blind_output_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&blind_output_zkbin).unwrap(), &blind_output_zkbin,
+        );
+        let blind_output_pk = ProvingKey::build(blind_output_zkbin.k, &blind_output_circuit)
+            .expect("ProvingKey::build failed");
         let burn_zkbin = ZkBinary::decode(burn_bin, false).unwrap();
-        let burn_circuit = ZkCircuit::new(empty_witnesses(&burn_zkbin).unwrap(), &burn_zkbin);
-        let burn_pk = ProvingKey::build(burn_zkbin.k, &burn_circuit).expect("ProvingKey::build failed");
+        let burn_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&burn_zkbin).unwrap(), &burn_zkbin,
+        );
+        let burn_pk = ProvingKey::build(burn_zkbin.k, &burn_circuit)
+            .expect("ProvingKey::build failed");
         let redeem_zkbin = ZkBinary::decode(redeem_bin, false).unwrap();
-        let redeem_circuit = ZkCircuit::new(empty_witnesses(&redeem_zkbin).unwrap(), &redeem_zkbin);
-        let redeem_pk = ProvingKey::build(redeem_zkbin.k, &redeem_circuit).expect("ProvingKey::build failed");
+        let redeem_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&redeem_zkbin).unwrap(), &redeem_zkbin,
+        );
+        let redeem_pk = ProvingKey::build(redeem_zkbin.k, &redeem_circuit)
+            .expect("ProvingKey::build failed");
         let prove_coverage_zkbin = ZkBinary::decode(prove_coverage_bin, false).unwrap();
-        let prove_coverage_circuit = ZkCircuit::new(empty_witnesses(&prove_coverage_zkbin).unwrap(), &prove_coverage_zkbin);
-        let prove_coverage_pk = ProvingKey::build(prove_coverage_zkbin.k, &prove_coverage_circuit).expect("ProvingKey::build failed");
+        let prove_coverage_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&prove_coverage_zkbin).unwrap(), &prove_coverage_zkbin,
+        );
+        let prove_coverage_pk = ProvingKey::build(prove_coverage_zkbin.k, &prove_coverage_circuit)
+            .expect("ProvingKey::build failed");
 
         Self {
             blind_output_zkbin, blind_output_pk,
@@ -66,6 +91,162 @@ impl BearerBondHarness {
             redeem_zkbin, redeem_pk,
             prove_coverage_zkbin, prove_coverage_pk,
         }
+    }
+
+    /// Issue stake (BlindOutput_V1, function code 0x01)
+    pub fn issue_stake(
+        &self,
+        input: IssueStakeCallInput,
+    ) -> Result<IssueStakeResult, Box<dyn std::error::Error>> {
+        let debris = IssueStakeCallBuilder {
+            input,
+            blind_output_zkbin: self.blind_output_zkbin.clone(),
+            blind_output_pk: self.blind_output_pk.clone(),
+        }
+        .build()?;
+
+        let mut call_data = vec![0x01];
+        debris.params.encode(&mut call_data)?;
+
+        Ok(IssueStakeResult { call_data, proofs: debris.proofs })
+    }
+
+    /// Burn stake (Burn_V1, function code 0x02)
+    pub fn burn_stake(
+        &self,
+        inputs: Vec<BurnStakeCallInput>,
+    ) -> Result<BurnStakeResult, Box<dyn std::error::Error>> {
+        let debris = BurnStakeCallBuilder {
+            inputs,
+            burn_zkbin: self.burn_zkbin.clone(),
+            burn_pk: self.burn_pk.clone(),
+        }
+        .build()?;
+
+        let mut call_data = vec![0x02];
+        debris.params.encode(&mut call_data)?;
+
+        Ok(BurnStakeResult { call_data, proofs: debris.proofs })
+    }
+
+    /// Transfer stake (Burn_V1 + BlindOutput_V1, function code 0x03)
+    pub fn transfer_stake(
+        &self,
+        inputs: Vec<TransferStakeCallInput>,
+        outputs: Vec<TransferStakeCallOutput>,
+    ) -> Result<TransferStakeResult, Box<dyn std::error::Error>> {
+        let debris = TransferStakeCallBuilder {
+            inputs,
+            outputs,
+            burn_zkbin: self.burn_zkbin.clone(),
+            burn_pk: self.burn_pk.clone(),
+            blind_output_zkbin: self.blind_output_zkbin.clone(),
+            blind_output_pk: self.blind_output_pk.clone(),
+        }
+        .build()?;
+
+        let mut call_data = vec![0x03];
+        debris.params.encode(&mut call_data)?;
+
+        Ok(TransferStakeResult { call_data, proofs: debris.proofs })
+    }
+
+    /// Request interest (Burn_V1, function code 0x04)
+    pub fn request_interest(
+        &self,
+        input: RequestInterestCallInput,
+    ) -> Result<RequestInterestResult, Box<dyn std::error::Error>> {
+        let debris = RequestInterestCallBuilder {
+            input,
+            burn_zkbin: self.burn_zkbin.clone(),
+            burn_pk: self.burn_pk.clone(),
+        }
+        .build()?;
+
+        let mut call_data = vec![0x04];
+        debris.params.encode(&mut call_data)?;
+
+        Ok(RequestInterestResult { call_data, proofs: debris.proofs })
+    }
+
+    /// Unstake (Burn_V1 + Redeem_V1, function code 0x05)
+    pub fn unstake(
+        &self,
+        input: UnstakeCallInput,
+        output: UnstakeCallOutput,
+    ) -> Result<UnstakeResult, Box<dyn std::error::Error>> {
+        let debris = UnstakeCallBuilder {
+            input,
+            output,
+            burn_zkbin: self.burn_zkbin.clone(),
+            burn_pk: self.burn_pk.clone(),
+            redeem_zkbin: self.redeem_zkbin.clone(),
+            redeem_pk: self.redeem_pk.clone(),
+        }
+        .build()?;
+
+        let mut call_data = vec![0x05];
+        debris.params.encode(&mut call_data)?;
+
+        Ok(UnstakeResult { call_data, proofs: debris.proofs })
+    }
+
+    /// Emergency unstake (Burn_V1 + Redeem_V1, function code 0x06)
+    pub fn emergency_unstake(
+        &self,
+        input: EmergencyUnstakeCallInput,
+        output: EmergencyUnstakeCallOutput,
+    ) -> Result<EmergencyUnstakeResult, Box<dyn std::error::Error>> {
+        let debris = EmergencyUnstakeCallBuilder {
+            input,
+            output,
+            burn_zkbin: self.burn_zkbin.clone(),
+            burn_pk: self.burn_pk.clone(),
+            redeem_zkbin: self.redeem_zkbin.clone(),
+            redeem_pk: self.redeem_pk.clone(),
+        }
+        .build()?;
+
+        let mut call_data = vec![0x06];
+        debris.params.encode(&mut call_data)?;
+
+        Ok(EmergencyUnstakeResult { call_data, proofs: debris.proofs })
+    }
+
+    /// Pay interest (BlindOutput_V1, function code 0x07)
+    pub fn pay_interest(
+        &self,
+        input: PayInterestCallInput,
+    ) -> Result<PayInterestResult, Box<dyn std::error::Error>> {
+        let debris = PayInterestCallBuilder {
+            input,
+            blind_output_zkbin: self.blind_output_zkbin.clone(),
+            blind_output_pk: self.blind_output_pk.clone(),
+        }
+        .build()?;
+
+        let mut call_data = vec![0x07];
+        debris.params.encode(&mut call_data)?;
+
+        Ok(PayInterestResult { call_data, proofs: debris.proofs })
+    }
+
+    /// Prove coverage (ProveCoverage_V1, function code 0x08)
+    pub fn prove_coverage(
+        &self,
+        input: ProveCoverageCallInput,
+    ) -> Result<ProveCoverageResult, Box<dyn std::error::Error>> {
+        let debris = ProveCoverageCallBuilder {
+            input,
+            prove_coverage_zkbin: self.prove_coverage_zkbin.clone(),
+            prove_coverage_pk: self.prove_coverage_pk.clone(),
+        }
+        .build()?;
+
+        let mut call_data = vec![0x08];
+        debris.params.encode(&mut call_data)?;
+
+        Ok(ProveCoverageResult { call_data, proofs: debris.proofs })
     }
 }
 
@@ -97,4 +278,52 @@ impl super::ContractHarness for BearerBondHarness {
             _ => None,
         }
     }
+}
+
+/// Result of issue_stake
+pub struct IssueStakeResult {
+    pub call_data: Vec<u8>,
+    pub proofs: Vec<Proof>,
+}
+
+/// Result of burn_stake
+pub struct BurnStakeResult {
+    pub call_data: Vec<u8>,
+    pub proofs: Vec<Proof>,
+}
+
+/// Result of transfer_stake
+pub struct TransferStakeResult {
+    pub call_data: Vec<u8>,
+    pub proofs: Vec<Proof>,
+}
+
+/// Result of request_interest
+pub struct RequestInterestResult {
+    pub call_data: Vec<u8>,
+    pub proofs: Vec<Proof>,
+}
+
+/// Result of unstake
+pub struct UnstakeResult {
+    pub call_data: Vec<u8>,
+    pub proofs: Vec<Proof>,
+}
+
+/// Result of emergency_unstake
+pub struct EmergencyUnstakeResult {
+    pub call_data: Vec<u8>,
+    pub proofs: Vec<Proof>,
+}
+
+/// Result of pay_interest
+pub struct PayInterestResult {
+    pub call_data: Vec<u8>,
+    pub proofs: Vec<Proof>,
+}
+
+/// Result of prove_coverage
+pub struct ProveCoverageResult {
+    pub call_data: Vec<u8>,
+    pub proofs: Vec<Proof>,
 }
