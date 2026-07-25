@@ -189,7 +189,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
     pub async fn new(harness: H, contract_name: &str) -> Result<Self> {
         let genesis = GenesisHarness::new_without_contracts()?;
         let zk = crate::registry::model::LinearPowRewardZk::new(
-            genesis.chain_state.clone(),
+            chain.chain_state.clone(),
         ).await?;
         // Temp keys.toml — the test mining key needed by `init_genesis` for
         // the genesis block coinbase, and by `build_linear_coinbase` for
@@ -211,7 +211,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         ).map_err(|e| dwow_core::Error::Custom(format!("MiningRecipient for genesis: {}", e)))?;
         drop(mgr);
         let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
-        crate::init_genesis(&genesis.chain_state, gen_recipient, magic_bytes).await?;
+        crate::init_genesis(&chain.chain_state, gen_recipient, magic_bytes).await?;
 
         Ok(Self {
             genesis, harness, contract_name: contract_name.to_string(),
@@ -643,19 +643,20 @@ fn test_heavyweight_promissory_note() -> std::result::Result<(), Box<dyn std::er
     use dwow_sdk::pasta::pallas;
     use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
     use dwow_promissory_note_contract::client::transfer_v1::{TransferCallInput, TransferCallOutput};
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== PromissoryNote Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = PromissoryNoteHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
 
-        let mut pipeline = HeavyweightPipeline::new(harness, "promissory_note").await?;
         let wasm = include_bytes!("../../../../src/contract/promissory_note/dwow_promissory_note_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "promissory_note", wasm).await?;
         println!("Contract deployed");
 
-        let harness = &pipeline.harness;
         let auth_parent = pallas::Base::from(1u64);
         let user_data = pallas::Base::from(2u64);
         let blind = pallas::Base::from(3u64);
@@ -675,9 +676,12 @@ fn test_heavyweight_promissory_note() -> std::result::Result<(), Box<dyn std::er
         // This is the smoke test for the DarkLeaf+accept_block infrastructure
         // (production-test-standard.md §1).
         println!("  Exec: RegisterTypeV1 through accept_block");
-        let height_before = pipeline.genesis.block_height();
-        pipeline.exec(&token.call_data, token.token_proofs.clone()).await?;
-        let height_after = pipeline.genesis.block_height();
+        let height_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &token.call_data, token.token_proofs.clone())?
+            .with_fee_collect()?
+            .submit().await?;
+        let height_after = chain.height();
         assert!(height_after > height_before,
             "accept_block must advance height after RegisterTypeV1");
         println!("    accept_block height {} -> {} OK", height_before, height_after);
@@ -690,9 +694,12 @@ fn test_heavyweight_promissory_note() -> std::result::Result<(), Box<dyn std::er
 
         // --- mint through accept_block ---
         println!("  Exec: IssueV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&mint.call_data, mint.proofs.clone()).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &mint.call_data, mint.proofs.clone())?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after IssueV1");
         println!("    accept_block height OK");
 
@@ -727,9 +734,12 @@ fn test_heavyweight_promissory_note() -> std::result::Result<(), Box<dyn std::er
 
         // --- transfer through accept_block ---
         println!("  Exec: TransferV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&transfer.call_data, transfer.proofs.clone()).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &transfer.call_data, transfer.proofs.clone())?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after TransferV1");
         println!("    accept_block height OK");
 
@@ -741,9 +751,12 @@ fn test_heavyweight_promissory_note() -> std::result::Result<(), Box<dyn std::er
 
         // --- otc_swap through accept_block ---
         println!("  Exec: OtcSwapV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&swap.call_data, swap.proofs.clone()).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &swap.call_data, swap.proofs.clone())?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after OtcSwapV1");
         println!("    accept_block height OK");
 
@@ -765,15 +778,16 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
     println!("=== DEX Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        use crate::tests::blockchain::HeavyweightPipeline;
+
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = DexHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
 
-        let mut pipeline = HeavyweightPipeline::new(harness, "dex").await?;
         let wasm = include_bytes!("../../../../src/contract/dex/dwow_dex_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "dex", wasm).await?;
         println!("Contract deployed");
-
-        let harness = &pipeline.harness;
         let secret = pallas::Base::from(100u64);
         let offer_token = pallas::Base::from(1u64);
         let request_token = pallas::Base::from(2u64);
@@ -787,9 +801,12 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
 
         // --- create_swap through accept_block ---
         println!("  Exec: CreateSwapV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&create.call_data, vec![create.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &create.call_data, vec![create.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- accept_swap ---
@@ -800,9 +817,12 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
 
         // --- accept_swap through accept_block ---
         println!("  Exec: AcceptSwapV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&accept.call_data, vec![accept.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &accept.call_data, vec![accept.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- execute_swap ---
@@ -813,9 +833,12 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
 
         // --- execute_swap through accept_block ---
         println!("  Exec: ExecuteSwapV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&exec.call_data, vec![exec.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &exec.call_data, vec![exec.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- cancel_swap ---
@@ -826,9 +849,12 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
 
         // --- cancel_swap through accept_block ---
         println!("  Exec: CancelSwapV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&cancel.call_data, vec![cancel.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &cancel.call_data, vec![cancel.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- execute_swap_fee ---
@@ -842,9 +868,12 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
 
         // --- execute_swap_fee through accept_block ---
         println!("  Exec: ExecuteSwapFeeV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&fee.call_data, vec![fee.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &fee.call_data, vec![fee.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- execute_swap_slippage ---
@@ -858,9 +887,12 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
 
         // --- execute_swap_slippage through accept_block ---
         println!("  Exec: ExecuteSwapSlippageV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&slip.call_data, vec![slip.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &slip.call_data, vec![slip.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         println!("=== All DEX endpoints OK ===");
@@ -883,20 +915,21 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
     println!("=== NativeToken Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
-        let harness = NativeTokenHarness::spawn();
-        println!("Harness spawned with circuits: {:?}", harness.circuits());
+        use crate::tests::blockchain::HeavyweightPipeline;
 
         // Deploy NativeToken at a derived ContractId separate from the
         // genesis-deployed NATIVE_TOKEN_CONTRACT_ID. The coinbase's
         // PoWRewardV1 (0x05) targets NATIVE_TOKEN_CONTRACT_ID and our
         // test's mint_pow_reward targets the derived contract — validate
         // block_structure now filters by contract_id, so no collision.
-        let mut pipeline = HeavyweightPipeline::new(harness, "native_token").await?;
-        let wasm = include_bytes!("../../../../src/contract/native_token/dwow_native_token_contract.wasm");
-        let contract_id = pipeline.deploy(wasm).await?;
-        println!("Contract deployed at {:?}", contract_id);
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
+        let harness = NativeTokenHarness::spawn();
+        println!("Harness spawned with circuits: {:?}", harness.circuits());
 
-        let harness = &pipeline.harness;
+        let wasm = include_bytes!("../../../../src/contract/native_token/dwow_native_token_contract.wasm");
+        let contract_id = chain.deploy(&harness, "native_token", wasm).await?;
+        println!("Contract deployed at {:?}", contract_id);
         let secret = SecretKey::from_bytes([2u8; 32]).unwrap();
         let public = PublicKey::from_secret(secret.clone());
         let keypair = Keypair { secret, public };
@@ -916,9 +949,12 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
 
         // --- mint_pow_reward through accept_block ---
         println!("  Exec: MintPoWRewardV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&reward.call_data, reward.proofs.clone()).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(contract_id, &harness, &reward.call_data, reward.proofs.clone())?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- burn ---
@@ -969,9 +1005,12 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
 
         // --- fee through accept_block ---
         println!("  Exec: FeeV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&fee.call_data, fee.proofs.clone()).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(contract_id, &harness, &fee.call_data, fee.proofs.clone())?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after FeeV1");
         println!("    accept_block height OK");
 
@@ -998,15 +1037,16 @@ fn test_heavyweight_auction() -> std::result::Result<(), Box<dyn std::error::Err
     println!("=== Auction Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        use crate::tests::blockchain::HeavyweightPipeline;
+
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = AuctionHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
 
-        let mut pipeline = HeavyweightPipeline::new(harness, "auction").await?;
         let wasm = include_bytes!("../../../../src/contract/auction/dwow_auction_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "auction", wasm).await?;
         println!("Contract deployed");
-
-        let harness = &pipeline.harness;
         let seller_secret = pallas::Base::from(10u64);
         let seller_pub = PublicKey::from_secret(SecretKey::from_base(seller_secret));
         let bidder_secret = pallas::Base::from(20u64);
@@ -1022,9 +1062,12 @@ fn test_heavyweight_auction() -> std::result::Result<(), Box<dyn std::error::Err
 
         // --- create_auction through accept_block ---
         println!("  Exec: CreateAuctionV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&create.call_data, vec![create.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &create.call_data, vec![create.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after CreateAuctionV1");
         println!("    accept_block height OK");
 
@@ -1036,9 +1079,12 @@ fn test_heavyweight_auction() -> std::result::Result<(), Box<dyn std::error::Err
 
         // --- place_bid through accept_block ---
         println!("  Exec: PlaceBidV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&bid.call_data, vec![bid.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &bid.call_data, vec![bid.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after PlaceBidV1");
         println!("    accept_block height OK");
 
@@ -1050,9 +1096,12 @@ fn test_heavyweight_auction() -> std::result::Result<(), Box<dyn std::error::Err
 
         // --- close_auction through accept_block ---
         println!("  Exec: CloseAuctionV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&close.call_data, vec![close.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &close.call_data, vec![close.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after CloseAuctionV1");
         println!("    accept_block height OK");
 
@@ -1064,9 +1113,12 @@ fn test_heavyweight_auction() -> std::result::Result<(), Box<dyn std::error::Err
 
         // --- claim_winnings through accept_block ---
         println!("  Exec: ClaimWinningsV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&claim.call_data, vec![claim.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &claim.call_data, vec![claim.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after ClaimWinningsV1");
         println!("    accept_block height OK");
 
@@ -1078,9 +1130,12 @@ fn test_heavyweight_auction() -> std::result::Result<(), Box<dyn std::error::Err
 
         // --- settle_auction through accept_block ---
         println!("  Exec: SettleAuctionV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&settle.call_data, vec![settle.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &settle.call_data, vec![settle.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after SettleAuctionV1");
         println!("    accept_block height OK");
 
@@ -1092,9 +1147,12 @@ fn test_heavyweight_auction() -> std::result::Result<(), Box<dyn std::error::Err
 
         // --- refund_bid through accept_block ---
         println!("  Exec: RefundBidV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&refund.call_data, vec![refund.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &refund.call_data, vec![refund.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after RefundBidV1");
         println!("    accept_block height OK");
 
@@ -1116,12 +1174,15 @@ fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Erro
     println!("=== Escrow Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        use crate::tests::blockchain::HeavyweightPipeline;
+
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = EscrowHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
 
-        let mut pipeline = HeavyweightPipeline::new(harness, "escrow").await?;
         let wasm = include_bytes!("../../../../src/contract/escrow/dwow_escrow_contract.wasm");
-        let contract_id = pipeline.deploy(wasm).await?;
+        let contract_id = chain.deploy(&harness, "escrow", wasm).await?;
         println!("Contract deployed");
 
         let buyer_wallet_sk = SecretKey::from_base(pallas::Base::from(10u64));
@@ -1146,57 +1207,69 @@ fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Erro
 
         // --- create_escrow ---
         println!("  Test: create_escrow");
-        let create = pipeline.harness.create_escrow(buyer_secret, buyer_pub, seller_pub, 5000, token_id, 1000, instance_seed)?;
+        let create = harness.create_escrow(buyer_secret, buyer_pub, seller_pub, 5000, token_id, 1000, instance_seed)?;
         assert!(!create.call_data.is_empty());
         println!("    call_data={}B", create.call_data.len());
 
         // --- create_escrow through accept_block ---
         println!("  Exec: CreateEscrowV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&create.call_data, vec![create.proof.clone()]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(contract_id, &harness, &create.call_data, vec![create.proof.clone()])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after CreateEscrowV1");
         println!("    accept_block height OK");
 
         // --- fund_escrow ---
         println!("  Test: fund_escrow");
-        let fund = pipeline.harness.fund_escrow(create.public_inputs.commitment, 5000, value_blind).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
+        let fund = harness.fund_escrow(create.public_inputs.commitment, 5000, value_blind).map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         assert!(!fund.call_data.is_empty());
         println!("    call_data={}B", fund.call_data.len());
 
         // --- fund_escrow through accept_block ---
         println!("  Exec: FundV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&fund.call_data, vec![fund.proof.clone()]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(contract_id, &harness, &fund.call_data, vec![fund.proof.clone()])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after FundV1");
         println!("    accept_block height OK");
 
         // --- claim_escrow ---
         println!("  Test: claim_escrow");
-        let claim = pipeline.harness.claim_escrow(create.public_inputs.commitment, seller_secret, seller_pub, create.public_inputs.commitment, seller_pub)?;
+        let claim = harness.claim_escrow(create.public_inputs.commitment, seller_secret, seller_pub, create.public_inputs.commitment, seller_pub)?;
         assert!(!claim.call_data.is_empty());
         println!("    call_data={}B", claim.call_data.len());
 
         // --- claim_escrow through accept_block ---
         println!("  Exec: ClaimV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&claim.call_data, vec![claim.proof.clone()]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(contract_id, &harness, &claim.call_data, vec![claim.proof.clone()])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after ClaimV1");
         println!("    accept_block height OK");
 
         // --- refund_escrow ---
         println!("  Test: refund_escrow");
-        let refund = pipeline.harness.refund_escrow(create.public_inputs.commitment, 1000, 1001, buyer_secret, buyer_pub, buyer_pub.x().expect("pk not identity"), buyer_pub.y().expect("pk not identity"), buyer_pub)?;
+        let refund = harness.refund_escrow(create.public_inputs.commitment, 1000, 1001, buyer_secret, buyer_pub, buyer_pub.x().expect("pk not identity"), buyer_pub.y().expect("pk not identity"), buyer_pub)?;
         assert!(!refund.call_data.is_empty());
         println!("    call_data={}B", refund.call_data.len());
 
         // --- refund_escrow through accept_block ---
         println!("  Exec: RefundV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&refund.call_data, vec![refund.proof.clone()]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(contract_id, &harness, &refund.call_data, vec![refund.proof.clone()])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after RefundV1");
         println!("    accept_block height OK");
 
@@ -1219,10 +1292,13 @@ fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Er
     println!("=== Escrow Heavyweight: Contract Metadata + State Transitions ===");
 
     smol::block_on(async {
+        use crate::tests::blockchain::HeavyweightPipeline;
+
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = EscrowHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
 
-        let mut pipeline = HeavyweightPipeline::new(harness, "escrow").await?;
         let wasm =
             include_bytes!("../../../../src/contract/escrow/dwow_escrow_contract.wasm");
 
@@ -1241,7 +1317,7 @@ fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Er
         let ix = metadata.to_ix_bytes();
         assert!(!ix.is_empty(), "serialized metadata must be non-empty");
 
-        let contract_id = pipeline.deploy_with_ix(wasm, &ix).await?;
+        let contract_id = chain.deploy_with_ix(&harness, "escrow", wasm, &ix).await?;
         println!("Contract deployed with metadata at {:?}", contract_id.to_bytes());
 
         // Verify metadata roundtrips through ix bytes
@@ -1277,18 +1353,21 @@ fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- create_escrow (ZK proof generation) ---
         println!("  Test: create_escrow");
-        let create = pipeline.harness.create_escrow(
+        let create = harness.create_escrow(
             buyer_secret, buyer_pub, seller_pub, 5000, token_id, 1000, instance_seed,
         )?;
         assert!(!create.call_data.is_empty());
         println!("    call_data={}B", create.call_data.len());
 
         // Route through accept_block for production path verification
-        let height_before = pipeline.genesis.block_height();
+        let height_before = chain.height();
         println!("  Exec: CreateEscrowV1 through accept_block (height={})", height_before);
-        pipeline.exec(&create.call_data, vec![create.proof.clone()]).await?;
+        chain.block()?
+            .with_call(contract_id, &harness, &create.call_data, vec![create.proof.clone()])?
+            .with_fee_collect()?
+            .submit().await?;
 
-        let height_after = pipeline.genesis.block_height();
+        let height_after = chain.height();
         assert!(
             height_after > height_before,
             "height must increase after on-chain exec (was {}, now {})",
@@ -1318,15 +1397,16 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
     println!("=== Stablecoin Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        use crate::tests::blockchain::HeavyweightPipeline;
+
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = StablecoinHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
 
-        let mut pipeline = HeavyweightPipeline::new(harness, "stablecoin").await?;
         let wasm = include_bytes!("../../../../src/contract/stablecoin/dwow_stablecoin_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "stablecoin", wasm).await?;
         println!("Contract deployed");
-
-        let harness = &pipeline.harness;
         let owner_secret = pallas::Base::from(10u64);
         let collateral_blind = Blind(pallas::Base::from(100u64));
         let debt_blind = Blind(pallas::Base::from(200u64));
@@ -1339,9 +1419,12 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
 
         // --- open_position through accept_block ---
         println!("  Exec: OpenPositionV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&pos.call_data, vec![pos.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &pos.call_data, vec![pos.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- mint_stable ---
@@ -1352,9 +1435,12 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
 
         // --- mint_stable through accept_block ---
         println!("  Exec: MintStableV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&mint.call_data, vec![mint.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &mint.call_data, vec![mint.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- liquidate ---
@@ -1365,9 +1451,12 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
 
         // --- liquidate through accept_block ---
         println!("  Exec: LiquidateV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&liq.call_data, vec![liq.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &liq.call_data, vec![liq.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- governance_report ---
@@ -1378,9 +1467,12 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
 
         // --- governance_report through accept_block ---
         println!("  Exec: GovernanceReportV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&gov.call_data, vec![gov.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &gov.call_data, vec![gov.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- accrue_interest ---
@@ -1391,9 +1483,12 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
 
         // --- accrue_interest through accept_block ---
         println!("  Exec: AccrueInterestV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&accrue.call_data, vec![accrue.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &accrue.call_data, vec![accrue.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- add_collateral ---
@@ -1412,9 +1507,12 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
 
         // --- add_collateral through accept_block ---
         println!("  Exec: AddCollateralV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&ac.call_data, vec![ac.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &ac.call_data, vec![ac.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- remove_collateral ---
@@ -1433,9 +1531,12 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
 
         // --- remove_collateral through accept_block ---
         println!("  Exec: RemoveCollateralV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&rc.call_data, vec![rc.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &rc.call_data, vec![rc.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- repay_stable ---
@@ -1453,9 +1554,12 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
 
         // --- repay_stable through accept_block ---
         println!("  Exec: RepayStableV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&rs.call_data, vec![rs.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &rs.call_data, vec![rs.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- update_config ---
@@ -1479,9 +1583,12 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
 
         // --- update_config through accept_block ---
         println!("  Exec: UpdateConfigV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&uc.call_data, vec![uc.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &uc.call_data, vec![uc.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         println!("=== All Stablecoin endpoints OK ===");
@@ -1503,15 +1610,16 @@ fn test_heavyweight_bridge() -> std::result::Result<(), Box<dyn std::error::Erro
     println!("=== Bridge Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        use crate::tests::blockchain::HeavyweightPipeline;
+
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = BridgeHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
 
-        let mut pipeline = HeavyweightPipeline::new(harness, "bridge").await?;
         let wasm = include_bytes!("../../../../src/contract/bridge/dwow_bridge_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "bridge", wasm).await?;
         println!("Contract deployed");
-
-        let harness = &pipeline.harness;
         let secret = pallas::Base::from(100u64);
         let recipient = PublicKey::from_secret(SecretKey::from_bytes([3u8; 32]).unwrap());
 
@@ -1533,9 +1641,12 @@ fn test_heavyweight_bridge() -> std::result::Result<(), Box<dyn std::error::Erro
                 assert!(!d.call_data.is_empty());
                 println!("    call_data={}B", d.call_data.len());
                 println!("  Exec: DepositV1 through accept_block");
-                let hb = pipeline.genesis.block_height();
-                pipeline.exec(&d.call_data, vec![d.proof]).await?;
-                assert!(pipeline.genesis.block_height() > hb);
+                let hb = chain.height();
+                chain.block()?
+                    .with_call(cid, &harness, &d.call_data, vec![d.proof])?
+                    .with_fee_collect()?
+                    .submit().await?;
+                assert!(chain.height() > hb);
                 println!("    accept_block height OK");
             }
             Err(e) => println!("    deposit proof skipped: {}", e),
@@ -1548,9 +1659,12 @@ fn test_heavyweight_bridge() -> std::result::Result<(), Box<dyn std::error::Erro
                 assert!(!w.call_data.is_empty());
                 println!("    call_data={}B", w.call_data.len());
                 println!("  Exec: WithdrawV1 through accept_block");
-                let hb = pipeline.genesis.block_height();
-                pipeline.exec(&w.call_data, vec![w.proof]).await?;
-                assert!(pipeline.genesis.block_height() > hb);
+                let hb = chain.height();
+                chain.block()?
+                    .with_call(cid, &harness, &w.call_data, vec![w.proof])?
+                    .with_fee_collect()?
+                    .submit().await?;
+                assert!(chain.height() > hb);
                 println!("    accept_block height OK");
             }
             Err(e) => println!("    withdraw proof skipped: {}", e),
@@ -1569,9 +1683,12 @@ fn test_heavyweight_bridge() -> std::result::Result<(), Box<dyn std::error::Erro
                 assert!(!d.call_data.is_empty());
                 println!("    call_data={}B", d.call_data.len());
                 println!("  Exec: AztDepositV1 through accept_block");
-                let hb = pipeline.genesis.block_height();
-                pipeline.exec(&d.call_data, vec![d.proof]).await?;
-                assert!(pipeline.genesis.block_height() > hb);
+                let hb = chain.height();
+                chain.block()?
+                    .with_call(cid, &harness, &d.call_data, vec![d.proof])?
+                    .with_fee_collect()?
+                    .submit().await?;
+                assert!(chain.height() > hb);
                 println!("    accept_block height OK");
             }
             Err(e) => println!("    azt_deposit proof skipped: {}", e),
@@ -1588,9 +1705,12 @@ fn test_heavyweight_bridge() -> std::result::Result<(), Box<dyn std::error::Erro
                 assert!(!d.call_data.is_empty());
                 println!("    call_data={}B", d.call_data.len());
                 println!("  Exec: LtcDepositV1 through accept_block");
-                let hb = pipeline.genesis.block_height();
-                pipeline.exec(&d.call_data, vec![d.proof]).await?;
-                assert!(pipeline.genesis.block_height() > hb);
+                let hb = chain.height();
+                chain.block()?
+                    .with_call(cid, &harness, &d.call_data, vec![d.proof])?
+                    .with_fee_collect()?
+                    .submit().await?;
+                assert!(chain.height() > hb);
                 println!("    accept_block height OK");
             }
             Err(e) => println!("    ltc_deposit proof skipped: {}", e),
@@ -1608,9 +1728,12 @@ fn test_heavyweight_bridge() -> std::result::Result<(), Box<dyn std::error::Erro
                 assert!(!d.call_data.is_empty());
                 println!("    call_data={}B", d.call_data.len());
                 println!("  Exec: XmrDepositV1 through accept_block");
-                let hb = pipeline.genesis.block_height();
-                pipeline.exec(&d.call_data, vec![d.proof]).await?;
-                assert!(pipeline.genesis.block_height() > hb);
+                let hb = chain.height();
+                chain.block()?
+                    .with_call(cid, &harness, &d.call_data, vec![d.proof])?
+                    .with_fee_collect()?
+                    .submit().await?;
+                assert!(chain.height() > hb);
                 println!("    accept_block height OK");
             }
             Err(e) => println!("    xmr_deposit proof skipped: {}", e),
@@ -1629,9 +1752,12 @@ fn test_heavyweight_bridge() -> std::result::Result<(), Box<dyn std::error::Erro
                 assert!(!d.call_data.is_empty());
                 println!("    call_data={}B", d.call_data.len());
                 println!("  Exec: ZecDepositV1 through accept_block");
-                let hb = pipeline.genesis.block_height();
-                pipeline.exec(&d.call_data, vec![d.proof]).await?;
-                assert!(pipeline.genesis.block_height() > hb);
+                let hb = chain.height();
+                chain.block()?
+                    .with_call(cid, &harness, &d.call_data, vec![d.proof])?
+                    .with_fee_collect()?
+                    .submit().await?;
+                assert!(chain.height() > hb);
                 println!("    accept_block height OK");
             }
             Err(e) => println!("    zec_deposit proof skipped: {}", e),
@@ -1649,9 +1775,12 @@ fn test_heavyweight_bridge() -> std::result::Result<(), Box<dyn std::error::Erro
 
         // --- update_config through accept_block ---
         println!("  Exec: UpdateConfigV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&uc.call_data, vec![uc.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &uc.call_data, vec![uc.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         println!("=== All Bridge endpoints OK ===");
@@ -1668,19 +1797,18 @@ fn test_heavyweight_labor_market() -> std::result::Result<(), Box<dyn std::error
     use dwow_contract_test_harness::harness::LaborMarketHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== LaborMarket Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = LaborMarketHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "labor_market").await?;
         let wasm = include_bytes!("../../../../src/contract/labor_market/dwow_labor_market_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "labor_market", wasm).await?;
         println!("Contract deployed");
-
-        let harness = &pipeline.harness;
         let employer_secret = pallas::Base::from(10u64);
         let employer_pub = PublicKey::from_secret(SecretKey::from_base(employer_secret));
         let worker_secret = pallas::Base::from(20u64);
@@ -1696,9 +1824,12 @@ fn test_heavyweight_labor_market() -> std::result::Result<(), Box<dyn std::error
 
         // --- create_job through accept_block ---
         println!("  Exec: CreateJobV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&create.call_data, vec![create.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &create.call_data, vec![create.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- accept_job ---
@@ -1709,9 +1840,12 @@ fn test_heavyweight_labor_market() -> std::result::Result<(), Box<dyn std::error
 
         // --- accept_job through accept_block ---
         println!("  Exec: AcceptJobV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&accept.call_data, vec![accept.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &accept.call_data, vec![accept.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- submit_deliverable ---
@@ -1722,9 +1856,12 @@ fn test_heavyweight_labor_market() -> std::result::Result<(), Box<dyn std::error
 
         // --- submit_deliverable through accept_block ---
         println!("  Exec: SubmitDeliverableV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&submit.call_data, vec![submit.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &submit.call_data, vec![submit.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- submit_git_deliverable ---
@@ -1735,9 +1872,12 @@ fn test_heavyweight_labor_market() -> std::result::Result<(), Box<dyn std::error
 
         // --- submit_git_deliverable through accept_block ---
         println!("  Exec: SubmitGitDeliverableV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&git.call_data, vec![git.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &git.call_data, vec![git.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- confirm_delivery ---
@@ -1748,9 +1888,12 @@ fn test_heavyweight_labor_market() -> std::result::Result<(), Box<dyn std::error
 
         // --- confirm_delivery through accept_block ---
         println!("  Exec: ConfirmDeliveryV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&confirm.call_data, vec![confirm.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &confirm.call_data, vec![confirm.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- dispute ---
@@ -1761,9 +1904,12 @@ fn test_heavyweight_labor_market() -> std::result::Result<(), Box<dyn std::error
 
         // --- dispute through accept_block ---
         println!("  Exec: DisputeV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&dispute.call_data, vec![dispute.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &dispute.call_data, vec![dispute.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- refund ---
@@ -1774,9 +1920,12 @@ fn test_heavyweight_labor_market() -> std::result::Result<(), Box<dyn std::error
 
         // --- refund through accept_block ---
         println!("  Exec: RefundV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&refund.call_data, vec![refund.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &refund.call_data, vec![refund.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- accept_job_with_capability ---
@@ -1794,9 +1943,12 @@ fn test_heavyweight_labor_market() -> std::result::Result<(), Box<dyn std::error
 
         // --- accept_job_with_capability through accept_block ---
         println!("  Exec: AcceptJobWithCapabilityV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&awc.call_data, vec![awc.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &awc.call_data, vec![awc.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- confirm_milestone ---
@@ -1810,9 +1962,12 @@ fn test_heavyweight_labor_market() -> std::result::Result<(), Box<dyn std::error
 
         // --- confirm_milestone through accept_block ---
         println!("  Exec: ConfirmMilestoneV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&cm.call_data, vec![cm.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &cm.call_data, vec![cm.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         println!("=== All LaborMarket endpoints OK ===");
@@ -1830,19 +1985,18 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
     use dwow_attestation_contract::model::Predicate;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== Attestation Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = AttestationHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "attestation").await?;
         let wasm = include_bytes!("../../../../src/contract/attestation/dwow_attestation_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "attestation", wasm).await?;
         println!("Contract deployed");
-
-        let harness = &pipeline.harness;
         let attestor_secret = pallas::Base::from(10u64);
         let attestor_pub = PublicKey::from_secret(SecretKey::from_base(attestor_secret));
         let claimant_secret = pallas::Base::from(20u64);
@@ -1858,9 +2012,12 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
 
         // --- create_attestation through accept_block ---
         println!("  Exec: CreateAttestationV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&att.call_data, vec![att.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &att.call_data, vec![att.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- create_claim ---
@@ -1871,9 +2028,12 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
 
         // --- create_claim through accept_block ---
         println!("  Exec: CreateClaimV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&claim.call_data, vec![claim.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &claim.call_data, vec![claim.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- verify_claim ---
@@ -1884,9 +2044,12 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
 
         // --- verify_claim through accept_block ---
         println!("  Exec: VerifyClaimV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&verify.call_data, vec![verify.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &verify.call_data, vec![verify.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- consume_claim ---
@@ -1897,9 +2060,12 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
 
         // --- consume_claim through accept_block ---
         println!("  Exec: ConsumeClaimV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&consume.call_data, vec![consume.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &consume.call_data, vec![consume.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- delegate_attestation ---
@@ -1910,9 +2076,12 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
 
         // --- delegate_attestation through accept_block ---
         println!("  Exec: DelegateAttestationV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&delegate.call_data, vec![delegate.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &delegate.call_data, vec![delegate.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- check_not_revoked ---
@@ -1927,9 +2096,12 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
 
         // --- check_not_revoked through accept_block ---
         println!("  Exec: CheckNotRevokedV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&cnr.call_data, vec![cnr.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &cnr.call_data, vec![cnr.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- update_delegation ---
@@ -1946,9 +2118,12 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
 
         // --- update_delegation through accept_block ---
         println!("  Exec: UpdateDelegationV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&ud.call_data, vec![ud.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &ud.call_data, vec![ud.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- attest_slash ---
@@ -1961,9 +2136,12 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
 
         // --- attest_slash through accept_block ---
         println!("  Exec: AttestSlashV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&slash.call_data, vec![slash.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &slash.call_data, vec![slash.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- commit_fee_schedule ---
@@ -1976,9 +2154,12 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
 
         // --- commit_fee_schedule through accept_block ---
         println!("  Exec: CommitFeeScheduleV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&cfs.call_data, vec![cfs.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &cfs.call_data, vec![cfs.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         println!("=== All Attestation endpoints OK ===");
@@ -1995,19 +2176,18 @@ fn test_heavyweight_tender() -> std::result::Result<(), Box<dyn std::error::Erro
     use dwow_contract_test_harness::harness::TenderHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== Tender Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = TenderHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "tender").await?;
         let wasm = include_bytes!("../../../../src/contract/tender/dwow_tender_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "tender", wasm).await?;
         println!("Contract deployed");
-
-        let harness = &pipeline.harness;
         let requester_secret = pallas::Base::from(10u64);
         let requester_pub = PublicKey::from_secret(SecretKey::from_base(requester_secret));
         let bidder_secret = pallas::Base::from(20u64);
@@ -2021,9 +2201,12 @@ fn test_heavyweight_tender() -> std::result::Result<(), Box<dyn std::error::Erro
 
         // --- create_tender through accept_block ---
         println!("  Exec: CreateTenderV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&create.call_data, vec![create.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &create.call_data, vec![create.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after CreateTenderV1");
         println!("    accept_block height OK");
 
@@ -2035,9 +2218,12 @@ fn test_heavyweight_tender() -> std::result::Result<(), Box<dyn std::error::Erro
 
         // --- submit_bid through accept_block ---
         println!("  Exec: SubmitBidV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&submit.call_data, vec![submit.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &submit.call_data, vec![submit.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after SubmitBidV1");
         println!("    accept_block height OK");
 
@@ -2049,9 +2235,12 @@ fn test_heavyweight_tender() -> std::result::Result<(), Box<dyn std::error::Erro
 
         // --- reveal_bid through accept_block ---
         println!("  Exec: RevealBidV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&reveal.call_data, vec![reveal.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &reveal.call_data, vec![reveal.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after RevealBidV1");
         println!("    accept_block height OK");
 
@@ -2063,9 +2252,12 @@ fn test_heavyweight_tender() -> std::result::Result<(), Box<dyn std::error::Erro
 
         // --- select_winner through accept_block ---
         println!("  Exec: SelectWinnerV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&select.call_data, vec![select.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &select.call_data, vec![select.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after SelectWinnerV1");
         println!("    accept_block height OK");
 
@@ -2175,19 +2367,18 @@ fn test_heavyweight_pool_stake() -> std::result::Result<(), Box<dyn std::error::
     use dwow_contract_test_harness::harness::PoolStakeHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== PoolStake Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = PoolStakeHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "pool_stake").await?;
         let wasm = include_bytes!("../../../../src/contract/pool_stake/dwow_pool_stake_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "pool_stake", wasm).await?;
         println!("Contract deployed");
-
-        let harness = &pipeline.harness;
         let owner_secret = pallas::Base::from(10u64);
         let owner_pub = PublicKey::from_secret(SecretKey::from_base(owner_secret));
         let member_secret = pallas::Base::from(20u64);
@@ -2201,9 +2392,12 @@ fn test_heavyweight_pool_stake() -> std::result::Result<(), Box<dyn std::error::
 
         // --- create_pool through accept_block ---
         println!("  Exec: CreatePoolV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&create.call_data, vec![create.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &create.call_data, vec![create.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after CreatePoolV1");
         println!("    accept_block height OK");
 
@@ -2215,9 +2409,12 @@ fn test_heavyweight_pool_stake() -> std::result::Result<(), Box<dyn std::error::
 
         // --- join_pool through accept_block ---
         println!("  Exec: JoinPoolV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&join.call_data, vec![join.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &join.call_data, vec![join.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after JoinPoolV1");
         println!("    accept_block height OK");
 
@@ -2235,9 +2432,12 @@ fn test_heavyweight_pool_stake() -> std::result::Result<(), Box<dyn std::error::
 
         // --- allocate_coverage through accept_block ---
         println!("  Exec: AllocateCoverageV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&alloc.call_data, vec![alloc.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &alloc.call_data, vec![alloc.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after AllocateCoverageV1");
         println!("    accept_block height OK");
 
@@ -2249,9 +2449,12 @@ fn test_heavyweight_pool_stake() -> std::result::Result<(), Box<dyn std::error::
 
         // --- slash_coverage through accept_block ---
         println!("  Exec: SlashCoverageV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&slash.call_data, vec![slash.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &slash.call_data, vec![slash.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after SlashCoverageV1");
         println!("    accept_block height OK");
 
@@ -2269,19 +2472,18 @@ fn test_heavyweight_relayer_endowment() -> std::result::Result<(), Box<dyn std::
     use dwow_contract_test_harness::harness::RelayerEndowmentHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== RelayerEndowment Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = RelayerEndowmentHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "relayer_endowment").await?;
         let wasm = include_bytes!("../../../../src/contract/relayer_endowment/dwow_relayer_endowment_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "relayer_endowment", wasm).await?;
         println!("Contract deployed");
-
-        let harness = &pipeline.harness;
         let relayer_secret = pallas::Base::from(10u64);
         let relayer_pub = PublicKey::from_secret(SecretKey::from_base(relayer_secret));
         let backer_secret = pallas::Base::from(20u64);
@@ -2295,9 +2497,12 @@ fn test_heavyweight_relayer_endowment() -> std::result::Result<(), Box<dyn std::
 
         // --- initialize through accept_block ---
         println!("  Exec: InitializeV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&init.call_data, vec![init.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &init.call_data, vec![init.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after InitializeV1");
         println!("    accept_block height OK");
 
@@ -2309,9 +2514,12 @@ fn test_heavyweight_relayer_endowment() -> std::result::Result<(), Box<dyn std::
 
         // --- deploy_capital through accept_block ---
         println!("  Exec: DeployCapitalV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&deploy.call_data, vec![deploy.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &deploy.call_data, vec![deploy.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after DeployCapitalV1");
         println!("    accept_block height OK");
 
@@ -2323,9 +2531,12 @@ fn test_heavyweight_relayer_endowment() -> std::result::Result<(), Box<dyn std::
 
         // --- claim_fees through accept_block ---
         println!("  Exec: ClaimFeesV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&claim.call_data, vec![claim.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &claim.call_data, vec![claim.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after ClaimFeesV1");
         println!("    accept_block height OK");
 
@@ -2344,19 +2555,18 @@ fn test_heavyweight_slot() -> std::result::Result<(), Box<dyn std::error::Error>
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::crypto::pasta_prelude::Group;
     use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== Slot Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = SlotHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "slot").await?;
         let wasm = include_bytes!("../../../../src/contract/slot/dwow_slot_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "slot", wasm).await?;
         println!("Contract deployed");
-
-        let harness = &pipeline.harness;
         let player_secret = pallas::Base::from(10u64);
         let player_pub = PublicKey::from_secret(SecretKey::from_base(player_secret));
 
@@ -2379,9 +2589,12 @@ fn test_heavyweight_slot() -> std::result::Result<(), Box<dyn std::error::Error>
 
         // --- reveal_spin through accept_block ---
         println!("  Exec: RevealSpinV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&reveal.call_data, vec![reveal.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &reveal.call_data, vec![reveal.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- settle_bet ---
@@ -2394,9 +2607,12 @@ fn test_heavyweight_slot() -> std::result::Result<(), Box<dyn std::error::Error>
 
         // --- settle_bet through accept_block ---
         println!("  Exec: SettleBetV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&settle.call_data, vec![settle.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &settle.call_data, vec![settle.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         println!("=== All Slot endpoints OK ===");
@@ -2412,19 +2628,18 @@ fn test_heavyweight_slot() -> std::result::Result<(), Box<dyn std::error::Error>
 fn test_heavyweight_deployooor() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::DeployooorHarness;
     use dwow_sdk::crypto::{Keypair, PublicKey, SecretKey};
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== Deployooor Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = DeployooorHarness::spawn();
         println!("Harness spawned (no ZK circuits — pure WASM)");
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "deployooor").await?;
         let wasm = include_bytes!("../../../../src/contract/deployooor/dwow_deployooor_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "deployooor", wasm).await?;
         println!("Contract deployed");
-
-        let harness = &pipeline.harness;
         let secret = SecretKey::from_bytes([9u8; 32]).unwrap();
         let public = PublicKey::from_secret(secret.clone());
         let keypair = Keypair { secret, public };
@@ -2438,9 +2653,12 @@ fn test_heavyweight_deployooor() -> std::result::Result<(), Box<dyn std::error::
         let mut deploy_cd = vec![0x00];
         deploy.params.encode(&mut deploy_cd)?;
         println!("  Exec: DeployV1 through accept_block (0 ZK circuits)");
-        let hb = pipeline.genesis.block_height();
-        pipeline.exec(&deploy_cd, vec![]).await?;
-        assert!(pipeline.genesis.block_height() > hb);
+        let hb = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &deploy_cd, vec![])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > hb);
         println!("    accept_block height OK");
 
         // --- build_lock_call ---
@@ -2450,9 +2668,12 @@ fn test_heavyweight_deployooor() -> std::result::Result<(), Box<dyn std::error::
         let mut lock_cd = vec![0x01];
         lock.params.encode(&mut lock_cd)?;
         println!("  Exec: LockV1 through accept_block (0 ZK circuits)");
-        let hb = pipeline.genesis.block_height();
-        pipeline.exec(&lock_cd, vec![]).await?;
-        assert!(pipeline.genesis.block_height() > hb);
+        let hb = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &lock_cd, vec![])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > hb);
         println!("    accept_block height OK");
 
         println!("=== All Deployooor endpoints OK ===");
@@ -2570,19 +2791,18 @@ fn test_heavyweight_insurance_market() -> std::result::Result<(), Box<dyn std::e
     use dwow_contract_test_harness::harness::InsuranceMarketHarness;
     use dwow_sdk::crypto::{pasta_prelude::Group, schnorr::Signature, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== InsuranceMarket Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = InsuranceMarketHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "insurance_market").await?;
         let wasm = include_bytes!("../../../../src/contract/insurance_market/dwow_insurance_market_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "insurance_market", wasm).await?;
         println!("Contract deployed");
-
-        let harness = &pipeline.harness;
 
         // --- underwrite ---
         println!("  Test: underwrite");
@@ -2600,9 +2820,12 @@ fn test_heavyweight_insurance_market() -> std::result::Result<(), Box<dyn std::e
 
         // --- underwrite through accept_block ---
         println!("  Exec: UnderwriteV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&uw.call_data, vec![uw.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &uw.call_data, vec![uw.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- purchase_coverage ---
@@ -2623,9 +2846,12 @@ fn test_heavyweight_insurance_market() -> std::result::Result<(), Box<dyn std::e
 
         // --- purchase_coverage through accept_block ---
         println!("  Exec: PurchaseCoverageV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&pc.call_data, vec![pc.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &pc.call_data, vec![pc.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         println!("=== All InsuranceMarket endpoints OK ===");
@@ -2642,19 +2868,19 @@ fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Er
     use dwow_contract_test_harness::harness::BaccaratHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== Baccarat Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = BaccaratHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "baccarat").await?;
         let wasm = include_bytes!("../../../../src/contract/baccarat/dwow_baccarat_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "baccarat", wasm).await?;
         println!("Contract deployed");
 
-        let harness = &pipeline.harness;
         let player_secret = pallas::Base::from(10u64);
         let player_pub = PublicKey::from_secret(SecretKey::from_base(player_secret));
         let house_secret = SecretKey::from_bytes([11u8; 32]).unwrap();
@@ -2668,9 +2894,12 @@ fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- commit_bet through accept_block ---
         println!("  Exec: CommitBetV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&commit.call_data, vec![commit.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &commit.call_data, vec![commit.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- draw_cards ---
@@ -2681,9 +2910,12 @@ fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- draw_cards through accept_block ---
         println!("  Exec: DrawCardsV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&draw.call_data, vec![draw.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &draw.call_data, vec![draw.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- settle_bet ---
@@ -2694,9 +2926,12 @@ fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- settle_bet through accept_block ---
         println!("  Exec: SettleBetV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&settle.call_data, vec![settle.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &settle.call_data, vec![settle.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- house_close ---
@@ -2707,9 +2942,12 @@ fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- house_close through accept_block ---
         println!("  Exec: HouseCloseV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&close.call_data, vec![close.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &close.call_data, vec![close.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         println!("=== All Baccarat endpoints OK ===");
@@ -2726,19 +2964,19 @@ fn test_heavyweight_betting_stake() -> std::result::Result<(), Box<dyn std::erro
     use dwow_contract_test_harness::harness::{BettingStakeHarness, ClaimStakeInfo, UnstakeStakeInfo};
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== BettingStake Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = BettingStakeHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "betting_stake").await?;
         let wasm = include_bytes!("../../../../src/contract/betting_stake/dwow_betting_stake_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "betting_stake", wasm).await?;
         println!("Contract deployed");
 
-        let harness = &pipeline.harness;
         let staker_secret = SecretKey::from_bytes([12u8; 32]).unwrap();
         let staker_pub = PublicKey::from_secret(staker_secret.clone());
         let table_id = pallas::Base::from(100u64);
@@ -2751,9 +2989,12 @@ fn test_heavyweight_betting_stake() -> std::result::Result<(), Box<dyn std::erro
 
         // --- initialize through accept_block ---
         println!("  Exec: InitializeV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&init.call_data, vec![init.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &init.call_data, vec![init.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- stake ---
@@ -2764,9 +3005,12 @@ fn test_heavyweight_betting_stake() -> std::result::Result<(), Box<dyn std::erro
 
         // --- stake through accept_block ---
         println!("  Exec: StakeV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&stake.call_data, vec![stake.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &stake.call_data, vec![stake.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- unstake ---
@@ -2778,9 +3022,12 @@ fn test_heavyweight_betting_stake() -> std::result::Result<(), Box<dyn std::erro
 
         // --- unstake through accept_block ---
         println!("  Exec: UnstakeV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&unstake.call_data, vec![unstake.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &unstake.call_data, vec![unstake.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- claim_earnings ---
@@ -2792,9 +3039,12 @@ fn test_heavyweight_betting_stake() -> std::result::Result<(), Box<dyn std::erro
 
         // --- claim_earnings through accept_block ---
         println!("  Exec: ClaimEarningsV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&claim.call_data, vec![claim.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &claim.call_data, vec![claim.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- update_risk ---
@@ -2805,9 +3055,12 @@ fn test_heavyweight_betting_stake() -> std::result::Result<(), Box<dyn std::erro
 
         // --- update_risk through accept_block ---
         println!("  Exec: UpdateRiskV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&risk.call_data, vec![risk.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &risk.call_data, vec![risk.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         println!("=== All BettingStake endpoints OK ===");
@@ -2823,19 +3076,19 @@ fn test_heavyweight_betting_stake() -> std::result::Result<(), Box<dyn std::erro
 fn test_heavyweight_darkbet_exchange() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::DarkbetExchangeHarness;
     use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== DarkbetExchange Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = DarkbetExchangeHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "darkbet_exchange").await?;
         let wasm = include_bytes!("../../../../src/contract/darkbet_exchange/dwow_darkbet_exchange_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "darkbet_exchange", wasm).await?;
         println!("Contract deployed");
 
-        let harness = &pipeline.harness;
         let owner_x = pallas::Base::from(10u64);
         let owner_y = pallas::Base::from(20u64);
 
@@ -2847,9 +3100,12 @@ fn test_heavyweight_darkbet_exchange() -> std::result::Result<(), Box<dyn std::e
 
         // --- create_market through accept_block ---
         println!("  Exec: CreateMarketV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&market.call_data, vec![market.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &market.call_data, vec![market.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- buy_position ---
@@ -2860,9 +3116,12 @@ fn test_heavyweight_darkbet_exchange() -> std::result::Result<(), Box<dyn std::e
 
         // --- buy_position through accept_block ---
         println!("  Exec: BuyPositionV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&buy.call_data, vec![buy.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &buy.call_data, vec![buy.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- claim_winnings ---
@@ -2873,9 +3132,12 @@ fn test_heavyweight_darkbet_exchange() -> std::result::Result<(), Box<dyn std::e
 
         // --- claim_winnings through accept_block ---
         println!("  Exec: ClaimWinningsV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&claim.call_data, vec![claim.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &claim.call_data, vec![claim.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- add_liquidity ---
@@ -2886,9 +3148,12 @@ fn test_heavyweight_darkbet_exchange() -> std::result::Result<(), Box<dyn std::e
 
         // --- add_liquidity through accept_block ---
         println!("  Exec: AddLiquidityV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&liq.call_data, vec![liq.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &liq.call_data, vec![liq.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         println!("=== All DarkbetExchange endpoints OK ===");
@@ -2905,19 +3170,19 @@ fn test_heavyweight_darktoshi_dice() -> std::result::Result<(), Box<dyn std::err
     use dwow_contract_test_harness::harness::DarkToshiDiceHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== DarkToshiDice Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = DarkToshiDiceHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "darktoshi_dice").await?;
         let wasm = include_bytes!("../../../../src/contract/darktoshi_dice/dwow_darktoshi_dice_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "darktoshi_dice", wasm).await?;
         println!("Contract deployed");
 
-        let harness = &pipeline.harness;
         let player_secret = pallas::Base::from(10u64);
         let player_pub = PublicKey::from_secret(SecretKey::from_base(player_secret));
         let house_secret = pallas::Base::from(30u64);
@@ -2931,9 +3196,12 @@ fn test_heavyweight_darktoshi_dice() -> std::result::Result<(), Box<dyn std::err
 
         // --- commit_bet through accept_block ---
         println!("  Exec: CommitBetV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&commit.call_data, vec![commit.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &commit.call_data, vec![commit.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- reveal_roll (non-ZK, harness-only) ---
@@ -2950,9 +3218,12 @@ fn test_heavyweight_darktoshi_dice() -> std::result::Result<(), Box<dyn std::err
 
         // --- settle_bet through accept_block ---
         println!("  Exec: SettleBetV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&settle.call_data, vec![settle.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &settle.call_data, vec![settle.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- house_close ---
@@ -2968,9 +3239,12 @@ fn test_heavyweight_darktoshi_dice() -> std::result::Result<(), Box<dyn std::err
 
         // --- house_close through accept_block ---
         println!("  Exec: HouseCloseV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&close.call_data, vec![close.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &close.call_data, vec![close.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         println!("=== All DarkToshiDice endpoints OK ===");
@@ -2987,19 +3261,19 @@ fn test_heavyweight_lottery() -> std::result::Result<(), Box<dyn std::error::Err
     use dwow_contract_test_harness::harness::LotteryHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== Lottery Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = LotteryHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "lottery").await?;
         let wasm = include_bytes!("../../../../src/contract/lottery/dwow_lottery_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "lottery", wasm).await?;
         println!("Contract deployed");
 
-        let harness = &pipeline.harness;
         let player_secret = pallas::Base::from(10u64);
         let player_pub = PublicKey::from_secret(SecretKey::from_base(player_secret));
         let numbers = vec![3, 7, 15, 22, 31, 42];
@@ -3012,9 +3286,12 @@ fn test_heavyweight_lottery() -> std::result::Result<(), Box<dyn std::error::Err
 
         // --- commit_ticket through accept_block ---
         println!("  Exec: BuyTicketV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&commit.call_data, vec![commit.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &commit.call_data, vec![commit.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- reveal_ticket ---
@@ -3025,9 +3302,12 @@ fn test_heavyweight_lottery() -> std::result::Result<(), Box<dyn std::error::Err
 
         // --- reveal_ticket through accept_block ---
         println!("  Exec: RevealTicketV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&reveal.call_data, vec![reveal.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &reveal.call_data, vec![reveal.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         println!("=== All Lottery endpoints OK ===");
@@ -3044,19 +3324,19 @@ fn test_heavyweight_roulette() -> std::result::Result<(), Box<dyn std::error::Er
     use dwow_contract_test_harness::harness::RouletteHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== Roulette Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = RouletteHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "roulette").await?;
         let wasm = include_bytes!("../../../../src/contract/roulette/dwow_roulette_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "roulette", wasm).await?;
         println!("Contract deployed");
 
-        let harness = &pipeline.harness;
         let house_secret = pallas::Base::from(10u64);
         let house_pub = PublicKey::from_secret(SecretKey::from_base(house_secret));
         let player_secret = pallas::Base::from(20u64);
@@ -3077,9 +3357,12 @@ fn test_heavyweight_roulette() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- place_bet through accept_block ---
         println!("  Exec: PlaceBetV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&bet.call_data, vec![bet.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &bet.call_data, vec![bet.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- spin_wheel ---
@@ -3090,9 +3373,12 @@ fn test_heavyweight_roulette() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- spin_wheel through accept_block ---
         println!("  Exec: SpinWheelV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&spin.call_data, vec![spin.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &spin.call_data, vec![spin.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- settle_bets ---
@@ -3103,9 +3389,12 @@ fn test_heavyweight_roulette() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- settle_bets through accept_block ---
         println!("  Exec: SettleBetsV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&settle.call_data, vec![settle.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &settle.call_data, vec![settle.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- house_close ---
@@ -3116,9 +3405,12 @@ fn test_heavyweight_roulette() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- house_close through accept_block ---
         println!("  Exec: HouseCloseV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&close.call_data, vec![close.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &close.call_data, vec![close.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         println!("=== All Roulette endpoints OK ===");
@@ -3137,19 +3429,19 @@ fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::
     use dwow_sdk::crypto::pasta_prelude::Group;
     use dwow_sdk::pasta::pallas;
     use dwow_dao_escrow_contract::model::ClaimType;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== DAO-Escrow Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = DaoEscrowHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "dao_escrow").await?;
         let wasm = include_bytes!("../../../../src/contract/dao_escrow/dwow_dao_escrow_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "dao_escrow", wasm).await?;
         println!("Contract deployed");
 
-        let harness = &pipeline.harness;
         let nullifier_k = pallas::Scalar::from(1u64);
         let owner_secret = pallas::Base::from(12345u64);
         let owner_pub = PublicKey::from_secret(SecretKey::from_base(owner_secret));
@@ -3166,9 +3458,12 @@ fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::
 
         // --- InitializeV1 through accept_block ---
         println!("  Exec: InitializeV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&init_result.call_data, vec![init_result.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &init_result.call_data, vec![init_result.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- 0x02: PayPremiumV1 (ZK) ---
@@ -3218,9 +3513,12 @@ fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::
 
         // --- ProposeClaimV1 through accept_block ---
         println!("  Exec: ProposeClaimV1 through accept_block");
-        let hb = pipeline.genesis.block_height();
-        pipeline.exec(&propose_result.call_data, vec![propose_result.proof]).await?;
-        assert!(pipeline.genesis.block_height() > hb);
+        let hb = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &propose_result.call_data, vec![propose_result.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > hb);
         println!("    accept_block height OK");
 
         // --- 0x08: VoteClaimV1 (ZK) ---
@@ -3247,9 +3545,12 @@ fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::
 
         // --- VoteClaimV1 through accept_block ---
         println!("  Exec: VoteClaimV1 through accept_block");
-        let hb = pipeline.genesis.block_height();
-        pipeline.exec(&vote_result.call_data, vec![vote_result.proof]).await?;
-        assert!(pipeline.genesis.block_height() > hb);
+        let hb = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &vote_result.call_data, vec![vote_result.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > hb);
         println!("    accept_block height OK");
 
         // --- 0x09: ExecuteClaimV1 ---
@@ -3285,9 +3586,12 @@ fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::
 
         // --- VerifyMemberCapabilityV1 through accept_block ---
         println!("  Exec: VerifyMemberCapabilityV1 through accept_block");
-        let hb = pipeline.genesis.block_height();
-        pipeline.exec(&verify_member_result.call_data, vec![verify_member_result.proof]).await?;
-        assert!(pipeline.genesis.block_height() > hb);
+        let hb = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &verify_member_result.call_data, vec![verify_member_result.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > hb);
         println!("    accept_block height OK");
 
         // --- 0x0c: ResolveDisputeV1 (ZK) ---
@@ -3312,9 +3616,12 @@ fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::
 
         // --- ResolveDisputeV1 through accept_block ---
         println!("  Exec: ResolveDisputeV1 through accept_block");
-        let hb = pipeline.genesis.block_height();
-        pipeline.exec(&resolve_result.call_data, vec![resolve_result.proof]).await?;
-        assert!(pipeline.genesis.block_height() > hb);
+        let hb = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &resolve_result.call_data, vec![resolve_result.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > hb);
         println!("    accept_block height OK");
 
         // --- 0x0d: CancelClaimV1 ---
@@ -3338,19 +3645,19 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
     use dwow_contract_test_harness::harness::IdentityHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== Identity Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = IdentityHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "identity").await?;
         let wasm = include_bytes!("../../../../src/contract/identity/dwow_identity_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "identity", wasm).await?;
         println!("Contract deployed");
 
-        let harness = &pipeline.harness;
         let issuer_secret = pallas::Base::from(10u64);
         let issuer_pub = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
         let credential_secret = pallas::Base::from(20u64);
@@ -3372,9 +3679,12 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- IssueCredentialV1 through accept_block ---
         println!("  Exec: IssueCredentialV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&issue_result.call_data, vec![issue_result.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &issue_result.call_data, vec![issue_result.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after IssueCredentialV1");
         println!("    accept_block height OK");
 
@@ -3386,9 +3696,12 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- CreateClaimV1 through accept_block ---
         println!("  Exec: CreateClaimV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&claim_result.call_data, vec![claim_result.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &claim_result.call_data, vec![claim_result.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after CreateClaimV1");
         println!("    accept_block height OK");
 
@@ -3400,9 +3713,12 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- CreateClaimL1 through accept_block ---
         println!("  Exec: CreateClaimL1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&l1_result.call_data, vec![l1_result.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &l1_result.call_data, vec![l1_result.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after CreateClaimL1");
         println!("    accept_block height OK");
 
@@ -3414,9 +3730,12 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- CreateClaimL1V2 through accept_block ---
         println!("  Exec: CreateClaimL1V2 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&l1v2_result.call_data, vec![l1v2_result.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &l1v2_result.call_data, vec![l1v2_result.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after CreateClaimL1V2");
         println!("    accept_block height OK");
 
@@ -3428,9 +3747,12 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- CreateClaimMulti through accept_block ---
         println!("  Exec: CreateClaimMulti through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&multi_result.call_data, vec![multi_result.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &multi_result.call_data, vec![multi_result.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after CreateClaimMulti");
         println!("    accept_block height OK");
 
@@ -3442,9 +3764,12 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- CreateClaimRatio through accept_block ---
         println!("  Exec: CreateClaimRatio through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&ratio_result.call_data, vec![ratio_result.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &ratio_result.call_data, vec![ratio_result.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after CreateClaimRatio");
         println!("    accept_block height OK");
 
@@ -3461,9 +3786,12 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- VerifyCapability through accept_block ---
         println!("  Exec: VerifyCapability through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&verify_result.call_data, vec![verify_result.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before,
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &verify_result.call_data, vec![verify_result.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
             "accept_block must advance height after VerifyCapability");
         println!("    accept_block height OK");
 
@@ -3525,6 +3853,7 @@ fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn st
     };
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== Recruitment Pipeline: Cross-Contract Integration ===");
 
@@ -3534,43 +3863,41 @@ fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn st
         // ------------------------------------------------------------------
         println!("\n--- Step 1: Deploy contracts ---");
 
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
+
         // Deploy Identity
         let id_harness = IdentityHarness::spawn();
         println!("Identity harness: {:?}", id_harness.circuits());
-        let mut id_pipeline = HeavyweightPipeline::new(id_harness, "identity").await?;
         let id_wasm = include_bytes!("../../../../src/contract/identity/dwow_identity_contract.wasm");
-        let _id_contract_id = id_pipeline.deploy(id_wasm).await?;
+        let _id_contract_id = chain.deploy(&id_harness, "identity", id_wasm).await?;
         println!("  Identity deployed");
 
         // Deploy Labor Market (with milestone_payment binary now registered)
         let lm_harness = LaborMarketHarness::spawn();
         println!("LaborMarket harness: {:?}", lm_harness.circuits());
-        let mut lm_pipeline = HeavyweightPipeline::new(lm_harness, "labor_market").await?;
         let lm_wasm = include_bytes!("../../../../src/contract/labor_market/dwow_labor_market_contract.wasm");
-        let _lm_contract_id = lm_pipeline.deploy(lm_wasm).await?;
+        let _lm_contract_id = chain.deploy(&lm_harness, "labor_market", lm_wasm).await?;
         println!("  LaborMarket deployed");
 
         // Deploy DAO Escrow
         let dao_harness = DaoEscrowHarness::spawn();
         println!("DAO-Escrow harness: {:?}", dao_harness.circuits());
-        let mut dao_pipeline = HeavyweightPipeline::new(dao_harness, "dao_escrow").await?;
         let dao_wasm = include_bytes!("../../../../src/contract/dao_escrow/dwow_dao_escrow_contract.wasm");
-        let _dao_contract_id = dao_pipeline.deploy(dao_wasm).await?;
+        let _dao_contract_id = chain.deploy(&dao_harness, "dao_escrow", dao_wasm).await?;
         println!("  DAO-Escrow deployed");
 
         // Deploy Attestation
         let att_harness = AttestationHarness::spawn();
         println!("Attestation harness: {:?}", att_harness.circuits());
-        let mut att_pipeline = HeavyweightPipeline::new(att_harness, "attestation").await?;
         let att_wasm = include_bytes!("../../../../src/contract/attestation/dwow_attestation_contract.wasm");
-        let _att_contract_id = att_pipeline.deploy(att_wasm).await?;
+        let _att_contract_id = chain.deploy(&att_harness, "attestation", att_wasm).await?;
         println!("  Attestation deployed");
 
         // ------------------------------------------------------------------
         // Step 2: DAO initializes governance (dao_escrow::InitializeV1)
         // ------------------------------------------------------------------
         println!("\n--- Step 2: DAO initializes governance ---");
-        let dao_harness = &dao_pipeline.harness;
         let nullifier_k = pallas::Scalar::from(1u64);
         let dao_bulla = pallas::Base::from(1u64);
         let owner_secret = pallas::Base::from(30u64);
@@ -3590,7 +3917,6 @@ fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn st
         // Step 3: Issuer issues credential to worker via Identity
         // ------------------------------------------------------------------
         println!("\n--- Step 3: Issuer issues credential to worker ---");
-        let id_harness = &id_pipeline.harness;
         let issuer_secret = pallas::Base::from(30u64);
         let worker_secret = pallas::Base::from(20u64);
         let schema_hash = pallas::Base::from(55u64);
@@ -3631,7 +3957,6 @@ fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn st
         // Step 5: Employer creates job (basic — no capability)
         // ------------------------------------------------------------------
         println!("\n--- Step 5: Employer creates job (escrow deposit) ---");
-        let lm_harness = &lm_pipeline.harness;
         let employer_secret = pallas::Base::from(10u64);
         let employer_pub = PublicKey::from_secret(
             SecretKey::from_base(employer_secret),
@@ -3782,28 +4107,30 @@ fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn st
 
 use dwow_contract_test_harness::harness::NativeTokenHarness;
 use dwow_sdk::crypto::{Keypair, PublicKey, SecretKey};
+use crate::tests::blockchain::HeavyweightPipeline as BlockPipeline;
 use super::harness::{
-    build_coinbase_tx, build_contract_tx, build_test_block,
-    build_test_block_with_uncles, build_test_uncle,
+    build_contract_tx, build_test_block,
+    build_test_block_with_uncles, build_test_uncle, wrap_call_data,
 };
 
-/// Create a HeavyweightPipeline with NativeTokenHarness, deploy WASM,
-/// and return the pipeline + a keypair for generating call_data.
+/// Create a BlockPipeline with NativeTokenHarness, deploy WASM,
+/// and return the chain, harness, ContractId, and a keypair for generating call_data.
 async fn setup_native_token_pipeline(
 ) -> std::result::Result<
-    (HeavyweightPipeline<NativeTokenHarness>, Keypair),
+    (BlockPipeline, NativeTokenHarness, ContractId, Keypair),
     Box<dyn std::error::Error>,
 > {
+    let chain = BlockPipeline::new().await?;
+    chain.init_genesis().await?;
     let harness = NativeTokenHarness::spawn();
-    let mut pipeline = HeavyweightPipeline::new(harness, "native_token").await?;
     let wasm = include_bytes!("../../../../src/contract/native_token/dwow_native_token_contract.wasm");
-    pipeline.deploy(wasm).await?;
+    let cid = chain.deploy(&harness, "native_token", wasm).await?;
 
     let secret = SecretKey::from_bytes([2u8; 32])?;
     let public = PublicKey::from_secret(secret.clone());
     let keypair = Keypair { secret, public };
 
-    Ok((pipeline, keypair))
+    Ok((chain, harness, cid, keypair))
 }
 
 /// Generate call_data via NativeTokenHarness.
@@ -3811,14 +4138,14 @@ async fn setup_native_token_pipeline(
 /// The fee call may not pass WASM execution (it references a non-existent coin
 /// on the test contract), but uncle tests use this to exercise the execution
 /// pipeline where failures are non-fatal. Canonical tests should use
-/// `exec_coinbase_only()` to prove the accept_block path.
-/// Returns (call_data, proofs) for use with pipeline.exec*() methods.
+/// `submit()` to prove the accept_block path.
+/// Returns (call_data, proofs) for use with chain.block() methods.
 fn native_token_call(
-    pipeline: &HeavyweightPipeline<NativeTokenHarness>,
+    harness: &NativeTokenHarness,
     keypair: Keypair,
 ) -> std::result::Result<(Vec<u8>, Vec<dwow_core::zk::Proof>), Box<dyn std::error::Error>> {
     let recipient = PublicKey::from_secret(SecretKey::from_bytes([9u8; 32])?);
-    let result = pipeline.harness.fee(
+    let result = harness.fee(
         1000,
         dwow_sdk::pasta::pallas::Base::from(1u64),
         dwow_sdk::pasta::pallas::Base::from(0u64),
@@ -3844,15 +4171,15 @@ fn test_heavyweight_canonical_exec() -> std::result::Result<(), Box<dyn std::err
     println!("=== Canonical Block Execution ===");
 
     smol::block_on(async {
-        let (pipeline, _keypair) = setup_native_token_pipeline().await?;
-        let before = pipeline.genesis.block_height();
+        let (chain, _harness, _cid, _keypair) = setup_native_token_pipeline().await?;
+        let before = chain.height();
 
-        // Mine a coinbase-only block — proves the full accept_block path
+        // Submit a coinbase-only block — proves the full accept_block path
         // (coinbase + cumulative supply chain) without needing a contract
         // call that spends a coin.
-        pipeline.exec_coinbase_only().await?;
+        chain.block()?.submit().await?;
 
-        let after = pipeline.genesis.block_height();
+        let after = chain.height();
         assert!(after > before, "Height should increase (was {} now {})", before, after);
         println!("  Canonical block at height {} applied OK", after);
         Ok(())
@@ -3873,8 +4200,8 @@ fn test_heavyweight_coinbase_rejects_wrong_reward() -> std::result::Result<(), B
     println!("=== Coinbase Wrong Reward Rejection (F1 fix) ===");
 
     smol::block_on(async {
-        let (pipeline, _keypair) = setup_native_token_pipeline().await?;
-        let height = pipeline.genesis.block_height();
+        let (chain, _harness, _cid, _keypair) = setup_native_token_pipeline().await?;
+        let height = chain.height();
         let next_height = height.succ();
         let correct_reward = dwow_sdk::blockchain::expected_reward(next_height);
 
@@ -3884,17 +4211,17 @@ fn test_heavyweight_coinbase_rejects_wrong_reward() -> std::result::Result<(), B
         let over_reward = BlockReward::new(correct_reward.get() + 1);
         println!("  Height {} expected_reward={}, attempting over_reward={}",
             next_height, correct_reward.get(), over_reward.get());
-        let cb = pipeline.build_coinbase_for_height(next_height, over_reward).await?;
+        let cb = chain.build_coinbase_for_height(next_height, over_reward).await?;
 
-        let target = pipeline.expected_target();
+        let target = chain.expected_target(next_height);
         let mut block = build_test_block(
-            &pipeline.genesis.chain_state, next_height, vec![cb.tx.clone()],
+            &chain.chain_state, next_height, vec![cb.tx.clone()],
         );
         block.header.target = target;
         let vm = build_accept_vm(&block)?;
 
         let result = crate::block_acceptor::accept_block(
-            &pipeline.genesis.chain_state, &block, &[], &vm,
+            &chain.chain_state, &block, &[], &vm,
             height, target, None,
         );
 
@@ -3906,7 +4233,7 @@ fn test_heavyweight_coinbase_rejects_wrong_reward() -> std::result::Result<(), B
         println!("  Correctly rejected: {}", err_msg);
 
         // Verify the chain was NOT corrupted — height must be unchanged
-        assert_eq!(pipeline.genesis.block_height(), height,
+        assert_eq!(chain.height(), height,
             "Chain height changed despite rejection — state corruption");
         Ok(())
     })
@@ -3920,13 +4247,26 @@ fn test_heavyweight_uncle_exec() -> std::result::Result<(), Box<dyn std::error::
     println!("=== Uncle Block Execution ===");
 
     smol::block_on(async {
-        let (pipeline, keypair) = setup_native_token_pipeline().await?;
-        let (call_data, proofs) = native_token_call(&pipeline, keypair)?;
-        let before = pipeline.genesis.block_height();
+        let (chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        let (call_data, _proofs) = native_token_call(&harness, keypair)?;
+        let before = chain.height();
 
-        pipeline.exec_as_uncle(&call_data, proofs, 1).await?;
+        let next = chain.height().succ();
+        let reward = dwow_sdk::blockchain::expected_reward(next);
+        let call_data_wrapped = if cid == *NATIVE_TOKEN_CONTRACT_ID {
+            call_data
+        } else {
+            wrap_call_data(cid, call_data)
+        };
+        let contract_tx = build_contract_tx(cid, call_data_wrapped);
+        let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx]);
+        let uncle = build_test_uncle(uncle_raw, 1, reward);
 
-        let after = pipeline.genesis.block_height();
+        chain.block()?
+            .with_uncle(uncle)
+            .submit().await?;
+
+        let after = chain.height();
         assert!(after > before, "Height should increase (was {} now {})", before, after);
         println!("  Uncle block execution at height {} applied OK", after);
         Ok(())
@@ -3941,16 +4281,29 @@ fn test_heavyweight_mixed_exec() -> std::result::Result<(), Box<dyn std::error::
     println!("=== Mixed Execution: Canonical + Uncle ===");
 
     smol::block_on(async {
-        let (pipeline, keypair) = setup_native_token_pipeline().await?;
-        let (call_data, proofs) = native_token_call(&pipeline, keypair)?;
-        let before = pipeline.genesis.block_height();
+        let (chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        let (call_data, _proofs) = native_token_call(&harness, keypair)?;
+        let before = chain.height();
 
-        // exec_as_uncle: coinbase-only canonical block + uncle with contract call.
+        // Coinbase-only canonical block + uncle with contract call.
         // Uncle execution failures are non-fatal; this tests the accept_block
         // path with uncles.
-        pipeline.exec_as_uncle(&call_data, proofs, 1).await?;
+        let next = chain.height().succ();
+        let reward = dwow_sdk::blockchain::expected_reward(next);
+        let call_data_wrapped = if cid == *NATIVE_TOKEN_CONTRACT_ID {
+            call_data
+        } else {
+            wrap_call_data(cid, call_data)
+        };
+        let contract_tx = build_contract_tx(cid, call_data_wrapped);
+        let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx]);
+        let uncle = build_test_uncle(uncle_raw, 1, reward);
 
-        let after = pipeline.genesis.block_height();
+        chain.block()?
+            .with_uncle(uncle)
+            .submit().await?;
+
+        let after = chain.height();
         assert!(after > before, "Height should increase (was {} now {})", before, after);
         println!("  Mixed (canonical coinbase + uncle call) at height {} applied OK", after);
         Ok(())
@@ -3965,18 +4318,30 @@ fn test_heavyweight_multi_uncle() -> std::result::Result<(), Box<dyn std::error:
     println!("=== Multi-Uncle Execution (3 uncles) ===");
 
     smol::block_on(async {
-        let (pipeline, keypair) = setup_native_token_pipeline().await?;
+        let (chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
 
-        let mut call_datas = Vec::new();
+        let next = chain.height().succ();
+        let reward = dwow_sdk::blockchain::expected_reward(next);
+        let mut uncles = Vec::new();
         for _i in 0u32..3 {
-            let (call_data, _) = native_token_call(&pipeline, keypair.clone())?;
-            call_datas.push(call_data);
+            let (call_data, _) = native_token_call(&harness, keypair.clone())?;
+            let call_data_wrapped = if cid == *NATIVE_TOKEN_CONTRACT_ID {
+                call_data
+            } else {
+                wrap_call_data(cid, call_data)
+            };
+            let contract_tx = build_contract_tx(cid, call_data_wrapped);
+            let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx]);
+            let uncle = build_test_uncle(uncle_raw, 1, reward);
+            uncles.push(uncle);
         }
-        let before = pipeline.genesis.block_height();
+        let before = chain.height();
 
-        pipeline.exec_multi_uncle(call_datas, 1).await?;
+        chain.block()?
+            .with_uncles(uncles)
+            .submit().await?;
 
-        let after = pipeline.genesis.block_height();
+        let after = chain.height();
         assert!(after > before, "Height should increase (was {} now {})", before, after);
         println!("  Multi-uncle (3 uncles) at height {} applied OK", after);
         Ok(())
@@ -3997,15 +4362,28 @@ fn test_heavyweight_uncle_depth() -> std::result::Result<(), Box<dyn std::error:
     println!("=== Uncle Depth Verification ===");
 
     smol::block_on(async {
-        let (pipeline, keypair) = setup_native_token_pipeline().await?;
+        let (chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
 
         for depth in [1u8, 2, 3] {
-            let (call_data, proofs) = native_token_call(&pipeline, keypair.clone())?;
-            let before = pipeline.genesis.block_height();
+            let (call_data, _proofs) = native_token_call(&harness, keypair.clone())?;
+            let before = chain.height();
 
-            pipeline.exec_as_uncle(&call_data, proofs, depth).await?;
+            let next = chain.height().succ();
+            let reward = dwow_sdk::blockchain::expected_reward(next);
+            let call_data_wrapped = if cid == *NATIVE_TOKEN_CONTRACT_ID {
+                call_data
+            } else {
+                wrap_call_data(cid, call_data)
+            };
+            let contract_tx = build_contract_tx(cid, call_data_wrapped);
+            let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx]);
+            let uncle = build_test_uncle(uncle_raw, depth, reward);
 
-            let after = pipeline.genesis.block_height();
+            chain.block()?
+                .with_uncle(uncle)
+                .submit().await?;
+
+            let after = chain.height();
             assert!(after > before, "Height should increase for depth {}", depth);
             println!("  Depth {} uncle applied OK (pin_confirmed = reward / 2^{})", depth, depth);
         }
@@ -4023,24 +4401,28 @@ fn test_heavyweight_empty_uncle() -> std::result::Result<(), Box<dyn std::error:
     println!("=== Empty Uncle (no contract calls) ===");
 
     smol::block_on(async {
-        let (pipeline, keypair) = setup_native_token_pipeline().await?;
-        let height = pipeline.genesis.block_height();
+        let (chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        let height = chain.height();
         let next = height.succ();
         let reward = dwow_sdk::blockchain::expected_reward(next);
 
         // Build a real coinbase via the production path.
-        let cb = pipeline.build_coinbase_for_height(next, reward).await?;
+        let cb = chain.build_coinbase_for_height(next, reward).await?;
 
         // Uncle with a contract tx — exercises uncle execution through accept_block.
-        let (call_data, _proofs) = native_token_call(&pipeline, keypair)?;
-        let contract_id = pipeline.contract_id.unwrap();
-        let uncle_tx = build_contract_tx(contract_id, call_data);
-        let uncle_raw = build_test_block(&pipeline.genesis.chain_state, next, vec![uncle_tx]);
+        let (call_data, _proofs) = native_token_call(&harness, keypair)?;
+        let call_data_wrapped = if cid == *NATIVE_TOKEN_CONTRACT_ID {
+            call_data
+        } else {
+            wrap_call_data(cid, call_data)
+        };
+        let uncle_tx = build_contract_tx(cid, call_data_wrapped);
+        let uncle_raw = build_test_block(&chain.chain_state, next, vec![uncle_tx]);
         let uncle = build_test_uncle(uncle_raw, 1, reward);
 
-        let target = pipeline.expected_target();
+        let target = chain.expected_target(next);
         let mut block = build_test_block_with_uncles(
-            &pipeline.genesis.chain_state,
+            &chain.chain_state,
             next,
             vec![cb.tx],
             &[uncle.clone()],
@@ -4049,7 +4431,7 @@ fn test_heavyweight_empty_uncle() -> std::result::Result<(), Box<dyn std::error:
         let vm = build_accept_vm(&block)?;
 
         crate::block_acceptor::accept_block(
-            &pipeline.genesis.chain_state, &block, &[uncle], &vm,
+            &chain.chain_state, &block, &[uncle], &vm,
             height, target, None,
         ).map_err(|e| dwow_core::Error::Custom(format!("accept_block empty uncle: {}", e)))?;
 
@@ -4066,37 +4448,41 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
     println!("=== Invalid Uncle Proof ===");
 
     smol::block_on(async {
-        let (pipeline, keypair) = setup_native_token_pipeline().await?;
-        let height = pipeline.genesis.block_height();
+        let (chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        let height = chain.height();
         let next = height.succ();
         let reward = dwow_sdk::blockchain::expected_reward(next);
 
-        let cb = pipeline.build_coinbase_for_height(next, reward).await?;
+        let cb = chain.build_coinbase_for_height(next, reward).await?;
 
         // Build a valid uncle with real ZK call_data
-        let (call_data, _proofs) = native_token_call(&pipeline, keypair)?;
-        let contract_id = pipeline.contract_id.unwrap();
-        let uncle_tx = build_contract_tx(contract_id, call_data);
+        let (call_data, _proofs) = native_token_call(&harness, keypair)?;
+        let call_data_wrapped = if cid == *NATIVE_TOKEN_CONTRACT_ID {
+            call_data
+        } else {
+            wrap_call_data(cid, call_data)
+        };
+        let uncle_tx = build_contract_tx(cid, call_data_wrapped);
         let uncle_raw = build_test_block(
-            &pipeline.genesis.chain_state,
+            &chain.chain_state,
             next,
             vec![uncle_tx],
         );
         let good_uncle = build_test_uncle(uncle_raw, 1, reward);
 
         // Build a different uncle that is NOT in the merkle root
-        let bad_tx = build_contract_tx(contract_id, vec![0xFF]);
+        let bad_tx = build_contract_tx(cid, vec![0xFF]);
         let bad_raw = build_test_block(
-            &pipeline.genesis.chain_state,
+            &chain.chain_state,
             next,
             vec![bad_tx],
         );
         let bad_uncle = build_test_uncle(bad_raw, 1, reward);
 
         // Canonical block's uncle_merkle_root only includes good_uncle
-        let target = pipeline.expected_target();
+        let target = chain.expected_target(next);
         let mut block = build_test_block_with_uncles(
-            &pipeline.genesis.chain_state,
+            &chain.chain_state,
             next,
             vec![cb.tx],
             &[good_uncle],
@@ -4109,7 +4495,7 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
         // verifying they match the block header's uncle_merkle_root. This check
         // should be added to chain validation (future work).
         let result = crate::block_acceptor::accept_block(
-            &pipeline.genesis.chain_state, &block, &[bad_uncle], &vm,
+            &chain.chain_state, &block, &[bad_uncle], &vm,
             height, target, None,
         );
 
@@ -4139,43 +4525,15 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
     use dwow_sdk::crypto::ContractId;
     use dwow_sdk::pasta::pallas;
     use dwow_bridge_contract::model::ExternalChain;
-    use dwow_sdk::crypto::keypair::Network;
-    use dwow_core::runtime::vm_runtime::{Runtime, RuntimeBackend};
-    use dwow_chain::execution::TxBackend;
-    use dwow_sdk::tx::TransactionHash;
-    use sled_overlay::SledTreeOverlay;
-
-    use super::genesis::GenesisHarness;
+    use crate::tests::blockchain::HeavyweightPipeline;
     use super::harness::{build_contract_tx, build_test_block};
 
     println!("=== Relayer Lifecycle Heavyweight ===");
 
     smol::block_on(async {
-        // --- Setup: genesis + ZK infrastructure ---
-        let genesis = GenesisHarness::new_without_contracts()?;
-        let zk = crate::registry::model::LinearPowRewardZk::new(
-            genesis.chain_state.clone(),
-        ).await?;
-        let linear_zk = std::sync::Arc::new(zk);
-
-        let keys_path = std::env::temp_dir()
-            .join(format!("dwow_relayer_{}_{}.toml", std::process::id(),
-                KEY_COUNTER.fetch_add(1, Ordering::Relaxed)));
-        let test_keys = "[node0]\nwallet_secret = \
-            \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
-        std::fs::write(&keys_path, test_keys)
-            .map_err(|e| dwow_core::Error::Custom(format!("write test keys: {}", e)))?;
-
-        // Init genesis — deploys all 9 contracts via apply_genesis_deployments.
-        let mgr = crate::accounts::AccountManager::open(
-            &keys_path, Network::Testnet, "node0",
-        ).map_err(|e| dwow_core::Error::Custom(format!("open test keys: {}", e)))?;
-        let gen_recipient = crate::accounts::MiningRecipient::from_account(
-            &mgr, dwow_sdk::blockchain::BlockHeight::GENESIS,
-        ).map_err(|e| dwow_core::Error::Custom(format!("MiningRecipient: {}", e)))?;
-        drop(mgr);
-        let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
-        crate::init_genesis(&genesis.chain_state, gen_recipient, magic_bytes).await?;
+        // --- Setup: shared chain ---
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
 
         let bridge_harness = BridgeHarness::spawn();
         let relayer_harness = RelayerEndowmentHarness::spawn();
@@ -4184,90 +4542,19 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         println!("  Bridge circuits: {:?}", bridge_harness.circuits());
         println!("  RelayerEndowment circuits: {:?}", relayer_harness.circuits());
 
-        // Helper: deploy WASM + run __initialize (same pattern as HeavyweightPipeline).
-        async fn deploy_wasm(
-            chain_state: &std::sync::Arc<dwow_chain::CChainState>,
-            wasm: &[u8],
-            contract_id: ContractId,
-        ) -> dwow_core::Result<()> {
-            let contracts_tree = chain_state.store.contracts_tree().clone();
-            let mut overlay = SledTreeOverlay::new(&contracts_tree);
-            overlay.state.cache.insert(
-                sled::IVec::from(contract_id.to_bytes().as_slice()),
-                sled::IVec::from(wasm),
-            );
-            let flags = randomx::RandomXFlags::get_recommended_flags()
-                & !randomx::RandomXFlags::JIT;
-            let rx_cache = chain_state.get_cache([0u8; 32]);
-            let vm = std::sync::Arc::new(
-                randomx::RandomXVM::new(flags, Some(rx_cache), None)
-                    .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?,
-            );
-            let overlay_arc = std::sync::Arc::new(std::sync::Mutex::new(overlay.clone()));
-            let backend = std::sync::Arc::new(TxBackend {
-                overlay: std::sync::Arc::clone(&overlay_arc),
-                store: chain_state.store.clone(),
-                height: dwow_sdk::blockchain::BlockHeight::GENESIS,
-                vm,
-            });
-            let mut runtime = Runtime::new(
-                wasm, backend, contract_id,
-                dwow_sdk::blockchain::BlockHeight::GENESIS,
-                BlockTarget::MAX, TransactionHash::none(), 0,
-            ).map_err(|e| dwow_core::Error::Custom(format!("Runtime::new: {}", e)))?;
-            runtime.deploy(&[]).map_err(|e| dwow_core::Error::Custom(format!(
-                "deploy __initialize: {}", e,
-            )))?;
-            drop(runtime);
-            let overlay = overlay_arc.lock().unwrap().clone();
-            let batch = overlay.state.aggregate().unwrap_or_default();
-            contracts_tree.apply_batch(batch)
-                .map_err(|e| dwow_core::Error::Custom(format!("apply_batch: {}", e)))?;
-            Ok(())
-        }
-
-        // Helper: build a real coinbase tx for the given height.
-        async fn build_cb(
-            keys_path: &std::path::Path,
-            linear_zk: &std::sync::Arc<crate::registry::model::LinearPowRewardZk>,
-            height: dwow_sdk::blockchain::BlockHeight,
-        ) -> dwow_core::Result<(dwow_chain::Transaction, dwow_chain::CoinbaseTransaction)> {
-            let reward = dwow_sdk::blockchain::expected_reward(height);
-            let mgr = crate::accounts::AccountManager::open(
-                keys_path, Network::Testnet, "node0",
-            ).map_err(|e| dwow_core::Error::Custom(format!("open keys: {}", e)))?;
-            let recipient = crate::accounts::MiningRecipient::from_account(&mgr, height)
-                .map_err(|e| dwow_core::Error::Custom(format!("MiningRecipient: {}", e)))?;
-            drop(mgr);
-            let (coinbase, _pi, pow_reward_call, _coin_blind) =
-                crate::registry::model::build_linear_coinbase(
-                    recipient, reward, linear_zk, height,
-                ).await?;
-            let tx = dwow_chain::Transaction {
-                version: BlockVersion::CURRENT, inputs: vec![], outputs: vec![],
-                contract_calls: vec![pow_reward_call],
-                lock_time: 0,
-                nullifiers: vec![coinbase.nullifier],
-                witness: vec![],
-            };
-            Ok((tx, coinbase))
-        }
-
         // --- Deploy bridge contract ---
         let bridge_wasm =
             include_bytes!("../../../../src/contract/bridge/dwow_bridge_contract.wasm");
-        let bridge_id = ContractId::from_base(pallas::Base::from(0xB0_B1_B2_B3u64));
-        deploy_wasm(&genesis.chain_state, bridge_wasm, bridge_id).await?;
+        let bridge_id = chain.deploy(&bridge_harness, "bridge", bridge_wasm).await?;
         println!("Bridge deployed at {:?}", bridge_id.to_bytes());
 
         // --- Deploy relayer_endowment contract ---
         let relayer_wasm =
             include_bytes!("../../../../src/contract/relayer_endowment/dwow_relayer_endowment_contract.wasm");
-        let relayer_id = ContractId::from_base(pallas::Base::from(0xE0_E1_E2_E3u64));
-        deploy_wasm(&genesis.chain_state, relayer_wasm, relayer_id).await?;
+        let relayer_id = chain.deploy(&relayer_harness, "relayer_endowment", relayer_wasm).await?;
         println!("RelayerEndowment deployed at {:?}", relayer_id.to_bytes());
 
-        let start_height = genesis.block_height();
+        let start_height = chain.height();
         println!("Start height: {}", start_height);
 
         // --- Block 1: Bridge deposit ---
@@ -4296,14 +4583,14 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             let (cb_tx, _) = build_cb(&keys_path, &linear_zk, height1).await?;
             let mut deposit_tx = build_contract_tx(bridge_id, deposit.call_data);
             deposit_tx.witness = build_witness(bridge_id, &deposit_tx.contract_calls[0].data, vec![]);
-            let block1 = build_test_block(&genesis.chain_state, height1, vec![cb_tx, deposit_tx]);
+            let block1 = build_test_block(&chain.chain_state, height1, vec![cb_tx, deposit_tx]);
             let vm = build_accept_vm(&block1)?;
             crate::block_acceptor::accept_block(
-                &genesis.chain_state, &block1, &[], &vm,
+                &chain.chain_state, &block1, &[], &vm,
                 start_height, BlockTarget::MAX, None,
             ).map_err(|e| dwow_core::Error::Custom(format!("accept_block deposit: {}", e)))?;
         }
-        assert_eq!(genesis.block_height(), height1, "height must advance after deposit");
+        assert_eq!(chain.height(), height1, "height must advance after deposit");
         println!("  deposit executed OK (height {} -> {})", start_height, height1);
 
         // --- Block 2: Bridge withdraw ---
@@ -4324,19 +4611,19 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         assert!(!withdraw.call_data.is_empty(), "withdraw call_data must not be empty");
         println!("  Withdraw call_data={}B", withdraw.call_data.len());
 
-        let height2 = genesis.block_height().succ();
+        let height2 = chain.height().succ();
         {
             let (cb_tx, _) = build_cb(&keys_path, &linear_zk, height2).await?;
             let mut withdraw_tx = build_contract_tx(bridge_id, withdraw.call_data);
             withdraw_tx.witness = build_witness(bridge_id, &withdraw_tx.contract_calls[0].data, vec![]);
-            let block2 = build_test_block(&genesis.chain_state, height2, vec![cb_tx, withdraw_tx]);
+            let block2 = build_test_block(&chain.chain_state, height2, vec![cb_tx, withdraw_tx]);
             let vm = build_accept_vm(&block2)?;
             crate::block_acceptor::accept_block(
-                &genesis.chain_state, &block2, &[], &vm,
+                &chain.chain_state, &block2, &[], &vm,
                 height1, BlockTarget::MAX, None,
             ).map_err(|e| dwow_core::Error::Custom(format!("accept_block withdraw: {}", e)))?;
         }
-        assert_eq!(genesis.block_height(), height2, "height must advance after withdraw");
+        assert_eq!(chain.height(), height2, "height must advance after withdraw");
         println!("  withdraw executed OK (height {} -> {})", height1, height2);
 
         // --- Block 3: Double-spend attempt (same secret = same nullifier) ---
@@ -4355,15 +4642,15 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             }
         };
 
-        let height3 = genesis.block_height().succ();
+        let height3 = chain.height().succ();
         {
             let (cb_tx, _) = build_cb(&keys_path, &linear_zk, height3).await?;
             let mut double_tx = build_contract_tx(bridge_id, double_withdraw.call_data);
             double_tx.witness = build_witness(bridge_id, &double_tx.contract_calls[0].data, vec![]);
-            let block3 = build_test_block(&genesis.chain_state, height3, vec![cb_tx, double_tx]);
+            let block3 = build_test_block(&chain.chain_state, height3, vec![cb_tx, double_tx]);
             let vm = build_accept_vm(&block3)?;
             let double_result = crate::block_acceptor::accept_block(
-                &genesis.chain_state, &block3, &[], &vm,
+                &chain.chain_state, &block3, &[], &vm,
                 height2, BlockTarget::MAX, None,
             );
             assert!(double_result.is_err(), "double-spend must be rejected (nullifier already spent)");
@@ -4389,7 +4676,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         assert!(!deploy.call_data.is_empty(), "deploy_capital call_data must not be empty");
         println!("  DeployCapital call_data={}B", deploy.call_data.len());
 
-        let height4 = genesis.block_height().succ();
+        let height4 = chain.height().succ();
         {
             let (cb_tx, _) = build_cb(&keys_path, &linear_zk, height4).await?;
             let mut init_tx = build_contract_tx(relayer_id, init.call_data);
@@ -4397,21 +4684,21 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             let mut deploy_tx = build_contract_tx(relayer_id, deploy.call_data);
             deploy_tx.witness = build_witness(relayer_id, &deploy_tx.contract_calls[0].data, vec![]);
             let block4 = build_test_block(
-                &genesis.chain_state, height4,
+                &chain.chain_state, height4,
                 vec![cb_tx, init_tx, deploy_tx],
             );
             let vm = build_accept_vm(&block4)?;
             crate::block_acceptor::accept_block(
-                &genesis.chain_state, &block4, &[], &vm,
+                &chain.chain_state, &block4, &[], &vm,
                 height3, BlockTarget::MAX, None,
             ).map_err(|e| dwow_core::Error::Custom(format!("accept_block relayer: {}", e)))?;
         }
-        assert_eq!(genesis.block_height(), height4,
+        assert_eq!(chain.height(), height4,
             "height must advance after relayer_endowment calls");
         println!("  initialize + deploy_capital executed OK (height {} -> {})", height3, height4);
 
         // --- Verify final state ---
-        let final_height = genesis.block_height();
+        let final_height = chain.height();
         assert!(final_height.get() >= 3, "must have at least 3 successful blocks (deposit + withdraw + relayer)");
         println!(
             "\n=== Relayer Lifecycle Heavyweight: All assertions passed (final height: {}) ===",
@@ -4481,19 +4768,19 @@ fn test_heavyweight_otc_swap() -> std::result::Result<(), Box<dyn std::error::Er
     use dwow_contract_test_harness::harness::OtcSwapHarness;
     use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== OtcSwap Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
         let harness = OtcSwapHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let mut pipeline = HeavyweightPipeline::new(harness, "otc_swap").await?;
         let wasm = include_bytes!("../../../../src/contract/otc_swap/dwow_otc_swap_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let cid = chain.deploy(&harness, "otc_swap", wasm).await?;
         println!("Contract deployed");
 
-        let harness = &pipeline.harness;
         let alice_secret = pallas::Base::from(10u64);
         let alice_pub = PublicKey::from_secret(SecretKey::from_base(alice_secret));
         let bob_secret = pallas::Base::from(20u64);
@@ -4511,9 +4798,12 @@ fn test_heavyweight_otc_swap() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- create_swap through accept_block ---
         println!("  Exec: CreateSwapV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&create.call_data, vec![create.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &create.call_data, vec![create.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- fund_swap ---
@@ -4526,9 +4816,12 @@ fn test_heavyweight_otc_swap() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- fund_swap through accept_block ---
         println!("  Exec: FundSwapV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&fund.call_data, vec![fund.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &fund.call_data, vec![fund.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- execute_swap ---
@@ -4541,9 +4834,12 @@ fn test_heavyweight_otc_swap() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- execute_swap through accept_block ---
         println!("  Exec: ExecuteSwapV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&exec.call_data, vec![exec.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &exec.call_data, vec![exec.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         // --- cancel_swap ---
@@ -4556,9 +4852,12 @@ fn test_heavyweight_otc_swap() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- cancel_swap through accept_block ---
         println!("  Exec: CancelSwapV1 through accept_block");
-        let h_before = pipeline.genesis.block_height();
-        pipeline.exec(&cancel.call_data, vec![cancel.proof]).await?;
-        assert!(pipeline.genesis.block_height() > h_before);
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &cancel.call_data, vec![cancel.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
         println!("=== OtcSwap Heavyweight: PASSED ===");

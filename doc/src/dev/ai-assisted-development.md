@@ -126,7 +126,7 @@ Here is the concrete loop for AI-assisted contract development:
    → Iterate with AI until green
 
 3. Level 2 reveals ZK circuit and business logic issues
-   RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd test_heavyweight
+   ./bin/dwowd/src/tests/heavyweight.sh --all
    → Fix proof failures, state machine bugs
    → Iterate with AI until green
 

@@ -253,7 +253,7 @@ Level 1 through the Deployooor contract. Level 2 uses the direct
 `deploy_contract()` path solely for test setup convenience.
 
 **Caveats:** Requires `--release` mode and `RUST_MIN_STACK=67108864` (64MB)
-for halo2 proving keys. All 36 tests complete in ~450 seconds.
+for halo2 proving keys. All 40 tests complete in ~450 seconds.
 
 See [Level 2: Heavyweight Tests](level-2-heavyweight.md).
 
@@ -474,7 +474,7 @@ execution, wallet scan, merge-mining, or strict-mode rejection paths.
 | Fee collect determinism (Level 2) | `bin/dwowd/src/tests/fee_collect_pipeline.rs` |
 | Consensus coordination tests | `bin/dwowd/tests/consensus_coordination.rs` |
 | Tripwire guardrails | `bin/dwowd/src/tests/tripwire.rs` |
-| Relayer heavyweight test runner | `bin/universal_relayer/test_relayer_heavyweight.sh` |
+| Relayer heavyweight test runner | `bin/dwowd/src/tests/heavyweight.sh --relayer` |
 | Docker base image (shared by all images) | `contrib/docker/darkwow-testnet/Dockerfile.base` |
 | Docker localnet (modular pipeline) | `contrib/docker/darkwow-testnet/` (18 `lib/*.sh` modules + `test_pipeline.sh` orchestrator + `pipeline_spec.py` spec) |
 | Bridge Docker image + pipeline (Level 3) | `contrib/docker/bridge-node/` |

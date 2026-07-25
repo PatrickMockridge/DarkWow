@@ -174,13 +174,34 @@ block.submit().await?;
 
 ### Running Heavyweight Tests
 
-```bash
-# All 40 heavyweight tests (requires --release for halo2 proving keys)
-RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd -- test_heavyweight_
+Use the `heavyweight.sh` script from `bin/dwowd/src/tests/`:
 
-# Individual tests
-cargo test --release -p dwowd -- test_heavyweight_dao_escrow
-cargo test --release -p dwowd -- test_heavyweight_identity
+```bash
+# Run a single contract test
+./heavyweight.sh --dex
+
+# Run multiple contracts
+./heavyweight.sh --dex --auction --stablecoin
+
+# Run all block execution tests (8 tests)
+./heavyweight.sh --block-execution
+
+# Run cross-contract integration
+./heavyweight.sh --recruitment
+
+# Show test output
+./heavyweight.sh --dex --nocapture
+
+# Run all 40 heavyweight tests
+./heavyweight.sh --all
+
+# List all flags
+./heavyweight.sh --help
+```
+
+For CI or bare-metal usage, the raw cargo command is:
+```bash
+RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd -- test_heavyweight_
 ```
 
 ### Why Stack Overflow Occurs
@@ -194,9 +215,9 @@ through hundreds of consecutive runs with zero SIGSEGV.
 ### Test Coverage
 
 40 tests total: 29 contract-specific tests + 1 cross-contract integration
-test (recruitment_pipeline) + 7 block-execution infrastructure tests
-(canonical, uncle, mixed, multi-uncle, depth, empty-uncle, invalid-uncle-proof)
-+ 1 coinbase rejection test + 1 metadata test + 1 relayer lifecycle test.
+test (recruitment_pipeline) + 8 block-execution infrastructure tests
+(canonical, coinbase-rejects-wrong-reward, uncle, mixed, multi-uncle, depth,
+empty-uncle, invalid-uncle-proof) + 1 metadata test + 1 relayer lifecycle test.
 
 Every block in every test includes PoWRewardV1 + FeeCollectV1, exercising
 the full merkle tree open/close lifecycle.

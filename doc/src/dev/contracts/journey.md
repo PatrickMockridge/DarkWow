@@ -135,7 +135,7 @@ Run through the [testing pipeline](../testing/overview.md):
 | Level | Command | Catches |
 |---|---|---|
 | 1 — Lightweight | `cargo test -p dwowd test_all_contracts_deploy` | Compilation, deploy, serialization |
-| 2 — Heavyweight | `RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd test_heavyweight` | ZK proof failures, state machine bugs |
+| 2 — Heavyweight | `./bin/dwowd/src/tests/heavyweight.sh --all` | ZK proof failures, state machine bugs |
 | 3 — Localnet | `contrib/docker/darkwow-testnet/test_pipeline.sh --mode native` | P2P, mining, block propagation, wallet sync |
 
 Run the [safety checklist](checklist.md) before each level. Never skip a level.

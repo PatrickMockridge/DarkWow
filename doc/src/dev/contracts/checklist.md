@@ -45,7 +45,7 @@ For any new or modified ZK circuit:
 Run before deploying any contract, even in devnet:
 
 - [ ] `cargo test -p dwowd test_all_contracts_deploy` — Level 1 deployment
-- [ ] `RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd test_heavyweight` — Level 2 ZK proofs
+- [ ] `./bin/dwowd/src/tests/heavyweight.sh --all` — Level 2 ZK proofs
 - [ ] Python model tests pass for the relevant contract (if a model exists)
 - [ ] Capability descriptor updated: every new entrypoint function has a matching descriptor action. See safety.md lesson #10.
 - [ ] `cargo check --tests` clean — zero warnings in the contract crate

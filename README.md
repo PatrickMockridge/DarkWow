@@ -179,7 +179,7 @@ Minimum Rust: **1.87.0**.
 |-------|---------|
 | Pre-production bridge | `RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd --lib` |
 | Lightweight (deployment) | `cargo test -p dwowd test_all_contracts_deploy` |
-| Heavyweight (ZK proofs) | `RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd test_heavyweight` |
+| Heavyweight (ZK proofs) | `./bin/dwowd/src/tests/heavyweight.sh --all` |
 | Localnet (Docker) | `./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native` |
 | Wallet spec (Python) | `python3 contrib/model/wallet_model.py` |
 | Wallet unit | `RAYON_NUM_THREADS=10 cargo test -p dwow_wallet --lib` |
