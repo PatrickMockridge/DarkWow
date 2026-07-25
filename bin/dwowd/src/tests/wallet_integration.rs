@@ -926,8 +926,8 @@ fn test_wallet_manifest_scan() {
         use dwow_sdk::crypto::keypair::Network;
         use dwow_sdk::crypto::pasta_prelude::PrimeField;
         use dwow_sdk::capability::{Barb, Primitive};
-        use dwow_chain::{Block, BlockHeader, BlockTimestamp, BlockTarget, BlockVersion,
-            BlockReward, MoneroBlockHeight, PowSource, Transaction, ContractCall};
+        use dwow_chain::{Block, BlockHeader, BlockTarget, BlockReward, PowSource, Transaction, ContractCall};
+        use dwow_sdk::blockchain::{BlockTimestamp, BlockVersion, MoneroBlockHeight};
         use dwow_serial::Encodable;
 
         // ── Wallet setup ────────────────────────────────────
@@ -952,7 +952,7 @@ fn test_wallet_manifest_scan() {
         ).expect("wallet initialize");
         dww.initialize_wallet().expect("wallet schema init");
 
-        let wallet_ptr = dww.get_wallet_db().expect("wallet db");
+        let wallet_ptr = &dww.wallet;
 
         let master_sk = SecretKey::from_bytes([1u8; 32]).unwrap();
         let wallet_pk = PublicKey::from_secret(master_sk.clone());
