@@ -2782,14 +2782,16 @@ fn test_heavyweight_lottery() -> std::result::Result<(), Box<dyn std::error::Err
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
 
-    println!("=== Lottery Heavyweight: All Endpoints (no WASM) ===");
+    println!("=== Lottery Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
         let harness = LotteryHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
 
-        let pipeline = HeavyweightPipeline::new(harness, "lottery").await?;
-        println!("(skipping deploy — WASM not yet built)");
+        let mut pipeline = HeavyweightPipeline::new(harness, "lottery").await?;
+        let wasm = include_bytes!("../../../../src/contract/lottery/dwow_lottery_contract.wasm");
+        let _contract_id = pipeline.deploy(wasm).await?;
+        println!("Contract deployed");
 
         let harness = &pipeline.harness;
         let player_secret = pallas::Base::from(10u64);
@@ -2802,11 +2804,25 @@ fn test_heavyweight_lottery() -> std::result::Result<(), Box<dyn std::error::Err
         assert!(!commit.call_data.is_empty());
         println!("    call_data={}B", commit.call_data.len());
 
+        // --- commit_ticket through accept_block ---
+        println!("  Exec: BuyTicketV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&commit.call_data, vec![commit.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- reveal_ticket ---
         println!("  Test: reveal_ticket");
         let reveal = harness.reveal_ticket(player_pub, 100, pallas::Base::from(2u64), pallas::Base::from(3u64), pallas::Base::from(4u64), pallas::Base::from(5u64), pallas::Base::from(6u64), numbers)?;
         assert!(!reveal.call_data.is_empty());
         println!("    call_data={}B", reveal.call_data.len());
+
+        // --- reveal_ticket through accept_block ---
+        println!("  Exec: RevealTicketV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&reveal.call_data, vec![reveal.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         println!("=== All Lottery endpoints OK ===");
         Ok(())
