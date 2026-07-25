@@ -2088,7 +2088,7 @@ fn test_heavyweight_subscription() -> std::result::Result<(), Box<dyn std::error
     println!("=== Subscription Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
-        let chain = BlockChain::new().await?;
+        let chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
         let harness = SubscriptionHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
@@ -2134,7 +2134,7 @@ fn test_heavyweight_oracle() -> std::result::Result<(), Box<dyn std::error::Erro
     println!("=== Oracle Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
-        let chain = BlockChain::new().await?;
+        let chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
         let harness = OracleHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
@@ -2472,7 +2472,7 @@ fn test_heavyweight_drain_protection() -> std::result::Result<(), Box<dyn std::e
     println!("=== DrainProtection Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
-        let chain = BlockChain::new().await?;
+        let chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
         let harness = DrainProtectionHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
@@ -2521,7 +2521,7 @@ fn test_heavyweight_game_room() -> std::result::Result<(), Box<dyn std::error::E
     println!("=== GameRoom Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
-        let chain = BlockChain::new().await?;
+        let chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
         let harness = GameRoomHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
