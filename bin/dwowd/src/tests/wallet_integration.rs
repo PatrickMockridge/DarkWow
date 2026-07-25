@@ -1311,15 +1311,49 @@ fn test_wallet_capability_scan() {
         let scan_2 = dww.scan_block_linear(&mut tree, &scan_block_2)
             .expect("rescan block 2");
 
-        // Find PN capability by contract_id
+        // Find PN capability by contract_id and verify §4.1 typed construction
+        use dwow_sdk::capability::{Barb, Primitive};
+        use std::collections::BTreeSet;
+
         let pn_cap = scan_2.capabilities.iter()
             .find(|c| c.cap_record.contract_id == pn_cid)
             .expect("must discover PN capability");
-        let pn_cap_rec = &pn_cap.cap_record;
-        assert_eq!(pn_cap_rec.contract_id, pn_cid,
-            "PN cap: contract_id == PROMISSORY_NOTE_CONTRACT_ID (↓dispatch)");
-        assert!(!pn_cap_rec.barbs.is_empty(),
-            "PN cap: barbs non-empty (coverage gate passed, ↓denominate)");
+        let rec = &pn_cap.cap_record;
+
+        // Manifest-driven type construction (§4.1)
+        assert_eq!(rec.capability_name.as_deref(), Some("coin"),
+            "capability_name must match manifest [[capabilities]].name (CAP_NOTE)");
+        assert_eq!(rec.capability_discriminant, Some(0),
+            "discriminant must match CAP_NOTE = 0x00 in capability.rs");
+        assert!(rec.resource.is_some(),
+            "resource must be set from manifest [[actions]]");
+        assert!(rec.action.is_some(),
+            "action must be set from manifest [[actions]]");
+
+        // Primitive composition — exact set (§4.1)
+        let expected_primitives: BTreeSet<Primitive> = [
+            Primitive::SecretKey, Primitive::Commitment, Primitive::Nullifier,
+            Primitive::ContractId, Primitive::FuncId, Primitive::AssetId,
+            Primitive::MerkleNode,
+        ].into_iter().collect();
+        let actual_primitives: BTreeSet<Primitive> =
+            rec.primitives.iter().copied().collect();
+        assert_eq!(actual_primitives, expected_primitives,
+            "primitives must match manifest exactly");
+
+        // Barb composition — union of primitive barbs (§4.1)
+        let expected_barbs: BTreeSet<Barb> = [
+            Barb::Spend, Barb::Derive, Barb::Nullify, Barb::Commit,
+            Barb::Dispatch, Barb::Gate, Barb::Denominate, Barb::ProveInclusion,
+        ].into_iter().collect();
+        let actual_barbs: BTreeSet<Barb> =
+            rec.barbs.iter().copied().collect();
+        assert_eq!(actual_barbs, expected_barbs,
+            "barbs must be union of primitive barbs");
+
+        // Inflation guard (§4.1)
+        assert_eq!(rec.value, 0,
+            "non-native capability must have zero DRKW value");
 
         // ── Inflation guard: capability_balance excludes foreign ─
         // Pattern D: ↓observe — capability_balance is a query that
