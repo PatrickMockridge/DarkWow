@@ -1444,11 +1444,25 @@ fn test_heavyweight_labor_market() -> std::result::Result<(), Box<dyn std::error
         assert!(!create.call_data.is_empty());
         println!("    call_data={}B", create.call_data.len());
 
+        // --- create_job through accept_block ---
+        println!("  Exec: CreateJobV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&create.call_data, vec![create.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- accept_job ---
         println!("  Test: accept_job");
         let accept = harness.accept_job(worker_secret, worker_pub, job_id)?;
         assert!(!accept.call_data.is_empty());
         println!("    call_data={}B", accept.call_data.len());
+
+        // --- accept_job through accept_block ---
+        println!("  Exec: AcceptJobV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&accept.call_data, vec![accept.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         // --- submit_deliverable ---
         println!("  Test: submit_deliverable");
@@ -1456,11 +1470,25 @@ fn test_heavyweight_labor_market() -> std::result::Result<(), Box<dyn std::error
         assert!(!submit.call_data.is_empty());
         println!("    call_data={}B", submit.call_data.len());
 
+        // --- submit_deliverable through accept_block ---
+        println!("  Exec: SubmitDeliverableV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&submit.call_data, vec![submit.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- submit_git_deliverable ---
         println!("  Test: submit_git_deliverable");
         let git = harness.submit_git_deliverable(worker_secret, worker_pub, job_id, claim_id, 1000, 50)?;
         assert!(!git.call_data.is_empty());
         println!("    call_data={}B", git.call_data.len());
+
+        // --- submit_git_deliverable through accept_block ---
+        println!("  Exec: SubmitGitDeliverableV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&git.call_data, vec![git.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         // --- confirm_delivery ---
         println!("  Test: confirm_delivery");
@@ -1468,18 +1496,74 @@ fn test_heavyweight_labor_market() -> std::result::Result<(), Box<dyn std::error
         assert!(!confirm.call_data.is_empty());
         println!("    call_data={}B", confirm.call_data.len());
 
+        // --- confirm_delivery through accept_block ---
+        println!("  Exec: ConfirmDeliveryV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&confirm.call_data, vec![confirm.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- dispute ---
         println!("  Test: dispute");
         let dispute = harness.dispute(job_id, worker_secret, pallas::Base::from(50u64), pallas::Base::from(60u64), worker_pub)?;
         assert!(!dispute.call_data.is_empty());
         println!("    call_data={}B", dispute.call_data.len());
 
+        // --- dispute through accept_block ---
+        println!("  Exec: DisputeV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&dispute.call_data, vec![dispute.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- refund ---
         println!("  Test: refund");
         let refund = harness.refund(job_id, employer_secret, 1, 0, 5000, 1000, 100, 5000, employer_pub)?;
         assert!(!refund.call_data.is_empty());
-        println!("    call_data={}B", refund.call_data.len());        println!("  Exec: coinbase-only accept_block");
-        pipeline.exec_coinbase_only().await?;
+        println!("    call_data={}B", refund.call_data.len());
+
+        // --- refund through accept_block ---
+        println!("  Exec: RefundV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&refund.call_data, vec![refund.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- accept_job_with_capability ---
+        println!("  Test: accept_job_with_capability");
+        let cap_id = pallas::Base::from(300u64);
+        let cap_proof = vec![0u8; 32];
+        let cap_secret = [0u8; 32];
+        let awc = harness.accept_job_with_capability(
+            worker_secret, worker_pub, job_id, cap_id,
+            pallas::Base::from(301u64), pallas::Base::from(302u64),
+            cap_proof, cap_secret,
+        )?;
+        assert!(!awc.call_data.is_empty());
+        println!("    call_data={}B", awc.call_data.len());
+
+        // --- accept_job_with_capability through accept_block ---
+        println!("  Exec: AcceptJobWithCapabilityV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&awc.call_data, vec![awc.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- confirm_milestone ---
+        println!("  Test: confirm_milestone");
+        let cm = harness.confirm_milestone(
+            employer_secret, employer_pub, job_id, 0, 5000, 5000,
+            pallas::Base::from(0u64), pallas::Base::from(1000u64), pallas::Base::from(5000u64),
+        )?;
+        assert!(!cm.call_data.is_empty());
+        println!("    call_data={}B", cm.call_data.len());
+
+        // --- confirm_milestone through accept_block ---
+        println!("  Exec: ConfirmMilestoneV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&cm.call_data, vec![cm.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         println!("=== All LaborMarket endpoints OK ===");
         Ok(())
@@ -1719,8 +1803,86 @@ fn test_heavyweight_oracle() -> std::result::Result<(), Box<dyn std::error::Erro
         println!("  Test: register_oracle");
         let reg = harness.register_oracle(oracle_secret, oracle_pub, pallas::Base::from(1u64), "price_feed".to_string(), "u64".to_string())?;
         assert!(!reg.call_data.is_empty());
-        println!("    call_data={}B", reg.call_data.len());        println!("  Exec: coinbase-only accept_block");
-        pipeline.exec_coinbase_only().await?;
+        println!("    call_data={}B", reg.call_data.len());
+
+        // --- register_oracle through accept_block ---
+        println!("  Exec: RegisterOracleV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&reg.call_data, vec![reg.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- push_value ---
+        println!("  Test: push_value");
+        let pv = harness.push_value(
+            pallas::Base::from(1u64), oracle_secret, oracle_pub, pallas::Base::from(42u64),
+        )?;
+        assert!(!pv.call_data.is_empty());
+        println!("    call_data={}B", pv.call_data.len());
+
+        // --- push_value through accept_block ---
+        println!("  Exec: PushValueV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&pv.call_data, vec![pv.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- attest_value ---
+        println!("  Test: attest_value");
+        let av = harness.attest_value(
+            pallas::Base::from(1u64), pallas::Base::from(100u64),
+            oracle_secret, pallas::Base::from(0u64), pallas::Base::from(42u64),
+            pallas::Base::from(42u64), oracle_pub,
+        )?;
+        assert!(!av.call_data.is_empty());
+        println!("    call_data={}B", av.call_data.len());
+
+        // --- attest_value through accept_block ---
+        println!("  Exec: AttestValueV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&av.call_data, vec![av.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- push_value_commitment ---
+        println!("  Test: push_value_commitment");
+        use dwow_sdk::crypto::MerkleNode;
+        let empty_path: Vec<MerkleNode> = vec![MerkleNode::new(pallas::Base::from(0u64)); 32];
+        let pvc = harness.push_value_commitment(
+            pallas::Base::from(1u64), oracle_secret, 0, empty_path,
+            pallas::Base::from(42u64), pallas::Base::from(99u64), oracle_pub,
+            pallas::Base::from(100u64), pallas::Base::from(200u64),
+        )?;
+        assert!(!pvc.call_data.is_empty());
+        println!("    call_data={}B", pvc.call_data.len());
+
+        // --- push_value_commitment through accept_block ---
+        println!("  Exec: PushValueCommitmentV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&pvc.call_data, vec![pvc.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- aggregate ---
+        println!("  Test: aggregate");
+        let agg = harness.aggregate(
+            pallas::Base::from(1u64),
+            [pallas::Base::from(10u64); 4],
+            [pallas::Base::from(1u64); 4],
+            pallas::Base::from(4u64),
+            pallas::Base::from(10u64),
+            pallas::Base::from(0u64),
+            pallas::Base::from(100u64),
+        )?;
+        assert!(!agg.call_data.is_empty());
+        println!("    call_data={}B", agg.call_data.len());
+
+        // --- aggregate through accept_block ---
+        println!("  Exec: AggregateV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&agg.call_data, vec![agg.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         println!("=== All Oracle endpoints OK ===");
         Ok(())
