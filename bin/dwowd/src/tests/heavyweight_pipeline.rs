@@ -3270,8 +3270,14 @@ fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::
         let init_result = harness.initialize(nullifier_k, dao_bulla, owner_secret, endowment_token_id, bulla_blind)?;
         assert!(!init_result.call_data.is_empty());
         assert_eq!(init_result.public_inputs.dao_bulla, dao_bulla);
-        println!("    call_data={}B proof created", init_result.call_data.len());        println!("  Exec: coinbase-only accept_block");
-        pipeline.exec_coinbase_only().await?;
+        println!("    call_data={}B proof created", init_result.call_data.len());
+
+        // --- InitializeV1 through accept_block ---
+        println!("  Exec: InitializeV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&init_result.call_data, vec![init_result.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         // --- 0x02: PayPremiumV1 (ZK) ---
         println!("  Test 0x02: PayPremiumV1 (skipped — pre-existing circuit bug)");
@@ -3318,6 +3324,13 @@ fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::
         assert_eq!(propose_result.public_inputs.dao_escrow_bulla, dao_bulla);
         println!("    call_data={}B proof created", propose_result.call_data.len());
 
+        // --- ProposeClaimV1 through accept_block ---
+        println!("  Exec: ProposeClaimV1 through accept_block");
+        let hb = pipeline.genesis.block_height();
+        pipeline.exec(&propose_result.call_data, vec![propose_result.proof]).await?;
+        assert!(pipeline.genesis.block_height() > hb);
+        println!("    accept_block height OK");
+
         // --- 0x08: VoteClaimV1 (ZK) ---
         println!("  Test 0x08: VoteClaimV1");
         let vote_commit_value = pallas::Point::identity();
@@ -3339,6 +3352,13 @@ fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::
         assert!(!vote_result.call_data.is_empty());
         assert_eq!(vote_result.public_inputs.proposal_id, proposal_id);
         println!("    call_data={}B proof created", vote_result.call_data.len());
+
+        // --- VoteClaimV1 through accept_block ---
+        println!("  Exec: VoteClaimV1 through accept_block");
+        let hb = pipeline.genesis.block_height();
+        pipeline.exec(&vote_result.call_data, vec![vote_result.proof]).await?;
+        assert!(pipeline.genesis.block_height() > hb);
+        println!("    accept_block height OK");
 
         // --- 0x09: ExecuteClaimV1 ---
         println!("  Test 0x09: ExecuteClaimV1");
@@ -3371,6 +3391,13 @@ fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::
         assert!(!verify_member_result.call_data.is_empty());
         println!("    call_data={}B proof created", verify_member_result.call_data.len());
 
+        // --- VerifyMemberCapabilityV1 through accept_block ---
+        println!("  Exec: VerifyMemberCapabilityV1 through accept_block");
+        let hb = pipeline.genesis.block_height();
+        pipeline.exec(&verify_member_result.call_data, vec![verify_member_result.proof]).await?;
+        assert!(pipeline.genesis.block_height() > hb);
+        println!("    accept_block height OK");
+
         // --- 0x0c: ResolveDisputeV1 (ZK) ---
         println!("  Test 0x0c: ResolveDisputeV1");
         let dispute_id = pallas::Base::from(500u64);
@@ -3390,6 +3417,13 @@ fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::
         assert!(!resolve_result.call_data.is_empty());
         assert_eq!(resolve_result.public_inputs.dao_escrow_bulla, dao_bulla);
         println!("    call_data={}B proof created", resolve_result.call_data.len());
+
+        // --- ResolveDisputeV1 through accept_block ---
+        println!("  Exec: ResolveDisputeV1 through accept_block");
+        let hb = pipeline.genesis.block_height();
+        pipeline.exec(&resolve_result.call_data, vec![resolve_result.proof]).await?;
+        assert!(pipeline.genesis.block_height() > hb);
+        println!("    accept_block height OK");
 
         // --- 0x0d: CancelClaimV1 ---
         println!("  Test 0x0d: CancelClaimV1");
