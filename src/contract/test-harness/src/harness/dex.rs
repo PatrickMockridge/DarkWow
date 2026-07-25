@@ -52,13 +52,20 @@ fn base_to_bytes(base: pallas::Base) -> [u8; 32] {
 }
 
 use dwow_dex_contract::client::{
-    create_swap_v1::{create_create_swap_proof, CreateSwapCallData, CreateSwapPublicInputs},
     accept_swap_v1::{create_accept_swap_proof, AcceptSwapCallData, AcceptSwapPublicInputs},
-    execute_swap_v1::{create_execute_swap_proof, ExecuteSwapCallData, ExecuteSwapPublicInputs},
     cancel_swap_v1::{create_cancel_swap_proof, CancelSwapCallData, CancelSwapPublicInputs},
+    create_swap_v1::{create_create_swap_proof, CreateSwapCallData, CreateSwapPublicInputs},
+    execute_swap_fee_v1::{
+        create_execute_swap_fee_proof, ExecuteSwapFeeCallData, ExecuteSwapFeePublicInputs,
+    },
+    execute_swap_slippage_v1::{
+        create_execute_swap_slippage_proof, ExecuteSwapSlippageCallData,
+        ExecuteSwapSlippagePublicInputs,
+    },
+    execute_swap_v1::{create_execute_swap_proof, ExecuteSwapCallData, ExecuteSwapPublicInputs},
 };
 use dwow_dex_contract::model::{
-    CreateSwapParams, AcceptSwapParams, ExecuteSwapParams, CancelSwapParams,
+    AcceptSwapParams, CancelSwapParams, CreateSwapParams, ExecuteSwapParams,
 };
 
 /// DEX Harness for atomic swap testing
@@ -385,6 +392,66 @@ impl DexHarness {
             public_inputs,
         })
     }
+
+    /// Execute swap with fee (function code 0x07)
+    #[allow(clippy::too_many_arguments)]
+    pub fn execute_swap_fee(
+        &self,
+        alice_secret: pallas::Base,
+        alice_token: pallas::Base,
+        alice_amount: pallas::Base,
+        alice_lock: pallas::Base,
+        bob_secret: pallas::Base,
+        bob_token: pallas::Base,
+        bob_amount: pallas::Base,
+        bob_lock: pallas::Base,
+        fill_amount: pallas::Base,
+        fee_bps: pallas::Base,
+    ) -> Result<ExecuteSwapFeeResult, Box<dyn std::error::Error>> {
+        let input = ExecuteSwapFeeCallData::new(
+            alice_secret, alice_token, alice_amount, alice_lock,
+            bob_secret, bob_token, bob_amount, bob_lock, fill_amount, fee_bps,
+        );
+        let (proof, public_inputs) = create_execute_swap_fee_proof(
+            &self.execute_swap_fee_zkbin, &self.execute_swap_fee_pk, &input,
+        )?;
+
+        let mut call_data = vec![0x07];
+        call_data.extend_from_slice(&public_inputs.to_vec().iter()
+            .flat_map(|x| x.to_repr().to_vec()).collect::<Vec<u8>>());
+
+        Ok(ExecuteSwapFeeResult { call_data, proof, public_inputs })
+    }
+
+    /// Execute swap with slippage protection (function code 0x08)
+    #[allow(clippy::too_many_arguments)]
+    pub fn execute_swap_slippage(
+        &self,
+        alice_secret: pallas::Base,
+        alice_token: pallas::Base,
+        alice_amount: pallas::Base,
+        alice_lock: pallas::Base,
+        bob_secret: pallas::Base,
+        bob_token: pallas::Base,
+        bob_amount: pallas::Base,
+        bob_lock: pallas::Base,
+        fill_amount: pallas::Base,
+        slippage_bps: pallas::Base,
+    ) -> Result<ExecuteSwapSlippageResult, Box<dyn std::error::Error>> {
+        let input = ExecuteSwapSlippageCallData::new(
+            alice_secret, alice_token, alice_amount, alice_lock,
+            bob_secret, bob_token, bob_amount, bob_lock, fill_amount, slippage_bps,
+        );
+        let (proof, public_inputs) = create_execute_swap_slippage_proof(
+            &self.execute_swap_slippage_zkbin, &self.execute_swap_slippage_pk, &input,
+        )?;
+
+        let mut call_data = vec![0x08];
+        call_data.extend_from_slice(&public_inputs.to_vec().iter()
+            .flat_map(|x| x.to_repr().to_vec()).collect::<Vec<u8>>());
+
+        Ok(ExecuteSwapSlippageResult { call_data, proof, public_inputs })
+    }
 }
 
 impl Default for DexHarness {
@@ -469,4 +536,18 @@ pub struct CancelSwapResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: CancelSwapPublicInputs,
+}
+
+/// Result of execute_swap_fee
+pub struct ExecuteSwapFeeResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: ExecuteSwapFeePublicInputs,
+}
+
+/// Result of execute_swap_slippage
+pub struct ExecuteSwapSlippageResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: ExecuteSwapSlippagePublicInputs,
 }

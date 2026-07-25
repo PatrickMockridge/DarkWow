@@ -768,11 +768,25 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
         assert!(!create.call_data.is_empty());
         println!("    call_data={}B", create.call_data.len());
 
+        // --- create_swap through accept_block ---
+        println!("  Exec: CreateSwapV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&create.call_data, vec![create.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- accept_swap ---
         println!("  Test: accept_swap");
         let accept = harness.accept_swap(create.public_inputs.swap_id, create.public_inputs.lock_commitment, secret, offer_token, 1000, sig_secret)?;
         assert!(!accept.call_data.is_empty());
         println!("    call_data={}B", accept.call_data.len());
+
+        // --- accept_swap through accept_block ---
+        println!("  Exec: AcceptSwapV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&accept.call_data, vec![accept.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         // --- execute_swap ---
         println!("  Test: execute_swap");
@@ -780,22 +794,57 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
         assert!(!exec.call_data.is_empty());
         println!("    call_data={}B", exec.call_data.len());
 
+        // --- execute_swap through accept_block ---
+        println!("  Exec: ExecuteSwapV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&exec.call_data, vec![exec.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- cancel_swap ---
         println!("  Test: cancel_swap");
         let cancel = harness.cancel_swap(create.public_inputs.swap_id, create.public_inputs.lock_commitment, secret, offer_token, 1000)?;
         assert!(!cancel.call_data.is_empty());
         println!("    call_data={}B", cancel.call_data.len());
 
-        // Prove accept_block path with a coinbase-only block.
-        // On-chain WASM execution requires the harness call_data format to
-        // match the contract entrypoint's expected deserialization — a
-        // separate integration concern. ZK proof generation is verified above.
-        println!("  Exec: coinbase-only accept_block");
-        let before = pipeline.genesis.block_height();
-        pipeline.exec_coinbase_only().await?;
-        let after = pipeline.genesis.block_height();
-        assert!(after > before, "Height should increase");
-        println!("    block at height {} accepted OK", after);
+        // --- cancel_swap through accept_block ---
+        println!("  Exec: CancelSwapV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&cancel.call_data, vec![cancel.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- execute_swap_fee ---
+        println!("  Test: execute_swap_fee");
+        let fee = harness.execute_swap_fee(
+            secret, offer_token, pallas::Base::from(1000u64), pallas::Base::from(10u64),
+            secret, request_token, pallas::Base::from(500u64), pallas::Base::from(20u64),
+            pallas::Base::from(500u64), pallas::Base::from(30u64),
+        )?;
+        println!("    call_data={}B", fee.call_data.len());
+
+        // --- execute_swap_fee through accept_block ---
+        println!("  Exec: ExecuteSwapFeeV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&fee.call_data, vec![fee.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- execute_swap_slippage ---
+        println!("  Test: execute_swap_slippage");
+        let slip = harness.execute_swap_slippage(
+            secret, offer_token, pallas::Base::from(1000u64), pallas::Base::from(10u64),
+            secret, request_token, pallas::Base::from(500u64), pallas::Base::from(20u64),
+            pallas::Base::from(500u64), pallas::Base::from(50u64),
+        )?;
+        println!("    call_data={}B", slip.call_data.len());
+
+        // --- execute_swap_slippage through accept_block ---
+        println!("  Exec: ExecuteSwapSlippageV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&slip.call_data, vec![slip.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         println!("=== All DEX endpoints OK ===");
         Ok(())
