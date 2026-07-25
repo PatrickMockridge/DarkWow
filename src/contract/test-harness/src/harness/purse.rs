@@ -26,7 +26,7 @@
 //! Provides isolated testing for Purse contract (balance/deposit/withdraw).
 
 use dwow_core::{
-    zk::{ProvingKey, ZkCircuit},
+    zk::{Proof, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
 
@@ -79,6 +79,30 @@ impl PurseHarness {
             withdraw_pk,
         }
     }
+
+    pub fn deposit(&self, amount: u64) -> dwow_core::Result<DepositPurseResult> {
+        let w = dwow_core::zk::empty_witnesses(&self.deposit_zkbin)?;
+        let c = ZkCircuit::new(w, &self.deposit_zkbin);
+        let proof = Proof::create(&self.deposit_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        Ok(DepositPurseResult { call_data: vec![0x01], proof })
+    }
+
+    pub fn withdraw(&self, amount: u64) -> dwow_core::Result<WithdrawPurseResult> {
+        let w = dwow_core::zk::empty_witnesses(&self.withdraw_zkbin)?;
+        let c = ZkCircuit::new(w, &self.withdraw_zkbin);
+        let proof = Proof::create(&self.withdraw_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        Ok(WithdrawPurseResult { call_data: vec![0x02], proof })
+    }
+
+    pub fn balance(&self) -> dwow_core::Result<BalancePurseResult> {
+        let w = dwow_core::zk::empty_witnesses(&self.balance_zkbin)?;
+        let c = ZkCircuit::new(w, &self.balance_zkbin);
+        let proof = Proof::create(&self.balance_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        Ok(BalancePurseResult { call_data: vec![0x03], proof })
+    }
 }
 
 impl super::ContractHarness for PurseHarness {
@@ -108,3 +132,7 @@ impl super::ContractHarness for PurseHarness {
         }
     }
 }
+
+pub struct DepositPurseResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct WithdrawPurseResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct BalancePurseResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }

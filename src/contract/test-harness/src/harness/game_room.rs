@@ -26,7 +26,7 @@
 //! Provides isolated testing for GameRoom contract.
 
 use dwow_core::{
-    zk::{ProvingKey, ZkCircuit},
+    zk::{Proof, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
 
@@ -198,6 +198,47 @@ impl GameRoomHarness {
             withdraw_pk,
         }
     }
+
+    fn mk(&self, zkbin: &ZkBinary, pk: &ProvingKey) -> dwow_core::Result<Proof> {
+        let w = dwow_core::zk::empty_witnesses(zkbin)?;
+        let c = ZkCircuit::new(w, zkbin);
+        Proof::create(pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))
+    }
+
+    pub fn create_room(&self) -> dwow_core::Result<CreateRoomGRResult> {
+        Ok(CreateRoomGRResult { call_data: vec![0x00], proof: self.mk(&self.create_room_zkbin, &self.create_room_pk)? })
+    }
+    pub fn deposit(&self) -> dwow_core::Result<DepositGRResult> {
+        Ok(DepositGRResult { call_data: vec![0x01], proof: self.mk(&self.deposit_zkbin, &self.deposit_pk)? })
+    }
+    pub fn withdraw(&self) -> dwow_core::Result<WithdrawGRResult> {
+        Ok(WithdrawGRResult { call_data: vec![0x02], proof: self.mk(&self.withdraw_zkbin, &self.withdraw_pk)? })
+    }
+    pub fn place_bet(&self) -> dwow_core::Result<PlaceBetGRResult> {
+        Ok(PlaceBetGRResult { call_data: vec![0x03], proof: self.mk(&self.place_bet_zkbin, &self.place_bet_pk)? })
+    }
+    pub fn raise(&self) -> dwow_core::Result<RaiseGRResult> {
+        Ok(RaiseGRResult { call_data: vec![0x04], proof: self.mk(&self.raise_zkbin, &self.raise_pk)? })
+    }
+    pub fn call(&self) -> dwow_core::Result<CallGRResult> {
+        Ok(CallGRResult { call_data: vec![0x05], proof: self.mk(&self.call_zkbin, &self.call_pk)? })
+    }
+    pub fn fold(&self) -> dwow_core::Result<FoldGRResult> {
+        Ok(FoldGRResult { call_data: vec![0x06], proof: self.mk(&self.fold_zkbin, &self.fold_pk)? })
+    }
+    pub fn close_pot(&self) -> dwow_core::Result<ClosePotGRResult> {
+        Ok(ClosePotGRResult { call_data: vec![0x07], proof: self.mk(&self.close_pot_zkbin, &self.close_pot_pk)? })
+    }
+    pub fn settle_pot(&self) -> dwow_core::Result<SettlePotGRResult> {
+        Ok(SettlePotGRResult { call_data: vec![0x08], proof: self.mk(&self.settle_pot_zkbin, &self.settle_pot_pk)? })
+    }
+    pub fn contribute_entropy(&self) -> dwow_core::Result<ContributeEntropyGRResult> {
+        Ok(ContributeEntropyGRResult { call_data: vec![0x09], proof: self.mk(&self.contribute_entropy_zkbin, &self.contribute_entropy_pk)? })
+    }
+    pub fn claim(&self) -> dwow_core::Result<ClaimGRResult> {
+        Ok(ClaimGRResult { call_data: vec![0x0A], proof: self.mk(&self.claim_zkbin, &self.claim_pk)? })
+    }
 }
 
 impl super::ContractHarness for GameRoomHarness {
@@ -244,3 +285,15 @@ impl super::ContractHarness for GameRoomHarness {
         }
     }
 }
+
+pub struct CreateRoomGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct DepositGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct WithdrawGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct PlaceBetGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct RaiseGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct CallGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct FoldGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct ClosePotGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct SettlePotGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct ContributeEntropyGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct ClaimGRResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }

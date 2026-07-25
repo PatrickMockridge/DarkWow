@@ -41,6 +41,8 @@ dwow_insurance_market_contract = {path = "../insurance_market", features = ["cli
 dwow_game_room_contract = {path = "../game_room", features = ["client", "no-entrypoint"]}
 dwow_otc_swap_contract = {path = "../otc_swap", features = ["client", "no-entrypoint"]}
 dwow_bearer_bond_contract = {path = "../bearer_bond", features = ["client", "no-entrypoint"]}
+dwow_multisig_contract = {path = "../multisig", features = ["client", "no-entrypoint"]}
+dwow_purse_contract = {path = "../purse", features = ["client", "no-entrypoint"]}
 
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", default-features = false, features = ["fmt"] }

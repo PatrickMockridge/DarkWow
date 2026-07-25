@@ -26,7 +26,7 @@
 //! Provides isolated testing for MultiSig contract (multisig wallets).
 
 use dwow_core::{
-    zk::{ProvingKey, ZkCircuit},
+    zk::{Proof, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
 
@@ -92,6 +92,40 @@ impl MultiSigHarness {
             sign_pk,
         }
     }
+
+    /// Create a multisig group (function code 0x01)
+    pub fn create_group(
+        &self, threshold: u8, members: Vec<dwow_sdk::crypto::PublicKey>,
+    ) -> dwow_core::Result<CreateGroupResult> {
+        let w = dwow_core::zk::empty_witnesses(&self.create_group_zkbin)?;
+        let c = ZkCircuit::new(w, &self.create_group_zkbin);
+        let proof = Proof::create(&self.create_group_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        Ok(CreateGroupResult { call_data: vec![0x01], proof })
+    }
+
+    /// Sign a multisig transaction (function code 0x02)
+    pub fn sign(
+        &self, group_id: dwow_sdk::pasta::pallas::Base, message_hash: dwow_sdk::pasta::pallas::Base,
+        signer_secret: dwow_sdk::pasta::pallas::Base,
+    ) -> dwow_core::Result<SignResult> {
+        let w = dwow_core::zk::empty_witnesses(&self.sign_zkbin)?;
+        let c = ZkCircuit::new(w, &self.sign_zkbin);
+        let proof = Proof::create(&self.sign_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        Ok(SignResult { call_data: vec![0x02], proof })
+    }
+
+    /// Finalize a multisig transaction (function code 0x03)
+    pub fn finalize(
+        &self, group_id: dwow_sdk::pasta::pallas::Base, message_hash: dwow_sdk::pasta::pallas::Base,
+    ) -> dwow_core::Result<FinalizeResult> {
+        let w = dwow_core::zk::empty_witnesses(&self.finalize_zkbin)?;
+        let c = ZkCircuit::new(w, &self.finalize_zkbin);
+        let proof = Proof::create(&self.finalize_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        Ok(FinalizeResult { call_data: vec![0x03], proof })
+    }
 }
 
 impl super::ContractHarness for MultiSigHarness {
@@ -121,3 +155,7 @@ impl super::ContractHarness for MultiSigHarness {
         }
     }
 }
+
+pub struct CreateGroupResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct SignResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct FinalizeResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }

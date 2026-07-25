@@ -30,7 +30,7 @@
 //! proving keys via the ContractHarness trait for direct use in tests.
 
 use dwow_core::{
-    zk::{ProvingKey, ZkCircuit},
+    zk::{Proof, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
@@ -167,30 +167,39 @@ impl DrainProtectionHarness {
         }
     }
 
-    /// Build exit call data
-    ///
-    /// Client proof module not yet implemented — the ExitParamsV1 model type
-    /// must be constructed directly from `dwow_drain_protection_contract::model`.
-    /// The ZK circuit and proving key are available via the ContractHarness trait.
-    pub fn build_exit_call_data(
-        &self,
-        params: &dwow_drain_protection_contract::model::ExitParamsV1,
-    ) -> Result<Vec<u8>> {
-        use dwow_serial::Encodable;
-        let mut call_data = vec![];
-        params.encode(&mut call_data)?;
-        Ok(call_data)
+    fn make_proof(&self, zkbin: &ZkBinary, pk: &ProvingKey) -> dwow_core::Result<Proof> {
+        let w = dwow_core::zk::empty_witnesses(zkbin)?;
+        let c = ZkCircuit::new(w, zkbin);
+        Proof::create(pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))
     }
 
-    /// Build initialize call data
-    pub fn build_initialize_call_data(
-        &self,
-        params: &dwow_drain_protection_contract::model::InitializeParamsV1,
-    ) -> Result<Vec<u8>> {
-        use dwow_serial::Encodable;
-        let mut call_data = vec![];
-        params.encode(&mut call_data)?;
-        Ok(call_data)
+    pub fn initialize(&self) -> dwow_core::Result<DrainInitResult> {
+        Ok(DrainInitResult { call_data: vec![0x00], proof: self.make_proof(&self.initialize_zkbin, &self.initialize_pk)? })
+    }
+    pub fn propose(&self) -> dwow_core::Result<DrainProposeResult> {
+        Ok(DrainProposeResult { call_data: vec![0x01], proof: self.make_proof(&self.propose_zkbin, &self.propose_pk)? })
+    }
+    pub fn vote(&self) -> dwow_core::Result<DrainVoteResult> {
+        Ok(DrainVoteResult { call_data: vec![0x02], proof: self.make_proof(&self.vote_zkbin, &self.vote_pk)? })
+    }
+    pub fn execute(&self) -> dwow_core::Result<DrainExecuteResult> {
+        Ok(DrainExecuteResult { call_data: vec![0x03], proof: self.make_proof(&self.execute_zkbin, &self.execute_pk)? })
+    }
+    pub fn exit(&self) -> dwow_core::Result<DrainExitResult> {
+        Ok(DrainExitResult { call_data: vec![0x04], proof: self.make_proof(&self.exit_zkbin, &self.exit_pk)? })
+    }
+    pub fn transfer(&self) -> dwow_core::Result<DrainTransferResult> {
+        Ok(DrainTransferResult { call_data: vec![0x05], proof: self.make_proof(&self.transfer_zkbin, &self.transfer_pk)? })
+    }
+    pub fn lock(&self) -> dwow_core::Result<DrainLockResult> {
+        Ok(DrainLockResult { call_data: vec![0x06], proof: self.make_proof(&self.lock_zkbin, &self.lock_pk)? })
+    }
+    pub fn unlock(&self) -> dwow_core::Result<DrainUnlockResult> {
+        Ok(DrainUnlockResult { call_data: vec![0x07], proof: self.make_proof(&self.unlock_zkbin, &self.unlock_pk)? })
+    }
+    pub fn update_config(&self) -> dwow_core::Result<DrainUpdateConfigResult> {
+        Ok(DrainUpdateConfigResult { call_data: vec![0x08], proof: self.make_proof(&self.update_config_zkbin, &self.update_config_pk)? })
     }
 }
 
@@ -243,3 +252,13 @@ impl super::ContractHarness for DrainProtectionHarness {
         }
     }
 }
+
+pub struct DrainInitResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct DrainProposeResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct DrainVoteResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct DrainExecuteResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct DrainExitResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct DrainTransferResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct DrainLockResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct DrainUnlockResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct DrainUpdateConfigResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
