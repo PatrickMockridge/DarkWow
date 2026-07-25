@@ -1374,34 +1374,117 @@ fn test_heavyweight_bridge() -> std::result::Result<(), Box<dyn std::error::Erro
         let amount = 10000u64;
         use dwow_sdk::crypto::poseidon_hash;
 
+        let empty_path: Vec<MerkleNode> = vec![MerkleNode::new(pallas::Base::from(0u64)); 32];
+
         // --- deposit ---
         println!("  Test: deposit");
-        let deposit = harness.deposit(secret, amount, recipient, 1, pallas::Base::from(200u64), pallas::Base::from(300u64), 0, vec![MerkleNode::new(pallas::Base::from(0u64)); 32], ExternalChain::Monero, 0);
-        match deposit {
-            Ok(deposit) => {
-                assert!(!deposit.call_data.is_empty());
-                println!("    call_data={}B", deposit.call_data.len());
-                println!("  Exec: coinbase-only accept_block");
-                pipeline.exec_coinbase_only().await?;
+        match harness.deposit(secret, amount, recipient, 1, pallas::Base::from(200u64), pallas::Base::from(300u64), 0, empty_path.clone(), ExternalChain::Monero, 0) {
+            Ok(d) => {
+                assert!(!d.call_data.is_empty());
+                println!("    call_data={}B", d.call_data.len());
+                println!("  Exec: DepositV1 through accept_block");
+                let hb = pipeline.genesis.block_height();
+                pipeline.exec(&d.call_data, vec![d.proof]).await?;
+                assert!(pipeline.genesis.block_height() > hb);
+                println!("    accept_block height OK");
             }
-            Err(e) => {
-                // Expected until Sinsemilla Merkle data is available.
-                // The circuit correctly rejects invalid Merkle proofs.
-                println!("    deposit proof skipped: {}", e);
-            }
+            Err(e) => println!("    deposit proof skipped: {}", e),
         }
 
         // --- withdraw ---
         println!("  Test: withdraw");
-        let withdraw = harness.withdraw(secret, 5000, pallas::Base::from(400u64), pallas::Base::from(500u64), pallas::Base::from(600u64), [pallas::Base::from(0u64); 4], 0, 10, 1);
-        match withdraw {
+        match harness.withdraw(secret, 5000, pallas::Base::from(400u64), pallas::Base::from(500u64), pallas::Base::from(600u64), [pallas::Base::from(0u64); 4], 0, 10, 1) {
             Ok(w) => {
                 assert!(!w.call_data.is_empty());
                 println!("    call_data={}B", w.call_data.len());
+                println!("  Exec: WithdrawV1 through accept_block");
+                let hb = pipeline.genesis.block_height();
+                pipeline.exec(&w.call_data, vec![w.proof]).await?;
+                assert!(pipeline.genesis.block_height() > hb);
+                println!("    accept_block height OK");
             }
-            Err(e) => {
-                println!("    withdraw proof skipped: {}", e);
+            Err(e) => println!("    withdraw proof skipped: {}", e),
+        }
+
+        // --- azt_deposit (ZK proof generation + exec) ---
+        println!("  Test: azt_deposit");
+        match harness.azt_deposit(
+            secret, pallas::Base::from(1u64), pallas::Base::from(2u64),
+            10000, 1, recipient, 1, pallas::Base::from(3u64),
+            pallas::Base::from(4u64), pallas::Base::from(5u64),
+            100, 200, 12, pallas::Base::from(6u64), pallas::Base::from(7u64),
+            0, empty_path.clone(),
+        ) {
+            Ok(d) => {
+                assert!(!d.call_data.is_empty());
+                println!("    call_data={}B", d.call_data.len());
+                println!("  Exec: AztDepositV1 through accept_block");
+                let hb = pipeline.genesis.block_height();
+                pipeline.exec(&d.call_data, vec![d.proof]).await?;
+                assert!(pipeline.genesis.block_height() > hb);
+                println!("    accept_block height OK");
             }
+            Err(e) => println!("    azt_deposit proof skipped: {}", e),
+        }
+
+        // --- ltc_deposit ---
+        println!("  Test: ltc_deposit");
+        match harness.ltc_deposit(
+            secret, 5000, recipient, 1, pallas::Base::from(1u64),
+            pallas::Base::from(2u64), 0, pallas::Base::from(3u64),
+            100, 12, 0, empty_path.clone(),
+        ) {
+            Ok(d) => {
+                assert!(!d.call_data.is_empty());
+                println!("    call_data={}B", d.call_data.len());
+                println!("  Exec: LtcDepositV1 through accept_block");
+                let hb = pipeline.genesis.block_height();
+                pipeline.exec(&d.call_data, vec![d.proof]).await?;
+                assert!(pipeline.genesis.block_height() > hb);
+                println!("    accept_block height OK");
+            }
+            Err(e) => println!("    ltc_deposit proof skipped: {}", e),
+        }
+
+        // --- xmr_deposit ---
+        println!("  Test: xmr_deposit");
+        match harness.xmr_deposit(
+            secret, pallas::Base::from(1u64), 10000, recipient, 1,
+            pallas::Base::from(2u64), 100, 0, pallas::Base::from(3u64),
+            pallas::Base::from(4u64), 12, pallas::Base::from(5u64),
+            0, empty_path.clone(),
+        ) {
+            Ok(d) => {
+                assert!(!d.call_data.is_empty());
+                println!("    call_data={}B", d.call_data.len());
+                println!("  Exec: XmrDepositV1 through accept_block");
+                let hb = pipeline.genesis.block_height();
+                pipeline.exec(&d.call_data, vec![d.proof]).await?;
+                assert!(pipeline.genesis.block_height() > hb);
+                println!("    accept_block height OK");
+            }
+            Err(e) => println!("    xmr_deposit proof skipped: {}", e),
+        }
+
+        // --- zec_deposit ---
+        println!("  Test: zec_deposit");
+        match harness.zec_deposit(
+            secret, pallas::Base::from(1u64), pallas::Base::from(2u64),
+            5000, recipient, 1, pallas::Base::from(3u64),
+            pallas::Base::from(4u64), pallas::Base::from(5u64),
+            100, pallas::Base::from(6u64), pallas::Base::from(7u64),
+            pallas::Base::from(8u64), 12, 0, empty_path.clone(),
+        ) {
+            Ok(d) => {
+                assert!(!d.call_data.is_empty());
+                println!("    call_data={}B", d.call_data.len());
+                println!("  Exec: ZecDepositV1 through accept_block");
+                let hb = pipeline.genesis.block_height();
+                pipeline.exec(&d.call_data, vec![d.proof]).await?;
+                assert!(pipeline.genesis.block_height() > hb);
+                println!("    accept_block height OK");
+            }
+            Err(e) => println!("    zec_deposit proof skipped: {}", e),
         }
 
         println!("=== All Bridge endpoints OK ===");

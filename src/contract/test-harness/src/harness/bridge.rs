@@ -36,8 +36,12 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 
 use dwow_bridge_contract::client::{
+    azt_deposit_v1::{AztDepositCallData, AztDepositPublicInputs, create_azt_deposit_proof},
     deposit_v1::{DepositCallData, DepositPublicInputs, create_deposit_proof},
+    ltc_deposit_v1::{LtcDepositCallData, LtcDepositPublicInputs, create_ltc_deposit_proof},
     withdraw_v1::{WithdrawCallData, WithdrawPublicInputs, create_withdraw_proof},
+    xmr_deposit_v1::{XmrDepositCallData, XmrDepositPublicInputs, create_xmr_deposit_proof},
+    zec_deposit_v1::{ZecDepositCallData, ZecDepositPublicInputs, create_zec_deposit_proof},
 };
 use dwow_bridge_contract::model::{DepositParams, ExternalChain, ExternalChainProof, WithdrawParams};
 
@@ -238,6 +242,139 @@ impl BridgeHarness {
 
         Ok(WithdrawResult { call_data, proof, public_inputs })
     }
+
+    /// Create an Aztec deposit with ZK proof (function code 0x01, chain Aztec)
+    #[allow(clippy::too_many_arguments)]
+    pub fn azt_deposit(
+        &self,
+        secret: pallas::Base,
+        note_secret: pallas::Base,
+        blinding_factor: pallas::Base,
+        value: u64,
+        asset_id: u64,
+        recipient_public: PublicKey,
+        bridge_nonce: u64,
+        nullifier: pallas::Base,
+        commitment: pallas::Base,
+        anchor: pallas::Base,
+        rollup_height: u64,
+        eth_block_height: u64,
+        confirmations: u64,
+        rollup_tx_hash_0: pallas::Base,
+        rollup_tx_hash_1: pallas::Base,
+        leaf_pos: u64,
+        merkle_path: Vec<MerkleNode>,
+    ) -> Result<AztDepositResult, Box<dyn std::error::Error>> {
+        let input = AztDepositCallData::new(
+            secret, note_secret, blinding_factor, value, asset_id,
+            recipient_public, bridge_nonce, nullifier, commitment, anchor,
+            rollup_height, eth_block_height, confirmations,
+            rollup_tx_hash_0, rollup_tx_hash_1, leaf_pos, merkle_path,
+        );
+        let (proof, public_inputs) = create_azt_deposit_proof(
+            &self.azt_deposit_zkbin, &self.azt_deposit_pk, &input,
+        )?;
+        let mut call_data = vec![0x01];
+        call_data.extend_from_slice(&proof.as_ref());
+        Ok(AztDepositResult { call_data, proof, public_inputs })
+    }
+
+    /// Create a Litecoin deposit with ZK proof (function code 0x01, chain Litecoin)
+    #[allow(clippy::too_many_arguments)]
+    pub fn ltc_deposit(
+        &self,
+        secret: pallas::Base,
+        amount: u64,
+        recipient_public: PublicKey,
+        bridge_nonce: u64,
+        tx_hash_0: pallas::Base,
+        tx_hash_1: pallas::Base,
+        output_index: u64,
+        block_merkle_root: pallas::Base,
+        block_height: u64,
+        confirmations: u64,
+        leaf_pos: u64,
+        merkle_path: Vec<MerkleNode>,
+    ) -> Result<LtcDepositResult, Box<dyn std::error::Error>> {
+        let input = LtcDepositCallData::new(
+            secret, amount, recipient_public, bridge_nonce,
+            tx_hash_0, tx_hash_1, output_index, block_merkle_root,
+            block_height, confirmations, leaf_pos, merkle_path,
+        );
+        let (proof, public_inputs) = create_ltc_deposit_proof(
+            &self.ltc_deposit_zkbin, &self.ltc_deposit_pk, &input,
+        )?;
+        let mut call_data = vec![0x01];
+        call_data.extend_from_slice(&proof.as_ref());
+        Ok(LtcDepositResult { call_data, proof, public_inputs })
+    }
+
+    /// Create a Monero deposit with ZK proof (function code 0x01, chain Monero)
+    #[allow(clippy::too_many_arguments)]
+    pub fn xmr_deposit(
+        &self,
+        secret: pallas::Base,
+        one_time_addr_secret: pallas::Base,
+        amount: u64,
+        recipient_public: PublicKey,
+        bridge_nonce: u64,
+        tx_hash: pallas::Base,
+        block_height: u64,
+        output_index: u64,
+        ephemeral_pub_x: pallas::Base,
+        ephemeral_pub_y: pallas::Base,
+        confirmations: u64,
+        merkle_root: pallas::Base,
+        leaf_pos: u64,
+        merkle_path: Vec<MerkleNode>,
+    ) -> Result<XmrDepositResult, Box<dyn std::error::Error>> {
+        let input = XmrDepositCallData::new(
+            secret, one_time_addr_secret, amount, recipient_public, bridge_nonce,
+            tx_hash, block_height, output_index, ephemeral_pub_x, ephemeral_pub_y,
+            confirmations, merkle_root, leaf_pos, merkle_path,
+        );
+        let (proof, public_inputs) = create_xmr_deposit_proof(
+            &self.xmr_deposit_zkbin, &self.xmr_deposit_pk, &input,
+        )?;
+        let mut call_data = vec![0x01];
+        call_data.extend_from_slice(&proof.as_ref());
+        Ok(XmrDepositResult { call_data, proof, public_inputs })
+    }
+
+    /// Create a Zcash deposit with ZK proof (function code 0x01, chain Zcash)
+    #[allow(clippy::too_many_arguments)]
+    pub fn zec_deposit(
+        &self,
+        secret: pallas::Base,
+        position: pallas::Base,
+        note_encryption: pallas::Base,
+        amount: u64,
+        recipient_public: PublicKey,
+        bridge_nonce: u64,
+        nullifier: pallas::Base,
+        commitment: pallas::Base,
+        anchor: pallas::Base,
+        block_height: u64,
+        randomized_pub_key_x: pallas::Base,
+        randomized_pub_key_y: pallas::Base,
+        randomness: pallas::Base,
+        confirmations: u64,
+        leaf_pos: u64,
+        merkle_path: Vec<MerkleNode>,
+    ) -> Result<ZecDepositResult, Box<dyn std::error::Error>> {
+        let input = ZecDepositCallData::new(
+            secret, position, note_encryption, amount, recipient_public,
+            bridge_nonce, nullifier, commitment, anchor, block_height,
+            randomized_pub_key_x, randomized_pub_key_y, randomness,
+            confirmations, leaf_pos, merkle_path,
+        );
+        let (proof, public_inputs) = create_zec_deposit_proof(
+            &self.zec_deposit_zkbin, &self.zec_deposit_pk, &input,
+        )?;
+        let mut call_data = vec![0x01];
+        call_data.extend_from_slice(&proof.as_ref());
+        Ok(ZecDepositResult { call_data, proof, public_inputs })
+    }
 }
 
 impl super::ContractHarness for BridgeHarness {
@@ -288,4 +425,32 @@ pub struct WithdrawResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: WithdrawPublicInputs,
+}
+
+/// Result of azt_deposit
+pub struct AztDepositResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: AztDepositPublicInputs,
+}
+
+/// Result of ltc_deposit
+pub struct LtcDepositResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: LtcDepositPublicInputs,
+}
+
+/// Result of xmr_deposit
+pub struct XmrDepositResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: XmrDepositPublicInputs,
+}
+
+/// Result of zec_deposit
+pub struct ZecDepositResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: ZecDepositPublicInputs,
 }
