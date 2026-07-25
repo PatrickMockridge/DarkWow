@@ -435,6 +435,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
                     t0.elapsed().as_secs_f64());
             }
         }
+        Ok(())
     }
 
     /// Mine a coinbase-only block and return the coin's parameters so the
