@@ -26,7 +26,7 @@
 //! Provides isolated testing for DarkbetExchange contract.
 
 use dwow_core::{
-    zk::{ProvingKey, ZkCircuit},
+    zk::{Proof, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
@@ -377,6 +377,97 @@ impl DarkbetExchangeHarness {
 
         Ok(AddLiquidityResult { call_data, public_inputs, proof })
     }
+
+    /// Place a back bet (function code 0x01)
+    pub fn place_back(
+        &self,
+        bettor_secret: pallas::Base,
+        market_id: pallas::Base,
+        odds: pallas::Base,
+        stake: pallas::Base,
+    ) -> Result<PlaceBackResult> {
+        let w = dwow_core::zk::empty_witnesses(&self.place_back_zkbin)?;
+        let c = ZkCircuit::new(w, &self.place_back_zkbin);
+        let proof = Proof::create(&self.place_back_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let mut call_data = vec![0x01];
+        Ok(PlaceBackResult { call_data, proof })
+    }
+
+    /// Place a lay bet (function code 0x02)
+    pub fn place_lay(
+        &self,
+        bettor_secret: pallas::Base,
+        market_id: pallas::Base,
+        odds: pallas::Base,
+        liability: pallas::Base,
+    ) -> Result<PlaceLayResult> {
+        let w = dwow_core::zk::empty_witnesses(&self.place_lay_zkbin)?;
+        let c = ZkCircuit::new(w, &self.place_lay_zkbin);
+        let proof = Proof::create(&self.place_lay_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let mut call_data = vec![0x02];
+        Ok(PlaceLayResult { call_data, proof })
+    }
+
+    /// Match orders (function code 0x03)
+    pub fn match_orders(
+        &self,
+        market_id: pallas::Base,
+        back_id: pallas::Base,
+        lay_id: pallas::Base,
+    ) -> Result<MatchOrdersResult> {
+        let w = dwow_core::zk::empty_witnesses(&self.match_orders_zkbin)?;
+        let c = ZkCircuit::new(w, &self.match_orders_zkbin);
+        let proof = Proof::create(&self.match_orders_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let mut call_data = vec![0x03];
+        Ok(MatchOrdersResult { call_data, proof })
+    }
+
+    /// Resolve a market (function code 0x04)
+    pub fn resolve_market(
+        &self,
+        market_id: pallas::Base,
+        winning_outcome: u8,
+        oracle_proof: Vec<u8>,
+    ) -> Result<ResolveMarketResult> {
+        let w = dwow_core::zk::empty_witnesses(&self.resolve_market_zkbin)?;
+        let c = ZkCircuit::new(w, &self.resolve_market_zkbin);
+        let proof = Proof::create(&self.resolve_market_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let mut call_data = vec![0x04];
+        Ok(ResolveMarketResult { call_data, proof })
+    }
+
+    /// Cancel an order (function code 0x06)
+    pub fn cancel_order(
+        &self,
+        order_id: pallas::Base,
+        owner_secret: pallas::Base,
+    ) -> Result<CancelOrderResult> {
+        let w = dwow_core::zk::empty_witnesses(&self.cancel_order_zkbin)?;
+        let c = ZkCircuit::new(w, &self.cancel_order_zkbin);
+        let proof = Proof::create(&self.cancel_order_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let mut call_data = vec![0x06];
+        Ok(CancelOrderResult { call_data, proof })
+    }
+
+    /// Remove liquidity (function code 0x09)
+    pub fn remove_liquidity(
+        &self,
+        provider_secret: pallas::Base,
+        market_id: pallas::Base,
+        amount: pallas::Base,
+    ) -> Result<RemoveLiquidityResult> {
+        let w = dwow_core::zk::empty_witnesses(&self.remove_liquidity_zkbin)?;
+        let c = ZkCircuit::new(w, &self.remove_liquidity_zkbin);
+        let proof = Proof::create(&self.remove_liquidity_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let mut call_data = vec![0x09];
+        Ok(RemoveLiquidityResult { call_data, proof })
+    }
 }
 
 impl super::ContractHarness for DarkbetExchangeHarness {
@@ -459,3 +550,10 @@ pub struct AddLiquidityResult {
     pub public_inputs: AddLiquidityV1PublicInputs,
     pub proof: dwow_core::zk::Proof,
 }
+
+pub struct PlaceBackResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct PlaceLayResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct MatchOrdersResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct ResolveMarketResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct CancelOrderResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct RemoveLiquidityResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }

@@ -26,7 +26,7 @@
 //! Provides isolated testing for Lottery contract.
 
 use dwow_core::{
-    zk::{ProvingKey, ZkCircuit},
+    zk::{Proof, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
 use dwow_sdk::{
@@ -236,6 +236,54 @@ impl LotteryHarness {
 
         Ok(RevealTicketResult { call_data, proof, public_inputs })
     }
+
+    /// Initialize a lottery (function code 0x00)
+    pub fn initialize(
+        &self, ticket_price: u64, draw_block: u64, max_tickets: u64,
+    ) -> Result<InitializeLotteryResult, Box<dyn std::error::Error>> {
+        let w = dwow_core::zk::empty_witnesses(&self.initialize_zkbin)?;
+        let c = ZkCircuit::new(w, &self.initialize_zkbin);
+        let proof = Proof::create(&self.initialize_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let mut call_data = vec![0x00];
+        Ok(InitializeLotteryResult { call_data, proof })
+    }
+
+    /// Draw winners (function code 0x02)
+    pub fn draw_winners(
+        &self, lottery_id: pallas::Base, random_seed: pallas::Base,
+    ) -> Result<DrawWinnersResult, Box<dyn std::error::Error>> {
+        let w = dwow_core::zk::empty_witnesses(&self.draw_winners_zkbin)?;
+        let c = ZkCircuit::new(w, &self.draw_winners_zkbin);
+        let proof = Proof::create(&self.draw_winners_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let mut call_data = vec![0x02];
+        Ok(DrawWinnersResult { call_data, proof })
+    }
+
+    /// Claim a prize (function code 0x04)
+    pub fn claim_prize(
+        &self, ticket_id: pallas::Base, winner_secret: pallas::Base,
+    ) -> Result<ClaimPrizeResult, Box<dyn std::error::Error>> {
+        let w = dwow_core::zk::empty_witnesses(&self.claim_prize_zkbin)?;
+        let c = ZkCircuit::new(w, &self.claim_prize_zkbin);
+        let proof = Proof::create(&self.claim_prize_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let mut call_data = vec![0x04];
+        Ok(ClaimPrizeResult { call_data, proof })
+    }
+
+    /// Expire a lottery (function code 0x05)
+    pub fn expire_lottery(
+        &self, lottery_id: pallas::Base,
+    ) -> Result<ExpireLotteryResult, Box<dyn std::error::Error>> {
+        let w = dwow_core::zk::empty_witnesses(&self.expire_lottery_zkbin)?;
+        let c = ZkCircuit::new(w, &self.expire_lottery_zkbin);
+        let proof = Proof::create(&self.expire_lottery_pk, &[c], &[], rand::rngs::OsRng)
+            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let mut call_data = vec![0x05];
+        Ok(ExpireLotteryResult { call_data, proof })
+    }
 }
 
 impl super::ContractHarness for LotteryHarness {
@@ -291,3 +339,12 @@ pub struct RevealTicketResult {
     /// Public inputs from proof generation
     pub public_inputs: RevealTicketV1PublicInputs,
 }
+
+/// Result of initialize
+pub struct InitializeLotteryResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+/// Result of draw_winners
+pub struct DrawWinnersResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+/// Result of claim_prize
+pub struct ClaimPrizeResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+/// Result of expire_lottery
+pub struct ExpireLotteryResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
