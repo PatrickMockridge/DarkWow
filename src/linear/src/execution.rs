@@ -367,9 +367,11 @@ pub fn execute_block(
                 entry.zkp.push(zkp);
                 entry.pubkeys.push(sigs);
             }
-            Err(_) => {
+            Err(e) => {
                 success = false;
                 fail_stage = "metadata";
+                eprintln!("metadata() failed for contract {} (tx {}) fn_code={:?}: {:?}",
+                    job.contract_id, job.tx_hash, job.call_data.first(), e);
             }
         }
 
