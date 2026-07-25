@@ -1689,11 +1689,25 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
         assert!(!att.call_data.is_empty());
         println!("    call_data={}B", att.call_data.len());
 
+        // --- create_attestation through accept_block ---
+        println!("  Exec: CreateAttestationV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&att.call_data, vec![att.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- create_claim ---
         println!("  Test: create_claim");
         let claim = harness.create_claim(attestation_id, claimant_secret, claimant_pub, Predicate::GreaterOrEqual, b"evidence".to_vec(), b"result".to_vec(), claim_id)?;
         assert!(!claim.call_data.is_empty());
         println!("    call_data={}B", claim.call_data.len());
+
+        // --- create_claim through accept_block ---
+        println!("  Exec: CreateClaimV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&claim.call_data, vec![claim.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         // --- verify_claim ---
         println!("  Test: verify_claim");
@@ -1701,18 +1715,74 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
         assert!(!verify.call_data.is_empty());
         println!("    call_data={}B", verify.call_data.len());
 
+        // --- verify_claim through accept_block ---
+        println!("  Exec: VerifyClaimV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&verify.call_data, vec![verify.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- consume_claim ---
         println!("  Test: consume_claim");
         let consume = harness.consume_claim(claim_id, attestation_id, pallas::Base::from(7u64), claimant_secret, claimant_pub)?;
         assert!(!consume.call_data.is_empty());
         println!("    call_data={}B", consume.call_data.len());
 
+        // --- consume_claim through accept_block ---
+        println!("  Exec: ConsumeClaimV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&consume.call_data, vec![consume.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
         // --- delegate_attestation ---
         println!("  Test: delegate_attestation");
         let delegate = harness.delegate_attestation(pallas::Base::from(1u64), pallas::Base::from(2u64), attestor_secret, pallas::Base::from(3u64), pallas::Base::from(4u64), pallas::Base::from(5u64), pallas::Base::from(6u64), pallas::Base::from(7u64), pallas::Base::from(8u64), pallas::Base::from(9u64), pallas::Base::from(10u64), pallas::Base::from(11u64), pallas::Base::from(12u64), [pallas::Base::from(0u64); 255], pallas::Base::from(13u64), [pallas::Base::from(0u64); 255], attestor_pub, claimant_pub)?;
         assert!(!delegate.call_data.is_empty());
-        println!("    call_data={}B", delegate.call_data.len());        println!("  Exec: coinbase-only accept_block");
-        pipeline.exec_coinbase_only().await?;
+        println!("    call_data={}B", delegate.call_data.len());
+
+        // --- delegate_attestation through accept_block ---
+        println!("  Exec: DelegateAttestationV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&delegate.call_data, vec![delegate.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- check_not_revoked ---
+        println!("  Test: check_not_revoked");
+        use dwow_sdk::crypto::MerkleNode;
+        let empty_path: Vec<MerkleNode> = vec![MerkleNode::new(pallas::Base::from(0u64)); 32];
+        let cnr = harness.check_not_revoked(
+            pallas::Base::from(100u64), pallas::Base::from(200u64), 0, empty_path,
+        )?;
+        assert!(!cnr.call_data.is_empty());
+        println!("    call_data={}B", cnr.call_data.len());
+
+        // --- check_not_revoked through accept_block ---
+        println!("  Exec: CheckNotRevokedV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&cnr.call_data, vec![cnr.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
+
+        // --- update_delegation ---
+        println!("  Test: update_delegation");
+        let ud = harness.update_delegation(
+            pallas::Base::from(1u64), pallas::Base::from(0u64),
+            pallas::Base::from(0u64), pallas::Base::from(5u64),
+            pallas::Base::from(1000u64), pallas::Base::from(500u64),
+            pallas::Base::from(10000u64),
+            1000, 500, 10000, 0, 5, 0,
+        )?;
+        assert!(!ud.call_data.is_empty());
+        println!("    call_data={}B", ud.call_data.len());
+
+        // --- update_delegation through accept_block ---
+        println!("  Exec: UpdateDelegationV1 through accept_block");
+        let h_before = pipeline.genesis.block_height();
+        pipeline.exec(&ud.call_data, vec![ud.proof]).await?;
+        assert!(pipeline.genesis.block_height() > h_before);
+        println!("    accept_block height OK");
 
         println!("=== All Attestation endpoints OK ===");
         Ok(())

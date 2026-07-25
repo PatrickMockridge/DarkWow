@@ -33,6 +33,9 @@ use dwow_sdk::{crypto::{pasta_prelude::PrimeField, PublicKey}, pasta::pallas};
 use dwow_serial::Encodable;
 
 use dwow_attestation_contract::client::{
+    check_not_revoked_v1::{
+        CheckNotRevokedV1CallData, check_not_revoked_v1_proof, CheckNotRevokedV1PublicInputs,
+    },
     consume_claim_v1::{
         ConsumeClaimV1CallData, consume_claim_v1_proof, ConsumeClaimV1PublicInputs,
     },
@@ -46,13 +49,17 @@ use dwow_attestation_contract::client::{
         DelegateAttestationV1CallData, delegate_attestation_v1_proof,
         DelegateAttestationV1PublicInputs,
     },
+    update_delegation_v1::{
+        UpdateDelegationV1CallData, update_delegation_v1_proof, UpdateDelegationV1PublicInputs,
+    },
     verify_claim_v1::{
         VerifyClaimV1CallData, verify_claim_v1_proof, VerifyClaimV1PublicInputs,
     },
 };
 use dwow_attestation_contract::model::{
-    AttestationId, ClaimId, ConsumeClaimParamsV1, CreateAttestationParamsV1,
-    CreateClaimParamsV1, DelegateAttestationParamsV1, VerifyClaimParamsV1, Predicate,
+    AttestationId, CheckNotRevokedParamsV1, ClaimId, ConsumeClaimParamsV1,
+    CreateAttestationParamsV1, CreateClaimParamsV1, DelegateAttestationParamsV1,
+    UpdateDelegationParamsV1, VerifyClaimParamsV1, Predicate,
 };
 
 /// Attestation Harness for isolated testing
@@ -422,6 +429,74 @@ impl AttestationHarness {
 
         Ok(DelegateAttestationResult { call_data, proof, public_inputs })
     }
+
+    /// Check non-revocation status (function code 0x07)
+    pub fn check_not_revoked(
+        &self,
+        revocation_root: pallas::Base,
+        nonce: pallas::Base,
+        pos: u64,
+        path: Vec<dwow_sdk::crypto::MerkleNode>,
+    ) -> Result<CheckNotRevokedResult, Box<dyn std::error::Error>> {
+        let input = CheckNotRevokedV1CallData::new(revocation_root, nonce, pos, path);
+        let (proof, public_inputs) = check_not_revoked_v1_proof(
+            &self.check_not_revoked_zkbin, &self.check_not_revoked_pk, &input,
+        )?;
+
+        let params = CheckNotRevokedParamsV1 {
+            proof: proof.as_ref().to_vec(),
+            revocation_root: public_inputs.revocation_root,
+            nonce: public_inputs.nonce,
+        };
+
+        let mut call_data = vec![0x07];
+        params.encode(&mut call_data)?;
+
+        Ok(CheckNotRevokedResult { call_data, proof, public_inputs })
+    }
+
+    /// Update delegation parameters (function code 0x0a)
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_delegation(
+        &self,
+        original_attestation_id: pallas::Base,
+        delegation_type: pallas::Base,
+        current_depth: pallas::Base,
+        max_depth: pallas::Base,
+        delegator_stake: pallas::Base,
+        delegatee_stake: pallas::Base,
+        max_ratio: pallas::Base,
+        delegator_stake_u64: u64,
+        delegatee_stake_u64: u64,
+        max_ratio_u64: u64,
+        depth: u64,
+        max_depth_u64: u64,
+        delegation_type_u8: u8,
+    ) -> Result<UpdateDelegationResult, Box<dyn std::error::Error>> {
+        let input = UpdateDelegationV1CallData::new(
+            original_attestation_id, delegation_type, current_depth,
+            max_depth, delegator_stake, delegatee_stake, max_ratio,
+        );
+        let (proof, public_inputs) = update_delegation_v1_proof(
+            &self.update_delegation_zkbin, &self.update_delegation_pk, &input,
+        )?;
+
+        let params = UpdateDelegationParamsV1 {
+            proof: proof.as_ref().to_vec(),
+            original_attestation_id: public_inputs.original_attestation_id,
+            delegation_type: delegation_type_u8,
+            current_depth: depth,
+            max_depth: max_depth_u64,
+            delegator_stake: delegator_stake_u64,
+            delegatee_stake: delegatee_stake_u64,
+            max_ratio: max_ratio_u64,
+        };
+
+        let mut call_data = vec![0x0a];
+        params.encode(&mut call_data)?;
+
+        Ok(UpdateDelegationResult { call_data, proof, public_inputs })
+    }
 }
 
 impl super::ContractHarness for AttestationHarness {
@@ -504,4 +579,18 @@ pub struct DelegateAttestationResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: DelegateAttestationV1PublicInputs,
+}
+
+/// Result of check_not_revoked
+pub struct CheckNotRevokedResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: CheckNotRevokedV1PublicInputs,
+}
+
+/// Result of update_delegation
+pub struct UpdateDelegationResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: UpdateDelegationV1PublicInputs,
 }
