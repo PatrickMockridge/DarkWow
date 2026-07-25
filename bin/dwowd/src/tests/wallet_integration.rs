@@ -911,6 +911,305 @@ required_barbs = ["Spend","Mine"]
     });
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Wallet manifest-driven capability scan — extracted from
+// test_wallet_integration Phases 6-10 to unblock Path 2 coverage.
+// Does NOT call build_native_transfer — the halo2 plonk synthesis
+// error in that path is the sole reason test_wallet_integration is
+// #[ignore] per §2.6.
+// ─────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_wallet_manifest_scan() {
+    dwow_native_token_contract::enable_deterministic_zk();
+
+    smol::block_on(async {
+        use dwow_wallet::Dww;
+        use dwow_sdk::crypto::keypair::Network;
+        use dwow_sdk::crypto::pasta_prelude::PrimeField;
+        use dwow_sdk::capability::{Barb, Primitive};
+        use dwow_chain::{Block, BlockHeader, BlockTimestamp, BlockTarget, BlockVersion,
+            BlockReward, MoneroBlockHeight, PowSource, Transaction, ContractCall};
+        use dwow_serial::Encodable;
+
+        // ── Wallet setup ────────────────────────────────────
+        let keys_toml = "[node0]\nwallet_secret = \
+            \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+        let keys_path = std::env::temp_dir()
+            .join(format!("dwow_manifest_scan_{}.toml", std::process::id()));
+        std::fs::write(&keys_path, keys_toml).expect("write test keys");
+
+        let wallet_dir = std::env::temp_dir()
+            .join(format!("dwow_manifest_scan_db_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&wallet_dir);
+
+        let dww = Dww::new(
+            Network::Testnet,
+            Some(&keys_path),
+            "node0",
+            wallet_dir.to_string_lossy().to_string(),
+            "".to_string(),
+            false,
+            None,
+        ).expect("wallet initialize");
+        dww.initialize_wallet().expect("wallet schema init");
+
+        let wallet_ptr = dww.get_wallet_db().expect("wallet db");
+
+        let master_sk = SecretKey::from_bytes([1u8; 32]).unwrap();
+        let wallet_pk = PublicKey::from_secret(master_sk.clone());
+        let deployer_pubkey_str = bs58::encode(wallet_pk.to_bytes()).into_string();
+
+        // ── Phase 6: Store synthetic manifest ────────────────
+        let foreign_cid = ContractId::from_bytes([1u8; 32]).expect("synthetic CID");
+        let foreign_cid_str = bs58::encode(foreign_cid.to_bytes()).into_string();
+
+        let synthetic_manifest_toml = r#"
+[contract]
+name = "synthetic_cap_test"
+category = "Testing"
+description = "Capability integration test manifest"
+
+[[functions]]
+name = "issue_badge"
+code = 7
+
+[[capabilities]]
+discriminant = 42
+name = "badge"
+primitives = ["SecretKey","Commitment","Nullifier","ContractId","FuncId","AssetId","MerkleNode"]
+note_schema = [
+    { name = "commitment", type = "pallas_base" },
+    { name = "badge_id", type = "u64" },
+]
+
+[[actions]]
+function = "issue_badge"
+requires = { type = "none" }
+produces = [{ name = "badge" }]
+required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","ProveInclusion"]
+"#;
+
+        wallet_ptr
+            .insert_contract_metadata_with_manifest(
+                &dwow_wallet::walletdb::ContractMetadataRecord {
+                    contract_id: foreign_cid_str.clone(),
+                    name: "synthetic_cap_test".into(),
+                    symbol: None,
+                    category: "Testing".into(),
+                    description: Some("Integration test".into()),
+                    public: true,
+                    deployer_pubkey: deployer_pubkey_str.clone(),
+                    deploy_height: 1,
+                    attestations_json: "[]".into(),
+                    lock_status: "unlocked".into(),
+                },
+                Some(&synthetic_manifest_toml.to_string()),
+            )
+            .expect("store synthetic manifest");
+
+        // ── Build AEAD note + synthetic block ──────────────
+        let ephem = SecretKey::from_base(poseidon_hash([
+            master_sk.inner(),
+            pallas::Base::from(0xBEEF_BEEF_BEEF_BEEFu64),
+        ]));
+
+        #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
+        struct BadgeNote {
+            commitment: pallas::Base,
+            badge_id: u64,
+        }
+        let badge_note = BadgeNote { commitment: pallas::Base::from(42_000), badge_id: 99 };
+        let enc_note = AeadEncryptedNote::encrypt_deterministic(
+            &badge_note, &wallet_pk, ephem.clone(),
+        ).expect("encrypt badge note");
+
+        let mut call_data = vec![0x07u8];
+        Encodable::encode(&enc_note, &mut call_data).ok();
+
+        let synthetic_block = Block {
+            header: BlockHeader {
+                version: BlockVersion::CURRENT,
+                previous: blake3::Hash::from_bytes([0u8; 32]),
+                merkle_root: blake3::Hash::from_bytes([0u8; 32]),
+                timestamp: BlockTimestamp::new(0),
+                target: BlockTarget::MAX,
+                nonce: 0,
+                height: BlockHeight::new(99),
+                uncle_merkle_root: [0u8; 32],
+                total_reward: BlockReward::ZERO,
+                randomx_key: [0u8; 32],
+                coin_merkle_root: [0u8; 32],
+                nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32],
+                anchor_monero_height: MoneroBlockHeight::new(0),
+                anchor_monero_hash: [0u8; 32],
+                finality_flags: 0,
+                pow_source: PowSource::Native,
+            },
+            transactions: vec![Transaction {
+                version: BlockVersion::CURRENT,
+                inputs: vec![],
+                outputs: vec![],
+                contract_calls: vec![ContractCall {
+                    contract_id: foreign_cid, data: call_data,
+                }],
+                lock_time: 0,
+                nullifiers: vec![],
+                witness: vec![],
+            }],
+        };
+
+        // ── Phase 7: Scan + verify typed capability ─────────
+        let mut tree = dww.get_capability_commitment_tree().expect("tree");
+        let result = dww.scan_block_linear(&mut tree, &synthetic_block)
+            .expect("scan Path 2 synthetic block");
+
+        assert_eq!(result.capabilities.len(), 1,
+            "Path2: exactly 1 generic capability");
+        let cap = &result.capabilities[0].cap_record;
+
+        assert_eq!(cap.capability_name.as_deref(), Some("badge"),
+            "capability_name must be 'badge' from manifest");
+        assert_eq!(cap.capability_discriminant, Some(42),
+            "discriminant must be 42 from manifest");
+        assert_eq!(cap.contract_id, foreign_cid,
+            "contract_id must match foreign CID");
+        assert!(cap.resource.is_some(), "resource must be set");
+        assert!(cap.action.is_some(), "action must be set");
+        assert_eq!(cap.primitives.len(), 7, "must compose 7 primitives");
+        assert_eq!(cap.barbs.len(), 8, "barbs union must be 8");
+        assert_eq!(cap.value, 0, "foreign cap must have zero value");
+
+        // ── Phase 8: Coverage gate ─────────────────────────
+        let uncovered_toml = r#"
+[contract]
+name = "uncovered_cap"
+category = "Testing"
+
+[[functions]]
+name = "fail_mine"
+code = 3
+
+[[capabilities]]
+discriminant = 1
+name = "fake_miner"
+primitives = ["AssetId","SecretKey"]
+note_schema = [{ name = "commitment", type = "pallas_base" }]
+
+[[actions]]
+function = "fail_mine"
+requires = { type = "none" }
+produces = [{ name = "fake_miner" }]
+required_barbs = ["Spend","Mine"]
+"#;
+        let uncovered_cid = ContractId::from_bytes([2u8; 32]).expect("uncovered CID");
+        let uncovered_cid_str = bs58::encode(uncovered_cid.to_bytes()).into_string();
+
+        wallet_ptr
+            .insert_contract_metadata_with_manifest(
+                &dwow_wallet::walletdb::ContractMetadataRecord {
+                    contract_id: uncovered_cid_str,
+                    name: "uncovered_cap".into(),
+                    symbol: None,
+                    category: "Testing".into(),
+                    description: None,
+                    public: true,
+                    deployer_pubkey: deployer_pubkey_str,
+                    deploy_height: 1,
+                    attestations_json: "[]".into(),
+                    lock_status: "unlocked".into(),
+                },
+                Some(&uncovered_toml.to_string()),
+            )
+            .expect("store uncovered manifest");
+
+        #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
+        struct UncoveredNote { commitment: pallas::Base }
+        let unc_note = UncoveredNote { commitment: pallas::Base::from(1) };
+        let enc_unc = AeadEncryptedNote::encrypt_deterministic(
+            &unc_note, &wallet_pk, ephem,
+        ).expect("encrypt uncovered note");
+
+        let mut unc_data = vec![0x03u8];
+        Encodable::encode(&enc_unc, &mut unc_data).ok();
+
+        let uncovered_block = Block {
+            header: BlockHeader {
+                version: BlockVersion::CURRENT,
+                previous: blake3::Hash::from_bytes([0u8; 32]),
+                merkle_root: blake3::Hash::from_bytes([0u8; 32]),
+                timestamp: BlockTimestamp::new(0),
+                target: BlockTarget::MAX,
+                nonce: 0,
+                height: BlockHeight::new(98),
+                uncle_merkle_root: [0u8; 32],
+                total_reward: BlockReward::ZERO,
+                randomx_key: [0u8; 32],
+                coin_merkle_root: [0u8; 32],
+                nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32],
+                anchor_monero_height: MoneroBlockHeight::new(0),
+                anchor_monero_hash: [0u8; 32],
+                finality_flags: 0,
+                pow_source: PowSource::Native,
+            },
+            transactions: vec![Transaction {
+                version: BlockVersion::CURRENT,
+                inputs: vec![],
+                outputs: vec![],
+                contract_calls: vec![ContractCall {
+                    contract_id: uncovered_cid, data: unc_data,
+                }],
+                lock_time: 0,
+                nullifiers: vec![],
+                witness: vec![],
+            }],
+        };
+
+        let uncovered_result = dww.scan_block_linear(&mut tree, &uncovered_block)
+            .expect("scan uncovered block");
+        assert!(uncovered_result.capabilities.is_empty(),
+            "primitives AssetId+SecretKey don't cover required barb Mine");
+
+        // ── Phase 9: Wrong-key negative ────────────────────
+        let wrong_keys_toml = "[node0]\nwallet_secret = \
+            \"0200000000000000000000000000000000000000000000000000000000000000\"\n";
+        let wrong_keys_path = std::env::temp_dir()
+            .join(format!("dwow_ms_wrong_{}.toml", std::process::id()));
+        std::fs::write(&wrong_keys_path, wrong_keys_toml).expect("write wrong keys");
+        let wrong_dir = std::env::temp_dir()
+            .join(format!("dwow_ms_wrong_db_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&wrong_dir);
+        let dww_wrong = Dww::new(
+            Network::Testnet, Some(&wrong_keys_path), "node0",
+            wrong_dir.to_string_lossy().to_string(), "".to_string(), false, None,
+        ).expect("wrong wallet init");
+        dww_wrong.initialize_wallet().expect("wrong wallet schema");
+        let mut wrong_tree = dww_wrong.get_capability_commitment_tree().expect("wrong tree");
+        let wrong_scan = dww_wrong.scan_block_linear(&mut wrong_tree, &synthetic_block)
+            .expect("wrong scan");
+        assert!(wrong_scan.capabilities.is_empty(),
+            "wrong key must find zero generic capabilities");
+
+        // ── Phase 10: Determinism ──────────────────────────
+        let mut tree2 = dww.get_capability_commitment_tree().expect("tree2");
+        let replay = dww.scan_block_linear(&mut tree2, &synthetic_block)
+            .expect("replay scan");
+        assert_eq!(
+            result.capabilities[0].cap_record.capability_name,
+            replay.capabilities[0].cap_record.capability_name,
+            "re-scan must be deterministic"
+        );
+
+        // Cleanup
+        let _ = std::fs::remove_file(&keys_path);
+        let _ = std::fs::remove_file(&wrong_keys_path);
+        let _ = std::fs::remove_dir_all(&wallet_dir);
+        let _ = std::fs::remove_dir_all(&wrong_dir);
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Tripwire — wallet.md §6.4, §9: zero per-contract code in the wallet
 // ---------------------------------------------------------------------------
