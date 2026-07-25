@@ -127,511 +127,6 @@ pub(crate) fn mine_test_nonce(block: &dwow_chain::Block, vm: &randomx::RandomXVM
     panic!("Could not find valid nonce for target {} after 1M iterations", target);
 }
 
-/// Full ZK-aware contract function/endpoint testing pipeline.
-///
-/// Generic over any `ContractHarness` implementation. Owns a `GenesisHarness`
-/// for the baseline chain (NativeToken + Deployooor pre-deployed).
-///
-/// Deploys contracts via the direct `deploy_contract()` path for setup
-/// convenience — deployment correctness is tested separately by the
-/// lightweight pipeline. Focus is on contract function behavior, state
-/// transitions, ZK proof generation, and uncle-merkle block execution.
-///
-/// `exec()` routes through `accept_block` (production path), which requires
-/// a real PoWRewardV1 coinbase with a nullifier — the toy `build_coinbase_tx`
-/// (empty contract_calls) cannot pass `validate_block_structure`. This struct
-/// holds the ZK proving keys and a test mining key so `exec()` builds a
-/// production-grade coinbase via `build_linear_coinbase`.
-pub struct HeavyweightPipeline<H: ContractHarness> {
-    /// Baseline chain with NativeToken + Deployooor
-    pub genesis: GenesisHarness,
-    /// Contract harness with ZK circuits and proving keys
-    pub harness: H,
-    /// Contract name (e.g., "dex", "promissory_note")
-    pub contract_name: String,
-    /// ContractId after deployment
-    pub contract_id: Option<ContractId>,
-    /// When true, `exec()` requires non-empty proofs for ZK contracts.
-    /// Default: true (hard error on empty proofs). ZK contracts SHALL have
-    /// proofs — per production-test-standard.md §2.3.
-    pub strict_zk: bool,
-    /// Cached ZK proving keys for coinbase construction (built eagerly in
-    /// `new()` — `exec()` is `&self`, no lazy init needed).
-    linear_zk: Arc<crate::registry::model::LinearPowRewardZk>,
-    /// Path to a temp keys.toml with the deterministic test mining key.
-    /// Owned for cleanup — temp dir cleanup happens on process exit.
-    keys_path: std::path::PathBuf,
-}
-
-/// Result of building a coinbase: the transaction, the miner identity,
-/// and the coin's on-chain parameters (needed by tests that build
-/// call_data referencing the coinbase coin).
-pub(super) struct CoinbaseResult {
-    pub(super) tx: dwow_chain::Transaction,
-    pub(super) recipient: crate::accounts::MiningRecipient,
-    pub(super) coin_value: u64,
-    pub(super) coin_commitment: dwow_chain::CoinCommitment,
-    pub(super) nullifier: dwow_chain::Nullifier,
-    pub(super) coin_blind: dwow_sdk::pasta::pallas::Base,
-}
-
-impl<H: ContractHarness> HeavyweightPipeline<H> {
-    /// Test mining key — deterministic, same as genesis.rs.
-    const TEST_KEY_TOML: &'static str =
-        "[node0]\nwallet_secret = \
-         \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
-
-    /// Create a new HeavyweightPipeline with the given harness and contract name.
-    /// Initializes a genesis block (height 1) with all 9 contracts deployed
-    /// via `apply_genesis_deployments`, then compiles ZK proving keys for
-    /// coinbase construction. After construction, `block_height()` is 1 and
-    /// `exec()` mines at height 2+ through the production `accept_block` path.
-    pub async fn new(harness: H, contract_name: &str) -> Result<Self> {
-        let genesis = GenesisHarness::new_without_contracts()?;
-        let zk = crate::registry::model::LinearPowRewardZk::new(
-            chain.chain_state.clone(),
-        ).await?;
-        // Temp keys.toml — the test mining key needed by `init_genesis` for
-        // the genesis block coinbase, and by `build_linear_coinbase` for
-        // subsequent `exec()` coinbases. Atomic counter prevents race
-        // conditions when multiple tests run in parallel.
-        let key_id = KEY_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let keys_path = std::env::temp_dir()
-            .join(format!("dwow_hwp_{}_{}_{}.toml", std::process::id(), contract_name, key_id));
-        std::fs::write(&keys_path, Self::TEST_KEY_TOML)
-            .map_err(|e| dwow_core::Error::Custom(format!("write test keys: {}", e)))?;
-
-        // Create the genesis block — deploys all 9 contracts via the
-        // apply_genesis_deployments consensus rule (same path as production).
-        let mgr = crate::accounts::AccountManager::open(
-            &keys_path, Network::Testnet, "node0",
-        ).map_err(|e| dwow_core::Error::Custom(format!("open test keys for genesis: {}", e)))?;
-        let gen_recipient = crate::accounts::MiningRecipient::from_account(
-            &mgr, BlockHeight::GENESIS,
-        ).map_err(|e| dwow_core::Error::Custom(format!("MiningRecipient for genesis: {}", e)))?;
-        drop(mgr);
-        let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
-        crate::init_genesis(&chain.chain_state, gen_recipient, magic_bytes).await?;
-
-        Ok(Self {
-            genesis, harness, contract_name: contract_name.to_string(),
-            contract_id: None, strict_zk: true,
-            linear_zk: Arc::new(zk), keys_path,
-        })
-    }
-
-    /// Build a real PoWRewardV1 coinbase tx for `accept_block`.
-    /// Requires a test mining key (inline keys.toml) and ZK proving keys.
-    pub(crate) async fn build_coinbase_for_height(
-        &self,
-        height: dwow_sdk::blockchain::BlockHeight,
-        reward: BlockReward,
-    ) -> Result<CoinbaseResult> {
-        let mgr = crate::accounts::AccountManager::open(
-            &self.keys_path,
-            dwow_sdk::crypto::keypair::Network::Testnet,
-            "node0",
-        ).map_err(|e| dwow_core::Error::Custom(format!("open test keys: {}", e)))?;
-        let recipient = crate::accounts::MiningRecipient::from_account(&mgr, height)
-            .map_err(|e| dwow_core::Error::Custom(format!("MiningRecipient: {}", e)))?;
-        drop(mgr);
-
-        let (coinbase, _public_inputs, pow_reward_call, coin_blind) =
-            crate::registry::model::build_linear_coinbase(
-                recipient.clone(), reward, &self.linear_zk, height,
-            ).await?;
-
-        let tx = dwow_chain::Transaction {
-            version: BlockVersion::CURRENT,
-            inputs: vec![],
-            outputs: vec![],
-            contract_calls: vec![pow_reward_call],
-            lock_time: 0,
-            nullifiers: vec![coinbase.nullifier],
-            witness: vec![],
-        };
-        Ok(CoinbaseResult {
-            tx,
-            recipient,
-            coin_value: reward.get(),
-            coin_commitment: coinbase.coin,
-            nullifier: coinbase.nullifier,
-            coin_blind,
-        })
-    }
-
-    /// Deploy the contract WASM and store its ContractId.
-    ///
-    /// Stores the WASM in the contracts sled tree AND runs `__initialize`
-    /// via `runtime.deploy(&[])` — same semantics as the genesis deployment
-    /// rule. This is required because `exec()` now routes through
-    /// `accept_block` → `execute_block` which executes full WASM; a contract
-    /// without initialized state (ZK circuits, merkle trees) will fail.
-    ///
-    /// Runs a pre-deploy ZK coverage check: every circuit in `circuits()` must
-    /// have a valid ZkBinary and ProvingKey.
-    pub async fn deploy(&mut self, wasm: &[u8]) -> Result<ContractId> {
-        self.harness.verify_zk_coverage()?;
-        let contract_id = self.derive_contract_id();
-        self.deploy_and_initialize(wasm, &[], contract_id).await?;
-        self.contract_id = Some(contract_id);
-        Ok(contract_id)
-    }
-
-    /// Deploy the contract WASM with an explicit initialization payload (`ix`).
-    /// Runs `__initialize` with the provided `ix` payload. See [`deploy`].
-    pub async fn deploy_with_ix(&mut self, wasm: &[u8], ix: &[u8]) -> Result<ContractId> {
-        self.harness.verify_zk_coverage()?;
-        let contract_id = self.derive_contract_id();
-        self.deploy_and_initialize(wasm, ix, contract_id).await?;
-        self.contract_id = Some(contract_id);
-        Ok(contract_id)
-    }
-
-    /// Store WASM in the contracts sled tree and run `__initialize` so the
-    /// contract is ready for WASM execution via `exec()` → `accept_block`.
-    async fn deploy_and_initialize(
-        &self,
-        wasm: &[u8],
-        ix: &[u8],
-        contract_id: ContractId,
-    ) -> Result<()> {
-        use dwow_core::runtime::vm_runtime::{Runtime, RuntimeBackend};
-        use dwow_chain::execution::TxBackend;
-        use dwow_sdk::tx::TransactionHash;
-        use sled_overlay::SledTreeOverlay;
-
-        let contracts_tree = self.genesis.chain_state.store.contracts_tree().clone();
-        let mut overlay = SledTreeOverlay::new(&contracts_tree);
-
-        // Pre-insert WASM into overlay so contract_lookup sees it during deploy.
-        overlay.state.cache.insert(
-            sled::IVec::from(contract_id.to_bytes().as_slice()),
-            sled::IVec::from(wasm),
-        );
-
-        // Minimal RandomX VM — deploy only does DB ops, no hashing.
-        let flags = randomx::RandomXFlags::get_recommended_flags()
-            & !randomx::RandomXFlags::JIT;
-        let rx_cache = self.genesis.chain_state.get_cache([0u8; 32]);
-        let vm = std::sync::Arc::new(
-            randomx::RandomXVM::new(flags, Some(rx_cache), None)
-                .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM for deploy: {}", e)))?,
-        );
-        let overlay_arc = std::sync::Arc::new(std::sync::Mutex::new(overlay.clone()));
-        let backend = std::sync::Arc::new(TxBackend {
-            overlay: std::sync::Arc::clone(&overlay_arc),
-            store: self.genesis.chain_state.store.clone(),
-            height: BlockHeight::GENESIS,
-            vm,
-        });
-        let mut runtime = Runtime::new(
-            wasm, backend, contract_id, BlockHeight::GENESIS,
-            BlockTarget::MAX, TransactionHash::none(), 0,
-        ).map_err(|e| dwow_core::Error::Custom(format!(
-            "Runtime::new for deploy: {}", e,
-        )))?;
-        runtime.deploy(ix).map_err(|e| dwow_core::Error::Custom(format!(
-            "deploy __initialize: {}", e,
-        )))?;
-        drop(runtime);
-
-        // Commit the initialized state into the contracts tree.
-        overlay = overlay_arc.lock().unwrap().clone();
-        let batch = overlay.state.aggregate().unwrap_or_default();
-        contracts_tree.apply_batch(batch)
-            .map_err(|e| dwow_core::Error::Custom(format!("apply_batch for deploy: {}", e)))?;
-        Ok(())
-    }
-
-    /// Execute a contract call through the production block acceptance path.
-    ///
-    /// Routes through `accept_block` → `execute_block` → `connect_block` —
-    /// the full WASM runtime path with contracts overlay and cumulative supply
-    /// state (MOC close-out item 5: now routes through the production
-    /// accept_block path).
-    ///
-    /// Takes the ZK-generated call_data (which must include the function code byte)
-    /// and proofs. Constructs a block with `target: u32::MAX` (instant PoW).
-    /// The coinbase is a real PoWRewardV1 with a ZK proof and nullifier,
-    /// built via `build_linear_coinbase` — the same production path as mining.
-    /// The toy `build_coinbase_tx` (empty contract_calls) cannot pass
-    /// `validate_block_structure` on this path.
-    ///
-    /// Proofs are verified locally against the harness's ZK binary before submission.
-    /// If the contract has ZK circuits (circuits() is non-empty), proofs must be non-empty.
-    pub async fn exec(&self, call_data: &[u8], proofs: Vec<Proof>) -> Result<()> {
-        use super::harness::{build_contract_tx, build_test_block};
-
-        let contract_id = self.contract_id
-            .ok_or_else(|| dwow_core::Error::Custom("Contract not deployed".to_string()))?;
-
-        // ZK proof gate: if the contract has ZK circuits, proofs should be provided.
-        // In strict_zk mode, empty proofs are a hard error. Otherwise, warn.
-        let circuits = self.harness.circuits();
-        if !circuits.is_empty() && proofs.is_empty() {
-            if self.strict_zk {
-                return Err(dwow_core::Error::Custom(format!(
-                    "exec() called on ZK contract '{}' ({} circuits: [{}]) with empty proofs \
-                     in strict_zk mode. Every ZK endpoint must provide its proof.",
-                    self.contract_name,
-                    circuits.len(),
-                    circuits.join(", ")
-                )));
-            }
-            eprintln!(
-                "WARNING: exec() called on ZK contract '{}' ({} circuits: [{}]) with empty proofs. \
-                 This means on-chain ZK verification is not being exercised. \
-                 Set pipeline.strict_zk = true to enforce.",
-                self.contract_name,
-                circuits.len(),
-                circuits.join(", ")
-            );
-        }
-
-        // Wrap call_data in Vec<DarkLeaf<ContractCall>> format for non-NativeToken
-        // contracts. NativeToken uses raw [fn_code]+params format — skip wrapping.
-        let call_data_wrapped = if contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID {
-            call_data.to_vec()
-        } else {
-            super::harness::wrap_call_data(contract_id, call_data.to_vec())
-        };
-        let mut tx = build_contract_tx(contract_id, call_data_wrapped.clone());
-        tx.witness = build_witness(contract_id, &call_data_wrapped, proofs);
-
-        let height = self.genesis.block_height();
-        let next_height = height.succ();
-        let reward = dwow_sdk::blockchain::expected_reward(next_height);
-        eprintln!("[exec] building coinbase for height {} (ZK proof)...", next_height);
-        let t0 = std::time::Instant::now();
-        let cb = self.build_coinbase_for_height(next_height, reward).await?;
-        eprintln!("[exec] coinbase built ({:.1}s), constructing block...", t0.elapsed().as_secs_f64());
-        let target = self.expected_target();
-        let mut block = build_test_block(&self.genesis.chain_state, next_height, vec![cb.tx, tx]);
-        block.header.target = target;
-        eprintln!("[exec] building RandomX VM...");
-        let t0 = std::time::Instant::now();
-        let vm = build_accept_vm(&block)?;
-        eprintln!("[exec] RandomX VM ready ({:.1}s), submitting to accept_block...", t0.elapsed().as_secs_f64());
-
-        let t0 = std::time::Instant::now();
-        let outcome = crate::block_acceptor::accept_block(
-            &self.genesis.chain_state,
-            &block,
-            &[],
-            &vm,
-            height,
-            target,
-            None,
-        )
-        .map_err(|e| dwow_core::Error::Custom(format!("accept_block exec: {}", e)))?;
-        match outcome {
-            dwow_chain::BlockConnectOutcome::CanonicalExtension { new_height } => {
-                eprintln!("[exec] block accepted at height {} ({:.1}s)",
-                    new_height, t0.elapsed().as_secs_f64());
-            }
-            _ => {
-                eprintln!("[exec] block processed ({:.1}s, non-canonical)",
-                    t0.elapsed().as_secs_f64());
-            }
-        }
-        Ok(())
-    }
-
-    /// Mine a coinbase-only block and return the coin's parameters so the
-    /// caller can build call_data referencing the actual coinbase coin.
-    /// Required for tests where the contract endpoint spends coins (fee,
-    /// burn, transfer) and the coin must exist before the call executes.
-    pub async fn exec_coinbase_only(&self) -> Result<CoinbaseResult> {
-        let height = self.genesis.block_height();
-        let next_height = height.succ();
-        let reward = dwow_sdk::blockchain::expected_reward(next_height);
-        let cb = self.build_coinbase_for_height(next_height, reward).await?;
-        let real_target = self.expected_target();
-        let mut block = build_test_block(&self.genesis.chain_state, next_height, vec![cb.tx.clone()]);
-        block.header.target = real_target;
-        let vm = build_accept_vm(&block)?;
-
-        crate::block_acceptor::accept_block(
-            &self.genesis.chain_state,
-            &block,
-            &[],
-            &vm,
-            height,
-            BlockTarget::MAX,
-            None,
-        )
-        .map_err(|e| dwow_core::Error::Custom(format!("accept_block exec_coinbase_only: {}", e)))?;
-        Ok(cb)
-    }
-
-    /// Execute a contract call as an uncle block transaction.
-    ///
-    /// The canonical block contains a real PoWRewardV1 coinbase; the contract
-    /// call executes from the uncle block's transaction list. Routes through
-    /// `accept_block` — uncle txs bypass `decode_and_reconcile` (no witness
-    /// needed), but execute through the WASM runtime.
-    pub async fn exec_as_uncle(
-        &self,
-        call_data: &[u8],
-        _proofs: Vec<Proof>,
-        depth: u8,
-    ) -> Result<()> {
-        use super::harness::{build_contract_tx, build_test_block, build_test_block_with_uncles, build_test_uncle};
-
-        let contract_id = self.contract_id
-            .ok_or_else(|| dwow_core::Error::Custom("Contract not deployed".to_string()))?;
-        let height = self.genesis.block_height();
-        let next = height.succ();
-        let reward = dwow_sdk::blockchain::expected_reward(next);
-
-        let cb = self.build_coinbase_for_height(next, reward).await?;
-        let call_data_wrapped = if contract_id == *NATIVE_TOKEN_CONTRACT_ID {
-            call_data.to_vec()
-        } else {
-            super::harness::wrap_call_data(contract_id, call_data.to_vec())
-        };
-        let contract_tx = build_contract_tx(contract_id, call_data_wrapped);
-        let uncle_raw = build_test_block(&self.genesis.chain_state, next, vec![contract_tx]);
-        let uncle = build_test_uncle(uncle_raw, depth, reward);
-        let real_target = self.expected_target();
-        let mut block = build_test_block_with_uncles(
-            &self.genesis.chain_state, next, vec![cb.tx], &[uncle.clone()],
-        );
-        block.header.target = real_target;
-        let vm = build_accept_vm(&block)?;
-        // Mine a valid nonce if target is below u32::MAX (heights > 2).
-        if real_target < BlockTarget::MAX {
-            block.header.nonce = mine_test_nonce(&block, &vm, real_target);
-        }
-
-        crate::block_acceptor::accept_block(
-            &self.genesis.chain_state, &block, &[uncle], &vm, height, real_target, None,
-        )
-        .map(|_| ())
-        .map_err(|e| dwow_core::Error::Custom(format!("accept_block exec_as_uncle: {}", e)))
-    }
-
-    /// Execute two contract calls: one in the canonical block, one in an uncle.
-    ///
-    /// Both execute through the WASM runtime. The canonical contract tx carries
-    /// a witness; the uncle tx does not (uncle txs bypass `decode_and_reconcile`).
-    /// Routes through `accept_block`.
-    pub async fn exec_mixed(
-        &self,
-        canonical_data: &[u8],
-        uncle_data: &[u8],
-    ) -> Result<()> {
-        use super::harness::{build_contract_tx, build_test_block, build_test_block_with_uncles, build_test_uncle};
-
-        let contract_id = self.contract_id
-            .ok_or_else(|| dwow_core::Error::Custom("Contract not deployed".to_string()))?;
-        let height = self.genesis.block_height();
-        let next = height.succ();
-        let reward = dwow_sdk::blockchain::expected_reward(next);
-
-        let cb = self.build_coinbase_for_height(next, reward).await?;
-        // Wrap call_data for non-NativeToken contracts.
-        // Canonical txs go through decode_and_reconcile; uncle txs bypass
-        // it but still execute through WASM — both need the DarkLeaf wrapper.
-        let canonical_wrapped = if contract_id == *NATIVE_TOKEN_CONTRACT_ID {
-            canonical_data.to_vec()
-        } else {
-            super::harness::wrap_call_data(contract_id, canonical_data.to_vec())
-        };
-        let uncle_wrapped = if contract_id == *NATIVE_TOKEN_CONTRACT_ID {
-            uncle_data.to_vec()
-        } else {
-            super::harness::wrap_call_data(contract_id, uncle_data.to_vec())
-        };
-        // Canonical contract tx — must carry a witness for accept_block step 2.6.
-        let mut canon_tx = build_contract_tx(contract_id, canonical_wrapped.clone());
-        canon_tx.witness = build_witness(contract_id, &canonical_wrapped, vec![]);
-        // Uncle contract tx — no witness needed (uncle txs bypass L2 verification).
-        let uncle_tx = build_contract_tx(contract_id, uncle_wrapped);
-        let uncle_raw = build_test_block(&self.genesis.chain_state, next, vec![uncle_tx]);
-        let uncle = build_test_uncle(uncle_raw, 1, reward);
-        let target = self.expected_target();
-        let mut block = build_test_block_with_uncles(
-            &self.genesis.chain_state, next, vec![cb.tx, canon_tx], &[uncle.clone()],
-        );
-        block.header.target = target;
-        let vm = build_accept_vm(&block)?;
-
-        crate::block_acceptor::accept_block(
-            &self.genesis.chain_state, &block, &[uncle], &vm, height, target, None,
-        )
-        .map(|_| ())
-        .map_err(|e| dwow_core::Error::Custom(format!("accept_block exec_mixed: {}", e)))
-    }
-
-    /// Execute multiple uncle blocks, each with a different contract call.
-    ///
-    /// Simulates parallel throughput: N uncle blocks, each executing one
-    /// contract call through WASM, all included in a single canonical block.
-    /// Routes through `accept_block`.
-    pub async fn exec_multi_uncle(
-        &self,
-        call_datas: Vec<Vec<u8>>,
-        depth: u8,
-    ) -> Result<()> {
-        use super::harness::{build_contract_tx, build_test_block, build_test_block_with_uncles, build_test_uncle};
-
-        let contract_id = self.contract_id
-            .ok_or_else(|| dwow_core::Error::Custom("Contract not deployed".to_string()))?;
-        let height = self.genesis.block_height();
-        let next = height.succ();
-        let reward = dwow_sdk::blockchain::expected_reward(next);
-
-        let cb = self.build_coinbase_for_height(next, reward).await?;
-        let mut uncles = Vec::new();
-
-        for call_data in &call_datas {
-            let call_data_wrapped = if contract_id == *NATIVE_TOKEN_CONTRACT_ID {
-                call_data.clone()
-            } else {
-                super::harness::wrap_call_data(contract_id, call_data.clone())
-            };
-            let uncle_tx = build_contract_tx(contract_id, call_data_wrapped);
-            let uncle_raw = build_test_block(&self.genesis.chain_state, next, vec![uncle_tx]);
-            let uncle = build_test_uncle(uncle_raw, depth, reward);
-            uncles.push(uncle);
-        }
-
-        let target = self.expected_target();
-        let mut block = build_test_block_with_uncles(
-            &self.genesis.chain_state, next, vec![cb.tx], &uncles,
-        );
-        block.header.target = target;
-        let vm = build_accept_vm(&block)?;
-
-        crate::block_acceptor::accept_block(
-            &self.genesis.chain_state, &block, &uncles, &vm, height, target, None,
-        )
-        .map(|_| ())
-        .map_err(|e| dwow_core::Error::Custom(format!("accept_block exec_multi_uncle: {}", e)))
-    }
-
-    /// Get the expected PoW target for the next block from chain consensus.
-    /// `get_next_work_required(height)` takes the NEW block's height and
-    /// computes the target from blocks in range [1, height-1].
-    fn expected_target(&self) -> BlockTarget {
-        let next = self.genesis.block_height().succ();
-        self.genesis.chain_state.consensus.lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get_next_work_required(&self.genesis.chain_state.store, next)
-    }
-
-    /// Derive a deterministic ContractId for testing.
-    fn derive_contract_id(&self) -> ContractId {
-        use dwow_sdk::pasta::pallas;
-        let mut hash = 0u64;
-        for b in self.contract_name.as_bytes() {
-            hash = hash.wrapping_mul(31).wrapping_add(*b as u64);
-        }
-        ContractId::from_base(pallas::Base::from(hash))
-    }
-}
 
 // ============================================================================
 // promissory_note
@@ -1178,7 +673,7 @@ fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Erro
 
         let chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
-        let harness = EscrowHarness::spawn();
+        let mut harness = EscrowHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
 
         let wasm = include_bytes!("../../../../src/contract/escrow/dwow_escrow_contract.wasm");
@@ -4580,10 +4075,10 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
 
         let height1 = start_height.succ();
         {
-            let (cb_tx, _) = build_cb(&keys_path, &linear_zk, height1).await?;
+            let cb = chain.build_coinbase_for_height(height1, dwow_sdk::blockchain::expected_reward(height1)).await?;
             let mut deposit_tx = build_contract_tx(bridge_id, deposit.call_data);
             deposit_tx.witness = build_witness(bridge_id, &deposit_tx.contract_calls[0].data, vec![]);
-            let block1 = build_test_block(&chain.chain_state, height1, vec![cb_tx, deposit_tx]);
+            let block1 = build_test_block(&chain.chain_state, height1, vec![cb.tx,deposit_tx]);
             let vm = build_accept_vm(&block1)?;
             crate::block_acceptor::accept_block(
                 &chain.chain_state, &block1, &[], &vm,
@@ -4613,10 +4108,10 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
 
         let height2 = chain.height().succ();
         {
-            let (cb_tx, _) = build_cb(&keys_path, &linear_zk, height2).await?;
+            let cb = chain.build_coinbase_for_height(height2, dwow_sdk::blockchain::expected_reward(height2)).await?;
             let mut withdraw_tx = build_contract_tx(bridge_id, withdraw.call_data);
             withdraw_tx.witness = build_witness(bridge_id, &withdraw_tx.contract_calls[0].data, vec![]);
-            let block2 = build_test_block(&chain.chain_state, height2, vec![cb_tx, withdraw_tx]);
+            let block2 = build_test_block(&chain.chain_state, height2, vec![cb.tx,withdraw_tx]);
             let vm = build_accept_vm(&block2)?;
             crate::block_acceptor::accept_block(
                 &chain.chain_state, &block2, &[], &vm,
@@ -4644,10 +4139,10 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
 
         let height3 = chain.height().succ();
         {
-            let (cb_tx, _) = build_cb(&keys_path, &linear_zk, height3).await?;
+            let cb = chain.build_coinbase_for_height(height3, dwow_sdk::blockchain::expected_reward(height3)).await?;
             let mut double_tx = build_contract_tx(bridge_id, double_withdraw.call_data);
             double_tx.witness = build_witness(bridge_id, &double_tx.contract_calls[0].data, vec![]);
-            let block3 = build_test_block(&chain.chain_state, height3, vec![cb_tx, double_tx]);
+            let block3 = build_test_block(&chain.chain_state, height3, vec![cb.tx,double_tx]);
             let vm = build_accept_vm(&block3)?;
             let double_result = crate::block_acceptor::accept_block(
                 &chain.chain_state, &block3, &[], &vm,
@@ -4678,14 +4173,14 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
 
         let height4 = chain.height().succ();
         {
-            let (cb_tx, _) = build_cb(&keys_path, &linear_zk, height4).await?;
+            let cb = chain.build_coinbase_for_height(height4, dwow_sdk::blockchain::expected_reward(height4)).await?;
             let mut init_tx = build_contract_tx(relayer_id, init.call_data);
             init_tx.witness = build_witness(relayer_id, &init_tx.contract_calls[0].data, vec![]);
             let mut deploy_tx = build_contract_tx(relayer_id, deploy.call_data);
             deploy_tx.witness = build_witness(relayer_id, &deploy_tx.contract_calls[0].data, vec![]);
             let block4 = build_test_block(
                 &chain.chain_state, height4,
-                vec![cb_tx, init_tx, deploy_tx],
+                vec![cb.tx,init_tx, deploy_tx],
             );
             let vm = build_accept_vm(&block4)?;
             crate::block_acceptor::accept_block(
