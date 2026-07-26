@@ -188,7 +188,7 @@ fn drain_protection_exit_get_metadata_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        crate::DRAIN_PROTECTION_CONTRACT_ZKAS_EXIT_NS_V2.to_string(),
+        crate::DRAIN_PROTECTION_CONTRACT_ZKAS_EXIT_NS_V1.to_string(),
         vec![
             params.fund_id,
             params.member_pubkey.x().expect("pk not identity"),
