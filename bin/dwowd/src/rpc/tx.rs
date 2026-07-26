@@ -141,7 +141,6 @@ impl DwowNode {
                         }
                     }).collect(),
                     proofs: vec![],
-                    signatures: vec![],
                     tx_commitment: [0u8; 32],
                     nullifiers: chain_tx.nullifiers.clone(),
                 };

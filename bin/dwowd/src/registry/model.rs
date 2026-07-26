@@ -409,7 +409,7 @@ pub fn build_fee_collect_tx(
             parent_index: None,
         }],
         proofs: vec![debris.proofs],
-        signatures: vec![vec![]], // no sigs — nullifier proves identity (spec §3.7)
+        // Schnorr signatures removed per contract-standards.md §3.
         tx_commitment: [0u8; 32],
         nullifiers: vec![nullifier],
     };
