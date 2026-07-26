@@ -708,10 +708,11 @@ fn process_settle_fees_instruction(
 
     // Verify each deployment exists, belongs to this relayer, and is not withdrawn
     let deployments_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
-    assert!(
-        params.allocations.len() <= crate::RELAYER_ENDOWMENT_MAX_ALLOCATIONS,
-        "Too many allocations for settle_fees"
-    );
+    if params.allocations.len() > crate::RELAYER_ENDOWMENT_MAX_ALLOCATIONS {
+        msg!("[relayer_endowment::settle_fees] Too many allocations: {} (max {})",
+            params.allocations.len(), crate::RELAYER_ENDOWMENT_MAX_ALLOCATIONS);
+        return Err(RelayerEndowmentError::Custom(1).into());
+    }
     for alloc in &params.allocations {
         let deployment: EndowmentDeployment =
             match wasm::db::db_get(deployments_db, &serialize(&alloc.deployment_id))? {

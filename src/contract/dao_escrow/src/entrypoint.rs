@@ -1782,25 +1782,37 @@ fn deactivate_capability_requirement_v1(
         .ok_or_else(|| DaoEscrowError::CapabilityRequirementNotRegistered(
             String::from_utf8_lossy(&params.role).to_string()
         ))?;
-    let mut requirement: model::CapabilityRequirement = deserialize(&req_data)?;
-    requirement.active = false;
-    wasm::db::db_set(caps_db, &params.role, &serialize(&requirement))?;
+    let requirement: model::CapabilityRequirement = deserialize(&req_data)?;
+    // Validate that the requirement exists and is active — the actual
+    // deactivation write happens in apply (two-phase exec/apply separation).
+    if !requirement.active {
+        msg!("[dao_escrow::deactivate_capability_requirement_v1] Requirement already deactivated");
+        return Err(DaoEscrowError::Custom(2).into());
+    }
 
     let update = model::DeactivateCapabilityRequirementUpdateV1 {
         dao_escrow_bulla: params.dao_escrow_bulla,
-        role: params.role,
+        role: params.role.clone(),
     };
 
-    msg!("[dao_escrow::deactivate_capability_requirement_v1] Capability requirement deactivated");
+    msg!("[dao_escrow::deactivate_capability_requirement_v1] Capability requirement deactivation computed");
     wasm::util::set_return_data(&serialize(&update))
 }
 
-/// DeactivateCapabilityRequirementV1 apply - update already applied in instruction
+/// DeactivateCapabilityRequirementV1 apply — writes the deactivation to state
 fn deactivate_capability_requirement_apply_v1(
-    _cid: ContractId,
-    _update: model::DeactivateCapabilityRequirementUpdateV1,
+    cid: ContractId,
+    update: model::DeactivateCapabilityRequirementUpdateV1,
 ) -> ContractResult {
-    msg!("[dao_escrow::deactivate_capability_requirement_apply_v1] Capability requirement deactivation confirmed");
+    let caps_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_CAPABILITY_REQUIREMENTS_TREE)?;
+    let req_data = wasm::db::db_get(caps_db, &update.role)?
+        .ok_or_else(|| DaoEscrowError::CapabilityRequirementNotRegistered(
+            String::from_utf8_lossy(&update.role).to_string()
+        ))?;
+    let mut requirement: model::CapabilityRequirement = deserialize(&req_data)?;
+    requirement.active = false;
+    wasm::db::db_set(caps_db, &update.role, &serialize(&requirement))?;
+    msg!("[dao_escrow::deactivate_capability_requirement_apply_v1] Capability requirement deactivation written");
     Ok(())
 }
 

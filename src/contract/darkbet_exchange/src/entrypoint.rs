@@ -1648,10 +1648,11 @@ fn darkbet_settle_market_process_instruction_v1(
     let mut total_payout: u64 = 0;
     let mut total_commission: u64 = 0;
 
-    assert!(
-        params.match_ids.len() <= crate::DARKBET_EXCHANGE_MAX_SETTLE_MATCHES,
-        "Too many match IDs for settle"
-    );
+    if params.match_ids.len() > crate::DARKBET_EXCHANGE_MAX_SETTLE_MATCHES {
+        msg!("[darkbet_exchange::settle_market] Too many match IDs: {} (max {})",
+            params.match_ids.len(), crate::DARKBET_EXCHANGE_MAX_SETTLE_MATCHES);
+        return Err(DarkbetExchangeError::Custom(1).into());
+    }
     for &match_id in &params.match_ids {
         let match_data = wasm::db::db_get(matches_db, &serialize(&match_id))?
             .ok_or(DarkbetError::MatchNotFound)?;
