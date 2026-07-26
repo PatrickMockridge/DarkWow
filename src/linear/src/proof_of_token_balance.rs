@@ -193,15 +193,17 @@ fn process_fee_call(
     let params: FeeParamsV1 =
         deserialize(&data[9..]).map_err(|e| BalanceError::Deserialize(e.to_string()))?;
 
-    // Only track darkw token
-    if params.input.token_commit == darkw_token_commit {
-        *total_inputs = *total_inputs + params.input.value_commit;
-    }
-    if params.output.token_commit == darkw_token_commit {
-        *total_outputs = *total_outputs + params.output.value_commit;
+    // Only track DRKW (native token). Guard prevents spam-token fee injection
+    // into the DRKW mass balance equation.
+    if params.input.token_commit != darkw_token_commit {
+        return Ok(());
     }
 
+    *total_inputs = *total_inputs + params.input.value_commit;
+    *total_outputs = *total_outputs + params.output.value_commit;
+
     // Fee commitment: pedersen_commit(fee, blind=0)
+    // Only DRKW fees reach here — non-DRKW early-returns above.
     let zero_blind: ScalarBlind = 0u64.into();
     *fee_aggregate = *fee_aggregate + pedersen_commitment_u64(fee, zero_blind);
 
