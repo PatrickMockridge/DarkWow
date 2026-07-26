@@ -40,6 +40,7 @@ use dwow_stablecoin_contract::client::{
     liquidate_v1::{LiquidateCallData, create_liquidate_proof, LiquidatePublicInputs},
     governance_report_v1::{GovernanceReportCallData, create_governance_report_proof, GovernanceReportPublicInputs},
     accrue_interest_v1::{AccrueInterestCallData, create_accrue_interest_proof, AccrueInterestPublicInputs},
+    initialize_v1::{InitV1CallData, create_initialize_proof, InitV1PublicInputs},
 };
 use dwow_stablecoin_contract::model::{DepositCollateralParams, MintStableParams, LiquidateParams, GovernanceReportParams, AccrueInterestParams};
 
@@ -450,12 +451,21 @@ impl StablecoinHarness {
     /// Initialize the stablecoin contract (function code 0x00)
     pub fn initialize(
         &self,
+        deployer_secret: pallas::Base,
+        contract_salt: pallas::Base,
         params: &dwow_stablecoin_contract::model::InitializeParams,
     ) -> Result<InitializeResult, Box<dyn std::error::Error>> {
-        let witnesses = dwow_core::zk::empty_witnesses(&self.init_zkbin)?;
-        let circuit = ZkCircuit::new(witnesses, &self.init_zkbin);
-        let proof = Proof::create(&self.init_pk, &[circuit], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
+        let input = InitV1CallData::new(deployer_secret, contract_salt);
+
+        let (proof, public_inputs) = create_initialize_proof(
+            &self.init_zkbin,
+            &self.init_pk,
+            &input,
+        )?;
+
+        // Override deployer_auth from proof
+        let mut params = params.clone();
+        params.deployer_auth = public_inputs.deployer_auth;
 
         let mut call_data = vec![0x00];
         params.encode(&mut call_data)?;

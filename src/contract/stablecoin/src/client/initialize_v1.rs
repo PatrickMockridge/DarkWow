@@ -26,6 +26,11 @@
 //! This module handles the creation of a PromissoryNote token for the stablecoin.
 //! When initializing, stablecoin creates its token type (e.g., "USDx") in PromissoryNote.
 
+use dwow_core::{
+    zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
+    zkas::ZkBinary,
+    Result,
+};
 use dwow_sdk::{
     crypto::{ContractId, PublicKey},
     crypto::{poseidon_hash, BaseBlind},
@@ -173,4 +178,100 @@ impl InitializeCallBuilder {
 
         InitializeCallDebris { params, token_mint_debris }
     }
+}
+
+// ============================================================================
+// ZK Proof Generation
+// ============================================================================
+
+/// InitV1 circuit public inputs (in order of constrain_instance)
+#[derive(Debug, Clone)]
+pub struct InitV1PublicInputs {
+    /// Transaction binding = poseidon_hash(tx_commitment, tx_nonce)
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce
+    pub tx_nonce: pallas::Base,
+    /// Deployer authorization = poseidon_hash(deployer_secret, contract_salt)
+    pub deployer_auth: pallas::Base,
+}
+
+impl InitV1PublicInputs {
+    /// Convert to vector for ZK proof creation
+    /// Order must match constrain_instance calls in init_v1.zk:
+    /// constrain_instance(tx_binding), constrain_instance(tx_nonce), constrain_instance(deployer_auth)
+    pub fn to_vec(&self) -> Vec<pallas::Base> {
+        vec![self.tx_binding, self.tx_nonce, self.deployer_auth]
+    }
+}
+
+/// Input data for InitV1 proof generation
+#[derive(Debug, Clone)]
+pub struct InitV1CallData {
+    /// Deployer's secret key (as pallas::Base field element)
+    pub deployer_secret: pallas::Base,
+    /// Contract salt for uniqueness
+    pub contract_salt: pallas::Base,
+    /// Transaction commitment
+    pub tx_commitment: pallas::Base,
+    /// Transaction nonce
+    pub tx_nonce: pallas::Base,
+}
+
+impl InitV1CallData {
+    /// Create new call data with default zero tx fields
+    pub fn new(deployer_secret: pallas::Base, contract_salt: pallas::Base) -> Self {
+        Self {
+            deployer_secret,
+            contract_salt,
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        }
+    }
+
+    /// Compute the deployer authorization hash
+    pub fn deployer_auth(&self) -> pallas::Base {
+        poseidon_hash([self.deployer_secret, self.contract_salt])
+    }
+
+    /// Compute the transaction binding hash
+    pub fn tx_binding(&self) -> pallas::Base {
+        poseidon_hash([self.tx_commitment, self.tx_nonce])
+    }
+
+    /// Compute public inputs for this call
+    pub fn compute_public_inputs(&self) -> InitV1PublicInputs {
+        InitV1PublicInputs {
+            tx_binding: self.tx_binding(),
+            tx_nonce: self.tx_nonce,
+            deployer_auth: self.deployer_auth(),
+        }
+    }
+
+    /// Generate prover witnesses for the circuit
+    /// Order matches the witness block in init_v1.zk:
+    /// deployer_secret, contract_salt, tx_commitment, tx_nonce, tx_binding
+    pub fn to_witnesses(&self) -> Vec<Witness> {
+        vec![
+            Witness::Base(Value::known(self.deployer_secret)),
+            Witness::Base(Value::known(self.contract_salt)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(self.tx_binding())),
+        ]
+    }
+}
+
+/// Create an InitV1 ZK proof
+pub fn create_initialize_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    input: &InitV1CallData,
+) -> Result<(Proof, InitV1PublicInputs)> {
+    let public_inputs = input.compute_public_inputs();
+    let witnesses = input.to_witnesses();
+
+    let circuit = ZkCircuit::new(witnesses, zkbin);
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+
+    Ok((proof, public_inputs))
 }

@@ -247,6 +247,8 @@ pub struct CreateAuctionParamsV1 {
 pub struct CreateAuctionUpdateV1 {
     /// The created auction ID
     pub auction_id: AuctionId,
+    /// Serialized auction data for apply phase
+    pub serialized_auction: Vec<u8>,
 }
 
 /// Parameters for `Auction::PlaceBidV1`
@@ -272,14 +274,14 @@ pub struct PlaceBidParamsV1 {
 /// State update for `Auction::PlaceBidV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct PlaceBidUpdateV1 {
-    /// The auction ID
     pub auction_id: AuctionId,
-    /// The new highest bid
     pub highest_bid: u64,
-    /// The new highest bidder
     pub highest_bidder: PublicKey,
-    /// The winning bid ID
     pub highest_bid_id: BidId,
+    pub serialized_auction: Vec<u8>,
+    pub serialized_bid: Vec<u8>,
+    pub prev_bid_id: Option<BidId>,
+    pub serialized_prev_bid: Option<Vec<u8>>,
 }
 
 /// Parameters for `Auction::CloseAuctionV1`
@@ -298,10 +300,11 @@ pub struct CloseAuctionParamsV1 {
 /// State update for `Auction::CloseAuctionV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct CloseAuctionUpdateV1 {
-    /// The closed auction ID
     pub auction_id: AuctionId,
-    /// The winning bid ID
     pub winner_bid_id: BidId,
+    pub serialized_auction: Vec<u8>,
+    pub winner_bid_id_bytes: Vec<u8>,
+    pub serialized_winner_bid: Vec<u8>,
 }
 
 /// Parameters for `Auction::ClaimWinningsV1`
@@ -320,10 +323,9 @@ pub struct ClaimWinningsParamsV1 {
 /// State update for `Auction::ClaimWinningsV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct ClaimWinningsUpdateV1 {
-    /// The auction ID
     pub auction_id: AuctionId,
-    /// The winning bid ID
     pub winner_bid_id: BidId,
+    pub serialized_auction: Vec<u8>,
 }
 
 /// Parameters for `Auction::SettleAuctionV1`
@@ -344,10 +346,9 @@ pub struct SettleAuctionParamsV1 {
 /// State update for `Auction::SettleAuctionV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct SettleAuctionUpdateV1 {
-    /// The settled auction ID
     pub auction_id: AuctionId,
-    /// The settlement nullifier
     pub settlement_nullifier: pallas::Base,
+    pub serialized_auction: Vec<u8>,
 }
 
 /// Parameters for `Auction::RefundBidV1`
@@ -366,8 +367,7 @@ pub struct RefundBidParamsV1 {
 /// State update for `Auction::RefundBidV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RefundBidUpdateV1 {
-    /// The refunded bid ID
     pub bid_id: BidId,
-    /// The refund nullifier
     pub refund_nullifier: pallas::Base,
+    pub serialized_bid: Vec<u8>,
 }

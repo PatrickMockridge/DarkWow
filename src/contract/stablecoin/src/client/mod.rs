@@ -554,6 +554,7 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 
 // Re-export call data types for convenience
+pub use initialize_v1::{create_initialize_proof, InitV1CallData, InitV1PublicInputs};
 pub use open_position_v1::{create_open_position_proof, OpenPositionCallData};
 pub use mint_stable_v1::{create_mint_stable_proof, MintStableCallData};
 pub use liquidate_v1::{create_liquidate_proof, LiquidateCallData};
