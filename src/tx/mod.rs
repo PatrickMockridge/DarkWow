@@ -25,10 +25,7 @@ use std::collections::HashMap;
 
 pub use dwow_sdk::dark_tree::DarkLeaf;
 use dwow_sdk::{
-    crypto::{
-        schnorr::{SchnorrPublic, SchnorrSecret, Signature},
-        PublicKey, SecretKey,
-    },
+    crypto::PublicKey,
     dark_tree::{dark_forest_leaf_vec_integrity_check, DarkForest, DarkTree},
     error::DarkTreeResult,
     pasta::pallas,
@@ -58,10 +55,6 @@ macro_rules! zip {
 pub enum TxVerifyFailed {
     #[error("Transaction {0} already exists")]
     AlreadySeenTx(String),
-    #[error("Invalid transaction signature")]
-    InvalidSignature,
-    #[error("Missing signatures in transaction")]
-    MissingSignatures,
     #[error("Missing contract calls in transaction")]
     MissingCalls,
     #[error("Invalid ZK proof in transaction")]
@@ -100,8 +93,6 @@ pub struct Transaction {
     pub calls: Vec<DarkLeaf<ContractCall>>,
     /// Attached ZK proofs
     pub proofs: Vec<Vec<Proof>>,
-    /// Attached Schnorr signatures
-    pub signatures: Vec<Vec<Signature>>,
     /// Transaction commitment: hash of all call data (excluding proofs).
     /// Binds every ZK proof in this transaction to the same call set.
     pub tx_commitment: [u8; 32],
@@ -166,58 +157,6 @@ impl Transaction {
         }
 
         Ok(())
-    }
-
-    /// Verify Schnorr signatures for the entire transaction.
-    pub fn verify_sigs(&self, pub_table: Vec<Vec<PublicKey>>) -> Result<()> {
-        // Hash the transaction without the signatures
-        let mut hasher = blake3::Hasher::new();
-        self.calls.encode(&mut hasher)?;
-        self.proofs.encode(&mut hasher)?;
-        let data_hash = hasher.finalize();
-
-        debug!(target: "tx::verify_sigs", "tx.verify_sigs: data_hash: {data_hash}");
-
-        assert_eq!(self.signatures.len(), pub_table.len());
-
-        for (i, (sigs, pubkeys)) in self.signatures.iter().zip(pub_table.iter()).enumerate() {
-            assert_eq!(sigs.len(), pubkeys.len());
-
-            for (pubkey, signature) in pubkeys.iter().zip(sigs) {
-                debug!(target: "tx::verify_sigs", "[TX] Verifying signature with public key: {pubkey}");
-                if !pubkey.verify(&data_hash.as_bytes()[..], signature) {
-                    error!(target: "tx::verify_sigs", "[TX] tx::verify_sigs[{i}] failed to verify signature");
-                    return Err(Error::InvalidSignature)
-                }
-            }
-
-            debug!(target: "tx::verify_sigs", "[TX] tx::verify_sigs[{i}] passed");
-        }
-
-        Ok(())
-    }
-
-    /// Create Schnorr signatures for the entire transaction.
-    pub fn create_sigs(&self, secret_keys: &[SecretKey]) -> Result<Vec<Signature>> {
-        // Hash the transaction without the signatures
-        let mut hasher = blake3::Hasher::new();
-        self.calls.encode(&mut hasher)?;
-        self.proofs.encode(&mut hasher)?;
-        let data_hash = hasher.finalize();
-
-        debug!(target: "tx::create_sigs", "[TX] tx.create_sigs: data_hash: {data_hash}");
-
-        let mut sigs = vec![];
-        for secret in secret_keys {
-            debug!(
-                target: "tx::create_sigs",
-                "[TX] Creating signature with public key: {}", PublicKey::from_secret(secret.clone()),
-            );
-            let signature = secret.sign(&data_hash.as_bytes()[..]);
-            sigs.push(signature);
-        }
-
-        Ok(sigs)
     }
 
     /// Get the transaction hash
@@ -388,6 +327,6 @@ impl TransactionBuilder {
             bytes
         };
 
-        Ok(Transaction { calls, proofs, signatures: vec![], tx_commitment, nullifiers: self.nullifiers.clone() })
+        Ok(Transaction { calls, proofs, tx_commitment, nullifiers: self.nullifiers.clone() })
     }
 }

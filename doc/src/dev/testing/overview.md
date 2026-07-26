@@ -253,7 +253,7 @@ Level 1 through the Deployooor contract. Level 2 uses the direct
 `deploy_contract()` path solely for test setup convenience.
 
 **Caveats:** Requires `--release` mode and `RUST_MIN_STACK=67108864` (64MB)
-for halo2 proving keys. All 40 tests complete in ~450 seconds.
+for halo2 proving keys. All 43 tests complete in ~480 seconds.
 
 See [Level 2: Heavyweight Tests](level-2-heavyweight.md).
 
@@ -462,7 +462,7 @@ execution, wallet scan, merge-mining, or strict-mode rejection paths.
 | Component | Path |
 |-----------|------|
 | Contract unit/integration tests | `src/contract/<name>/tests/` |
-| Test harness crate (27 contracts) | `src/contract/test-harness/` |
+| Test harness crate (32 contracts) | `src/contract/test-harness/` |
 | ZK coverage CI audit test | `src/contract/test-harness/tests/zk_audit.rs` |
 | Relayer unit tests (Level 1) | `bin/universal_relayer/src/` |
 | Relayer lightweight test runner | `bin/universal_relayer/test_relayer_lightweight.sh` |

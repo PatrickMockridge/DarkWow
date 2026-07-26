@@ -49,7 +49,8 @@ pub(crate) fn lock_get_metadata_v1(
     // Public inputs for the ZK proofs we have to verify
     let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Public keys for the transaction signatures we have to verify
-    let signature_pubkeys: Vec<PublicKey> = vec![params.public_key];
+    // Schnorr signatures prohibited (contract-standards.md §3).
+    let signature_pubkeys: Vec<PublicKey> = vec![];
 
     // Serialize everything gathered and return it
     let mut metadata = vec![];

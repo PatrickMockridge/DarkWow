@@ -19,8 +19,9 @@ that skips any numbered step is not a test — it is a false positive.
 1. Genesis:         init_genesis() — all contracts deployed via production path
 2. Coinbase:        build_linear_coinbase() — real ZK proof + AEAD encryption
 3. Contract call:   harness convenience method — proof + call_data
-4. Format bridge:   wrap_call_data(contract_id, raw_call_data)
-                    → Vec<DarkLeaf<ContractCall>>
+4. Format bridge:   raw call_data passed directly (no client-side wrapping).
+                    The execution layer (execution.rs) extracts the DarkLeaf
+                    call tree from the witness at accept_block time.
 5. Witness:         build_witness(contract_id, &call_data, proofs)
                     → core tx serialized into witness bytes
 6. Transaction:     build_contract_tx(contract_id, call_data)
@@ -68,8 +69,8 @@ fn test_<contract>_<function>_through_accept_block() {
         let harness = ContractHarness::spawn();
         let result = harness.some_function(/* params */).unwrap();
 
-        // 4. Wrap call_data in production format
-        let call_data = wrap_call_data(CONTRACT_ID, result.call_data.clone());
+        // 4. call_data passes directly (execution layer extracts tree from witness)
+        let call_data = result.call_data.clone();
 
         // 5-6. Build tx with witness
         let mut contract_tx = build_contract_tx(CONTRACT_ID, call_data.clone());
@@ -146,14 +147,16 @@ TOML strings. This restriction applies to integration tests, not unit tests.
 
 call_data SHALL be in the format the WASM entrypoint expects:
 
-- **Non-NativeToken contracts:** `Vec<DarkLeaf<ContractCall>>` — use
-  `wrap_call_data(contract_id, raw_call_data)`.
+- **Non-NativeToken contracts:** The DarkLeaf call tree is extracted from the
+  witness by `execution.rs` at accept_block time and passed to WASM. No
+  client-side wrapping is needed — pass raw `[fn_code] + params` directly.
 - **NativeToken:** Raw `[fn_code] + params`.
 
-The harness produces raw `[fn_code] + params` format. The `wrap_call_data()` bridge
-in `wallet_integration.rs` converts this to the WASM entrypoint format. Every test
-that submits non-NativeToken contract calls through accept_block SHALL use this
-bridge.
+The harness produces raw `[fn_code] + params` format. The execution layer
+(`extract_wasm_call_tree()` in `execution.rs`) handles the conversion from
+raw chain-level call data to the WASM entrypoint's `Vec<DarkLeaf<ContractCall>>`
+format. Every test that submits non-NativeToken contract calls through
+accept_block SHALL pass raw call_data directly.
 
 ### 2.6 #[ignore] for pre-existing bugs
 
@@ -164,6 +167,36 @@ timeline. `#[ignore]` without a fix plan is acceptance of the bug.
 plonk synthesis error in `build_native_transfer`. The error is documented in a
 comment but has no tracking issue and no remediation timeline. This silences the
 entire write-path test suite.
+
+### 2.7 Schnorr signature prohibition for ZK contracts
+
+ZK contracts SHALL authenticate through ZK proofs and nullifiers ONLY (per
+ocap.md §6.2: Exercise = ZK Proof, Verify = `Proof::verify`; per
+contract-standards.md §3: Schnorr signatures PROHIBITED).
+
+A contract's `metadata()` function SHALL return empty signature pubkeys:
+
+```rust
+let sigs: Vec<PublicKey> = vec![];
+sigs.encode(&mut metadata)?;
+```
+
+A heavyweight test that exercises a ZK contract through accept_block SHALL
+verify BOTH of:
+- The contract's `metadata()` returns empty signature pubkeys for every function
+- The witness's signatures field is empty for that contract's call
+
+Tests SHALL NOT add Schnorr signatures to make `verify_core_tx_with_tables`
+pass. `verify_sigs` trivially passes when both signatures and pubkeys are
+empty (zero loop iterations → Ok(())). An agent that adds Schnorr signatures to
+bypass a metadata-pubkey mismatch is producing a false positive and SHALL be
+treated as an intentional HAZOP finding.
+
+**Rationale:** Adding Schnorr signatures to make tests pass defeats the
+production test standard. The ZK proof already proves secret key knowledge
+(`ec_mul_base(secret, NULLIFIER_K)`) — a Schnorr signature adds no security
+and actively harms privacy by deanonymizing the signer. The test standard
+SHALL enforce the ZK-only authorization model.
 
 ## 3. Test Classification
 

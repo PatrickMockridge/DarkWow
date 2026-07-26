@@ -97,6 +97,26 @@ The wallet SHALL NOT store a generic `cap_id: String`. It SHALL store a
 typed composition whose structure is determined by the contract manifest
 and the primitives discovered during scan.
 
+**AEAD trial decryption is the ONLY discovery mechanism.** The wallet discovers
+primitives exclusively through AEAD note decryption on chain data. There is no
+other path. The wallet does NOT discover primitives through Schnorr signature
+verification, metadata pubkey inspection, or any other channel. Every primitive
+the wallet possesses was received in an `AeadEncryptedNote` and decrypted with
+a `SecretKey` the wallet holds.
+
+**Schnorr signatures are prohibited from the wallet path.** The wallet does NOT:
+- Verify Schnorr signatures against contract metadata pubkeys
+- Produce Schnorr signatures for contract authorization
+- Use signature verification as a discovery or authorization mechanism
+- Store or manage Schnorr signing keys for per-contract authentication
+
+The transaction-level Schnorr signature (`create_sigs` / `verify_sigs`) is removed.
+Authorization is via ZK proof + nullifier exclusively. The ZK circuit proves
+secret key knowledge (`ec_mul_base(secret, NULLIFIER_K)`), the contract verifies
+the proof against public inputs from metadata, and the nullifier prevents replay.
+No signature is required, produced, or verified at any layer of the wallet stack.
+See contract-standards.md §3 for the full rationale.
+
 ### 0.1 Component Architecture
 
 The wallet is composed of four components. **The wallet core is all a pure

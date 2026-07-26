@@ -352,7 +352,7 @@ impl<'c> HeavyweightBlock<'c> {
     /// Add one contract call to this block.
     ///
     /// Takes the contract_id and the raw outputs of a harness method.
-    /// Internally: strict_zk check, wrap_call_data, build_witness,
+    /// Internally: strict_zk check, build_witness,
     /// construct tx, accumulate.
     pub fn with_call(
         &mut self,
@@ -375,15 +375,12 @@ impl<'c> HeavyweightBlock<'c> {
             );
         }
 
-        let call_data_wrapped = if contract_id == *NATIVE_TOKEN_CONTRACT_ID {
-            call_data.to_vec()
-        } else {
-            super::harness::wrap_call_data(contract_id, call_data.to_vec())
-        };
-
-        let mut tx = super::harness::build_contract_tx(contract_id, call_data_wrapped.clone());
+        // Raw call data: [fn_code] + params. The execution layer
+        // (execution.rs) extracts the DarkLeaf call tree from the witness
+        // and passes it to WASM — no client-side wrapping needed.
+        let mut tx = super::harness::build_contract_tx(contract_id, call_data.to_vec());
         tx.witness = super::heavyweight_pipeline::build_witness(
-            contract_id, &call_data_wrapped, proofs,
+            contract_id, call_data, proofs,
         );
 
         self.contract_txs.push(tx);

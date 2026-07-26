@@ -92,14 +92,15 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
-    let func = DeployFunction::try_from(self_.data[0])?;
+    let func_byte = self_.data[0];
+    let func = DeployFunction::try_from(func_byte)?;
 
     let update_data = match func {
         DeployFunction::DeployV1 => deploy_process_instruction_v1(cid, call_idx, calls)?,
         DeployFunction::LockV1 => lock_process_instruction_v1(cid, call_idx, calls)?,
     };
 
-    wasm::util::set_return_data(&update_data)
+    wasm::util::set_return_data(&[&[func_byte], &update_data[..]].concat())
 }
 
 /// This function attempts to write a given state update provided the previous

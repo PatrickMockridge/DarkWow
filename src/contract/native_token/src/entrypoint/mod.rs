@@ -209,11 +209,15 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     // ix = [function_selector] + serialize(params) — individual call dispatched by host
     if ix.is_empty() {
         msg!("[native_token::get_metadata] Error: Empty call data");
+        wasm::util::set_return_data(&vec![]);
         return Ok(());
     }
     let func = match NativeTokenFunction::try_from(ix[0]) {
         Ok(f) => f,
-        Err(_) => return Ok(()),
+        Err(_) => {
+            wasm::util::set_return_data(&vec![]);
+            return Ok(());
+        }
     };
     let params = &ix[1..];
 
@@ -246,8 +250,10 @@ fn fee_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    // Public keys for the transaction signatures we have to verify
-    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![fee_params.input.signature_public];
+    // Schnorr signatures are prohibited in contract metadata (contract-standards.md §3).
+    // Authorization is via ZK proof + nullifier. The signature_public coordinates are
+    // included in zk_public_inputs — the circuit itself binds to them.
+    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
     // Grab the Pedersen commitments and the signature pubkey from the params
     let input_value_coords = fee_params.input.value_commit.to_affine().coordinates();
@@ -298,7 +304,8 @@ fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let mut signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
+    // Schnorr signatures prohibited (contract-standards.md §3). sig_x/sig_y remain in ZK inputs.
+    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
     for input in &bp.inputs {
         let value_coords = input.value_commit.to_affine().coordinates();
@@ -308,7 +315,6 @@ fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
         }
         let value_coords = value_coords.unwrap();
         let (sig_x, sig_y) = input.signature_public.xy().expect("pk not identity");
-        signature_pubkeys.push(input.signature_public);
 
         zk_public_inputs.push((
             NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
@@ -340,11 +346,11 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     let tp: TransferParamsV1 = match deserialize(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to deserialize params: {:?}", e); return vec![]; } };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let mut signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
+    // Schnorr signatures prohibited (contract-standards.md §3). sig_x/sig_y remain in ZK inputs.
+    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
     for input in &tp.inputs {
         let (sig_x, sig_y) = input.signature_public.xy().expect("pk not identity");
-        signature_pubkeys.push(input.signature_public);
 
         let value_coords = input.value_commit.to_affine().coordinates();
         if value_coords.is_none().into() {
@@ -411,7 +417,8 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     let sp: SpendParamsV1 = match deserialize(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to deserialize params: {:?}", e); return vec![]; } };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![sp.input.signature_public];
+    // Schnorr signatures prohibited (contract-standards.md §3). sig_x/sig_y remain in ZK inputs.
+    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
     let input_value_coords = sp.input.value_commit.to_affine().coordinates();
     if input_value_coords.is_none().into() {
@@ -755,8 +762,8 @@ fn pow_reward_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    // Public keys for the transaction signatures we have to verify
-    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![pr.input.signature_public];
+    // Schnorr signatures prohibited (contract-standards.md §3). Coinbase is excluded from L2 verification.
+    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
     // Grab the Pedersen commitment and token commit from the output
     let value_coords = pr.output.value_commit.to_affine().coordinates();

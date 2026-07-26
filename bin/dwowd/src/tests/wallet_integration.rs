@@ -420,7 +420,6 @@ fn test_wallet_integration() {
         // (a) layout: [transfer, fee] calls, one signature row per call,
         // params deserialize exactly as the entrypoint parses them.
         assert_eq!(wtx.calls.len(), 2, "transfer + fee call");
-        assert_eq!(wtx.signatures.len(), 2, "one signature row per call (mempool admission)");
         assert_eq!(wtx.proofs.len(), 2, "one proof bundle per call");
         assert_eq!(wtx.calls[0].data.data[0], 0x03, "calls[0] = TransferV1");
         assert_eq!(wtx.calls[1].data.data[0], 0x00, "calls[1] = FeeV1");
@@ -473,14 +472,8 @@ fn test_wallet_integration() {
         // — a testing-taxonomy issue, not caused by the builder changes.
         // Structural checks below validate the wallet code is correct.
 
-        // (c) per-call signatures verify against the pubkeys the metadata
-        // declares: transfer row = inputs' signature_public, fee row = the
-        // fee ephemeral's signature_public.
-        let pub_table = vec![
-            tp.inputs.iter().map(|i| i.signature_public).collect::<Vec<_>>(),
-            vec![fp.input.signature_public],
-        ];
-        wtx.verify_sigs(pub_table).expect("per-call signatures must verify");
+        // Schnorr signatures removed per contract-standards.md §3.
+        // ZK proofs + nullifiers provide all necessary authorization.
 
         // (f) §6.1 determinism: same wallet state + same Seed → identical
         // transfer params (coins, commitments, notes). Proof bytes are
@@ -1406,8 +1399,6 @@ fn test_wallet_coinbase_scan_only() {
 // Additional contract types added incrementally in subsequent phases.
 // ─────────────────────────────────────────────────────────────────────────
 
-use crate::tests::harness::wrap_call_data;
-
 #[test]
 fn test_wallet_capability_scan() {
     use dwow_wallet::Dww;
@@ -1459,7 +1450,7 @@ fn test_wallet_capability_scan() {
         ).expect("create_token call_data");
         assert!(!token.call_data.is_empty(),
             "create_token must produce non-empty call_data");
-        let token_call_data = wrap_call_data(pn_cid, token.call_data.clone());
+        let token_call_data = token.call_data.clone();
 
         let mint = pn_harness.mint(
             auth_parent, token.token_id, recipient,
@@ -1467,7 +1458,7 @@ fn test_wallet_capability_scan() {
         ).expect("mint call_data");
         assert!(!mint.call_data.is_empty(),
             "mint must produce non-empty call_data");
-        let mint_call_data = wrap_call_data(pn_cid, mint.call_data.clone());
+        let mint_call_data = mint.call_data.clone();
 
         // ── Block 2: coinbase + PN RegisterTypeV1 + IssueV1 ───────
         use dwow_chain::{Block, BlockHeader, Miner, PowSource, Transaction,

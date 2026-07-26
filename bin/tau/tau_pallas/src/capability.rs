@@ -236,13 +236,7 @@ pub async fn verify_capability_onchain(
         .build()
         .map_err(|e| TauPallasError::TransactionError(format!("Failed to build tx: {}", e)))?;
 
-    // Sign the transaction with the verifier's secret key
-    let sigs = tx
-        .create_sigs(&[verifier_keypair.secret])
-        .map_err(|e| TauPallasError::TransactionError(format!("Failed to sign tx: {}", e)))?;
-
-    tx.signatures.push(sigs);
-
+    // Schnorr signatures removed per contract-standards.md §3.
     // Broadcast the transaction via darkfid RPC
     let tx_hash = darkfid_client
         .broadcast_tx(&tx)

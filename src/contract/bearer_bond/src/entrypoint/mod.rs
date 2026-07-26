@@ -223,11 +223,11 @@ fn transfer_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
     let params: TransferStakeParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let mut signature_pubkeys: Vec<pallas::Base> = vec![];
+    // Schnorr signatures prohibited (contract-standards.md §3).
+    let signature_pubkeys: Vec<pallas::Base> = vec![];
 
     // Burn proofs (one per input)
     for input in &params.inputs {
-        signature_pubkeys.push(input.signature_public);
         let (vc_x, vc_y) = point_coords(input.value_commit);
 
         zk_public_inputs.push((
@@ -280,10 +280,10 @@ fn request_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkL
     let params: RequestInterestParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let mut signature_pubkeys: Vec<pallas::Base> = vec![];
+    // Schnorr signatures prohibited (contract-standards.md §3).
+    let signature_pubkeys: Vec<pallas::Base> = vec![];
 
     // Burn_V1 proof for bond ownership (nullifier NOT written to tree)
-    signature_pubkeys.push(params.bond_input.signature_public);
     let (vc_x, vc_y) = point_coords(params.bond_input.value_commit);
 
     zk_public_inputs.push((
@@ -316,10 +316,10 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
     let params: EmergencyUnstakeParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let mut signature_pubkeys: Vec<pallas::Base> = vec![];
+    // Schnorr signatures prohibited (contract-standards.md §3).
+    let signature_pubkeys: Vec<pallas::Base> = vec![];
 
     // Burn proof for the input stake coin
-    signature_pubkeys.push(params.bond_input.signature_public);
     let (vc_x, vc_y) = point_coords(params.bond_input.value_commit);
 
     zk_public_inputs.push((
@@ -366,10 +366,10 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
     let params: UnstakeParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let mut signature_pubkeys: Vec<pallas::Base> = vec![];
+    // Schnorr signatures prohibited (contract-standards.md §3).
+    let signature_pubkeys: Vec<pallas::Base> = vec![];
 
     // Burn proof for the input stake coin
-    signature_pubkeys.push(params.bond_input.signature_public);
     let (vc_x, vc_y) = point_coords(params.bond_input.value_commit);
 
     zk_public_inputs.push((
@@ -417,10 +417,10 @@ fn burn_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
     let params: BurnStakeParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let mut signature_pubkeys: Vec<pallas::Base> = vec![];
+    // Schnorr signatures prohibited (contract-standards.md §3).
+    let signature_pubkeys: Vec<pallas::Base> = vec![];
 
     for input in &params.inputs {
-        signature_pubkeys.push(input.signature_public);
         let (vc_x, vc_y) = point_coords(input.value_commit);
 
         zk_public_inputs.push((

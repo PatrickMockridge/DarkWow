@@ -74,7 +74,7 @@ specific `ContractSection` which governs ACL access to host functions.
 | `init` | `__initialize` | `init:` | `fn(ContractId, &[u8]) -> ContractResult` | `↓dispatch` | `Deploy` |
 | `exec` | `__entrypoint` | `exec:` | `fn(ContractId, &[u8]) -> ContractResult` | `↓dispatch`, `↓gate`, function-specific barbs | `Exec` |
 | `apply` | `__update` | `apply:` | `fn(ContractId, &[u8]) -> ContractResult` | `↓commit` (state writes) | `Update` |
-| `metadata` | `__metadata` | `metadata:` | `fn(ContractId, &[u8]) -> Vec<u8>` | `↓verify` (returns ZK public inputs + signature pubkeys) | `Metadata` |
+| `metadata` | `__metadata` | `metadata:` | `fn(ContractId, &[u8]) -> Vec<u8>` | `↓verify` (returns ZK public inputs; signature pubkeys SHALL be empty) | `Metadata` |
 
 A variant macro `define_contract_with_spend_hook!` (`entrypoint.rs:101`) adds a
 fifth export `__spend_hook` for contracts that receive burn callbacks from
@@ -191,22 +191,23 @@ A contract that fails to call `set_return_data` in `exec` produces an empty
 
 ### 1.6 Metadata Contract
 
-The `metadata` entrypoint SHALL return the ZK public inputs and signature pubkeys
-the host needs to verify:
+The `metadata` entrypoint SHALL return the ZK public inputs the host needs to verify proofs:
 
 ```
 serialize(Vec<(String, Vec<pallas::Base>)>) || serialize(Vec<PublicKey>)
 ```
 
-The host at `src/linear/src/execution.rs:468-511` deserializes this, accumulates
-all proofs and signatures across all canonical calls, then calls
-`crate::zk_verifier::verify_core_tx_with_tables()` for proof verification AND
-Schnorr signature verification.
+The signature pubkeys component SHALL be empty `vec![]`. Authorization is via
+ZK proof + nullifier (ocap.md §6.2) — Schnorr signatures are prohibited in
+contract metadata (see contract-standards.md §3 for the full rationale).
+
+The host at `src/linear/src/execution.rs` deserializes this, accumulates
+all proofs across all canonical calls, then calls
+`crate::zk_verifier::verify_core_tx_with_tables()` for ZK proof verification.
 
 The metadata for a function SHALL match the function's manifest-declared circuits.
-Each call's metadata SHALL include ALL ZK proofs AND ALL signature pubkeys for
-that call. A function with no proofs and no signatures SHALL return two empty
-vectors (encoded).
+Each call's metadata SHALL include ALL ZK proof public inputs for that call.
+A function with no proofs SHALL return an empty ZK inputs vector (encoded).
 
 The metadata entrypoint is called BEFORE `exec`, so the host can verify proofs
 and signatures before trusting the contract's state transition. A contract whose
@@ -247,8 +248,10 @@ function's action. For a transfer action declaring
 the contract SHALL:
 
 1. **`↓gate`** — Dispatch to the correct function handler by the selector byte.
-2. **`↓spend`** — Verify that the signature over the input coin was produced by
-   the secret key corresponding to the coin's public key.
+2. **`↓spend`** — Verify that the nullifier was produced by knowledge of the
+   capability's authorization secret (`poseidon_hash(secret, resource_id)`).
+   The ZK circuit proves secret key knowledge via `ec_mul_base(secret, NULLIFIER_K)`
+   and constrains the nullifier as a public input. No Schnorr signature is involved.
 3. **`↓nullify`** — Check that the input's nullifier is not already in the
    nullifier SMT (`smt.get_leaf(&nullifier) == pallas::Base::zero()`).
 4. **`↓prove-inclusion`** — Verify that the input's Merkle root exists in the
@@ -287,7 +290,7 @@ The `metadata` entrypoint exhibits `↓verify`. It SHALL:
 2. Deserialize the function-specific parameters
 3. Surface ALL ZK public inputs for the function's declared circuits (one entry
    per circuit, each with the ordered list of `pallas::Base` public inputs)
-4. Surface ALL signature pubkeys for the function's inputs
+4. Return empty signature pubkeys `vec![]` — Schnorr signatures are prohibited in contract metadata (contract-standards.md §3)
 5. NOT access state (no `db_get` calls — metadata is a pure function of the call
    data)
 6. Return empty vectors (not error) on parameter deserialization failure — the

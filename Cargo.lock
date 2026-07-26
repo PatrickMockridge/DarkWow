@@ -2272,6 +2272,7 @@ dependencies = [
  "dwow_baccarat_contract",
  "dwow_bearer_bond_contract",
  "dwow_betting_stake_contract",
+ "dwow_box_contract",
  "dwow_bridge_contract",
  "dwow_core",
  "dwow_dao_escrow_contract",

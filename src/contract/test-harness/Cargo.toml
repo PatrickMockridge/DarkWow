@@ -13,6 +13,7 @@ dwow_core = {path = "../../../", features = ["zk"]}
 dwow-sdk = {path = "../../sdk"}
 dwow-serial = {path = "../../serial", features = ["crypto"]}
 dwow_native_token_contract = {path = "../native_token", features = ["client", "no-entrypoint"]}
+dwow_box_contract = {path = "../box", features = ["client", "no-entrypoint"]}
 dwow_promissory_note_contract = {path = "../promissory_note", features = ["client", "no-entrypoint"]}
 dwow_deployooor_contract = {path = "../deployooor", features = ["client", "no-entrypoint"]}
 dwow_dex_contract = {path = "../dex", features = ["client", "no-entrypoint"]}

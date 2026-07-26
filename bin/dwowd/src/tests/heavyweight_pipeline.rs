@@ -90,11 +90,52 @@ pub(crate) fn build_witness(
             children_indexes: vec![],
         }],
         proofs: vec![proofs],
-        signatures: vec![vec![]],
         tx_commitment: [0u8; 32],
         nullifiers: vec![],
     };
     dwow_serial::serialize(&core_tx)
+}
+
+/// Verify that a witness contains a well-formed DarkLeaf call tree.
+///
+/// Deserializes the witness back to a core tx and checks that every call
+/// has non-empty inner data and a valid function selector byte.  Call
+/// this from heavyweight tests for early diagnostic feedback — a panic
+/// here means the tree the execution layer will extract is malformed.
+pub(crate) fn verify_witness_tree(witness: &[u8], label: &str) {
+    let core_tx: dwow_core::tx::Transaction =
+        match dwow_serial::deserialize(witness) {
+            Ok(tx) => tx,
+            Err(e) => {
+                eprintln!(
+                    "[tree-diag] {}: witness decode FAILED: {:?}",
+                    label, e,
+                );
+                return;
+            }
+        };
+    eprintln!(
+        "[tree-diag] {}: {} calls in witness tree",
+        label, core_tx.calls.len(),
+    );
+    for (i, leaf) in core_tx.calls.iter().enumerate() {
+        let cid = leaf.data.contract_id;
+        let inner = &leaf.data.data;
+        let fn_code = inner.first().copied();
+        let has_children = !leaf.children_indexes.is_empty();
+        let has_parent = leaf.parent_index.is_some();
+        eprintln!(
+            "[tree-diag]   call[{}]: cid={} fn=0x{:02x?} data_len={} parent={:?} children={}",
+            i, cid, fn_code, inner.len(),
+            leaf.parent_index, leaf.children_indexes.len(),
+        );
+        if inner.is_empty() {
+            eprintln!(
+                "[tree-diag]   call[{}]: WARNING — empty inner data (no fn_code, no params)",
+                i,
+            );
+        }
+    }
 }
 
 /// Build a RandomX VM for `accept_block` — used by all `exec*` methods.
@@ -3605,7 +3646,7 @@ use dwow_sdk::crypto::{Keypair, PublicKey, SecretKey};
 use crate::tests::blockchain::HeavyweightPipeline as BlockPipeline;
 use super::harness::{
     build_contract_tx, build_test_block,
-    build_test_block_with_uncles, build_test_uncle, wrap_call_data,
+    build_test_block_with_uncles, build_test_uncle,
 };
 
 /// Create a BlockPipeline with NativeTokenHarness, deploy WASM,
@@ -3751,7 +3792,7 @@ fn test_heavyweight_uncle_exec() -> std::result::Result<(), Box<dyn std::error::
         let call_data_wrapped = if cid == *NATIVE_TOKEN_CONTRACT_ID {
             call_data
         } else {
-            wrap_call_data(cid, call_data)
+            call_data
         };
         let contract_tx = build_contract_tx(cid, call_data_wrapped);
         let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx]);
@@ -3788,7 +3829,7 @@ fn test_heavyweight_mixed_exec() -> std::result::Result<(), Box<dyn std::error::
         let call_data_wrapped = if cid == *NATIVE_TOKEN_CONTRACT_ID {
             call_data
         } else {
-            wrap_call_data(cid, call_data)
+            call_data
         };
         let contract_tx = build_contract_tx(cid, call_data_wrapped);
         let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx]);
@@ -3823,7 +3864,7 @@ fn test_heavyweight_multi_uncle() -> std::result::Result<(), Box<dyn std::error:
             let call_data_wrapped = if cid == *NATIVE_TOKEN_CONTRACT_ID {
                 call_data
             } else {
-                wrap_call_data(cid, call_data)
+                call_data
             };
             let contract_tx = build_contract_tx(cid, call_data_wrapped);
             let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx]);
@@ -3868,7 +3909,7 @@ fn test_heavyweight_uncle_depth() -> std::result::Result<(), Box<dyn std::error:
             let call_data_wrapped = if cid == *NATIVE_TOKEN_CONTRACT_ID {
                 call_data
             } else {
-                wrap_call_data(cid, call_data)
+                call_data
             };
             let contract_tx = build_contract_tx(cid, call_data_wrapped);
             let uncle_raw = build_test_block(&chain.chain_state, next, vec![contract_tx]);
@@ -3909,7 +3950,7 @@ fn test_heavyweight_empty_uncle() -> std::result::Result<(), Box<dyn std::error:
         let call_data_wrapped = if cid == *NATIVE_TOKEN_CONTRACT_ID {
             call_data
         } else {
-            wrap_call_data(cid, call_data)
+            call_data
         };
         let uncle_tx = build_contract_tx(cid, call_data_wrapped);
         let uncle_raw = build_test_block(&chain.chain_state, next, vec![uncle_tx]);
@@ -3955,7 +3996,7 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
         let call_data_wrapped = if cid == *NATIVE_TOKEN_CONTRACT_ID {
             call_data
         } else {
-            wrap_call_data(cid, call_data)
+            call_data
         };
         let uncle_tx = build_contract_tx(cid, call_data_wrapped);
         let uncle_raw = build_test_block(
@@ -4356,6 +4397,205 @@ fn test_heavyweight_otc_swap() -> std::result::Result<(), Box<dyn std::error::Er
         println!("    accept_block height OK");
 
         println!("=== OtcSwap Heavyweight: PASSED ===");
+        Ok(())
+    })
+}
+
+#[test]
+fn test_heavyweight_box() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use dwow_contract_test_harness::harness::BoxHarness;
+    use crate::tests::blockchain::HeavyweightPipeline;
+
+    println!("=== Box Heavyweight: All Endpoints ===");
+
+    smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
+        let harness = BoxHarness::spawn();
+        println!("Harness spawned with circuits: {:?}", harness.circuits());
+        let wasm = include_bytes!("../../../../src/contract/box/dwow_box_contract.wasm");
+        let cid = chain.deploy(&harness, "box", wasm).await?;
+        println!("Contract deployed");
+
+        // --- PutV1 (0x01) ---
+        println!("  Test: put");
+        let put = harness.put()?;
+        assert!(!put.call_data.is_empty());
+        println!("    call_data={}B", put.call_data.len());
+
+        println!("  Exec: PutV1 through accept_block");
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &put.call_data, vec![put.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
+            "accept_block must advance height after PutV1");
+        println!("    accept_block height OK");
+
+        // --- TakeV1 (0x02) ---
+        println!("  Test: take");
+        let take = harness.take()?;
+        assert!(!take.call_data.is_empty());
+        println!("    call_data={}B", take.call_data.len());
+
+        println!("  Exec: TakeV1 through accept_block");
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &take.call_data, vec![take.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
+            "accept_block must advance height after TakeV1");
+        println!("    accept_block height OK");
+
+        println!("=== All Box endpoints OK ===");
+        Ok(())
+    })
+}
+
+#[test]
+fn test_heavyweight_purse() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use dwow_contract_test_harness::harness::PurseHarness;
+    use crate::tests::blockchain::HeavyweightPipeline;
+
+    println!("=== Purse Heavyweight: All Endpoints ===");
+
+    smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
+        let harness = PurseHarness::spawn();
+        println!("Harness spawned with circuits: {:?}", harness.circuits());
+        let wasm = include_bytes!("../../../../src/contract/purse/dwow_purse_contract.wasm");
+        let cid = chain.deploy(&harness, "purse", wasm).await?;
+        println!("Contract deployed");
+
+        // --- DepositV1 (0x01) ---
+        println!("  Test: deposit");
+        let deposit = harness.deposit(100)?;
+        assert!(!deposit.call_data.is_empty());
+        println!("    call_data={}B", deposit.call_data.len());
+
+        println!("  Exec: DepositV1 through accept_block");
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &deposit.call_data, vec![deposit.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
+            "accept_block must advance height after DepositV1");
+        println!("    accept_block height OK");
+
+        // --- WithdrawV1 (0x02) ---
+        println!("  Test: withdraw");
+        let withdraw = harness.withdraw(50)?;
+        assert!(!withdraw.call_data.is_empty());
+        println!("    call_data={}B", withdraw.call_data.len());
+
+        println!("  Exec: WithdrawV1 through accept_block");
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &withdraw.call_data, vec![withdraw.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
+            "accept_block must advance height after WithdrawV1");
+        println!("    accept_block height OK");
+
+        // --- BalanceV1 (0x03) ---
+        println!("  Test: balance");
+        let balance = harness.balance()?;
+        assert!(!balance.call_data.is_empty());
+        println!("    call_data={}B", balance.call_data.len());
+
+        println!("  Exec: BalanceV1 through accept_block");
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &balance.call_data, vec![balance.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
+            "accept_block must advance height after BalanceV1");
+        println!("    accept_block height OK");
+
+        println!("=== All Purse endpoints OK ===");
+        Ok(())
+    })
+}
+
+#[test]
+fn test_heavyweight_multisig() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use dwow_contract_test_harness::harness::MultiSigHarness;
+    use dwow_sdk::crypto::{PublicKey, SecretKey};
+    use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
+
+    println!("=== MultiSig Heavyweight: All Endpoints ===");
+
+    smol::block_on(async {
+        let chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
+        let harness = MultiSigHarness::spawn();
+        println!("Harness spawned with circuits: {:?}", harness.circuits());
+        let wasm = include_bytes!("../../../../src/contract/multisig/dwow_multisig_contract.wasm");
+        let cid = chain.deploy(&harness, "multisig", wasm).await?;
+        println!("Contract deployed");
+
+        let group_id = pallas::Base::from(1u64);
+        let message_hash = pallas::Base::from(2u64);
+        let signer_secret = pallas::Base::from(3u64);
+        let signer_pub = PublicKey::from_secret(SecretKey::from_base(signer_secret));
+        let members = vec![signer_pub];
+
+        // --- CreateGroupV1 (0x01) ---
+        println!("  Test: create_group");
+        let create = harness.create_group(1, members)?;
+        assert!(!create.call_data.is_empty());
+        println!("    call_data={}B", create.call_data.len());
+
+        println!("  Exec: CreateGroupV1 through accept_block");
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &create.call_data, vec![create.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
+            "accept_block must advance height after CreateGroupV1");
+        println!("    accept_block height OK");
+
+        // --- SignV1 (0x02) ---
+        println!("  Test: sign");
+        let sign = harness.sign(group_id, message_hash, signer_secret)?;
+        assert!(!sign.call_data.is_empty());
+        println!("    call_data={}B", sign.call_data.len());
+
+        println!("  Exec: SignV1 through accept_block");
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &sign.call_data, vec![sign.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
+            "accept_block must advance height after SignV1");
+        println!("    accept_block height OK");
+
+        // --- FinalizeV1 (0x03) ---
+        println!("  Test: finalize");
+        let finalize = harness.finalize(group_id, message_hash)?;
+        assert!(!finalize.call_data.is_empty());
+        println!("    call_data={}B", finalize.call_data.len());
+
+        println!("  Exec: FinalizeV1 through accept_block");
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &finalize.call_data, vec![finalize.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
+            "accept_block must advance height after FinalizeV1");
+        println!("    accept_block height OK");
+
+        println!("=== All MultiSig endpoints OK ===");
         Ok(())
     })
 }

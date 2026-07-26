@@ -216,26 +216,29 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
-    let func = IdentityFunction::try_from(self_.data[0])?;
+    let func_byte = self_.data[0];
+    let func = IdentityFunction::try_from(func_byte)?;
 
-    match func {
-        IdentityFunction::InitializeV1 => process_initialize_instruction(cid, call_idx, calls),
-        IdentityFunction::IssueCredentialV1 => process_issue_credential_instruction(cid, call_idx, calls),
-        IdentityFunction::RevokeCredentialV1 => process_revoke_credential_instruction(cid, call_idx, calls),
-        IdentityFunction::CreateClaimV1 => process_create_claim_instruction(cid, call_idx, calls),
-        IdentityFunction::CreateClaimV1L1 => process_create_claim_l1_instruction(cid, call_idx, calls),
-        IdentityFunction::VerifyClaimV1 => process_verify_claim_instruction(cid, call_idx, calls),
-        IdentityFunction::CreateClaimV1L1V2 => process_create_claim_l1_v2_instruction(cid, call_idx, calls),
-        IdentityFunction::CreateClaimV1Multi => process_create_claim_multi_instruction(cid, call_idx, calls),
-        IdentityFunction::CreateClaimV1Ratio => process_create_claim_ratio_instruction(cid, call_idx, calls),
-        IdentityFunction::RegisterCapabilityV1 => process_register_capability_instruction(cid, call_idx, calls),
-        IdentityFunction::IssueCapabilityV1 => process_issue_capability_instruction(cid, call_idx, calls),
-        IdentityFunction::VerifyCapabilityV1 => process_verify_capability_instruction(cid, call_idx, calls),
-        IdentityFunction::RevokeCapabilityV1 => process_revoke_capability_instruction(cid, call_idx, calls),
-        IdentityFunction::CreateClaimDAGV1 => process_create_claim_dag_instruction(cid, call_idx, calls),
-        IdentityFunction::RegisterIssuerV1 => process_register_issuer_instruction(cid, call_idx, calls),
-        IdentityFunction::UpdateReputationV1 => process_update_reputation_instruction(cid, call_idx, calls),
-    }
+    let update_bytes = match func {
+        IdentityFunction::InitializeV1 => process_initialize_instruction(cid, call_idx, calls)?,
+        IdentityFunction::IssueCredentialV1 => process_issue_credential_instruction(cid, call_idx, calls)?,
+        IdentityFunction::RevokeCredentialV1 => process_revoke_credential_instruction(cid, call_idx, calls)?,
+        IdentityFunction::CreateClaimV1 => process_create_claim_instruction(cid, call_idx, calls)?,
+        IdentityFunction::CreateClaimV1L1 => process_create_claim_l1_instruction(cid, call_idx, calls)?,
+        IdentityFunction::VerifyClaimV1 => process_verify_claim_instruction(cid, call_idx, calls)?,
+        IdentityFunction::CreateClaimV1L1V2 => process_create_claim_l1_v2_instruction(cid, call_idx, calls)?,
+        IdentityFunction::CreateClaimV1Multi => process_create_claim_multi_instruction(cid, call_idx, calls)?,
+        IdentityFunction::CreateClaimV1Ratio => process_create_claim_ratio_instruction(cid, call_idx, calls)?,
+        IdentityFunction::RegisterCapabilityV1 => process_register_capability_instruction(cid, call_idx, calls)?,
+        IdentityFunction::IssueCapabilityV1 => process_issue_capability_instruction(cid, call_idx, calls)?,
+        IdentityFunction::VerifyCapabilityV1 => process_verify_capability_instruction(cid, call_idx, calls)?,
+        IdentityFunction::RevokeCapabilityV1 => process_revoke_capability_instruction(cid, call_idx, calls)?,
+        IdentityFunction::CreateClaimDAGV1 => process_create_claim_dag_instruction(cid, call_idx, calls)?,
+        IdentityFunction::RegisterIssuerV1 => process_register_issuer_instruction(cid, call_idx, calls)?,
+        IdentityFunction::UpdateReputationV1 => process_update_reputation_instruction(cid, call_idx, calls)?,
+    };
+    wasm::util::set_return_data(&[&[func_byte], &update_bytes[..]].concat());
+    Ok(())
 }
 
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
@@ -317,7 +320,7 @@ fn process_initialize_instruction(
     _cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: InitializeParams = deserialize(&self_.data[1..])?;
 
@@ -329,7 +332,7 @@ fn process_initialize_instruction(
     };
 
     msg!("[identity::initialize] Identity contract initialized successfully");
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 fn apply_initialize_update(cid: ContractId, update: InitializeUpdateV1) -> ContractResult {
@@ -353,7 +356,7 @@ fn process_issue_credential_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: IssueCredentialParams = deserialize(&self_.data[1..])?;
 
@@ -380,7 +383,7 @@ fn process_issue_credential_instruction(
     };
 
     msg!("[identity::issue_credential] Credential issuance prepared");
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 fn apply_issue_credential_update(cid: ContractId, update: IssueCredentialUpdateV1) -> ContractResult {
@@ -417,7 +420,7 @@ fn process_revoke_credential_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: RevokeCredentialParams = deserialize(&self_.data[1..])?;
 
@@ -436,7 +439,7 @@ fn process_revoke_credential_instruction(
     };
 
     msg!("[identity::revoke_credential] Revocation prepared");
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 fn apply_revoke_credential_update(cid: ContractId, update: RevokeCredentialUpdateV1) -> ContractResult {
@@ -469,7 +472,7 @@ fn process_create_claim_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: CreateClaimParams = deserialize(&self_.data[1..])?;
 
@@ -495,7 +498,7 @@ fn process_create_claim_instruction(
     };
 
     msg!("[identity::create_claim] Claim created");
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 fn apply_create_claim_update(_cid: ContractId, _update: CreateClaimUpdateV1) -> ContractResult {
@@ -512,7 +515,7 @@ fn process_create_claim_l1_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: CreateClaimParamsL1 = deserialize(&self_.data[1..])?;
 
@@ -541,7 +544,7 @@ fn process_create_claim_l1_instruction(
         "[identity::create_claim_l1] Claim created with predicate_result={}",
         params.predicate_result
     );
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 // ============================================================================
@@ -552,7 +555,7 @@ fn process_verify_claim_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: VerifyClaimParams = deserialize(&self_.data[1..])?;
 
@@ -577,7 +580,7 @@ fn process_verify_claim_instruction(
     };
 
     msg!("[identity::verify_claim] Claim verified");
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 fn apply_verify_claim_update(_cid: ContractId, _update: VerifyClaimUpdateV1) -> ContractResult {
@@ -593,7 +596,7 @@ fn process_create_claim_l1_v2_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: CreateClaimParamsL1 = deserialize(&self_.data[1..])?;
 
@@ -622,7 +625,7 @@ fn process_create_claim_l1_v2_instruction(
         "[identity::create_claim_l1_v2] Claim created with predicate_result={}",
         params.predicate_result
     );
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 // ============================================================================
@@ -633,7 +636,7 @@ fn process_create_claim_multi_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: CreateClaimParamsL1 = deserialize(&self_.data[1..])?;
 
@@ -654,7 +657,7 @@ fn process_create_claim_multi_instruction(
     };
 
     msg!("[identity::create_claim_multi] Multi-credential claim created");
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 // ============================================================================
@@ -665,7 +668,7 @@ fn process_create_claim_ratio_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: CreateClaimParamsL1 = deserialize(&self_.data[1..])?;
 
@@ -686,7 +689,7 @@ fn process_create_claim_ratio_instruction(
     };
 
     msg!("[identity::create_claim_ratio] Ratio claim created");
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 // ============================================================================
@@ -697,7 +700,7 @@ fn process_register_capability_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: RegisterCapabilityParams = deserialize(&self_.data[1..])?;
 
@@ -723,7 +726,7 @@ fn process_register_capability_instruction(
     };
 
     msg!("[identity::register_capability] Capability registered");
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 fn apply_register_capability_update(cid: ContractId, update: RegisterCapabilityUpdateV1) -> ContractResult {
@@ -752,7 +755,7 @@ fn process_issue_capability_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: IssueCapabilityParams = deserialize(&self_.data[1..])?;
 
@@ -793,7 +796,7 @@ fn process_issue_capability_instruction(
     };
 
     msg!("[identity::issue_capability] Capability issuance prepared");
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 fn apply_issue_capability_update(cid: ContractId, update: IssueCapabilityUpdateV1) -> ContractResult {
@@ -823,7 +826,7 @@ fn process_verify_capability_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: VerifyCapabilityParams = deserialize(&self_.data[1..])?;
 
@@ -846,7 +849,7 @@ fn process_verify_capability_instruction(
     };
 
     msg!("[identity::verify_capability] Capability verified");
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 fn apply_verify_capability_update(_cid: ContractId, _update: VerifyCapabilityUpdateV1) -> ContractResult {
@@ -862,7 +865,7 @@ fn process_revoke_capability_instruction(
     _cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: RevokeCapabilityParams = deserialize(&self_.data[1..])?;
 
@@ -877,7 +880,7 @@ fn process_revoke_capability_instruction(
     };
 
     msg!("[identity::revoke_capability] Capability revocation prepared");
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 fn apply_revoke_capability_update(_cid: ContractId, _update: RevokeCapabilityUpdateV1) -> ContractResult {
@@ -894,7 +897,7 @@ fn process_create_claim_dag_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: CreateClaimDAGParams = deserialize(&self_.data[1..])?;
 
@@ -928,7 +931,7 @@ fn process_create_claim_dag_instruction(
     };
 
     msg!("[identity::create_claim_dag] DAG claim created");
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 fn apply_create_claim_dag_update(_cid: ContractId, _update: CreateClaimDAGUpdateV1) -> ContractResult {
@@ -978,7 +981,7 @@ fn process_register_issuer_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: RegisterIssuerParams = deserialize(&self_.data[1..])?;
 
@@ -1001,7 +1004,7 @@ fn process_register_issuer_instruction(
     };
 
     msg!("[identity::register_issuer] Issuer registration prepared");
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 fn apply_register_issuer_update(cid: ContractId, update: RegisterIssuerUpdateV1) -> ContractResult {
@@ -1036,7 +1039,7 @@ fn process_update_reputation_instruction(
     cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
-) -> ContractResult {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: UpdateReputationParams = deserialize(&self_.data[1..])?;
 
@@ -1063,7 +1066,7 @@ fn process_update_reputation_instruction(
     };
 
     msg!("[identity::update_reputation] Reputation update prepared");
-    wasm::util::set_return_data(&serialize(&update))
+    Ok(serialize(&update))
 }
 
 fn apply_update_reputation_update(cid: ContractId, update: UpdateReputationUpdateV1) -> ContractResult {

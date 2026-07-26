@@ -78,16 +78,28 @@ fn my_get_metadata(cid: ContractId, params: &[u8]) -> Vec<u8> {
 Err(_) => return Ok(()),  // Stale buffer, host sees garbage or empty data
 ```
 
-### Encode Both ZK Inputs and Signature Pubkeys
+### Encode ZK Inputs Only — No Schnorr Signatures
 
 The metadata wire format is: `Encoded(Vec<(String, Vec<Base>)>) ++ Encoded(Vec<PublicKey>)`.
-Both components MUST be encoded even if empty.
+Both components MUST be encoded. The ZK public inputs component MUST be populated.
+The signature pubkeys component SHALL be empty `vec![]`.
 
 - **ZK public inputs**: circuit namespace → instance values. Must match `constrain_instance` order in the `.zk` circuit.
-- **Signature pubkeys**: `Vec<PublicKey>` — empty vec if the contract authorizes purely via ZK proofs (o-cap model).
+- **Signature pubkeys**: SHALL be `Vec::new()` (empty). Schnorr signatures are PROHIBITED in contract metadata.
 
-Per the o-cap specification, contracts authorize via ZK proofs (capabilities). Schnorr signatures
-are OPTIONAL. An empty `Vec<PublicKey>` is valid and the host handles it.
+DarkWow contracts authorize via ZK proofs + nullifiers (o-cap model). Every ZK circuit
+proves secret key knowledge via `ec_mul_base(secret, NULLIFIER_K)` — this IS the authorization.
+A Schnorr signature adds no security and actively harms privacy by deanonymizing the signer
+to every verifier. Per ocap.md §2: "The verifier observes only: the predicate result, the
+nullifier, and the commitment's inclusion proof. Nothing else." A Schnorr pubkey in metadata
+is observable identity information that violates this guarantee.
+
+**Rationale from the red team audit (2026-07-26):** Schnorr signatures in contract metadata
+violate ~52 explicit statements across ocap.md, type-system.md, wallet.md, manifest.md,
+and contract-wasm-type-system.md. The Authorization Inversion Theorem (type-system.md §6)
+requires ZK proofs to invert ACL into O-Cap. Schnorr signatures are not ZK proofs — they
+reveal the signer's public key, reverting to identity-based (ACL) authorization. A contract
+that returns non-empty signature pubkeys in metadata is non-compliant.
 
 ### Handle Unknown Function Selectors
 
@@ -272,9 +284,11 @@ capable of passing through `accept_block` verification. TIER C harnesses (empty_
 pattern) SHALL be upgraded to TIER A before any test claims to exercise contract functions
 through the 9-step production path.
 
-Tests SHALL follow: genesis → coinbase → contract call → wrap_call_data → witness →
-transaction → block → accept_block → state check. Tests verifying only call_data generation
-without accept_block routing do not exercise contract function behavior.
+Tests SHALL follow: genesis → coinbase → contract call → witness →
+transaction → block → accept_block → state check. The DarkLeaf call tree is
+extracted from the witness by the execution layer — no client-side wrapping is
+needed. Tests verifying only call_data generation without accept_block routing
+do not exercise contract function behavior.
 
 ## 11. Deployment Configuration
 
@@ -289,4 +303,104 @@ Contracts MUST NOT permanently accept `ContractId::ZERO` as a valid child contra
 ID. The `if cid != ContractId::ZERO { validate }` bypass pattern SHALL be
 replaced with explicit configuration checks that fail-closed: if the child CID
 has not been configured, cross-contract calls SHALL be rejected.
+
+## 12. Call Data Format — DarkLeaf Tree Architecture
+
+This section documents a critical architectural decision: where the DarkLeaf call tree
+lives, why it is not in `ContractCall.data`, and how WASM contracts receive it.
+
+### 12.1 The Two Consumers
+
+Two different subsystems read contract call data, with different needs:
+
+| Consumer | Needs | Reads |
+|----------|-------|-------|
+| **Chain-level** (coinbase detection, fee extraction, supply verification, block validation) | Function selector byte only | `c.data[0]` — checks `0x00` (FeeV1), `0x05` (PoWRewardV1), `0x06` (FeeCollectV1) |
+| **Contract-level** (WASM entrypoints) | Full DarkLeaf call tree for cross-contract child call validation | `calls[child_idx].data` — validates child function selectors, ContractIds, value commitments |
+
+Forcing both consumers to use the same byte representation (Option C: putting the
+DarkLeaf tree in `ContractCall.data`) creates false coupling: the chain must unwrap
+trees to read selector bytes, and ~20 consensus-critical sites must change. It also
+duplicates data (each of N contract calls carries N copies of the same tree).
+
+### 12.2 Chosen Architecture: Tree in Witness, Extracted at Execution
+
+The DarkLeaf call tree (`Vec<DarkLeaf<ContractCall>>`) is the canonical structure of
+a core transaction (`dwow_core::tx::Transaction.calls`). The full core transaction is
+serialized and stored in the chain transaction's `witness` field
+(`type-system.md §8.2`). This witness is:
+
+- **Signed**: The transaction author's Schnorr signatures cover the call data
+- **ZK-proven**: Each call's ZK proofs bind to the call's public inputs
+- **Reconciled**: `decode_and_reconcile()` verifies that chain-level `ContractCall`
+  fields match the witness-embedded core transaction
+
+At execution time (`execution.rs`), the tree is extracted from the witness and passed
+to WASM as `job.call_data`. This means:
+
+```
+Chain ContractCall.data → raw [fn_code] + params (chain-level operations)
+Transaction.witness      → full core tx (authentication + tree storage)
+job.call_data            → serialized Vec<DarkLeaf<ContractCall>> (WASM contracts)
+```
+
+### 12.3 Why Not in ContractCall.data
+
+The red/blue team audit (2026-07-26) evaluated two approaches:
+
+**Option C (rejected): Put DarkLeaf tree in `ContractCall.data`.**
+- ~20 chain-level `data[0]` reads must be refactored (consensus fork risk)
+- Tree is P2P-malleable — reconciliation only checks inner payload, not tree indexes
+- N copies of the same tree for N contract calls (data duplication)
+- Deployooor post-processing and fee extraction must navigate trees to read selectors
+
+**Option B (chosen): Extract tree from witness at execution.rs.**
+- 1 site changed (execution.rs), zero consensus-critical sites touched
+- Tree is cryptographically attested (signed + ZK-proven in witness)
+- Zero data duplication — one tree in witness, served to all calls
+- Chain-level code unchanged — continues to read raw `data[0]` for selector checks
+- Consistent with existing execution-layer mediation (metadata extraction, spend hooks,
+  Deployooor post-processing)
+
+### 12.4 Contract Entrypoint Patterns
+
+With the tree arriving at WASM via execution.rs, contracts use the DarkLeaf
+deserialization pattern documented in `contract-wasm-type-system.md §1.3`:
+
+```rust
+fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
+    let call_idx = wasm::util::get_call_index()? as usize;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let self_ = &calls[call_idx].data;
+    let func = FooFunction::try_from(self_.data[0])?;
+    // ... dispatch on func, deserialize params from self_.data[1..]
+}
+```
+
+For cross-contract child call validation:
+```rust
+let child_idx = /* index of child call in tree */;
+let child_call = &calls[child_idx].data;
+if child_call.data[0] != 0x04 {  // TransferV1
+    return Err(...);
+}
+validate_child_contract_id(&child_call.contract_id, &stored_cid)?;
+```
+
+NativeToken uses `ix[0]` dispatch (per its consensus-critical role, no child calls).
+The execution layer passes raw `call.data` for NativeToken specifically.
+
+### 12.5 Contract Standard for Tree Access
+
+Contracts that perform cross-contract child call validation SHALL:
+
+1. **Validate child function selectors** against expected values (not accept any selector)
+2. **Validate child ContractIds** against stored configuration (per §11)
+3. **Validate child value commitments** where applicable (Pedersen commitment checks)
+4. **Not trust tree topology as authority** — parent/child relationships are structural
+   hints authenticated by the witness; authorization flows through ZK proofs and
+   nullifiers, not through tree position
+5. **Not access sibling calls without explicit authorization** — tree visibility is for
+   validation of child calls the contract creates, not for ambient observation of
+   unrelated calls in the same transaction
 

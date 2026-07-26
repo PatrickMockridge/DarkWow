@@ -28,7 +28,7 @@ tested separately by Level 1 (Lightweight) through the Deployooor contract.
 |-----------|----------|-----------------|
 | HeavyweightPipeline | `bin/dwowd/src/tests/heavyweight_pipeline.rs` | Contract functions, ZK proofs, state transitions, uncle-merkle execution |
 | ContractHarness trait | `src/contract/test-harness/src/harness.rs` | Per-contract ZK circuit access |
-| Contract harness modules (27) | `src/contract/test-harness/src/harness/` | Proof generation for each contract |
+| Contract harness modules (32) | `src/contract/test-harness/src/harness/` | Proof generation for each contract |
 | CI ZK audit test | `src/contract/test-harness/tests/zk_audit.rs` | Decodes all 99 harness-loaded `.zk.bin` files, cross-checks harness `circuits()` |
 
 ## ContractHarness Trait
@@ -93,7 +93,7 @@ loaded zkbins.
 | `test_harness_circuits_match_zkbins` | Slow (nightly) | Each harness's `circuits()` list exactly matches the zkbins loaded in `spawn()` |
 
 The fast test runs on every CI push. The slow cross-check is `#[ignore]`d and
-runs nightly since it builds proving keys for all 27 harnesses.
+runs nightly since it builds proving keys for all 32 harnesses.
 
 **Deployooor exclusion:** Only `deployooor` is allowed to have empty
 `circuits()` — it's a pure-WASM contract with no ZK circuits. All other
@@ -192,7 +192,7 @@ Use the `heavyweight.sh` script from `bin/dwowd/src/tests/`:
 # Show test output
 ./heavyweight.sh --dex --nocapture
 
-# Run all 40 heavyweight tests
+# Run all 43 heavyweight tests
 ./heavyweight.sh --all
 
 # List all flags
@@ -214,7 +214,7 @@ through hundreds of consecutive runs with zero SIGSEGV.
 
 ### Test Coverage
 
-40 tests total: 29 contract-specific tests + 1 cross-contract integration
+43 tests total: 32 contract-specific tests + 1 cross-contract integration
 test (recruitment_pipeline) + 8 block-execution infrastructure tests
 (canonical, coinbase-rejects-wrong-reward, uncle, mixed, multi-uncle, depth,
 empty-uncle, invalid-uncle-proof) + 1 metadata test + 1 relayer lifecycle test.
@@ -235,16 +235,18 @@ the full merkle tree open/close lifecycle.
 
 ## Contract Harness List
 
-The test harness crate supports 27 contracts. Each has a harness module under
+The test harness crate supports 32 contracts. Each has a harness module under
 `src/contract/test-harness/src/harness/`. Circuit counts are verified by the
-CI audit test (`zk_audit.rs`) which decodes all 99 harness-loaded `.zk.bin` files.
+CI audit test (`zk_audit.rs`) which decodes all harness-loaded `.zk.bin` files.
 
 | Contract | Circuits | Client Module |
 |----------|----------|---------------|
 | attestation | 5 | `src/contract/attestation/src/client/` |
 | auction | 6 | `src/contract/auction/src/client/` |
 | baccarat | 2 | `src/contract/baccarat/src/client/` |
+| bearer_bond | 4 | `src/contract/bearer_bond/src/client/` |
 | betting_stake | 5 | `src/contract/betting_stake/src/client/` |
+| box | 2 | `src/contract/box/src/client/` |
 | bridge | 2 | `src/contract/bridge/src/client/` |
 | dao_escrow | 6 | `src/contract/dao_escrow/src/client/` |
 | darkbet_exchange | 4 | `src/contract/darkbet_exchange/src/client/` |
@@ -258,10 +260,13 @@ CI audit test (`zk_audit.rs`) which decodes all 99 harness-loaded `.zk.bin` file
 | insurance_market | 2 | `src/contract/insurance_market/src/client/` |
 | labor_market | 7 | `src/contract/labor_market/src/client/` |
 | lottery | 2 | `src/contract/lottery/src/client/` |
-| promissory_note | 4 | `src/contract/promissory_note/src/client/` |
+| multisig | 3 | `src/contract/multisig/src/client/` |
 | native_token | 3 | `src/contract/native_token/src/client/` |
 | oracle | 1 | `src/contract/oracle/src/client/` |
+| otc_swap | 4 | `src/contract/otc_swap/src/client/` |
 | pool_stake | 4 | `src/contract/pool_stake/src/client/` |
+| promissory_note | 4 | `src/contract/promissory_note/src/client/` |
+| purse | 3 | `src/contract/purse/src/client/` |
 | relayer_endowment | 3 | `src/contract/relayer_endowment/src/client/` |
 | roulette | 2 | `src/contract/roulette/src/client/` |
 | slot | 2 | `src/contract/slot/src/client/` |
@@ -339,7 +344,7 @@ dwow_<contract>_contract = { path = "../<contract>", features = ["client", "no-e
 |-----------|------|
 | HeavyweightPipeline | `bin/dwowd/src/tests/heavyweight_pipeline.rs` |
 | ContractHarness trait | `src/contract/test-harness/src/harness.rs` |
-| Contract harness modules (27) | `src/contract/test-harness/src/harness/` |
+| Contract harness modules (32) | `src/contract/test-harness/src/harness/` |
 | VK injection | `src/contract/test-harness/src/vks.rs` |
 | CI ZK audit test | `src/contract/test-harness/tests/zk_audit.rs` |
 | Wallet pre-flight ZK check | `bin/dww/src/lib.rs` |

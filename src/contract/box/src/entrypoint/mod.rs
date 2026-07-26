@@ -69,13 +69,18 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
 fn box_put_get_metadata_v1(params: PutParamsV1) -> Result<Vec<u8>, ContractError> {
     let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    // Order MUST match circuit constrain_instance order:
+    // box_id, old_contents_commit, tx_binding, tx_nonce, new_contents_commit
     zk_inputs.push((BOX_CONTRACT_ZKAS_PUT_NS_V1.to_string(), vec![
-        params.box_id.inner(), params.old_contents_commit, params.new_contents_commit,
-        params.tx_binding, params.tx_nonce,
+        params.box_id.inner(), params.old_contents_commit,
+        params.tx_binding, params.tx_nonce, params.new_contents_commit,
     ]));
     let mut metadata = vec![];
     zk_inputs.encode(&mut metadata)?;
-    let sigs: Vec<dwow_sdk::crypto::PublicKey> = vec![params.owner];
+    // O-cap authorization: ZK proof already proves ownership via
+    // owner_pub = ec_mul_base(owner_secret, NULLIFIER_K) in the circuit.
+    // No redundant Schnorr signature required.
+    let sigs: Vec<dwow_sdk::crypto::PublicKey> = vec![];
     sigs.encode(&mut metadata)?;
     Ok(metadata)
 }
@@ -88,7 +93,10 @@ fn box_take_get_metadata_v1(params: TakeParamsV1) -> Result<Vec<u8>, ContractErr
     ]));
     let mut metadata = vec![];
     zk_inputs.encode(&mut metadata)?;
-    let sigs: Vec<dwow_sdk::crypto::PublicKey> = vec![params.owner];
+    // O-cap authorization: ZK proof already proves ownership via
+    // owner_pub = ec_mul_base(owner_secret, NULLIFIER_K) in the circuit.
+    // No redundant Schnorr signature required.
+    let sigs: Vec<dwow_sdk::crypto::PublicKey> = vec![];
     sigs.encode(&mut metadata)?;
     Ok(metadata)
 }

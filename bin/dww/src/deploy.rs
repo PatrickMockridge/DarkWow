@@ -95,17 +95,12 @@ impl Dww {
         // by the centralized fee builder.
         let mut seed = [0u8; 32];
         rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
-        let (mut tx, fee_ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(
+        let mut tx = crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, &self.account_mgr, deploy_leaf, None, None, seed,
         )?;
 
-        // Per-call signature rows, in call order (calls[0] = deploy,
-        // calls[1] = fee). Mempool admission rejects any other layout.
-        let deploy_sigs = tx.create_sigs(&[deploy_keypair.secret.clone()])
-            .map_err(|e| Error::Custom(format!("create_sigs deploy: {}", e)))?;
-        let fee_sigs = tx.create_sigs(&fee_ephemeral)
-            .map_err(|e| Error::Custom(format!("create_sigs fee: {}", e)))?;
-        tx.signatures = vec![deploy_sigs, fee_sigs];
+        // Schnorr signatures removed per contract-standards.md §3.
+        tx.signatures = vec![vec![], vec![]];
 
         Ok(tx)
     }

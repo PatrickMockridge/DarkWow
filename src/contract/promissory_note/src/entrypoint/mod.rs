@@ -305,7 +305,8 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
     let params: MintParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let signature_pubkeys: Vec<pallas::Base> = vec![params.mint_public];
+    // Schnorr signatures prohibited (contract-standards.md §3).
+    let signature_pubkeys: Vec<pallas::Base> = vec![];
 
     let (vc_x, vc_y) = point_coords(params.value_commit);
 
@@ -343,10 +344,10 @@ fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
     };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let mut signature_pubkeys: Vec<pallas::Base> = vec![];
+    // Schnorr signatures prohibited (contract-standards.md §3).
+    let signature_pubkeys: Vec<pallas::Base> = vec![];
 
     for input in &params.inputs {
-        signature_pubkeys.push(input.signature_public);
 
         let (vc_x, vc_y) = point_coords(input.value_commit);
 
@@ -382,11 +383,11 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
     let params: TransferParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let mut signature_pubkeys: Vec<pallas::Base> = vec![];
+    // Schnorr signatures prohibited (contract-standards.md §3).
+    let signature_pubkeys: Vec<pallas::Base> = vec![];
 
     // Burn proofs (one per input)
     for input in &params.inputs {
-        signature_pubkeys.push(input.signature_public);
 
         let (vc_x, vc_y) = point_coords(input.value_commit);
 
@@ -923,10 +924,10 @@ fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
     let params: RedeemParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let mut signature_pubkeys: Vec<pallas::Base> = vec![];
+    // Schnorr signatures prohibited (contract-standards.md §3).
+    let signature_pubkeys: Vec<pallas::Base> = vec![];
 
     // Burn proof for the input coin being redeemed
-    signature_pubkeys.push(params.input.signature_public);
 
     let (vc_x, vc_y) = point_coords(params.input.value_commit);
 
@@ -1051,11 +1052,11 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
     let params: OtcSwapParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let mut signature_pubkeys: Vec<pallas::Base> = vec![];
+    // Schnorr signatures prohibited (contract-standards.md §3).
+    let signature_pubkeys: Vec<pallas::Base> = vec![];
 
     // Burn proofs (one per input)
     for input in &params.inputs {
-        signature_pubkeys.push(input.signature_public);
 
         let (vc_x, vc_y) = point_coords(input.value_commit);
 

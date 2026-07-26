@@ -1198,7 +1198,7 @@ impl Dww {
         // consumed input, the SAME values the entrypoint verifies from params.
         let transfer_nullifiers: Vec<dwow_sdk::crypto::Nullifier> =
             debris.params.inputs.iter().map(|i| i.nullifier).collect();
-        let transfer_secrets = debris.signature_secrets.clone();
+        // Schnorr signatures removed per contract-standards.md §3.
 
         // wallet.md §6.3 step 8: serialize params with function selector.
         // Layout: [0x03][TransferParamsV1] — what the entrypoint's
@@ -1219,7 +1219,7 @@ impl Dww {
         // §6.3 step 6 / model steps 3-4: fee from a different DRKW cap;
         // TransactionBuilder computes the outer tx_commitment; the fee input's
         // nullifier is published by the fee builder.
-        let (mut tx, fee_ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(
+        let mut tx = crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, &self.account_mgr, leaf, None, Some(&selected.cap_id), seed,
         )?;
 
@@ -1232,12 +1232,8 @@ impl Dww {
         // §6.3 step 7: per-call signature rows, in call order
         // (calls[0] = transfer, calls[1] = fee). The transfer row is signed by
         // the input secrets (metadata: inputs[].signature_public); the fee row
-        // by the fee ephemeral (metadata: input.signature_public = ephemeral).
-        let transfer_sigs = tx.create_sigs(&transfer_secrets)
-            .map_err(|e| Error::Custom(format!("create_sigs transfer: {}", e)))?;
-        let fee_sigs = tx.create_sigs(&fee_ephemeral)
-            .map_err(|e| Error::Custom(format!("create_sigs fee: {}", e)))?;
-        tx.signatures = vec![transfer_sigs, fee_sigs];
+        // Schnorr signatures removed per contract-standards.md §3.
+        tx.signatures = vec![vec![], vec![]];
 
         Ok(tx)
     }
@@ -1544,18 +1540,15 @@ impl Dww {
                 };
                 let mut seed = [0u8; 32];
                 rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
-                let (mut tx, ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(
+                let mut tx = crate::fee_builder::build_fee_and_finalize_tx(
                     &self.wallet, &self.account_mgr, leaf, None, None, seed)?;
                 // §6.3 step 7 / mempool admission: ONE signature row per call,
                 // in call order — calls[0] = main (signed by the caller-supplied
                 // secrets matching the call's metadata pubkeys, empty row when
                 // the metadata declares none), calls[1] = fee (signed by the
                 // fee ephemeral, fee metadata: signature_public = ephemeral).
-                let main_sigs = tx.create_sigs(&signing_secrets)
-                    .map_err(|e| Error::Custom(format!("create_sigs main: {}", e)))?;
-                let fee_sigs = tx.create_sigs(&ephemeral)
-                    .map_err(|e| Error::Custom(format!("create_sigs fee: {}", e)))?;
-                tx.signatures = vec![main_sigs, fee_sigs];
+                // Schnorr signatures removed per contract-standards.md §3.
+                tx.signatures = vec![vec![], vec![]];
                 return Ok(tx);
             }
             // P4 Step 4: if a stored manifest exists, construct a
@@ -1578,15 +1571,12 @@ impl Dww {
                 };
                 let mut seed = [0u8; 32];
                 rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
-                let (mut tx, ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(
+                let mut tx = crate::fee_builder::build_fee_and_finalize_tx(
                     &self.wallet, &self.account_mgr, leaf, None, None, seed,
                 )?;
                 // Per-call signature rows (see the Path A exit above).
-                let main_sigs = tx.create_sigs(&signing_secrets)
-                    .map_err(|e| Error::Custom(format!("create_sigs main: {}", e)))?;
-                let fee_sigs = tx.create_sigs(&ephemeral)
-                    .map_err(|e| Error::Custom(format!("create_sigs fee: {}", e)))?;
-                tx.signatures = vec![main_sigs, fee_sigs];
+                // Schnorr signatures removed per contract-standards.md §3.
+                tx.signatures = vec![vec![], vec![]];
                 return Ok(tx);
             }
         }
@@ -1658,11 +1648,8 @@ impl Dww {
         let (mut tx, ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, &self.account_mgr, leaf, None, None, seed)?;
         // Per-call signature rows (see the Path A exit above).
-        let main_sigs = tx.create_sigs(&signing_secrets)
-            .map_err(|e| Error::Custom(format!("create_sigs main: {}", e)))?;
-        let fee_sigs = tx.create_sigs(&ephemeral)
-            .map_err(|e| Error::Custom(format!("create_sigs fee: {}", e)))?;
-        tx.signatures = vec![main_sigs, fee_sigs];
+        // Schnorr signatures removed per contract-standards.md §3.
+        tx.signatures = vec![vec![], vec![]];
 
         Ok(tx)
     }

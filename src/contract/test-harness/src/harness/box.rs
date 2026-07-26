@@ -26,9 +26,16 @@
 //! Provides isolated testing for the Box contract (put/take circuits).
 
 use dwow_core::{
-    zk::{Proof, ProvingKey, ZkCircuit},
+    zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
+    Result,
 };
+use dwow_sdk::{
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, Nullifier, PublicKey, SecretKey},
+    pasta::pallas,
+};
+use dwow_serial::{Encodable, SerialEncodable};
+use rand::rngs::OsRng;
 
 /// Box Harness for isolated testing
 pub struct BoxHarness {
@@ -69,20 +76,141 @@ impl BoxHarness {
         }
     }
 
-    pub fn put(&self) -> dwow_core::Result<BoxPutResult> {
-        let w = dwow_core::zk::empty_witnesses(&self.put_zkbin)?;
-        let c = ZkCircuit::new(w, &self.put_zkbin);
-        let proof = Proof::create(&self.put_pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
-        Ok(BoxPutResult { call_data: vec![0x01], proof })
+    pub fn put(&self) -> Result<BoxPutResult> {
+        // Witness layout (PutV1 circuit):
+        //   0: box_id
+        //   1: old_contents_commit (must be 0)
+        //   2: new_contents_commit
+        //   3: capability_data
+        //   4: owner_secret
+        //   5: owner_pub_x
+        //   6: owner_pub_y
+        //   7: tx_commitment
+        //   8: tx_nonce
+        //   9: tx_binding
+        //
+        // Public inputs (matching get_metadata):
+        //   box_id.inner(), old_contents_commit, new_contents_commit, tx_binding, tx_nonce
+
+        let owner_secret = pallas::Base::from(42u64);
+        let owner_pub = PublicKey::from_secret(SecretKey::from_base(owner_secret));
+        let owner_pub_x = owner_pub.x().expect("owner_pub.x()");
+        let owner_pub_y = owner_pub.y().expect("owner_pub.y()");
+        let box_id = pallas::Base::from(1u64);
+        let old_contents_commit = pallas::Base::zero(); // Box must be empty
+        let capability_data = pallas::Base::from(100u64);
+        let new_contents_commit = poseidon_hash([capability_data]);
+        let tx_commitment = pallas::Base::from(200u64);
+        let tx_nonce = pallas::Base::from(300u64);
+        let tx_binding = poseidon_hash([tx_commitment, tx_nonce]);
+
+        let witnesses = vec![
+            Witness::Base(Value::known(box_id)),
+            Witness::Base(Value::known(old_contents_commit)),
+            Witness::Base(Value::known(new_contents_commit)),
+            Witness::Base(Value::known(capability_data)),
+            Witness::Base(Value::known(owner_secret)),
+            Witness::Base(Value::known(owner_pub_x)),
+            Witness::Base(Value::known(owner_pub_y)),
+            Witness::Base(Value::known(tx_commitment)),
+            Witness::Base(Value::known(tx_nonce)),
+            Witness::Base(Value::known(tx_binding)),
+        ];
+
+        // Order MUST match circuit constrain_instance order:
+        // box_id, old_contents_commit, tx_binding, tx_nonce, new_contents_commit
+        let public_inputs = vec![
+            box_id,
+            old_contents_commit,
+            tx_binding,
+            tx_nonce,
+            new_contents_commit,
+        ];
+
+        let circuit = ZkCircuit::new(witnesses, &self.put_zkbin);
+        let proof = Proof::create(&self.put_pk, &[circuit], &public_inputs, OsRng)
+            .map_err(|e| dwow_core::Error::Custom(format!("Proof::create failed: {:?}", e)))?;
+
+        // Build call_data: [0x01] + serialize(PutParamsV1)
+        let proof_bytes: Vec<u8> = dwow_serial::serialize(&proof);
+        let params = dwow_box_contract::model::PutParamsV1 {
+            box_id: dwow_box_contract::model::BoxId(box_id),
+            old_contents_commit,
+            new_contents_commit,
+            owner: owner_pub,
+            proof: proof_bytes,
+            tx_binding,
+            tx_nonce,
+        };
+        let mut call_data = vec![0x01u8]; // PutV1 function selector
+        params.encode(&mut call_data).map_err(|e| dwow_core::Error::Custom(format!("encode: {:?}", e)))?;
+
+        Ok(BoxPutResult { call_data, proof })
     }
 
-    pub fn take(&self) -> dwow_core::Result<BoxTakeResult> {
-        let w = dwow_core::zk::empty_witnesses(&self.take_zkbin)?;
-        let c = ZkCircuit::new(w, &self.take_zkbin);
-        let proof = Proof::create(&self.take_pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
-        Ok(BoxTakeResult { call_data: vec![0x02], proof })
+    pub fn take(&self) -> Result<BoxTakeResult> {
+        // Witness layout (TakeV1 circuit):
+        //   0: box_id
+        //   1: contents_commit (must be > 0)
+        //   2: owner_secret
+        //   3: owner_pub_x
+        //   4: owner_pub_y
+        //   5: tx_commitment
+        //   6: tx_nonce
+        //   7: tx_binding
+        //
+        // Public inputs (matching get_metadata):
+        //   nullifier.inner(), box_id.inner(), tx_binding, tx_nonce, contents_commit
+
+        let owner_secret = pallas::Base::from(42u64);
+        let owner_pub = PublicKey::from_secret(SecretKey::from_base(owner_secret));
+        let owner_pub_x = owner_pub.x().expect("owner_pub.x()");
+        let owner_pub_y = owner_pub.y().expect("owner_pub.y()");
+        let box_id = pallas::Base::from(1u64);
+        let contents_commit = pallas::Base::from(100u64); // Must be > 0
+        let tx_commitment = pallas::Base::from(200u64);
+        let tx_nonce = pallas::Base::from(300u64);
+        let tx_binding = poseidon_hash([tx_commitment, tx_nonce]);
+        let nullifier_val = poseidon_hash([owner_secret, box_id]);
+
+        let witnesses = vec![
+            Witness::Base(Value::known(box_id)),
+            Witness::Base(Value::known(contents_commit)),
+            Witness::Base(Value::known(owner_secret)),
+            Witness::Base(Value::known(owner_pub_x)),
+            Witness::Base(Value::known(owner_pub_y)),
+            Witness::Base(Value::known(tx_commitment)),
+            Witness::Base(Value::known(tx_nonce)),
+            Witness::Base(Value::known(tx_binding)),
+        ];
+
+        let public_inputs = vec![
+            nullifier_val,
+            box_id,
+            tx_binding,
+            tx_nonce,
+            contents_commit,
+        ];
+
+        let circuit = ZkCircuit::new(witnesses, &self.take_zkbin);
+        let proof = Proof::create(&self.take_pk, &[circuit], &public_inputs, OsRng)
+            .map_err(|e| dwow_core::Error::Custom(format!("Proof::create failed: {:?}", e)))?;
+
+        // Build call_data: [0x02] + serialize(TakeParamsV1)
+        let proof_bytes: Vec<u8> = dwow_serial::serialize(&proof);
+        let params = dwow_box_contract::model::TakeParamsV1 {
+            box_id: dwow_box_contract::model::BoxId(box_id),
+            contents_commit,
+            nullifier: Nullifier::from_bytes(nullifier_val.to_repr()).unwrap(),
+            owner: owner_pub,
+            proof: proof_bytes,
+            tx_binding,
+            tx_nonce,
+        };
+        let mut call_data = vec![0x02u8]; // TakeV1 function selector
+        params.encode(&mut call_data).map_err(|e| dwow_core::Error::Custom(format!("encode: {:?}", e)))?;
+
+        Ok(BoxTakeResult { call_data, proof })
     }
 }
 

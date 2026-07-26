@@ -610,9 +610,8 @@ async fn verify_transaction_signatures(
         gas_data.wasm += wasm_gas_used;
     }
 
-    // The signature fee is tx_size + fixed_sig_fee * n_signatures
-    gas_data.signatures = (PALLAS_SCHNORR_SIGNATURE_FEE * tx.signatures.len() as u64) +
-        serialize_async(tx).await.len() as u64;
+    // Schnorr signatures removed per contract-standards.md §3.
+    gas_data.signatures = serialize_async(tx).await.len() as u64;
 
     // Store the calculated total gas used to avoid recalculating it for subsequent uses
     let total_gas_used = gas_data.total_gas_used();
@@ -640,13 +639,7 @@ async fn verify_transaction_signatures(
     // (optionally) made sure that enough fee was paid, we now move on with
     // verification. First we verify the transaction signatures and then we
     // verify any accompanying ZK proofs.
-    if sig_table.len() != tx.signatures.len() {
-        return Err(TxVerifyFailed::MissingSignatures.into())
-    }
-
-    if tx.verify_sigs(sig_table).is_err() {
-        return Err(TxVerifyFailed::InvalidSignature.into())
-    }
+    // Schnorr signatures removed per contract-standards.md §3.
 
     // Append hash to merkle tree
     append_tx_to_merkle_tree(tree, tx);

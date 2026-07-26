@@ -120,6 +120,51 @@ pub struct ExecutionOutcome {
     pub stats: ExecutionStats,
 }
 
+/// Extract the DarkLeaf call tree from a transaction witness for WASM delivery.
+///
+/// The witness carries the full authenticated core transaction
+/// (`dwow_core::tx::Transaction`, stored per type-system.md §8.2).
+/// Non-NativeToken contracts need the `Vec<DarkLeaf<ContractCall>>`
+/// tree for cross-contract child call validation (`calls[child_idx]`).
+/// NativeToken receives raw call data — consensus-critical, no child
+/// calls, uses `ix[0]` dispatch.
+///
+/// Returns `None` if the witness is empty (coinbase tx) or fails to decode
+/// (legacy tx without witness). Callers fall back to raw `call.data`.
+fn extract_wasm_call_tree(witness: &[u8]) -> Option<Vec<u8>> {
+    if witness.is_empty() {
+        eprintln!("[execution::tree] empty witness — using raw call.data (coinbase or legacy)");
+        return None;
+    }
+    match dwow_serial::deserialize::<dwow_core::tx::Transaction>(witness) {
+        Ok(core_tx) => {
+            let n_calls = core_tx.calls.len();
+            let tree_bytes = dwow_serial::serialize(&core_tx.calls);
+            eprintln!(
+                "[execution::tree] extracted tree from witness: {} calls, {} bytes → WASM",
+                n_calls, tree_bytes.len(),
+            );
+            // Diagnostic: verify each call has well-formed inner data
+            for (i, leaf) in core_tx.calls.iter().enumerate() {
+                if leaf.data.data.is_empty() {
+                    eprintln!(
+                        "[execution::tree] WARNING: call[{}] has empty inner data (contract_id={})",
+                        i, leaf.data.contract_id,
+                    );
+                }
+            }
+            Some(tree_bytes)
+        }
+        Err(e) => {
+            eprintln!(
+                "[execution::tree] witness decode failed: {:?} — falling back to raw call.data",
+                e,
+            );
+            None
+        }
+    }
+}
+
 /// Execute all contract calls in a block and its uncles against the
 /// blockchain's stored contracts.
 ///
@@ -186,6 +231,13 @@ pub fn execute_block(
             continue;
         }
         let tx_hash = tx.hash();
+        // Extract DarkLeaf call tree from witness for WASM delivery.
+        // The witness carries the full authenticated core transaction
+        // (type-system.md §8.2). Non-NativeToken contracts need the
+        // tree for cross-contract child call validation (child_idx).
+        // NativeToken receives raw call data — consensus-critical,
+        // no child calls, uses ix[0] dispatch.
+        let serialized_tree: Option<Vec<u8>> = extract_wasm_call_tree(&tx.witness);
         for (call_idx, call) in tx.contract_calls.iter().enumerate() {
             // Phase 2.1: contract_id is now typed ContractId — no from_bytes needed
             let contract_id = call.contract_id;
@@ -213,13 +265,27 @@ pub fn execute_block(
                     }
                 },
             };
+            let (call_data, data_source) = if contract_id == *NATIVE_TOKEN_CONTRACT_ID {
+                // NativeToken: raw call data (ix[0] dispatch, no child calls)
+                (call.data.clone(), "raw (native_token)")
+            } else if let Some(ref tree) = serialized_tree {
+                // All other contracts: DarkLeaf tree from witness
+                (tree.clone(), "tree (witness)")
+            } else {
+                // Fallback: raw call data (empty witness, e.g. coinbase)
+                (call.data.clone(), "raw (fallback)")
+            };
+            eprintln!(
+                "[execution::tree] call[{}] contract={} data_source={} size={}",
+                call_idx, contract_id, data_source, call_data.len(),
+            );
             jobs.push(CallJob {
                 tx_hash,
                 is_canonical: true,
                 overlay: Arc::clone(&canonical_overlay),
                 wasm_bytes,
                 contract_id,
-                call_data: call.data.clone(),
+                call_data,
                 call_idx: call_idx as u8,
             });
         }
@@ -229,6 +295,7 @@ pub fn execute_block(
     for uncle in uncles.iter() {
         for tx in &uncle.transactions {
             let tx_hash = tx.hash();
+            let serialized_tree: Option<Vec<u8>> = extract_wasm_call_tree(&tx.witness);
             for (call_idx, call) in tx.contract_calls.iter().enumerate() {
                 // Phase 2.1: contract_id is now typed ContractId
                 let contract_id = call.contract_id;
@@ -237,13 +304,20 @@ pub fn execute_block(
                     Err(_) => { early_fail += 1; continue; }
                 };
                 if wasm_bytes.is_empty() { early_fail += 1; continue; }
+                let call_data = if contract_id == *NATIVE_TOKEN_CONTRACT_ID {
+                    call.data.clone()
+                } else if let Some(ref tree) = serialized_tree {
+                    tree.clone()
+                } else {
+                    call.data.clone()
+                };
                 jobs.push(CallJob {
                     tx_hash,
                     is_canonical: false,
                     overlay: Arc::new(std::sync::Mutex::new(base_overlay.clone())),
                     wasm_bytes,
                     contract_id,
-                    call_data: call.data.clone(),
+                    call_data,
                     call_idx: call_idx as u8,
                 });
             }
@@ -273,7 +347,6 @@ pub fn execute_block(
     // canonical tx_hash so only on-chain txs are verified (uncles excluded).
     struct TxVeriTables {
         zkp: Vec<Vec<(String, Vec<dwow_sdk::pasta::pallas::Base>)>>,
-        pubkeys: Vec<Vec<dwow_sdk::crypto::PublicKey>>,
     }
     let mut veri_state: HashMap<Blake3Hash, TxVeriTables> = HashMap::new();
 
@@ -353,32 +426,13 @@ pub fn execute_block(
                             Vec::new()
                         }
                     };
-                let sigs: Vec<dwow_sdk::crypto::PublicKey> =
-                    if c.position() >= m.len() as u64 {
-                        // No signature pubkeys encoded — valid per o-cap model:
-                        // contract authorizes via ZK capabilities, not Schnorr sigs.
-                        Vec::new()
-                    } else {
-                        match dwow_serial::Decodable::decode(&mut c) {
-                            Ok(v) => v,
-                            Err(e) => {
-                                eprintln!("metadata sig decode failed for contract {} (tx {}): {:?}",
-                                    job.contract_id, job.tx_hash, e);
-                                success = false; fail_stage = "metadata-decode-sigs";
-                                Vec::new()
-                            }
-                        }
-                    };
-                if !success {
-                    // Don't accumulate bad metadata — fall through to the !success
-                    // check below which reverts the checkpoint and rejects the block.
-                } else {
-                    let entry = veri_state.entry(job.tx_hash).or_insert_with(|| {
-                        TxVeriTables { zkp: vec![], pubkeys: vec![] }
-                    });
-                    entry.zkp.push(zkp);
-                    entry.pubkeys.push(sigs);
-                }
+                // Schnorr signature pubkeys removed per contract-standards.md §3.
+                // Metadata format still encodes an empty Vec<PublicKey> for backward
+                // compatibility, but the host no longer decodes or verifies it.
+                let entry = veri_state.entry(job.tx_hash).or_insert_with(|| {
+                    TxVeriTables { zkp: vec![] }
+                });
+                entry.zkp.push(zkp);
             }
             Err(e) => {
                 success = false;
@@ -511,11 +565,10 @@ pub fn execute_block(
                 &store,
                 &core_tx,
                 &tables.zkp,
-                &tables.pubkeys,
             )
             .map_err(|e| {
                 dwow_core::Error::Custom(format!(
-                    "L2 proof/signature verify tx {}: {}",
+                    "L2 proof verify tx {}: {}",
                     hex::encode(tx_hash.as_bytes()),
                     e,
                 ))

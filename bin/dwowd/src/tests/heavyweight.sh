@@ -2,7 +2,7 @@
 # Heavyweight Test Runner — runs Level 2 ZK proof tests for DarkWow contracts.
 #
 # Usage:
-#   ./heavyweight.sh --all                    Run all 40 tests
+#   ./heavyweight.sh --all                    Run all 43 tests
 #   ./heavyweight.sh --dex                    Run a single contract test
 #   ./heavyweight.sh --dex --auction          Run multiple tests
 #   ./heavyweight.sh --block-execution        Run all 8 block execution tests
@@ -50,6 +50,7 @@ while [[ $# -gt 0 ]]; do
 
         # ── Contract flags ─────────────────────────────────────────────────────
         --promissory-note)      TEST_FILTERS+=("test_heavyweight_promissory_note") ;;
+        --purse)                TEST_FILTERS+=("test_heavyweight_purse") ;;
         --dex)                  TEST_FILTERS+=("test_heavyweight_dex") ;;
         --native-token)         TEST_FILTERS+=("test_heavyweight_native_token") ;;
         --auction)              TEST_FILTERS+=("test_heavyweight_auction") ;;
@@ -71,9 +72,11 @@ while [[ $# -gt 0 ]]; do
         --insurance-market)     TEST_FILTERS+=("test_heavyweight_insurance_market") ;;
         --baccarat)             TEST_FILTERS+=("test_heavyweight_baccarat") ;;
         --betting-stake)        TEST_FILTERS+=("test_heavyweight_betting_stake") ;;
+        --box)                  TEST_FILTERS+=("test_heavyweight_box") ;;
         --darkbet-exchange)     TEST_FILTERS+=("test_heavyweight_darkbet_exchange") ;;
         --darktoshi-dice)       TEST_FILTERS+=("test_heavyweight_darktoshi_dice") ;;
         --lottery)              TEST_FILTERS+=("test_heavyweight_lottery") ;;
+        --multisig)             TEST_FILTERS+=("test_heavyweight_multisig") ;;
         --roulette)             TEST_FILTERS+=("test_heavyweight_roulette") ;;
         --dao-escrow)           TEST_FILTERS+=("test_heavyweight_dao_escrow") ;;
         --identity)             TEST_FILTERS+=("test_heavyweight_identity") ;;
@@ -89,7 +92,7 @@ while [[ $# -gt 0 ]]; do
         --help)
             echo "Usage: heavyweight.sh [flags...]"
             echo ""
-            echo "Contract tests (29):"
+            echo "Contract tests (32):"
             echo "  --promissory-note   --dex               --native-token"
             echo "  --auction           --escrow            --metadata"
             echo "  --stablecoin        --bridge            --labor-market"
@@ -100,6 +103,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --betting-stake     --darkbet-exchange  --darktoshi-dice"
             echo "  --lottery           --roulette          --dao-escrow"
             echo "  --identity          --bearer-bond       --otc-swap"
+            echo "  --box               --purse             --multisig"
             echo ""
             echo "Block execution tests (1 group):"
             echo "  --block-execution   (8 tests: canonical, uncle, mixed, multi-uncle,"
@@ -110,7 +114,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --relayer           Relayer lifecycle"
             echo ""
             echo "Meta flags:"
-            echo "  --all               Run all 40 heavyweight tests"
+            echo "  --all               Run all 43 heavyweight tests"
             echo "  --nocapture         Show test output (println diagnostics)"
             echo "  --help              This help"
             echo ""
@@ -139,6 +143,6 @@ for f in "${TEST_FILTERS[@]}"; do
     FILTER_STRING="${FILTER_STRING}${f} "
 done
 
-echo "Running: $CARGO_CMD $NOCAPTURE -- $FILTER_STRING"
+echo "Running: $CARGO_CMD -- $FILTER_STRING $NOCAPTURE"
 echo ""
-exec $CARGO_CMD $NOCAPTURE -- $FILTER_STRING
+exec $CARGO_CMD -- $FILTER_STRING $NOCAPTURE

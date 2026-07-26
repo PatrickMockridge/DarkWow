@@ -79,9 +79,7 @@ pub fn estimate_fee(num_inputs: usize, _num_outputs: usize) -> u64 {
 /// (which is the master key, unable to witness per-block-derived coinbase caps).
 /// `fee_proofs` is optional for callers that merge fee ZK proofs into the main
 /// proof bundle.
-/// Returns `(tx, ephemeral_secrets)` — the ephemeral secret keys the fee
-/// metadata expects for per-call signature verification. The caller MUST use
-/// these (not the wallet's master key) when signing the fee call.
+/// Schnorr signatures removed per contract-standards.md §3.
 pub fn build_fee_and_finalize_tx(
     wallet: &WalletPtr,
     account_mgr: &dwow_accounts::AccountManager,
@@ -89,7 +87,7 @@ pub fn build_fee_and_finalize_tx(
     fee_proofs: Option<Vec<Proof>>,
     exclude_cap_id: Option<&str>,
     seed: [u8; 32],
-) -> Result<(Transaction, Vec<SecretKey>)> {
+) -> Result<Transaction> {
     // wallet.md §6.1: Seed-derived randomness — no OsRng.
     let mut rng = StdRng::from_seed(seed);
     // Get DRKW cap for fee
@@ -257,7 +255,7 @@ pub fn build_fee_and_finalize_tx(
     let tx = tx_builder.build()
         .map_err(|e| Error::Custom(format!("Failed to build transaction: {:?}", e)))?;
 
-    Ok((tx, fee_debris.signature_secrets))
+    Ok(tx)
 }
 
 #[cfg(test)]

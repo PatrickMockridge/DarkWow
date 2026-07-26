@@ -311,8 +311,7 @@ fn main() -> Result<()> {
                     vec![],
                 )?;
                 let mut tx = tx_builder.build()?;
-                let sigs = tx.create_sigs(&[signature_secret])?;
-                tx.signatures = vec![sigs];
+                // Schnorr signatures removed per contract-standards.md §3.
 
                 println!("{}", base64::encode(&serialize_async(&tx).await));
             }

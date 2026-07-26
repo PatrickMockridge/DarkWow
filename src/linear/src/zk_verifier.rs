@@ -195,7 +195,6 @@ pub fn verify_core_tx_with_tables(
     store: &crate::LinearStore,
     core_tx: &dwow_core::tx::Transaction,
     zkp_table: &[Vec<(String, Vec<dwow_sdk::pasta::pallas::Base>)>],
-    pub_table: &[Vec<dwow_sdk::crypto::PublicKey>],
 ) -> Result<(), VerifyError> {
     // -- ZK proofs: per call, per proof --
     // Safety gate: the outer zip silently truncates to the minimum length.
@@ -243,13 +242,10 @@ pub fn verify_core_tx_with_tables(
         }
     }
 
-    // -- Schnorr signatures --
-    if let Err(e) = core_tx.verify_sigs(pub_table.to_vec()) {
-        return Err(VerifyError::InvalidProof(format!(
-            "signature verification failed: {}",
-            e,
-        )));
-    }
+    // Schnorr signature verification removed per contract-standards.md §3.
+    // Authorization is via ZK proof + nullifier exclusively. The wallet does not
+    // produce Schnorr signatures; contracts return empty signature pubkeys in metadata.
+    // The Transaction.signatures field is retained as empty vec for serialization compat.
 
     Ok(())
 }
@@ -431,8 +427,6 @@ mod tests {
         let zkp_table: Vec<Vec<(String, Vec<pallas::Base>)>> = vec![
             vec![("FeeCollect_V1".to_string(), vec![pallas::Base::zero()])],
         ];
-        let pub_table: Vec<Vec<dwow_sdk::crypto::PublicKey>> = vec![vec![]];
-
         // The function never reaches load_zkbin on this code path (fails on
         // the length guard before any store access), but the type system
         // requires a store handle. Create a minimal LinearStore via sled
@@ -443,7 +437,6 @@ mod tests {
             &store,
             &core_tx,
             &zkp_table,
-            &pub_table,
         );
         assert!(
             matches!(result, Err(VerifyError::InvalidProof(_))),
