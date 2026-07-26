@@ -275,3 +275,18 @@ through the 9-step production path.
 Tests SHALL follow: genesis → coinbase → contract call → wrap_call_data → witness →
 transaction → block → accept_block → state check. Tests verifying only call_data generation
 without accept_block routing do not exercise contract function behavior.
+
+## 11. Deployment Configuration
+
+### Child Contract ID Configuration
+
+Contracts that make cross-contract calls MUST support post-deployment configuration
+of child contract IDs. The `[0u8; 32]` placeholder pattern is permitted during
+initialization ONLY when paired with an `UpdateConfig` function that allows the
+operator to set the real contract ID before accepting user transactions.
+
+Contracts MUST NOT permanently accept `ContractId::ZERO` as a valid child contract
+ID. The `if cid != ContractId::ZERO { validate }` bypass pattern SHALL be
+replaced with explicit configuration checks that fail-closed: if the child CID
+has not been configured, cross-contract calls SHALL be rejected.
+
