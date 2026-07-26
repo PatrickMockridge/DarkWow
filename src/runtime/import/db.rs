@@ -631,7 +631,7 @@ pub(crate) fn db_get(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
     let cid = env.contract_id;
 
     if let Err(e) =
-        acl_allow(env, &[ContractSection::Deploy, ContractSection::Metadata, ContractSection::Exec])
+        acl_allow(env, &[ContractSection::Deploy, ContractSection::Metadata, ContractSection::Exec, ContractSection::Update])
     {
         error!(
             target: "runtime::db::db_get",
