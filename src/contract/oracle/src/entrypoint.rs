@@ -124,7 +124,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     match func {
         OracleFunction::RegisterOracleV1 => {
             let params: RegisterOracleParamsV1 = match deserialize(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize RegisterOracleParamsV1: {:?}", e); return Ok(()); }
+                Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize RegisterOracleParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             // Circuit constrain_instance: oracle_pub_x, oracle_pub_y
             zk_public_inputs.push((
@@ -137,7 +137,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         OracleFunction::PushValueV1 => {
             let params: PushValueParamsV1 = match deserialize(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize PushValueParamsV1: {:?}", e); return Ok(()); }
+                Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize PushValueParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_PUSH_VALUE_NS_V2.to_string(),
@@ -146,7 +146,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         OracleFunction::AttestValueV1 => {
             let params: AttestValueParamsV1 = match deserialize(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize AttestValueParamsV1: {:?}", e); return Ok(()); }
+                Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize AttestValueParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             // Circuit constrain_instance: oracle_id, attestation_id, predicate, threshold
             zk_public_inputs.push((
@@ -161,7 +161,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         OracleFunction::PushValueCommitmentV1 => {
             let params: PushValueCommitmentParamsV1 = match deserialize(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize PushValueCommitmentParamsV1: {:?}", e); return Ok(()); }
+                Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize PushValueCommitmentParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             // Circuit constrain_instance: oracle_id, commitment, data_root
             zk_public_inputs.push((
@@ -171,7 +171,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         OracleFunction::AggregateV1 => {
             let params: AggregateParamsV1 = match deserialize(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize AggregateParamsV1: {:?}", e); return Ok(()); }
+                Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize AggregateParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             // Circuit constrain_instance: oracle_id, result, min_result, max_result
             zk_public_inputs.push((

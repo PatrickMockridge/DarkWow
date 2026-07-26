@@ -160,7 +160,16 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     // deploy_contract() in tests (bypassing Deployooor) — use sensible defaults.
     let params = if ix.is_empty() {
         InitializeParams {
-            timeout: 100, fee: 0, trusted_money_merkle_root: [0u8; 32],
+            // Default to the empty Poseidon SMT root over pallas::Base —
+            // same as promissory_note::EMPTY_COINS_TREE_ROOT. This allows
+            // lock_proofs with zero-sibling paths to verify against the
+            // zero leaf (empty tree). Per the o-cap model, this is the
+            // root of the token contract's coin tree when no tokens exist.
+            timeout: 100, fee: 0, trusted_money_merkle_root: [
+                0xb8, 0xc1, 0x07, 0x5a, 0x80, 0xa8, 0x09, 0x65, 0xc2, 0x39, 0x8f, 0x71,
+                0x1f, 0xe7, 0x3e, 0x05, 0xb4, 0xed, 0xae, 0xde, 0xf1, 0x62, 0xf2, 0x61,
+                0xd4, 0xee, 0xd7, 0xcd, 0x72, 0x74, 0x8d, 0x17,
+            ],
             transparency_config: Default::default(),
         }
     } else {

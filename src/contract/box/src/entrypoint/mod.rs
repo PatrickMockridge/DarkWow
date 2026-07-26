@@ -51,13 +51,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let metadata = match func {
         BoxFunction::PutV1 => {
             let params: PutParamsV1 = match deserialize(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[box::get_metadata] Error: Failed to deserialize PutParamsV1: {:?}", e); return Ok(()); }
+                Ok(p) => p, Err(e) => { msg!("[box::get_metadata] Error: Failed to deserialize PutParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             box_put_get_metadata_v1(params)?
         }
         BoxFunction::TakeV1 => {
             let params: TakeParamsV1 = match deserialize(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[box::get_metadata] Error: Failed to deserialize TakeParamsV1: {:?}", e); return Ok(()); }
+                Ok(p) => p, Err(e) => { msg!("[box::get_metadata] Error: Failed to deserialize TakeParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             box_take_get_metadata_v1(params)?
         }

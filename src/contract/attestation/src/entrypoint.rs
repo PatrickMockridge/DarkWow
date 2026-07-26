@@ -189,7 +189,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize CreateAttestationParamsV1: {:?}", e);
-                    return Ok(());
+                    wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
             zk_public_inputs.push((
@@ -205,7 +205,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize CreateClaimParamsV1: {:?}", e);
-                    return Ok(());
+                    wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
             zk_public_inputs.push((
@@ -221,7 +221,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize VerifyClaimParamsV1: {:?}", e);
-                    return Ok(());
+                    wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
             zk_public_inputs.push((
@@ -239,7 +239,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize ConsumeClaimParamsV1: {:?}", e);
-                    return Ok(());
+                    wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
             zk_public_inputs.push((
@@ -259,7 +259,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize CheckNotRevokedParamsV1: {:?}", e);
-                    return Ok(());
+                    wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
             zk_public_inputs.push((
@@ -272,7 +272,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize DelegateAttestationParamsV1: {:?}", e);
-                    return Ok(());
+                    wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
             zk_public_inputs.push((
@@ -301,7 +301,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize VerifyChainParamsV1: {:?}", e);
-                    return Ok(());
+                    wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
             zk_public_inputs.push((
@@ -320,7 +320,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize UpdateDelegationParamsV1: {:?}", e);
-                    return Ok(());
+                    wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
             zk_public_inputs.push((
@@ -341,7 +341,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize AttestSlashParamsV1: {:?}", e);
-                    return Ok(());
+                    wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
             zk_public_inputs.push((
@@ -357,7 +357,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize CommitFeeScheduleParamsV1: {:?}", e);
-                    return Ok(());
+                    wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
             zk_public_inputs.push((

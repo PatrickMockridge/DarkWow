@@ -82,6 +82,7 @@
 # Contracts
 
 - [Contract Catalog](contracts.md) ← Canonical catalog (all 32)
+- [Contract Standards](contract-standards.md) ← Minimum standards + best practices
 - [Security Audit](contract/audit.md)
 
 ## Genesis

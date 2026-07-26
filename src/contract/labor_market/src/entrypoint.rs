@@ -95,8 +95,13 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let info_db = wasm::db::db_init(cid, LABOR_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, b"db_version", &env!("CARGO_PKG_VERSION").as_bytes())?;
 
-    // Deserialize init params: attestation_contract_id
-    let attestation_cid: ContractId = deserialize(_ix)?;
+    // Deserialize init params: attestation_contract_id.
+    // Empty ix means deploy_contract() path — default to ContractId::ZERO.
+    let attestation_cid: ContractId = if _ix.is_empty() {
+        ContractId::ZERO
+    } else {
+        deserialize(_ix).map_err(|_| ContractError::IoError("Invalid init params".to_string()))?
+    };
     wasm::db::db_set(info_db, LABOR_CONTRACT_ATTESTATION_CONTRACT_ID, &serialize(&attestation_cid))?;
 
     // Store default promissory_note contract ID for cross-contract validation

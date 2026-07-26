@@ -119,25 +119,25 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let metadata = match func {
         InsuranceMarketFunction::UnderwriteWithCapabilityV1 => {
             let params: UnderwriteWithCapabilityParamsV1 = match deserialize(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to deserialize UnderwriteWithCapabilityParamsV1: {:?}", e); return Ok(()); }
+                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to deserialize UnderwriteWithCapabilityParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             underwrite_with_capability_get_metadata_v1(params)?
         }
         InsuranceMarketFunction::PurchaseCoverageV1 => {
             let params: PurchaseCoverageParamsV1 = match deserialize(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to deserialize PurchaseCoverageParamsV1: {:?}", e); return Ok(()); }
+                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to deserialize PurchaseCoverageParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             purchase_coverage_get_metadata_v1(params)?
         }
         InsuranceMarketFunction::PurchaseCoverageWithCapabilityV1 => {
             let params: PurchaseCoverageWithCapabilityParamsV1 = match deserialize(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to deserialize PurchaseCoverageWithCapabilityParamsV1: {:?}", e); return Ok(()); }
+                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to deserialize PurchaseCoverageWithCapabilityParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             purchase_coverage_with_capability_get_metadata_v1(params)?
         }
         InsuranceMarketFunction::PurchaseCoverageWithDAGV1 => {
             let params: PurchaseCoverageWithDAGParamsV1 = match deserialize(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to deserialize PurchaseCoverageWithDAGParamsV1: {:?}", e); return Ok(()); }
+                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to deserialize PurchaseCoverageWithDAGParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             purchase_coverage_with_dag_get_metadata_v1(params)?
         }

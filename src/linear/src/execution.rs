@@ -347,25 +347,38 @@ pub fn execute_block(
                     match dwow_serial::Decodable::decode(&mut c) {
                         Ok(v) => v,
                         Err(e) => {
-                            tracing::error!(target: "dwow_chain::execution",
-                                "metadata ZK public inputs decode failed: {:?}", e);
-                            continue;
+                            eprintln!("metadata ZK decode failed for contract {} (tx {}): {:?}",
+                                job.contract_id, job.tx_hash, e);
+                            success = false; fail_stage = "metadata-decode-zkp";
+                            Vec::new()
                         }
                     };
                 let sigs: Vec<dwow_sdk::crypto::PublicKey> =
-                    match dwow_serial::Decodable::decode(&mut c) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            tracing::error!(target: "dwow_chain::execution",
-                                "metadata signature pubkeys decode failed: {:?}", e);
-                            continue;
+                    if c.position() >= m.len() as u64 {
+                        // No signature pubkeys encoded — valid per o-cap model:
+                        // contract authorizes via ZK capabilities, not Schnorr sigs.
+                        Vec::new()
+                    } else {
+                        match dwow_serial::Decodable::decode(&mut c) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                eprintln!("metadata sig decode failed for contract {} (tx {}): {:?}",
+                                    job.contract_id, job.tx_hash, e);
+                                success = false; fail_stage = "metadata-decode-sigs";
+                                Vec::new()
+                            }
                         }
                     };
-                let entry = veri_state.entry(job.tx_hash).or_insert_with(|| {
-                    TxVeriTables { zkp: vec![], pubkeys: vec![] }
-                });
-                entry.zkp.push(zkp);
-                entry.pubkeys.push(sigs);
+                if !success {
+                    // Don't accumulate bad metadata — fall through to the !success
+                    // check below which reverts the checkpoint and rejects the block.
+                } else {
+                    let entry = veri_state.entry(job.tx_hash).or_insert_with(|| {
+                        TxVeriTables { zkp: vec![], pubkeys: vec![] }
+                    });
+                    entry.zkp.push(zkp);
+                    entry.pubkeys.push(sigs);
+                }
             }
             Err(e) => {
                 success = false;
