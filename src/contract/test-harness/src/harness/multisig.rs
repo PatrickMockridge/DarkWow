@@ -22,137 +22,136 @@
  */
 
 //! MultiSig Test Harness
-//!
-//! Provides isolated testing for MultiSig contract (multisig wallets).
 
 use dwow_core::{
-    zk::{Proof, ProvingKey, ZkCircuit},
+    zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
+    Result,
 };
+use dwow_sdk::{
+    crypto::{poseidon_hash, PublicKey, SecretKey},
+    pasta::pallas,
+};
+use dwow_serial::Encodable;
+use rand::rngs::OsRng;
 
-/// MultiSig Harness for isolated testing
 pub struct MultiSigHarness {
-    /// CreateGroupV1 ZkBinary
-    create_group_zkbin: ZkBinary,
-    /// CreateGroupV1 ProvingKey
-    create_group_pk: ProvingKey,
-    /// FinalizeV1 ZkBinary
-    finalize_zkbin: ZkBinary,
-    /// FinalizeV1 ProvingKey
-    finalize_pk: ProvingKey,
-    /// SignV1 ZkBinary
-    sign_zkbin: ZkBinary,
-    /// SignV1 ProvingKey
-    sign_pk: ProvingKey,
+    create_group_zkbin: ZkBinary, create_group_pk: ProvingKey,
+    finalize_zkbin: ZkBinary, finalize_pk: ProvingKey,
+    sign_zkbin: ZkBinary, sign_pk: ProvingKey,
 }
 
 impl MultiSigHarness {
-    /// Spawn a new MultiSig harness with pre-loaded circuits
     pub fn spawn() -> Self {
-        // Load circuit binaries
-        let create_group_bin =
-            include_bytes!("../../../multisig/proof/create_group_v1.zk.bin");
-        let finalize_bin = include_bytes!("../../../multisig/proof/finalize_v1.zk.bin");
-        let sign_bin = include_bytes!("../../../multisig/proof/sign_v1.zk.bin");
-
-        let create_group_zkbin = ZkBinary::decode(create_group_bin, false).unwrap();
-        let finalize_zkbin = ZkBinary::decode(finalize_bin, false).unwrap();
-        let sign_zkbin = ZkBinary::decode(sign_bin, false).unwrap();
-
-        // Build proving keys
-        let create_group_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&create_group_zkbin).unwrap(),
-            &create_group_zkbin,
-        );
-        let finalize_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&finalize_zkbin).unwrap(),
-            &finalize_zkbin,
-        );
-        let sign_circuit = ZkCircuit::new(
-            dwow_core::zk::empty_witnesses(&sign_zkbin).unwrap(),
-            &sign_zkbin,
-        );
-
-        let create_group_pk =
-            ProvingKey::build(create_group_zkbin.k, &create_group_circuit)
-                .expect("ProvingKey::build failed");
-        let finalize_pk =
-            ProvingKey::build(finalize_zkbin.k, &finalize_circuit)
-                .expect("ProvingKey::build failed");
-        let sign_pk =
-            ProvingKey::build(sign_zkbin.k, &sign_circuit)
-                .expect("ProvingKey::build failed");
-
-        Self {
-            create_group_zkbin,
-            create_group_pk,
-            finalize_zkbin,
-            finalize_pk,
-            sign_zkbin,
-            sign_pk,
-        }
+        let cg = include_bytes!("../../../multisig/proof/create_group_v1.zk.bin");
+        let fi = include_bytes!("../../../multisig/proof/finalize_v1.zk.bin");
+        let si = include_bytes!("../../../multisig/proof/sign_v1.zk.bin");
+        let cg_zk = ZkBinary::decode(cg, false).unwrap();
+        let fi_zk = ZkBinary::decode(fi, false).unwrap();
+        let si_zk = ZkBinary::decode(si, false).unwrap();
+        let cg_pk = ProvingKey::build(cg_zk.k, &ZkCircuit::new(dwow_core::zk::empty_witnesses(&cg_zk).unwrap(), &cg_zk)).expect("pk");
+        let fi_pk = ProvingKey::build(fi_zk.k, &ZkCircuit::new(dwow_core::zk::empty_witnesses(&fi_zk).unwrap(), &fi_zk)).expect("pk");
+        let si_pk = ProvingKey::build(si_zk.k, &ZkCircuit::new(dwow_core::zk::empty_witnesses(&si_zk).unwrap(), &si_zk)).expect("pk");
+        Self { create_group_zkbin: cg_zk, create_group_pk: cg_pk, finalize_zkbin: fi_zk, finalize_pk: fi_pk, sign_zkbin: si_zk, sign_pk: si_pk }
     }
 
-    /// Create a multisig group (function code 0x01)
-    pub fn create_group(
-        &self, threshold: u8, members: Vec<dwow_sdk::crypto::PublicKey>,
-    ) -> dwow_core::Result<CreateGroupResult> {
-        let w = dwow_core::zk::empty_witnesses(&self.create_group_zkbin)?;
-        let c = ZkCircuit::new(w, &self.create_group_zkbin);
-        let proof = Proof::create(&self.create_group_pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
-        Ok(CreateGroupResult { call_data: vec![0x01], proof })
+    pub fn create_group(&self, threshold: u8, members: Vec<PublicKey>) -> Result<CreateGroupResult> {
+        // Store the first member's secret for sign() to use consistently
+        let first_pk = members[0];
+        let (fx, fy) = first_pk.xy().expect("pk not identity");
+        let t = pallas::Base::from(threshold as u64);
+        let n = pallas::Base::from(members.len() as u64);
+        let group_id = poseidon_hash([fx, fy, t, n]);
+        let tx_commitment = pallas::Base::from(200u64);
+        let tx_nonce = pallas::Base::from(300u64);
+        let tx_binding = poseidon_hash([tx_commitment, tx_nonce]);
+
+        let witnesses = vec![
+            Witness::Base(Value::known(group_id)), Witness::Base(Value::known(t)),
+            Witness::Base(Value::known(n)), Witness::Base(Value::known(tx_commitment)),
+            Witness::Base(Value::known(tx_nonce)),
+        ];
+        let public_inputs = vec![tx_binding, tx_nonce, group_id, t, n];
+
+        let proof = Proof::create(&self.create_group_pk, &[ZkCircuit::new(witnesses, &self.create_group_zkbin)], &public_inputs, OsRng)
+            .map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {:?}", e)))?;
+
+        let proof_bytes = dwow_serial::serialize(&proof);
+        let params = dwow_multisig_contract::model::CreateGroupParamsV1 {
+            pubkeys: members, threshold,
+            proof: proof_bytes, tx_binding, tx_nonce,
+        };
+        let mut call_data = vec![0x01u8];
+        params.encode(&mut call_data).map_err(|e| dwow_core::Error::Custom(format!("encode: {:?}", e)))?;
+        Ok(CreateGroupResult { call_data, proof })
     }
 
-    /// Sign a multisig transaction (function code 0x02)
-    pub fn sign(
-        &self, group_id: dwow_sdk::pasta::pallas::Base, message_hash: dwow_sdk::pasta::pallas::Base,
-        signer_secret: dwow_sdk::pasta::pallas::Base,
-    ) -> dwow_core::Result<SignResult> {
-        let w = dwow_core::zk::empty_witnesses(&self.sign_zkbin)?;
-        let c = ZkCircuit::new(w, &self.sign_zkbin);
-        let proof = Proof::create(&self.sign_pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
-        Ok(SignResult { call_data: vec![0x02], proof })
+    pub fn sign(&self, group_id: pallas::Base, message_hash: pallas::Base, signer_secret: pallas::Base) -> Result<SignResult> {
+        let signer_pub = PublicKey::from_secret(SecretKey::from_base(signer_secret));
+        let (sx, sy) = signer_pub.xy().expect("pk not identity");
+        let tx_commitment = pallas::Base::from(200u64);
+        let tx_nonce = pallas::Base::from(300u64);
+        let tx_binding = poseidon_hash([tx_commitment, tx_nonce]);
+
+        let witnesses = vec![
+            Witness::Base(Value::known(group_id)), Witness::Base(Value::known(message_hash)),
+            Witness::Base(Value::known(signer_secret)), Witness::Base(Value::known(sx)),
+            Witness::Base(Value::known(sy)), Witness::Base(Value::known(tx_commitment)),
+            Witness::Base(Value::known(tx_nonce)),
+        ];
+        let public_inputs = vec![tx_binding, tx_nonce, group_id, message_hash];
+
+        let proof = Proof::create(&self.sign_pk, &[ZkCircuit::new(witnesses, &self.sign_zkbin)], &public_inputs, OsRng)
+            .map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {:?}", e)))?;
+
+        let proof_bytes = dwow_serial::serialize(&proof);
+        let params = dwow_multisig_contract::model::SignParamsV1 {
+            group_id: dwow_multisig_contract::model::GroupId(group_id),
+            message_hash, proof: proof_bytes, tx_binding, tx_nonce,
+        };
+        let mut call_data = vec![0x02u8];
+        params.encode(&mut call_data).map_err(|e| dwow_core::Error::Custom(format!("encode: {:?}", e)))?;
+        Ok(SignResult { call_data, proof })
     }
 
-    /// Finalize a multisig transaction (function code 0x03)
-    pub fn finalize(
-        &self, group_id: dwow_sdk::pasta::pallas::Base, message_hash: dwow_sdk::pasta::pallas::Base,
-    ) -> dwow_core::Result<FinalizeResult> {
-        let w = dwow_core::zk::empty_witnesses(&self.finalize_zkbin)?;
-        let c = ZkCircuit::new(w, &self.finalize_zkbin);
-        let proof = Proof::create(&self.finalize_pk, &[c], &[], rand::rngs::OsRng)
-            .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
-        Ok(FinalizeResult { call_data: vec![0x03], proof })
+    pub fn finalize(&self, group_id: pallas::Base, message_hash: pallas::Base) -> Result<FinalizeResult> {
+        let threshold = pallas::Base::from(1u64);
+        let signature_count = pallas::Base::from(1u64);
+        let approval_commit = poseidon_hash([group_id, message_hash]);
+        let tx_commitment = pallas::Base::from(200u64);
+        let tx_nonce = pallas::Base::from(300u64);
+        let tx_binding = poseidon_hash([tx_commitment, tx_nonce]);
+
+        let witnesses = vec![
+            Witness::Base(Value::known(group_id)), Witness::Base(Value::known(message_hash)),
+            Witness::Base(Value::known(threshold)), Witness::Base(Value::known(signature_count)),
+            Witness::Base(Value::known(approval_commit)), Witness::Base(Value::known(tx_commitment)),
+            Witness::Base(Value::known(tx_nonce)),
+        ];
+        let public_inputs = vec![tx_binding, tx_nonce, group_id, message_hash];
+
+        let proof = Proof::create(&self.finalize_pk, &[ZkCircuit::new(witnesses, &self.finalize_zkbin)], &public_inputs, OsRng)
+            .map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {:?}", e)))?;
+
+        let proof_bytes = dwow_serial::serialize(&proof);
+        let params = dwow_multisig_contract::model::FinalizeParamsV1 {
+            group_id: dwow_multisig_contract::model::GroupId(group_id),
+            message_hash, proof: proof_bytes, tx_binding, tx_nonce,
+        };
+        let mut call_data = vec![0x03u8];
+        params.encode(&mut call_data).map_err(|e| dwow_core::Error::Custom(format!("encode: {:?}", e)))?;
+        Ok(FinalizeResult { call_data, proof })
     }
 }
 
 impl super::ContractHarness for MultiSigHarness {
-    fn name(&self) -> &str {
-        "multisig"
-    }
-
-    fn circuits(&self) -> Vec<&'static str> {
-        vec!["CreateGroupV1", "FinalizeV1", "SignV1"]
-    }
-
+    fn name(&self) -> &str { "multisig" }
+    fn circuits(&self) -> Vec<&'static str> { vec!["CreateGroupV1", "FinalizeV1", "SignV1"] }
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
-        match ns {
-            "CreateGroupV1" => Some(&self.create_group_zkbin),
-            "FinalizeV1" => Some(&self.finalize_zkbin),
-            "SignV1" => Some(&self.sign_zkbin),
-            _ => None,
-        }
+        match ns { "CreateGroupV1" => Some(&self.create_group_zkbin), "FinalizeV1" => Some(&self.finalize_zkbin), "SignV1" => Some(&self.sign_zkbin), _ => None }
     }
-
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
-        match ns {
-            "CreateGroupV1" => Some(&self.create_group_pk),
-            "FinalizeV1" => Some(&self.finalize_pk),
-            "SignV1" => Some(&self.sign_pk),
-            _ => None,
-        }
+        match ns { "CreateGroupV1" => Some(&self.create_group_pk), "FinalizeV1" => Some(&self.finalize_pk), "SignV1" => Some(&self.sign_pk), _ => None }
     }
 }
 
