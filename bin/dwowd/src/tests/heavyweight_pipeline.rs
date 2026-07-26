@@ -4534,7 +4534,6 @@ fn test_heavyweight_multisig() -> std::result::Result<(), Box<dyn std::error::Er
         let cid = chain.deploy(&harness, "multisig", wasm).await?;
         println!("Contract deployed");
 
-        let group_id = pallas::Base::from(1u64);
         let message_hash = pallas::Base::from(2u64);
         let signer_secret = pallas::Base::from(3u64);
         let signer_pub = PublicKey::from_secret(SecretKey::from_base(signer_secret));
@@ -4544,7 +4543,8 @@ fn test_heavyweight_multisig() -> std::result::Result<(), Box<dyn std::error::Er
         println!("  Test: create_group");
         let create = harness.create_group(1, members)?;
         assert!(!create.call_data.is_empty());
-        println!("    call_data={}B", create.call_data.len());
+        let group_id = create.group_id; // capture actual derived group_id
+        println!("    call_data={}B group_id={:?}", create.call_data.len(), group_id);
 
         println!("  Exec: CreateGroupV1 through accept_block");
         let h_before = chain.height();

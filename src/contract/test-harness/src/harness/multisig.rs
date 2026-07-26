@@ -83,7 +83,7 @@ impl MultiSigHarness {
         };
         let mut call_data = vec![0x01u8];
         params.encode(&mut call_data).map_err(|e| dwow_core::Error::Custom(format!("encode: {:?}", e)))?;
-        Ok(CreateGroupResult { call_data, proof })
+        Ok(CreateGroupResult { call_data, proof, group_id })
     }
 
     pub fn sign(&self, group_id: pallas::Base, message_hash: pallas::Base, signer_secret: pallas::Base) -> Result<SignResult> {
@@ -155,6 +155,6 @@ impl super::ContractHarness for MultiSigHarness {
     }
 }
 
-pub struct CreateGroupResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
+pub struct CreateGroupResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof, pub group_id: pallas::Base }
 pub struct SignResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
 pub struct FinalizeResult { pub call_data: Vec<u8>, pub proof: dwow_core::zk::Proof }
