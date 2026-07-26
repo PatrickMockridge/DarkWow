@@ -466,6 +466,10 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
         let wasm = include_bytes!("../../../../src/contract/native_token/dwow_native_token_contract.wasm");
         let contract_id = chain.deploy(&harness, "native_token", wasm).await?;
         println!("Contract deployed at {:?}", contract_id);
+        // native_token uses ix[0] dispatch — execution.rs routes raw call_data
+        // only for NATIVE_TOKEN_CONTRACT_ID. All calls MUST use the genesis-deployed
+        // native_token at that ID, not the derived deployment ID.
+        let native_cid = *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
         let secret = SecretKey::from_bytes([2u8; 32]).unwrap();
         let public = PublicKey::from_secret(secret.clone());
         let keypair = Keypair { secret, public };
@@ -487,7 +491,7 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
         println!("  Exec: MintPoWRewardV1 through accept_block");
         let h_before = chain.height();
         chain.block()?
-            .with_call(contract_id, &harness, &reward.call_data, reward.proofs.clone())?
+            .with_call(native_cid, &harness, &reward.call_data, reward.proofs.clone())?
             .with_fee_collect()?
             .submit().await?;
         assert!(chain.height() > h_before);
@@ -543,7 +547,7 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
         println!("  Exec: FeeV1 through accept_block");
         let h_before = chain.height();
         chain.block()?
-            .with_call(contract_id, &harness, &fee.call_data, fee.proofs.clone())?
+            .with_call(native_cid, &harness, &fee.call_data, fee.proofs.clone())?
             .with_fee_collect()?
             .submit().await?;
         assert!(chain.height() > h_before,
