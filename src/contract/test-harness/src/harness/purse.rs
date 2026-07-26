@@ -94,11 +94,14 @@ impl PurseHarness {
             Witness::Base(Value::known(tx_binding)),
         ];
 
+        // Order MUST match circuit constrain_instance:
+        // purse_id, old_x, old_y, new_x, tx_binding, tx_nonce, new_y
         let public_inputs = vec![
             purse_id,
             *old_coords.x(), *old_coords.y(),
-            *new_coords.x(), *new_coords.y(),
+            *new_coords.x(),
             tx_binding, tx_nonce,
+            *new_coords.y(),
         ];
 
         let circuit = ZkCircuit::new(witnesses, &self.deposit_zkbin);

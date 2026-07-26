@@ -207,7 +207,9 @@ impl NativeTokenHarness {
 
         let debris = builder.build()?;
 
+        // Canonical format: [selector: 0x00][fee u64 LE: 8 bytes][FeeParamsV1]
         let mut call_data = vec![0x00];
+        call_data.extend_from_slice(&fee_amount.to_le_bytes());
         debris.params.encode(&mut call_data)?;
 
         Ok(FeeResult { call_data, params: debris.params, proofs: debris.proofs })

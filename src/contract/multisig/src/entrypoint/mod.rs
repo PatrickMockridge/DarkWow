@@ -139,7 +139,10 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             if !wasm::db::db_contains_key(groups_db, &serialize(&params.group_id))? {
                 return Err(MultiSigError::GroupNotFound.into());
             }
-            let nf_base = poseidon_hash([params.group_id.inner(), params.message_hash]);
+            // Nullifier binds signer pubkey to prevent collision across signers
+            // Must match FinalizeV1 lookup: poseidon_hash([group_id, msg_hash, pk_x, pk_y])
+            let (pk_x, pk_y) = params.signer_pub.xy().expect("pk not identity");
+            let nf_base = poseidon_hash([params.group_id.inner(), params.message_hash, pk_x, pk_y]);
             let nullifier = Nullifier::from_bytes(nf_base.to_repr()).expect("non-zero poseidon output");
             let nullifiers_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(nullifiers_db, &serialize(&nullifier))? {

@@ -87,10 +87,13 @@ fn purse_deposit_get_metadata_v1(params: DepositParamsV1) -> Result<Vec<u8>, Con
     }
     let old_coords = old_coords.unwrap();
     let new_coords = new_coords.unwrap();
+    // Order MUST match circuit constrain_instance:
+    // purse_id, old_x, old_y, new_x, tx_binding, tx_nonce, new_y
     zk_inputs.push((PURSE_CONTRACT_ZKAS_DEPOSIT_NS_V1.to_string(), vec![
         params.purse_id.inner(), *old_coords.x(), *old_coords.y(),
-        *new_coords.x(), *new_coords.y(),
+        *new_coords.x(),
         params.tx_binding, params.tx_nonce,
+        *new_coords.y(),
     ]));
     let mut metadata = vec![];
     zk_inputs.encode(&mut metadata)?;

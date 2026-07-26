@@ -184,13 +184,14 @@ fn process_fee_call(
     fee_aggregate: &mut pallas::Point,
     darkw_token_commit: pallas::Base,
 ) -> Result<(), BalanceError> {
-    // FeeV1 call data: [selector:1][FeeParamsV1...] — fee is a field inside FeeParamsV1
-    if data.len() < 2 {
+    // FeeV1 call data: [selector:1][fee:8][FeeParamsV1...] — canonical format
+    if data.len() < 10 {
         return Err(BalanceError::Deserialize("FeeV1 data too short".into()));
     }
+    let fee: u64 =
+        deserialize(&data[1..9]).map_err(|e| BalanceError::Deserialize(e.to_string()))?;
     let params: FeeParamsV1 =
-        deserialize(&data[1..]).map_err(|e| BalanceError::Deserialize(e.to_string()))?;
-    let fee = params.fee;
+        deserialize(&data[9..]).map_err(|e| BalanceError::Deserialize(e.to_string()))?;
 
     // Only track darkw token
     if params.input.token_commit == darkw_token_commit {

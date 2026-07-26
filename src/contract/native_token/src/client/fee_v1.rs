@@ -322,13 +322,18 @@ impl FeeCallBuilder {
         // blind fails consensus with TokenMismatch.
         // Gated: deterministic when enable_deterministic_zk() is set
         // (MOC item 10 bug-3 — matching transfer_v1/proof.rs gating pattern).
-        let (input_value_blind, output_value_blind, output_coin_blind) =
+        // Pedersen homomorphic balance requires input_blind == output_blind
+        // (MoC audit: proof_of_token_balance uses blind=0 for fee, so
+        //  pedersen(in_val, in_blind) == pedersen(out_val, out_blind) + pedersen(fee, 0)
+        //  requires in_blind == out_blind)
+        let (input_value_blind, output_coin_blind) =
             if crate::deterministic_zk_enabled() {
             let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-            (ScalarBlind::random(&mut rng), ScalarBlind::random(&mut rng), BaseBlind::random(&mut rng))
+            (ScalarBlind::random(&mut rng), BaseBlind::random(&mut rng))
         } else {
-            (ScalarBlind::random(&mut OsRng), ScalarBlind::random(&mut OsRng), BaseBlind::random(&mut OsRng))
+            (ScalarBlind::random(&mut OsRng), BaseBlind::random(&mut OsRng))
         };
+        let output_value_blind = input_value_blind.clone();
         let token_blind = BaseBlind::ZERO;
 
         // Create output value (input - fee)

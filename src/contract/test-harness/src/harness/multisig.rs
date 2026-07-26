@@ -105,9 +105,12 @@ impl MultiSigHarness {
             .map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {:?}", e)))?;
 
         let proof_bytes = dwow_serial::serialize(&proof);
+        let signer_pub = PublicKey::from_secret(SecretKey::from_base(signer_secret));
         let params = dwow_multisig_contract::model::SignParamsV1 {
             group_id: dwow_multisig_contract::model::GroupId(group_id),
-            message_hash, proof: proof_bytes, tx_binding, tx_nonce,
+            message_hash,
+            signer_pub,
+            proof: proof_bytes, tx_binding, tx_nonce,
         };
         let mut call_data = vec![0x02u8];
         params.encode(&mut call_data).map_err(|e| dwow_core::Error::Custom(format!("encode: {:?}", e)))?;

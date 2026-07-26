@@ -71,6 +71,7 @@ pub struct CreateGroupUpdateV1 {
 pub struct SignParamsV1 {
     pub group_id: GroupId,
     pub message_hash: pallas::Base,
+    pub signer_pub: PublicKey,
     pub proof: Vec<u8>,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
