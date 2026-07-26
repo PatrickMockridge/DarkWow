@@ -330,8 +330,8 @@ a core transaction (`dwow_core::tx::Transaction.calls`). The full core transacti
 serialized and stored in the chain transaction's `witness` field
 (`type-system.md §8.2`). This witness is:
 
-- **Signed**: The transaction author's Schnorr signatures cover the call data
-- **ZK-proven**: Each call's ZK proofs bind to the call's public inputs
+- **ZK-proven**: Each call's ZK proofs bind to the call's public inputs. Schnorr
+  signatures are prohibited (see §3).
 - **Reconciled**: `decode_and_reconcile()` verifies that chain-level `ContractCall`
   fields match the witness-embedded core transaction
 

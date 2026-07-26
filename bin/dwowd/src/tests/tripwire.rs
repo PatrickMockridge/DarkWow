@@ -83,3 +83,69 @@ fn tripwire_no_contract_names_in_wallet() {
         }
     }
 }
+
+/// Every ZK contract metadata function SHALL return empty signature pubkeys.
+/// Schnorr signatures are prohibited per contract-standards.md §3.
+/// This tripwire catches any re-addition of non-empty signature_pubkeys before
+/// it reaches the integration test layer.
+#[test]
+fn tripwire_no_schnorr_signature_pubkeys() {
+    use std::path::Path;
+    let contracts_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/contract");
+    if !contracts_dir.exists() {
+        return;
+    }
+    // Patterns that indicate a non-empty signature_pubkeys initialization
+    let violation_patterns = [
+        "signature_pubkeys.push(",
+        "signature_pubkeys = vec![",
+        "sigs = vec![params.",
+        "sigs = vec![input.",
+        "sigs = vec![pr.",
+        "sigs = vec![sp.",
+        "sigs = vec![fee_",
+        "empty_sigs = vec![",
+    ];
+    // Allowed: empty vec initialization
+    let allowed = "vec![]";
+
+    for entry in std::fs::read_dir(&contracts_dir).unwrap() {
+        let contract_dir = entry.unwrap().path();
+        if !contract_dir.is_dir() { continue; }
+        let entrypoint = contract_dir.join("src/entrypoint/mod.rs");
+        if !entrypoint.exists() {
+            let alt = contract_dir.join("src/entrypoint.rs");
+            if !alt.exists() { continue; }
+            let contents = std::fs::read_to_string(&alt).unwrap();
+            check_schnorr_free(&alt, &contents, &violation_patterns, allowed);
+            continue;
+        }
+        // Also check sub-entrypoint files (deployooor has deploy_v1.rs, lock_v1.rs)
+        if let Ok(sub_entries) = std::fs::read_dir(entrypoint.parent().unwrap()) {
+            for sub in sub_entries {
+                let sub_path = sub.unwrap().path();
+                if sub_path.extension().map_or(true, |e| e != "rs") { continue; }
+                let contents = std::fs::read_to_string(&sub_path).unwrap();
+                check_schnorr_free(&sub_path, &contents, &violation_patterns, allowed);
+            }
+        }
+    }
+}
+
+fn check_schnorr_free(path: &std::path::Path, contents: &str, violations: &[&str], allowed: &str) {
+    for (lineno, line) in contents.lines().enumerate() {
+        let stripped = line.trim();
+        if stripped.starts_with("//") || stripped.starts_with("/*") || stripped.starts_with('*') {
+            continue;
+        }
+        for pattern in violations {
+            if stripped.contains(pattern) && !stripped.contains(allowed) {
+                panic!(
+                    "SCHNORR LEAK in {}:{} — '{}' found but signature_pubkeys must be vec![]. \
+                     See contract-standards.md §3.",
+                    path.display(), lineno + 1, pattern.trim(),
+                );
+            }
+        }
+    }
+}

@@ -362,6 +362,10 @@ impl<'c> HeavyweightBlock<'c> {
         proofs: Vec<Proof>,
     ) -> Result<&mut Self> {
         let circuits = harness.circuits();
+        // strict_zk guards: ZK contracts MUST have proofs, MUST NOT use Schnorr.
+        // Schnorr signatures are prohibited per contract-standards.md §3.
+        // The Transaction struct has no signatures field — this is a structural
+        // guard. The tripwire_no_schnorr_signature_pubkeys test catches metadata leaks.
         if !circuits.is_empty() && proofs.is_empty() {
             if self.chain.strict_zk {
                 return Err(dwow_core::Error::Custom(format!(
