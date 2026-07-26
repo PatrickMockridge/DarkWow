@@ -166,8 +166,18 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
             let params: ExitParamsV1 = deserialize(&self_.data[1..])?;
             drain_protection_exit_get_metadata_v1(params)?
         }
-        // No ZK circuits for other functions yet
-        _ => vec![],
+        // V2 circuits registered (exit_v2, execute_v2, initialize_v2, lock_v2,
+        // propose_v2, transfer_v2, unlock_v2, update_config_v2, vote_v2) but
+        // metadata sub-functions not yet created — returning empty metadata
+        // until circuit public-input layouts are specified.
+        DrainProtectionFunction::InitializeV1
+        | DrainProtectionFunction::ProposeV1
+        | DrainProtectionFunction::VoteV1
+        | DrainProtectionFunction::ExecuteV1
+        | DrainProtectionFunction::TransferV1
+        | DrainProtectionFunction::LockV1
+        | DrainProtectionFunction::UnlockV1
+        | DrainProtectionFunction::UpdateConfigV1 => vec![],
     };
 
     wasm::util::set_return_data(&metadata)
