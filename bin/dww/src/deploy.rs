@@ -99,8 +99,6 @@ impl Dww {
             &self.wallet, &self.account_mgr, deploy_leaf, None, None, seed,
         )?;
 
-        // Schnorr signatures removed per contract-standards.md §3.
-        tx.signatures = vec![vec![], vec![]];
 
         Ok(tx)
     }

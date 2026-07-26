@@ -43,7 +43,7 @@ use crate::Transaction as ChainTransaction;
 /// Decode the witness and reconcile it against the chain tx.
 ///
 /// The witness is `dwow_serial(core_tx)` where `core_tx` is
-/// `dwow_core::tx::Transaction` (calls + proofs + signatures + tx_commitment +
+/// `dwow_core::tx::Transaction` (calls + proofs + tx_commitment +
 /// nullifiers). Because the witness is hash-excluded / malleable (L1 barrier
 /// #1), contract_calls in the chain tx could diverge from the calls in the
 /// witness. Verification is decoupled from execution unless we enforce
@@ -51,7 +51,7 @@ use crate::Transaction as ChainTransaction;
 /// mandatory reconciliation requirement).
 ///
 /// Returns the decoded `dwow_core::tx::Transaction` on success so the caller
-/// can feed it to `verify_zkps`/`verify_sigs`.
+/// can feed it to `verify_zkps`.
 pub fn decode_and_reconcile(
     chain_tx: &ChainTransaction,
 ) -> Result<dwow_core::tx::Transaction, VerifyError> {
@@ -187,7 +187,7 @@ impl std::error::Error for VerifyError {}
 ///
 /// For each call in core_tx: load the zkbin from the contracts store,
 /// feed it to the stateless `verify_zkp` along with the proof and public
-/// inputs. Then verify all Schnorr signatures against the pub_table.
+/// inputs. Schnorr signature verification removed per contract-standards.md §3.
 ///
 /// This is the function that closes HAZOP C1 (counterfeiting) — a
 /// fabricated transaction has no valid proof and is rejected here.
@@ -243,9 +243,7 @@ pub fn verify_core_tx_with_tables(
     }
 
     // Schnorr signature verification removed per contract-standards.md §3.
-    // Authorization is via ZK proof + nullifier exclusively. The wallet does not
-    // produce Schnorr signatures; contracts return empty signature pubkeys in metadata.
-    // The Transaction.signatures field is retained as empty vec for serialization compat.
+    // Authorization is via ZK proof + nullifier exclusively.
 
     Ok(())
 }
@@ -299,11 +297,8 @@ pub fn verify_single_tx(chain_tx: &ChainTransaction) -> Result<(), VerifyError> 
     // possession of the SecretKey (the capability name) — this IS the
     // authority evidence per type-system.md §5.
     //
-    // Schnorr signatures are a transaction-level concern (wallet.md §6.3
-    // step 7), enforced at block accept by verify_core_tx_with_tables.
-    // They are NOT a per-call requirement and SHALL NOT be coupled to
-    // proof presence — the ↓spend barb is exhibited by SecretKey, not by
-    // a signature. ocap.md §6.2 defines Exercise = ZK Proof, Verify =
+    // Schnorr signatures removed per contract-standards.md §3.
+    // ocap.md §6.2 defines Exercise = ZK Proof, Verify =
     // Proof::verify, Consume = Nullifier. No per-call Schnorr signature.
 
     Ok(())
@@ -331,7 +326,6 @@ mod tests {
                 parent_index: None,
             }],
             proofs: vec![],
-            signatures: vec![],
             tx_commitment: [0u8; 32],
             nullifiers: vec![],
         };
@@ -369,7 +363,6 @@ mod tests {
                 parent_index: None,
             }],
             proofs: vec![],
-            signatures: vec![],
             tx_commitment: [0u8; 32],
             nullifiers: vec![],
         };
@@ -418,7 +411,6 @@ mod tests {
                 parent_index: None,
             }],
             proofs: vec![], // EMPTY — should trigger the outer length guard
-            signatures: vec![vec![]],
             tx_commitment: [0u8; 32],
             nullifiers: vec![],
         };

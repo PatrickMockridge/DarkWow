@@ -1232,8 +1232,6 @@ impl Dww {
         // §6.3 step 7: per-call signature rows, in call order
         // (calls[0] = transfer, calls[1] = fee). The transfer row is signed by
         // the input secrets (metadata: inputs[].signature_public); the fee row
-        // Schnorr signatures removed per contract-standards.md §3.
-        tx.signatures = vec![vec![], vec![]];
 
         Ok(tx)
     }
@@ -1645,11 +1643,9 @@ impl Dww {
         // Build transaction with fee
         let mut seed = [0u8; 32];
         rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
-        let (mut tx, ephemeral) = crate::fee_builder::build_fee_and_finalize_tx(
+        let mut tx = crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, &self.account_mgr, leaf, None, None, seed)?;
         // Per-call signature rows (see the Path A exit above).
-        // Schnorr signatures removed per contract-standards.md §3.
-        tx.signatures = vec![vec![], vec![]];
 
         Ok(tx)
     }

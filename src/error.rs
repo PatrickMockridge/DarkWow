@@ -295,9 +295,6 @@ pub enum Error {
     #[error("Public inputs are invalid")]
     InvalidPublicInputsError,
 
-    #[error("Signature could not be verified")]
-    InvalidSignature,
-
     #[error("State transition failed")]
     StateTransitionError,
 
