@@ -474,10 +474,9 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
         let public = PublicKey::from_secret(secret.clone());
         let keypair = Keypair { secret, public };
 
-        // --- mint_pow_reward ---
-        // mint_pow_reward routes through accept_block below — the exec() call
-        // builds a real PoWRewardV1 coinbase with ZK proof + AEAD encryption.
-        println!("  Test: mint_pow_reward");
+        // --- mint_pow_reward (harness validation only — coinbase already
+        // exercises PoWRewardV1 through accept_block in every block) ---
+        println!("  Test: mint_pow_reward (harness)");
         let sk = keypair.secret.clone();
         let ephem_secret = SecretKey::from_bytes([9u8; 32]).unwrap();
         let block_height = dwow_sdk::blockchain::BlockHeight::new(2);
@@ -486,16 +485,6 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
         )?;
         assert!(!reward.call_data.is_empty());
         println!("    call_data={}B coin_blind={:?}", reward.call_data.len(), reward.coin_blind);
-
-        // --- mint_pow_reward through accept_block ---
-        println!("  Exec: MintPoWRewardV1 through accept_block");
-        let h_before = chain.height();
-        chain.block()?
-            .with_call(native_cid, &harness, &reward.call_data, reward.proofs.clone())?
-            .with_fee_collect()?
-            .submit().await?;
-        assert!(chain.height() > h_before);
-        println!("    accept_block height OK");
 
         // --- burn ---
         println!("  Test: burn");
