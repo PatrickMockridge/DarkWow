@@ -1546,7 +1546,6 @@ impl Dww {
                 // the metadata declares none), calls[1] = fee (signed by the
                 // fee ephemeral, fee metadata: signature_public = ephemeral).
                 // Schnorr signatures removed per contract-standards.md §3.
-                tx.signatures = vec![vec![], vec![]];
                 return Ok(tx);
             }
             // P4 Step 4: if a stored manifest exists, construct a
@@ -1574,7 +1573,6 @@ impl Dww {
                 )?;
                 // Per-call signature rows (see the Path A exit above).
                 // Schnorr signatures removed per contract-standards.md §3.
-                tx.signatures = vec![vec![], vec![]];
                 return Ok(tx);
             }
         }
