@@ -119,7 +119,8 @@ impl InsuranceMarketHarness {
         }
     }
 
-    /// Underwrite with ZK proof (function code 0x00)
+    /// Underwrite with ZK proof (fn 0x09 = UnderwriteWithCapabilityV1)
+    /// NOTE: V1/V2 namespace mismatch — contract metadata uses "UnderwriteV2"
     pub fn underwrite(
         &self,
         params: &dwow_insurance_market_contract::model::UnderwriteParamsV1,
@@ -133,13 +134,14 @@ impl InsuranceMarketHarness {
             &self.underwrite_zkbin, &self.underwrite_pk, &input,
         )?;
 
-        let mut call_data = vec![0x00];
+        let mut call_data = vec![0x09];
         params.encode(&mut call_data)?;
 
         Ok(UnderwriteResult { call_data, proof, public_inputs })
     }
 
-    /// Purchase coverage with ZK proof (function code 0x01)
+    /// Purchase coverage with ZK proof (fn 0x0a = PurchaseCoverageWithCapabilityV1)
+    /// NOTE: V1/V2 namespace mismatch — contract metadata uses "PurchaseCoverageV2"
     pub fn purchase_coverage(
         &self,
         params: &dwow_insurance_market_contract::model::PurchaseCoverageParamsV1,
@@ -153,7 +155,7 @@ impl InsuranceMarketHarness {
             &self.purchase_coverage_zkbin, &self.purchase_coverage_pk, &input,
         )?;
 
-        let mut call_data = vec![0x01];
+        let mut call_data = vec![0x0a];
         params.encode(&mut call_data)?;
 
         Ok(PurchaseCoverageResult { call_data, proof, public_inputs })
