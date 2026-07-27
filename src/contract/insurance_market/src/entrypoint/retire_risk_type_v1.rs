@@ -43,8 +43,8 @@ pub fn insurance_market_retire_risk_type_process_instruction_v1(
 
     let risk_types_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_RISK_TYPES_TREE)?;
     let risk_type_bytes =
-        wasm::db::db_get(risk_types_db, &serialize(&params.risk_type_id))?.ok_or(ContractError::DbGetEmpty)?;
-    let risk_type: crate::model::RiskType = deserialize(&risk_type_bytes)?;
+        wasm::db::db_get(risk_types_db, &params.risk_type_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
+    let risk_type = crate::model::RiskType::decode(&risk_type_bytes)?;
 
     if !risk_type.active {
         return Err(InsuranceMarketError::MarketNotActive.into())
@@ -55,7 +55,7 @@ pub fn insurance_market_retire_risk_type_process_instruction_v1(
     };
 
     msg!("[insurance_market::retire_risk_type] Risk type retired: {:?}", params.risk_type_id);
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Process update for RetireRiskTypeV1
@@ -66,13 +66,13 @@ pub fn insurance_market_retire_risk_type_process_update_v1(
     let risk_types_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_RISK_TYPES_TREE)?;
 
     let risk_type_bytes =
-        wasm::db::db_get(risk_types_db, &serialize(&update.risk_type_id))?.ok_or(ContractError::DbGetEmpty)?;
-    let mut risk_type: crate::model::RiskType = deserialize(&risk_type_bytes)?;
+        wasm::db::db_get(risk_types_db, &update.risk_type_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
+    let mut risk_type = crate::model::RiskType::decode(&risk_type_bytes)?;
     risk_type.active = false;
     wasm::db::db_set(
         risk_types_db,
-        &serialize(&update.risk_type_id),
-        &serialize(&risk_type),
+        &update.risk_type_id.to_repr(),
+        &risk_type.encode(),
     )?;
 
     msg!("[insurance_market::retire_risk_type::update] Risk type {:?} retired", update.risk_type_id);
