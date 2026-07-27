@@ -46,7 +46,7 @@ pub fn baccarat_draw_cards_process_instruction_v1(
     calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: DrawCardsParamsV1 = deserialize(&self_.data[1..])?;
+    let params = DrawCardsParamsV1::decode(&self_.data[1..])?;
 
     msg!("[baccarat::draw_cards] Drawing cards for bet_id: {:?}", params.bet_id);
 

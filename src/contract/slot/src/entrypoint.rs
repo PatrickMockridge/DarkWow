@@ -108,11 +108,11 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> GenericResult<()> {
             slot_commit_bet_get_metadata_v1(params)?
         }
         SlotFunction::RevealSpinV1 => {
-            let params: crate::model::RevealSpinParamsV1 = deserialize(&self_.data[1..])?;
+            let params = crate::model::RevealSpinParamsV1::decode(&self_.data[1..])?;
             slot_reveal_spin_get_metadata_v1(params)?
         }
         SlotFunction::SettleSpinV1 => {
-            let params: crate::model::SettleSpinParamsV1 = deserialize(&self_.data[1..])?;
+            let params = crate::model::SettleSpinParamsV1::decode(&self_.data[1..])?;
             slot_settle_bet_get_metadata_v1(params)?
         }
         // No ZK circuits for Initialize, CancelSpin
@@ -429,7 +429,7 @@ fn reveal_spin_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> GenericResult<Vec<u8>> {
     let self_ = &calls[call_idx].data;
-    let params: crate::model::RevealSpinParamsV1 = deserialize(&self_.data[1..])?;
+    let params = crate::model::RevealSpinParamsV1::decode(&self_.data[1..])?;
 
     msg!("[slot::reveal_spin] Revealing spin {:?}", params.spin_id);
 
@@ -507,7 +507,7 @@ fn settle_spin_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> GenericResult<Vec<u8>> {
     let self_ = &calls[call_idx].data;
-    let params: crate::model::SettleSpinParamsV1 = deserialize(&self_.data[1..])?;
+    let params = crate::model::SettleSpinParamsV1::decode(&self_.data[1..])?;
 
     // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled for payouts
     let this_call = &calls[call_idx];
@@ -630,7 +630,7 @@ fn cancel_spin_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> GenericResult<Vec<u8>> {
     let self_ = &calls[call_idx].data;
-    let params: crate::model::CancelSpinParamsV1 = deserialize(&self_.data[1..])?;
+    let params = crate::model::CancelSpinParamsV1::decode(&self_.data[1..])?;
 
     // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled for house's share
     let this_call = &calls[call_idx];

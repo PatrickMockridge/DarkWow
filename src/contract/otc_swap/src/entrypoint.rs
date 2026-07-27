@@ -306,22 +306,22 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         OtcSwapFunction::CreateSwapV1 => {
-            let params: CreateSwapParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params = CreateSwapParamsV1::decode(&self_.data.data[1..])?;
             let update = swap_create_process_instruction_v1(cid, call_idx, calls, params)?;
             let _ = wasm::util::set_return_data(&update);
         }
         OtcSwapFunction::FundSwapV1 => {
-            let params: FundSwapParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params = FundSwapParamsV1::decode(&self_.data.data[1..])?;
             let update = swap_fund_process_instruction_v1(cid, call_idx, calls, params)?;
             let _ = wasm::util::set_return_data(&update);
         }
         OtcSwapFunction::ExecuteSwapV1 => {
-            let params: ExecuteSwapParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params = ExecuteSwapParamsV1::decode(&self_.data.data[1..])?;
             let update = swap_execute_process_instruction_v1(cid, call_idx, calls, params)?;
             let _ = wasm::util::set_return_data(&update);
         }
         OtcSwapFunction::CancelSwapV1 => {
-            let params: CancelSwapParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params = CancelSwapParamsV1::decode(&self_.data.data[1..])?;
             let update = swap_cancel_process_instruction_v1(cid, call_idx, calls, params)?;
             let _ = wasm::util::set_return_data(&update);
         }
