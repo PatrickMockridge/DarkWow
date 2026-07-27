@@ -37,8 +37,9 @@
 //! - **Cancelled**: Alice cancelled (Created) or timeout expired (Funded)
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, MerkleNode, PublicKey},
-    pasta::pallas,
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, MerkleNode, PublicKey},
+    error::ContractError,
+    pasta::{group::GroupEncoding, pallas},
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
@@ -46,7 +47,7 @@ use dwow_serial::{SerialDecodable, SerialEncodable};
 pub type SwapId = pallas::Base;
 
 /// Represents the current state of a swap
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SwapState {
     /// Swap created but not yet funded by Alice
     Created = 0,
@@ -73,7 +74,7 @@ impl TryFrom<u8> for SwapState {
 }
 
 /// Core OTC swap data stored on-chain
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct OtcSwap {
     pub version: u8,
     /// Swap identifier (commitment hash)
@@ -147,6 +148,110 @@ impl OtcSwap {
     }
 }
 
+impl OtcSwap {
+    pub const ENCODED_SIZE: usize = 363;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.push(self.version);
+        b.extend_from_slice(&self.id.to_repr());
+        b.extend_from_slice(&self.alice_pubkey.to_bytes());
+        b.extend_from_slice(&self.bob_pubkey.to_bytes());
+        b.extend_from_slice(&self.send_value.to_le_bytes());
+        b.extend_from_slice(&self.send_token_id.to_repr());
+        b.extend_from_slice(&self.recv_value.to_le_bytes());
+        b.extend_from_slice(&self.recv_token_id.to_repr());
+        b.extend_from_slice(&self.timeout.to_le_bytes());
+        b.push(self.state as u8);
+        b.extend_from_slice(&self.alice_value_commit.to_bytes());
+        b.extend_from_slice(&self.alice_value_blind.to_repr());
+        b.extend_from_slice(&self.bob_value_commit.to_bytes());
+        b.extend_from_slice(&self.spent_nullifier.to_repr());
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b.push(self.funded_at.is_some() as u8);
+        if let Some(fa) = self.funded_at {
+            b.extend_from_slice(&fa.to_le_bytes());
+        } else {
+            b.extend_from_slice(&0u64.to_le_bytes());
+        }
+        b.extend_from_slice(&self.instance_seed);
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "OtcSwap: expected {} bytes, got {}",
+                Self::ENCODED_SIZE,
+                data.len()
+            )));
+        }
+        let version = data[0];
+        let id = Option::<pallas::Base>::from(pallas::Base::from_repr(
+            data[1..33].try_into().unwrap(),
+        ))
+        .ok_or_else(|| ContractError::IoError("OtcSwap: invalid id".into()))?;
+        let alice_pubkey = PublicKey::from_bytes(data[33..65].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("OtcSwap: invalid alice_pubkey: {}", e)))?;
+        let bob_pubkey = PublicKey::from_bytes(data[65..97].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("OtcSwap: invalid bob_pubkey: {}", e)))?;
+        let send_value = u64::from_le_bytes(data[97..105].try_into().unwrap());
+        let send_token_id = Option::<pallas::Base>::from(pallas::Base::from_repr(
+            data[105..137].try_into().unwrap(),
+        ))
+        .ok_or_else(|| ContractError::IoError("OtcSwap: invalid send_token_id".into()))?;
+        let recv_value = u64::from_le_bytes(data[137..145].try_into().unwrap());
+        let recv_token_id = Option::<pallas::Base>::from(pallas::Base::from_repr(
+            data[145..177].try_into().unwrap(),
+        ))
+        .ok_or_else(|| ContractError::IoError("OtcSwap: invalid recv_token_id".into()))?;
+        let timeout = u64::from_le_bytes(data[177..185].try_into().unwrap());
+        let state = SwapState::try_from(data[185])?;
+        let alice_value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(
+            data[186..218].try_into().unwrap(),
+        ))
+        .ok_or_else(|| ContractError::IoError("OtcSwap: invalid alice_value_commit".into()))?;
+        let alice_value_blind = Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(
+            data[218..250].try_into().unwrap(),
+        ))
+        .ok_or_else(|| ContractError::IoError("OtcSwap: invalid alice_value_blind".into()))?;
+        let bob_value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(
+            data[250..282].try_into().unwrap(),
+        ))
+        .ok_or_else(|| ContractError::IoError("OtcSwap: invalid bob_value_commit".into()))?;
+        let spent_nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(
+            data[282..314].try_into().unwrap(),
+        ))
+        .ok_or_else(|| ContractError::IoError("OtcSwap: invalid spent_nullifier".into()))?;
+        let created_at = u64::from_le_bytes(data[314..322].try_into().unwrap());
+        let funded_at = if data[322] != 0 {
+            Some(u64::from_le_bytes(data[323..331].try_into().unwrap()))
+        } else {
+            None
+        };
+        let instance_seed: [u8; 32] = data[331..363].try_into().unwrap();
+        Ok(OtcSwap {
+            version,
+            id,
+            alice_pubkey,
+            bob_pubkey,
+            send_value,
+            send_token_id,
+            recv_value,
+            recv_token_id,
+            timeout,
+            state,
+            alice_value_commit,
+            alice_value_blind,
+            bob_value_commit,
+            spent_nullifier,
+            created_at,
+            funded_at,
+            instance_seed,
+        })
+    }
+}
+
 /// Parameters for `OtcSwap::CreateSwapV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct CreateSwapParamsV1 {
@@ -171,10 +276,33 @@ pub struct CreateSwapParamsV1 {
 }
 
 /// State update for `OtcSwap::CreateSwapV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CreateSwapUpdateV1 {
     /// The created swap ID
     pub swap_id: SwapId,
+}
+
+impl CreateSwapUpdateV1 {
+    pub const ENCODED_SIZE: usize = 32;
+
+    pub fn encode(&self) -> Vec<u8> {
+        self.swap_id.to_repr().to_vec()
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "CreateSwapUpdateV1: expected {} bytes, got {}",
+                Self::ENCODED_SIZE,
+                data.len()
+            )));
+        }
+        let swap_id = Option::<pallas::Base>::from(pallas::Base::from_repr(
+            data[0..32].try_into().unwrap(),
+        ))
+        .ok_or_else(|| ContractError::IoError("CreateSwapUpdateV1: invalid swap_id".into()))?;
+        Ok(CreateSwapUpdateV1 { swap_id })
+    }
 }
 
 /// Parameters for `OtcSwap::FundSwapV1`
@@ -191,10 +319,33 @@ pub struct FundSwapParamsV1 {
 }
 
 /// State update for `OtcSwap::FundSwapV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct FundSwapUpdateV1 {
     /// The funded swap ID
     pub swap_id: SwapId,
+}
+
+impl FundSwapUpdateV1 {
+    pub const ENCODED_SIZE: usize = 32;
+
+    pub fn encode(&self) -> Vec<u8> {
+        self.swap_id.to_repr().to_vec()
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "FundSwapUpdateV1: expected {} bytes, got {}",
+                Self::ENCODED_SIZE,
+                data.len()
+            )));
+        }
+        let swap_id = Option::<pallas::Base>::from(pallas::Base::from_repr(
+            data[0..32].try_into().unwrap(),
+        ))
+        .ok_or_else(|| ContractError::IoError("FundSwapUpdateV1: invalid swap_id".into()))?;
+        Ok(FundSwapUpdateV1 { swap_id })
+    }
 }
 
 /// Parameters for `OtcSwap::ExecuteSwapV1`
@@ -213,12 +364,44 @@ pub struct ExecuteSwapParamsV1 {
 }
 
 /// State update for `OtcSwap::ExecuteSwapV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ExecuteSwapUpdateV1 {
     /// The executed swap ID
     pub swap_id: SwapId,
     /// Nullifier for the executed swap
     pub spent_nullifier: pallas::Base,
+}
+
+impl ExecuteSwapUpdateV1 {
+    pub const ENCODED_SIZE: usize = 64;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.swap_id.to_repr());
+        b.extend_from_slice(&self.spent_nullifier.to_repr());
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "ExecuteSwapUpdateV1: expected {} bytes, got {}",
+                Self::ENCODED_SIZE,
+                data.len()
+            )));
+        }
+        let swap_id = Option::<pallas::Base>::from(pallas::Base::from_repr(
+            data[0..32].try_into().unwrap(),
+        ))
+        .ok_or_else(|| ContractError::IoError("ExecuteSwapUpdateV1: invalid swap_id".into()))?;
+        let spent_nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(
+            data[32..64].try_into().unwrap(),
+        ))
+        .ok_or_else(|| {
+            ContractError::IoError("ExecuteSwapUpdateV1: invalid spent_nullifier".into())
+        })?;
+        Ok(ExecuteSwapUpdateV1 { swap_id, spent_nullifier })
+    }
 }
 
 /// Parameters for `OtcSwap::CancelSwapV1`
@@ -239,10 +422,42 @@ pub struct CancelSwapParamsV1 {
 }
 
 /// State update for `OtcSwap::CancelSwapV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CancelSwapUpdateV1 {
     /// The cancelled swap ID
     pub swap_id: SwapId,
     /// Nullifier for the cancelled swap
     pub spent_nullifier: pallas::Base,
+}
+
+impl CancelSwapUpdateV1 {
+    pub const ENCODED_SIZE: usize = 64;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.swap_id.to_repr());
+        b.extend_from_slice(&self.spent_nullifier.to_repr());
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "CancelSwapUpdateV1: expected {} bytes, got {}",
+                Self::ENCODED_SIZE,
+                data.len()
+            )));
+        }
+        let swap_id = Option::<pallas::Base>::from(pallas::Base::from_repr(
+            data[0..32].try_into().unwrap(),
+        ))
+        .ok_or_else(|| ContractError::IoError("CancelSwapUpdateV1: invalid swap_id".into()))?;
+        let spent_nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(
+            data[32..64].try_into().unwrap(),
+        ))
+        .ok_or_else(|| {
+            ContractError::IoError("CancelSwapUpdateV1: invalid spent_nullifier".into())
+        })?;
+        Ok(CancelSwapUpdateV1 { swap_id, spent_nullifier })
+    }
 }

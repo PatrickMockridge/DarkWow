@@ -24,12 +24,12 @@
 //! Betting Stake Contract Entrypoint
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId, PublicKey},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId, PublicKey},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta::pallas, wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id, validate_child_value_commit,
 };
@@ -234,26 +234,94 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     match BettingStakeFunction::try_from(update_data[0]).map_err(|_| BettingStakeError::InvalidFunction)? {
         BettingStakeFunction::InitializeV1 => {
-            let update: InitializeUpdateV1 = deserialize(&update_data[1..])?;
+            let update = decode_initialize_update_v1(&update_data[1..])?;
             staking_initialize_process_update_v1(cid, update)
         }
         BettingStakeFunction::StakeV1 => {
-            let update: StakeUpdateV1 = deserialize(&update_data[1..])?;
+            let update = decode_stake_update_v1(&update_data[1..])?;
             staking_stake_process_update_v1(cid, update)
         }
         BettingStakeFunction::UnstakeV1 => {
-            let update: UnstakeUpdateV1 = deserialize(&update_data[1..])?;
+            let update = decode_unstake_update_v1(&update_data[1..])?;
             staking_unstake_process_update_v1(cid, update)
         }
         BettingStakeFunction::ClaimEarningsV1 => {
-            let update: ClaimEarningsUpdateV1 = deserialize(&update_data[1..])?;
+            let update = decode_claim_earnings_update_v1(&update_data[1..])?;
             staking_claim_earnings_process_update_v1(cid, update)
         }
         BettingStakeFunction::UpdateRiskV1 => {
-            let update: UpdateRiskUpdateV1 = deserialize(&update_data[1..])?;
+            let update = decode_update_risk_update_v1(&update_data[1..])?;
             staking_update_risk_process_update_v1(cid, update)
         }
     }
+}
+
+// =============================================================================
+// RHO-CALCULUS EXPLICIT BRIDGE ENCODE/DECODE
+// =============================================================================
+// Per type-system.md §2.2: bytes round-trip across module boundaries is forbidden.
+// Per contract-wasm-type-system.md §3.1: bridge SHALL use explicit per-type encode/decode.
+// These replace serialize(&(BettingStakeFunction::XxxV1 as u8, update)) on the exec side
+// and deserialize(&update_data[1..]) on the apply side.
+
+fn encode_initialize_update_v1(update: &InitializeUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(BettingStakeFunction::InitializeV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn decode_initialize_update_v1(data: &[u8]) -> Result<InitializeUpdateV1, ContractError> {
+    InitializeUpdateV1::decode(data)
+}
+
+fn encode_stake_update_v1(update: &StakeUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(BettingStakeFunction::StakeV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn decode_stake_update_v1(data: &[u8]) -> Result<StakeUpdateV1, ContractError> {
+    StakeUpdateV1::decode(data)
+}
+
+fn encode_unstake_update_v1(update: &UnstakeUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(BettingStakeFunction::UnstakeV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn decode_unstake_update_v1(data: &[u8]) -> Result<UnstakeUpdateV1, ContractError> {
+    UnstakeUpdateV1::decode(data)
+}
+
+fn encode_claim_earnings_update_v1(update: &ClaimEarningsUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(BettingStakeFunction::ClaimEarningsV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn decode_claim_earnings_update_v1(data: &[u8]) -> Result<ClaimEarningsUpdateV1, ContractError> {
+    ClaimEarningsUpdateV1::decode(data)
+}
+
+fn encode_update_risk_update_v1(update: &UpdateRiskUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(BettingStakeFunction::UpdateRiskV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn decode_update_risk_update_v1(data: &[u8]) -> Result<UpdateRiskUpdateV1, ContractError> {
+    UpdateRiskUpdateV1::decode(data)
 }
 
 // =============================================================================
@@ -280,7 +348,7 @@ fn staking_initialize_process_instruction_v1(
 
     // Check if table already exists
     let registry_db = wasm::db::db_lookup(cid, BETTING_STAKE_REGISTRY_TREE)?;
-    if wasm::db::db_contains_key(registry_db, &serialize(&table_id))? {
+    if wasm::db::db_contains_key(registry_db, &table_id.to_repr())? {
         return Err(BettingStakeError::TableNotFound.into())
     }
 
@@ -293,8 +361,8 @@ fn staking_initialize_process_instruction_v1(
     };
 
     msg!("[betting_stake::initialize] Table initialized");
-    wasm::util::set_return_data(&serialize(&update))?;
-    Ok(serialize(&update))
+    wasm::util::set_return_data(&encode_initialize_update_v1(&update))?;
+    Ok(encode_initialize_update_v1(&update))
 }
 
 fn staking_initialize_process_update_v1(cid: ContractId, update: InitializeUpdateV1) -> ContractResult {
@@ -311,7 +379,7 @@ fn staking_initialize_process_update_v1(cid: ContractId, update: InitializeUpdat
         risk_profile: update.risk_profile,
     };
 
-    wasm::db::db_set(registry_db, &serialize(&update.table_id), &serialize(&registry))?;
+    wasm::db::db_set(registry_db, &update.table_id.to_repr(), &registry.encode())?;
     msg!("[betting_stake::initialize::update] Registry stored");
 
     Ok(())
@@ -364,8 +432,8 @@ fn staking_stake_process_instruction_v1(
 
     // Get registry
     let registry_db = wasm::db::db_lookup(cid, BETTING_STAKE_REGISTRY_TREE)?;
-    let mut table: TableStakeRegistry = match wasm::db::db_get(registry_db, &serialize(&params.table_id))? {
-        Some(data) => deserialize(&data)?,
+    let mut table: TableStakeRegistry = match wasm::db::db_get(registry_db, &params.table_id.to_repr())? {
+        Some(data) => TableStakeRegistry::decode(&data)?,
         None => return Err(BettingStakeError::TableNotFound.into()),
     };
 
@@ -376,7 +444,7 @@ fn staking_stake_process_instruction_v1(
 
     // Verify staker nullifier hasn't been used (ZK proof verifies identity)
     let nullifiers_db = wasm::db::db_lookup(cid, BETTING_STAKE_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.staker_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.staker_nullifier.to_repr())? {
         return Err(BettingStakeError::DuplicateNullifier.into())
     }
 
@@ -393,7 +461,7 @@ fn staking_stake_process_instruction_v1(
 
     // Check if stake already exists
     let stakes_db = wasm::db::db_lookup(cid, BETTING_STAKE_STAKES_TREE)?;
-    if wasm::db::db_contains_key(stakes_db, &serialize(&stake_id))? {
+    if wasm::db::db_contains_key(stakes_db, &stake_id.to_repr())? {
         return Err(BettingStakeError::StakeNotFound.into())
     }
 
@@ -413,7 +481,7 @@ fn staking_stake_process_instruction_v1(
     };
 
     msg!("[betting_stake::stake] Stake created");
-    Ok(serialize(&update))
+    Ok(encode_stake_update_v1(&update))
 }
 
 fn staking_stake_process_update_v1(cid: ContractId, update: StakeUpdateV1) -> ContractResult {
@@ -421,14 +489,14 @@ fn staking_stake_process_update_v1(cid: ContractId, update: StakeUpdateV1) -> Co
     let stakes_db = wasm::db::db_lookup(cid, BETTING_STAKE_STAKES_TREE)?;
 
     // Get and update registry
-    let mut table: TableStakeRegistry = match wasm::db::db_get(registry_db, &serialize(&update.table_id))? {
-        Some(data) => deserialize(&data)?,
+    let mut table: TableStakeRegistry = match wasm::db::db_get(registry_db, &update.table_id.to_repr())? {
+        Some(data) => TableStakeRegistry::decode(&data)?,
         None => return Err(BettingStakeError::TableNotFound.into()),
     };
     table.total_stake = update.total_stake;
     table.staker_count = update.staker_count;
 
-    wasm::db::db_set(registry_db, &serialize(&update.table_id), &serialize(&table))?;
+    wasm::db::db_set(registry_db, &update.table_id.to_repr(), &table.encode())?;
 
     // Create stake
     let stake = Stake {
@@ -445,11 +513,11 @@ fn staking_stake_process_update_v1(cid: ContractId, update: StakeUpdateV1) -> Co
         is_active: true,
     };
 
-    wasm::db::db_set(stakes_db, &serialize(&update.stake_id), &serialize(&stake))?;
+    wasm::db::db_set(stakes_db, &update.stake_id.to_repr(), &stake.encode())?;
 
     // Record staker nullifier for replay protection
     let nullifiers_db = wasm::db::db_lookup(cid, BETTING_STAKE_NULLIFIERS_TREE)?;
-    wasm::db::db_set(nullifiers_db, &serialize(&update.staker_nullifier), &[])?;
+    wasm::db::db_set(nullifiers_db, &update.staker_nullifier.to_repr(), &[])?;
 
     msg!("[betting_stake::stake::update] Stake stored in database");
 
@@ -503,8 +571,8 @@ fn staking_unstake_process_instruction_v1(
 
     // Get stake
     let stakes_db = wasm::db::db_lookup(cid, BETTING_STAKE_STAKES_TREE)?;
-    let stake: Stake = match wasm::db::db_get(stakes_db, &serialize(&params.stake_id))? {
-        Some(data) => deserialize(&data)?,
+    let stake: Stake = match wasm::db::db_get(stakes_db, &params.stake_id.to_repr())? {
+        Some(data) => Stake::decode(&data)?,
         None => return Err(BettingStakeError::StakeNotFound.into()),
     };
 
@@ -526,14 +594,14 @@ fn staking_unstake_process_instruction_v1(
 
     // Verify staker nullifier hasn't been used (ZK proof verifies identity)
     let nullifiers_db = wasm::db::db_lookup(cid, BETTING_STAKE_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.staker_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.staker_nullifier.to_repr())? {
         return Err(BettingStakeError::DuplicateNullifier.into())
     }
 
     // Get table for final settlement
     let registry_db = wasm::db::db_lookup(cid, BETTING_STAKE_REGISTRY_TREE)?;
-    let table: TableStakeRegistry = match wasm::db::db_get(registry_db, &serialize(&stake.table_id))? {
-        Some(data) => deserialize(&data)?,
+    let table: TableStakeRegistry = match wasm::db::db_get(registry_db, &stake.table_id.to_repr())? {
+        Some(data) => TableStakeRegistry::decode(&data)?,
         None => return Err(BettingStakeError::TableNotFound.into()),
     };
 
@@ -561,15 +629,15 @@ fn staking_unstake_process_instruction_v1(
     let update = UnstakeUpdateV1 { stake_id: params.stake_id, payout_amount, unstake_penalty, staker_nullifier: params.staker_nullifier };
 
     msg!("[betting_stake::unstake] Payout: {}", payout_amount);
-    Ok(serialize(&update))
+    Ok(encode_unstake_update_v1(&update))
 }
 
 fn staking_unstake_process_update_v1(cid: ContractId, update: UnstakeUpdateV1) -> ContractResult {
     let stakes_db = wasm::db::db_lookup(cid, BETTING_STAKE_STAKES_TREE)?;
 
     // Get and update stake
-    let mut stake: Stake = match wasm::db::db_get(stakes_db, &serialize(&update.stake_id))? {
-        Some(data) => deserialize(&data)?,
+    let mut stake: Stake = match wasm::db::db_get(stakes_db, &update.stake_id.to_repr())? {
+        Some(data) => Stake::decode(&data)?,
         None => return Err(BettingStakeError::StakeNotFound.into()),
     };
 
@@ -577,11 +645,11 @@ fn staking_unstake_process_update_v1(cid: ContractId, update: UnstakeUpdateV1) -
     stake.current_amount = 0;
     stake.accumulated_earnings = 0;
 
-    wasm::db::db_set(stakes_db, &serialize(&update.stake_id), &serialize(&stake))?;
+    wasm::db::db_set(stakes_db, &update.stake_id.to_repr(), &stake.encode())?;
 
     // Record staker nullifier for replay protection
     let nullifiers_db = wasm::db::db_lookup(cid, BETTING_STAKE_NULLIFIERS_TREE)?;
-    wasm::db::db_set(nullifiers_db, &serialize(&update.staker_nullifier), &[])?;
+    wasm::db::db_set(nullifiers_db, &update.staker_nullifier.to_repr(), &[])?;
 
     msg!("[betting_stake::unstake::update] Stake deactivated");
 
@@ -635,8 +703,8 @@ fn staking_claim_earnings_process_instruction_v1(
 
     // Get stake
     let stakes_db = wasm::db::db_lookup(cid, BETTING_STAKE_STAKES_TREE)?;
-    let stake: Stake = match wasm::db::db_get(stakes_db, &serialize(&params.stake_id))? {
-        Some(data) => deserialize(&data)?,
+    let stake: Stake = match wasm::db::db_get(stakes_db, &params.stake_id.to_repr())? {
+        Some(data) => Stake::decode(&data)?,
         None => return Err(BettingStakeError::StakeNotFound.into()),
     };
 
@@ -647,14 +715,14 @@ fn staking_claim_earnings_process_instruction_v1(
 
     // Verify staker nullifier hasn't been used (ZK proof verifies identity)
     let nullifiers_db = wasm::db::db_lookup(cid, BETTING_STAKE_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.staker_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.staker_nullifier.to_repr())? {
         return Err(BettingStakeError::DuplicateNullifier.into())
     }
 
     // Get table
     let registry_db = wasm::db::db_lookup(cid, BETTING_STAKE_REGISTRY_TREE)?;
-    let table: TableStakeRegistry = match wasm::db::db_get(registry_db, &serialize(&stake.table_id))? {
-        Some(data) => deserialize(&data)?,
+    let table: TableStakeRegistry = match wasm::db::db_get(registry_db, &stake.table_id.to_repr())? {
+        Some(data) => TableStakeRegistry::decode(&data)?,
         None => return Err(BettingStakeError::TableNotFound.into()),
     };
 
@@ -687,25 +755,25 @@ fn staking_claim_earnings_process_instruction_v1(
     };
 
     msg!("[betting_stake::claim] Claimed: {}", claimable);
-    Ok(serialize(&update))
+    Ok(encode_claim_earnings_update_v1(&update))
 }
 
 fn staking_claim_earnings_process_update_v1(cid: ContractId, update: ClaimEarningsUpdateV1) -> ContractResult {
     let stakes_db = wasm::db::db_lookup(cid, BETTING_STAKE_STAKES_TREE)?;
 
     // Get and update stake
-    let mut stake: Stake = match wasm::db::db_get(stakes_db, &serialize(&update.stake_id))? {
-        Some(data) => deserialize(&data)?,
+    let mut stake: Stake = match wasm::db::db_get(stakes_db, &update.stake_id.to_repr())? {
+        Some(data) => Stake::decode(&data)?,
         None => return Err(BettingStakeError::StakeNotFound.into()),
     };
 
     stake.accumulated_earnings = update.remaining_earnings;
 
-    wasm::db::db_set(stakes_db, &serialize(&update.stake_id), &serialize(&stake))?;
+    wasm::db::db_set(stakes_db, &update.stake_id.to_repr(), &stake.encode())?;
 
     // Record staker nullifier for replay protection
     let nullifiers_db = wasm::db::db_lookup(cid, BETTING_STAKE_NULLIFIERS_TREE)?;
-    wasm::db::db_set(nullifiers_db, &serialize(&update.staker_nullifier), &[])?;
+    wasm::db::db_set(nullifiers_db, &update.staker_nullifier.to_repr(), &[])?;
 
     msg!("[betting_stake::claim::update] Earnings updated");
 
@@ -728,8 +796,8 @@ fn staking_update_risk_process_instruction_v1(
 
     // Get registry
     let registry_db = wasm::db::db_lookup(cid, BETTING_STAKE_REGISTRY_TREE)?;
-    let mut table: TableStakeRegistry = match wasm::db::db_get(registry_db, &serialize(&params.table_id))? {
-        Some(data) => deserialize(&data)?,
+    let mut table: TableStakeRegistry = match wasm::db::db_get(registry_db, &params.table_id.to_repr())? {
+        Some(data) => TableStakeRegistry::decode(&data)?,
         None => return Err(BettingStakeError::TableNotFound.into()),
     };
 
@@ -756,21 +824,21 @@ fn staking_update_risk_process_instruction_v1(
     };
 
     msg!("[betting_stake::update_risk] Staker loss: {}", staker_loss);
-    Ok(serialize(&update))
+    Ok(encode_update_risk_update_v1(&update))
 }
 
 fn staking_update_risk_process_update_v1(cid: ContractId, update: UpdateRiskUpdateV1) -> ContractResult {
     let registry_db = wasm::db::db_lookup(cid, BETTING_STAKE_REGISTRY_TREE)?;
 
     // Get and update registry
-    let mut table: TableStakeRegistry = match wasm::db::db_get(registry_db, &serialize(&update.table_id))? {
-        Some(data) => deserialize(&data)?,
+    let mut table: TableStakeRegistry = match wasm::db::db_get(registry_db, &update.table_id.to_repr())? {
+        Some(data) => TableStakeRegistry::decode(&data)?,
         None => return Err(BettingStakeError::TableNotFound.into()),
     };
 
     table.total_stake = update.new_total_stake;
 
-    wasm::db::db_set(registry_db, &serialize(&update.table_id), &serialize(&table))?;
+    wasm::db::db_set(registry_db, &update.table_id.to_repr(), &table.encode())?;
     msg!("[betting_stake::update_risk::update] Table risk updated");
 
     Ok(())

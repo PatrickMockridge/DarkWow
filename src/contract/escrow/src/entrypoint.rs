@@ -54,7 +54,7 @@ use dwow_sdk::{
     wasm, ContractCall,
 };
 use dwow_promissory_note_contract::validation::{validate_child_contract_id, validate_child_value_commit};
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 
 use crate::{
     error::EscrowError,
@@ -400,7 +400,7 @@ fn escrow_create_process_instruction_v1(
     let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
 
     // Verify the escrow doesn't already exist
-    if wasm::db::db_contains_key(escrows_db, &serialize(&params.commitment))? {
+    if wasm::db::db_contains_key(escrows_db, &params.commitment.to_bytes())? {
         msg!("[CreateEscrowV1] Error: Escrow already exists");
         return Err(EscrowError::EscrowAlreadyExists("commitment exists".to_string()).into())
     }
@@ -424,12 +424,12 @@ fn escrow_create_process_instruction_v1(
     };
 
     // Store the escrow directly since CreateEscrowUpdateV1 only has escrow_id
-    let key = serialize(&escrow.id);
-    let value = serialize(&escrow);
+    let key = escrow.id.to_bytes();
+    let value = escrow.encode();
     wasm::db::db_set(escrows_db, &key, &value)?;
 
     let update = CreateEscrowUpdateV1 { escrow_id: escrow.id };
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// `process_instruction` for FundV1
@@ -476,9 +476,9 @@ fn escrow_fund_process_instruction_v1(
     let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
 
     // Fetch the existing escrow
-    let escrow_data = wasm::db::db_get(escrows_db, &serialize(&params.escrow_id))?
+    let escrow_data = wasm::db::db_get(escrows_db, &params.escrow_id.to_bytes())?
         .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", params.escrow_id)))?;
-    let mut escrow: Escrow = deserialize(&escrow_data)?;
+    let mut escrow: Escrow = Escrow::decode(&escrow_data)?;
 
     // Verify the escrow is in Created state
     if escrow.state != EscrowState::Created {
@@ -492,7 +492,7 @@ fn escrow_fund_process_instruction_v1(
     escrow.funded_at = Some(wasm::util::get_verifying_block_height()?.get());
 
     let update = FundEscrowUpdateV1 { escrow_id: escrow.id };
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// `process_instruction` for ClaimV1
@@ -540,9 +540,9 @@ fn escrow_claim_process_instruction_v1(
     let spent_flags_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_SPENT_FLAGS_TREE)?;
 
     // Fetch the existing escrow
-    let escrow_data = wasm::db::db_get(escrows_db, &serialize(&params.escrow_id))?
+    let escrow_data = wasm::db::db_get(escrows_db, &params.escrow_id.to_bytes())?
         .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", params.escrow_id)))?;
-    let escrow: Escrow = deserialize(&escrow_data)?;
+    let escrow: Escrow = Escrow::decode(&escrow_data)?;
 
     // CRITICAL: Verify the escrow is in Funded state
     if escrow.state != EscrowState::Funded {
@@ -551,13 +551,13 @@ fn escrow_claim_process_instruction_v1(
     }
 
     // CRITICAL: Verify the escrow hasn't already been spent
-    if wasm::db::db_contains_key(spent_flags_db, &serialize(&params.spent_nullifier))? {
+    if wasm::db::db_contains_key(spent_flags_db, &params.spent_nullifier.to_repr())? {
         msg!("[ClaimV1] Error: Escrow already spent (nullifier exists)");
         return Err(EscrowError::AlreadySpent.into())
     }
 
     // Verify the nullifier matches what we expect
-    let expected_nullifier = poseidon_hash([escrow.id, params.seller_secret]);
+    let expected_nullifier = poseidon_hash([escrow.id.0, params.seller_secret]);
     if expected_nullifier != params.spent_nullifier {
         msg!("[ClaimV1] Error: Nullifier mismatch");
         return Err(EscrowError::InvalidNullifier.into())
@@ -566,7 +566,7 @@ fn escrow_claim_process_instruction_v1(
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
         pallas::Base::from(escrow.value),
-        escrow.id,
+        escrow.id.0,
     ]);
     validate_child_value_commit(&child_call.data, escrow.value, value_blind)?;
 
@@ -574,7 +574,7 @@ fn escrow_claim_process_instruction_v1(
         escrow_id: escrow.id,
         spent_nullifier: params.spent_nullifier,
     };
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// `process_instruction` for RefundV1
@@ -615,9 +615,9 @@ fn escrow_refund_process_instruction_v1(
     let spent_flags_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_SPENT_FLAGS_TREE)?;
 
     // Fetch the existing escrow
-    let escrow_data = wasm::db::db_get(escrows_db, &serialize(&params.escrow_id))?
+    let escrow_data = wasm::db::db_get(escrows_db, &params.escrow_id.to_bytes())?
         .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", params.escrow_id)))?;
-    let escrow: Escrow = deserialize(&escrow_data)?;
+    let escrow: Escrow = Escrow::decode(&escrow_data)?;
 
     // CRITICAL: Verify the escrow is in Funded state
     if escrow.state != EscrowState::Funded {
@@ -626,7 +626,7 @@ fn escrow_refund_process_instruction_v1(
     }
 
     // CRITICAL: Verify the escrow hasn't already been spent
-    if wasm::db::db_contains_key(spent_flags_db, &serialize(&params.spent_nullifier))? {
+    if wasm::db::db_contains_key(spent_flags_db, &params.spent_nullifier.to_repr())? {
         msg!("[RefundV1] Error: Escrow already spent (nullifier exists)");
         return Err(EscrowError::AlreadySpent.into())
     }
@@ -643,7 +643,7 @@ fn escrow_refund_process_instruction_v1(
     }
 
     // Verify the nullifier matches what we expect
-    let expected_nullifier = poseidon_hash([escrow.id, params.buyer_secret]);
+    let expected_nullifier = poseidon_hash([escrow.id.0, params.buyer_secret]);
     if expected_nullifier != params.spent_nullifier {
         msg!("[RefundV1] Error: Nullifier mismatch");
         return Err(EscrowError::InvalidNullifier.into())
@@ -652,7 +652,7 @@ fn escrow_refund_process_instruction_v1(
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
         pallas::Base::from(escrow.value),
-        escrow.id,
+        escrow.id.0,
     ]);
     validate_child_value_commit(&child_call.data, escrow.value, value_blind)?;
 
@@ -660,7 +660,7 @@ fn escrow_refund_process_instruction_v1(
         escrow_id: escrow.id,
         spent_nullifier: params.spent_nullifier,
     };
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// `process_instruction` for CancelV1
@@ -676,9 +676,9 @@ fn escrow_cancel_process_instruction_v1(
     let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
 
     // Fetch the existing escrow
-    let escrow_data = wasm::db::db_get(escrows_db, &serialize(&params.escrow_id))?
+    let escrow_data = wasm::db::db_get(escrows_db, &params.escrow_id.to_bytes())?
         .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", params.escrow_id)))?;
-    let escrow: Escrow = deserialize(&escrow_data)?;
+    let escrow: Escrow = Escrow::decode(&escrow_data)?;
 
     // Verify buyer pubkey matches the escrow's stored buyer pubkey
     // (the ZK proof already proves knowledge of the secret for this pubkey)
@@ -689,7 +689,7 @@ fn escrow_cancel_process_instruction_v1(
 
     // Verify cancel nullifier hasn't been used (prevent double-cancel)
     let spent_flags_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(spent_flags_db, &serialize(&params.cancel_nullifier))? {
+    if wasm::db::db_contains_key(spent_flags_db, &params.cancel_nullifier.to_repr())? {
         msg!("[CancelV1] Error: Cancel nullifier already spent");
         return Err(EscrowError::AlreadySpent.into())
     }
@@ -704,7 +704,7 @@ fn escrow_cancel_process_instruction_v1(
         escrow_id: escrow.id,
         cancel_nullifier: params.cancel_nullifier,
     };
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 // ============================================================================
@@ -717,23 +717,23 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 
     match func {
         EscrowFunction::CreateEscrowV1 => {
-            let update: CreateEscrowUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CreateEscrowUpdateV1::decode(&update_data[1..])?;
             escrow_create_process_update_v1(cid, update)
         }
         EscrowFunction::FundV1 => {
-            let update: FundEscrowUpdateV1 = deserialize(&update_data[1..])?;
+            let update = FundEscrowUpdateV1::decode(&update_data[1..])?;
             escrow_fund_process_update_v1(cid, update)
         }
         EscrowFunction::ClaimV1 => {
-            let update: ClaimEscrowUpdateV1 = deserialize(&update_data[1..])?;
+            let update = ClaimEscrowUpdateV1::decode(&update_data[1..])?;
             escrow_claim_process_update_v1(cid, update)
         }
         EscrowFunction::RefundV1 => {
-            let update: RefundEscrowUpdateV1 = deserialize(&update_data[1..])?;
+            let update = RefundEscrowUpdateV1::decode(&update_data[1..])?;
             escrow_refund_process_update_v1(cid, update)
         }
         EscrowFunction::CancelV1 => {
-            let update: CancelEscrowUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CancelEscrowUpdateV1::decode(&update_data[1..])?;
             escrow_cancel_process_update_v1(cid, update)
         }
         EscrowFunction::InitializeV1 => {
@@ -755,14 +755,14 @@ fn escrow_fund_process_update_v1(cid: ContractId, update: FundEscrowUpdateV1) ->
     let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
 
     // Fetch and update the escrow
-    let escrow_data = wasm::db::db_get(escrows_db, &serialize(&update.escrow_id))?
+    let escrow_data = wasm::db::db_get(escrows_db, &update.escrow_id.to_bytes())?
         .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", update.escrow_id)))?;
-    let mut escrow: Escrow = deserialize(&escrow_data)?;
+    let mut escrow: Escrow = Escrow::decode(&escrow_data)?;
 
     escrow.state = EscrowState::Funded;
     escrow.funded_at = Some(wasm::util::get_verifying_block_height()?.get());
 
-    wasm::db::db_set(escrows_db, &serialize(&escrow.id), &serialize(&escrow))?;
+    wasm::db::db_set(escrows_db, &escrow.id.to_bytes(), &escrow.encode())?;
     msg!("[FundV1] Escrow {:?} funded and state updated to Funded", update.escrow_id);
     Ok(())
 }
@@ -773,17 +773,17 @@ fn escrow_claim_process_update_v1(cid: ContractId, update: ClaimEscrowUpdateV1) 
     let spent_flags_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_SPENT_FLAGS_TREE)?;
 
     // Fetch and update the escrow
-    let escrow_data = wasm::db::db_get(escrows_db, &serialize(&update.escrow_id))?
+    let escrow_data = wasm::db::db_get(escrows_db, &update.escrow_id.to_bytes())?
         .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", update.escrow_id)))?;
-    let mut escrow: Escrow = deserialize(&escrow_data)?;
+    let mut escrow: Escrow = Escrow::decode(&escrow_data)?;
 
     escrow.state = EscrowState::Claimed;
     escrow.spent_nullifier = update.spent_nullifier;
 
-    wasm::db::db_set(escrows_db, &serialize(&escrow.id), &serialize(&escrow))?;
+    wasm::db::db_set(escrows_db, &escrow.id.to_bytes(), &escrow.encode())?;
 
     // Record the spent nullifier to prevent double-spend
-    wasm::db::db_set(spent_flags_db, &serialize(&update.spent_nullifier), &[])?;
+    wasm::db::db_set(spent_flags_db, &update.spent_nullifier.to_repr(), &[])?;
 
     msg!(
         "[ClaimV1] Escrow {:?} claimed, nullifier {:?} recorded",
@@ -799,17 +799,17 @@ fn escrow_refund_process_update_v1(cid: ContractId, update: RefundEscrowUpdateV1
     let spent_flags_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_SPENT_FLAGS_TREE)?;
 
     // Fetch and update the escrow
-    let escrow_data = wasm::db::db_get(escrows_db, &serialize(&update.escrow_id))?
+    let escrow_data = wasm::db::db_get(escrows_db, &update.escrow_id.to_bytes())?
         .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", update.escrow_id)))?;
-    let mut escrow: Escrow = deserialize(&escrow_data)?;
+    let mut escrow: Escrow = Escrow::decode(&escrow_data)?;
 
     escrow.state = EscrowState::Refunded;
     escrow.spent_nullifier = update.spent_nullifier;
 
-    wasm::db::db_set(escrows_db, &serialize(&escrow.id), &serialize(&escrow))?;
+    wasm::db::db_set(escrows_db, &escrow.id.to_bytes(), &escrow.encode())?;
 
     // Record the spent nullifier to prevent double-spend
-    wasm::db::db_set(spent_flags_db, &serialize(&update.spent_nullifier), &[])?;
+    wasm::db::db_set(spent_flags_db, &update.spent_nullifier.to_repr(), &[])?;
 
     msg!(
         "[RefundV1] Escrow {:?} refunded, nullifier {:?} recorded",
@@ -825,16 +825,16 @@ fn escrow_cancel_process_update_v1(cid: ContractId, update: CancelEscrowUpdateV1
     let spent_flags_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_NULLIFIERS_TREE)?;
 
     // Fetch and update the escrow
-    let escrow_data = wasm::db::db_get(escrows_db, &serialize(&update.escrow_id))?
+    let escrow_data = wasm::db::db_get(escrows_db, &update.escrow_id.to_bytes())?
         .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", update.escrow_id)))?;
-    let mut escrow: Escrow = deserialize(&escrow_data)?;
+    let mut escrow: Escrow = Escrow::decode(&escrow_data)?;
 
     escrow.state = EscrowState::Cancelled;
 
-    wasm::db::db_set(escrows_db, &serialize(&escrow.id), &serialize(&escrow))?;
+    wasm::db::db_set(escrows_db, &escrow.id.to_bytes(), &escrow.encode())?;
 
     // Record cancel nullifier to prevent double-cancel
-    wasm::db::db_set(spent_flags_db, &serialize(&update.cancel_nullifier), &[])?;
+    wasm::db::db_set(spent_flags_db, &update.cancel_nullifier.to_repr(), &[])?;
     msg!("[CancelV1] Escrow {:?} cancelled", update.escrow_id);
     Ok(())
 }

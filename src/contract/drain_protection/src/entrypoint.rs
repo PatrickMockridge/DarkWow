@@ -51,7 +51,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id, validate_child_value_commit,
 };
@@ -323,7 +323,7 @@ fn init_fund_process_instruction_v1(
     let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
 
     // Check fund doesn't already exist
-    if wasm::db::db_contains_key(funds_db, &serialize(&params.fund_id))? {
+    if wasm::db::db_contains_key(funds_db, &params.fund_id.to_repr())? {
         return Err(DrainProtectionError::MemberAlreadyExists.into())
     }
 
@@ -351,12 +351,10 @@ fn init_fund_process_instruction_v1(
     };
 
     // Store fund directly (InitializeUpdateV1 only has fund_id)
-    let key = serialize(&fund.id);
-    let value = serialize(&fund);
-    wasm::db::db_set(funds_db, &key, &value)?;
+    wasm::db::db_set(funds_db, &fund.id.to_repr(), &fund.encode())?;
 
     let update = crate::model::InitializeUpdateV1 { instance_seed: params.instance_seed, fund_id: fund.id };
-    Ok(serialize(&update))
+    Ok(encode_initialize_update_v1(&update))
 }
 
 /// `process_instruction` for ProposeV1
@@ -369,9 +367,9 @@ fn propose_process_instruction_v1(
     let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
 
     // Verify fund exists and multisig group is configured
-    let fund_data = wasm::db::db_get(funds_db, &serialize(&params.multisig_group_id))?
+    let fund_data = wasm::db::db_get(funds_db, &params.multisig_group_id.to_repr())?
         .ok_or(DrainProtectionError::NotInitialized)?;
-    let fund: ProtectedFund = deserialize(&fund_data)?;
+    let fund: ProtectedFund = ProtectedFund::decode(&fund_data)?;
 
     if fund.lock_state == crate::model::LockState::Locked {
         if (wasm::util::get_verifying_block_height()?.get()) < fund.lock_expires_at {
@@ -383,7 +381,7 @@ fn propose_process_instruction_v1(
     let proposal_id = dwow_sdk::crypto::poseidon_hash([fund.id, params.message_hash]);
 
     let update = ProposeUpdateV1 { proposal_id };
-    Ok(serialize(&update))
+    Ok(encode_propose_update_v1(&update))
 }
 
 /// `process_instruction` for VoteV1
@@ -406,10 +404,10 @@ fn vote_process_instruction_v1(
 
     // Record vote yes/no via MultiSig-compatible signature
     let vote_value = if params.vote { pallas::Base::one() } else { pallas::Base::zero() };
-    wasm::db::db_set(votes_db, &vote_key, &serialize(&vote_value))?;
+    wasm::db::db_set(votes_db, &vote_key, &vote_value.to_repr())?;
 
     let update = VoteUpdateV1 { proposal_id: params.proposal_id, yes_votes: 0, no_votes: 0 };
-    Ok(serialize(&update))
+    Ok(encode_vote_update_v1(&update))
 }
 
 /// `process_instruction` for ExecuteV1
@@ -425,16 +423,16 @@ fn execute_process_instruction_v1(
     // MultiSig composition: execute validates fund's multisig_group_id is configured.
     // The MultiSig::FinalizeV1 child call produces an approval_commit verified in
     // the process_instruction layer (has access to calls/self_).
-    let fund_data = wasm::db::db_get(funds_db, &serialize(&params.proposal_id))?
+    let fund_data = wasm::db::db_get(funds_db, &params.proposal_id.to_repr())?
         .ok_or(DrainProtectionError::NotInitialized)?;
-    let fund: ProtectedFund = deserialize(&fund_data)?;
+    let fund: ProtectedFund = ProtectedFund::decode(&fund_data)?;
 
     if fund.multisig_group_id == pallas::Base::zero() {
         return Err(DrainProtectionError::Unauthorized.into());
     }
 
     let update = crate::model::ExecuteUpdateV1 { proposal_id: params.proposal_id, action: params.proposal_id };
-    Ok(serialize(&update))
+    Ok(encode_execute_update_v1(&update))
 }
 
 /// `process_instruction` for ExitV1
@@ -449,9 +447,9 @@ fn exit_process_instruction_v1(
     let exits_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_EXITS_TREE)?;
 
     // Find the fund by its ID
-    let fund_data = wasm::db::db_get(funds_db, &serialize(&params.fund_id))?
+    let fund_data = wasm::db::db_get(funds_db, &params.fund_id.to_repr())?
         .ok_or(DrainProtectionError::MemberNotFound)?;
-    let fund: ProtectedFund = deserialize(&fund_data)?;
+    let fund: ProtectedFund = ProtectedFund::decode(&fund_data)?;
 
     // Calculate exit value with haircut
     // exit_value = (weight / total_weight) × total_funds × 0.666
@@ -477,7 +475,7 @@ fn exit_process_instruction_v1(
     ]);
     validate_child_value_commit(child_call_data, exit_value, value_blind)?;
 
-    wasm::db::db_set(exits_db, &serialize(&exit_id), &[1])?;
+    wasm::db::db_set(exits_db, &exit_id.to_repr(), &[1])?;
 
     let update = ExitUpdateV1 {
         exit_id,
@@ -485,7 +483,7 @@ fn exit_process_instruction_v1(
         payout_value: exit_value,
         haircut_collected: (member_weight * fund.total_funds / total_weight.max(1)) * haircut_bps / 10_000,
     };
-    Ok(serialize(&update))
+    Ok(encode_exit_update_v1(&update))
 }
 
 /// `process_instruction` for TransferV1
@@ -499,9 +497,9 @@ fn transfer_process_instruction_v1(
     let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
     let transfers_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_TRANSFERS_TREE)?;
 
-    let fund_data = wasm::db::db_get(funds_db, &serialize(&params.fund_id))?
+    let fund_data = wasm::db::db_get(funds_db, &params.fund_id.to_repr())?
         .ok_or(DrainProtectionError::MemberNotFound)?;
-    let fund: ProtectedFund = deserialize(&fund_data)?;
+    let fund: ProtectedFund = ProtectedFund::decode(&fund_data)?;
 
     // Check if locked
     if fund.lock_state == crate::model::LockState::Locked {
@@ -536,14 +534,14 @@ fn transfer_process_instruction_v1(
     // Record transfer for rate limiting
     let record = crate::model::TransferRecord { version: 1, block: current_block, amount: params.amount };
     let transfer_key = dwow_sdk::crypto::poseidon_hash([current_block.into()]);
-    wasm::db::db_set(transfers_db, &serialize(&transfer_key), &serialize(&record))?;
+    wasm::db::db_set(transfers_db, &transfer_key.to_repr(), &record.encode())?;
 
     let update = crate::model::TransferUpdateV1 {
         amount: params.amount,
         recipient: params.recipient,
         rate_limited,
     };
-    Ok(serialize(&update))
+    Ok(encode_transfer_update_v1(&update))
 }
 
 /// `process_instruction` for LockV1
@@ -555,9 +553,9 @@ fn lock_process_instruction_v1(
 
     let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
 
-    let fund_data = wasm::db::db_get(funds_db, &serialize(&params.fund_id))?
+    let fund_data = wasm::db::db_get(funds_db, &params.fund_id.to_repr())?
         .ok_or(DrainProtectionError::MemberNotFound)?;
-    let mut fund: ProtectedFund = deserialize(&fund_data)?;
+    let mut fund: ProtectedFund = ProtectedFund::decode(&fund_data)?;
 
     let current_block: u64 = wasm::util::get_verifying_block_height()?.get();
 
@@ -570,10 +568,10 @@ fn lock_process_instruction_v1(
     fund.lock_state = crate::model::LockState::Locked;
     fund.lock_expires_at = current_block + params.duration_blocks;
 
-    wasm::db::db_set(funds_db, &serialize(&fund.id), &serialize(&fund))?;
+    wasm::db::db_set(funds_db, &fund.id.to_repr(), &fund.encode())?;
 
     let update = LockUpdateV1 { locked_until: fund.lock_expires_at };
-    Ok(serialize(&update))
+    Ok(encode_lock_update_v1(&update))
 }
 
 /// `process_instruction` for UnlockV1
@@ -585,9 +583,9 @@ fn unlock_process_instruction_v1(
 
     let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
 
-    let fund_data = wasm::db::db_get(funds_db, &serialize(&params.fund_id))?
+    let fund_data = wasm::db::db_get(funds_db, &params.fund_id.to_repr())?
         .ok_or(DrainProtectionError::MemberNotFound)?;
-    let mut fund: ProtectedFund = deserialize(&fund_data)?;
+    let mut fund: ProtectedFund = ProtectedFund::decode(&fund_data)?;
 
     // Check timelock (24hr after lock expires)
     let current_block: u64 = wasm::util::get_verifying_block_height()?.get();
@@ -602,10 +600,10 @@ fn unlock_process_instruction_v1(
 
     fund.lock_state = crate::model::LockState::Unlocked;
 
-    wasm::db::db_set(funds_db, &serialize(&fund.id), &serialize(&fund))?;
+    wasm::db::db_set(funds_db, &fund.id.to_repr(), &fund.encode())?;
 
     let update = UnlockUpdateV1 { unlocked_at: current_block };
-    Ok(serialize(&update))
+    Ok(encode_unlock_update_v1(&update))
 }
 
 /// `process_instruction` for UpdateConfigV1
@@ -617,9 +615,9 @@ fn update_config_process_instruction_v1(
 
     let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
 
-    let fund_data = wasm::db::db_get(funds_db, &serialize(&params.fund_id))?
+    let fund_data = wasm::db::db_get(funds_db, &params.fund_id.to_repr())?
         .ok_or(DrainProtectionError::MemberNotFound)?;
-    let mut fund: ProtectedFund = deserialize(&fund_data)?;
+    let mut fund: ProtectedFund = ProtectedFund::decode(&fund_data)?;
 
     let current_block: u64 = wasm::util::get_verifying_block_height()?.get();
 
@@ -642,7 +640,7 @@ fn update_config_process_instruction_v1(
         fund.spend_authority = new_authority;
     }
 
-    wasm::db::db_set(funds_db, &serialize(&fund.id), &serialize(&fund))?;
+    wasm::db::db_set(funds_db, &fund.id.to_repr(), &fund.encode())?;
 
     let update = crate::model::UpdateConfigUpdateV1 {
         authority_change_timelock: if params.new_spend_authority.is_some() {
@@ -651,7 +649,83 @@ fn update_config_process_instruction_v1(
             None
         },
     };
-    Ok(serialize(&update))
+    Ok(encode_update_config_update_v1(&update))
+}
+
+// ============================================================================
+// RHO-CALCULUS EXPLICIT BRIDGE ENCODE/DECODE
+// ============================================================================
+
+fn encode_initialize_update_v1(update: &crate::model::InitializeUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(DrainProtectionFunction::InitializeV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn encode_propose_update_v1(update: &crate::model::ProposeUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(DrainProtectionFunction::ProposeV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn encode_vote_update_v1(update: &crate::model::VoteUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(DrainProtectionFunction::VoteV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn encode_execute_update_v1(update: &crate::model::ExecuteUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(DrainProtectionFunction::ExecuteV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn encode_exit_update_v1(update: &crate::model::ExitUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(DrainProtectionFunction::ExitV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn encode_transfer_update_v1(update: &crate::model::TransferUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(DrainProtectionFunction::TransferV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn encode_lock_update_v1(update: &crate::model::LockUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(DrainProtectionFunction::LockV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn encode_unlock_update_v1(update: &crate::model::UnlockUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(DrainProtectionFunction::UnlockV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn encode_update_config_update_v1(update: &crate::model::UpdateConfigUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(DrainProtectionFunction::UpdateConfigV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
 }
 
 // ============================================================================

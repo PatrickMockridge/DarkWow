@@ -44,6 +44,7 @@
 
 use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, poseidon_hash, PublicKey},
+    error::ContractError,
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -53,7 +54,7 @@ use dwow_serial::{SerialDecodable, SerialEncodable};
 // ============================================================================
 
 /// Subscription unique identifier (Poseidon hash of subscription data)
-#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct SubscriptionId(pub pallas::Base);
 impl SubscriptionId {
     pub fn inner(&self) -> pallas::Base { self.0 }
@@ -66,7 +67,7 @@ impl SubscriptionId {
 }
 
 /// Represents the current state of a subscription
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SubscriptionState {
     /// Subscription is active
     Active = 0,
@@ -94,7 +95,7 @@ impl TryFrom<u8> for SubscriptionState {
 // ============================================================================
 
 /// Core subscription data stored on-chain
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Subscription {
     pub version: u8,
     /// Subscription identifier (commitment)
@@ -169,7 +170,7 @@ impl Subscription {
 }
 
 /// Subscription plan definition
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Plan {
     pub version: u8,
     /// Plan unique identifier
@@ -196,7 +197,7 @@ pub struct Plan {
 
 /// Capability derived from subscription for access control
 /// This implements the Object Capability pattern
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct SubscriptionCapability {
     /// Subscriber's public key
     pub subscriber: PublicKey,
@@ -269,7 +270,7 @@ pub struct SubscribeParamsV1 {
 }
 
 /// State update for `Subscription::SubscribeV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct SubscribeUpdateV1 {
     /// The full subscription object
     pub subscription: Subscription,
@@ -291,7 +292,7 @@ pub struct CancelParamsV1 {
 }
 
 /// State update for `Subscription::CancelV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CancelUpdateV1 {
     /// The cancelled subscription ID
     pub subscription_id: SubscriptionId,
@@ -319,7 +320,7 @@ pub struct RenewParamsV1 {
 }
 
 /// State update for `Subscription::RenewV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RenewUpdateV1 {
     /// The renewed subscription ID (new commitment)
     pub subscription_id: SubscriptionId,
@@ -362,7 +363,7 @@ pub struct UpdateUsageParamsV1 {
 }
 
 /// State update for `Subscription::UpdateUsageV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct UpdateUsageUpdateV1 {
     /// The subscription ID
     pub subscription_id: SubscriptionId,
@@ -392,14 +393,14 @@ pub enum DaoControlParamsV1 {
 }
 
 /// State update for `Subscription::DaoControlV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct DaoControlUpdateV1 {
     /// The DAO action performed
     pub action: DaoControlAction,
 }
 
 /// Actions resulting from DAO control
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub enum DaoControlAction {
     /// Plan was updated
     PlanUpdated(u32),
@@ -411,6 +412,667 @@ pub enum DaoControlAction {
     EndowmentWithdrawn { amount: u64, recipient: PublicKey },
     /// Subscription slashed
     SubscriptionSlashed(SubscriptionId),
+}
+
+// ============================================================================
+// RHO-CALCULUS EXPLICIT ENCODE/DECODE
+//
+// Replace SerialEncodable/SerialDecodable derives with explicit deterministic
+// encoding. This eliminates the VarInt length-prefix anti-pattern and gives
+// full control over byte layout.
+// ============================================================================
+
+impl SubscriptionId {
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    pub fn encode(&self) -> Vec<u8> {
+        self.to_bytes().to_vec()
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 32 {
+            return Err(ContractError::IoError(format!(
+                "SubscriptionId: expected 32 bytes, got {}",
+                data.len()
+            )));
+        }
+        Self::from_bytes(data.try_into().unwrap())
+            .ok_or_else(|| {
+                ContractError::IoError(
+                    "SubscriptionId: invalid field element".into(),
+                )
+            })
+    }
+}
+
+impl SubscriptionState {
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    pub fn encode(&self) -> Vec<u8> {
+        vec![*self as u8]
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval).
+    /// Uses Pattern 5: TryFrom<u8> for enum discriminant.
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() {
+            return Err(ContractError::IoError(
+                "SubscriptionState: empty data".into(),
+            ));
+        }
+        Self::try_from(data[0])
+    }
+}
+
+impl Subscription {
+    /// Minimum canonical byte size (without optional fields present).
+    pub const MIN_ENCODED_SIZE: usize = 264;
+
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = Self::MIN_ENCODED_SIZE
+            + if self.dao_escrow_bulla.is_some() { 32 } else { 0 }
+            + if self.dao_membership_note.is_some() { 32 } else { 0 };
+        let mut b = Vec::with_capacity(cap);
+        b.push(self.version);
+        b.extend_from_slice(&self.id.to_bytes());
+        b.extend_from_slice(&self.subscriber_pubkey.to_bytes());
+        b.extend_from_slice(&self.plan_id.to_le_bytes());
+        b.extend_from_slice(&self.lock_until_block.to_le_bytes());
+        b.extend_from_slice(&self.deposit.to_le_bytes());
+        b.extend_from_slice(&self.token_id.to_repr());
+        b.extend_from_slice(&self.value_commit.to_bytes());
+        b.push(self.state as u8);
+        b.extend_from_slice(&self.spent_nullifier.to_repr());
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        // Option fields (Pattern 4: presence byte + conditional value)
+        b.push(self.dao_escrow_bulla.is_some() as u8);
+        if let Some(ref v) = self.dao_escrow_bulla {
+            b.extend_from_slice(&v.to_repr());
+        }
+        b.push(self.dao_membership_note.is_some() as u8);
+        if let Some(ref v) = self.dao_membership_note {
+            b.extend_from_slice(&v.to_repr());
+        }
+        // Rate limiting fields
+        b.extend_from_slice(&self.uses_allowed.to_le_bytes());
+        b.extend_from_slice(&self.rate_period.to_le_bytes());
+        b.extend_from_slice(&self.period_uses.to_le_bytes());
+        b.extend_from_slice(&self.last_access_block.to_le_bytes());
+        b.extend_from_slice(&self.uses_remaining.to_le_bytes());
+        b.extend_from_slice(&self.instance_seed);
+        b
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < Self::MIN_ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "Subscription: expected at least {} bytes, got {}",
+                Self::MIN_ENCODED_SIZE,
+                data.len()
+            )));
+        }
+        let mut pos = 0;
+        let version = data[pos];
+        pos += 1;
+        let id = SubscriptionId::decode(&data[pos..pos + 32])?;
+        pos += 32;
+        let subscriber_pubkey =
+            PublicKey::from_bytes(data[pos..pos + 32].try_into().unwrap())
+                .map_err(|e| {
+                    ContractError::IoError(format!(
+                        "Subscription: invalid subscriber_pubkey: {}",
+                        e
+                    ))
+                })?;
+        pos += 32;
+        let plan_id =
+            u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
+        pos += 4;
+        let lock_until_block =
+            u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        pos += 8;
+        let deposit =
+            u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        pos += 8;
+        let token_id =
+            Option::<pallas::Base>::from(pallas::Base::from_repr(
+                data[pos..pos + 32].try_into().unwrap(),
+            ))
+            .ok_or_else(|| {
+                ContractError::IoError(
+                    "Subscription: invalid token_id".into(),
+                )
+            })?;
+        pos += 32;
+        let value_commit =
+            Option::<pallas::Point>::from(pallas::Point::from_bytes(
+                &data[pos..pos + 32].try_into().unwrap(),
+            ))
+            .ok_or_else(|| {
+                ContractError::IoError(
+                    "Subscription: invalid value_commit".into(),
+                )
+            })?;
+        pos += 32;
+        let state = SubscriptionState::try_from(data[pos])?;
+        pos += 1;
+        let spent_nullifier =
+            Option::<pallas::Base>::from(pallas::Base::from_repr(
+                data[pos..pos + 32].try_into().unwrap(),
+            ))
+            .ok_or_else(|| {
+                ContractError::IoError(
+                    "Subscription: invalid spent_nullifier".into(),
+                )
+            })?;
+        pos += 32;
+        let created_at =
+            u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        pos += 8;
+        // Option fields (Pattern 4: presence byte + conditional position tracking)
+        let has_bulla = data[pos] != 0;
+        pos += 1;
+        let dao_escrow_bulla = if has_bulla {
+            let v = Option::<pallas::Base>::from(pallas::Base::from_repr(
+                data[pos..pos + 32].try_into().unwrap(),
+            ))
+            .ok_or_else(|| {
+                ContractError::IoError(
+                    "Subscription: invalid dao_escrow_bulla".into(),
+                )
+            })?;
+            pos += 32;
+            Some(v)
+        } else {
+            None
+        };
+        let has_note = data[pos] != 0;
+        pos += 1;
+        let dao_membership_note = if has_note {
+            let v = Option::<pallas::Base>::from(pallas::Base::from_repr(
+                data[pos..pos + 32].try_into().unwrap(),
+            ))
+            .ok_or_else(|| {
+                ContractError::IoError(
+                    "Subscription: invalid dao_membership_note".into(),
+                )
+            })?;
+            pos += 32;
+            Some(v)
+        } else {
+            None
+        };
+        // Rate limiting fields
+        let uses_allowed =
+            u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        pos += 8;
+        let rate_period =
+            u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        pos += 8;
+        let period_uses =
+            u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        pos += 8;
+        let last_access_block =
+            u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        pos += 8;
+        let uses_remaining =
+            u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        pos += 8;
+        let instance_seed: [u8; 32] =
+            data[pos..pos + 32].try_into().unwrap();
+
+        Ok(Subscription {
+            version,
+            id,
+            subscriber_pubkey,
+            plan_id,
+            lock_until_block,
+            deposit,
+            token_id,
+            value_commit,
+            state,
+            spent_nullifier,
+            created_at,
+            dao_escrow_bulla,
+            dao_membership_note,
+            uses_allowed,
+            rate_period,
+            period_uses,
+            last_access_block,
+            uses_remaining,
+            instance_seed,
+        })
+    }
+}
+
+impl Plan {
+    /// Minimum canonical byte size (without optional fields present).
+    pub const MIN_ENCODED_SIZE: usize = 99;
+
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = Self::MIN_ENCODED_SIZE
+            + if self.required_dao_escrow.is_some() { 32 } else { 0 };
+        let mut b = Vec::with_capacity(cap);
+        b.push(self.version);
+        b.extend_from_slice(&self.id.to_le_bytes());
+        b.extend_from_slice(&self.name_hash.to_repr());
+        b.extend_from_slice(&self.price.to_le_bytes());
+        b.extend_from_slice(&self.token_id.to_repr());
+        b.extend_from_slice(&self.duration_blocks.to_le_bytes());
+        b.extend_from_slice(&self.treasury_share.to_le_bytes());
+        b.extend_from_slice(&self.endowment_share.to_le_bytes());
+        b.push(self.active as u8);
+        b.extend_from_slice(&self.dao_escrow_discount.to_le_bytes());
+        b.push(self.required_dao_escrow.is_some() as u8);
+        if let Some(ref v) = self.required_dao_escrow {
+            b.extend_from_slice(&v.to_repr());
+        }
+        b
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < Self::MIN_ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "Plan: expected at least {} bytes, got {}",
+                Self::MIN_ENCODED_SIZE,
+                data.len()
+            )));
+        }
+        let mut pos = 0;
+        let version = data[pos];
+        pos += 1;
+        let id =
+            u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
+        pos += 4;
+        let name_hash =
+            Option::<pallas::Base>::from(pallas::Base::from_repr(
+                data[pos..pos + 32].try_into().unwrap(),
+            ))
+            .ok_or_else(|| {
+                ContractError::IoError("Plan: invalid name_hash".into())
+            })?;
+        pos += 32;
+        let price =
+            u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        pos += 8;
+        let token_id =
+            Option::<pallas::Base>::from(pallas::Base::from_repr(
+                data[pos..pos + 32].try_into().unwrap(),
+            ))
+            .ok_or_else(|| {
+                ContractError::IoError("Plan: invalid token_id".into())
+            })?;
+        pos += 32;
+        let duration_blocks =
+            u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        pos += 8;
+        let treasury_share =
+            u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
+        pos += 4;
+        let endowment_share =
+            u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
+        pos += 4;
+        let active = data[pos] != 0;
+        pos += 1;
+        let dao_escrow_discount =
+            u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
+        pos += 4;
+        let has_req = data[pos] != 0;
+        pos += 1;
+        let required_dao_escrow = if has_req {
+            let v =
+                Option::<pallas::Base>::from(pallas::Base::from_repr(
+                    data[pos..pos + 32].try_into().unwrap(),
+                ))
+                .ok_or_else(|| {
+                    ContractError::IoError(
+                        "Plan: invalid required_dao_escrow".into(),
+                    )
+                })?;
+            pos += 32;
+            Some(v)
+        } else {
+            None
+        };
+
+        Ok(Plan {
+            version,
+            id,
+            name_hash,
+            price,
+            token_id,
+            duration_blocks,
+            treasury_share,
+            endowment_share,
+            active,
+            dao_escrow_discount,
+            required_dao_escrow,
+        })
+    }
+}
+
+impl SubscriptionCapability {
+    /// Fixed canonical byte size: subscriber(32) + plan_id(4) +
+    /// subscription_id(32) + permissions(1) + expires_at(8) + nonce(32) = 109
+    pub const ENCODED_SIZE: usize = 109;
+
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.subscriber.to_bytes());
+        b.extend_from_slice(&self.plan_id.to_le_bytes());
+        b.extend_from_slice(&self.subscription_id.to_bytes());
+        b.push(self.permissions);
+        b.extend_from_slice(&self.expires_at.to_le_bytes());
+        b.extend_from_slice(&self.nonce.to_repr());
+        b
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "SubscriptionCapability: expected {} bytes, got {}",
+                Self::ENCODED_SIZE,
+                data.len()
+            )));
+        }
+        let subscriber =
+            PublicKey::from_bytes(data[0..32].try_into().unwrap())
+                .map_err(|e| {
+                    ContractError::IoError(format!(
+                        "SubscriptionCapability: invalid subscriber: {}",
+                        e
+                    ))
+                })?;
+        let plan_id =
+            u32::from_le_bytes(data[32..36].try_into().unwrap());
+        let subscription_id = SubscriptionId::decode(&data[36..68])?;
+        let permissions = data[68];
+        let expires_at =
+            u64::from_le_bytes(data[69..77].try_into().unwrap());
+        let nonce =
+            Option::<pallas::Base>::from(pallas::Base::from_repr(
+                data[77..109].try_into().unwrap(),
+            ))
+            .ok_or_else(|| {
+                ContractError::IoError(
+                    "SubscriptionCapability: invalid nonce".into(),
+                )
+            })?;
+
+        Ok(SubscriptionCapability {
+            subscriber,
+            plan_id,
+            subscription_id,
+            permissions,
+            expires_at,
+            nonce,
+        })
+    }
+}
+
+impl SubscribeUpdateV1 {
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    pub fn encode(&self) -> Vec<u8> {
+        self.subscription.encode()
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        Ok(SubscribeUpdateV1 {
+            subscription: Subscription::decode(data)?,
+        })
+    }
+}
+
+impl CancelUpdateV1 {
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b =
+            Vec::with_capacity(64 + Subscription::MIN_ENCODED_SIZE);
+        b.extend_from_slice(&self.subscription_id.to_bytes());
+        b.extend_from_slice(&self.spent_nullifier.to_repr());
+        b.extend_from_slice(&self.updated_subscription.encode());
+        b
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 64 {
+            return Err(ContractError::IoError(format!(
+                "CancelUpdateV1: expected at least 64 bytes, got {}",
+                data.len()
+            )));
+        }
+        let subscription_id = SubscriptionId::decode(&data[0..32])?;
+        let spent_nullifier =
+            Option::<pallas::Base>::from(pallas::Base::from_repr(
+                data[32..64].try_into().unwrap(),
+            ))
+            .ok_or_else(|| {
+                ContractError::IoError(
+                    "CancelUpdateV1: invalid spent_nullifier".into(),
+                )
+            })?;
+        let updated_subscription = Subscription::decode(&data[64..])?;
+        Ok(CancelUpdateV1 {
+            subscription_id,
+            spent_nullifier,
+            updated_subscription,
+        })
+    }
+}
+
+impl RenewUpdateV1 {
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b =
+            Vec::with_capacity(64 + Subscription::MIN_ENCODED_SIZE);
+        b.extend_from_slice(&self.subscription_id.to_bytes());
+        b.extend_from_slice(&self.spent_nullifier.to_repr());
+        b.extend_from_slice(&self.new_subscription.encode());
+        b
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 64 {
+            return Err(ContractError::IoError(format!(
+                "RenewUpdateV1: expected at least 64 bytes, got {}",
+                data.len()
+            )));
+        }
+        let subscription_id = SubscriptionId::decode(&data[0..32])?;
+        let spent_nullifier =
+            Option::<pallas::Base>::from(pallas::Base::from_repr(
+                data[32..64].try_into().unwrap(),
+            ))
+            .ok_or_else(|| {
+                ContractError::IoError(
+                    "RenewUpdateV1: invalid spent_nullifier".into(),
+                )
+            })?;
+        let new_subscription = Subscription::decode(&data[64..])?;
+        Ok(RenewUpdateV1 {
+            subscription_id,
+            spent_nullifier,
+            new_subscription,
+        })
+    }
+}
+
+impl UpdateUsageUpdateV1 {
+    /// Fixed canonical byte size: subscription_id(32) + period_uses(8) +
+    /// last_access_block(8) + uses_remaining(8) + is_new_period(1) = 57
+    pub const ENCODED_SIZE: usize = 57;
+
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.subscription_id.to_bytes());
+        b.extend_from_slice(&self.period_uses.to_le_bytes());
+        b.extend_from_slice(&self.last_access_block.to_le_bytes());
+        b.extend_from_slice(&self.uses_remaining.to_le_bytes());
+        b.push(self.is_new_period as u8);
+        b
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "UpdateUsageUpdateV1: expected {} bytes, got {}",
+                Self::ENCODED_SIZE,
+                data.len()
+            )));
+        }
+        let subscription_id = SubscriptionId::decode(&data[0..32])?;
+        let period_uses =
+            u64::from_le_bytes(data[32..40].try_into().unwrap());
+        let last_access_block =
+            u64::from_le_bytes(data[40..48].try_into().unwrap());
+        let uses_remaining =
+            u64::from_le_bytes(data[48..56].try_into().unwrap());
+        let is_new_period = data[56] != 0;
+
+        Ok(UpdateUsageUpdateV1 {
+            subscription_id,
+            period_uses,
+            last_access_block,
+            uses_remaining,
+            is_new_period,
+        })
+    }
+}
+
+impl DaoControlUpdateV1 {
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    pub fn encode(&self) -> Vec<u8> {
+        self.action.encode()
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        Ok(DaoControlUpdateV1 {
+            action: DaoControlAction::decode(data)?,
+        })
+    }
+}
+
+impl DaoControlAction {
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    /// Pattern 5: discriminant byte + variant-specific data.
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::new();
+        match self {
+            Self::PlanUpdated(plan_id) => {
+                b.push(0u8);
+                b.extend_from_slice(&plan_id.to_le_bytes());
+            }
+            Self::PlanStatusChanged { plan_id, active } => {
+                b.push(1u8);
+                b.extend_from_slice(&plan_id.to_le_bytes());
+                b.push(*active as u8);
+            }
+            Self::EmergencyPauseToggled(pause) => {
+                b.push(2u8);
+                b.push(*pause as u8);
+            }
+            Self::EndowmentWithdrawn { amount, recipient } => {
+                b.push(3u8);
+                b.extend_from_slice(&amount.to_le_bytes());
+                b.extend_from_slice(&recipient.to_bytes());
+            }
+            Self::SubscriptionSlashed(subscription_id) => {
+                b.push(4u8);
+                b.extend_from_slice(&subscription_id.to_bytes());
+            }
+        }
+        b
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() {
+            return Err(ContractError::IoError(
+                "DaoControlAction: empty data".into(),
+            ));
+        }
+        let discriminant = data[0];
+        match discriminant {
+            0 => {
+                if data.len() < 5 {
+                    return Err(ContractError::IoError(
+                        "DaoControlAction::PlanUpdated: expected 5 bytes"
+                            .into(),
+                    ));
+                }
+                let plan_id =
+                    u32::from_le_bytes(data[1..5].try_into().unwrap());
+                Ok(Self::PlanUpdated(plan_id))
+            }
+            1 => {
+                if data.len() < 6 {
+                    return Err(ContractError::IoError(
+                        "DaoControlAction::PlanStatusChanged: expected 6 bytes"
+                            .into(),
+                    ));
+                }
+                let plan_id =
+                    u32::from_le_bytes(data[1..5].try_into().unwrap());
+                let active = data[5] != 0;
+                Ok(Self::PlanStatusChanged { plan_id, active })
+            }
+            2 => {
+                if data.len() < 2 {
+                    return Err(ContractError::IoError(
+                        "DaoControlAction::EmergencyPauseToggled: expected 2 bytes"
+                            .into(),
+                    ));
+                }
+                Ok(Self::EmergencyPauseToggled(data[1] != 0))
+            }
+            3 => {
+                if data.len() < 41 {
+                    return Err(ContractError::IoError(
+                        "DaoControlAction::EndowmentWithdrawn: expected 41 bytes"
+                            .into(),
+                    ));
+                }
+                let amount =
+                    u64::from_le_bytes(data[1..9].try_into().unwrap());
+                let recipient = PublicKey::from_bytes(
+                    data[9..41].try_into().unwrap(),
+                )
+                .map_err(|e| {
+                    ContractError::IoError(format!(
+                        "DaoControlAction: invalid recipient: {}",
+                        e
+                    ))
+                })?;
+                Ok(Self::EndowmentWithdrawn { amount, recipient })
+            }
+            4 => {
+                if data.len() < 33 {
+                    return Err(ContractError::IoError(
+                        "DaoControlAction::SubscriptionSlashed: expected 33 bytes"
+                            .into(),
+                    ));
+                }
+                let subscription_id =
+                    SubscriptionId::decode(&data[1..33])?;
+                Ok(Self::SubscriptionSlashed(subscription_id))
+            }
+            _ => Err(ContractError::IoError(format!(
+                "DaoControlAction: unknown discriminant {}",
+                discriminant
+            ))),
+        }
+    }
 }
 
 // ============================================================================

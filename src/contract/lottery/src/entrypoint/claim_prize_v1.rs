@@ -29,13 +29,13 @@
 //! the actual token transfer to the winner.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
     error::ContractError,
     msg,
     pasta::pallas,
     wasm,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::deserialize;
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id,
     validate_child_value_commit,
@@ -95,13 +95,14 @@ pub fn lottery_claim_prize_process_instruction_v1(
 
     // First get the ticket to find the lottery_id
     let tickets_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_TICKETS_TREE)?;
-    let ticket: crate::model::Ticket =
-        deserialize(&wasm::db::db_get(tickets_db, &serialize(&params.ticket_id))?.ok_or(ContractError::DbGetEmpty)?)?;
+    let ticket = crate::model::Ticket::decode(
+        &wasm::db::db_get(tickets_db, &params.ticket_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?
+    )?;
 
     // Get lottery state
     let lotteries_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_LOTTERIES_TREE)?;
-    let lottery: crate::model::Lottery = deserialize(
-        &wasm::db::db_get(lotteries_db, &serialize(&ticket.lottery_id))?.ok_or(ContractError::DbGetEmpty)?,
+    let lottery = crate::model::Lottery::decode(
+        &wasm::db::db_get(lotteries_db, &ticket.lottery_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?,
     )?;
 
     // Verify lottery is in winners drawn state
@@ -119,7 +120,7 @@ pub fn lottery_claim_prize_process_instruction_v1(
 
     // Check if already claimed
     let claims_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_CLAIMS_TREE)?;
-    if wasm::db::db_contains_key(claims_db, &serialize(&params.ticket_id))? {
+    if wasm::db::db_contains_key(claims_db, &params.ticket_id.to_repr())? {
         return Err(LotteryError::PrizeAlreadyClaimed.into())
     }
 
@@ -156,7 +157,7 @@ pub fn lottery_claim_prize_process_instruction_v1(
     };
 
     msg!("[lottery::claim_prize] Prize claimed successfully: {}", prize);
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Process update for ClaimPrizeV1
@@ -177,7 +178,7 @@ pub fn lottery_claim_prize_process_update_v1(
     };
 
     // Store claim
-    wasm::db::db_set(claims_db, &serialize(&update.ticket_id), &serialize(&claim))?;
+    wasm::db::db_set(claims_db, &update.ticket_id.to_repr(), &claim.encode())?;
     msg!("[lottery::claim_prize::update] Claim stored for ticket: {:?}", update.ticket_id);
 
     Ok(())

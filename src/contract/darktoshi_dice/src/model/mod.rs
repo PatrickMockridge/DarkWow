@@ -22,12 +22,17 @@
  */
 
 //! DarkToshi Dice Contract Data Models
+//!
+//! Per rho-calculus explicit encode/decode: bytes round-trip across module
+//! boundaries is forbidden. All stored types and bridge update structs SHALL
+//! use explicit `encode() -> Vec<u8>` and `decode(&[u8]) -> Result<Self, ContractError>`.
 
 use dwow_sdk::{
     crypto::{
         combine_block_hashes, mix_entropy, pasta_prelude::PrimeField, poseidon_hash,
         tx_hash_to_base, PublicKey,
     },
+    error::ContractError,
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -43,7 +48,7 @@ use crate::{MAX_HOUSE_EDGE, MAX_TARGET, MIN_HOUSE_EDGE, ROLL_RANGE};
 pub type BetId = pallas::Base;
 
 /// Represents the current state of a bet in the state machine
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BetState {
     Committed = 0,
     Revealed = 1,
@@ -53,7 +58,7 @@ pub enum BetState {
 }
 
 impl TryFrom<u8> for BetState {
-    type Error = dwow_sdk::error::ContractError;
+    type Error = ContractError;
 
     fn try_from(b: u8) -> Result<Self, Self::Error> {
         match b {
@@ -62,8 +67,23 @@ impl TryFrom<u8> for BetState {
             2 => Ok(Self::SettledPlayer),
             3 => Ok(Self::SettledHouse),
             4 => Ok(Self::Cancelled),
-            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
+            _ => Err(ContractError::InvalidFunction),
         }
+    }
+}
+
+impl BetState {
+    /// Encode BetState as a single byte.
+    pub fn encode(&self) -> Vec<u8> {
+        vec![*self as u8]
+    }
+
+    /// Decode BetState from a single byte.
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 1 {
+            return Err(ContractError::IoError("Invalid BetState length".to_string()))
+        }
+        Self::try_from(data[0])
     }
 }
 
@@ -71,8 +91,11 @@ impl TryFrom<u8> for BetState {
 // CORE DATA STRUCTURES
 // ============================================================================
 
-/// Core bet data stored on-chain
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+/// Core bet data stored on-chain.
+///
+/// Per type-system.md: SHALL use explicit encode/decode, not SerialEncodable.
+/// `roll: Option<u8>` uses Pattern 4: presence byte + 1 byte if Some.
+#[derive(Debug, Clone)]
 pub struct Bet {
     pub version: u8,
     pub id: BetId,
@@ -84,17 +107,145 @@ pub struct Bet {
     pub roll: Option<u8>,
     pub state: BetState,
     pub house_edge: u32,
-    pub confirmation_depth: u8,  // Number of blocks to wait for randomness
+    pub confirmation_depth: u8,
     pub created_at: u64,
     pub revealed_at: u64,
-    pub settle_block: u64,       // Block at which settlement becomes allowed
+    pub settle_block: u64,
     pub value_commit: pallas::Point,
     pub token_id: pallas::Base,
     pub nullifier: BetId,
     pub instance_seed: [u8; 32],
 }
 
+/// Fixed encoded size for Bet: 298 bytes.
+pub const BET_ENCODED_SIZE: usize = 298;
+
 impl Bet {
+    /// Encode Bet into a fixed-size byte vector (298 bytes).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(BET_ENCODED_SIZE);
+        b.push(self.version);
+        let (px, py) = self.player_pub.xy().expect("pk not identity");
+        b.extend_from_slice(&self.id.to_repr());
+        b.extend_from_slice(&px.to_repr());
+        b.extend_from_slice(&py.to_repr());
+        b.extend_from_slice(&self.bet_value.to_le_bytes());
+        b.push(self.target);
+        b.extend_from_slice(&self.secret_nonce_commit.to_repr());
+        b.extend_from_slice(&self.blind.to_repr());
+        // Pattern 4: Option<u8> — presence byte + 1 byte if Some
+        b.push(self.roll.is_some() as u8);
+        if let Some(v) = self.roll {
+            b.push(v);
+        } else {
+            b.push(0u8);
+        }
+        b.push(self.state as u8);
+        b.extend_from_slice(&self.house_edge.to_le_bytes());
+        b.push(self.confirmation_depth);
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b.extend_from_slice(&self.revealed_at.to_le_bytes());
+        b.extend_from_slice(&self.settle_block.to_le_bytes());
+        {
+            use pasta_curves::arithmetic::CurveAffine;
+            let vc_affine = self.value_commit.to_affine();
+            let coords = vc_affine.coordinates().expect("value_commit not identity");
+            b.extend_from_slice(&coords.x().to_repr());
+            b.extend_from_slice(&coords.y().to_repr());
+        }
+        b.extend_from_slice(&self.token_id.to_repr());
+        b.extend_from_slice(&self.nullifier.to_repr());
+        b.extend_from_slice(&self.instance_seed);
+        b
+    }
+
+    /// Decode Bet from a byte slice (298 bytes expected).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != BET_ENCODED_SIZE {
+            return Err(ContractError::IoError("Invalid Bet length".to_string()))
+        }
+        let mut pos = 0;
+
+        let version = data[pos];
+        pos += 1;
+
+        let id = decode_base(&data[pos..pos + 32], "id")?;
+        pos += 32;
+
+        let player_pub = decode_public_key(&data[pos..pos + 64])?;
+        pos += 64;
+
+        let bet_value = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        pos += 8;
+
+        let target = data[pos];
+        pos += 1;
+
+        let secret_nonce_commit = decode_base(&data[pos..pos + 32], "secret_nonce_commit")?;
+        pos += 32;
+
+        let blind = decode_base(&data[pos..pos + 32], "blind")?;
+        pos += 32;
+
+        // Pattern 4: Option<u8> — presence byte + value byte
+        let has_roll = data[pos] != 0;
+        pos += 1;
+        let roll_byte = data[pos];
+        pos += 1;
+        let roll = if has_roll { Some(roll_byte) } else { None };
+
+        let state = BetState::try_from(data[pos])?;
+        pos += 1;
+
+        let house_edge = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
+        pos += 4;
+
+        let confirmation_depth = data[pos];
+        pos += 1;
+
+        let created_at = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        pos += 8;
+
+        let revealed_at = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        pos += 8;
+
+        let settle_block = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        pos += 8;
+
+        let value_commit = decode_point(&data[pos..pos + 64], "value_commit")?;
+        pos += 64;
+
+        let token_id = decode_base(&data[pos..pos + 32], "token_id")?;
+        pos += 32;
+
+        let nullifier = decode_base(&data[pos..pos + 32], "nullifier")?;
+        pos += 32;
+
+        let mut instance_seed = [0u8; 32];
+        instance_seed.copy_from_slice(&data[pos..pos + 32]);
+
+        Ok(Self {
+            version,
+            id,
+            player_pub,
+            bet_value,
+            target,
+            secret_nonce_commit,
+            blind,
+            roll,
+            state,
+            house_edge,
+            confirmation_depth,
+            created_at,
+            revealed_at,
+            settle_block,
+            value_commit,
+            token_id,
+            nullifier,
+            instance_seed,
+        })
+    }
+
     /// Calculate payout for player winning.
     /// Formula: bet_value * (10000 - house_edge) / (target * 100)
     /// Example: bet=100, target=50, house_edge=200bp (2%)
@@ -118,7 +269,8 @@ impl Bet {
 }
 
 // ============================================================================
-// PARAMETER TYPES
+// PARAMETER TYPES (keep SerialEncodable/SerialDecodable — deserialized from
+// contract call data in entrypoint.rs)
 // ============================================================================
 
 /// Parameters for `Dice::CommitBetV1`
@@ -133,12 +285,15 @@ pub struct CommitBetParamsV1 {
     pub value_commit: pallas::Point,
     pub signature: pallas::Base,
     pub house_edge: u32,
-    pub confirmation_depth: u8,  // Player-selected depth for randomness (higher = more secure)
+    pub confirmation_depth: u8,
     pub instance_seed: [u8; 32],
 }
 
-/// State update for `CommitBetV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+/// State update for `CommitBetV1`.
+///
+/// Per rho-calculus: explicit encode/decode for bridge (module boundary crossing).
+/// Fixed encoding: 286 bytes.
+#[derive(Debug, Clone)]
 pub struct CommitBetUpdateV1 {
     pub bet_id: BetId,
     pub player_pub: PublicKey,
@@ -150,10 +305,109 @@ pub struct CommitBetUpdateV1 {
     pub token_id: pallas::Base,
     pub house_edge: u32,
     pub confirmation_depth: u8,
-    pub settle_block: u64,  // Block at which settlement is allowed
+    pub settle_block: u64,
     pub nullifier: BetId,
     pub created_at: u64,
     pub instance_seed: [u8; 32],
+}
+
+pub const COMMIT_BET_UPDATE_ENCODED_SIZE: usize = 286;
+
+impl CommitBetUpdateV1 {
+    /// Encode into a fixed-size byte vector (286 bytes).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(COMMIT_BET_UPDATE_ENCODED_SIZE);
+        let (px, py) = self.player_pub.xy().expect("pk not identity");
+        b.extend_from_slice(&self.bet_id.to_repr());
+        b.extend_from_slice(&px.to_repr());
+        b.extend_from_slice(&py.to_repr());
+        b.extend_from_slice(&self.bet_value.to_le_bytes());
+        b.push(self.target);
+        b.extend_from_slice(&self.secret_nonce_commit.to_repr());
+        b.extend_from_slice(&self.blind.to_repr());
+        {
+            use pasta_curves::arithmetic::CurveAffine;
+            let vc_affine = self.value_commit.to_affine();
+            let coords = vc_affine.coordinates().expect("value_commit not identity");
+            b.extend_from_slice(&coords.x().to_repr());
+            b.extend_from_slice(&coords.y().to_repr());
+        }
+        b.extend_from_slice(&self.token_id.to_repr());
+        b.extend_from_slice(&self.house_edge.to_le_bytes());
+        b.push(self.confirmation_depth);
+        b.extend_from_slice(&self.settle_block.to_le_bytes());
+        b.extend_from_slice(&self.nullifier.to_repr());
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b.extend_from_slice(&self.instance_seed);
+        b
+    }
+
+    /// Decode from a byte slice (286 bytes expected).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != COMMIT_BET_UPDATE_ENCODED_SIZE {
+            return Err(ContractError::IoError("Invalid CommitBetUpdateV1 length".to_string()))
+        }
+        let mut pos = 0;
+
+        let bet_id = decode_base(&data[pos..pos + 32], "bet_id")?;
+        pos += 32;
+
+        let player_pub = decode_public_key(&data[pos..pos + 64])?;
+        pos += 64;
+
+        let bet_value = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        pos += 8;
+
+        let target = data[pos];
+        pos += 1;
+
+        let secret_nonce_commit = decode_base(&data[pos..pos + 32], "secret_nonce_commit")?;
+        pos += 32;
+
+        let blind = decode_base(&data[pos..pos + 32], "blind")?;
+        pos += 32;
+
+        let value_commit = decode_point(&data[pos..pos + 64], "value_commit")?;
+        pos += 64;
+
+        let token_id = decode_base(&data[pos..pos + 32], "token_id")?;
+        pos += 32;
+
+        let house_edge = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
+        pos += 4;
+
+        let confirmation_depth = data[pos];
+        pos += 1;
+
+        let settle_block = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        pos += 8;
+
+        let nullifier = decode_base(&data[pos..pos + 32], "nullifier")?;
+        pos += 32;
+
+        let created_at = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        pos += 8;
+
+        let mut instance_seed = [0u8; 32];
+        instance_seed.copy_from_slice(&data[pos..pos + 32]);
+
+        Ok(Self {
+            bet_id,
+            player_pub,
+            bet_value,
+            target,
+            secret_nonce_commit,
+            blind,
+            value_commit,
+            token_id,
+            house_edge,
+            confirmation_depth,
+            settle_block,
+            nullifier,
+            created_at,
+            instance_seed,
+        })
+    }
 }
 
 /// Parameters for `Dice::RevealRollV1`
@@ -163,13 +417,41 @@ pub struct RevealRollParamsV1 {
     pub secret_nonce: pallas::Base,
 }
 
-/// State update for `RevealRollV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+/// State update for `RevealRollV1`.
+///
+/// Fixed encoding: 42 bytes.
+#[derive(Debug, Clone)]
 pub struct RevealRollUpdateV1 {
     pub bet_id: BetId,
     pub roll: u8,
     pub state: BetState,
     pub revealed_at: u64,
+}
+
+pub const REVEAL_ROLL_UPDATE_ENCODED_SIZE: usize = 42;
+
+impl RevealRollUpdateV1 {
+    /// Encode into a fixed-size byte vector (42 bytes).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(REVEAL_ROLL_UPDATE_ENCODED_SIZE);
+        b.extend_from_slice(&self.bet_id.to_repr());
+        b.push(self.roll);
+        b.push(self.state as u8);
+        b.extend_from_slice(&self.revealed_at.to_le_bytes());
+        b
+    }
+
+    /// Decode from a byte slice (42 bytes expected).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != REVEAL_ROLL_UPDATE_ENCODED_SIZE {
+            return Err(ContractError::IoError("Invalid RevealRollUpdateV1 length".to_string()))
+        }
+        let bet_id = decode_base(&data[..32], "bet_id")?;
+        let roll = data[32];
+        let state = BetState::try_from(data[33])?;
+        let revealed_at = u64::from_le_bytes(data[34..42].try_into().unwrap());
+        Ok(Self { bet_id, roll, state, revealed_at })
+    }
 }
 
 /// Parameters for `Dice::SettleBetV1`
@@ -180,33 +462,114 @@ pub struct SettleBetParamsV1 {
     pub roll_hash: pallas::Base,
 }
 
-/// State update for `SettleBetV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+/// State update for `SettleBetV1`.
+///
+/// Fixed encoding: 41 bytes.
+#[derive(Debug, Clone)]
 pub struct SettleBetUpdateV1 {
     pub bet_id: BetId,
     pub state: BetState,
     pub payout: u64,
 }
 
+pub const SETTLE_BET_UPDATE_ENCODED_SIZE: usize = 41;
+
+impl SettleBetUpdateV1 {
+    /// Encode into a fixed-size byte vector (41 bytes).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(SETTLE_BET_UPDATE_ENCODED_SIZE);
+        b.extend_from_slice(&self.bet_id.to_repr());
+        b.push(self.state as u8);
+        b.extend_from_slice(&self.payout.to_le_bytes());
+        b
+    }
+
+    /// Decode from a byte slice (41 bytes expected).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != SETTLE_BET_UPDATE_ENCODED_SIZE {
+            return Err(ContractError::IoError("Invalid SettleBetUpdateV1 length".to_string()))
+        }
+        let bet_id = decode_base(&data[..32], "bet_id")?;
+        let state = BetState::try_from(data[32])?;
+        let payout = u64::from_le_bytes(data[33..41].try_into().unwrap());
+        Ok(Self { bet_id, state, payout })
+    }
+}
+
 /// Parameters for `Dice::HouseCloseV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct HouseCloseParamsV1 {
-    /// Bet ID to close
     pub bet_id: BetId,
-    /// House public key X coordinate (ZK-verified)
     pub house_pub_x: pallas::Base,
-    /// House public key Y coordinate (ZK-verified)
     pub house_pub_y: pallas::Base,
-    /// Close nullifier = H(bet_id, house_secret) — replay protection
     pub close_nullifier: pallas::Base,
 }
 
-/// State update for `HouseCloseV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+/// State update for `HouseCloseV1`.
+///
+/// Fixed encoding: 65 bytes.
+#[derive(Debug, Clone)]
 pub struct HouseCloseUpdateV1 {
     pub bet_id: BetId,
     pub close_nullifier: pallas::Base,
     pub state: BetState,
+}
+
+pub const HOUSE_CLOSE_UPDATE_ENCODED_SIZE: usize = 65;
+
+impl HouseCloseUpdateV1 {
+    /// Encode into a fixed-size byte vector (65 bytes).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(HOUSE_CLOSE_UPDATE_ENCODED_SIZE);
+        b.extend_from_slice(&self.bet_id.to_repr());
+        b.extend_from_slice(&self.close_nullifier.to_repr());
+        b.push(self.state as u8);
+        b
+    }
+
+    /// Decode from a byte slice (65 bytes expected).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != HOUSE_CLOSE_UPDATE_ENCODED_SIZE {
+            return Err(ContractError::IoError("Invalid HouseCloseUpdateV1 length".to_string()))
+        }
+        let bet_id = decode_base(&data[..32], "bet_id")?;
+        let close_nullifier = decode_base(&data[32..64], "close_nullifier")?;
+        let state = BetState::try_from(data[64])?;
+        Ok(Self { bet_id, close_nullifier, state })
+    }
+}
+
+// ============================================================================
+// ENCODE/DECODE HELPERS
+// ============================================================================
+
+/// Decode a pallas::Base from 32 bytes.
+fn decode_base(data: &[u8], _field: &str) -> Result<pallas::Base, ContractError> {
+    let arr: [u8; 32] = data.try_into().map_err(|_| {
+        ContractError::IoError("Invalid slice length for pallas::Base".to_string())
+    })?;
+    match Option::<pallas::Base>::from(pallas::Base::from_repr(arr)) {
+        Some(v) => Ok(v),
+        None => Err(ContractError::IoError("Invalid repr for pallas::Base".to_string())),
+    }
+}
+
+/// Decode a PublicKey from 64 bytes (x || y).
+fn decode_public_key(data: &[u8]) -> Result<PublicKey, ContractError> {
+    let x = decode_base(&data[..32], "pk_x")?;
+    let y = decode_base(&data[32..64], "pk_y")?;
+    Ok(PublicKey::from_xy(x, y).expect("valid point coords"))
+}
+
+/// Decode a pallas::Point from 64 bytes (x || y, affine).
+fn decode_point(data: &[u8], _field: &str) -> Result<pallas::Point, ContractError> {
+    use pasta_curves::arithmetic::CurveAffine;
+    let x = decode_base(&data[..32], "point_x")?;
+    let y = decode_base(&data[32..64], "point_y")?;
+    match pasta_curves::EpAffine::from_xy(x, y).into() {
+        Some(affine) => Ok(pasta_curves::Ep::from(affine)),
+        None => Err(ContractError::IoError("Invalid point affine".to_string())),
+    }
 }
 
 // ============================================================================
@@ -263,9 +626,7 @@ pub fn calculate_roll_with_depth(
     bet_id: BetId,
     secret_nonce: pallas::Base,
 ) -> u8 {
-    // Combine all block hashes cumulatively using Poseidon
     let combined_hash = combine_block_hashes(block_hashes);
-    // Mix in bet_id and secret_nonce for additional entropy
     let final_entropy = mix_entropy(combined_hash, &[bet_id, secret_nonce]);
     let bytes = final_entropy.to_repr();
     ((bytes[0] as u64) % (ROLL_RANGE as u64)) as u8

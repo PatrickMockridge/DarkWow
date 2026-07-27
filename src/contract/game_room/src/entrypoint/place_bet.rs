@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow_sdk::crypto::poseidon_hash;
+use dwow_sdk::crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId};
 use dwow_sdk::{
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -78,7 +78,7 @@ pub(crate) fn game_room_place_bet_process_instruction_v1(
     let info_db = wasm::db::db_lookup(cid, GAME_ROOM_CONTRACT_INFO_TREE)?;
     let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(GameRoomError::InvalidChildCall)?;
-    let promissory_note_cid: dwow_sdk::crypto::ContractId = dwow_serial::deserialize(&promissory_note_bytes)?;
+    let promissory_note_cid: dwow_sdk::crypto::ContractId = ContractId::from_bytes(promissory_note_bytes.as_slice().try_into().map_err(|_| GameRoomError::InvalidChildCall)?)?;
     // Only validate if promissory_note_contract_id was configured (non-zero)
     if promissory_note_cid != dwow_sdk::crypto::ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
@@ -102,13 +102,13 @@ pub(crate) fn game_room_place_bet_process_instruction_v1(
     // Get room
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
     let Some(room_data) =
-        wasm::db::db_get(rooms_db, &dwow_serial::serialize(&params.room_id))?
+        wasm::db::db_get(rooms_db, &params.room_id.to_repr())?
     else {
         msg!("[PlaceBet] Error: Room not found");
         return Err(GameRoomError::RoomNotFound.into())
     };
     let mut room: GameRoom =
-        dwow_serial::deserialize(&room_data)?;
+        GameRoom::decode(&room_data)?;
 
     // Validate room state
     if room.state != RoomState::Open && room.state != RoomState::Active {
@@ -130,13 +130,13 @@ pub(crate) fn game_room_place_bet_process_instruction_v1(
 
     // Verify account exists (balance enforced by promissory_note child call)
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
-    let account_key = dwow_serial::serialize(&(params.room_id, poseidon_hash([caller.x().expect("pk not identity"), caller.y().expect("pk not identity")])));
+    let account_key = [&params.room_id.to_repr()[..], &poseidon_hash([caller.x().expect("pk not identity"), caller.y().expect("pk not identity")]).to_repr()[..]].concat();
     let Some(account_data) = wasm::db::db_get(accounts_db, &account_key)? else {
         msg!("[PlaceBet] Error: Account not found");
         return Err(GameRoomError::AccountNotFound.into())
     };
     let mut account: PlayerAccount =
-        dwow_serial::deserialize(&account_data)?;
+        PlayerAccount::decode(&account_data)?;
 
     if account.has_folded {
         msg!("[PlaceBet] Error: Player has folded");
@@ -148,12 +148,12 @@ pub(crate) fn game_room_place_bet_process_instruction_v1(
     let pot_id = params.pot_id;
 
     // Get pot
-    let Some(pot_data) = wasm::db::db_get(pots_db, &dwow_serial::serialize(&pot_id))? else {
+    let Some(pot_data) = wasm::db::db_get(pots_db, &pot_id.to_repr())? else {
         msg!("[PlaceBet] Error: Pot not found");
         return Err(GameRoomError::PotNotFound.into())
     };
     let mut pot: Pot =
-        dwow_serial::deserialize(&pot_data)?;
+        Pot::decode(&pot_data)?;
 
     // Validate pot state
     if pot.state != crate::model::PotState::Open {
@@ -195,13 +195,13 @@ pub(crate) fn game_room_place_bet_process_instruction_v1(
 
     // Store bet
     let bets_db = wasm::db::db_lookup(cid, GAME_ROOM_BETS_TREE)?;
-    wasm::db::db_set(bets_db, &dwow_serial::serialize(&bet_id), &dwow_serial::serialize(&bet))?;
+    wasm::db::db_set(bets_db, &bet_id.to_repr(), &bet.encode())?;
 
     // Store updated pot
-    wasm::db::db_set(pots_db, &dwow_serial::serialize(&pot_id), &dwow_serial::serialize(&pot))?;
+    wasm::db::db_set(pots_db, &pot_id.to_repr(), &pot.encode())?;
 
     // Store updated account
-    wasm::db::db_set(accounts_db, &account_key, &dwow_serial::serialize(&account))?;
+    wasm::db::db_set(accounts_db, &account_key, &account.encode())?;
 
     // Update room state
     room.current_bet_amount = params.amount;
@@ -211,8 +211,8 @@ pub(crate) fn game_room_place_bet_process_instruction_v1(
     }
     wasm::db::db_set(
         rooms_db,
-        &dwow_serial::serialize(&params.room_id),
-        &dwow_serial::serialize(&room),
+        &params.room_id.to_repr(),
+        &room.encode(),
     )?;
 
     msg!("[PlaceBet] Bet placed successfully: {:?}", bet_id);
@@ -227,7 +227,7 @@ pub(crate) fn game_room_place_bet_process_instruction_v1(
         new_current_bet: params.amount,
         new_current_better: caller,
     };
-    Ok(dwow_serial::serialize(&update))
+    Ok(update.encode())
 }
 
 pub(crate) fn game_room_place_bet_process_update_v1(

@@ -24,12 +24,14 @@
 //! Roulette Contract Entrypoint
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
-    msg, pasta::pallas, wasm, ContractCall,
+    msg,
+    pasta::{group::GroupEncoding, pallas},
+    wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id, validate_child_value_commit,
 };
@@ -171,23 +173,23 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> Result<(), ContractError> 
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     match RouletteFunction::try_from(update_data[0]).map_err(|_| RouletteError::InvalidFunction)? {
         RouletteFunction::InitializeV1 => {
-            let update: InitializeUpdateV1 = deserialize(&update_data[1..])?;
+            let update = InitializeUpdateV1::decode(&update_data[1..])?;
             roulette_initialize_process_update_v1(cid, update)
         }
         RouletteFunction::PlaceBetV1 => {
-            let update: PlaceBetUpdateV1 = deserialize(&update_data[1..])?;
+            let update = PlaceBetUpdateV1::decode(&update_data[1..])?;
             roulette_place_bet_process_update_v1(cid, update)
         }
         RouletteFunction::SpinWheelV1 => {
-            let update: SpinWheelUpdateV1 = deserialize(&update_data[1..])?;
+            let update = SpinWheelUpdateV1::decode(&update_data[1..])?;
             roulette_spin_wheel_process_update_v1(cid, update)
         }
         RouletteFunction::SettleBetsV1 => {
-            let update: SettleBetsUpdateV1 = deserialize(&update_data[1..])?;
+            let update = SettleBetsUpdateV1::decode(&update_data[1..])?;
             roulette_settle_bets_process_update_v1(cid, update)
         }
         RouletteFunction::HouseCloseV1 => {
-            let update: HouseCloseUpdateV1 = deserialize(&update_data[1..])?;
+            let update = HouseCloseUpdateV1::decode(&update_data[1..])?;
             roulette_house_close_process_update_v1(cid, update)
         }
     }
@@ -218,7 +220,7 @@ fn roulette_initialize_process_instruction_v1(
 
     // Check if table already exists
     let tables_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_TABLES_TREE)?;
-    if wasm::db::db_contains_key(tables_db, &serialize(&table_id))? {
+    if wasm::db::db_contains_key(tables_db, &table_id.to_repr())? {
         return Err(RouletteError::TableAlreadyClosed.into())
     }
 
@@ -240,8 +242,9 @@ fn roulette_initialize_process_instruction_v1(
     };
 
     msg!("[roulette::initialize] Table initialized");
-    wasm::util::set_return_data(&serialize(&update))?;
-    Ok(serialize(&update))
+    let encoded = [&[RouletteFunction::InitializeV1 as u8], &update.encode()[..]].concat();
+    wasm::util::set_return_data(&encoded)?;
+    Ok(encoded)
 }
 
 fn roulette_initialize_process_update_v1(cid: ContractId, update: InitializeUpdateV1) -> ContractResult {
@@ -270,7 +273,7 @@ fn roulette_initialize_process_update_v1(cid: ContractId, update: InitializeUpda
         ).ok_or(RouletteError::ArithmeticOverflow)?
     };
 
-    wasm::db::db_set(tables_db, &serialize(&update.table_id), &serialize(&table))?;
+    wasm::db::db_set(tables_db, &update.table_id.to_repr(), &table.encode())?;
     msg!("[roulette::initialize::update] Table stored in database");
 
     Ok(())
@@ -331,8 +334,8 @@ fn roulette_place_bet_process_instruction_v1(
 
     // Get table
     let tables_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_TABLES_TREE)?;
-    let mut table: RouletteTable = match wasm::db::db_get(tables_db, &serialize(&params.table_id))? {
-        Some(data) => deserialize(&data)?,
+    let mut table: RouletteTable = match wasm::db::db_get(tables_db, &params.table_id.to_repr())? {
+        Some(data) => RouletteTable::decode(&data)?,
         None => return Err(RouletteError::TableNotFound.into()),
     };
 
@@ -365,7 +368,7 @@ fn roulette_place_bet_process_instruction_v1(
 
     // Check nullifier not used
     let nullifiers_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&bet.nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &bet.nullifier.to_repr())? {
         return Err(RouletteError::DuplicateBet.into())
     }
 
@@ -388,7 +391,8 @@ fn roulette_place_bet_process_instruction_v1(
     };
 
     msg!("[roulette::place_bet] Bet placed");
-    Ok(serialize(&update))
+    let encoded = [&[RouletteFunction::PlaceBetV1 as u8], &update.encode()[..]].concat();
+    Ok(encoded)
 }
 
 fn roulette_place_bet_process_update_v1(cid: ContractId, update: PlaceBetUpdateV1) -> ContractResult {
@@ -397,13 +401,13 @@ fn roulette_place_bet_process_update_v1(cid: ContractId, update: PlaceBetUpdateV
     let nullifiers_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_NULLIFIERS_TREE)?;
 
     // Get and update table
-    let mut table: RouletteTable = match wasm::db::db_get(tables_db, &serialize(&update.table_id))? {
-        Some(data) => deserialize(&data)?,
+    let mut table: RouletteTable = match wasm::db::db_get(tables_db, &update.table_id.to_repr())? {
+        Some(data) => RouletteTable::decode(&data)?,
         None => return Err(RouletteError::TableNotFound.into()),
     };
     table.house_capital = update.table_house_capital;
 
-    wasm::db::db_set(tables_db, &serialize(&update.table_id), &serialize(&table))?;
+    wasm::db::db_set(tables_db, &update.table_id.to_repr(), &table.encode())?;
 
     // Create bet
     let bet = Bet {
@@ -422,8 +426,8 @@ fn roulette_place_bet_process_update_v1(cid: ContractId, update: PlaceBetUpdateV
         instance_seed: update.instance_seed,
     };
 
-    wasm::db::db_set(bets_db, &serialize(&update.bet_id), &serialize(&bet))?;
-    wasm::db::db_set(nullifiers_db, &serialize(&update.nullifier), &[])?;
+    wasm::db::db_set(bets_db, &update.bet_id.to_repr(), &bet.encode())?;
+    wasm::db::db_set(nullifiers_db, &update.nullifier.to_repr(), &[])?;
 
     msg!("[roulette::place_bet::update] Bet stored, capital reserved");
 
@@ -446,8 +450,8 @@ fn roulette_spin_wheel_process_instruction_v1(
 
     // Get table
     let tables_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_TABLES_TREE)?;
-    let mut table: RouletteTable = match wasm::db::db_get(tables_db, &serialize(&params.table_id))? {
-        Some(data) => deserialize(&data)?,
+    let mut table: RouletteTable = match wasm::db::db_get(tables_db, &params.table_id.to_repr())? {
+        Some(data) => RouletteTable::decode(&data)?,
         None => return Err(RouletteError::TableNotFound.into()),
     };
 
@@ -471,7 +475,7 @@ fn roulette_spin_wheel_process_instruction_v1(
 
     // Verify spin_nullifier hasn't been used (ZK proof verifies it's correctly derived)
     let nullifiers_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.spin_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.spin_nullifier.to_repr())? {
         return Err(RouletteError::InvalidSignature.into())
     }
 
@@ -503,14 +507,15 @@ fn roulette_spin_wheel_process_instruction_v1(
     };
 
     msg!("[roulette::spin] Winning number: {}", winning_number);
-    Ok(serialize(&update))
+    let encoded = [&[RouletteFunction::SpinWheelV1 as u8], &update.encode()[..]].concat();
+    Ok(encoded)
 }
 
 fn roulette_spin_wheel_process_update_v1(cid: ContractId, update: SpinWheelUpdateV1) -> ContractResult {
     let tables_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_TABLES_TREE)?;
 
-    let mut table: RouletteTable = match wasm::db::db_get(tables_db, &serialize(&update.table_id))? {
-        Some(data) => deserialize(&data)?,
+    let mut table: RouletteTable = match wasm::db::db_get(tables_db, &update.table_id.to_repr())? {
+        Some(data) => RouletteTable::decode(&data)?,
         None => return Err(RouletteError::TableNotFound.into()),
     };
 
@@ -519,11 +524,11 @@ fn roulette_spin_wheel_process_update_v1(cid: ContractId, update: SpinWheelUpdat
     table.spun_at_block = Some(update.spun_at_block);
     table.state = RouletteTableState::Spun;
 
-    wasm::db::db_set(tables_db, &serialize(&update.table_id), &serialize(&table))?;
+    wasm::db::db_set(tables_db, &update.table_id.to_repr(), &table.encode())?;
 
     // Record spin nullifier to prevent replay
     let nullifiers_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_NULLIFIERS_TREE)?;
-    wasm::db::db_set(nullifiers_db, &serialize(&update.spin_nullifier), &[])?;
+    wasm::db::db_set(nullifiers_db, &update.spin_nullifier.to_repr(), &[])?;
 
     msg!("[roulette::spin::update] Wheel spun, state updated");
 
@@ -578,8 +583,8 @@ fn roulette_settle_bets_process_instruction_v1(
 
     // Get table
     let tables_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_TABLES_TREE)?;
-    let table: RouletteTable = match wasm::db::db_get(tables_db, &serialize(&params.table_id))? {
-        Some(data) => deserialize(&data)?,
+    let table: RouletteTable = match wasm::db::db_get(tables_db, &params.table_id.to_repr())? {
+        Some(data) => RouletteTable::decode(&data)?,
         None => return Err(RouletteError::TableNotFound.into()),
     };
 
@@ -601,8 +606,8 @@ fn roulette_settle_bets_process_instruction_v1(
         return Err(RouletteError::Custom(1).into());
     }
     for bet_id in &params.bet_ids {
-        let bet: Bet = match wasm::db::db_get(bets_db, &serialize(bet_id))? {
-            Some(data) => deserialize(&data)?,
+        let bet: Bet = match wasm::db::db_get(bets_db, &bet_id.to_repr())? {
+            Some(data) => Bet::decode(&data)?,
             None => continue, // Skip missing bets
         };
 
@@ -646,21 +651,22 @@ fn roulette_settle_bets_process_instruction_v1(
     };
 
     msg!("[roulette::settle] Total payout: {}", house_payout);
-    Ok(serialize(&update))
+    let encoded = [&[RouletteFunction::SettleBetsV1 as u8], &update.encode()[..]].concat();
+    Ok(encoded)
 }
 
 fn roulette_settle_bets_process_update_v1(cid: ContractId, update: SettleBetsUpdateV1) -> ContractResult {
     let tables_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_TABLES_TREE)?;
 
-    let mut table: RouletteTable = match wasm::db::db_get(tables_db, &serialize(&update.table_id))? {
-        Some(data) => deserialize(&data)?,
+    let mut table: RouletteTable = match wasm::db::db_get(tables_db, &update.table_id.to_repr())? {
+        Some(data) => RouletteTable::decode(&data)?,
         None => return Err(RouletteError::TableNotFound.into()),
     };
 
     table.house_capital = update.house_new_capital;
     table.state = update.state;
 
-    wasm::db::db_set(tables_db, &serialize(&update.table_id), &serialize(&table))?;
+    wasm::db::db_set(tables_db, &update.table_id.to_repr(), &table.encode())?;
     msg!("[roulette::settle::update] Bets settled, capital updated, state updated");
 
     Ok(())
@@ -713,8 +719,8 @@ fn roulette_house_close_process_instruction_v1(
     msg!("[roulette::house_close] Closing table {:?}", params.table_id);
 
     let tables_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_TABLES_TREE)?;
-    let table: RouletteTable = match wasm::db::db_get(tables_db, &serialize(&params.table_id))? {
-        Some(data) => deserialize(&data)?,
+    let table: RouletteTable = match wasm::db::db_get(tables_db, &params.table_id.to_repr())? {
+        Some(data) => RouletteTable::decode(&data)?,
         None => return Err(RouletteError::TableNotFound.into()),
     };
 
@@ -738,7 +744,7 @@ fn roulette_house_close_process_instruction_v1(
 
     // Verify close_nullifier hasn't been used (ZK proof verifies it's correctly derived)
     let nullifiers_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.close_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.close_nullifier.to_repr())? {
         return Err(RouletteError::InvalidSignature.into())
     }
 
@@ -749,24 +755,25 @@ fn roulette_house_close_process_instruction_v1(
     };
 
     msg!("[roulette::house_close] Remaining capital: {}", table.house_capital);
-    Ok(serialize(&update))
+    let encoded = [&[RouletteFunction::HouseCloseV1 as u8], &update.encode()[..]].concat();
+    Ok(encoded)
 }
 
 fn roulette_house_close_process_update_v1(cid: ContractId, update: HouseCloseUpdateV1) -> ContractResult {
     let tables_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_TABLES_TREE)?;
 
-    let mut table: RouletteTable = match wasm::db::db_get(tables_db, &serialize(&update.table_id))? {
-        Some(data) => deserialize(&data)?,
+    let mut table: RouletteTable = match wasm::db::db_get(tables_db, &update.table_id.to_repr())? {
+        Some(data) => RouletteTable::decode(&data)?,
         None => return Err(RouletteError::TableNotFound.into()),
     };
 
     table.state = RouletteTableState::Closed;
 
-    wasm::db::db_set(tables_db, &serialize(&update.table_id), &serialize(&table))?;
+    wasm::db::db_set(tables_db, &update.table_id.to_repr(), &table.encode())?;
 
     // Record close nullifier to prevent replay
     let nullifiers_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_NULLIFIERS_TREE)?;
-    wasm::db::db_set(nullifiers_db, &serialize(&update.close_nullifier), &[])?;
+    wasm::db::db_set(nullifiers_db, &update.close_nullifier.to_repr(), &[])?;
 
     msg!("[roulette::house_close::update] Table closed");
 

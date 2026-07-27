@@ -35,7 +35,7 @@
 //! 2. Each winner calls `claim` to receive their payout
 //! 3. The claim must bundle promissory_note::transfer_v1 for actual token transfer
 
-use dwow_sdk::crypto::poseidon_hash;
+use dwow_sdk::crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId};
 use dwow_sdk::{
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -98,7 +98,7 @@ pub(crate) fn game_room_claim_process_instruction_v1(
     let info_db = wasm::db::db_lookup(cid, GAME_ROOM_CONTRACT_INFO_TREE)?;
     let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(GameRoomError::InvalidChildCall)?;
-    let promissory_note_cid: dwow_sdk::crypto::ContractId = dwow_serial::deserialize(&promissory_note_bytes)?;
+    let promissory_note_cid: dwow_sdk::crypto::ContractId = ContractId::from_bytes(promissory_note_bytes.as_slice().try_into().map_err(|_| GameRoomError::InvalidChildCall)?)?;
     // Only validate if promissory_note_contract_id was configured (non-zero)
     if promissory_note_cid != dwow_sdk::crypto::ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
@@ -113,7 +113,7 @@ pub(crate) fn game_room_claim_process_instruction_v1(
     // Get room
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
     let Some(_room_data) =
-        wasm::db::db_get(rooms_db, &dwow_serial::serialize(&params.room_id))?
+        wasm::db::db_get(rooms_db, &params.room_id.to_repr())?
     else {
         msg!("[Claim] Error: Room not found");
         return Err(GameRoomError::RoomNotFound.into())
@@ -121,13 +121,13 @@ pub(crate) fn game_room_claim_process_instruction_v1(
 
     // Get pot
     let pots_db = wasm::db::db_lookup(cid, GAME_ROOM_POTS_TREE)?;
-    let Some(pot_data) = wasm::db::db_get(pots_db, &dwow_serial::serialize(&params.pot_id))?
+    let Some(pot_data) = wasm::db::db_get(pots_db, &params.pot_id.to_repr())?
     else {
         msg!("[Claim] Error: Pot not found");
         return Err(GameRoomError::PotNotFound.into())
     };
     let pot: Pot =
-        dwow_serial::deserialize(&pot_data)?;
+        Pot::decode(&pot_data)?;
 
     // Validate pot state - must be settled
     if pot.state != PotState::Settled {
@@ -137,7 +137,7 @@ pub(crate) fn game_room_claim_process_instruction_v1(
 
     // Check nullifier to prevent double-claim
     let nullifiers_db = wasm::db::db_lookup(cid, GAME_ROOM_NULLIFIERS_TREE)?;
-    let claim_key = dwow_serial::serialize(&(params.pot_id, poseidon_hash([params.winner.x().expect("pk not identity"), params.winner.y().expect("pk not identity")])));
+    let claim_key = [&params.pot_id.to_repr()[..], &poseidon_hash([params.winner.x().expect("pk not identity"), params.winner.y().expect("pk not identity")]).to_repr()[..]].concat();
     if wasm::db::db_contains_key(nullifiers_db, &claim_key)? {
         msg!("[Claim] Error: Already claimed");
         return Err(GameRoomError::AlreadyClaimed.into())
@@ -156,7 +156,7 @@ pub(crate) fn game_room_claim_process_instruction_v1(
 
     // Verify winner's account exists (token payout handled by promissory_note child call)
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
-    let account_key = dwow_serial::serialize(&(params.room_id, poseidon_hash([params.winner.x().expect("pk not identity"), params.winner.y().expect("pk not identity")])));
+    let account_key = [&params.room_id.to_repr()[..], &poseidon_hash([params.winner.x().expect("pk not identity"), params.winner.y().expect("pk not identity")]).to_repr()[..]].concat();
     if !wasm::db::db_contains_key(accounts_db, &account_key)? {
         msg!("[Claim] Error: Account not found");
         return Err(GameRoomError::AccountNotFound.into())
@@ -179,7 +179,7 @@ pub(crate) fn game_room_claim_process_instruction_v1(
         winner: params.winner,
         amount: winnings,
     };
-    Ok(dwow_serial::serialize(&update))
+    Ok(update.encode())
 }
 
 pub(crate) fn game_room_claim_process_update_v1(

@@ -35,7 +35,7 @@ use dwow_promissory_note_contract::validation::{
     validate_child_contract_id,
     validate_child_value_commit,
 };
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 
 use crate::error::PoolStakeError;
 use crate::model::*;
@@ -44,8 +44,6 @@ use crate::{
     POOL_STAKE_ALLOCATIONS_TREE, POOL_STAKE_MEMBERS_TREE, POOL_STAKE_REGISTRY_TREE,
     POOL_STAKE_MIN_STAKE, POOL_STAKE_INFO_TREE, POOL_STAKE_PROMISSORY_NOTE_CONTRACT_ID,
     POOL_STAKE_PURSE_CONTRACT_ID,
-    POOL_STAKE_ZKAS_CREATE_POOL_NS_V1, POOL_STAKE_ZKAS_JOIN_POOL_NS_V1,
-    POOL_STAKE_ZKAS_ALLOCATE_COVERAGE_NS_V1, POOL_STAKE_ZKAS_SLASH_COVERAGE_NS_V1,
     POOL_STAKE_ZKAS_CREATE_POOL_NS_V2, POOL_STAKE_ZKAS_JOIN_POOL_NS_V2,
     POOL_STAKE_ZKAS_ALLOCATE_COVERAGE_NS_V2, POOL_STAKE_ZKAS_SLASH_COVERAGE_NS_V2,
 };
@@ -223,39 +221,39 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 
     match func {
         PoolStakeFunction::CreatePoolV1 => {
-            let update: CreatePoolUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CreatePoolUpdateV1::decode(&update_data[1..])?;
             apply_create_pool_update(cid, update)
         }
         PoolStakeFunction::JoinPoolV1 => {
-            let update: JoinPoolUpdateV1 = deserialize(&update_data[1..])?;
+            let update = JoinPoolUpdateV1::decode(&update_data[1..])?;
             apply_join_pool_update(cid, update)
         }
         PoolStakeFunction::LeavePoolV1 => {
-            let update: LeavePoolUpdateV1 = deserialize(&update_data[1..])?;
+            let update = LeavePoolUpdateV1::decode(&update_data[1..])?;
             apply_leave_pool_update(cid, update)
         }
         PoolStakeFunction::AllocateCoverageV1 => {
-            let update: AllocateCoverageUpdateV1 = deserialize(&update_data[1..])?;
+            let update = AllocateCoverageUpdateV1::decode(&update_data[1..])?;
             apply_allocate_coverage_update(cid, update)
         }
         PoolStakeFunction::ReleaseCoverageV1 => {
-            let update: ReleaseCoverageUpdateV1 = deserialize(&update_data[1..])?;
+            let update = ReleaseCoverageUpdateV1::decode(&update_data[1..])?;
             apply_release_coverage_update(cid, update)
         }
         PoolStakeFunction::SlashCoverageV1 => {
-            let update: SlashCoverageUpdateV1 = deserialize(&update_data[1..])?;
+            let update = SlashCoverageUpdateV1::decode(&update_data[1..])?;
             apply_slash_coverage_update(cid, update)
         }
         PoolStakeFunction::ClaimFeesV1 => {
-            let update: ClaimFeesUpdateV1 = deserialize(&update_data[1..])?;
+            let update = ClaimFeesUpdateV1::decode(&update_data[1..])?;
             apply_claim_fees_update(cid, update)
         }
         PoolStakeFunction::UpdatePoolConfigV1 => {
-            let update: UpdatePoolConfigUpdateV1 = deserialize(&update_data[1..])?;
+            let update = UpdatePoolConfigUpdateV1::decode(&update_data[1..])?;
             apply_update_pool_config_update(cid, update)
         }
         PoolStakeFunction::RebalancePoolSharesV1 => {
-            let update: RebalancePoolSharesUpdateV1 = deserialize(&update_data[1..])?;
+            let update = RebalancePoolSharesUpdateV1::decode(&update_data[1..])?;
             apply_rebalance_pool_shares_update(cid, update)
         }
     }
@@ -285,7 +283,7 @@ fn process_create_pool_instruction(
 
     // Check pool doesn't already exist (shouldn't happen with unique ID)
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
-    if wasm::db::db_contains_key(registry_db, &serialize(&pool_id))? {
+    if wasm::db::db_contains_key(registry_db, &pool_id.to_repr())? {
         return Err(PoolStakeError::PoolNotFound.into());
     }
 
@@ -299,7 +297,7 @@ fn process_create_pool_instruction(
     };
 
     msg!("[pool_stake::create_pool] Pool {:?} created", pool_id);
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 fn apply_create_pool_update(cid: ContractId, update: CreatePoolUpdateV1) -> ContractResult {
@@ -321,7 +319,7 @@ fn apply_create_pool_update(cid: ContractId, update: CreatePoolUpdateV1) -> Cont
         is_active: true,
     };
 
-    wasm::db::db_set(registry_db, &serialize(&update.pool_id), &serialize(&registry))?;
+    wasm::db::db_set(registry_db, &update.pool_id.to_repr(), &registry.encode())?;
     msg!("[pool_stake::create_pool::update] Pool registry stored");
 
     Ok(())
@@ -377,8 +375,8 @@ fn process_join_pool_instruction(
     // Get registry
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
     let mut pool: PoolStakeRegistry =
-        match wasm::db::db_get(registry_db, &serialize(&params.pool_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(registry_db, &params.pool_id.to_repr())? {
+            Some(data) => PoolStakeRegistry::decode(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
         };
 
@@ -391,7 +389,7 @@ fn process_join_pool_instruction(
 
     // Check stake doesn't already exist
     let stakes_db = wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE)?;
-    if wasm::db::db_contains_key(stakes_db, &serialize(&stake_id))? {
+    if wasm::db::db_contains_key(stakes_db, &stake_id.to_repr())? {
         return Err(PoolStakeError::AlreadyMember.into());
     }
 
@@ -426,7 +424,7 @@ fn process_join_pool_instruction(
     };
 
     msg!("[pool_stake::join_pool] Stake {:?} created", stake_id);
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 fn apply_join_pool_update(cid: ContractId, update: JoinPoolUpdateV1) -> ContractResult {
@@ -435,15 +433,15 @@ fn apply_join_pool_update(cid: ContractId, update: JoinPoolUpdateV1) -> Contract
 
     // Get and update registry
     let mut pool: PoolStakeRegistry =
-        match wasm::db::db_get(registry_db, &serialize(&update.pool_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(registry_db, &update.pool_id.to_repr())? {
+            Some(data) => PoolStakeRegistry::decode(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
         };
 
     pool.total_stake = update.total_stake;
     pool.member_count = update.member_count;
 
-    wasm::db::db_set(registry_db, &serialize(&update.pool_id), &serialize(&pool))?;
+    wasm::db::db_set(registry_db, &update.pool_id.to_repr(), &pool.encode())?;
 
     // Create stake
     let stake = PoolMemberStake {
@@ -464,7 +462,7 @@ fn apply_join_pool_update(cid: ContractId, update: JoinPoolUpdateV1) -> Contract
         is_active: true,
     };
 
-    wasm::db::db_set(stakes_db, &serialize(&update.stake_id), &serialize(&stake))?;
+    wasm::db::db_set(stakes_db, &update.stake_id.to_repr(), &stake.encode())?;
     msg!("[pool_stake::join_pool::update] Stake stored");
 
     Ok(())
@@ -509,8 +507,8 @@ fn process_leave_pool_instruction(
     // Get stake
     let stakes_db = wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE)?;
     let mut stake: PoolMemberStake =
-        match wasm::db::db_get(stakes_db, &serialize(&params.stake_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(stakes_db, &params.stake_id.to_repr())? {
+            Some(data) => PoolMemberStake::decode(&data)?,
             None => return Err(PoolStakeError::StakeNotFound.into()),
         };
 
@@ -531,7 +529,7 @@ fn process_leave_pool_instruction(
     } else {
         // First call — start cooldown
         stake.leave_requested_at = Some(current_block);
-        wasm::db::db_set(stakes_db, &serialize(&params.stake_id), &serialize(&stake))?;
+        wasm::db::db_set(stakes_db, &params.stake_id.to_repr(), &stake.encode())?;
         msg!("[pool_stake::leave_pool] Cooldown started: {} blocks", crate::POOL_STAKE_LEAVE_COOLDOWN_BLOCKS);
         return Err(PoolStakeError::StakeLocked.into())
     }
@@ -539,8 +537,8 @@ fn process_leave_pool_instruction(
     // Calculate final payout (current_amount - proportional losses)
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
     let _pool: PoolStakeRegistry =
-        match wasm::db::db_get(registry_db, &serialize(&stake.pool_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(registry_db, &stake.pool_id.to_repr())? {
+            Some(data) => PoolStakeRegistry::decode(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
         };
 
@@ -557,7 +555,7 @@ fn process_leave_pool_instruction(
     let update = LeavePoolUpdateV1 { stake_id: params.stake_id, payout_amount, unstake_penalty };
 
     msg!("[pool_stake::leave_pool] Payout: {}", payout_amount);
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 fn apply_leave_pool_update(cid: ContractId, update: LeavePoolUpdateV1) -> ContractResult {
@@ -565,15 +563,15 @@ fn apply_leave_pool_update(cid: ContractId, update: LeavePoolUpdateV1) -> Contra
 
     // Get and update stake
     let mut stake: PoolMemberStake =
-        match wasm::db::db_get(stakes_db, &serialize(&update.stake_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(stakes_db, &update.stake_id.to_repr())? {
+            Some(data) => PoolMemberStake::decode(&data)?,
             None => return Err(PoolStakeError::StakeNotFound.into()),
         };
 
     stake.is_active = false;
     stake.current_amount = 0;
 
-    wasm::db::db_set(stakes_db, &serialize(&update.stake_id), &serialize(&stake))?;
+    wasm::db::db_set(stakes_db, &update.stake_id.to_repr(), &stake.encode())?;
     msg!("[pool_stake::leave_pool::update] Stake deactivated");
 
     Ok(())
@@ -600,8 +598,8 @@ fn process_allocate_coverage_instruction(
     // Get pool
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
     let pool: PoolStakeRegistry =
-        match wasm::db::db_get(registry_db, &serialize(&params.pool_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(registry_db, &params.pool_id.to_repr())? {
+            Some(data) => PoolStakeRegistry::decode(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
         };
 
@@ -634,7 +632,7 @@ fn process_allocate_coverage_instruction(
     };
 
     msg!("[pool_stake::allocate_coverage] Allocation {:?} created", allocation_id);
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 fn apply_allocate_coverage_update(cid: ContractId, update: AllocateCoverageUpdateV1) -> ContractResult {
@@ -643,15 +641,15 @@ fn apply_allocate_coverage_update(cid: ContractId, update: AllocateCoverageUpdat
 
     // Update pool
     let mut pool: PoolStakeRegistry =
-        match wasm::db::db_get(registry_db, &serialize(&update.pool_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(registry_db, &update.pool_id.to_repr())? {
+            Some(data) => PoolStakeRegistry::decode(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
         };
 
     pool.available_coverage = update.available_coverage;
     pool.allocated_coverage = update.allocated_coverage;
 
-    wasm::db::db_set(registry_db, &serialize(&update.pool_id), &serialize(&pool))?;
+    wasm::db::db_set(registry_db, &update.pool_id.to_repr(), &pool.encode())?;
 
     // Create allocation
     let allocation = CoverageAllocation {
@@ -669,8 +667,8 @@ fn apply_allocate_coverage_update(cid: ContractId, update: AllocateCoverageUpdat
 
     wasm::db::db_set(
         allocations_db,
-        &serialize(&update.allocation_id),
-        &serialize(&allocation),
+        &update.allocation_id.to_repr(),
+        &allocation.encode(),
     )?;
     msg!("[pool_stake::allocate_coverage::update] Allocation stored");
 
@@ -693,8 +691,8 @@ fn process_release_coverage_instruction(
 
     let allocations_db = wasm::db::db_lookup(cid, POOL_STAKE_ALLOCATIONS_TREE)?;
     let allocation: CoverageAllocation =
-        match wasm::db::db_get(allocations_db, &serialize(&params.allocation_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(allocations_db, &params.allocation_id.to_repr())? {
+            Some(data) => CoverageAllocation::decode(&data)?,
             None => return Err(PoolStakeError::AllocationNotFound.into()),
         };
 
@@ -705,8 +703,8 @@ fn process_release_coverage_instruction(
     // Get pool to calculate new coverage
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
     let pool: PoolStakeRegistry =
-        match wasm::db::db_get(registry_db, &serialize(&allocation.pool_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(registry_db, &allocation.pool_id.to_repr())? {
+            Some(data) => PoolStakeRegistry::decode(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
         };
 
@@ -721,7 +719,7 @@ fn process_release_coverage_instruction(
         allocated_coverage: pool.allocated_coverage - allocation.amount,
     };
 
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 fn apply_release_coverage_update(cid: ContractId, update: ReleaseCoverageUpdateV1) -> ContractResult {
@@ -730,30 +728,30 @@ fn apply_release_coverage_update(cid: ContractId, update: ReleaseCoverageUpdateV
 
     // Look up allocation to get pool_id
     let mut allocation: CoverageAllocation =
-        match wasm::db::db_get(allocations_db, &serialize(&update.allocation_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(allocations_db, &update.allocation_id.to_repr())? {
+            Some(data) => CoverageAllocation::decode(&data)?,
             None => return Err(PoolStakeError::AllocationNotFound.into()),
         };
 
     // Look up pool by pool_id from the allocation
     let mut pool: PoolStakeRegistry =
-        match wasm::db::db_get(registry_db, &serialize(&allocation.pool_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(registry_db, &allocation.pool_id.to_repr())? {
+            Some(data) => PoolStakeRegistry::decode(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
         };
 
     pool.available_coverage = update.available_coverage;
     pool.allocated_coverage = update.allocated_coverage;
 
-    wasm::db::db_set(registry_db, &serialize(&pool.pool_id), &serialize(&pool))?;
+    wasm::db::db_set(registry_db, &pool.pool_id.to_repr(), &pool.encode())?;
 
     // Mark allocation as executed
     allocation.executed = true;
 
     wasm::db::db_set(
         allocations_db,
-        &serialize(&update.allocation_id),
-        &serialize(&allocation),
+        &update.allocation_id.to_repr(),
+        &allocation.encode(),
     )?;
     msg!("[pool_stake::release_coverage::update] Coverage released");
 
@@ -780,8 +778,8 @@ fn process_slash_coverage_instruction(
 
     let allocations_db = wasm::db::db_lookup(cid, POOL_STAKE_ALLOCATIONS_TREE)?;
     let allocation: CoverageAllocation =
-        match wasm::db::db_get(allocations_db, &serialize(&params.allocation_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(allocations_db, &params.allocation_id.to_repr())? {
+            Some(data) => CoverageAllocation::decode(&data)?,
             None => return Err(PoolStakeError::AllocationNotFound.into()),
         };
 
@@ -792,8 +790,8 @@ fn process_slash_coverage_instruction(
     // Get pool
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
     let pool: PoolStakeRegistry =
-        match wasm::db::db_get(registry_db, &serialize(&allocation.pool_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(registry_db, &allocation.pool_id.to_repr())? {
+            Some(data) => PoolStakeRegistry::decode(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
         };
 
@@ -813,7 +811,7 @@ fn process_slash_coverage_instruction(
         allocated_coverage: pool.allocated_coverage - params.slash_amount,
     };
 
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 fn apply_slash_coverage_update(cid: ContractId, update: SlashCoverageUpdateV1) -> ContractResult {
@@ -823,8 +821,8 @@ fn apply_slash_coverage_update(cid: ContractId, update: SlashCoverageUpdateV1) -
 
     // Update allocation
     let mut allocation: CoverageAllocation =
-        match wasm::db::db_get(allocations_db, &serialize(&update.allocation_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(allocations_db, &update.allocation_id.to_repr())? {
+            Some(data) => CoverageAllocation::decode(&data)?,
             None => return Err(PoolStakeError::AllocationNotFound.into()),
         };
 
@@ -832,27 +830,27 @@ fn apply_slash_coverage_update(cid: ContractId, update: SlashCoverageUpdateV1) -
 
     wasm::db::db_set(
         allocations_db,
-        &serialize(&update.allocation_id),
-        &serialize(&allocation),
+        &update.allocation_id.to_repr(),
+        &allocation.encode(),
     )?;
 
     // Track per-member slash counts (Phase 2d hardening)
     for member_id in &allocation.contributing_members {
-        if let Some(data) = wasm::db::db_get(members_db, &serialize(member_id))? {
-            let mut stake: PoolMemberStake = deserialize(&data)?;
+        if let Some(data) = wasm::db::db_get(members_db, &member_id.to_repr())? {
+            let mut stake: PoolMemberStake = PoolMemberStake::decode(&data)?;
             stake.slash_count = stake.slash_count.saturating_add(1);
-            wasm::db::db_set(members_db, &serialize(member_id), &serialize(&stake))?;
+            wasm::db::db_set(members_db, &member_id.to_repr(), &stake.encode())?;
         }
     }
 
     // Update pool-level slash stats
-    if let Some(pool_data) = wasm::db::db_get(registry_db, &serialize(&allocation.pool_id))? {
-        let mut pool: PoolStakeRegistry = deserialize(&pool_data)?;
+    if let Some(pool_data) = wasm::db::db_get(registry_db, &allocation.pool_id.to_repr())? {
+        let mut pool: PoolStakeRegistry = PoolStakeRegistry::decode(&pool_data)?;
         pool.total_slashed = pool.total_slashed.saturating_add(update.slashed_amount);
         pool.pool_slash_count = pool.pool_slash_count.saturating_add(1);
         pool.available_coverage = update.available_coverage;
         pool.allocated_coverage = update.allocated_coverage;
-        wasm::db::db_set(registry_db, &serialize(&allocation.pool_id), &serialize(&pool))?;
+        wasm::db::db_set(registry_db, &allocation.pool_id.to_repr(), &pool.encode())?;
     }
 
     msg!("[pool_stake::slash_coverage::update] Coverage slashed (per-member tracking)");
@@ -898,16 +896,16 @@ fn process_claim_fees_instruction(
 
     let stakes_db = wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE)?;
     let stake: PoolMemberStake =
-        match wasm::db::db_get(stakes_db, &serialize(&params.stake_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(stakes_db, &params.stake_id.to_repr())? {
+            Some(data) => PoolMemberStake::decode(&data)?,
             None => return Err(PoolStakeError::StakeNotFound.into()),
         };
 
     // Verify owner authorization
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
     let pool: PoolStakeRegistry =
-        match wasm::db::db_get(registry_db, &serialize(&stake.pool_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(registry_db, &stake.pool_id.to_repr())? {
+            Some(data) => PoolStakeRegistry::decode(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
         };
     if params.owner_pub != pool.owner_pub {
@@ -930,21 +928,21 @@ fn process_claim_fees_instruction(
         remaining_fees: 0,
     };
 
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 fn apply_claim_fees_update(cid: ContractId, update: ClaimFeesUpdateV1) -> ContractResult {
     let stakes_db = wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE)?;
 
     let mut stake: PoolMemberStake =
-        match wasm::db::db_get(stakes_db, &serialize(&update.stake_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(stakes_db, &update.stake_id.to_repr())? {
+            Some(data) => PoolMemberStake::decode(&data)?,
             None => return Err(PoolStakeError::StakeNotFound.into()),
         };
 
     stake.accumulated_fees = update.remaining_fees;
 
-    wasm::db::db_set(stakes_db, &serialize(&update.stake_id), &serialize(&stake))?;
+    wasm::db::db_set(stakes_db, &update.stake_id.to_repr(), &stake.encode())?;
     msg!("[pool_stake::claim_fees::update] Fees claimed");
 
     Ok(())
@@ -966,8 +964,8 @@ fn process_update_pool_config_instruction(
 
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
     let pool: PoolStakeRegistry =
-        match wasm::db::db_get(registry_db, &serialize(&params.pool_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(registry_db, &params.pool_id.to_repr())? {
+            Some(data) => PoolStakeRegistry::decode(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
         };
 
@@ -984,7 +982,7 @@ fn process_update_pool_config_instruction(
         operator_fee_bp,
     };
 
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 fn apply_update_pool_config_update(
@@ -994,15 +992,15 @@ fn apply_update_pool_config_update(
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
 
     let mut pool: PoolStakeRegistry =
-        match wasm::db::db_get(registry_db, &serialize(&update.pool_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(registry_db, &update.pool_id.to_repr())? {
+            Some(data) => PoolStakeRegistry::decode(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
         };
 
     pool.max_coverage_ratio = update.max_coverage_ratio;
     pool.operator_fee_bp = update.operator_fee_bp;
 
-    wasm::db::db_set(registry_db, &serialize(&update.pool_id), &serialize(&pool))?;
+    wasm::db::db_set(registry_db, &update.pool_id.to_repr(), &pool.encode())?;
     msg!("[pool_stake::update_config::update] Pool config updated");
 
     Ok(())
@@ -1067,8 +1065,8 @@ fn process_rebalance_pool_shares_instruction(
 
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
     let pool: PoolStakeRegistry =
-        match wasm::db::db_get(registry_db, &serialize(&params.pool_id))? {
-            Some(data) => deserialize(&data)?,
+        match wasm::db::db_get(registry_db, &params.pool_id.to_repr())? {
+            Some(data) => PoolStakeRegistry::decode(&data)?,
             None => return Err(PoolStakeError::PoolNotFound.into()),
         };
 
@@ -1087,12 +1085,12 @@ fn process_rebalance_pool_shares_instruction(
 	    if params.member_ids.len() > crate::POOL_STAKE_MAX_REBALANCE_MEMBERS {
 	        msg!("[pool_stake::rebalance] Too many members: {} (max {})",
 	            params.member_ids.len(), crate::POOL_STAKE_MAX_REBALANCE_MEMBERS);
-	        return Err(PoolStakeError::Custom(1).into());
+	        return Err(PoolStakeError::InvalidParams("too many members".into()).into());
 	    }
 	    for member_id in &params.member_ids {
 	        let mut stake: PoolMemberStake =
-	            match wasm::db::db_get(members_db, &serialize(member_id))? {
-	                Some(data) => deserialize(&data)?,
+	            match wasm::db::db_get(members_db, &member_id.to_repr())? {
+	                Some(data) => PoolMemberStake::decode(&data)?,
 	                None => continue,
 	            };
 
@@ -1109,7 +1107,7 @@ fn process_rebalance_pool_shares_instruction(
 
 	        // Persist updated share to DB
 	        stake.pool_share_bp = adjusted_bp;
-	        wasm::db::db_set(members_db, &serialize(member_id), &serialize(&stake))?;
+	        wasm::db::db_set(members_db, &member_id.to_repr(), &stake.encode())?;
 
 	        total_share_bp = total_share_bp.saturating_add(adjusted_bp);
 	        members_rebalanced = members_rebalanced.saturating_add(1);
@@ -1127,7 +1125,7 @@ fn process_rebalance_pool_shares_instruction(
     };
 
     msg!("[pool_stake::rebalance] Rebalanced {} members", members_rebalanced);
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 fn apply_rebalance_pool_shares_update(

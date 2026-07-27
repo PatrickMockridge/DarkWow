@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow_sdk::error::ContractError;
+pub use dwow_sdk::error::ContractError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GameRoomError {

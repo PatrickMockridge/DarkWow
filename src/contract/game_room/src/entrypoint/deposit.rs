@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow_sdk::crypto::poseidon_hash;
+use dwow_sdk::crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId};
 use dwow_sdk::{
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -69,7 +69,7 @@ pub(crate) fn game_room_deposit_process_instruction_v1(
     let info_db = wasm::db::db_lookup(cid, GAME_ROOM_CONTRACT_INFO_TREE)?;
     let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(GameRoomError::InvalidChildCall)?;
-    let promissory_note_cid: dwow_sdk::crypto::ContractId = dwow_serial::deserialize(&promissory_note_bytes)?;
+    let promissory_note_cid: dwow_sdk::crypto::ContractId = ContractId::from_bytes(promissory_note_bytes.as_slice().try_into().map_err(|_| GameRoomError::InvalidChildCall)?)?;
     // Only validate if promissory_note_contract_id was configured (non-zero)
     if promissory_note_cid != dwow_sdk::crypto::ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
@@ -84,13 +84,13 @@ pub(crate) fn game_room_deposit_process_instruction_v1(
     // Get room
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
     let Some(room_data) =
-        wasm::db::db_get(rooms_db, &dwow_serial::serialize(&params.room_id))?
+        wasm::db::db_get(rooms_db, &params.room_id.to_repr())?
     else {
         msg!("[Deposit] Error: Room not found");
         return Err(GameRoomError::RoomNotFound.into())
     };
     let room: GameRoom =
-        dwow_serial::deserialize(&room_data)?;
+        GameRoom::decode(&room_data)?;
 
     // Validate room state
     if room.state != crate::model::RoomState::Open {
@@ -117,11 +117,11 @@ pub(crate) fn game_room_deposit_process_instruction_v1(
 
     // Get or create account (token balance tracked by promissory_note)
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
-    let account_key = dwow_serial::serialize(&(params.room_id, poseidon_hash([caller.x().expect("pk not identity"), caller.y().expect("pk not identity")])));
+    let account_key = [&params.room_id.to_repr()[..], &poseidon_hash([caller.x().expect("pk not identity"), caller.y().expect("pk not identity")]).to_repr()[..]].concat();
     let account = match wasm::db::db_get(accounts_db, &account_key)? {
         Some(data) => {
             let mut acc: PlayerAccount =
-                dwow_serial::deserialize(&data)?;
+                PlayerAccount::decode(&data)?;
             acc.last_action_block = current_block;
             acc
         }
@@ -131,10 +131,10 @@ pub(crate) fn game_room_deposit_process_instruction_v1(
     msg!("[Deposit] Player account updated at block {}", current_block);
 
     // Store updated account
-    wasm::db::db_set(accounts_db, &account_key, &dwow_serial::serialize(&account))?;
+    wasm::db::db_set(accounts_db, &account_key, &account.encode())?;
 
     let update = DepositUpdateV1 { room_id: params.room_id, player: caller, amount: params.amount, instance_seed: params.instance_seed };
-    Ok(dwow_serial::serialize(&update))
+    Ok(update.encode())
 }
 
 pub(crate) fn game_room_deposit_process_update_v1(

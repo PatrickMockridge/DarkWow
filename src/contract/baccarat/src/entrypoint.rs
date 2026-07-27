@@ -29,7 +29,7 @@ use dwow_sdk::{
     error::ContractResult,
     pasta::pallas, wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 use pasta_curves::group::Curve;
 use pasta_curves::arithmetic::CurveAffine;
 
@@ -67,8 +67,8 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     // Initialize default house settings
     let info_db = wasm::db::db_lookup(cid, crate::BACCARAT_CONTRACT_INFO_TREE)?;
-    wasm::db::db_set(info_db, crate::BACCARAT_CONTRACT_HOUSE_EDGE, &serialize(&crate::DEFAULT_HOUSE_EDGE))?;
-    wasm::db::db_set(info_db, crate::BACCARAT_CONTRACT_BET_TIMEOUT, &serialize(&crate::DEFAULT_BET_TIMEOUT))?;
+    wasm::db::db_set(info_db, crate::BACCARAT_CONTRACT_HOUSE_EDGE, &crate::DEFAULT_HOUSE_EDGE.to_le_bytes())?;
+    wasm::db::db_set(info_db, crate::BACCARAT_CONTRACT_BET_TIMEOUT, &crate::DEFAULT_BET_TIMEOUT.to_le_bytes())?;
 
     // Store promissory_note contract ID for cross-contract validation
     wasm::db::db_set(info_db, crate::BACCARAT_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
@@ -175,19 +175,19 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     match BaccaratFunction::try_from(update_data[0])? {
         BaccaratFunction::CommitBetV1 => {
-            let update: CommitBetUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CommitBetUpdateV1::decode(&update_data[1..])?;
             baccarat_commit_bet_process_update_v1(cid, update)
         }
         BaccaratFunction::DrawCardsV1 => {
-            let update: DrawCardsUpdateV1 = deserialize(&update_data[1..])?;
+            let update = DrawCardsUpdateV1::decode(&update_data[1..])?;
             baccarat_draw_cards_process_update_v1(cid, update)
         }
         BaccaratFunction::SettleBetV1 => {
-            let update: SettleBetUpdateV1 = deserialize(&update_data[1..])?;
+            let update = SettleBetUpdateV1::decode(&update_data[1..])?;
             baccarat_settle_bet_process_update_v1(cid, update)
         }
         BaccaratFunction::HouseCloseV1 => {
-            let update: HouseCloseUpdateV1 = deserialize(&update_data[1..])?;
+            let update = HouseCloseUpdateV1::decode(&update_data[1..])?;
             baccarat_house_close_process_update_v1(cid, update)
         }
         BaccaratFunction::InitializeV1 => Err(BaccaratError::InvalidFunction.into()),

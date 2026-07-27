@@ -55,7 +55,7 @@ use dwow_sdk::{
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id, validate_child_value_commit,
 };
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 
 use crate::{
     error::OtcSwapError,
@@ -346,7 +346,7 @@ fn swap_create_process_instruction_v1(
     let swaps_db = wasm::db::db_lookup(cid, OTC_SWAP_CONTRACT_SWAPS_TREE)?;
 
     // Verify the swap doesn't already exist
-    if wasm::db::db_contains_key(swaps_db, &serialize(&params.commitment))? {
+    if wasm::db::db_contains_key(swaps_db, &params.commitment.to_repr())? {
         msg!("[CreateSwapV1] Error: Swap already exists");
         return Err(OtcSwapError::SwapAlreadyExists("commitment exists".to_string()).into())
     }
@@ -372,12 +372,12 @@ fn swap_create_process_instruction_v1(
         instance_seed: params.instance_seed,
     };
 
-    let key = serialize(&swap.id);
-    let value = serialize(&swap);
+    let key = swap.id.to_repr();
+    let value = swap.encode();
     wasm::db::db_set(swaps_db, &key, &value)?;
 
     let update = CreateSwapUpdateV1 { swap_id: swap.id };
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// `process_instruction` for FundSwapV1
@@ -416,9 +416,9 @@ fn swap_fund_process_instruction_v1(
     let swaps_db = wasm::db::db_lookup(cid, OTC_SWAP_CONTRACT_SWAPS_TREE)?;
 
     // Fetch the existing swap
-    let swap_data = wasm::db::db_get(swaps_db, &serialize(&params.swap_id))?
+    let swap_data = wasm::db::db_get(swaps_db, &params.swap_id.to_repr())?
         .ok_or_else(|| OtcSwapError::SwapNotFound(format!("{:?}", params.swap_id)))?;
-    let mut swap: OtcSwap = deserialize(&swap_data)?;
+    let mut swap: OtcSwap = OtcSwap::decode(&swap_data)?;
 
     // Verify the swap is in Created state
     if swap.state != SwapState::Created {
@@ -439,7 +439,7 @@ fn swap_fund_process_instruction_v1(
     swap.funded_at = Some(wasm::util::get_verifying_block_height()?.get());
 
     let update = FundSwapUpdateV1 { swap_id: swap.id };
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// `process_instruction` for ExecuteSwapV1
@@ -479,9 +479,9 @@ fn swap_execute_process_instruction_v1(
     let nullifiers_db = wasm::db::db_lookup(cid, OTC_SWAP_CONTRACT_NULLIFIERS_TREE)?;
 
     // Fetch the existing swap
-    let swap_data = wasm::db::db_get(swaps_db, &serialize(&params.swap_id))?
+    let swap_data = wasm::db::db_get(swaps_db, &params.swap_id.to_repr())?
         .ok_or_else(|| OtcSwapError::SwapNotFound(format!("{:?}", params.swap_id)))?;
-    let swap: OtcSwap = deserialize(&swap_data)?;
+    let swap: OtcSwap = OtcSwap::decode(&swap_data)?;
 
     // Verify the swap is in Funded state
     if swap.state != SwapState::Funded {
@@ -490,7 +490,7 @@ fn swap_execute_process_instruction_v1(
     }
 
     // Verify the swap hasn't already been resolved
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.spent_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.spent_nullifier.to_repr())? {
         msg!("[ExecuteSwapV1] Error: Swap already resolved (nullifier exists)");
         return Err(OtcSwapError::AlreadySpent.into())
     }
@@ -514,7 +514,7 @@ fn swap_execute_process_instruction_v1(
         swap_id: swap.id,
         spent_nullifier: params.spent_nullifier,
     };
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// `process_instruction` for CancelSwapV1
@@ -530,12 +530,12 @@ fn swap_cancel_process_instruction_v1(
     let nullifiers_db = wasm::db::db_lookup(cid, OTC_SWAP_CONTRACT_NULLIFIERS_TREE)?;
 
     // Fetch the existing swap
-    let swap_data = wasm::db::db_get(swaps_db, &serialize(&params.swap_id))?
+    let swap_data = wasm::db::db_get(swaps_db, &params.swap_id.to_repr())?
         .ok_or_else(|| OtcSwapError::SwapNotFound(format!("{:?}", params.swap_id)))?;
-    let swap: OtcSwap = deserialize(&swap_data)?;
+    let swap: OtcSwap = OtcSwap::decode(&swap_data)?;
 
     // Verify the swap hasn't already been resolved
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.spent_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.spent_nullifier.to_repr())? {
         msg!("[CancelSwapV1] Error: Swap already resolved (nullifier exists)");
         return Err(OtcSwapError::AlreadySpent.into())
     }
@@ -575,7 +575,7 @@ fn swap_cancel_process_instruction_v1(
         swap_id: swap.id,
         spent_nullifier: params.spent_nullifier,
     };
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 // ============================================================================
@@ -588,19 +588,19 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 
     match func {
         OtcSwapFunction::CreateSwapV1 => {
-            let update: CreateSwapUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CreateSwapUpdateV1::decode(&update_data[1..])?;
             swap_create_process_update_v1(cid, update)
         }
         OtcSwapFunction::FundSwapV1 => {
-            let update: FundSwapUpdateV1 = deserialize(&update_data[1..])?;
+            let update = FundSwapUpdateV1::decode(&update_data[1..])?;
             swap_fund_process_update_v1(cid, update)
         }
         OtcSwapFunction::ExecuteSwapV1 => {
-            let update: ExecuteSwapUpdateV1 = deserialize(&update_data[1..])?;
+            let update = ExecuteSwapUpdateV1::decode(&update_data[1..])?;
             swap_execute_process_update_v1(cid, update)
         }
         OtcSwapFunction::CancelSwapV1 => {
-            let update: CancelSwapUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CancelSwapUpdateV1::decode(&update_data[1..])?;
             swap_cancel_process_update_v1(cid, update)
         }
         OtcSwapFunction::InitializeV1 => {
@@ -620,14 +620,14 @@ fn swap_create_process_update_v1(_cid: ContractId, update: CreateSwapUpdateV1) -
 fn swap_fund_process_update_v1(cid: ContractId, update: FundSwapUpdateV1) -> ContractResult {
     let swaps_db = wasm::db::db_lookup(cid, OTC_SWAP_CONTRACT_SWAPS_TREE)?;
 
-    let swap_data = wasm::db::db_get(swaps_db, &serialize(&update.swap_id))?
+    let swap_data = wasm::db::db_get(swaps_db, &update.swap_id.to_repr())?
         .ok_or_else(|| OtcSwapError::SwapNotFound(format!("{:?}", update.swap_id)))?;
-    let mut swap: OtcSwap = deserialize(&swap_data)?;
+    let mut swap: OtcSwap = OtcSwap::decode(&swap_data)?;
 
     swap.state = SwapState::Funded;
     swap.funded_at = Some(wasm::util::get_verifying_block_height()?.get());
 
-    wasm::db::db_set(swaps_db, &serialize(&swap.id), &serialize(&swap))?;
+    wasm::db::db_set(swaps_db, &swap.id.to_repr(), &swap.encode())?;
     msg!("[FundSwapV1] Swap {:?} funded and state updated to Funded", update.swap_id);
     Ok(())
 }
@@ -637,17 +637,17 @@ fn swap_execute_process_update_v1(cid: ContractId, update: ExecuteSwapUpdateV1) 
     let swaps_db = wasm::db::db_lookup(cid, OTC_SWAP_CONTRACT_SWAPS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, OTC_SWAP_CONTRACT_NULLIFIERS_TREE)?;
 
-    let swap_data = wasm::db::db_get(swaps_db, &serialize(&update.swap_id))?
+    let swap_data = wasm::db::db_get(swaps_db, &update.swap_id.to_repr())?
         .ok_or_else(|| OtcSwapError::SwapNotFound(format!("{:?}", update.swap_id)))?;
-    let mut swap: OtcSwap = deserialize(&swap_data)?;
+    let mut swap: OtcSwap = OtcSwap::decode(&swap_data)?;
 
     swap.state = SwapState::Executed;
     swap.spent_nullifier = update.spent_nullifier;
 
-    wasm::db::db_set(swaps_db, &serialize(&swap.id), &serialize(&swap))?;
+    wasm::db::db_set(swaps_db, &swap.id.to_repr(), &swap.encode())?;
 
     // Record the spent nullifier to prevent double-spend
-    wasm::db::db_set(nullifiers_db, &serialize(&update.spent_nullifier), &[])?;
+    wasm::db::db_set(nullifiers_db, &update.spent_nullifier.to_repr(), &[])?;
 
     msg!(
         "[ExecuteSwapV1] Swap {:?} executed, nullifier {:?} recorded",
@@ -662,17 +662,17 @@ fn swap_cancel_process_update_v1(cid: ContractId, update: CancelSwapUpdateV1) ->
     let swaps_db = wasm::db::db_lookup(cid, OTC_SWAP_CONTRACT_SWAPS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, OTC_SWAP_CONTRACT_NULLIFIERS_TREE)?;
 
-    let swap_data = wasm::db::db_get(swaps_db, &serialize(&update.swap_id))?
+    let swap_data = wasm::db::db_get(swaps_db, &update.swap_id.to_repr())?
         .ok_or_else(|| OtcSwapError::SwapNotFound(format!("{:?}", update.swap_id)))?;
-    let mut swap: OtcSwap = deserialize(&swap_data)?;
+    let mut swap: OtcSwap = OtcSwap::decode(&swap_data)?;
 
     swap.state = SwapState::Cancelled;
     swap.spent_nullifier = update.spent_nullifier;
 
-    wasm::db::db_set(swaps_db, &serialize(&swap.id), &serialize(&swap))?;
+    wasm::db::db_set(swaps_db, &swap.id.to_repr(), &swap.encode())?;
 
     // Record the spent nullifier to prevent double-spend
-    wasm::db::db_set(nullifiers_db, &serialize(&update.spent_nullifier), &[])?;
+    wasm::db::db_set(nullifiers_db, &update.spent_nullifier.to_repr(), &[])?;
 
     msg!(
         "[CancelSwapV1] Swap {:?} cancelled, nullifier {:?} recorded",

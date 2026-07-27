@@ -38,6 +38,7 @@ use dwow_sdk::{
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
 };
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // Re-export for use in client modules
 pub use dwow_sdk::crypto::note::AeadEncryptedNote;
@@ -273,7 +274,7 @@ impl TokenMintUpdateV1 {
             )));
         }
         let token_id = TokenId::from_bytes(data[0..32].try_into().unwrap())
-            .ok_or_else(|| ContractError::IoError("TokenMintUpdateV1: invalid token_id".into()))?;
+            .map_err(|_| ContractError::IoError("TokenMintUpdateV1: invalid token_id".into()))?;
         let coin = Coin(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("TokenMintUpdateV1: invalid coin".into()))?);
         let token_auth_parent = Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap()))
@@ -336,7 +337,7 @@ impl MintUpdateV1 {
         let coin = Coin(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("MintUpdateV1: invalid coin".into()))?);
         let token_id = TokenId::from_bytes(data[32..64].try_into().unwrap())
-            .ok_or_else(|| ContractError::IoError("MintUpdateV1: invalid token_id".into()))?;
+            .map_err(|_| ContractError::IoError("MintUpdateV1: invalid token_id".into()))?;
         let new_coin_count = u64::from_le_bytes(data[64..72].try_into().unwrap());
         Ok(MintUpdateV1 { coin, token_id, new_coin_count })
     }
@@ -617,7 +618,7 @@ impl BurnSpendHookPayload {
             return Err(ContractError::IoError("BurnSpendHookPayload: data too short".into()));
         }
         let caller_contract_id = ContractId::from_bytes(data[0..32].try_into().unwrap())
-            .ok_or_else(|| ContractError::IoError("BurnSpendHookPayload: invalid caller_contract_id".into()))?;
+            .map_err(|_| ContractError::IoError("BurnSpendHookPayload: invalid caller_contract_id".into()))?;
         let n = data[32] as usize;
         fn decode_vec_base(data: &[u8], start: usize, n: usize) -> Result<(Vec<pallas::Base>, usize), ContractError> {
             let mut v = Vec::with_capacity(n);

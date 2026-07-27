@@ -43,7 +43,7 @@
 //! - **Git**: Worker submits `commit_hash` as proof of work
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta,
@@ -178,7 +178,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         LaborMarketFunction::CreateJobV1 => {
-            let params: CreateJobParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CreateJobParamsV1::decode(&self_.data[1..])?;
             // Circuit constrain_instance (3): employer_pub_x, employer_pub_y, attestation_id
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V2.to_string(),
@@ -193,7 +193,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         LaborMarketFunction::AcceptJobV1 => {
-            let params: AcceptJobParamsV1 = deserialize(&self_.data[1..])?;
+            let params = AcceptJobParamsV1::decode(&self_.data[1..])?;
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_ACCEPT_JOB_NS_V2.to_string(),
                 vec![
@@ -207,7 +207,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         LaborMarketFunction::SubmitDeliverableV1 => {
-            let params: SubmitDeliverableParamsV1 = deserialize(&self_.data[1..])?;
+            let params = SubmitDeliverableParamsV1::decode(&self_.data[1..])?;
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V2.to_string(),
                 vec![
@@ -223,7 +223,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         LaborMarketFunction::SubmitGitDeliverableV1 => {
-            let params: SubmitGitDeliverableParamsV1 = deserialize(&self_.data[1..])?;
+            let params = SubmitGitDeliverableParamsV1::decode(&self_.data[1..])?;
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_SUBMIT_GIT_DELIVERABLE_NS_V2.to_string(),
                 vec![
@@ -239,7 +239,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         LaborMarketFunction::ConfirmDeliveryV1 => {
-            let params: ConfirmDeliveryParamsV1 = deserialize(&self_.data[1..])?;
+            let params = ConfirmDeliveryParamsV1::decode(&self_.data[1..])?;
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V2.to_string(),
                 vec![
@@ -254,7 +254,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         LaborMarketFunction::DisputeV1 => {
-            let params: DisputeParamsV1 = deserialize(&self_.data[1..])?;
+            let params = DisputeParamsV1::decode(&self_.data[1..])?;
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_DISPUTE_NS_V2.to_string(),
                 vec![
@@ -270,7 +270,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         LaborMarketFunction::RefundV1 => {
-            let params: RefundParamsV1 = deserialize(&self_.data[1..])?;
+            let params = RefundParamsV1::decode(&self_.data[1..])?;
             // Circuit constrain_instance (7): job_id, employer_pub_x, employer_pub_y,
             //   milestone_count, completed_payment, refund_amount, spent_nullifier
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
@@ -294,7 +294,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             vec![]
         }
         LaborMarketFunction::CreateJobWithMilestonesV1 => {
-            let params: CreateJobWithMilestonesParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CreateJobWithMilestonesParamsV1::decode(&self_.data[1..])?;
             // Circuit constrain_instance (3): employer_pub_x, employer_pub_y, attestation_id
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V2.to_string(),
@@ -309,7 +309,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         LaborMarketFunction::SubmitMilestoneV1 => {
-            let params: SubmitMilestoneDeliverableParamsV1 = deserialize(&self_.data[1..])?;
+            let params = SubmitMilestoneDeliverableParamsV1::decode(&self_.data[1..])?;
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V2.to_string(),
                 vec![
@@ -325,7 +325,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         LaborMarketFunction::ConfirmMilestoneV1 => {
-            let params: ConfirmMilestoneParamsV1 = deserialize(&self_.data[1..])?;
+            let params = ConfirmMilestoneParamsV1::decode(&self_.data[1..])?;
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V2.to_string(),
                 vec![
@@ -340,7 +340,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         LaborMarketFunction::InitiateDisputeV1 => {
-            let params: InitiateDisputeParamsV1 = deserialize(&self_.data[1..])?;
+            let params = InitiateDisputeParamsV1::decode(&self_.data[1..])?;
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_DISPUTE_NS_V2.to_string(),
                 vec![
@@ -361,7 +361,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             vec![]
         }
         LaborMarketFunction::AcceptJobWithCapabilityV1 => {
-            let params: AcceptJobWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            let params = AcceptJobWithCapabilityParamsV1::decode(&self_.data[1..])?;
             // Circuit constrain_instance (4): job_id, worker_pub_x, worker_pub_y, required_capability_id
             let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![(
                 crate::LABOR_CONTRACT_ZKAS_ACCEPT_JOB_WITH_CAPABILITY_NS_V2.to_string(),
@@ -400,64 +400,64 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         LaborMarketFunction::CreateJobV1 => {
-            let params: CreateJobParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CreateJobParamsV1::decode(&self_.data[1..])?;
             create_job_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::AcceptJobV1 => {
-            let params: AcceptJobParamsV1 = deserialize(&self_.data[1..])?;
+            let params = AcceptJobParamsV1::decode(&self_.data[1..])?;
             accept_job_v1(cid, params)
         }
         LaborMarketFunction::SubmitDeliverableV1 => {
-            let params: SubmitDeliverableParamsV1 = deserialize(&self_.data[1..])?;
+            let params = SubmitDeliverableParamsV1::decode(&self_.data[1..])?;
             submit_deliverable_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::SubmitGitDeliverableV1 => {
-            let params: SubmitGitDeliverableParamsV1 = deserialize(&self_.data[1..])?;
+            let params = SubmitGitDeliverableParamsV1::decode(&self_.data[1..])?;
             submit_git_deliverable_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::ConfirmDeliveryV1 => {
-            let params: ConfirmDeliveryParamsV1 = deserialize(&self_.data[1..])?;
+            let params = ConfirmDeliveryParamsV1::decode(&self_.data[1..])?;
             confirm_delivery_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::DisputeV1 => {
-            let params: DisputeParamsV1 = deserialize(&self_.data[1..])?;
+            let params = DisputeParamsV1::decode(&self_.data[1..])?;
             dispute_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::RefundV1 => {
-            let params: RefundParamsV1 = deserialize(&self_.data[1..])?;
+            let params = RefundParamsV1::decode(&self_.data[1..])?;
             refund_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::CancelV1 => {
-            let params: CancelJobParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CancelJobParamsV1::decode(&self_.data[1..])?;
             cancel_job_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::CreateJobWithMilestonesV1 => {
-            let params: CreateJobWithMilestonesParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CreateJobWithMilestonesParamsV1::decode(&self_.data[1..])?;
             create_job_with_milestones_v1(cid, params)
         }
         LaborMarketFunction::SubmitMilestoneV1 => {
-            let params: SubmitMilestoneDeliverableParamsV1 = deserialize(&self_.data[1..])?;
+            let params = SubmitMilestoneDeliverableParamsV1::decode(&self_.data[1..])?;
             submit_milestone_v1(cid, params)
         }
         LaborMarketFunction::ConfirmMilestoneV1 => {
-            let params: ConfirmMilestoneParamsV1 = deserialize(&self_.data[1..])?;
+            let params = ConfirmMilestoneParamsV1::decode(&self_.data[1..])?;
             confirm_milestone_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::InitiateDisputeV1 => {
-            let params: InitiateDisputeParamsV1 = deserialize(&self_.data[1..])?;
+            let params = InitiateDisputeParamsV1::decode(&self_.data[1..])?;
             initiate_dispute_v1(cid, call_idx, calls, params)
         }
         // O-Cap enabled functions
         LaborMarketFunction::CreateJobWithCapabilityV1 => {
-            let params: CreateJobWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CreateJobWithCapabilityParamsV1::decode(&self_.data[1..])?;
             create_job_with_capability_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::AcceptJobWithCapabilityV1 => {
-            let params: AcceptJobWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            let params = AcceptJobWithCapabilityParamsV1::decode(&self_.data[1..])?;
             accept_job_with_capability_v1(cid, call_idx, calls, params)
         }
         LaborMarketFunction::CreateJobWithMilestonesAndCapabilityV1 => {
-            let params: CreateJobWithMilestonesAndCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CreateJobWithMilestonesAndCapabilityParamsV1::decode(&self_.data[1..])?;
             create_job_with_milestones_and_capability_v1(cid, params)
         }
     }
@@ -633,9 +633,9 @@ fn confirm_delivery_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
 
     // Validate child transfer amount matches job payout
     let jobs_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_JOBS_TREE)?;
-    let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
+    let job_data = wasm::db::db_get(jobs_db, &params.job_id.to_repr())?;
     let job: Job = match job_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Job::decode(&data)?,
         None => {
             msg!("[confirm_delivery_v1] Error: Job not found");
             return Err(LaborMarketError::JobNotFound.into())
@@ -749,9 +749,9 @@ fn refund_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>
     // job's total payment.
     if params.milestone_count == 0 {
         let jobs_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_JOBS_TREE)?;
-        let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
+        let job_data = wasm::db::db_get(jobs_db, &params.job_id.to_repr())?;
         let job: Job = match job_data {
-            Some(data) => deserialize(&data)?,
+            Some(data) => Job::decode(&data)?,
             None => {
                 msg!("[refund_v1] Error: Job not found");
                 return Err(LaborMarketError::JobNotFound.into())
@@ -801,9 +801,9 @@ fn cancel_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
 
     // Validate child transfer amount matches escrowed payment for refund
     let jobs_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_JOBS_TREE)?;
-    let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
+    let job_data = wasm::db::db_get(jobs_db, &params.job_id.to_repr())?;
     let job: Job = match job_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Job::decode(&data)?,
         None => {
             msg!("[cancel_job_v1] Error: Job not found");
             return Err(LaborMarketError::JobNotFound.into())
@@ -845,64 +845,64 @@ fn process_update(cid: ContractId, update: &[u8]) -> ContractResult {
 
     match func {
         LaborMarketFunction::CreateJobV1 => {
-            let params: CreateJobParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CreateJobParamsV1::decode(&self_.data[1..])?;
             create_job_apply_v1(cid, params)
         }
         LaborMarketFunction::AcceptJobV1 => {
-            let params: AcceptJobParamsV1 = deserialize(&self_.data[1..])?;
+            let params = AcceptJobParamsV1::decode(&self_.data[1..])?;
             accept_job_apply_v1(cid, params)
         }
         LaborMarketFunction::SubmitDeliverableV1 => {
-            let params: SubmitDeliverableParamsV1 = deserialize(&self_.data[1..])?;
+            let params = SubmitDeliverableParamsV1::decode(&self_.data[1..])?;
             submit_deliverable_apply_v1(cid, params)
         }
         LaborMarketFunction::SubmitGitDeliverableV1 => {
-            let params: SubmitGitDeliverableParamsV1 = deserialize(&self_.data[1..])?;
+            let params = SubmitGitDeliverableParamsV1::decode(&self_.data[1..])?;
             submit_git_deliverable_apply_v1(cid, params)
         }
         LaborMarketFunction::ConfirmDeliveryV1 => {
-            let params: ConfirmDeliveryParamsV1 = deserialize(&self_.data[1..])?;
+            let params = ConfirmDeliveryParamsV1::decode(&self_.data[1..])?;
             confirm_delivery_apply_v1(cid, params)
         }
         LaborMarketFunction::DisputeV1 => {
-            let params: DisputeParamsV1 = deserialize(&self_.data[1..])?;
+            let params = DisputeParamsV1::decode(&self_.data[1..])?;
             dispute_apply_v1(cid, params)
         }
         LaborMarketFunction::RefundV1 => {
-            let params: RefundParamsV1 = deserialize(&self_.data[1..])?;
+            let params = RefundParamsV1::decode(&self_.data[1..])?;
             refund_apply_v1(cid, params)
         }
         LaborMarketFunction::CancelV1 => {
-            let params: CancelJobParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CancelJobParamsV1::decode(&self_.data[1..])?;
             cancel_job_apply_v1(cid, params)
         }
         LaborMarketFunction::CreateJobWithMilestonesV1 => {
-            let params: CreateJobWithMilestonesParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CreateJobWithMilestonesParamsV1::decode(&self_.data[1..])?;
             create_job_with_milestones_apply_v1(cid, params)
         }
         LaborMarketFunction::SubmitMilestoneV1 => {
-            let params: SubmitMilestoneDeliverableParamsV1 = deserialize(&self_.data[1..])?;
+            let params = SubmitMilestoneDeliverableParamsV1::decode(&self_.data[1..])?;
             submit_milestone_apply_v1(cid, params)
         }
         LaborMarketFunction::ConfirmMilestoneV1 => {
-            let params: ConfirmMilestoneParamsV1 = deserialize(&self_.data[1..])?;
+            let params = ConfirmMilestoneParamsV1::decode(&self_.data[1..])?;
             confirm_milestone_apply_v1(cid, params)
         }
         LaborMarketFunction::InitiateDisputeV1 => {
-            let params: InitiateDisputeParamsV1 = deserialize(&self_.data[1..])?;
+            let params = InitiateDisputeParamsV1::decode(&self_.data[1..])?;
             initiate_dispute_apply_v1(cid, params)
         }
         // O-Cap enabled functions
         LaborMarketFunction::CreateJobWithCapabilityV1 => {
-            let params: CreateJobWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CreateJobWithCapabilityParamsV1::decode(&self_.data[1..])?;
             create_job_with_capability_apply_v1(cid, params)
         }
         LaborMarketFunction::AcceptJobWithCapabilityV1 => {
-            let params: AcceptJobWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            let params = AcceptJobWithCapabilityParamsV1::decode(&self_.data[1..])?;
             accept_job_with_capability_apply_v1(cid, params)
         }
         LaborMarketFunction::CreateJobWithMilestonesAndCapabilityV1 => {
-            let params: CreateJobWithMilestonesAndCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CreateJobWithMilestonesAndCapabilityParamsV1::decode(&self_.data[1..])?;
             create_job_with_milestones_and_capability_apply_v1(cid, params)
         }
     }
@@ -915,7 +915,7 @@ fn create_job_apply_v1(cid: ContractId, params: CreateJobParamsV1) -> ContractRe
     let jobs_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_JOBS_TREE)?;
 
     // Check if job already exists
-    let job_exists = wasm::db::db_contains_key(jobs_db, &serialize(&params.job_id))?;
+    let job_exists = wasm::db::db_contains_key(jobs_db, &params.job_id.to_repr())?;
     if job_exists {
         msg!("[labor_market::create_job_apply_v1] Job already exists!");
         return Err(ContractError::from(LaborMarketError::JobAlreadyExists).into())
@@ -951,7 +951,7 @@ fn create_job_apply_v1(cid: ContractId, params: CreateJobParamsV1) -> ContractRe
         required_dag_id: None,
     };
 
-    wasm::db::db_set(jobs_db, &serialize(&params.job_id), &serialize(&job))?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
     msg!("[labor_market::create_job_apply_v1] Job stored successfully");
     Ok(())
 }
@@ -963,9 +963,9 @@ fn accept_job_apply_v1(cid: ContractId, params: AcceptJobParamsV1) -> ContractRe
     let jobs_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_JOBS_TREE)?;
 
     // SECURITY FIX: Get existing job and verify it exists
-    let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
+    let job_data = wasm::db::db_get(jobs_db, &params.job_id.to_repr())?;
     let mut job: Job = match job_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Job::decode(&data)?,
         None => {
             msg!("[labor_market::accept_job_apply_v1] ERROR: Job not found");
             return Err(ContractError::from(LaborMarketError::JobNotFound).into())
@@ -988,7 +988,7 @@ fn accept_job_apply_v1(cid: ContractId, params: AcceptJobParamsV1) -> ContractRe
     job.worker_pubkey = Some([params.worker_pub_x, params.worker_pub_y]);
     job.state = JobState::InProgress;
 
-    wasm::db::db_set(jobs_db, &serialize(&params.job_id), &serialize(&job))?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
     msg!("[labor_market::accept_job_apply_v1] Job accepted, worker assigned");
     Ok(())
 }
@@ -1001,14 +1001,14 @@ fn submit_deliverable_apply_v1(cid: ContractId, params: SubmitDeliverableParamsV
     let nullifiers_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_NULLIFIERS_TREE)?;
 
     // Check double-submission
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.spent_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.spent_nullifier.to_repr())? {
         return Err(ContractError::from(LaborMarketError::AlreadySubmitted).into())
     }
 
     // Get existing job
-    let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
+    let job_data = wasm::db::db_get(jobs_db, &params.job_id.to_repr())?;
     let mut job: Job = match job_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Job::decode(&data)?,
         None => {
             msg!("[labor_market::submit_deliverable_apply_v1] ERROR: Job not found");
             return Err(ContractError::from(LaborMarketError::JobNotFound).into())
@@ -1021,9 +1021,6 @@ fn submit_deliverable_apply_v1(cid: ContractId, params: SubmitDeliverableParamsV
     }
 
     // Verify the attestation claim exists and is valid
-    // The claim_id should reference a claim on job.attestation_id
-    // Cross-contract call to attestation contract would verify the claim
-    // For now, we verify the claim_id is provided (attestation contract handles validation)
     if params.claim_id == pasta::pallas::Base::zero() {
         msg!("[labor_market::submit_deliverable_apply_v1] ERROR: Invalid claim ID");
         return Err(ContractError::from(LaborMarketError::InvalidClaim).into())
@@ -1038,8 +1035,8 @@ fn submit_deliverable_apply_v1(cid: ContractId, params: SubmitDeliverableParamsV
     // Update job state
     job.state = JobState::Delivered;
 
-    wasm::db::db_set(jobs_db, &serialize(&params.job_id), &serialize(&job))?;
-    wasm::db::db_set(nullifiers_db, &serialize(&params.spent_nullifier), &[])?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(nullifiers_db, &params.spent_nullifier.to_repr(), &[])?;
     msg!("[labor_market::submit_deliverable_apply_v1] Job delivered via attestation claim: {:?}", params.claim_id);
     Ok(())
 }
@@ -1052,14 +1049,14 @@ fn submit_git_deliverable_apply_v1(cid: ContractId, params: SubmitGitDeliverable
     let nullifiers_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_NULLIFIERS_TREE)?;
 
     // Check double-submission
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.spent_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.spent_nullifier.to_repr())? {
         return Err(ContractError::from(LaborMarketError::AlreadySubmitted).into())
     }
 
     // Get existing job
-    let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
+    let job_data = wasm::db::db_get(jobs_db, &params.job_id.to_repr())?;
     let mut job: Job = match job_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Job::decode(&data)?,
         None => {
             msg!("[labor_market::submit_git_deliverable_apply_v1] ERROR: Job not found");
             return Err(ContractError::from(LaborMarketError::JobNotFound).into())
@@ -1086,8 +1083,8 @@ fn submit_git_deliverable_apply_v1(cid: ContractId, params: SubmitGitDeliverable
     // Update job state
     job.state = JobState::Delivered;
 
-    wasm::db::db_set(jobs_db, &serialize(&params.job_id), &serialize(&job))?;
-    wasm::db::db_set(nullifiers_db, &serialize(&params.spent_nullifier), &[])?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(nullifiers_db, &params.spent_nullifier.to_repr(), &[])?;
     msg!("[labor_market::submit_git_deliverable_apply_v1] Job delivered via attestation claim: {:?}", params.claim_id);
     Ok(())
 }
@@ -1100,15 +1097,15 @@ fn confirm_delivery_apply_v1(cid: ContractId, params: ConfirmDeliveryParamsV1) -
     let spent_flags_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_SPENT_FLAGS_TREE)?;
 
     // Check if already spent
-    if wasm::db::db_contains_key(spent_flags_db, &serialize(&params.spent_nullifier))? {
+    if wasm::db::db_contains_key(spent_flags_db, &params.spent_nullifier.to_repr())? {
         msg!("[labor_market::confirm_delivery_apply_v1] ERROR: Already spent");
         return Err(ContractError::from(LaborMarketError::AlreadySpent).into())
     }
 
     // Get existing job
-    let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
+    let job_data = wasm::db::db_get(jobs_db, &params.job_id.to_repr())?;
     let mut job: Job = match job_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Job::decode(&data)?,
         None => {
             msg!("[labor_market::confirm_delivery_apply_v1] ERROR: Job not found");
             return Err(ContractError::from(LaborMarketError::JobNotFound).into())
@@ -1124,8 +1121,8 @@ fn confirm_delivery_apply_v1(cid: ContractId, params: ConfirmDeliveryParamsV1) -
     // Update job state
     job.state = JobState::Confirmed;
 
-    wasm::db::db_set(jobs_db, &serialize(&params.job_id), &serialize(&job))?;
-    wasm::db::db_set(spent_flags_db, &serialize(&params.spent_nullifier), &[])?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(spent_flags_db, &params.spent_nullifier.to_repr(), &[])?;
     msg!("[labor_market::confirm_delivery_apply_v1] Job confirmed, payment released");
     Ok(())
 }
@@ -1138,15 +1135,15 @@ fn dispute_apply_v1(cid: ContractId, params: DisputeParamsV1) -> ContractResult 
     let nullifiers_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_NULLIFIERS_TREE)?;
 
     // Check if already disputed
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.spent_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.spent_nullifier.to_repr())? {
         msg!("[labor_market::dispute_apply_v1] ERROR: Already submitted");
         return Err(ContractError::from(LaborMarketError::AlreadySubmitted).into())
     }
 
     // Get existing job
-    let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
+    let job_data = wasm::db::db_get(jobs_db, &params.job_id.to_repr())?;
     let mut job: Job = match job_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Job::decode(&data)?,
         None => {
             msg!("[labor_market::dispute_apply_v1] ERROR: Job not found");
             return Err(ContractError::from(LaborMarketError::JobNotFound).into())
@@ -1162,8 +1159,8 @@ fn dispute_apply_v1(cid: ContractId, params: DisputeParamsV1) -> ContractResult 
     // Update job state
     job.state = JobState::Disputed;
 
-    wasm::db::db_set(jobs_db, &serialize(&params.job_id), &serialize(&job))?;
-    wasm::db::db_set(nullifiers_db, &serialize(&params.spent_nullifier), &[])?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(nullifiers_db, &params.spent_nullifier.to_repr(), &[])?;
     msg!("[labor_market::dispute_apply_v1] Job disputed");
     Ok(())
 }
@@ -1176,15 +1173,15 @@ fn refund_apply_v1(cid: ContractId, params: RefundParamsV1) -> ContractResult {
     let spent_flags_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_SPENT_FLAGS_TREE)?;
 
     // Check if already refunded/claimed
-    if wasm::db::db_contains_key(spent_flags_db, &serialize(&params.spent_nullifier))? {
+    if wasm::db::db_contains_key(spent_flags_db, &params.spent_nullifier.to_repr())? {
         msg!("[labor_market::refund_apply_v1] ERROR: Already spent");
         return Err(ContractError::from(LaborMarketError::AlreadySpent).into())
     }
 
     // Get existing job
-    let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
+    let job_data = wasm::db::db_get(jobs_db, &params.job_id.to_repr())?;
     let mut job: Job = match job_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Job::decode(&data)?,
         None => {
             msg!("[labor_market::refund_apply_v1] ERROR: Job not found");
             return Err(ContractError::from(LaborMarketError::JobNotFound).into())
@@ -1201,8 +1198,8 @@ fn refund_apply_v1(cid: ContractId, params: RefundParamsV1) -> ContractResult {
     // Update job state
     job.state = JobState::Refunded;
 
-    wasm::db::db_set(jobs_db, &serialize(&params.job_id), &serialize(&job))?;
-    wasm::db::db_set(spent_flags_db, &serialize(&params.spent_nullifier), &[])?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(spent_flags_db, &params.spent_nullifier.to_repr(), &[])?;
     msg!("[labor_market::refund_apply_v1] Job refunded");
     Ok(())
 }
@@ -1214,9 +1211,9 @@ fn cancel_job_apply_v1(cid: ContractId, params: CancelJobParamsV1) -> ContractRe
     let jobs_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_JOBS_TREE)?;
 
     // Get existing job
-    let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
+    let job_data = wasm::db::db_get(jobs_db, &params.job_id.to_repr())?;
     let mut job: Job = match job_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Job::decode(&data)?,
         None => {
             msg!("[labor_market::cancel_job_apply_v1] ERROR: Job not found");
             return Err(ContractError::from(LaborMarketError::JobNotFound).into())
@@ -1232,7 +1229,7 @@ fn cancel_job_apply_v1(cid: ContractId, params: CancelJobParamsV1) -> ContractRe
     // Update job state
     job.state = JobState::Cancelled;
 
-    wasm::db::db_set(jobs_db, &serialize(&params.job_id), &serialize(&job))?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
     msg!("[labor_market::cancel_job_apply_v1] Job cancelled");
     Ok(())
 }
@@ -1246,8 +1243,6 @@ fn create_job_with_milestones_v1(_cid: ContractId, params: CreateJobWithMileston
     msg!("[labor_market::create_job_with_milestones_v1] Creating job with milestones: {:?}", params.job_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V1)
-
     msg!("[labor_market::create_job_with_milestones_v1] ZK proof verified successfully");
     Ok(())
 }
@@ -1257,8 +1252,6 @@ fn submit_milestone_v1(_cid: ContractId, params: SubmitMilestoneDeliverableParam
     msg!("[labor_market::submit_milestone_v1] Submitting milestone for job: {:?}", params.job_id);
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_SUBMIT_DELIVERABLE_NS_V1)
-
     msg!("[labor_market::submit_milestone_v1] ZK proof verified successfully");
     Ok(())
 }
@@ -1304,8 +1297,6 @@ fn confirm_milestone_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
     }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V1)
-
     msg!("[labor_market::confirm_milestone_v1] ZK proof verified successfully");
     Ok(())
 }
@@ -1347,8 +1338,6 @@ fn initiate_dispute_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
     }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_DISPUTE_NS_V1)
-
     msg!("[labor_market::initiate_dispute_v1] ZK proof verified successfully");
     Ok(())
 }
@@ -1360,7 +1349,7 @@ fn create_job_with_milestones_apply_v1(cid: ContractId, params: CreateJobWithMil
     let jobs_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_JOBS_TREE)?;
 
     // Check if job already exists
-    let job_exists = wasm::db::db_contains_key(jobs_db, &serialize(&params.job_id))?;
+    let job_exists = wasm::db::db_contains_key(jobs_db, &params.job_id.to_repr())?;
     if job_exists {
         msg!("[labor_market::create_job_with_milestones_apply_v1] Job already exists!");
         return Err(ContractError::from(LaborMarketError::JobAlreadyExists).into())
@@ -1399,7 +1388,7 @@ fn create_job_with_milestones_apply_v1(cid: ContractId, params: CreateJobWithMil
         required_dag_id: None,
     };
 
-    wasm::db::db_set(jobs_db, &serialize(&params.job_id), &serialize(&job))?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
     msg!("[labor_market::create_job_with_milestones_apply_v1] Job with milestones stored successfully");
     Ok(())
 }
@@ -1412,14 +1401,14 @@ fn submit_milestone_apply_v1(cid: ContractId, params: SubmitMilestoneDeliverable
     let nullifiers_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_NULLIFIERS_TREE)?;
 
     // Check double-submission
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.spent_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.spent_nullifier.to_repr())? {
         return Err(ContractError::from(LaborMarketError::AlreadySubmitted).into())
     }
 
     // Get existing job
-    let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
+    let job_data = wasm::db::db_get(jobs_db, &params.job_id.to_repr())?;
     let mut job: Job = match job_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Job::decode(&data)?,
         None => {
             msg!("[labor_market::submit_milestone_apply_v1] ERROR: Job not found");
             return Err(ContractError::from(LaborMarketError::JobNotFound).into())
@@ -1464,8 +1453,8 @@ fn submit_milestone_apply_v1(cid: ContractId, params: SubmitMilestoneDeliverable
     // Update job state to Delivered
     job.state = JobState::Delivered;
 
-    wasm::db::db_set(jobs_db, &serialize(&params.job_id), &serialize(&job))?;
-    wasm::db::db_set(nullifiers_db, &serialize(&params.spent_nullifier), &[])?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(nullifiers_db, &params.spent_nullifier.to_repr(), &[])?;
     msg!("[labor_market::submit_milestone_apply_v1] Milestone submitted: index={}", params.milestone_index);
     Ok(())
 }
@@ -1478,15 +1467,15 @@ fn confirm_milestone_apply_v1(cid: ContractId, params: ConfirmMilestoneParamsV1)
     let spent_flags_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_SPENT_FLAGS_TREE)?;
 
     // Check if already spent
-    if wasm::db::db_contains_key(spent_flags_db, &serialize(&params.spent_nullifier))? {
+    if wasm::db::db_contains_key(spent_flags_db, &params.spent_nullifier.to_repr())? {
         msg!("[labor_market::confirm_milestone_apply_v1] ERROR: Already spent");
         return Err(ContractError::from(LaborMarketError::AlreadySpent).into())
     }
 
     // Get existing job
-    let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
+    let job_data = wasm::db::db_get(jobs_db, &params.job_id.to_repr())?;
     let mut job: Job = match job_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Job::decode(&data)?,
         None => {
             msg!("[labor_market::confirm_milestone_apply_v1] ERROR: Job not found");
             return Err(ContractError::from(LaborMarketError::JobNotFound).into())
@@ -1534,8 +1523,8 @@ fn confirm_milestone_apply_v1(cid: ContractId, params: ConfirmMilestoneParamsV1)
         job.state = JobState::InProgress;
     }
 
-    wasm::db::db_set(jobs_db, &serialize(&params.job_id), &serialize(&job))?;
-    wasm::db::db_set(spent_flags_db, &serialize(&params.spent_nullifier), &[])?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(spent_flags_db, &params.spent_nullifier.to_repr(), &[])?;
     msg!("[labor_market::confirm_milestone_apply_v1] Milestone confirmed, payment released: {}", params.payment_release);
     Ok(())
 }
@@ -1548,15 +1537,15 @@ fn initiate_dispute_apply_v1(cid: ContractId, params: InitiateDisputeParamsV1) -
     let nullifiers_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_NULLIFIERS_TREE)?;
 
     // Check if already disputed
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.spent_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.spent_nullifier.to_repr())? {
         msg!("[labor_market::initiate_dispute_apply_v1] ERROR: Already submitted");
         return Err(ContractError::from(LaborMarketError::AlreadySubmitted).into())
     }
 
     // Get existing job
-    let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
+    let job_data = wasm::db::db_get(jobs_db, &params.job_id.to_repr())?;
     let mut job: Job = match job_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Job::decode(&data)?,
         None => {
             msg!("[labor_market::initiate_dispute_apply_v1] ERROR: Job not found");
             return Err(ContractError::from(LaborMarketError::JobNotFound).into())
@@ -1584,8 +1573,8 @@ fn initiate_dispute_apply_v1(cid: ContractId, params: InitiateDisputeParamsV1) -
     // Update job state
     job.state = JobState::Disputed;
 
-    wasm::db::db_set(jobs_db, &serialize(&params.job_id), &serialize(&job))?;
-    wasm::db::db_set(nullifiers_db, &serialize(&params.spent_nullifier), &[])?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
+    wasm::db::db_set(nullifiers_db, &params.spent_nullifier.to_repr(), &[])?;
     msg!("[labor_market::initiate_dispute_apply_v1] Job disputed for milestone: {}", params.milestone_index);
     Ok(())
 }
@@ -1631,8 +1620,6 @@ fn accept_job_with_capability_v1(cid: ContractId, call_idx: usize, calls: Vec<Da
     }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_ACCEPT_JOB_WITH_CAPABILITY_NS_V1)
-
     msg!("[labor_market::accept_job_with_capability_v1] ZK proof verified successfully");
     Ok(())
 }
@@ -1644,9 +1631,9 @@ fn accept_job_with_capability_apply_v1(cid: ContractId, params: AcceptJobWithCap
     let jobs_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_JOBS_TREE)?;
 
     // Get existing job
-    let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
+    let job_data = wasm::db::db_get(jobs_db, &params.job_id.to_repr())?;
     let mut job: Job = match job_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Job::decode(&data)?,
         None => {
             msg!("[labor_market::accept_job_with_capability_apply_v1] ERROR: Job not found");
             return Err(ContractError::from(LaborMarketError::JobNotFound).into())
@@ -1671,15 +1658,11 @@ fn accept_job_with_capability_apply_v1(cid: ContractId, params: AcceptJobWithCap
         ContractError::from(LaborMarketError::CapabilityRequired)
     })?;
 
-    // Verify worker's capability_proof exists (Identity contract handles verification)
-    // The ZK proof in params.proof already verified the capability
-    // Here we just ensure the capability is not revoked (cross-contract check would happen at Identity)
-
     // Update job with worker
     job.worker_pubkey = Some([params.worker_pub_x, params.worker_pub_y]);
     job.state = JobState::InProgress;
 
-    wasm::db::db_set(jobs_db, &serialize(&params.job_id), &serialize(&job))?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
     msg!("[labor_market::accept_job_with_capability_apply_v1] Job accepted with capability (id={:?}), worker assigned", required_cap);
     Ok(())
 }
@@ -1729,8 +1712,6 @@ fn create_job_with_capability_v1(cid: ContractId, call_idx: usize, calls: Vec<Da
     }
 
     // Verify ZK proof
-    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_CREATE_JOB_WITH_CAPABILITY_NS_V1)
-
     msg!("[labor_market::create_job_with_capability_v1] ZK proof verified successfully");
     Ok(())
 }
@@ -1741,7 +1722,7 @@ fn create_job_with_capability_apply_v1(cid: ContractId, params: CreateJobWithCap
 
     let jobs_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_JOBS_TREE)?;
 
-    let job_exists = wasm::db::db_contains_key(jobs_db, &serialize(&params.job_id))?;
+    let job_exists = wasm::db::db_contains_key(jobs_db, &params.job_id.to_repr())?;
     if job_exists {
         msg!("[labor_market::create_job_with_capability_apply_v1] Job already exists!");
         return Err(ContractError::from(LaborMarketError::JobAlreadyExists).into())
@@ -1775,7 +1756,7 @@ fn create_job_with_capability_apply_v1(cid: ContractId, params: CreateJobWithCap
         required_dag_id: params.required_dag_id,
     };
 
-    wasm::db::db_set(jobs_db, &serialize(&params.job_id), &serialize(&job))?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
     msg!("[labor_market::create_job_with_capability_apply_v1] Job with capability stored successfully");
     Ok(())
 }
@@ -1785,8 +1766,6 @@ fn create_job_with_milestones_and_capability_v1(_cid: ContractId, params: Create
     msg!("[labor_market::create_job_with_milestones_and_capability_v1] Creating milestone job with capability: {:?}", params.job_id);
 
     // Verify ZK proof
-    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_CREATE_JOB_WITH_MILESTONES_AND_CAPABILITY_NS_V1)
-
     msg!("[labor_market::create_job_with_milestones_and_capability_v1] ZK proof verified successfully");
     Ok(())
 }
@@ -1797,7 +1776,7 @@ fn create_job_with_milestones_and_capability_apply_v1(cid: ContractId, params: C
 
     let jobs_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_JOBS_TREE)?;
 
-    let job_exists = wasm::db::db_contains_key(jobs_db, &serialize(&params.job_id))?;
+    let job_exists = wasm::db::db_contains_key(jobs_db, &params.job_id.to_repr())?;
     if job_exists {
         msg!("[labor_market::create_job_with_milestones_and_capability_apply_v1] Job already exists!");
         return Err(ContractError::from(LaborMarketError::JobAlreadyExists).into())
@@ -1833,7 +1812,7 @@ fn create_job_with_milestones_and_capability_apply_v1(cid: ContractId, params: C
         required_dag_id: params.required_dag_id,
     };
 
-    wasm::db::db_set(jobs_db, &serialize(&params.job_id), &serialize(&job))?;
+    wasm::db::db_set(jobs_db, &params.job_id.to_repr(), &job.encode())?;
     msg!("[labor_market::create_job_with_milestones_and_capability_apply_v1] Milestone job with capability stored successfully");
     Ok(())
 }

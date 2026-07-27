@@ -24,7 +24,7 @@
 //! DrawWinnersV1 Implementation
 
 use dwow_sdk::{crypto::pasta_prelude::PrimeField, error::ContractError, msg, pasta::pallas, wasm};
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::deserialize;
 
 use crate::error::LotteryError;
 use crate::model::{draw_winning_numbers, DrawWinnersParamsV1, DrawWinnersUpdateV1, LotteryState};
@@ -43,8 +43,9 @@ pub fn lottery_draw_winners_process_instruction_v1(
 
     // Get lottery state
     let lotteries_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_LOTTERIES_TREE)?;
-    let lottery: crate::model::Lottery =
-        deserialize(&wasm::db::db_get(lotteries_db, &serialize(&params.lottery_id))?.ok_or(ContractError::DbGetEmpty)?)?;
+    let lottery = crate::model::Lottery::decode(
+        &wasm::db::db_get(lotteries_db, &params.lottery_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?
+    )?;
 
     // Verify lottery is in correct state
     if lottery.state != LotteryState::Initialized {
@@ -95,7 +96,7 @@ pub fn lottery_draw_winners_process_instruction_v1(
     };
 
     msg!("[lottery::draw_winners] Winners drawn successfully");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Process update for DrawWinnersV1
@@ -106,8 +107,9 @@ pub fn lottery_draw_winners_process_update_v1(
     let lotteries_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_LOTTERIES_TREE)?;
 
     // Get and update lottery
-    let mut lottery: crate::model::Lottery =
-        deserialize(&wasm::db::db_get(lotteries_db, &serialize(&update.lottery_id))?.ok_or(ContractError::DbGetEmpty)?)?;
+    let mut lottery = crate::model::Lottery::decode(
+        &wasm::db::db_get(lotteries_db, &update.lottery_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?
+    )?;
 
     lottery.state = update.state;
     lottery.winning_numbers = Some(update.winning_numbers.clone());
@@ -117,7 +119,7 @@ pub fn lottery_draw_winners_process_update_v1(
     lottery.prize_pool = update.prize_pool;
 
     // Store updated lottery
-    wasm::db::db_set(lotteries_db, &serialize(&update.lottery_id), &serialize(&lottery))?;
+    wasm::db::db_set(lotteries_db, &update.lottery_id.to_repr(), &lottery.encode())?;
     msg!("[lottery::draw_winners::update] Lottery updated with winning numbers");
 
     Ok(())

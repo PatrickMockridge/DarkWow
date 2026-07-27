@@ -30,7 +30,7 @@ use dwow_sdk::{
     wasm,
 };
 use dwow_sdk::pasta::pallas;
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::deserialize;
 
 use crate::error::DiceError;
 use crate::model::{calculate_roll_with_depth, Bet, BetState, RevealRollParamsV1, RevealRollUpdateV1};
@@ -50,8 +50,8 @@ pub fn dice_reveal_roll_process_instruction_v1(
 
     // Look up the bet
     let bets_db = wasm::db::db_lookup(cid, DICE_CONTRACT_BETS_TREE)?;
-    let bet: Bet = match wasm::db::db_get(bets_db, &serialize(&params.bet_id))? {
-        Some(data) => deserialize(&data)?,
+    let bet: Bet = match wasm::db::db_get(bets_db, &params.bet_id.to_repr())? {
+        Some(data) => Bet::decode(&data)?,
         None => return Err(DiceError::BetNotFound.into()),
     };
 
@@ -113,7 +113,7 @@ pub fn dice_reveal_roll_process_instruction_v1(
     };
 
     msg!("[dice::reveal_roll] Roll revealed successfully");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Process update for RevealRollV1
@@ -124,8 +124,8 @@ pub fn dice_reveal_roll_process_update_v1(
     let bets_db = wasm::db::db_lookup(cid, DICE_CONTRACT_BETS_TREE)?;
 
     // Look up and update the bet
-    let mut bet: Bet = match wasm::db::db_get(bets_db, &serialize(&update.bet_id))? {
-        Some(data) => deserialize(&data)?,
+    let mut bet: Bet = match wasm::db::db_get(bets_db, &update.bet_id.to_repr())? {
+        Some(data) => Bet::decode(&data)?,
         None => return Err(DiceError::BetNotFound.into()),
     };
 
@@ -135,7 +135,7 @@ pub fn dice_reveal_roll_process_update_v1(
     bet.revealed_at = update.revealed_at;
 
     // Store updated bet
-    wasm::db::db_set(bets_db, &serialize(&update.bet_id), &serialize(&bet))?;
+    wasm::db::db_set(bets_db, &update.bet_id.to_repr(), &bet.encode())?;
 
     msg!("[dice::reveal_roll::update] Bet updated");
     Ok(())

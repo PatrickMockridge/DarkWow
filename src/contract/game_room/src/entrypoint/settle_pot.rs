@@ -22,6 +22,7 @@
  */
 
 use dwow_sdk::{
+    crypto::pasta_prelude::PrimeField,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
@@ -52,13 +53,13 @@ pub(crate) fn game_room_settle_pot_process_instruction_v1(
     // Get room
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
     let Some(room_data) =
-        wasm::db::db_get(rooms_db, &dwow_serial::serialize(&params.room_id))?
+        wasm::db::db_get(rooms_db, &params.room_id.to_repr())?
     else {
         msg!("[SettlePot] Error: Room not found");
         return Err(GameRoomError::RoomNotFound.into())
     };
     let room: crate::model::GameRoom =
-        dwow_serial::deserialize(&room_data)?;
+        crate::model::GameRoom::decode(&room_data)?;
 
     // Validate caller is owner DAO (use caller from params, verified by signature)
     let caller = params.caller;
@@ -75,13 +76,13 @@ pub(crate) fn game_room_settle_pot_process_instruction_v1(
 
     // Get pot
     let pots_db = wasm::db::db_lookup(cid, GAME_ROOM_POTS_TREE)?;
-    let Some(pot_data) = wasm::db::db_get(pots_db, &dwow_serial::serialize(&params.pot_id))?
+    let Some(pot_data) = wasm::db::db_get(pots_db, &params.pot_id.to_repr())?
     else {
         msg!("[SettlePot] Error: Pot not found");
         return Err(GameRoomError::PotNotFound.into())
     };
     let mut pot: Pot =
-        dwow_serial::deserialize(&pot_data)?;
+        Pot::decode(&pot_data)?;
 
     // Validate pot state
     if pot.state == PotState::Settled {
@@ -108,7 +109,7 @@ pub(crate) fn game_room_settle_pot_process_instruction_v1(
 
     // Settle the pot
     pot.state = PotState::Settled;
-    wasm::db::db_set(pots_db, &dwow_serial::serialize(&params.pot_id), &dwow_serial::serialize(&pot))?;
+    wasm::db::db_set(pots_db, &params.pot_id.to_repr(), &pot.encode())?;
 
     msg!("[SettlePot] Pot {:?} settled with total {}", params.pot_id, pot.total);
 
@@ -122,7 +123,7 @@ pub(crate) fn game_room_settle_pot_process_instruction_v1(
         winners,
         payouts,
     };
-    Ok(dwow_serial::serialize(&update))
+    Ok(update.encode())
 }
 
 pub(crate) fn game_room_settle_pot_process_update_v1(

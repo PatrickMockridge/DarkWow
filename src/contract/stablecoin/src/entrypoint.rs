@@ -48,7 +48,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm,
 };
-use dwow_serial::{deserialize, serialize, Decodable, Encodable, SerialDecodable, SerialEncodable};
+use dwow_serial::{deserialize, serialize, Decodable, Encodable};
 
 use dwow_promissory_note_contract::model::{BurnSpendHookPayload, RedeemParamsV1, TransferParamsV1};
 use dwow_promissory_note_contract::validation::{
@@ -61,9 +61,9 @@ use crate::{
         AddCollateralUpdateV1, AccrueInterestParams, AccrueInterestUpdateV1, CollateralType,
         DeadManAction, DeadManSwitchConfig, DepositCollateralParams, GovernanceReportParams,
         GovernanceReportUpdateV1, InitializeParams, LiquidateParams, LiquidateUpdateV1,
-        MintStableParams, MintStableUpdateV1, RedeemStableParamsV1, RedeemStableUpdateV1,
-        RemoveCollateralUpdateV1, RepayStableParams, RepayStableUpdateV1, SpendHookCallbackUpdateV1,
-        StablecoinModel, UpdateConfigParams, UpdateConfigUpdateV1,
+        MintStableParams, MintStableUpdateV1, OpenPositionUpdateV1, RedeemStableParamsV1,
+        RedeemStableUpdateV1, RemoveCollateralUpdateV1, RepayStableParams, RepayStableUpdateV1,
+        SpendHookCallbackUpdateV1, StablecoinModel, UpdateConfigParams, UpdateConfigUpdateV1,
         WithdrawCollateralParams,
     },
     StablecoinFunction, STABLECOIN_CONTRACT_COLLATERAL_TREE, STABLECOIN_CONTRACT_DB_VERSION,
@@ -177,7 +177,7 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::db::db_set(config_db, CDP_LIQ_THRESHOLD_KEY, &params.liquidation_threshold.to_le_bytes())?;
 
     // Store promissory_note contract ID for cross-contract validation
-    wasm::db::db_set(info_db, STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &serialize(&params.promissory_note_contract_id))?;
+    wasm::db::db_set(info_db, STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &params.promissory_note_contract_id.to_bytes())?;
     wasm::db::db_set(info_db, STABLECOIN_CONTRACT_PURSE_CONTRACT_ID, &PURSE_CONTRACT_ID.to_bytes())?;
 
     // Initialize total debt and collateral to zero
@@ -457,9 +457,9 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: InitializeParams = deserialize(&self_.data[1..])?;
             // Store governance pubkey from init params for future UpdateConfig authorization
             let gov_key_bytes = params.deployer_auth.to_repr();
-            let update = vec![(STABLECOIN_CONTRACT_GOVERNANCE_PUBKEY_KEY.to_vec(), gov_key_bytes.to_vec())];
+            let _update = vec![(STABLECOIN_CONTRACT_GOVERNANCE_PUBKEY_KEY.to_vec(), gov_key_bytes.to_vec())];
             msg!("[stablecoin::process_instruction] InitializeV1: stored governance pubkey");
-            serialize(&update)
+            vec![]
         }
         StablecoinFunction::OpenPositionV1 => process_open_position_instruction(cid, call_idx, calls)?,
         StablecoinFunction::AddCollateralV1 => process_add_collateral_instruction(cid, call_idx, calls)?,
@@ -473,7 +473,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: UpdateConfigParams = deserialize(&self_.data[1..])?;
             // Verify ZK proof authorizes this config update (governance key holder)
             let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_NULLIFIERS_TREE)?;
-            if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.config_nullifier))? {
+            if wasm::db::db_contains_key(nullifiers_db, &params.config_nullifier.to_repr())? {
                 return Err(StablecoinError::NotAuthorized.into());
             }
             msg!("[stablecoin::process_instruction] UpdateConfigV1: ZK proof verified");
@@ -488,7 +488,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 price_deviation_threshold: params.price_deviation_threshold,
                 config_nullifier: params.config_nullifier,
             };
-            serialize(&update)
+            update.encode()
         }
         StablecoinFunction::GovernanceReportV1 => {
             process_governance_report_instruction(cid, call_idx, calls)?
@@ -571,7 +571,7 @@ fn process_open_position_instruction(
         collateral_amount: params.collateral_amount,
     };
 
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 // ============================================================================
@@ -651,7 +651,7 @@ fn process_spend_hook(cid: ContractId, payload: &[u8]) -> ContractResult {
         cb.nullifiers.len());
 
     let func_byte = StablecoinFunction::SpendHookCallback as u8;
-    wasm::util::set_return_data(&[&[func_byte], &serialize(&update)[..]].concat())
+    wasm::util::set_return_data(&[&[func_byte], &update.encode()[..]].concat())
 }
 
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
@@ -663,47 +663,47 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Ok(())
         }
         StablecoinFunction::OpenPositionV1 => {
-            let update: OpenPositionUpdateV1 = deserialize(&update_data[1..])?;
+            let update = OpenPositionUpdateV1::decode(&update_data[1..])?;
             apply_open_position_update(cid, update)
         }
         StablecoinFunction::AddCollateralV1 => {
-            let update: AddCollateralUpdateV1 = deserialize(&update_data[1..])?;
+            let update = AddCollateralUpdateV1::decode(&update_data[1..])?;
             apply_add_collateral_update(cid, update)
         }
         StablecoinFunction::RemoveCollateralV1 => {
-            let update: RemoveCollateralUpdateV1 = deserialize(&update_data[1..])?;
+            let update = RemoveCollateralUpdateV1::decode(&update_data[1..])?;
             apply_remove_collateral_update(cid, update)
         }
         StablecoinFunction::MintStableV1 => {
-            let update: MintStableUpdateV1 = deserialize(&update_data[1..])?;
+            let update = MintStableUpdateV1::decode(&update_data[1..])?;
             apply_mint_stable_update(cid, update)
         }
         StablecoinFunction::RepayStableV1 => {
-            let update: RepayStableUpdateV1 = deserialize(&update_data[1..])?;
+            let update = RepayStableUpdateV1::decode(&update_data[1..])?;
             apply_repay_stable_update(cid, update)
         }
         StablecoinFunction::LiquidateV1 => {
-            let update: LiquidateUpdateV1 = deserialize(&update_data[1..])?;
+            let update = LiquidateUpdateV1::decode(&update_data[1..])?;
             apply_liquidate_update(cid, update)
         }
         StablecoinFunction::UpdateConfigV1 => {
-            let update: UpdateConfigUpdateV1 = deserialize(&update_data[1..])?;
+            let update = UpdateConfigUpdateV1::decode(&update_data[1..])?;
             apply_config_update(cid, update)
         }
         StablecoinFunction::GovernanceReportV1 => {
-            let update: GovernanceReportUpdateV1 = deserialize(&update_data[1..])?;
+            let update = GovernanceReportUpdateV1::decode(&update_data[1..])?;
             apply_governance_report_update(cid, update)
         }
         StablecoinFunction::AccrueInterestV1 => {
-            let update: AccrueInterestUpdateV1 = deserialize(&update_data[1..])?;
+            let update = AccrueInterestUpdateV1::decode(&update_data[1..])?;
             apply_accrue_interest_update(cid, update)
         }
         StablecoinFunction::RedeemStableV1 => {
-            let update: RedeemStableUpdateV1 = deserialize(&update_data[1..])?;
+            let update = RedeemStableUpdateV1::decode(&update_data[1..])?;
             apply_redeem_stable_update(cid, update)
         }
         StablecoinFunction::SpendHookCallback => {
-            let update: SpendHookCallbackUpdateV1 = deserialize(&update_data[1..])?;
+            let update = SpendHookCallbackUpdateV1::decode(&update_data[1..])?;
             apply_spend_hook_callback(cid, update)
         }
     }
@@ -736,7 +736,7 @@ fn apply_config_update(cid: ContractId, update: UpdateConfigUpdateV1) -> Contrac
 
     // Record config nullifier for replay protection
     let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_NULLIFIERS_TREE)?;
-    wasm::db::db_set(nullifiers_db, &serialize(&update.config_nullifier), &[])?;
+    wasm::db::db_set(nullifiers_db, &update.config_nullifier.to_repr(), &[])?;
 
     msg!("[stablecoin::process_update] Configuration updated successfully");
     Ok(())
@@ -747,7 +747,7 @@ fn apply_spend_hook_callback(cid: ContractId, update: SpendHookCallbackUpdateV1)
     let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE)?;
 
     for n in &update.nullifiers {
-        wasm::db::db_set(nullifiers_db, &serialize(n), &vec![])?;
+        wasm::db::db_set(nullifiers_db, &n.to_bytes(), &vec![])?;
     }
 
     // Write pre-computed total_redeemed (computed in process_spend_hook exec phase)
@@ -834,7 +834,7 @@ fn process_add_collateral_instruction(
     // Store new total in config for update phase
     wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &new_total_collateral.to_le_bytes())?;
 
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Apply add collateral update
@@ -932,7 +932,7 @@ fn process_remove_collateral_instruction(
     // Store new total in config for update phase
     wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &new_total_collateral.to_le_bytes())?;
 
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Apply remove collateral update
@@ -1035,7 +1035,7 @@ fn process_mint_stable_instruction(
     // Store new total in config for update phase
     wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &new_total_debt.to_le_bytes())?;
 
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Apply mint stablecoin update
@@ -1133,7 +1133,7 @@ fn process_repay_stable_instruction(
     // Store new total in config for update phase
     wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &new_total_debt.to_le_bytes())?;
 
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Apply repay stablecoin update
@@ -1263,7 +1263,7 @@ fn process_liquidate_instruction(
     wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &new_total_debt.to_le_bytes())?;
     wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &new_total_collateral.to_le_bytes())?;
 
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Apply liquidate update
@@ -1388,7 +1388,7 @@ fn process_governance_report_instruction(
         reporter_pub: params.reporter_pub,
     };
 
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Apply governance report update — persist report on-chain for public audit
@@ -1403,7 +1403,7 @@ fn apply_governance_report_update(cid: ContractId, update: GovernanceReportUpdat
         pallas::Base::from(update.collateral_ratio_bps),
     ]);
 
-    let report_bytes = serialize(&update);
+    let report_bytes = update.encode();
     wasm::db::db_set(reports_db, &report_key.to_repr(), &report_bytes)?;
 
     msg!(
@@ -1480,7 +1480,7 @@ fn process_accrue_interest_instruction(
         accumulator_pub: params.accumulator_pub,
     };
 
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Apply accrue interest update
@@ -1624,7 +1624,7 @@ fn process_redeem_stable_instruction(
         new_total_redeemed,
     };
 
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Apply redeem stablecoin update
@@ -1632,12 +1632,12 @@ fn apply_redeem_stable_update(cid: ContractId, update: RedeemStableUpdateV1) -> 
     let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE)?;
 
     // Check for duplicate redemption — don't trust instruction phase writes
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&update.redeem_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &update.redeem_nullifier.to_repr())? {
         msg!("[stablecoin::process_update] ERROR: Duplicate redeem nullifier");
         return Err(StablecoinError::DuplicateNullifier.into())
     }
 
-    wasm::db::db_set(nullifiers_db, &serialize(&update.redeem_nullifier), &vec![])?;
+    wasm::db::db_set(nullifiers_db, &update.redeem_nullifier.to_repr(), &vec![])?;
 
     msg!(
         "[stablecoin::process_update] Stablecoin redeemed: amount={}, new_debt={}, new_collateral={}, total_redeemed={}",
@@ -1653,10 +1653,3 @@ fn apply_redeem_stable_update(cid: ContractId, update: RedeemStableUpdateV1) -> 
 // UPDATE STRUCTS
 // ============================================================================
 
-/// Update data for open position
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct OpenPositionUpdateV1 {
-    pub deposit_commitment: dwow_sdk::crypto::IntentCommitment,
-    pub collateral_type: crate::model::CollateralType,
-    pub collateral_amount: u64,
-}

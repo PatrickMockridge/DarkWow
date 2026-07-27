@@ -49,9 +49,9 @@
 
 use dwow_sdk::{
     crypto::{pasta_prelude::Group, ContractId, MerkleNode},
-    pasta::pallas,
+    error::ContractError,
+    pasta::{group::GroupEncoding, pallas},
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // ============================================================================
 // CONSTANTS
@@ -114,7 +114,7 @@ impl CoinAttributes {
 // ============================================================================
 
 /// Nullifier for double-spend prevention.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Nullifier(pallas::Base);
 
 impl Nullifier {
@@ -129,6 +129,19 @@ impl Nullifier {
     pub fn from_base(base: pallas::Base) -> Self {
         Nullifier(base)
     }
+
+    pub fn to_bytes(&self) -> [u8; 32] {
+        self.0.to_repr()
+    }
+
+    pub fn from_bytes(b: &[u8]) -> Option<Self> {
+        if b.len() != 32 {
+            return None;
+        }
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(b);
+        pallas::Base::from_repr(arr).into_option().map(Self)
+    }
 }
 
 // ============================================================================
@@ -136,7 +149,7 @@ impl Nullifier {
 // ============================================================================
 
 /// Status of a bond series.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SeriesStatus {
     /// Series is active — stakes, transfers, and interest claims are allowed
@@ -147,10 +160,23 @@ pub enum SeriesStatus {
     Matured = 2,
 }
 
+impl TryFrom<u8> for SeriesStatus {
+    type Error = ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(SeriesStatus::Active),
+            1 => Ok(SeriesStatus::Voided),
+            2 => Ok(SeriesStatus::Matured),
+            _ => Err(ContractError::IoError(format!("Invalid SeriesStatus: {}", b))),
+        }
+    }
+}
+
 /// Per-series configuration stored in the `bonds_info` tree.
 ///
 /// Keyed by `poseidon_hash(series_token_id)`.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct BondSeriesInfo {
     /// Token ID of the staking pool series
     pub series_token_id: pallas::Base,
@@ -166,6 +192,40 @@ pub struct BondSeriesInfo {
     pub total_staked: u64,
 }
 
+impl BondSeriesInfo {
+    pub const ENCODED_SIZE: usize = 89;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(89);
+        b.extend_from_slice(&self.series_token_id.to_repr());
+        b.extend_from_slice(&self.interest_rate_bps.to_le_bytes());
+        b.extend_from_slice(&self.maturity_block.to_le_bytes());
+        b.push(self.status as u8);
+        b.extend_from_slice(&self.issuer_contract.to_bytes());
+        b.extend_from_slice(&self.total_staked.to_le_bytes());
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 89 {
+            return Err(ContractError::IoError(format!(
+                "BondSeriesInfo: expected 89 bytes, got {}",
+                data.len()
+            )));
+        }
+        Ok(BondSeriesInfo {
+            series_token_id: pallas::Base::from_repr(data[0..32].try_into().unwrap())
+                .into_option()
+                .ok_or_else(|| ContractError::IoError("BondSeriesInfo: invalid series_token_id".into()))?,
+            interest_rate_bps: u64::from_le_bytes(data[32..40].try_into().unwrap()),
+            maturity_block: u64::from_le_bytes(data[40..48].try_into().unwrap()),
+            status: SeriesStatus::try_from(data[48])?,
+            issuer_contract: ContractId::from_bytes(data[49..81].try_into().unwrap())?,
+            total_staked: u64::from_le_bytes(data[81..89].try_into().unwrap()),
+        })
+    }
+}
+
 // ============================================================================
 // STAKE COIN
 // ============================================================================
@@ -174,7 +234,7 @@ pub struct BondSeriesInfo {
 ///
 /// Stake coins are tracked in a Merkle tree. Each coin carries staking
 /// metadata: value_commit (Pedersen), last_claim_block, maturity_block, and issuer_contract.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct BondCoin {
     /// Pedersen commitment of the principal value (additively homomorphic)
     pub value_commit: pallas::Point,
@@ -196,6 +256,57 @@ pub struct BondCoin {
     pub maturity_block: u64,
     /// Issuer contract ID
     pub issuer_contract: ContractId,
+}
+
+impl BondCoin {
+    pub const ENCODED_SIZE: usize = 272;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(272);
+        b.extend_from_slice(&self.value_commit.to_bytes());
+        b.extend_from_slice(&self.token_commit.to_repr());
+        b.extend_from_slice(&self.nullifier.to_bytes());
+        b.extend_from_slice(&self.merkle_root.to_bytes());
+        b.extend_from_slice(&self.user_data_enc.to_repr());
+        b.extend_from_slice(&self.spend_hook.to_repr());
+        b.extend_from_slice(&self.signature_public.to_repr());
+        b.extend_from_slice(&self.last_claim_block.to_le_bytes());
+        b.extend_from_slice(&self.maturity_block.to_le_bytes());
+        b.extend_from_slice(&self.issuer_contract.to_bytes());
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 272 {
+            return Err(ContractError::IoError(format!(
+                "BondCoin: expected 272 bytes, got {}",
+                data.len()
+            )));
+        }
+        Ok(BondCoin {
+            value_commit: Option::<pallas::Point>::from(pallas::Point::from_bytes(&data[0..32].try_into().unwrap()).into())
+                .ok_or_else(|| ContractError::IoError("BondCoin: invalid value_commit".into()))?,
+            token_commit: pallas::Base::from_repr(data[32..64].try_into().unwrap())
+                .into_option()
+                .ok_or_else(|| ContractError::IoError("BondCoin: invalid token_commit".into()))?,
+            nullifier: Nullifier::from_bytes(&data[64..96])
+                .ok_or_else(|| ContractError::IoError("BondCoin: invalid nullifier".into()))?,
+            merkle_root: MerkleNode::from_bytes(data[96..128].try_into().unwrap())
+                .ok_or_else(|| ContractError::IoError("BondCoin: invalid merkle_root".into()))?,
+            user_data_enc: pallas::Base::from_repr(data[128..160].try_into().unwrap())
+                .into_option()
+                .ok_or_else(|| ContractError::IoError("BondCoin: invalid user_data_enc".into()))?,
+            spend_hook: pallas::Base::from_repr(data[160..192].try_into().unwrap())
+                .into_option()
+                .ok_or_else(|| ContractError::IoError("BondCoin: invalid spend_hook".into()))?,
+            signature_public: pallas::Base::from_repr(data[192..224].try_into().unwrap())
+                .into_option()
+                .ok_or_else(|| ContractError::IoError("BondCoin: invalid signature_public".into()))?,
+            last_claim_block: u64::from_le_bytes(data[224..232].try_into().unwrap()),
+            maturity_block: u64::from_le_bytes(data[232..240].try_into().unwrap()),
+            issuer_contract: ContractId::from_bytes(data[240..272].try_into().unwrap())?,
+        })
+    }
 }
 
 impl Default for BondCoin {
@@ -249,7 +360,7 @@ pub struct BondCoinWitness {
 ///
 /// Maturity is derived from the bond series (BondSeriesInfo), not set by
 /// the wallet at issuance time.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct IssueStakeParamsV1 {
     /// Minimum claim value (dust protection)
     pub min_claim: u64,
@@ -261,10 +372,62 @@ pub struct IssueStakeParamsV1 {
     pub coin: BondCoin,
 }
 
+impl IssueStakeParamsV1 {
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 72 + BondCoin::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "IssueStakeParamsV1: expected at least {} bytes, got {}",
+                72 + BondCoin::ENCODED_SIZE,
+                data.len()
+            )));
+        }
+        let min_claim = u64::from_le_bytes(data[0..8].try_into().unwrap());
+        let issuer_contract = ContractId::from_bytes(data[8..40].try_into().unwrap())?;
+        let token_id = pallas::Base::from_repr(data[40..72].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("IssueStakeParamsV1: invalid token_id".into()))?;
+        let coin = BondCoin::decode(&data[72..])?;
+        Ok(IssueStakeParamsV1 { min_claim, issuer_contract, token_id, coin })
+    }
+}
+
 /// State update for IssueStakeV1.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct IssueStakeUpdateV1 {
     pub coins: Vec<BondCoin>,
+}
+
+impl IssueStakeUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 1 + self.coins.len() * BondCoin::ENCODED_SIZE;
+        let mut b = Vec::with_capacity(cap);
+        b.push(self.coins.len() as u8);
+        for coin in &self.coins {
+            b.extend_from_slice(&coin.encode());
+        }
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() {
+            return Err(ContractError::IoError("IssueStakeUpdateV1: empty data".into()));
+        }
+        let count = data[0] as usize;
+        let expected = 1 + count * BondCoin::ENCODED_SIZE;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "IssueStakeUpdateV1: expected {} bytes, got {}",
+                expected,
+                data.len()
+            )));
+        }
+        let mut coins = Vec::with_capacity(count);
+        for i in 0..count {
+            let start = 1 + i * BondCoin::ENCODED_SIZE;
+            coins.push(BondCoin::decode(&data[start..start + BondCoin::ENCODED_SIZE])?);
+        }
+        Ok(IssueStakeUpdateV1 { coins })
+    }
 }
 
 // ============================================================================
@@ -272,7 +435,7 @@ pub struct IssueStakeUpdateV1 {
 // ============================================================================
 
 /// On-chain input for TransferStakeV1 — proves ownership of an existing stake.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct BondInput {
     /// Pedersen commitment of the principal
     pub value_commit: pallas::Point,
@@ -288,6 +451,51 @@ pub struct BondInput {
     pub spend_hook: pallas::Base,
     /// Signature public key
     pub signature_public: pallas::Base,
+}
+
+impl BondInput {
+    pub const ENCODED_SIZE: usize = 224;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(224);
+        b.extend_from_slice(&self.value_commit.to_bytes());
+        b.extend_from_slice(&self.token_commit.to_repr());
+        b.extend_from_slice(&self.nullifier.to_bytes());
+        b.extend_from_slice(&self.merkle_root.to_bytes());
+        b.extend_from_slice(&self.user_data_enc.to_repr());
+        b.extend_from_slice(&self.spend_hook.to_repr());
+        b.extend_from_slice(&self.signature_public.to_repr());
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 224 {
+            return Err(ContractError::IoError(format!(
+                "BondInput: expected 224 bytes, got {}",
+                data.len()
+            )));
+        }
+        Ok(BondInput {
+            value_commit: Option::<pallas::Point>::from(pallas::Point::from_bytes(&data[0..32].try_into().unwrap()).into())
+                .ok_or_else(|| ContractError::IoError("BondInput: invalid value_commit".into()))?,
+            token_commit: pallas::Base::from_repr(data[32..64].try_into().unwrap())
+                .into_option()
+                .ok_or_else(|| ContractError::IoError("BondInput: invalid token_commit".into()))?,
+            nullifier: Nullifier::from_bytes(&data[64..96])
+                .ok_or_else(|| ContractError::IoError("BondInput: invalid nullifier".into()))?,
+            merkle_root: MerkleNode::from_bytes(data[96..128].try_into().unwrap())
+                .ok_or_else(|| ContractError::IoError("BondInput: invalid merkle_root".into()))?,
+            user_data_enc: pallas::Base::from_repr(data[128..160].try_into().unwrap())
+                .into_option()
+                .ok_or_else(|| ContractError::IoError("BondInput: invalid user_data_enc".into()))?,
+            spend_hook: pallas::Base::from_repr(data[160..192].try_into().unwrap())
+                .into_option()
+                .ok_or_else(|| ContractError::IoError("BondInput: invalid spend_hook".into()))?,
+            signature_public: pallas::Base::from_repr(data[192..224].try_into().unwrap())
+                .into_option()
+                .ok_or_else(|| ContractError::IoError("BondInput: invalid signature_public".into()))?,
+        })
+    }
 }
 
 /// Client-side witness for transfer input.
@@ -309,17 +517,84 @@ pub struct BondInputWitness {
 }
 
 /// Parameters for TransferStakeV1 — burn old stake, create new with same metadata.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct TransferStakeParamsV1 {
     pub inputs: Vec<BondInput>,
     pub outputs: Vec<BondCoin>,
 }
 
+impl TransferStakeParamsV1 {
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 2 {
+            return Err(ContractError::IoError("TransferStakeParamsV1: data too short".into()));
+        }
+        let input_count = data[0] as usize;
+        let mut pos = 1usize;
+        let mut inputs = Vec::with_capacity(input_count);
+        for _ in 0..input_count {
+            inputs.push(BondInput::decode(&data[pos..pos + BondInput::ENCODED_SIZE])?);
+            pos += BondInput::ENCODED_SIZE;
+        }
+        if pos >= data.len() {
+            return Err(ContractError::IoError("TransferStakeParamsV1: missing output count".into()));
+        }
+        let output_count = data[pos] as usize;
+        pos += 1;
+        let mut outputs = Vec::with_capacity(output_count);
+        for _ in 0..output_count {
+            outputs.push(BondCoin::decode(&data[pos..pos + BondCoin::ENCODED_SIZE])?);
+            pos += BondCoin::ENCODED_SIZE;
+        }
+        Ok(TransferStakeParamsV1 { inputs, outputs })
+    }
+}
+
 /// State update for TransferStakeV1.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct TransferStakeUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
     pub coins: Vec<BondCoin>,
+}
+
+impl TransferStakeUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 2 + self.nullifiers.len() * 32 + self.coins.len() * BondCoin::ENCODED_SIZE;
+        let mut b = Vec::with_capacity(cap);
+        b.push(self.nullifiers.len() as u8);
+        for n in &self.nullifiers {
+            b.extend_from_slice(&n.to_bytes());
+        }
+        b.push(self.coins.len() as u8);
+        for coin in &self.coins {
+            b.extend_from_slice(&coin.encode());
+        }
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 2 {
+            return Err(ContractError::IoError("TransferStakeUpdateV1: data too short".into()));
+        }
+        let null_count = data[0] as usize;
+        let mut pos = 1usize;
+        let mut nullifiers = Vec::with_capacity(null_count);
+        for _ in 0..null_count {
+            nullifiers.push(Nullifier::from_bytes(&data[pos..pos + 32])
+                .ok_or_else(|| ContractError::IoError("TransferStakeUpdateV1: invalid nullifier".into()))?);
+            pos += 32;
+        }
+        if pos >= data.len() {
+            return Err(ContractError::IoError("TransferStakeUpdateV1: missing coin count".into()));
+        }
+        let coin_count = data[pos] as usize;
+        pos += 1;
+        let mut coins = Vec::with_capacity(coin_count);
+        for _ in 0..coin_count {
+            coins.push(BondCoin::decode(&data[pos..pos + BondCoin::ENCODED_SIZE])?);
+            pos += BondCoin::ENCODED_SIZE;
+        }
+        Ok(TransferStakeUpdateV1 { nullifiers, coins })
+    }
 }
 
 // ============================================================================
@@ -327,7 +602,7 @@ pub struct TransferStakeUpdateV1 {
 // ============================================================================
 
 /// Status of an interest claim request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ClaimStatus {
     /// Claim is awaiting payment from the issuer
@@ -336,12 +611,24 @@ pub enum ClaimStatus {
     Paid = 1,
 }
 
+impl TryFrom<u8> for ClaimStatus {
+    type Error = ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(ClaimStatus::Pending),
+            1 => Ok(ClaimStatus::Paid),
+            _ => Err(ContractError::IoError(format!("Invalid ClaimStatus: {}", b))),
+        }
+    }
+}
+
 /// An on-chain record of a holder's interest claim request.
 ///
 /// Like a physical bond coupon — the holder presents it, the issuer pays
 /// against it. Stored in the `bonds_info` tree keyed by
 /// `(token_commit, claim_block)`.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RequestedClaim {
     /// Interest amount owed (computed deterministically)
     pub interest_amount: u64,
@@ -349,6 +636,34 @@ pub struct RequestedClaim {
     pub payment_key: pallas::Base,
     /// Claim status
     pub status: ClaimStatus,
+}
+
+impl RequestedClaim {
+    pub const ENCODED_SIZE: usize = 41;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(41);
+        b.extend_from_slice(&self.interest_amount.to_le_bytes());
+        b.extend_from_slice(&self.payment_key.to_repr());
+        b.push(self.status as u8);
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 41 {
+            return Err(ContractError::IoError(format!(
+                "RequestedClaim: expected 41 bytes, got {}",
+                data.len()
+            )));
+        }
+        Ok(RequestedClaim {
+            interest_amount: u64::from_le_bytes(data[0..8].try_into().unwrap()),
+            payment_key: pallas::Base::from_repr(data[8..40].try_into().unwrap())
+                .into_option()
+                .ok_or_else(|| ContractError::IoError("RequestedClaim: invalid payment_key".into()))?,
+            status: ClaimStatus::try_from(data[40])?,
+        })
+    }
 }
 
 /// Parameters for RequestInterestV1 — holder requests interest payment.
@@ -365,7 +680,7 @@ pub struct RequestedClaim {
 ///
 /// `last_claim_block` is NOT updated yet — only when the issuer pays.
 /// The pending claim record blocks duplicate claims for the same period.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RequestInterestParamsV1 {
     /// The stake coin being claimed against (not consumed)
     pub bond_input: BondInput,
@@ -377,8 +692,28 @@ pub struct RequestInterestParamsV1 {
     pub min_claim: u64,
 }
 
+impl RequestInterestParamsV1 {
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < BondInput::ENCODED_SIZE + 48 {
+            return Err(ContractError::IoError(format!(
+                "RequestInterestParamsV1: expected at least {} bytes, got {}",
+                BondInput::ENCODED_SIZE + 48,
+                data.len()
+            )));
+        }
+        let bond_input = BondInput::decode(&data[..BondInput::ENCODED_SIZE])?;
+        let pos = BondInput::ENCODED_SIZE;
+        let claim_block = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        let payment_key = pallas::Base::from_repr(data[pos + 8..pos + 40].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("RequestInterestParamsV1: invalid payment_key".into()))?;
+        let min_claim = u64::from_le_bytes(data[pos + 40..pos + 48].try_into().unwrap());
+        Ok(RequestInterestParamsV1 { bond_input, claim_block, payment_key, min_claim })
+    }
+}
+
 /// State update for RequestInterestV1 — stores the claim record on-chain.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RequestInterestUpdateV1 {
     /// Token commit of the bond being claimed against
     pub bond_token_commit: pallas::Base,
@@ -386,6 +721,34 @@ pub struct RequestInterestUpdateV1 {
     pub claim_block: u64,
     /// The claim record to store
     pub claim: RequestedClaim,
+}
+
+impl RequestInterestUpdateV1 {
+    pub const ENCODED_SIZE: usize = 81;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(81);
+        b.extend_from_slice(&self.bond_token_commit.to_repr());
+        b.extend_from_slice(&self.claim_block.to_le_bytes());
+        b.extend_from_slice(&self.claim.encode());
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 81 {
+            return Err(ContractError::IoError(format!(
+                "RequestInterestUpdateV1: expected 81 bytes, got {}",
+                data.len()
+            )));
+        }
+        Ok(RequestInterestUpdateV1 {
+            bond_token_commit: pallas::Base::from_repr(data[0..32].try_into().unwrap())
+                .into_option()
+                .ok_or_else(|| ContractError::IoError("RequestInterestUpdateV1: invalid bond_token_commit".into()))?,
+            claim_block: u64::from_le_bytes(data[32..40].try_into().unwrap()),
+            claim: RequestedClaim::decode(&data[40..81])?,
+        })
+    }
 }
 
 // ============================================================================
@@ -398,7 +761,7 @@ pub struct RequestInterestUpdateV1 {
 /// (via latest CoverageReport), and creates a fresh payment coin
 /// (BlindOutput_V1) addressed to the holder's one-time `payment_key`.
 /// Updates `last_claim_block` on the stake coin and marks the claim Paid.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct PayInterestParamsV1 {
     /// Token commit identifying the bond
     pub bond_token_commit: pallas::Base,
@@ -408,8 +771,26 @@ pub struct PayInterestParamsV1 {
     pub interest_coin: BondCoin,
 }
 
+impl PayInterestParamsV1 {
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 40 + BondCoin::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "PayInterestParamsV1: expected at least {} bytes, got {}",
+                40 + BondCoin::ENCODED_SIZE,
+                data.len()
+            )));
+        }
+        let bond_token_commit = pallas::Base::from_repr(data[0..32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("PayInterestParamsV1: invalid bond_token_commit".into()))?;
+        let claim_block = u64::from_le_bytes(data[32..40].try_into().unwrap());
+        let interest_coin = BondCoin::decode(&data[40..])?;
+        Ok(PayInterestParamsV1 { bond_token_commit, claim_block, interest_coin })
+    }
+}
+
 /// State update for PayInterestV1 — updates stake coin and stores payment.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct PayInterestUpdateV1 {
     /// Stake coin with updated last_claim_block
     pub updated_coin: BondCoin,
@@ -423,6 +804,38 @@ pub struct PayInterestUpdateV1 {
     pub claim: RequestedClaim,
 }
 
+impl PayInterestUpdateV1 {
+    pub const ENCODED_SIZE: usize = 665;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(665);
+        b.extend_from_slice(&self.updated_coin.encode());
+        b.extend_from_slice(&self.interest_coin.encode());
+        b.extend_from_slice(&self.bond_token_commit.to_repr());
+        b.extend_from_slice(&self.claim_block.to_le_bytes());
+        b.extend_from_slice(&self.claim.encode());
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 665 {
+            return Err(ContractError::IoError(format!(
+                "PayInterestUpdateV1: expected 665 bytes, got {}",
+                data.len()
+            )));
+        }
+        Ok(PayInterestUpdateV1 {
+            updated_coin: BondCoin::decode(&data[0..272])?,
+            interest_coin: BondCoin::decode(&data[272..544])?,
+            bond_token_commit: pallas::Base::from_repr(data[544..576].try_into().unwrap())
+                .into_option()
+                .ok_or_else(|| ContractError::IoError("PayInterestUpdateV1: invalid bond_token_commit".into()))?,
+            claim_block: u64::from_le_bytes(data[576..584].try_into().unwrap()),
+            claim: RequestedClaim::decode(&data[584..625])?,
+        })
+    }
+}
+
 // ============================================================================
 // EMERGENCY UNSTAKE
 // ============================================================================
@@ -431,19 +844,67 @@ pub struct PayInterestUpdateV1 {
 ///
 /// Only valid when the latest coverage report shows
 /// `coverage_ratio_bps < MIN_COVERAGE_RATIO_BPS` for the series.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct EmergencyUnstakeParamsV1 {
     pub bond_input: BondInput,
     /// Coverage report proving the series is under-collateralized
     pub coverage_report: CoverageReport,
 }
 
+impl EmergencyUnstakeParamsV1 {
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < BondInput::ENCODED_SIZE + CoverageReport::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "EmergencyUnstakeParamsV1: expected at least {} bytes, got {}",
+                BondInput::ENCODED_SIZE + CoverageReport::ENCODED_SIZE,
+                data.len()
+            )));
+        }
+        let bond_input = BondInput::decode(&data[..BondInput::ENCODED_SIZE])?;
+        let coverage_report = CoverageReport::decode(&data[BondInput::ENCODED_SIZE..])?;
+        Ok(EmergencyUnstakeParamsV1 { bond_input, coverage_report })
+    }
+}
+
 /// State update for EmergencyUnstakeV1.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct EmergencyUnstakeUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
     /// Receipt coin proving emergency unstake
     pub receipt_coin: BondCoin,
+}
+
+impl EmergencyUnstakeUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 1 + self.nullifiers.len() * 32 + 1 + BondCoin::ENCODED_SIZE;
+        let mut b = Vec::with_capacity(cap);
+        b.push(self.nullifiers.len() as u8);
+        for n in &self.nullifiers {
+            b.extend_from_slice(&n.to_bytes());
+        }
+        b.push(1u8);
+        b.extend_from_slice(&self.receipt_coin.encode());
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 2 + 32 + BondCoin::ENCODED_SIZE {
+            return Err(ContractError::IoError("EmergencyUnstakeUpdateV1: data too short".into()));
+        }
+        let null_count = data[0] as usize;
+        if data.len() < 1 + null_count * 32 + 1 + BondCoin::ENCODED_SIZE {
+            return Err(ContractError::IoError("EmergencyUnstakeUpdateV1: data too short for nullifiers".into()));
+        }
+        let mut nullifiers = Vec::with_capacity(null_count);
+        for i in 0..null_count {
+            let start = 1 + i * 32;
+            nullifiers.push(Nullifier::from_bytes(&data[start..start + 32])
+                .ok_or_else(|| ContractError::IoError("EmergencyUnstakeUpdateV1: invalid nullifier".into()))?);
+        }
+        let coin_pos = 1 + null_count * 32 + 1;
+        let receipt_coin = BondCoin::decode(&data[coin_pos..coin_pos + BondCoin::ENCODED_SIZE])?;
+        Ok(EmergencyUnstakeUpdateV1 { nullifiers, receipt_coin })
+    }
 }
 
 // ============================================================================
@@ -451,19 +912,67 @@ pub struct EmergencyUnstakeUpdateV1 {
 // ============================================================================
 
 /// Parameters for UnstakeV1 — withdraw principal at maturity.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct UnstakeParamsV1 {
     pub bond_input: BondInput,
     /// Current block height (public input, verified by host)
     pub current_block: u64,
 }
 
+impl UnstakeParamsV1 {
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < BondInput::ENCODED_SIZE + 8 {
+            return Err(ContractError::IoError(format!(
+                "UnstakeParamsV1: expected at least {} bytes, got {}",
+                BondInput::ENCODED_SIZE + 8,
+                data.len()
+            )));
+        }
+        let bond_input = BondInput::decode(&data[..BondInput::ENCODED_SIZE])?;
+        let current_block = u64::from_le_bytes(data[BondInput::ENCODED_SIZE..BondInput::ENCODED_SIZE + 8].try_into().unwrap());
+        Ok(UnstakeParamsV1 { bond_input, current_block })
+    }
+}
+
 /// State update for UnstakeV1.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct UnstakeUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
     /// Receipt coin proving unstake
     pub receipt_coin: BondCoin,
+}
+
+impl UnstakeUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 1 + self.nullifiers.len() * 32 + 1 + BondCoin::ENCODED_SIZE;
+        let mut b = Vec::with_capacity(cap);
+        b.push(self.nullifiers.len() as u8);
+        for n in &self.nullifiers {
+            b.extend_from_slice(&n.to_bytes());
+        }
+        b.push(1u8);
+        b.extend_from_slice(&self.receipt_coin.encode());
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 2 + 32 + BondCoin::ENCODED_SIZE {
+            return Err(ContractError::IoError("UnstakeUpdateV1: data too short".into()));
+        }
+        let null_count = data[0] as usize;
+        if data.len() < 1 + null_count * 32 + 1 + BondCoin::ENCODED_SIZE {
+            return Err(ContractError::IoError("UnstakeUpdateV1: data too short for nullifiers".into()));
+        }
+        let mut nullifiers = Vec::with_capacity(null_count);
+        for i in 0..null_count {
+            let start = 1 + i * 32;
+            nullifiers.push(Nullifier::from_bytes(&data[start..start + 32])
+                .ok_or_else(|| ContractError::IoError("UnstakeUpdateV1: invalid nullifier".into()))?);
+        }
+        let coin_pos = 1 + null_count * 32 + 1;
+        let receipt_coin = BondCoin::decode(&data[coin_pos..coin_pos + BondCoin::ENCODED_SIZE])?;
+        Ok(UnstakeUpdateV1 { nullifiers, receipt_coin })
+    }
 }
 
 // ============================================================================
@@ -471,15 +980,72 @@ pub struct UnstakeUpdateV1 {
 // ============================================================================
 
 /// Parameters for BurnStakeV1 — issuer retires staking pool.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct BurnStakeParamsV1 {
     pub inputs: Vec<BondInput>,
 }
 
+impl BurnStakeParamsV1 {
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() {
+            return Err(ContractError::IoError("BurnStakeParamsV1: empty data".into()));
+        }
+        let count = data[0] as usize;
+        let expected = 1 + count * BondInput::ENCODED_SIZE;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "BurnStakeParamsV1: expected {} bytes, got {}",
+                expected,
+                data.len()
+            )));
+        }
+        let mut inputs = Vec::with_capacity(count);
+        for i in 0..count {
+            let start = 1 + i * BondInput::ENCODED_SIZE;
+            inputs.push(BondInput::decode(&data[start..start + BondInput::ENCODED_SIZE])?);
+        }
+        Ok(BurnStakeParamsV1 { inputs })
+    }
+}
+
 /// State update for BurnStakeV1.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct BurnStakeUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
+}
+
+impl BurnStakeUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 1 + self.nullifiers.len() * 32;
+        let mut b = Vec::with_capacity(cap);
+        b.push(self.nullifiers.len() as u8);
+        for n in &self.nullifiers {
+            b.extend_from_slice(&n.to_bytes());
+        }
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() {
+            return Err(ContractError::IoError("BurnStakeUpdateV1: empty data".into()));
+        }
+        let count = data[0] as usize;
+        let expected = 1 + count * 32;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "BurnStakeUpdateV1: expected {} bytes, got {}",
+                expected,
+                data.len()
+            )));
+        }
+        let mut nullifiers = Vec::with_capacity(count);
+        for i in 0..count {
+            let start = 1 + i * 32;
+            nullifiers.push(Nullifier::from_bytes(&data[start..start + 32])
+                .ok_or_else(|| ContractError::IoError("BurnStakeUpdateV1: invalid nullifier".into()))?);
+        }
+        Ok(BurnStakeUpdateV1 { nullifiers })
+    }
 }
 
 // ============================================================================
@@ -527,7 +1093,7 @@ pub fn calculate_interest(
 /// and constrains it against the submitted value. The entrypoint
 /// independently verifies `reserve_amount >= total_outstanding + total_interest_obligation`
 /// (>= 100% coverage required for both principal and interest).
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ProveCoverageParamsV1 {
     /// Staking pool series identifier
     pub series_token_id: pallas::Base,
@@ -545,11 +1111,40 @@ pub struct ProveCoverageParamsV1 {
     pub proof: Vec<u8>,
 }
 
+impl ProveCoverageParamsV1 {
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 72 {
+            return Err(ContractError::IoError(format!(
+                "ProveCoverageParamsV1: expected at least 72 bytes, got {}",
+                data.len()
+            )));
+        }
+        let series_token_id = pallas::Base::from_repr(data[0..32].try_into().unwrap())
+            .into_option()
+            .ok_or_else(|| ContractError::IoError("ProveCoverageParamsV1: invalid series_token_id".into()))?;
+        let total_outstanding = u64::from_le_bytes(data[32..40].try_into().unwrap());
+        let total_interest_obligation = u64::from_le_bytes(data[40..48].try_into().unwrap());
+        let reserve_amount = u64::from_le_bytes(data[48..56].try_into().unwrap());
+        let coverage_ratio_bps = u64::from_le_bytes(data[56..64].try_into().unwrap());
+        let report_block = u64::from_le_bytes(data[64..72].try_into().unwrap());
+        let proof = data[72..].to_vec();
+        Ok(ProveCoverageParamsV1 {
+            series_token_id,
+            total_outstanding,
+            total_interest_obligation,
+            reserve_amount,
+            coverage_ratio_bps,
+            report_block,
+            proof,
+        })
+    }
+}
+
 /// On-chain record of a coverage report.
 ///
 /// Stored in the `bonds_info` tree keyed by
 /// `poseidon_hash(series_token_id, report_block)`.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CoverageReport {
     /// Staking pool series identifier
     pub series_token_id: pallas::Base,
@@ -566,8 +1161,53 @@ pub struct CoverageReport {
     pub report_block: u64,
 }
 
+impl CoverageReport {
+    pub const ENCODED_SIZE: usize = 72;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(72);
+        b.extend_from_slice(&self.series_token_id.to_repr());
+        b.extend_from_slice(&self.total_outstanding.to_le_bytes());
+        b.extend_from_slice(&self.total_interest_obligation.to_le_bytes());
+        b.extend_from_slice(&self.reserve_amount.to_le_bytes());
+        b.extend_from_slice(&self.coverage_ratio_bps.to_le_bytes());
+        b.extend_from_slice(&self.report_block.to_le_bytes());
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 72 {
+            return Err(ContractError::IoError(format!(
+                "CoverageReport: expected 72 bytes, got {}",
+                data.len()
+            )));
+        }
+        Ok(CoverageReport {
+            series_token_id: pallas::Base::from_repr(data[0..32].try_into().unwrap())
+                .into_option()
+                .ok_or_else(|| ContractError::IoError("CoverageReport: invalid series_token_id".into()))?,
+            total_outstanding: u64::from_le_bytes(data[32..40].try_into().unwrap()),
+            total_interest_obligation: u64::from_le_bytes(data[40..48].try_into().unwrap()),
+            reserve_amount: u64::from_le_bytes(data[48..56].try_into().unwrap()),
+            coverage_ratio_bps: u64::from_le_bytes(data[56..64].try_into().unwrap()),
+            report_block: u64::from_le_bytes(data[64..72].try_into().unwrap()),
+        })
+    }
+}
+
 /// State update for ProveCoverageV1.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ProveCoverageUpdateV1 {
     pub report: CoverageReport,
+}
+
+impl ProveCoverageUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        self.report.encode()
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        let report = CoverageReport::decode(data)?;
+        Ok(ProveCoverageUpdateV1 { report })
+    }
 }

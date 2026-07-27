@@ -446,53 +446,53 @@ fn process_update(cid: dwow_sdk::crypto::ContractId, update_data: &[u8]) -> Cont
     match GameRoomFunction::try_from(update_data[0])? {
         GameRoomFunction::CreateRoomV1 => {
             let update: model::CreateRoomUpdateV1 =
-                dwow_serial::deserialize(&update_data[1..])?;
+                model::CreateRoomUpdateV1::decode(&update_data[1..])?;
             Ok(entrypoint::create_room::game_room_create_process_update_v1(cid, update)?)
         }
         GameRoomFunction::DepositV1 => {
             let update: model::DepositUpdateV1 =
-                dwow_serial::deserialize(&update_data[1..])?;
+                model::DepositUpdateV1::decode(&update_data[1..])?;
             Ok(entrypoint::deposit::game_room_deposit_process_update_v1(cid, update)?)
         }
         GameRoomFunction::WithdrawV1 => {
             let update: model::WithdrawUpdateV1 =
-                dwow_serial::deserialize(&update_data[1..])?;
+                model::WithdrawUpdateV1::decode(&update_data[1..])?;
             Ok(entrypoint::withdraw::game_room_withdraw_process_update_v1(cid, update)?)
         }
         GameRoomFunction::PlaceBetV1 => {
             let update: model::PlaceBetUpdateV1 =
-                dwow_serial::deserialize(&update_data[1..])?;
+                model::PlaceBetUpdateV1::decode(&update_data[1..])?;
             Ok(entrypoint::place_bet::game_room_place_bet_process_update_v1(cid, update)?)
         }
         GameRoomFunction::RaiseV1 => {
-            let update: model::RaiseUpdateV1 = dwow_serial::deserialize(&update_data[1..])?;
+            let update: model::RaiseUpdateV1 = model::RaiseUpdateV1::decode(&update_data[1..])?;
             Ok(entrypoint::raise::game_room_raise_process_update_v1(cid, update)?)
         }
         GameRoomFunction::CallV1 => {
-            let update: model::CallUpdateV1 = dwow_serial::deserialize(&update_data[1..])?;
+            let update: model::CallUpdateV1 = model::CallUpdateV1::decode(&update_data[1..])?;
             Ok(entrypoint::call::game_room_call_process_update_v1(cid, update)?)
         }
         GameRoomFunction::FoldV1 => {
-            let update: model::FoldUpdateV1 = dwow_serial::deserialize(&update_data[1..])?;
+            let update: model::FoldUpdateV1 = model::FoldUpdateV1::decode(&update_data[1..])?;
             Ok(entrypoint::fold::game_room_fold_process_update_v1(cid, update)?)
         }
         GameRoomFunction::ClosePotV1 => {
             let update: model::ClosePotUpdateV1 =
-                dwow_serial::deserialize(&update_data[1..])?;
+                model::ClosePotUpdateV1::decode(&update_data[1..])?;
             Ok(entrypoint::close_pot::game_room_close_pot_process_update_v1(cid, update)?)
         }
         GameRoomFunction::SettlePotV1 => {
             let update: model::SettlePotUpdateV1 =
-                dwow_serial::deserialize(&update_data[1..])?;
+                model::SettlePotUpdateV1::decode(&update_data[1..])?;
             Ok(entrypoint::settle_pot::game_room_settle_pot_process_update_v1(cid, update)?)
         }
         GameRoomFunction::ContributeEntropyV1 => {
             let update: model::ContributeEntropyUpdateV1 =
-                dwow_serial::deserialize(&update_data[1..])?;
+                model::ContributeEntropyUpdateV1::decode(&update_data[1..])?;
             entrypoint::entropy::apply_contribute_entropy_update(cid, update)
         }
         GameRoomFunction::ClaimV1 => {
-            let update: model::ClaimUpdateV1 = dwow_serial::deserialize(&update_data[1..])?;
+            let update: model::ClaimUpdateV1 = model::ClaimUpdateV1::decode(&update_data[1..])?;
             Ok(entrypoint::claim::game_room_claim_process_update_v1(cid, update)?)
         }
     }

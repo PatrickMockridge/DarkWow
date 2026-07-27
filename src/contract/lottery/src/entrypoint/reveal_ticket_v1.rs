@@ -23,9 +23,8 @@
 
 //! RevealTicketV1 Implementation
 
-use dwow_sdk::crypto::poseidon_hash;
-use dwow_sdk::{error::ContractError, msg, pasta::pallas, wasm};
-use dwow_serial::{deserialize, serialize};
+use dwow_sdk::{crypto::pasta_prelude::PrimeField, error::ContractError, msg, pasta::pallas, wasm};
+use dwow_serial::deserialize;
 
 use crate::error::LotteryError;
 use crate::model::{
@@ -47,13 +46,15 @@ pub fn lottery_reveal_ticket_process_instruction_v1(
 
     // Get ticket first to find lottery_id
     let tickets_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_TICKETS_TREE)?;
-    let ticket: crate::model::Ticket =
-        deserialize(&wasm::db::db_get(tickets_db, &serialize(&params.ticket_id))?.ok_or(ContractError::DbGetEmpty)?)?;
+    let ticket = crate::model::Ticket::decode(
+        &wasm::db::db_get(tickets_db, &params.ticket_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?
+    )?;
 
     // Get lottery state
     let lotteries_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_LOTTERIES_TREE)?;
-    let lottery: crate::model::Lottery =
-        deserialize(&wasm::db::db_get(lotteries_db, &serialize(&ticket.lottery_id))?.ok_or(ContractError::DbGetEmpty)?)?;
+    let lottery = crate::model::Lottery::decode(
+        &wasm::db::db_get(lotteries_db, &ticket.lottery_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?
+    )?;
 
     // Verify lottery is in winners drawn state
     if lottery.state != crate::model::LotteryState::WinnersDrawn {
@@ -100,7 +101,7 @@ pub fn lottery_reveal_ticket_process_instruction_v1(
     let update = RevealTicketUpdateV1 { ticket_id: params.ticket_id, matches, tier: tier.map(|t| t as u8) };
 
     msg!("[lottery::reveal_ticket] Reveal processed successfully");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Process update for RevealTicketV1

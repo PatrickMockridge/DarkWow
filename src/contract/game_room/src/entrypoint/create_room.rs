@@ -22,6 +22,7 @@
  */
 
 use dwow_sdk::{
+    crypto::pasta_prelude::PrimeField,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
@@ -90,14 +91,14 @@ pub(crate) fn game_room_create_process_instruction_v1(
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
     wasm::db::db_set(
         rooms_db,
-        &dwow_serial::serialize(&room_id),
-        &dwow_serial::serialize(&room),
+        &room_id.to_repr(),
+        &room.encode(),
     )?;
 
     msg!("[CreateRoom] Room created successfully: {:?}", room_id);
 
     let update = CreateRoomUpdateV1 { room_id, owner_dao: config.owner_dao.clone(), config, instance_seed: params.instance_seed };
-    Ok(dwow_serial::serialize(&update))
+    Ok(update.encode())
 }
 
 pub(crate) fn game_room_create_process_update_v1(

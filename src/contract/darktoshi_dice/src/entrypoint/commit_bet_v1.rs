@@ -35,7 +35,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::deserialize;
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id, validate_child_value_commit,
 };
@@ -109,7 +109,7 @@ pub fn dice_commit_bet_process_instruction_v1(
     // Look up house edge
     let info_db = wasm::db::db_lookup(cid, DICE_CONTRACT_INFO_TREE)?;
     let stored_house_edge_bytes = wasm::db::db_get(info_db, DICE_CONTRACT_HOUSE_EDGE)?.ok_or(ContractError::DbGetEmpty)?;
-    let stored_house_edge: u32 = deserialize(&stored_house_edge_bytes)?;
+    let stored_house_edge: u32 = u32::from_le_bytes(stored_house_edge_bytes.try_into().map_err(|e| dwow_sdk::error::ContractError::IoError(format!("{e}")))?);
 
     let house_edge = if params.house_edge == 0 { stored_house_edge } else { params.house_edge };
     validate_house_edge(house_edge)?;
@@ -135,7 +135,7 @@ pub fn dice_commit_bet_process_instruction_v1(
 
     // Check if bet already exists
     let bets_db = wasm::db::db_lookup(cid, DICE_CONTRACT_BETS_TREE)?;
-    if wasm::db::db_contains_key(bets_db, &serialize(&bet_id))? {
+    if wasm::db::db_contains_key(bets_db, &bet_id.to_repr())? {
         return Err(DiceError::BetAlreadyExists.into())
     }
 
@@ -145,7 +145,7 @@ pub fn dice_commit_bet_process_instruction_v1(
 
     // Check nullifier hasn't been used
     let nullifiers_db = wasm::db::db_lookup(cid, DICE_CONTRACT_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &nullifier.to_repr())? {
         return Err(DiceError::DuplicateNullifier.into())
     }
 
@@ -174,7 +174,7 @@ pub fn dice_commit_bet_process_instruction_v1(
     };
 
     msg!("[dice::commit_bet] Bet committed successfully");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Process update for CommitBetV1
@@ -208,11 +208,11 @@ pub fn dice_commit_bet_process_update_v1(
     };
 
     // Store bet
-    wasm::db::db_set(bets_db, &serialize(&update.bet_id), &serialize(&bet))?;
+    wasm::db::db_set(bets_db, &update.bet_id.to_repr(), &bet.encode())?;
     msg!("[dice::commit_bet::update] Bet stored in database");
 
     // Store nullifier
-    wasm::db::db_set(nullifiers_db, &serialize(&update.nullifier), &[])?;
+    wasm::db::db_set(nullifiers_db, &update.nullifier.to_repr(), &[])?;
     msg!("[dice::commit_bet::update] Nullifier stored");
 
     Ok(())

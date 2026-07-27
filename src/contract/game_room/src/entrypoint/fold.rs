@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow_sdk::crypto::poseidon_hash;
+use dwow_sdk::crypto::{pasta_prelude::PrimeField, poseidon_hash};
 use dwow_sdk::{
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -48,13 +48,13 @@ pub(crate) fn game_room_fold_process_instruction_v1(
     // Get room
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
     let Some(room_data) =
-        wasm::db::db_get(rooms_db, &dwow_serial::serialize(&params.room_id))?
+        wasm::db::db_get(rooms_db, &params.room_id.to_repr())?
     else {
         msg!("[Fold] Error: Room not found");
         return Err(GameRoomError::RoomNotFound.into())
     };
     let _room: crate::model::GameRoom =
-        dwow_serial::deserialize(&room_data)?;
+        crate::model::GameRoom::decode(&room_data)?;
 
     // Validate room state
     if _room.state != RoomState::Active {
@@ -67,13 +67,13 @@ pub(crate) fn game_room_fold_process_instruction_v1(
 
     // Get account
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
-    let account_key = dwow_serial::serialize(&(params.room_id, poseidon_hash([caller.x().expect("pk not identity"), caller.y().expect("pk not identity")])));
+    let account_key = [&params.room_id.to_repr()[..], &poseidon_hash([caller.x().expect("pk not identity"), caller.y().expect("pk not identity")]).to_repr()[..]].concat();
     let Some(account_data) = wasm::db::db_get(accounts_db, &account_key)? else {
         msg!("[Fold] Error: Account not found");
         return Err(GameRoomError::AccountNotFound.into())
     };
     let mut account: PlayerAccount =
-        dwow_serial::deserialize(&account_data)?;
+        PlayerAccount::decode(&account_data)?;
 
     if account.has_folded {
         msg!("[Fold] Error: Already folded");
@@ -82,12 +82,12 @@ pub(crate) fn game_room_fold_process_instruction_v1(
 
     // Mark as folded
     account.has_folded = true;
-    wasm::db::db_set(accounts_db, &account_key, &dwow_serial::serialize(&account))?;
+    wasm::db::db_set(accounts_db, &account_key, &account.encode())?;
 
     msg!("[Fold] Player {:?} folded", caller);
 
     let update = FoldUpdateV1 { room_id: params.room_id, player: caller, has_folded: true };
-    Ok(dwow_serial::serialize(&update))
+    Ok(update.encode())
 }
 
 pub(crate) fn game_room_fold_process_update_v1(

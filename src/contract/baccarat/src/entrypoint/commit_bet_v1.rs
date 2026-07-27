@@ -29,13 +29,13 @@
 //! locking the player's bet value.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, pasta_prelude::Group, ContractId},
+    crypto::{pasta_prelude::{Group, PrimeField}, poseidon_hash, ContractId},
     error::ContractError,
     msg,
-    wasm,
     pasta::pallas,
+    wasm,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::deserialize;
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id, validate_child_value_commit,
 };
@@ -154,8 +154,13 @@ pub fn baccarat_commit_bet_process_instruction_v1(
     // Look up house edge from contract info or use default
     let info_db = wasm::db::db_lookup(cid, BACCARAT_CONTRACT_INFO_TREE)?;
     let stored_house_edge_bytes = wasm::db::db_get(info_db, BACCARAT_CONTRACT_HOUSE_EDGE)?
-        .unwrap_or_else(|| serialize(&DEFAULT_HOUSE_EDGE));
-    let stored_house_edge: u32 = deserialize(&stored_house_edge_bytes)?;
+        .unwrap_or_else(|| DEFAULT_HOUSE_EDGE.to_le_bytes().to_vec());
+    let stored_house_edge = u32::from_le_bytes(
+        stored_house_edge_bytes.as_slice().try_into().map_err(|_| {
+            msg!("[baccarat::commit_bet] Error: Corrupt state — house_edge wrong size: {}", stored_house_edge_bytes.len());
+            ContractError::IoError("Corrupt state: house_edge wrong size".to_string())
+        })?
+    );
 
     let house_edge = if params.house_edge == 0 { stored_house_edge } else { params.house_edge };
     validate_house_edge(house_edge)?;
@@ -184,7 +189,7 @@ pub fn baccarat_commit_bet_process_instruction_v1(
 
     // Check if bet already exists
     let bets_db = wasm::db::db_lookup(cid, BACCARAT_CONTRACT_BETS_TREE)?;
-    if wasm::db::db_contains_key(bets_db, &serialize(&bet_id))? {
+    if wasm::db::db_contains_key(bets_db, &bet_id.to_repr())? {
         return Err(BaccaratError::BetAlreadyExists.into())
     }
 
@@ -201,7 +206,7 @@ pub fn baccarat_commit_bet_process_instruction_v1(
 
     // Check nullifier hasn't been used
     let nullifiers_db = wasm::db::db_lookup(cid, BACCARAT_CONTRACT_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &nullifier.to_repr())? {
         return Err(BaccaratError::DuplicateNullifier.into())
     }
 
@@ -225,7 +230,7 @@ pub fn baccarat_commit_bet_process_instruction_v1(
     };
 
     msg!("[baccarat::commit_bet] Bet committed successfully");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Process update for CommitBetV1 - persists the bet to database
@@ -262,10 +267,10 @@ pub fn baccarat_commit_bet_process_update_v1(
     };
 
     // Store the bet
-    wasm::db::db_set(bets_db, &serialize(&bet.id), &serialize(&bet))?;
+    wasm::db::db_set(bets_db, &bet.id.to_repr(), &bet.encode())?;
 
     // Store the nullifier to prevent double-spending
-    wasm::db::db_set(nullifiers_db, &serialize(&update.nullifier), &serialize(&update.nullifier))?;
+    wasm::db::db_set(nullifiers_db, &update.nullifier.to_repr(), &update.nullifier.to_repr())?;
 
     msg!("[baccarat::commit_bet::update] Bet persisted to database");
     Ok(())

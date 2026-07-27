@@ -23,8 +23,8 @@
 
 //! InitializeV1 Implementation
 
-use dwow_sdk::{error::ContractError, msg, pasta::pallas, wasm};
-use dwow_serial::{deserialize, serialize};
+use dwow_sdk::{crypto::pasta_prelude::PrimeField, error::ContractError, msg, pasta::pallas, wasm};
+use dwow_serial::deserialize;
 
 use crate::error::LotteryError;
 use crate::model::{derive_lottery_id, InitializeParamsV1, InitializeUpdateV1, Lottery, LotteryState};
@@ -61,7 +61,7 @@ pub fn lottery_initialize_process_instruction_v1(
 
     // Check if lottery already exists
     let lotteries_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_LOTTERIES_TREE)?;
-    if wasm::db::db_contains_key(lotteries_db, &serialize(&lottery_id))? {
+    if wasm::db::db_contains_key(lotteries_db, &lottery_id.to_repr())? {
         return Err(LotteryError::LotteryAlreadyExpired.into())
     }
 
@@ -82,7 +82,7 @@ pub fn lottery_initialize_process_instruction_v1(
     };
 
     msg!("[lottery::initialize] Lottery initialized successfully");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Process update for InitializeV1
@@ -114,14 +114,14 @@ pub fn lottery_initialize_process_update_v1(
     };
 
     // Store lottery
-    wasm::db::db_set(lotteries_db, &serialize(&update.lottery_id), &serialize(&lottery))?;
+    wasm::db::db_set(lotteries_db, &update.lottery_id.to_repr(), &lottery.encode())?;
     msg!("[lottery::initialize::update] Lottery stored in database");
 
     // Set as current lottery
     wasm::db::db_set(
         lotteries_db,
         LOTTERY_CONTRACT_CURRENT_LOTTERY,
-        &serialize(&update.lottery_id),
+        &update.lottery_id.to_repr(),
     )?;
     msg!("[lottery::initialize::update] Current lottery set");
 

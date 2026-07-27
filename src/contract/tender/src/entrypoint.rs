@@ -41,13 +41,13 @@
 //! 7. Task tracked via Tau
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta,
     wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 
 use crate::{
     TENDER_CONTRACT_ZKAS_CREATE_NS_V1, TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V1,
@@ -131,30 +131,30 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         TenderFunction::CreateTenderV1 => {
-            let params: CreateTenderParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CreateTenderParamsV1::decode(&self_.data[1..])?;
             create_tender_get_metadata_v1(cid, call_idx, calls, params)?
         }
         TenderFunction::SubmitBidV1 => {
-            let params: SubmitBidParamsV1 = deserialize(&self_.data[1..])?;
+            let params = SubmitBidParamsV1::decode(&self_.data[1..])?;
             submit_bid_get_metadata_v1(cid, call_idx, calls, params)?
         }
         TenderFunction::RevealBidV1 => {
-            let params: RevealBidParamsV1 = deserialize(&self_.data[1..])?;
+            let params = RevealBidParamsV1::decode(&self_.data[1..])?;
             reveal_bid_get_metadata_v1(cid, call_idx, calls, params)?
         }
         TenderFunction::CloseTenderV1 => {
-            let params: CloseTenderParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CloseTenderParamsV1::decode(&self_.data[1..])?;
             close_tender_get_metadata_v1(cid, call_idx, calls, params)?
         }
         TenderFunction::SelectWinnerV1 => {
-            let params: SelectWinnerParamsV1 = deserialize(&self_.data[1..])?;
+            let params = SelectWinnerParamsV1::decode(&self_.data[1..])?;
             select_winner_get_metadata_v1(cid, call_idx, calls, params)?
         }
         TenderFunction::CancelTenderV1 => vec![],
         TenderFunction::RejectBidV1 => vec![],
         TenderFunction::CreateTenderWithCapabilityV1 => vec![],
         TenderFunction::SubmitBidWithCapabilityV1 => {
-            let params: SubmitBidWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            let params = SubmitBidWithCapabilityParamsV1::decode(&self_.data[1..])?;
             submit_bid_with_capability_get_metadata_v1(cid, call_idx, calls, params)?
         }
     };
@@ -172,7 +172,7 @@ fn create_tender_get_metadata_v1(
 
     // Verify tender doesn't already exist
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
-    if wasm::db::db_contains_key(tenders_db, &serialize(&params.tender_id))? {
+    if wasm::db::db_contains_key(tenders_db, &params.tender_id.to_repr())? {
         msg!("[tender::create_tender_get_metadata_v1] ERROR: Tender already exists");
         return Err(ContractError::InvalidFunction.into())
     }
@@ -198,9 +198,9 @@ fn submit_bid_get_metadata_v1(
 
     // Verify tender exists and is accepting bids
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
-    let tender_data = wasm::db::db_get(tenders_db, &serialize(&params.tender_id))?;
+    let tender_data = wasm::db::db_get(tenders_db, &params.tender_id.to_repr())?;
     let tender: Tender = match tender_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Tender::decode(&data)?,
         None => {
             msg!("[tender::submit_bid_get_metadata_v1] ERROR: Tender not found");
             return Err(ContractError::InvalidFunction.into())
@@ -248,9 +248,9 @@ fn submit_bid_with_capability_get_metadata_v1(
     msg!("[tender::submit_bid_with_capability_get_metadata_v1] Submitting bid with capability: {:?}", params.bid_id);
 
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
-    let tender_data = wasm::db::db_get(tenders_db, &serialize(&params.tender_id))?;
+    let tender_data = wasm::db::db_get(tenders_db, &params.tender_id.to_repr())?;
     let tender: Tender = match tender_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Tender::decode(&data)?,
         None => {
             msg!("[tender::submit_bid_with_capability_get_metadata_v1] ERROR: Tender not found");
             return Err(ContractError::InvalidFunction.into())
@@ -307,9 +307,9 @@ fn reveal_bid_get_metadata_v1(
     msg!("[tender::reveal_bid_get_metadata_v1] Revealing bid: {:?}", params.bid_id);
 
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
-    let tender_data = wasm::db::db_get(tenders_db, &serialize(&params.tender_id))?;
+    let tender_data = wasm::db::db_get(tenders_db, &params.tender_id.to_repr())?;
     let tender: Tender = match tender_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Tender::decode(&data)?,
         None => {
             msg!("[tender::reveal_bid_get_metadata_v1] ERROR: Tender not found");
             return Err(ContractError::InvalidFunction.into())
@@ -323,9 +323,9 @@ fn reveal_bid_get_metadata_v1(
 
     // Look up bid to get bidder_pub coordinates for ZK proof public inputs
     let bids_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_BIDS_TREE)?;
-    let bid_data = wasm::db::db_get(bids_db, &serialize(&params.bid_id))?;
+    let bid_data = wasm::db::db_get(bids_db, &params.bid_id.to_repr())?;
     let bid: Bid = match bid_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Bid::decode(&data)?,
         None => {
             msg!("[tender::reveal_bid_get_metadata_v1] ERROR: Bid not found");
             return Err(ContractError::InvalidFunction.into())
@@ -358,9 +358,9 @@ fn close_tender_get_metadata_v1(
     msg!("[tender::close_tender_get_metadata_v1] Closing tender: {:?}", params.tender_id);
 
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
-    let tender_data = wasm::db::db_get(tenders_db, &serialize(&params.tender_id))?;
+    let tender_data = wasm::db::db_get(tenders_db, &params.tender_id.to_repr())?;
     let tender: Tender = match tender_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Tender::decode(&data)?,
         None => {
             msg!("[tender::close_tender_get_metadata_v1] ERROR: Tender not found");
             return Err(ContractError::InvalidFunction.into())
@@ -390,9 +390,9 @@ fn select_winner_get_metadata_v1(
     msg!("[tender::select_winner_get_metadata_v1] Selecting winner: {:?}", params.winner_bid_id);
 
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
-    let tender_data = wasm::db::db_get(tenders_db, &serialize(&params.tender_id))?;
+    let tender_data = wasm::db::db_get(tenders_db, &params.tender_id.to_repr())?;
     let tender: Tender = match tender_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Tender::decode(&data)?,
         None => {
             msg!("[tender::select_winner_get_metadata_v1] ERROR: Tender not found");
             return Err(ContractError::InvalidFunction.into())
@@ -435,40 +435,40 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let update_bytes = match func {
         TenderFunction::CreateTenderV1 => {
-            let params: CreateTenderParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CreateTenderParamsV1::decode(&self_.data[1..])?;
             create_tender_v1(cid, params)?
         }
         TenderFunction::SubmitBidV1 => {
-            let params: SubmitBidParamsV1 = deserialize(&self_.data[1..])?;
+            let params = SubmitBidParamsV1::decode(&self_.data[1..])?;
             submit_bid_v1(cid, params)?
         }
         TenderFunction::RevealBidV1 => {
-            let params: RevealBidParamsV1 = deserialize(&self_.data[1..])?;
+            let params = RevealBidParamsV1::decode(&self_.data[1..])?;
             reveal_bid_v1(cid, params)?
         }
         TenderFunction::CloseTenderV1 => {
-            let params: CloseTenderParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CloseTenderParamsV1::decode(&self_.data[1..])?;
             close_tender_v1(cid, params)?
         }
         TenderFunction::SelectWinnerV1 => {
-            let params: SelectWinnerParamsV1 = deserialize(&self_.data[1..])?;
+            let params = SelectWinnerParamsV1::decode(&self_.data[1..])?;
             select_winner_v1(cid, params)?
         }
         TenderFunction::CancelTenderV1 => {
-            let params: CancelTenderParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CancelTenderParamsV1::decode(&self_.data[1..])?;
             cancel_tender_v1(cid, params)?
         }
         TenderFunction::RejectBidV1 => {
-            let params: RejectBidParamsV1 = deserialize(&self_.data[1..])?;
+            let params = RejectBidParamsV1::decode(&self_.data[1..])?;
             reject_bid_v1(cid, params)?
         }
         // O-Cap enabled functions
         TenderFunction::CreateTenderWithCapabilityV1 => {
-            let params: CreateTenderWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CreateTenderWithCapabilityParamsV1::decode(&self_.data[1..])?;
             create_tender_with_capability_v1(cid, params)?
         }
         TenderFunction::SubmitBidWithCapabilityV1 => {
-            let params: SubmitBidWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            let params = SubmitBidWithCapabilityParamsV1::decode(&self_.data[1..])?;
             submit_bid_with_capability_v1(cid, params)?
         }
     };
@@ -482,7 +482,7 @@ fn create_tender_v1(cid: ContractId, params: CreateTenderParamsV1) -> Result<Vec
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
 
     // Check if tender already exists
-    let existing_data = wasm::db::db_get(tenders_db, &serialize(&params.tender_id))?;
+    let existing_data = wasm::db::db_get(tenders_db, &params.tender_id.to_repr())?;
     if existing_data.is_some() {
         msg!("[tender::create_tender_v1] ERROR: Tender already exists");
         return Err(ContractError::InvalidFunction.into())
@@ -513,10 +513,10 @@ fn create_tender_v1(cid: ContractId, params: CreateTenderParamsV1) -> Result<Vec
         required_dag_id: None,
     };
 
-    wasm::db::db_set(tenders_db, &serialize(&params.tender_id), &serialize(&tender))?;
+    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode())?;
 
     msg!("[tender::create_tender_v1] Tender created successfully");
-    Ok(serialize(&CreateTenderUpdateV1 { tender_id: params.tender_id }))
+    Ok(CreateTenderUpdateV1 { tender_id: params.tender_id }.encode())
 }
 
 fn submit_bid_v1(cid: ContractId, params: SubmitBidParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -527,9 +527,9 @@ fn submit_bid_v1(cid: ContractId, params: SubmitBidParamsV1) -> Result<Vec<u8>, 
     let nullifiers_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_NULLIFIERS_TREE)?;
 
     // Get and verify tender
-    let tender_data = wasm::db::db_get(tenders_db, &serialize(&params.tender_id))?;
+    let tender_data = wasm::db::db_get(tenders_db, &params.tender_id.to_repr())?;
     let mut tender: Tender = match tender_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Tender::decode(&data)?,
         None => {
             msg!("[tender::submit_bid_v1] ERROR: Tender not found");
             return Err(ContractError::InvalidFunction.into())
@@ -556,7 +556,7 @@ fn submit_bid_v1(cid: ContractId, params: SubmitBidParamsV1) -> Result<Vec<u8>, 
     }
 
     // Check for double submission using nullifier
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.bid_id))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.bid_id.to_repr())? {
         msg!("[tender::submit_bid_v1] ERROR: Bid already submitted");
         return Err(ContractError::InvalidFunction.into())
     }
@@ -577,20 +577,20 @@ fn submit_bid_v1(cid: ContractId, params: SubmitBidParamsV1) -> Result<Vec<u8>, 
     };
 
     // Store bid
-    wasm::db::db_set(bids_db, &serialize(&params.bid_id), &serialize(&bid))?;
+    wasm::db::db_set(bids_db, &params.bid_id.to_repr(), &bid.encode())?;
 
     // Store nullifier to prevent double submission
-    wasm::db::db_set(nullifiers_db, &serialize(&params.bid_id), &[])?;
+    wasm::db::db_set(nullifiers_db, &params.bid_id.to_repr(), &[])?;
 
     // Update tender state and count
     if tender.state == TenderState::Created {
         tender.state = TenderState::Bidding;
     }
     tender.bid_count += 1;
-    wasm::db::db_set(tenders_db, &serialize(&params.tender_id), &serialize(&tender))?;
+    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode())?;
 
     msg!("[tender::submit_bid_v1] Bid submitted successfully");
-    Ok(serialize(&SubmitBidUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }))
+    Ok(SubmitBidUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }.encode())
 }
 
 fn reveal_bid_v1(cid: ContractId, params: RevealBidParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -601,9 +601,9 @@ fn reveal_bid_v1(cid: ContractId, params: RevealBidParamsV1) -> Result<Vec<u8>, 
     let nullifiers_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_NULLIFIERS_TREE)?;
 
     // Get and verify tender is in Revealed state
-    let tender_data = wasm::db::db_get(tenders_db, &serialize(&params.tender_id))?;
+    let tender_data = wasm::db::db_get(tenders_db, &params.tender_id.to_repr())?;
     let tender: Tender = match tender_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Tender::decode(&data)?,
         None => {
             msg!("[tender::reveal_bid_v1] ERROR: Tender not found");
             return Err(ContractError::InvalidFunction.into())
@@ -616,9 +616,9 @@ fn reveal_bid_v1(cid: ContractId, params: RevealBidParamsV1) -> Result<Vec<u8>, 
     }
 
     // Get and verify bid
-    let bid_data = wasm::db::db_get(bids_db, &serialize(&params.bid_id))?;
+    let bid_data = wasm::db::db_get(bids_db, &params.bid_id.to_repr())?;
     let mut bid: Bid = match bid_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Bid::decode(&data)?,
         None => {
             msg!("[tender::reveal_bid_v1] ERROR: Bid not found");
             return Err(ContractError::InvalidFunction.into())
@@ -633,7 +633,7 @@ fn reveal_bid_v1(cid: ContractId, params: RevealBidParamsV1) -> Result<Vec<u8>, 
 
     // Check for double reveal using nullifier (separate from submit nullifier)
     let reveal_nullifier = poseidon_hash([params.bid_id, pasta::pallas::Base::one()]);
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&reveal_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &reveal_nullifier.to_repr())? {
         msg!("[tender::reveal_bid_v1] ERROR: Bid already revealed");
         return Err(ContractError::InvalidFunction.into())
     }
@@ -648,13 +648,13 @@ fn reveal_bid_v1(cid: ContractId, params: RevealBidParamsV1) -> Result<Vec<u8>, 
     bid.state = BidState::Revealed;
     bid.revealed_amount = Some(params.revealed_amount);
 
-    wasm::db::db_set(bids_db, &serialize(&params.bid_id), &serialize(&bid))?;
+    wasm::db::db_set(bids_db, &params.bid_id.to_repr(), &bid.encode())?;
 
     // Store nullifier to prevent double reveal
-    wasm::db::db_set(nullifiers_db, &serialize(&reveal_nullifier), &[])?;
+    wasm::db::db_set(nullifiers_db, &reveal_nullifier.to_repr(), &[])?;
 
     msg!("[tender::reveal_bid_v1] Bid revealed successfully");
-    Ok(serialize(&RevealBidUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }))
+    Ok(RevealBidUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }.encode())
 }
 
 fn close_tender_v1(cid: ContractId, params: CloseTenderParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -663,9 +663,9 @@ fn close_tender_v1(cid: ContractId, params: CloseTenderParamsV1) -> Result<Vec<u
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
 
     // Get and verify tender
-    let tender_data = wasm::db::db_get(tenders_db, &serialize(&params.tender_id))?;
+    let tender_data = wasm::db::db_get(tenders_db, &params.tender_id.to_repr())?;
     let mut tender: Tender = match tender_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Tender::decode(&data)?,
         None => {
             msg!("[tender::close_tender_v1] ERROR: Tender not found");
             return Err(ContractError::InvalidFunction.into())
@@ -693,10 +693,10 @@ fn close_tender_v1(cid: ContractId, params: CloseTenderParamsV1) -> Result<Vec<u
 
     // Transition to Revealed state
     tender.state = TenderState::Revealed;
-    wasm::db::db_set(tenders_db, &serialize(&params.tender_id), &serialize(&tender))?;
+    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode())?;
 
     msg!("[tender::close_tender_v1] Tender closed successfully");
-    Ok(serialize(&CloseTenderUpdateV1 { tender_id: params.tender_id }))
+    Ok(CloseTenderUpdateV1 { tender_id: params.tender_id }.encode())
 }
 
 fn select_winner_v1(cid: ContractId, params: SelectWinnerParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -706,9 +706,9 @@ fn select_winner_v1(cid: ContractId, params: SelectWinnerParamsV1) -> Result<Vec
     let bids_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_BIDS_TREE)?;
 
     // Get and verify tender
-    let tender_data = wasm::db::db_get(tenders_db, &serialize(&params.tender_id))?;
+    let tender_data = wasm::db::db_get(tenders_db, &params.tender_id.to_repr())?;
     let mut tender: Tender = match tender_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Tender::decode(&data)?,
         None => {
             msg!("[tender::select_winner_v1] ERROR: Tender not found");
             return Err(ContractError::InvalidFunction.into())
@@ -734,9 +734,9 @@ fn select_winner_v1(cid: ContractId, params: SelectWinnerParamsV1) -> Result<Vec
     }
 
     // Get and verify winning bid
-    let bid_data = wasm::db::db_get(bids_db, &serialize(&params.winner_bid_id))?;
+    let bid_data = wasm::db::db_get(bids_db, &params.winner_bid_id.to_repr())?;
     let mut winner_bid: Bid = match bid_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Bid::decode(&data)?,
         None => {
             msg!("[tender::select_winner_v1] ERROR: Winner bid not found");
             return Err(ContractError::InvalidFunction.into())
@@ -770,14 +770,14 @@ fn select_winner_v1(cid: ContractId, params: SelectWinnerParamsV1) -> Result<Vec
     // Update tender
     tender.state = TenderState::Awarded;
     tender.selected_bid_id = Some(params.winner_bid_id);
-    wasm::db::db_set(tenders_db, &serialize(&params.tender_id), &serialize(&tender))?;
+    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode())?;
 
     // Update winner bid
     winner_bid.state = BidState::Accepted;
-    wasm::db::db_set(bids_db, &serialize(&params.winner_bid_id), &serialize(&winner_bid))?;
+    wasm::db::db_set(bids_db, &params.winner_bid_id.to_repr(), &winner_bid.encode())?;
 
     msg!("[tender::select_winner_v1] Winner selected successfully");
-    Ok(serialize(&SelectWinnerUpdateV1 { tender_id: params.tender_id, winner_bid_id: params.winner_bid_id, labor_job_id: None }))
+    Ok(SelectWinnerUpdateV1 { tender_id: params.tender_id, winner_bid_id: params.winner_bid_id, labor_job_id: None }.encode())
 }
 
 fn cancel_tender_v1(cid: ContractId, params: CancelTenderParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -786,9 +786,9 @@ fn cancel_tender_v1(cid: ContractId, params: CancelTenderParamsV1) -> Result<Vec
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
 
     // Get and verify tender
-    let tender_data = wasm::db::db_get(tenders_db, &serialize(&params.tender_id))?;
+    let tender_data = wasm::db::db_get(tenders_db, &params.tender_id.to_repr())?;
     let mut tender: Tender = match tender_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Tender::decode(&data)?,
         None => {
             msg!("[tender::cancel_tender_v1] ERROR: Tender not found");
             return Err(ContractError::InvalidFunction.into())
@@ -809,10 +809,10 @@ fn cancel_tender_v1(cid: ContractId, params: CancelTenderParamsV1) -> Result<Vec
 
     // Update tender
     tender.state = TenderState::Cancelled;
-    wasm::db::db_set(tenders_db, &serialize(&params.tender_id), &serialize(&tender))?;
+    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode())?;
 
     msg!("[tender::cancel_tender_v1] Tender cancelled successfully");
-    Ok(serialize(&CancelTenderUpdateV1 { tender_id: params.tender_id }))
+    Ok(CancelTenderUpdateV1 { tender_id: params.tender_id }.encode())
 }
 
 fn reject_bid_v1(cid: ContractId, params: RejectBidParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -822,9 +822,9 @@ fn reject_bid_v1(cid: ContractId, params: RejectBidParamsV1) -> Result<Vec<u8>, 
     let bids_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_BIDS_TREE)?;
 
     // Get and verify tender
-    let tender_data = wasm::db::db_get(tenders_db, &serialize(&params.tender_id))?;
+    let tender_data = wasm::db::db_get(tenders_db, &params.tender_id.to_repr())?;
     let tender: Tender = match tender_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Tender::decode(&data)?,
         None => {
             msg!("[tender::reject_bid_v1] ERROR: Tender not found");
             return Err(ContractError::InvalidFunction.into())
@@ -844,9 +844,9 @@ fn reject_bid_v1(cid: ContractId, params: RejectBidParamsV1) -> Result<Vec<u8>, 
     }
 
     // Get and verify bid
-    let bid_data = wasm::db::db_get(bids_db, &serialize(&params.bid_id))?;
+    let bid_data = wasm::db::db_get(bids_db, &params.bid_id.to_repr())?;
     let mut bid: Bid = match bid_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Bid::decode(&data)?,
         None => {
             msg!("[tender::reject_bid_v1] ERROR: Bid not found");
             return Err(ContractError::InvalidFunction.into())
@@ -861,10 +861,10 @@ fn reject_bid_v1(cid: ContractId, params: RejectBidParamsV1) -> Result<Vec<u8>, 
 
     // Update bid
     bid.state = BidState::Rejected;
-    wasm::db::db_set(bids_db, &serialize(&params.bid_id), &serialize(&bid))?;
+    wasm::db::db_set(bids_db, &params.bid_id.to_repr(), &bid.encode())?;
 
     msg!("[tender::reject_bid_v1] Bid rejected successfully");
-    Ok(serialize(&RejectBidUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }))
+    Ok(RejectBidUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }.encode())
 }
 
 // ============================================================================
@@ -880,7 +880,7 @@ fn create_tender_with_capability_v1(
     let tenders_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_TENDERS_TREE)?;
 
     // Check if tender already exists
-    let existing_data = wasm::db::db_get(tenders_db, &serialize(&params.tender_id))?;
+    let existing_data = wasm::db::db_get(tenders_db, &params.tender_id.to_repr())?;
     if existing_data.is_some() {
         msg!("[tender::create_tender_with_capability_v1] ERROR: Tender already exists");
         return Err(ContractError::InvalidFunction.into())
@@ -911,10 +911,10 @@ fn create_tender_with_capability_v1(
         required_dag_id: params.required_dag_id,
     };
 
-    wasm::db::db_set(tenders_db, &serialize(&params.tender_id), &serialize(&tender))?;
+    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode())?;
 
     msg!("[tender::create_tender_with_capability_v1] Tender created successfully");
-    Ok(serialize(&CreateTenderWithCapabilityUpdateV1 { tender_id: params.tender_id }))
+    Ok(CreateTenderWithCapabilityUpdateV1 { tender_id: params.tender_id }.encode())
 }
 
 fn submit_bid_with_capability_v1(
@@ -928,9 +928,9 @@ fn submit_bid_with_capability_v1(
     let nullifiers_db = wasm::db::db_lookup(cid, TENDER_CONTRACT_NULLIFIERS_TREE)?;
 
     // Get and verify tender
-    let tender_data = wasm::db::db_get(tenders_db, &serialize(&params.tender_id))?;
+    let tender_data = wasm::db::db_get(tenders_db, &params.tender_id.to_repr())?;
     let mut tender: Tender = match tender_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Tender::decode(&data)?,
         None => {
             msg!("[tender::submit_bid_with_capability_v1] ERROR: Tender not found");
             return Err(ContractError::InvalidFunction.into())
@@ -957,7 +957,7 @@ fn submit_bid_with_capability_v1(
     }
 
     // Check for double submission using nullifier
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.bid_id))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.bid_id.to_repr())? {
         msg!("[tender::submit_bid_with_capability_v1] ERROR: Bid already submitted");
         return Err(ContractError::InvalidFunction.into())
     }
@@ -992,20 +992,20 @@ fn submit_bid_with_capability_v1(
     };
 
     // Store bid
-    wasm::db::db_set(bids_db, &serialize(&params.bid_id), &serialize(&bid))?;
+    wasm::db::db_set(bids_db, &params.bid_id.to_repr(), &bid.encode())?;
 
     // Store nullifier to prevent double submission
-    wasm::db::db_set(nullifiers_db, &serialize(&params.bid_id), &[])?;
+    wasm::db::db_set(nullifiers_db, &params.bid_id.to_repr(), &[])?;
 
     // Update tender state and count
     if tender.state == TenderState::Created {
         tender.state = TenderState::Bidding;
     }
     tender.bid_count += 1;
-    wasm::db::db_set(tenders_db, &serialize(&params.tender_id), &serialize(&tender))?;
+    wasm::db::db_set(tenders_db, &params.tender_id.to_repr(), &tender.encode())?;
 
     msg!("[tender::submit_bid_with_capability_v1] Bid submitted successfully");
-    Ok(serialize(&SubmitBidWithCapabilityUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }))
+    Ok(SubmitBidWithCapabilityUpdateV1 { tender_id: params.tender_id, bid_id: params.bid_id }.encode())
 }
 
 // ============================================================================
@@ -1016,47 +1016,47 @@ fn process_update(_cid: ContractId, update_data: &[u8]) -> ContractResult {
     let func = TenderFunction::try_from(update_data[0])?;
     match func {
         TenderFunction::CreateTenderV1 => {
-            let update: CreateTenderUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CreateTenderUpdateV1::decode(&update_data[1..])?;
             msg!("[tender::process_update] CreateTender: {:?}", update.tender_id);
             Ok(())
         }
         TenderFunction::SubmitBidV1 => {
-            let update: SubmitBidUpdateV1 = deserialize(&update_data[1..])?;
+            let update = SubmitBidUpdateV1::decode(&update_data[1..])?;
             msg!("[tender::process_update] SubmitBid: {:?} {:?}", update.tender_id, update.bid_id);
             Ok(())
         }
         TenderFunction::RevealBidV1 => {
-            let update: RevealBidUpdateV1 = deserialize(&update_data[1..])?;
+            let update = RevealBidUpdateV1::decode(&update_data[1..])?;
             msg!("[tender::process_update] RevealBid: {:?} {:?}", update.tender_id, update.bid_id);
             Ok(())
         }
         TenderFunction::CloseTenderV1 => {
-            let update: CloseTenderUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CloseTenderUpdateV1::decode(&update_data[1..])?;
             msg!("[tender::process_update] CloseTender: {:?}", update.tender_id);
             Ok(())
         }
         TenderFunction::SelectWinnerV1 => {
-            let update: SelectWinnerUpdateV1 = deserialize(&update_data[1..])?;
+            let update = SelectWinnerUpdateV1::decode(&update_data[1..])?;
             msg!("[tender::process_update] SelectWinner: {:?} {:?}", update.tender_id, update.winner_bid_id);
             Ok(())
         }
         TenderFunction::CancelTenderV1 => {
-            let update: CancelTenderUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CancelTenderUpdateV1::decode(&update_data[1..])?;
             msg!("[tender::process_update] CancelTender: {:?}", update.tender_id);
             Ok(())
         }
         TenderFunction::RejectBidV1 => {
-            let update: RejectBidUpdateV1 = deserialize(&update_data[1..])?;
+            let update = RejectBidUpdateV1::decode(&update_data[1..])?;
             msg!("[tender::process_update] RejectBid: {:?} {:?}", update.tender_id, update.bid_id);
             Ok(())
         }
         TenderFunction::CreateTenderWithCapabilityV1 => {
-            let update: CreateTenderWithCapabilityUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CreateTenderWithCapabilityUpdateV1::decode(&update_data[1..])?;
             msg!("[tender::process_update] CreateTenderWithCapability: {:?}", update.tender_id);
             Ok(())
         }
         TenderFunction::SubmitBidWithCapabilityV1 => {
-            let update: SubmitBidWithCapabilityUpdateV1 = deserialize(&update_data[1..])?;
+            let update = SubmitBidWithCapabilityUpdateV1::decode(&update_data[1..])?;
             msg!("[tender::process_update] SubmitBidWithCapability: {:?} {:?}", update.tender_id, update.bid_id);
             Ok(())
         }

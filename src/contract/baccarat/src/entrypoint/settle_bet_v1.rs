@@ -29,13 +29,13 @@
 //! paying out winnings to the player.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
     error::ContractError,
     msg,
     pasta::pallas,
     wasm,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::deserialize;
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id, validate_child_value_commit,
 };
@@ -93,10 +93,10 @@ pub fn baccarat_settle_bet_process_instruction_v1(
 
     // Look up the bet
     let bets_db = wasm::db::db_lookup(cid, BACCARAT_CONTRACT_BETS_TREE)?;
-    let bet_bytes = wasm::db::db_get(bets_db, &serialize(&params.bet_id))?
+    let bet_bytes = wasm::db::db_get(bets_db, &params.bet_id.to_repr())?
         .ok_or(BaccaratError::BetNotFound)?;
 
-    let bet: Bet = deserialize(&bet_bytes)?;
+    let bet = Bet::decode(&bet_bytes)?;
 
     // Verify bet is in CardsDrawn state
     if bet.state != BetState::CardsDrawn {
@@ -126,7 +126,7 @@ pub fn baccarat_settle_bet_process_instruction_v1(
     };
 
     msg!("[baccarat::settle_bet] Bet settled successfully");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Process update for SettleBetV1
@@ -137,14 +137,14 @@ pub fn baccarat_settle_bet_process_update_v1(
     let bets_db = wasm::db::db_lookup(cid, BACCARAT_CONTRACT_BETS_TREE)?;
 
     // Look up bet to update state
-    let bet_bytes = wasm::db::db_get(bets_db, &serialize(&update.bet_id))?
+    let bet_bytes = wasm::db::db_get(bets_db, &update.bet_id.to_repr())?
         .ok_or(BaccaratError::BetNotFound)?;
 
-    let mut bet: Bet = deserialize(&bet_bytes)?;
+    let mut bet = Bet::decode(&bet_bytes)?;
     bet.state = BetState::Settled;
 
     // Store updated bet
-    wasm::db::db_set(bets_db, &serialize(&bet.id), &serialize(&bet))?;
+    wasm::db::db_set(bets_db, &bet.id.to_repr(), &bet.encode())?;
 
     msg!("[baccarat::settle_bet::update] Bet state updated to Settled");
     Ok(())

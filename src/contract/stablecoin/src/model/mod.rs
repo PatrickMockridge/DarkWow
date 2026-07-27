@@ -46,17 +46,18 @@
 //! - Simpler ZK circuits
 //! - No position IDs that could leak information
 
-use dwow_serial::{SerialDecodable, SerialEncodable};
 use dwow_sdk::{
     crypto::{ContractId, IntentCommitment, IntentNullifier, Nullifier, PublicKey},
-    pasta::pallas,
+    error::ContractError,
+    pasta::{group::GroupEncoding, pallas},
 };
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Namespace for stablecoin intents
 pub const STABLECOIN_NAMESPACE: u64 = 0x0005;
 
 /// Collateral type identifier
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub enum CollateralType {
     /// XMR (Monero) collateral
     Xmr,
@@ -66,8 +67,21 @@ pub enum CollateralType {
     Eth,
 }
 
+impl TryFrom<u8> for CollateralType {
+    type Error = ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(Self::Xmr),
+            1 => Ok(Self::Drk),
+            2 => Ok(Self::Eth),
+            _ => Err(ContractError::InvalidFunction),
+        }
+    }
+}
+
 /// Stablecoin model selector - determines the behavior of the stablecoin
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub enum StablecoinModel {
     /// Synthetix-style pooled debt (default)
     /// All collateral backs all debt. No individual position tracking.
@@ -86,8 +100,22 @@ pub enum StablecoinModel {
     IndividualCdp,
 }
 
+impl TryFrom<u8> for StablecoinModel {
+    type Error = ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(Self::PooledDebt),
+            1 => Ok(Self::Liquity),
+            2 => Ok(Self::Fractional),
+            3 => Ok(Self::IndividualCdp),
+            _ => Err(ContractError::InvalidFunction),
+        }
+    }
+}
+
 /// Per-collateral risk parameters (used for multi-collateral support)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CollateralParams {
     /// Collateral type
     pub collateral_type: CollateralType,
@@ -102,7 +130,7 @@ pub struct CollateralParams {
 }
 
 /// What action to take when dead man switch triggers
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub enum DeadManAction {
     /// Liquidate all positions at current prices (emergency settlement)
     LiquidateAll,
@@ -112,8 +140,21 @@ pub enum DeadManAction {
     EnableFreeWithdrawals,
 }
 
+impl TryFrom<u8> for DeadManAction {
+    type Error = ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(Self::LiquidateAll),
+            1 => Ok(Self::DisableMinting),
+            2 => Ok(Self::EnableFreeWithdrawals),
+            _ => Err(ContractError::InvalidFunction),
+        }
+    }
+}
+
 /// Dead man switch configuration - emergency shutdown if no executive action
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct DeadManSwitchConfig {
     /// Enable dead man switch
     pub enabled: bool,
@@ -343,7 +384,7 @@ pub struct UpdateConfigParams {
 }
 
 /// Update data for configuration changes (sent from instruction to update phase)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct UpdateConfigUpdateV1 {
     /// New minimum collateralization ratio
     pub min_collateralization_ratio: u64,
@@ -373,7 +414,7 @@ pub struct UpdateConfigUpdateV1 {
 }
 
 /// Update data for adding collateral
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct AddCollateralUpdateV1 {
     /// The position commitment (for tracking)
     pub position_commitment: IntentCommitment,
@@ -384,7 +425,7 @@ pub struct AddCollateralUpdateV1 {
 }
 
 /// Update data for removing collateral
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RemoveCollateralUpdateV1 {
     /// The position nullifier (proves ownership)
     pub position_nullifier: IntentNullifier,
@@ -397,7 +438,7 @@ pub struct RemoveCollateralUpdateV1 {
 }
 
 /// Update data for minting stablecoin
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct MintStableUpdateV1 {
     /// Position commitment
     pub position_commitment: IntentCommitment,
@@ -408,7 +449,7 @@ pub struct MintStableUpdateV1 {
 }
 
 /// Update data for repaying stablecoin debt
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RepayStableUpdateV1 {
     /// Position nullifier
     pub position_nullifier: IntentNullifier,
@@ -421,7 +462,7 @@ pub struct RepayStableUpdateV1 {
 }
 
 /// Update data for liquidating the pool
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct LiquidateUpdateV1 {
     /// Liquidation record
     pub debt_covered: u64,
@@ -436,7 +477,7 @@ pub struct LiquidateUpdateV1 {
 }
 
 /// Update data for governance report — persisted on-chain for public audit
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct GovernanceReportUpdateV1 {
     /// Token ID being reported on
     pub token_id: pallas::Base,
@@ -459,7 +500,7 @@ pub struct GovernanceReportUpdateV1 {
 }
 
 /// Update data for interest accrual
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct AccrueInterestUpdateV1 {
     /// Old total debt before accrual
     pub old_total_debt: u64,
@@ -498,7 +539,7 @@ pub struct RedeemStableParamsV1 {
 }
 
 /// Update data for stablecoin redemption
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RedeemStableUpdateV1 {
     /// Nullifier of the redeemed coin (prevents double-redeem)
     pub redeem_nullifier: pallas::Base,
@@ -519,7 +560,7 @@ pub struct RedeemStableUpdateV1 {
 // ============================================================================
 
 /// Global debt pool state
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct DebtPool {
     /// Total debt in the pool (all stablecoins minted)
     pub total_debt: u64,
@@ -535,7 +576,7 @@ pub struct DebtPool {
 }
 
 /// Collateral pool for a specific collateral type
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CollateralPool {
     /// Collateral type
     pub collateral_type: CollateralType,
@@ -555,7 +596,7 @@ pub struct CollateralPool {
 /// Note: In the pooled model, we don't track individual positions.
 /// Instead, users have "debt shares" that represent their proportion
 /// of the total debt. Their actual collateral is pooled.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct DebtShare {
     /// Owner's public key
     pub owner_pub: PublicKey,
@@ -574,7 +615,7 @@ pub struct DebtShare {
 }
 
 /// PI Controller state for redemption rate
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct PiControllerState {
     /// Current integral term
     pub integral: i64,
@@ -590,7 +631,7 @@ pub struct PiControllerState {
 }
 
 /// Price feed data from AMM TWAP
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct PriceFeed {
     /// Current TWAP price
     pub twap: u64,
@@ -693,7 +734,7 @@ pub struct AccrueInterestParams {
 }
 
 /// Global liquidation record
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct LiquidationRecord {
     /// Total debt covered
     pub debt_covered: u64,
@@ -711,13 +752,21 @@ pub struct LiquidationRecord {
     pub liquidated_at: u64,
 }
 
+/// Update data for open position
+#[derive(Debug, Clone)]
+pub struct OpenPositionUpdateV1 {
+    pub deposit_commitment: IntentCommitment,
+    pub collateral_type: CollateralType,
+    pub collateral_amount: u64,
+}
+
 // ============================================================================
 // SPEND HOOK CALLBACK (received from PN BurnV1)
 // ============================================================================
 
 /// State update from a spend_hook callback received from Promissory Note BurnV1.
 /// Records the burn so the stablecoin contract can track redemptions and adjust supply.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct SpendHookCallbackUpdateV1 {
     /// Nullifiers of burned stablecoins (replay protection)
     pub nullifiers: Vec<Nullifier>,
@@ -725,6 +774,557 @@ pub struct SpendHookCallbackUpdateV1 {
     pub value_commits: Vec<[u8; 64]>,
     /// Pre-computed new total_redeemed value (read in exec, written in apply)
     pub new_total_redeemed: u64,
+}
+
+// ============================================================================
+// ENCODE / DECODE IMPL BLOCKS (ρ-calculus: eval(quote(x)) ~ x)
+// ============================================================================
+
+/// Helper: decode a pallas::Base from a 32-byte slice with validation.
+macro_rules! decode_pallas_base {
+    ($data:expr, $offset:expr, $name:literal) => {{
+        let bytes: [u8; 32] = $data[$offset..$offset + 32].try_into().unwrap();
+        Option::<pallas::Base>::from(pallas::Base::from_repr(bytes))
+            .ok_or_else(|| ContractError::IoError(
+                format!("{}: invalid pallas::Base", $name)
+            ))?
+    }};
+}
+
+// ---- CollateralType ----
+
+impl CollateralType {
+    pub fn encode(&self) -> Vec<u8> { vec![*self as u8] }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() { return Err(ContractError::IoError("CollateralType: empty data".into())); }
+        CollateralType::try_from(data[0])
+    }
+}
+
+// ---- StablecoinModel ----
+
+impl StablecoinModel {
+    pub fn encode(&self) -> Vec<u8> { vec![*self as u8] }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() { return Err(ContractError::IoError("StablecoinModel: empty data".into())); }
+        StablecoinModel::try_from(data[0])
+    }
+}
+
+// ---- DeadManAction ----
+
+impl DeadManAction {
+    pub fn encode(&self) -> Vec<u8> { vec![*self as u8] }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() { return Err(ContractError::IoError("DeadManAction: empty data".into())); }
+        DeadManAction::try_from(data[0])
+    }
+}
+
+// ---- CollateralParams (25 bytes) ----
+// Layout: collateral_type(1) + haircut(8) + liquidation_threshold(8) + max_debt_share(8)
+
+impl CollateralParams {
+    pub const ENCODED_SIZE: usize = 25;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.push(self.collateral_type as u8);
+        b.extend_from_slice(&self.haircut.to_le_bytes());
+        b.extend_from_slice(&self.liquidation_threshold.to_le_bytes());
+        b.extend_from_slice(&self.max_debt_share.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("CollateralParams: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        Ok(CollateralParams {
+            collateral_type: CollateralType::try_from(data[0])?,
+            haircut: u64::from_le_bytes(data[1..9].try_into().unwrap()),
+            liquidation_threshold: u64::from_le_bytes(data[9..17].try_into().unwrap()),
+            max_debt_share: u64::from_le_bytes(data[17..25].try_into().unwrap()),
+        })
+    }
+}
+
+// ---- DeadManSwitchConfig (18 bytes) ----
+// Layout: enabled(1) + timeout_blocks(8) + action(1) + last_action_block(8)
+
+impl DeadManSwitchConfig {
+    pub const ENCODED_SIZE: usize = 18;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.push(self.enabled as u8);
+        b.extend_from_slice(&self.timeout_blocks.to_le_bytes());
+        b.push(self.action as u8);
+        b.extend_from_slice(&self.last_action_block.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("DeadManSwitchConfig: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        Ok(DeadManSwitchConfig {
+            enabled: data[0] != 0,
+            timeout_blocks: u64::from_le_bytes(data[1..9].try_into().unwrap()),
+            action: DeadManAction::try_from(data[9])?,
+            last_action_block: u64::from_le_bytes(data[10..18].try_into().unwrap()),
+        })
+    }
+}
+
+// ---- DebtPool (32 bytes) ----
+// Layout: total_debt(8) + total_collateral(8) + accumulated_fees(8) + last_update(8)
+
+impl DebtPool {
+    pub const ENCODED_SIZE: usize = 32;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.total_debt.to_le_bytes());
+        b.extend_from_slice(&self.total_collateral.to_le_bytes());
+        b.extend_from_slice(&self.accumulated_fees.to_le_bytes());
+        b.extend_from_slice(&self.last_update.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("DebtPool: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        Ok(DebtPool {
+            total_debt: u64::from_le_bytes(data[0..8].try_into().unwrap()),
+            total_collateral: u64::from_le_bytes(data[8..16].try_into().unwrap()),
+            accumulated_fees: u64::from_le_bytes(data[16..24].try_into().unwrap()),
+            last_update: u64::from_le_bytes(data[24..32].try_into().unwrap()),
+        })
+    }
+}
+
+// ---- CollateralPool (25 bytes) ----
+// Layout: collateral_type(1) + total_deposited(8) + value_ratio(8) + last_update(8)
+
+impl CollateralPool {
+    pub const ENCODED_SIZE: usize = 25;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.push(self.collateral_type as u8);
+        b.extend_from_slice(&self.total_deposited.to_le_bytes());
+        b.extend_from_slice(&self.value_ratio.to_le_bytes());
+        b.extend_from_slice(&self.last_update.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("CollateralPool: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        Ok(CollateralPool {
+            collateral_type: CollateralType::try_from(data[0])?,
+            total_deposited: u64::from_le_bytes(data[1..9].try_into().unwrap()),
+            value_ratio: u64::from_le_bytes(data[9..17].try_into().unwrap()),
+            last_update: u64::from_le_bytes(data[17..25].try_into().unwrap()),
+        })
+    }
+}
+
+// ---- DebtShare (88 bytes) ----
+// Layout: owner_pub(32) + debt_amount(8) + commitment(32) + created_at(8) + updated_at(8)
+
+impl DebtShare {
+    pub const ENCODED_SIZE: usize = 88;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.owner_pub.to_bytes());
+        b.extend_from_slice(&self.debt_amount.to_le_bytes());
+        b.extend_from_slice(&self.commitment.to_bytes());
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b.extend_from_slice(&self.updated_at.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("DebtShare: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        Ok(DebtShare {
+            owner_pub: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("DebtShare: invalid owner_pub: {}", e)))?,
+            debt_amount: u64::from_le_bytes(data[32..40].try_into().unwrap()),
+            commitment: IntentCommitment::from_bytes(data[40..72].try_into().unwrap()).map_err(|_| ContractError::IoError("DebtShare: invalid commitment".into()))?,
+            created_at: u64::from_le_bytes(data[72..80].try_into().unwrap()),
+            updated_at: u64::from_le_bytes(data[80..88].try_into().unwrap()),
+        })
+    }
+}
+
+// ---- PiControllerState (32 bytes) ----
+// Layout: integral(8) + last_update(8) + current_rate(8) + last_twap(8)
+
+impl PiControllerState {
+    pub const ENCODED_SIZE: usize = 32;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.integral.to_le_bytes());
+        b.extend_from_slice(&self.last_update.to_le_bytes());
+        b.extend_from_slice(&self.current_rate.to_le_bytes());
+        b.extend_from_slice(&self.last_twap.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("PiControllerState: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        Ok(PiControllerState {
+            integral: i64::from_le_bytes(data[0..8].try_into().unwrap()),
+            last_update: u64::from_le_bytes(data[8..16].try_into().unwrap()),
+            current_rate: u64::from_le_bytes(data[16..24].try_into().unwrap()),
+            last_twap: u64::from_le_bytes(data[24..32].try_into().unwrap()),
+        })
+    }
+}
+
+// ---- PriceFeed (48 bytes) ----
+// Layout: twap(8) + window_start(8) + window_end(8) + reserve0(8) + reserve1(8) + timestamp(8)
+
+impl PriceFeed {
+    pub const ENCODED_SIZE: usize = 48;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.twap.to_le_bytes());
+        b.extend_from_slice(&self.window_start.to_le_bytes());
+        b.extend_from_slice(&self.window_end.to_le_bytes());
+        b.extend_from_slice(&self.reserve0.to_le_bytes());
+        b.extend_from_slice(&self.reserve1.to_le_bytes());
+        b.extend_from_slice(&self.timestamp.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("PriceFeed: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        Ok(PriceFeed {
+            twap: u64::from_le_bytes(data[0..8].try_into().unwrap()),
+            window_start: u64::from_le_bytes(data[8..16].try_into().unwrap()),
+            window_end: u64::from_le_bytes(data[16..24].try_into().unwrap()),
+            reserve0: u64::from_le_bytes(data[24..32].try_into().unwrap()),
+            reserve1: u64::from_le_bytes(data[32..40].try_into().unwrap()),
+            timestamp: u64::from_le_bytes(data[40..48].try_into().unwrap()),
+        })
+    }
+}
+
+// ---- LiquidationRecord (64 bytes) ----
+// Layout: debt_covered(8) + collateral_seized(8) + penalty(8) + liquidator_pub(32) + liquidated_at(8)
+
+impl LiquidationRecord {
+    pub const ENCODED_SIZE: usize = 64;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.debt_covered.to_le_bytes());
+        b.extend_from_slice(&self.collateral_seized.to_le_bytes());
+        b.extend_from_slice(&self.penalty.to_le_bytes());
+        b.extend_from_slice(&self.liquidator_pub.to_bytes());
+        b.extend_from_slice(&self.liquidated_at.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("LiquidationRecord: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        Ok(LiquidationRecord {
+            debt_covered: u64::from_le_bytes(data[0..8].try_into().unwrap()),
+            collateral_seized: u64::from_le_bytes(data[8..16].try_into().unwrap()),
+            penalty: u64::from_le_bytes(data[16..24].try_into().unwrap()),
+            liquidator_pub: PublicKey::from_bytes(data[24..56].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("LiquidationRecord: invalid liquidator_pub: {}", e)))?,
+            liquidated_at: u64::from_le_bytes(data[56..64].try_into().unwrap()),
+        })
+    }
+}
+
+// ---- UpdateConfigUpdateV1 (96 bytes) ----
+// Layout: min_collat_ratio(8) + liq_threshold(8) + liq_penalty(8) + base_rate(8)
+//         + pi_kp(8) + pi_ki(8) + twap_window(8) + price_dev_threshold(8) + config_nullifier(32)
+
+impl UpdateConfigUpdateV1 {
+    pub const ENCODED_SIZE: usize = 96;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.min_collateralization_ratio.to_le_bytes());
+        b.extend_from_slice(&self.liquidation_threshold.to_le_bytes());
+        b.extend_from_slice(&self.liquidation_penalty.to_le_bytes());
+        b.extend_from_slice(&self.base_rate.to_le_bytes());
+        b.extend_from_slice(&self.pi_kp.to_le_bytes());
+        b.extend_from_slice(&self.pi_ki.to_le_bytes());
+        b.extend_from_slice(&self.twap_window.to_le_bytes());
+        b.extend_from_slice(&self.price_deviation_threshold.to_le_bytes());
+        b.extend_from_slice(&self.config_nullifier.to_repr());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("UpdateConfigUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        Ok(UpdateConfigUpdateV1 {
+            min_collateralization_ratio: u64::from_le_bytes(data[0..8].try_into().unwrap()),
+            liquidation_threshold: u64::from_le_bytes(data[8..16].try_into().unwrap()),
+            liquidation_penalty: u64::from_le_bytes(data[16..24].try_into().unwrap()),
+            base_rate: u64::from_le_bytes(data[24..32].try_into().unwrap()),
+            pi_kp: i64::from_le_bytes(data[32..40].try_into().unwrap()),
+            pi_ki: i64::from_le_bytes(data[40..48].try_into().unwrap()),
+            twap_window: u64::from_le_bytes(data[48..56].try_into().unwrap()),
+            price_deviation_threshold: u64::from_le_bytes(data[56..64].try_into().unwrap()),
+            config_nullifier: decode_pallas_base!(data, 64, "UpdateConfigUpdateV1"),
+        })
+    }
+}
+
+// ---- AddCollateralUpdateV1 (41 bytes) ----
+// Layout: position_commitment(32) + added_collateral(8) + collateral_type(1)
+
+impl AddCollateralUpdateV1 {
+    pub const ENCODED_SIZE: usize = 41;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.position_commitment.to_bytes());
+        b.extend_from_slice(&self.added_collateral.to_le_bytes());
+        b.push(self.collateral_type as u8);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("AddCollateralUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        Ok(AddCollateralUpdateV1 {
+            position_commitment: IntentCommitment::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("AddCollateralUpdateV1: invalid position_commitment".into()))?,
+            added_collateral: u64::from_le_bytes(data[32..40].try_into().unwrap()),
+            collateral_type: CollateralType::try_from(data[40])?,
+        })
+    }
+}
+
+// ---- RemoveCollateralUpdateV1 (73 bytes) ----
+// Layout: position_nullifier(32) + new_commitment(32) + collateral_type(1) + removed_collateral(8)
+
+impl RemoveCollateralUpdateV1 {
+    pub const ENCODED_SIZE: usize = 73;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.position_nullifier.to_bytes());
+        b.extend_from_slice(&self.new_commitment.to_bytes());
+        b.push(self.collateral_type as u8);
+        b.extend_from_slice(&self.removed_collateral.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("RemoveCollateralUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        Ok(RemoveCollateralUpdateV1 {
+            position_nullifier: IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("RemoveCollateralUpdateV1: invalid position_nullifier".into()))?,
+            new_commitment: IntentCommitment::from_bytes(data[32..64].try_into().unwrap()).map_err(|_| ContractError::IoError("RemoveCollateralUpdateV1: invalid new_commitment".into()))?,
+            collateral_type: CollateralType::try_from(data[64])?,
+            removed_collateral: u64::from_le_bytes(data[65..73].try_into().unwrap()),
+        })
+    }
+}
+
+// ---- MintStableUpdateV1 (48 bytes) ----
+// Layout: position_commitment(32) + mint_amount(8) + new_total_debt(8)
+
+impl MintStableUpdateV1 {
+    pub const ENCODED_SIZE: usize = 48;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.position_commitment.to_bytes());
+        b.extend_from_slice(&self.mint_amount.to_le_bytes());
+        b.extend_from_slice(&self.new_total_debt.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("MintStableUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        Ok(MintStableUpdateV1 {
+            position_commitment: IntentCommitment::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("MintStableUpdateV1: invalid position_commitment".into()))?,
+            mint_amount: u64::from_le_bytes(data[32..40].try_into().unwrap()),
+            new_total_debt: u64::from_le_bytes(data[40..48].try_into().unwrap()),
+        })
+    }
+}
+
+// ---- RepayStableUpdateV1 (80 bytes) ----
+// Layout: position_nullifier(32) + new_commitment(32) + repay_amount(8) + new_total_debt(8)
+
+impl RepayStableUpdateV1 {
+    pub const ENCODED_SIZE: usize = 80;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.position_nullifier.to_bytes());
+        b.extend_from_slice(&self.new_commitment.to_bytes());
+        b.extend_from_slice(&self.repay_amount.to_le_bytes());
+        b.extend_from_slice(&self.new_total_debt.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("RepayStableUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        Ok(RepayStableUpdateV1 {
+            position_nullifier: IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("RepayStableUpdateV1: invalid position_nullifier".into()))?,
+            new_commitment: IntentCommitment::from_bytes(data[32..64].try_into().unwrap()).map_err(|_| ContractError::IoError("RepayStableUpdateV1: invalid new_commitment".into()))?,
+            repay_amount: u64::from_le_bytes(data[64..72].try_into().unwrap()),
+            new_total_debt: u64::from_le_bytes(data[72..80].try_into().unwrap()),
+        })
+    }
+}
+
+// ---- LiquidateUpdateV1 (40 bytes) ----
+// Layout: debt_covered(8) + collateral_seized(8) + penalty(8) + new_total_debt(8) + new_total_collateral(8)
+
+impl LiquidateUpdateV1 {
+    pub const ENCODED_SIZE: usize = 40;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.debt_covered.to_le_bytes());
+        b.extend_from_slice(&self.collateral_seized.to_le_bytes());
+        b.extend_from_slice(&self.penalty.to_le_bytes());
+        b.extend_from_slice(&self.new_total_debt.to_le_bytes());
+        b.extend_from_slice(&self.new_total_collateral.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("LiquidateUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        Ok(LiquidateUpdateV1 {
+            debt_covered: u64::from_le_bytes(data[0..8].try_into().unwrap()),
+            collateral_seized: u64::from_le_bytes(data[8..16].try_into().unwrap()),
+            penalty: u64::from_le_bytes(data[16..24].try_into().unwrap()),
+            new_total_debt: u64::from_le_bytes(data[24..32].try_into().unwrap()),
+            new_total_collateral: u64::from_le_bytes(data[32..40].try_into().unwrap()),
+        })
+    }
+}
+
+// ---- GovernanceReportUpdateV1 (120 bytes) ----
+// Layout: token_id(32) + total_collateral(8) + total_debt(8) + total_redeemed(8) + outstanding(8)
+//         + collateral_ratio_bps(8) + interest_accrued(8) + report_block(8) + reporter_pub(32)
+
+impl GovernanceReportUpdateV1 {
+    pub const ENCODED_SIZE: usize = 120;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.token_id.to_repr());
+        b.extend_from_slice(&self.total_collateral.to_le_bytes());
+        b.extend_from_slice(&self.total_debt.to_le_bytes());
+        b.extend_from_slice(&self.total_redeemed.to_le_bytes());
+        b.extend_from_slice(&self.outstanding.to_le_bytes());
+        b.extend_from_slice(&self.collateral_ratio_bps.to_le_bytes());
+        b.extend_from_slice(&self.interest_accrued.to_le_bytes());
+        b.extend_from_slice(&self.report_block.to_le_bytes());
+        b.extend_from_slice(&self.reporter_pub.to_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("GovernanceReportUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        Ok(GovernanceReportUpdateV1 {
+            token_id: decode_pallas_base!(data, 0, "GovernanceReportUpdateV1:token_id"),
+            total_collateral: u64::from_le_bytes(data[32..40].try_into().unwrap()),
+            total_debt: u64::from_le_bytes(data[40..48].try_into().unwrap()),
+            total_redeemed: u64::from_le_bytes(data[48..56].try_into().unwrap()),
+            outstanding: u64::from_le_bytes(data[56..64].try_into().unwrap()),
+            collateral_ratio_bps: u64::from_le_bytes(data[64..72].try_into().unwrap()),
+            interest_accrued: u64::from_le_bytes(data[72..80].try_into().unwrap()),
+            report_block: u64::from_le_bytes(data[80..88].try_into().unwrap()),
+            reporter_pub: PublicKey::from_bytes(data[88..120].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("GovernanceReportUpdateV1: invalid reporter_pub: {}", e)))?,
+        })
+    }
+}
+
+// ---- AccrueInterestUpdateV1 (56 bytes) ----
+// Layout: old_total_debt(8) + new_total_debt(8) + interest_amount(8) + accumulator_pub(32)
+
+impl AccrueInterestUpdateV1 {
+    pub const ENCODED_SIZE: usize = 56;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.old_total_debt.to_le_bytes());
+        b.extend_from_slice(&self.new_total_debt.to_le_bytes());
+        b.extend_from_slice(&self.interest_amount.to_le_bytes());
+        b.extend_from_slice(&self.accumulator_pub.to_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("AccrueInterestUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        Ok(AccrueInterestUpdateV1 {
+            old_total_debt: u64::from_le_bytes(data[0..8].try_into().unwrap()),
+            new_total_debt: u64::from_le_bytes(data[8..16].try_into().unwrap()),
+            interest_amount: u64::from_le_bytes(data[16..24].try_into().unwrap()),
+            accumulator_pub: PublicKey::from_bytes(data[24..56].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("AccrueInterestUpdateV1: invalid accumulator_pub: {}", e)))?,
+        })
+    }
+}
+
+// ---- RedeemStableUpdateV1 (96 bytes) ----
+// Layout: redeem_nullifier(32) + receipt_coin(32) + redeem_amount(8) + new_total_debt(8)
+//         + new_total_collateral(8) + new_total_redeemed(8)
+
+impl RedeemStableUpdateV1 {
+    pub const ENCODED_SIZE: usize = 96;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.redeem_nullifier.to_repr());
+        b.extend_from_slice(&self.receipt_coin);
+        b.extend_from_slice(&self.redeem_amount.to_le_bytes());
+        b.extend_from_slice(&self.new_total_debt.to_le_bytes());
+        b.extend_from_slice(&self.new_total_collateral.to_le_bytes());
+        b.extend_from_slice(&self.new_total_redeemed.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("RedeemStableUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        let mut receipt_coin = [0u8; 32];
+        receipt_coin.copy_from_slice(&data[32..64]);
+        Ok(RedeemStableUpdateV1 {
+            redeem_nullifier: decode_pallas_base!(data, 0, "RedeemStableUpdateV1:redeem_nullifier"),
+            receipt_coin,
+            redeem_amount: u64::from_le_bytes(data[64..72].try_into().unwrap()),
+            new_total_debt: u64::from_le_bytes(data[72..80].try_into().unwrap()),
+            new_total_collateral: u64::from_le_bytes(data[80..88].try_into().unwrap()),
+            new_total_redeemed: u64::from_le_bytes(data[88..96].try_into().unwrap()),
+        })
+    }
+}
+
+// ---- SpendHookCallbackUpdateV1 (variable: Vec<Nullifier> + Vec<[u8;64]> + u64) ----
+// Layout: nullifier_count(u8) + nullifiers(count*32) + value_commit_count(u8) + value_commits(count*64) + new_total_redeemed(8)
+
+impl SpendHookCallbackUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 2 + 8 + self.nullifiers.len() * 32 + self.value_commits.len() * 64;
+        let mut b = Vec::with_capacity(cap);
+        b.push(self.nullifiers.len() as u8);
+        for n in &self.nullifiers { b.extend_from_slice(&n.to_bytes()); }
+        b.push(self.value_commits.len() as u8);
+        for vc in &self.value_commits { b.extend_from_slice(vc); }
+        b.extend_from_slice(&self.new_total_redeemed.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 2 { return Err(ContractError::IoError("SpendHookCallbackUpdateV1: data too short".into())); }
+        let nf_count = data[0] as usize;
+        let nf_end = 1 + nf_count * 32;
+        if data.len() < nf_end + 1 { return Err(ContractError::IoError(format!("SpendHookCallbackUpdateV1: expected {} bytes for nullifiers, got {}", nf_end + 1, data.len()))); }
+        let mut nullifiers = Vec::with_capacity(nf_count);
+        for i in 0..nf_count {
+            nullifiers.push(Nullifier::from_bytes(data[1 + i*32..1 + (i+1)*32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("SpendHookCallbackUpdateV1: invalid nullifier[{}]: {}", i, e)))?);
+        }
+        let vc_count = data[nf_end] as usize;
+        let vc_end = nf_end + 1 + vc_count * 64;
+        if data.len() != vc_end + 8 { return Err(ContractError::IoError(format!("SpendHookCallbackUpdateV1: expected {} bytes total, got {}", vc_end + 8, data.len()))); }
+        let mut value_commits = Vec::with_capacity(vc_count);
+        for i in 0..vc_count {
+            let start = nf_end + 1 + i * 64;
+            let mut vc = [0u8; 64];
+            vc.copy_from_slice(&data[start..start + 64]);
+            value_commits.push(vc);
+        }
+        Ok(SpendHookCallbackUpdateV1 {
+            nullifiers,
+            value_commits,
+            new_total_redeemed: u64::from_le_bytes(data[vc_end..vc_end + 8].try_into().unwrap()),
+        })
+    }
+}
+
+// ---- OpenPositionUpdateV1 (41 bytes) ----
+// Layout: deposit_commitment(32) + collateral_type(1) + collateral_amount(8)
+
+impl OpenPositionUpdateV1 {
+    pub const ENCODED_SIZE: usize = 41;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.deposit_commitment.to_bytes());
+        b.push(self.collateral_type as u8);
+        b.extend_from_slice(&self.collateral_amount.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("OpenPositionUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        Ok(OpenPositionUpdateV1 {
+            deposit_commitment: IntentCommitment::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("OpenPositionUpdateV1: invalid deposit_commitment".into()))?,
+            collateral_type: CollateralType::try_from(data[32])?,
+            collateral_amount: u64::from_le_bytes(data[33..41].try_into().unwrap()),
+        })
+    }
 }
 
 // ============================================================================

@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow_sdk::crypto::poseidon_hash;
+use dwow_sdk::crypto::{pasta_prelude::PrimeField, poseidon_hash};
 use dwow_sdk::{
     dark_tree::DarkLeaf,
     error::ContractResult,
@@ -51,13 +51,13 @@ pub(crate) fn process_contribute_entropy_instruction(
     // Get room
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
     let Some(room_data) =
-        wasm::db::db_get(rooms_db, &dwow_serial::serialize(&params.room_id))?
+        wasm::db::db_get(rooms_db, &params.room_id.to_repr())?
     else {
         msg!("[Entropy] Error: Room not found");
         return Err(GameRoomError::RoomNotFound.into())
     };
     let mut room: GameRoom =
-        dwow_serial::deserialize(&room_data)?;
+        GameRoom::decode(&room_data)?;
 
     // Validate entropy mode
     if room.config.entropy_mode != EntropyMode::TrustedSetup {
@@ -77,13 +77,13 @@ pub(crate) fn process_contribute_entropy_instruction(
 
     // Get account
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
-    let account_key = dwow_serial::serialize(&(params.room_id, poseidon_hash([caller.x().expect("pk not identity"), caller.y().expect("pk not identity")])));
+    let account_key = [&params.room_id.to_repr()[..], &poseidon_hash([caller.x().expect("pk not identity"), caller.y().expect("pk not identity")]).to_repr()[..]].concat();
     let Some(account_data) = wasm::db::db_get(accounts_db, &account_key)? else {
         msg!("[Entropy] Error: Account not found");
         return Err(GameRoomError::AccountNotFound.into())
     };
     let mut account: PlayerAccount =
-        dwow_serial::deserialize(&account_data)?;
+        PlayerAccount::decode(&account_data)?;
 
     // Check if already contributed
     if account.entropy_contribution.is_some() {
@@ -123,15 +123,15 @@ pub(crate) fn process_contribute_entropy_instruction(
         revealed_nonce: params.reveal,
         contributed_at: current_block,
     });
-    wasm::db::db_set(accounts_db, &account_key, &dwow_serial::serialize(&account))?;
+    wasm::db::db_set(accounts_db, &account_key, &account.encode())?;
 
     // Update room
     room.total_entropy_contributions += 1;
     room.combined_entropy = new_combined_entropy;
     wasm::db::db_set(
         rooms_db,
-        &dwow_serial::serialize(&params.room_id),
-        &dwow_serial::serialize(&room),
+        &params.room_id.to_repr(),
+        &room.encode(),
     )?;
 
     msg!(
@@ -146,7 +146,7 @@ pub(crate) fn process_contribute_entropy_instruction(
         combined_entropy: new_combined_entropy,
         contributions_count: room.total_entropy_contributions,
     };
-    wasm::util::set_return_data(&dwow_serial::serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 pub(crate) fn apply_contribute_entropy_update(

@@ -40,16 +40,27 @@
 //! - **Cancelled**: Buyer cancelled before funding
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, MerkleNode, PublicKey},
-    pasta::pallas,
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, MerkleNode, PublicKey},
+    error::ContractError,
+    pasta::{group::GroupEncoding, pallas},
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Escrow unique identifier (hash of escrow data)
-pub type EscrowId = pallas::Base;
+#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+pub struct EscrowId(pub pallas::Base);
+impl EscrowId {
+    pub fn inner(&self) -> pallas::Base { self.0 }
+    pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
+    pub fn from_bytes(x: [u8; 32]) -> Option<Self> {
+        pallas::Base::from_repr(x).into_option().map(Self)
+    }
+    pub fn is_zero(&self) -> bool { self.0 == pallas::Base::zero() }
+    pub fn zero() -> Self { Self(pallas::Base::zero()) }
+}
 
 /// Represents the current state of an escrow
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EscrowState {
     /// Escrow created but not yet funded
     Created = 0,
@@ -92,7 +103,7 @@ impl TryFrom<u8> for EscrowState {
 /// The Purse and Box contracts handle balance tracking, nullifier replay,
 /// and ZK proof verification — the escrow contract validates only that
 /// the child call targets the correct genesis contract.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Escrow {
     pub version: u8,
     /// Escrow identifier (commitment)
@@ -139,20 +150,109 @@ impl Escrow {
     ) -> EscrowId {
         let (bx, by) = buyer_pubkey.xy().expect("pk not identity");
         let (sx, sy) = seller_pubkey.xy().expect("pk not identity");
-        poseidon_hash([
+        EscrowId(poseidon_hash([
             bx, by, sx, sy,
             pallas::Base::from(value),
             token_id,
             pallas::Base::from(timeout),
             buyer_secret,
             seller_secret,
-        ])
+        ]))
     }
 
     /// Compute the nullifier that prevents double-claim or double-refund
     #[allow(dead_code)]
     pub fn compute_nullifier(&self, secret: pallas::Base) -> pallas::Base {
-        poseidon_hash([self.id, secret])
+        poseidon_hash([self.id.0, secret])
+    }
+}
+
+impl Escrow {
+    /// Fixed canonical byte size:
+    ///   version(1) + id(32) + buyer_pubkey(32) + seller_pubkey(32) +
+    ///   value(8) + token_id(32) + timeout(8) + state(1) +
+    ///   value_commit(32) + value_blind(32) + spent_nullifier(32) +
+    ///   created_at(8) + funded_at(9) + instance_seed(32)
+    pub const ENCODED_SIZE: usize = 291;
+
+    /// Encode to canonical bytes (rho-calculus: quote).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.push(self.version);
+        b.extend_from_slice(&self.id.to_bytes());
+        b.extend_from_slice(&self.buyer_pubkey.to_bytes());
+        b.extend_from_slice(&self.seller_pubkey.to_bytes());
+        b.extend_from_slice(&self.value.to_le_bytes());
+        b.extend_from_slice(&self.token_id.to_repr());
+        b.extend_from_slice(&self.timeout.to_le_bytes());
+        b.push(self.state as u8);
+        b.extend_from_slice(&self.value_commit.to_bytes());
+        b.extend_from_slice(&self.value_blind.to_repr());
+        b.extend_from_slice(&self.spent_nullifier.to_repr());
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b.push(self.funded_at.is_some() as u8);
+        if let Some(fa) = self.funded_at {
+            b.extend_from_slice(&fa.to_le_bytes());
+        } else {
+            b.extend_from_slice(&[0u8; 8]);
+        }
+        b.extend_from_slice(&self.instance_seed);
+        b
+    }
+
+    /// Decode from canonical bytes (rho-calculus: eval).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "Escrow: expected {} bytes, got {}",
+                Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let version = data[0];
+        let id = EscrowId::from_bytes(data[1..33].try_into().unwrap())
+            .ok_or_else(|| ContractError::IoError("Escrow: invalid id".into()))?;
+        let buyer_pubkey = PublicKey::from_bytes(data[33..65].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("Escrow: invalid buyer_pubkey: {}", e)))?;
+        let seller_pubkey = PublicKey::from_bytes(data[65..97].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("Escrow: invalid seller_pubkey: {}", e)))?;
+        let value = u64::from_le_bytes(data[97..105].try_into().unwrap());
+        let token_id = Option::<pallas::Base>::from(
+            pallas::Base::from_repr(data[105..137].try_into().unwrap())
+        ).ok_or_else(|| ContractError::IoError("Escrow: invalid token_id".into()))?;
+        let timeout = u64::from_le_bytes(data[137..145].try_into().unwrap());
+        let state = EscrowState::try_from(data[145])?;
+        let value_commit = Option::<pallas::Point>::from(
+            pallas::Point::from_bytes(data[146..178].try_into().unwrap())
+        ).ok_or_else(|| ContractError::IoError("Escrow: invalid value_commit".into()))?;
+        let value_blind = Option::<pallas::Scalar>::from(
+            pallas::Scalar::from_repr(data[178..210].try_into().unwrap())
+        ).ok_or_else(|| ContractError::IoError("Escrow: invalid value_blind".into()))?;
+        let spent_nullifier = Option::<pallas::Base>::from(
+            pallas::Base::from_repr(data[210..242].try_into().unwrap())
+        ).ok_or_else(|| ContractError::IoError("Escrow: invalid spent_nullifier".into()))?;
+        let created_at = u64::from_le_bytes(data[242..250].try_into().unwrap());
+        let funded_at = if data[250] != 0 {
+            Some(u64::from_le_bytes(data[251..259].try_into().unwrap()))
+        } else {
+            None
+        };
+        let instance_seed: [u8; 32] = data[259..291].try_into().unwrap();
+        Ok(Escrow {
+            version,
+            id,
+            buyer_pubkey,
+            seller_pubkey,
+            value,
+            token_id,
+            timeout,
+            state,
+            value_commit,
+            value_blind,
+            spent_nullifier,
+            created_at,
+            funded_at,
+            instance_seed,
+        })
     }
 }
 
@@ -180,10 +280,24 @@ pub struct CreateEscrowParamsV1 {
 }
 
 /// State update for `Escrow::CreateEscrowV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CreateEscrowUpdateV1 {
     /// The created escrow ID
     pub escrow_id: EscrowId,
+}
+
+impl CreateEscrowUpdateV1 {
+    pub const ENCODED_SIZE: usize = 32;
+    pub fn encode(&self) -> Vec<u8> { self.escrow_id.to_bytes().to_vec() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 32 {
+            return Err(ContractError::IoError(format!("CreateEscrowUpdateV1: expected 32 bytes, got {}", data.len())));
+        }
+        Ok(CreateEscrowUpdateV1 {
+            escrow_id: EscrowId::from_bytes(data[0..32].try_into().unwrap())
+                .ok_or_else(|| ContractError::IoError("CreateEscrowUpdateV1: invalid escrow_id".into()))?,
+        })
+    }
 }
 
 /// Parameters for `Escrow::FundV1`
@@ -200,10 +314,24 @@ pub struct FundEscrowParamsV1 {
 }
 
 /// State update for `Escrow::FundV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct FundEscrowUpdateV1 {
     /// The funded escrow ID
     pub escrow_id: EscrowId,
+}
+
+impl FundEscrowUpdateV1 {
+    pub const ENCODED_SIZE: usize = 32;
+    pub fn encode(&self) -> Vec<u8> { self.escrow_id.to_bytes().to_vec() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 32 {
+            return Err(ContractError::IoError(format!("FundEscrowUpdateV1: expected 32 bytes, got {}", data.len())));
+        }
+        Ok(FundEscrowUpdateV1 {
+            escrow_id: EscrowId::from_bytes(data[0..32].try_into().unwrap())
+                .ok_or_else(|| ContractError::IoError("FundEscrowUpdateV1: invalid escrow_id".into()))?,
+        })
+    }
 }
 
 /// Parameters for `Escrow::ClaimV1`
@@ -220,12 +348,34 @@ pub struct ClaimEscrowParamsV1 {
 }
 
 /// State update for `Escrow::ClaimEscrowV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ClaimEscrowUpdateV1 {
     /// The claimed escrow ID
     pub escrow_id: EscrowId,
     /// Nullifier for the spent escrow
     pub spent_nullifier: pallas::Base,
+}
+
+impl ClaimEscrowUpdateV1 {
+    pub const ENCODED_SIZE: usize = 64;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(64);
+        b.extend_from_slice(&self.escrow_id.to_bytes());
+        b.extend_from_slice(&self.spent_nullifier.to_repr());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 64 {
+            return Err(ContractError::IoError(format!("ClaimEscrowUpdateV1: expected 64 bytes, got {}", data.len())));
+        }
+        Ok(ClaimEscrowUpdateV1 {
+            escrow_id: EscrowId::from_bytes(data[0..32].try_into().unwrap())
+                .ok_or_else(|| ContractError::IoError("ClaimEscrowUpdateV1: invalid escrow_id".into()))?,
+            spent_nullifier: Option::<pallas::Base>::from(
+                pallas::Base::from_repr(data[32..64].try_into().unwrap())
+            ).ok_or_else(|| ContractError::IoError("ClaimEscrowUpdateV1: invalid spent_nullifier".into()))?,
+        })
+    }
 }
 
 /// Parameters for `Escrow::RefundV1`
@@ -246,12 +396,34 @@ pub struct RefundEscrowParamsV1 {
 }
 
 /// State update for `Escrow::RefundEscrowV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RefundEscrowUpdateV1 {
     /// The refunded escrow ID
     pub escrow_id: EscrowId,
     /// Nullifier for the spent escrow
     pub spent_nullifier: pallas::Base,
+}
+
+impl RefundEscrowUpdateV1 {
+    pub const ENCODED_SIZE: usize = 64;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(64);
+        b.extend_from_slice(&self.escrow_id.to_bytes());
+        b.extend_from_slice(&self.spent_nullifier.to_repr());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 64 {
+            return Err(ContractError::IoError(format!("RefundEscrowUpdateV1: expected 64 bytes, got {}", data.len())));
+        }
+        Ok(RefundEscrowUpdateV1 {
+            escrow_id: EscrowId::from_bytes(data[0..32].try_into().unwrap())
+                .ok_or_else(|| ContractError::IoError("RefundEscrowUpdateV1: invalid escrow_id".into()))?,
+            spent_nullifier: Option::<pallas::Base>::from(
+                pallas::Base::from_repr(data[32..64].try_into().unwrap())
+            ).ok_or_else(|| ContractError::IoError("RefundEscrowUpdateV1: invalid spent_nullifier".into()))?,
+        })
+    }
 }
 
 /// Parameters for `Escrow::CancelV1`
@@ -266,10 +438,32 @@ pub struct CancelEscrowParamsV1 {
 }
 
 /// State update for `Escrow::CancelV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CancelEscrowUpdateV1 {
     /// The cancelled escrow ID
     pub escrow_id: EscrowId,
     /// Cancel nullifier — recorded to prevent double-cancel
     pub cancel_nullifier: pallas::Base,
+}
+
+impl CancelEscrowUpdateV1 {
+    pub const ENCODED_SIZE: usize = 64;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(64);
+        b.extend_from_slice(&self.escrow_id.to_bytes());
+        b.extend_from_slice(&self.cancel_nullifier.to_repr());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 64 {
+            return Err(ContractError::IoError(format!("CancelEscrowUpdateV1: expected 64 bytes, got {}", data.len())));
+        }
+        Ok(CancelEscrowUpdateV1 {
+            escrow_id: EscrowId::from_bytes(data[0..32].try_into().unwrap())
+                .ok_or_else(|| ContractError::IoError("CancelEscrowUpdateV1: invalid escrow_id".into()))?,
+            cancel_nullifier: Option::<pallas::Base>::from(
+                pallas::Base::from_repr(data[32..64].try_into().unwrap())
+            ).ok_or_else(|| ContractError::IoError("CancelEscrowUpdateV1: invalid cancel_nullifier".into()))?,
+        })
+    }
 }

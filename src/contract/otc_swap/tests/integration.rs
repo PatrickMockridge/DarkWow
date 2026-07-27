@@ -119,8 +119,8 @@ fn test_create_swap_update_encoding() {
         swap_id: pallas::Base::from(1),
     };
 
-    let encoded = serialize(&update);
-    let decoded: CreateSwapUpdateV1 = deserialize(&encoded).unwrap();
+    let encoded = update.encode();
+    let decoded = CreateSwapUpdateV1::decode(&encoded).unwrap();
 
     assert_eq!(decoded.swap_id, update.swap_id);
 }
@@ -147,8 +147,8 @@ fn test_fund_swap_update_encoding() {
         swap_id: pallas::Base::from(1),
     };
 
-    let encoded = serialize(&update);
-    let decoded: FundSwapUpdateV1 = deserialize(&encoded).unwrap();
+    let encoded = update.encode();
+    let decoded = FundSwapUpdateV1::decode(&encoded).unwrap();
 
     assert_eq!(decoded.swap_id, update.swap_id);
 }
@@ -180,8 +180,8 @@ fn test_execute_swap_update_encoding() {
         spent_nullifier: pallas::Base::from(50),
     };
 
-    let encoded = serialize(&update);
-    let decoded: ExecuteSwapUpdateV1 = deserialize(&encoded).unwrap();
+    let encoded = update.encode();
+    let decoded = ExecuteSwapUpdateV1::decode(&encoded).unwrap();
 
     assert_eq!(decoded.swap_id, update.swap_id);
     assert_eq!(decoded.spent_nullifier, update.spent_nullifier);
@@ -215,8 +215,8 @@ fn test_cancel_swap_update_encoding() {
         spent_nullifier: pallas::Base::from(50),
     };
 
-    let encoded = serialize(&update);
-    let decoded: CancelSwapUpdateV1 = deserialize(&encoded).unwrap();
+    let encoded = update.encode();
+    let decoded = CancelSwapUpdateV1::decode(&encoded).unwrap();
 
     assert_eq!(decoded.swap_id, update.swap_id);
     assert_eq!(decoded.spent_nullifier, update.spent_nullifier);
@@ -244,8 +244,8 @@ fn test_swap_encoding() {
         instance_seed: [1u8; 32],
     };
 
-    let encoded = serialize(&swap);
-    let decoded: OtcSwap = deserialize(&encoded).unwrap();
+    let encoded = swap.encode();
+    let decoded = OtcSwap::decode(&encoded).unwrap();
 
     assert_eq!(decoded.id, swap.id);
     assert_eq!(decoded.alice_pubkey, swap.alice_pubkey);

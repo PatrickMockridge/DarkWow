@@ -27,7 +27,8 @@
 
 use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, poseidon_hash, tx_hash_to_base, PublicKey},
-    pasta::pallas,
+    error::ContractError,
+    pasta::{group::GroupEncoding, pallas},
     tx::TransactionHash,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -41,7 +42,7 @@ use dwow_serial::{SerialDecodable, SerialEncodable};
 /// 13-25: Diamonds
 /// 26-38: Hearts
 /// 39-51: Spades
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Card(pub u8);
 
 impl Card {
@@ -75,7 +76,7 @@ impl Card {
 }
 
 /// Baccarat hand (2-3 cards)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Hand {
     pub card1: Card,
     pub card2: Card,
@@ -98,7 +99,7 @@ impl Hand {
 // ============================================================================
 
 /// Bet type enumeration
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BetType {
     Player = 0,
     Banker = 1,
@@ -117,7 +118,7 @@ impl BetType {
 }
 
 /// Game outcome
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
     Player = 0,
     Banker = 1,
@@ -136,7 +137,7 @@ impl Outcome {
 }
 
 /// Bet state enumeration
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BetState {
     Committed = 0,
     CardsDrawn = 1,
@@ -144,11 +145,47 @@ pub enum BetState {
     Cancelled = 3,
 }
 
+impl BetState {
+    pub fn from_u8(v: u8) -> Option<Self> {
+        match v {
+            0 => Some(Self::Committed),
+            1 => Some(Self::CardsDrawn),
+            2 => Some(Self::Settled),
+            3 => Some(Self::Cancelled),
+            _ => None,
+        }
+    }
+}
+
 /// Unique bet identifier (Poseidon hash)
 pub type BetId = pallas::Base;
 
+// ============================================================================
+// ENCODING HELPERS
+// ============================================================================
+
+#[inline]
+fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> {
+    Option::<pallas::Base>::from(pallas::Base::from_repr(
+        data.try_into().map_err(|_| ContractError::IoError("read_base: wrong size".into()))?,
+    ))
+    .ok_or_else(|| ContractError::IoError("read_base: invalid field element".into()))
+}
+
+#[inline]
+fn read_point(data: &[u8]) -> Result<pallas::Point, ContractError> {
+    Option::<pallas::Point>::from(pallas::Point::from_bytes(
+        data.try_into().map_err(|_| ContractError::IoError("read_point: wrong size".into()))?,
+    ))
+    .ok_or_else(|| ContractError::IoError("read_point: invalid point".into()))
+}
+
+// ============================================================================
+// BET (STORED TYPE — manual encode/decode, no derived serialization)
+// ============================================================================
+
 /// Bet structure stored on-chain
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Bet {
     pub version: u8,
     /// Unique bet ID
@@ -193,10 +230,200 @@ pub struct Bet {
     pub instance_seed: [u8; 32],
 }
 
+/// Fixed-size prefix of Bet encoding (all fields before the 5 Option fields).
+/// Layout: version(1) + id(32) + player_pub(32) + bet_type(1) + bet_value(8)
+///        + secret_nonce_commit(32) + blind(32) + state(1) + house_edge(4)
+///        + confirmation_depth(1) + created_at(8) + settle_block(8)
+///        + value_commit(32) + token_id(32) + nullifier(32) + instance_seed(32)
+const BET_FIXED_SIZE: usize = 288;
+
 impl Bet {
     /// Derive nullifier for this bet
     pub fn derive_nullifier(&self) -> BetId {
         poseidon_hash([self.id, self.secret_nonce_commit])
+    }
+
+    /// Manual encode for DB storage.
+    /// Options are encoded at the end: each is 1 presence-byte + data if Some.
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(300);
+        buf.push(self.version);
+        buf.extend_from_slice(&self.id.to_repr());
+        buf.extend_from_slice(&self.player_pub.to_bytes());
+        buf.push(self.bet_type as u8);
+        buf.extend_from_slice(&self.bet_value.to_le_bytes());
+        buf.extend_from_slice(&self.secret_nonce_commit.to_repr());
+        buf.extend_from_slice(&self.blind.to_repr());
+        buf.push(self.state as u8);
+        buf.extend_from_slice(&self.house_edge.to_le_bytes());
+        buf.push(self.confirmation_depth);
+        buf.extend_from_slice(&self.created_at.to_le_bytes());
+        buf.extend_from_slice(&self.settle_block.to_le_bytes());
+        buf.extend_from_slice(&self.value_commit.to_bytes());
+        buf.extend_from_slice(&self.token_id.to_repr());
+        buf.extend_from_slice(&self.nullifier.to_repr());
+        buf.extend_from_slice(&self.instance_seed);
+        // Option fields at the end
+        encode_option_hand(&mut buf, &self.player_hand);
+        encode_option_hand(&mut buf, &self.banker_hand);
+        encode_option_card(&mut buf, &self.player_third_card);
+        encode_option_card(&mut buf, &self.banker_third_card);
+        encode_option_outcome(&mut buf, &self.outcome);
+        buf
+    }
+
+    /// Manual decode from DB storage.
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < BET_FIXED_SIZE + 5 {
+            return Err(ContractError::IoError(format!(
+                "Bet: expected at least {} bytes, got {}",
+                BET_FIXED_SIZE + 5,
+                data.len()
+            )));
+        }
+        let version = data[0];
+        let id = read_base(&data[1..33])?;
+        let player_pub = PublicKey::from_bytes(data[33..65].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("Bet: invalid player_pub".into()))?;
+        let bet_type = BetType::from_u8(data[65])
+            .ok_or_else(|| ContractError::IoError("Bet: invalid bet_type".into()))?;
+        let bet_value = u64::from_le_bytes(
+            data[66..74].try_into().unwrap(),
+        );
+        let secret_nonce_commit = read_base(&data[74..106])?;
+        let blind = read_base(&data[106..138])?;
+        let state = BetState::from_u8(data[138])
+            .ok_or_else(|| ContractError::IoError("Bet: invalid state".into()))?;
+        let house_edge = u32::from_le_bytes(
+            data[139..143].try_into().unwrap(),
+        );
+        let confirmation_depth = data[143];
+        let created_at = u64::from_le_bytes(
+            data[144..152].try_into().unwrap(),
+        );
+        let settle_block = u64::from_le_bytes(
+            data[152..160].try_into().unwrap(),
+        );
+        let value_commit = read_point(&data[160..192])?;
+        let token_id = read_base(&data[192..224])?;
+        let nullifier = read_base(&data[224..256])?;
+        let instance_seed: [u8; 32] = data[256..288].try_into().unwrap();
+
+        let (player_hand, pos) = decode_option_hand(data, BET_FIXED_SIZE)?;
+        let (banker_hand, pos) = decode_option_hand(data, pos)?;
+        let (player_third_card, pos) = decode_option_card(data, pos)?;
+        let (banker_third_card, pos) = decode_option_card(data, pos)?;
+        let (outcome, _pos) = decode_option_outcome(data, pos)?;
+
+        Ok(Bet {
+            version,
+            id,
+            player_pub,
+            bet_type,
+            bet_value,
+            secret_nonce_commit,
+            blind,
+            player_hand,
+            banker_hand,
+            player_third_card,
+            banker_third_card,
+            outcome,
+            state,
+            house_edge,
+            confirmation_depth,
+            created_at,
+            settle_block,
+            value_commit,
+            token_id,
+            nullifier,
+            instance_seed,
+        })
+    }
+}
+
+// --- Option encoding helpers (shared by Bet and bridge update structs) ---
+
+fn encode_option_hand(buf: &mut Vec<u8>, hand: &Option<[Card; 2]>) {
+    match hand {
+        Some(cards) => {
+            buf.push(1);
+            buf.push(cards[0].0);
+            buf.push(cards[1].0);
+        }
+        None => {
+            buf.push(0);
+        }
+    }
+}
+
+fn decode_option_hand(data: &[u8], pos: usize) -> Result<(Option<[Card; 2]>, usize), ContractError> {
+    if data.len() <= pos {
+        return Err(ContractError::IoError("decode_option_hand: data too short".into()));
+    }
+    if data[pos] == 1 {
+        if data.len() < pos + 3 {
+            return Err(ContractError::IoError("decode_option_hand: expected 3 bytes for Some".into()));
+        }
+        Ok((Some([Card(data[pos + 1]), Card(data[pos + 2])]), pos + 3))
+    } else {
+        Ok((None, pos + 1))
+    }
+}
+
+fn encode_option_card(buf: &mut Vec<u8>, card: &Option<Card>) {
+    match card {
+        Some(c) => {
+            buf.push(1);
+            buf.push(c.0);
+        }
+        None => {
+            buf.push(0);
+        }
+    }
+}
+
+fn decode_option_card(data: &[u8], pos: usize) -> Result<(Option<Card>, usize), ContractError> {
+    if data.len() <= pos {
+        return Err(ContractError::IoError("decode_option_card: data too short".into()));
+    }
+    if data[pos] == 1 {
+        if data.len() < pos + 2 {
+            return Err(ContractError::IoError("decode_option_card: expected 2 bytes for Some".into()));
+        }
+        Ok((Some(Card(data[pos + 1])), pos + 2))
+    } else {
+        Ok((None, pos + 1))
+    }
+}
+
+fn encode_option_outcome(buf: &mut Vec<u8>, outcome: &Option<Outcome>) {
+    match outcome {
+        Some(o) => {
+            buf.push(1);
+            buf.push(*o as u8);
+        }
+        None => {
+            buf.push(0);
+        }
+    }
+}
+
+fn decode_option_outcome(
+    data: &[u8],
+    pos: usize,
+) -> Result<(Option<Outcome>, usize), ContractError> {
+    if data.len() <= pos {
+        return Err(ContractError::IoError("decode_option_outcome: data too short".into()));
+    }
+    if data[pos] == 1 {
+        if data.len() < pos + 2 {
+            return Err(ContractError::IoError("decode_option_outcome: expected 2 bytes for Some".into()));
+        }
+        let o = Outcome::from_u8(data[pos + 1])
+            .ok_or_else(|| ContractError::IoError("decode_option_outcome: invalid outcome".into()))?;
+        Ok((Some(o), pos + 2))
+    } else {
+        Ok((None, pos + 1))
     }
 }
 
@@ -242,7 +469,7 @@ impl CommitBetParamsV1 {
 }
 
 /// Update produced by CommitBetV1 - contains all info needed to reconstruct bet
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CommitBetUpdateV1 {
     pub bet_id: BetId,
     pub player_pub: PublicKey,
@@ -261,6 +488,79 @@ pub struct CommitBetUpdateV1 {
     pub instance_seed: [u8; 32],
 }
 
+impl CommitBetUpdateV1 {
+    pub const ENCODED_SIZE: usize = 287;
+    /// Layout: bet_id(32) + player_pub(32) + bet_type(1) + bet_value(8)
+    ///        + secret_nonce_commit(32) + blind(32) + house_edge(4)
+    ///        + confirmation_depth(1) + token_id(32) + value_commit(32)
+    ///        + settle_block(8) + nullifier(32) + state(1) + created_at(8)
+    ///        + instance_seed(32)
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.bet_id.to_repr());
+        buf.extend_from_slice(&self.player_pub.to_bytes());
+        buf.push(self.bet_type as u8);
+        buf.extend_from_slice(&self.bet_value.to_le_bytes());
+        buf.extend_from_slice(&self.secret_nonce_commit.to_repr());
+        buf.extend_from_slice(&self.blind.to_repr());
+        buf.extend_from_slice(&self.house_edge.to_le_bytes());
+        buf.push(self.confirmation_depth);
+        buf.extend_from_slice(&self.token_id.to_repr());
+        buf.extend_from_slice(&self.value_commit.to_bytes());
+        buf.extend_from_slice(&self.settle_block.to_le_bytes());
+        buf.extend_from_slice(&self.nullifier.to_repr());
+        buf.push(self.state as u8);
+        buf.extend_from_slice(&self.created_at.to_le_bytes());
+        buf.extend_from_slice(&self.instance_seed);
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "CommitBetUpdateV1: expected {} bytes, got {}",
+                Self::ENCODED_SIZE,
+                data.len()
+            )));
+        }
+        let bet_id = read_base(&data[0..32])?;
+        let player_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("CommitBetUpdateV1: invalid player_pub".into()))?;
+        let bet_type = BetType::from_u8(data[64])
+            .ok_or_else(|| ContractError::IoError("CommitBetUpdateV1: invalid bet_type".into()))?;
+        let bet_value = u64::from_le_bytes(data[65..73].try_into().unwrap());
+        let secret_nonce_commit = read_base(&data[73..105])?;
+        let blind = read_base(&data[105..137])?;
+        let house_edge = u32::from_le_bytes(data[137..141].try_into().unwrap());
+        let confirmation_depth = data[141];
+        let token_id = read_base(&data[142..174])?;
+        let value_commit = read_point(&data[174..206])?;
+        let settle_block = u64::from_le_bytes(data[206..214].try_into().unwrap());
+        let nullifier = read_base(&data[214..246])?;
+        let state = BetState::from_u8(data[246])
+            .ok_or_else(|| ContractError::IoError("CommitBetUpdateV1: invalid state".into()))?;
+        let created_at = u64::from_le_bytes(data[247..255].try_into().unwrap());
+        let instance_seed: [u8; 32] = data[255..287].try_into().unwrap();
+        Ok(CommitBetUpdateV1 {
+            bet_id,
+            player_pub,
+            bet_type,
+            bet_value,
+            secret_nonce_commit,
+            blind,
+            house_edge,
+            confirmation_depth,
+            token_id,
+            value_commit,
+            settle_block,
+            nullifier,
+            state,
+            created_at,
+            instance_seed,
+        })
+    }
+}
+
 /// Parameters for DrawCardsV1
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct DrawCardsParamsV1 {
@@ -271,7 +571,7 @@ pub struct DrawCardsParamsV1 {
 }
 
 /// Update produced by DrawCardsV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct DrawCardsUpdateV1 {
     pub bet_id: BetId,
     pub player_card1: Card,
@@ -284,6 +584,60 @@ pub struct DrawCardsUpdateV1 {
     pub state: BetState,
 }
 
+impl DrawCardsUpdateV1 {
+    /// Fixed prefix: bet_id(32) + 4 cards(4) + outcome(1) + state(1) = 38
+    const FIXED_SIZE: usize = 38;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(42);
+        buf.extend_from_slice(&self.bet_id.to_repr());
+        buf.push(self.player_card1.0);
+        buf.push(self.player_card2.0);
+        buf.push(self.banker_card1.0);
+        buf.push(self.banker_card2.0);
+        buf.push(self.outcome as u8);
+        buf.push(self.state as u8);
+        // Option fields at end
+        encode_option_card(&mut buf, &self.player_third_card);
+        encode_option_card(&mut buf, &self.banker_third_card);
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < Self::FIXED_SIZE + 2 {
+            return Err(ContractError::IoError(format!(
+                "DrawCardsUpdateV1: expected at least {} bytes, got {}",
+                Self::FIXED_SIZE + 2,
+                data.len()
+            )));
+        }
+        let bet_id = read_base(&data[0..32])?;
+        let player_card1 = Card(data[32]);
+        let player_card2 = Card(data[33]);
+        let banker_card1 = Card(data[34]);
+        let banker_card2 = Card(data[35]);
+        let outcome = Outcome::from_u8(data[36])
+            .ok_or_else(|| ContractError::IoError("DrawCardsUpdateV1: invalid outcome".into()))?;
+        let state = BetState::from_u8(data[37])
+            .ok_or_else(|| ContractError::IoError("DrawCardsUpdateV1: invalid state".into()))?;
+
+        let (player_third_card, pos) = decode_option_card(data, Self::FIXED_SIZE)?;
+        let (banker_third_card, _pos) = decode_option_card(data, pos)?;
+
+        Ok(DrawCardsUpdateV1 {
+            bet_id,
+            player_card1,
+            player_card2,
+            banker_card1,
+            banker_card2,
+            player_third_card,
+            banker_third_card,
+            outcome,
+            state,
+        })
+    }
+}
+
 /// Parameters for SettleBetV1
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct SettleBetParamsV1 {
@@ -292,11 +646,38 @@ pub struct SettleBetParamsV1 {
 }
 
 /// Update produced by SettleBetV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct SettleBetUpdateV1 {
     pub bet_id: BetId,
     pub payout: u64,
     pub state: BetState,
+}
+
+impl SettleBetUpdateV1 {
+    pub const ENCODED_SIZE: usize = 41;
+    /// Layout: bet_id(32) + payout(8) + state(1)
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.bet_id.to_repr());
+        buf.extend_from_slice(&self.payout.to_le_bytes());
+        buf.push(self.state as u8);
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "SettleBetUpdateV1: expected {} bytes, got {}",
+                Self::ENCODED_SIZE,
+                data.len()
+            )));
+        }
+        let bet_id = read_base(&data[0..32])?;
+        let payout = u64::from_le_bytes(data[32..40].try_into().unwrap());
+        let state = BetState::from_u8(data[40])
+            .ok_or_else(|| ContractError::IoError("SettleBetUpdateV1: invalid state".into()))?;
+        Ok(SettleBetUpdateV1 { bet_id, payout, state })
+    }
 }
 
 /// Parameters for HouseCloseV1
@@ -313,12 +694,41 @@ pub struct HouseCloseParamsV1 {
 }
 
 /// Update produced by HouseCloseV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct HouseCloseUpdateV1 {
     pub bet_id: BetId,
     pub house_take: u64,
     pub close_nullifier: pallas::Base,
     pub state: BetState,
+}
+
+impl HouseCloseUpdateV1 {
+    pub const ENCODED_SIZE: usize = 73;
+    /// Layout: bet_id(32) + house_take(8) + close_nullifier(32) + state(1)
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.bet_id.to_repr());
+        buf.extend_from_slice(&self.house_take.to_le_bytes());
+        buf.extend_from_slice(&self.close_nullifier.to_repr());
+        buf.push(self.state as u8);
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "HouseCloseUpdateV1: expected {} bytes, got {}",
+                Self::ENCODED_SIZE,
+                data.len()
+            )));
+        }
+        let bet_id = read_base(&data[0..32])?;
+        let house_take = u64::from_le_bytes(data[32..40].try_into().unwrap());
+        let close_nullifier = read_base(&data[40..72])?;
+        let state = BetState::from_u8(data[72])
+            .ok_or_else(|| ContractError::IoError("HouseCloseUpdateV1: invalid state".into()))?;
+        Ok(HouseCloseUpdateV1 { bet_id, house_take, close_nullifier, state })
+    }
 }
 
 // ============================================================================

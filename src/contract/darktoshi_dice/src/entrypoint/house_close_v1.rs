@@ -35,7 +35,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::deserialize;
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id, validate_child_value_commit,
 };
@@ -95,15 +95,15 @@ pub fn dice_house_close_process_instruction_v1(
 
     // Look up the bet
     let bets_db = wasm::db::db_lookup(cid, DICE_CONTRACT_BETS_TREE)?;
-    let bet_bytes = wasm::db::db_get(bets_db, &serialize(&params.bet_id))?.ok_or(ContractError::DbGetEmpty)?;
-    let bet: Bet = deserialize(&bet_bytes)?;
+    let bet_bytes = wasm::db::db_get(bets_db, &params.bet_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
+    let bet: Bet = Bet::decode(&bet_bytes)?;
 
     msg!("[dice::house_close] Found bet, current state: {:?}", bet.state as u8);
 
     // Get roll timeout from info
     let info_db = wasm::db::db_lookup(cid, DICE_CONTRACT_INFO_TREE)?;
     let timeout_bytes = wasm::db::db_get(info_db, DICE_CONTRACT_ROLL_TIMEOUT)?.ok_or(ContractError::DbGetEmpty)?;
-    let roll_timeout: u32 = deserialize(&timeout_bytes)?;
+    let roll_timeout: u32 = u32::from_le_bytes(timeout_bytes.try_into().map_err(|e| ContractError::IoError(format!("{e}")))?);
 
     // Get current block height
     let current_block = wasm::util::get_verifying_block_height()?;
@@ -140,7 +140,7 @@ pub fn dice_house_close_process_instruction_v1(
         wasm::db::db_get(info_db, crate::DICE_CONTRACT_HOUSE_PUBKEY)?;
 
     let stored_house_pubkey: dwow_sdk::crypto::PublicKey = match house_pubkey_bytes {
-        Some(bytes) => deserialize(&bytes)?,
+        Some(bytes) => dwow_sdk::crypto::PublicKey::from_bytes(bytes.try_into().map_err(|e| ContractError::IoError(format!("{e}")))?)?,
         None => return Err(DiceError::UnauthorizedCaller.into()),
     };
 
@@ -153,7 +153,7 @@ pub fn dice_house_close_process_instruction_v1(
 
     // Verify close_nullifier hasn't been used (ZK proof verifies it's correctly derived)
     let nullifiers_db = wasm::db::db_lookup(cid, DICE_CONTRACT_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.close_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.close_nullifier.to_repr())? {
         return Err(DiceError::DuplicateNullifier.into())
     }
 
@@ -168,7 +168,7 @@ pub fn dice_house_close_process_instruction_v1(
     let update = HouseCloseUpdateV1 { bet_id: bet.id, close_nullifier: params.close_nullifier, state: BetState::Cancelled };
 
     msg!("[dice::house_close] House close approved");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Process update for HouseCloseV1
@@ -180,26 +180,26 @@ pub fn dice_house_close_process_update_v1(
     let house_db = wasm::db::db_lookup(cid, DICE_CONTRACT_HOUSE_TREE)?;
 
     // Look up and update the bet
-    let bet_bytes = wasm::db::db_get(bets_db, &serialize(&update.bet_id))?.ok_or(ContractError::DbGetEmpty)?;
-    let mut bet: Bet = deserialize(&bet_bytes)?;
+    let bet_bytes = wasm::db::db_get(bets_db, &update.bet_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
+    let mut bet: Bet = Bet::decode(&bet_bytes)?;
 
     // Update bet state to Cancelled
     bet.state = update.state;
-    wasm::db::db_set(bets_db, &serialize(&update.bet_id), &serialize(&bet))?;
+    wasm::db::db_set(bets_db, &update.bet_id.to_repr(), &bet.encode())?;
 
     // House collects the bet value
     let house_take = bet.calculate_house_take().ok_or(DiceError::ArithmeticOverflow)?;
     let mut house_balance: u64 = 0;
     if wasm::db::db_contains_key(house_db, b"balance")? {
         let balance_bytes = wasm::db::db_get(house_db, b"balance")?.ok_or(ContractError::DbGetEmpty)?;
-        house_balance = deserialize(&balance_bytes)?;
+        house_balance = u64::from_le_bytes(balance_bytes.try_into().map_err(|e| ContractError::IoError(format!("{e}")))?);
     }
     house_balance += house_take;
-    wasm::db::db_set(house_db, b"balance", &serialize(&house_balance))?;
+    wasm::db::db_set(house_db, b"balance", &house_balance.to_le_bytes())?;
 
     // Record close nullifier to prevent replay
     let nullifiers_db = wasm::db::db_lookup(cid, DICE_CONTRACT_NULLIFIERS_TREE)?;
-    wasm::db::db_set(nullifiers_db, &serialize(&update.close_nullifier), &[])?;
+    wasm::db::db_set(nullifiers_db, &update.close_nullifier.to_repr(), &[])?;
 
     msg!("[dice::house_close::update] House collected {}", house_take);
     Ok(())

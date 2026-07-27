@@ -22,416 +22,212 @@
  */
 
 //! DrainProtection contract data structures
-//!
-//! This contract provides governance-level protections for endowment/treasury funds:
-//! - Rate limiting per block
-//! - 2/3 vote thresholds for large withdrawals
-//! - Lock/unlock emergency controls
-//! - Member exit with haircut
 
 use dwow_sdk::{
-    crypto::PublicKey,
+    crypto::{pasta_prelude::PrimeField, PublicKey},
+    error::ContractError,
     pasta::pallas,
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{deserialize, serialize, SerialDecodable, SerialEncodable};
 
 /// Unique identifier for the protected fund (derived from DAO-Escrow bulla)
 pub type FundId = pallas::Base;
 
-/// Member's contribution weight (block-height-adjusted)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+// ============================================================================
+// STORED-ONLY SUB-TYPES (manual encode/decode, no SerialEncodable)
+// ============================================================================
+
+#[derive(Debug, Clone)]
 pub struct MemberWeight {
-    /// Raw contribution amount
     pub contribution: u64,
-    /// Block height when contribution was made
     pub deposited_at: u64,
-    /// Weight multiplier (longer deposit time = higher weight)
     pub weight_multiplier: u64,
 }
 
 impl MemberWeight {
-    /// Compute the effective weight for exit calculations
     pub fn effective_weight(&self, current_block: u64) -> u64 {
         let blocks_held = current_block.saturating_sub(self.deposited_at);
-        // Weight increases with time held, capped at 3x after ~1 year
         let time_multiplier = 1_000 + (blocks_held / 10_000).min(2_000);
         self.contribution * time_multiplier / 1_000
     }
 }
 
-/// Represents a protected fund with drain controls
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct ProtectedFund {
-    pub version: u8,
-    /// Instance seed for per-capability key derivation
-    pub instance_seed: [u8; 32],
-    /// Unique fund identifier
-    pub id: FundId,
-    /// Total funds under protection
-    pub total_funds: u64,
-    /// Spend authority (who can propose withdrawals)
-    pub spend_authority: PublicKey,
-    /// Current lock state
-    pub lock_state: LockState,
-    /// Legacy rate limit configuration (used if graduated_tiers disabled)
-    pub rate_limit: RateLimit,
-    /// MultiSig group ID for per-action threshold voting (replaces VoteThresholds)
-    pub multisig_group_id: pallas::Base,
-    /// Purse instance ID for Pedersen-committed balance tracking (replaces total_funds)
-    pub purse_id: pallas::Base,
-    /// Comprehensive drain protection config (all optional features)
-    pub drain_config: DrainConfig,
-    /// Members and their weights
-    pub members: Vec<MemberWeight>,
-    /// Emergency lock expiry block
-    pub lock_expires_at: u64,
-    /// Spend authority change timelock
-    pub authority_change_timelock: u64,
-    /// Block height when fund was created
-    pub created_at: u64,
-    // ─────────────────────────────────────────────────────────────────
-    // OPTIONAL FEATURE STATE
-    // ─────────────────────────────────────────────────────────────────
-    /// Exit queue state (if exit_queue enabled)
-    pub exit_queue_state: Vec<ExitQueueEntry>,
-    /// Circuit breaker state (if circuit_breaker enabled)
-    pub circuit_breaker_state: Option<CircuitBreakerState>,
-    /// Dead man's switch state (if dead_mans_switch enabled)
-    pub dead_mans_switch_state: Option<DeadMansSwitchState>,
-    /// Current no-loss reserve balance (computed from total_funds and reserve_bps)
-    pub no_loss_reserve_balance: u64,
-    /// Pending observation period proposals
-    pub observation_pending: Vec<ObservationPending>,
-}
-
-/// Pending observation period entry
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ObservationPending {
-    /// Proposal ID
     pub proposal_id: pallas::Base,
-    /// Amount being withdrawn
     pub amount: u64,
-    /// Observation ends at block
     pub observation_ends_at: u64,
 }
 
-/// Lock state of the fund
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
+pub struct ExitQueueEntry {
+    pub position: u64,
+    pub member_pubkey: PublicKey,
+    pub requested_value: u64,
+    pub weight: u64,
+    pub queued_at: u64,
+    pub processed: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct CircuitBreakerState {
+    pub paused: bool,
+    pub pause_triggered_at: u64,
+    pub auto_resume_at: u64,
+    pub drained_in_window: u64,
+    pub guardian_notified_at: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct DeadMansSwitchState {
+    pub triggered: bool,
+    pub last_activity_at: u64,
+    pub notification_sent_at: u64,
+    pub recovery_activated_at: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct TransferRecord {
+    pub version: u8,
+    pub block: u64,
+    pub amount: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExitRequest {
+    pub id: pallas::Base,
+    pub member_pubkey: PublicKey,
+    pub weight: u64,
+    pub requested_value: u64,
+    pub haircut_bps: u64,
+    pub payout_value: u64,
+    pub requested_at: u64,
+    pub processed: bool,
+}
+
+// ============================================================================
+// ENUMS AND CONFIG TYPES (keep SerialEncodable — used in params)
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LockState {
-    /// Funds are unlocked and available
     Unlocked = 0,
-    /// Funds are locked (emergency state)
     Locked = 1,
 }
 
-/// Rate limiting configuration
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RateLimit {
-    /// Base rate: percentage of total per 1000 blocks (e.g., 10 = 0.1%)
     pub base_rate_bps: u64,
-    /// Blocks over which rate is averaged
     pub averaging_window_blocks: u64,
-    /// Transfers exceeding base rate require vote
     pub vote_required_above_bps: u64,
 }
 
 impl Default for RateLimit {
     fn default() -> Self {
-        // Default: 1% per 1000 blocks, requires vote above that
-        Self {
-            base_rate_bps: 100,       // 1%
-            averaging_window_blocks: 1000,
-            vote_required_above_bps: 100,
-        }
+        Self { base_rate_bps: 100, averaging_window_blocks: 1000, vote_required_above_bps: 100 }
     }
 }
 
-/// Record of a fund transfer for rate limiting
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct TransferRecord {
-    pub version: u8,
-    /// Block height of transfer
-    pub block: u64,
-    /// Amount transferred
-    pub amount: u64,
+pub struct ExitQueueConfig {
+    pub max_exit_per_epoch_bps: u64,
+    pub epoch_blocks: u64,
+    pub min_queue_blocks: u64,
+    pub force_fcfs: bool,
 }
 
-/// Exit request from a member
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct ExitRequest {
-    /// Request ID
-    pub id: pallas::Base,
-    /// Member public key
-    pub member_pubkey: PublicKey,
-    /// Contribution weight at time of request
-    pub weight: u64,
-    /// Requested exit value (before haircut)
-    pub requested_value: u64,
-    /// Haircut applied
-    pub haircut_bps: u64,
-    /// Actual payout (after haircut)
-    pub payout_value: u64,
-    /// Block when request was made
-    pub requested_at: u64,
-    /// Whether exit has been processed
-    pub processed: bool,
+impl Default for ExitQueueConfig {
+    fn default() -> Self {
+        Self { max_exit_per_epoch_bps: 1000, epoch_blocks: 600, min_queue_blocks: 10, force_fcfs: true }
+    }
 }
 
-// ============================================================================
-// Contract Function Parameters
-// ============================================================================
-
-/// Parameters for `DrainProtection::InitializeV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct InitializeParamsV1 {
-    /// Instance seed for per-capability key derivation
-    pub instance_seed: [u8; 32],
-    /// Fund identifier (from DAO-Escrow)
-    pub fund_id: FundId,
-    /// Initial spend authority
-    pub spend_authority: PublicKey,
-    /// Associated DAO-Escrow bulla
-    pub dao_escrow_bulla: pallas::Base,
-    /// Drain protection configuration (all features optional)
-    pub drain_config: DrainConfig,
+pub struct CircuitBreakerConfig {
+    pub trigger_threshold_bps: u64,
+    pub window_blocks: u64,
+    pub pause_duration_blocks: u64,
+    pub auto_resume: bool,
+    pub notify_guardians: bool,
 }
 
-/// State update for `DrainProtection::InitializeV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct InitializeUpdateV1 {
-    /// Instance seed for per-capability key derivation
-    pub instance_seed: [u8; 32],
-    pub fund_id: FundId,
+impl Default for CircuitBreakerConfig {
+    fn default() -> Self {
+        Self { trigger_threshold_bps: 1000, window_blocks: 100, pause_duration_blocks: 600, auto_resume: false, notify_guardians: true }
+    }
 }
 
-/// Parameters for `DrainProtection::ProposeV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct ProposeParamsV1 {
-    /// MultiSig message hash (the action being proposed for approval)
-    pub message_hash: pallas::Base,
-    /// MultiSig group ID this proposal targets
-    pub multisig_group_id: pallas::Base,
-    /// Prover's public key
-    pub prover_pubkey: PublicKey,
-    /// Vote period in blocks
-    pub vote_period_blocks: u64,
-    /// ZK proof
-    pub proof: Vec<u8>,
+pub struct ObservationPeriodConfig {
+    pub threshold_bps: u64,
+    pub observation_blocks: u64,
+    pub allow_emergency_bypass: bool,
+    pub emergency_bypass_quorum_bps: u64,
 }
 
-/// State update for `DrainProtection::ProposeV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct ProposeUpdateV1 {
-    pub proposal_id: pallas::Base,
+impl Default for ObservationPeriodConfig {
+    fn default() -> Self {
+        Self { threshold_bps: 500, observation_blocks: 48 * 6, allow_emergency_bypass: true, emergency_bypass_quorum_bps: 9000 }
+    }
 }
 
-/// Parameters for `DrainProtection::VoteV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct VoteParamsV1 {
-    /// Proposal ID to vote on
-    pub proposal_id: pallas::Base,
-    /// Voter's public key
-    pub voter_pubkey: PublicKey,
-    /// Vote choice (true = yes, false = no)
-    pub vote: bool,
-    /// Signature
-    pub signature: pallas::Base,
+pub struct SplitProposalsConfig {
+    pub threshold_bps: u64,
+    pub max_chunk_bps: u64,
+    pub chunk_delay_blocks: u64,
+    pub separate_vote_each_chunk: bool,
 }
 
-/// State update for `DrainProtection::VoteV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct VoteUpdateV1 {
-    pub proposal_id: pallas::Base,
-    pub yes_votes: u64,
-    pub no_votes: u64,
+impl Default for SplitProposalsConfig {
+    fn default() -> Self {
+        Self { threshold_bps: 1000, max_chunk_bps: 1000, chunk_delay_blocks: 600, separate_vote_each_chunk: true }
+    }
 }
 
-/// Parameters for `DrainProtection::ExecuteV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct ExecuteParamsV1 {
-    /// Proposal ID to execute
-    pub proposal_id: pallas::Base,
-    /// Executor signature
-    pub signature: pallas::Base,
+pub enum ReserveSpendAuthority {
+    EmergencyVoteOnly,
+    GuardianMultisig,
+    BothRequired,
 }
 
-/// State update for `DrainProtection::ExecuteV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct ExecuteUpdateV1 {
-    pub proposal_id: pallas::Base,
-    pub action: pallas::Base,
+pub struct NoLossReserveConfig {
+    pub reserve_bps: u64,
+    pub reserve_spend_authority: ReserveSpendAuthority,
+    pub min_reserve_absolute: u64,
 }
 
-/// Parameters for `DrainProtection::ExitV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct ExitParamsV1 {
-    /// Fund to exit from
-    pub fund_id: FundId,
-    /// Member public key
-    pub member_pubkey: PublicKey,
-    /// Member's contribution proof
-    pub contribution_weight: u64,
-    /// Current block height
-    pub current_block: u64,
-    /// DAO-Escrow bulla identifier (public input for ZK proof)
-    pub dao_escrow_bulla: pallas::Base,
-    /// DAO-Escrow membership note (public input for ZK proof)
-    pub dao_membership_note: pallas::Base,
-    /// Effective weight after time multiplier (public input for ZK proof)
-    pub effective_weight: pallas::Base,
-    /// ZK proof of membership
-    pub proof: Vec<u8>,
+impl Default for NoLossReserveConfig {
+    fn default() -> Self {
+        Self { reserve_bps: 2000, reserve_spend_authority: ReserveSpendAuthority::EmergencyVoteOnly, min_reserve_absolute: 100 }
+    }
 }
 
-/// State update for `DrainProtection::ExitV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct ExitUpdateV1 {
-    pub exit_id: pallas::Base,
-    pub member_pubkey: PublicKey,
-    pub payout_value: u64,
-    pub haircut_collected: u64,
+pub struct DeadMansSwitchConfig {
+    pub inactivity_threshold_blocks: u64,
+    pub auto_rate_limit_bps: u64,
+    pub notification_blocks: u64,
+    pub enable_social_recovery: bool,
+    pub social_recovery_timelock_blocks: u64,
 }
 
-/// Parameters for `DrainProtection::TransferV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct TransferParamsV1 {
-    /// Fund to transfer from
-    pub fund_id: FundId,
-    /// Amount to transfer
-    pub amount: u64,
-    /// Recipient
-    pub recipient: PublicKey,
-    /// Spend authority signature
-    pub signature: pallas::Base,
-    /// Whether this exceeds rate limit (requires prior vote)
-    pub exceeds_rate_limit: bool,
-    /// If exceeds_rate_limit, proposal ID that was voted
-    pub vote_proposal_id: Option<pallas::Base>,
+impl Default for DeadMansSwitchConfig {
+    fn default() -> Self {
+        Self { inactivity_threshold_blocks: 30 * 24 * 6, auto_rate_limit_bps: 100, notification_blocks: 7 * 24 * 6, enable_social_recovery: true, social_recovery_timelock_blocks: 14 * 24 * 6 }
+    }
 }
 
-/// State update for `DrainProtection::TransferV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct TransferUpdateV1 {
-    pub amount: u64,
-    pub recipient: PublicKey,
-    pub rate_limited: bool,
-}
-
-/// Parameters for `DrainProtection::LockV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct LockParamsV1 {
-    /// Fund to lock
-    pub fund_id: FundId,
-    /// Lock duration in blocks
-    pub duration_blocks: u64,
-    /// Signature from spend authority
-    pub signature: pallas::Base,
-}
-
-/// State update for `DrainProtection::LockV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct LockUpdateV1 {
-    pub locked_until: u64,
-}
-
-/// Parameters for `DrainProtection::UnlockV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct UnlockParamsV1 {
-    /// Fund to unlock
-    pub fund_id: FundId,
-    /// Signature from spend authority
-    pub signature: pallas::Base,
-}
-
-/// State update for `DrainProtection::UnlockV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct UnlockUpdateV1 {
-    pub unlocked_at: u64,
-}
-
-/// Parameters for `DrainProtection::UpdateConfigV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct UpdateConfigParamsV1 {
-    /// Fund to update
-    pub fund_id: FundId,
-    /// New rate limit (optional)
-    pub rate_limit: Option<RateLimit>,
-    /// New MultiSig group ID for governance (optional, replaces VoteThresholds)
-    pub multisig_group_id: Option<pallas::Base>,
-    /// Spend authority (optional, subject to timelock)
-    pub new_spend_authority: Option<PublicKey>,
-}
-
-/// State update for `DrainProtection::UpdateConfigV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct UpdateConfigUpdateV1 {
-    pub authority_change_timelock: Option<u64>,
-}
-
-// ============================================================================
-// DRAIN PROTECTION CONFIG (All Optional Best Practices)
-// ============================================================================
-
-/// Comprehensive drain protection configuration.
-/// All features are OPTIONAL and default to disabled.
-/// Enable features based on your risk tolerance and needs.
-///
-/// # Features
-///
-/// | Feature | Purpose | Risk Mitigated |
-/// |---------|---------|----------------|
-/// | `graduated_tiers` | Multi-tier withdrawal limits | Prevents single-vote large drains |
-/// | `exit_queue` | FCFS exit processing | Prevents bank-run cascades |
-/// | `circuit_breaker` | Auto-pause on anomalous drain | Stops bleeding during attacks |
-/// | `guardian_pause` | Multisig pause capability | Manual emergency stop |
-/// | `observation_period` | Delay before large withdrawals | Gives members time to react |
-/// | `split_proposals` | Split large proposals | Prevents single proposal drains |
-/// | `no_loss_reserve` | 20% untouchable reserve | Always have insurance funds |
-/// | `dead_mans_switch` | Auto-protocol on inactivity | Protects against abandonment |
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct DrainConfig {
-    // ─────────────────────────────────────────────────────────────────
-    // MULTISIG GOVERNANCE — replaces graduated_tiers + guardian_pause
-    // ─────────────────────────────────────────────────────────────────
-    /// MultiSig group ID for guardian pause/unpause authorization.
-    /// Guardians call MultiSig::SignV1; when threshold met, FinalizeV1
-    /// produces an approval_commit that authorizes pause/unpause.
     pub guardian_multisig_group_id: pallas::Base,
-
-    // ─────────────────────────────────────────────────────────────────
-    // EXIT QUEUE (FCFS)
-    // ─────────────────────────────────────────────────────────────────
-    /// Enable FCFS exit queue (prevents bank-run cascades)
     pub exit_queue: Option<ExitQueueConfig>,
-
-    // ─────────────────────────────────────────────────────────────────
-    // CIRCUIT BREAKER
-    // ─────────────────────────────────────────────────────────────────
-    /// Enable circuit breaker (auto-pause on anomalous activity)
     pub circuit_breaker: Option<CircuitBreakerConfig>,
-
-    // ─────────────────────────────────────────────────────────────────
-    // OBSERVATION PERIOD
-    // ─────────────────────────────────────────────────────────────────
-    /// Enable observation period for large withdrawals
     pub observation_period: Option<ObservationPeriodConfig>,
-
-    // ─────────────────────────────────────────────────────────────────
-    // SPLIT PROPOSALS
-    // ─────────────────────────────────────────────────────────────────
-    /// Enable mandatory proposal splitting for large withdrawals
     pub split_proposals: Option<SplitProposalsConfig>,
-
-    // ─────────────────────────────────────────────────────────────────
-    // NO-LOSS RESERVE
-    // ─────────────────────────────────────────────────────────────────
-    /// Enable no-loss reserve (percentage always kept as insurance)
     pub no_loss_reserve: Option<NoLossReserveConfig>,
-
-    // ─────────────────────────────────────────────────────────────────
-    // DEAD MAN'S SWITCH
-    // ─────────────────────────────────────────────────────────────────
-    /// Enable dead man's switch (auto-protocol on inactivity)
     pub dead_mans_switch: Option<DeadMansSwitchConfig>,
 }
 
@@ -449,268 +245,599 @@ impl Default for DrainConfig {
     }
 }
 
-/// Exit queue configuration (FCFS)
-///
-/// Prevents bank-run cascades by processing exits in order.
-/// Max exit per epoch prevents draining more than TVL can handle.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct ExitQueueConfig {
-    /// Maximum exits processed per epoch (bps of TVL, e.g., 1000 = 10%)
-    pub max_exit_per_epoch_bps: u64,
-    /// Epoch length in blocks
-    pub epoch_blocks: u64,
-    /// Minimum time in queue before processing (blocks)
-    pub min_queue_blocks: u64,
-    /// Enable强制顺序处理 (true = FCFS only, false = allow priority)
-    pub force_fcfs: bool,
-}
+// ============================================================================
+// PROTECTED FUND (main stored type — manual encode/decode)
+// ============================================================================
 
-impl Default for ExitQueueConfig {
-    fn default() -> Self {
-        Self {
-            // Max 10% TVL can exit per epoch
-            max_exit_per_epoch_bps: 1000,
-            // Epoch: 1 day (~600 blocks)
-            epoch_blocks: 600,
-            // Must wait at least 10 blocks in queue
-            min_queue_blocks: 10,
-            // Enforce strict FCFS
-            force_fcfs: true,
-        }
-    }
-}
-
-/// Circuit breaker configuration
-///
-/// Auto-pauses withdrawals if drain rate exceeds threshold,
-/// preventing continued bleeding during an attack.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct CircuitBreakerConfig {
-    /// Trigger threshold: if >X% drained in window, pause
-    pub trigger_threshold_bps: u64,
-    /// Window size in blocks to measure drain rate
-    pub window_blocks: u64,
-    /// Pause duration when triggered (blocks)
-    pub pause_duration_blocks: u64,
-    /// Auto-resume after pause (vs manual resume only)
-    pub auto_resume: bool,
-    /// Notify guardians when triggered
-    pub notify_guardians: bool,
-}
-
-impl Default for CircuitBreakerConfig {
-    fn default() -> Self {
-        Self {
-            // Trigger if >10% drained in window
-            trigger_threshold_bps: 1000,
-            // Measure over last 100 blocks
-            window_blocks: 100,
-            // Pause for 24 hours (~600 blocks)
-            pause_duration_blocks: 600,
-            // Manual resume required
-            auto_resume: false,
-            // Alert guardians
-            notify_guardians: true,
-        }
-    }
-}
-
-/// Guardian multisig pause configuration
-///
-/// Designated watchers can pause withdrawals without full governance.
-/// Observation period configuration
-///
-/// Large withdrawals must be publicly visible for a period
-/// before execution, giving members time to react.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct ObservationPeriodConfig {
-    /// Minimum threshold to trigger observation (bps of TVL)
-    pub threshold_bps: u64,
-    /// Observation period in blocks
-    pub observation_blocks: u64,
-    /// Allow emergency bypass with higher quorum
-    pub allow_emergency_bypass: bool,
-    /// Emergency bypass quorum (bps)
-    pub emergency_bypass_quorum_bps: u64,
-}
-
-impl Default for ObservationPeriodConfig {
-    fn default() -> Self {
-        Self {
-            // Trigger for >5% TVL withdrawals
-            threshold_bps: 500,
-            // 48 hour observation
-            observation_blocks: 48 * 6,
-            // Allow bypass with 90% quorum
-            allow_emergency_bypass: true,
-            emergency_bypass_quorum_bps: 9000,
-        }
-    }
-}
-
-/// Split proposals configuration
-///
-/// Large proposals must be split into smaller chunks,
-/// preventing single malicious proposal drains.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct SplitProposalsConfig {
-    /// Minimum threshold to trigger splitting (bps of TVL)
-    pub threshold_bps: u64,
-    /// Maximum chunk size (bps of TVL)
-    pub max_chunk_bps: u64,
-    /// Minimum time between chunks (blocks)
-    pub chunk_delay_blocks: u64,
-    /// Require separate vote for each chunk
-    pub separate_vote_each_chunk: bool,
-}
-
-impl Default for SplitProposalsConfig {
-    fn default() -> Self {
-        Self {
-            // Split if >10% TVL
-            threshold_bps: 1000,
-            // Max chunk: 10% TVL
-            max_chunk_bps: 1000,
-            // Wait 1 day between chunks
-            chunk_delay_blocks: 600,
-            // Each chunk needs separate vote
-            separate_vote_each_chunk: true,
-        }
-    }
-}
-
-/// No-loss reserve configuration
-///
-/// A percentage of funds are never available for DAO governance
-/// and serve as permanent insurance.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct NoLossReserveConfig {
-    /// Reserve percentage (bps, e.g., 2000 = 20%)
-    pub reserve_bps: u64,
-    /// Who can authorize reserve usage (usually guardians or emergency vote only)
-    pub reserve_spend_authority: ReserveSpendAuthority,
-    /// Minimum reserve balance (absolute, prevents draining to near-zero)
-    pub min_reserve_absolute: u64,
-}
-
-impl Default for NoLossReserveConfig {
-    fn default() -> Self {
-        Self {
-            // 20% reserve
-            reserve_bps: 2000,
-            // Only emergency vote can spend reserve
-            reserve_spend_authority: ReserveSpendAuthority::EmergencyVoteOnly,
-            // Keep at least 1% TVL as absolute minimum
-            min_reserve_absolute: 100,
-        }
-    }
-}
-
-/// Authority that can spend from no-loss reserve
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub enum ReserveSpendAuthority {
-    /// Only emergency proposals with >90% quorum
-    EmergencyVoteOnly,
-    /// Guardian multisig only
-    GuardianMultisig,
-    /// Both emergency vote AND guardians required
-    BothRequired,
-}
-
-/// Dead man's switch configuration
-///
-/// Auto-engages protections if DAO is inactive for extended period.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct DeadMansSwitchConfig {
-    /// Inactivity threshold in blocks (no proposals/votes)
-    pub inactivity_threshold_blocks: u64,
-    /// Auto-engage rate limit (bps of TVL per epoch)
-    pub auto_rate_limit_bps: u64,
-    /// Notify members after notification period
-    pub notification_blocks: u64,
-    /// Enable social recovery mode after switch
-    pub enable_social_recovery: bool,
-    /// Social recovery timelock (blocks)
-    pub social_recovery_timelock_blocks: u64,
-}
-
-impl Default for DeadMansSwitchConfig {
-    fn default() -> Self {
-        Self {
-            // Trigger after 30 days of no activity
-            inactivity_threshold_blocks: 30 * 24 * 6,
-            // Auto-limit to 1% TVL per day
-            auto_rate_limit_bps: 100,
-            // Notify for 7 days before switch
-            notification_blocks: 7 * 24 * 6,
-            // Enable member claims in recovery
-            enable_social_recovery: true,
-            // 14 day timelock for recovery
-            social_recovery_timelock_blocks: 14 * 24 * 6,
-        }
-    }
+#[derive(Debug, Clone)]
+pub struct ProtectedFund {
+    pub version: u8,
+    pub instance_seed: [u8; 32],
+    pub id: FundId,
+    pub total_funds: u64,
+    pub spend_authority: PublicKey,
+    pub lock_state: LockState,
+    pub rate_limit: RateLimit,
+    pub multisig_group_id: pallas::Base,
+    pub purse_id: pallas::Base,
+    pub drain_config: DrainConfig,
+    pub members: Vec<MemberWeight>,
+    pub lock_expires_at: u64,
+    pub authority_change_timelock: u64,
+    pub created_at: u64,
+    pub exit_queue_state: Vec<ExitQueueEntry>,
+    pub circuit_breaker_state: Option<CircuitBreakerState>,
+    pub dead_mans_switch_state: Option<DeadMansSwitchState>,
+    pub no_loss_reserve_balance: u64,
+    pub observation_pending: Vec<ObservationPending>,
 }
 
 // ============================================================================
-// EXIT QUEUE STATE
+// PARAMS (keep SerialEncodable/SerialDecodable)
 // ============================================================================
 
-/// Entry in the exit queue
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct ExitQueueEntry {
-    /// Queue position (FIFO order)
-    pub position: u64,
-    /// Member public key
+pub struct InitializeParamsV1 {
+    pub instance_seed: [u8; 32],
+    pub fund_id: FundId,
+    pub spend_authority: PublicKey,
+    pub dao_escrow_bulla: pallas::Base,
+    pub drain_config: DrainConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct InitializeUpdateV1 {
+    pub instance_seed: [u8; 32],
+    pub fund_id: FundId,
+}
+
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ProposeParamsV1 {
+    pub message_hash: pallas::Base,
+    pub multisig_group_id: pallas::Base,
+    pub prover_pubkey: PublicKey,
+    pub vote_period_blocks: u64,
+    pub proof: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProposeUpdateV1 {
+    pub proposal_id: pallas::Base,
+}
+
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct VoteParamsV1 {
+    pub proposal_id: pallas::Base,
+    pub voter_pubkey: PublicKey,
+    pub vote: bool,
+    pub signature: pallas::Base,
+}
+
+#[derive(Debug, Clone)]
+pub struct VoteUpdateV1 {
+    pub proposal_id: pallas::Base,
+    pub yes_votes: u64,
+    pub no_votes: u64,
+}
+
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ExecuteParamsV1 {
+    pub proposal_id: pallas::Base,
+    pub signature: pallas::Base,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExecuteUpdateV1 {
+    pub proposal_id: pallas::Base,
+    pub action: pallas::Base,
+}
+
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ExitParamsV1 {
+    pub fund_id: FundId,
     pub member_pubkey: PublicKey,
-    /// Requested exit value
-    pub requested_value: u64,
-    /// Weight at time of request
-    pub weight: u64,
-    /// Block when queued
-    pub queued_at: u64,
-    /// Whether processed
-    pub processed: bool,
+    pub contribution_weight: u64,
+    pub current_block: u64,
+    pub dao_escrow_bulla: pallas::Base,
+    pub dao_membership_note: pallas::Base,
+    pub effective_weight: pallas::Base,
+    pub proof: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExitUpdateV1 {
+    pub exit_id: pallas::Base,
+    pub member_pubkey: PublicKey,
+    pub payout_value: u64,
+    pub haircut_collected: u64,
+}
+
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct TransferParamsV1 {
+    pub fund_id: FundId,
+    pub amount: u64,
+    pub recipient: PublicKey,
+    pub signature: pallas::Base,
+    pub exceeds_rate_limit: bool,
+    pub vote_proposal_id: Option<pallas::Base>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TransferUpdateV1 {
+    pub amount: u64,
+    pub recipient: PublicKey,
+    pub rate_limited: bool,
+}
+
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct LockParamsV1 {
+    pub fund_id: FundId,
+    pub duration_blocks: u64,
+    pub signature: pallas::Base,
+}
+
+#[derive(Debug, Clone)]
+pub struct LockUpdateV1 {
+    pub locked_until: u64,
+}
+
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct UnlockParamsV1 {
+    pub fund_id: FundId,
+    pub signature: pallas::Base,
+}
+
+#[derive(Debug, Clone)]
+pub struct UnlockUpdateV1 {
+    pub unlocked_at: u64,
+}
+
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct UpdateConfigParamsV1 {
+    pub fund_id: FundId,
+    pub rate_limit: Option<RateLimit>,
+    pub multisig_group_id: Option<pallas::Base>,
+    pub new_spend_authority: Option<PublicKey>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateConfigUpdateV1 {
+    pub authority_change_timelock: Option<u64>,
 }
 
 // ============================================================================
-// CIRCUIT BREAKER STATE
+// RHO-CALCULUS EXPLICIT ENCODE/DECODE
 // ============================================================================
 
-/// Circuit breaker state
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct CircuitBreakerState {
-    /// Whether currently paused
-    pub paused: bool,
-    /// Block when pause was triggered
-    pub pause_triggered_at: u64,
-    /// Block when auto-resume would occur
-    pub auto_resume_at: u64,
-    /// Amount drained in current window
-    pub drained_in_window: u64,
-    /// Guardian notified at block
-    pub guardian_notified_at: u64,
+// --- Stored-only sub-types ---
+
+impl MemberWeight {
+    pub const ENCODED_SIZE: usize = 24;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.contribution.to_le_bytes());
+        buf.extend_from_slice(&self.deposited_at.to_le_bytes());
+        buf.extend_from_slice(&self.weight_multiplier.to_le_bytes());
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("MemberWeight: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        Ok(MemberWeight {
+            contribution: u64::from_le_bytes(data[0..8].try_into().unwrap()),
+            deposited_at: u64::from_le_bytes(data[8..16].try_into().unwrap()),
+            weight_multiplier: u64::from_le_bytes(data[16..24].try_into().unwrap()),
+        })
+    }
 }
 
-// ============================================================================
-// GUARDIAN PAUSE STATE — replaced by MultiSig composition
-// ============================================================================
-// Guardian pause/unpause now validates MultiSig::FinalizeV1 child calls.
-// guardian_group_id references a MultiSig group created during init.
-// ============================================================================
+impl ObservationPending {
+    pub const ENCODED_SIZE: usize = 48;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.proposal_id.to_repr());
+        buf.extend_from_slice(&self.amount.to_le_bytes());
+        buf.extend_from_slice(&self.observation_ends_at.to_le_bytes());
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("ObservationPending: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        Ok(ObservationPending {
+            proposal_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+                .ok_or_else(|| ContractError::IoError("ObservationPending: invalid proposal_id".into()))?,
+            amount: u64::from_le_bytes(data[32..40].try_into().unwrap()),
+            observation_ends_at: u64::from_le_bytes(data[40..48].try_into().unwrap()),
+        })
+    }
+}
 
-// ============================================================================
-// DEAD MAN'S SWITCH STATE
-// ============================================================================
+impl ExitQueueEntry {
+    pub const ENCODED_SIZE: usize = 65;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.position.to_le_bytes());
+        buf.extend_from_slice(&self.member_pubkey.to_bytes());
+        buf.extend_from_slice(&self.requested_value.to_le_bytes());
+        buf.extend_from_slice(&self.weight.to_le_bytes());
+        buf.extend_from_slice(&self.queued_at.to_le_bytes());
+        buf.push(if self.processed { 1 } else { 0 });
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("ExitQueueEntry: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        Ok(ExitQueueEntry {
+            position: u64::from_le_bytes(data[0..8].try_into().unwrap()),
+            member_pubkey: PublicKey::from_bytes(data[8..40].try_into().unwrap())
+                .map_err(|e| ContractError::IoError(format!("ExitQueueEntry: invalid member_pubkey: {:?}", e)))?,
+            requested_value: u64::from_le_bytes(data[40..48].try_into().unwrap()),
+            weight: u64::from_le_bytes(data[48..56].try_into().unwrap()),
+            queued_at: u64::from_le_bytes(data[56..64].try_into().unwrap()),
+            processed: data[64] != 0,
+        })
+    }
+}
 
-/// Dead man's switch state
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct DeadMansSwitchState {
-    /// Whether switch has been triggered
-    pub triggered: bool,
-    /// Last activity block (proposal or vote)
-    pub last_activity_at: u64,
-    /// Notification sent at block
-    pub notification_sent_at: u64,
-    /// Social recovery mode activated at block
-    pub recovery_activated_at: u64,
+impl CircuitBreakerState {
+    pub const ENCODED_SIZE: usize = 33;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.push(if self.paused { 1 } else { 0 });
+        buf.extend_from_slice(&self.pause_triggered_at.to_le_bytes());
+        buf.extend_from_slice(&self.auto_resume_at.to_le_bytes());
+        buf.extend_from_slice(&self.drained_in_window.to_le_bytes());
+        buf.extend_from_slice(&self.guardian_notified_at.to_le_bytes());
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("CircuitBreakerState: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        Ok(CircuitBreakerState {
+            paused: data[0] != 0,
+            pause_triggered_at: u64::from_le_bytes(data[1..9].try_into().unwrap()),
+            auto_resume_at: u64::from_le_bytes(data[9..17].try_into().unwrap()),
+            drained_in_window: u64::from_le_bytes(data[17..25].try_into().unwrap()),
+            guardian_notified_at: u64::from_le_bytes(data[25..33].try_into().unwrap()),
+        })
+    }
+}
+
+impl DeadMansSwitchState {
+    pub const ENCODED_SIZE: usize = 25;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.push(if self.triggered { 1 } else { 0 });
+        buf.extend_from_slice(&self.last_activity_at.to_le_bytes());
+        buf.extend_from_slice(&self.notification_sent_at.to_le_bytes());
+        buf.extend_from_slice(&self.recovery_activated_at.to_le_bytes());
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("DeadMansSwitchState: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        Ok(DeadMansSwitchState {
+            triggered: data[0] != 0,
+            last_activity_at: u64::from_le_bytes(data[1..9].try_into().unwrap()),
+            notification_sent_at: u64::from_le_bytes(data[9..17].try_into().unwrap()),
+            recovery_activated_at: u64::from_le_bytes(data[17..25].try_into().unwrap()),
+        })
+    }
+}
+
+impl TransferRecord {
+    pub const ENCODED_SIZE: usize = 17;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.push(self.version);
+        buf.extend_from_slice(&self.block.to_le_bytes());
+        buf.extend_from_slice(&self.amount.to_le_bytes());
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("TransferRecord: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        Ok(TransferRecord { version: data[0], block: u64::from_le_bytes(data[1..9].try_into().unwrap()), amount: u64::from_le_bytes(data[9..17].try_into().unwrap()) })
+    }
+}
+
+// --- ProtectedFund (main stored type) ---
+
+impl ProtectedFund {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.push(self.version);
+        buf.extend_from_slice(&self.instance_seed);
+        buf.extend_from_slice(&self.id.to_repr());
+        buf.extend_from_slice(&self.total_funds.to_le_bytes());
+        buf.extend_from_slice(&self.spend_authority.to_bytes());
+        buf.push(self.lock_state as u8);
+        // rate_limit: use dwow_serial (has SerialEncodable)
+        let rl_enc = serialize(&self.rate_limit);
+        buf.extend_from_slice(&(rl_enc.len() as u32).to_le_bytes());
+        buf.extend_from_slice(&rl_enc);
+        buf.extend_from_slice(&self.multisig_group_id.to_repr());
+        buf.extend_from_slice(&self.purse_id.to_repr());
+        // drain_config: use dwow_serial (has SerialEncodable)
+        let dc_enc = serialize(&self.drain_config);
+        buf.extend_from_slice(&(dc_enc.len() as u32).to_le_bytes());
+        buf.extend_from_slice(&dc_enc);
+        // members: Vec<MemberWeight>
+        buf.push(self.members.len() as u8);
+        for m in &self.members { buf.extend_from_slice(&m.encode()); }
+        buf.extend_from_slice(&self.lock_expires_at.to_le_bytes());
+        buf.extend_from_slice(&self.authority_change_timelock.to_le_bytes());
+        buf.extend_from_slice(&self.created_at.to_le_bytes());
+        // exit_queue_state
+        buf.push(self.exit_queue_state.len() as u8);
+        for e in &self.exit_queue_state { buf.extend_from_slice(&e.encode()); }
+        // circuit_breaker_state
+        match &self.circuit_breaker_state {
+            Some(s) => { buf.push(1); buf.extend_from_slice(&s.encode()); }
+            None => { buf.push(0); }
+        }
+        // dead_mans_switch_state
+        match &self.dead_mans_switch_state {
+            Some(s) => { buf.push(1); buf.extend_from_slice(&s.encode()); }
+            None => { buf.push(0); }
+        }
+        buf.extend_from_slice(&self.no_loss_reserve_balance.to_le_bytes());
+        // observation_pending
+        buf.push(self.observation_pending.len() as u8);
+        for o in &self.observation_pending { buf.extend_from_slice(&o.encode()); }
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        let mut pos: usize = 0;
+        if data.len() < 194 { return Err(ContractError::IoError("ProtectedFund: data too short".into())); }
+        let version = data[pos]; pos += 1;
+        let instance_seed: [u8; 32] = data[pos..pos+32].try_into().unwrap(); pos += 32;
+        let id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("ProtectedFund: invalid id".into()))?; pos += 32;
+        let total_funds = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
+        let spend_authority = PublicKey::from_bytes(data[pos..pos+32].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("ProtectedFund: invalid spend_authority: {:?}", e)))?; pos += 32;
+        let lock_state = match data[pos] { 0 => LockState::Unlocked, 1 => LockState::Locked, _ => return Err(ContractError::IoError("ProtectedFund: invalid lock_state".into())) }; pos += 1;
+        // rate_limit: deserialize length-prefixed
+        if pos + 4 > data.len() { return Err(ContractError::IoError("ProtectedFund: data too short for rate_limit len".into())); }
+        let rl_len = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()) as usize; pos += 4;
+        if pos + rl_len > data.len() { return Err(ContractError::IoError("ProtectedFund: data too short for rate_limit".into())); }
+        let rate_limit: RateLimit = deserialize(&data[pos..pos+rl_len])?; pos += rl_len;
+        let multisig_group_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("ProtectedFund: invalid multisig_group_id".into()))?; pos += 32;
+        let purse_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("ProtectedFund: invalid purse_id".into()))?; pos += 32;
+        // drain_config: deserialize length-prefixed
+        if pos + 4 > data.len() { return Err(ContractError::IoError("ProtectedFund: data too short for drain_config len".into())); }
+        let dc_len = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()) as usize; pos += 4;
+        if pos + dc_len > data.len() { return Err(ContractError::IoError("ProtectedFund: data too short for drain_config".into())); }
+        let drain_config: DrainConfig = deserialize(&data[pos..pos+dc_len])?; pos += dc_len;
+        // members
+        if pos >= data.len() { return Err(ContractError::IoError("ProtectedFund: data too short for members count".into())); }
+        let member_count = data[pos] as usize; pos += 1;
+        let mut members = Vec::with_capacity(member_count);
+        for _ in 0..member_count {
+            members.push(MemberWeight::decode(&data[pos..pos+MemberWeight::ENCODED_SIZE])?);
+            pos += MemberWeight::ENCODED_SIZE;
+        }
+        if pos + 24 > data.len() { return Err(ContractError::IoError("ProtectedFund: data too short for tail".into())); }
+        let lock_expires_at = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
+        let authority_change_timelock = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
+        let created_at = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
+        // exit_queue_state
+        if pos >= data.len() { return Err(ContractError::IoError("ProtectedFund: data too short for exit_queue_state count".into())); }
+        let eq_count = data[pos] as usize; pos += 1;
+        let mut exit_queue_state = Vec::with_capacity(eq_count);
+        for _ in 0..eq_count {
+            exit_queue_state.push(ExitQueueEntry::decode(&data[pos..pos+ExitQueueEntry::ENCODED_SIZE])?);
+            pos += ExitQueueEntry::ENCODED_SIZE;
+        }
+        // circuit_breaker_state
+        if pos >= data.len() { return Err(ContractError::IoError("ProtectedFund: data too short for cb flag".into())); }
+        let circuit_breaker_state = if data[pos] == 1 {
+            pos += 1;
+            let s = CircuitBreakerState::decode(&data[pos..pos+CircuitBreakerState::ENCODED_SIZE])?;
+            pos += CircuitBreakerState::ENCODED_SIZE;
+            Some(s)
+        } else { pos += 1; None };
+        // dead_mans_switch_state
+        if pos >= data.len() { return Err(ContractError::IoError("ProtectedFund: data too short for dms flag".into())); }
+        let dead_mans_switch_state = if data[pos] == 1 {
+            pos += 1;
+            let s = DeadMansSwitchState::decode(&data[pos..pos+DeadMansSwitchState::ENCODED_SIZE])?;
+            pos += DeadMansSwitchState::ENCODED_SIZE;
+            Some(s)
+        } else { pos += 1; None };
+        if pos + 8 > data.len() { return Err(ContractError::IoError("ProtectedFund: data too short for no_loss_reserve_balance".into())); }
+        let no_loss_reserve_balance = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
+        // observation_pending
+        if pos >= data.len() { return Err(ContractError::IoError("ProtectedFund: data too short for obs count".into())); }
+        let obs_count = data[pos] as usize; pos += 1;
+        let mut observation_pending = Vec::with_capacity(obs_count);
+        for _ in 0..obs_count {
+            observation_pending.push(ObservationPending::decode(&data[pos..pos+ObservationPending::ENCODED_SIZE])?);
+            pos += ObservationPending::ENCODED_SIZE;
+        }
+        Ok(ProtectedFund {
+            version, instance_seed, id, total_funds, spend_authority, lock_state,
+            rate_limit, multisig_group_id, purse_id, drain_config, members,
+            lock_expires_at, authority_change_timelock, created_at, exit_queue_state,
+            circuit_breaker_state, dead_mans_switch_state, no_loss_reserve_balance,
+            observation_pending,
+        })
+    }
+}
+
+// --- Bridge update structs ---
+
+impl InitializeUpdateV1 {
+    pub const ENCODED_SIZE: usize = 64;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.instance_seed);
+        buf.extend_from_slice(&self.fund_id.to_repr());
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("InitializeUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        Ok(InitializeUpdateV1 {
+            instance_seed: data[0..32].try_into().unwrap(),
+            fund_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
+                .ok_or_else(|| ContractError::IoError("InitializeUpdateV1: invalid fund_id".into()))?,
+        })
+    }
+}
+
+impl ProposeUpdateV1 {
+    pub const ENCODED_SIZE: usize = 32;
+    pub fn encode(&self) -> Vec<u8> { self.proposal_id.to_repr().to_vec() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("ProposeUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        Ok(ProposeUpdateV1 {
+            proposal_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+                .ok_or_else(|| ContractError::IoError("ProposeUpdateV1: invalid proposal_id".into()))?,
+        })
+    }
+}
+
+impl VoteUpdateV1 {
+    pub const ENCODED_SIZE: usize = 48;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.proposal_id.to_repr());
+        buf.extend_from_slice(&self.yes_votes.to_le_bytes());
+        buf.extend_from_slice(&self.no_votes.to_le_bytes());
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("VoteUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        Ok(VoteUpdateV1 {
+            proposal_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+                .ok_or_else(|| ContractError::IoError("VoteUpdateV1: invalid proposal_id".into()))?,
+            yes_votes: u64::from_le_bytes(data[32..40].try_into().unwrap()),
+            no_votes: u64::from_le_bytes(data[40..48].try_into().unwrap()),
+        })
+    }
+}
+
+impl ExecuteUpdateV1 {
+    pub const ENCODED_SIZE: usize = 64;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.proposal_id.to_repr());
+        buf.extend_from_slice(&self.action.to_repr());
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("ExecuteUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        Ok(ExecuteUpdateV1 {
+            proposal_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+                .ok_or_else(|| ContractError::IoError("ExecuteUpdateV1: invalid proposal_id".into()))?,
+            action: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
+                .ok_or_else(|| ContractError::IoError("ExecuteUpdateV1: invalid action".into()))?,
+        })
+    }
+}
+
+impl ExitUpdateV1 {
+    pub const ENCODED_SIZE: usize = 80;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.exit_id.to_repr());
+        buf.extend_from_slice(&self.member_pubkey.to_bytes());
+        buf.extend_from_slice(&self.payout_value.to_le_bytes());
+        buf.extend_from_slice(&self.haircut_collected.to_le_bytes());
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("ExitUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        Ok(ExitUpdateV1 {
+            exit_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+                .ok_or_else(|| ContractError::IoError("ExitUpdateV1: invalid exit_id".into()))?,
+            member_pubkey: PublicKey::from_bytes(data[32..64].try_into().unwrap())
+                .map_err(|e| ContractError::IoError(format!("ExitUpdateV1: invalid member_pubkey: {:?}", e)))?,
+            payout_value: u64::from_le_bytes(data[64..72].try_into().unwrap()),
+            haircut_collected: u64::from_le_bytes(data[72..80].try_into().unwrap()),
+        })
+    }
+}
+
+impl TransferUpdateV1 {
+    pub const ENCODED_SIZE: usize = 41;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.amount.to_le_bytes());
+        buf.extend_from_slice(&self.recipient.to_bytes());
+        buf.push(if self.rate_limited { 1 } else { 0 });
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("TransferUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        Ok(TransferUpdateV1 {
+            amount: u64::from_le_bytes(data[0..8].try_into().unwrap()),
+            recipient: PublicKey::from_bytes(data[8..40].try_into().unwrap())
+                .map_err(|e| ContractError::IoError(format!("TransferUpdateV1: invalid recipient: {:?}", e)))?,
+            rate_limited: data[40] != 0,
+        })
+    }
+}
+
+impl LockUpdateV1 {
+    pub const ENCODED_SIZE: usize = 8;
+    pub fn encode(&self) -> Vec<u8> { self.locked_until.to_le_bytes().to_vec() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("LockUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        Ok(LockUpdateV1 { locked_until: u64::from_le_bytes(data[0..8].try_into().unwrap()) })
+    }
+}
+
+impl UnlockUpdateV1 {
+    pub const ENCODED_SIZE: usize = 8;
+    pub fn encode(&self) -> Vec<u8> { self.unlocked_at.to_le_bytes().to_vec() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("UnlockUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        Ok(UnlockUpdateV1 { unlocked_at: u64::from_le_bytes(data[0..8].try_into().unwrap()) })
+    }
+}
+
+impl UpdateConfigUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        match self.authority_change_timelock {
+            Some(v) => { buf.push(1); buf.extend_from_slice(&v.to_le_bytes()); }
+            None => { buf.push(0); }
+        }
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() { return Err(ContractError::IoError("UpdateConfigUpdateV1: empty data".into())); }
+        let authority_change_timelock = if data[0] == 1 {
+            if data.len() < 9 { return Err(ContractError::IoError("UpdateConfigUpdateV1: data too short".into())); }
+            Some(u64::from_le_bytes(data[1..9].try_into().unwrap()))
+        } else { None };
+        Ok(UpdateConfigUpdateV1 { authority_change_timelock })
+    }
 }

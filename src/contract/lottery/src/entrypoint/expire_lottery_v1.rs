@@ -29,13 +29,13 @@
 //! the actual token transfer to the house for unclaimed prizes.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
     error::ContractError,
     msg,
     pasta::pallas,
     wasm,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::deserialize;
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id,
     validate_child_value_commit,
@@ -94,8 +94,9 @@ pub fn lottery_expire_lottery_process_instruction_v1(
 
     // Get lottery state
     let lotteries_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_LOTTERIES_TREE)?;
-    let lottery: crate::model::Lottery =
-        deserialize(&wasm::db::db_get(lotteries_db, &serialize(&params.lottery_id))?.ok_or(ContractError::DbGetEmpty)?)?;
+    let lottery = crate::model::Lottery::decode(
+        &wasm::db::db_get(lotteries_db, &params.lottery_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?
+    )?;
 
     // Allow expiry from Initialized (draw deadline passed) or WinnersDrawn (claim deadline passed)
     let current_block = wasm::util::get_verifying_block_height()?.get();
@@ -137,7 +138,7 @@ pub fn lottery_expire_lottery_process_instruction_v1(
     };
 
     msg!("[lottery::expire_lottery] Lottery expired successfully");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Process update for ExpireLotteryV1
@@ -148,13 +149,14 @@ pub fn lottery_expire_lottery_process_update_v1(
     let lotteries_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_LOTTERIES_TREE)?;
 
     // Get and update lottery
-    let mut lottery: crate::model::Lottery =
-        deserialize(&wasm::db::db_get(lotteries_db, &serialize(&update.lottery_id))?.ok_or(ContractError::DbGetEmpty)?)?;
+    let mut lottery = crate::model::Lottery::decode(
+        &wasm::db::db_get(lotteries_db, &update.lottery_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?
+    )?;
 
     lottery.state = update.state;
 
     // Store updated lottery
-    wasm::db::db_set(lotteries_db, &serialize(&update.lottery_id), &serialize(&lottery))?;
+    wasm::db::db_set(lotteries_db, &update.lottery_id.to_repr(), &lottery.encode())?;
     msg!("[lottery::expire_lottery::update] Lottery marked as expired");
 
     Ok(())

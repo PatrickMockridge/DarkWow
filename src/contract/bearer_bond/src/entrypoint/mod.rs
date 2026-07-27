@@ -48,7 +48,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 
 use crate::{
     error::BearerBondError,
@@ -109,7 +109,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Coin roots database
     if wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COIN_ROOTS_TREE).is_err() {
         let db_coin_roots = wasm::db::db_init(cid, BEARER_BOND_CONTRACT_COIN_ROOTS_TREE)?;
-        wasm::db::db_set(db_coin_roots, &serialize(&BEARER_BOND_EMPTY_COINS_ROOT), &roots_data)?;
+        wasm::db::db_set(db_coin_roots, &BEARER_BOND_EMPTY_COINS_ROOT, &roots_data)?;
     }
 
     // Nullifier roots database
@@ -117,8 +117,8 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         let db_null_roots = wasm::db::db_init(cid, BEARER_BOND_CONTRACT_NULLIFIER_ROOTS_TREE)?;
         wasm::db::db_set(
             db_null_roots,
-            &serialize(&BEARER_BOND_EMPTY_NULLIFIER_ROOT),
-            &serialize(&vec![roots_data.clone()]),
+            &BEARER_BOND_EMPTY_NULLIFIER_ROOT,
+            &roots_data,
         )?;
     }
 
@@ -189,7 +189,7 @@ fn point_coords(pt: pallas::Point) -> (pallas::Base, pallas::Base) {
 /// Metadata for IssueStakeV1 — BlindOutput_V1 instance(s) for output coins.
 fn issue_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: IssueStakeParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+    let params = match IssueStakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<pallas::Base> = vec![];
@@ -220,7 +220,7 @@ fn issue_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<C
 /// Metadata for TransferStakeV1 — Burn_V1 for inputs, BlindOutput_V1 for outputs.
 fn transfer_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: TransferStakeParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+    let params = match TransferStakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -277,7 +277,7 @@ fn transfer_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
 /// presenting a physical bond coupon).
 fn request_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: RequestInterestParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+    let params = match RequestInterestParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -313,7 +313,7 @@ fn request_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkL
 /// Metadata for EmergencyUnstakeV1 — Burn_V1 for input, Redeem_V1 for receipt coin.
 fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: EmergencyUnstakeParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+    let params = match EmergencyUnstakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -363,7 +363,7 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
 /// Metadata for UnstakeV1 — Burn_V1 for input, Redeem_V1 for receipt coin.
 fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: UnstakeParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+    let params = match UnstakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -414,7 +414,7 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
 /// Metadata for BurnStakeV1 — Burn_V1 instance(s) for inputs.
 fn burn_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: BurnStakeParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+    let params = match BurnStakeParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -451,7 +451,7 @@ fn burn_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
 /// Metadata for ProveCoverageV1 — ProveCoverage_V1 circuit with coverage_ratio_bps public input.
 fn prove_coverage_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: ProveCoverageParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+    let params = match ProveCoverageParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<pallas::Base> = vec![];
@@ -476,7 +476,7 @@ fn prove_coverage_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
 /// per payment ensures unlinkable payment addresses.
 fn pay_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: PayInterestParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+    let params = match PayInterestParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<pallas::Base> = vec![];
@@ -532,36 +532,36 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 
     match func {
         BearerBondFunction::IssueStakeV1 => {
-            let update: IssueStakeUpdateV1 = deserialize(&update_data[1..])?;
+            let update = IssueStakeUpdateV1::decode(&update_data[1..])?;
             apply_issue_stake(cid, update)
         }
         BearerBondFunction::TransferStakeV1 => {
-            let update: TransferStakeUpdateV1 = deserialize(&update_data[1..])?;
+            let update = TransferStakeUpdateV1::decode(&update_data[1..])?;
             apply_transfer_stake(cid, update)
         }
         BearerBondFunction::RequestInterestV1 => {
-            let update: RequestInterestUpdateV1 = deserialize(&update_data[1..])?;
+            let update = RequestInterestUpdateV1::decode(&update_data[1..])?;
             apply_request_interest(cid, update)
         }
         BearerBondFunction::EmergencyUnstakeV1 => {
-            let update: EmergencyUnstakeUpdateV1 = deserialize(&update_data[1..])?;
+            let update = EmergencyUnstakeUpdateV1::decode(&update_data[1..])?;
             apply_emergency_unstake(cid, update)
         }
         BearerBondFunction::UnstakeV1 => {
-            let update: UnstakeUpdateV1 = deserialize(&update_data[1..])?;
+            let update = UnstakeUpdateV1::decode(&update_data[1..])?;
             apply_unstake(cid, update)
         }
         BearerBondFunction::BurnStakeV1 => {
-            let update: BurnStakeUpdateV1 = deserialize(&update_data[1..])?;
+            let update = BurnStakeUpdateV1::decode(&update_data[1..])?;
             apply_burn_stake(cid, update)
         }
         BearerBondFunction::ProveCoverageV1 => {
-            let update: ProveCoverageUpdateV1 = deserialize(&update_data[1..])?;
+            let update = ProveCoverageUpdateV1::decode(&update_data[1..])?;
             apply_prove_coverage(cid, update)
         }
         BearerBondFunction::VerifyCoverageV1 => Ok(()),
         BearerBondFunction::PayInterestV1 => {
-            let update: PayInterestUpdateV1 = deserialize(&update_data[1..])?;
+            let update = PayInterestUpdateV1::decode(&update_data[1..])?;
             apply_pay_interest(cid, update)
         }
     }
@@ -575,11 +575,11 @@ fn issue_stake_v1(
     cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: IssueStakeParamsV1 = deserialize(&self_.data[1..])?;
+    let params = IssueStakeParamsV1::decode(&self_.data[1..])?;
 
     // Verify the bond series exists and is active
     let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
-    let series_key = serialize(&params.token_id);
+    let series_key = params.token_id.to_repr();
     let series_data = match wasm::db::db_get(bonds_info_db, &series_key)? {
         Some(data) => data,
         None => {
@@ -590,20 +590,22 @@ fn issue_stake_v1(
 
     // Verify the caller is the authorized issuer for this series.
     // The issuer_contract in the params is bound by the ZK proof.
-    let series_info: BondSeriesInfo = deserialize(&series_data)?;
+    let series_info = BondSeriesInfo::decode(&series_data)?;
     if params.issuer_contract != series_info.issuer_contract {
         msg!("[issue_stake_v1] Error: Caller is not the authorized issuer");
         return Err(BearerBondError::StakeNotFound.into());
     }
 
     let coins_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
-    if wasm::db::db_contains_key(coins_db, &serialize(&params.coin.token_commit))? {
+    if wasm::db::db_contains_key(coins_db, &params.coin.token_commit.to_repr())? {
         msg!("[issue_stake_v1] Error: Stake coin already exists");
         return Err(BearerBondError::StakeAlreadyExists.into());
     }
 
     let update = IssueStakeUpdateV1 { coins: vec![params.coin] };
-    wasm::util::set_return_data(&serialize(&(BearerBondFunction::IssueStakeV1 as u8, update)))
+    let mut return_data = vec![BearerBondFunction::IssueStakeV1 as u8];
+    return_data.extend_from_slice(&update.encode());
+    wasm::util::set_return_data(&return_data)
 }
 
 // ============================================================================
@@ -614,7 +616,7 @@ fn transfer_stake_v1(
     cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: TransferStakeParamsV1 = deserialize(&self_.data[1..])?;
+    let params = TransferStakeParamsV1::decode(&self_.data[1..])?;
 
     if params.inputs.is_empty() {
         msg!("[bearer_bond::transfer_stake_v1] Error: Missing inputs");
@@ -629,18 +631,18 @@ fn transfer_stake_v1(
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
     for input in &params.inputs {
-        if !wasm::db::db_contains_key(coins_db, &serialize(&input.token_commit))? {
+        if !wasm::db::db_contains_key(coins_db, &input.token_commit.to_repr())? {
             msg!("[transfer_stake_v1] Error: Input stake coin not found");
             return Err(BearerBondError::StakeNotFound.into());
         }
-        if wasm::db::db_contains_key(nullifiers_db, &serialize(&input.nullifier))? {
+        if wasm::db::db_contains_key(nullifiers_db, &input.nullifier.to_bytes())? {
             msg!("[transfer_stake_v1] Error: Duplicate nullifier");
             return Err(BearerBondError::DuplicateNullifier.into());
         }
     }
 
     for output in &params.outputs {
-        if wasm::db::db_contains_key(coins_db, &serialize(&output.token_commit))? {
+        if wasm::db::db_contains_key(coins_db, &output.token_commit.to_repr())? {
             msg!("[transfer_stake_v1] Error: Output stake coin already exists");
             return Err(BearerBondError::StakeAlreadyExists.into());
         }
@@ -662,7 +664,9 @@ fn transfer_stake_v1(
 
     let nullifiers: Vec<_> = params.inputs.iter().map(|i| i.nullifier).collect();
     let update = TransferStakeUpdateV1 { nullifiers, coins: params.outputs };
-    wasm::util::set_return_data(&serialize(&(BearerBondFunction::TransferStakeV1 as u8, update)))
+    let mut return_data = vec![BearerBondFunction::TransferStakeV1 as u8];
+    return_data.extend_from_slice(&update.encode());
+    wasm::util::set_return_data(&return_data)
 }
 
 // ============================================================================
@@ -673,7 +677,7 @@ fn request_interest_v1(
     cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: RequestInterestParamsV1 = deserialize(&self_.data[1..])?;
+    let params = RequestInterestParamsV1::decode(&self_.data[1..])?;
 
     if params.claim_block == 0 {
         msg!("[bearer_bond::request_interest_v1] Error: Claim block is zero");
@@ -683,9 +687,9 @@ fn request_interest_v1(
     let coins_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
 
     // Look up the existing stake coin to get last_claim_block
-    let coin_bytes = wasm::db::db_get(coins_db, &serialize(&params.bond_input.token_commit))?
+    let coin_bytes = wasm::db::db_get(coins_db, &params.bond_input.token_commit.to_repr())?
         .ok_or(BearerBondError::StakeNotFound)?;
-    let stake_coin: BondCoin = deserialize(&coin_bytes)?;
+    let stake_coin = BondCoin::decode(&coin_bytes)?;
 
     // Verify the claim block is after the last claim block
     if params.claim_block <= stake_coin.last_claim_block {
@@ -699,7 +703,7 @@ fn request_interest_v1(
 
     // Read the bond series info to get interest rate
     let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
-    let series_key = serialize(&stake_coin.token_commit);
+    let series_key = stake_coin.token_commit.to_repr();
     let series_bytes = match wasm::db::db_get(bonds_info_db, &series_key) {
         Ok(Some(b)) => b,
         _ => {
@@ -707,7 +711,7 @@ fn request_interest_v1(
             return Err(BearerBondError::StakeNotFound.into());
         }
     };
-    let series_info: BondSeriesInfo = deserialize(&series_bytes)?;
+    let series_info = BondSeriesInfo::decode(&series_bytes)?;
 
     // Check series status
     if series_info.status != SeriesStatus::Active {
@@ -734,7 +738,7 @@ fn request_interest_v1(
     }
 
     // Check no pending claim already exists for this bond
-    let claim_key = serialize(&(params.bond_input.token_commit, params.claim_block));
+    let claim_key = [&params.bond_input.token_commit.to_repr()[..], &params.claim_block.to_le_bytes()[..]].concat();
     if wasm::db::db_contains_key(bonds_info_db, &claim_key)? {
         msg!("[request_interest_v1] Error: Interest claim request already exists");
         return Err(BearerBondError::ClaimAlreadyExists.into());
@@ -752,7 +756,9 @@ fn request_interest_v1(
         claim_block: params.claim_block,
         claim,
     };
-    wasm::util::set_return_data(&serialize(&(BearerBondFunction::RequestInterestV1 as u8, update)))
+    let mut return_data = vec![BearerBondFunction::RequestInterestV1 as u8];
+    return_data.extend_from_slice(&update.encode());
+    wasm::util::set_return_data(&return_data)
 }
 
 // ============================================================================
@@ -763,15 +769,15 @@ fn pay_interest_v1(
     cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: PayInterestParamsV1 = deserialize(&self_.data[1..])?;
+    let params = PayInterestParamsV1::decode(&self_.data[1..])?;
 
     let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
 
     // Look up the pending claim
-    let claim_key = serialize(&(params.bond_token_commit, params.claim_block));
+    let claim_key = [&params.bond_token_commit.to_repr()[..], &params.claim_block.to_le_bytes()[..]].concat();
     let claim_bytes = wasm::db::db_get(bonds_info_db, &claim_key)?
         .ok_or(BearerBondError::ClaimNotFound)?;
-    let claim: RequestedClaim = deserialize(&claim_bytes)?;
+    let claim = RequestedClaim::decode(&claim_bytes)?;
 
     // Verify the claim is still pending
     if claim.status != ClaimStatus::Pending {
@@ -782,15 +788,15 @@ fn pay_interest_v1(
     // Verify the issuer has sufficient reserves (ringfencing enforcement)
     // Scan bonds_info for the latest coverage report for this series
     let coins_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
-    let coin_bytes = wasm::db::db_get(coins_db, &serialize(&params.bond_token_commit))?
+    let coin_bytes = wasm::db::db_get(coins_db, &params.bond_token_commit.to_repr())?
         .ok_or(BearerBondError::StakeNotFound)?;
-    let stake_coin: BondCoin = deserialize(&coin_bytes)?;
+    let stake_coin = BondCoin::decode(&coin_bytes)?;
 
     // Check series is still active
-    let series_key = serialize(&stake_coin.token_commit);
+    let series_key = stake_coin.token_commit.to_repr();
     let series_bytes = wasm::db::db_get(bonds_info_db, &series_key)?
         .ok_or(BearerBondError::StakeNotFound)?;
-    let series_info: BondSeriesInfo = deserialize(&series_bytes)?;
+    let series_info = BondSeriesInfo::decode(&series_bytes)?;
 
     if series_info.status == SeriesStatus::Voided {
         msg!("[pay_interest_v1] Error: Series is voided — cannot pay interest");
@@ -801,7 +807,7 @@ fn pay_interest_v1(
     // The issuer must have proven reserves >= obligations before paying.
     // In a full implementation this scans bonds_info for the latest CoverageReport
     // for this series. For now we verify a report exists.
-    let coverage_scan_key = serialize(&(stake_coin.token_commit, 0u64));
+    let coverage_scan_key = [&stake_coin.token_commit.to_repr()[..], &0u64.to_le_bytes()[..]].concat();
     if !wasm::db::db_contains_key(bonds_info_db, &coverage_scan_key)? {
         // Try higher block numbers — the coverage report key is (series_token_id, report_block)
         // For now, check if ANY coverage-related key exists by attempting the lookup
@@ -826,7 +832,9 @@ fn pay_interest_v1(
         claim_block: params.claim_block,
         claim: paid_claim,
     };
-    wasm::util::set_return_data(&serialize(&(BearerBondFunction::PayInterestV1 as u8, update)))
+    let mut return_data = vec![BearerBondFunction::PayInterestV1 as u8];
+    return_data.extend_from_slice(&update.encode());
+    wasm::util::set_return_data(&return_data)
 }
 
 // ============================================================================
@@ -837,7 +845,7 @@ fn emergency_unstake_v1(
     cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: EmergencyUnstakeParamsV1 = deserialize(&self_.data[1..])?;
+    let params = EmergencyUnstakeParamsV1::decode(&self_.data[1..])?;
 
     // Verify the coverage report shows voided coverage
     if !validation::is_coverage_voided(&params.coverage_report) {
@@ -848,12 +856,12 @@ fn emergency_unstake_v1(
     let coins_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
-    if !wasm::db::db_contains_key(coins_db, &serialize(&params.bond_input.token_commit))? {
+    if !wasm::db::db_contains_key(coins_db, &params.bond_input.token_commit.to_repr())? {
         msg!("[emergency_unstake_v1] Error: Stake coin not found");
         return Err(BearerBondError::StakeNotFound.into());
     }
 
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.bond_input.nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.bond_input.nullifier.to_bytes())? {
         msg!("[emergency_unstake_v1] Error: Stake already unstaked");
         return Err(BearerBondError::StakeAlreadyUnstaked.into());
     }
@@ -866,7 +874,9 @@ fn emergency_unstake_v1(
         nullifiers: vec![params.bond_input.nullifier],
         receipt_coin,
     };
-    wasm::util::set_return_data(&serialize(&(BearerBondFunction::EmergencyUnstakeV1 as u8, update)))
+    let mut return_data = vec![BearerBondFunction::EmergencyUnstakeV1 as u8];
+    return_data.extend_from_slice(&update.encode());
+    wasm::util::set_return_data(&return_data)
 }
 
 // ============================================================================
@@ -877,15 +887,15 @@ fn unstake_v1(
     cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: UnstakeParamsV1 = deserialize(&self_.data[1..])?;
+    let params = UnstakeParamsV1::decode(&self_.data[1..])?;
 
     let coins_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
     // Look up the stake coin to verify maturity
-    let coin_bytes = wasm::db::db_get(coins_db, &serialize(&params.bond_input.token_commit))?
+    let coin_bytes = wasm::db::db_get(coins_db, &params.bond_input.token_commit.to_repr())?
         .ok_or(BearerBondError::StakeNotFound)?;
-    let stake_coin: BondCoin = deserialize(&coin_bytes)?;
+    let stake_coin = BondCoin::decode(&coin_bytes)?;
 
     // Enforce maturity: current block must be >= maturity block
     if params.current_block < stake_coin.maturity_block {
@@ -897,7 +907,7 @@ fn unstake_v1(
         }.into());
     }
 
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.bond_input.nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.bond_input.nullifier.to_bytes())? {
         msg!("[unstake_v1] Error: Stake already unstaked");
         return Err(BearerBondError::StakeAlreadyUnstaked.into());
     }
@@ -910,7 +920,9 @@ fn unstake_v1(
         nullifiers: vec![params.bond_input.nullifier],
         receipt_coin,
     };
-    wasm::util::set_return_data(&serialize(&(BearerBondFunction::UnstakeV1 as u8, update)))
+    let mut return_data = vec![BearerBondFunction::UnstakeV1 as u8];
+    return_data.extend_from_slice(&update.encode());
+    wasm::util::set_return_data(&return_data)
 }
 
 // ============================================================================
@@ -921,7 +933,7 @@ fn burn_stake_v1(
     cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: BurnStakeParamsV1 = deserialize(&self_.data[1..])?;
+    let params = BurnStakeParamsV1::decode(&self_.data[1..])?;
 
     if params.inputs.is_empty() {
         msg!("[bearer_bond::burn_stake_v1] Error: Missing inputs");
@@ -932,11 +944,11 @@ fn burn_stake_v1(
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
     for input in &params.inputs {
-        if !wasm::db::db_contains_key(coins_db, &serialize(&input.token_commit))? {
+        if !wasm::db::db_contains_key(coins_db, &input.token_commit.to_repr())? {
             msg!("[burn_stake_v1] Error: Stake coin not found");
             return Err(BearerBondError::StakeNotFound.into());
         }
-        if wasm::db::db_contains_key(nullifiers_db, &serialize(&input.nullifier))? {
+        if wasm::db::db_contains_key(nullifiers_db, &input.nullifier.to_bytes())? {
             msg!("[burn_stake_v1] Error: Duplicate nullifier");
             return Err(BearerBondError::DuplicateNullifier.into());
         }
@@ -944,7 +956,9 @@ fn burn_stake_v1(
 
     let nullifiers: Vec<_> = params.inputs.iter().map(|i| i.nullifier).collect();
     let update = BurnStakeUpdateV1 { nullifiers };
-    wasm::util::set_return_data(&serialize(&(BearerBondFunction::BurnStakeV1 as u8, update)))
+    let mut return_data = vec![BearerBondFunction::BurnStakeV1 as u8];
+    return_data.extend_from_slice(&update.encode());
+    wasm::util::set_return_data(&return_data)
 }
 
 // ============================================================================
@@ -955,7 +969,7 @@ fn prove_coverage_v1(
     cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: ProveCoverageParamsV1 = deserialize(&self_.data[1..])?;
+    let params = ProveCoverageParamsV1::decode(&self_.data[1..])?;
 
     if params.total_outstanding == 0 {
         msg!("[bearer_bond::prove_coverage_v1] Error: Total outstanding is zero");
@@ -972,7 +986,7 @@ fn prove_coverage_v1(
 
     // Check this report block doesn't already have a coverage report
     let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
-    let key = serialize(&(params.series_token_id, params.report_block));
+    let key = [&params.series_token_id.to_repr()[..], &params.report_block.to_le_bytes()[..]].concat();
     if wasm::db::db_contains_key(bonds_info_db, &key)? {
         msg!("[prove_coverage_v1] Error: Coverage report already exists for this block");
         return Err(BearerBondError::CoverageReportExists.into());
@@ -997,7 +1011,9 @@ fn prove_coverage_v1(
     }
 
     let update = ProveCoverageUpdateV1 { report };
-    wasm::util::set_return_data(&serialize(&(BearerBondFunction::ProveCoverageV1 as u8, update)))
+    let mut return_data = vec![BearerBondFunction::ProveCoverageV1 as u8];
+    return_data.extend_from_slice(&update.encode());
+    wasm::util::set_return_data(&return_data)
 }
 
 // ============================================================================
@@ -1013,7 +1029,9 @@ fn verify_coverage_v1(
         msg!("[bearer_bond::verify_coverage_v1] Error: Empty call data");
         return Err(BearerBondError::StakeNotFound.into());
     }
-    let _series_token_id: pallas::Base = deserialize(&self_.data[1..])?;
+    let _series_token_id = pallas::Base::from_repr(self_.data[1..33].try_into().map_err(|_| BearerBondError::StakeNotFound)?)
+        .into_option()
+        .ok_or(BearerBondError::StakeNotFound)?;
     let _bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
     // FIXME: implement coverage lookup using a sentinel key pattern:
     // On ProveCoverageV1, store the latest report under key (series_token_id, u64::MAX)
@@ -1030,7 +1048,7 @@ fn verify_coverage_v1(
 fn apply_issue_stake(cid: ContractId, update: IssueStakeUpdateV1) -> ContractResult {
     let coins_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
     for coin in &update.coins {
-        wasm::db::db_set(coins_db, &serialize(&coin.token_commit), &serialize(coin))?;
+        wasm::db::db_set(coins_db, &coin.token_commit.to_repr(), &coin.encode())?;
     }
     // TODO(#12): Increment series_info.total_staked in the bonds_info tree.
     // Currently total_staked is never updated after series creation, causing
@@ -1049,10 +1067,10 @@ fn apply_transfer_stake(cid: ContractId, update: TransferStakeUpdateV1) -> Contr
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
     for nullifier in &update.nullifiers {
-        wasm::db::db_set(nullifiers_db, &serialize(nullifier), &[])?;
+        wasm::db::db_set(nullifiers_db, &nullifier.to_bytes(), &[])?;
     }
     for coin in &update.coins {
-        wasm::db::db_set(coins_db, &serialize(&coin.token_commit), &serialize(coin))?;
+        wasm::db::db_set(coins_db, &coin.token_commit.to_repr(), &coin.encode())?;
     }
     Ok(())
 }
@@ -1065,8 +1083,8 @@ fn apply_request_interest(cid: ContractId, update: RequestInterestUpdateV1) -> C
     let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
 
     // Store the claim record keyed by (token_commit, claim_block)
-    let claim_key = serialize(&(update.bond_token_commit, update.claim_block));
-    wasm::db::db_set(bonds_info_db, &claim_key, &serialize(&update.claim))?;
+    let claim_key = [&update.bond_token_commit.to_repr()[..], &update.claim_block.to_le_bytes()[..]].concat();
+    wasm::db::db_set(bonds_info_db, &claim_key, &update.claim.encode())?;
 
     msg!("[apply_request_interest] Claim stored: bond={:?}, block={}, amount={}, status=Pending",
         update.bond_token_commit, update.claim_block, update.claim.interest_amount);
@@ -1084,20 +1102,20 @@ fn apply_pay_interest(cid: ContractId, update: PayInterestUpdateV1) -> ContractR
     // Update the stake coin with new last_claim_block
     wasm::db::db_set(
         coins_db,
-        &serialize(&update.updated_coin.token_commit),
-        &serialize(&update.updated_coin),
+        &update.updated_coin.token_commit.to_repr(),
+        &update.updated_coin.encode(),
     )?;
 
     // Store the interest payment coin
     wasm::db::db_set(
         coins_db,
-        &serialize(&update.interest_coin.token_commit),
-        &serialize(&update.interest_coin),
+        &update.interest_coin.token_commit.to_repr(),
+        &update.interest_coin.encode(),
     )?;
 
     // Write the claim with pre-set Paid status (computed in pay_interest_v1 exec phase)
-    let claim_key = serialize(&(update.bond_token_commit, update.claim_block));
-    wasm::db::db_set(bonds_info_db, &claim_key, &serialize(&update.claim))?;
+    let claim_key = [&update.bond_token_commit.to_repr()[..], &update.claim_block.to_le_bytes()[..]].concat();
+    wasm::db::db_set(bonds_info_db, &claim_key, &update.claim.encode())?;
 
     msg!("[apply_pay_interest] Payment applied: bond={:?}, block={}, status=Paid",
         update.bond_token_commit, update.claim_block);
@@ -1113,9 +1131,9 @@ fn apply_emergency_unstake(cid: ContractId, update: EmergencyUnstakeUpdateV1) ->
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
     for nullifier in &update.nullifiers {
-        wasm::db::db_set(nullifiers_db, &serialize(nullifier), &[])?;
+        wasm::db::db_set(nullifiers_db, &nullifier.to_bytes(), &[])?;
     }
-    wasm::db::db_set(coins_db, &serialize(&update.receipt_coin.token_commit), &serialize(&update.receipt_coin))?;
+    wasm::db::db_set(coins_db, &update.receipt_coin.token_commit.to_repr(), &update.receipt_coin.encode())?;
     Ok(())
 }
 
@@ -1128,9 +1146,9 @@ fn apply_unstake(cid: ContractId, update: UnstakeUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
     for nullifier in &update.nullifiers {
-        wasm::db::db_set(nullifiers_db, &serialize(nullifier), &[])?;
+        wasm::db::db_set(nullifiers_db, &nullifier.to_bytes(), &[])?;
     }
-    wasm::db::db_set(coins_db, &serialize(&update.receipt_coin.token_commit), &serialize(&update.receipt_coin))?;
+    wasm::db::db_set(coins_db, &update.receipt_coin.token_commit.to_repr(), &update.receipt_coin.encode())?;
     Ok(())
 }
 
@@ -1141,7 +1159,7 @@ fn apply_unstake(cid: ContractId, update: UnstakeUpdateV1) -> ContractResult {
 fn apply_burn_stake(cid: ContractId, update: BurnStakeUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
     for nullifier in &update.nullifiers {
-        wasm::db::db_set(nullifiers_db, &serialize(nullifier), &[])?;
+        wasm::db::db_set(nullifiers_db, &nullifier.to_bytes(), &[])?;
     }
     Ok(())
 }
@@ -1154,21 +1172,18 @@ fn apply_prove_coverage(cid: ContractId, update: ProveCoverageUpdateV1) -> Contr
     let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
 
     // Store coverage report keyed by series_token_id + report_block
-    let key = serialize(&(
-        update.report.series_token_id,
-        update.report.report_block,
-    ));
-    wasm::db::db_set(bonds_info_db, &key, &serialize(&update.report))?;
+    let key = [&update.report.series_token_id.to_repr()[..], &update.report.report_block.to_le_bytes()[..]].concat();
+    wasm::db::db_set(bonds_info_db, &key, &update.report.encode())?;
 
     // Auto-void the series if coverage falls below minimum.
     // Enables EmergencyUnstakeV1 by filing a sub-100% report.
     if validation::is_coverage_voided(&update.report) {
-        let series_key = serialize(&update.report.series_token_id);
+        let series_key = update.report.series_token_id.to_repr();
         if let Ok(Some(series_bytes)) = wasm::db::db_get(bonds_info_db, &series_key) {
-            if let Ok(mut series_info) = deserialize::<BondSeriesInfo>(&series_bytes) {
+            if let Ok(mut series_info) = BondSeriesInfo::decode(&series_bytes) {
                 if series_info.status == SeriesStatus::Active {
                     series_info.status = SeriesStatus::Voided;
-                    wasm::db::db_set(bonds_info_db, &series_key, &serialize(&series_info))?;
+                    wasm::db::db_set(bonds_info_db, &series_key, &series_info.encode())?;
                     msg!("[apply_prove_coverage] Series {:?} auto-voided: coverage {} bps < {} bps",
                         update.report.series_token_id,
                         update.report.coverage_ratio_bps,

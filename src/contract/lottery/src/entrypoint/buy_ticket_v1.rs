@@ -29,13 +29,13 @@
 //! the actual token transfer to lock the ticket price.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
     error::ContractError,
     msg,
     pasta::pallas,
     wasm,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::deserialize;
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id,
     validate_child_value_commit,
@@ -103,13 +103,16 @@ pub fn lottery_buy_ticket_process_instruction_v1(
     let lotteries_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_LOTTERIES_TREE)?;
     let current_lottery_id_bytes =
         wasm::db::db_get(lotteries_db, LOTTERY_CONTRACT_CURRENT_LOTTERY)?.ok_or(ContractError::DbGetEmpty)?;
-    let lottery_id: pallas::Base = deserialize(&current_lottery_id_bytes)?;
+    let lid_bytes: [u8; 32] = current_lottery_id_bytes.try_into().map_err(|_| ContractError::IoError("invalid lottery_id bytes".into()))?;
+    let lottery_id = Option::<pallas::Base>::from(pallas::Base::from_repr(lid_bytes))
+        .ok_or_else(|| ContractError::IoError("invalid lottery_id".into()))?;
 
     msg!("[lottery::buy_ticket] lottery_id: {:?}", lottery_id);
 
     // Get lottery state
-    let lottery: crate::model::Lottery =
-        deserialize(&wasm::db::db_get(lotteries_db, &serialize(&lottery_id))?.ok_or(ContractError::DbGetEmpty)?)?;
+    let lottery = crate::model::Lottery::decode(
+        &wasm::db::db_get(lotteries_db, &lottery_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?
+    )?;
 
     // Verify lottery is active
     let current_block = wasm::util::get_verifying_block_height()?.get();
@@ -136,7 +139,7 @@ pub fn lottery_buy_ticket_process_instruction_v1(
 
     // Check if ticket already exists
     let tickets_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_TICKETS_TREE)?;
-    if wasm::db::db_contains_key(tickets_db, &serialize(&ticket_id))? {
+    if wasm::db::db_contains_key(tickets_db, &ticket_id.to_repr())? {
         return Err(LotteryError::TicketAlreadyClaimed.into())
     }
 
@@ -146,7 +149,7 @@ pub fn lottery_buy_ticket_process_instruction_v1(
 
     // Check nullifier hasn't been used
     let nullifiers_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &nullifier.to_repr())? {
         return Err(LotteryError::InvalidNullifier.into())
     }
 
@@ -166,7 +169,7 @@ pub fn lottery_buy_ticket_process_instruction_v1(
     };
 
     msg!("[lottery::buy_ticket] Ticket purchased successfully");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Process update for BuyTicketV1
@@ -192,20 +195,23 @@ pub fn lottery_buy_ticket_process_update_v1(
     // Read the new Merkle root from the info database
     let new_merkle_root_bytes =
         wasm::db::db_get(lotteries_db, LOTTERY_CONTRACT_LATEST_TICKET_ROOT)?.ok_or(ContractError::DbGetEmpty)?;
-    let new_merkle_root: pallas::Base = deserialize(&new_merkle_root_bytes)?;
+    let mr_bytes: [u8; 32] = new_merkle_root_bytes.try_into().map_err(|_| ContractError::IoError("invalid merkle root bytes".into()))?;
+    let new_merkle_root = Option::<pallas::Base>::from(pallas::Base::from_repr(mr_bytes))
+        .ok_or_else(|| ContractError::IoError("invalid merkle root".into()))?;
 
     msg!("[lottery::buy_ticket::update] Ticket SMT root: {:?}", new_merkle_root);
 
     // Get and update lottery
-    let mut lottery: crate::model::Lottery =
-        deserialize(&wasm::db::db_get(lotteries_db, &serialize(&update.lottery_id))?.ok_or(ContractError::DbGetEmpty)?)?;
+    let mut lottery = crate::model::Lottery::decode(
+        &wasm::db::db_get(lotteries_db, &update.lottery_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?
+    )?;
 
     lottery.ticket_count = update.ticket_count;
     lottery.gross_pool = update.gross_pool;
     lottery.ticket_merkle_root = new_merkle_root;
 
     // Store updated lottery
-    wasm::db::db_set(lotteries_db, &serialize(&update.lottery_id), &serialize(&lottery))?;
+    wasm::db::db_set(lotteries_db, &update.lottery_id.to_repr(), &lottery.encode())?;
     msg!("[lottery::buy_ticket::update] Lottery updated with new Merkle root");
 
     // Create ticket state
@@ -223,11 +229,11 @@ pub fn lottery_buy_ticket_process_update_v1(
     };
 
     // Store ticket
-    wasm::db::db_set(tickets_db, &serialize(&update.ticket_id), &serialize(&ticket))?;
+    wasm::db::db_set(tickets_db, &update.ticket_id.to_repr(), &ticket.encode())?;
     msg!("[lottery::buy_ticket::update] Ticket stored in database");
 
     // Store nullifier
-    wasm::db::db_set(nullifiers_db, &serialize(&update.nullifier), &[])?;
+    wasm::db::db_set(nullifiers_db, &update.nullifier.to_repr(), &[])?;
     msg!("[lottery::buy_ticket::update] Nullifier stored");
 
     Ok(())

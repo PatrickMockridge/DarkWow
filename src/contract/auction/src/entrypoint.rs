@@ -45,7 +45,7 @@
 //! - Seller settles to receive the winning bid amount
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta,
@@ -53,9 +53,7 @@ use dwow_sdk::{
     wasm,
 };
 use dwow_promissory_note_contract::validation::{validate_child_contract_id, validate_child_value_commit};
-use dwow_serial::{deserialize, serialize};
-
-use dwow_serial::Encodable;
+use dwow_serial::{deserialize, Encodable};
 
 use crate::{
     error::AuctionError,
@@ -377,9 +375,9 @@ fn create_auction_v1(cid: ContractId, params: CreateAuctionParamsV1) -> Contract
 
     // Verify the auction doesn't already exist
     let auctions_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
-    let existing_data = wasm::db::db_get(auctions_db, &serialize(&params.auction_id))?;
+    let existing_data = wasm::db::db_get(auctions_db, &params.auction_id.to_repr())?;
     let existing: Option<Auction> = match existing_data {
-        Some(data) => Some(deserialize(&data)?),
+        Some(data) => Some(Auction::decode(&data)?),
         None => None,
     };
     if existing.is_some() {
@@ -411,11 +409,11 @@ fn create_auction_v1(cid: ContractId, params: CreateAuctionParamsV1) -> Contract
     // Build update for apply phase — the actual DB write happens in process_update.
     let update = CreateAuctionUpdateV1 {
         auction_id: params.auction_id,
-        serialized_auction: serialize(&auction),
+        auction,
     };
 
     msg!("[auction::create_auction_v1] Auction creation computed");
-    wasm::util::set_return_data(&serialize(&(AuctionFunction::CreateAuctionV1 as u8, update)))
+    wasm::util::set_return_data(&encode_create_auction_update_v1(&update))
 }
 
 /// PlaceBidV1 instruction
@@ -424,9 +422,9 @@ fn place_bid_v1(cid: ContractId, params: PlaceBidParamsV1) -> ContractResult {
 
     // Verify the auction exists and is active
     let auctions_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
-    let auction_data = wasm::db::db_get(auctions_db, &serialize(&params.auction_id))?;
+    let auction_data = wasm::db::db_get(auctions_db, &params.auction_id.to_repr())?;
     let mut auction: Auction = match auction_data {
-        Some(a) => deserialize(&a)?,
+        Some(a) => Auction::decode(&a)?,
         None => {
             msg!("[auction::place_bid_v1] ERROR: Auction not found");
             return Err(ContractError::InvalidFunction.into())
@@ -463,18 +461,18 @@ fn place_bid_v1(cid: ContractId, params: PlaceBidParamsV1) -> ContractResult {
     }
 
     // If there was a previous highest bid, it will be marked as outbid in apply.
-    let (prev_bid_id_opt, serialized_prev_bid_opt) = if let Some(prev_bid_id) = auction.highest_bid_id {
+    let (prev_bid_id_opt, prev_bid_opt) = if let Some(prev_bid_id) = auction.highest_bid_id {
         let bids_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_BIDS_TREE)?;
-        let prev_bid_data = wasm::db::db_get(bids_db, &serialize(&prev_bid_id))?;
+        let prev_bid_data = wasm::db::db_get(bids_db, &prev_bid_id.to_repr())?;
         let mut prev_bid: Bid = match prev_bid_data {
-            Some(b) => deserialize(&b)?,
+            Some(b) => Bid::decode(&b)?,
             None => {
                 msg!("[auction::place_bid_v1] ERROR: Previous bid not found");
                 return Err(ContractError::InvalidFunction.into())
             }
         };
         prev_bid.state = BidState::Outbid;
-        (Some(prev_bid_id), Some(serialize(&prev_bid)))
+        (Some(prev_bid_id), Some(prev_bid))
     } else {
         (None, None)
     };
@@ -505,14 +503,14 @@ fn place_bid_v1(cid: ContractId, params: PlaceBidParamsV1) -> ContractResult {
         highest_bid: params.amount,
         highest_bidder: params.bidder_pubkey,
         highest_bid_id: params.bid_id,
-        serialized_auction: serialize(&auction),
-        serialized_bid: serialize(&bid),
+        auction,
+        bid,
         prev_bid_id: prev_bid_id_opt,
-        serialized_prev_bid: serialized_prev_bid_opt,
+        prev_bid: prev_bid_opt,
     };
 
     msg!("[auction::place_bid_v1] Bid computed");
-    wasm::util::set_return_data(&serialize(&(AuctionFunction::PlaceBidV1 as u8, update)))
+    wasm::util::set_return_data(&encode_place_bid_update_v1(&update))
 }
 
 /// CloseAuctionV1 instruction
@@ -521,9 +519,9 @@ fn close_auction_v1(cid: ContractId, params: CloseAuctionParamsV1) -> ContractRe
 
     // Verify the auction exists
     let auctions_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
-    let auction_data = wasm::db::db_get(auctions_db, &serialize(&params.auction_id))?;
+    let auction_data = wasm::db::db_get(auctions_db, &params.auction_id.to_repr())?;
     let mut auction: Auction = match auction_data {
-        Some(a) => deserialize(&a)?,
+        Some(a) => Auction::decode(&a)?,
         None => {
             msg!("[auction::close_auction_v1] ERROR: Auction not found");
             return Err(ContractError::InvalidFunction.into())
@@ -546,33 +544,32 @@ fn close_auction_v1(cid: ContractId, params: CloseAuctionParamsV1) -> ContractRe
     auction.state = AuctionState::Closed;
 
     // Mark winning bid as won in memory (write deferred to apply phase)
-    let (winner_bid_id_opt, winner_bid_id_bytes_opt, serialized_winner_bid_opt) =
-        if let Some(winner_bid_id) = auction.highest_bid_id {
+    let (winner_bid_id, winner_bid_opt) =
+        if let Some(wbid_id) = auction.highest_bid_id {
             let bids_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_BIDS_TREE)?;
-            let winner_bid_data = wasm::db::db_get(bids_db, &serialize(&winner_bid_id))?;
+            let winner_bid_data = wasm::db::db_get(bids_db, &wbid_id.to_repr())?;
             let mut winner_bid: Bid = match winner_bid_data {
-                Some(b) => deserialize(&b)?,
+                Some(b) => Bid::decode(&b)?,
                 None => {
                     msg!("[auction::close_auction_v1] ERROR: Winner bid not found");
                     return Err(ContractError::InvalidFunction.into())
                 }
             };
             winner_bid.state = BidState::Won;
-            (Some(winner_bid_id), Some(serialize(&winner_bid_id)), Some(serialize(&winner_bid)))
+            (wbid_id, Some(winner_bid))
         } else {
-            (None, None, None)
+            (pasta::pallas::Base::from(0u64), None)
         };
 
     let update = CloseAuctionUpdateV1 {
         auction_id: params.auction_id,
-        winner_bid_id: winner_bid_id_opt.unwrap_or(pasta::pallas::Base::from(0u64)),
-        serialized_auction: serialize(&auction),
-        winner_bid_id_bytes: winner_bid_id_bytes_opt.unwrap_or(vec![]),
-        serialized_winner_bid: serialized_winner_bid_opt.unwrap_or(vec![]),
+        winner_bid_id,
+        auction,
+        winner_bid: winner_bid_opt,
     };
 
     msg!("[auction::close_auction_v1] Auction close computed");
-    wasm::util::set_return_data(&serialize(&(AuctionFunction::CloseAuctionV1 as u8, update)))
+    wasm::util::set_return_data(&encode_close_auction_update_v1(&update))
 }
 
 /// ClaimWinningsV1 instruction
@@ -581,9 +578,9 @@ fn claim_winnings_v1(cid: ContractId, params: ClaimWinningsParamsV1, child_call_
 
     // Verify the auction exists and is closed
     let auctions_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
-    let auction_data = wasm::db::db_get(auctions_db, &serialize(&params.auction_id))?;
+    let auction_data = wasm::db::db_get(auctions_db, &params.auction_id.to_repr())?;
     let auction: Auction = match auction_data {
-        Some(a) => deserialize(&a)?,
+        Some(a) => Auction::decode(&a)?,
         None => {
             msg!("[auction::claim_winnings_v1] ERROR: Auction not found");
             return Err(ContractError::InvalidFunction.into())
@@ -621,9 +618,9 @@ fn settle_auction_v1(cid: ContractId, params: SettleAuctionParamsV1, child_call_
 
     // Verify the auction exists and is closed
     let auctions_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
-    let auction_data = wasm::db::db_get(auctions_db, &serialize(&params.auction_id))?;
+    let auction_data = wasm::db::db_get(auctions_db, &params.auction_id.to_repr())?;
     let mut auction: Auction = match auction_data {
-        Some(a) => deserialize(&a)?,
+        Some(a) => Auction::decode(&a)?,
         None => {
             msg!("[auction::settle_auction_v1] ERROR: Auction not found");
             return Err(ContractError::InvalidFunction.into())
@@ -644,7 +641,7 @@ fn settle_auction_v1(cid: ContractId, params: SettleAuctionParamsV1, child_call_
 
     // SECURITY FIX: Verify settlement nullifier hasn't been used
     let nullifiers_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.settlement_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.settlement_nullifier.to_repr())? {
         msg!("[auction::settle_auction_v1] ERROR: Already settled");
         return Err(ContractError::InvalidFunction.into())
     }
@@ -664,11 +661,11 @@ fn settle_auction_v1(cid: ContractId, params: SettleAuctionParamsV1, child_call_
     let update = SettleAuctionUpdateV1 {
         auction_id: params.auction_id,
         settlement_nullifier: params.settlement_nullifier,
-        serialized_auction: serialize(&auction),
+        auction,
     };
 
     msg!("[auction::settle_auction_v1] Settlement computed");
-    wasm::util::set_return_data(&serialize(&(AuctionFunction::SettleAuctionV1 as u8, update)))
+    wasm::util::set_return_data(&encode_settle_auction_update_v1(&update))
 }
 
 /// RefundBidV1 instruction
@@ -677,9 +674,9 @@ fn refund_bid_v1(cid: ContractId, params: RefundBidParamsV1, child_call_data: &[
 
     // Verify the bid exists
     let bids_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_BIDS_TREE)?;
-    let bid_data = wasm::db::db_get(bids_db, &serialize(&params.bid_id))?;
+    let bid_data = wasm::db::db_get(bids_db, &params.bid_id.to_repr())?;
     let mut bid: Bid = match bid_data {
-        Some(b) => deserialize(&b)?,
+        Some(b) => Bid::decode(&b)?,
         None => {
             msg!("[auction::refund_bid_v1] ERROR: Bid not found");
             return Err(ContractError::InvalidFunction.into())
@@ -711,11 +708,87 @@ fn refund_bid_v1(cid: ContractId, params: RefundBidParamsV1, child_call_data: &[
     let update = RefundBidUpdateV1 {
         bid_id: params.bid_id,
         refund_nullifier: params.refund_nullifier,
-        serialized_bid: serialize(&bid),
+        bid,
     };
 
     msg!("[auction::refund_bid_v1] Refund computed");
-    wasm::util::set_return_data(&serialize(&(AuctionFunction::RefundBidV1 as u8, update)))
+    wasm::util::set_return_data(&encode_refund_bid_update_v1(&update))
+}
+
+// ============================================================================
+// RHO-CALCULUS EXPLICIT BRIDGE ENCODE/DECODE
+// ============================================================================
+
+fn encode_create_auction_update_v1(update: &CreateAuctionUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(AuctionFunction::CreateAuctionV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn decode_create_auction_update_v1(data: &[u8]) -> Result<CreateAuctionUpdateV1, ContractError> {
+    CreateAuctionUpdateV1::decode(data)
+}
+
+fn encode_place_bid_update_v1(update: &PlaceBidUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(AuctionFunction::PlaceBidV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn decode_place_bid_update_v1(data: &[u8]) -> Result<PlaceBidUpdateV1, ContractError> {
+    PlaceBidUpdateV1::decode(data)
+}
+
+fn encode_close_auction_update_v1(update: &CloseAuctionUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(AuctionFunction::CloseAuctionV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn decode_close_auction_update_v1(data: &[u8]) -> Result<CloseAuctionUpdateV1, ContractError> {
+    CloseAuctionUpdateV1::decode(data)
+}
+
+fn encode_claim_winnings_update_v1(update: &ClaimWinningsUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(AuctionFunction::ClaimWinningsV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn decode_claim_winnings_update_v1(data: &[u8]) -> Result<ClaimWinningsUpdateV1, ContractError> {
+    ClaimWinningsUpdateV1::decode(data)
+}
+
+fn encode_settle_auction_update_v1(update: &SettleAuctionUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(AuctionFunction::SettleAuctionV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn decode_settle_auction_update_v1(data: &[u8]) -> Result<SettleAuctionUpdateV1, ContractError> {
+    SettleAuctionUpdateV1::decode(data)
+}
+
+fn encode_refund_bid_update_v1(update: &RefundBidUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(AuctionFunction::RefundBidV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn decode_refund_bid_update_v1(data: &[u8]) -> Result<RefundBidUpdateV1, ContractError> {
+    RefundBidUpdateV1::decode(data)
 }
 
 // ============================================================================
@@ -726,58 +799,56 @@ fn refund_bid_v1(cid: ContractId, params: RefundBidParamsV1, child_call_data: &[
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     match AuctionFunction::try_from(update_data[0])? {
         AuctionFunction::CreateAuctionV1 => {
-            let update: CreateAuctionUpdateV1 = deserialize(&update_data[1..])?;
+            let update = decode_create_auction_update_v1(&update_data[1..])?;
             let auctions_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
-            let auction: Auction = deserialize(&update.serialized_auction)?;
-            wasm::db::db_set(auctions_db, &serialize(&update.auction_id), &update.serialized_auction)?;
+            wasm::db::db_set(auctions_db, &update.auction_id.to_repr(), &update.auction.encode())?;
             msg!("[auction::process_update] CreateAuction written: {:?}", update.auction_id);
             Ok(())
         }
         AuctionFunction::PlaceBidV1 => {
-            let update: PlaceBidUpdateV1 = deserialize(&update_data[1..])?;
+            let update = decode_place_bid_update_v1(&update_data[1..])?;
             let auctions_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
             let bids_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_BIDS_TREE)?;
             // Mark previous bid as outbid if one existed
-            if let (Some(prev_id), Some(prev_data)) = (update.prev_bid_id, &update.serialized_prev_bid) {
-                wasm::db::db_set(bids_db, &serialize(&prev_id), prev_data)?;
+            if let (Some(prev_id), Some(prev_bid)) = (update.prev_bid_id, &update.prev_bid) {
+                wasm::db::db_set(bids_db, &prev_id.to_repr(), &prev_bid.encode())?;
             }
             // Store new bid
-            wasm::db::db_set(bids_db, &serialize(&update.highest_bid_id), &update.serialized_bid)?;
+            wasm::db::db_set(bids_db, &update.highest_bid_id.to_repr(), &update.bid.encode())?;
             // Update auction
-            wasm::db::db_set(auctions_db, &serialize(&update.auction_id), &update.serialized_auction)?;
+            wasm::db::db_set(auctions_db, &update.auction_id.to_repr(), &update.auction.encode())?;
             msg!("[auction::process_update] PlaceBid written: {:?}", update.auction_id);
             Ok(())
         }
         AuctionFunction::CloseAuctionV1 => {
-            let update: CloseAuctionUpdateV1 = deserialize(&update_data[1..])?;
+            let update = decode_close_auction_update_v1(&update_data[1..])?;
             let auctions_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
-            wasm::db::db_set(auctions_db, &serialize(&update.auction_id), &update.serialized_auction)?;
-            if !update.serialized_winner_bid.is_empty() {
+            wasm::db::db_set(auctions_db, &update.auction_id.to_repr(), &update.auction.encode())?;
+            if let Some(ref winner_bid) = update.winner_bid {
                 let bids_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_BIDS_TREE)?;
-                let bid_id: BidId = deserialize(&update.winner_bid_id_bytes[..])?;
-                wasm::db::db_set(bids_db, &serialize(&bid_id), &update.serialized_winner_bid)?;
+                wasm::db::db_set(bids_db, &update.winner_bid_id.to_repr(), &winner_bid.encode())?;
             }
             msg!("[auction::process_update] CloseAuction written: {:?}", update.auction_id);
             Ok(())
         }
         AuctionFunction::ClaimWinningsV1 => {
-            let update: ClaimWinningsUpdateV1 = deserialize(&update_data[1..])?;
+            let update = decode_claim_winnings_update_v1(&update_data[1..])?;
             msg!("[auction::process_update] ClaimWinnings: {:?}", update.auction_id);
             Ok(())
         }
         AuctionFunction::SettleAuctionV1 => {
-            let update: SettleAuctionUpdateV1 = deserialize(&update_data[1..])?;
+            let update = decode_settle_auction_update_v1(&update_data[1..])?;
             let auctions_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
             let nullifiers_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_NULLIFIERS_TREE)?;
-            wasm::db::db_set(auctions_db, &serialize(&update.auction_id), &update.serialized_auction)?;
-            wasm::db::db_set(nullifiers_db, &serialize(&update.settlement_nullifier), &[])?;
+            wasm::db::db_set(auctions_db, &update.auction_id.to_repr(), &update.auction.encode())?;
+            wasm::db::db_set(nullifiers_db, &update.settlement_nullifier.to_repr(), &[])?;
             msg!("[auction::process_update] SettleAuction written: {:?}", update.auction_id);
             Ok(())
         }
         AuctionFunction::RefundBidV1 => {
-            let update: RefundBidUpdateV1 = deserialize(&update_data[1..])?;
+            let update = decode_refund_bid_update_v1(&update_data[1..])?;
             let bids_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_BIDS_TREE)?;
-            wasm::db::db_set(bids_db, &serialize(&update.bid_id), &update.serialized_bid)?;
+            wasm::db::db_set(bids_db, &update.bid_id.to_repr(), &update.bid.encode())?;
             msg!("[auction::process_update] RefundBid written: {:?}", update.bid_id);
             Ok(())
         }

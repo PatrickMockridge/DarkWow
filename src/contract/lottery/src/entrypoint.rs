@@ -161,27 +161,27 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     match LotteryFunction::try_from(update_data[0])? {
         LotteryFunction::InitializeV1 => {
-            let update: InitializeUpdateV1 = deserialize(&update_data[1..])?;
+            let update = InitializeUpdateV1::decode(&update_data[1..])?;
             lottery_initialize_process_update_v1(cid, update)
         }
         LotteryFunction::BuyTicketV1 => {
-            let update: BuyTicketUpdateV1 = deserialize(&update_data[1..])?;
+            let update = BuyTicketUpdateV1::decode(&update_data[1..])?;
             lottery_buy_ticket_process_update_v1(cid, update)
         }
         LotteryFunction::DrawWinnersV1 => {
-            let update: DrawWinnersUpdateV1 = deserialize(&update_data[1..])?;
+            let update = DrawWinnersUpdateV1::decode(&update_data[1..])?;
             lottery_draw_winners_process_update_v1(cid, update)
         }
         LotteryFunction::RevealTicketV1 => {
-            let update: RevealTicketUpdateV1 = deserialize(&update_data[1..])?;
+            let update = RevealTicketUpdateV1::decode(&update_data[1..])?;
             lottery_reveal_ticket_process_update_v1(cid, update)
         }
         LotteryFunction::ClaimPrizeV1 => {
-            let update: ClaimPrizeUpdateV1 = deserialize(&update_data[1..])?;
+            let update = ClaimPrizeUpdateV1::decode(&update_data[1..])?;
             lottery_claim_prize_process_update_v1(cid, update)
         }
         LotteryFunction::ExpireLotteryV1 => {
-            let update: ExpireLotteryUpdateV1 = deserialize(&update_data[1..])?;
+            let update = ExpireLotteryUpdateV1::decode(&update_data[1..])?;
             lottery_expire_lottery_process_update_v1(cid, update)
         }
     }

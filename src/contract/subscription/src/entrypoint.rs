@@ -56,7 +56,7 @@ use dwow_sdk::{
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id, validate_child_value_commit,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::deserialize;
 use dwow_serial::Encodable;
 
 use crate::{
@@ -242,15 +242,15 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 
     match func {
         SubscriptionFunction::SubscribeV1 => {
-            let update: SubscribeUpdateV1 = deserialize(&update_data[1..])?;
+            let update: SubscribeUpdateV1 = SubscribeUpdateV1::decode(&update_data[1..])?;
             subscribe_apply_v1(cid, update)
         }
         SubscriptionFunction::CancelV1 => {
-            let update: CancelUpdateV1 = deserialize(&update_data[1..])?;
+            let update: CancelUpdateV1 = CancelUpdateV1::decode(&update_data[1..])?;
             cancel_apply_v1(cid, update)
         }
         SubscriptionFunction::RenewV1 => {
-            let update: RenewUpdateV1 = deserialize(&update_data[1..])?;
+            let update: RenewUpdateV1 = RenewUpdateV1::decode(&update_data[1..])?;
             renew_apply_v1(cid, update)
         }
         SubscriptionFunction::VerifyAccessV1 => {
@@ -259,11 +259,11 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Ok(())
         }
         SubscriptionFunction::UpdateUsageV1 => {
-            let update: UpdateUsageUpdateV1 = deserialize(&update_data[1..])?;
+            let update: UpdateUsageUpdateV1 = UpdateUsageUpdateV1::decode(&update_data[1..])?;
             update_usage_apply_v1(cid, update)
         }
         SubscriptionFunction::DaoControlV1 => {
-            let update: DaoControlUpdateV1 = deserialize(&update_data[1..])?;
+            let update: DaoControlUpdateV1 = DaoControlUpdateV1::decode(&update_data[1..])?;
             dao_control_apply_v1(cid, update)
         }
         SubscriptionFunction::InitializeV1 => {
@@ -300,7 +300,11 @@ fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree
     let info_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_INFO_TREE)?;
     let promissory_note_bytes = wasm::db::db_get(info_db, SUBSCRIPTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(ContractError::Custom(31))?;
-    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    let promissory_note_cid: ContractId = ContractId::from_bytes(
+        promissory_note_bytes.try_into().map_err(|_| {
+            ContractError::IoError("subscribe_v1: invalid ContractId bytes".into())
+        })?,
+    )?;
     if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
@@ -309,7 +313,7 @@ fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree
     let plans_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_PLANS_TREE)?;
     let plan_bytes = wasm::db::db_get(plans_db, &params.plan_id.to_le_bytes())?;
     let plan: Plan = match plan_bytes {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Plan::decode(&data)?,
         None => {
             msg!("[subscription::subscribe_v1] ERROR: Plan not found");
             return Err(ContractError::Custom(1).into())
@@ -356,7 +360,7 @@ fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree
 
     let update = SubscribeUpdateV1 { subscription };
     msg!("[subscription::subscribe_v1] Subscription created: {:?}", update.subscription.id);
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// SubscribeV1 apply - store subscription
@@ -365,10 +369,11 @@ fn subscribe_apply_v1(cid: ContractId, update: SubscribeUpdateV1) -> ContractRes
     let nullifiers_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_NULLIFIERS_TREE)?;
 
     // Write subscription to subscriptions tree
+    let sub_data = update.subscription.encode();
     wasm::db::db_set(
         subs_db,
         &update.subscription.id.to_bytes(),
-        &serialize(&update.subscription),
+        &sub_data,
     )?;
 
     // Record nullifier placeholder (not spent yet - tracks subscription existence)
@@ -386,7 +391,7 @@ fn cancel_v1(cid: ContractId, params: CancelParamsV1) -> Result<Vec<u8>, Contrac
     let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
     let sub_bytes = wasm::db::db_get(subs_db, &params.subscription_id.to_bytes())?;
     let mut subscription: Subscription = match sub_bytes {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Subscription::decode(&data)?,
         None => {
             msg!("[subscription::cancel_v1] ERROR: Subscription not found");
             return Err(ContractError::Custom(1).into())
@@ -416,7 +421,7 @@ fn cancel_v1(cid: ContractId, params: CancelParamsV1) -> Result<Vec<u8>, Contrac
     };
 
     msg!("[subscription::cancel_v1] Cancellation prepared for: {:?}", params.subscription_id);
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// CancelV1 apply - mark subscription cancelled and record nullifier
@@ -425,10 +430,11 @@ fn cancel_apply_v1(cid: ContractId, update: CancelUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_NULLIFIERS_TREE)?;
 
     // Write updated subscription with Cancelled state
+    let sub_data = update.updated_subscription.encode();
     wasm::db::db_set(
         subs_db,
         &update.subscription_id.to_bytes(),
-        &serialize(&update.updated_subscription),
+        &sub_data,
     )?;
 
     // Record the nullifier as spent
@@ -461,7 +467,11 @@ fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::Da
     let info_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_INFO_TREE)?;
     let promissory_note_bytes = wasm::db::db_get(info_db, SUBSCRIPTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(ContractError::Custom(31))?;
-    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    let promissory_note_cid: ContractId = ContractId::from_bytes(
+        promissory_note_bytes.try_into().map_err(|_| {
+            ContractError::IoError("renew_v1: invalid ContractId bytes".into())
+        })?,
+    )?;
     if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
@@ -470,7 +480,7 @@ fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::Da
     let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
     let sub_bytes = wasm::db::db_get(subs_db, &params.subscription_id.to_bytes())?;
     let old_subscription: Subscription = match sub_bytes {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Subscription::decode(&data)?,
         None => {
             msg!("[subscription::renew_v1] ERROR: Subscription not found");
             return Err(ContractError::Custom(1).into())
@@ -487,7 +497,7 @@ fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::Da
     let plans_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_PLANS_TREE)?;
     let plan_bytes = wasm::db::db_get(plans_db, &old_subscription.plan_id.to_le_bytes())?;
     let plan: Plan = match plan_bytes {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Plan::decode(&data)?,
         None => {
             msg!("[subscription::renew_v1] ERROR: Plan not found");
             return Err(ContractError::Custom(1).into())
@@ -533,7 +543,7 @@ fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::Da
     };
 
     msg!("[subscription::renew_v1] Renewal prepared for: {:?}", params.subscription_id);
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// RenewV1 apply - nullify old, create new subscription
@@ -542,10 +552,11 @@ fn renew_apply_v1(cid: ContractId, update: RenewUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_NULLIFIERS_TREE)?;
 
     // Write new subscription
+    let sub_data = update.new_subscription.encode();
     wasm::db::db_set(
         subs_db,
         &update.subscription_id.to_bytes(),
-        &serialize(&update.new_subscription),
+        &sub_data,
     )?;
 
     // Record old nullifier as spent
@@ -563,7 +574,7 @@ fn update_usage_v1(cid: ContractId, params: UpdateUsageParamsV1) -> Result<Vec<u
     let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
     let sub_bytes = wasm::db::db_get(subs_db, &params.subscription_id.to_bytes())?;
     let subscription: Subscription = match sub_bytes {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Subscription::decode(&data)?,
         None => {
             msg!("[subscription::update_usage_v1] ERROR: Subscription not found");
             return Err(ContractError::Custom(1).into())
@@ -616,7 +627,7 @@ fn update_usage_v1(cid: ContractId, params: UpdateUsageParamsV1) -> Result<Vec<u
     };
 
     msg!("[subscription::update_usage_v1] Usage update prepared for: {:?}", params.subscription_id);
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// UpdateUsageV1 apply - write updated usage to subscription
@@ -626,7 +637,7 @@ fn update_usage_apply_v1(cid: ContractId, update: UpdateUsageUpdateV1) -> Contra
     // Get current subscription
     let sub_bytes = wasm::db::db_get(subs_db, &update.subscription_id.to_bytes())?;
     let mut subscription: Subscription = match sub_bytes {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Subscription::decode(&data)?,
         None => {
             msg!("[subscription::update_usage_apply_v1] ERROR: Subscription not found");
             return Err(ContractError::Custom(1).into())
@@ -638,10 +649,11 @@ fn update_usage_apply_v1(cid: ContractId, update: UpdateUsageUpdateV1) -> Contra
     subscription.last_access_block = update.last_access_block;
     subscription.uses_remaining = update.uses_remaining;
 
+    let sub_data = subscription.encode();
     wasm::db::db_set(
         subs_db,
         &update.subscription_id.to_bytes(),
-        &serialize(&subscription),
+        &sub_data,
     )?;
 
     msg!("[subscription::update_usage_apply_v1] Usage updated for: {:?}", update.subscription_id);
@@ -682,7 +694,11 @@ fn dao_control_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tr
         let info_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_INFO_TREE)?;
         let promissory_note_bytes = wasm::db::db_get(info_db, SUBSCRIPTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
             .ok_or(ContractError::Custom(2))?;
-        let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+        let promissory_note_cid: ContractId = ContractId::from_bytes(
+            promissory_note_bytes.try_into().map_err(|_| {
+                ContractError::IoError("dao_control_v1: invalid ContractId bytes".into())
+            })?,
+        )?;
         if promissory_note_cid != ContractId::ZERO {
             validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
             let value_blind = poseidon_hash([
@@ -719,7 +735,7 @@ fn dao_control_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tr
     let update = DaoControlUpdateV1 { action };
 
     msg!("[subscription::dao_control_v1] DAO control action prepared");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// DaoControlV1 apply - execute DAO governance action
@@ -733,14 +749,15 @@ fn dao_control_apply_v1(cid: ContractId, update: DaoControlUpdateV1) -> Contract
             let plans_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_PLANS_TREE)?;
             let plan_bytes = wasm::db::db_get(plans_db, &plan_id.to_le_bytes())?;
             let mut plan: Plan = match plan_bytes {
-                Some(data) => deserialize(&data)?,
+                Some(data) => Plan::decode(&data)?,
                 None => {
                     msg!("[subscription::dao_control_apply_v1] ERROR: Plan not found");
                     return Err(ContractError::Custom(1).into())
                 }
             };
             plan.active = active;
-            wasm::db::db_set(plans_db, &plan_id.to_le_bytes(), &serialize(&plan))?;
+            let plan_data = plan.encode();
+            wasm::db::db_set(plans_db, &plan_id.to_le_bytes(), &plan_data)?;
             msg!("[subscription::dao_control_apply_v1] Plan {} active status: {}", plan_id, active);
         }
         DaoControlAction::EmergencyPauseToggled(pause) => {
@@ -756,14 +773,15 @@ fn dao_control_apply_v1(cid: ContractId, update: DaoControlUpdateV1) -> Contract
             let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
             let sub_bytes = wasm::db::db_get(subs_db, &subscription_id.to_bytes())?;
             let mut subscription: Subscription = match sub_bytes {
-                Some(data) => deserialize(&data)?,
+                Some(data) => Subscription::decode(&data)?,
                 None => {
                     msg!("[subscription::dao_control_apply_v1] ERROR: Subscription not found");
                     return Err(ContractError::Custom(1).into())
                 }
             };
             subscription.state = SubscriptionState::Cancelled;
-            wasm::db::db_set(subs_db, &subscription_id.to_bytes(), &serialize(&subscription))?;
+            let sub_data = subscription.encode();
+            wasm::db::db_set(subs_db, &subscription_id.to_bytes(), &sub_data)?;
             msg!("[subscription::dao_control_apply_v1] Subscription slashed: {:?}", subscription_id);
         }
     }
