@@ -115,17 +115,17 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 return Err(BoxError::BoxNotEmpty.into());
             }
             let update = PutUpdateV1 { box_id: params.box_id, new_contents_commit: params.new_contents_commit };
-            wasm::util::set_return_data(&serialize(&(BoxFunction::PutV1 as u8, update)))?;
+            wasm::util::set_return_data(&[&[BoxFunction::PutV1 as u8], &update.encode()[..]].concat())?;
         }
         BoxFunction::TakeV1 => {
             let params: TakeParamsV1 = deserialize(&self_.data.data[1..])?;
             msg!("[box::take_v1] Take from box {:?}", params.box_id.inner());
             let nullifiers_db = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
-            if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.nullifier))? {
+            if wasm::db::db_contains_key(nullifiers_db, &params.nullifier.to_bytes())? {
                 return Err(BoxError::DuplicateNullifier.into());
             }
             let update = TakeUpdateV1 { box_id: params.box_id, nullifier: params.nullifier };
-            wasm::util::set_return_data(&serialize(&(BoxFunction::TakeV1 as u8, update)))?;
+            wasm::util::set_return_data(&[&[BoxFunction::TakeV1 as u8], &update.encode()[..]].concat())?;
         }
         BoxFunction::InitializeV1 => {
             msg!("[box::process_instruction] Error: InitializeV1 must be called via init");

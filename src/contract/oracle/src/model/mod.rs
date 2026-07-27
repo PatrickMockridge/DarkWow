@@ -253,7 +253,7 @@ impl PushValueParamsV1 {
 }
 
 /// Parameters for creating an attestation for external data
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct AttestValueParamsV1 {
     /// ZK proof for attestation
     pub proof: Vec<u8>,
@@ -267,8 +267,37 @@ pub struct AttestValueParamsV1 {
     pub threshold: pallas::Base,
 }
 
+impl AttestValueParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 2 + self.proof.len() + 32 + 32 + 1 + 32;
+        let mut buf = Vec::with_capacity(cap);
+        buf.extend_from_slice(&(self.proof.len() as u16).to_le_bytes());
+        buf.extend_from_slice(&self.proof);
+        buf.extend_from_slice(&self.oracle_id.to_bytes());
+        buf.extend_from_slice(&self.attestation_id.to_bytes());
+        buf.push(self.predicate);
+        buf.extend_from_slice(&self.threshold.to_repr());
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 67 { return Err(ContractError::IoError("AttestValueParamsV1: too short".into())); }
+        let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
+        let pos = 2 + proof_len;
+        if data.len() != pos + 65 { return Err(ContractError::IoError("AttestValueParamsV1: wrong length".into())); }
+        let proof = data[2..pos].to_vec();
+        let oracle_id = OracleId::from_bytes(data[pos..pos+32].try_into().unwrap())
+            .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid oracle_id".into()))?;
+        let attestation_id = AttestationId::from_bytes(data[pos+32..pos+64].try_into().unwrap())
+            .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid attestation_id".into()))?;
+        let predicate = data[pos+64];
+        let threshold = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+65..pos+97].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid threshold".into()))?;
+        Ok(AttestValueParamsV1 { proof, oracle_id, attestation_id, predicate, threshold })
+    }
+}
+
 /// Parameters for pushing a commitment to a data point (private value submission)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct PushValueCommitmentParamsV1 {
     /// ZK proof for commitment push
     pub proof: Vec<u8>,
@@ -284,8 +313,48 @@ pub struct PushValueCommitmentParamsV1 {
     pub path: Vec<pallas::Base>,
 }
 
+impl PushValueCommitmentParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 2 + self.proof.len() + 32 + 32 + 32 + 32 + 1 + self.path.len() * 32;
+        let mut buf = Vec::with_capacity(cap);
+        buf.extend_from_slice(&(self.proof.len() as u16).to_le_bytes());
+        buf.extend_from_slice(&self.proof);
+        buf.extend_from_slice(&self.oracle_id.to_bytes());
+        buf.extend_from_slice(&self.commitment.to_repr());
+        buf.extend_from_slice(&self.data_root.to_repr());
+        buf.extend_from_slice(&self.pos.to_repr());
+        buf.push(self.path.len() as u8);
+        for p in &self.path { buf.extend_from_slice(&p.to_repr()); }
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 130 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: too short".into())); }
+        let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
+        let mut pos = 2 + proof_len;
+        if data.len() < pos + 128 + 1 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: truncated".into())); }
+        let proof = data[2..pos].to_vec();
+        let oracle_id = OracleId::from_bytes(data[pos..pos+32].try_into().unwrap())
+            .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid oracle_id".into()))?;
+        let commitment = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid commitment".into()))?;
+        let data_root = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+64..pos+96].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid data_root".into()))?;
+        let pval = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+96..pos+128].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid pos".into()))?;
+        pos += 128;
+        let path_len = data[pos] as usize; pos += 1;
+        if data.len() != pos + path_len * 32 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: path truncated".into())); }
+        let mut path = Vec::with_capacity(path_len);
+        for i in 0..path_len {
+            path.push(Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+i*32..pos+(i+1)*32].try_into().unwrap()))
+                .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid path element".into()))?);
+        }
+        Ok(PushValueCommitmentParamsV1 { proof, oracle_id, commitment, data_root, pos: pval, path })
+    }
+}
+
 /// Parameters for aggregating multiple data points
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct AggregateParamsV1 {
     /// ZK proof for aggregation
     pub proof: Vec<u8>,
@@ -297,6 +366,36 @@ pub struct AggregateParamsV1 {
     pub min_result: pallas::Base,
     /// Maximum acceptable result
     pub max_result: pallas::Base,
+}
+
+impl AggregateParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 2 + self.proof.len() + 32 + 32 + 32 + 32;
+        let mut buf = Vec::with_capacity(cap);
+        buf.extend_from_slice(&(self.proof.len() as u16).to_le_bytes());
+        buf.extend_from_slice(&self.proof);
+        buf.extend_from_slice(&self.oracle_id.to_bytes());
+        buf.extend_from_slice(&self.result.to_repr());
+        buf.extend_from_slice(&self.min_result.to_repr());
+        buf.extend_from_slice(&self.max_result.to_repr());
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 130 { return Err(ContractError::IoError("AggregateParamsV1: too short".into())); }
+        let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
+        let pos = 2 + proof_len;
+        if data.len() != pos + 128 { return Err(ContractError::IoError("AggregateParamsV1: wrong length".into())); }
+        let proof = data[2..pos].to_vec();
+        let oracle_id = OracleId::from_bytes(data[pos..pos+32].try_into().unwrap())
+            .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid oracle_id".into()))?;
+        let result = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid result".into()))?;
+        let min_result = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+64..pos+96].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid min_result".into()))?;
+        let max_result = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+96..pos+128].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid max_result".into()))?;
+        Ok(AggregateParamsV1 { proof, oracle_id, result, min_result, max_result })
+    }
 }
 
 // ============================================================================
@@ -459,10 +558,31 @@ impl AggregateUpdateV1 {
 }
 
 /// Parameters for `SetOracleActiveV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct SetOracleActiveParamsV1 {
     pub oracle_pub: PublicKey,
     pub is_active: bool,
+}
+
+impl SetOracleActiveParamsV1 {
+    pub const ENCODED_SIZE: usize = 33;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.oracle_pub.to_bytes());
+        buf.push(self.is_active as u8);
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "SetOracleActiveParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let oracle_pub = PublicKey::from_bytes(data[0..32].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("SetOracleActiveParamsV1: invalid oracle_pub: {}", e)))?;
+        let is_active = data[32] != 0;
+        Ok(SetOracleActiveParamsV1 { oracle_pub, is_active })
+    }
 }
 
 /// Update for `SetOracleActiveV1`

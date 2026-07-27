@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow_sdk::crypto::{ContractId, PublicKey};
+use dwow_sdk::crypto::{pasta_prelude::PrimeField, ContractId, PublicKey};
 use dwow_sdk::error::ContractError;
 use dwow_sdk::pasta::pallas;
 
@@ -55,7 +55,7 @@ impl DeployUpdateV1 {
             )));
         }
         let contract_id = ContractId::from_bytes(data[0..32].try_into().unwrap())
-            .ok_or_else(|| ContractError::IoError("DeployUpdateV1: invalid contract_id".into()))?;
+            .map_err(|e| ContractError::IoError(format!("DeployUpdateV1: invalid contract_id: {}", e)))?;
         let wasm_hash = Option::<pallas::Base>::from(
             pallas::Base::from_repr(data[32..64].try_into().unwrap()),
         )
@@ -66,7 +66,7 @@ impl DeployUpdateV1 {
 
 /// Parameters for `Deploy::Lock`
 // ANCHOR: deploy-lock-params
-#[derive(Clone, Debug, SerialEncodable, SerialDecodable)]
+#[derive(Clone, Debug)]
 pub struct LockParamsV1 {
     /// Public key used to sign the transaction and derive the `ContractId`
     pub public_key: PublicKey,
@@ -100,7 +100,7 @@ impl LockUpdateV1 {
             )));
         }
         let contract_id = ContractId::from_bytes(data[0..32].try_into().unwrap())
-            .ok_or_else(|| ContractError::IoError("LockUpdateV1: invalid contract_id".into()))?;
+            .map_err(|e| ContractError::IoError(format!("LockUpdateV1: invalid contract_id: {}", e)))?;
         Ok(LockUpdateV1 { contract_id })
     }
 }

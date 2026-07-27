@@ -102,7 +102,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     } else {
         deserialize(_ix).map_err(|_| ContractError::IoError("Invalid init params".to_string()))?
     };
-    wasm::db::db_set(info_db, LABOR_CONTRACT_ATTESTATION_CONTRACT_ID, &serialize(&attestation_cid))?;
+    wasm::db::db_set(info_db, LABOR_CONTRACT_ATTESTATION_CONTRACT_ID, &attestation_cid.to_bytes())?;
 
     // Store default promissory_note contract ID for cross-contract validation
     wasm::db::db_set(info_db, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;

@@ -870,7 +870,7 @@ fn process_config_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkL
 
     msg!("[bridge::process_instruction] Configuration update: ZK proof verified");
 
-    wasm::util::set_return_data(&serialize(&params))
+    wasm::util::set_return_data(&params.encode())
 }
 
 /// Process cancel withdrawal instruction
@@ -2046,7 +2046,7 @@ fn process_verify_relayer_reputation_instruction(
         reputation.is_registered, reputation.slash_count, reputation.success_count);
 
     // Read-only — return data directly, no update struct needed
-    wasm::util::set_return_data(&serialize(&reputation))
+    wasm::util::set_return_data(&reputation.encode())
 }
 
 // ============================================================================
