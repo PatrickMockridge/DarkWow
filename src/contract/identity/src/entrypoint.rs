@@ -35,7 +35,7 @@ use dwow_sdk::{
     msg, ContractCall,
     wasm,
 };
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 use dwow_sdk::pasta::pallas::Base;
 
 use crate::error::IdentityError;
@@ -246,67 +246,67 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 
     match func {
         IdentityFunction::InitializeV1 => {
-            let update: InitializeUpdateV1 = deserialize(&update_data[1..])?;
+            let update = InitializeUpdateV1::decode(&update_data[1..])?;
             apply_initialize_update(cid, update)
         }
         IdentityFunction::IssueCredentialV1 => {
-            let update: IssueCredentialUpdateV1 = deserialize(&update_data[1..])?;
+            let update = IssueCredentialUpdateV1::decode(&update_data[1..])?;
             apply_issue_credential_update(cid, update)
         }
         IdentityFunction::RevokeCredentialV1 => {
-            let update: RevokeCredentialUpdateV1 = deserialize(&update_data[1..])?;
+            let update = RevokeCredentialUpdateV1::decode(&update_data[1..])?;
             apply_revoke_credential_update(cid, update)
         }
         IdentityFunction::CreateClaimV1 => {
-            let update: CreateClaimUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CreateClaimUpdateV1::decode(&update_data[1..])?;
             apply_create_claim_update(cid, update)
         }
         IdentityFunction::CreateClaimV1L1 => {
-            let update: CreateClaimUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CreateClaimUpdateV1::decode(&update_data[1..])?;
             apply_create_claim_update(cid, update)
         }
         IdentityFunction::VerifyClaimV1 => {
-            let update: VerifyClaimUpdateV1 = deserialize(&update_data[1..])?;
+            let update = VerifyClaimUpdateV1::decode(&update_data[1..])?;
             apply_verify_claim_update(cid, update)
         }
         IdentityFunction::CreateClaimV1L1V2 => {
-            let update: CreateClaimUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CreateClaimUpdateV1::decode(&update_data[1..])?;
             apply_create_claim_update(cid, update)
         }
         IdentityFunction::CreateClaimV1Multi => {
-            let update: CreateClaimUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CreateClaimUpdateV1::decode(&update_data[1..])?;
             apply_create_claim_update(cid, update)
         }
         IdentityFunction::CreateClaimV1Ratio => {
-            let update: CreateClaimUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CreateClaimUpdateV1::decode(&update_data[1..])?;
             apply_create_claim_update(cid, update)
         }
         IdentityFunction::RegisterCapabilityV1 => {
-            let update: RegisterCapabilityUpdateV1 = deserialize(&update_data[1..])?;
+            let update = RegisterCapabilityUpdateV1::decode(&update_data[1..])?;
             apply_register_capability_update(cid, update)
         }
         IdentityFunction::IssueCapabilityV1 => {
-            let update: IssueCapabilityUpdateV1 = deserialize(&update_data[1..])?;
+            let update = IssueCapabilityUpdateV1::decode(&update_data[1..])?;
             apply_issue_capability_update(cid, update)
         }
         IdentityFunction::VerifyCapabilityV1 => {
-            let update: VerifyCapabilityUpdateV1 = deserialize(&update_data[1..])?;
+            let update = VerifyCapabilityUpdateV1::decode(&update_data[1..])?;
             apply_verify_capability_update(cid, update)
         }
         IdentityFunction::RevokeCapabilityV1 => {
-            let update: RevokeCapabilityUpdateV1 = deserialize(&update_data[1..])?;
+            let update = RevokeCapabilityUpdateV1::decode(&update_data[1..])?;
             apply_revoke_capability_update(cid, update)
         }
         IdentityFunction::CreateClaimDAGV1 => {
-            let update: CreateClaimDAGUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CreateClaimDAGUpdateV1::decode(&update_data[1..])?;
             apply_create_claim_dag_update(cid, update)
         }
         IdentityFunction::RegisterIssuerV1 => {
-            let update: RegisterIssuerUpdateV1 = deserialize(&update_data[1..])?;
+            let update = RegisterIssuerUpdateV1::decode(&update_data[1..])?;
             apply_register_issuer_update(cid, update)
         }
         IdentityFunction::UpdateReputationV1 => {
-            let update: UpdateReputationUpdateV1 = deserialize(&update_data[1..])?;
+            let update = UpdateReputationUpdateV1::decode(&update_data[1..])?;
             apply_update_reputation_update(cid, update)
         }
     }
@@ -332,7 +332,7 @@ fn process_initialize_instruction(
     };
 
     msg!("[identity::initialize] Identity contract initialized successfully");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn apply_initialize_update(cid: ContractId, update: InitializeUpdateV1) -> ContractResult {
@@ -341,7 +341,7 @@ fn apply_initialize_update(cid: ContractId, update: InitializeUpdateV1) -> Contr
     wasm::db::db_set(
         config_db,
         b"version",
-        &serialize(&update.version),
+        &update.version.to_le_bytes(),
     )?;
 
     msg!("[identity::initialize::update] Config stored");
@@ -383,7 +383,7 @@ fn process_issue_credential_instruction(
     };
 
     msg!("[identity::issue_credential] Credential issuance prepared");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn apply_issue_credential_update(cid: ContractId, update: IssueCredentialUpdateV1) -> ContractResult {
@@ -403,7 +403,7 @@ fn apply_issue_credential_update(cid: ContractId, update: IssueCredentialUpdateV
         issued_at: update.issued_at,
         expires_at: update.expires_at,
     };
-    wasm::db::db_set(credentials_db, &nullifier_bytes, &serialize(&credential))?;
+    wasm::db::db_set(credentials_db, &nullifier_bytes, &credential.encode())?;
 
     // Store nullifier (prevents double-issuance)
     wasm::db::db_set(nullifiers_db, &nullifier_bytes, &[])?;
@@ -439,7 +439,7 @@ fn process_revoke_credential_instruction(
     };
 
     msg!("[identity::revoke_credential] Revocation prepared");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn apply_revoke_credential_update(cid: ContractId, update: RevokeCredentialUpdateV1) -> ContractResult {
@@ -452,10 +452,10 @@ fn apply_revoke_credential_update(cid: ContractId, update: RevokeCredentialUpdat
     let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
 
-    let mut credential: Credential = deserialize(&cred_data)?;
+    let mut credential: Credential = Credential::decode(&cred_data)?;
     credential.revoked = true;
 
-    wasm::db::db_set(credentials_db, &nullifier_bytes, &serialize(&credential))?;
+    wasm::db::db_set(credentials_db, &nullifier_bytes, &credential.encode())?;
 
     // Add to nullifiers list
     wasm::db::db_set(nullifiers_db, &nullifier_bytes, &update.reason)?;
@@ -484,7 +484,7 @@ fn process_create_claim_instruction(
     let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
 
-    let credential: Credential = deserialize(&cred_data)?;
+    let credential: Credential = Credential::decode(&cred_data)?;
 
     if credential.revoked {
         msg!("[identity::create_claim] ERROR: Credential is revoked");
@@ -498,7 +498,7 @@ fn process_create_claim_instruction(
     };
 
     msg!("[identity::create_claim] Claim created");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn apply_create_claim_update(_cid: ContractId, _update: CreateClaimUpdateV1) -> ContractResult {
@@ -527,7 +527,7 @@ fn process_create_claim_l1_instruction(
     let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
 
-    let credential: Credential = deserialize(&cred_data)?;
+    let credential: Credential = Credential::decode(&cred_data)?;
 
     if credential.revoked {
         msg!("[identity::create_claim_l1] ERROR: Credential is revoked");
@@ -544,7 +544,7 @@ fn process_create_claim_l1_instruction(
         "[identity::create_claim_l1] Claim created with predicate_result={}",
         params.predicate_result
     );
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 // ============================================================================
@@ -567,7 +567,7 @@ fn process_verify_claim_instruction(
     let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
 
-    let credential: Credential = deserialize(&cred_data)?;
+    let credential: Credential = Credential::decode(&cred_data)?;
 
     if credential.revoked {
         msg!("[identity::verify_claim] ERROR: Credential is revoked");
@@ -580,7 +580,7 @@ fn process_verify_claim_instruction(
     };
 
     msg!("[identity::verify_claim] Claim verified");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn apply_verify_claim_update(_cid: ContractId, _update: VerifyClaimUpdateV1) -> ContractResult {
@@ -608,7 +608,7 @@ fn process_create_claim_l1_v2_instruction(
     let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
 
-    let credential: Credential = deserialize(&cred_data)?;
+    let credential: Credential = Credential::decode(&cred_data)?;
 
     if credential.revoked {
         msg!("[identity::create_claim_l1_v2] ERROR: Credential is revoked");
@@ -625,7 +625,7 @@ fn process_create_claim_l1_v2_instruction(
         "[identity::create_claim_l1_v2] Claim created with predicate_result={}",
         params.predicate_result
     );
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 // ============================================================================
@@ -648,7 +648,7 @@ fn process_create_claim_multi_instruction(
     let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
 
-    let _credential: Credential = deserialize(&cred_data)?;
+    let _credential: Credential = Credential::decode(&cred_data)?;
 
     let update = CreateClaimUpdateV1 {
         nullifier: params.nullifier,
@@ -657,7 +657,7 @@ fn process_create_claim_multi_instruction(
     };
 
     msg!("[identity::create_claim_multi] Multi-credential claim created");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 // ============================================================================
@@ -680,7 +680,7 @@ fn process_create_claim_ratio_instruction(
     let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
 
-    let _credential: Credential = deserialize(&cred_data)?;
+    let _credential: Credential = Credential::decode(&cred_data)?;
 
     let update = CreateClaimUpdateV1 {
         nullifier: params.nullifier,
@@ -689,7 +689,7 @@ fn process_create_claim_ratio_instruction(
     };
 
     msg!("[identity::create_claim_ratio] Ratio claim created");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 // ============================================================================
@@ -726,7 +726,7 @@ fn process_register_capability_instruction(
     };
 
     msg!("[identity::register_capability] Capability registered");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn apply_register_capability_update(cid: ContractId, update: RegisterCapabilityUpdateV1) -> ContractResult {
@@ -741,7 +741,7 @@ fn apply_register_capability_update(cid: ContractId, update: RegisterCapabilityU
         issued_count: 0,
     };
 
-    wasm::db::db_set(capabilities_db, &update.capability_id.to_bytes(), &serialize(&capability))?;
+    wasm::db::db_set(capabilities_db, &update.capability_id.to_bytes(), &capability.encode())?;
 
     msg!("[identity::register_capability::update] Capability stored");
     Ok(())
@@ -767,7 +767,7 @@ fn process_issue_capability_instruction(
     let cap_data = wasm::db::db_get(capabilities_db, &cap_bytes)?
         .ok_or(IdentityError::CapabilityNotFound)?;
 
-    let capability: Capability = deserialize(&cap_data)?;
+    let capability: Capability = Capability::decode(&cap_data)?;
 
     // Check max holders limit
     if let Some(max) = capability.max_holders {
@@ -796,7 +796,7 @@ fn process_issue_capability_instruction(
     };
 
     msg!("[identity::issue_capability] Capability issuance prepared");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn apply_issue_capability_update(cid: ContractId, update: IssueCapabilityUpdateV1) -> ContractResult {
@@ -809,10 +809,10 @@ fn apply_issue_capability_update(cid: ContractId, update: IssueCapabilityUpdateV
     let cap_data = wasm::db::db_get(capabilities_db, &cap_bytes)?
         .ok_or(IdentityError::CapabilityNotFound)?;
 
-    let mut capability: Capability = deserialize(&cap_data)?;
+    let mut capability: Capability = Capability::decode(&cap_data)?;
     capability.issued_count += 1;
 
-    wasm::db::db_set(capabilities_db, &cap_bytes, &serialize(&capability))?;
+    wasm::db::db_set(capabilities_db, &cap_bytes, &capability.encode())?;
 
     msg!("[identity::issue_capability::update] Capability issued");
     Ok(())
@@ -849,7 +849,7 @@ fn process_verify_capability_instruction(
     };
 
     msg!("[identity::verify_capability] Capability verified");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn apply_verify_capability_update(_cid: ContractId, _update: VerifyCapabilityUpdateV1) -> ContractResult {
@@ -880,7 +880,7 @@ fn process_revoke_capability_instruction(
     };
 
     msg!("[identity::revoke_capability] Capability revocation prepared");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn apply_revoke_capability_update(_cid: ContractId, _update: RevokeCapabilityUpdateV1) -> ContractResult {
@@ -916,7 +916,7 @@ fn process_create_claim_dag_instruction(
         let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
             .ok_or(IdentityError::CredentialNotFound)?;
 
-        let credential: Credential = deserialize(&cred_data)?;
+        let credential: Credential = Credential::decode(&cred_data)?;
 
         if credential.revoked {
             msg!("[identity::create_claim_dag] ERROR: Credential is revoked");
@@ -931,7 +931,7 @@ fn process_create_claim_dag_instruction(
     };
 
     msg!("[identity::create_claim_dag] DAG claim created");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn apply_create_claim_dag_update(_cid: ContractId, _update: CreateClaimDAGUpdateV1) -> ContractResult {
@@ -946,8 +946,7 @@ fn apply_create_claim_dag_update(_cid: ContractId, _update: CreateClaimDAGUpdate
 /// Compute capability ID from name and requirements
 fn compute_capability_id(name: &[u8], requirement: &CredentialRequirement) -> CapabilityId {
     use dwow_sdk::crypto::poseidon_hash;
-    use dwow_serial::serialize;
-    let mut data = serialize(requirement);
+    let mut data = requirement.encode();
     data.extend_from_slice(name);
     let mut u64_bytes = [0u8; 8];
     u64_bytes.copy_from_slice(&data[..8.min(data.len())]);
@@ -1004,7 +1003,7 @@ fn process_register_issuer_instruction(
     };
 
     msg!("[identity::register_issuer] Issuer registration prepared");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn apply_register_issuer_update(cid: ContractId, update: RegisterIssuerUpdateV1) -> ContractResult {
@@ -1017,7 +1016,7 @@ fn apply_register_issuer_update(cid: ContractId, update: RegisterIssuerUpdateV1)
         trusted: true,
     };
 
-    wasm::db::db_set(issuers_db, &compute_issuer_key(&update.issuer_id), &serialize(&issuer))?;
+    wasm::db::db_set(issuers_db, &compute_issuer_key(&update.issuer_id), &issuer.encode())?;
 
     msg!("[identity::register_issuer::update] Issuer stored");
     Ok(())
@@ -1066,7 +1065,7 @@ fn process_update_reputation_instruction(
     };
 
     msg!("[identity::update_reputation] Reputation update prepared");
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn apply_update_reputation_update(cid: ContractId, update: UpdateReputationUpdateV1) -> ContractResult {
@@ -1082,7 +1081,7 @@ fn apply_update_reputation_update(cid: ContractId, update: UpdateReputationUpdat
         last_updated: update.last_updated,
     };
 
-    wasm::db::db_set(reputations_db, &update.reputation_id.to_bytes(), &serialize(&record))?;
+    wasm::db::db_set(reputations_db, &update.reputation_id.to_bytes(), &record.encode())?;
 
     msg!("[identity::update_reputation::update] Reputation stored");
     Ok(())
