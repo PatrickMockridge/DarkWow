@@ -456,7 +456,7 @@ fn create_attestation_v1(cid: ContractId, params: CreateAttestationParamsV1) -> 
 
     // Check if attestation already exists
     let existing: Option<Attestation> =
-        match wasm::db::db_get(attestations_db, &serialize(&params.attestation_id))? {
+        match wasm::db::db_get(attestations_db, &params.attestation_id.to_bytes())? {
             Some(data) => Some(deserialize(&data)?),
             None => None,
         };
@@ -501,7 +501,7 @@ fn revoke_attestation_v1(cid: ContractId, params: RevokeAttestationParamsV1) -> 
 
     // Get and verify attestation
     let attestation: Attestation =
-        match wasm::db::db_get(attestations_db, &serialize(&params.attestation_id))? {
+        match wasm::db::db_get(attestations_db, &params.attestation_id.to_bytes())? {
             Some(data) => deserialize(&data)?,
             None => {
                 msg!("[attestation::revoke_attestation_v1] ERROR: Attestation not found");
@@ -534,7 +534,7 @@ fn expire_attestation_v1(cid: ContractId, params: ExpireAttestationParamsV1) -> 
 
     // Get and verify attestation
     let attestation: Attestation =
-        match wasm::db::db_get(attestations_db, &serialize(&params.attestation_id))? {
+        match wasm::db::db_get(attestations_db, &params.attestation_id.to_bytes())? {
             Some(data) => deserialize(&data)?,
             None => {
                 msg!("[attestation::expire_attestation_v1] ERROR: Attestation not found");
@@ -575,7 +575,7 @@ fn create_claim_v1(cid: ContractId, params: CreateClaimParamsV1) -> Result<Vec<u
 
     // Get and verify attestation
     let attestation: Attestation =
-        match wasm::db::db_get(attestations_db, &serialize(&params.attestation_id))? {
+        match wasm::db::db_get(attestations_db, &params.attestation_id.to_bytes())? {
             Some(data) => deserialize(&data)?,
             None => {
                 msg!("[attestation::create_claim_v1] ERROR: Attestation not found");
@@ -611,7 +611,7 @@ fn create_claim_v1(cid: ContractId, params: CreateClaimParamsV1) -> Result<Vec<u
 
     // FIX 2: Check if claim already exists
     let existing: Option<Claim> =
-        match wasm::db::db_get(claims_db, &serialize(&params.claim_id))? {
+        match wasm::db::db_get(claims_db, &params.claim_id.to_bytes())? {
             Some(data) => Some(deserialize(&data)?),
             None => None,
         };
@@ -677,7 +677,7 @@ fn verify_claim_v1(cid: ContractId, params: VerifyClaimParamsV1) -> Result<Vec<u
 
     // Get and verify attestation
     let attestation: Attestation =
-        match wasm::db::db_get(attestations_db, &serialize(&params.attestation_id))? {
+        match wasm::db::db_get(attestations_db, &params.attestation_id.to_bytes())? {
             Some(data) => deserialize(&data)?,
             None => {
                 msg!("[attestation::verify_claim_v1] ERROR: Attestation not found");
@@ -693,7 +693,7 @@ fn verify_claim_v1(cid: ContractId, params: VerifyClaimParamsV1) -> Result<Vec<u
 
     // Get and verify claim
     let claim: Claim =
-        match wasm::db::db_get(claims_db, &serialize(&params.claim_id))? {
+        match wasm::db::db_get(claims_db, &params.claim_id.to_bytes())? {
             Some(data) => deserialize(&data)?,
             None => {
                 msg!("[attestation::verify_claim_v1] ERROR: Claim not found");
@@ -783,7 +783,7 @@ fn consume_claim_v1(cid: ContractId, params: ConsumeClaimParamsV1) -> Result<Vec
     // FIX 5: Atomic state verification - read all state upfront before any modifications
     // Get attestation
     let attestation: Attestation =
-        match wasm::db::db_get(attestations_db, &serialize(&params.attestation_id))? {
+        match wasm::db::db_get(attestations_db, &params.attestation_id.to_bytes())? {
             Some(data) => deserialize(&data)?,
             None => {
                 msg!("[attestation::consume_claim_v1] ERROR: Attestation not found");
@@ -793,7 +793,7 @@ fn consume_claim_v1(cid: ContractId, params: ConsumeClaimParamsV1) -> Result<Vec
 
     // Get claim
     let claim: Claim =
-        match wasm::db::db_get(claims_db, &serialize(&params.claim_id))? {
+        match wasm::db::db_get(claims_db, &params.claim_id.to_bytes())? {
             Some(data) => deserialize(&data)?,
             None => {
                 msg!("[attestation::consume_claim_v1] ERROR: Claim not found");
@@ -850,7 +850,7 @@ fn validate_claim_v1(cid: ContractId, params: ValidateClaimParamsV1) -> Result<V
 
     // Get and verify attestation
     let attestation: Attestation =
-        match wasm::db::db_get(attestations_db, &serialize(&params.attestation_id))? {
+        match wasm::db::db_get(attestations_db, &params.attestation_id.to_bytes())? {
             Some(data) => deserialize(&data)?,
             None => {
                 msg!("[attestation::validate_claim_v1] ERROR: Attestation not found");
@@ -866,7 +866,7 @@ fn validate_claim_v1(cid: ContractId, params: ValidateClaimParamsV1) -> Result<V
 
     // Get and verify claim
     let claim: Claim =
-        match wasm::db::db_get(claims_db, &serialize(&params.claim_id))? {
+        match wasm::db::db_get(claims_db, &params.claim_id.to_bytes())? {
             Some(data) => deserialize(&data)?,
             None => {
                 msg!("[attestation::validate_claim_v1] ERROR: Claim not found");
@@ -1190,31 +1190,31 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         AttestationFunction::CreateAttestationV1 => {
             let update: CreateAttestationUpdateV1 = deserialize(&update_data[1..])?;
             let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
-            wasm::db::db_set(db, &serialize(&update.attestation_id), &serialize(&update.attestation))?;
+            wasm::db::db_set(db, &update.attestation_id.to_bytes(), &serialize(&update.attestation))?;
             let index_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_INDEX_TREE)?;
-            wasm::db::db_set(index_db, &serialize(&update.index_key), &serialize(&update.attestation_id))?;
+            wasm::db::db_set(index_db, &serialize(&update.index_key), &update.attestation_id.to_bytes())?;
             msg!("[attestation::process_update] CreateAttestation: {:?}", update.attestation_id);
             Ok(())
         }
         AttestationFunction::RevokeAttestationV1 => {
             let update: RevokeAttestationUpdateV1 = deserialize(&update_data[1..])?;
             let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
-            let data = wasm::db::db_get(db, &serialize(&update.attestation_id))?
+            let data = wasm::db::db_get(db, &update.attestation_id.to_bytes())?
                 .ok_or(ContractError::IoError("attestation not found".to_string()))?;
             let mut attestation: Attestation = deserialize(&data)?;
             attestation.state = AttestationState::Revoked;
-            wasm::db::db_set(db, &serialize(&update.attestation_id), &serialize(&attestation))?;
+            wasm::db::db_set(db, &update.attestation_id.to_bytes(), &serialize(&attestation))?;
             msg!("[attestation::process_update] RevokeAttestation: {:?}", update.attestation_id);
             Ok(())
         }
         AttestationFunction::ExpireAttestationV1 => {
             let update: ExpireAttestationUpdateV1 = deserialize(&update_data[1..])?;
             let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
-            let data = wasm::db::db_get(db, &serialize(&update.attestation_id))?
+            let data = wasm::db::db_get(db, &update.attestation_id.to_bytes())?
                 .ok_or(ContractError::IoError("attestation not found".to_string()))?;
             let mut attestation: Attestation = deserialize(&data)?;
             attestation.state = AttestationState::Expired;
-            wasm::db::db_set(db, &serialize(&update.attestation_id), &serialize(&attestation))?;
+            wasm::db::db_set(db, &update.attestation_id.to_bytes(), &serialize(&attestation))?;
             msg!("[attestation::process_update] ExpireAttestation: {:?}", update.attestation_id);
             Ok(())
         }
@@ -1305,7 +1305,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update: AttestSlashUpdateV1 = deserialize(&update_data[1..])?;
             if update.is_new {
                 let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
-                wasm::db::db_set(db, &serialize(&update.attestation_id), &serialize(&update.attestation))?;
+                wasm::db::db_set(db, &update.attestation_id.to_bytes(), &serialize(&update.attestation))?;
                 let index_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_INDEX_TREE)?;
                 wasm::db::db_set(index_db, &update.index_key_bytes, &[])?;
             }
@@ -1318,7 +1318,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         AttestationFunction::CommitFeeScheduleV1 => {
             let update: CommitFeeScheduleUpdateV1 = deserialize(&update_data[1..])?;
             let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
-            wasm::db::db_set(db, &serialize(&update.attestation_id), &serialize(&update.attestation))?;
+            wasm::db::db_set(db, &update.attestation_id.to_bytes(), &serialize(&update.attestation))?;
             let index_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_INDEX_TREE)?;
             wasm::db::db_set(index_db, &update.index_key_bytes, &[])?;
             msg!(

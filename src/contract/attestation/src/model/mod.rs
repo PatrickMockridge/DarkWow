@@ -25,9 +25,9 @@
 
 use dwow_sdk::{
     crypto::{pasta_prelude::{FromUniformBytes, PrimeField}, poseidon_hash, PublicKey},
-    pasta::pallas,
+    error::ContractError,
+    pasta::{group::GroupEncoding, pallas},
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Attestation unique identifier (hash of attestation data)
 #[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
@@ -296,7 +296,7 @@ pub struct RevokeAttestationParamsV1 {
 }
 
 /// State update for RevokeAttestationV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RevokeAttestationUpdateV1 {
     /// The revoked attestation ID
     pub attestation_id: AttestationId,
