@@ -49,7 +49,7 @@ use dwow_sdk::{
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id, validate_child_value_commit,
 };
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 
 use crate::{
     error::DaoEscrowError,
@@ -1280,7 +1280,7 @@ fn propose_claim_apply_v1(cid: ContractId, update: model::ProposeClaimUpdateV1) 
         execution_deadline: update.execution_deadline,
     };
 
-    wasm::db::db_set(proposals_db, &update.claim_id.to_bytes(), &serialize(&proposal))?;
+    wasm::db::db_set(proposals_db, &update.claim_id.to_bytes(), &proposal.encode())?;
     msg!("[dao_escrow::propose_claim_apply_v1] Proposal stored: {:?}", update.claim_id);
     Ok(())
 }
@@ -1389,7 +1389,7 @@ fn vote_claim_apply_v1(cid: ContractId, update: model::VoteClaimUpdateV1) -> Con
             proposal.state = model::ProposalState::Approved;
         }
 
-        wasm::db::db_set(proposals_db, &update.claim_id.to_bytes(), &serialize(&proposal))?;
+        wasm::db::db_set(proposals_db, &update.claim_id.to_bytes(), &proposal.encode())?;
     }
 
     msg!("[dao_escrow::vote_claim_apply_v1] Vote tally updated");
@@ -1482,7 +1482,7 @@ fn execute_claim_apply_v1(cid: ContractId, update: model::ExecuteClaimUpdateV1) 
     if let Some(data) = proposal_data {
         let mut proposal: model::Proposal = deserialize(&data)?;
         proposal.state = update.state;
-        wasm::db::db_set(proposals_db, &update.proposal_id.inner().to_repr(), &serialize(&proposal))?;
+        wasm::db::db_set(proposals_db, &update.proposal_id.inner().to_repr(), &proposal.encode())?;
     }
 
     msg!("[dao_escrow::execute_claim_apply_v1] Proposal marked as executed");
@@ -1742,7 +1742,7 @@ fn cancel_claim_apply_v1(cid: ContractId, update: model::CancelClaimUpdateV1) ->
     if let Some(data) = proposal_data {
         let mut proposal: model::Proposal = deserialize(&data)?;
         proposal.state = update.state;
-        wasm::db::db_set(proposals_db, &update.claim_id.to_bytes(), &serialize(&proposal))?;
+        wasm::db::db_set(proposals_db, &update.claim_id.to_bytes(), &proposal.encode())?;
     }
 
     msg!("[dao_escrow::cancel_claim_apply_v1] Proposal cancelled");

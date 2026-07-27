@@ -904,32 +904,60 @@ impl ProposalId {
 #[derive(Debug, Clone)]
 pub struct Proposal {
     pub version: u8,
-    /// Unique proposal identifier
     pub id: ProposalId,
-    /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
-    /// Proposer's public key
     pub proposer_pubkey: PublicKey,
-    /// Type of claim
     pub claim_type: ClaimType,
-    /// Value requested
     pub value: u64,
-    /// Hash of the claim description
     pub description_hash: pallas::Base,
-    /// Recipient public key
     pub recipient_pubkey: PublicKey,
-    /// Number of yes votes
     pub yes_votes: u64,
-    /// Number of no votes
     pub no_votes: u64,
-    /// Current proposal state
     pub state: ProposalState,
-    /// Block height when created
     pub created_at: u64,
-    /// Block height when voting ends
     pub voting_ends_at: u64,
-    /// Block height when execution window expires
     pub execution_deadline: u64,
+}
+
+impl Proposal {
+    pub const ENCODED_SIZE: usize = 211;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(211);
+        b.push(self.version);
+        b.extend_from_slice(&self.id.to_bytes());
+        b.extend_from_slice(&self.dao_escrow_bulla.to_bytes());
+        b.extend_from_slice(&self.proposer_pubkey.to_bytes());
+        b.push(self.claim_type as u8);
+        b.extend_from_slice(&self.value.to_le_bytes());
+        b.extend_from_slice(&self.description_hash.to_repr());
+        b.extend_from_slice(&self.recipient_pubkey.to_bytes());
+        b.extend_from_slice(&self.yes_votes.to_le_bytes());
+        b.extend_from_slice(&self.no_votes.to_le_bytes());
+        b.push(self.state as u8);
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b.extend_from_slice(&self.voting_ends_at.to_le_bytes());
+        b.extend_from_slice(&self.execution_deadline.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 211 { return Err(ContractError::IoError(format!("Proposal: expected 211 bytes, got {}", data.len()))); }
+        Ok(Proposal {
+            version: data[0],
+            id: ProposalId(Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Proposal: invalid id".into()))?),
+            dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Proposal: invalid dao_escrow_bulla".into()))?),
+            proposer_pubkey: PublicKey::from_bytes(data[65..97].try_into().unwrap())?,
+            claim_type: ClaimType::try_from(data[97])?,
+            value: u64::from_le_bytes(data[98..106].try_into().unwrap()),
+            description_hash: Option::<pallas::Base>::from(pallas::Base::from_repr(data[106..138].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Proposal: invalid description_hash".into()))?,
+            recipient_pubkey: PublicKey::from_bytes(data[138..170].try_into().unwrap())?,
+            yes_votes: u64::from_le_bytes(data[170..178].try_into().unwrap()),
+            no_votes: u64::from_le_bytes(data[178..186].try_into().unwrap()),
+            state: ProposalState::try_from(data[186])?,
+            created_at: u64::from_le_bytes(data[187..195].try_into().unwrap()),
+            voting_ends_at: u64::from_le_bytes(data[195..203].try_into().unwrap()),
+            execution_deadline: u64::from_le_bytes(data[203..211].try_into().unwrap()),
+        })
+    }
 }
 
 // ============================================================================
