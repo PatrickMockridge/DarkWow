@@ -131,7 +131,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         IdentityFunction::IssueCredentialV1 => {
-            let params: IssueCredentialParams = match deserialize(&self_.data[1..]) {
+            let params = match IssueCredentialParams::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize IssueCredentialParams: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             zk_public_inputs.push((
@@ -140,7 +140,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         IdentityFunction::CreateClaimV1 => {
-            let params: CreateClaimParams = match deserialize(&self_.data[1..]) {
+            let params = match CreateClaimParams::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize CreateClaimParams: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             zk_public_inputs.push((
@@ -149,7 +149,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         IdentityFunction::CreateClaimV1L1 => {
-            let params: CreateClaimParamsL1 = match deserialize(&self_.data[1..]) {
+            let params = match CreateClaimParamsL1::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize CreateClaimParamsL1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             zk_public_inputs.push((
@@ -158,7 +158,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         IdentityFunction::CreateClaimV1L1V2 => {
-            let params: CreateClaimParamsL1 = match deserialize(&self_.data[1..]) {
+            let params = match CreateClaimParamsL1::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize CreateClaimParamsL1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             zk_public_inputs.push((
@@ -167,7 +167,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         IdentityFunction::CreateClaimV1Multi => {
-            let params: CreateClaimParamsL1 = match deserialize(&self_.data[1..]) {
+            let params = match CreateClaimParamsL1::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize CreateClaimParamsL1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             zk_public_inputs.push((
@@ -176,7 +176,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         IdentityFunction::CreateClaimV1Ratio => {
-            let params: CreateClaimParamsL1 = match deserialize(&self_.data[1..]) {
+            let params = match CreateClaimParamsL1::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize CreateClaimParamsL1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             zk_public_inputs.push((
@@ -191,7 +191,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         IdentityFunction::VerifyCapabilityV1 => {
-            let params: VerifyCapabilityParams = match deserialize(&self_.data[1..]) {
+            let params = match VerifyCapabilityParams::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize VerifyCapabilityParams: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             zk_public_inputs.push((
@@ -322,7 +322,7 @@ fn process_initialize_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: InitializeParams = deserialize(&self_.data[1..])?;
+    let params= InitializeParams::decode(&self_.data[1..])?;
 
     msg!("[identity::initialize] Initializing Identity contract v{}", params.version);
 
@@ -358,7 +358,7 @@ fn process_issue_credential_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: IssueCredentialParams = deserialize(&self_.data[1..])?;
+    let params= IssueCredentialParams::decode(&self_.data[1..])?;
 
     msg!("[identity::issue_credential] Issuing credential to holder");
 
@@ -422,7 +422,7 @@ fn process_revoke_credential_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: RevokeCredentialParams = deserialize(&self_.data[1..])?;
+    let params= RevokeCredentialParams::decode(&self_.data[1..])?;
 
     msg!("[identity::revoke_credential] Revoking credential");
 
@@ -474,7 +474,7 @@ fn process_create_claim_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: CreateClaimParams = deserialize(&self_.data[1..])?;
+    let params= CreateClaimParams::decode(&self_.data[1..])?;
 
     msg!("[identity::create_claim] Creating claim");
 
@@ -517,7 +517,7 @@ fn process_create_claim_l1_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: CreateClaimParamsL1 = deserialize(&self_.data[1..])?;
+    let params= CreateClaimParamsL1::decode(&self_.data[1..])?;
 
     msg!("[identity::create_claim_l1] Creating Level 1 claim");
 
@@ -557,7 +557,7 @@ fn process_verify_claim_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: VerifyClaimParams = deserialize(&self_.data[1..])?;
+    let params= VerifyClaimParams::decode(&self_.data[1..])?;
 
     msg!("[identity::verify_claim] Verifying claim");
 
@@ -598,7 +598,7 @@ fn process_create_claim_l1_v2_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: CreateClaimParamsL1 = deserialize(&self_.data[1..])?;
+    let params= CreateClaimParamsL1::decode(&self_.data[1..])?;
 
     msg!("[identity::create_claim_l1_v2] Creating Level 1 v2 claim");
 
@@ -638,7 +638,7 @@ fn process_create_claim_multi_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: CreateClaimParamsL1 = deserialize(&self_.data[1..])?;
+    let params= CreateClaimParamsL1::decode(&self_.data[1..])?;
 
     msg!("[identity::create_claim_multi] Creating multi-credential claim");
 
@@ -670,7 +670,7 @@ fn process_create_claim_ratio_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: CreateClaimParamsL1 = deserialize(&self_.data[1..])?;
+    let params= CreateClaimParamsL1::decode(&self_.data[1..])?;
 
     msg!("[identity::create_claim_ratio] Creating ratio-based claim");
 
@@ -757,7 +757,7 @@ fn process_issue_capability_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: IssueCapabilityParams = deserialize(&self_.data[1..])?;
+    let params= IssueCapabilityParams::decode(&self_.data[1..])?;
 
     msg!("[identity::issue_capability] Issuing capability");
 
@@ -828,7 +828,7 @@ fn process_verify_capability_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: VerifyCapabilityParams = deserialize(&self_.data[1..])?;
+    let params= VerifyCapabilityParams::decode(&self_.data[1..])?;
 
     msg!("[identity::verify_capability] Verifying capability");
 
@@ -867,7 +867,7 @@ fn process_revoke_capability_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: RevokeCapabilityParams = deserialize(&self_.data[1..])?;
+    let params= RevokeCapabilityParams::decode(&self_.data[1..])?;
 
     msg!("[identity::revoke_capability] Revoking capability");
 
@@ -899,7 +899,7 @@ fn process_create_claim_dag_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: CreateClaimDAGParams = deserialize(&self_.data[1..])?;
+    let params= CreateClaimDAGParams::decode(&self_.data[1..])?;
 
     msg!("[identity::create_claim_dag] Creating DAG claim for DAG {:?}", &params.dag_id);
 
@@ -982,7 +982,7 @@ fn process_register_issuer_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: RegisterIssuerParams = deserialize(&self_.data[1..])?;
+    let params= RegisterIssuerParams::decode(&self_.data[1..])?;
 
     msg!("[identity::register_issuer] Registering issuer");
 
@@ -1040,7 +1040,7 @@ fn process_update_reputation_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: UpdateReputationParams = deserialize(&self_.data[1..])?;
+    let params= UpdateReputationParams::decode(&self_.data[1..])?;
 
     msg!("[identity::update_reputation] Updating relayer reputation");
 
