@@ -99,19 +99,19 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         PoolStakeFunction::CreatePoolV1 => {
-            let params: CreatePoolParamsV1 = deserialize(&self_.data[1..])?;
+            let params= CreatePoolParamsV1::decode(&self_.data[1..])?;
             create_pool_get_metadata_v1(params)?
         }
         PoolStakeFunction::JoinPoolV1 => {
-            let params: JoinPoolParamsV1 = deserialize(&self_.data[1..])?;
+            let params= JoinPoolParamsV1::decode(&self_.data[1..])?;
             join_pool_get_metadata_v1(params)?
         }
         PoolStakeFunction::AllocateCoverageV1 => {
-            let params: AllocateCoverageParamsV1 = deserialize(&self_.data[1..])?;
+            let params= AllocateCoverageParamsV1::decode(&self_.data[1..])?;
             allocate_coverage_get_metadata_v1(params)?
         }
         PoolStakeFunction::SlashCoverageV1 => {
-            let params: SlashCoverageParamsV1 = deserialize(&self_.data[1..])?;
+            let params= SlashCoverageParamsV1::decode(&self_.data[1..])?;
             slash_coverage_get_metadata_v1(params)?
         }
         // Functions without ZK proofs: empty metadata
@@ -269,7 +269,7 @@ fn process_create_pool_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: CreatePoolParamsV1 = deserialize(&self_.data[1..])?;
+    let params= CreatePoolParamsV1::decode(&self_.data[1..])?;
 
     msg!("[pool_stake::create_pool] Creating new pool");
 
@@ -335,7 +335,7 @@ fn process_join_pool_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: JoinPoolParamsV1 = deserialize(&self_.data[1..])?;
+    let params= JoinPoolParamsV1::decode(&self_.data[1..])?;
 
     msg!("[pool_stake::join_pool] Joining pool {:?} with amount {}", params.pool_id, params.amount);
 
@@ -478,7 +478,7 @@ fn process_leave_pool_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: LeavePoolParamsV1 = deserialize(&self_.data[1..])?;
+    let params= LeavePoolParamsV1::decode(&self_.data[1..])?;
 
     msg!("[pool_stake::leave_pool] Leave request for stake {:?}", params.stake_id);
 
@@ -587,7 +587,7 @@ fn process_allocate_coverage_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: AllocateCoverageParamsV1 = deserialize(&self_.data[1..])?;
+    let params= AllocateCoverageParamsV1::decode(&self_.data[1..])?;
 
     msg!(
         "[pool_stake::allocate_coverage] Allocating {} for withdrawal {:?}",
@@ -685,7 +685,7 @@ fn process_release_coverage_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: ReleaseCoverageParamsV1 = deserialize(&self_.data[1..])?;
+    let params= ReleaseCoverageParamsV1::decode(&self_.data[1..])?;
 
     msg!("[pool_stake::release_coverage] Releasing allocation {:?}", params.allocation_id);
 
@@ -768,7 +768,7 @@ fn process_slash_coverage_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: SlashCoverageParamsV1 = deserialize(&self_.data[1..])?;
+    let params= SlashCoverageParamsV1::decode(&self_.data[1..])?;
 
     msg!(
         "[pool_stake::slash_coverage] Slashing {} from allocation {:?}",
@@ -868,7 +868,7 @@ fn process_claim_fees_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: ClaimFeesParamsV1 = deserialize(&self_.data[1..])?;
+    let params= ClaimFeesParamsV1::decode(&self_.data[1..])?;
 
     msg!("[pool_stake::claim_fees] Claiming fees for stake {:?}", params.stake_id);
 
@@ -958,7 +958,7 @@ fn process_update_pool_config_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: UpdatePoolConfigParamsV1 = deserialize(&self_.data[1..])?;
+    let params= UpdatePoolConfigParamsV1::decode(&self_.data[1..])?;
 
     msg!("[pool_stake::update_config] Updating pool {:?}", params.pool_id);
 
@@ -1059,7 +1059,7 @@ fn process_rebalance_pool_shares_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: RebalancePoolSharesParamsV1 = deserialize(&self_.data[1..])?;
+    let params= RebalancePoolSharesParamsV1::decode(&self_.data[1..])?;
 
     msg!("[pool_stake::rebalance] Rebalancing shares for pool {:?}", params.pool_id);
 

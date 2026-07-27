@@ -354,6 +354,11 @@ impl CoverageAllocation {
 // PARAMETER STRUCTS
 // ============================================================================
 
+fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> {
+    Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap()))
+        .ok_or_else(|| ContractError::IoError("invalid base field element".into()))
+}
+
 /// Parameters for creating a new pool
 #[derive(Debug, Clone,)]
 pub struct CreatePoolParamsV1 {
@@ -536,6 +541,8 @@ pub struct LeavePoolParamsV1 {
     pub stake_id: pallas::Base,
 }
 
+impl LeavePoolParamsV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { self.stake_id.to_repr().to_vec() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("LeavePoolParamsV1: expected 32 bytes, got {}", data.len()))); } Ok(LeavePoolParamsV1 { stake_id: read_base(&data[0..32])? }) } }
+
 /// Update returned after leaving a pool
 #[derive(Debug, Clone)]
 pub struct LeavePoolUpdateV1 {
@@ -593,6 +600,8 @@ pub struct AllocateCoverageParamsV1 {
     /// Derived allocation ID from ZK proof — ZK public input
     pub derived_allocation_id: pallas::Base,
 }
+
+impl AllocateCoverageParamsV1 { pub const ENCODED_SIZE: usize = 184; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(184); buf.extend_from_slice(&self.pool_id.to_repr()); buf.extend_from_slice(&self.withdrawal_nullifier); buf.extend_from_slice(&self.amount.to_le_bytes()); buf.extend_from_slice(&self.timeout_height.to_le_bytes()); buf.extend_from_slice(&self.member_pub.to_bytes()); buf.extend_from_slice(&self.withdrawal_id.to_repr()); buf.extend_from_slice(&self.nonce.to_le_bytes()); buf.extend_from_slice(&self.derived_allocation_id.to_repr()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 184 { return Err(ContractError::IoError(format!("AllocateCoverageParamsV1: expected 184 bytes, got {}", data.len()))); } Ok(AllocateCoverageParamsV1 { pool_id: read_base(&data[0..32])?, withdrawal_nullifier: data[32..64].try_into().unwrap(), amount: u64::from_le_bytes(data[64..72].try_into().unwrap()), timeout_height: u64::from_le_bytes(data[72..80].try_into().unwrap()), member_pub: PublicKey::from_bytes(data[80..112].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("AllocateCoverageParamsV1: invalid member_pub: {}", e)))?, withdrawal_id: read_base(&data[112..144])?, nonce: u64::from_le_bytes(data[144..152].try_into().unwrap()), derived_allocation_id: read_base(&data[152..184])? }) } }
 
 /// Update returned after allocating coverage
 #[derive(Debug, Clone)]
@@ -697,6 +706,8 @@ pub struct ReleaseCoverageParamsV1 {
     pub owner_pub: PublicKey,
 }
 
+impl ReleaseCoverageParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(64); buf.extend_from_slice(&self.allocation_id.to_repr()); buf.extend_from_slice(&self.owner_pub.to_bytes()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("ReleaseCoverageParamsV1: expected 64 bytes, got {}", data.len()))); } Ok(ReleaseCoverageParamsV1 { allocation_id: read_base(&data[0..32])?, owner_pub: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ReleaseCoverageParamsV1: invalid owner_pub: {}", e)))? }) } }
+
 /// Update returned after releasing coverage
 #[derive(Debug, Clone)]
 pub struct ReleaseCoverageUpdateV1 {
@@ -755,6 +766,8 @@ pub struct SlashCoverageParamsV1 {
     /// Derived slash ID from ZK proof — ZK public input
     pub derived_slash_id: pallas::Base,
 }
+
+impl SlashCoverageParamsV1 { pub const ENCODED_SIZE: usize = 144; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(144); buf.extend_from_slice(&self.allocation_id.to_repr()); buf.extend_from_slice(&self.owner_pub.to_bytes()); buf.extend_from_slice(&self.slash_amount.to_le_bytes()); buf.extend_from_slice(&self.user_pub.to_bytes()); buf.extend_from_slice(&self.nonce.to_le_bytes()); buf.extend_from_slice(&self.derived_slash_id.to_repr()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 144 { return Err(ContractError::IoError(format!("SlashCoverageParamsV1: expected 144 bytes, got {}", data.len()))); } Ok(SlashCoverageParamsV1 { allocation_id: read_base(&data[0..32])?, owner_pub: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("SlashCoverageParamsV1: invalid owner_pub: {}", e)))?, slash_amount: u64::from_le_bytes(data[64..72].try_into().unwrap()), user_pub: PublicKey::from_bytes(data[72..104].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("SlashCoverageParamsV1: invalid user_pub: {}", e)))?, nonce: u64::from_le_bytes(data[104..112].try_into().unwrap()), derived_slash_id: read_base(&data[112..144])? }) } }
 
 /// Update returned after slashing coverage
 #[derive(Debug, Clone)]
@@ -816,6 +829,8 @@ pub struct ClaimFeesParamsV1 {
     pub owner_pub: PublicKey,
 }
 
+impl ClaimFeesParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(64); buf.extend_from_slice(&self.stake_id.to_repr()); buf.extend_from_slice(&self.owner_pub.to_bytes()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("ClaimFeesParamsV1: expected 64 bytes, got {}", data.len()))); } Ok(ClaimFeesParamsV1 { stake_id: read_base(&data[0..32])?, owner_pub: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ClaimFeesParamsV1: invalid owner_pub: {}", e)))? }) } }
+
 /// Update returned after claiming fees
 #[derive(Debug, Clone)]
 pub struct ClaimFeesUpdateV1 {
@@ -865,6 +880,8 @@ pub struct UpdatePoolConfigParamsV1 {
     /// New operator fee
     pub operator_fee_bp: Option<u32>,
 }
+
+impl UpdatePoolConfigParamsV1 { pub const ENCODED_SIZE: usize = 74; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(74); buf.extend_from_slice(&self.pool_id.to_repr()); buf.extend_from_slice(&self.owner_pub.to_bytes()); buf.push(self.max_coverage_ratio.is_some() as u8); if let Some(v) = self.max_coverage_ratio { buf.extend_from_slice(&v.to_le_bytes()); } buf.push(self.operator_fee_bp.is_some() as u8); if let Some(v) = self.operator_fee_bp { buf.extend_from_slice(&v.to_le_bytes()); } buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 74 { return Err(ContractError::IoError(format!("UpdatePoolConfigParamsV1: expected 74 bytes, got {}", data.len()))); } let pool_id = read_base(&data[0..32])?; let owner_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("UpdatePoolConfigParamsV1: invalid owner_pub: {}", e)))?; let has_mcr = data[64] != 0; let max_coverage_ratio = if has_mcr { Some(u32::from_le_bytes(data[65..69].try_into().unwrap())) } else { None }; let has_ofb = data[69] != 0; let operator_fee_bp = if has_ofb { Some(u32::from_le_bytes(data[70..74].try_into().unwrap())) } else { None }; Ok(UpdatePoolConfigParamsV1 { pool_id, owner_pub, max_coverage_ratio, operator_fee_bp }) } }
 
 /// Update returned after updating pool config
 #[derive(Debug, Clone)]
@@ -919,6 +936,8 @@ pub struct RebalancePoolSharesParamsV1 {
     /// Member stake IDs to rebalance (caller provides these since DB lacks iteration)
     pub member_ids: Vec<pallas::Base>,
 }
+
+impl RebalancePoolSharesParamsV1 { pub fn encode(&self) -> Vec<u8> { let cap = 65 + self.member_ids.len() * 32; let mut buf = Vec::with_capacity(cap); buf.extend_from_slice(&self.pool_id.to_repr()); buf.extend_from_slice(&self.owner_pub.to_bytes()); buf.push(self.member_ids.len() as u8); for m in &self.member_ids { buf.extend_from_slice(&m.to_repr()); } buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 65 { return Err(ContractError::IoError("RebalancePoolSharesParamsV1: too short".into())); } let pool_id = read_base(&data[0..32])?; let owner_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("RebalancePoolSharesParamsV1: invalid owner_pub: {}", e)))?; let count = data[64] as usize; let expected = 65 + count * 32; if data.len() != expected { return Err(ContractError::IoError(format!("RebalancePoolSharesParamsV1: expected {} bytes, got {}", expected, data.len()))); } let mut member_ids = Vec::with_capacity(count); for i in 0..count { member_ids.push(read_base(&data[65+i*32..65+(i+1)*32])?); } Ok(RebalancePoolSharesParamsV1 { pool_id, owner_pub, member_ids }) } }
 
 /// Update returned after rebalancing pool shares
 #[derive(Debug, Clone)]
