@@ -802,3 +802,69 @@ impl Coverage {
         Ok(Coverage { version, id, market_id, buyer, underwriter_id, amount, premium_paid, state, starts_at, expires_at, claim_id })
     }
 }
+
+impl Claim {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 156 + self.evidence.len() + self.attestation.len();
+        let mut b = Vec::with_capacity(cap);
+        b.push(self.version);
+        b.extend_from_slice(&self.id.to_repr());
+        b.extend_from_slice(&self.coverage_id.to_repr());
+        b.extend_from_slice(&self.market_id.to_repr());
+        b.extend_from_slice(&self.amount.to_le_bytes());
+        b.extend_from_slice(&self.payout.to_le_bytes());
+        b.push(self.state as u8);
+        b.push(self.evidence.len() as u8);
+        b.extend_from_slice(&self.evidence);
+        b.push(self.attestation.len() as u8);
+        b.extend_from_slice(&self.attestation);
+        b.extend_from_slice(&self.oracle_signature.to_repr());
+        b.extend_from_slice(&self.resolved_at.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 156 { return Err(ContractError::IoError(format!("Claim: expected at least 156 bytes, got {}", data.len()))); }
+        let version = data[0];
+        let id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Claim: invalid id".into()))?;
+        let coverage_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Claim: invalid coverage_id".into()))?;
+        let market_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[65..97].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Claim: invalid market_id".into()))?;
+        let amount = u64::from_le_bytes(data[97..105].try_into().unwrap());
+        let payout = u64::from_le_bytes(data[105..113].try_into().unwrap());
+        let state = ClaimState::try_from(data[113])?;
+        let ev_len = data[114] as usize;
+        if data.len() < 115 + ev_len + 1 { return Err(ContractError::IoError("Claim: data too short for evidence".into())); }
+        let evidence = data[115..115+ev_len].to_vec();
+        let at_len = data[115+ev_len] as usize;
+        let at_end = 116 + ev_len + at_len;
+        if data.len() != at_end + 40 { return Err(ContractError::IoError(format!("Claim: expected {} bytes, got {}", at_end + 40, data.len()))); }
+        let attestation = data[116+ev_len..at_end].to_vec();
+        let oracle_signature = Option::<pallas::Base>::from(pallas::Base::from_repr(data[at_end..at_end+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Claim: invalid oracle_signature".into()))?;
+        let resolved_at = u64::from_le_bytes(data[at_end+32..at_end+40].try_into().unwrap());
+        Ok(Claim { version, id, coverage_id, market_id, amount, payout, state, evidence, attestation, oracle_signature, resolved_at })
+    }
+}
+
+impl Underwriter {
+    pub const ENCODED_SIZE: usize = 154;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(154);
+        b.push(self.version);
+        b.extend_from_slice(&self.id.to_repr());
+        b.extend_from_slice(&self.owner.to_bytes());
+        b.extend_from_slice(&self.market_id.to_repr());
+        b.extend_from_slice(&self.bond_amount.to_le_bytes());
+        b.extend_from_slice(&self.coverage_provided.to_le_bytes());
+        b.extend_from_slice(&self.coverage_sold.to_le_bytes());
+        b.extend_from_slice(&self.earned_premiums.to_le_bytes());
+        b.extend_from_slice(&self.claims_paid.to_le_bytes());
+        b.extend_from_slice(&self.slash_count.to_le_bytes());
+        b.extend_from_slice(&self.performance_score.to_le_bytes());
+        b.push(self.active as u8);
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 154 { return Err(ContractError::IoError(format!("Underwriter: expected 154 bytes, got {}", data.len()))); }
+        Ok(Underwriter { version: data[0], id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Underwriter: invalid id".into()))?, owner: PublicKey::from_bytes(data[33..65].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Underwriter: invalid owner: {}", e)))?, market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[65..97].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Underwriter: invalid market_id".into()))?, bond_amount: u64::from_le_bytes(data[97..105].try_into().unwrap()), coverage_provided: u64::from_le_bytes(data[105..113].try_into().unwrap()), coverage_sold: u64::from_le_bytes(data[113..121].try_into().unwrap()), earned_premiums: u64::from_le_bytes(data[121..129].try_into().unwrap()), claims_paid: u64::from_le_bytes(data[129..137].try_into().unwrap()), slash_count: u32::from_le_bytes(data[137..141].try_into().unwrap()), performance_score: u32::from_le_bytes(data[141..145].try_into().unwrap()), active: data[145] != 0, created_at: u64::from_le_bytes(data[146..154].try_into().unwrap()) })
+    }
+}
