@@ -50,14 +50,14 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         BoxFunction::PutV1 => {
-            let params: PutParamsV1 = match deserialize(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[box::get_metadata] Error: Failed to deserialize PutParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
+            let params = match PutParamsV1::decode(&self_.data[1..]) {
+                Ok(p) => p, Err(e) => { msg!("[box::get_metadata] Error: Failed to decode PutParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             box_put_get_metadata_v1(params)?
         }
         BoxFunction::TakeV1 => {
-            let params: TakeParamsV1 = match deserialize(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[box::get_metadata] Error: Failed to deserialize TakeParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
+            let params = match TakeParamsV1::decode(&self_.data[1..]) {
+                Ok(p) => p, Err(e) => { msg!("[box::get_metadata] Error: Failed to decode TakeParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             box_take_get_metadata_v1(params)?
         }
@@ -109,7 +109,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         BoxFunction::PutV1 => {
-            let params: PutParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params= PutParamsV1::decode(&self_.data.data[1..])?;
             msg!("[box::put_v1] Put into box {:?}", params.box_id.inner());
             if params.old_contents_commit != pallas::Base::zero() {
                 return Err(BoxError::BoxNotEmpty.into());
@@ -118,7 +118,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&[&[BoxFunction::PutV1 as u8], &update.encode()[..]].concat())?;
         }
         BoxFunction::TakeV1 => {
-            let params: TakeParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params= TakeParamsV1::decode(&self_.data.data[1..])?;
             msg!("[box::take_v1] Take from box {:?}", params.box_id.inner());
             let nullifiers_db = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(nullifiers_db, &params.nullifier.to_bytes())? {
