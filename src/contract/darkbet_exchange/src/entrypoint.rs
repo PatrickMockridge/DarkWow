@@ -473,7 +473,7 @@ fn darkbet_create_market_process_update_v1(
         instance_seed: update.instance_seed,
     };
 
-    wasm::db::db_set(markets_db, &serialize(&update.market_id), &serialize(&market))?;
+    wasm::db::db_set(markets_db, &update.market_id.to_repr(), &serialize(&market))?;
 
     msg!("[darkbet::create_market::update] Market stored successfully with {} outcomes", num_outcomes);
 
@@ -520,7 +520,7 @@ fn darkbet_place_back_process_instruction_v1(
 
     // Get and validate market
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
-    let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
+    let market: Market = match wasm::db::db_get(markets_db, &params.market_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::MarketNotFound.into()),
     };
@@ -616,10 +616,10 @@ fn darkbet_place_back_process_update_v1(
         instance_seed: update.instance_seed,
     };
 
-    wasm::db::db_set(back_orders_db, &serialize(&update.order_id), &serialize(&order))?;
+    wasm::db::db_set(back_orders_db, &update.order_id.to_repr(), &serialize(&order))?;
 
     // Record nullifier
-    wasm::db::db_set(nullifiers_db, &serialize(&update.nullifier), &[])?;
+    wasm::db::db_set(nullifiers_db, &update.nullifier.to_repr(), &[])?;
 
     msg!("[darkbet::place_back::update] Back order stored");
 
@@ -666,7 +666,7 @@ fn darkbet_place_lay_process_instruction_v1(
 
     // Get and validate market
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
-    let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
+    let market: Market = match wasm::db::db_get(markets_db, &params.market_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::MarketNotFound.into()),
     };
@@ -771,10 +771,10 @@ fn darkbet_place_lay_process_update_v1(
         instance_seed: update.instance_seed,
     };
 
-    wasm::db::db_set(lay_orders_db, &serialize(&update.order_id), &serialize(&order))?;
+    wasm::db::db_set(lay_orders_db, &update.order_id.to_repr(), &serialize(&order))?;
 
     // Record nullifier
-    wasm::db::db_set(nullifiers_db, &serialize(&update.nullifier), &[])?;
+    wasm::db::db_set(nullifiers_db, &update.nullifier.to_repr(), &[])?;
 
     msg!("[darkbet::place_lay::update] Lay order stored");
 
@@ -797,7 +797,7 @@ fn darkbet_match_orders_process_instruction_v1(
 
     // Get and validate market
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
-    let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
+    let market: Market = match wasm::db::db_get(markets_db, &params.market_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::MarketNotFound.into()),
     };
@@ -808,7 +808,7 @@ fn darkbet_match_orders_process_instruction_v1(
 
     // Get back order
     let back_orders_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_BACK_ORDERS_TREE)?;
-    let back_order: Order = match wasm::db::db_get(back_orders_db, &serialize(&params.back_order_id))? {
+    let back_order: Order = match wasm::db::db_get(back_orders_db, &params.back_order_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::OrderNotFound.into()),
     };
@@ -823,7 +823,7 @@ fn darkbet_match_orders_process_instruction_v1(
 
     // Get lay order
     let lay_orders_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_LAY_ORDERS_TREE)?;
-    let lay_order: Order = match wasm::db::db_get(lay_orders_db, &serialize(&params.lay_order_id))? {
+    let lay_order: Order = match wasm::db::db_get(lay_orders_db, &params.lay_order_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::OrderNotFound.into()),
     };
@@ -987,7 +987,7 @@ fn darkbet_buy_position_process_instruction_v1(
 
     // Get market
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
-    let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
+    let market: Market = match wasm::db::db_get(markets_db, &params.market_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::MarketNotFound.into()),
     };
@@ -1093,7 +1093,7 @@ fn darkbet_buy_position_process_update_v1(
     wasm::db::db_set(positions_db, &serialize(&position.position_id), &serialize(&position))?;
 
     // Update market pool
-    let market_data = wasm::db::db_get(markets_db, &serialize(&update.market_id))?.ok_or(ContractError::DbGetEmpty)?;
+    let market_data = wasm::db::db_get(markets_db, &update.market_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
     let mut market: Market = deserialize(&market_data)?;
     market.total_pool += update.amount;
     market.outcome_pools[update.outcome as usize] += update.amount;
@@ -1152,7 +1152,7 @@ fn darkbet_add_liquidity_process_instruction_v1(
 
     // Get and validate market
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
-    let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
+    let market: Market = match wasm::db::db_get(markets_db, &params.market_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::MarketNotFound.into()),
     };
@@ -1222,7 +1222,7 @@ fn darkbet_add_liquidity_process_update_v1(
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
 
     // Get market to calculate shares
-    let market_data = wasm::db::db_get(markets_db, &serialize(&update.market_id))?.ok_or(ContractError::DbGetEmpty)?;
+    let market_data = wasm::db::db_get(markets_db, &update.market_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
     let mut market: Market = deserialize(&market_data)?;
 
     // Store LP share (shares_minted already calculated in instruction)
@@ -1315,7 +1315,7 @@ fn darkbet_remove_liquidity_process_instruction_v1(
 
     // Get market for payout calculation
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
-    let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
+    let market: Market = match wasm::db::db_get(markets_db, &params.market_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::MarketNotFound.into()),
     };
@@ -1365,7 +1365,7 @@ fn darkbet_remove_liquidity_process_update_v1(
     wasm::db::db_set(lp_shares_db, &serialize(&lp_share.lp_share_id), &serialize(&lp_share))?;
 
     // Update market
-    let mut market: Market = match wasm::db::db_get(markets_db, &serialize(&update.market_id))? {
+    let mut market: Market = match wasm::db::db_get(markets_db, &update.market_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::MarketNotFound.into()),
     };
@@ -1446,7 +1446,7 @@ fn darkbet_claim_winnings_process_instruction_v1(
 
     // Get market to verify resolved
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
-    let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
+    let market: Market = match wasm::db::db_get(markets_db, &params.market_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::MarketNotFound.into()),
     };
@@ -1513,7 +1513,7 @@ fn darkbet_resolve_market_process_instruction_v1(
 
     // Get market and verify it exists
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
-    let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
+    let market: Market = match wasm::db::db_get(markets_db, &params.market_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::MarketNotFound.into()),
     };
@@ -1570,7 +1570,7 @@ fn darkbet_resolve_market_process_update_v1(
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
 
     // Get and update market
-    let mut market: Market = match wasm::db::db_get(markets_db, &serialize(&update.market_id))? {
+    let mut market: Market = match wasm::db::db_get(markets_db, &update.market_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::MarketNotFound.into()),
     };
@@ -1579,7 +1579,7 @@ fn darkbet_resolve_market_process_update_v1(
     market.winning_outcome = Some(update.winning_outcome);
     market.resolved_at = Some(update.resolved_at_block);
 
-    wasm::db::db_set(markets_db, &serialize(&update.market_id), &serialize(&market))?;
+    wasm::db::db_set(markets_db, &update.market_id.to_repr(), &serialize(&market))?;
 
     msg!("[darkbet::resolve_market::update] Market state updated to Resolved");
 
@@ -1630,7 +1630,7 @@ fn darkbet_settle_market_process_instruction_v1(
     );
 
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
-    let market: Market = match wasm::db::db_get(markets_db, &serialize(&params.market_id))? {
+    let market: Market = match wasm::db::db_get(markets_db, &params.market_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::MarketNotFound.into()),
     };
@@ -1709,7 +1709,7 @@ fn darkbet_settle_market_process_update_v1(
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
 
     // Get and update market
-    let mut market: Market = match wasm::db::db_get(markets_db, &serialize(&update.market_id))? {
+    let mut market: Market = match wasm::db::db_get(markets_db, &update.market_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::MarketNotFound.into()),
     };
@@ -1717,7 +1717,7 @@ fn darkbet_settle_market_process_update_v1(
     // Update market state to Settled
     market.state = MarketState::Settled;
 
-    wasm::db::db_set(markets_db, &serialize(&update.market_id), &serialize(&market))?;
+    wasm::db::db_set(markets_db, &update.market_id.to_repr(), &serialize(&market))?;
 
     // Process individual matches - update their state to Settled
     for match_id in &update.match_ids {
@@ -1832,14 +1832,14 @@ fn darkbet_cancel_order_process_update_v1(
     let lay_orders_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_LAY_ORDERS_TREE)?;
 
     // Update order state (try back first, then lay)
-    if let Some(order_data) = wasm::db::db_get(back_orders_db, &serialize(&update.order_id))? {
+    if let Some(order_data) = wasm::db::db_get(back_orders_db, &update.order_id.to_repr())? {
         let mut order: Order = deserialize(&order_data)?;
         order.state = OrderState::Cancelled;
-        wasm::db::db_set(back_orders_db, &serialize(&update.order_id), &serialize(&order))?;
-    } else if let Some(order_data) = wasm::db::db_get(lay_orders_db, &serialize(&update.order_id))? {
+        wasm::db::db_set(back_orders_db, &update.order_id.to_repr(), &serialize(&order))?;
+    } else if let Some(order_data) = wasm::db::db_get(lay_orders_db, &update.order_id.to_repr())? {
         let mut order: Order = deserialize(&order_data)?;
         order.state = OrderState::Cancelled;
-        wasm::db::db_set(lay_orders_db, &serialize(&update.order_id), &serialize(&order))?;
+        wasm::db::db_set(lay_orders_db, &update.order_id.to_repr(), &serialize(&order))?;
     }
 
     msg!("[darkbet::cancel_order::update] Order cancelled successfully");
