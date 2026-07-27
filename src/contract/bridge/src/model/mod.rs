@@ -1140,6 +1140,102 @@ impl Withdrawal {
     }
 }
 
+impl PendingWithdrawal {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 103 + if self.relayer.is_some() { 32 } else { 0 }
+            + if self.stake_lock_id.is_some() { 32 } else { 0 }
+            + if self.reassignable_after.is_some() { 8 } else { 0 }
+            + if self.heartbeat_at.is_some() { 8 } else { 0 };
+        let mut b = Vec::with_capacity(cap);
+        b.push(self.version);
+        b.extend_from_slice(&self.nullifier.to_bytes());
+        b.extend_from_slice(&self.recipient_hash);
+        b.extend_from_slice(&self.amount.to_le_bytes());
+        b.extend_from_slice(&self.timeout_height.to_le_bytes());
+        b.push(self.relayer.is_some() as u8);
+        if let Some(ref r) = self.relayer { b.extend_from_slice(&r.to_bytes()); }
+        b.extend_from_slice(&self.submitted_at.to_le_bytes());
+        b.push(self.cancelled as u8);
+        b.push(self.feed_mode);
+        b.extend_from_slice(&self.guarantee_premium.to_le_bytes());
+        b.push(self.stake_lock_id.is_some() as u8);
+        if let Some(ref id) = self.stake_lock_id { b.extend_from_slice(id); }
+        b.push(self.reassignable_after.is_some() as u8);
+        if let Some(ra) = self.reassignable_after { b.extend_from_slice(&ra.to_le_bytes()); }
+        b.push(self.heartbeat_at.is_some() as u8);
+        if let Some(hb) = self.heartbeat_at { b.extend_from_slice(&hb.to_le_bytes()); }
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 103 { return Err(ContractError::IoError(format!("PendingWithdrawal: expected at least 103 bytes, got {}", data.len()))); }
+        let version = data[0];
+        let nullifier = IntentNullifier::from_bytes(data[1..33].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PendingWithdrawal: invalid nullifier: {}", e)))?;
+        let recipient_hash: [u8; 32] = data[33..65].try_into().unwrap();
+        let amount = u64::from_le_bytes(data[65..73].try_into().unwrap());
+        let timeout_height = u64::from_le_bytes(data[73..81].try_into().unwrap());
+        let has_relayer = data[81] != 0;
+        let (relayer, mut pos) = if has_relayer { (Some(PublicKey::from_bytes(data[82..114].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PendingWithdrawal: invalid relayer: {}", e)))?), 114usize) } else { (None, 82usize) };
+        let submitted_at = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
+        let cancelled = data[pos] != 0; pos += 1;
+        let feed_mode = data[pos]; pos += 1;
+        let guarantee_premium = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
+        let has_stake = data[pos] != 0; pos += 1;
+        let (stake_lock_id, pos) = if has_stake { (Some(data[pos..pos+32].try_into().unwrap()), pos + 32) } else { (None, pos) };
+        let has_reassign = data[pos] != 0; pos += 1;
+        let (reassignable_after, pos) = if has_reassign { (Some(u64::from_le_bytes(data[pos..pos+8].try_into().unwrap())), pos + 8) } else { (None, pos) };
+        let has_hb = data[pos] != 0; pos += 1;
+        let (heartbeat_at, _) = if has_hb { (Some(u64::from_le_bytes(data[pos..pos+8].try_into().unwrap())), pos + 8) } else { (None, pos) };
+        Ok(PendingWithdrawal { version, nullifier, recipient_hash, amount, timeout_height, relayer, submitted_at, cancelled, feed_mode, guarantee_premium, stake_lock_id, reassignable_after, heartbeat_at })
+    }
+}
+
+impl HtlcSwapInfo {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 82 + self.external_sender.len() + self.external_recipient.len()
+            + if self.claimed_at.is_some() { 8 } else { 0 }
+            + if self.refunded_at.is_some() { 8 } else { 0 };
+        let mut b = Vec::with_capacity(cap);
+        b.push(self.version);
+        b.extend_from_slice(&self.swap_id);
+        b.extend_from_slice(&self.hash.to_repr());
+        b.extend_from_slice(&self.timelock.to_le_bytes());
+        b.extend_from_slice(&self.amount.to_le_bytes());
+        b.push(self.external_sender.len() as u8);
+        b.extend_from_slice(&self.external_sender);
+        b.push(self.external_recipient.len() as u8);
+        b.extend_from_slice(&self.external_recipient);
+        b.push(self.state);
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b.push(self.claimed_at.is_some() as u8);
+        if let Some(c) = self.claimed_at { b.extend_from_slice(&c.to_le_bytes()); }
+        b.push(self.refunded_at.is_some() as u8);
+        if let Some(r) = self.refunded_at { b.extend_from_slice(&r.to_le_bytes()); }
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 82 { return Err(ContractError::IoError(format!("HtlcSwapInfo: expected at least 82 bytes, got {}", data.len()))); }
+        let version = data[0];
+        let swap_id: [u8; 32] = data[1..33].try_into().unwrap();
+        let hash = Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("HtlcSwapInfo: invalid hash".into()))?;
+        let timelock = u64::from_le_bytes(data[65..73].try_into().unwrap());
+        let amount = u64::from_le_bytes(data[73..81].try_into().unwrap());
+        let sender_len = data[81] as usize;
+        if data.len() < 82 + sender_len + 1 { return Err(ContractError::IoError("HtlcSwapInfo: data too short".into())); }
+        let external_sender = data[82..82+sender_len].to_vec();
+        let recip_len = data[82+sender_len] as usize;
+        let mut pos = 83 + sender_len + recip_len;
+        if data.len() < pos { return Err(ContractError::IoError("HtlcSwapInfo: data too short for recipient".into())); }
+        let external_recipient = data[83+sender_len..pos].to_vec();
+        let state = data[pos]; pos += 1;
+        let created_at = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
+        let has_claimed = data[pos] != 0; pos += 1;
+        let (claimed_at, pos) = if has_claimed { (Some(u64::from_le_bytes(data[pos..pos+8].try_into().unwrap())), pos + 8) } else { (None, pos) };
+        let has_refunded = data[pos] != 0; pos += 1;
+        let (refunded_at, _) = if has_refunded { (Some(u64::from_le_bytes(data[pos..pos+8].try_into().unwrap())), pos + 8) } else { (None, pos) };
+        Ok(HtlcSwapInfo { version, swap_id, hash, timelock, amount, external_sender, external_recipient, state, created_at, claimed_at, refunded_at })
+    }
+}
+
 impl RelayerInfo {
     pub fn encode(&self) -> Vec<u8> {
         let cap = 66 + if self.fee_schedule_id.is_some() { 32 } else { 0 };
@@ -1247,5 +1343,66 @@ impl CreateHtlcUpdateV1 {
         if data.len() != expected { return Err(ContractError::IoError(format!("CreateHtlcUpdateV1: expected {} bytes, got {}", expected, data.len()))); }
         let external_recipient = data[83+sender_len..expected].to_vec();
         Ok(CreateHtlcUpdateV1 { swap_id, hash, timelock, amount, external_sender, external_recipient, chain })
+    }
+}
+
+impl AcceptWithdrawalUpdateV1 {
+    pub const ENCODED_SIZE: usize = 80;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(80);
+        b.extend_from_slice(&self.nullifier.to_bytes());
+        b.extend_from_slice(&self.relayer_pub.to_bytes());
+        b.extend_from_slice(&self.max_fee_bp.to_le_bytes());
+        b.extend_from_slice(&self.accepted_at.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 80 { return Err(ContractError::IoError(format!("AcceptWithdrawalUpdateV1: expected 80 bytes, got {}", data.len()))); }
+        Ok(AcceptWithdrawalUpdateV1 {
+            nullifier: IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("AcceptWithdrawalUpdateV1: invalid nullifier: {}", e)))?,
+            relayer_pub: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("AcceptWithdrawalUpdateV1: invalid relayer_pub: {}", e)))?,
+            max_fee_bp: u64::from_le_bytes(data[64..72].try_into().unwrap()),
+            accepted_at: u64::from_le_bytes(data[72..80].try_into().unwrap()),
+        })
+    }
+}
+
+impl RegisterFeeScheduleUpdateV1 {
+    pub const ENCODED_SIZE: usize = 64;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(64);
+        b.extend_from_slice(&self.relayer_pub.to_bytes());
+        b.extend_from_slice(&self.fee_schedule_id);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 64 { return Err(ContractError::IoError(format!("RegisterFeeScheduleUpdateV1: expected 64 bytes, got {}", data.len()))); }
+        Ok(RegisterFeeScheduleUpdateV1 {
+            relayer_pub: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("RegisterFeeScheduleUpdateV1: invalid relayer_pub: {}", e)))?,
+            fee_schedule_id: data[32..64].try_into().unwrap(),
+        })
+    }
+}
+
+impl GovernanceReportUpdateV1 {
+    pub const ENCODED_SIZE: usize = 33;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(33);
+        b.push(self.chain as u8);
+        b.extend_from_slice(&self.total_deposited.to_le_bytes());
+        b.extend_from_slice(&self.total_withdrawn.to_le_bytes());
+        b.extend_from_slice(&self.outstanding.to_le_bytes());
+        b.extend_from_slice(&self.report_block.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 33 { return Err(ContractError::IoError(format!("GovernanceReportUpdateV1: expected 33 bytes, got {}", data.len()))); }
+        Ok(GovernanceReportUpdateV1 {
+            chain: ExternalChain::try_from(data[0])?,
+            total_deposited: u64::from_le_bytes(data[1..9].try_into().unwrap()),
+            total_withdrawn: u64::from_le_bytes(data[9..17].try_into().unwrap()),
+            outstanding: u64::from_le_bytes(data[17..25].try_into().unwrap()),
+            report_block: u64::from_le_bytes(data[25..33].try_into().unwrap()),
+        })
     }
 }

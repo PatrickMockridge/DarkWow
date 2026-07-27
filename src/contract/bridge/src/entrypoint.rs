@@ -435,7 +435,7 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
         amount: params.fee,
     };
 
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// Verify XMR deposit proof
@@ -853,7 +853,7 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
         feed_mode: params.feed_mode,
     };
 
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// Process configuration update instruction
@@ -918,7 +918,7 @@ fn process_cancel_withdraw_instruction(
         msg!("[bridge::CancelWithdrawV1] ERROR: Pending withdrawal not found");
         return Err(BridgeError::WithdrawalNotFound.into())
     };
-    let pending: PendingWithdrawal = deserialize(&pending_data)
+    let pending = PendingWithdrawal::decode(&pending_data)
         .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
     // Verify timeout has expired (use on-chain block height, not caller-provided)
@@ -938,7 +938,7 @@ fn process_cancel_withdraw_instruction(
     let withdrawals_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_WITHDRAWALS_TREE)?;
     let withdrawal_key = build_withdrawal_key(&params.nullifier.to_bytes());
     if let Some(withdrawal_data) = wasm::db::db_get(withdrawals_db, &withdrawal_key)? {
-        let withdrawal: Withdrawal = deserialize(&withdrawal_data)
+        let withdrawal = Withdrawal::decode(&withdrawal_data)
             .map_err(|_| ContractError::IoError("decode error".to_string()))?;
         if withdrawal.executed {
             msg!("[bridge::CancelWithdrawV1] ERROR: Withdrawal already executed");
@@ -961,7 +961,7 @@ fn process_cancel_withdraw_instruction(
     msg!("[bridge::CancelWithdrawV1] Withdrawal cancellation approved");
 
     let update = CancelWithdrawUpdateV1 { nullifier: params.nullifier };
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 // ============================================================================
@@ -1015,7 +1015,7 @@ fn process_execute_guaranteed_withdraw_instruction(
         msg!("[bridge::ExecuteGuaranteedWithdrawV1] ERROR: Pending withdrawal not found");
         return Err(BridgeError::WithdrawalNotFound.into())
     };
-    let pending: PendingWithdrawal = deserialize(&pending_data)
+    let pending = PendingWithdrawal::decode(&pending_data)
         .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
     // Verify feed_mode == 1 (guaranteed)
@@ -1039,7 +1039,7 @@ fn process_execute_guaranteed_withdraw_instruction(
     let withdrawals_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_WITHDRAWALS_TREE)?;
     let withdrawal_key = build_withdrawal_key(&params.nullifier.to_bytes());
     if let Some(withdrawal_data) = wasm::db::db_get(withdrawals_db, &withdrawal_key)? {
-        let withdrawal: Withdrawal = deserialize(&withdrawal_data)
+        let withdrawal = Withdrawal::decode(&withdrawal_data)
             .map_err(|_| ContractError::IoError("decode error".to_string()))?;
         if withdrawal.executed {
             msg!("[bridge::ExecuteGuaranteedWithdrawV1] ERROR: Withdrawal already executed");
@@ -1062,7 +1062,7 @@ fn process_execute_guaranteed_withdraw_instruction(
     msg!("[bridge::ExecuteGuaranteedWithdrawV1] Guaranteed withdrawal execution approved");
 
     let update = ExecuteGuaranteedWithdrawUpdateV1 { nullifier: params.nullifier };
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// Process withdrawal reassignment instruction
@@ -1088,7 +1088,7 @@ fn process_reassign_withdrawal_instruction(
         msg!("[bridge::ReassignWithdrawalV1] ERROR: Pending withdrawal not found");
         return Err(BridgeError::WithdrawalNotFound.into())
     };
-    let pending: PendingWithdrawal = deserialize(&pending_data)
+    let pending = PendingWithdrawal::decode(&pending_data)
         .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
     // Verify withdrawal has not been cancelled or executed
@@ -1100,7 +1100,7 @@ fn process_reassign_withdrawal_instruction(
     let withdrawals_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_WITHDRAWALS_TREE)?;
     let withdrawal_key = build_withdrawal_key(&params.nullifier.to_bytes());
     if let Some(withdrawal_data) = wasm::db::db_get(withdrawals_db, &withdrawal_key)? {
-        let withdrawal: Withdrawal = deserialize(&withdrawal_data)
+        let withdrawal = Withdrawal::decode(&withdrawal_data)
             .map_err(|_| ContractError::IoError("decode error".to_string()))?;
         if withdrawal.executed {
             msg!("[bridge::ReassignWithdrawalV1] ERROR: Withdrawal already executed");
@@ -1144,7 +1144,7 @@ fn process_reassign_withdrawal_instruction(
         nullifier: params.nullifier,
         new_relayer: params.new_relayer,
     };
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 // ============================================================================
@@ -1161,11 +1161,11 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Ok(())
         }
         BridgeFunction::DepositV1 => {
-            let update: DepositUpdateV1 = deserialize(&update_data[1..])?;
+            let update = DepositUpdateV1::decode(&update_data[1..])?;
             apply_deposit_update(cid, update)
         }
         BridgeFunction::WithdrawV1 => {
-            let update: WithdrawUpdateV1 = deserialize(&update_data[1..])?;
+            let update = WithdrawUpdateV1::decode(&update_data[1..])?;
             apply_withdraw_update(cid, update)
         }
         BridgeFunction::UpdateConfigV1 => {
@@ -1173,36 +1173,36 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             apply_config_update(cid, params)
         }
         BridgeFunction::CancelWithdrawV1 => {
-            let update: CancelWithdrawUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CancelWithdrawUpdateV1::decode(&update_data[1..])?;
             apply_cancel_withdraw_update(cid, update)
         }
         BridgeFunction::ExecuteGuaranteedWithdrawV1 => {
-            let update: ExecuteGuaranteedWithdrawUpdateV1 = deserialize(&update_data[1..])?;
+            let update = ExecuteGuaranteedWithdrawUpdateV1::decode(&update_data[1..])?;
             apply_execute_guaranteed_withdraw_update(cid, update)
         }
         // HTLC operations
         BridgeFunction::CreateHtlcV1 => {
-            let update: CreateHtlcUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CreateHtlcUpdateV1::decode(&update_data[1..])?;
             apply_create_htlc_update(cid, update)
         }
         BridgeFunction::ClaimHtlcV1 => {
-            let update: ClaimHtlcUpdateV1 = deserialize(&update_data[1..])?;
+            let update = ClaimHtlcUpdateV1::decode(&update_data[1..])?;
             apply_claim_htlc_update(cid, update)
         }
         BridgeFunction::RefundHtlcV1 => {
-            let update: RefundHtlcUpdateV1 = deserialize(&update_data[1..])?;
+            let update = RefundHtlcUpdateV1::decode(&update_data[1..])?;
             apply_refund_htlc_update(cid, update)
         }
         BridgeFunction::ReassignWithdrawalV1 => {
-            let update: ReassignWithdrawalUpdateV1 = deserialize(&update_data[1..])?;
+            let update = ReassignWithdrawalUpdateV1::decode(&update_data[1..])?;
             apply_reassign_withdrawal_update(cid, update)
         }
         BridgeFunction::RegisterRelayerV1 => {
-            let update: RegisterRelayerUpdateV1 = deserialize(&update_data[1..])?;
+            let update = RegisterRelayerUpdateV1::decode(&update_data[1..])?;
             apply_register_relayer_update(cid, update)
         }
         BridgeFunction::AcceptWithdrawalV1 => {
-            let update: AcceptWithdrawalUpdateV1 = deserialize(&update_data[1..])?;
+            let update = AcceptWithdrawalUpdateV1::decode(&update_data[1..])?;
             apply_accept_withdrawal_update(cid, update)
         }
         BridgeFunction::VerifyRelayerReputationV1 => {
@@ -1210,11 +1210,11 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Ok(())
         }
         BridgeFunction::RegisterFeeScheduleV1 => {
-            let update: RegisterFeeScheduleUpdateV1 = deserialize(&update_data[1..])?;
+            let update = RegisterFeeScheduleUpdateV1::decode(&update_data[1..])?;
             apply_register_fee_schedule_update(cid, update)
         }
         BridgeFunction::GovernanceReportV1 => {
-            let update: GovernanceReportUpdateV1 = deserialize(&update_data[1..])?;
+            let update = GovernanceReportUpdateV1::decode(&update_data[1..])?;
             apply_governance_report_update(cid, update)
         }
     }
@@ -1238,7 +1238,7 @@ fn apply_deposit_update(cid: ContractId, update: DepositUpdateV1) -> ContractRes
         claimed: false,
         registered_at: get_current_timestamp(info_db)?,
     };
-    wasm::db::db_set(deposits_db, &build_deposit_key(&update.commitment.to_bytes()), &serialize(&deposit))?;
+    wasm::db::db_set(deposits_db, &build_deposit_key(&update.commitment.to_bytes()), &deposit.encode())?;
 
     // Update deposit Merkle root
     let new_root = compute_deposit_root(&update.commitment.to_bytes())?;
@@ -1292,7 +1292,7 @@ fn apply_withdraw_update(cid: ContractId, update: WithdrawUpdateV1) -> ContractR
         reassignable_after: Some(update.timeout_height),
         heartbeat_at: None,
     };
-    wasm::db::db_set(pending_db, &build_pending_key(&update.nullifier.to_bytes()), &serialize(&pending))?;
+    wasm::db::db_set(pending_db, &build_pending_key(&update.nullifier.to_bytes()), &pending.encode())?;
 
     // Increment guaranteed pending counter for circuit breaker
     if update.feed_mode == 1 {
@@ -1320,7 +1320,7 @@ fn apply_cancel_withdraw_update(cid: ContractId, update: CancelWithdrawUpdateV1)
         return Err(BridgeError::WithdrawalNotFound.into())
     };
 
-    let mut pending: PendingWithdrawal = deserialize(&pending_data)
+    let mut pending = PendingWithdrawal::decode(&pending_data)
         .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
     // Decrement guaranteed pending counter if this was a guaranteed withdrawal
@@ -1331,7 +1331,7 @@ fn apply_cancel_withdraw_update(cid: ContractId, update: CancelWithdrawUpdateV1)
     }
 
     pending.cancelled = true;
-    wasm::db::db_set(pending_db, &pending_key, &serialize(&pending))?;
+    wasm::db::db_set(pending_db, &pending_key, &pending.encode())?;
 
     msg!("[bridge::apply_update] Withdrawal cancelled: nullifier={:?}", update.nullifier);
     Ok(())
@@ -1349,7 +1349,7 @@ fn apply_execute_guaranteed_withdraw_update(cid: ContractId, update: ExecuteGuar
         return Err(BridgeError::WithdrawalNotFound.into())
     };
 
-    let mut withdrawal: Withdrawal = deserialize(&withdrawal_data)
+    let mut withdrawal = Withdrawal::decode(&withdrawal_data)
         .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
     withdrawal.executed = true;
@@ -1358,7 +1358,7 @@ fn apply_execute_guaranteed_withdraw_update(cid: ContractId, update: ExecuteGuar
     // Remove the pending record (no longer needed after execution)
     let pending_key = build_pending_key(&update.nullifier.to_bytes());
     if let Some(pending_data) = wasm::db::db_get(pending_db, &pending_key)? {
-        let mut pending: PendingWithdrawal = deserialize(&pending_data)
+        let mut pending = PendingWithdrawal::decode(&pending_data)
             .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
         // Decrement guaranteed pending counter
@@ -1369,7 +1369,7 @@ fn apply_execute_guaranteed_withdraw_update(cid: ContractId, update: ExecuteGuar
         }
 
         pending.cancelled = false; // ensure not cancelled
-        wasm::db::db_set(pending_db, &pending_key, &serialize(&pending))?;
+        wasm::db::db_set(pending_db, &pending_key, &pending.encode())?;
     }
 
     msg!("[bridge::apply_update] Guaranteed withdrawal executed: nullifier={:?}", update.nullifier);
@@ -1386,7 +1386,7 @@ fn apply_reassign_withdrawal_update(cid: ContractId, update: ReassignWithdrawalU
         return Err(BridgeError::WithdrawalNotFound.into())
     };
 
-    let mut pending: PendingWithdrawal = deserialize(&pending_data)
+    let mut pending = PendingWithdrawal::decode(&pending_data)
         .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
     // Update the relayer assignment
@@ -1397,7 +1397,7 @@ fn apply_reassign_withdrawal_update(cid: ContractId, update: ReassignWithdrawalU
     let current_block = get_current_timestamp(info_db)?;
     pending.reassignable_after = Some(current_block.saturating_add(BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS / 2));
 
-    wasm::db::db_set(pending_db, &pending_key, &serialize(&pending))?;
+    wasm::db::db_set(pending_db, &pending_key, &pending.encode())?;
 
     msg!("[bridge::apply_update] Withdrawal reassigned: nullifier={:?}, new_relayer={:?}",
         update.nullifier, update.new_relayer);
@@ -1431,14 +1431,62 @@ pub struct DepositUpdateV1 {
     pub amount: u64,
 }
 
+impl DepositUpdateV1 {
+    pub const ENCODED_SIZE: usize = 113;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(113);
+        b.extend_from_slice(&self.commitment.to_bytes());
+        b.extend_from_slice(&self.recipient_pub.to_bytes());
+        b.extend_from_slice(&self.bridge_nonce.to_le_bytes());
+        b.push(self.chain as u8);
+        b.extend_from_slice(&self.external_block_hash);
+        b.extend_from_slice(&self.amount.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 113 { return Err(ContractError::IoError(format!("DepositUpdateV1: expected 113 bytes, got {}", data.len()))); }
+        Ok(DepositUpdateV1 {
+            commitment: dwow_sdk::crypto::IntentCommitment::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("DepositUpdateV1: invalid commitment: {}", e)))?,
+            recipient_pub: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("DepositUpdateV1: invalid recipient_pub: {}", e)))?,
+            bridge_nonce: u64::from_le_bytes(data[64..72].try_into().unwrap()),
+            chain: ExternalChain::try_from(data[72])?,
+            external_block_hash: data[73..105].try_into().unwrap(),
+            amount: u64::from_le_bytes(data[105..113].try_into().unwrap()),
+        })
+    }
+}
+
 /// Update data for withdrawal
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct WithdrawUpdateV1 {
     pub nullifier: dwow_sdk::crypto::IntentNullifier,
     pub recipient_hash: [u8; 32],
     pub amount: u64,
     pub timeout_height: u64,
     pub feed_mode: u8,
+}
+
+impl WithdrawUpdateV1 {
+    pub const ENCODED_SIZE: usize = 81;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(81);
+        b.extend_from_slice(&self.nullifier.to_bytes());
+        b.extend_from_slice(&self.recipient_hash);
+        b.extend_from_slice(&self.amount.to_le_bytes());
+        b.extend_from_slice(&self.timeout_height.to_le_bytes());
+        b.push(self.feed_mode);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 81 { return Err(ContractError::IoError(format!("WithdrawUpdateV1: expected 81 bytes, got {}", data.len()))); }
+        Ok(WithdrawUpdateV1 {
+            nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("WithdrawUpdateV1: invalid nullifier: {}", e)))?,
+            recipient_hash: data[32..64].try_into().unwrap(),
+            amount: u64::from_le_bytes(data[64..72].try_into().unwrap()),
+            timeout_height: u64::from_le_bytes(data[72..80].try_into().unwrap()),
+            feed_mode: data[80],
+        })
+    }
 }
 
 // ============================================================================
@@ -1507,7 +1555,7 @@ fn process_governance_report_instruction(
         reporter_pub: params.reporter_pub,
     };
 
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// Apply governance report update — persist report on-chain for public audit
@@ -1522,7 +1570,7 @@ fn apply_governance_report_update(cid: ContractId, update: GovernanceReportUpdat
         pallas::Base::from(update.report_block),
     ]);
 
-    let report_bytes = serialize(&update);
+    let report_bytes = update.encode();
     wasm::db::db_set(reports_db, &report_key.to_repr(), &report_bytes)?;
 
     msg!(
@@ -1631,7 +1679,7 @@ fn process_create_htlc_instruction(
         chain: params.chain,
     };
 
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// Process ClaimHtlc instruction
@@ -1652,7 +1700,7 @@ fn process_claim_htlc_instruction(
         return Err(BridgeError::InvalidFunction.into())
     };
 
-    let htlc: HtlcSwapInfo = deserialize(&htlc_data)
+    let htlc = HtlcSwapInfo::decode(&htlc_data)
         .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
     // Verify HTLC is in Claimable state
@@ -1671,7 +1719,7 @@ fn process_claim_htlc_instruction(
 
     // Return update data
     let update = ClaimHtlcUpdateV1 { swap_id: params.swap_id, secret: params.secret };
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// Process RefundHtlc instruction
@@ -1692,7 +1740,7 @@ fn process_refund_htlc_instruction(
         return Err(BridgeError::InvalidFunction.into())
     };
 
-    let htlc: HtlcSwapInfo = deserialize(&htlc_data)
+    let htlc = HtlcSwapInfo::decode(&htlc_data)
         .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
     // Verify timelock has expired (use on-chain block height, not caller-provided)
@@ -1715,7 +1763,7 @@ fn process_refund_htlc_instruction(
 
     // Return update data
     let update = RefundHtlcUpdateV1 { swap_id: params.swap_id };
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// Apply CreateHtlc state update
@@ -1737,7 +1785,7 @@ fn apply_create_htlc_update(cid: ContractId, update: CreateHtlcUpdateV1) -> Cont
         refunded_at: None,
     };
 
-    wasm::db::db_set(htlcs_db, &update.swap_id, &serialize(&htlc))?;
+    wasm::db::db_set(htlcs_db, &update.swap_id, &htlc.encode())?;
 
     msg!("[bridge::apply_update] HTLC created: swap_id={:?}", update.swap_id);
     Ok(())
@@ -1753,7 +1801,7 @@ fn apply_claim_htlc_update(cid: ContractId, update: ClaimHtlcUpdateV1) -> Contra
         return Err(BridgeError::InvalidFunction.into())
     };
 
-    let mut htlc: HtlcSwapInfo = deserialize(&htlc_data)
+    let mut htlc = HtlcSwapInfo::decode(&htlc_data)
         .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
     // Re-check state atomically — if already claimed or refunded, reject
@@ -1765,7 +1813,7 @@ fn apply_claim_htlc_update(cid: ContractId, update: ClaimHtlcUpdateV1) -> Contra
     let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
     htlc.claimed_at = Some(get_current_timestamp(info_db)?);
     htlc.state = HtlcSwapState::Claimed as u8;
-    wasm::db::db_set(htlcs_db, &update.swap_id, &serialize(&htlc))?;
+    wasm::db::db_set(htlcs_db, &update.swap_id, &htlc.encode())?;
 
     // Record nullifier to prevent replay
     wasm::db::db_set(htlc_nullifiers_db, &update.swap_id, &[])?;
@@ -1784,7 +1832,7 @@ fn apply_refund_htlc_update(cid: ContractId, update: RefundHtlcUpdateV1) -> Cont
         return Err(BridgeError::InvalidFunction.into())
     };
 
-    let mut htlc: HtlcSwapInfo = deserialize(&htlc_data)
+    let mut htlc = HtlcSwapInfo::decode(&htlc_data)
         .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
     // Re-check state atomically — if already claimed, refuse refund
@@ -1800,7 +1848,7 @@ fn apply_refund_htlc_update(cid: ContractId, update: RefundHtlcUpdateV1) -> Cont
     let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
     htlc.refunded_at = Some(get_current_timestamp(info_db)?);
     htlc.state = HtlcSwapState::Refunded as u8;
-    wasm::db::db_set(htlcs_db, &update.swap_id, &serialize(&htlc))?;
+    wasm::db::db_set(htlcs_db, &update.swap_id, &htlc.encode())?;
 
     // Record nullifier to prevent replay
     wasm::db::db_set(htlc_nullifiers_db, &update.swap_id, &[])?;
@@ -1838,7 +1886,7 @@ fn process_register_relayer_instruction(
         relayer_pub: params.relayer_pub,
         registered_at: wasm::util::get_verifying_block_height()?.get(),
     };
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 fn apply_register_relayer_update(cid: ContractId, update: RegisterRelayerUpdateV1) -> ContractResult {
@@ -1892,7 +1940,7 @@ fn process_accept_withdrawal_instruction(
         msg!("[bridge::AcceptWithdrawalV1] ERROR: Pending withdrawal not found");
         return Err(BridgeError::WithdrawalNotFound.into())
     };
-    let pending: PendingWithdrawal = deserialize(&pending_data)
+    let pending = PendingWithdrawal::decode(&pending_data)
         .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
     // Check withdrawal is not already assigned to a relayer
@@ -1919,7 +1967,7 @@ fn process_accept_withdrawal_instruction(
         max_fee_bp: params.max_fee_bp,
         accepted_at: current_height,
     };
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 fn apply_accept_withdrawal_update(cid: ContractId, update: AcceptWithdrawalUpdateV1) -> ContractResult {
@@ -1930,14 +1978,14 @@ fn apply_accept_withdrawal_update(cid: ContractId, update: AcceptWithdrawalUpdat
         return Err(BridgeError::WithdrawalNotFound.into())
     };
 
-    let mut pending: PendingWithdrawal = deserialize(&pending_data)
+    let mut pending = PendingWithdrawal::decode(&pending_data)
         .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
     pending.relayer = Some(update.relayer_pub);
     pending.reassignable_after = Some(update.accepted_at.saturating_add(BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS));
     pending.heartbeat_at = Some(update.accepted_at);
 
-    wasm::db::db_set(pending_db, &pending_key, &serialize(&pending))?;
+    wasm::db::db_set(pending_db, &pending_key, &pending.encode())?;
 
     // Increment relayer's total_withdrawals
     let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
@@ -2033,7 +2081,7 @@ fn process_register_fee_schedule_instruction(
         relayer_pub: params.relayer_pub,
         fee_schedule_id: params.fee_schedule_id,
     };
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 fn apply_register_fee_schedule_update(cid: ContractId, update: RegisterFeeScheduleUpdateV1) -> ContractResult {
