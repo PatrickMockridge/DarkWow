@@ -69,19 +69,23 @@ impl CapabilityId {
 #[derive(Debug, Clone, Copy, Eq, PartialEq,)]
 pub struct CapabilitySecret(pub pallas::Base);
 impl CapabilitySecret {
+    pub const ENCODED_SIZE: usize = 32;
     pub fn inner(&self) -> pallas::Base { self.0 }
     pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
+    pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("CapabilitySecret: expected 32 bytes, got {}", data.len()))); } Ok(CapabilitySecret(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CapabilitySecret: invalid".into()))?)) }
 }
 
 /// Reputation ID: hash of issuer pubkey + relayer pubkey
 #[derive(Debug, Clone, Copy, Eq, PartialEq,)]
 pub struct ReputationId(pub pallas::Base);
 impl ReputationId {
+    pub const ENCODED_SIZE: usize = 32;
     pub fn inner(&self) -> pallas::Base { self.0 }
     pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
-    pub fn from_bytes(b: [u8; 32]) -> Option<Self> {
-        pallas::Base::from_repr(b).into_option().map(Self)
-    }
+    pub fn from_bytes(b: [u8; 32]) -> Option<Self> { pallas::Base::from_repr(b).into_option().map(Self) }
+    pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("ReputationId: expected 32 bytes, got {}", data.len()))); } Self::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("ReputationId: invalid".into())) }
 }
 
 /// Namespace for identity intents (used with generic intent primitives)
@@ -102,6 +106,12 @@ pub enum AttributeType {
     Hash,
 }
 
+impl TryFrom<u8> for AttributeType {
+    type Error = ContractError;
+    fn try_from(v: u8) -> Result<Self, Self::Error> { match v { 0 => Ok(Self::Boolean), 1 => Ok(Self::Numeric), 2 => Ok(Self::String), 3 => Ok(Self::Timestamp), 4 => Ok(Self::Hash), _ => Err(ContractError::InvalidFunction) } }
+}
+impl AttributeType { pub fn encode(&self) -> Vec<u8> { vec![self.clone() as u8] } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.is_empty() { return Err(ContractError::IoError("AttributeType: empty".into())); } Self::try_from(data[0]) } }
+
 /// A single attribute in a credential
 #[derive(Debug, Clone,)]
 pub struct Attribute {
@@ -113,29 +123,17 @@ pub struct Attribute {
     pub value: Vec<u8>,
 }
 
-/// Credential schema defining required and optional attributes
-#[derive(Debug, Clone,)]
-pub struct CredentialSchema {
-    /// Schema name
-    pub name: Vec<u8>,
-    /// Schema version
-    pub version: u32,
-    /// Required attributes
-    pub required_attributes: Vec<Attribute>,
-    /// Optional attributes
-    pub optional_attributes: Vec<Attribute>,
-}
+impl Attribute { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(3+self.name.len()+self.value.len()); b.extend_from_slice(&self.attribute_type.encode()); b.push(self.name.len() as u8); b.extend_from_slice(&self.name); b.push(self.value.len() as u8); b.extend_from_slice(&self.value); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 4 { return Err(ContractError::IoError("Attribute: too short".into())); } let attribute_type = AttributeType::decode(&data[0..1])?; let name_len = data[1] as usize; let n_end = 2+name_len; if data.len() < n_end+1 { return Err(ContractError::IoError("Attribute: name truncated".into())); } let name = data[2..n_end].to_vec(); let val_len = data[n_end] as usize; if data.len() != n_end+1+val_len { return Err(ContractError::IoError(format!("Attribute: expected {} bytes, got {}", n_end+1+val_len, data.len()))); } let value = data[n_end+1..].to_vec(); Ok(Attribute { attribute_type, name, value }) } }
 
-// ============================================================================
-// CREDENTIAL STRUCTURES
-// ============================================================================
+/// Credential schema
+#[derive(Debug, Clone,)] pub struct CredentialSchema { pub name: Vec<u8>, pub version: u32, pub required_attributes: Vec<Attribute>, pub optional_attributes: Vec<Attribute> }
+impl CredentialSchema { pub fn encode(&self) -> Vec<u8> { let req_bytes: Vec<Vec<u8>> = self.required_attributes.iter().map(|a| a.encode()).collect(); let opt_bytes: Vec<Vec<u8>> = self.optional_attributes.iter().map(|a| a.encode()).collect(); let cap = 7+self.name.len()+req_bytes.iter().map(|b| b.len()).sum::<usize>()+opt_bytes.iter().map(|b| b.len()).sum::<usize>(); let mut b = Vec::with_capacity(cap); b.push(self.name.len() as u8); b.extend_from_slice(&self.name); b.extend_from_slice(&self.version.to_le_bytes()); b.push(self.required_attributes.len() as u8); for rb in &req_bytes { b.extend_from_slice(rb); } b.push(self.optional_attributes.len() as u8); for ob in &opt_bytes { b.extend_from_slice(ob); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 8 { return Err(ContractError::IoError("CredentialSchema: too short".into())); } let name_len = data[0] as usize; let mut pos = 1+name_len; if data.len() < pos+5 { return Err(ContractError::IoError("CredentialSchema: truncated".into())); } let name = data[1..pos].to_vec(); let version = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()); pos += 4; let req_count = data[pos] as usize; pos += 1; let mut required_attributes = Vec::with_capacity(req_count); for _ in 0..req_count { let attr = Attribute::decode(&data[pos..])?; pos += attr.encode().len(); required_attributes.push(attr); } if data.len() < pos+1 { return Err(ContractError::IoError("CredentialSchema: opt count missing".into())); } let opt_count = data[pos] as usize; pos += 1; let mut optional_attributes = Vec::with_capacity(opt_count); for _ in 0..opt_count { let attr = Attribute::decode(&data[pos..])?; pos += attr.encode().len(); optional_attributes.push(attr); } Ok(CredentialSchema { name, version, required_attributes, optional_attributes }) } }
 
 /// Initialize contract parameters
-#[derive(Debug, Clone,)]
-pub struct InitializeParams {
-    /// Contract version
-    pub version: u32,
-}
+#[derive(Debug, Clone,)] pub struct InitializeParams { pub version: u32 }
+impl InitializeParams { pub const ENCODED_SIZE: usize = 4; pub fn encode(&self) -> Vec<u8> { self.version.to_le_bytes().to_vec() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 4 { return Err(ContractError::IoError(format!("InitializeParams: expected 4 bytes, got {}", data.len()))); } Ok(InitializeParams { version: u32::from_le_bytes(data[0..4].try_into().unwrap()) }) } }
+
+// CREDENTIAL STRUCTURES
 
 /// Issue credential parameters
 #[derive(Debug, Clone,)]
