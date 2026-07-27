@@ -47,11 +47,10 @@
 //! - No position IDs that could leak information
 
 use dwow_sdk::{
-    crypto::{ContractId, IntentCommitment, IntentNullifier, Nullifier, PublicKey},
+    crypto::{pasta_prelude::PrimeField, ContractId, IntentCommitment, IntentNullifier, Nullifier, PublicKey},
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Namespace for stablecoin intents
 pub const STABLECOIN_NAMESPACE: u64 = 0x0005;
@@ -168,7 +167,7 @@ pub struct DeadManSwitchConfig {
 }
 
 /// Pooled Debt Engine initialization parameters
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct InitializeParams {
     /// The stablecoin model to use (PooledDebt, Liquity, Fractional, IndividualCdp)
     pub model: StablecoinModel,
@@ -222,7 +221,7 @@ pub struct InitializeParams {
 }
 
 /// Deposit collateral into the pool
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct DepositCollateralParams {
     /// Commitment to the deposit (hides amount)
     pub deposit_commitment: IntentCommitment,
@@ -245,7 +244,7 @@ pub struct DepositCollateralParams {
 }
 
 /// Withdraw collateral from the pool (only if collateralization ratio allows)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct WithdrawCollateralParams {
     /// Nullifier to prove withdrawal is authorized
     pub withdrawal_nullifier: IntentNullifier,
@@ -268,7 +267,7 @@ pub struct WithdrawCollateralParams {
 }
 
 /// Mint stablecoin against collateral pool
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct MintStableParams {
     /// Commitment to the mint (hides debt amount)
     pub mint_commitment: IntentCommitment,
@@ -294,7 +293,7 @@ pub struct MintStableParams {
 }
 
 /// Repay stablecoin debt to reduce debt share
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RepayStableParams {
     /// Commitment to the repayment
     pub repay_commitment: IntentCommitment,
@@ -317,7 +316,7 @@ pub struct RepayStableParams {
 ///
 /// Note: In pooled model, liquidation is global - the entire pool is either
 /// liquidated or not. Individual users' collateral is seized proportionally.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct LiquidateParams {
     /// Liquidation commitment
     pub liquidation_commitment: IntentCommitment,
@@ -349,7 +348,7 @@ pub struct LiquidateParams {
 }
 
 /// Update pool configuration (governance)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct UpdateConfigParams {
     /// New minimum collateralization ratio
     pub min_collateralization_ratio: u64,
@@ -516,7 +515,7 @@ pub struct AccrueInterestUpdateV1 {
 ///
 /// The first application-layer consumer of PN::RedeemV1 (0x01).
 /// Burns stablecoins and returns proportional collateral to the redeemer.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RedeemStableParamsV1 {
     /// Recipient's public key (who receives the receipt coin)
     pub recipient_pub: PublicKey,
@@ -667,7 +666,7 @@ pub struct PriceFeed {
 /// `total_redeemed` match the on-chain config DB values before accepting the report.
 /// This prevents a malicious reporter from submitting a valid ZK proof against
 /// cherry-picked inputs that don't reflect the actual contract state.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct GovernanceReportParams {
     /// Token ID being reported on (the stablecoin token)
     pub token_id: pallas::Base,
@@ -706,7 +705,7 @@ pub struct GovernanceReportParams {
 
 /// Accrue interest parameters (cold/precise - uses BaseDiv)
 /// For precise interest accrual calculation
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct AccrueInterestParams {
     /// Total debt before interest accrual
     pub old_total_debt: u64,
@@ -794,7 +793,7 @@ macro_rules! decode_pallas_base {
 // ---- CollateralType ----
 
 impl CollateralType {
-    pub fn encode(&self) -> Vec<u8> { vec![*self as u8] }
+    pub fn encode(&self) -> Vec<u8> { vec![self.clone() as u8] }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.is_empty() { return Err(ContractError::IoError("CollateralType: empty data".into())); }
         CollateralType::try_from(data[0])
@@ -804,7 +803,7 @@ impl CollateralType {
 // ---- StablecoinModel ----
 
 impl StablecoinModel {
-    pub fn encode(&self) -> Vec<u8> { vec![*self as u8] }
+    pub fn encode(&self) -> Vec<u8> { vec![self.clone() as u8] }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.is_empty() { return Err(ContractError::IoError("StablecoinModel: empty data".into())); }
         StablecoinModel::try_from(data[0])
@@ -814,7 +813,7 @@ impl StablecoinModel {
 // ---- DeadManAction ----
 
 impl DeadManAction {
-    pub fn encode(&self) -> Vec<u8> { vec![*self as u8] }
+    pub fn encode(&self) -> Vec<u8> { vec![self.clone() as u8] }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.is_empty() { return Err(ContractError::IoError("DeadManAction: empty data".into())); }
         DeadManAction::try_from(data[0])
@@ -828,7 +827,7 @@ impl CollateralParams {
     pub const ENCODED_SIZE: usize = 25;
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
-        b.push(self.collateral_type as u8);
+        b.push(self.collateral_type.clone() as u8);
         b.extend_from_slice(&self.haircut.to_le_bytes());
         b.extend_from_slice(&self.liquidation_threshold.to_le_bytes());
         b.extend_from_slice(&self.max_debt_share.to_le_bytes());
@@ -854,7 +853,7 @@ impl DeadManSwitchConfig {
         let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
         b.push(self.enabled as u8);
         b.extend_from_slice(&self.timeout_blocks.to_le_bytes());
-        b.push(self.action as u8);
+        b.push(self.action.clone() as u8);
         b.extend_from_slice(&self.last_action_block.to_le_bytes());
         b
     }
@@ -900,7 +899,7 @@ impl CollateralPool {
     pub const ENCODED_SIZE: usize = 25;
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
-        b.push(self.collateral_type as u8);
+        b.push(self.collateral_type.clone() as u8);
         b.extend_from_slice(&self.total_deposited.to_le_bytes());
         b.extend_from_slice(&self.value_ratio.to_le_bytes());
         b.extend_from_slice(&self.last_update.to_le_bytes());
@@ -1065,7 +1064,7 @@ impl AddCollateralUpdateV1 {
         let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
         b.extend_from_slice(&self.position_commitment.to_bytes());
         b.extend_from_slice(&self.added_collateral.to_le_bytes());
-        b.push(self.collateral_type as u8);
+        b.push(self.collateral_type.clone() as u8);
         b
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -1087,7 +1086,7 @@ impl RemoveCollateralUpdateV1 {
         let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
         b.extend_from_slice(&self.position_nullifier.to_bytes());
         b.extend_from_slice(&self.new_commitment.to_bytes());
-        b.push(self.collateral_type as u8);
+        b.push(self.collateral_type.clone() as u8);
         b.extend_from_slice(&self.removed_collateral.to_le_bytes());
         b
     }
@@ -1313,7 +1312,7 @@ impl OpenPositionUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
         b.extend_from_slice(&self.deposit_commitment.to_bytes());
-        b.push(self.collateral_type as u8);
+        b.push(self.collateral_type.clone() as u8);
         b.extend_from_slice(&self.collateral_amount.to_le_bytes());
         b
     }

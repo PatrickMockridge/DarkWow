@@ -75,10 +75,9 @@ use dwow_sdk::{
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// DAO-Escrow unique identifier (hash of parameters)
-#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct DaoEscrowBulla(pub pallas::Base);
 impl DaoEscrowBulla {
     pub fn inner(&self) -> pallas::Base { self.0 }
@@ -91,7 +90,7 @@ impl DaoEscrowBulla {
 }
 
 /// Membership note identifier
-#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct MembershipNote(pub pallas::Base);
 impl MembershipNote {
     pub fn inner(&self) -> pallas::Base { self.0 }
@@ -108,7 +107,7 @@ impl MembershipNote {
 // ============================================================================
 
 /// Operating mode of the DAO-Escrow
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DaoEscrowMode {
     /// Escrow-only: Pure insurance pool, no treasury
     Escrow = 0,
@@ -136,7 +135,7 @@ impl TryFrom<u8> for DaoEscrowMode {
 // ============================================================================
 
 /// Fee distribution configuration (used in TreasuryEndowment mode)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct FeeConfig {
     pub version: u8,
     /// Treasury share (percentage * 10000, e.g., 7000 = 70%)
@@ -149,7 +148,7 @@ pub struct FeeConfig {
 // on DaoEscrow struct. Voting, quorum, approval ratios delegated to MultiSig groups.
 
 /// Represents a DAO-Escrow instance
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct DaoEscrow {
     pub version: u8,
     /// Instance seed for per-capability key derivation
@@ -209,7 +208,7 @@ impl DaoEscrow {
 // ============================================================================
 
 /// Represents a membership note (time-limited)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Membership {
     pub version: u8,
     /// Membership note (unique identifier)
@@ -256,7 +255,7 @@ impl Membership {
 // ============================================================================
 
 /// Parameters for `DaoEscrow::InitializeV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct InitializeParamsV1 {
     /// Instance seed for per-capability key derivation
     pub instance_seed: [u8; 32],
@@ -275,7 +274,7 @@ pub struct InitializeParamsV1 {
 }
 
 /// State update for `DaoEscrow::InitializeV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct InitializeUpdateV1 {
     /// Instance seed for per-capability key derivation
     pub instance_seed: [u8; 32],
@@ -288,21 +287,21 @@ pub struct InitializeUpdateV1 {
 }
 
 /// Parameters for `DaoEscrow::UpdateV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct UpdateParamsV1 {
     /// DAO-Escrow bulla
     pub bulla: DaoEscrowBulla,
 }
 
 /// State update for `DaoEscrow::UpdateV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct UpdateUpdateV1 {
     /// Updated DAO-Escrow bulla
     pub bulla: DaoEscrowBulla,
 }
 
 /// Parameters for `DaoEscrow::PayPremiumV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct PayPremiumParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -325,7 +324,7 @@ pub struct PayPremiumParamsV1 {
 }
 
 /// State update for `DaoEscrow::PayPremiumV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct PayPremiumUpdateV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -344,7 +343,7 @@ pub struct PayPremiumUpdateV1 {
 }
 
 /// Parameters for `DaoEscrow::WithdrawV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct WithdrawParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -357,7 +356,7 @@ pub struct WithdrawParamsV1 {
 }
 
 /// State update for `DaoEscrow::WithdrawV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct WithdrawUpdateV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -372,7 +371,7 @@ pub struct WithdrawUpdateV1 {
 // ============================================================================
 
 /// Parameters for enabling DrainProtection on an existing DAO-Escrow
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct EnableDrainProtectionParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -381,7 +380,7 @@ pub struct EnableDrainProtectionParamsV1 {
 }
 
 /// State update for `EnableDrainProtectionV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct EnableDrainProtectionUpdateV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -394,7 +393,7 @@ pub struct EnableDrainProtectionUpdateV1 {
 // ============================================================================
 
 /// Claim identifier
-#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct ClaimId(pub pallas::Base);
 impl ClaimId {
     pub fn inner(&self) -> pallas::Base { self.0 }
@@ -406,7 +405,7 @@ impl ClaimId {
 }
 
 /// Vote type for claims
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VoteType {
     /// Yes vote
     Yes = 0,
@@ -427,7 +426,7 @@ impl TryFrom<u8> for VoteType {
 }
 
 /// Parameters for proposing a claim (endowment, treasury, or dispute)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ProposeClaimParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -448,7 +447,7 @@ pub struct ProposeClaimParamsV1 {
 }
 
 /// State update for `ProposeClaimV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ProposeClaimUpdateV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -471,7 +470,7 @@ pub struct ProposeClaimUpdateV1 {
 }
 
 /// Parameters for voting on a claim
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct VoteClaimParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -486,7 +485,7 @@ pub struct VoteClaimParamsV1 {
 }
 
 /// State update for `VoteClaimV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct VoteClaimUpdateV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -506,7 +505,7 @@ pub struct VoteClaimUpdateV1 {
 // ============================================================================
 
 /// Parameters for executing an approved endowment withdrawal (claim)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct EndowmentWithdrawParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -523,7 +522,7 @@ pub struct EndowmentWithdrawParamsV1 {
 }
 
 /// State update for `EndowmentWithdrawV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct EndowmentWithdrawUpdateV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -540,7 +539,7 @@ pub struct EndowmentWithdrawUpdateV1 {
 // ============================================================================
 
 /// Parameters for executing an approved treasury spend
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct TreasurySpendParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -555,7 +554,7 @@ pub struct TreasurySpendParamsV1 {
 }
 
 /// State update for `TreasurySpendV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct TreasurySpendUpdateV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -573,7 +572,7 @@ pub struct TreasurySpendUpdateV1 {
 
 /// A capability proof from the Identity contract.
 /// Referenced by dao_escrow to verify capability-based authorization.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CapabilityProof {
     /// Capability identifier (from Identity contract)
     pub capability_id: [u8; 32],
@@ -594,7 +593,7 @@ pub struct CapabilityProof {
 // ============================================================================
 
 /// Maps a DAO role to a required capability ID from the Identity contract
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CapabilityRequirement {
     pub version: u8,
     /// Role name (e.g., "member_vote", "board_treasury")
@@ -612,7 +611,7 @@ pub struct CapabilityRequirement {
 // ============================================================================
 
 /// Type of claim or proposal
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClaimType {
     /// Claim against endowment (insurance)
     Endowment = 0,
@@ -627,7 +626,7 @@ pub enum ClaimType {
 // ============================================================================
 
 /// Proposal lifecycle states
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProposalState {
     /// Voting is open
     Pending = 0,
@@ -643,12 +642,28 @@ pub enum ProposalState {
     Expired = 5,
 }
 
+impl TryFrom<u8> for ProposalState {
+    type Error = dwow_sdk::error::ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(Self::Pending),
+            1 => Ok(Self::Approved),
+            2 => Ok(Self::Rejected),
+            3 => Ok(Self::Executed),
+            4 => Ok(Self::Cancelled),
+            5 => Ok(Self::Expired),
+            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
+        }
+    }
+}
+
 // ============================================================================
 // PROPOSAL
 // ============================================================================
 
 /// Proposal identifier type
-#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct ProposalId(pub pallas::Base);
 impl ProposalId {
     pub fn inner(&self) -> pallas::Base { self.0 }
@@ -660,7 +675,7 @@ impl ProposalId {
 }
 
 /// A governance proposal (claim against endowment or treasury spend)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Proposal {
     pub version: u8,
     /// Unique proposal identifier
@@ -696,7 +711,7 @@ pub struct Proposal {
 // ============================================================================
 
 /// A vote record (prevents double-voting via nullifier)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct VoteRecord {
     pub version: u8,
     /// Proposal being voted on
@@ -716,7 +731,7 @@ pub struct VoteRecord {
 // ============================================================================
 
 /// Reference to an oracle attestation used for dispute resolution
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct OracleAttestationRef {
     pub version: u8,
     /// Attestation ID from the attestation contract
@@ -734,7 +749,7 @@ pub struct OracleAttestationRef {
 // ============================================================================
 
 /// Dispute resolution record
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct DisputeResolution {
     pub version: u8,
     /// Unique dispute identifier
@@ -762,7 +777,7 @@ pub struct DisputeResolution {
 // ============================================================================
 
 /// Parameters for `ExecuteClaimV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ExecuteClaimParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -775,7 +790,7 @@ pub struct ExecuteClaimParamsV1 {
 }
 
 /// State update for `ExecuteClaimV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ExecuteClaimUpdateV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -792,7 +807,7 @@ pub struct ExecuteClaimUpdateV1 {
 // ============================================================================
 
 /// Parameters for `RegisterCapabilityRequirementV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RegisterCapabilityRequirementParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -805,7 +820,7 @@ pub struct RegisterCapabilityRequirementParamsV1 {
 }
 
 /// State update for `RegisterCapabilityRequirementV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RegisterCapabilityRequirementUpdateV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -820,7 +835,7 @@ pub struct RegisterCapabilityRequirementUpdateV1 {
 // ============================================================================
 
 /// Parameters for `VerifyMemberCapabilityV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct VerifyMemberCapabilityParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -831,7 +846,7 @@ pub struct VerifyMemberCapabilityParamsV1 {
 }
 
 /// State update for `VerifyMemberCapabilityV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct VerifyMemberCapabilityUpdateV1 {
     /// Capability ID that was verified
     pub capability_id: [u8; 32],
@@ -844,7 +859,7 @@ pub struct VerifyMemberCapabilityUpdateV1 {
 // ============================================================================
 
 /// Parameters for `ResolveDisputeV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ResolveDisputeParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -861,7 +876,7 @@ pub struct ResolveDisputeParamsV1 {
 }
 
 /// State update for `ResolveDisputeV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ResolveDisputeUpdateV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -882,7 +897,7 @@ pub struct ResolveDisputeUpdateV1 {
 // ============================================================================
 
 /// Parameters for `CancelClaimV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CancelClaimParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -893,7 +908,7 @@ pub struct CancelClaimParamsV1 {
 }
 
 /// State update for `CancelClaimV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CancelClaimUpdateV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -911,14 +926,14 @@ pub struct CancelClaimUpdateV1 {
 // manage governance configuration and activation.
 
 /// Parameters for `DeactivateCapabilityRequirementV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct DeactivateCapabilityRequirementParamsV1 {
     pub dao_escrow_bulla: DaoEscrowBulla,
     pub role: Vec<u8>,
 }
 
 /// State update for `DeactivateCapabilityRequirementV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct DeactivateCapabilityRequirementUpdateV1 {
     pub dao_escrow_bulla: DaoEscrowBulla,
     pub role: Vec<u8>,
@@ -932,9 +947,9 @@ pub struct DeactivateCapabilityRequirementUpdateV1 {
 
 impl UpdateUpdateV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { self.bulla.to_bytes().to_vec() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("UpdateUpdateV1: expected 32 bytes, got {}", data.len()))); } Ok(UpdateUpdateV1 { bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UpdateUpdateV1: invalid bulla".into()))?) }) } }
 
-impl InitializeUpdateV1 { pub const ENCODED_SIZE: usize = 129; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(129); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.bulla.to_bytes()); b.extend_from_slice(&self.owner_pubkey.to_bytes()); b.extend_from_slice(&self.bulla_blind.inner().to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 129 { return Err(ContractError::IoError(format!("InitializeUpdateV1: expected 129 bytes, got {}", data.len()))); } Ok(InitializeUpdateV1 { instance_seed: data[0..32].try_into().unwrap(), bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("InitializeUpdateV1: invalid bulla".into()))?), owner_pubkey: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("InitializeUpdateV1: invalid owner_pubkey: {}", e)))?, bulla_blind: BaseBlind::from(pallas::Base::from_repr(data[96..128].try_into().unwrap()).into_option().ok_or_else(|| ContractError::IoError("InitializeUpdateV1: invalid bulla_blind".into()))?) }) } }
+impl InitializeUpdateV1 { pub const ENCODED_SIZE: usize = 129; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(129); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.bulla.to_bytes()); b.extend_from_slice(&self.owner_pubkey.to_bytes()); b.extend_from_slice(&self.bulla_blind.inner().to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 129 { return Err(ContractError::IoError(format!("InitializeUpdateV1: expected 129 bytes, got {}", data.len()))); } Ok(InitializeUpdateV1 { instance_seed: data[0..32].try_into().unwrap(), bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("InitializeUpdateV1: invalid bulla".into()))?), owner_pubkey: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("InitializeUpdateV1: invalid owner_pubkey: {}", e)))?, bulla_blind: BaseBlind::from_raw(pallas::Base::from_repr(data[96..128].try_into().unwrap()).into_option().ok_or_else(|| ContractError::IoError("InitializeUpdateV1: invalid bulla_blind".into()))?) }) } }
 
-impl PayPremiumUpdateV1 { pub const ENCODED_SIZE: usize = 181; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(181); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.membership_note.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.member_count.to_le_bytes()); b.extend_from_slice(&self.member_pubkey.to_bytes()); b.extend_from_slice(&self.token_id.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 181 { return Err(ContractError::IoError(format!("PayPremiumUpdateV1: expected 181 bytes, got {}", data.len()))); } Ok(PayPremiumUpdateV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumUpdateV1: invalid dao_escrow_bulla".into()))?), membership_note: MembershipNote(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumUpdateV1: invalid membership_note".into()))?), amount: u64::from_le_bytes(data[64..72].try_into().unwrap()), member_count: u64::from_le_bytes(data[72..80].try_into().unwrap()), member_pubkey: PublicKey::from_bytes(data[80..112].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PayPremiumUpdateV1: invalid member_pubkey: {}", e)))?, token_id: TokenId::from_bytes(data[112..144].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PayPremiumUpdateV1: invalid token_id: {}", e)))? }) } }
+impl PayPremiumUpdateV1 { pub const ENCODED_SIZE: usize = 152; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(152); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.membership_note.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.member_count.to_le_bytes()); b.extend_from_slice(&self.member_pubkey.to_bytes()); b.extend_from_slice(&self.token_id.to_bytes()); b.extend_from_slice(&self.expiry.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 152 { return Err(ContractError::IoError(format!("PayPremiumUpdateV1: expected 152 bytes, got {}", data.len()))); } Ok(PayPremiumUpdateV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumUpdateV1: invalid dao_escrow_bulla".into()))?), membership_note: MembershipNote(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumUpdateV1: invalid membership_note".into()))?), amount: u64::from_le_bytes(data[64..72].try_into().unwrap()), member_count: u64::from_le_bytes(data[72..80].try_into().unwrap()), member_pubkey: PublicKey::from_bytes(data[80..112].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PayPremiumUpdateV1: invalid member_pubkey: {}", e)))?, token_id: TokenId::from_bytes(data[112..144].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PayPremiumUpdateV1: invalid token_id: {}", e)))?, expiry: u64::from_le_bytes(data[144..152].try_into().unwrap()) }) } }
 
 impl WithdrawUpdateV1 { pub const ENCODED_SIZE: usize = 48; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(48); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.value.to_le_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 48 { return Err(ContractError::IoError(format!("WithdrawUpdateV1: expected 48 bytes, got {}", data.len()))); } Ok(WithdrawUpdateV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("WithdrawUpdateV1: invalid dao_escrow_bulla".into()))?), value: u64::from_le_bytes(data[32..40].try_into().unwrap()), amount: u64::from_le_bytes(data[40..48].try_into().unwrap()) }) } }
 
@@ -944,7 +959,7 @@ impl TreasurySpendUpdateV1 { pub const ENCODED_SIZE: usize = 80; pub fn encode(&
 
 impl EnableDrainProtectionUpdateV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.drain_protection_bulla.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("EnableDrainProtectionUpdateV1: expected 64 bytes, got {}", data.len()))); } Ok(EnableDrainProtectionUpdateV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("EnableDrainProtectionUpdateV1: invalid dao_escrow_bulla".into()))?), drain_protection_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("EnableDrainProtectionUpdateV1: invalid drain_protection_bulla".into()))?) }) } }
 
-impl ProposeClaimUpdateV1 { pub const ENCODED_SIZE: usize = 128; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(128); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.claim_id.to_bytes()); b.extend_from_slice(&self.value.to_le_bytes()); b.extend_from_slice(&self.voting_ends_at.to_le_bytes()); b.extend_from_slice(&self.execution_deadline.to_le_bytes()); b.extend_from_slice(&self.proposer_pubkey.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 128 { return Err(ContractError::IoError(format!("ProposeClaimUpdateV1: expected 128 bytes, got {}", data.len()))); } Ok(ProposeClaimUpdateV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ProposeClaimUpdateV1: invalid dao_escrow_bulla".into()))?), claim_id: ClaimId(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ProposeClaimUpdateV1: invalid claim_id".into()))?), value: u64::from_le_bytes(data[64..72].try_into().unwrap()), voting_ends_at: u64::from_le_bytes(data[72..80].try_into().unwrap()), execution_deadline: u64::from_le_bytes(data[80..88].try_into().unwrap()), proposer_pubkey: PublicKey::from_bytes(data[88..120].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ProposeClaimUpdateV1: invalid proposer_pubkey: {}", e)))? }) } }
+impl ProposeClaimUpdateV1 { pub const ENCODED_SIZE: usize = 185; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(185); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.claim_id.to_bytes()); b.extend_from_slice(&self.value.to_le_bytes()); b.extend_from_slice(&self.voting_ends_at.to_le_bytes()); b.extend_from_slice(&self.execution_deadline.to_le_bytes()); b.extend_from_slice(&self.proposer_pubkey.to_bytes()); b.extend_from_slice(&self.recipient_pubkey.to_bytes()); b.push(self.claim_type as u8); b.extend_from_slice(&self.description_hash.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 185 { return Err(ContractError::IoError(format!("ProposeClaimUpdateV1: expected 185 bytes, got {}", data.len()))); } Ok(ProposeClaimUpdateV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ProposeClaimUpdateV1: invalid dao_escrow_bulla".into()))?), claim_id: ClaimId(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ProposeClaimUpdateV1: invalid claim_id".into()))?), value: u64::from_le_bytes(data[64..72].try_into().unwrap()), voting_ends_at: u64::from_le_bytes(data[72..80].try_into().unwrap()), execution_deadline: u64::from_le_bytes(data[80..88].try_into().unwrap()), proposer_pubkey: PublicKey::from_bytes(data[88..120].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ProposeClaimUpdateV1: invalid proposer_pubkey: {}", e)))?, recipient_pubkey: PublicKey::from_bytes(data[120..152].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ProposeClaimUpdateV1: invalid recipient_pubkey: {}", e)))?, claim_type: ClaimType::try_from(data[152])?, description_hash: Option::<pallas::Base>::from(pallas::Base::from_repr(data[153..185].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ProposeClaimUpdateV1: invalid description_hash".into()))? }) } }
 
 impl VoteClaimUpdateV1 { pub const ENCODED_SIZE: usize = 98; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(98); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.claim_id.to_bytes()); b.extend_from_slice(&self.yes_votes.to_le_bytes()); b.extend_from_slice(&self.no_votes.to_le_bytes()); b.push(self.passed as u8); b.push(self.expired as u8); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 98 { return Err(ContractError::IoError(format!("VoteClaimUpdateV1: expected 98 bytes, got {}", data.len()))); } Ok(VoteClaimUpdateV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("VoteClaimUpdateV1: invalid dao_escrow_bulla".into()))?), claim_id: ClaimId(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("VoteClaimUpdateV1: invalid claim_id".into()))?), yes_votes: u64::from_le_bytes(data[64..72].try_into().unwrap()), no_votes: u64::from_le_bytes(data[72..80].try_into().unwrap()), passed: data[80] != 0, expired: data[81] != 0 }) } }
 

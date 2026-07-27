@@ -38,7 +38,7 @@
 use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, poseidon_hash, tx_hash_to_base, PublicKey},
     error::ContractError,
-    pasta::pallas,
+    pasta::{group::GroupEncoding, pallas},
     tx::TransactionHash,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -59,7 +59,7 @@ pub const CLASSIC_REEL_COUNT: usize = 3;
 pub const VIDEO_REEL_COUNT: usize = 5;
 
 /// Symbol ID (0-255 allows for various symbol sets)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Symbol(pub u8);
 
 impl Symbol {
@@ -76,6 +76,12 @@ impl Symbol {
 
     /// Blank symbol
     pub const BLANK: Symbol = Symbol(0);
+
+    pub fn encode(&self) -> Vec<u8> { vec![self.0] }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() { return Err(ContractError::IoError("Symbol: empty".into())); }
+        Ok(Symbol(data[0]))
+    }
 }
 
 /// A reel strip (sequence of symbols that cycles)
@@ -361,7 +367,7 @@ pub mod video_paytable {
 // ============================================================================
 
 /// Spin state enumeration
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpinState {
     /// Spin has been committed, waiting for reveal
     Committed = 0,
@@ -371,6 +377,19 @@ pub enum SpinState {
     Settled = 2,
     /// Spin was cancelled (timeout)
     Cancelled = 3,
+}
+
+impl TryFrom<u8> for SpinState {
+    type Error = ContractError;
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        match v {
+            0 => Ok(Self::Committed),
+            1 => Ok(Self::Revealed),
+            2 => Ok(Self::Settled),
+            3 => Ok(Self::Cancelled),
+            _ => Err(ContractError::IoError("SpinState: invalid discriminant".into())),
+        }
+    }
 }
 
 /// Unique spin identifier (Poseidon hash)
@@ -819,12 +838,12 @@ impl Win {
         b.extend_from_slice(&self.payline_id.to_le_bytes());
         b.push(self.symbol.0);
         b.push(self.count);
-        b.extend_from_slice(&self.payout.to_le_bytes());
+        b.extend_from_slice(&self.multiplier.to_le_bytes());
         b
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 14 { return Err(ContractError::IoError(format!("Win: expected 14 bytes, got {}", data.len()))); }
-        Ok(Win { payline_id: u32::from_le_bytes(data[0..4].try_into().unwrap()), symbol: Symbol(data[4]), count: data[5], payout: u64::from_le_bytes(data[6..14].try_into().unwrap()) })
+        Ok(Win { payline_id: u32::from_le_bytes(data[0..4].try_into().unwrap()), symbol: Symbol(data[4]), count: data[5], multiplier: u64::from_le_bytes(data[6..14].try_into().unwrap()) })
     }
 }
 

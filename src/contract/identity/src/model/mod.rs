@@ -534,7 +534,7 @@ pub struct CapabilityProof {
 }
 
 /// Parameters for registering a new capability type
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RegisterCapabilityParams {
     /// Capability name (e.g., "can_merge_pr")
     pub name: Vec<u8>,

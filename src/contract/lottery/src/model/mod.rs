@@ -174,7 +174,7 @@ impl LotteryConfig {
 // ============================================================================
 
 /// Lottery round state
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LotteryState {
     Initialized = 0,
     WinnersDrawn = 1,

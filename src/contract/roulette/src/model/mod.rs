@@ -193,9 +193,8 @@ impl RouletteTable {
         let table_id = Option::<pallas::Base>::from(
             pallas::Base::from_repr(data[1..33].try_into().unwrap())
         ).ok_or_else(|| ContractError::IoError("RouletteTable: invalid table_id".into()))?;
-        let house_pub = Option::<PublicKey>::from(
-            PublicKey::from_bytes(data[33..65].try_into().unwrap())
-        ).ok_or_else(|| ContractError::IoError("RouletteTable: invalid house_pub".into()))?;
+        let house_pub = PublicKey::from_bytes(data[33..65].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("RouletteTable: invalid house_pub: {}", e)))?;
         let wheel_size = data[65];
         let house_edge_bp = u32::from_le_bytes(data[66..70].try_into().unwrap());
         let house_capital = u64::from_le_bytes(data[70..78].try_into().unwrap());
@@ -419,9 +418,8 @@ impl Bet {
         let table_id = Option::<pallas::Base>::from(
             pallas::Base::from_repr(data[32..64].try_into().unwrap())
         ).ok_or_else(|| ContractError::IoError("Bet: invalid table_id".into()))?;
-        let player_pub = Option::<PublicKey>::from(
-            PublicKey::from_bytes(data[64..96].try_into().unwrap())
-        ).ok_or_else(|| ContractError::IoError("Bet: invalid player_pub".into()))?;
+        let player_pub = PublicKey::from_bytes(data[64..96].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("Bet: invalid player_pub: {}", e)))?;
         let bet_type = BetType::try_from(data[96])?;
         // data[97] is numbers_len, already read as n
         let numbers = data[98..98 + n].to_vec();
@@ -545,9 +543,8 @@ impl InitializeUpdateV1 {
         let table_id = Option::<pallas::Base>::from(
             pallas::Base::from_repr(data[0..32].try_into().unwrap())
         ).ok_or_else(|| ContractError::IoError("InitializeUpdateV1: invalid table_id".into()))?;
-        let house_pub = Option::<PublicKey>::from(
-            PublicKey::from_bytes(data[32..64].try_into().unwrap())
-        ).ok_or_else(|| ContractError::IoError("InitializeUpdateV1: invalid house_pub".into()))?;
+        let house_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("InitializeUpdateV1: invalid house_pub: {}", e)))?;
         let wheel_size = data[64];
         let house_edge_bp = u32::from_le_bytes(data[65..69].try_into().unwrap());
         let house_capital = u64::from_le_bytes(data[69..77].try_into().unwrap());
@@ -641,9 +638,8 @@ impl PlaceBetUpdateV1 {
         let table_id = Option::<pallas::Base>::from(
             pallas::Base::from_repr(data[32..64].try_into().unwrap())
         ).ok_or_else(|| ContractError::IoError("PlaceBetUpdateV1: invalid table_id".into()))?;
-        let player_pub = Option::<PublicKey>::from(
-            PublicKey::from_bytes(data[64..96].try_into().unwrap())
-        ).ok_or_else(|| ContractError::IoError("PlaceBetUpdateV1: invalid player_pub".into()))?;
+        let player_pub = PublicKey::from_bytes(data[64..96].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("PlaceBetUpdateV1: invalid player_pub: {}", e)))?;
         let bet_type = BetType::try_from(data[96])?;
         // data[97] is numbers_len, already read as n
         let numbers = data[98..98 + n].to_vec();
