@@ -844,6 +844,89 @@ impl Claim {
     }
 }
 
+impl InsuranceMarket {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 129 + if self.required_underwriter_capability.is_some() { 32 } else { 0 }
+            + if self.required_buyer_capability.is_some() { 32 } else { 0 }
+            + if self.required_dag_id.is_some() { 32 } else { 0 };
+        let mut b = Vec::with_capacity(cap);
+        b.push(self.version);
+        b.extend_from_slice(&self.id.to_repr());
+        b.extend_from_slice(&self.risk_type.to_repr());
+        b.extend_from_slice(&self.premium_rate.to_le_bytes());
+        b.extend_from_slice(&self.total_coverage.to_le_bytes());
+        b.extend_from_slice(&self.coverage_sold.to_le_bytes());
+        b.extend_from_slice(&self.coverage_period.to_le_bytes());
+        b.extend_from_slice(&self.deductible.to_le_bytes());
+        b.extend_from_slice(&self.max_coverage_per_buyer.to_le_bytes());
+        b.push(self.active as u8);
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b.extend_from_slice(&self.closes_at.to_le_bytes());
+        b.push(self.required_underwriter_capability.is_some() as u8);
+        if let Some(ref c) = self.required_underwriter_capability { b.extend_from_slice(c); }
+        b.push(self.required_buyer_capability.is_some() as u8);
+        if let Some(ref c) = self.required_buyer_capability { b.extend_from_slice(c); }
+        b.push(self.required_dag_id.is_some() as u8);
+        if let Some(ref d) = self.required_dag_id { b.extend_from_slice(d); }
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 129 { return Err(ContractError::IoError(format!("InsuranceMarket: expected at least 129 bytes, got {}", data.len()))); }
+        let version = data[0];
+        let id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("InsuranceMarket: invalid id".into()))?;
+        let risk_type = Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("InsuranceMarket: invalid risk_type".into()))?;
+        let premium_rate = u32::from_le_bytes(data[65..69].try_into().unwrap());
+        let total_coverage = u64::from_le_bytes(data[69..77].try_into().unwrap());
+        let coverage_sold = u64::from_le_bytes(data[77..85].try_into().unwrap());
+        let coverage_period = u64::from_le_bytes(data[85..93].try_into().unwrap());
+        let deductible = u64::from_le_bytes(data[93..101].try_into().unwrap());
+        let max_coverage_per_buyer = u64::from_le_bytes(data[101..109].try_into().unwrap());
+        let active = data[109] != 0;
+        let created_at = u64::from_le_bytes(data[110..118].try_into().unwrap());
+        let closes_at = u64::from_le_bytes(data[118..126].try_into().unwrap());
+        let mut pos = 126;
+        let has_uw = data[pos] != 0; pos += 1;
+        let (required_underwriter_capability, pos) = if has_uw { (Some(data[pos..pos+32].try_into().unwrap()), pos + 32) } else { (None, pos) };
+        let has_buy = data[pos] != 0; pos += 1;
+        let (required_buyer_capability, pos) = if has_buy { (Some(data[pos..pos+32].try_into().unwrap()), pos + 32) } else { (None, pos) };
+        let has_dag = data[pos] != 0; pos += 1;
+        let (required_dag_id, _) = if has_dag { (Some(data[pos..pos+32].try_into().unwrap()), pos + 32) } else { (None, pos) };
+        Ok(InsuranceMarket { version, id, risk_type, premium_rate, total_coverage, coverage_sold, coverage_period, deductible, max_coverage_per_buyer, active, created_at, closes_at, required_underwriter_capability, required_buyer_capability, required_dag_id })
+    }
+}
+
+impl EndowmentPool {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(98 + self.returns_history.len() * 8);
+        b.push(self.version);
+        b.extend_from_slice(&self.id.to_repr());
+        b.extend_from_slice(&self.market_id.to_repr());
+        b.extend_from_slice(&self.total_capital.to_le_bytes());
+        b.extend_from_slice(&self.deployed_capital.to_le_bytes());
+        b.extend_from_slice(&self.total_shares.to_le_bytes());
+        b.push(self.returns_history.len() as u8);
+        for r in &self.returns_history { b.extend_from_slice(&r.to_le_bytes()); }
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 98 { return Err(ContractError::IoError(format!("EndowmentPool: expected at least 98 bytes, got {}", data.len()))); }
+        let version = data[0];
+        let id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("EndowmentPool: invalid id".into()))?;
+        let market_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("EndowmentPool: invalid market_id".into()))?;
+        let total_capital = u64::from_le_bytes(data[65..73].try_into().unwrap());
+        let deployed_capital = u64::from_le_bytes(data[73..81].try_into().unwrap());
+        let total_shares = u64::from_le_bytes(data[81..89].try_into().unwrap());
+        let rh_count = data[89] as usize;
+        let expected = 98 + rh_count * 8;
+        if data.len() != expected { return Err(ContractError::IoError(format!("EndowmentPool: expected {} bytes for {} returns, got {}", expected, rh_count, data.len()))); }
+        let mut returns_history = Vec::with_capacity(rh_count);
+        for i in 0..rh_count { returns_history.push(u64::from_le_bytes(data[90+i*8..90+(i+1)*8].try_into().unwrap())); }
+        let created_at = u64::from_le_bytes(data[90+rh_count*8..98+rh_count*8].try_into().unwrap());
+        Ok(EndowmentPool { version, id, market_id, total_capital, deployed_capital, total_shares, returns_history, created_at })
+    }
+}
+
 impl Underwriter {
     pub const ENCODED_SIZE: usize = 154;
     pub fn encode(&self) -> Vec<u8> {
