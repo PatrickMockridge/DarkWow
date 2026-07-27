@@ -28,7 +28,8 @@
 
 use dwow_sdk::{
     crypto::{poseidon_hash, schnorr::Signature, PublicKey},
-    pasta::pallas,
+    error::ContractError,
+    pasta::{group::GroupEncoding, pallas},
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
@@ -1017,3 +1018,85 @@ pub const MIN_PROTOCOL_FEE: u32 = 10;
 pub const MAX_PROTOCOL_FEE: u32 = 1000;
 /// Maximum number of outcomes in a market
 pub const MAX_OUTCOMES: u8 = 20;
+
+// ============================================================================
+// RHO-CALCULUS EXPLICIT ENCODE/DECODE
+// ============================================================================
+// Per type-system.md §2.2: bytes round-trip is forbidden.
+// Per contract-wasm-type-system.md §3.1: SHALL use explicit encode/decode.
+
+impl Order {
+    pub const ENCODED_SIZE: usize = 192;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(192);
+        b.push(self.version);
+        b.extend_from_slice(&self.order_id.to_repr());
+        b.extend_from_slice(&self.market_id.to_repr());
+        b.push(self.order_type as u8);
+        b.push(self.outcome_index);
+        b.extend_from_slice(&self.odds.to_le_bytes());
+        b.extend_from_slice(&self.stake.to_le_bytes());
+        b.extend_from_slice(&self.liability.to_le_bytes());
+        b.extend_from_slice(&self.user_pub.to_bytes());
+        b.push(self.state as u8);
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b.extend_from_slice(&self.nullifier.to_repr());
+        b.extend_from_slice(&self.instance_seed);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 192 { return Err(ContractError::IoError(format!("Order: expected 192 bytes, got {}", data.len()))); }
+        Ok(Order {
+            version: data[0],
+            order_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Order: invalid order_id".into()))?,
+            market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Order: invalid market_id".into()))?,
+            order_type: OrderType::try_from(data[65])?,
+            outcome_index: data[66],
+            odds: u32::from_le_bytes(data[67..71].try_into().unwrap()),
+            stake: u64::from_le_bytes(data[71..79].try_into().unwrap()),
+            liability: u64::from_le_bytes(data[79..87].try_into().unwrap()),
+            user_pub: PublicKey::from_bytes(data[87..119].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Order: invalid user_pub: {}", e)))?,
+            state: OrderState::try_from(data[119])?,
+            created_at: u64::from_le_bytes(data[120..128].try_into().unwrap()),
+            nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[128..160].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Order: invalid nullifier".into()))?,
+            instance_seed: data[160..192].try_into().unwrap(),
+        })
+    }
+}
+
+impl Match {
+    pub const ENCODED_SIZE: usize = 167;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(167);
+        b.push(self.version);
+        b.extend_from_slice(&self.match_id.to_repr());
+        b.extend_from_slice(&self.market_id.to_repr());
+        b.push(self.outcome_index);
+        b.extend_from_slice(&self.odds.to_le_bytes());
+        b.extend_from_slice(&self.back_stake.to_le_bytes());
+        b.extend_from_slice(&self.lay_liability.to_le_bytes());
+        b.extend_from_slice(&self.back_user.to_bytes());
+        b.extend_from_slice(&self.lay_user.to_bytes());
+        b.extend_from_slice(&self.commission.to_le_bytes());
+        b.push(self.state as u8);
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 167 { return Err(ContractError::IoError(format!("Match: expected 167 bytes, got {}", data.len()))); }
+        Ok(Match {
+            version: data[0],
+            match_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Match: invalid match_id".into()))?,
+            market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Match: invalid market_id".into()))?,
+            outcome_index: data[65],
+            odds: u32::from_le_bytes(data[66..70].try_into().unwrap()),
+            back_stake: u64::from_le_bytes(data[70..78].try_into().unwrap()),
+            lay_liability: u64::from_le_bytes(data[78..86].try_into().unwrap()),
+            back_user: PublicKey::from_bytes(data[86..118].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Match: invalid back_user: {}", e)))?,
+            lay_user: PublicKey::from_bytes(data[118..150].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Match: invalid lay_user: {}", e)))?,
+            commission: u64::from_le_bytes(data[150..158].try_into().unwrap()),
+            state: MatchState::try_from(data[158])?,
+            created_at: u64::from_le_bytes(data[159..167].try_into().unwrap()),
+        })
+    }
+}
