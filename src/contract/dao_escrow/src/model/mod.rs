@@ -353,8 +353,58 @@ pub struct DaoEscrow {
 }
 
 impl DaoEscrow {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(367);
+        b.push(self.version);
+        b.extend_from_slice(&self.instance_seed);
+        b.extend_from_slice(&self.bulla.to_bytes());
+        b.push(self.mode as u8);
+        b.extend_from_slice(&self.owner_pubkey.to_bytes());
+        b.extend_from_slice(&self.pool_token_id.to_bytes());
+        b.extend_from_slice(&self.multisig_group_id.to_repr());
+        b.extend_from_slice(&self.pool_purse_id.to_repr());
+        b.extend_from_slice(&self.treasury_purse_id.to_repr());
+        b.extend_from_slice(&self.endowment_purse_id.to_repr());
+        b.extend_from_slice(&self.member_count.to_le_bytes());
+        b.push(self.fee_config.is_some() as u8);
+        if let Some(ref fc) = self.fee_config { b.extend_from_slice(&fc.encode()); }
+        b.extend_from_slice(&self.min_premium.to_le_bytes());
+        b.extend_from_slice(&self.max_members.to_le_bytes());
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b.extend_from_slice(&self.bulla_blind.inner().to_repr());
+        b.push(self.paused as u8);
+        b.push(self.drain_protection_enabled as u8);
+        b.push(self.drain_protection_bulla.is_some() as u8);
+        if let Some(ref db) = self.drain_protection_bulla { b.extend_from_slice(&db.to_bytes()); }
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 326 { return Err(ContractError::IoError(format!("DaoEscrow: expected at least 326 bytes, got {}", data.len()))); }
+        let version = data[0];
+        let instance_seed: [u8; 32] = data[1..33].try_into().unwrap();
+        let bulla = DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DaoEscrow: invalid bulla".into()))?);
+        let mode = DaoEscrowMode::try_from(data[65])?;
+        let owner_pubkey = PublicKey::from_bytes(data[66..98].try_into().unwrap())?;
+        let pool_token_id = TokenId::from_bytes(data[98..130].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("DaoEscrow: invalid pool_token_id: {}", e)))?;
+        let multisig_group_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[130..162].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DaoEscrow: invalid multisig_group_id".into()))?;
+        let pool_purse_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[162..194].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DaoEscrow: invalid pool_purse_id".into()))?;
+        let treasury_purse_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[194..226].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DaoEscrow: invalid treasury_purse_id".into()))?;
+        let endowment_purse_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[226..258].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DaoEscrow: invalid endowment_purse_id".into()))?;
+        let member_count = u64::from_le_bytes(data[258..266].try_into().unwrap());
+        let has_fc = data[266] != 0;
+        let (fee_config, mut pos) = if has_fc { (Some(FeeConfig::decode(&data[267..276])?), 276usize) } else { (None, 267usize) };
+        let min_premium = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
+        let max_members = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
+        let created_at = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
+        let bulla_blind = BaseBlind::from_raw(Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DaoEscrow: invalid bulla_blind".into()))?);
+        pos += 32;
+        let paused = data[pos] != 0; pos += 1;
+        let drain_protection_enabled = data[pos] != 0; pos += 1;
+        let has_db = data[pos] != 0;
+        let drain_protection_bulla = if has_db { Some(DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+1..pos+33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DaoEscrow: invalid drain_protection_bulla".into()))?)) } else { None };
+        Ok(DaoEscrow { version, instance_seed, bulla, mode, owner_pubkey, pool_token_id, multisig_group_id, pool_purse_id, treasury_purse_id, endowment_purse_id, member_count, fee_config, min_premium, max_members, created_at, bulla_blind, paused, drain_protection_enabled, drain_protection_bulla })
+    }
     /// Derive the DAO-Escrow bulla from parameters.
-    /// Formula must match init_v1.zk circuit: poseidon_hash(dao_bulla, ox, oy, pool_token_id, blind)
     pub fn derive_bulla(
         dao_bulla: DaoEscrowBulla,
         owner_pubkey: &PublicKey,

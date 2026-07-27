@@ -461,7 +461,7 @@ fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> Co
         drain_protection_bulla: None,
     };
 
-    wasm::db::db_set(endowments_db, &update.bulla.to_bytes(), &serialize(&endowment))?;
+    wasm::db::db_set(endowments_db, &update.bulla.to_bytes(), &endowment.encode())?;
 
     msg!("[dao_escrow::initialize_apply_v1] Endowment stored: {:?}", update.bulla);
     Ok(())
