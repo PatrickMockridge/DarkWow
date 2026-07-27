@@ -251,6 +251,8 @@ impl OtcSwap {
     }
 }
 
+fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap())).ok_or_else(|| ContractError::IoError("invalid base".into())) }
+
 /// Parameters for `OtcSwap::CreateSwapV1`
 #[derive(Debug, Clone,)]
 pub struct CreateSwapParamsV1 {
