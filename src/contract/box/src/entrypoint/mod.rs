@@ -140,14 +140,14 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     let func = BoxFunction::try_from(update_data[0])?;
     match func {
         BoxFunction::PutV1 => {
-            let update: PutUpdateV1 = deserialize(&update_data[1..])?;
+            let update = PutUpdateV1::decode(&update_data[1..])?;
             let boxes_db = wasm::db::db_lookup(cid, BOX_CONTRACT_BOXES_TREE)?;
             let bx = BoxRecord { version: 1, box_id: update.box_id, contents_commit: update.new_contents_commit, is_empty: false };
             wasm::db::db_set(boxes_db, &update.box_id.to_bytes(), &bx.encode())?;
             Ok(())
         }
         BoxFunction::TakeV1 => {
-            let update: TakeUpdateV1 = deserialize(&update_data[1..])?;
+            let update = TakeUpdateV1::decode(&update_data[1..])?;
             let nullifiers_db = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
             wasm::db::db_set(nullifiers_db, &update.nullifier.to_bytes(), &[])?;
             let boxes_db = wasm::db::db_lookup(cid, BOX_CONTRACT_BOXES_TREE)?;

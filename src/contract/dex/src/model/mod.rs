@@ -74,6 +74,7 @@
 
 use dwow_serial::{SerialDecodable, SerialEncodable};
 use dwow_sdk::crypto::{IntentCommitment, IntentNullifier, PublicKey};
+use dwow_sdk::error::ContractError;
 use dwow_sdk::pasta::pallas;
 
 /// Namespace for DEX intents (used with generic intent primitives)
@@ -416,8 +417,33 @@ pub enum SwapState {
     Cancelled,
 }
 
+impl From<SwapState> for u8 {
+    fn from(s: SwapState) -> u8 {
+        match s {
+            SwapState::Created => 0,
+            SwapState::Accepted => 1,
+            SwapState::Executed => 2,
+            SwapState::Cancelled => 3,
+        }
+    }
+}
+
+impl TryFrom<u8> for SwapState {
+    type Error = ContractError;
+
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        match v {
+            0 => Ok(SwapState::Created),
+            1 => Ok(SwapState::Accepted),
+            2 => Ok(SwapState::Executed),
+            3 => Ok(SwapState::Cancelled),
+            _ => Err(ContractError::IoError(format!("Invalid SwapState variant: {}", v))),
+        }
+    }
+}
+
 /// Stored swap record
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Swap {
     /// Unique swap ID
     pub swap_id: [u8; 32],
@@ -460,6 +486,90 @@ pub struct Swap {
     /// If true, anyone can execute this swap (no Alice secret needed)
     /// Set by Alice at swap creation time
     pub open_execution: bool,
+}
+
+impl Swap {
+    /// Exact encoded size: 11×[u8;32] + 4×u64 + bool + SwapState = 386 bytes.
+    pub const ENCODED_SIZE: usize = 386;
+
+    /// Rho-calculus deterministic encode.
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.swap_id);
+        b.extend_from_slice(&self.proposer_pub_x);
+        b.extend_from_slice(&self.proposer_pub_y);
+        b.extend_from_slice(&self.acceptor_pub_x);
+        b.extend_from_slice(&self.acceptor_pub_y);
+        b.extend_from_slice(&self.offer_token);
+        b.extend_from_slice(&self.offer_amount.to_le_bytes());
+        b.extend_from_slice(&self.request_token);
+        b.extend_from_slice(&self.request_amount.to_le_bytes());
+        b.extend_from_slice(&self.proposer_lock.to_bytes());
+        b.extend_from_slice(&self.proposer_nullifier.to_bytes());
+        b.extend_from_slice(&self.acceptor_lock.to_bytes());
+        b.extend_from_slice(&self.acceptor_nullifier.to_bytes());
+        b.push(u8::from(self.state.clone()));
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b.extend_from_slice(&self.expires_at.to_le_bytes());
+        b.push(self.open_execution as u8);
+        b
+    }
+
+    /// Rho-calculus deterministic decode.
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "Swap::decode buffer too short: {} < {}",
+                data.len(),
+                Self::ENCODED_SIZE,
+            )))
+        }
+        let d = &data[..Self::ENCODED_SIZE];
+
+        let swap_id: [u8; 32] = d[0..32].try_into().unwrap();
+        let proposer_pub_x: [u8; 32] = d[32..64].try_into().unwrap();
+        let proposer_pub_y: [u8; 32] = d[64..96].try_into().unwrap();
+        let acceptor_pub_x: [u8; 32] = d[96..128].try_into().unwrap();
+        let acceptor_pub_y: [u8; 32] = d[128..160].try_into().unwrap();
+        let offer_token: [u8; 32] = d[160..192].try_into().unwrap();
+        let offer_amount = u64::from_le_bytes(d[192..200].try_into().unwrap());
+        let request_token: [u8; 32] = d[200..232].try_into().unwrap();
+        let request_amount = u64::from_le_bytes(d[232..240].try_into().unwrap());
+
+        let proposer_lock = IntentCommitment::from_bytes(d[240..272].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("Swap::decode proposer_lock: {}", e)))?;
+        let proposer_nullifier = IntentNullifier::from_bytes(d[272..304].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("Swap::decode proposer_nullifier: {}", e)))?;
+        let acceptor_lock = IntentCommitment::from_bytes(d[304..336].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("Swap::decode acceptor_lock: {}", e)))?;
+        let acceptor_nullifier = IntentNullifier::from_bytes(d[336..368].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("Swap::decode acceptor_nullifier: {}", e)))?;
+
+        let state = SwapState::try_from(d[368])?;
+        let created_at = u64::from_le_bytes(d[369..377].try_into().unwrap());
+        let expires_at = u64::from_le_bytes(d[377..385].try_into().unwrap());
+        let open_execution = d[385] != 0;
+
+        Ok(Self {
+            swap_id,
+            proposer_pub_x,
+            proposer_pub_y,
+            acceptor_pub_x,
+            acceptor_pub_y,
+            offer_token,
+            offer_amount,
+            request_token,
+            request_amount,
+            proposer_lock,
+            proposer_nullifier,
+            acceptor_lock,
+            acceptor_nullifier,
+            state,
+            created_at,
+            expires_at,
+            open_execution,
+        })
+    }
 }
 
 // ============================================================================
