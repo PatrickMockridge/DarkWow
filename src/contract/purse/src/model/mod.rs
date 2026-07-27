@@ -3,17 +3,22 @@ use dwow_sdk::{
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Purse unique identifier — Poseidon hash of owner and instance data.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct PurseId(pub pallas::Base);
 
 impl PurseId {
+    pub const ENCODED_SIZE: usize = 32;
     pub fn inner(&self) -> pallas::Base { self.0 }
     pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
     pub fn from_bytes(bytes: &[u8; 32]) -> Option<Self> {
         pallas::Base::from_repr(*bytes).into_option().map(PurseId)
+    }
+    pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 32 { return Err(ContractError::IoError(format!("PurseId: expected 32 bytes, got {}", data.len()))); }
+        Self::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("PurseId: invalid".into()))
     }
 }
 
@@ -67,7 +72,7 @@ impl Purse {
 }
 
 /// Deposit parameters.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct DepositParamsV1 {
     pub purse_id: PurseId,
     pub deposit_amount: u64,
@@ -79,16 +84,20 @@ pub struct DepositParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
+impl DepositParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(169+self.proof.len()); b.extend_from_slice(&self.purse_id.encode()); b.extend_from_slice(&self.deposit_amount.to_le_bytes()); b.extend_from_slice(&self.old_balance_commit.to_bytes()); b.extend_from_slice(&self.new_balance_commit.to_bytes()); b.extend_from_slice(&self.owner.to_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 169 { return Err(ContractError::IoError("DepositParamsV1: too short".into())); } let purse_id = PurseId::decode(&data[0..32])?; let deposit_amount = u64::from_le_bytes(data[32..40].try_into().unwrap()); let old_balance_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[40..72].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DepositParamsV1: invalid old_balance_commit".into()))?; let new_balance_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[72..104].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DepositParamsV1: invalid new_balance_commit".into()))?; let owner = PublicKey::from_bytes(data[104..136].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("DepositParamsV1: invalid owner: {}", e)))?; let proof_len = data[136] as usize; if data.len() != 137+proof_len+64 { return Err(ContractError::IoError(format!("DepositParamsV1: expected {} bytes, got {}", 137+proof_len+64, data.len()))); } let proof = data[137..137+proof_len].to_vec(); let pos = 137+proof_len; let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DepositParamsV1: invalid tx_binding".into()))?; let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DepositParamsV1: invalid tx_nonce".into()))?; Ok(DepositParamsV1 { purse_id, deposit_amount, old_balance_commit, new_balance_commit, owner, proof, tx_binding, tx_nonce }) } }
+
 /// Deposit update.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct DepositUpdateV1 {
     pub purse_id: PurseId,
     pub new_balance_commit: pallas::Point,
     pub deposit_amount: u64,
 }
 
+impl DepositUpdateV1 { pub const ENCODED_SIZE: usize = 72; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(72); b.extend_from_slice(&self.purse_id.encode()); b.extend_from_slice(&self.new_balance_commit.to_bytes()); b.extend_from_slice(&self.deposit_amount.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 72 { return Err(ContractError::IoError(format!("DepositUpdateV1: expected 72 bytes, got {}", data.len()))); } Ok(DepositUpdateV1 { purse_id: PurseId::decode(&data[0..32])?, new_balance_commit: Option::<pallas::Point>::from(pallas::Point::from_bytes(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DepositUpdateV1: invalid new_balance_commit".into()))?, deposit_amount: u64::from_le_bytes(data[64..72].try_into().unwrap()) }) } }
+
 /// Withdraw parameters.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct WithdrawParamsV1 {
     pub purse_id: PurseId,
     pub withdraw_amount: u64,
@@ -101,8 +110,10 @@ pub struct WithdrawParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
+impl WithdrawParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(169+self.proof.len()); b.extend_from_slice(&self.purse_id.encode()); b.extend_from_slice(&self.withdraw_amount.to_le_bytes()); b.extend_from_slice(&self.old_balance_commit.to_bytes()); b.extend_from_slice(&self.new_balance_commit.to_bytes()); b.extend_from_slice(&self.nullifier.to_bytes()); b.extend_from_slice(&self.owner.to_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 169 { return Err(ContractError::IoError("WithdrawParamsV1: too short".into())); } let purse_id = PurseId::decode(&data[0..32])?; let withdraw_amount = u64::from_le_bytes(data[32..40].try_into().unwrap()); let old_balance_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[40..72].try_into().unwrap())).ok_or_else(|| ContractError::IoError("WithdrawParamsV1: invalid old_balance_commit".into()))?; let new_balance_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[72..104].try_into().unwrap())).ok_or_else(|| ContractError::IoError("WithdrawParamsV1: invalid new_balance_commit".into()))?; let nullifier = Nullifier::from_bytes(data[104..136].try_into().unwrap())?; let owner = PublicKey::from_bytes(data[136..168].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("WithdrawParamsV1: invalid owner: {}", e)))?; let proof_len = data[168] as usize; if data.len() != 169+proof_len+64 { return Err(ContractError::IoError(format!("WithdrawParamsV1: expected {} bytes, got {}", 169+proof_len+64, data.len()))); } let proof = data[169..169+proof_len].to_vec(); let pos = 169+proof_len; let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("WithdrawParamsV1: invalid tx_binding".into()))?; let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("WithdrawParamsV1: invalid tx_nonce".into()))?; Ok(WithdrawParamsV1 { purse_id, withdraw_amount, old_balance_commit, new_balance_commit, nullifier, owner, proof, tx_binding, tx_nonce }) } }
+
 /// Withdraw update.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct WithdrawUpdateV1 {
     pub purse_id: PurseId,
     pub nullifier: Nullifier,
@@ -110,8 +121,10 @@ pub struct WithdrawUpdateV1 {
     pub withdraw_amount: u64,
 }
 
+impl WithdrawUpdateV1 { pub const ENCODED_SIZE: usize = 104; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(104); b.extend_from_slice(&self.purse_id.encode()); b.extend_from_slice(&self.nullifier.to_bytes()); b.extend_from_slice(&self.new_balance_commit.to_bytes()); b.extend_from_slice(&self.withdraw_amount.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 104 { return Err(ContractError::IoError(format!("WithdrawUpdateV1: expected 104 bytes, got {}", data.len()))); } Ok(WithdrawUpdateV1 { purse_id: PurseId::decode(&data[0..32])?, nullifier: Nullifier::from_bytes(data[32..64].try_into().unwrap())?, new_balance_commit: Option::<pallas::Point>::from(pallas::Point::from_bytes(data[64..96].try_into().unwrap())).ok_or_else(|| ContractError::IoError("WithdrawUpdateV1: invalid new_balance_commit".into()))?, withdraw_amount: u64::from_le_bytes(data[96..104].try_into().unwrap()) }) } }
+
 /// Balance parameters.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct BalanceParamsV1 {
     pub purse_id: PurseId,
     pub token_id: pallas::Base,
@@ -122,3 +135,5 @@ pub struct BalanceParamsV1 {
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
+
+impl BalanceParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(161+self.proof.len()); b.extend_from_slice(&self.purse_id.encode()); b.extend_from_slice(&self.token_id.to_repr()); b.extend_from_slice(&self.balance_commit.to_bytes()); b.extend_from_slice(&self.token_commit.to_repr()); b.extend_from_slice(&self.owner.to_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 161 { return Err(ContractError::IoError("BalanceParamsV1: too short".into())); } let purse_id = PurseId::decode(&data[0..32])?; let token_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("BalanceParamsV1: invalid token_id".into()))?; let balance_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[64..96].try_into().unwrap())).ok_or_else(|| ContractError::IoError("BalanceParamsV1: invalid balance_commit".into()))?; let token_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(data[96..128].try_into().unwrap())).ok_or_else(|| ContractError::IoError("BalanceParamsV1: invalid token_commit".into()))?; let owner = PublicKey::from_bytes(data[128..160].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("BalanceParamsV1: invalid owner: {}", e)))?; let proof_len = data[160] as usize; if data.len() != 161+proof_len+64 { return Err(ContractError::IoError(format!("BalanceParamsV1: expected {} bytes, got {}", 161+proof_len+64, data.len()))); } let proof = data[161..161+proof_len].to_vec(); let pos = 161+proof_len; let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("BalanceParamsV1: invalid tx_binding".into()))?; let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("BalanceParamsV1: invalid tx_nonce".into()))?; Ok(BalanceParamsV1 { purse_id, token_id, balance_commit, token_commit, owner, proof, tx_binding, tx_nonce }) } }

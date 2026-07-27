@@ -55,19 +55,19 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         PurseFunction::DepositV1 => {
-            let params: DepositParamsV1 = match deserialize(&self_.data[1..]) {
+            let params = match DepositParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[purse::get_metadata] Error: Failed to deserialize DepositParamsV1: {:?}", e); return Ok(()); }
             };
             purse_deposit_get_metadata_v1(params)?
         }
         PurseFunction::WithdrawV1 => {
-            let params: WithdrawParamsV1 = match deserialize(&self_.data[1..]) {
+            let params = match WithdrawParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[purse::get_metadata] Error: Failed to deserialize WithdrawParamsV1: {:?}", e); return Ok(()); }
             };
             purse_withdraw_get_metadata_v1(params)?
         }
         PurseFunction::BalanceV1 => {
-            let params: BalanceParamsV1 = match deserialize(&self_.data[1..]) {
+            let params = match BalanceParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[purse::get_metadata] Error: Failed to deserialize BalanceParamsV1: {:?}", e); return Ok(()); }
             };
             purse_balance_get_metadata_v1(params)?
