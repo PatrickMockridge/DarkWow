@@ -329,22 +329,137 @@ The WASM accesses state through host functions: `wasm::db::db_get`,
 `wasm::db::db_set`, `wasm::db::db_lookup`, `wasm::db::db_contains_key`,
 `wasm::db::db_delete` (`src/sdk/src/wasm/db.rs`).
 
-State values cross the sled boundary as raw bytes. The contract SHALL
-serialize on write and deserialize on read. Both SHALL use `dwow_serial`.
+State values cross the sled boundary as raw bytes. The contract SHALL encode
+on write and decode on read using explicit per-type functions with a **fixed
+canonical byte layout**. Each field SHALL be converted through its validating
+constructor.
+
+Encoding SHALL use `to_bytes()` / `to_repr()` / `to_le_bytes()` on each field.
+Decoding SHALL use `from_bytes()` / `from_repr()` / `from_le_bytes()` on each
+field — the named constructor that validates the type's invariants. The
+ρ-calculus property `eval(quote(x)) ∼ x` SHALL hold: `decode(encode(val)) == val`
+for all valid values, and invalid bytes SHALL be rejected by the validating
+constructors.
+
+**`dwow_serial::serialize()` and `deserialize()` with derive macros
+(`SerialEncodable`/`SerialDecodable`) SHALL NOT be used for state values
+crossing the sled boundary.** Derive macros bypass validating constructors:
+`Nullifier`'s derived `Decodable` reads `pallas::Base` directly — it never
+calls `Nullifier::from_bytes()` and silently accepts zero and non-canonical
+values. This is the same class of error as `unwrap()` on a fallible conversion
+or a bare integer cast — the type system cannot enforce correctness. See
+§3.1.1 for the documented anti-pattern.
+
+This applies to all state reads and writes in `process_update` (apply phase).
+The `process_instruction` → `process_update` bridge SHALL also use explicit
+encoding (see §11.4, §11.8). Wire-format serialization via `dwow_serial` for
+entrypoint parameters (`deserialize(&self_.data.data[1..])`) is permitted for
+the exec entrypoint where the data originates from an externally-constructed
+transaction, but SHALL be replaced with explicit decoding in the apply
+entrypoint where the data is produced by the contract itself.
+
+**Encoding pattern:**
+
+```rust
+/// Encode a Purse to canonical fixed-offset bytes (ρ-calculus: quote).
+fn encode_purse(purse: &Purse) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(129);
+    buf.push(purse.version);
+    buf.extend_from_slice(&purse.purse_id.to_bytes());
+    buf.extend_from_slice(&purse.token_commit.to_repr());
+    buf.extend_from_slice(&purse.balance_commit.to_bytes());
+    buf.extend_from_slice(&purse.owner_commit.to_repr());
+    buf
+}
+
+/// Decode a Purse from canonical fixed-offset bytes (ρ-calculus: eval).
+/// Every field SHALL be validated through its named constructor.
+fn decode_purse(data: &[u8]) -> Result<Purse, ContractError> {
+    if data.len() != 129 {
+        return Err(ContractError::IoError(format!(
+            "Purse: expected 129 bytes, got {}", data.len()
+        )));
+    }
+    let version = data[0];
+    let purse_id = PurseId::from_bytes(data[1..33].try_into().unwrap())
+        .ok_or_else(|| ContractError::IoError("Purse: invalid purse_id".into()))?;
+    let token_commit = Option::<pallas::Base>::from(
+        pallas::Base::from_repr(data[33..65].try_into().unwrap())
+    ).ok_or_else(|| ContractError::IoError("Purse: invalid token_commit".into()))?;
+    let balance_commit = Option::<pallas::Point>::from(
+        pallas::Point::from_bytes(data[65..97].try_into().unwrap())
+    ).ok_or_else(|| ContractError::IoError("Purse: invalid balance_commit".into()))?;
+    let owner_commit = Option::<pallas::Base>::from(
+        pallas::Base::from_repr(data[97..129].try_into().unwrap())
+    ).ok_or_else(|| ContractError::IoError("Purse: invalid owner_commit".into()))?;
+    Ok(Purse { version, purse_id, token_commit, balance_commit, owner_commit })
+}
+```
+
+Rules:
+- Fixed byte layout with exact offsets. No variable-length codec.
+- Every cryptographic type through its validating constructor (`from_bytes`).
+- `Vec<T>` fields SHALL use a fixed-width length prefix (u8 for counts < 256).
+- No `unwrap_or` — every validation failure is a `ContractError` with field context.
+- Pre-allocate exact capacity in encode: `Vec::with_capacity(FIXED_SIZE)`.
+
+### 3.1.1 Anti-Pattern: Derive-Based serialize/deserialize for State Values
+
+`SerialEncodable`/`SerialDecodable` derive macros SHALL NOT be applied to
+types stored in sled trees. The derive macros produce opaque byte blobs with
+no compile-time format guarantee. This is equivalent to a raw `unwrap()` or a
+bare integer cast — the type's barbs are stripped, and the bytes carry no
+behavioral constraints (per type-system.md §2.2: "Bytes Round-Trip Is Forbidden").
+
+**Failure mode:** A Purse struct stored via `serialize(&purse)` was observed to
+produce a 9-byte value instead of the expected 129 bytes. The derived `Decodable`
+accepted this, producing a corrupt Purse with zeroed fields. The error surfaced
+only as `ContractError::IoError("Unknown")` at the WASM boundary — the original
+error context was irretrievably lost.
+
+**BEFORE (anti-pattern):**
+```rust
+#[derive(SerialEncodable, SerialDecodable)]
+pub struct Purse { ... }
+
+// Write
+wasm::db::db_set(db, &key, &serialize(&purse))?;
+// Read
+let purse: Purse = deserialize(&data)?;
+```
+
+**AFTER (compliant):**
+```rust
+// No SerialEncodable/SerialDecodable on Purse.
+// Explicit encode/decode with validating constructors.
+
+// Write
+wasm::db::db_set(db, &purse_id.to_bytes(), &purse.encode())?;
+// Read
+let purse = Purse::decode(&data)?;
+```
+
+**Detection:** A tripwire test SHALL grep for `serialize(&` in `db_set` argument
+position on non-scalar types. A match SHALL fail CI.
 
 ### 3.2 State Keys Are Typed
 
-Every sled key SHALL be the serialization of a typed value, not a raw integer
-or magic string. Tree names SHALL be declared in the manifest's `[[trees]]`
-section. Key types SHALL be traceable to the contract's model definitions.
+Every sled key SHALL use the canonical byte representation of a typed value.
+Keys SHALL be constructed via `to_bytes()` / `to_le_bytes()` / `to_repr()`,
+not via `dwow_serial::serialize()`. Tree names SHALL be declared in the
+manifest's `[[trees]]` section. Key types SHALL be traceable to the contract's
+model definitions.
 
 ```rust
-// Compliant: key is serialized BlockHeight
-let height_key = serialize(&verifying_block_height);
+// Compliant: key is BlockHeight via to_le_bytes
+let height_key = verifying_block_height.to_le_bytes();
 
 // Compliant: composite key from typed values
 let mut supply_key = TOTAL_SUPPLY.to_vec();
-supply_key.extend_from_slice(&serialize(&params.token_id));
+supply_key.extend_from_slice(&params.token_id.to_repr());
+
+// Compliant: Nullifier as DB key via to_bytes
+wasm::db::db_get(sigs_db, &nullifier.to_bytes())?;
 
 // Violation: magic string key
 let key = b"total_supply_v1";
@@ -352,17 +467,19 @@ let key = b"total_supply_v1";
 
 ### 3.3 State Values Are Typed
 
-Every sled value SHALL deserialize to a known type. The type SHALL be traceable
-to the contract's model definitions (`model/mod.rs`). A value that fails to
-deserialize SHALL be an error, not a default.
+Every sled value SHALL decode to a known type through that type's explicit
+`decode()` function. The type SHALL be traceable to the contract's model
+definitions (`model/mod.rs`). A value that fails to decode SHALL produce a
+typed error identifying the field that failed validation — never a default.
 
 ### 3.4 The `unwrap_or` Prohibition
 
-`deserialize(&data).unwrap_or(default)` SHALL NOT appear in contract code. This
-pattern silently substitutes a default when deserialization fails, conflating:
+`decode(&data).unwrap_or(default)` and `deserialize(&data).unwrap_or(default)`
+SHALL NOT appear in contract code. This pattern silently substitutes a default
+when decoding fails, conflating:
 
 - "sled returned corrupt bytes" with "value is zero"
-- "serialization format changed" with "state not yet initialized"
+- "encoding format changed" with "state not yet initialized"
 - "attacker supplied malformed bytes in a prior block" with "genesis state"
 
 **Violations found in the codebase (2026-07-22):**
@@ -385,9 +502,9 @@ let current_supply: u64 = wasm::db::db_get(info_db, TOTAL_SUPPLY)?
 
 // AFTER (compliant):
 let current_supply: u64 = match wasm::db::db_get(info_db, TOTAL_SUPPLY)? {
-    Some(data) => deserialize(&data).map_err(|e| {
-        msg!("[contract::function] Error: Failed to deserialize TOTAL_SUPPLY: {:?}", e);
-        ContractError::IoError("Corrupt state: TOTAL_SUPPLY deserialization failed".to_string())
+    Some(data) => u64::decode(&data).map_err(|e| {
+        msg!("[contract::function] Error: Failed to decode TOTAL_SUPPLY: {:?}", e);
+        ContractError::IoError("Corrupt state: TOTAL_SUPPLY decoding failed".to_string())
     })?,
     None => {
         msg!("[contract::function] Error: TOTAL_SUPPLY not found in state");
@@ -431,28 +548,29 @@ Reference: `src/contract/native_token/src/entrypoint/mod.rs:91-189` (init_contra
 ### 3.6 Type-Safe State Wrappers
 
 Contracts SHOULD define typed wrapper functions for state access. Each wrapper
-SHALL have exactly one responsibility: one state key, one type, validated
-deserialization.
+SHALL have exactly one responsibility: one state key, one type, validated decode.
 
 ```rust
 /// Read the current total supply from state.
-/// Returns Err if the key is missing or the stored value fails to deserialize.
+/// Returns Err if the key is missing or the stored value fails to decode.
 fn read_total_supply(info_db: DbHandle) -> Result<u64, ContractError> {
-    match wasm::db::db_get(info_db, &serialize(&TOTAL_SUPPLY_KEY))? {
-        Some(data) => deserialize(&data).map_err(|e| {
-            msg!("[contract] Corrupt state: TOTAL_SUPPLY deserialization failed: {:?}", e);
-            ContractError::IoError("Corrupt state: TOTAL_SUPPLY".to_string())
-        }),
+    match wasm::db::db_get(info_db, &TOTAL_SUPPLY_KEY.to_le_bytes())? {
+        Some(data) => {
+            let bytes: [u8; 8] = data.try_into().map_err(|_| {
+                ContractError::IoError("Corrupt state: TOTAL_SUPPLY wrong size".into())
+            })?;
+            Ok(u64::from_le_bytes(bytes))
+        }
         None => {
             msg!("[contract] Missing state: TOTAL_SUPPLY");
-            Err(ContractError::IoError("Missing state: TOTAL_SUPPLY".to_string()))
+            Err(ContractError::IoError("Missing state: TOTAL_SUPPLY".into()))
         }
     }
 }
 
 /// Write the total supply to state.
 fn write_total_supply(info_db: DbHandle, supply: u64) -> Result<(), ContractError> {
-    wasm::db::db_set(info_db, &serialize(&TOTAL_SUPPLY_KEY), &serialize(&supply))
+    wasm::db::db_set(info_db, &TOTAL_SUPPLY_KEY.to_le_bytes(), &supply.to_le_bytes())
 }
 ```
 
