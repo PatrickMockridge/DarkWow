@@ -268,10 +268,10 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::DelegateAttestationV1 => {
-            let params: DelegateAttestationParamsV1 = match deserialize(&self_.data[1..]) {
+            let params = match DelegateAttestationParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
-                    msg!("[attestation::get_metadata] Error: Failed to deserialize DelegateAttestationParamsV1: {:?}", e);
+                    msg!("[attestation::get_metadata] Error: Failed to decode DelegateAttestationParamsV1: {:?}", e);
                     wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
@@ -316,10 +316,10 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::UpdateDelegationV1 => {
-            let params: UpdateDelegationParamsV1 = match deserialize(&self_.data[1..]) {
+            let params = match UpdateDelegationParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
-                    msg!("[attestation::get_metadata] Error: Failed to deserialize UpdateDelegationParamsV1: {:?}", e);
+                    msg!("[attestation::get_metadata] Error: Failed to decode UpdateDelegationParamsV1: {:?}", e);
                     wasm::util::set_return_data(&vec![]); return Ok(());
                 }
             };
@@ -425,7 +425,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             check_not_revoked_v1(cid, params)?
         }
         AttestationFunction::DelegateAttestationV1 => {
-            let params: DelegateAttestationParamsV1 = deserialize(&self_.data[1..])?;
+            let params = DelegateAttestationParamsV1::decode(&self_.data[1..])?;
             delegate_attestation_v1(cid, params)?
         }
         AttestationFunction::VerifyChainV1 => {
@@ -433,7 +433,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             verify_chain_v1(cid, params)?
         }
         AttestationFunction::UpdateDelegationV1 => {
-            let params: UpdateDelegationParamsV1 = deserialize(&self_.data[1..])?;
+            let params = UpdateDelegationParamsV1::decode(&self_.data[1..])?;
             update_delegation_v1(cid, params)?
         }
         AttestationFunction::AttestSlashV1 => {
@@ -1278,7 +1278,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         AttestationFunction::DelegateAttestationV1 => {
             let update = DelegateAttestationUpdateV1::decode(&update_data[1..])?;
             let delegations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_DELEGATIONS_TREE)?;
-            wasm::db::db_set(delegations_db, &update.delegation_id.to_repr(), &dwow_serial::serialize(&update.delegation_params))?;
+            wasm::db::db_set(delegations_db, &update.delegation_id.to_repr(), &update.delegation_params.encode())?;
             msg!(
                 "[attestation::process_update] DelegateAttestation: {:?} success={:?}",
                 update.delegation_id,
@@ -1294,7 +1294,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         AttestationFunction::UpdateDelegationV1 => {
             let update = UpdateDelegationUpdateV1::decode(&update_data[1..])?;
             let delegations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_DELEGATIONS_TREE)?;
-            wasm::db::db_set(delegations_db, &update.original_attestation_id.to_repr(), &serialize(&update.updated_params))?;
+            wasm::db::db_set(delegations_db, &update.original_attestation_id.to_repr(), &update.updated_params.encode())?;
             msg!(
                 "[attestation::process_update] UpdateDelegation: success={:?}",
                 update.success

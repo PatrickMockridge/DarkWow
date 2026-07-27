@@ -555,7 +555,7 @@ impl ValidateClaimUpdateV1 {
 }
 
 /// Parameters for delegating an attestation
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct DelegateAttestationParamsV1 {
     /// ZK proof for delegation
     pub proof: Vec<u8>,
@@ -585,6 +585,101 @@ pub struct DelegateAttestationParamsV1 {
     pub delegatee_stake: u64,
 }
 
+impl DelegateAttestationParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(267 + self.proof.len());
+        b.push(self.proof.len() as u8);
+        b.extend_from_slice(&self.proof);
+        b.extend_from_slice(&self.delegation_id.to_repr());
+        b.extend_from_slice(&self.parent_id.to_repr());
+        b.extend_from_slice(&self.delegator_pub.to_bytes());
+        b.extend_from_slice(&self.delegatee_pub.to_bytes());
+        b.push(self.delegation_type);
+        b.extend_from_slice(&self.max_ratio.to_le_bytes());
+        b.extend_from_slice(&self.revocation_root.to_repr());
+        b.extend_from_slice(&self.chain_root.to_repr());
+        b.extend_from_slice(&self.chain_depth.to_le_bytes());
+        b.extend_from_slice(&self.max_depth.to_le_bytes());
+        b.extend_from_slice(&self.delegator_stake.to_le_bytes());
+        b.extend_from_slice(&self.delegatee_stake.to_le_bytes());
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 1 {
+            return Err(ContractError::IoError(
+                "DelegateAttestationParamsV1: data too short for proof length".into(),
+            ));
+        }
+        let proof_len = data[0] as usize;
+        let fixed_start = 1 + proof_len;
+        if data.len() < fixed_start + 266 {
+            return Err(ContractError::IoError(format!(
+                "DelegateAttestationParamsV1: expected at least {} bytes, got {}",
+                fixed_start + 266,
+                data.len()
+            )));
+        }
+        let proof = data[1..1 + proof_len].to_vec();
+        let d = &data[fixed_start..];
+        let delegation_id =
+            Option::<pallas::Base>::from(pallas::Base::from_repr(d[0..32].try_into().unwrap()))
+                .ok_or_else(|| ContractError::IoError(
+                    "DelegateAttestationParamsV1: invalid delegation_id".into(),
+                ))?;
+        let parent_id =
+            Option::<pallas::Base>::from(pallas::Base::from_repr(d[32..64].try_into().unwrap()))
+                .ok_or_else(|| ContractError::IoError(
+                    "DelegateAttestationParamsV1: invalid parent_id".into(),
+                ))?;
+        let delegator_pub =
+            PublicKey::from_bytes(d[64..96].try_into().unwrap()).map_err(|e| {
+                ContractError::IoError(format!(
+                    "DelegateAttestationParamsV1: invalid delegator_pub: {}",
+                    e
+                ))
+            })?;
+        let delegatee_pub =
+            PublicKey::from_bytes(d[96..128].try_into().unwrap()).map_err(|e| {
+                ContractError::IoError(format!(
+                    "DelegateAttestationParamsV1: invalid delegatee_pub: {}",
+                    e
+                ))
+            })?;
+        let delegation_type = d[128];
+        let max_ratio = u64::from_le_bytes(d[129..137].try_into().unwrap());
+        let revocation_root =
+            Option::<pallas::Base>::from(pallas::Base::from_repr(d[137..169].try_into().unwrap()))
+                .ok_or_else(|| ContractError::IoError(
+                    "DelegateAttestationParamsV1: invalid revocation_root".into(),
+                ))?;
+        let chain_root =
+            Option::<pallas::Base>::from(pallas::Base::from_repr(d[169..201].try_into().unwrap()))
+                .ok_or_else(|| ContractError::IoError(
+                    "DelegateAttestationParamsV1: invalid chain_root".into(),
+                ))?;
+        let chain_depth = u64::from_le_bytes(d[201..209].try_into().unwrap());
+        let max_depth = u64::from_le_bytes(d[209..217].try_into().unwrap());
+        let delegator_stake = u64::from_le_bytes(d[217..225].try_into().unwrap());
+        let delegatee_stake = u64::from_le_bytes(d[225..233].try_into().unwrap());
+        Ok(DelegateAttestationParamsV1 {
+            proof,
+            delegation_id,
+            parent_id,
+            delegator_pub,
+            delegatee_pub,
+            delegation_type,
+            max_ratio,
+            revocation_root,
+            chain_root,
+            chain_depth,
+            max_depth,
+            delegator_stake,
+            delegatee_stake,
+        })
+    }
+}
+
 /// State update for DelegateAttestationV1
 #[derive(Debug, Clone)]
 pub struct DelegateAttestationUpdateV1 {
@@ -595,7 +690,7 @@ pub struct DelegateAttestationUpdateV1 {
 
 impl DelegateAttestationUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
-        let params_bytes = dwow_serial::serialize(&self.delegation_params);
+        let params_bytes = self.delegation_params.encode();
         let mut b = Vec::with_capacity(33 + params_bytes.len());
         b.extend_from_slice(&self.delegation_id.to_repr());
         b.push(self.success as u8);
@@ -606,7 +701,7 @@ impl DelegateAttestationUpdateV1 {
         if data.len() < 33 { return Err(ContractError::IoError(format!("DelegateAttestationUpdateV1: expected at least 33 bytes, got {}", data.len()))); }
         let delegation_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DelegateAttestationUpdateV1: invalid delegation_id".into()))?;
         let success = data[32] != 0;
-        let delegation_params = dwow_serial::deserialize(&data[33..])?;
+        let delegation_params = DelegateAttestationParamsV1::decode(&data[33..])?;
         Ok(DelegateAttestationUpdateV1 { delegation_id, success, delegation_params })
     }
 }
@@ -656,7 +751,7 @@ pub struct VerifyChainUpdateV1 {
 }
 
 /// Parameters for updating a delegation
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct UpdateDelegationParamsV1 {
     /// ZK proof for delegation update
     pub proof: Vec<u8>,
@@ -676,6 +771,62 @@ pub struct UpdateDelegationParamsV1 {
     pub max_ratio: u64,
 }
 
+impl UpdateDelegationParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(74 + self.proof.len());
+        b.push(self.proof.len() as u8);
+        b.extend_from_slice(&self.proof);
+        b.extend_from_slice(&self.original_attestation_id.to_repr());
+        b.push(self.delegation_type);
+        b.extend_from_slice(&self.current_depth.to_le_bytes());
+        b.extend_from_slice(&self.max_depth.to_le_bytes());
+        b.extend_from_slice(&self.delegator_stake.to_le_bytes());
+        b.extend_from_slice(&self.delegatee_stake.to_le_bytes());
+        b.extend_from_slice(&self.max_ratio.to_le_bytes());
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 1 {
+            return Err(ContractError::IoError(
+                "UpdateDelegationParamsV1: data too short for proof length".into(),
+            ));
+        }
+        let proof_len = data[0] as usize;
+        let fixed_start = 1 + proof_len;
+        if data.len() < fixed_start + 73 {
+            return Err(ContractError::IoError(format!(
+                "UpdateDelegationParamsV1: expected at least {} bytes, got {}",
+                fixed_start + 73,
+                data.len()
+            )));
+        }
+        let proof = data[1..1 + proof_len].to_vec();
+        let d = &data[fixed_start..];
+        let original_attestation_id =
+            Option::<pallas::Base>::from(pallas::Base::from_repr(d[0..32].try_into().unwrap()))
+                .ok_or_else(|| ContractError::IoError(
+                    "UpdateDelegationParamsV1: invalid original_attestation_id".into(),
+                ))?;
+        let delegation_type = d[32];
+        let current_depth = u64::from_le_bytes(d[33..41].try_into().unwrap());
+        let max_depth = u64::from_le_bytes(d[41..49].try_into().unwrap());
+        let delegator_stake = u64::from_le_bytes(d[49..57].try_into().unwrap());
+        let delegatee_stake = u64::from_le_bytes(d[57..65].try_into().unwrap());
+        let max_ratio = u64::from_le_bytes(d[65..73].try_into().unwrap());
+        Ok(UpdateDelegationParamsV1 {
+            proof,
+            original_attestation_id,
+            delegation_type,
+            current_depth,
+            max_depth,
+            delegator_stake,
+            delegatee_stake,
+            max_ratio,
+        })
+    }
+}
+
 /// State update for UpdateDelegationV1
 #[derive(Debug, Clone)]
 pub struct UpdateDelegationUpdateV1 {
@@ -686,7 +837,7 @@ pub struct UpdateDelegationUpdateV1 {
 
 impl UpdateDelegationUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
-        let params_bytes = dwow_serial::serialize(&self.updated_params);
+        let params_bytes = self.updated_params.encode();
         let mut b = Vec::with_capacity(33 + params_bytes.len());
         b.push(self.success as u8);
         b.extend_from_slice(&self.original_attestation_id.to_repr());
@@ -697,7 +848,7 @@ impl UpdateDelegationUpdateV1 {
         if data.len() < 33 { return Err(ContractError::IoError(format!("UpdateDelegationUpdateV1: expected at least 33 bytes, got {}", data.len()))); }
         let success = data[0] != 0;
         let original_attestation_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UpdateDelegationUpdateV1: invalid original_attestation_id".into()))?;
-        let updated_params = dwow_serial::deserialize(&data[33..])?;
+        let updated_params = UpdateDelegationParamsV1::decode(&data[33..])?;
         Ok(UpdateDelegationUpdateV1 { success, original_attestation_id, updated_params })
     }
 }
