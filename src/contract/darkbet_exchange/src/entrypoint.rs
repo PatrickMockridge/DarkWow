@@ -431,7 +431,7 @@ fn darkbet_create_market_process_instruction_v1(
         close_block,
         market_id
     );
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn darkbet_create_market_process_update_v1(
@@ -473,7 +473,7 @@ fn darkbet_create_market_process_update_v1(
         instance_seed: update.instance_seed,
     };
 
-    wasm::db::db_set(markets_db, &update.market_id.to_repr(), &serialize(&market))?;
+    wasm::db::db_set(markets_db, &update.market_id.to_repr(), &market.encode())?;
 
     msg!("[darkbet::create_market::update] Market stored successfully with {} outcomes", num_outcomes);
 
@@ -588,7 +588,7 @@ fn darkbet_place_back_process_instruction_v1(
     };
 
     msg!("[darkbet::place_back] Back order placed: {} @ {}bps", params.stake, params.odds);
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn darkbet_place_back_process_update_v1(
@@ -616,7 +616,7 @@ fn darkbet_place_back_process_update_v1(
         instance_seed: update.instance_seed,
     };
 
-    wasm::db::db_set(back_orders_db, &update.order_id.to_repr(), &serialize(&order))?;
+    wasm::db::db_set(back_orders_db, &update.order_id.to_repr(), &order.encode())?;
 
     // Record nullifier
     wasm::db::db_set(nullifiers_db, &update.nullifier.to_repr(), &[])?;
@@ -743,7 +743,7 @@ fn darkbet_place_lay_process_instruction_v1(
     };
 
     msg!("[darkbet::place_lay] Lay order placed: {} liability @ {}bps", liability, params.odds);
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn darkbet_place_lay_process_update_v1(
@@ -771,7 +771,7 @@ fn darkbet_place_lay_process_update_v1(
         instance_seed: update.instance_seed,
     };
 
-    wasm::db::db_set(lay_orders_db, &update.order_id.to_repr(), &serialize(&order))?;
+    wasm::db::db_set(lay_orders_db, &update.order_id.to_repr(), &order.encode())?;
 
     // Record nullifier
     wasm::db::db_set(nullifiers_db, &update.nullifier.to_repr(), &[])?;
@@ -892,7 +892,7 @@ fn darkbet_match_orders_process_instruction_v1(
     };
 
     msg!("[darkbet::match_orders] Matched at {} odds, commission {}", params.odds, commission);
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn darkbet_match_orders_process_update_v1(
@@ -905,20 +905,20 @@ fn darkbet_match_orders_process_update_v1(
     let _markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
 
     // Update back order state
-    let mut back_order: Order = match wasm::db::db_get(back_orders_db, &serialize(&update.back_order_id))? {
+    let mut back_order: Order = match wasm::db::db_get(back_orders_db, &update.back_order_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::OrderNotFound.into()),
     };
     back_order.state = OrderState::Matched;
-    wasm::db::db_set(back_orders_db, &serialize(&update.back_order_id), &serialize(&back_order))?;
+    wasm::db::db_set(back_orders_db, &update.back_order_id.to_repr(), &back_order.encode())?;
 
     // Update lay order state
-    let mut lay_order: Order = match wasm::db::db_get(lay_orders_db, &serialize(&update.lay_order_id))? {
+    let mut lay_order: Order = match wasm::db::db_get(lay_orders_db, &update.lay_order_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::OrderNotFound.into()),
     };
     lay_order.state = OrderState::Matched;
-    wasm::db::db_set(lay_orders_db, &serialize(&update.lay_order_id), &serialize(&lay_order))?;
+    wasm::db::db_set(lay_orders_db, &update.lay_order_id.to_repr(), &lay_order.encode())?;
 
     // Store match - outcome_index comes from back_order
     let m = Match {
@@ -935,7 +935,7 @@ fn darkbet_match_orders_process_update_v1(
         state: MatchState::Pending,
         created_at: wasm::util::get_verifying_block_height()?.get(),
     };
-    wasm::db::db_set(matches_db, &serialize(&update.match_id), &serialize(&m))?;
+    wasm::db::db_set(matches_db, &update.match_id.to_repr(), &m.encode())?;
 
     msg!("[darkbet::match_orders::update] Match stored, orders updated");
 
@@ -1068,7 +1068,7 @@ fn darkbet_buy_position_process_instruction_v1(
         params.amount,
         payout
     );
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn darkbet_buy_position_process_update_v1(
@@ -1090,17 +1090,17 @@ fn darkbet_buy_position_process_update_v1(
         update.instance_seed,
     );
 
-    wasm::db::db_set(positions_db, &serialize(&position.position_id), &serialize(&position))?;
+    wasm::db::db_set(positions_db, &position.position_id.to_repr(), &position.encode())?;
 
     // Update market pool
     let market_data = wasm::db::db_get(markets_db, &update.market_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
     let mut market: Market = deserialize(&market_data)?;
     market.total_pool += update.amount;
     market.outcome_pools[update.outcome as usize] += update.amount;
-    wasm::db::db_set(markets_db, &serialize(&market.market_id), &serialize(&market))?;
+    wasm::db::db_set(markets_db, &market.market_id.to_repr(), &market.encode())?;
 
     // Record nullifier
-    wasm::db::db_set(nullifiers_db, &serialize(&position.position_id), &[])?;
+    wasm::db::db_set(nullifiers_db, &position.position_id.to_repr(), &[])?;
 
     msg!("[darkbet::buy_position::update] Position stored: {:?}", position.position_id);
 
@@ -1211,7 +1211,7 @@ fn darkbet_add_liquidity_process_instruction_v1(
     };
 
     msg!("[darkbet::add_liquidity] Adding liquidity: {}", params.amount);
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn darkbet_add_liquidity_process_update_v1(
@@ -1228,11 +1228,11 @@ fn darkbet_add_liquidity_process_update_v1(
     // Store LP share (shares_minted already calculated in instruction)
     let lp_share = LpShare::new(update.market_id, update.provider, update.shares_minted, update.created_at, update.instance_seed);
 
-    wasm::db::db_set(lp_shares_db, &serialize(&lp_share.lp_share_id), &serialize(&lp_share))?;
+    wasm::db::db_set(lp_shares_db, &lp_share.lp_share_id.to_repr(), &lp_share.encode())?;
 
     market.total_pool += update.amount;  // Add actual token amount to pool
     market.total_lp_shares += update.shares_minted;  // Add LP shares
-    wasm::db::db_set(markets_db, &serialize(&market.market_id), &serialize(&market))?;
+    wasm::db::db_set(markets_db, &market.market_id.to_repr(), &market.encode())?;
 
     msg!("[darkbet::add_liquidity::update] LP shares minted: {:?}", lp_share.lp_share_id);
 
@@ -1284,7 +1284,7 @@ fn darkbet_remove_liquidity_process_instruction_v1(
 
     // Get LP share
     let lp_shares_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_LP_SHARES_TREE)?;
-    let lp_share: LpShare = match wasm::db::db_get(lp_shares_db, &serialize(&params.lp_share_id))? {
+    let lp_share: LpShare = match wasm::db::db_get(lp_shares_db, &params.lp_share_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::LpShareNotFound.into()),
     };
@@ -1346,7 +1346,7 @@ fn darkbet_remove_liquidity_process_instruction_v1(
         payout,
         fees_withdrawn
     );
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn darkbet_remove_liquidity_process_update_v1(
@@ -1357,12 +1357,12 @@ fn darkbet_remove_liquidity_process_update_v1(
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
 
     // Update LP share state
-    let mut lp_share: LpShare = match wasm::db::db_get(lp_shares_db, &serialize(&update.lp_share_id))? {
+    let mut lp_share: LpShare = match wasm::db::db_get(lp_shares_db, &update.lp_share_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::LpShareNotFound.into()),
     };
     lp_share.state = LpShareState::Removed;
-    wasm::db::db_set(lp_shares_db, &serialize(&lp_share.lp_share_id), &serialize(&lp_share))?;
+    wasm::db::db_set(lp_shares_db, &lp_share.lp_share_id.to_repr(), &lp_share.encode())?;
 
     // Update market
     let mut market: Market = match wasm::db::db_get(markets_db, &update.market_id.to_repr())? {
@@ -1377,7 +1377,7 @@ fn darkbet_remove_liquidity_process_update_v1(
         .total_lp_shares
         .checked_sub(update.shares_burned)
         .ok_or(DarkbetError::ArithmeticOverflow)?;
-    wasm::db::db_set(markets_db, &serialize(&market.market_id), &serialize(&market))?;
+    wasm::db::db_set(markets_db, &market.market_id.to_repr(), &market.encode())?;
 
     msg!("[darkbet::remove_liquidity::update] LP shares removed");
 
@@ -1425,7 +1425,7 @@ fn darkbet_claim_winnings_process_instruction_v1(
 
     // Get position
     let positions_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_POSITIONS_TREE)?;
-    let position: Position = match wasm::db::db_get(positions_db, &serialize(&params.position_id))? {
+    let position: Position = match wasm::db::db_get(positions_db, &params.position_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::PositionNotFound.into()),
     };
@@ -1475,7 +1475,7 @@ fn darkbet_claim_winnings_process_instruction_v1(
     };
 
     msg!("[darkbet::claim_winnings] Claiming payout: {}", update.payout);
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn darkbet_claim_winnings_process_update_v1(
@@ -1485,12 +1485,12 @@ fn darkbet_claim_winnings_process_update_v1(
     let positions_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_POSITIONS_TREE)?;
 
     // Update position state
-    let mut position: Position = match wasm::db::db_get(positions_db, &serialize(&update.position_id))? {
+    let mut position: Position = match wasm::db::db_get(positions_db, &update.position_id.to_repr())? {
         Some(data) => deserialize(&data)?,
         None => return Err(DarkbetError::PositionNotFound.into()),
     };
     position.state = PositionState::Claimed;
-    wasm::db::db_set(positions_db, &serialize(&position.position_id), &serialize(&position))?;
+    wasm::db::db_set(positions_db, &position.position_id.to_repr(), &position.encode())?;
 
     msg!("[darkbet::claim_winnings::update] Winnings claimed for position {:?}", update.position_id);
 
@@ -1560,7 +1560,7 @@ fn darkbet_resolve_market_process_instruction_v1(
     };
 
     msg!("[darkbet::resolve_market] Market resolved at block {}", current_block);
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn darkbet_resolve_market_process_update_v1(
@@ -1579,7 +1579,7 @@ fn darkbet_resolve_market_process_update_v1(
     market.winning_outcome = Some(update.winning_outcome);
     market.resolved_at = Some(update.resolved_at_block);
 
-    wasm::db::db_set(markets_db, &update.market_id.to_repr(), &serialize(&market))?;
+    wasm::db::db_set(markets_db, &update.market_id.to_repr(), &market.encode())?;
 
     msg!("[darkbet::resolve_market::update] Market state updated to Resolved");
 
@@ -1654,7 +1654,7 @@ fn darkbet_settle_market_process_instruction_v1(
         return Err(DarkbetExchangeError::Custom(1).into());
     }
     for &match_id in &params.match_ids {
-        let match_data = wasm::db::db_get(matches_db, &serialize(&match_id))?
+        let match_data = wasm::db::db_get(matches_db, &match_id.to_repr())?
             .ok_or(DarkbetError::MatchNotFound)?;
 
         let m: Match = deserialize(&match_data)?;
@@ -1698,7 +1698,7 @@ fn darkbet_settle_market_process_instruction_v1(
     };
 
     msg!("[darkbet::settle_market] Settling {} matches", params.match_ids.len());
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn darkbet_settle_market_process_update_v1(
@@ -1717,17 +1717,17 @@ fn darkbet_settle_market_process_update_v1(
     // Update market state to Settled
     market.state = MarketState::Settled;
 
-    wasm::db::db_set(markets_db, &update.market_id.to_repr(), &serialize(&market))?;
+    wasm::db::db_set(markets_db, &update.market_id.to_repr(), &market.encode())?;
 
     // Process individual matches - update their state to Settled
     for match_id in &update.match_ids {
-        let match_data = wasm::db::db_get(matches_db, &serialize(match_id))?
+        let match_data = wasm::db::db_get(matches_db, &match_id.to_repr())?
             .ok_or(DarkbetError::MatchNotFound)?;
 
         let mut m: Match = deserialize(&match_data)?;
         m.state = MatchState::Settled;
 
-        wasm::db::db_set(matches_db, &serialize(match_id), &serialize(&m))?;
+        wasm::db::db_set(matches_db, &match_id.to_repr(), &m.encode())?;
     }
 
     msg!(
@@ -1783,8 +1783,8 @@ fn darkbet_cancel_order_process_instruction_v1(
     let back_orders_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_BACK_ORDERS_TREE)?;
     let lay_orders_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_LAY_ORDERS_TREE)?;
 
-    let back_order_data = wasm::db::db_get(back_orders_db, &serialize(&params.order_id))?;
-    let lay_order_data = wasm::db::db_get(lay_orders_db, &serialize(&params.order_id))?;
+    let back_order_data = wasm::db::db_get(back_orders_db, &params.order_id.to_repr())?;
+    let lay_order_data = wasm::db::db_get(lay_orders_db, &params.order_id.to_repr())?;
 
     let order_data = if let Some(d) = back_order_data {
         d
@@ -1821,7 +1821,7 @@ fn darkbet_cancel_order_process_instruction_v1(
     let update = CancelOrderUpdateV1 { order_id: params.order_id, refund_amount: order.stake };
 
     msg!("[darkbet::cancel_order] Order cancelled, refunding {}", order.stake);
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn darkbet_cancel_order_process_update_v1(
@@ -1835,11 +1835,11 @@ fn darkbet_cancel_order_process_update_v1(
     if let Some(order_data) = wasm::db::db_get(back_orders_db, &update.order_id.to_repr())? {
         let mut order: Order = deserialize(&order_data)?;
         order.state = OrderState::Cancelled;
-        wasm::db::db_set(back_orders_db, &update.order_id.to_repr(), &serialize(&order))?;
+        wasm::db::db_set(back_orders_db, &update.order_id.to_repr(), &order.encode())?;
     } else if let Some(order_data) = wasm::db::db_get(lay_orders_db, &update.order_id.to_repr())? {
         let mut order: Order = deserialize(&order_data)?;
         order.state = OrderState::Cancelled;
-        wasm::db::db_set(lay_orders_db, &update.order_id.to_repr(), &serialize(&order))?;
+        wasm::db::db_set(lay_orders_db, &update.order_id.to_repr(), &order.encode())?;
     }
 
     msg!("[darkbet::cancel_order::update] Order cancelled successfully");
