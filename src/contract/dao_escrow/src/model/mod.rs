@@ -982,3 +982,94 @@ impl Membership {
         Ok(Membership { version: data[0], note: MembershipNote(Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Membership: invalid note".into()))?), dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Membership: invalid dao_escrow_bulla".into()))?), member_pubkey: PublicKey::from_bytes(data[65..97].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Membership: invalid member_pubkey: {}", e)))?, value: u64::from_le_bytes(data[97..105].try_into().unwrap()), token_id: TokenId::from_bytes(data[105..137].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Membership: invalid token_id: {}", e)))?, expiry: u64::from_le_bytes(data[137..145].try_into().unwrap()), created_at: u64::from_le_bytes(data[145..153].try_into().unwrap()) })
     }
 }
+
+impl CapabilityRequirement {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(35 + self.role.len());
+        b.push(self.version);
+        b.push(self.role.len() as u8);
+        b.extend_from_slice(&self.role);
+        b.extend_from_slice(&self.capability_id);
+        b.extend_from_slice(&self.identity_contract_bulla.to_repr());
+        b.push(self.active as u8);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 35 { return Err(ContractError::IoError(format!("CapabilityRequirement: expected at least 35 bytes, got {}", data.len()))); }
+        let version = data[0];
+        let role_len = data[1] as usize;
+        if data.len() != 35 + role_len { return Err(ContractError::IoError(format!("CapabilityRequirement: expected {} bytes, got {}", 35 + role_len, data.len()))); }
+        let role = data[2..2+role_len].to_vec();
+        let capability_id: [u8; 32] = data[2+role_len..34+role_len].try_into().unwrap();
+        let identity_contract_bulla = Option::<pallas::Base>::from(pallas::Base::from_repr(data[34+role_len..66+role_len].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CapabilityRequirement: invalid identity_contract_bulla".into()))?;
+        let active = data[66+role_len] != 0;
+        Ok(CapabilityRequirement { version, role, capability_id, identity_contract_bulla, active })
+    }
+}
+
+impl RegisterCapabilityRequirementUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let inner = self.requirement.encode();
+        let mut b = Vec::with_capacity(33 + self.role.len() + inner.len());
+        b.extend_from_slice(&self.dao_escrow_bulla.to_bytes());
+        b.push(self.role.len() as u8);
+        b.extend_from_slice(&self.role);
+        b.extend_from_slice(&inner);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 33 { return Err(ContractError::IoError(format!("RegisterCapabilityRequirementUpdateV1: expected at least 33 bytes, got {}", data.len()))); }
+        let dao_escrow_bulla = DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RegisterCapabilityRequirementUpdateV1: invalid dao_escrow_bulla".into()))?);
+        let role_len = data[32] as usize;
+        if data.len() < 33 + role_len { return Err(ContractError::IoError("RegisterCapabilityRequirementUpdateV1: data too short".into())); }
+        let role = data[33..33+role_len].to_vec();
+        let requirement = CapabilityRequirement::decode(&data[33+role_len..])?;
+        Ok(RegisterCapabilityRequirementUpdateV1 { dao_escrow_bulla, role, requirement })
+    }
+}
+
+impl ResolveDisputeUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(106 + self.consumed_attestation_ids.len() * 32);
+        b.extend_from_slice(&self.dao_escrow_bulla.to_bytes());
+        b.extend_from_slice(&self.dispute_id.to_repr());
+        b.extend_from_slice(&self.proposal_id.to_bytes());
+        b.push(self.approved as u8);
+        b.extend_from_slice(&self.payout_amount.to_le_bytes());
+        b.push(self.consumed_attestation_ids.len() as u8);
+        for id in &self.consumed_attestation_ids { b.extend_from_slice(&id.to_repr()); }
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 106 { return Err(ContractError::IoError(format!("ResolveDisputeUpdateV1: expected at least 106 bytes, got {}", data.len()))); }
+        let dao_escrow_bulla = DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ResolveDisputeUpdateV1: invalid dao_escrow_bulla".into()))?);
+        let dispute_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ResolveDisputeUpdateV1: invalid dispute_id".into()))?;
+        let proposal_id = ProposalId(Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ResolveDisputeUpdateV1: invalid proposal_id".into()))?);
+        let approved = data[96] != 0;
+        let payout_amount = u64::from_le_bytes(data[97..105].try_into().unwrap());
+        let count = data[105] as usize;
+        let expected = 106 + count * 32;
+        if data.len() != expected { return Err(ContractError::IoError(format!("ResolveDisputeUpdateV1: expected {} bytes for {} ids, got {}", expected, count, data.len()))); }
+        let mut consumed_attestation_ids = Vec::with_capacity(count);
+        for i in 0..count { consumed_attestation_ids.push(Option::<pallas::Base>::from(pallas::Base::from_repr(data[106+i*32..106+(i+1)*32].try_into().unwrap())).ok_or_else(|| ContractError::IoError(format!("ResolveDisputeUpdateV1: invalid attestation_id[{}]", i)))?); }
+        Ok(ResolveDisputeUpdateV1 { dao_escrow_bulla, dispute_id, proposal_id, approved, payout_amount, consumed_attestation_ids })
+    }
+}
+
+impl DeactivateCapabilityRequirementUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(33 + self.role.len());
+        b.extend_from_slice(&self.dao_escrow_bulla.to_bytes());
+        b.push(self.role.len() as u8);
+        b.extend_from_slice(&self.role);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 33 { return Err(ContractError::IoError(format!("DeactivateCapabilityRequirementUpdateV1: expected at least 33 bytes, got {}", data.len()))); }
+        let dao_escrow_bulla = DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DeactivateCapabilityRequirementUpdateV1: invalid dao_escrow_bulla".into()))?);
+        let role_len = data[32] as usize;
+        if data.len() != 33 + role_len { return Err(ContractError::IoError(format!("DeactivateCapabilityRequirementUpdateV1: expected {} bytes, got {}", 33 + role_len, data.len()))); }
+        let role = data[33..33+role_len].to_vec();
+        Ok(DeactivateCapabilityRequirementUpdateV1 { dao_escrow_bulla, role })
+    }
+}

@@ -345,48 +345,48 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             withdraw_apply_v1(cid, update)
         }
         DaoEscrowFunction::EndowmentWithdrawV1 => {
-            let update: model::EndowmentWithdrawUpdateV1 = deserialize(&update_data[1..])?;
+            let update = model::EndowmentWithdrawUpdateV1::decode(&update_data[1..])?;
             endowment_withdraw_apply_v1(cid, update)
         }
         DaoEscrowFunction::TreasurySpendV1 => {
-            let update: model::TreasurySpendUpdateV1 = deserialize(&update_data[1..])?;
+            let update = model::TreasurySpendUpdateV1::decode(&update_data[1..])?;
             treasury_spend_apply_v1(cid, update)
         }
         DaoEscrowFunction::EnableDrainProtectionV1 => {
-            let update: model::EnableDrainProtectionUpdateV1 = deserialize(&update_data[1..])?;
+            let update = model::EnableDrainProtectionUpdateV1::decode(&update_data[1..])?;
             enable_drain_protection_apply_v1(cid, update)
         }
         DaoEscrowFunction::ProposeClaimV1 => {
-            let update: model::ProposeClaimUpdateV1 = deserialize(&update_data[1..])?;
+            let update = model::ProposeClaimUpdateV1::decode(&update_data[1..])?;
             propose_claim_apply_v1(cid, update)
         }
         DaoEscrowFunction::VoteClaimV1 => {
-            let update: model::VoteClaimUpdateV1 = deserialize(&update_data[1..])?;
+            let update = model::VoteClaimUpdateV1::decode(&update_data[1..])?;
             vote_claim_apply_v1(cid, update)
         }
         DaoEscrowFunction::ExecuteClaimV1 => {
-            let update: model::ExecuteClaimUpdateV1 = deserialize(&update_data[1..])?;
+            let update = model::ExecuteClaimUpdateV1::decode(&update_data[1..])?;
             execute_claim_apply_v1(cid, update)
         }
         DaoEscrowFunction::RegisterCapabilityRequirementV1 => {
-            let update: model::RegisterCapabilityRequirementUpdateV1 = deserialize(&update_data[1..])?;
+            let update = model::RegisterCapabilityRequirementUpdateV1::decode(&update_data[1..])?;
             register_capability_requirement_apply_v1(cid, update)
         }
         DaoEscrowFunction::VerifyMemberCapabilityV1 => {
-            let update: model::VerifyMemberCapabilityUpdateV1 = deserialize(&update_data[1..])?;
+            let update = model::VerifyMemberCapabilityUpdateV1::decode(&update_data[1..])?;
             verify_member_capability_apply_v1(cid, update)
         }
         DaoEscrowFunction::ResolveDisputeV1 => {
-            let update: model::ResolveDisputeUpdateV1 = deserialize(&update_data[1..])?;
+            let update = model::ResolveDisputeUpdateV1::decode(&update_data[1..])?;
             resolve_dispute_apply_v1(cid, update)
         }
         DaoEscrowFunction::CancelClaimV1 => {
-            let update: model::CancelClaimUpdateV1 = deserialize(&update_data[1..])?;
+            let update = model::CancelClaimUpdateV1::decode(&update_data[1..])?;
             cancel_claim_apply_v1(cid, update)
         }
         DaoEscrowFunction::SetGovernanceConfigV1 | DaoEscrowFunction::SetGovernanceActiveV1 => Ok(()),
         DaoEscrowFunction::DeactivateCapabilityRequirementV1 => {
-            let update: model::DeactivateCapabilityRequirementUpdateV1 = deserialize(&update_data[1..])?;
+            let update = model::DeactivateCapabilityRequirementUpdateV1::decode(&update_data[1..])?;
             deactivate_capability_requirement_apply_v1(cid, update)
         }
     }
@@ -1690,7 +1690,7 @@ fn resolve_dispute_apply_v1(cid: ContractId, update: model::ResolveDisputeUpdate
     }
 
     // Store minimal resolution record keyed by dispute_id
-    let resolution_data = serialize(&update);
+    let resolution_data = update.encode();
     wasm::db::db_set(disputes_db, &update.dispute_id.to_repr(), &resolution_data)?;
     msg!("[dao_escrow::resolve_dispute_apply_v1] Dispute resolution stored");
     Ok(())
