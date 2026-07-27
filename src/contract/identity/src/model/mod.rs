@@ -49,18 +49,24 @@ use dwow_sdk::pasta::{group::GroupEncoding, pallas};
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Capability identifier: hash of name + credential requirement
-#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq,)]
 pub struct CapabilityId(pub pallas::Base);
 impl CapabilityId {
+    pub const ENCODED_SIZE: usize = 32;
     pub fn inner(&self) -> pallas::Base { self.0 }
     pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
     pub fn from_bytes(b: [u8; 32]) -> Option<Self> {
         pallas::Base::from_repr(b).into_option().map(Self)
     }
+    pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 32 { return Err(ContractError::IoError(format!("CapabilityId: expected 32 bytes, got {}", data.len()))); }
+        Self::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("CapabilityId: invalid".into()))
+    }
 }
 
 /// Capability secret: derived from holder pubkey + capability_id
-#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq,)]
 pub struct CapabilitySecret(pub pallas::Base);
 impl CapabilitySecret {
     pub fn inner(&self) -> pallas::Base { self.0 }
@@ -68,7 +74,7 @@ impl CapabilitySecret {
 }
 
 /// Reputation ID: hash of issuer pubkey + relayer pubkey
-#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq,)]
 pub struct ReputationId(pub pallas::Base);
 impl ReputationId {
     pub fn inner(&self) -> pallas::Base { self.0 }
@@ -82,7 +88,7 @@ impl ReputationId {
 pub const IDENTITY_NAMESPACE: u64 = 0x0001;
 
 /// Supported attribute types for credentials
-#[derive(Debug, Clone, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, PartialEq, Eq,)]
 pub enum AttributeType {
     /// Boolean attribute (e.g., "is adult", "is citizen")
     Boolean,
@@ -97,7 +103,7 @@ pub enum AttributeType {
 }
 
 /// A single attribute in a credential
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct Attribute {
     /// Attribute type
     pub attribute_type: AttributeType,
@@ -108,7 +114,7 @@ pub struct Attribute {
 }
 
 /// Credential schema defining required and optional attributes
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CredentialSchema {
     /// Schema name
     pub name: Vec<u8>,
@@ -125,14 +131,14 @@ pub struct CredentialSchema {
 // ============================================================================
 
 /// Initialize contract parameters
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct InitializeParams {
     /// Contract version
     pub version: u32,
 }
 
 /// Issue credential parameters
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct IssueCredentialParams {
     /// Issuer's public key
     pub issuer_pub: PublicKey,
@@ -169,7 +175,7 @@ pub struct IssueCredentialParams {
 }
 
 /// Revoke credential parameters
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct RevokeCredentialParams {
     /// Issuer's signature on revocation
     pub issuer_sig: Vec<u8>,
@@ -186,7 +192,7 @@ pub struct RevokeCredentialParams {
 
 /// Create claim parameters
 /// This is typically done off-chain by the holder
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CreateClaimParams {
     /// The credential nullifier
     pub nullifier: IntentNullifier,
@@ -210,7 +216,7 @@ pub struct CreateClaimParams {
 
 /// Create claim parameters (Level 1 - Selective Disclosure)
 /// This version includes a public predicate_result output
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CreateClaimParamsL1 {
     /// The credential nullifier
     pub nullifier: IntentNullifier,
@@ -238,7 +244,7 @@ pub struct CreateClaimParamsL1 {
 
 /// Verify claim parameters
 /// This is typically called by a verifier
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct VerifyClaimParams {
     /// The claim to verify
     pub claim: Claim,
@@ -251,7 +257,7 @@ pub struct VerifyClaimParams {
 }
 
 /// A generated claim ready for verification
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct Claim {
     /// Credential nullifier (proves credential exists)
     pub nullifier: IntentNullifier,
@@ -483,7 +489,7 @@ impl Capability {
 ///
 /// Describes the credential schema and threshold needed to qualify
 /// for a capability.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CredentialRequirement {
     /// Schema hash this capability requires
     pub schema_hash: [u8; 32],
@@ -533,7 +539,7 @@ impl CredentialRequirement {
 /// This is what holders present to prove they have a capability.
 /// The proof reveals only that the holder meets the requirement,
 /// not their identity or actual attribute values.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CapabilityProof {
     /// Hash of the capability definition
     pub capability_id: CapabilityId,
@@ -615,7 +621,7 @@ impl RegisterCapabilityParams {
 }
 
 /// Parameters for issuing a capability to a holder
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct IssueCapabilityParams {
     /// Capability ID being issued
     pub capability_id: CapabilityId,
@@ -632,7 +638,7 @@ pub struct IssueCapabilityParams {
 }
 
 /// Parameters for verifying a capability
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct VerifyCapabilityParams {
     /// The capability proof to verify
     pub capability_proof: CapabilityProof,
@@ -643,7 +649,7 @@ pub struct VerifyCapabilityParams {
 }
 
 /// Parameters for revoking a capability
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct RevokeCapabilityParams {
     /// Capability ID being revoked
     pub capability_id: CapabilityId,
@@ -719,7 +725,7 @@ impl StoredCapability {
 // ============================================================================
 
 /// A single credential in a DAG path
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct DAGCredential {
     /// Credential nullifier (proves credential exists and is valid)
     pub nullifier: IntentNullifier,
@@ -733,7 +739,7 @@ pub struct DAGCredential {
 ///
 /// A path is an AND chain of credentials. All credentials in a path
 /// must pass for the path to be considered "satisfied".
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CredentialPath {
     /// Credentials in this path (AND chain)
     pub credentials: Vec<DAGCredential>,
@@ -745,7 +751,7 @@ pub struct CredentialPath {
 ///
 /// Defines multiple paths (OR logic) where any path can be satisfied
 /// to achieve the DAG's competency.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CompetencyDAG {
     /// Unique DAG identifier
     pub dag_id: [u8; 32],
@@ -764,7 +770,7 @@ pub struct CompetencyDAG {
 }
 
 /// Parameters for creating a DAG claim
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CreateClaimDAGParams {
     /// The DAG being claimed
     pub dag_id: [u8; 32],
@@ -781,7 +787,7 @@ pub struct CreateClaimDAGParams {
 }
 
 /// A DAG claim ready for verification
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct DAGClaim {
     /// DAG identifier
     pub dag_id: [u8; 32],
@@ -800,7 +806,7 @@ pub struct DAGClaim {
 }
 
 /// Parameters for verifying a DAG claim
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct VerifyDAGClaimParams {
     /// The DAG claim to verify
     pub claim: DAGClaim,
@@ -1236,7 +1242,7 @@ impl CreateClaimDAGUpdateV1 {
 // ============================================================================
 
 /// Register issuer parameters
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct RegisterIssuerParams {
     /// Issuer's public key
     pub issuer_pub: PublicKey,
@@ -1306,7 +1312,7 @@ impl RegisterIssuerUpdateV1 {
 // ============================================================================
 
 /// Update relayer reputation parameters
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct UpdateReputationParams {
     /// Issuer's public key (must be a registered issuer)
     pub issuer_pub: PublicKey,
