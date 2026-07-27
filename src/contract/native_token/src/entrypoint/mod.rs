@@ -532,7 +532,7 @@ fn fee_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     }
 
     // Verify Merkle root exists
-    if !wasm::db::db_contains_key(coin_roots_db, &serialize(&fee_val.input.merkle_root))? {
+    if !wasm::db::db_contains_key(coin_roots_db, &fee_val.input.merkle_root.to_repr())? {
         msg!("[fee_v1] Error: Input Merkle root not found in previous state");
         return Err(NativeTokenError::TransferMerkleRootNotFound.into())
     }
@@ -546,7 +546,7 @@ fn fee_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     }
 
     // Verify new coin does not already exist
-    if wasm::db::db_contains_key(coins_db, &serialize(&fee_val.output.coin))? {
+    if wasm::db::db_contains_key(coins_db, &fee_val.output.coin.to_bytes())? {
         msg!("[fee_v1] Error: Duplicate coin found");
         return Err(NativeTokenError::DuplicateCoin.into())
     }
@@ -597,7 +597,7 @@ fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     let mut new_nullifiers = Vec::new();
     for (i, input) in tp.inputs.iter().enumerate() {
         // Check Merkle root exists
-        if !wasm::db::db_contains_key(coin_roots_db, &serialize(&input.merkle_root))? {
+        if !wasm::db::db_contains_key(coin_roots_db, &input.merkle_root.to_repr())? {
             msg!("[transfer_v1] Error: Merkle root not found for input {}", i);
             return Err(NativeTokenError::TransferMerkleRootNotFound.into())
         }
@@ -614,7 +614,7 @@ fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     // Verify outputs are unique
     let mut new_coins = Vec::new();
     for (i, output) in tp.outputs.iter().enumerate() {
-        if wasm::db::db_contains_key(coins_db, &serialize(&output.coin))? {
+        if wasm::db::db_contains_key(coins_db, &output.coin.to_bytes())? {
             msg!("[transfer_v1] Error: Duplicate coin in output {}", i);
             return Err(NativeTokenError::DuplicateCoin.into())
         }
@@ -684,7 +684,7 @@ fn spend_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
     // Verify Merkle root exists
     let coin_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
-    if !wasm::db::db_contains_key(coin_roots_db, &serialize(&sp.input.merkle_root))? {
+    if !wasm::db::db_contains_key(coin_roots_db, &sp.input.merkle_root.to_repr())? {
         msg!("[spend_v1] Error: Input Merkle root not found in previous state");
         return Err(NativeTokenError::TransferMerkleRootNotFound.into())
     }
@@ -700,7 +700,7 @@ fn spend_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
     // Verify new coin doesn't already exist
     let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
-    if wasm::db::db_contains_key(coins_db, &serialize(&sp.output.coin))? {
+    if wasm::db::db_contains_key(coins_db, &sp.output.coin.to_bytes())? {
         msg!("[spend_v1] Error: Duplicate coin found");
         return Err(NativeTokenError::DuplicateCoin.into())
     }
@@ -733,7 +733,7 @@ fn burn_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     let mut new_nullifiers = Vec::new();
     for (i, input) in bp.inputs.iter().enumerate() {
         // Verify Merkle root exists
-        if !wasm::db::db_contains_key(coin_roots_db, &serialize(&input.merkle_root))? {
+        if !wasm::db::db_contains_key(coin_roots_db, &input.merkle_root.to_repr())? {
             msg!("[burn_v1] Error: Merkle root not found for input {}", i);
             return Err(NativeTokenError::TransferMerkleRootNotFound.into())
         }
@@ -828,7 +828,7 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     }
 
     // Check that the coin from the output hasn't existed before
-    if wasm::db::db_contains_key(coins_db, &serialize(&pr.output.coin))? {
+    if wasm::db::db_contains_key(coins_db, &pr.output.coin.to_bytes())? {
         msg!("[pow_reward_v1] Error: Duplicate coin in output");
         return Err(NativeTokenError::DuplicateCoin.into())
     }
@@ -1059,7 +1059,7 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
     // Check 3 (spec §3.7): the fee coin is not a duplicate
     let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
-    if wasm::db::db_contains_key(coins_db, &serialize(&fc.output.coin))? {
+    if wasm::db::db_contains_key(coins_db, &fc.output.coin.to_bytes())? {
         msg!("[fee_collect_v1] Duplicate fee coin");
         return Err(NativeTokenError::DuplicateCoin.into())
     }
@@ -1111,7 +1111,7 @@ fn apply_fee_collect(cid: ContractId, update: FeeCollectUpdateV1) -> ContractRes
     // a previously-SPENT coin (same formula, different height/key collision).
 
     // Add fee coin to coin set
-    wasm::db::db_set(coins_db, &serialize(&update.coin), &[])?;
+    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[])?;
 
     // Update Merkle tree (closes the tree for this block)
     wasm::merkle::merkle_add(
@@ -1137,10 +1137,10 @@ fn apply_fee(cid: ContractId, update: FeeUpdateV1) -> ContractResult {
     let fees_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_FEES_TREE)?;
 
     // Mark nullifier as spent
-    wasm::db::db_set(nullifiers_db, &serialize(&update.nullifier.inner()), &[])?;
+    wasm::db::db_set(nullifiers_db, &update.nullifier.to_bytes(), &[])?;
 
     // Add new coin
-    wasm::db::db_set(coins_db, &serialize(&update.coin), &[])?;
+    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[])?;
 
     // Update Merkle tree
     wasm::merkle::merkle_add(
@@ -1200,8 +1200,8 @@ fn apply_spend(cid: ContractId, update: SpendUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
     let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
 
-    wasm::db::db_set(nullifiers_db, &serialize(&update.nullifier.inner()), &[])?;
-    wasm::db::db_set(coins_db, &serialize(&update.coin), &[])?;
+    wasm::db::db_set(nullifiers_db, &update.nullifier.to_bytes(), &[])?;
+    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[])?;
     Ok(())
 }
 
@@ -1264,7 +1264,7 @@ fn apply_pow_reward(cid: ContractId, update: PoWRewardUpdateV1) -> ContractResul
 
     // Add new coin
     msg!("[PoWRewardV1] Adding new coin to the set");
-    wasm::db::db_set(coins_db, &serialize(&update.coin), &[])?;
+    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[])?;
 
     // Update Merkle tree
     msg!("[PoWRewardV1] Adding new coin to the Merkle tree");
