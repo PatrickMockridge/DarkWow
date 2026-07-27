@@ -239,11 +239,11 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update = decode_deposit_update_v1(&update_data[1..])?;
             let purses_db = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSES_TREE)?;
             let mut purse: Purse = match wasm::db::db_get(purses_db, &update.purse_id.to_bytes())? {
-                Some(data) => deserialize(&data)?,
+                Some(data) => Purse::decode(&data)?,
                 None => Purse { version: 1, purse_id: update.purse_id, token_commit: pallas::Base::zero(), balance_commit: update.new_balance_commit, owner_commit: pallas::Base::zero() },
             };
             purse.balance_commit = update.new_balance_commit;
-            wasm::db::db_set(purses_db, &update.purse_id.to_bytes(), &serialize(&purse))?;
+            wasm::db::db_set(purses_db, &update.purse_id.to_bytes(), &purse.encode())?;
             Ok(())
         }
         PurseFunction::WithdrawV1 => {
@@ -252,10 +252,11 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             wasm::db::db_set(nullifiers_db, &update.nullifier.to_bytes(), &[])?;
             let purses_db = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSES_TREE)?;
             if let Some(data) = wasm::db::db_get(purses_db, &update.purse_id.to_bytes())? {
-                let mut purse: Purse = deserialize(&data)?;
+                let mut purse: Purse = Purse::decode(&data)?;
                 purse.balance_commit = update.new_balance_commit;
-                wasm::db::db_set(purses_db, &update.purse_id.to_bytes(), &serialize(&purse))?;
+                wasm::db::db_set(purses_db, &update.purse_id.to_bytes(), &purse.encode())?;
             }
+            msg!("[purse::process_update::WithdrawV1] complete");
             Ok(())
         }
         PurseFunction::BalanceV1 => {

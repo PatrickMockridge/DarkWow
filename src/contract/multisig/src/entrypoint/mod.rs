@@ -270,7 +270,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let groups_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_GROUPS_TREE)?;
             let data = wasm::db::db_get(groups_db, &params.group_id.to_bytes())?
                 .ok_or(MultiSigError::GroupNotFound)?;
-            let group: MultiSigGroup = deserialize(&data)?;
+            let group = MultiSigGroup::decode(&data)?;
             let sigs_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_SIGNATURES_TREE)?;
             let mut consumed: Vec<Nullifier> = Vec::new();
             for pk in &group.pubkeys {
@@ -303,18 +303,20 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         MultiSigFunction::CreateGroupV1 => {
             let u = decode_create_group_update_v1(&update_data[1..])?;
             let groups_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_GROUPS_TREE)?;
-            wasm::db::db_set(groups_db, &u.group_id.to_bytes(), &serialize(&MultiSigGroup {
+            let group = MultiSigGroup {
                 version: 1, group_id: u.group_id, pubkeys: u.pubkeys,
                 threshold: u.threshold, total_keys: u.total_keys,
-            }))?;
+            };
+            wasm::db::db_set(groups_db, &u.group_id.to_bytes(), &group.encode())?;
             Ok(())
         }
         MultiSigFunction::SignV1 => {
             let u = decode_sign_update_v1(&update_data[1..])?;
             let sigs_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_SIGNATURES_TREE)?;
-            wasm::db::db_set(sigs_db, &u.nullifier.to_bytes(), &serialize(&PartialSignature {
+            let sig = PartialSignature {
                 group_id: u.group_id, message_hash: u.message_hash, nullifier: u.nullifier,
-            }))?;
+            };
+            wasm::db::db_set(sigs_db, &u.nullifier.to_bytes(), &sig.encode())?;
             let nf_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_NULLIFIERS_TREE)?;
             wasm::db::db_set(nf_db, &u.nullifier.to_bytes(), &[])?;
             Ok(())
@@ -324,9 +326,9 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let sigs_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_SIGNATURES_TREE)?;
             for nf in &u.consumed_nullifiers {
                 if let Some(d) = wasm::db::db_get(sigs_db, &nf.to_bytes())? {
-                    let mut sig: PartialSignature = deserialize(&d)?;
+                    let mut sig = PartialSignature::decode(&d)?;
                     sig.nullifier = Nullifier::ZERO;
-                    wasm::db::db_set(sigs_db, &nf.to_bytes(), &serialize(&sig))?;
+                    wasm::db::db_set(sigs_db, &nf.to_bytes(), &sig.encode())?;
                 }
             }
             Ok(())

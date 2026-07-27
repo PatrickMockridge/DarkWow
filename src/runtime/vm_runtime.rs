@@ -555,7 +555,22 @@ impl Runtime {
         match retval {
             wasm::entrypoint::SUCCESS => Ok(retdata),
             _ => {
-                let err = dwow_sdk::error::ContractError::from(retval);
+                // Surface WASM-side msg!() context before the logs are cleared.
+                // Per contract-wasm-type-system.md §5.5: every error SHALL be
+                // accompanied by a msg!() identifying the contract, function,
+                // and specific failure. The i64 ABI cannot carry the string,
+                // so we recover it from the log buffer.
+                self.print_logs();
+                let mut err = dwow_sdk::error::ContractError::from(retval);
+                // If the contract left a msg!() before returning the error,
+                // propagate it into the IoError so callers see the real cause
+                // instead of "Unknown".
+                if let dwow_sdk::error::ContractError::IoError(_) = &err {
+                    let logs = self.ctx.as_ref(&self.store).logs.borrow();
+                    if let Some(last_msg) = logs.last() {
+                        err = dwow_sdk::error::ContractError::IoError(last_msg.clone());
+                    }
+                }
                 error!(target: "runtime::vm_runtime", "[WASM] Contract returned: {err:?}");
                 Err(Error::ContractError(err))
             }
