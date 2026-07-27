@@ -42,10 +42,10 @@
 // Each attribute is tagged so verifiers know what they're checking.
 // ============================================================================
 
-use dwow_serial::{SerialDecodable, SerialEncodable};
 use dwow_sdk::crypto::{IntentCommitment, IntentNullifier, PublicKey};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
-use dwow_sdk::pasta::pallas;
+use dwow_sdk::error::ContractError;
+use dwow_sdk::pasta::{group::GroupEncoding, pallas};
 
 /// Capability identifier: hash of name + credential requirement
 #[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
@@ -634,10 +634,30 @@ pub struct VerifyDAGClaimParams {
 // ============================================================================
 
 /// Initialize update
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct InitializeUpdateV1 {
     pub version: u32,
     pub created_at: u64,
+}
+
+impl InitializeUpdateV1 {
+    pub const ENCODED_SIZE: usize = 12;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.version.to_le_bytes());
+        buf.extend_from_slice(&self.created_at.to_le_bytes());
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "InitializeUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let version = u32::from_le_bytes(data[0..4].try_into().unwrap());
+        let created_at = u64::from_le_bytes(data[4..12].try_into().unwrap());
+        Ok(InitializeUpdateV1 { version, created_at })
+    }
 }
 
 /// Issue credential update
@@ -669,10 +689,31 @@ pub struct CreateClaimUpdateV1 {
 }
 
 /// Verify claim update
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct VerifyClaimUpdateV1 {
     pub nullifier: IntentNullifier,
     pub verified: bool,
+}
+
+impl VerifyClaimUpdateV1 {
+    pub const ENCODED_SIZE: usize = 33;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.nullifier.to_bytes());
+        buf.push(self.verified as u8);
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "VerifyClaimUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("VerifyClaimUpdateV1: invalid nullifier: {}", e)))?;
+        let verified = data[32] != 0;
+        Ok(VerifyClaimUpdateV1 { nullifier, verified })
+    }
 }
 
 /// Register capability update
@@ -694,26 +735,94 @@ pub struct IssueCapabilityUpdateV1 {
 }
 
 /// Verify capability update
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct VerifyCapabilityUpdateV1 {
     pub capability_id: CapabilityId,
     pub holder_pub: PublicKey,
     pub verified: bool,
 }
 
+impl VerifyCapabilityUpdateV1 {
+    pub const ENCODED_SIZE: usize = 65;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.capability_id.to_bytes());
+        buf.extend_from_slice(&self.holder_pub.to_bytes());
+        buf.push(self.verified as u8);
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "VerifyCapabilityUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let capability_id = CapabilityId::from_bytes(data[0..32].try_into().unwrap())
+            .ok_or_else(|| ContractError::IoError("VerifyCapabilityUpdateV1: invalid capability_id".into()))?;
+        let holder_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("VerifyCapabilityUpdateV1: invalid holder_pub: {}", e)))?;
+        let verified = data[64] != 0;
+        Ok(VerifyCapabilityUpdateV1 { capability_id, holder_pub, verified })
+    }
+}
+
 /// Revoke capability update
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RevokeCapabilityUpdateV1 {
     pub capability_id: CapabilityId,
     pub holder_pub: PublicKey,
 }
 
+impl RevokeCapabilityUpdateV1 {
+    pub const ENCODED_SIZE: usize = 64;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.capability_id.to_bytes());
+        buf.extend_from_slice(&self.holder_pub.to_bytes());
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "RevokeCapabilityUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let capability_id = CapabilityId::from_bytes(data[0..32].try_into().unwrap())
+            .ok_or_else(|| ContractError::IoError("RevokeCapabilityUpdateV1: invalid capability_id".into()))?;
+        let holder_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("RevokeCapabilityUpdateV1: invalid holder_pub: {}", e)))?;
+        Ok(RevokeCapabilityUpdateV1 { capability_id, holder_pub })
+    }
+}
+
 /// Create DAG claim update
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CreateClaimDAGUpdateV1 {
     pub dag_id: [u8; 32],
     pub path_index: u32,
     pub predicate_result: u8,
+}
+
+impl CreateClaimDAGUpdateV1 {
+    pub const ENCODED_SIZE: usize = 37;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.dag_id);
+        buf.extend_from_slice(&self.path_index.to_le_bytes());
+        buf.push(self.predicate_result);
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "CreateClaimDAGUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let dag_id: [u8; 32] = data[0..32].try_into().unwrap();
+        let path_index = u32::from_le_bytes(data[32..36].try_into().unwrap());
+        let predicate_result = data[36];
+        Ok(CreateClaimDAGUpdateV1 { dag_id, path_index, predicate_result })
+    }
 }
 
 // ============================================================================
@@ -774,7 +883,7 @@ pub struct ReputationRecord {
 }
 
 /// Update reputation update
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct UpdateReputationUpdateV1 {
     pub reputation_id: ReputationId,
     pub relayer_pub: PublicKey,
@@ -784,4 +893,39 @@ pub struct UpdateReputationUpdateV1 {
     pub total_volume: u64,
     pub settlement_frequency: u64,
     pub last_updated: u64,
+}
+
+impl UpdateReputationUpdateV1 {
+    pub const ENCODED_SIZE: usize = 136;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.reputation_id.to_bytes());
+        buf.extend_from_slice(&self.relayer_pub.to_bytes());
+        buf.extend_from_slice(&self.issuer_pub.to_bytes());
+        buf.extend_from_slice(&self.slash_count.to_le_bytes());
+        buf.extend_from_slice(&self.success_count.to_le_bytes());
+        buf.extend_from_slice(&self.total_volume.to_le_bytes());
+        buf.extend_from_slice(&self.settlement_frequency.to_le_bytes());
+        buf.extend_from_slice(&self.last_updated.to_le_bytes());
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "UpdateReputationUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let reputation_id = ReputationId::from_bytes(data[0..32].try_into().unwrap())
+            .ok_or_else(|| ContractError::IoError("UpdateReputationUpdateV1: invalid reputation_id".into()))?;
+        let relayer_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("UpdateReputationUpdateV1: invalid relayer_pub: {}", e)))?;
+        let issuer_pub = PublicKey::from_bytes(data[64..96].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("UpdateReputationUpdateV1: invalid issuer_pub: {}", e)))?;
+        let slash_count = u64::from_le_bytes(data[96..104].try_into().unwrap());
+        let success_count = u64::from_le_bytes(data[104..112].try_into().unwrap());
+        let total_volume = u64::from_le_bytes(data[112..120].try_into().unwrap());
+        let settlement_frequency = u64::from_le_bytes(data[120..128].try_into().unwrap());
+        let last_updated = u64::from_le_bytes(data[128..136].try_into().unwrap());
+        Ok(UpdateReputationUpdateV1 { reputation_id, relayer_pub, issuer_pub, slash_count, success_count, total_volume, settlement_frequency, last_updated })
+    }
 }

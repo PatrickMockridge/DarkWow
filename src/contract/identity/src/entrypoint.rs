@@ -363,7 +363,7 @@ fn process_issue_credential_instruction(
     msg!("[identity::issue_credential] Issuing credential to holder");
 
     // Credential data stored locally for DAG; possession tracked via Box::PutV1.
-    let nullifier_bytes = serialize(&params.nullifier);
+    let nullifier_bytes = params.nullifier.to_bytes();
     // Check nullifier hasn't been used
     let nullifiers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_NULLIFIERS_TREE)?;
     let nullifier_used = wasm::db::db_get(nullifiers_db, &nullifier_bytes)?;
@@ -389,7 +389,7 @@ fn process_issue_credential_instruction(
 fn apply_issue_credential_update(cid: ContractId, update: IssueCredentialUpdateV1) -> ContractResult {
     let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_NULLIFIERS_TREE)?;
-    let nullifier_bytes = serialize(&update.nullifier);
+    let nullifier_bytes = update.nullifier.to_bytes();
 
     // Store credential data for DAG operations.
     // Possession tracking delegated to Box::PutV1 child call.
@@ -428,7 +428,7 @@ fn process_revoke_credential_instruction(
 
     // Load credential (just to verify it exists)
     let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
-    let nullifier_bytes = serialize(&params.nullifier);
+    let nullifier_bytes = params.nullifier.to_bytes();
     let _cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
 
@@ -446,7 +446,7 @@ fn apply_revoke_credential_update(cid: ContractId, update: RevokeCredentialUpdat
     let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_NULLIFIERS_TREE)?;
 
-    let nullifier_bytes = serialize(&update.nullifier);
+    let nullifier_bytes = update.nullifier.to_bytes();
 
     // Load and update credential
     let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
@@ -480,7 +480,7 @@ fn process_create_claim_instruction(
 
     // Load and verify credential
     let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
-    let nullifier_bytes = serialize(&params.nullifier);
+    let nullifier_bytes = params.nullifier.to_bytes();
     let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
 
@@ -523,7 +523,7 @@ fn process_create_claim_l1_instruction(
 
     // Load and verify credential
     let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
-    let nullifier_bytes = serialize(&params.nullifier);
+    let nullifier_bytes = params.nullifier.to_bytes();
     let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
 
@@ -563,7 +563,7 @@ fn process_verify_claim_instruction(
 
     // Load and verify credential
     let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
-    let nullifier_bytes = serialize(&params.claim.nullifier);
+    let nullifier_bytes = params.claim.nullifier.to_bytes();
     let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
 
@@ -604,7 +604,7 @@ fn process_create_claim_l1_v2_instruction(
 
     // Load and verify credential
     let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
-    let nullifier_bytes = serialize(&params.nullifier);
+    let nullifier_bytes = params.nullifier.to_bytes();
     let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
 
@@ -644,7 +644,7 @@ fn process_create_claim_multi_instruction(
 
     // Load and verify credential
     let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
-    let nullifier_bytes = serialize(&params.nullifier);
+    let nullifier_bytes = params.nullifier.to_bytes();
     let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
 
@@ -676,7 +676,7 @@ fn process_create_claim_ratio_instruction(
 
     // Load and verify credential
     let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
-    let nullifier_bytes = serialize(&params.nullifier);
+    let nullifier_bytes = params.nullifier.to_bytes();
     let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
 
@@ -711,7 +711,7 @@ fn process_register_capability_instruction(
 
     // Check if capability already exists
     let capabilities_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CAPABILITIES_TREE)?;
-    let cap_bytes = serialize(&capability_id);
+    let cap_bytes = capability_id.to_bytes();
     let existing = wasm::db::db_get(capabilities_db, &cap_bytes)?;
     if existing.is_some() {
         msg!("[identity::register_capability] ERROR: Capability already registered");
@@ -741,7 +741,7 @@ fn apply_register_capability_update(cid: ContractId, update: RegisterCapabilityU
         issued_count: 0,
     };
 
-    wasm::db::db_set(capabilities_db, &serialize(&update.capability_id), &serialize(&capability))?;
+    wasm::db::db_set(capabilities_db, &update.capability_id.to_bytes(), &serialize(&capability))?;
 
     msg!("[identity::register_capability::update] Capability stored");
     Ok(())
@@ -763,7 +763,7 @@ fn process_issue_capability_instruction(
 
     // Load capability definition
     let capabilities_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CAPABILITIES_TREE)?;
-    let cap_bytes = serialize(&params.capability_id);
+    let cap_bytes = params.capability_id.to_bytes();
     let cap_data = wasm::db::db_get(capabilities_db, &cap_bytes)?
         .ok_or(IdentityError::CapabilityNotFound)?;
 
@@ -779,7 +779,7 @@ fn process_issue_capability_instruction(
 
     // Verify credential exists
     let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
-    let cred_nullifier_bytes = serialize(&params.credential_nullifier);
+    let cred_nullifier_bytes = params.credential_nullifier.to_bytes();
     let _cred_data = wasm::db::db_get(credentials_db, &cred_nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
 
@@ -805,7 +805,7 @@ fn apply_issue_capability_update(cid: ContractId, update: IssueCapabilityUpdateV
     // StoredCapability issuance record removed — Box id is the record.
 
     // Update issued count
-    let cap_bytes = serialize(&update.capability_id);
+    let cap_bytes = update.capability_id.to_bytes();
     let cap_data = wasm::db::db_get(capabilities_db, &cap_bytes)?
         .ok_or(IdentityError::CapabilityNotFound)?;
 
@@ -834,7 +834,7 @@ fn process_verify_capability_instruction(
 
     // Load capability definition
     let capabilities_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CAPABILITIES_TREE)?;
-    let cap_bytes = serialize(&params.capability_proof.capability_id);
+    let cap_bytes = params.capability_proof.capability_id.to_bytes();
     let _cap_data = wasm::db::db_get(capabilities_db, &cap_bytes)?
         .ok_or(IdentityError::CapabilityNotFound)?;
 
@@ -912,7 +912,7 @@ fn process_create_claim_dag_instruction(
         return Err(ContractError::IoError("Too many DAG credentials".to_string()));
     }
     for dag_cred in &params.credentials {
-        let nullifier_bytes = serialize(&dag_cred.nullifier);
+        let nullifier_bytes = dag_cred.nullifier.to_bytes();
         let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
             .ok_or(IdentityError::CredentialNotFound)?;
 
@@ -1082,7 +1082,7 @@ fn apply_update_reputation_update(cid: ContractId, update: UpdateReputationUpdat
         last_updated: update.last_updated,
     };
 
-    wasm::db::db_set(reputations_db, &serialize(&update.reputation_id), &serialize(&record))?;
+    wasm::db::db_set(reputations_db, &update.reputation_id.to_bytes(), &serialize(&record))?;
 
     msg!("[identity::update_reputation::update] Reputation stored");
     Ok(())
