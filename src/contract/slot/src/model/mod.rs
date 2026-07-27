@@ -37,6 +37,7 @@
 
 use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, poseidon_hash, tx_hash_to_base, PublicKey},
+    error::ContractError,
     pasta::pallas,
     tx::TransactionHash,
 };
