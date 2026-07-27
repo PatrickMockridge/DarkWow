@@ -105,7 +105,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         RouletteFunction::SpinWheelV1 => {
-            let params: SpinWheelParamsV1 = deserialize(&self_.data[1..])?;
+            let params= SpinWheelParamsV1::decode(&self_.data[1..])?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::ROULETTE_CONTRACT_ZKAS_SPIN_WHEEL_NS_V2.to_string(),
@@ -116,7 +116,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         RouletteFunction::HouseCloseV1 => {
-            let params: HouseCloseParamsV1 = deserialize(&self_.data[1..])?;
+            let params= HouseCloseParamsV1::decode(&self_.data[1..])?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::ROULETTE_CONTRACT_ZKAS_HOUSE_CLOSE_NS_V2.to_string(),
@@ -127,7 +127,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         RouletteFunction::SettleBetsV1 => {
-            let params: SettleBetsParamsV1 = deserialize(&self_.data[1..])?;
+            let params= SettleBetsParamsV1::decode(&self_.data[1..])?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::ROULETTE_CONTRACT_ZKAS_SETTLE_BET_NS_V2.to_string(),
@@ -205,7 +205,7 @@ fn roulette_initialize_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: InitializeParamsV1 = deserialize(&self_.data[1..])?;
+    let params= InitializeParamsV1::decode(&self_.data[1..])?;
 
     msg!("[roulette::initialize] Initializing roulette table");
     msg!("  american_wheel: {}", params.american_wheel);
@@ -291,7 +291,7 @@ fn roulette_place_bet_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: PlaceBetParamsV1 = deserialize(&self_.data[1..])?;
+    let params= PlaceBetParamsV1::decode(&self_.data[1..])?;
 
     // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled for bet locking
     let this_call = &calls[call_idx];
@@ -444,7 +444,7 @@ fn roulette_spin_wheel_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: SpinWheelParamsV1 = deserialize(&self_.data[1..])?;
+    let params= SpinWheelParamsV1::decode(&self_.data[1..])?;
 
     msg!("[roulette::spin] Spinning wheel for table {:?}", params.table_id);
 
@@ -547,7 +547,7 @@ fn roulette_settle_bets_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: SettleBetsParamsV1 = deserialize(&self_.data[1..])?;
+    let params= SettleBetsParamsV1::decode(&self_.data[1..])?;
 
     // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled for payouts
     let this_call = &calls[call_idx];
@@ -684,7 +684,7 @@ fn roulette_house_close_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: HouseCloseParamsV1 = deserialize(&self_.data[1..])?;
+    let params= HouseCloseParamsV1::decode(&self_.data[1..])?;
 
     // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled for house's capital
     let this_call = &calls[call_idx];

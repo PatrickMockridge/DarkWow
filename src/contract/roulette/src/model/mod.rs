@@ -30,7 +30,6 @@ use dwow_sdk::{
     error::ContractError,
     pasta::pallas,
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::{EUROPEAN_HOUSE_EDGE_BP, EUROPEAN_WHEEL_SIZE, AMERICAN_HOUSE_EDGE_BP, AMERICAN_WHEEL_SIZE};
 
@@ -562,8 +561,10 @@ impl Bet {
 // PARAMS AND UPDATES
 // ============================================================================
 
+fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap())).ok_or_else(|| ContractError::IoError("invalid base".into())) }
+
 /// Parameters for InitializeV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct InitializeParamsV1 {
     /// House public key
     pub house_pub: PublicKey,
@@ -577,6 +578,8 @@ pub struct InitializeParamsV1 {
     pub duration_blocks: u64,
     pub instance_seed: [u8; 32],
 }
+
+impl InitializeParamsV1 { pub const ENCODED_SIZE: usize = 89; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(89); b.extend_from_slice(&self.house_pub.to_bytes()); b.push(self.american_wheel as u8); b.extend_from_slice(&self.house_capital.to_le_bytes()); b.extend_from_slice(&self.max_straight_bet.to_le_bytes()); b.extend_from_slice(&self.duration_blocks.to_le_bytes()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 89 { return Err(ContractError::IoError(format!("InitializeParamsV1: expected 89 bytes, got {}", data.len()))); } Ok(InitializeParamsV1 { house_pub: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("InitializeParamsV1: invalid house_pub: {}", e)))?, american_wheel: data[32] != 0, house_capital: u64::from_le_bytes(data[33..41].try_into().unwrap()), max_straight_bet: u64::from_le_bytes(data[41..49].try_into().unwrap()), duration_blocks: u64::from_le_bytes(data[49..57].try_into().unwrap()), instance_seed: data[57..89].try_into().unwrap() }) } }
 
 /// Update from InitializeV1
 #[derive(Debug, Clone)]
@@ -634,7 +637,7 @@ impl InitializeUpdateV1 {
 }
 
 /// Parameters for PlaceBetV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct PlaceBetParamsV1 {
     /// Table ID
     pub table_id: pallas::Base,
@@ -650,6 +653,8 @@ pub struct PlaceBetParamsV1 {
     pub signature: pallas::Base,
     pub instance_seed: [u8; 32],
 }
+
+impl PlaceBetParamsV1 { pub fn encode(&self) -> Vec<u8> { let n = self.numbers.len() as u8; let mut b = Vec::with_capacity(106 + n as usize); b.extend_from_slice(&self.table_id.to_repr()); b.extend_from_slice(&self.player_pub.to_bytes()); b.push(self.bet_type as u8); b.push(n); b.extend_from_slice(&self.numbers); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.signature.to_repr()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 106 { return Err(ContractError::IoError("PlaceBetParamsV1: too short".into())); } let table_id = read_base(&data[0..32])?; let player_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PlaceBetParamsV1: invalid player_pub: {}", e)))?; let bet_type = BetType::try_from(data[64])?; let n = data[65] as usize; let end = 66+n; if data.len() < end+40 { return Err(ContractError::IoError("PlaceBetParamsV1: numbers truncated".into())); } let numbers = data[66..end].to_vec(); let amount = u64::from_le_bytes(data[end..end+8].try_into().unwrap()); let signature = read_base(&data[end+8..end+40])?; let instance_seed: [u8;32] = data[end+40..end+72].try_into().unwrap(); Ok(PlaceBetParamsV1 { table_id, player_pub, bet_type, numbers, amount, signature, instance_seed }) } }
 
 /// Update from PlaceBetV1
 #[derive(Debug, Clone)]
@@ -737,7 +742,7 @@ impl PlaceBetUpdateV1 {
 }
 
 /// Parameters for SpinWheelV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct SpinWheelParamsV1 {
     /// Table ID
     pub table_id: pallas::Base,
@@ -750,6 +755,8 @@ pub struct SpinWheelParamsV1 {
     /// Spin nullifier = H(table_id, house_secret) — replay protection
     pub spin_nullifier: pallas::Base,
 }
+
+impl SpinWheelParamsV1 { pub const ENCODED_SIZE: usize = 160; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(160); b.extend_from_slice(&self.table_id.to_repr()); b.extend_from_slice(&self.nonce.to_repr()); b.extend_from_slice(&self.house_pub_x.to_repr()); b.extend_from_slice(&self.house_pub_y.to_repr()); b.extend_from_slice(&self.spin_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 160 { return Err(ContractError::IoError(format!("SpinWheelParamsV1: expected 160 bytes, got {}", data.len()))); } Ok(SpinWheelParamsV1 { table_id: read_base(&data[0..32])?, nonce: read_base(&data[32..64])?, house_pub_x: read_base(&data[64..96])?, house_pub_y: read_base(&data[96..128])?, spin_nullifier: read_base(&data[128..160])? }) } }
 
 /// Update from SpinWheelV1
 #[derive(Debug, Clone)]
@@ -795,7 +802,7 @@ impl SpinWheelUpdateV1 {
 }
 
 /// Parameters for SettleBetsV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct SettleBetsParamsV1 {
     /// Table ID
     pub table_id: pallas::Base,
@@ -804,6 +811,8 @@ pub struct SettleBetsParamsV1 {
     /// Total payout amount (public input for ZK proof)
     pub payout: u64,
 }
+
+impl SettleBetsParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(41+self.bet_ids.len()*32); b.extend_from_slice(&self.table_id.to_repr()); b.push(self.bet_ids.len() as u8); for id in &self.bet_ids { b.extend_from_slice(&id.to_repr()); } b.extend_from_slice(&self.payout.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 41 { return Err(ContractError::IoError("SettleBetsParamsV1: too short".into())); } let table_id = read_base(&data[0..32])?; let count = data[32] as usize; let end = 33+count*32; if data.len() != end+8 { return Err(ContractError::IoError(format!("SettleBetsParamsV1: expected {} bytes, got {}", end+8, data.len()))); } let mut bet_ids = Vec::with_capacity(count); for i in 0..count { bet_ids.push(read_base(&data[33+i*32..33+(i+1)*32])?); } let payout = u64::from_le_bytes(data[end..end+8].try_into().unwrap()); Ok(SettleBetsParamsV1 { table_id, bet_ids, payout }) } }
 
 /// Update from SettleBetsV1
 #[derive(Debug, Clone)]
@@ -853,7 +862,7 @@ impl SettleBetsUpdateV1 {
 }
 
 /// Parameters for HouseCloseV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct HouseCloseParamsV1 {
     /// Table ID
     pub table_id: pallas::Base,
@@ -864,6 +873,8 @@ pub struct HouseCloseParamsV1 {
     /// Close nullifier = H(table_id, house_secret) — replay protection
     pub close_nullifier: pallas::Base,
 }
+
+impl HouseCloseParamsV1 { pub const ENCODED_SIZE: usize = 128; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(128); b.extend_from_slice(&self.table_id.to_repr()); b.extend_from_slice(&self.house_pub_x.to_repr()); b.extend_from_slice(&self.house_pub_y.to_repr()); b.extend_from_slice(&self.close_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 128 { return Err(ContractError::IoError(format!("HouseCloseParamsV1: expected 128 bytes, got {}", data.len()))); } Ok(HouseCloseParamsV1 { table_id: read_base(&data[0..32])?, house_pub_x: read_base(&data[32..64])?, house_pub_y: read_base(&data[64..96])?, close_nullifier: read_base(&data[96..128])? }) } }
 
 /// Update from HouseCloseV1
 #[derive(Debug, Clone)]
