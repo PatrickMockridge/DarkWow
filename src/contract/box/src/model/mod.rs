@@ -23,7 +23,7 @@ impl dwow_serial::Decodable for BoxId {
 }
 
 /// Box unique identifier — Poseidon hash of creator public key and nonce.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct BoxId(pub pallas::Base);
 
 impl BoxId {
