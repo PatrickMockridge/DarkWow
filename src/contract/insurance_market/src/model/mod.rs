@@ -945,6 +945,77 @@ impl CloseMarketUpdateV1 { pub const ENCODED_SIZE: usize = 33; pub fn encode(&se
 
 impl RetireRiskTypeUpdateV1 { pub const ENCODED_SIZE: usize = 33; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(33); b.extend_from_slice(&self.risk_type_id.to_repr()); b.push(self.active as u8); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 33 { return Err(ContractError::IoError(format!("RetireRiskTypeUpdateV1: expected 33 bytes, got {}", data.len()))); } Ok(RetireRiskTypeUpdateV1 { risk_type_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RetireRiskTypeUpdateV1: invalid risk_type_id".into()))?, active: data[32] != 0 }) } }
 
+impl CreateMarketUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 109 + if self.required_underwriter_capability.is_some() { 32 } else { 0 }
+            + if self.required_buyer_capability.is_some() { 32 } else { 0 }
+            + if self.required_dag_id.is_some() { 32 } else { 0 };
+        let mut b = Vec::with_capacity(cap);
+        b.extend_from_slice(&self.market_id.to_repr());
+        b.extend_from_slice(&self.risk_type.to_repr());
+        b.extend_from_slice(&self.premium_rate.to_le_bytes());
+        b.extend_from_slice(&self.total_coverage.to_le_bytes());
+        b.extend_from_slice(&self.coverage_period.to_le_bytes());
+        b.extend_from_slice(&self.deductible.to_le_bytes());
+        b.extend_from_slice(&self.max_coverage_per_buyer.to_le_bytes());
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b.push(self.required_underwriter_capability.is_some() as u8);
+        if let Some(ref c) = self.required_underwriter_capability { b.extend_from_slice(c); }
+        b.push(self.required_buyer_capability.is_some() as u8);
+        if let Some(ref c) = self.required_buyer_capability { b.extend_from_slice(c); }
+        b.push(self.required_dag_id.is_some() as u8);
+        if let Some(ref d) = self.required_dag_id { b.extend_from_slice(d); }
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 109 { return Err(ContractError::IoError(format!("CreateMarketUpdateV1: expected at least 109 bytes, got {}", data.len()))); }
+        let market_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CreateMarketUpdateV1: invalid market_id".into()))?;
+        let risk_type = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CreateMarketUpdateV1: invalid risk_type".into()))?;
+        let premium_rate = u32::from_le_bytes(data[64..68].try_into().unwrap());
+        let total_coverage = u64::from_le_bytes(data[68..76].try_into().unwrap());
+        let coverage_period = u64::from_le_bytes(data[76..84].try_into().unwrap());
+        let deductible = u64::from_le_bytes(data[84..92].try_into().unwrap());
+        let max_coverage_per_buyer = u64::from_le_bytes(data[92..100].try_into().unwrap());
+        let created_at = u64::from_le_bytes(data[100..108].try_into().unwrap());
+        let mut pos = 108;
+        let has_uw = data[pos] != 0; pos += 1;
+        let (required_underwriter_capability, pos) = if has_uw { (Some(data[pos..pos+32].try_into().unwrap()), pos + 32) } else { (None, pos) };
+        let has_buy = data[pos] != 0; pos += 1;
+        let (required_buyer_capability, pos) = if has_buy { (Some(data[pos..pos+32].try_into().unwrap()), pos + 32) } else { (None, pos) };
+        let has_dag = data[pos] != 0; pos += 1;
+        let (required_dag_id, _) = if has_dag { (Some(data[pos..pos+32].try_into().unwrap()), pos + 32) } else { (None, pos) };
+        Ok(CreateMarketUpdateV1 { market_id, risk_type, premium_rate, total_coverage, coverage_period, deductible, max_coverage_per_buyer, created_at, required_underwriter_capability, required_buyer_capability, required_dag_id })
+    }
+}
+
+impl RegisterRiskTypeUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(77 + self.description.len());
+        b.extend_from_slice(&self.risk_type_id.to_repr());
+        b.push(self.category as u8);
+        b.push(self.description.len() as u8);
+        b.extend_from_slice(&self.description);
+        b.extend_from_slice(&self.base_premium_rate.to_le_bytes());
+        b.extend_from_slice(&self.min_bond_rate.to_le_bytes());
+        b.extend_from_slice(&self.oracle_pubkey.to_bytes());
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 77 { return Err(ContractError::IoError(format!("RegisterRiskTypeUpdateV1: expected at least 77 bytes, got {}", data.len()))); }
+        let risk_type_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RegisterRiskTypeUpdateV1: invalid risk_type_id".into()))?;
+        let category = RiskCategory::try_from(data[32])?;
+        let desc_len = data[33] as usize;
+        if data.len() != 77 + desc_len { return Err(ContractError::IoError(format!("RegisterRiskTypeUpdateV1: expected {} bytes, got {}", 77 + desc_len, data.len()))); }
+        let description = data[34..34+desc_len].to_vec();
+        let base_premium_rate = u32::from_le_bytes(data[34+desc_len..38+desc_len].try_into().unwrap());
+        let min_bond_rate = u32::from_le_bytes(data[38+desc_len..42+desc_len].try_into().unwrap());
+        let oracle_pubkey = PublicKey::from_bytes(data[42+desc_len..74+desc_len].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("RegisterRiskTypeUpdateV1: invalid oracle_pubkey: {}", e)))?;
+        let created_at = u64::from_le_bytes(data[74+desc_len..82+desc_len].try_into().unwrap());
+        Ok(RegisterRiskTypeUpdateV1 { risk_type_id, category, description, base_premium_rate, min_bond_rate, oracle_pubkey, created_at })
+    }
+}
+
 impl Underwriter {
     pub const ENCODED_SIZE: usize = 154;
     pub fn encode(&self) -> Vec<u8> {

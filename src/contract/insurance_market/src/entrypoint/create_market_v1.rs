@@ -50,8 +50,8 @@ pub fn insurance_market_create_market_process_instruction_v1(
     // Verify risk type exists
     let risk_types_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_RISK_TYPES_TREE)?;
     let risk_type_bytes =
-        wasm::db::db_get(risk_types_db, &serialize(&params.risk_type_id))?.ok_or(ContractError::DbGetEmpty)?;
-    let risk_type: crate::model::RiskType = deserialize(&risk_type_bytes)?;
+        wasm::db::db_get(risk_types_db, &params.risk_type_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
+    let risk_type = crate::model::RiskType::decode(&risk_type_bytes)?;
 
     if !risk_type.active {
         return Err(InsuranceMarketError::RiskTypeNotFound.into())
@@ -67,7 +67,7 @@ pub fn insurance_market_create_market_process_instruction_v1(
 
     // Check if market already exists
     let markets_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_MARKETS_TREE)?;
-    if wasm::db::db_contains_key(markets_db, &serialize(&market_id))? {
+    if wasm::db::db_contains_key(markets_db, &market_id.to_repr())? {
         return Err(InsuranceMarketError::MarketAlreadyExists.into())
     }
 
@@ -109,7 +109,7 @@ pub fn insurance_market_create_market_process_instruction_v1(
     };
 
     msg!("[insurance_market::create_market] Market created: {:?}", market_id);
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Process update for CreateMarketV1
@@ -141,8 +141,8 @@ pub fn insurance_market_create_market_process_update_v1(
     // Store market
     wasm::db::db_set(
         markets_db,
-        &serialize(&update.market_id),
-        &serialize(&market),
+        &update.market_id.to_repr(),
+        &market.encode(),
     )?;
 
     msg!("[insurance_market::create_market::update] Market stored: {:?}", update.market_id);

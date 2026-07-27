@@ -51,7 +51,7 @@ pub fn insurance_market_register_risk_type_process_instruction_v1(
 
     // Check if risk type already exists
     let risk_types_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_RISK_TYPES_TREE)?;
-    if wasm::db::db_contains_key(risk_types_db, &serialize(&risk_type_id))? {
+    if wasm::db::db_contains_key(risk_types_db, &risk_type_id.to_repr())? {
         return Err(InsuranceMarketError::RiskTypeAlreadyExists.into())
     }
 
@@ -80,7 +80,7 @@ pub fn insurance_market_register_risk_type_process_instruction_v1(
     };
 
     msg!("[insurance_market::register_risk_type] Risk type registered: {:?}", update.risk_type_id);
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Process update for RegisterRiskTypeV1
@@ -106,8 +106,8 @@ pub fn insurance_market_register_risk_type_process_update_v1(
     // Store risk type
     wasm::db::db_set(
         risk_types_db,
-        &serialize(&update.risk_type_id),
-        &serialize(&risk_type),
+        &update.risk_type_id.to_repr(),
+        &risk_type.encode(),
     )?;
 
     msg!("[insurance_market::register_risk_type::update] Risk type stored: {:?}", update.risk_type_id);

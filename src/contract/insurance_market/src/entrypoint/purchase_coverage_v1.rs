@@ -90,8 +90,8 @@ pub fn insurance_market_purchase_coverage_process_instruction_v1(
 
     // Look up the market
     let markets_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_MARKETS_TREE)?;
-    let market_bytes = wasm::db::db_get(markets_db, &serialize(&params.market_id))?.ok_or(ContractError::DbGetEmpty)?;
-    let market: crate::model::InsuranceMarket = deserialize(&market_bytes)?;
+    let market_bytes = wasm::db::db_get(markets_db, &params.market_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
+    let market = crate::model::InsuranceMarket::decode(&market_bytes)?;
 
     if !market.active {
         return Err(InsuranceMarketError::MarketNotActive.into())
@@ -117,8 +117,8 @@ pub fn insurance_market_purchase_coverage_process_instruction_v1(
     // Look up the underwriter
     let underwriters_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_UNDERWRITERS_TREE)?;
     let underwriter_bytes =
-        wasm::db::db_get(underwriters_db, &serialize(&params.underwriter_id))?.ok_or(ContractError::DbGetEmpty)?;
-    let underwriter: crate::model::Underwriter = deserialize(&underwriter_bytes)?;
+        wasm::db::db_get(underwriters_db, &params.underwriter_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
+    let underwriter = crate::model::Underwriter::decode(&underwriter_bytes)?;
 
     if !underwriter.active {
         return Err(InsuranceMarketError::UnauthorizedUnderwriter.into())
@@ -141,7 +141,7 @@ pub fn insurance_market_purchase_coverage_process_instruction_v1(
     let _vc_coords = vc_coords.unwrap();
     // Verify buyer nullifier hasn't been used (ZK proof verifies identity)
     let nullifiers_db = wasm::db::db_lookup(cid, INSURANCE_MARKET_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.buyer_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.buyer_nullifier.to_repr())? {
         return Err(InsuranceMarketError::InvalidParameter("Duplicate nullifier".to_string()).into())
     }
 
@@ -155,7 +155,7 @@ pub fn insurance_market_purchase_coverage_process_instruction_v1(
 
     // Check if coverage already exists
     let coverages_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_COVERAGES_TREE)?;
-    if wasm::db::db_contains_key(coverages_db, &serialize(&coverage_id))? {
+    if wasm::db::db_contains_key(coverages_db, &coverage_id.to_repr())? {
         return Err(InsuranceMarketError::CoverageAlreadyActive.into())
     }
 
@@ -187,7 +187,7 @@ pub fn insurance_market_purchase_coverage_process_instruction_v1(
         coverage_id,
         premium
     );
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Process update for PurchaseCoverageV1
@@ -216,25 +216,25 @@ pub fn insurance_market_purchase_coverage_process_update_v1(
     // Store coverage
     wasm::db::db_set(
         coverages_db,
-        &serialize(&update.coverage_id),
-        &serialize(&coverage),
+        &update.coverage_id.to_repr(),
+        &coverage.encode(),
     )?;
 
     // Update underwriter's earned premiums and coverage sold
     let underwriter_bytes =
-        wasm::db::db_get(underwriters_db, &serialize(&update.underwriter_id))?.ok_or(ContractError::DbGetEmpty)?;
-    let mut underwriter: crate::model::Underwriter = deserialize(&underwriter_bytes)?;
+        wasm::db::db_get(underwriters_db, &update.underwriter_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
+    let mut underwriter = crate::model::Underwriter::decode(&underwriter_bytes)?;
     underwriter.earned_premiums += update.premium_paid;
     underwriter.coverage_sold += update.amount; // Track coverage sold
     wasm::db::db_set(
         underwriters_db,
-        &serialize(&update.underwriter_id),
-        &serialize(&underwriter),
+        &update.underwriter_id.to_repr(),
+        &underwriter.encode(),
     )?;
 
     // Record buyer nullifier for replay protection
     let nullifiers_db = wasm::db::db_lookup(cid, INSURANCE_MARKET_NULLIFIERS_TREE)?;
-    wasm::db::db_set(nullifiers_db, &serialize(&update.buyer_nullifier), &[])?;
+    wasm::db::db_set(nullifiers_db, &update.buyer_nullifier.to_repr(), &[])?;
 
     msg!(
         "[insurance_market::purchase_coverage::update] Coverage stored: {:?}",

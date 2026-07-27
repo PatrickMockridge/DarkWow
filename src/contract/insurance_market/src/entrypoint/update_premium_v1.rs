@@ -25,19 +25,25 @@
 //!
 //! Allows updating the premium rate for an insurance market.
 
-use dwow_sdk::{error::ContractError, msg, wasm};
-use dwow_serial::{deserialize, serialize};
+use dwow_sdk::{error::ContractError, msg, pasta::pallas, wasm};
+use dwow_serial::deserialize;
 
 use crate::error::InsuranceMarketError;
 use crate::model::UpdatePremiumParamsV1;
 use crate::INSURANCE_CONTRACT_MARKETS_TREE;
 
 /// State update for UpdatePremiumV1
-#[derive(Debug, Clone, dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct UpdatePremiumUpdateV1 {
     pub market_id: crate::model::MarketId,
     pub old_premium_rate: u32,
     pub new_premium_rate: u32,
+}
+
+impl UpdatePremiumUpdateV1 {
+    pub const ENCODED_SIZE: usize = 40;
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(40); b.extend_from_slice(&self.market_id.to_repr()); b.extend_from_slice(&self.old_premium_rate.to_le_bytes()); b.extend_from_slice(&self.new_premium_rate.to_le_bytes()); b }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 40 { return Err(ContractError::IoError(format!("UpdatePremiumUpdateV1: expected 40 bytes, got {}", data.len()))); } Ok(UpdatePremiumUpdateV1 { market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UpdatePremiumUpdateV1: invalid market_id".into()))?, old_premium_rate: u32::from_le_bytes(data[32..36].try_into().unwrap()), new_premium_rate: u32::from_le_bytes(data[36..40].try_into().unwrap()) }) }
 }
 
 /// Process instruction for UpdatePremiumV1
@@ -63,8 +69,8 @@ pub fn insurance_market_update_premium_process_instruction_v1(
     // Look up the market
     let markets_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_MARKETS_TREE)?;
     let market_bytes =
-        wasm::db::db_get(markets_db, &serialize(&params.market_id))?.ok_or(ContractError::DbGetEmpty)?;
-    let market: crate::model::InsuranceMarket = deserialize(&market_bytes)?;
+        wasm::db::db_get(markets_db, &params.market_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
+    let market = crate::model::InsuranceMarket::decode(&market_bytes)?;
 
     if !market.active {
         return Err(InsuranceMarketError::MarketNotActive.into())
@@ -84,7 +90,7 @@ pub fn insurance_market_update_premium_process_instruction_v1(
         old_premium_rate,
         params.new_premium_rate
     );
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Process update for UpdatePremiumV1
@@ -96,14 +102,14 @@ pub fn insurance_market_update_premium_process_update_v1(
 
     // Load and update market
     let market_bytes =
-        wasm::db::db_get(markets_db, &serialize(&update.market_id))?.ok_or(ContractError::DbGetEmpty)?;
-    let mut market: crate::model::InsuranceMarket = deserialize(&market_bytes)?;
+        wasm::db::db_get(markets_db, &update.market_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
+    let mut market = crate::model::InsuranceMarket::decode(&market_bytes)?;
     market.premium_rate = update.new_premium_rate;
 
     wasm::db::db_set(
         markets_db,
-        &serialize(&update.market_id),
-        &serialize(&market),
+        &update.market_id.to_repr(),
+        &market.encode(),
     )?;
 
     msg!(

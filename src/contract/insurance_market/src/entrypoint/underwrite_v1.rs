@@ -87,8 +87,8 @@ pub fn insurance_market_underwrite_process_instruction_v1(
 
     // Look up the market
     let markets_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_MARKETS_TREE)?;
-    let market_bytes = wasm::db::db_get(markets_db, &serialize(&params.market_id))?.ok_or(ContractError::DbGetEmpty)?;
-    let market: crate::model::InsuranceMarket = deserialize(&market_bytes)?;
+    let market_bytes = wasm::db::db_get(markets_db, &params.market_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
+    let market = crate::model::InsuranceMarket::decode(&market_bytes)?;
 
     if !market.active {
         return Err(InsuranceMarketError::MarketNotActive.into())
@@ -97,8 +97,8 @@ pub fn insurance_market_underwrite_process_instruction_v1(
     // Look up risk type to get min bond rate
     let risk_types_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_RISK_TYPES_TREE)?;
     let risk_type_bytes =
-        wasm::db::db_get(risk_types_db, &serialize(&market.risk_type))?.ok_or(ContractError::DbGetEmpty)?;
-    let risk_type: crate::model::RiskType = deserialize(&risk_type_bytes)?;
+        wasm::db::db_get(risk_types_db, &market.risk_type.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
+    let risk_type = crate::model::RiskType::decode(&risk_type_bytes)?;
 
     // Validate bond amount meets minimum
     let min_bond = (params.coverage_limit * risk_type.min_bond_rate as u64) / 10000;
@@ -126,7 +126,7 @@ pub fn insurance_market_underwrite_process_instruction_v1(
 
     // Check if underwriter already exists
     let underwriters_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_UNDERWRITERS_TREE)?;
-    if wasm::db::db_contains_key(underwriters_db, &serialize(&underwriter_id))? {
+    if wasm::db::db_contains_key(underwriters_db, &underwriter_id.to_repr())? {
         // Update existing underwriter's bond
         msg!("[insurance_market::underwrite] Updating existing underwriter");
     }
@@ -150,7 +150,7 @@ pub fn insurance_market_underwrite_process_instruction_v1(
     };
 
     msg!("[insurance_market::underwrite] Underwriter registered: {:?}", underwriter_id);
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Process update for UnderwriteV1
@@ -163,10 +163,10 @@ pub fn insurance_market_underwrite_process_update_v1(
 
     // Check if underwriter exists (update case)
     let existing: Option<crate::model::Underwriter> =
-        if wasm::db::db_contains_key(underwriters_db, &serialize(&update.underwriter_id))? {
+        if wasm::db::db_contains_key(underwriters_db, &update.underwriter_id.to_repr())? {
             let bytes =
-                wasm::db::db_get(underwriters_db, &serialize(&update.underwriter_id))?.ok_or(ContractError::DbGetEmpty)?;
-            Some(deserialize(&bytes)?)
+                wasm::db::db_get(underwriters_db, &update.underwriter_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
+            Some(crate::model::Underwriter::decode(&bytes)?)
         } else {
             None
         };
@@ -177,8 +177,8 @@ pub fn insurance_market_underwrite_process_update_v1(
         underwriter.coverage_provided += update.coverage_provided;
         wasm::db::db_set(
             underwriters_db,
-            &serialize(&update.underwriter_id),
-            &serialize(&underwriter),
+            &update.underwriter_id.to_repr(),
+            &underwriter.encode(),
         )?;
     } else {
         // Create new underwriter
@@ -200,20 +200,20 @@ pub fn insurance_market_underwrite_process_update_v1(
 
         wasm::db::db_set(
             underwriters_db,
-            &serialize(&update.underwriter_id),
-            &serialize(&underwriter),
+            &update.underwriter_id.to_repr(),
+            &underwriter.encode(),
         )?;
     }
 
     // Update market coverage sold
     let market_bytes =
-        wasm::db::db_get(markets_db, &serialize(&update.market_id))?.ok_or(ContractError::DbGetEmpty)?;
-    let mut market: crate::model::InsuranceMarket = deserialize(&market_bytes)?;
+        wasm::db::db_get(markets_db, &update.market_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
+    let mut market = crate::model::InsuranceMarket::decode(&market_bytes)?;
     market.coverage_sold += update.coverage_provided;
     wasm::db::db_set(
         markets_db,
-        &serialize(&update.market_id),
-        &serialize(&market),
+        &update.market_id.to_repr(),
+        &market.encode(),
     )?;
 
     msg!(

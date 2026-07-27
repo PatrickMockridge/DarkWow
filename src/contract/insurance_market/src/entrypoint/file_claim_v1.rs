@@ -46,8 +46,8 @@ pub fn insurance_market_file_claim_process_instruction_v1(
     // Look up the coverage
     let coverages_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_COVERAGES_TREE)?;
     let coverage_bytes =
-        wasm::db::db_get(coverages_db, &serialize(&params.coverage_id))?.ok_or(ContractError::DbGetEmpty)?;
-    let coverage: crate::model::Coverage = deserialize(&coverage_bytes)?;
+        wasm::db::db_get(coverages_db, &params.coverage_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
+    let coverage = crate::model::Coverage::decode(&coverage_bytes)?;
 
     // Verify coverage is active
     if coverage.state != crate::model::CoverageState::Active {
@@ -85,7 +85,7 @@ pub fn insurance_market_file_claim_process_instruction_v1(
 
     // Check if claim already exists
     let claims_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_CLAIMS_TREE)?;
-    if wasm::db::db_contains_key(claims_db, &serialize(&claim_id))? {
+    if wasm::db::db_contains_key(claims_db, &claim_id.to_repr())? {
         return Err(InsuranceMarketError::ClaimAlreadyResolved.into())
     }
 
@@ -101,7 +101,7 @@ pub fn insurance_market_file_claim_process_instruction_v1(
     };
 
     msg!("[insurance_market::file_claim] Claim filed: {:?}", claim_id);
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Process update for FileClaimV1
@@ -130,19 +130,19 @@ pub fn insurance_market_file_claim_process_update_v1(
     // Store claim
     wasm::db::db_set(
         claims_db,
-        &serialize(&update.claim_id),
-        &serialize(&claim),
+        &update.claim_id.to_repr(),
+        &claim.encode(),
     )?;
 
     // Update coverage to mark claim in progress
     let coverage_bytes =
-        wasm::db::db_get(coverages_db, &serialize(&update.coverage_id))?.ok_or(ContractError::DbGetEmpty)?;
-    let mut coverage: crate::model::Coverage = deserialize(&coverage_bytes)?;
+        wasm::db::db_get(coverages_db, &update.coverage_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
+    let mut coverage = crate::model::Coverage::decode(&coverage_bytes)?;
     coverage.claim_id = Some(update.claim_id);
     wasm::db::db_set(
         coverages_db,
-        &serialize(&update.coverage_id),
-        &serialize(&coverage),
+        &update.coverage_id.to_repr(),
+        &coverage.encode(),
     )?;
 
     msg!(

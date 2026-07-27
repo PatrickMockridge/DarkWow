@@ -88,8 +88,8 @@ pub fn insurance_market_withdraw_premium_process_instruction_v1(
     // Look up the underwriter
     let underwriters_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_UNDERWRITERS_TREE)?;
     let underwriter_bytes =
-        wasm::db::db_get(underwriters_db, &serialize(&params.underwriter_id))?.ok_or(ContractError::DbGetEmpty)?;
-    let underwriter: crate::model::Underwriter = deserialize(&underwriter_bytes)?;
+        wasm::db::db_get(underwriters_db, &params.underwriter_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
+    let underwriter = crate::model::Underwriter::decode(&underwriter_bytes)?;
 
     // Verify the caller is the underwriter owner (access control)
     if underwriter.owner != params.owner {
@@ -120,7 +120,7 @@ pub fn insurance_market_withdraw_premium_process_instruction_v1(
         params.amount,
         remaining_balance
     );
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// Process update for WithdrawPremiumV1
@@ -132,13 +132,13 @@ pub fn insurance_market_withdraw_premium_process_update_v1(
 
     // Update underwriter's earned premiums
     let underwriter_bytes =
-        wasm::db::db_get(underwriters_db, &serialize(&update.underwriter_id))?.ok_or(ContractError::DbGetEmpty)?;
-    let mut underwriter: crate::model::Underwriter = deserialize(&underwriter_bytes)?;
+        wasm::db::db_get(underwriters_db, &update.underwriter_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
+    let mut underwriter = crate::model::Underwriter::decode(&underwriter_bytes)?;
     underwriter.earned_premiums = update.remaining_balance;
     wasm::db::db_set(
         underwriters_db,
-        &serialize(&update.underwriter_id),
-        &serialize(&underwriter),
+        &update.underwriter_id.to_repr(),
+        &underwriter.encode(),
     )?;
 
     // In production: trigger Money::TokenMint to transfer the premium to underwriter
