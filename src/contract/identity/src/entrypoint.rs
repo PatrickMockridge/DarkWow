@@ -702,7 +702,7 @@ fn process_register_capability_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: RegisterCapabilityParams = deserialize(&self_.data[1..])?;
+    let params = RegisterCapabilityParams::decode(&self_.data[1..])?;
 
     msg!("[identity::register_capability] Registering capability");
 

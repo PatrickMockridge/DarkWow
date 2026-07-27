@@ -53,7 +53,7 @@ pub fn validate_child_value_commit(
         return Err(crate::ContractError::InvalidFunction)
     }
 
-    let params: TransferParamsV1 = deserialize(&child_call_data[1..])
+    let params = TransferParamsV1::decode(&child_call_data[1..])
         .map_err(|_| crate::ContractError::InvalidFunction)?;
 
     // Convert the base-field blind seed to a scalar for Pedersen.
@@ -105,7 +105,7 @@ pub fn validate_child_redeem_v1(
         return Err(crate::ContractError::InvalidFunction)
     }
 
-    let params: RedeemParamsV1 = deserialize(&child_call_data[1..])
+    let params = RedeemParamsV1::decode(&child_call_data[1..])
         .map_err(|_| crate::ContractError::InvalidFunction)?;
 
     Ok((params.output.value_commit, params.output.token_commit))

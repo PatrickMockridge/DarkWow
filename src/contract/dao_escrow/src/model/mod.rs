@@ -73,7 +73,7 @@
 use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, poseidon_hash, BaseBlind, IntentNullifier, PublicKey, ScalarBlind, TokenId},
     error::ContractError,
-    pasta::{group::GroupEncoding, pallas},
+    pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
@@ -96,7 +96,7 @@ impl dwow_serial::Decodable for DaoEscrowBulla {
     }
 }
 
-#[cfg(feature = "async")]
+#[cfg(feature = "client")]
 #[dwow_serial::async_trait]
 impl dwow_serial::AsyncEncodable for DaoEscrowBulla {
     async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
@@ -107,7 +107,7 @@ impl dwow_serial::AsyncEncodable for DaoEscrowBulla {
     }
 }
 
-#[cfg(feature = "async")]
+#[cfg(feature = "client")]
 #[dwow_serial::async_trait]
 impl dwow_serial::AsyncDecodable for DaoEscrowBulla {
     async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
@@ -136,7 +136,7 @@ impl dwow_serial::Decodable for MembershipNote {
     }
 }
 
-#[cfg(feature = "async")]
+#[cfg(feature = "client")]
 #[dwow_serial::async_trait]
 impl dwow_serial::AsyncEncodable for MembershipNote {
     async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
@@ -147,7 +147,7 @@ impl dwow_serial::AsyncEncodable for MembershipNote {
     }
 }
 
-#[cfg(feature = "async")]
+#[cfg(feature = "client")]
 #[dwow_serial::async_trait]
 impl dwow_serial::AsyncDecodable for MembershipNote {
     async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
@@ -176,7 +176,7 @@ impl dwow_serial::Decodable for ClaimId {
     }
 }
 
-#[cfg(feature = "async")]
+#[cfg(feature = "client")]
 #[dwow_serial::async_trait]
 impl dwow_serial::AsyncEncodable for ClaimId {
     async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
@@ -187,7 +187,7 @@ impl dwow_serial::AsyncEncodable for ClaimId {
     }
 }
 
-#[cfg(feature = "async")]
+#[cfg(feature = "client")]
 #[dwow_serial::async_trait]
 impl dwow_serial::AsyncDecodable for ClaimId {
     async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
@@ -216,7 +216,7 @@ impl dwow_serial::Decodable for ProposalId {
     }
 }
 
-#[cfg(feature = "async")]
+#[cfg(feature = "client")]
 #[dwow_serial::async_trait]
 impl dwow_serial::AsyncEncodable for ProposalId {
     async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
@@ -227,7 +227,7 @@ impl dwow_serial::AsyncEncodable for ProposalId {
     }
 }
 
-#[cfg(feature = "async")]
+#[cfg(feature = "client")]
 #[dwow_serial::async_trait]
 impl dwow_serial::AsyncDecodable for ProposalId {
     async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
@@ -396,7 +396,7 @@ impl DaoEscrow {
         let min_premium = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
         let max_members = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
         let created_at = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
-        let bulla_blind = BaseBlind::from_raw(Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DaoEscrow: invalid bulla_blind".into()))?);
+        let bulla_blind = dwow_sdk::crypto::Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DaoEscrow: invalid bulla_blind".into()))?);
         pos += 32;
         let paused = data[pos] != 0; pos += 1;
         let drain_protection_enabled = data[pos] != 0; pos += 1;

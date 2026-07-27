@@ -506,6 +506,26 @@ impl CredentialRequirement {
         buf.extend_from_slice(&self.attribute_name);
         buf
     }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 73 {
+            return Err(ContractError::IoError(format!(
+                "CredentialRequirement: expected at least 73 bytes, got {}", data.len()
+            )));
+        }
+        let schema_hash: [u8; 32] = data[0..32].try_into().unwrap();
+        let issuer_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("CredentialRequirement: invalid issuer_pub: {}", e)))?;
+        let min_threshold = u64::from_le_bytes(data[64..72].try_into().unwrap());
+        let attr_len = data[72] as usize;
+        if data.len() != 73 + attr_len {
+            return Err(ContractError::IoError(format!(
+                "CredentialRequirement: expected {} bytes, got {}", 73 + attr_len, data.len()
+            )));
+        }
+        let attribute_name = data[73..73 + attr_len].to_vec();
+        Ok(CredentialRequirement { schema_hash, issuer_pub, min_threshold, attribute_name })
+    }
 }
 
 /// A proof of capability presented to verifiers
@@ -544,6 +564,54 @@ pub struct RegisterCapabilityParams {
     pub max_holders: Option<u64>,
     /// Fee paid for registration
     pub fee: u64,
+}
+
+impl RegisterCapabilityParams {
+    pub fn encode(&self) -> Vec<u8> {
+        let cred = self.credential_requirement.encode();
+        let cap = 1 + self.name.len() + cred.len() + 1 + 8 + 8;
+        let mut buf = Vec::with_capacity(cap);
+        buf.push(self.name.len() as u8);
+        buf.extend_from_slice(&self.name);
+        buf.extend_from_slice(&cred);
+        buf.push(self.max_holders.is_some() as u8);
+        if let Some(mh) = self.max_holders {
+            buf.extend_from_slice(&mh.to_le_bytes());
+        }
+        buf.extend_from_slice(&self.fee.to_le_bytes());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 10 {
+            return Err(ContractError::IoError(format!(
+                "RegisterCapabilityParams: expected at least 10 bytes, got {}", data.len()
+            )));
+        }
+        let name_len = data[0] as usize;
+        if data.len() < 1 + name_len {
+            return Err(ContractError::IoError(format!(
+                "RegisterCapabilityParams: name truncated at offset {}", 1 + name_len
+            )));
+        }
+        let name = data[1..1 + name_len].to_vec();
+        let credential_requirement = CredentialRequirement::decode(&data[1 + name_len..])?;
+        let cred_len = credential_requirement.encode().len();
+        let pos = 1 + name_len + cred_len;
+        if data.len() < pos + 9 {
+            return Err(ContractError::IoError(format!(
+                "RegisterCapabilityParams: expected at least {} bytes, got {}", pos + 9, data.len()
+            )));
+        }
+        let has_max = data[pos] != 0;
+        let max_holders = if has_max {
+            Some(u64::from_le_bytes(data[pos + 1..pos + 9].try_into().unwrap()))
+        } else {
+            None
+        };
+        let fee = u64::from_le_bytes(data[pos + 9..pos + 17].try_into().unwrap());
+        Ok(RegisterCapabilityParams { name, credential_requirement, max_holders, fee })
+    }
 }
 
 /// Parameters for issuing a capability to a holder

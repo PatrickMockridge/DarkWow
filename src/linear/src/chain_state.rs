@@ -843,7 +843,7 @@ impl CChainState {
                 if has_pow_reward {
                     // Extract coin commitment and nullifier from PoWRewardV1 params.
                     let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
-                    if let Ok(params) = dwow_serial::deserialize::<dwow_native_token_contract::model::PoWRewardParamsV1>(pow_data) {
+                    if let Ok(params) = dwow_native_token_contract::model::PoWRewardParamsV1::decode(pow_data) {
                         coins_batch.insert(&params.output.coin.inner().to_repr(), &height.to_le_bytes());
                         // consensus-coinbase.md §1.2: "The PoWRewardV1 nullifier
                         // is the first entry in the nullifier SMT for this block."
@@ -860,7 +860,7 @@ impl CChainState {
                         && c.data.first() == Some(&0x06)
                     {
                         let fc_data = &c.data[1..]; // skip selector
-                        if let Ok(params) = dwow_serial::deserialize::<dwow_native_token_contract::model::FeeCollectParamsV1>(fc_data) {
+                        if let Ok(params) = dwow_native_token_contract::model::FeeCollectParamsV1::decode(fc_data) {
                             coins_batch.insert(&params.output.coin.inner().to_repr(), &height.to_le_bytes());
                             nullifiers_batch.insert(&params.nullifier.to_bytes(), &height.to_le_bytes());
                         }
@@ -942,7 +942,7 @@ impl CChainState {
                 .map_or(false, |c| c.data.first() == Some(&0x05));
             if has_pow_reward {
                 let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
-                if let Ok(params) = dwow_serial::deserialize::<dwow_native_token_contract::model::PoWRewardParamsV1>(pow_data) {
+                if let Ok(params) = dwow_native_token_contract::model::PoWRewardParamsV1::decode(pow_data) {
                     self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).insert(CoinCommitment::from_base(params.output.coin.inner()), height);
                     // Phase 1: params.nullifier is already a typed Nullifier — no bytes round-trip
                     self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).insert(params.nullifier, height);
@@ -957,7 +957,7 @@ impl CChainState {
                     && c.data.first() == Some(&0x06)
                 {
                     let fc_data = &c.data[1..]; // skip selector
-                    if let Ok(params) = dwow_serial::deserialize::<dwow_native_token_contract::model::FeeCollectParamsV1>(fc_data) {
+                    if let Ok(params) = dwow_native_token_contract::model::FeeCollectParamsV1::decode(fc_data) {
                         self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).insert(CoinCommitment::from_base(params.output.coin.inner()), height);
                         self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).insert(params.nullifier, height);
                     }

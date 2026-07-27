@@ -24,7 +24,7 @@
 //! RevealRollV1 Implementation
 
 use dwow_sdk::{
-    crypto::poseidon_hash,
+    crypto::{pasta_prelude::PrimeField, poseidon_hash},
     error::ContractError,
     msg,
     wasm,

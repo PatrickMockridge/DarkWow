@@ -38,7 +38,6 @@ use dwow_sdk::{
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // Re-export for use in client modules
 pub use dwow_sdk::crypto::note::AeadEncryptedNote;
@@ -56,10 +55,12 @@ pub const MAX_COIN_VALUE: u64 = 1_000_000_000_000;
 
 /// Nullifier definition (for double-spend prevention)
 /// Promissory Note uses poseidon_hash(secret, coin) for nullifier derivation
-#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Nullifier(pallas::Base);
 
 impl Nullifier {
+    pub const ENCODED_SIZE: usize = 32;
+
     /// Create a new nullifier from secret and coin
     pub fn new(secret: pallas::Base, coin: pallas::Base) -> Self {
         Nullifier(poseidon_hash([secret, coin]))
@@ -80,9 +81,32 @@ impl Nullifier {
         Nullifier(base)
     }
 
+    /// Create from bytes with validation.
+    pub fn from_bytes(bytes: [u8; 32]) -> Result<Self, ContractError> {
+        match pallas::Base::from_repr(bytes).into() {
+            Some(v) => Ok(Nullifier(v)),
+            None => Err(ContractError::IoError("Nullifier: invalid field element".into())),
+        }
+    }
+
     /// Convert into 32 raw bytes
     pub fn to_bytes(&self) -> [u8; 32] {
         self.0.to_repr()
+    }
+
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    pub fn encode(&self) -> Vec<u8> {
+        self.to_bytes().to_vec()
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "Nullifier: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        Self::from_bytes(data[0..32].try_into().unwrap())
     }
 }
 
@@ -94,10 +118,12 @@ impl Nullifier {
 /// This is the coin commitment that gets stored in the Merkle tree
 /// Coin = poseidon_hash(pub, value, token_id, spend_hook, user_data, blind)
 /// where pub = poseidon_hash(secret) is a field element, not EC point
-#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Coin(pallas::Base);
 
 impl Coin {
+    pub const ENCODED_SIZE: usize = 32;
+
     /// Reference the raw inner base field element
     pub fn inner(&self) -> pallas::Base {
         self.0
@@ -106,6 +132,23 @@ impl Coin {
     /// Convert the Coin type into 32 raw bytes
     pub fn to_bytes(&self) -> [u8; 32] {
         self.0.to_repr()
+    }
+
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    pub fn encode(&self) -> Vec<u8> {
+        self.to_bytes().to_vec()
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "Coin: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let inner = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("Coin: invalid field element".into()))?;
+        Ok(Coin(inner))
     }
 
     /// Create a Coin from coin attributes
@@ -132,7 +175,7 @@ impl Coin {
 
 /// Coin attributes (used in ZK circuits but NOT stored directly)
 /// Promissory Note: public_key is a field element, not EC point
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CoinAttributes {
     /// Public key as field element: poseidon_hash(secret)
     pub public_key: pallas::Base,
@@ -144,6 +187,39 @@ pub struct CoinAttributes {
 }
 
 impl CoinAttributes {
+    pub const ENCODED_SIZE: usize = 168;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.public_key.to_repr());
+        buf.extend_from_slice(&self.value.to_le_bytes());
+        buf.extend_from_slice(&self.token_id.to_bytes());
+        buf.extend_from_slice(&self.spend_hook.to_bytes());
+        buf.extend_from_slice(&self.user_data.to_repr());
+        buf.extend_from_slice(&self.blind.inner().to_repr());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "CoinAttributes: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let public_key = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("CoinAttributes: invalid public_key".into()))?;
+        let value = u64::from_le_bytes(data[32..40].try_into().unwrap());
+        let token_id = TokenId::from_bytes(data[40..72].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("CoinAttributes: invalid token_id".into()))?;
+        let spend_hook = FuncId::from_bytes(data[72..104].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("CoinAttributes: invalid spend_hook".into()))?;
+        let user_data = Option::<pallas::Base>::from(pallas::Base::from_repr(data[104..136].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("CoinAttributes: invalid user_data".into()))?;
+        let blind = dwow_sdk::crypto::Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(data[136..168].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("CoinAttributes: invalid blind".into()))?);
+        Ok(CoinAttributes { public_key, value, token_id, spend_hook, user_data, blind })
+    }
+
     pub fn to_coin(&self) -> Coin {
         Coin(poseidon_hash([
             self.public_key,
@@ -168,7 +244,7 @@ impl CoinAttributes {
 /// generation lives in [`InputWitness`].
 ///
 /// Promissory Note uses Pedersen commitments for value (additively homomorphic).
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct Input {
     /// Pedersen commitment of the value (additively homomorphic)
     pub value_commit: pallas::Point,
@@ -184,6 +260,44 @@ pub struct Input {
     pub spend_hook: FuncId,
     /// Signature public key (Poseidon hash of secret, as field element)
     pub signature_public: pallas::Base,
+}
+
+impl Input {
+    pub const ENCODED_SIZE: usize = 224;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.value_commit.to_bytes());
+        buf.extend_from_slice(&self.token_commit.to_repr());
+        buf.extend_from_slice(&self.nullifier.encode());
+        buf.extend_from_slice(&self.merkle_root.to_bytes());
+        buf.extend_from_slice(&self.user_data_enc.to_repr());
+        buf.extend_from_slice(&self.spend_hook.to_bytes());
+        buf.extend_from_slice(&self.signature_public.to_repr());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "Input: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[0..32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("Input: invalid value_commit".into()))?;
+        let token_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("Input: invalid token_commit".into()))?;
+        let nullifier = Nullifier::decode(&data[64..96])?;
+        let merkle_root = MerkleNode::from_bytes(data[96..128].try_into().unwrap())
+            .ok_or_else(|| ContractError::IoError("Input: invalid merkle_root".into()))?;
+        let user_data_enc = Option::<pallas::Base>::from(pallas::Base::from_repr(data[128..160].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("Input: invalid user_data_enc".into()))?;
+        let spend_hook = FuncId::from_bytes(data[160..192].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("Input: invalid spend_hook".into()))?;
+        let signature_public = Option::<pallas::Base>::from(pallas::Base::from_repr(data[192..224].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("Input: invalid signature_public".into()))?;
+        Ok(Input { value_commit, token_commit, nullifier, merkle_root, user_data_enc, spend_hook, signature_public })
+    }
 }
 
 /// Client-side witness data for ZK proof generation.
@@ -209,7 +323,7 @@ pub struct InputWitness {
 
 /// Output of a transaction - creates new coins
 /// Promissory Note uses Pedersen commitments for value (additively homomorphic).
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct Output {
     /// Pedersen commitment for value (additively homomorphic)
     pub value_commit: pallas::Point,
@@ -223,13 +337,53 @@ pub struct Output {
     pub spend_hook: FuncId,
 }
 
+impl Output {
+    pub fn encode(&self) -> Vec<u8> {
+        let note_bytes = dwow_serial::serialize(&self.note);
+        let cap = 130 + note_bytes.len();
+        let mut buf = Vec::with_capacity(cap);
+        buf.extend_from_slice(&self.value_commit.to_bytes());
+        buf.extend_from_slice(&self.token_commit.to_repr());
+        buf.extend_from_slice(&self.coin.encode());
+        buf.extend_from_slice(&(note_bytes.len() as u16).to_le_bytes());
+        buf.extend_from_slice(&note_bytes);
+        buf.extend_from_slice(&self.spend_hook.to_bytes());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 130 {
+            return Err(ContractError::IoError(format!(
+                "Output: expected at least 130 bytes, got {}", data.len()
+            )));
+        }
+        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[0..32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("Output: invalid value_commit".into()))?;
+        let token_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("Output: invalid token_commit".into()))?;
+        let coin = Coin::decode(&data[64..96])?;
+        let note_len = u16::from_le_bytes(data[96..98].try_into().unwrap()) as usize;
+        let note_end = 98 + note_len;
+        if data.len() < note_end + 32 {
+            return Err(ContractError::IoError(format!(
+                "Output: expected at least {} bytes, got {}", note_end + 32, data.len()
+            )));
+        }
+        let note = dwow_serial::deserialize(&data[98..note_end])
+            .map_err(|e| ContractError::IoError(format!("Output: invalid note: {:?}", e)))?;
+        let spend_hook = FuncId::from_bytes(data[note_end..note_end + 32].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("Output: invalid spend_hook".into()))?;
+        Ok(Output { value_commit, token_commit, coin, note, spend_hook })
+    }
+}
+
 // ============================================================================
 // FUNCTION PARAMETERS (PromissoryNote for DeFi tokens)
 // ============================================================================
 
 /// Parameters for RegisterTypeV1 - create a new token type
 /// This is how stablecoins, wrapped tokens, etc. are created
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct TokenMintParamsV1 {
     /// The initial coin minted with this token type
     pub coin: Coin,
@@ -247,6 +401,47 @@ pub struct TokenMintParamsV1 {
     pub tx_binding: pallas::Base,
     /// Transaction nonce
     pub tx_nonce: pallas::Base,
+}
+
+impl TokenMintParamsV1 {
+    pub const ENCODED_SIZE: usize = 256;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.coin.encode());
+        buf.extend_from_slice(&self.value_commit.to_bytes());
+        buf.extend_from_slice(&self.token_id.to_bytes());
+        buf.extend_from_slice(&self.token_auth_parent.to_repr());
+        buf.extend_from_slice(&self.token_commit.to_repr());
+        buf.extend_from_slice(&self.spend_hook.to_bytes());
+        buf.extend_from_slice(&self.tx_binding.to_repr());
+        buf.extend_from_slice(&self.tx_nonce.to_repr());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "TokenMintParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let coin = Coin::decode(&data[0..32])?;
+        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[32..64].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("TokenMintParamsV1: invalid value_commit".into()))?;
+        let token_id = TokenId::from_bytes(data[64..96].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("TokenMintParamsV1: invalid token_id".into()))?;
+        let token_auth_parent = Option::<pallas::Base>::from(pallas::Base::from_repr(data[96..128].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("TokenMintParamsV1: invalid token_auth_parent".into()))?;
+        let token_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(data[128..160].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("TokenMintParamsV1: invalid token_commit".into()))?;
+        let spend_hook = FuncId::from_bytes(data[160..192].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("TokenMintParamsV1: invalid spend_hook".into()))?;
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[192..224].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("TokenMintParamsV1: invalid tx_binding".into()))?;
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[224..256].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("TokenMintParamsV1: invalid tx_nonce".into()))?;
+        Ok(TokenMintParamsV1 { coin, value_commit, token_id, token_auth_parent, token_commit, spend_hook, tx_binding, tx_nonce })
+    }
 }
 
 /// State update for RegisterTypeV1
@@ -291,7 +486,7 @@ impl TokenMintUpdateV1 {
 
 /// Parameters for IssueV1 - mint tokens of existing token type
 /// Proves knowledge of the backing secret directly against stored token_auth_parent
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct MintParamsV1 {
     /// The newly minted coin
     pub coin: Coin,
@@ -309,6 +504,47 @@ pub struct MintParamsV1 {
     pub tx_binding: pallas::Base,
     /// Transaction nonce
     pub tx_nonce: pallas::Base,
+}
+
+impl MintParamsV1 {
+    pub const ENCODED_SIZE: usize = 256;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.coin.encode());
+        buf.extend_from_slice(&self.value_commit.to_bytes());
+        buf.extend_from_slice(&self.token_id.to_bytes());
+        buf.extend_from_slice(&self.token_registry_root.to_bytes());
+        buf.extend_from_slice(&self.mint_public.to_repr());
+        buf.extend_from_slice(&self.spend_hook.to_bytes());
+        buf.extend_from_slice(&self.tx_binding.to_repr());
+        buf.extend_from_slice(&self.tx_nonce.to_repr());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "MintParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let coin = Coin::decode(&data[0..32])?;
+        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[32..64].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("MintParamsV1: invalid value_commit".into()))?;
+        let token_id = TokenId::from_bytes(data[64..96].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("MintParamsV1: invalid token_id".into()))?;
+        let token_registry_root = MerkleNode::from_bytes(data[96..128].try_into().unwrap())
+            .ok_or_else(|| ContractError::IoError("MintParamsV1: invalid token_registry_root".into()))?;
+        let mint_public = Option::<pallas::Base>::from(pallas::Base::from_repr(data[128..160].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("MintParamsV1: invalid mint_public".into()))?;
+        let spend_hook = FuncId::from_bytes(data[160..192].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("MintParamsV1: invalid spend_hook".into()))?;
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[192..224].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("MintParamsV1: invalid tx_binding".into()))?;
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[224..256].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("MintParamsV1: invalid tx_nonce".into()))?;
+        Ok(MintParamsV1 { coin, value_commit, token_id, token_registry_root, mint_public, spend_hook, tx_binding, tx_nonce })
+    }
 }
 
 /// State update for IssueV1
@@ -345,7 +581,7 @@ impl MintUpdateV1 {
 
 /// Parameters for RevokeV1 - destroy tokens
 /// Reveals nullifier to prove spending without revealing coin content
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct BurnParamsV1 {
     /// Anonymous inputs being burned
     pub inputs: Vec<Input>,
@@ -353,6 +589,38 @@ pub struct BurnParamsV1 {
     pub tx_binding: pallas::Base,
     /// Transaction nonce
     pub tx_nonce: pallas::Base,
+}
+
+impl BurnParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 1 + self.inputs.len() * Input::ENCODED_SIZE + 64;
+        let mut buf = Vec::with_capacity(cap);
+        buf.push(self.inputs.len() as u8);
+        for input in &self.inputs { buf.extend_from_slice(&input.encode()); }
+        buf.extend_from_slice(&self.tx_binding.to_repr());
+        buf.extend_from_slice(&self.tx_nonce.to_repr());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 65 { return Err(ContractError::IoError("BurnParamsV1: too short".into())); }
+        let count = data[0] as usize;
+        let mut pos = 1;
+        let mut inputs = Vec::with_capacity(count);
+        for i in 0..count {
+            if data.len() < pos + Input::ENCODED_SIZE {
+                return Err(ContractError::IoError(format!("BurnParamsV1: input[{}] truncated", i)));
+            }
+            inputs.push(Input::decode(&data[pos..pos + Input::ENCODED_SIZE])?);
+            pos += Input::ENCODED_SIZE;
+        }
+        if data.len() < pos + 64 { return Err(ContractError::IoError("BurnParamsV1: missing trailing fields".into())); }
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("BurnParamsV1: invalid tx_binding".into()))?;
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("BurnParamsV1: invalid tx_nonce".into()))?;
+        Ok(BurnParamsV1 { inputs, tx_binding, tx_nonce })
+    }
 }
 
 /// State update for RevokeV1
@@ -396,7 +664,7 @@ impl BurnUpdateV1 {
 
 /// Parameters for TransferV1 - private token transfer
 /// Atomic burn + mint to prevent value leakage
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct TransferParamsV1 {
     pub inputs: Vec<Input>,
     pub outputs: Vec<Output>,
@@ -404,6 +672,57 @@ pub struct TransferParamsV1 {
     pub tx_binding: pallas::Base,
     /// Transaction nonce
     pub tx_nonce: pallas::Base,
+}
+
+impl TransferParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let input_cap = self.inputs.len() * Input::ENCODED_SIZE;
+        let output_bytes: Vec<Vec<u8>> = self.outputs.iter().map(|o| o.encode()).collect();
+        let output_cap: usize = output_bytes.iter().map(|b| b.len()).sum();
+        let mut buf = Vec::with_capacity(2 + input_cap + 2 + output_cap + output_bytes.len() * 2 + 64);
+        buf.push(self.inputs.len() as u8);
+        for input in &self.inputs { buf.extend_from_slice(&input.encode()); }
+        buf.push(self.outputs.len() as u8);
+        for ob in &output_bytes {
+            buf.extend_from_slice(&(ob.len() as u16).to_le_bytes());
+            buf.extend_from_slice(ob);
+        }
+        buf.extend_from_slice(&self.tx_binding.to_repr());
+        buf.extend_from_slice(&self.tx_nonce.to_repr());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 3 { return Err(ContractError::IoError("TransferParamsV1: too short".into())); }
+        let input_count = data[0] as usize;
+        let mut pos = 1;
+        let mut inputs = Vec::with_capacity(input_count);
+        for i in 0..input_count {
+            if data.len() < pos + Input::ENCODED_SIZE {
+                return Err(ContractError::IoError(format!("TransferParamsV1: input[{}] truncated", i)));
+            }
+            inputs.push(Input::decode(&data[pos..pos + Input::ENCODED_SIZE])?);
+            pos += Input::ENCODED_SIZE;
+        }
+        if data.len() < pos + 1 { return Err(ContractError::IoError("TransferParamsV1: missing output count".into())); }
+        let output_count = data[pos] as usize;
+        pos += 1;
+        let mut outputs = Vec::with_capacity(output_count);
+        for i in 0..output_count {
+            if data.len() < pos + 2 { return Err(ContractError::IoError(format!("TransferParamsV1: output[{}] truncated", i))); }
+            let out_len = u16::from_le_bytes(data[pos..pos+2].try_into().unwrap()) as usize;
+            pos += 2;
+            if data.len() < pos + out_len { return Err(ContractError::IoError(format!("TransferParamsV1: output[{}] data truncated", i))); }
+            outputs.push(Output::decode(&data[pos..pos + out_len])?);
+            pos += out_len;
+        }
+        if data.len() < pos + 64 { return Err(ContractError::IoError("TransferParamsV1: missing trailing fields".into())); }
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("TransferParamsV1: invalid tx_binding".into()))?;
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("TransferParamsV1: invalid tx_nonce".into()))?;
+        Ok(TransferParamsV1 { inputs, outputs, tx_binding, tx_nonce })
+    }
 }
 
 /// State update for TransferV1
@@ -473,7 +792,7 @@ impl TransferUpdateV1 {
 /// Value conservation is NOT enforced: redemption IS value destruction in the
 /// PromissoryNote system. The issuer fulfills the promise by releasing the
 /// underlying asset (collateral, native token on another chain, etc.).
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct RedeemParamsV1 {
     /// Coin being redeemed (burn proof)
     pub input: Input,
@@ -483,6 +802,35 @@ pub struct RedeemParamsV1 {
     pub tx_binding: pallas::Base,
     /// Transaction nonce
     pub tx_nonce: pallas::Base,
+}
+
+impl RedeemParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let input_bytes = self.input.encode();
+        let output_bytes = self.output.encode();
+        let mut buf = Vec::with_capacity(input_bytes.len() + output_bytes.len() + 64);
+        buf.extend_from_slice(&input_bytes);
+        buf.extend_from_slice(&output_bytes);
+        buf.extend_from_slice(&self.tx_binding.to_repr());
+        buf.extend_from_slice(&self.tx_nonce.to_repr());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        let input = Input::decode(data)?;
+        let pos = Input::ENCODED_SIZE;
+        let output = Output::decode(&data[pos..])?;
+        let output_bytes = output.encode();
+        let pos = pos + output_bytes.len();
+        if data.len() < pos + 64 {
+            return Err(ContractError::IoError(format!("RedeemParamsV1: expected at least {} bytes, got {}", pos + 64, data.len())));
+        }
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("RedeemParamsV1: invalid tx_binding".into()))?;
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("RedeemParamsV1: invalid tx_nonce".into()))?;
+        Ok(RedeemParamsV1 { input, output, tx_binding, tx_nonce })
+    }
 }
 
 /// State update for RedeemV1
@@ -519,7 +867,7 @@ impl RedeemUpdateV1 {
 /// Parameters for OtcSwapV1 - atomic OTC token swap
 /// Swaps tokens between two parties: inputs[0] -> outputs[1], inputs[1] -> outputs[0]
 /// Uses the same burn + mint proof structure as TransferV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct OtcSwapParamsV1 {
     pub inputs: Vec<Input>,
     pub outputs: Vec<Output>,
@@ -527,6 +875,57 @@ pub struct OtcSwapParamsV1 {
     pub tx_binding: pallas::Base,
     /// Transaction nonce
     pub tx_nonce: pallas::Base,
+}
+
+impl OtcSwapParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let input_cap = self.inputs.len() * Input::ENCODED_SIZE;
+        let output_bytes: Vec<Vec<u8>> = self.outputs.iter().map(|o| o.encode()).collect();
+        let output_cap: usize = output_bytes.iter().map(|b| b.len()).sum();
+        let mut buf = Vec::with_capacity(2 + input_cap + 2 + output_cap + output_bytes.len() * 2 + 64);
+        buf.push(self.inputs.len() as u8);
+        for input in &self.inputs { buf.extend_from_slice(&input.encode()); }
+        buf.push(self.outputs.len() as u8);
+        for ob in &output_bytes {
+            buf.extend_from_slice(&(ob.len() as u16).to_le_bytes());
+            buf.extend_from_slice(ob);
+        }
+        buf.extend_from_slice(&self.tx_binding.to_repr());
+        buf.extend_from_slice(&self.tx_nonce.to_repr());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 3 { return Err(ContractError::IoError("OtcSwapParamsV1: too short".into())); }
+        let input_count = data[0] as usize;
+        let mut pos = 1;
+        let mut inputs = Vec::with_capacity(input_count);
+        for i in 0..input_count {
+            if data.len() < pos + Input::ENCODED_SIZE {
+                return Err(ContractError::IoError(format!("OtcSwapParamsV1: input[{}] truncated", i)));
+            }
+            inputs.push(Input::decode(&data[pos..pos + Input::ENCODED_SIZE])?);
+            pos += Input::ENCODED_SIZE;
+        }
+        if data.len() < pos + 1 { return Err(ContractError::IoError("OtcSwapParamsV1: missing output count".into())); }
+        let output_count = data[pos] as usize;
+        pos += 1;
+        let mut outputs = Vec::with_capacity(output_count);
+        for i in 0..output_count {
+            if data.len() < pos + 2 { return Err(ContractError::IoError(format!("OtcSwapParamsV1: output[{}] truncated", i))); }
+            let out_len = u16::from_le_bytes(data[pos..pos+2].try_into().unwrap()) as usize;
+            pos += 2;
+            if data.len() < pos + out_len { return Err(ContractError::IoError(format!("OtcSwapParamsV1: output[{}] data truncated", i))); }
+            outputs.push(Output::decode(&data[pos..pos + out_len])?);
+            pos += out_len;
+        }
+        if data.len() < pos + 64 { return Err(ContractError::IoError("OtcSwapParamsV1: missing trailing fields".into())); }
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("OtcSwapParamsV1: invalid tx_binding".into()))?;
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("OtcSwapParamsV1: invalid tx_nonce".into()))?;
+        Ok(OtcSwapParamsV1 { inputs, outputs, tx_binding, tx_nonce })
+    }
 }
 
 /// State update for OtcSwapV1

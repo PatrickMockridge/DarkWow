@@ -864,13 +864,13 @@ fn process_config_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkL
     // Verify ZK proof authorizes this config update (governance key holder)
     // Host-side ZK verification ensures prover knows governance secret
     let nullifiers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &params.config_nullifier.to_bytes())? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.config_nullifier.to_repr())? {
         return Err(BridgeError::UnauthorizedConfigUpdate.into());
     }
 
     msg!("[bridge::process_instruction] Configuration update: ZK proof verified");
 
-    wasm::util::set_return_data(&params.encode())
+    wasm::util::set_return_data(&serialize(&params))
 }
 
 /// Process cancel withdrawal instruction
@@ -1991,8 +1991,7 @@ fn apply_accept_withdrawal_update(cid: ContractId, update: AcceptWithdrawalUpdat
     let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
     let relayer_key = compute_relayer_key(&update.relayer_pub);
     if let Some(relayer_data) = wasm::db::db_get(relayers_db, &relayer_key)? {
-        let mut info: RelayerInfo = deserialize(&relayer_data)
-            .map_err(|_| ContractError::IoError("decode error".to_string()))?;
+        let mut info = RelayerInfo::decode(&relayer_data)?;
         info.total_withdrawals = info.total_withdrawals.saturating_add(1);
         wasm::db::db_set(relayers_db, &relayer_key, &info.encode())?;
     }
@@ -2023,8 +2022,7 @@ fn process_verify_relayer_reputation_instruction(
 
     let reputation = match wasm::db::db_get(relayers_db, &relayer_key)? {
         Some(data) => {
-            let info: RelayerInfo = deserialize(&data)
-                .map_err(|_| ContractError::IoError("decode error".to_string()))?;
+            let info = RelayerInfo::decode(&data)?;
             ReputationInfo {
                 slash_count: info.total_slashed,
                 success_count: info.total_successful,
@@ -2046,7 +2044,7 @@ fn process_verify_relayer_reputation_instruction(
         reputation.is_registered, reputation.slash_count, reputation.success_count);
 
     // Read-only — return data directly, no update struct needed
-    wasm::util::set_return_data(&reputation.encode())
+    wasm::util::set_return_data(&serialize(&reputation))
 }
 
 // ============================================================================
@@ -2072,8 +2070,7 @@ fn process_register_fee_schedule_instruction(
         return Err(BridgeError::RelayerNotRegistered.into())
     };
 
-    let _info: RelayerInfo = deserialize(&relayer_data)
-        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
+    let _info = RelayerInfo::decode(&relayer_data)?;
 
     msg!("[bridge::RegisterFeeScheduleV1] Fee schedule registration approved");
 
@@ -2092,8 +2089,7 @@ fn apply_register_fee_schedule_update(cid: ContractId, update: RegisterFeeSchedu
         return Err(BridgeError::RelayerNotRegistered.into())
     };
 
-    let mut info: RelayerInfo = deserialize(&relayer_data)
-        .map_err(|_| ContractError::IoError("decode error".to_string()))?;
+    let mut info = RelayerInfo::decode(&relayer_data)?;
 
     info.fee_schedule_id = Some(update.fee_schedule_id);
     wasm::db::db_set(relayers_db, &relayer_key, &info.encode())?;

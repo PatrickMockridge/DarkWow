@@ -26,7 +26,7 @@
 use dwow_sdk::{
     crypto::{pasta_prelude::{FromUniformBytes, PrimeField}, poseidon_hash, PublicKey},
     error::ContractError,
-    pasta::{group::GroupEncoding, pallas},
+    pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
 

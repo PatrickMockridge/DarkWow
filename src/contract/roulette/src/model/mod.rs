@@ -52,6 +52,7 @@ impl dwow_serial::Decodable for BetType {
     }
 }
 
+#[cfg(feature = "client")]
 #[dwow_serial::async_trait]
 impl dwow_serial::AsyncEncodable for BetType {
     async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
@@ -61,6 +62,7 @@ impl dwow_serial::AsyncEncodable for BetType {
     }
 }
 
+#[cfg(feature = "client")]
 #[dwow_serial::async_trait]
 impl dwow_serial::AsyncDecodable for BetType {
     async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
@@ -86,6 +88,7 @@ impl dwow_serial::Decodable for RouletteTableState {
     }
 }
 
+#[cfg(feature = "client")]
 #[dwow_serial::async_trait]
 impl dwow_serial::AsyncEncodable for RouletteTableState {
     async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
@@ -95,6 +98,7 @@ impl dwow_serial::AsyncEncodable for RouletteTableState {
     }
 }
 
+#[cfg(feature = "client")]
 #[dwow_serial::async_trait]
 impl dwow_serial::AsyncDecodable for RouletteTableState {
     async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {

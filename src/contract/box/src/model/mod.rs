@@ -22,6 +22,7 @@ impl dwow_serial::Decodable for BoxId {
     }
 }
 
+#[cfg(feature = "client")]
 #[dwow_serial::async_trait]
 impl dwow_serial::AsyncEncodable for BoxId {
     async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
@@ -32,6 +33,7 @@ impl dwow_serial::AsyncEncodable for BoxId {
     }
 }
 
+#[cfg(feature = "client")]
 #[dwow_serial::async_trait]
 impl dwow_serial::AsyncDecodable for BoxId {
     async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {

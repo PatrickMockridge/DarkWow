@@ -34,7 +34,6 @@ use std::fs;
 use std::io::{self, Write};
 use std::process;
 
-use dwow_serial::Encodable;
 use dwow_sdk::crypto::{ContractId, PublicKey};
 use dwow_stablecoin_contract::model::{
     CollateralParams, CollateralType, DeadManAction, DeadManSwitchConfig, InitializeParams,
@@ -121,11 +120,7 @@ fn main() {
         promissory_note_contract_id: pn_contract_id,
     };
 
-    let mut buf = vec![];
-    params.encode(&mut buf).unwrap_or_else(|e| {
-        eprintln!("Error encoding params: {e}");
-        process::exit(1);
-    });
+    let buf = params.encode();
 
     let output = &args.get(3).cloned();
     match output {

@@ -29,7 +29,7 @@
 //! locking the player's bet value.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
     error::ContractError,
     msg,
     pasta::pallas,
@@ -109,7 +109,7 @@ pub fn dice_commit_bet_process_instruction_v1(
     // Look up house edge
     let info_db = wasm::db::db_lookup(cid, DICE_CONTRACT_INFO_TREE)?;
     let stored_house_edge_bytes = wasm::db::db_get(info_db, DICE_CONTRACT_HOUSE_EDGE)?.ok_or(ContractError::DbGetEmpty)?;
-    let stored_house_edge: u32 = u32::from_le_bytes(stored_house_edge_bytes.try_into().map_err(|e| dwow_sdk::error::ContractError::IoError(format!("{e}")))?);
+    let stored_house_edge: u32 = u32::from_le_bytes(stored_house_edge_bytes.try_into().map_err(|e| dwow_sdk::error::ContractError::IoError(format!("{e:?}")))?);
 
     let house_edge = if params.house_edge == 0 { stored_house_edge } else { params.house_edge };
     validate_house_edge(house_edge)?;

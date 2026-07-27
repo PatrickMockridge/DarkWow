@@ -144,8 +144,8 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
             promissory_note_contract_id: ContractId::ZERO,
         }
     } else {
-        InitializeParams::decode(&mut std::io::Cursor::new(ix))
-            .map_err(|_| ContractError::IoError("Decode error".to_string()))?
+        InitializeParams::decode(ix)
+            .map_err(|e| ContractError::IoError(format!("Decode error: {}", e)))?
     };
 
     // Initialize info tree
@@ -249,7 +249,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         StablecoinFunction::InitializeV1 => {
-            let params: InitializeParams = match deserialize(&self_.data[1..]) {
+            let params = match InitializeParams::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[stablecoin::get_metadata] Error: Failed to deserialize InitializeParams: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -262,7 +262,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::OpenPositionV1 => {
-            let params: DepositCollateralParams = match deserialize(&self_.data[1..]) {
+            let params = match DepositCollateralParams::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[stablecoin::get_metadata] Error: Failed to deserialize DepositCollateralParams: {:?}", e);
@@ -281,7 +281,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::AddCollateralV1 => {
-            let params: DepositCollateralParams = match deserialize(&self_.data[1..]) {
+            let params = match DepositCollateralParams::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[stablecoin::get_metadata] Error: Failed to deserialize DepositCollateralParams: {:?}", e);
@@ -300,7 +300,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::RemoveCollateralV1 => {
-            let params: WithdrawCollateralParams = match deserialize(&self_.data[1..]) {
+            let params = match WithdrawCollateralParams::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[stablecoin::get_metadata] Error: Failed to deserialize WithdrawCollateralParams: {:?}", e);
@@ -319,7 +319,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::MintStableV1 => {
-            let params: MintStableParams = match deserialize(&self_.data[1..]) {
+            let params = match MintStableParams::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[stablecoin::get_metadata] Error: Failed to deserialize MintStableParams: {:?}", e);
@@ -338,7 +338,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::RepayStableV1 => {
-            let params: RepayStableParams = match deserialize(&self_.data[1..]) {
+            let params = match RepayStableParams::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[stablecoin::get_metadata] Error: Failed to deserialize RepayStableParams: {:?}", e);
@@ -357,7 +357,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::LiquidateV1 => {
-            let params: LiquidateParams = match deserialize(&self_.data[1..]) {
+            let params = match LiquidateParams::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[stablecoin::get_metadata] Error: Failed to deserialize LiquidateParams: {:?}", e);
@@ -376,7 +376,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::UpdateConfigV1 => {
-            let params: UpdateConfigParams = match deserialize(&self_.data[1..]) {
+            let params = match UpdateConfigParams::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[stablecoin::get_metadata] Error: Failed to deserialize UpdateConfigParams: {:?}", e);
@@ -415,7 +415,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::RedeemStableV1 => {
-            let params: RedeemStableParamsV1 = match deserialize(&self_.data[1..]) {
+            let params = match RedeemStableParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[stablecoin::get_metadata] Error: Failed to deserialize RedeemStableParamsV1: {:?}", e);
@@ -454,7 +454,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let update_bytes = match func {
         StablecoinFunction::InitializeV1 => {
-            let params: InitializeParams = deserialize(&self_.data[1..])?;
+            let params = InitializeParams::decode(&self_.data[1..])?;
             // Store governance pubkey from init params for future UpdateConfig authorization
             let gov_key_bytes = params.deployer_auth.to_repr();
             let _update = vec![(STABLECOIN_CONTRACT_GOVERNANCE_PUBKEY_KEY.to_vec(), gov_key_bytes.to_vec())];
@@ -470,7 +470,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         StablecoinFunction::RepayStableV1 => process_repay_stable_instruction(cid, call_idx, calls)?,
         StablecoinFunction::LiquidateV1 => process_liquidate_instruction(cid, call_idx, calls)?,
         StablecoinFunction::UpdateConfigV1 => {
-            let params: UpdateConfigParams = deserialize(&self_.data[1..])?;
+            let params = UpdateConfigParams::decode(&self_.data[1..])?;
             // Verify ZK proof authorizes this config update (governance key holder)
             let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(nullifiers_db, &params.config_nullifier.to_repr())? {
@@ -516,7 +516,7 @@ fn process_open_position_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: DepositCollateralParams = deserialize(&self_.data[1..])?;
+    let params = DepositCollateralParams::decode(&self_.data[1..])?;
 
     msg!(
         "[stablecoin::process_instruction] Opening position: commitment={:?}",
@@ -588,7 +588,7 @@ fn process_open_position_instruction(
 /// Returns a [`SpendHookCallbackUpdateV1`] via `set_return_data` for the
 /// subsequent `apply()` call.
 fn process_spend_hook(cid: ContractId, payload: &[u8]) -> ContractResult {
-    let cb: BurnSpendHookPayload = deserialize(payload)?;
+    let cb = BurnSpendHookPayload::decode(payload)?;
 
     // Verify the callback came from our configured PN contract
     let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
@@ -766,7 +766,7 @@ fn process_add_collateral_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: DepositCollateralParams = deserialize(&self_.data[1..])?;
+    let params = DepositCollateralParams::decode(&self_.data[1..])?;
 
     msg!(
         "[stablecoin::process_instruction] AddCollateral: commitment={:?}, amount={}",
@@ -884,7 +884,7 @@ fn process_remove_collateral_instruction(
     validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
-    let params: WithdrawCollateralParams = deserialize(&self_.data[1..])?;
+    let params = WithdrawCollateralParams::decode(&self_.data[1..])?;
 
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
@@ -987,7 +987,7 @@ fn process_mint_stable_instruction(
     validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
-    let params: MintStableParams = deserialize(&self_.data[1..])?;
+    let params = MintStableParams::decode(&self_.data[1..])?;
 
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
@@ -1062,7 +1062,7 @@ fn process_repay_stable_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: RepayStableParams = deserialize(&self_.data[1..])?;
+    let params = RepayStableParams::decode(&self_.data[1..])?;
 
     msg!(
         "[stablecoin::process_instruction] RepayStable: amount={}",
@@ -1181,7 +1181,7 @@ fn process_liquidate_instruction(
     validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
-    let params: LiquidateParams = deserialize(&self_.data[1..])?;
+    let params = LiquidateParams::decode(&self_.data[1..])?;
 
     msg!(
         "[stablecoin::process_instruction] Liquidate: debt_to_cover={}, collateral={}",
@@ -1294,7 +1294,7 @@ fn process_governance_report_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: GovernanceReportParams = deserialize(&self_.data[1..])?;
+    let params = GovernanceReportParams::decode(&self_.data[1..])?;
 
     // Read on-chain config DB values
     let config_db = wasm::db::db_lookup(cid, "config")?;
@@ -1421,7 +1421,7 @@ fn process_accrue_interest_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: AccrueInterestParams = deserialize(&self_.data[1..])?;
+    let params = AccrueInterestParams::decode(&self_.data[1..])?;
 
     msg!(
         "[stablecoin::process_instruction] AccrueInterest: old_debt={}, new_debt={}, interest={}",
@@ -1509,7 +1509,7 @@ fn process_redeem_stable_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: RedeemStableParamsV1 = deserialize(&self_.data[1..])?;
+    let params = RedeemStableParamsV1::decode(&self_.data[1..])?;
 
     msg!(
         "[stablecoin::process_instruction] RedeemStable: amount={}, total_debt={}",

@@ -29,7 +29,7 @@
 //! paying out winnings to the player.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
     error::ContractError,
     msg,
     pasta::pallas,
@@ -164,7 +164,7 @@ pub fn dice_settle_bet_process_update_v1(
         let mut house_balance: u64 = 0;
         if wasm::db::db_contains_key(house_db, b"balance")? {
             if let Some(balance_bytes) = wasm::db::db_get(house_db, b"balance")? {
-                house_balance = u64::from_le_bytes(balance_bytes.try_into().map_err(|e| dwow_sdk::error::ContractError::IoError(format!("{e}")))?);
+                house_balance = u64::from_le_bytes(balance_bytes.try_into().map_err(|e| dwow_sdk::error::ContractError::IoError(format!("{e:?}")))?);
             }
         }
         house_balance += house_take;

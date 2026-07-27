@@ -132,6 +132,7 @@ impl dwow_serial::Decodable for LotteryConfig {
     }
 }
 
+#[cfg(feature = "client")]
 #[dwow_serial::async_trait]
 impl dwow_serial::AsyncEncodable for LotteryConfig {
     async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
@@ -142,6 +143,7 @@ impl dwow_serial::AsyncEncodable for LotteryConfig {
     }
 }
 
+#[cfg(feature = "client")]
 #[dwow_serial::async_trait]
 impl dwow_serial::AsyncDecodable for LotteryConfig {
     async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {

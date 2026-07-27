@@ -29,7 +29,7 @@
 //! collecting the house's share of the bet.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
     error::ContractError,
     msg,
     pasta::pallas,
@@ -103,7 +103,7 @@ pub fn dice_house_close_process_instruction_v1(
     // Get roll timeout from info
     let info_db = wasm::db::db_lookup(cid, DICE_CONTRACT_INFO_TREE)?;
     let timeout_bytes = wasm::db::db_get(info_db, DICE_CONTRACT_ROLL_TIMEOUT)?.ok_or(ContractError::DbGetEmpty)?;
-    let roll_timeout: u32 = u32::from_le_bytes(timeout_bytes.try_into().map_err(|e| ContractError::IoError(format!("{e}")))?);
+    let roll_timeout: u32 = u32::from_le_bytes(timeout_bytes.try_into().map_err(|e| ContractError::IoError(format!("{e:?}")))?);
 
     // Get current block height
     let current_block = wasm::util::get_verifying_block_height()?;
@@ -140,7 +140,7 @@ pub fn dice_house_close_process_instruction_v1(
         wasm::db::db_get(info_db, crate::DICE_CONTRACT_HOUSE_PUBKEY)?;
 
     let stored_house_pubkey: dwow_sdk::crypto::PublicKey = match house_pubkey_bytes {
-        Some(bytes) => dwow_sdk::crypto::PublicKey::from_bytes(bytes.try_into().map_err(|e| ContractError::IoError(format!("{e}")))?)?,
+        Some(bytes) => dwow_sdk::crypto::PublicKey::from_bytes(bytes.try_into().map_err(|e| ContractError::IoError(format!("{e:?}")))?)?,
         None => return Err(DiceError::UnauthorizedCaller.into()),
     };
 
@@ -192,7 +192,7 @@ pub fn dice_house_close_process_update_v1(
     let mut house_balance: u64 = 0;
     if wasm::db::db_contains_key(house_db, b"balance")? {
         let balance_bytes = wasm::db::db_get(house_db, b"balance")?.ok_or(ContractError::DbGetEmpty)?;
-        house_balance = u64::from_le_bytes(balance_bytes.try_into().map_err(|e| ContractError::IoError(format!("{e}")))?);
+        house_balance = u64::from_le_bytes(balance_bytes.try_into().map_err(|e| ContractError::IoError(format!("{e:?}")))?);
     }
     house_balance += house_take;
     wasm::db::db_set(house_db, b"balance", &house_balance.to_le_bytes())?;

@@ -229,7 +229,7 @@ fn escrow_fund_get_metadata_v1(
         vec![
             *value_coords.x(),
             *value_coords.y(),
-            params.escrow_id,
+            params.escrow_id.inner(),
             params.merkle_root.inner(),
         ],
     ));
@@ -259,7 +259,7 @@ fn escrow_claim_get_metadata_v1(
     zk_public_inputs.push((
         ESCROW_CONTRACT_ZKAS_CLAIM_NS_V2.to_string(),
         vec![
-            params.escrow_id,
+            params.escrow_id.inner(),
             escrow_seller_commitment,
             params.spent_nullifier,
         ],
@@ -292,7 +292,7 @@ fn escrow_refund_get_metadata_v1(
     zk_public_inputs.push((
         ESCROW_CONTRACT_ZKAS_REFUND_NS_V2.to_string(),
         vec![
-            params.escrow_id,
+            params.escrow_id.inner(),
             pallas::Base::from(params.timeout),
             pallas::Base::from(params.current_block),
             buyer_x,
@@ -326,7 +326,7 @@ fn escrow_cancel_get_metadata_v1(
     zk_public_inputs.push((
         ESCROW_CONTRACT_ZKAS_CANCEL_NS_V2.to_string(),
         vec![
-            params.escrow_id,
+            params.escrow_id.inner(),
             buyer_x,
             buyer_y,
             pallas::Base::zero(), // tx_commitment — verified by host

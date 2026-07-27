@@ -51,8 +51,6 @@ use dwow_sdk::{
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
-
 /// Namespace for stablecoin intents
 pub const STABLECOIN_NAMESPACE: u64 = 0x0005;
 
@@ -222,9 +220,11 @@ pub struct InitializeParams {
 }
 
 impl InitializeParams {
-    /// Encode initialization parameters to binary format.
-    pub fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
-        let mut buf = Vec::new();
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    pub fn encode(&self) -> Vec<u8> {
+        let cp_count = self.collateral_params.len();
+        let cap = 181 + cp_count * 25;
+        let mut buf = Vec::with_capacity(cap);
         buf.push(self.model.clone() as u8);
         buf.extend_from_slice(&self.min_collateralization_ratio.to_le_bytes());
         buf.extend_from_slice(&self.liquidation_threshold.to_le_bytes());
@@ -234,7 +234,7 @@ impl InitializeParams {
         buf.extend_from_slice(&self.pi_ki.to_le_bytes());
         buf.extend_from_slice(&self.twap_window.to_le_bytes());
         buf.extend_from_slice(&self.price_deviation_threshold.to_le_bytes());
-        buf.push(self.collateral_params.len() as u8);
+        buf.push(cp_count as u8);
         for cp in &self.collateral_params {
             buf.push(cp.collateral_type.clone() as u8);
             buf.extend_from_slice(&cp.haircut.to_le_bytes());
@@ -250,9 +250,61 @@ impl InitializeParams {
         buf.extend_from_slice(&self.token_symbol);
         buf.extend_from_slice(&self.deployer_auth.to_repr());
         buf.extend_from_slice(&self.promissory_note_contract_id.to_bytes());
-        let len = buf.len();
-        w.write_all(&buf)?;
-        Ok(len)
+        buf
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 181 {
+            return Err(ContractError::IoError(format!(
+                "InitializeParams: expected at least 181 bytes, got {}", data.len()
+            )));
+        }
+        let model = StablecoinModel::decode(&data[0..1])?;
+        let min_collateralization_ratio = u64::from_le_bytes(data[1..9].try_into().unwrap());
+        let liquidation_threshold = u64::from_le_bytes(data[9..17].try_into().unwrap());
+        let liquidation_penalty = u64::from_le_bytes(data[17..25].try_into().unwrap());
+        let base_rate = u64::from_le_bytes(data[25..33].try_into().unwrap());
+        let pi_kp = i64::from_le_bytes(data[33..41].try_into().unwrap());
+        let pi_ki = i64::from_le_bytes(data[41..49].try_into().unwrap());
+        let twap_window = u64::from_le_bytes(data[49..57].try_into().unwrap());
+        let price_deviation_threshold = u64::from_le_bytes(data[57..65].try_into().unwrap());
+        let cp_count = data[65] as usize;
+        let dm_start = 66 + cp_count * 25;
+        if data.len() < dm_start + 18 + 97 {
+            return Err(ContractError::IoError(format!(
+                "InitializeParams: expected at least {} bytes for {} collateral_params, got {}",
+                dm_start + 18 + 97, cp_count, data.len()
+            )));
+        }
+        let mut collateral_params = Vec::with_capacity(cp_count);
+        for i in 0..cp_count {
+            let off = 66 + i * 25;
+            let collateral_type = CollateralType::decode(&data[off..off + 1])?;
+            let haircut = u64::from_le_bytes(data[off + 1..off + 9].try_into().unwrap());
+            let lt = u64::from_le_bytes(data[off + 9..off + 17].try_into().unwrap());
+            let max_debt_share = u64::from_le_bytes(data[off + 17..off + 25].try_into().unwrap());
+            collateral_params.push(CollateralParams { collateral_type, haircut, liquidation_threshold: lt, max_debt_share });
+        }
+        let enabled = data[dm_start] != 0;
+        let timeout_blocks = u64::from_le_bytes(data[dm_start + 1..dm_start + 9].try_into().unwrap());
+        let action = DeadManAction::try_from(data[dm_start + 9])?;
+        let last_action_block = u64::from_le_bytes(data[dm_start + 10..dm_start + 18].try_into().unwrap());
+        let dead_man_switch = DeadManSwitchConfig { enabled, timeout_blocks, action, last_action_block };
+        let token_authority_pub = PublicKey::from_bytes(data[dm_start + 18..dm_start + 50].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("InitializeParams: invalid token_authority_pub: {}", e)))?;
+        let create_token = data[dm_start + 50] != 0;
+        let token_symbol: [u8; 32] = data[dm_start + 51..dm_start + 83].try_into().unwrap();
+        let deployer_auth = Option::<pallas::Base>::from(pallas::Base::from_repr(data[dm_start + 83..dm_start + 115].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("InitializeParams: invalid deployer_auth".into()))?;
+        let promissory_note_contract_id = ContractId::from_bytes(data[dm_start + 115..dm_start + 147].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("InitializeParams: invalid promissory_note_contract_id".into()))?;
+        Ok(InitializeParams {
+            model, min_collateralization_ratio, liquidation_threshold, liquidation_penalty,
+            base_rate, pi_kp, pi_ki, twap_window, price_deviation_threshold,
+            collateral_params, dead_man_switch, token_authority_pub, create_token,
+            token_symbol, deployer_auth, promissory_note_contract_id,
+        })
     }
 }
 
@@ -279,6 +331,60 @@ pub struct DepositCollateralParams {
     pub zk_public_inputs: Vec<pallas::Base>,
 }
 
+impl DepositCollateralParams {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 51 + self.proof.len() + self.zk_public_inputs.len() * 32;
+        let mut buf = Vec::with_capacity(cap);
+        buf.extend_from_slice(&self.deposit_commitment.to_bytes());
+        buf.extend_from_slice(&self.collateral_amount.to_le_bytes());
+        buf.extend_from_slice(&self.collateral_type.encode());
+        buf.push(self.proof.len() as u8);
+        buf.extend_from_slice(&self.proof);
+        buf.extend_from_slice(&self.fee.to_le_bytes());
+        buf.push(self.zk_public_inputs.len() as u8);
+        for pi in &self.zk_public_inputs {
+            buf.extend_from_slice(&pi.to_repr());
+        }
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 52 {
+            return Err(ContractError::IoError(format!(
+                "DepositCollateralParams: expected at least 52 bytes, got {}", data.len()
+            )));
+        }
+        let deposit_commitment = IntentCommitment::from_bytes(data[0..32].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("DepositCollateralParams: invalid deposit_commitment".into()))?;
+        let collateral_amount = u64::from_le_bytes(data[32..40].try_into().unwrap());
+        let collateral_type = CollateralType::decode(&data[40..41])?;
+        let proof_len = data[41] as usize;
+        if data.len() < 42 + proof_len + 9 {
+            return Err(ContractError::IoError(format!(
+                "DepositCollateralParams: proof truncated at offset {}", 42 + proof_len
+            )));
+        }
+        let proof = data[42..42 + proof_len].to_vec();
+        let fee = u64::from_le_bytes(data[42 + proof_len..50 + proof_len].try_into().unwrap());
+        let pi_count = data[50 + proof_len] as usize;
+        let expected = 51 + proof_len + pi_count * 32;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "DepositCollateralParams: expected {} bytes, got {}", expected, data.len()
+            )));
+        }
+        let mut zk_public_inputs = Vec::with_capacity(pi_count);
+        for i in 0..pi_count {
+            let start = 51 + proof_len + i * 32;
+            zk_public_inputs.push(
+                Option::<pallas::Base>::from(pallas::Base::from_repr(data[start..start + 32].try_into().unwrap()))
+                    .ok_or_else(|| ContractError::IoError(format!("DepositCollateralParams: invalid zk_public_inputs[{}]", i)))?,
+            );
+        }
+        Ok(DepositCollateralParams { deposit_commitment, collateral_amount, collateral_type, proof, fee, zk_public_inputs })
+    }
+}
+
 /// Withdraw collateral from the pool (only if collateralization ratio allows)
 #[derive(Debug, Clone)]
 pub struct WithdrawCollateralParams {
@@ -300,6 +406,61 @@ pub struct WithdrawCollateralParams {
     /// ZK public inputs for proof verification: [nullifier]
     /// The prover computes the nullifier from their secret
     pub zk_public_inputs: Vec<pallas::Base>,
+}
+
+impl WithdrawCollateralParams {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 83 + self.proof.len() + self.zk_public_inputs.len() * 32;
+        let mut buf = Vec::with_capacity(cap);
+        buf.extend_from_slice(&self.withdrawal_nullifier.to_bytes());
+        buf.extend_from_slice(&self.new_commitment.to_bytes());
+        buf.extend_from_slice(&self.withdraw_amount.to_le_bytes());
+        buf.push(self.proof.len() as u8);
+        buf.extend_from_slice(&self.proof);
+        buf.extend_from_slice(&self.fee.to_le_bytes());
+        buf.push(self.zk_public_inputs.len() as u8);
+        for pi in &self.zk_public_inputs {
+            buf.extend_from_slice(&pi.to_repr());
+        }
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 84 {
+            return Err(ContractError::IoError(format!(
+                "WithdrawCollateralParams: expected at least 84 bytes, got {}", data.len()
+            )));
+        }
+        let withdrawal_nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("WithdrawCollateralParams: invalid withdrawal_nullifier".into()))?;
+        let new_commitment = IntentCommitment::from_bytes(data[32..64].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("WithdrawCollateralParams: invalid new_commitment".into()))?;
+        let withdraw_amount = u64::from_le_bytes(data[64..72].try_into().unwrap());
+        let proof_len = data[72] as usize;
+        if data.len() < 73 + proof_len + 9 {
+            return Err(ContractError::IoError(format!(
+                "WithdrawCollateralParams: proof truncated at offset {}", 73 + proof_len
+            )));
+        }
+        let proof = data[73..73 + proof_len].to_vec();
+        let fee = u64::from_le_bytes(data[73 + proof_len..81 + proof_len].try_into().unwrap());
+        let pi_count = data[81 + proof_len] as usize;
+        let expected = 82 + proof_len + pi_count * 32;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "WithdrawCollateralParams: expected {} bytes, got {}", expected, data.len()
+            )));
+        }
+        let mut zk_public_inputs = Vec::with_capacity(pi_count);
+        for i in 0..pi_count {
+            let start = 82 + proof_len + i * 32;
+            zk_public_inputs.push(
+                Option::<pallas::Base>::from(pallas::Base::from_repr(data[start..start + 32].try_into().unwrap()))
+                    .ok_or_else(|| ContractError::IoError(format!("WithdrawCollateralParams: invalid zk_public_inputs[{}]", i)))?,
+            );
+        }
+        Ok(WithdrawCollateralParams { withdrawal_nullifier, new_commitment, withdraw_amount, proof, fee, zk_public_inputs })
+    }
 }
 
 /// Mint stablecoin against collateral pool
@@ -328,6 +489,62 @@ pub struct MintStableParams {
     pub zk_public_inputs: Vec<pallas::Base>,
 }
 
+impl MintStableParams {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 66 + self.proof.len() + self.zk_public_inputs.len() * 32;
+        let mut buf = Vec::with_capacity(cap);
+        buf.extend_from_slice(&self.mint_commitment.to_bytes());
+        buf.extend_from_slice(&self.mint_amount.to_le_bytes());
+        buf.extend_from_slice(&self.total_debt.to_le_bytes());
+        buf.extend_from_slice(&self.total_collateral.to_le_bytes());
+        buf.push(self.proof.len() as u8);
+        buf.extend_from_slice(&self.proof);
+        buf.extend_from_slice(&self.fee.to_le_bytes());
+        buf.push(self.zk_public_inputs.len() as u8);
+        for pi in &self.zk_public_inputs {
+            buf.extend_from_slice(&pi.to_repr());
+        }
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 67 {
+            return Err(ContractError::IoError(format!(
+                "MintStableParams: expected at least 67 bytes, got {}", data.len()
+            )));
+        }
+        let mint_commitment = IntentCommitment::from_bytes(data[0..32].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("MintStableParams: invalid mint_commitment".into()))?;
+        let mint_amount = u64::from_le_bytes(data[32..40].try_into().unwrap());
+        let total_debt = u64::from_le_bytes(data[40..48].try_into().unwrap());
+        let total_collateral = u64::from_le_bytes(data[48..56].try_into().unwrap());
+        let proof_len = data[56] as usize;
+        if data.len() < 57 + proof_len + 9 {
+            return Err(ContractError::IoError(format!(
+                "MintStableParams: proof truncated at offset {}", 57 + proof_len
+            )));
+        }
+        let proof = data[57..57 + proof_len].to_vec();
+        let fee = u64::from_le_bytes(data[57 + proof_len..65 + proof_len].try_into().unwrap());
+        let pi_count = data[65 + proof_len] as usize;
+        let expected = 66 + proof_len + pi_count * 32;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "MintStableParams: expected {} bytes, got {}", expected, data.len()
+            )));
+        }
+        let mut zk_public_inputs = Vec::with_capacity(pi_count);
+        for i in 0..pi_count {
+            let start = 66 + proof_len + i * 32;
+            zk_public_inputs.push(
+                Option::<pallas::Base>::from(pallas::Base::from_repr(data[start..start + 32].try_into().unwrap()))
+                    .ok_or_else(|| ContractError::IoError(format!("MintStableParams: invalid zk_public_inputs[{}]", i)))?,
+            );
+        }
+        Ok(MintStableParams { mint_commitment, mint_amount, total_debt, total_collateral, proof, fee, zk_public_inputs })
+    }
+}
+
 /// Repay stablecoin debt to reduce debt share
 #[derive(Debug, Clone)]
 pub struct RepayStableParams {
@@ -346,6 +563,58 @@ pub struct RepayStableParams {
     /// ZK public inputs for proof verification: [commitment]
     /// The prover computes the commitment from their secret values
     pub zk_public_inputs: Vec<pallas::Base>,
+}
+
+impl RepayStableParams {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 50 + self.proof.len() + self.zk_public_inputs.len() * 32;
+        let mut buf = Vec::with_capacity(cap);
+        buf.extend_from_slice(&self.repay_commitment.to_bytes());
+        buf.extend_from_slice(&self.repay_amount.to_le_bytes());
+        buf.push(self.proof.len() as u8);
+        buf.extend_from_slice(&self.proof);
+        buf.extend_from_slice(&self.fee.to_le_bytes());
+        buf.push(self.zk_public_inputs.len() as u8);
+        for pi in &self.zk_public_inputs {
+            buf.extend_from_slice(&pi.to_repr());
+        }
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 51 {
+            return Err(ContractError::IoError(format!(
+                "RepayStableParams: expected at least 51 bytes, got {}", data.len()
+            )));
+        }
+        let repay_commitment = IntentCommitment::from_bytes(data[0..32].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("RepayStableParams: invalid repay_commitment".into()))?;
+        let repay_amount = u64::from_le_bytes(data[32..40].try_into().unwrap());
+        let proof_len = data[40] as usize;
+        if data.len() < 41 + proof_len + 9 {
+            return Err(ContractError::IoError(format!(
+                "RepayStableParams: proof truncated at offset {}", 41 + proof_len
+            )));
+        }
+        let proof = data[41..41 + proof_len].to_vec();
+        let fee = u64::from_le_bytes(data[41 + proof_len..49 + proof_len].try_into().unwrap());
+        let pi_count = data[49 + proof_len] as usize;
+        let expected = 50 + proof_len + pi_count * 32;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "RepayStableParams: expected {} bytes, got {}", expected, data.len()
+            )));
+        }
+        let mut zk_public_inputs = Vec::with_capacity(pi_count);
+        for i in 0..pi_count {
+            let start = 50 + proof_len + i * 32;
+            zk_public_inputs.push(
+                Option::<pallas::Base>::from(pallas::Base::from_repr(data[start..start + 32].try_into().unwrap()))
+                    .ok_or_else(|| ContractError::IoError(format!("RepayStableParams: invalid zk_public_inputs[{}]", i)))?,
+            );
+        }
+        Ok(RepayStableParams { repay_commitment, repay_amount, proof, fee, zk_public_inputs })
+    }
 }
 
 /// Liquidate pool if undercollateralized
@@ -383,6 +652,66 @@ pub struct LiquidateParams {
     pub zk_public_inputs: Vec<pallas::Base>,
 }
 
+impl LiquidateParams {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 82 + self.proof.len() + self.zk_public_inputs.len() * 32;
+        let mut buf = Vec::with_capacity(cap);
+        buf.extend_from_slice(&self.liquidation_commitment.to_bytes());
+        buf.extend_from_slice(&self.total_debt.to_le_bytes());
+        buf.extend_from_slice(&self.total_collateral.to_le_bytes());
+        buf.extend_from_slice(&self.current_price.to_le_bytes());
+        buf.extend_from_slice(&self.debt_to_cover.to_le_bytes());
+        buf.push(self.proof.len() as u8);
+        buf.extend_from_slice(&self.proof);
+        buf.extend_from_slice(&self.liquidation_reward.to_le_bytes());
+        buf.extend_from_slice(&self.fee.to_le_bytes());
+        buf.push(self.zk_public_inputs.len() as u8);
+        for pi in &self.zk_public_inputs {
+            buf.extend_from_slice(&pi.to_repr());
+        }
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 83 {
+            return Err(ContractError::IoError(format!(
+                "LiquidateParams: expected at least 83 bytes, got {}", data.len()
+            )));
+        }
+        let liquidation_commitment = IntentCommitment::from_bytes(data[0..32].try_into().unwrap())
+            .map_err(|_| ContractError::IoError("LiquidateParams: invalid liquidation_commitment".into()))?;
+        let total_debt = u64::from_le_bytes(data[32..40].try_into().unwrap());
+        let total_collateral = u64::from_le_bytes(data[40..48].try_into().unwrap());
+        let current_price = u64::from_le_bytes(data[48..56].try_into().unwrap());
+        let debt_to_cover = u64::from_le_bytes(data[56..64].try_into().unwrap());
+        let proof_len = data[64] as usize;
+        if data.len() < 65 + proof_len + 17 {
+            return Err(ContractError::IoError(format!(
+                "LiquidateParams: proof truncated at offset {}", 65 + proof_len
+            )));
+        }
+        let proof = data[65..65 + proof_len].to_vec();
+        let liquidation_reward = u64::from_le_bytes(data[65 + proof_len..73 + proof_len].try_into().unwrap());
+        let fee = u64::from_le_bytes(data[73 + proof_len..81 + proof_len].try_into().unwrap());
+        let pi_count = data[81 + proof_len] as usize;
+        let expected = 82 + proof_len + pi_count * 32;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "LiquidateParams: expected {} bytes, got {}", expected, data.len()
+            )));
+        }
+        let mut zk_public_inputs = Vec::with_capacity(pi_count);
+        for i in 0..pi_count {
+            let start = 82 + proof_len + i * 32;
+            zk_public_inputs.push(
+                Option::<pallas::Base>::from(pallas::Base::from_repr(data[start..start + 32].try_into().unwrap()))
+                    .ok_or_else(|| ContractError::IoError(format!("LiquidateParams: invalid zk_public_inputs[{}]", i)))?,
+            );
+        }
+        Ok(LiquidateParams { liquidation_commitment, total_debt, total_collateral, current_price, debt_to_cover, proof, liquidation_reward, fee, zk_public_inputs })
+    }
+}
+
 /// Update pool configuration (governance)
 #[derive(Debug, Clone)]
 pub struct UpdateConfigParams {
@@ -416,6 +745,62 @@ pub struct UpdateConfigParams {
     pub gov_pub_y: pallas::Base,
     /// Nullifier = H(gov_pub_x, gov_pub_y, gov_secret) for ZK replay protection
     pub config_nullifier: pallas::Base,
+}
+
+impl UpdateConfigParams {
+    /// Fixed canonical byte size: 8×64bit(64) + 3×pallas::Base(96)
+    pub const ENCODED_SIZE: usize = 160;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.min_collateralization_ratio.to_le_bytes());
+        buf.extend_from_slice(&self.liquidation_threshold.to_le_bytes());
+        buf.extend_from_slice(&self.liquidation_penalty.to_le_bytes());
+        buf.extend_from_slice(&self.base_rate.to_le_bytes());
+        buf.extend_from_slice(&self.pi_kp.to_le_bytes());
+        buf.extend_from_slice(&self.pi_ki.to_le_bytes());
+        buf.extend_from_slice(&self.twap_window.to_le_bytes());
+        buf.extend_from_slice(&self.price_deviation_threshold.to_le_bytes());
+        buf.extend_from_slice(&self.gov_pub_x.to_repr());
+        buf.extend_from_slice(&self.gov_pub_y.to_repr());
+        buf.extend_from_slice(&self.config_nullifier.to_repr());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "UpdateConfigParams: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let min_collateralization_ratio = u64::from_le_bytes(data[0..8].try_into().unwrap());
+        let liquidation_threshold = u64::from_le_bytes(data[8..16].try_into().unwrap());
+        let liquidation_penalty = u64::from_le_bytes(data[16..24].try_into().unwrap());
+        let base_rate = u64::from_le_bytes(data[24..32].try_into().unwrap());
+        let pi_kp = i64::from_le_bytes(data[32..40].try_into().unwrap());
+        let pi_ki = i64::from_le_bytes(data[40..48].try_into().unwrap());
+        let twap_window = u64::from_le_bytes(data[48..56].try_into().unwrap());
+        let price_deviation_threshold = u64::from_le_bytes(data[56..64].try_into().unwrap());
+        let gov_pub_x = Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("UpdateConfigParams: invalid gov_pub_x".into()))?;
+        let gov_pub_y = Option::<pallas::Base>::from(pallas::Base::from_repr(data[96..128].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("UpdateConfigParams: invalid gov_pub_y".into()))?;
+        let config_nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(data[128..160].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("UpdateConfigParams: invalid config_nullifier".into()))?;
+        Ok(UpdateConfigParams {
+            min_collateralization_ratio,
+            liquidation_threshold,
+            liquidation_penalty,
+            base_rate,
+            pi_kp,
+            pi_ki,
+            twap_window,
+            price_deviation_threshold,
+            gov_pub_x,
+            gov_pub_y,
+            config_nullifier,
+        })
+    }
 }
 
 /// Update data for configuration changes (sent from instruction to update phase)
@@ -571,6 +956,68 @@ pub struct RedeemStableParamsV1 {
     pub fee: u64,
     /// ZK public inputs for proof verification
     pub zk_public_inputs: Vec<pallas::Base>,
+}
+
+impl RedeemStableParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 130 + self.proof.len() + self.zk_public_inputs.len() * 32;
+        let mut buf = Vec::with_capacity(cap);
+        buf.extend_from_slice(&self.recipient_pub.to_bytes());
+        buf.extend_from_slice(&self.redeem_amount.to_le_bytes());
+        buf.extend_from_slice(&self.token_id.to_repr());
+        buf.extend_from_slice(&self.receipt_spend_hook.to_repr());
+        buf.extend_from_slice(&self.total_debt.to_le_bytes());
+        buf.extend_from_slice(&self.total_collateral.to_le_bytes());
+        buf.push(self.proof.len() as u8);
+        buf.extend_from_slice(&self.proof);
+        buf.extend_from_slice(&self.fee.to_le_bytes());
+        buf.push(self.zk_public_inputs.len() as u8);
+        for pi in &self.zk_public_inputs {
+            buf.extend_from_slice(&pi.to_repr());
+        }
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 131 {
+            return Err(ContractError::IoError(format!(
+                "RedeemStableParamsV1: expected at least 131 bytes, got {}", data.len()
+            )));
+        }
+        let recipient_pub = PublicKey::from_bytes(data[0..32].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("RedeemStableParamsV1: invalid recipient_pub: {}", e)))?;
+        let redeem_amount = u64::from_le_bytes(data[32..40].try_into().unwrap());
+        let token_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[40..72].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("RedeemStableParamsV1: invalid token_id".into()))?;
+        let receipt_spend_hook = Option::<pallas::Base>::from(pallas::Base::from_repr(data[72..104].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("RedeemStableParamsV1: invalid receipt_spend_hook".into()))?;
+        let total_debt = u64::from_le_bytes(data[104..112].try_into().unwrap());
+        let total_collateral = u64::from_le_bytes(data[112..120].try_into().unwrap());
+        let proof_len = data[120] as usize;
+        if data.len() < 121 + proof_len + 9 {
+            return Err(ContractError::IoError(format!(
+                "RedeemStableParamsV1: proof truncated at offset {}", 121 + proof_len
+            )));
+        }
+        let proof = data[121..121 + proof_len].to_vec();
+        let fee = u64::from_le_bytes(data[121 + proof_len..129 + proof_len].try_into().unwrap());
+        let pi_count = data[129 + proof_len] as usize;
+        let expected = 130 + proof_len + pi_count * 32;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "RedeemStableParamsV1: expected {} bytes, got {}", expected, data.len()
+            )));
+        }
+        let mut zk_public_inputs = Vec::with_capacity(pi_count);
+        for i in 0..pi_count {
+            let start = 130 + proof_len + i * 32;
+            zk_public_inputs.push(
+                Option::<pallas::Base>::from(pallas::Base::from_repr(data[start..start + 32].try_into().unwrap()))
+                    .ok_or_else(|| ContractError::IoError(format!("RedeemStableParamsV1: invalid zk_public_inputs[{}]", i)))?,
+            );
+        }
+        Ok(RedeemStableParamsV1 { recipient_pub, redeem_amount, token_id, receipt_spend_hook, total_debt, total_collateral, proof, fee, zk_public_inputs })
+    }
 }
 
 /// Update data for stablecoin redemption
@@ -739,6 +1186,58 @@ pub struct GovernanceReportParams {
     pub fee: u64,
 }
 
+impl GovernanceReportParams {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 129 + self.proof.len();
+        let mut buf = Vec::with_capacity(cap);
+        buf.extend_from_slice(&self.token_id.to_repr());
+        buf.extend_from_slice(&self.total_collateral.to_le_bytes());
+        buf.extend_from_slice(&self.total_debt.to_le_bytes());
+        buf.extend_from_slice(&self.total_redeemed.to_le_bytes());
+        buf.extend_from_slice(&self.outstanding.to_le_bytes());
+        buf.extend_from_slice(&self.collateral_ratio_bps.to_le_bytes());
+        buf.extend_from_slice(&self.interest_accrued.to_le_bytes());
+        buf.extend_from_slice(&self.report_timestamp.to_le_bytes());
+        buf.extend_from_slice(&self.reporter_pub.to_bytes());
+        buf.push(self.proof.len() as u8);
+        buf.extend_from_slice(&self.proof);
+        buf.extend_from_slice(&self.fee.to_le_bytes());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 130 {
+            return Err(ContractError::IoError(format!(
+                "GovernanceReportParams: expected at least 130 bytes, got {}", data.len()
+            )));
+        }
+        let token_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("GovernanceReportParams: invalid token_id".into()))?;
+        let total_collateral = u64::from_le_bytes(data[32..40].try_into().unwrap());
+        let total_debt = u64::from_le_bytes(data[40..48].try_into().unwrap());
+        let total_redeemed = u64::from_le_bytes(data[48..56].try_into().unwrap());
+        let outstanding = u64::from_le_bytes(data[56..64].try_into().unwrap());
+        let collateral_ratio_bps = u64::from_le_bytes(data[64..72].try_into().unwrap());
+        let interest_accrued = u64::from_le_bytes(data[72..80].try_into().unwrap());
+        let report_timestamp = u64::from_le_bytes(data[80..88].try_into().unwrap());
+        let reporter_pub = PublicKey::from_bytes(data[88..120].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("GovernanceReportParams: invalid reporter_pub: {}", e)))?;
+        let proof_len = data[120] as usize;
+        let expected = 121 + proof_len + 8;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "GovernanceReportParams: expected {} bytes, got {}", expected, data.len()
+            )));
+        }
+        let proof = data[121..121 + proof_len].to_vec();
+        let fee = u64::from_le_bytes(data[121 + proof_len..121 + proof_len + 8].try_into().unwrap());
+        Ok(GovernanceReportParams {
+            token_id, total_collateral, total_debt, total_redeemed, outstanding,
+            collateral_ratio_bps, interest_accrued, report_timestamp, reporter_pub, proof, fee,
+        })
+    }
+}
+
 /// Accrue interest parameters (cold/precise - uses BaseDiv)
 /// For precise interest accrual calculation
 #[derive(Debug, Clone)]
@@ -766,6 +1265,48 @@ pub struct AccrueInterestParams {
 
     /// Fee paid for this operation
     pub fee: u64,
+}
+
+impl AccrueInterestParams {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 81 + self.proof.len();
+        let mut buf = Vec::with_capacity(cap);
+        buf.extend_from_slice(&self.old_total_debt.to_le_bytes());
+        buf.extend_from_slice(&self.new_total_debt.to_le_bytes());
+        buf.extend_from_slice(&self.interest_amount.to_le_bytes());
+        buf.extend_from_slice(&self.rate_per_second.to_le_bytes());
+        buf.extend_from_slice(&self.time_elapsed.to_le_bytes());
+        buf.extend_from_slice(&self.accumulator_pub.to_bytes());
+        buf.push(self.proof.len() as u8);
+        buf.extend_from_slice(&self.proof);
+        buf.extend_from_slice(&self.fee.to_le_bytes());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 82 {
+            return Err(ContractError::IoError(format!(
+                "AccrueInterestParams: expected at least 82 bytes, got {}", data.len()
+            )));
+        }
+        let old_total_debt = u64::from_le_bytes(data[0..8].try_into().unwrap());
+        let new_total_debt = u64::from_le_bytes(data[8..16].try_into().unwrap());
+        let interest_amount = u64::from_le_bytes(data[16..24].try_into().unwrap());
+        let rate_per_second = u64::from_le_bytes(data[24..32].try_into().unwrap());
+        let time_elapsed = u64::from_le_bytes(data[32..40].try_into().unwrap());
+        let accumulator_pub = PublicKey::from_bytes(data[40..72].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("AccrueInterestParams: invalid accumulator_pub: {}", e)))?;
+        let proof_len = data[72] as usize;
+        let expected = 73 + proof_len + 8;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "AccrueInterestParams: expected {} bytes, got {}", expected, data.len()
+            )));
+        }
+        let proof = data[73..73 + proof_len].to_vec();
+        let fee = u64::from_le_bytes(data[73 + proof_len..73 + proof_len + 8].try_into().unwrap());
+        Ok(AccrueInterestParams { old_total_debt, new_total_debt, interest_amount, rate_per_second, time_elapsed, accumulator_pub, proof, fee })
+    }
 }
 
 /// Global liquidation record

@@ -52,7 +52,7 @@ use dwow_sdk::{
     },
     error::{ContractError, ContractResult},
     msg,
-    pasta::pallas,
+    pasta::{group::GroupEncoding, pallas},
     wasm,
 };
 use dwow_serial::{deserialize, Encodable, WriteExt};
@@ -133,8 +133,8 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // check).  Use db_contains_key on a known marker to test whether the
     // tree has actually been initialized.
     let db_coin_roots = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
-    if !wasm::db::db_contains_key(db_coin_roots, &EMPTY_COINS_TREE_ROOT.to_repr())? {
-        wasm::db::db_set(db_coin_roots, &EMPTY_COINS_TREE_ROOT.to_repr(), &roots_value_data)?;
+    if !wasm::db::db_contains_key(db_coin_roots, &EMPTY_COINS_TREE_ROOT)? {
+        wasm::db::db_set(db_coin_roots, &EMPTY_COINS_TREE_ROOT, &roots_value_data)?;
     }
 
     // Set up nullifier roots database
@@ -183,7 +183,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         wasm::db::db_set(
             info_db,
             NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
-            &EMPTY_COINS_TREE_ROOT.to_repr(),
+            &EMPTY_COINS_TREE_ROOT,
         )?;
         wasm::db::db_set(
             info_db,
@@ -246,7 +246,7 @@ fn fee_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
         msg!("[native_token::fee_get_metadata] Error: Params too short ({} bytes, need >= 9)", params.len());
         return vec![];
     }
-    let fee_params: FeeParamsV1 = match deserialize(&params[8..]) { Ok(p) => p, Err(e) => { msg!("[native_token::fee_get_metadata] Error: Failed to deserialize FeeParamsV1: {:?}", e); return vec![]; } };
+    let fee_params = match FeeParamsV1::decode(&params[8..]) { Ok(p) => p, Err(e) => { msg!("[native_token::fee_get_metadata] Error: Failed to decode FeeParamsV1: {:?}", e); return vec![]; } };
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -300,7 +300,7 @@ fn fee_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
 /// Metadata for BurnV1
 fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     if params.is_empty() { msg!("[native_token::burn_get_metadata] Error: Empty params"); return vec![]; }
-    let bp: BurnParamsV1 = match deserialize(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to deserialize params: {:?}", e); return vec![]; } };
+    let bp = match BurnParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode params: {:?}", e); return vec![]; } };
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -343,7 +343,7 @@ fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
 /// Metadata for TransferV1
 fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     if params.is_empty() { msg!("[native_token::transfer_get_metadata] Error: Empty params"); return vec![]; }
-    let tp: TransferParamsV1 = match deserialize(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to deserialize params: {:?}", e); return vec![]; } };
+    let tp = match TransferParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode params: {:?}", e); return vec![]; } };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3). sig_x/sig_y remain in ZK inputs.
@@ -414,7 +414,7 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
 /// Metadata for SpendV1
 fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     if params.is_empty() { msg!("[native_token::spend_get_metadata] Error: Empty params"); return vec![]; }
-    let sp: SpendParamsV1 = match deserialize(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to deserialize params: {:?}", e); return vec![]; } };
+    let sp = match SpendParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode params: {:?}", e); return vec![]; } };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3). sig_x/sig_y remain in ZK inputs.
@@ -585,7 +585,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 fn fee_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     // Extract fee from raw tx data (bytes 0-8, before FeeParamsV1)
     let fee: u64 = deserialize(&params[0..8])?;
-    let fee_val: FeeParamsV1 = deserialize(&params[8..])?;
+    let fee_val = FeeParamsV1::decode(&params[8..])?;
     msg!("[native_token::fee_v1] Processing fee: {}", fee);
 
     // Access the necessary databases
@@ -612,7 +612,7 @@ fn fee_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     }
 
     // Verify Merkle root exists
-    if !wasm::db::db_contains_key(coin_roots_db, &fee_val.input.merkle_root.to_repr())? {
+    if !wasm::db::db_contains_key(coin_roots_db, &fee_val.input.merkle_root.to_bytes())? {
         msg!("[fee_v1] Error: Input Merkle root not found in previous state");
         return Err(NativeTokenError::TransferMerkleRootNotFound.into())
     }
@@ -651,7 +651,7 @@ fn fee_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 // ============================================================================
 
 fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
-    let tp: TransferParamsV1 = deserialize(params)?;
+    let tp = TransferParamsV1::decode(params)?;
     msg!(
         "[native_token::transfer_v1] Processing transfer: {} inputs, {} outputs",
         tp.inputs.len(),
@@ -677,7 +677,7 @@ fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     let mut new_nullifiers = Vec::new();
     for (i, input) in tp.inputs.iter().enumerate() {
         // Check Merkle root exists
-        if !wasm::db::db_contains_key(coin_roots_db, &input.merkle_root.to_repr())? {
+        if !wasm::db::db_contains_key(coin_roots_db, &input.merkle_root.to_bytes())? {
             msg!("[transfer_v1] Error: Merkle root not found for input {}", i);
             return Err(NativeTokenError::TransferMerkleRootNotFound.into())
         }
@@ -748,7 +748,7 @@ fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 // ============================================================================
 
 fn spend_v1(cid: ContractId, params: &[u8]) -> ContractResult {
-    let sp: SpendParamsV1 = deserialize(params)?;
+    let sp = SpendParamsV1::decode(params)?;
     msg!("[native_token::spend_v1] Processing spend");
 
     // Validate DRKW token (↓denominate — only native asset permitted)
@@ -764,7 +764,7 @@ fn spend_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
     // Verify Merkle root exists
     let coin_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
-    if !wasm::db::db_contains_key(coin_roots_db, &sp.input.merkle_root.to_repr())? {
+    if !wasm::db::db_contains_key(coin_roots_db, &sp.input.merkle_root.to_bytes())? {
         msg!("[spend_v1] Error: Input Merkle root not found in previous state");
         return Err(NativeTokenError::TransferMerkleRootNotFound.into())
     }
@@ -796,7 +796,7 @@ fn spend_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 // ============================================================================
 
 fn burn_v1(cid: ContractId, params: &[u8]) -> ContractResult {
-    let bp: BurnParamsV1 = deserialize(params)?;
+    let bp = BurnParamsV1::decode(params)?;
     msg!("[native_token::burn_v1] Processing burn: {} inputs", bp.inputs.len());
 
     if bp.inputs.is_empty() {
@@ -813,7 +813,7 @@ fn burn_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     let mut new_nullifiers = Vec::new();
     for (i, input) in bp.inputs.iter().enumerate() {
         // Verify Merkle root exists
-        if !wasm::db::db_contains_key(coin_roots_db, &input.merkle_root.to_repr())? {
+        if !wasm::db::db_contains_key(coin_roots_db, &input.merkle_root.to_bytes())? {
             msg!("[burn_v1] Error: Merkle root not found for input {}", i);
             return Err(NativeTokenError::TransferMerkleRootNotFound.into())
         }
@@ -838,7 +838,7 @@ fn burn_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
 fn pow_reward_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     if params.is_empty() { msg!("[native_token::pow_reward_get_metadata] Error: Empty params"); return vec![]; }
-    let pr: PoWRewardParamsV1 = match deserialize(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to deserialize params: {:?}", e); return vec![]; } };
+    let pr = match PoWRewardParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode params: {:?}", e); return vec![]; } };
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -883,7 +883,7 @@ fn pow_reward_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
 }
 
 fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
-    let pr: PoWRewardParamsV1 = deserialize(params)?;
+    let pr = PoWRewardParamsV1::decode(params)?;
     msg!("[native_token::pow_reward_v1] Processing PoW reward for height verification");
 
     // Access the necessary databases
@@ -950,8 +950,9 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
     let current_supply: u64 = match wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY)? {
         Some(data) => {
+            let data_len = data.len();
             let bytes: [u8; 8] = data.try_into().map_err(|_| {
-                msg!("[native_token::pow_reward_v1] Error: Corrupt state — TOTAL_SUPPLY wrong size: {}", data.len());
+                msg!("[native_token::pow_reward_v1] Error: Corrupt state — TOTAL_SUPPLY wrong size: {}", data_len);
                 ContractError::IoError("Corrupt state: TOTAL_SUPPLY wrong size".to_string())
             })?;
             u64::from_le_bytes(bytes)
@@ -975,8 +976,9 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     // and persists the new cumulative values for the next block.
     let old_cumulative = match wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT)? {
         Some(data) => {
+            let data_len = data.len();
             let bytes: [u8; 32] = data.try_into().map_err(|_| {
-                msg!("[native_token::pow_reward_v1] Error: Corrupt state — CUMULATIVE_VALUE_COMMIT wrong size: {}", data.len());
+                msg!("[native_token::pow_reward_v1] Error: Corrupt state — CUMULATIVE_VALUE_COMMIT wrong size: {}", data_len);
                 ContractError::IoError("Corrupt state: CUMULATIVE_VALUE_COMMIT wrong size".to_string())
             })?;
             Option::<pallas::Point>::from(pallas::Point::from_bytes(&bytes))
@@ -994,8 +996,9 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     };
     let old_blind = match wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND)? {
         Some(data) => {
+            let data_len = data.len();
             let bytes: [u8; 32] = data.try_into().map_err(|_| {
-                msg!("[native_token::pow_reward_v1] Error: Corrupt state — CUMULATIVE_BLIND wrong size: {}", data.len());
+                msg!("[native_token::pow_reward_v1] Error: Corrupt state — CUMULATIVE_BLIND wrong size: {}", data_len);
                 ContractError::IoError("Corrupt state: CUMULATIVE_BLIND wrong size".to_string())
             })?;
             Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(bytes))
@@ -1096,7 +1099,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 
 fn fee_collect_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     if params.is_empty() { msg!("[native_token::fee_collect_get_metadata] Error: Empty params"); return vec![]; }
-    let fc: FeeCollectParamsV1 = match deserialize(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to deserialize params: {:?}", e); return vec![]; } };
+    let fc = match FeeCollectParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode params: {:?}", e); return vec![]; } };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let value_coords = fc.output.value_commit.to_affine().coordinates();
@@ -1131,7 +1134,7 @@ fn fee_collect_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
 }
 
 fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
-    let fc: FeeCollectParamsV1 = deserialize(params)?;
+    let fc = FeeCollectParamsV1::decode(params)?;
     let height = wasm::util::get_verifying_block_height()?;
     msg!("[native_token::fee_collect_v1] Collecting {} fee units at height {}", fc.total_fees, height);
 

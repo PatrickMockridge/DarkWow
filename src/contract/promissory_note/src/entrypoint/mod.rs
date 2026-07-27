@@ -147,7 +147,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Set up coin roots database
     if wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE).is_err() {
         let db_coin_roots = wasm::db::db_init(cid, PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE)?;
-        wasm::db::db_set(db_coin_roots, &EMPTY_COINS_TREE_ROOT.to_repr(), &roots_value_data)?;
+        wasm::db::db_set(db_coin_roots, &EMPTY_COINS_TREE_ROOT, &roots_value_data)?;
     }
 
     // Set up nullifier roots database
@@ -180,7 +180,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         let db_token_registry_roots = wasm::db::db_init(cid, PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_ROOTS_TREE)?;
         wasm::db::db_set(
             db_token_registry_roots,
-            &EMPTY_TOKEN_REGISTRY_TREE_ROOT.to_repr(),
+            &EMPTY_TOKEN_REGISTRY_TREE_ROOT,
             &roots_value_data,
         )?;
     }
@@ -215,7 +215,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
             wasm::db::db_set(
                 info_db,
                 PROMISSORY_NOTE_CONTRACT_LATEST_COIN_ROOT,
-                &EMPTY_COINS_TREE_ROOT.to_repr(),
+                &EMPTY_COINS_TREE_ROOT,
             )?;
             wasm::db::db_set(
                 info_db,
@@ -225,7 +225,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
             wasm::db::db_set(
                 info_db,
                 PROMISSORY_NOTE_CONTRACT_LATEST_TOKEN_REGISTRY_ROOT,
-                &EMPTY_TOKEN_REGISTRY_TREE_ROOT.to_repr(),
+                &EMPTY_TOKEN_REGISTRY_TREE_ROOT,
             )?;
 
             info_db
@@ -271,7 +271,7 @@ fn point_coords(pt: pallas::Point) -> (pallas::Base, pallas::Base) {
 /// Circuit instances: token_id, token_auth_parent, coin, value_commit_x, value_commit_y
 fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx];
-    let params: TokenMintParamsV1 = match deserialize(&self_.data.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+    let params= match TokenMintParamsV1::decode(&self_.data.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<pallas::Base> = vec![];
@@ -302,7 +302,7 @@ fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
 /// Circuit instances: token_root, mint_public, coin, value_commit_x, value_commit_y, token_id, spend_hook
 fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: MintParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+    let params= match MintParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -338,7 +338,7 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
 ///                     merkle_root, user_data_enc, spend_hook, signature_public
 fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: BurnParamsV1 = match deserialize(&self_.data[1..]) {
+    let params = match BurnParamsV1::decode(&self_.data[1..]) {
         Ok(p) => p,
         Err(_) => return vec![],
     };
@@ -380,7 +380,7 @@ fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
 /// BlindOutput instances: coin, value_commit_x, value_commit_y, token_commit, spend_hook
 fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: TransferParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+    let params= match TransferParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -509,7 +509,7 @@ fn verify_value_conservation(inputs: &[crate::model::Input], outputs: &[crate::m
 
 fn token_mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: TokenMintParamsV1 = deserialize(&self_.data[1..])?;
+    let params= TokenMintParamsV1::decode(&self_.data[1..])?;
     msg!("[promissory_note::token_mint_v1] Creating new token type");
 
     let coins_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COINS_TREE)?;
@@ -531,7 +531,7 @@ fn token_mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
 
 fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: MintParamsV1 = deserialize(&self_.data[1..])?;
+    let params= MintParamsV1::decode(&self_.data[1..])?;
     msg!("[promissory_note::mint_v1] Minting tokens");
 
     let coins_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COINS_TREE)?;
@@ -584,8 +584,9 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     supply_key.extend_from_slice(&params.token_id.to_bytes());
     let current_count: u64 = match wasm::db::db_get(info_db, &supply_key)? {
         Some(data) => {
+            let data_len = data.len();
             let bytes: [u8; 8] = data.try_into().map_err(|_| {
-                msg!("[promissory_note::mint_v1] Error: Corrupt state — coin count wrong size: {}", data.len());
+                msg!("[promissory_note::mint_v1] Error: Corrupt state — coin count wrong size: {}", data_len);
                 ContractError::IoError("Corrupt state: coin count wrong size".to_string())
             })?;
             u64::from_le_bytes(bytes)
@@ -612,7 +613,7 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
 
 fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: BurnParamsV1 = deserialize(&self_.data[1..])?;
+    let params= BurnParamsV1::decode(&self_.data[1..])?;
     msg!("[promissory_note::burn_v1] Processing burn: {} inputs", params.inputs.len());
 
     if params.inputs.is_empty() {
@@ -640,7 +641,7 @@ fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     let mut new_nullifiers = Vec::new();
     for (i, input) in params.inputs.iter().enumerate() {
         // Verify Merkle root exists
-        if !wasm::db::db_contains_key(coin_roots_db, &input.merkle_root.to_repr())? {
+        if !wasm::db::db_contains_key(coin_roots_db, &input.merkle_root.to_bytes())? {
             msg!("[burn_v1] Error: Merkle root not found for input {}", i);
             return Err(PromissoryNoteError::TransferMerkleRootNotFound.into())
         }
@@ -693,7 +694,7 @@ fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
 
 fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: TransferParamsV1 = deserialize(&self_.data[1..])?;
+    let params= TransferParamsV1::decode(&self_.data[1..])?;
     msg!(
         "[promissory_note::transfer_v1] Processing transfer: {} inputs, {} outputs",
         params.inputs.len(),
@@ -719,7 +720,7 @@ fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
     let mut new_nullifiers = Vec::new();
     for (i, input) in params.inputs.iter().enumerate() {
         // Check Merkle root exists
-        if !wasm::db::db_contains_key(coin_roots_db, &input.merkle_root.to_repr())? {
+        if !wasm::db::db_contains_key(coin_roots_db, &input.merkle_root.to_bytes())? {
             msg!("[transfer_v1] Error: Merkle root not found for input {}", i);
             return Err(PromissoryNoteError::TransferMerkleRootNotFound.into())
         }
@@ -928,7 +929,7 @@ fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
 /// The entrypoint sets coin_value = 0; the circuit constrains it as a public input.
 fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: RedeemParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+    let params= match RedeemParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -984,7 +985,7 @@ fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
 /// 3. Receipt coin is unique
 fn redeem_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: RedeemParamsV1 = deserialize(&self_.data[1..])?;
+    let params= RedeemParamsV1::decode(&self_.data[1..])?;
     msg!("[promissory_note::redeem_v1] Processing redemption");
 
     let coins_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COINS_TREE)?;
@@ -992,7 +993,7 @@ fn redeem_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>
     let nullifiers_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE)?;
 
     // Verify Merkle root exists
-    if !wasm::db::db_contains_key(coin_roots_db, &params.input.merkle_root.to_repr())? {
+    if !wasm::db::db_contains_key(coin_roots_db, &params.input.merkle_root.to_bytes())? {
         msg!("[redeem_v1] Error: Merkle root not found");
         return Err(PromissoryNoteError::TransferMerkleRootNotFound.into())
     }
@@ -1056,7 +1057,7 @@ fn apply_redeem(cid: ContractId, update: RedeemUpdateV1) -> ContractResult {
 /// Same proof structure as TransferV1: Burn for inputs, BlindOutput for outputs.
 fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: OtcSwapParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+    let params= match OtcSwapParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -1112,7 +1113,7 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
 /// - Cross-token swap (inputs/outputs have different token_ids)
 fn otc_swap_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: OtcSwapParamsV1 = deserialize(&self_.data[1..])?;
+    let params= OtcSwapParamsV1::decode(&self_.data[1..])?;
     msg!(
         "[promissory_note::otc_swap_v1] Processing OTC swap: {} inputs, {} outputs",
         params.inputs.len(),
@@ -1141,7 +1142,7 @@ fn otc_swap_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
     let mut new_nullifiers = Vec::new();
     for (i, input) in params.inputs.iter().enumerate() {
         // Check Merkle root exists
-        if !wasm::db::db_contains_key(coin_roots_db, &input.merkle_root.to_repr())? {
+        if !wasm::db::db_contains_key(coin_roots_db, &input.merkle_root.to_bytes())? {
             msg!("[otc_swap_v1] Error: Merkle root not found for input {}", i);
             return Err(PromissoryNoteError::TransferMerkleRootNotFound.into())
         }

@@ -22,7 +22,7 @@
  */
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId, PublicKey},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId, PublicKey},
     dark_tree::DarkLeaf,
     deploy::DeployParamsV1,
     error::{ContractError, ContractResult},
@@ -190,8 +190,7 @@ pub(crate) fn deploy_process_instruction_v1(
         if let Some(existing) = wasm::db::db_get(singleton_db, singleton_key)? {
             let existing_cid = ContractId::from_bytes(existing.try_into().map_err(|_| {
                 ContractError::IoError("Corrupt state: singleton ContractId wrong size".into())
-            })?)
-            .ok_or_else(|| ContractError::IoError("Corrupt state: invalid singleton ContractId".into()))?;
+            })?)?;
             msg!(
                 "[DeployV1] Error: Singleton '{}' already claimed by contract {}",
                 params.singleton_name, existing_cid
