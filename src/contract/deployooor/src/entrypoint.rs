@@ -24,7 +24,7 @@
 use dwow_sdk::{
     crypto::ContractId, dark_tree::DarkLeaf, error::ContractResult, wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::deserialize;
 
 use crate::{
     model::{DeployUpdateV1, LockUpdateV1},
@@ -64,7 +64,7 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     }
 
     // Update db version
-    wasm::db::db_set(info_db, DEPLOY_CONTRACT_DB_VERSION, &serialize(&env!("CARGO_PKG_VERSION")))?;
+    wasm::db::db_set(info_db, DEPLOY_CONTRACT_DB_VERSION, env!("CARGO_PKG_VERSION").as_bytes())?;
 
     Ok(())
 }
@@ -111,12 +111,12 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     match DeployFunction::try_from(update_data[0])? {
         DeployFunction::DeployV1 => {
-            let update: DeployUpdateV1 = deserialize(&update_data[1..])?;
+            let update = DeployUpdateV1::decode(&update_data[1..])?;
             Ok(deploy_process_update_v1(cid, update)?)
         }
 
         DeployFunction::LockV1 => {
-            let update: LockUpdateV1 = deserialize(&update_data[1..])?;
+            let update = LockUpdateV1::decode(&update_data[1..])?;
             Ok(lock_process_update_v1(cid, update)?)
         }
     }

@@ -30,7 +30,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 use wasmparser::{
     ExternalKind::{Func, Memory},
     Payload::{ExportSection, ImportSection},
@@ -80,8 +80,8 @@ pub(crate) fn deploy_process_instruction_v1(
     let lock_db = wasm::db::db_lookup(cid, DEPLOY_CONTRACT_LOCK_TREE)?;
     let contract_id = ContractId::derive_public(params.public_key);
 
-    if let Some(v) = wasm::db::db_get(lock_db, &serialize(&contract_id))? {
-        let locked: bool = deserialize(&v)?;
+    if let Some(v) = wasm::db::db_get(lock_db, &contract_id.to_bytes())? {
+        let locked: bool = !v.is_empty() && v[0] != 0;
         if locked {
             msg!("[DeployV1] Error: Contract is locked. Cannot redeploy.");
             return Err(DeployError::ContractLocked.into())
@@ -188,7 +188,10 @@ pub(crate) fn deploy_process_instruction_v1(
         let singleton_db = wasm::db::db_lookup(cid, DEPLOY_CONTRACT_SINGLETON_TREE)?;
         let singleton_key = params.singleton_name.as_bytes();
         if let Some(existing) = wasm::db::db_get(singleton_db, singleton_key)? {
-            let existing_cid: ContractId = deserialize(&existing)?;
+            let existing_cid = ContractId::from_bytes(existing.try_into().map_err(|_| {
+                ContractError::IoError("Corrupt state: singleton ContractId wrong size".into())
+            })?)
+            .ok_or_else(|| ContractError::IoError("Corrupt state: invalid singleton ContractId".into()))?;
             msg!(
                 "[DeployV1] Error: Singleton '{}' already claimed by contract {}",
                 params.singleton_name, existing_cid
@@ -204,22 +207,22 @@ pub(crate) fn deploy_process_instruction_v1(
     ]);
 
     let update = DeployUpdateV1 { contract_id, wasm_hash };
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// `process_update` function for `Deploy::DeployV1`
 pub(crate) fn deploy_process_update_v1(cid: ContractId, update: DeployUpdateV1) -> ContractResult {
     msg!("[DeployV1] Adding ContractID to deployed list");
     let lock_db = wasm::db::db_lookup(cid, DEPLOY_CONTRACT_LOCK_TREE)?;
-    wasm::db::db_set(lock_db, &serialize(&update.contract_id), &serialize(&false))?;
+    wasm::db::db_set(lock_db, &update.contract_id.to_bytes(), &[0u8])?;
 
     // Store WASM content hash for integrity verification
     msg!("[DeployV1] Storing WASM hash for contract");
     let info_db = wasm::db::db_lookup(cid, DEPLOY_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(
         info_db,
-        &[DEPLOY_CONTRACT_WASM_HASH_KEY, &serialize(&update.contract_id)].concat(),
-        &serialize(&update.wasm_hash),
+        &[DEPLOY_CONTRACT_WASM_HASH_KEY, &update.contract_id.to_bytes()].concat(),
+        &update.wasm_hash.to_repr(),
     )?;
 
     Ok(())

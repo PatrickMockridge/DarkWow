@@ -56,7 +56,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize, Encodable, WriteExt};
+use dwow_serial::{deserialize, Encodable, WriteExt};
 
 use crate::{
     error::{ContractError, PromissoryNoteError},
@@ -147,7 +147,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Set up coin roots database
     if wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE).is_err() {
         let db_coin_roots = wasm::db::db_init(cid, PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE)?;
-        wasm::db::db_set(db_coin_roots, &serialize(&EMPTY_COINS_TREE_ROOT), &roots_value_data)?;
+        wasm::db::db_set(db_coin_roots, &EMPTY_COINS_TREE_ROOT.to_repr(), &roots_value_data)?;
     }
 
     // Set up nullifier roots database
@@ -155,8 +155,8 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         let db_null_roots = wasm::db::db_init(cid, PROMISSORY_NOTE_CONTRACT_NULLIFIER_ROOTS_TREE)?;
         wasm::db::db_set(
             db_null_roots,
-            &serialize(&pallas::Base::zero().to_repr()),
-            &serialize(&vec![roots_value_data.clone()]),
+            &pallas::Base::zero().to_repr(),
+            &roots_value_data,
         )?;
     }
 
@@ -180,7 +180,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         let db_token_registry_roots = wasm::db::db_init(cid, PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_ROOTS_TREE)?;
         wasm::db::db_set(
             db_token_registry_roots,
-            &serialize(&EMPTY_TOKEN_REGISTRY_TREE_ROOT),
+            &EMPTY_TOKEN_REGISTRY_TREE_ROOT.to_repr(),
             &roots_value_data,
         )?;
     }
@@ -215,17 +215,17 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
             wasm::db::db_set(
                 info_db,
                 PROMISSORY_NOTE_CONTRACT_LATEST_COIN_ROOT,
-                &serialize(&EMPTY_COINS_TREE_ROOT),
+                &EMPTY_COINS_TREE_ROOT.to_repr(),
             )?;
             wasm::db::db_set(
                 info_db,
                 PROMISSORY_NOTE_CONTRACT_LATEST_NULLIFIER_ROOT,
-                &serialize(&pallas::Base::zero().to_repr()),
+                &pallas::Base::zero().to_repr(),
             )?;
             wasm::db::db_set(
                 info_db,
                 PROMISSORY_NOTE_CONTRACT_LATEST_TOKEN_REGISTRY_ROOT,
-                &serialize(&EMPTY_TOKEN_REGISTRY_TREE_ROOT),
+                &EMPTY_TOKEN_REGISTRY_TREE_ROOT.to_repr(),
             )?;
 
             info_db
@@ -515,14 +515,14 @@ fn token_mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
     let coins_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COINS_TREE)?;
 
     // Verify coin doesn't already exist
-    if wasm::db::db_contains_key(coins_db, &serialize(&params.coin))? {
+    if wasm::db::db_contains_key(coins_db, &params.coin.to_bytes())? {
         msg!("[token_mint_v1] Error: Coin already exists");
         return Err(PromissoryNoteError::DuplicateCoin.into())
     }
 
     let update = TokenMintUpdateV1 { token_id: params.token_id, coin: params.coin, token_auth_parent: params.token_auth_parent };
     msg!("[promissory_note::token_mint_v1] Token type created successfully");
-    wasm::util::set_return_data(&serialize(&(PromissoryNoteFunction::RegisterTypeV1 as u8, update)))
+    wasm::util::set_return_data(&[&[PromissoryNoteFunction::RegisterTypeV1 as u8], &update.encode()[..]].concat())
 }
 
 // ============================================================================
@@ -538,13 +538,13 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     let token_registry_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_TREE)?;
 
     // Verify coin doesn't already exist
-    if wasm::db::db_contains_key(coins_db, &serialize(&params.coin))? {
+    if wasm::db::db_contains_key(coins_db, &params.coin.to_bytes())? {
         msg!("[mint_v1] Error: Coin already exists");
         return Err(PromissoryNoteError::DuplicateCoin.into())
     }
 
     // Verify token_id exists in token registry (must be created via RegisterTypeV1)
-    if !wasm::db::db_contains_key(token_registry_db, &serialize(&params.token_id))? {
+    if !wasm::db::db_contains_key(token_registry_db, &params.token_id.to_bytes())? {
         msg!("[mint_v1] Error: Token not registered");
         return Err(PromissoryNoteError::TokenNotRegistered.into())
     }
@@ -552,9 +552,11 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     // Verify mint authority: the prover must know the backing secret whose hash
     // matches the stored token_auth_parent from RegisterTypeV1. Without this check,
     // anyone with ANY valid IssueV1 proof can mint ANY registered token.
-    let stored_auth_bytes = wasm::db::db_get(token_registry_db, &serialize(&params.token_id))?
+    let stored_auth_bytes = wasm::db::db_get(token_registry_db, &params.token_id.to_bytes())?
         .ok_or(PromissoryNoteError::TokenNotRegistered)?;
-    let stored_auth: pallas::Base = deserialize(&stored_auth_bytes)?;
+    let stored_auth = Option::<pallas::Base>::from(pallas::Base::from_repr(
+        stored_auth_bytes.try_into().map_err(|_| ContractError::IoError("Corrupt state: token_auth_parent wrong size".into()))?,
+    )).ok_or_else(|| ContractError::IoError("Corrupt state: invalid token_auth_parent".into()))?;
     if params.mint_public != stored_auth {
         msg!("[mint_v1] Error: Mint authority mismatch — mint_public does not match stored token_auth_parent");
         return Err(PromissoryNoteError::InvalidMintAuthority.into())
@@ -565,7 +567,9 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     let info_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_INFO_TREE)?;
     let current_root_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_LATEST_TOKEN_REGISTRY_ROOT)?
         .ok_or(PromissoryNoteError::TokenNotRegistered)?;
-    let current_root: MerkleNode = deserialize(&current_root_bytes)?;
+    let current_root = MerkleNode::from_bytes(
+        current_root_bytes.try_into().map_err(|_| ContractError::IoError("Corrupt state: LATEST_TOKEN_REGISTRY_ROOT wrong size".into()))?,
+    ).ok_or_else(|| ContractError::IoError("Corrupt state: invalid LATEST_TOKEN_REGISTRY_ROOT".into()))?;
     if params.token_registry_root != current_root {
         msg!("[mint_v1] Error: Token registry root mismatch (stale or replayed proof)");
         return Err(PromissoryNoteError::TokenNotRegistered.into())
@@ -577,12 +581,15 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     // counts with expected issuance per token type.
     let info_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_INFO_TREE)?;
     let mut supply_key = PROMISSORY_NOTE_CONTRACT_TOTAL_SUPPLY.to_vec();
-    supply_key.extend_from_slice(&serialize(&params.token_id));
+    supply_key.extend_from_slice(&params.token_id.to_bytes());
     let current_count: u64 = match wasm::db::db_get(info_db, &supply_key)? {
-        Some(data) => deserialize(&data).map_err(|e| {
-            msg!("[promissory_note::mint_v1] Error: Corrupt state — coin count deserialization failed: {:?}", e);
-            ContractError::IoError("Corrupt state: coin count deserialization failed".to_string())
-        })?,
+        Some(data) => {
+            let bytes: [u8; 8] = data.try_into().map_err(|_| {
+                msg!("[promissory_note::mint_v1] Error: Corrupt state — coin count wrong size: {}", data.len());
+                ContractError::IoError("Corrupt state: coin count wrong size".to_string())
+            })?;
+            u64::from_le_bytes(bytes)
+        },
         None => {
             // First mint for this token type — zero coins before first issue.
             0
@@ -596,7 +603,7 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
         new_coin_count,
     };
     msg!("[promissory_note::mint_v1] Mint valid");
-    wasm::util::set_return_data(&serialize(&(PromissoryNoteFunction::IssueV1 as u8, update)))
+    wasm::util::set_return_data(&[&[PromissoryNoteFunction::IssueV1 as u8], &update.encode()[..]].concat())
 }
 
 // ============================================================================
@@ -633,7 +640,7 @@ fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     let mut new_nullifiers = Vec::new();
     for (i, input) in params.inputs.iter().enumerate() {
         // Verify Merkle root exists
-        if !wasm::db::db_contains_key(coin_roots_db, &serialize(&input.merkle_root))? {
+        if !wasm::db::db_contains_key(coin_roots_db, &input.merkle_root.to_repr())? {
             msg!("[burn_v1] Error: Merkle root not found for input {}", i);
             return Err(PromissoryNoteError::TransferMerkleRootNotFound.into())
         }
@@ -671,13 +678,13 @@ fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
             user_data_encs: params.inputs.iter().map(|i| i.user_data_enc).collect(),
         };
 
-        let payload_bytes = serialize(&payload);
+        let payload_bytes = payload.encode();
         wasm::util::emit_spend_hook(&target_cid, &payload_bytes)?;
     }
 
     let update = BurnUpdateV1 { nullifiers: new_nullifiers };
     msg!("[promissory_note::burn_v1] Burn valid");
-    wasm::util::set_return_data(&serialize(&(PromissoryNoteFunction::RevokeV1 as u8, update)))
+    wasm::util::set_return_data(&[&[PromissoryNoteFunction::RevokeV1 as u8], &update.encode()[..]].concat())
 }
 
 // ============================================================================
@@ -712,7 +719,7 @@ fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
     let mut new_nullifiers = Vec::new();
     for (i, input) in params.inputs.iter().enumerate() {
         // Check Merkle root exists
-        if !wasm::db::db_contains_key(coin_roots_db, &serialize(&input.merkle_root))? {
+        if !wasm::db::db_contains_key(coin_roots_db, &input.merkle_root.to_repr())? {
             msg!("[transfer_v1] Error: Merkle root not found for input {}", i);
             return Err(PromissoryNoteError::TransferMerkleRootNotFound.into())
         }
@@ -729,7 +736,7 @@ fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
     // Verify outputs are unique
     let mut new_coins = Vec::new();
     for (i, output) in params.outputs.iter().enumerate() {
-        if wasm::db::db_contains_key(coins_db, &serialize(&output.coin))? {
+        if wasm::db::db_contains_key(coins_db, &output.coin.to_bytes())? {
             msg!("[transfer_v1] Error: Duplicate coin in output {}", i);
             return Err(PromissoryNoteError::DuplicateCoin.into())
         }
@@ -745,7 +752,7 @@ fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
 
     let update = TransferUpdateV1 { nullifiers: new_nullifiers, coins: new_coins };
     msg!("[promissory_note::transfer_v1] Transfer valid");
-    wasm::util::set_return_data(&serialize(&(PromissoryNoteFunction::TransferV1 as u8, update)))
+    wasm::util::set_return_data(&[&[PromissoryNoteFunction::TransferV1 as u8], &update.encode()[..]].concat())
 }
 
 // ============================================================================
@@ -757,27 +764,27 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 
     match func {
         PromissoryNoteFunction::RegisterTypeV1 => {
-            let update: TokenMintUpdateV1 = deserialize(&update_data[1..])?;
+            let update = TokenMintUpdateV1::decode(&update_data[1..])?;
             apply_token_mint(cid, update)
         }
         PromissoryNoteFunction::RedeemV1 => {
-            let update: RedeemUpdateV1 = deserialize(&update_data[1..])?;
+            let update = RedeemUpdateV1::decode(&update_data[1..])?;
             apply_redeem(cid, update)
         }
         PromissoryNoteFunction::IssueV1 => {
-            let update: MintUpdateV1 = deserialize(&update_data[1..])?;
+            let update = MintUpdateV1::decode(&update_data[1..])?;
             apply_mint(cid, update)
         }
         PromissoryNoteFunction::RevokeV1 => {
-            let update: BurnUpdateV1 = deserialize(&update_data[1..])?;
+            let update = BurnUpdateV1::decode(&update_data[1..])?;
             apply_burn(cid, update)
         }
         PromissoryNoteFunction::TransferV1 => {
-            let update: TransferUpdateV1 = deserialize(&update_data[1..])?;
+            let update = TransferUpdateV1::decode(&update_data[1..])?;
             apply_transfer(cid, update)
         }
         PromissoryNoteFunction::OtcSwapV1 => {
-            let update: OtcSwapUpdateV1 = deserialize(&update_data[1..])?;
+            let update = OtcSwapUpdateV1::decode(&update_data[1..])?;
             apply_otc_swap(cid, update)
         }
     }
@@ -791,7 +798,7 @@ fn apply_token_mint(cid: ContractId, update: TokenMintUpdateV1) -> ContractResul
     let token_registry_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_TREE)?;
 
     // Add coin
-    wasm::db::db_set(coins_db, &serialize(&update.coin), &[])?;
+    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[])?;
 
     // Update coin Merkle tree
     wasm::merkle::merkle_add(
@@ -803,7 +810,7 @@ fn apply_token_mint(cid: ContractId, update: TokenMintUpdateV1) -> ContractResul
     )?;
 
     // Store token authority key in registry (capability datum for rotation)
-    wasm::db::db_set(token_registry_db, &serialize(&update.token_id), &serialize(&update.token_auth_parent))?;
+    wasm::db::db_set(token_registry_db, &update.token_id.to_bytes(), &update.token_auth_parent.to_repr())?;
 
     // Update token registry Merkle tree
     wasm::merkle::merkle_add(
@@ -817,8 +824,8 @@ fn apply_token_mint(cid: ContractId, update: TokenMintUpdateV1) -> ContractResul
     // Initialize coin count for this token type (infinity-mint hardening).
     // RegisterTypeV1 creates the initial coin, so count starts at 1.
     let mut supply_key = PROMISSORY_NOTE_CONTRACT_TOTAL_SUPPLY.to_vec();
-    supply_key.extend_from_slice(&serialize(&update.token_id));
-    wasm::db::db_set(info_db, &supply_key, &serialize(&1u64))?;
+    supply_key.extend_from_slice(&update.token_id.to_bytes());
+    wasm::db::db_set(info_db, &supply_key, &1u64.to_le_bytes())?;
 
     Ok(())
 }
@@ -829,7 +836,7 @@ fn apply_mint(cid: ContractId, update: MintUpdateV1) -> ContractResult {
     let info_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_INFO_TREE)?;
 
     // Add coin
-    wasm::db::db_set(coins_db, &serialize(&update.coin), &[])?;
+    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[])?;
 
     // Update Merkle tree
     wasm::merkle::merkle_add(
@@ -842,8 +849,8 @@ fn apply_mint(cid: ContractId, update: MintUpdateV1) -> ContractResult {
 
     // Persist updated coin count for this token (infinity-mint hardening)
     let mut supply_key = PROMISSORY_NOTE_CONTRACT_TOTAL_SUPPLY.to_vec();
-    supply_key.extend_from_slice(&serialize(&update.token_id));
-    wasm::db::db_set(info_db, &supply_key, &serialize(&update.new_coin_count))?;
+    supply_key.extend_from_slice(&update.token_id.to_bytes());
+    wasm::db::db_set(info_db, &supply_key, &update.new_coin_count.to_le_bytes())?;
 
     Ok(())
 }
@@ -863,7 +870,7 @@ fn apply_burn(cid: ContractId, update: BurnUpdateV1) -> ContractResult {
     // Persist updated nullifier root
     let new_root = smt.root();
     let info_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_INFO_TREE)?;
-    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_LATEST_NULLIFIER_ROOT, &serialize(&new_root))?;
+    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_LATEST_NULLIFIER_ROOT, &new_root.to_repr())?;
 
     Ok(())
 }
@@ -889,12 +896,12 @@ fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
 
     // Persist updated nullifier root
     let new_root = smt.root();
-    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_LATEST_NULLIFIER_ROOT, &serialize(&new_root))?;
+    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_LATEST_NULLIFIER_ROOT, &new_root.to_repr())?;
 
     // Add new coins
     let mut new_coins = Vec::new();
     for coin in &update.coins {
-        wasm::db::db_set(coins_db, &serialize(coin), &[])?;
+        wasm::db::db_set(coins_db, &coin.to_bytes(), &[])?;
         new_coins.push(MerkleNode::from_base(coin.inner()));
     }
 
@@ -985,7 +992,7 @@ fn redeem_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>
     let nullifiers_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE)?;
 
     // Verify Merkle root exists
-    if !wasm::db::db_contains_key(coin_roots_db, &serialize(&params.input.merkle_root))? {
+    if !wasm::db::db_contains_key(coin_roots_db, &params.input.merkle_root.to_repr())? {
         msg!("[redeem_v1] Error: Merkle root not found");
         return Err(PromissoryNoteError::TransferMerkleRootNotFound.into())
     }
@@ -999,14 +1006,14 @@ fn redeem_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>
     }
 
     // Verify receipt coin is unique
-    if wasm::db::db_contains_key(coins_db, &serialize(&params.output.coin))? {
+    if wasm::db::db_contains_key(coins_db, &params.output.coin.to_bytes())? {
         msg!("[redeem_v1] Error: Receipt coin already exists");
         return Err(PromissoryNoteError::DuplicateCoin.into())
     }
 
     let update = RedeemUpdateV1 { nullifier: params.input.nullifier, coin: params.output.coin };
     msg!("[promissory_note::redeem_v1] Redemption valid");
-    wasm::util::set_return_data(&serialize(&(PromissoryNoteFunction::RedeemV1 as u8, update)))
+    wasm::util::set_return_data(&[&[PromissoryNoteFunction::RedeemV1 as u8], &update.encode()[..]].concat())
 }
 
 /// Apply RedeemV1 state update — mark the nullifier and add the receipt coin.
@@ -1024,10 +1031,10 @@ fn apply_redeem(cid: ContractId, update: RedeemUpdateV1) -> ContractResult {
 
     // Persist updated nullifier root
     let new_root = smt.root();
-    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_LATEST_NULLIFIER_ROOT, &serialize(&new_root))?;
+    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_LATEST_NULLIFIER_ROOT, &new_root.to_repr())?;
 
     // Add receipt coin
-    wasm::db::db_set(coins_db, &serialize(&update.coin), &[])?;
+    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[])?;
 
     // Update Merkle tree
     wasm::merkle::merkle_add(
@@ -1134,7 +1141,7 @@ fn otc_swap_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
     let mut new_nullifiers = Vec::new();
     for (i, input) in params.inputs.iter().enumerate() {
         // Check Merkle root exists
-        if !wasm::db::db_contains_key(coin_roots_db, &serialize(&input.merkle_root))? {
+        if !wasm::db::db_contains_key(coin_roots_db, &input.merkle_root.to_repr())? {
             msg!("[otc_swap_v1] Error: Merkle root not found for input {}", i);
             return Err(PromissoryNoteError::TransferMerkleRootNotFound.into())
         }
@@ -1151,7 +1158,7 @@ fn otc_swap_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
     // Verify outputs are unique
     let mut new_coins = Vec::new();
     for (i, output) in params.outputs.iter().enumerate() {
-        if wasm::db::db_contains_key(coins_db, &serialize(&output.coin))? {
+        if wasm::db::db_contains_key(coins_db, &output.coin.to_bytes())? {
             msg!("[otc_swap_v1] Error: Duplicate coin in output {}", i);
             return Err(PromissoryNoteError::DuplicateCoin.into())
         }
@@ -1166,7 +1173,7 @@ fn otc_swap_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
 
     let update = OtcSwapUpdateV1 { nullifiers: new_nullifiers, coins: new_coins };
     msg!("[promissory_note::otc_swap_v1] OTC swap valid");
-    wasm::util::set_return_data(&serialize(&(PromissoryNoteFunction::OtcSwapV1 as u8, update)))
+    wasm::util::set_return_data(&[&[PromissoryNoteFunction::OtcSwapV1 as u8], &update.encode()[..]].concat())
 }
 
 /// Apply OtcSwapV1 state update (same as apply_transfer)
@@ -1191,12 +1198,12 @@ fn apply_otc_swap(cid: ContractId, update: OtcSwapUpdateV1) -> ContractResult {
 
     // Persist updated nullifier root
     let new_root = smt.root();
-    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_LATEST_NULLIFIER_ROOT, &serialize(&new_root))?;
+    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_LATEST_NULLIFIER_ROOT, &new_root.to_repr())?;
 
     // Add new coins
     let mut new_coins = Vec::new();
     for coin in &update.coins {
-        wasm::db::db_set(coins_db, &serialize(coin), &[])?;
+        wasm::db::db_set(coins_db, &coin.to_bytes(), &[])?;
         new_coins.push(MerkleNode::from_base(coin.inner()));
     }
 

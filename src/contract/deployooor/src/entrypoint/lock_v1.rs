@@ -29,7 +29,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 
 use crate::{
     error::DeployError,
@@ -74,20 +74,20 @@ pub(crate) fn lock_process_instruction_v1(
     let lock_db = wasm::db::db_lookup(cid, DEPLOY_CONTRACT_LOCK_TREE)?;
     let contract_id = ContractId::derive_public(params.public_key);
 
-    if !wasm::db::db_contains_key(lock_db, &serialize(&contract_id))? {
+    if !wasm::db::db_contains_key(lock_db, &contract_id.to_bytes())? {
         msg!("[LockV1] Error: Contract ID doesn't exist.");
         return Err(DeployError::ContractNonExistent.into())
     }
 
-    let v = wasm::db::db_get(lock_db, &serialize(&contract_id))?.ok_or(ContractError::DbGetEmpty)?;
-    let locked: bool = deserialize(&v)?;
+    let v = wasm::db::db_get(lock_db, &contract_id.to_bytes())?.ok_or(ContractError::DbGetEmpty)?;
+    let locked: bool = !v.is_empty() && v[0] != 0;
     if locked {
         msg!("[LockV1] Error: Contract already locked.");
         return Err(DeployError::ContractLocked.into())
     }
 
     let update = LockUpdateV1 { contract_id };
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// `process_update` function for `Deploy::LockV1`
@@ -95,7 +95,7 @@ pub(crate) fn lock_process_update_v1(cid: ContractId, update: LockUpdateV1) -> C
     // We make the contract immutable
     msg!("[LockV1] Making ContractID immutable");
     let lock_db = wasm::db::db_lookup(cid, DEPLOY_CONTRACT_LOCK_TREE)?;
-    wasm::db::db_set(lock_db, &serialize(&update.contract_id), &serialize(&true))?;
+    wasm::db::db_set(lock_db, &update.contract_id.to_bytes(), &[1u8])?;
 
     Ok(())
 }

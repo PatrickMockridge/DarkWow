@@ -29,7 +29,8 @@
 use dwow_sdk::{
     blockchain::BlockHeight,
     crypto::{note::AeadEncryptedNote, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, PublicKey, TokenId},
-    pasta::pallas,
+    error::ContractError,
+    pasta::{group::GroupEncoding, pallas},
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
@@ -238,7 +239,7 @@ pub struct FeeParamsV1 {
 }
 
 /// State update for FeeV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct FeeUpdateV1 {
     pub nullifier: Nullifier,
     pub coin: Coin,
@@ -273,7 +274,7 @@ pub struct PoWRewardParamsV1 {
 }
 
 /// State update for PoWRewardV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct PoWRewardUpdateV1 {
     pub coin: Coin,
     pub height: BlockHeight,
@@ -299,7 +300,7 @@ pub struct TransferParamsV1 {
 }
 
 /// State update for TransferV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct TransferUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
     pub coins: Vec<Coin>,
@@ -317,7 +318,7 @@ pub struct SpendParamsV1 {
 }
 
 /// State update for SpendV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct SpendUpdateV1 {
     pub nullifier: Nullifier,
     pub coin: Coin,
@@ -333,7 +334,7 @@ pub struct BurnParamsV1 {
 }
 
 /// State update for BurnV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct BurnUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
 }
@@ -366,7 +367,7 @@ pub struct FeeCollectParamsV1 {
 /// make the fee coin born-unspendable (same model as PoWRewardV1's empty
 /// SMT batch). Claim-replay prevention: zero-claim rejection (check #1),
 /// pot zeroing, Phase 0.5 structural rules, host-level nullifier tracking.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct FeeCollectUpdateV1 {
     /// The fee coin created for the miner
     pub coin: Coin,
@@ -374,4 +375,273 @@ pub struct FeeCollectUpdateV1 {
     pub height: BlockHeight,
     /// Total fees collected (must match fees_db[height])
     pub total_fees: u64,
+}
+
+// ============================================================================
+// RHO-CALCULUS EXPLICIT ENCODE/DECODE — BRIDGE UPDATE STRUCTS
+// ============================================================================
+// Per type-system.md §2.2: bytes round-trip across module boundaries is forbidden.
+// Per §10.5: re-lift validation SHALL use named constructors (from_bytes).
+// Per contract-wasm-type-system.md §3.1: SHALL NOT use derive macros for state values.
+//
+// These replace the former #[derive(SerialEncodable, SerialDecodable)] pattern.
+// Each type has fixed byte layout with per-field validating constructors.
+
+impl FeeUpdateV1 {
+    /// Fixed canonical byte size: nullifier(32) + coin(32) + height(8) + fee(8)
+    pub const ENCODED_SIZE: usize = 80;
+
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.nullifier.to_bytes());
+        buf.extend_from_slice(&self.coin.to_bytes());
+        buf.extend_from_slice(&self.height.to_le_bytes());
+        buf.extend_from_slice(&self.fee.to_le_bytes());
+        buf
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "FeeUpdateV1: expected {} bytes, got {}",
+                Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let nullifier = Nullifier::from_bytes(data[0..32].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!(
+                "FeeUpdateV1: invalid nullifier: {}", e
+            )))?;
+        let coin_bytes: [u8; 32] = data[32..64].try_into().unwrap();
+        let coin = Coin(Option::<pallas::Base>::from(pallas::Base::from_repr(coin_bytes))
+            .ok_or_else(|| ContractError::IoError("FeeUpdateV1: invalid coin".into()))?);
+        let height =
+            BlockHeight::from_le_bytes(data[64..72].try_into().unwrap());
+        let fee = u64::from_le_bytes(data[72..80].try_into().unwrap());
+        Ok(FeeUpdateV1 { nullifier, coin, height, fee })
+    }
+}
+
+impl BurnUpdateV1 {
+    /// Encode to canonical bytes with u8-prefixed nullifier count.
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 1 + self.nullifiers.len() * 32;
+        let mut buf = Vec::with_capacity(cap);
+        buf.push(self.nullifiers.len() as u8);
+        for nf in &self.nullifiers {
+            buf.extend_from_slice(&nf.to_bytes());
+        }
+        buf
+    }
+
+    /// Decode from canonical bytes with per-nullifier validation.
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() {
+            return Err(ContractError::IoError(
+                "BurnUpdateV1: empty data".into()
+            ));
+        }
+        let count = data[0] as usize;
+        let expected = 1 + count * 32;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "BurnUpdateV1: expected {} bytes for {} nullifiers, got {}",
+                expected, count, data.len()
+            )));
+        }
+        let mut nullifiers = Vec::with_capacity(count);
+        for i in 0..count {
+            let start = 1 + i * 32;
+            let nf = Nullifier::from_bytes(
+                data[start..start + 32].try_into().unwrap(),
+            )
+            .map_err(|e| ContractError::IoError(format!(
+                "BurnUpdateV1: invalid nullifier[{}]: {}", i, e
+            )))?;
+            nullifiers.push(nf);
+        }
+        Ok(BurnUpdateV1 { nullifiers })
+    }
+}
+
+impl TransferUpdateV1 {
+    /// Encode to canonical bytes: u8 nullifier count + N*32 + u8 coin count + N*32.
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 2 + self.nullifiers.len() * 32 + self.coins.len() * 32;
+        let mut buf = Vec::with_capacity(cap);
+        buf.push(self.nullifiers.len() as u8);
+        for nf in &self.nullifiers {
+            buf.extend_from_slice(&nf.to_bytes());
+        }
+        buf.push(self.coins.len() as u8);
+        for coin in &self.coins {
+            buf.extend_from_slice(&coin.to_bytes());
+        }
+        buf
+    }
+
+    /// Decode from canonical bytes with per-element validation.
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 2 {
+            return Err(ContractError::IoError(
+                "TransferUpdateV1: data too short".into()
+            ));
+        }
+        let nf_count = data[0] as usize;
+        let nf_end = 1 + nf_count * 32;
+        if data.len() < nf_end + 1 {
+            return Err(ContractError::IoError(format!(
+                "TransferUpdateV1: expected at least {} bytes for {} nullifiers, got {}",
+                nf_end + 1, nf_count, data.len()
+            )));
+        }
+        let coin_count = data[nf_end] as usize;
+        let expected = nf_end + 1 + coin_count * 32;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "TransferUpdateV1: expected {} bytes ({} nf + {} coins), got {}",
+                expected, nf_count, coin_count, data.len()
+            )));
+        }
+        let mut nullifiers = Vec::with_capacity(nf_count);
+        for i in 0..nf_count {
+            let start = 1 + i * 32;
+            let nf = Nullifier::from_bytes(
+                data[start..start + 32].try_into().unwrap(),
+            )
+            .map_err(|e| ContractError::IoError(format!(
+                "TransferUpdateV1: invalid nullifier[{}]: {}", i, e
+            )))?;
+            nullifiers.push(nf);
+        }
+        let mut coins = Vec::with_capacity(coin_count);
+        for i in 0..coin_count {
+            let start = nf_end + 1 + i * 32;
+            let coin_bytes: [u8; 32] = data[start..start + 32].try_into().unwrap();
+            let coin = Coin(
+                Option::<pallas::Base>::from(pallas::Base::from_repr(coin_bytes))
+                    .ok_or_else(|| ContractError::IoError(format!(
+                        "TransferUpdateV1: invalid coin[{}]", i
+                    )))?
+            );
+            coins.push(coin);
+        }
+        Ok(TransferUpdateV1 { nullifiers, coins })
+    }
+}
+
+impl SpendUpdateV1 {
+    /// Fixed canonical byte size: nullifier(32) + coin(32)
+    pub const ENCODED_SIZE: usize = 64;
+
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.nullifier.to_bytes());
+        buf.extend_from_slice(&self.coin.to_bytes());
+        buf
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "SpendUpdateV1: expected {} bytes, got {}",
+                Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let nullifier = Nullifier::from_bytes(data[0..32].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!(
+                "SpendUpdateV1: invalid nullifier: {}", e
+            )))?;
+        let coin_bytes: [u8; 32] = data[32..64].try_into().unwrap();
+        let coin = Coin(Option::<pallas::Base>::from(pallas::Base::from_repr(coin_bytes))
+            .ok_or_else(|| ContractError::IoError("SpendUpdateV1: invalid coin".into()))?);
+        Ok(SpendUpdateV1 { nullifier, coin })
+    }
+}
+
+impl PoWRewardUpdateV1 {
+    /// Fixed canonical byte size: coin(32) + height(8) + supply(8) + point(32) + scalar(32)
+    pub const ENCODED_SIZE: usize = 112;
+
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.coin.to_bytes());
+        buf.extend_from_slice(&self.height.to_le_bytes());
+        buf.extend_from_slice(&self.new_total_supply.to_le_bytes());
+        buf.extend_from_slice(&self.cumulative_value_commit.to_bytes());
+        buf.extend_from_slice(&self.aggregate_blind.to_repr());
+        buf
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "PoWRewardUpdateV1: expected {} bytes, got {}",
+                Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let coin_bytes: [u8; 32] = data[0..32].try_into().unwrap();
+        let coin = Coin(Option::<pallas::Base>::from(pallas::Base::from_repr(coin_bytes))
+            .ok_or_else(|| ContractError::IoError("PoWRewardUpdateV1: invalid coin".into()))?);
+        let height =
+            BlockHeight::from_le_bytes(data[32..40].try_into().unwrap());
+        let new_total_supply = u64::from_le_bytes(data[40..48].try_into().unwrap());
+        let cumulative_value_commit = Option::<pallas::Point>::from(
+            pallas::Point::from_bytes(data[48..80].try_into().unwrap()),
+        )
+        .ok_or_else(|| {
+            ContractError::IoError(
+                "PoWRewardUpdateV1: invalid cumulative_value_commit".into(),
+            )
+        })?;
+        let aggregate_blind = Option::<pallas::Scalar>::from(
+            pallas::Scalar::from_repr(data[80..112].try_into().unwrap()),
+        )
+        .ok_or_else(|| {
+            ContractError::IoError("PoWRewardUpdateV1: invalid aggregate_blind".into())
+        })?;
+        Ok(PoWRewardUpdateV1 {
+            coin,
+            height,
+            new_total_supply,
+            cumulative_value_commit,
+            aggregate_blind,
+        })
+    }
+}
+
+impl FeeCollectUpdateV1 {
+    /// Fixed canonical byte size: coin(32) + height(8) + total_fees(8)
+    pub const ENCODED_SIZE: usize = 48;
+
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.coin.to_bytes());
+        buf.extend_from_slice(&self.height.to_le_bytes());
+        buf.extend_from_slice(&self.total_fees.to_le_bytes());
+        buf
+    }
+
+    /// Decode from canonical bytes (ρ-calculus: eval).
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "FeeCollectUpdateV1: expected {} bytes, got {}",
+                Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let coin_bytes: [u8; 32] = data[0..32].try_into().unwrap();
+        let coin = Coin(Option::<pallas::Base>::from(pallas::Base::from_repr(coin_bytes))
+            .ok_or_else(|| ContractError::IoError("FeeCollectUpdateV1: invalid coin".into()))?);
+        let height =
+            BlockHeight::from_le_bytes(data[32..40].try_into().unwrap());
+        let total_fees = u64::from_le_bytes(data[40..48].try_into().unwrap());
+        Ok(FeeCollectUpdateV1 { coin, height, total_fees })
+    }
 }

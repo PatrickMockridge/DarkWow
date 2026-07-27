@@ -55,7 +55,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm,
 };
-use dwow_serial::{deserialize, serialize, Encodable, WriteExt};
+use dwow_serial::{deserialize, Encodable, WriteExt};
 
 use crate::{
     error::NativeTokenError,
@@ -133,17 +133,17 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // check).  Use db_contains_key on a known marker to test whether the
     // tree has actually been initialized.
     let db_coin_roots = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
-    if !wasm::db::db_contains_key(db_coin_roots, &serialize(&EMPTY_COINS_TREE_ROOT))? {
-        wasm::db::db_set(db_coin_roots, &serialize(&EMPTY_COINS_TREE_ROOT), &roots_value_data)?;
+    if !wasm::db::db_contains_key(db_coin_roots, &EMPTY_COINS_TREE_ROOT.to_repr())? {
+        wasm::db::db_set(db_coin_roots, &EMPTY_COINS_TREE_ROOT.to_repr(), &roots_value_data)?;
     }
 
     // Set up nullifier roots database
     let db_null_roots = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE)?;
-    if !wasm::db::db_contains_key(db_null_roots, &serialize(&pallas::Base::zero().to_repr()))? {
+    if !wasm::db::db_contains_key(db_null_roots, &pallas::Base::zero().to_repr())? {
         wasm::db::db_set(
             db_null_roots,
-            &serialize(&pallas::Base::zero().to_repr()),
-            &serialize(&vec![roots_value_data.clone()]),
+            &pallas::Base::zero().to_repr(),
+            &roots_value_data,
         )?;
     }
 
@@ -160,9 +160,9 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // (consensus-coinbase.md §3.13, Genesis). From height 2 onward,
     // apply_pow_reward seeds fees_db[H+1] for each block.
     let fees_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_FEES_TREE)?;
-    let height_2_key = serialize(&BlockHeight::GENESIS.succ());
+    let height_2_key = BlockHeight::GENESIS.succ().to_le_bytes();
     if !wasm::db::db_contains_key(fees_db, &height_2_key)? {
-        wasm::db::db_set(fees_db, &height_2_key, &serialize(&0_u64))?;
+        wasm::db::db_set(fees_db, &height_2_key, &0u64.to_le_bytes())?;
     }
 
     // Set up info database.
@@ -183,12 +183,12 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         wasm::db::db_set(
             info_db,
             NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
-            &serialize(&EMPTY_COINS_TREE_ROOT),
+            &EMPTY_COINS_TREE_ROOT.to_repr(),
         )?;
         wasm::db::db_set(
             info_db,
             NATIVE_TOKEN_CONTRACT_LATEST_NULLIFIER_ROOT,
-            &serialize(&pallas::Base::zero().to_repr()),
+            &pallas::Base::zero().to_repr(),
         )?;
     }
 
@@ -473,6 +473,86 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
 }
 
 // ============================================================================
+// RHO-CALCULUS EXPLICIT BRIDGE ENCODE/DECODE
+// ============================================================================
+// Per type-system.md §2.2: bytes round-trip across module boundaries is forbidden.
+// Per contract-wasm-type-system.md §3.1: bridge SHALL use explicit per-type encode/decode.
+// These replace serialize(&(NativeTokenFunction::XxxV1 as u8, update)) on the exec side
+// and deserialize(&update_data[1..]) on the apply side.
+
+fn encode_fee_update_v1(update: &FeeUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(NativeTokenFunction::FeeV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn decode_fee_update_v1(data: &[u8]) -> Result<FeeUpdateV1, ContractError> {
+    FeeUpdateV1::decode(data)
+}
+
+fn encode_burn_update_v1(update: &BurnUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(NativeTokenFunction::BurnV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn decode_burn_update_v1(data: &[u8]) -> Result<BurnUpdateV1, ContractError> {
+    BurnUpdateV1::decode(data)
+}
+
+fn encode_transfer_update_v1(update: &TransferUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(NativeTokenFunction::TransferV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn decode_transfer_update_v1(data: &[u8]) -> Result<TransferUpdateV1, ContractError> {
+    TransferUpdateV1::decode(data)
+}
+
+fn encode_spend_update_v1(update: &SpendUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(NativeTokenFunction::SpendV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn decode_spend_update_v1(data: &[u8]) -> Result<SpendUpdateV1, ContractError> {
+    SpendUpdateV1::decode(data)
+}
+
+fn encode_pow_reward_update_v1(update: &PoWRewardUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(NativeTokenFunction::PoWRewardV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn decode_pow_reward_update_v1(data: &[u8]) -> Result<PoWRewardUpdateV1, ContractError> {
+    PoWRewardUpdateV1::decode(data)
+}
+
+fn encode_fee_collect_update_v1(update: &FeeCollectUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(NativeTokenFunction::FeeCollectV1 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
+fn decode_fee_collect_update_v1(data: &[u8]) -> Result<FeeCollectUpdateV1, ContractError> {
+    FeeCollectUpdateV1::decode(data)
+}
+
+// ============================================================================
 // INSTRUCTION PROCESSING (STATE TRANSITION VERIFICATION)
 // ============================================================================
 
@@ -563,7 +643,7 @@ fn fee_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     };
 
     msg!("[native_token::fee_v1] Fee valid");
-    wasm::util::set_return_data(&serialize(&(NativeTokenFunction::FeeV1 as u8, update)))
+    wasm::util::set_return_data(&encode_fee_update_v1(&update))
 }
 
 // ============================================================================
@@ -660,7 +740,7 @@ fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
     let update = TransferUpdateV1 { nullifiers: new_nullifiers, coins: new_coins };
     msg!("[native_token::transfer_v1] Transfer valid");
-    wasm::util::set_return_data(&serialize(&(NativeTokenFunction::TransferV1 as u8, update)))
+    wasm::util::set_return_data(&encode_transfer_update_v1(&update))
 }
 
 // ============================================================================
@@ -708,7 +788,7 @@ fn spend_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     let update = SpendUpdateV1 { nullifier: sp.input.nullifier, coin: sp.output.coin };
 
     msg!("[native_token::spend_v1] Spend valid");
-    wasm::util::set_return_data(&serialize(&(NativeTokenFunction::SpendV1 as u8, update)))
+    wasm::util::set_return_data(&encode_spend_update_v1(&update))
 }
 
 // ============================================================================
@@ -749,7 +829,7 @@ fn burn_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
     let update = BurnUpdateV1 { nullifiers: new_nullifiers };
     msg!("[native_token::burn_v1] Burn valid");
-    wasm::util::set_return_data(&serialize(&(NativeTokenFunction::BurnV1 as u8, update)))
+    wasm::util::set_return_data(&encode_burn_update_v1(&update))
 }
 
 // ============================================================================
@@ -869,10 +949,13 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     // Enforce supply matches emission schedule (infinity-mint hardening)
     let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
     let current_supply: u64 = match wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY)? {
-        Some(data) => deserialize(&data).map_err(|e| {
-            msg!("[native_token::pow_reward_v1] Error: Corrupt state — TOTAL_SUPPLY deserialization failed: {:?}", e);
-            ContractError::IoError("Corrupt state: TOTAL_SUPPLY deserialization failed".to_string())
-        })?,
+        Some(data) => {
+            let bytes: [u8; 8] = data.try_into().map_err(|_| {
+                msg!("[native_token::pow_reward_v1] Error: Corrupt state — TOTAL_SUPPLY wrong size: {}", data.len());
+                ContractError::IoError("Corrupt state: TOTAL_SUPPLY wrong size".to_string())
+            })?;
+            u64::from_le_bytes(bytes)
+        },
         None => {
             // Genesis block: no prior supply exists. Zero is the correct initial value.
             0
@@ -891,10 +974,17 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     // The entrypoint verifies that the old cumulative values match on-chain state,
     // and persists the new cumulative values for the next block.
     let old_cumulative = match wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT)? {
-        Some(data) => deserialize::<pallas::Point>(&data).map_err(|e| {
-            msg!("[native_token::pow_reward_v1] Error: Corrupt state — CUMULATIVE_VALUE_COMMIT deserialization failed: {:?}", e);
-            ContractError::IoError("Corrupt state: CUMULATIVE_VALUE_COMMIT".to_string())
-        })?,
+        Some(data) => {
+            let bytes: [u8; 32] = data.try_into().map_err(|_| {
+                msg!("[native_token::pow_reward_v1] Error: Corrupt state — CUMULATIVE_VALUE_COMMIT wrong size: {}", data.len());
+                ContractError::IoError("Corrupt state: CUMULATIVE_VALUE_COMMIT wrong size".to_string())
+            })?;
+            Option::<pallas::Point>::from(pallas::Point::from_bytes(&bytes))
+                .ok_or_else(|| {
+                    msg!("[native_token::pow_reward_v1] Error: Corrupt state — CUMULATIVE_VALUE_COMMIT invalid point");
+                    ContractError::IoError("Corrupt state: CUMULATIVE_VALUE_COMMIT invalid point".to_string())
+                })?
+        },
         None => {
             // Genesis block: no prior cumulative supply commitment exists.
             // The identity point is the additive identity for Pedersen accumulation:
@@ -903,10 +993,17 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         }
     };
     let old_blind = match wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND)? {
-        Some(data) => deserialize::<pallas::Scalar>(&data).map_err(|e| {
-            msg!("[native_token::pow_reward_v1] Error: Corrupt state — CUMULATIVE_BLIND deserialization failed: {:?}", e);
-            ContractError::IoError("Corrupt state: CUMULATIVE_BLIND".to_string())
-        })?,
+        Some(data) => {
+            let bytes: [u8; 32] = data.try_into().map_err(|_| {
+                msg!("[native_token::pow_reward_v1] Error: Corrupt state — CUMULATIVE_BLIND wrong size: {}", data.len());
+                ContractError::IoError("Corrupt state: CUMULATIVE_BLIND wrong size".to_string())
+            })?;
+            Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(bytes))
+                .ok_or_else(|| {
+                    msg!("[native_token::pow_reward_v1] Error: Corrupt state — CUMULATIVE_BLIND invalid scalar");
+                    ContractError::IoError("Corrupt state: CUMULATIVE_BLIND invalid scalar".to_string())
+                })?
+        },
         None => {
             // Genesis block: no prior cumulative blind exists.
             pallas::Scalar::zero()
@@ -947,7 +1044,7 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         aggregate_blind: new_blind,
     };
     msg!("[native_token::pow_reward_v1] PoW reward valid");
-    wasm::util::set_return_data(&serialize(&(NativeTokenFunction::PoWRewardV1 as u8, update)))
+    wasm::util::set_return_data(&encode_pow_reward_update_v1(&update))
 }
 
 // ============================================================================
@@ -963,7 +1060,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 
     match func {
         NativeTokenFunction::FeeV1 => {
-            let update: FeeUpdateV1 = deserialize(&update_data[1..])?;
+            let update = decode_fee_update_v1(&update_data[1..])?;
             apply_fee(cid, update)
         }
         NativeTokenFunction::MintV1 => {
@@ -971,23 +1068,23 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Err(ContractError::InvalidFunction)
         }
         NativeTokenFunction::BurnV1 => {
-            let update: BurnUpdateV1 = deserialize(&update_data[1..])?;
+            let update = decode_burn_update_v1(&update_data[1..])?;
             apply_burn(cid, update)
         }
         NativeTokenFunction::TransferV1 => {
-            let update: TransferUpdateV1 = deserialize(&update_data[1..])?;
+            let update = decode_transfer_update_v1(&update_data[1..])?;
             apply_transfer(cid, update)
         }
         NativeTokenFunction::SpendV1 => {
-            let update: SpendUpdateV1 = deserialize(&update_data[1..])?;
+            let update = decode_spend_update_v1(&update_data[1..])?;
             apply_spend(cid, update)
         }
         NativeTokenFunction::PoWRewardV1 => {
-            let update: PoWRewardUpdateV1 = deserialize(&update_data[1..])?;
+            let update = decode_pow_reward_update_v1(&update_data[1..])?;
             apply_pow_reward(cid, update)
         }
         NativeTokenFunction::FeeCollectV1 => {
-            let update: FeeCollectUpdateV1 = deserialize(&update_data[1..])?;
+            let update = decode_fee_collect_update_v1(&update_data[1..])?;
             apply_fee_collect(cid, update)
         }
     }
@@ -1049,8 +1146,14 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
     // Check 2 (spec §3.7): claimed total matches the accumulated pot
     let fees_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_FEES_TREE)?;
-    let accumulated: u64 =
-        deserialize(&wasm::db::db_get(fees_db, &serialize(&height))?.ok_or(ContractError::DbGetEmpty)?)?;
+    let accumulated: u64 = {
+        let data = wasm::db::db_get(fees_db, &height.to_le_bytes())?
+            .ok_or(ContractError::DbGetEmpty)?;
+        let bytes: [u8; 8] = data.try_into().map_err(|_| {
+            ContractError::IoError("Corrupt state: fees_db value wrong size".to_string())
+        })?;
+        u64::from_le_bytes(bytes)
+    };
     if fc.total_fees != accumulated {
         msg!("[fee_collect_v1] Fee total mismatch: claimed {} != accumulated {} at height {}",
              fc.total_fees, accumulated, height);
@@ -1087,7 +1190,7 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     };
 
     msg!("[native_token::fee_collect_v1] Fee collection valid — {} units to miner", fc.total_fees);
-    wasm::util::set_return_data(&serialize(&(NativeTokenFunction::FeeCollectV1 as u8, update)))
+    wasm::util::set_return_data(&encode_fee_collect_update_v1(&update))
 }
 
 fn apply_fee_collect(cid: ContractId, update: FeeCollectUpdateV1) -> ContractResult {
@@ -1123,7 +1226,7 @@ fn apply_fee_collect(cid: ContractId, update: FeeCollectUpdateV1) -> ContractRes
     )?;
 
     // Zero out the fee pot for this height (prevents double-claim)
-    wasm::db::db_set(fees_db, &serialize(&update.height), &serialize(&0_u64))?;
+    wasm::db::db_set(fees_db, &update.height.to_le_bytes(), &0u64.to_le_bytes())?;
 
     Ok(())
 }
@@ -1152,10 +1255,16 @@ fn apply_fee(cid: ContractId, update: FeeUpdateV1) -> ContractResult {
     )?;
 
     // Update fee accumulator per block height
-    let mut paid_fee: u64 =
-        deserialize(&wasm::db::db_get(fees_db, &serialize(&update.height))?.ok_or(ContractError::DbGetEmpty)?)?;
+    let mut paid_fee: u64 = {
+        let data = wasm::db::db_get(fees_db, &update.height.to_le_bytes())?
+            .ok_or(ContractError::DbGetEmpty)?;
+        let bytes: [u8; 8] = data.try_into().map_err(|_| {
+            ContractError::IoError("Corrupt state: fees_db value wrong size".to_string())
+        })?;
+        u64::from_le_bytes(bytes)
+    };
     paid_fee = paid_fee.saturating_add(update.fee);
-    wasm::db::db_set(fees_db, &serialize(&update.height), &serialize(&paid_fee))?;
+    wasm::db::db_set(fees_db, &update.height.to_le_bytes(), &paid_fee.to_le_bytes())?;
 
     Ok(())
 }
@@ -1173,13 +1282,13 @@ fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
 
     // Mark nullifiers (coins spent)
     for nullifier in &update.nullifiers {
-        wasm::db::db_set(nullifiers_db, &serialize(&nullifier.inner()), &[])?;
+        wasm::db::db_set(nullifiers_db, &nullifier.to_bytes(), &[])?;
     }
 
     // Add new coins
     let mut new_coins = Vec::new();
     for coin in &update.coins {
-        wasm::db::db_set(coins_db, &serialize(coin), &[])?;
+        wasm::db::db_set(coins_db, &coin.to_bytes(), &[])?;
         new_coins.push(MerkleNode::from_base(coin.inner()));
     }
 
@@ -1211,7 +1320,7 @@ fn apply_burn(cid: ContractId, update: BurnUpdateV1) -> ContractResult {
 
     // Mark all nullifiers as spent
     for nullifier in &update.nullifiers {
-        wasm::db::db_set(nullifiers_db, &serialize(&nullifier.inner()), &[])?;
+        wasm::db::db_set(nullifiers_db, &nullifier.to_bytes(), &[])?;
     }
 
     Ok(())
@@ -1229,7 +1338,7 @@ fn apply_pow_reward(cid: ContractId, update: PoWRewardUpdateV1) -> ContractResul
 
     // Generate the accumulator for the next height
     msg!("[PoWRewardV1] Creating next height fees accumulator");
-    wasm::db::db_set(fees_db, &serialize(&update.height.succ()), &serialize(&0_u64))?;
+    wasm::db::db_set(fees_db, &update.height.succ().to_le_bytes(), &0u64.to_le_bytes())?;
 
     // Update nullifiers snapshot
     msg!("[PoWRewardV1] Updating nullifiers snapshot");
@@ -1246,7 +1355,7 @@ fn apply_pow_reward(cid: ContractId, update: PoWRewardUpdateV1) -> ContractResul
     wasm::db::db_set(
         info_db,
         NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
-        &serialize(&update.new_total_supply),
+        &update.new_total_supply.to_le_bytes(),
     )?;
 
     // Record Pedersen cumulative value commitment (cryptographic supply proof).
@@ -1254,12 +1363,12 @@ fn apply_pow_reward(cid: ContractId, update: PoWRewardUpdateV1) -> ContractResul
     wasm::db::db_set(
         info_db,
         NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT,
-        &serialize(&update.cumulative_value_commit),
+        &update.cumulative_value_commit.to_bytes(),
     )?;
     wasm::db::db_set(
         info_db,
         NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,
-        &serialize(&update.aggregate_blind),
+        &update.aggregate_blind.to_repr(),
     )?;
 
     // Add new coin

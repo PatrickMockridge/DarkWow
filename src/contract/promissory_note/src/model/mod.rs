@@ -35,9 +35,9 @@
 
 use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, poseidon_hash, BaseBlind, ContractId, FuncId, MerkleNode, TokenId},
-    pasta::pallas,
+    error::ContractError,
+    pasta::{group::GroupEncoding, pallas},
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // Re-export for use in client modules
 pub use dwow_sdk::crypto::note::AeadEncryptedNote;
@@ -249,13 +249,37 @@ pub struct TokenMintParamsV1 {
 }
 
 /// State update for RegisterTypeV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct TokenMintUpdateV1 {
     pub token_id: TokenId,
     pub coin: Coin,
     /// Token authority public key (poseidon_hash of mint_secret)
-    /// Stored on-chain as the current capability holder for rotation
     pub token_auth_parent: pallas::Base,
+}
+
+impl TokenMintUpdateV1 {
+    pub const ENCODED_SIZE: usize = 96; // 32 + 32 + 32
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.token_id.to_bytes());
+        buf.extend_from_slice(&self.coin.to_bytes());
+        buf.extend_from_slice(&self.token_auth_parent.to_repr());
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "TokenMintUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let token_id = TokenId::from_bytes(data[0..32].try_into().unwrap())
+            .ok_or_else(|| ContractError::IoError("TokenMintUpdateV1: invalid token_id".into()))?;
+        let coin = Coin(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("TokenMintUpdateV1: invalid coin".into()))?);
+        let token_auth_parent = Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("TokenMintUpdateV1: invalid token_auth_parent".into()))?;
+        Ok(TokenMintUpdateV1 { token_id, coin, token_auth_parent })
+    }
 }
 
 /// The token registry maps token_id → token_auth_parent (the current mint authority's
@@ -287,13 +311,35 @@ pub struct MintParamsV1 {
 }
 
 /// State update for IssueV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct MintUpdateV1 {
     pub coin: Coin,
-    /// Token ID being minted (for supply tracking)
     pub token_id: TokenId,
-    /// Cumulative coin count for this token after this mint (infinity-mint hardening)
     pub new_coin_count: u64,
+}
+
+impl MintUpdateV1 {
+    pub const ENCODED_SIZE: usize = 72; // 32 + 32 + 8
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.coin.to_bytes());
+        buf.extend_from_slice(&self.token_id.to_bytes());
+        buf.extend_from_slice(&self.new_coin_count.to_le_bytes());
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "MintUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let coin = Coin(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("MintUpdateV1: invalid coin".into()))?);
+        let token_id = TokenId::from_bytes(data[32..64].try_into().unwrap())
+            .ok_or_else(|| ContractError::IoError("MintUpdateV1: invalid token_id".into()))?;
+        let new_coin_count = u64::from_le_bytes(data[64..72].try_into().unwrap());
+        Ok(MintUpdateV1 { coin, token_id, new_coin_count })
+    }
 }
 
 /// Parameters for RevokeV1 - destroy tokens
@@ -309,9 +355,42 @@ pub struct BurnParamsV1 {
 }
 
 /// State update for RevokeV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct BurnUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
+}
+
+impl BurnUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(1 + self.nullifiers.len() * 32);
+        buf.push(self.nullifiers.len() as u8);
+        for nf in &self.nullifiers {
+            buf.extend_from_slice(&nf.to_bytes());
+        }
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() {
+            return Err(ContractError::IoError("BurnUpdateV1: empty data".into()));
+        }
+        let count = data[0] as usize;
+        let expected = 1 + count * 32;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "BurnUpdateV1: expected {} bytes for {} nullifiers, got {}", expected, count, data.len()
+            )));
+        }
+        let mut nullifiers = Vec::with_capacity(count);
+        for i in 0..count {
+            let start = 1 + i * 32;
+            let nf = Nullifier(Option::<pallas::Base>::from(pallas::Base::from_repr(
+                data[start..start + 32].try_into().unwrap(),
+            ))
+            .ok_or_else(|| ContractError::IoError(format!("BurnUpdateV1: invalid nullifier[{}]", i)))?);
+            nullifiers.push(nf);
+        }
+        Ok(BurnUpdateV1 { nullifiers })
+    }
 }
 
 /// Parameters for TransferV1 - private token transfer
@@ -327,10 +406,57 @@ pub struct TransferParamsV1 {
 }
 
 /// State update for TransferV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct TransferUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
     pub coins: Vec<Coin>,
+}
+
+impl TransferUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 2 + self.nullifiers.len() * 32 + self.coins.len() * 32;
+        let mut buf = Vec::with_capacity(cap);
+        buf.push(self.nullifiers.len() as u8);
+        for nf in &self.nullifiers { buf.extend_from_slice(&nf.to_bytes()); }
+        buf.push(self.coins.len() as u8);
+        for c in &self.coins { buf.extend_from_slice(&c.to_bytes()); }
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 2 {
+            return Err(ContractError::IoError("TransferUpdateV1: data too short".into()));
+        }
+        let nf_count = data[0] as usize;
+        let nf_end = 1 + nf_count * 32;
+        if data.len() < nf_end + 1 {
+            return Err(ContractError::IoError(format!(
+                "TransferUpdateV1: expected at least {} bytes, got {}", nf_end + 1, data.len()
+            )));
+        }
+        let coin_count = data[nf_end] as usize;
+        let expected = nf_end + 1 + coin_count * 32;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "TransferUpdateV1: expected {} bytes ({} nf + {} coins), got {}",
+                expected, nf_count, coin_count, data.len()
+            )));
+        }
+        let mut nullifiers = Vec::with_capacity(nf_count);
+        for i in 0..nf_count {
+            let start = 1 + i * 32;
+            nullifiers.push(Nullifier(Option::<pallas::Base>::from(pallas::Base::from_repr(
+                data[start..start + 32].try_into().unwrap(),
+            )).ok_or_else(|| ContractError::IoError(format!("TransferUpdateV1: invalid nullifier[{}]", i)))?));
+        }
+        let mut coins = Vec::with_capacity(coin_count);
+        for i in 0..coin_count {
+            let start = nf_end + 1 + i * 32;
+            coins.push(Coin(Option::<pallas::Base>::from(pallas::Base::from_repr(
+                data[start..start + 32].try_into().unwrap(),
+            )).ok_or_else(|| ContractError::IoError(format!("TransferUpdateV1: invalid coin[{}]", i)))?));
+        }
+        Ok(TransferUpdateV1 { nullifiers, coins })
+    }
 }
 
 /// Parameters for RedeemV1 - redeem a coin, destroying its monetary value
@@ -359,10 +485,34 @@ pub struct RedeemParamsV1 {
 }
 
 /// State update for RedeemV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RedeemUpdateV1 {
     pub nullifier: Nullifier,
     pub coin: Coin,
+}
+
+impl RedeemUpdateV1 {
+    pub const ENCODED_SIZE: usize = 64;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.nullifier.to_bytes());
+        buf.extend_from_slice(&self.coin.to_bytes());
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "RedeemUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+            )));
+        }
+        let nullifier = Nullifier(Option::<pallas::Base>::from(pallas::Base::from_repr(
+            data[0..32].try_into().unwrap(),
+        )).ok_or_else(|| ContractError::IoError("RedeemUpdateV1: invalid nullifier".into()))?);
+        let coin = Coin(Option::<pallas::Base>::from(pallas::Base::from_repr(
+            data[32..64].try_into().unwrap(),
+        )).ok_or_else(|| ContractError::IoError("RedeemUpdateV1: invalid coin".into()))?);
+        Ok(RedeemUpdateV1 { nullifier, coin })
+    }
 }
 
 /// Parameters for OtcSwapV1 - atomic OTC token swap
@@ -379,10 +529,57 @@ pub struct OtcSwapParamsV1 {
 }
 
 /// State update for OtcSwapV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct OtcSwapUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
     pub coins: Vec<Coin>,
+}
+
+impl OtcSwapUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 2 + self.nullifiers.len() * 32 + self.coins.len() * 32;
+        let mut buf = Vec::with_capacity(cap);
+        buf.push(self.nullifiers.len() as u8);
+        for nf in &self.nullifiers { buf.extend_from_slice(&nf.to_bytes()); }
+        buf.push(self.coins.len() as u8);
+        for c in &self.coins { buf.extend_from_slice(&c.to_bytes()); }
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 2 {
+            return Err(ContractError::IoError("OtcSwapUpdateV1: data too short".into()));
+        }
+        let nf_count = data[0] as usize;
+        let nf_end = 1 + nf_count * 32;
+        if data.len() < nf_end + 1 {
+            return Err(ContractError::IoError(format!(
+                "OtcSwapUpdateV1: expected at least {} bytes, got {}", nf_end + 1, data.len()
+            )));
+        }
+        let coin_count = data[nf_end] as usize;
+        let expected = nf_end + 1 + coin_count * 32;
+        if data.len() != expected {
+            return Err(ContractError::IoError(format!(
+                "OtcSwapUpdateV1: expected {} bytes ({} nf + {} coins), got {}",
+                expected, nf_count, coin_count, data.len()
+            )));
+        }
+        let mut nullifiers = Vec::with_capacity(nf_count);
+        for i in 0..nf_count {
+            let start = 1 + i * 32;
+            nullifiers.push(Nullifier(Option::<pallas::Base>::from(pallas::Base::from_repr(
+                data[start..start + 32].try_into().unwrap(),
+            )).ok_or_else(|| ContractError::IoError(format!("OtcSwapUpdateV1: invalid nullifier[{}]", i)))?));
+        }
+        let mut coins = Vec::with_capacity(coin_count);
+        for i in 0..coin_count {
+            let start = nf_end + 1 + i * 32;
+            coins.push(Coin(Option::<pallas::Base>::from(pallas::Base::from_repr(
+                data[start..start + 32].try_into().unwrap(),
+            )).ok_or_else(|| ContractError::IoError(format!("OtcSwapUpdateV1: invalid coin[{}]", i)))?));
+        }
+        Ok(OtcSwapUpdateV1 { nullifiers, coins })
+    }
 }
 
 // ============================================================================
@@ -390,17 +587,62 @@ pub struct OtcSwapUpdateV1 {
 // ============================================================================
 
 /// Payload delivered to the spend_hook target contract during RevokeV1.
-/// Contains all public Burn_V1 data so the target can verify the burn.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct BurnSpendHookPayload {
-    /// Contract ID of the PromissoryNote instance that performed the burn
     pub caller_contract_id: ContractId,
-    /// Nullifiers of burned coins
     pub nullifiers: Vec<pallas::Base>,
-    /// Token commitments of burned coins
     pub token_commits: Vec<pallas::Base>,
-    /// Value commitments of burned coins
     pub value_commits: Vec<pallas::Point>,
-    /// Encrypted user data of burned coins
     pub user_data_encs: Vec<pallas::Base>,
+}
+
+impl BurnSpendHookPayload {
+    pub fn encode(&self) -> Vec<u8> {
+        let n = self.nullifiers.len();
+        let cap = 33 + n * 32 * 4; // cid(32) + 4 x [u8 count + n*32]
+        let mut buf = Vec::with_capacity(cap);
+        buf.extend_from_slice(&self.caller_contract_id.to_bytes());
+        buf.push(n as u8);
+        for v in &self.nullifiers { buf.extend_from_slice(&v.to_repr()); }
+        buf.push(n as u8);
+        for v in &self.token_commits { buf.extend_from_slice(&v.to_repr()); }
+        buf.push(n as u8);
+        for v in &self.value_commits { buf.extend_from_slice(&v.to_bytes()); }
+        buf.push(n as u8);
+        for v in &self.user_data_encs { buf.extend_from_slice(&v.to_repr()); }
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 33 {
+            return Err(ContractError::IoError("BurnSpendHookPayload: data too short".into()));
+        }
+        let caller_contract_id = ContractId::from_bytes(data[0..32].try_into().unwrap())
+            .ok_or_else(|| ContractError::IoError("BurnSpendHookPayload: invalid caller_contract_id".into()))?;
+        let n = data[32] as usize;
+        fn decode_vec_base(data: &[u8], start: usize, n: usize) -> Result<(Vec<pallas::Base>, usize), ContractError> {
+            let mut v = Vec::with_capacity(n);
+            for i in 0..n {
+                let s = start + i * 32;
+                v.push(Option::<pallas::Base>::from(pallas::Base::from_repr(
+                    data[s..s + 32].try_into().unwrap(),
+                )).ok_or_else(|| ContractError::IoError("BurnSpendHookPayload: invalid field".into()))?);
+            }
+            Ok((v, start + n * 32))
+        }
+        fn decode_vec_point(data: &[u8], start: usize, n: usize) -> Result<(Vec<pallas::Point>, usize), ContractError> {
+            let mut v = Vec::with_capacity(n);
+            for i in 0..n {
+                let s = start + i * 32;
+                v.push(Option::<pallas::Point>::from(pallas::Point::from_bytes(
+                    data[s..s + 32].try_into().unwrap(),
+                )).ok_or_else(|| ContractError::IoError("BurnSpendHookPayload: invalid point".into()))?);
+            }
+            Ok((v, start + n * 32))
+        }
+        let (nullifiers, pos) = decode_vec_base(data, 33, n)?;
+        let (token_commits, pos) = decode_vec_base(data, pos + 1, data[pos] as usize)?;
+        let (value_commits, pos) = decode_vec_point(data, pos + 1, data[pos] as usize)?;
+        let (user_data_encs, _) = decode_vec_base(data, pos + 1, data[pos] as usize)?;
+        Ok(BurnSpendHookPayload { caller_contract_id, nullifiers, token_commits, value_commits, user_data_encs })
+    }
 }
