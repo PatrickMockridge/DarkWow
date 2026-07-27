@@ -684,4 +684,107 @@ pub fn derive_spin_id(
         blind,
         token_id,
     ])
+
+// ============================================================================
+// RHO-CALCULUS EXPLICIT ENCODE/DECODE
+// ============================================================================
+
+impl SpinResult {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(1 + self.positions.len() * 8);
+        b.push(self.positions.len() as u8);
+        for p in &self.positions { b.extend_from_slice(&p.to_le_bytes()); }
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() { return Err(ContractError::IoError("SpinResult: empty data".into())); }
+        let n = data[0] as usize;
+        if data.len() != 1 + n * 8 { return Err(ContractError::IoError(format!("SpinResult: expected {} bytes, got {}", 1 + n * 8, data.len()))); }
+        let mut positions = Vec::with_capacity(n);
+        for i in 0..n { positions.push(u64::from_le_bytes(data[1+i*8..1+(i+1)*8].try_into().unwrap())); }
+        Ok(SpinResult { positions })
+    }
+}
+
+impl Win {
+    pub const ENCODED_SIZE: usize = 14;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(14);
+        b.extend_from_slice(&self.payline_id.to_le_bytes());
+        b.push(self.symbol.0);
+        b.push(self.count);
+        b.extend_from_slice(&self.payout.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 14 { return Err(ContractError::IoError(format!("Win: expected 14 bytes, got {}", data.len()))); }
+        Ok(Win { payline_id: u32::from_le_bytes(data[0..4].try_into().unwrap()), symbol: Symbol(data[4]), count: data[5], payout: u64::from_le_bytes(data[6..14].try_into().unwrap()) })
+    }
+}
+
+impl Spin {
+    pub fn encode(&self) -> Vec<u8> {
+        let result_bytes = if let Some(ref r) = self.result { r.encode() } else { vec![] };
+        let cap = 302 + result_bytes.len() + self.wins.len() * 14;
+        let mut b = Vec::with_capacity(cap);
+        b.push(self.version);
+        b.extend_from_slice(&self.id.to_repr());
+        b.extend_from_slice(&self.player_pub.to_bytes());
+        b.extend_from_slice(&self.bet_value.to_le_bytes());
+        b.extend_from_slice(&self.paylines_played.to_le_bytes());
+        b.extend_from_slice(&self.secret_nonce_commit.to_repr());
+        b.extend_from_slice(&self.blind.to_repr());
+        b.push(self.result.is_some() as u8);
+        b.extend_from_slice(&result_bytes);
+        b.push(self.wins.len() as u8);
+        for w in &self.wins { b.extend_from_slice(&w.encode()); }
+        b.extend_from_slice(&self.payout.to_le_bytes());
+        b.push(self.state as u8);
+        b.extend_from_slice(&self.house_edge.to_le_bytes());
+        b.push(self.confirmation_depth);
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b.extend_from_slice(&self.settle_block.to_le_bytes());
+        b.extend_from_slice(&self.value_commit.to_bytes());
+        b.extend_from_slice(&self.token_id.to_repr());
+        b.extend_from_slice(&self.nullifier.to_repr());
+        b.extend_from_slice(&self.instance_seed);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 302 { return Err(ContractError::IoError(format!("Spin: expected at least 302 bytes, got {}", data.len()))); }
+        let version = data[0];
+        let id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Spin: invalid id".into()))?;
+        let player_pub = PublicKey::from_bytes(data[33..65].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Spin: invalid player_pub: {}", e)))?;
+        let bet_value = u64::from_le_bytes(data[65..73].try_into().unwrap());
+        let paylines_played = u32::from_le_bytes(data[73..77].try_into().unwrap());
+        let secret_nonce_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(data[77..109].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Spin: invalid secret_nonce_commit".into()))?;
+        let blind = Option::<pallas::Base>::from(pallas::Base::from_repr(data[109..141].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Spin: invalid blind".into()))?;
+        let has_result = data[141] != 0;
+        let (result, win_start) = if has_result {
+            let r = SpinResult::decode(&data[142..])?;
+            let next = 142 + r.encode().len();
+            (Some(r), next)
+        } else {
+            (None, 142)
+        };
+        if data.len() < win_start + 1 { return Err(ContractError::IoError("Spin: data too short for wins".into())); }
+        let win_count = data[win_start] as usize;
+        let win_end = win_start + 1 + win_count * 14;
+        if data.len() < win_end + 89 { return Err(ContractError::IoError("Spin: data too short for tail".into())); }
+        let mut wins = Vec::with_capacity(win_count);
+        for i in 0..win_count { wins.push(Win::decode(&data[win_start+1+i*14..win_start+1+(i+1)*14])?); }
+        let p = win_end;
+        let payout = u64::from_le_bytes(data[p..p+8].try_into().unwrap());
+        let state = SpinState::try_from(data[p+8])?;
+        let house_edge = u32::from_le_bytes(data[p+9..p+13].try_into().unwrap());
+        let confirmation_depth = data[p+13];
+        let created_at = u64::from_le_bytes(data[p+14..p+22].try_into().unwrap());
+        let settle_block = u64::from_le_bytes(data[p+22..p+30].try_into().unwrap());
+        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[p+30..p+62].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Spin: invalid value_commit".into()))?;
+        let token_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[p+62..p+94].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Spin: invalid token_id".into()))?;
+        let nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(data[p+94..p+126].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Spin: invalid nullifier".into()))?;
+        let instance_seed: [u8; 32] = data[p+126..p+158].try_into().unwrap();
+        Ok(Spin { version, id, player_pub, bet_value, paylines_played, secret_nonce_commit, blind, result, wins, payout, state, house_edge, confirmation_depth, created_at, settle_block, value_commit, token_id, nullifier, instance_seed })
+    }
+}
 }
