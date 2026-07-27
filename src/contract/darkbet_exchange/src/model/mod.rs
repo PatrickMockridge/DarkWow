@@ -1248,3 +1248,243 @@ impl Match {
         })
     }
 }
+
+// --- Bridge update structs ---
+
+impl CancelOrderUpdateV1 {
+    pub const ENCODED_SIZE: usize = 40;
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(40); b.extend_from_slice(&self.order_id.to_repr()); b.extend_from_slice(&self.refund_amount.to_le_bytes()); b }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 40 { return Err(ContractError::IoError(format!("CancelOrderUpdateV1: expected 40 bytes, got {}", data.len()))); }
+        Ok(CancelOrderUpdateV1 { order_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CancelOrderUpdateV1: invalid order_id".into()))?, refund_amount: u64::from_le_bytes(data[32..40].try_into().unwrap()) })
+    }
+}
+
+impl ResolveMarketUpdateV1 {
+    pub const ENCODED_SIZE: usize = 41;
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(41); b.extend_from_slice(&self.market_id.to_repr()); b.push(self.winning_outcome); b.extend_from_slice(&self.resolved_at_block.to_le_bytes()); b }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 41 { return Err(ContractError::IoError(format!("ResolveMarketUpdateV1: expected 41 bytes, got {}", data.len()))); }
+        Ok(ResolveMarketUpdateV1 { market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ResolveMarketUpdateV1: invalid market_id".into()))?, winning_outcome: data[32], resolved_at_block: u64::from_le_bytes(data[33..41].try_into().unwrap()) })
+    }
+}
+
+impl ClaimWinningsUpdateV1 {
+    pub const ENCODED_SIZE: usize = 41;
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(41); b.extend_from_slice(&self.position_id.to_repr()); b.extend_from_slice(&self.payout.to_le_bytes()); b.push(self.claimed as u8); b }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 41 { return Err(ContractError::IoError(format!("ClaimWinningsUpdateV1: expected 41 bytes, got {}", data.len()))); }
+        Ok(ClaimWinningsUpdateV1 { position_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ClaimWinningsUpdateV1: invalid position_id".into()))?, payout: u64::from_le_bytes(data[32..40].try_into().unwrap()), claimed: data[40] != 0 })
+    }
+}
+
+impl SettleMarketUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(56 + self.match_ids.len() * 32);
+        b.extend_from_slice(&self.market_id.to_repr());
+        b.push(self.match_ids.len() as u8);
+        for id in &self.match_ids { b.extend_from_slice(&id.to_repr()); }
+        b.extend_from_slice(&self.settled_count.to_le_bytes());
+        b.extend_from_slice(&self.total_payout.to_le_bytes());
+        b.extend_from_slice(&self.total_commission.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 56 { return Err(ContractError::IoError(format!("SettleMarketUpdateV1: expected at least 56 bytes, got {}", data.len()))); }
+        let market_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SettleMarketUpdateV1: invalid market_id".into()))?;
+        let count = data[32] as usize;
+        let expected = 33 + count * 32 + 24;
+        if data.len() != expected { return Err(ContractError::IoError(format!("SettleMarketUpdateV1: expected {} bytes for {} matches, got {}", expected, count, data.len()))); }
+        let mut match_ids = Vec::with_capacity(count);
+        for i in 0..count { let s = 33 + i * 32; match_ids.push(Option::<pallas::Base>::from(pallas::Base::from_repr(data[s..s+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError(format!("SettleMarketUpdateV1: invalid match_id[{}]", i)))?); }
+        let pos = 33 + count * 32;
+        let settled_count = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap());
+        let total_payout = u64::from_le_bytes(data[pos+8..pos+16].try_into().unwrap());
+        let total_commission = u64::from_le_bytes(data[pos+16..pos+24].try_into().unwrap());
+        Ok(SettleMarketUpdateV1 { market_id, match_ids, settled_count, total_payout, total_commission })
+    }
+}
+
+impl CreateMarketUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let outcomes_bytes: usize = self.outcomes.iter().map(|s| 1 + s.len()).sum();
+        let cap = 107 + self.description.len() + outcomes_bytes;
+        let mut b = Vec::with_capacity(cap);
+        b.extend_from_slice(&self.market_id.to_repr());
+        b.extend_from_slice(&self.creator.to_bytes());
+        b.push(self.description.len() as u8);
+        b.extend_from_slice(self.description.as_bytes());
+        b.push(self.outcomes.len() as u8);
+        for s in &self.outcomes { b.push(s.len() as u8); b.extend_from_slice(s.as_bytes()); }
+        b.extend_from_slice(&self.oracle_id.to_repr());
+        b.extend_from_slice(&self.commission_bp.to_le_bytes());
+        b.push(self.market_type as u8);
+        b.extend_from_slice(&self.protocol_fee.to_le_bytes());
+        b.extend_from_slice(&self.lp_fee.to_le_bytes());
+        b.extend_from_slice(&self.close_block.to_le_bytes());
+        b.extend_from_slice(&self.instance_seed);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 107 { return Err(ContractError::IoError(format!("CreateMarketUpdateV1: expected at least 107 bytes, got {}", data.len()))); }
+        let market_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CreateMarketUpdateV1: invalid market_id".into()))?;
+        let creator = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateMarketUpdateV1: invalid creator: {}", e)))?;
+        let desc_len = data[64] as usize;
+        if data.len() < 65 + desc_len { return Err(ContractError::IoError("CreateMarketUpdateV1: data too short for description".into())); }
+        let description = String::from_utf8(data[65..65+desc_len].to_vec()).map_err(|e| ContractError::IoError(format!("CreateMarketUpdateV1: invalid description: {}", e)))?;
+        let pos = 65 + desc_len;
+        let out_count = data[pos] as usize;
+        let mut p = pos + 1;
+        let mut outcomes = Vec::with_capacity(out_count);
+        for _ in 0..out_count {
+            if data.len() < p + 1 { return Err(ContractError::IoError("CreateMarketUpdateV1: outcome data truncated".into())); }
+            let slen = data[p] as usize; p += 1;
+            outcomes.push(String::from_utf8(data[p..p+slen].to_vec()).map_err(|e| ContractError::IoError(format!("CreateMarketUpdateV1: invalid outcome: {}", e)))?);
+            p += slen;
+        }
+        if data.len() < p + 75 { return Err(ContractError::IoError("CreateMarketUpdateV1: data too short for tail".into())); }
+        let oracle_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[p..p+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CreateMarketUpdateV1: invalid oracle_id".into()))?; p += 32;
+        let commission_bp = u32::from_le_bytes(data[p..p+4].try_into().unwrap()); p += 4;
+        let market_type = MarketType::try_from(data[p])?; p += 1;
+        let protocol_fee = u32::from_le_bytes(data[p..p+4].try_into().unwrap()); p += 4;
+        let lp_fee = u32::from_le_bytes(data[p..p+4].try_into().unwrap()); p += 4;
+        let close_block = u64::from_le_bytes(data[p..p+8].try_into().unwrap()); p += 8;
+        let instance_seed: [u8; 32] = data[p..p+32].try_into().unwrap();
+        Ok(CreateMarketUpdateV1 { market_id, creator, description, outcomes, oracle_id, commission_bp, market_type, protocol_fee, lp_fee, close_block, instance_seed })
+    }
+}
+
+impl PlaceBackUpdateV1 {
+    pub const ENCODED_SIZE: usize = 173;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(173);
+        b.extend_from_slice(&self.order_id.to_repr()); b.extend_from_slice(&self.market_id.to_repr());
+        b.push(self.outcome_index); b.extend_from_slice(&self.odds.to_le_bytes());
+        b.extend_from_slice(&self.stake.to_le_bytes()); b.extend_from_slice(&self.user_pub.to_bytes());
+        b.extend_from_slice(&self.nullifier.to_repr()); b.extend_from_slice(&self.instance_seed);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 173 { return Err(ContractError::IoError(format!("PlaceBackUpdateV1: expected 173 bytes, got {}", data.len()))); }
+        Ok(PlaceBackUpdateV1 {
+            order_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PlaceBackUpdateV1: invalid order_id".into()))?,
+            market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PlaceBackUpdateV1: invalid market_id".into()))?,
+            outcome_index: data[64], odds: u32::from_le_bytes(data[65..69].try_into().unwrap()),
+            stake: u64::from_le_bytes(data[69..77].try_into().unwrap()),
+            user_pub: PublicKey::from_bytes(data[77..109].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PlaceBackUpdateV1: invalid user_pub: {}", e)))?,
+            nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[109..141].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PlaceBackUpdateV1: invalid nullifier".into()))?,
+            instance_seed: data[141..173].try_into().unwrap(),
+        })
+    }
+}
+
+impl PlaceLayUpdateV1 {
+    pub const ENCODED_SIZE: usize = 181;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(181);
+        b.extend_from_slice(&self.order_id.to_repr()); b.extend_from_slice(&self.market_id.to_repr());
+        b.push(self.outcome_index); b.extend_from_slice(&self.odds.to_le_bytes());
+        b.extend_from_slice(&self.stake.to_le_bytes()); b.extend_from_slice(&self.liability.to_le_bytes());
+        b.extend_from_slice(&self.user_pub.to_bytes()); b.extend_from_slice(&self.nullifier.to_repr());
+        b.extend_from_slice(&self.instance_seed); b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 181 { return Err(ContractError::IoError(format!("PlaceLayUpdateV1: expected 181 bytes, got {}", data.len()))); }
+        Ok(PlaceLayUpdateV1 {
+            order_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PlaceLayUpdateV1: invalid order_id".into()))?,
+            market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PlaceLayUpdateV1: invalid market_id".into()))?,
+            outcome_index: data[64], odds: u32::from_le_bytes(data[65..69].try_into().unwrap()),
+            stake: u64::from_le_bytes(data[69..77].try_into().unwrap()), liability: u64::from_le_bytes(data[77..85].try_into().unwrap()),
+            user_pub: PublicKey::from_bytes(data[85..117].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PlaceLayUpdateV1: invalid user_pub: {}", e)))?,
+            nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[117..149].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PlaceLayUpdateV1: invalid nullifier".into()))?,
+            instance_seed: data[149..181].try_into().unwrap(),
+        })
+    }
+}
+
+impl MatchOrdersUpdateV1 {
+    pub const ENCODED_SIZE: usize = 156;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(156);
+        b.extend_from_slice(&self.match_id.to_repr()); b.extend_from_slice(&self.market_id.to_repr());
+        b.extend_from_slice(&self.back_order_id.to_repr()); b.extend_from_slice(&self.lay_order_id.to_repr());
+        b.extend_from_slice(&self.odds.to_le_bytes()); b.extend_from_slice(&self.back_stake.to_le_bytes());
+        b.extend_from_slice(&self.lay_liability.to_le_bytes()); b.extend_from_slice(&self.commission.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 156 { return Err(ContractError::IoError(format!("MatchOrdersUpdateV1: expected 156 bytes, got {}", data.len()))); }
+        Ok(MatchOrdersUpdateV1 {
+            match_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("MatchOrdersUpdateV1: invalid match_id".into()))?,
+            market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("MatchOrdersUpdateV1: invalid market_id".into()))?,
+            back_order_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap())).ok_or_else(|| ContractError::IoError("MatchOrdersUpdateV1: invalid back_order_id".into()))?,
+            lay_order_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[96..128].try_into().unwrap())).ok_or_else(|| ContractError::IoError("MatchOrdersUpdateV1: invalid lay_order_id".into()))?,
+            odds: u32::from_le_bytes(data[128..132].try_into().unwrap()), back_stake: u64::from_le_bytes(data[132..140].try_into().unwrap()),
+            lay_liability: u64::from_le_bytes(data[140..148].try_into().unwrap()), commission: u64::from_le_bytes(data[148..156].try_into().unwrap()),
+        })
+    }
+}
+
+impl BuyPositionUpdateV1 {
+    pub const ENCODED_SIZE: usize = 153;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(153);
+        b.extend_from_slice(&self.position_id.to_repr()); b.extend_from_slice(&self.market_id.to_repr());
+        b.extend_from_slice(&self.owner.to_bytes()); b.push(self.outcome);
+        b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.payout.to_le_bytes());
+        b.extend_from_slice(&self.created_at.to_le_bytes()); b.extend_from_slice(&self.instance_seed); b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 153 { return Err(ContractError::IoError(format!("BuyPositionUpdateV1: expected 153 bytes, got {}", data.len()))); }
+        Ok(BuyPositionUpdateV1 {
+            position_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("BuyPositionUpdateV1: invalid position_id".into()))?,
+            market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("BuyPositionUpdateV1: invalid market_id".into()))?,
+            owner: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("BuyPositionUpdateV1: invalid owner: {}", e)))?,
+            outcome: data[96], amount: u64::from_le_bytes(data[97..105].try_into().unwrap()),
+            payout: u64::from_le_bytes(data[105..113].try_into().unwrap()), created_at: u64::from_le_bytes(data[113..121].try_into().unwrap()),
+            instance_seed: data[121..153].try_into().unwrap(),
+        })
+    }
+}
+
+impl AddLiquidityUpdateV1 {
+    pub const ENCODED_SIZE: usize = 160;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(160);
+        b.extend_from_slice(&self.lp_share_id.to_repr()); b.extend_from_slice(&self.market_id.to_repr());
+        b.extend_from_slice(&self.provider.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes());
+        b.extend_from_slice(&self.shares_minted.to_le_bytes()); b.extend_from_slice(&self.fees_earned.to_le_bytes());
+        b.extend_from_slice(&self.created_at.to_le_bytes()); b.extend_from_slice(&self.instance_seed); b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 160 { return Err(ContractError::IoError(format!("AddLiquidityUpdateV1: expected 160 bytes, got {}", data.len()))); }
+        Ok(AddLiquidityUpdateV1 {
+            lp_share_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("AddLiquidityUpdateV1: invalid lp_share_id".into()))?,
+            market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("AddLiquidityUpdateV1: invalid market_id".into()))?,
+            provider: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("AddLiquidityUpdateV1: invalid provider: {}", e)))?,
+            amount: u64::from_le_bytes(data[96..104].try_into().unwrap()), shares_minted: u64::from_le_bytes(data[104..112].try_into().unwrap()),
+            fees_earned: u64::from_le_bytes(data[112..120].try_into().unwrap()), created_at: u64::from_le_bytes(data[120..128].try_into().unwrap()),
+            instance_seed: data[128..160].try_into().unwrap(),
+        })
+    }
+}
+
+impl RemoveLiquidityUpdateV1 {
+    pub const ENCODED_SIZE: usize = 120;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(120);
+        b.extend_from_slice(&self.market_id.to_repr()); b.extend_from_slice(&self.lp_share_id.to_repr());
+        b.extend_from_slice(&self.provider.to_bytes()); b.extend_from_slice(&self.shares_burned.to_le_bytes());
+        b.extend_from_slice(&self.payout.to_le_bytes()); b.extend_from_slice(&self.fees_withdrawn.to_le_bytes()); b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 120 { return Err(ContractError::IoError(format!("RemoveLiquidityUpdateV1: expected 120 bytes, got {}", data.len()))); }
+        Ok(RemoveLiquidityUpdateV1 {
+            market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RemoveLiquidityUpdateV1: invalid market_id".into()))?,
+            lp_share_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RemoveLiquidityUpdateV1: invalid lp_share_id".into()))?,
+            provider: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("RemoveLiquidityUpdateV1: invalid provider: {}", e)))?,
+            shares_burned: u64::from_le_bytes(data[96..104].try_into().unwrap()), payout: u64::from_le_bytes(data[104..112].try_into().unwrap()),
+            fees_withdrawn: u64::from_le_bytes(data[112..120].try_into().unwrap()),
+        })
+    }
+}
