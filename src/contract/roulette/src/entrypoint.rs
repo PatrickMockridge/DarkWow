@@ -28,7 +28,7 @@ use dwow_sdk::{
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
-    pasta::{group::GroupEncoding, pallas},
+    pasta::pallas,
     wasm, ContractCall,
 };
 use dwow_serial::{deserialize, Encodable};
@@ -603,7 +603,7 @@ fn roulette_settle_bets_process_instruction_v1(
     if params.bet_ids.len() > crate::ROULETTE_CONTRACT_MAX_SETTLE_BETS {
         msg!("[roulette::settle_bets] Too many bet IDs: {} (max {})",
             params.bet_ids.len(), crate::ROULETTE_CONTRACT_MAX_SETTLE_BETS);
-        return Err(RouletteError::Custom(1).into());
+        return Err(RouletteError::InternalError("Too many bet IDs".to_string()).into());
     }
     for bet_id in &params.bet_ids {
         let bet: Bet = match wasm::db::db_get(bets_db, &bet_id.to_repr())? {

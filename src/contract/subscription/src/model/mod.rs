@@ -46,8 +46,129 @@ use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, poseidon_hash, PublicKey},
     error::ContractError,
     pasta::pallas,
+    pasta::group::GroupEncoding,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
+
+// Bridge impls: dwow_serial::Encodable/Decodable delegate to rho-calculus
+// encode/decode so param structs can derive SerialEncodable/SerialDecodable
+// without losing the deterministic byte layout.
+
+use std::io::{Read, Write};
+
+impl dwow_serial::Encodable for SubscriptionId {
+    fn encode<W: Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
+        let bytes = self.to_bytes();
+        w.write_all(&bytes)?;
+        Ok(32)
+    }
+}
+
+impl dwow_serial::Decodable for SubscriptionId {
+    fn decode<D: Read>(d: &mut D) -> Result<Self, std::io::Error> {
+        let mut buf = [0u8; 32];
+        d.read_exact(&mut buf)?;
+        Self::decode(&buf).map_err(|e| std::io::Error::other(format!("{e}")))
+    }
+}
+
+impl dwow_serial::Encodable for Plan {
+    fn encode<W: Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
+        let mut len = 0;
+        w.write_all(&[self.version])?;
+        len += 1;
+        w.write_all(&self.id.to_le_bytes())?;
+        len += 4;
+        w.write_all(&self.name_hash.to_repr())?;
+        len += 32;
+        w.write_all(&self.price.to_le_bytes())?;
+        len += 8;
+        w.write_all(&self.token_id.to_repr())?;
+        len += 32;
+        w.write_all(&self.duration_blocks.to_le_bytes())?;
+        len += 8;
+        w.write_all(&self.treasury_share.to_le_bytes())?;
+        len += 4;
+        w.write_all(&self.endowment_share.to_le_bytes())?;
+        len += 4;
+        w.write_all(&[self.active as u8])?;
+        len += 1;
+        w.write_all(&self.dao_escrow_discount.to_le_bytes())?;
+        len += 4;
+        w.write_all(&[self.required_dao_escrow.is_some() as u8])?;
+        len += 1;
+        if let Some(ref v) = self.required_dao_escrow {
+            w.write_all(&v.to_repr())?;
+            len += 32;
+        }
+        Ok(len)
+    }
+}
+
+impl dwow_serial::Decodable for Plan {
+    fn decode<D: Read>(d: &mut D) -> Result<Self, std::io::Error> {
+        use dwow_sdk::pasta_curves::group::GroupEncoding;
+
+        let mut buf1 = [0u8; 1];
+        d.read_exact(&mut buf1)?;
+        let version = buf1[0];
+
+        let mut buf4 = [0u8; 4];
+        d.read_exact(&mut buf4)?;
+        let id = u32::from_le_bytes(buf4);
+
+        let mut buf32 = [0u8; 32];
+        d.read_exact(&mut buf32)?;
+        let name_hash = Option::<pallas::Base>::from(pallas::Base::from_repr(buf32))
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Plan: invalid name_hash"))?;
+
+        let mut buf8 = [0u8; 8];
+        d.read_exact(&mut buf8)?;
+        let price = u64::from_le_bytes(buf8);
+
+        d.read_exact(&mut buf32)?;
+        let token_id = Option::<pallas::Base>::from(pallas::Base::from_repr(buf32))
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Plan: invalid token_id"))?;
+
+        d.read_exact(&mut buf8)?;
+        let duration_blocks = u64::from_le_bytes(buf8);
+
+        d.read_exact(&mut buf4)?;
+        let treasury_share = u32::from_le_bytes(buf4);
+
+        d.read_exact(&mut buf4)?;
+        let endowment_share = u32::from_le_bytes(buf4);
+
+        d.read_exact(&mut buf1)?;
+        let active = buf1[0] != 0;
+
+        d.read_exact(&mut buf4)?;
+        let dao_escrow_discount = u32::from_le_bytes(buf4);
+
+        d.read_exact(&mut buf1)?;
+        let required_dao_escrow = if buf1[0] != 0 {
+            d.read_exact(&mut buf32)?;
+            Some(Option::<pallas::Base>::from(pallas::Base::from_repr(buf32))
+                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Plan: invalid required_dao_escrow"))?)
+        } else {
+            None
+        };
+
+        Ok(Plan {
+            version,
+            id,
+            name_hash,
+            price,
+            token_id,
+            duration_blocks,
+            treasury_share,
+            endowment_share,
+            active,
+            dao_escrow_discount,
+            required_dao_escrow,
+        })
+    }
+}
 
 // ============================================================================
 // STATE TYPES
@@ -423,11 +544,6 @@ pub enum DaoControlAction {
 // ============================================================================
 
 impl SubscriptionId {
-    /// Encode to canonical bytes (ρ-calculus: quote).
-    pub fn encode(&self) -> Vec<u8> {
-        self.to_bytes().to_vec()
-    }
-
     /// Decode from canonical bytes (ρ-calculus: eval).
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 32 {
@@ -649,28 +765,6 @@ impl Subscription {
 impl Plan {
     /// Minimum canonical byte size (without optional fields present).
     pub const MIN_ENCODED_SIZE: usize = 99;
-
-    /// Encode to canonical bytes (ρ-calculus: quote).
-    pub fn encode(&self) -> Vec<u8> {
-        let cap = Self::MIN_ENCODED_SIZE
-            + if self.required_dao_escrow.is_some() { 32 } else { 0 };
-        let mut b = Vec::with_capacity(cap);
-        b.push(self.version);
-        b.extend_from_slice(&self.id.to_le_bytes());
-        b.extend_from_slice(&self.name_hash.to_repr());
-        b.extend_from_slice(&self.price.to_le_bytes());
-        b.extend_from_slice(&self.token_id.to_repr());
-        b.extend_from_slice(&self.duration_blocks.to_le_bytes());
-        b.extend_from_slice(&self.treasury_share.to_le_bytes());
-        b.extend_from_slice(&self.endowment_share.to_le_bytes());
-        b.push(self.active as u8);
-        b.extend_from_slice(&self.dao_escrow_discount.to_le_bytes());
-        b.push(self.required_dao_escrow.is_some() as u8);
-        if let Some(ref v) = self.required_dao_escrow {
-            b.extend_from_slice(&v.to_repr());
-        }
-        b
-    }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {

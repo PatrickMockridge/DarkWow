@@ -28,11 +28,44 @@
 use dwow_sdk::{
     crypto::{draw_single, pasta_prelude::PrimeField, poseidon_hash, PublicKey},
     error::ContractError,
-    pasta::{group::GroupEncoding, pallas},
+    pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::{EUROPEAN_HOUSE_EDGE_BP, EUROPEAN_WHEEL_SIZE, AMERICAN_HOUSE_EDGE_BP, AMERICAN_WHEEL_SIZE};
+
+// dwow_serial bridge impls for BetType and RouletteTableState
+// so they can be fields in SerialEncodable/SerialDecodable params.
+
+impl dwow_serial::Encodable for BetType {
+    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
+        w.write_all(&[*self as u8])?;
+        Ok(1)
+    }
+}
+
+impl dwow_serial::Decodable for BetType {
+    fn decode<D: std::io::Read>(d: &mut D) -> Result<Self, std::io::Error> {
+        let mut buf = [0u8; 1];
+        d.read_exact(&mut buf)?;
+        Self::try_from(buf[0]).map_err(|e| std::io::Error::other(format!("{e}")))
+    }
+}
+
+impl dwow_serial::Encodable for RouletteTableState {
+    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
+        w.write_all(&[*self as u8])?;
+        Ok(1)
+    }
+}
+
+impl dwow_serial::Decodable for RouletteTableState {
+    fn decode<D: std::io::Read>(d: &mut D) -> Result<Self, std::io::Error> {
+        let mut buf = [0u8; 1];
+        d.read_exact(&mut buf)?;
+        Self::try_from(buf[0]).map_err(|e| std::io::Error::other(format!("{e}")))
+    }
+}
 
 // ============================================================================
 // BET TYPES

@@ -6,7 +6,7 @@ use dwow_sdk::{
     pasta::pallas,
     ContractCall,
 };
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 
 use crate::{
     error::BoxError,
@@ -115,7 +115,9 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 return Err(BoxError::BoxNotEmpty.into());
             }
             let update = PutUpdateV1 { box_id: params.box_id, new_contents_commit: params.new_contents_commit };
-            wasm::util::set_return_data(&[&[BoxFunction::PutV1 as u8], &update.encode()[..]].concat())?;
+            let mut data = vec![BoxFunction::PutV1 as u8];
+            update.encode(&mut data).map_err(|e| ContractError::IoError(e.to_string()))?;
+            wasm::util::set_return_data(&data)?;
         }
         BoxFunction::TakeV1 => {
             let params: TakeParamsV1 = deserialize(&self_.data.data[1..])?;
@@ -125,7 +127,9 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 return Err(BoxError::DuplicateNullifier.into());
             }
             let update = TakeUpdateV1 { box_id: params.box_id, nullifier: params.nullifier };
-            wasm::util::set_return_data(&[&[BoxFunction::TakeV1 as u8], &update.encode()[..]].concat())?;
+            let mut data = vec![BoxFunction::TakeV1 as u8];
+            update.encode(&mut data).map_err(|e| ContractError::IoError(e.to_string()))?;
+            wasm::util::set_return_data(&data)?;
         }
         BoxFunction::InitializeV1 => {
             msg!("[box::process_instruction] Error: InitializeV1 must be called via init");

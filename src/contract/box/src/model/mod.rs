@@ -5,6 +5,23 @@ use dwow_sdk::{
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
+impl dwow_serial::Encodable for BoxId {
+    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
+        let bytes = self.to_bytes();
+        w.write_all(&bytes)?;
+        Ok(32)
+    }
+}
+
+impl dwow_serial::Decodable for BoxId {
+    fn decode<D: std::io::Read>(d: &mut D) -> Result<Self, std::io::Error> {
+        let mut buf = [0u8; 32];
+        d.read_exact(&mut buf)?;
+        Self::from_bytes(&buf)
+            .ok_or_else(|| std::io::Error::other("BoxId: invalid field element"))
+    }
+}
+
 /// Box unique identifier — Poseidon hash of creator public key and nonce.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
 pub struct BoxId(pub pallas::Base);

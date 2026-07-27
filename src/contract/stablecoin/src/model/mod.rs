@@ -51,6 +51,7 @@ use dwow_sdk::{
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
 };
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Namespace for stablecoin intents
 pub const STABLECOIN_NAMESPACE: u64 = 0x0005;

@@ -40,6 +40,23 @@ use dwow_serial::{SerialDecodable, SerialEncodable};
 use crate::error::DiceError;
 use crate::{MAX_HOUSE_EDGE, MAX_TARGET, MIN_HOUSE_EDGE, ROLL_RANGE};
 
+// dwow_serial bridge impls for BetState
+
+impl dwow_serial::Encodable for BetState {
+    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
+        w.write_all(&[*self as u8])?;
+        Ok(1)
+    }
+}
+
+impl dwow_serial::Decodable for BetState {
+    fn decode<D: std::io::Read>(d: &mut D) -> Result<Self, std::io::Error> {
+        let mut buf = [0u8; 1];
+        d.read_exact(&mut buf)?;
+        Self::try_from(buf[0]).map_err(|e| std::io::Error::other(format!("{e}")))
+    }
+}
+
 // ============================================================================
 // STATE TYPES
 // ============================================================================
@@ -148,6 +165,7 @@ impl Bet {
         b.extend_from_slice(&self.settle_block.to_le_bytes());
         {
             use pasta_curves::arithmetic::CurveAffine;
+            use pasta_curves::group::Curve;
             let vc_affine = self.value_commit.to_affine();
             let coords = vc_affine.coordinates().expect("value_commit not identity");
             b.extend_from_slice(&coords.x().to_repr());
@@ -327,6 +345,7 @@ impl CommitBetUpdateV1 {
         b.extend_from_slice(&self.blind.to_repr());
         {
             use pasta_curves::arithmetic::CurveAffine;
+            use pasta_curves::group::Curve;
             let vc_affine = self.value_commit.to_affine();
             let coords = vc_affine.coordinates().expect("value_commit not identity");
             b.extend_from_slice(&coords.x().to_repr());
@@ -556,9 +575,13 @@ fn decode_base(data: &[u8], _field: &str) -> Result<pallas::Base, ContractError>
 
 /// Decode a PublicKey from 64 bytes (x || y).
 fn decode_public_key(data: &[u8]) -> Result<PublicKey, ContractError> {
+    use pasta_curves::arithmetic::CurveAffine;
     let x = decode_base(&data[..32], "pk_x")?;
     let y = decode_base(&data[32..64], "pk_y")?;
-    Ok(PublicKey::from_xy(x, y).expect("valid point coords"))
+    let point = Option::<pasta_curves::EpAffine>::from(pasta_curves::EpAffine::from_xy(x, y))
+        .map(pasta_curves::Ep::from)
+        .ok_or_else(|| ContractError::IoError("Invalid public key coordinates".to_string()))?;
+    PublicKey::try_from(point)
 }
 
 /// Decode a pallas::Point from 64 bytes (x || y, affine).
@@ -566,7 +589,7 @@ fn decode_point(data: &[u8], _field: &str) -> Result<pallas::Point, ContractErro
     use pasta_curves::arithmetic::CurveAffine;
     let x = decode_base(&data[..32], "point_x")?;
     let y = decode_base(&data[32..64], "point_y")?;
-    match pasta_curves::EpAffine::from_xy(x, y).into() {
+    match Option::<pasta_curves::EpAffine>::from(pasta_curves::EpAffine::from_xy(x, y)) {
         Some(affine) => Ok(pasta_curves::Ep::from(affine)),
         None => Err(ContractError::IoError("Invalid point affine".to_string())),
     }

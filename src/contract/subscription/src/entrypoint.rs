@@ -57,6 +57,7 @@ use dwow_promissory_note_contract::validation::{
     validate_child_contract_id, validate_child_value_commit,
 };
 use dwow_serial::deserialize;
+use dwow_serial::serialize;
 use dwow_serial::Encodable;
 
 use crate::{
@@ -756,7 +757,7 @@ fn dao_control_apply_v1(cid: ContractId, update: DaoControlUpdateV1) -> Contract
                 }
             };
             plan.active = active;
-            let plan_data = plan.encode();
+            let plan_data = serialize(&plan);
             wasm::db::db_set(plans_db, &plan_id.to_le_bytes(), &plan_data)?;
             msg!("[subscription::dao_control_apply_v1] Plan {} active status: {}", plan_id, active);
         }

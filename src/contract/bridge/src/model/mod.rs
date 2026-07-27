@@ -48,7 +48,7 @@ impl BridgeAddress {
 }
 
 /// Per-chain balance sheet entry for a governance report
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ChainBalanceEntry {
     /// External chain
     pub chain: ExternalChain,
@@ -64,8 +64,7 @@ pub struct ChainBalanceEntry {
 pub const BRIDGE_NAMESPACE: u64 = 0x0002;
 
 /// External chain identifier
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-#[derive(PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExternalChain {
     Ethereum,
     Monero,
@@ -74,6 +73,39 @@ pub enum ExternalChain {
     Litecoin,
     // Future chains can be added here
     // Bitcoin,
+}
+
+impl TryFrom<u8> for ExternalChain {
+    type Error = ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(Self::Ethereum),
+            1 => Ok(Self::Monero),
+            2 => Ok(Self::Zcash),
+            3 => Ok(Self::Aztec),
+            4 => Ok(Self::Litecoin),
+            _ => Err(ContractError::IoError(
+                format!("ExternalChain: unknown discriminant {}", b),
+            )),
+        }
+    }
+}
+
+impl dwow_serial::Encodable for ExternalChain {
+    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
+        let b = *self as u8;
+        w.write_all(&[b])?;
+        Ok(1)
+    }
+}
+
+impl dwow_serial::Decodable for ExternalChain {
+    fn decode<D: std::io::Read>(d: &mut D) -> Result<Self, std::io::Error> {
+        let mut buf = [0u8; 1];
+        d.read_exact(&mut buf)?;
+        Self::try_from(buf[0]).map_err(|e| std::io::Error::other(format!("{e}")))
+    }
 }
 
 /// Chain-specific deposit proof data.
@@ -212,7 +244,7 @@ pub struct UpdateConfigParams {
 /// This record tracks deposits registered in the bridge.
 /// The actual proof of deposit ownership is via the commitment
 /// which requires knowledge of secret to claim.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Deposit {
     pub version: u8,
     /// Commitment hash (uses generic PrivateIntent commitment)
@@ -239,7 +271,7 @@ pub struct Deposit {
 /// Records successful withdrawals for audit trail.
 /// Note: Withdrawal doesn't reveal which deposit was withdrawn,
 /// only that some deposit was spent.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Withdrawal {
     pub version: u8,
     /// Nullifier (proves deposit was spent) - uses generic PrivateIntent nullifier
@@ -661,7 +693,7 @@ pub struct XmrWithdrawParams {
 /// Tracks withdrawals that have been submitted but not yet executed.
 /// This allows the timeout mechanism to work - if relayer doesn't
 /// execute within the timeout, user can cancel and reclaim funds.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct PendingWithdrawal {
     pub version: u8,
     /// Nullifier of the withdrawal
@@ -757,7 +789,7 @@ pub struct ReassignWithdrawalParamsV1 {
 }
 
 /// Update for reassigning a withdrawal to a new relayer
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ReassignWithdrawalUpdateV1 {
     /// Nullifier of the withdrawal
     pub nullifier: IntentNullifier,
@@ -808,7 +840,7 @@ pub struct RefundHtlcParams {
 }
 
 /// Update data for HTLC creation
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CreateHtlcUpdateV1 {
     pub swap_id: [u8; 32],
     pub hash: dwow_sdk::pasta::pallas::Base,
@@ -820,26 +852,26 @@ pub struct CreateHtlcUpdateV1 {
 }
 
 /// Update data for HTLC claim
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ClaimHtlcUpdateV1 {
     pub swap_id: [u8; 32],
     pub secret: dwow_sdk::pasta::pallas::Base,
 }
 
 /// Update data for HTLC refund
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RefundHtlcUpdateV1 {
     pub swap_id: [u8; 32],
 }
 
 /// Update data for withdrawal cancellation
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CancelWithdrawUpdateV1 {
     pub nullifier: IntentNullifier,
 }
 
 /// Update data for guaranteed withdrawal execution
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ExecuteGuaranteedWithdrawUpdateV1 {
     pub nullifier: IntentNullifier,
 }
@@ -854,7 +886,7 @@ pub enum HtlcSwapState {
 }
 
 /// HTLC info stored in database
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct HtlcSwapInfo {
     pub version: u8,
     pub swap_id: [u8; 32],
@@ -904,7 +936,7 @@ pub struct RegisterRelayerParams {
 }
 
 /// Stored relayer info
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RelayerInfo {
     pub version: u8,
     pub pubkey: PublicKey,
@@ -917,7 +949,7 @@ pub struct RelayerInfo {
 }
 
 /// Register relayer update
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RegisterRelayerUpdateV1 {
     pub relayer_pub: PublicKey,
     pub registered_at: u64,
@@ -939,7 +971,7 @@ pub struct AcceptWithdrawalParams {
 }
 
 /// Accept withdrawal update
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct AcceptWithdrawalUpdateV1 {
     pub nullifier: IntentNullifier,
     pub relayer_pub: PublicKey,
@@ -982,7 +1014,7 @@ pub struct RegisterFeeScheduleParams {
 }
 
 /// Register fee schedule update
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RegisterFeeScheduleUpdateV1 {
     pub relayer_pub: PublicKey,
     pub fee_schedule_id: [u8; 32],
@@ -1027,7 +1059,7 @@ pub struct GovernanceReportParams {
 }
 
 /// Update data for governance report — persisted on-chain for public audit
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct GovernanceReportUpdateV1 {
     /// External chain reported on
     pub chain: ExternalChain,
