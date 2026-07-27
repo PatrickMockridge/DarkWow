@@ -787,4 +787,103 @@ impl Spin {
         Ok(Spin { version, id, player_pub, bet_value, paylines_played, secret_nonce_commit, blind, result, wins, payout, state, house_edge, confirmation_depth, created_at, settle_block, value_commit, token_id, nullifier, instance_seed })
     }
 }
+
+// --- Bridge update structs ---
+
+impl CancelSpinUpdateV1 {
+    pub const ENCODED_SIZE: usize = 41;
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(41); b.extend_from_slice(&self.spin_id.to_repr()); b.extend_from_slice(&self.house_take.to_le_bytes()); b.push(self.state as u8); b }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 41 { return Err(ContractError::IoError(format!("CancelSpinUpdateV1: expected 41 bytes, got {}", data.len()))); }
+        Ok(CancelSpinUpdateV1 { spin_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CancelSpinUpdateV1: invalid spin_id".into()))?, house_take: u64::from_le_bytes(data[32..40].try_into().unwrap()), state: SpinState::try_from(data[40])? })
+    }
+}
+
+impl RevealSpinUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(34 + self.positions.len() * 8);
+        b.extend_from_slice(&self.spin_id.to_repr());
+        b.push(self.positions.len() as u8);
+        for p in &self.positions { b.extend_from_slice(&p.to_le_bytes()); }
+        b.push(self.state as u8);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 34 { return Err(ContractError::IoError(format!("RevealSpinUpdateV1: expected at least 34 bytes, got {}", data.len()))); }
+        let spin_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RevealSpinUpdateV1: invalid spin_id".into()))?;
+        let n = data[32] as usize;
+        if data.len() != 34 + n * 8 { return Err(ContractError::IoError(format!("RevealSpinUpdateV1: expected {} bytes, got {}", 34 + n * 8, data.len()))); }
+        let mut positions = Vec::with_capacity(n);
+        for i in 0..n { positions.push(u64::from_le_bytes(data[33+i*8..33+(i+1)*8].try_into().unwrap())); }
+        let state = SpinState::try_from(data[33 + n * 8])?;
+        Ok(RevealSpinUpdateV1 { spin_id, positions, state })
+    }
+}
+
+impl SettleSpinUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(41 + self.wins.len() * 14);
+        b.extend_from_slice(&self.spin_id.to_repr());
+        b.push(self.wins.len() as u8);
+        for w in &self.wins { b.extend_from_slice(&w.encode()); }
+        b.extend_from_slice(&self.payout.to_le_bytes());
+        b.push(self.state as u8);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 41 { return Err(ContractError::IoError(format!("SettleSpinUpdateV1: expected at least 41 bytes, got {}", data.len()))); }
+        let spin_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SettleSpinUpdateV1: invalid spin_id".into()))?;
+        let n = data[32] as usize;
+        if data.len() != 41 + n * 14 { return Err(ContractError::IoError(format!("SettleSpinUpdateV1: expected {} bytes, got {}", 41 + n * 14, data.len()))); }
+        let mut wins = Vec::with_capacity(n);
+        for i in 0..n { wins.push(Win::decode(&data[33+i*14..33+(i+1)*14])?); }
+        let p = 33 + n * 14;
+        let payout = u64::from_le_bytes(data[p..p+8].try_into().unwrap());
+        let state = SpinState::try_from(data[p+8])?;
+        Ok(SettleSpinUpdateV1 { spin_id, wins, payout, state })
+    }
+}
+
+impl CommitSpinUpdateV1 {
+    pub const ENCODED_SIZE: usize = 290;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(290);
+        b.extend_from_slice(&self.spin_id.to_repr());
+        b.extend_from_slice(&self.player_pub.to_bytes());
+        b.extend_from_slice(&self.bet_value.to_le_bytes());
+        b.extend_from_slice(&self.paylines_played.to_le_bytes());
+        b.extend_from_slice(&self.secret_nonce_commit.to_repr());
+        b.extend_from_slice(&self.blind.to_repr());
+        b.extend_from_slice(&self.house_edge.to_le_bytes());
+        b.push(self.confirmation_depth);
+        b.extend_from_slice(&self.token_id.to_repr());
+        b.extend_from_slice(&self.value_commit.to_bytes());
+        b.extend_from_slice(&self.settle_block.to_le_bytes());
+        b.extend_from_slice(&self.nullifier.to_repr());
+        b.push(self.state as u8);
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b.extend_from_slice(&self.instance_seed);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 290 { return Err(ContractError::IoError(format!("CommitSpinUpdateV1: expected 290 bytes, got {}", data.len()))); }
+        Ok(CommitSpinUpdateV1 {
+            spin_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CommitSpinUpdateV1: invalid spin_id".into()))?,
+            player_pub: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CommitSpinUpdateV1: invalid player_pub: {}", e)))?,
+            bet_value: u64::from_le_bytes(data[64..72].try_into().unwrap()),
+            paylines_played: u32::from_le_bytes(data[72..76].try_into().unwrap()),
+            secret_nonce_commit: Option::<pallas::Base>::from(pallas::Base::from_repr(data[76..108].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CommitSpinUpdateV1: invalid secret_nonce_commit".into()))?,
+            blind: Option::<pallas::Base>::from(pallas::Base::from_repr(data[108..140].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CommitSpinUpdateV1: invalid blind".into()))?,
+            house_edge: u32::from_le_bytes(data[140..144].try_into().unwrap()),
+            confirmation_depth: data[144],
+            token_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[145..177].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CommitSpinUpdateV1: invalid token_id".into()))?,
+            value_commit: Option::<pallas::Point>::from(pallas::Point::from_bytes(data[177..209].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CommitSpinUpdateV1: invalid value_commit".into()))?,
+            settle_block: u64::from_le_bytes(data[209..217].try_into().unwrap()),
+            nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[217..249].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CommitSpinUpdateV1: invalid nullifier".into()))?,
+            state: SpinState::try_from(data[249])?,
+            created_at: u64::from_le_bytes(data[250..258].try_into().unwrap()),
+            instance_seed: data[258..290].try_into().unwrap(),
+        })
+    }
+}
 }
