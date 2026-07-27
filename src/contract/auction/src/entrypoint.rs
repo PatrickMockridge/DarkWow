@@ -142,27 +142,27 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         AuctionFunction::CreateAuctionV1 => {
-            let params: CreateAuctionParamsV1 = deserialize(&self_.data[1..])?;
+            let params= CreateAuctionParamsV1::decode(&self_.data[1..])?;
             create_auction_get_metadata_v1(params)?
         }
         AuctionFunction::PlaceBidV1 => {
-            let params: PlaceBidParamsV1 = deserialize(&self_.data[1..])?;
+            let params= PlaceBidParamsV1::decode(&self_.data[1..])?;
             place_bid_get_metadata_v1(params)?
         }
         AuctionFunction::CloseAuctionV1 => {
-            let params: CloseAuctionParamsV1 = deserialize(&self_.data[1..])?;
+            let params= CloseAuctionParamsV1::decode(&self_.data[1..])?;
             close_auction_get_metadata_v1(params)?
         }
         AuctionFunction::ClaimWinningsV1 => {
-            let params: ClaimWinningsParamsV1 = deserialize(&self_.data[1..])?;
+            let params= ClaimWinningsParamsV1::decode(&self_.data[1..])?;
             claim_winnings_get_metadata_v1(params)?
         }
         AuctionFunction::SettleAuctionV1 => {
-            let params: SettleAuctionParamsV1 = deserialize(&self_.data[1..])?;
+            let params= SettleAuctionParamsV1::decode(&self_.data[1..])?;
             settle_auction_get_metadata_v1(params)?
         }
         AuctionFunction::RefundBidV1 => {
-            let params: RefundBidParamsV1 = deserialize(&self_.data[1..])?;
+            let params= RefundBidParamsV1::decode(&self_.data[1..])?;
             refund_bid_get_metadata_v1(params)?
         }
     };
@@ -283,15 +283,15 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         AuctionFunction::CreateAuctionV1 => {
-            let params: CreateAuctionParamsV1 = deserialize(&self_.data[1..])?;
+            let params= CreateAuctionParamsV1::decode(&self_.data[1..])?;
             create_auction_v1(cid, params)
         }
         AuctionFunction::PlaceBidV1 => {
-            let params: PlaceBidParamsV1 = deserialize(&self_.data[1..])?;
+            let params= PlaceBidParamsV1::decode(&self_.data[1..])?;
             place_bid_v1(cid, params)
         }
         AuctionFunction::CloseAuctionV1 => {
-            let params: CloseAuctionParamsV1 = deserialize(&self_.data[1..])?;
+            let params= CloseAuctionParamsV1::decode(&self_.data[1..])?;
             close_auction_v1(cid, params)
         }
         AuctionFunction::ClaimWinningsV1 => {
@@ -315,7 +315,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             if promissory_note_cid != ContractId::ZERO {
                 validate_child_contract_id(&calls[child_idx].data.contract_id, &promissory_note_cid)?;
             }
-            let params: ClaimWinningsParamsV1 = deserialize(&self_.data[1..])?;
+            let params= ClaimWinningsParamsV1::decode(&self_.data[1..])?;
             claim_winnings_v1(cid, params, &calls[child_idx].data.data)
         }
         AuctionFunction::SettleAuctionV1 => {
@@ -339,7 +339,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             if promissory_note_cid != ContractId::ZERO {
                 validate_child_contract_id(&calls[child_idx].data.contract_id, &promissory_note_cid)?;
             }
-            let params: SettleAuctionParamsV1 = deserialize(&self_.data[1..])?;
+            let params= SettleAuctionParamsV1::decode(&self_.data[1..])?;
             settle_auction_v1(cid, params, &calls[child_idx].data.data)
         }
         AuctionFunction::RefundBidV1 => {
@@ -363,7 +363,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             if promissory_note_cid != ContractId::ZERO {
                 validate_child_contract_id(&calls[child_idx].data.contract_id, &promissory_note_cid)?;
             }
-            let params: RefundBidParamsV1 = deserialize(&self_.data[1..])?;
+            let params= RefundBidParamsV1::decode(&self_.data[1..])?;
             refund_bid_v1(cid, params, &calls[child_idx].data.data)
         }
     }

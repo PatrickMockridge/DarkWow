@@ -49,7 +49,6 @@ use dwow_sdk::{
     error::ContractError,
     pasta::pallas,
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Auction unique identifier (hash of auction data)
 pub type AuctionId = pallas::Base;
@@ -604,96 +603,68 @@ pub struct PlaceBidParamsV1 {
     pub instance_seed: [u8; 32],
 }
 
-/// State update for `Auction::PlaceBidV1`
-#[derive(Debug, Clone)]
-pub struct PlaceBidUpdateV1 {
-    pub auction_id: AuctionId,
-    pub highest_bid: u64,
-    pub highest_bidder: PublicKey,
-    pub highest_bid_id: BidId,
-    pub auction: Auction,
-    pub bid: Bid,
-    pub prev_bid_id: Option<BidId>,
-    pub prev_bid: Option<Bid>,
+impl PlaceBidParamsV1 {
+    pub const ENCODED_SIZE: usize = 208;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.auction_id.to_repr()); buf.extend_from_slice(&self.bidder_pubkey.to_bytes());
+        buf.extend_from_slice(&self.amount.to_le_bytes()); buf.extend_from_slice(&self.bid_nonce.to_repr());
+        buf.extend_from_slice(&self.bid_id.to_repr()); buf.extend_from_slice(&self.escrow_id.to_repr());
+        buf.extend_from_slice(&self.current_high_bid.to_le_bytes()); buf.extend_from_slice(&self.instance_seed); buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("PlaceBidParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        let auction_id = read_base(&data[0..32])?; let bidder_pubkey = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PlaceBidParamsV1: invalid bidder_pubkey: {}", e)))?;
+        let amount = u64::from_le_bytes(data[64..72].try_into().unwrap()); let bid_nonce = read_base(&data[72..104])?;
+        let bid_id = read_base(&data[104..136])?; let escrow_id = read_base(&data[136..168])?;
+        let current_high_bid = u64::from_le_bytes(data[168..176].try_into().unwrap());
+        let instance_seed: [u8; 32] = data[176..208].try_into().unwrap();
+        Ok(PlaceBidParamsV1 { auction_id, bidder_pubkey, amount, bid_nonce, bid_id, escrow_id, current_high_bid, instance_seed })
+    }
 }
 
+/// State update for `Auction::PlaceBidV1`
+#[derive(Debug, Clone)] pub struct PlaceBidUpdateV1 { pub auction_id: AuctionId, pub highest_bid: u64, pub highest_bidder: PublicKey, pub highest_bid_id: BidId, pub auction: Auction, pub bid: Bid, pub prev_bid_id: Option<BidId>, pub prev_bid: Option<Bid> }
+
 /// Parameters for `Auction::CloseAuctionV1`
-#[derive(Debug, Clone,)]
-pub struct CloseAuctionParamsV1 {
-    /// Auction ID
-    pub auction_id: AuctionId,
-    /// Winner's bid ID
-    pub winner_bid_id: BidId,
-    /// Seller's public key
-    pub seller_pubkey: PublicKey,
-    /// Current block height
-    pub current_block: u64,
+#[derive(Debug, Clone,)] pub struct CloseAuctionParamsV1 { pub auction_id: AuctionId, pub winner_bid_id: BidId, pub seller_pubkey: PublicKey, pub current_block: u64 }
+impl CloseAuctionParamsV1 {
+    pub const ENCODED_SIZE: usize = 104;
+    pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(Self::ENCODED_SIZE); buf.extend_from_slice(&self.auction_id.to_repr()); buf.extend_from_slice(&self.winner_bid_id.to_repr()); buf.extend_from_slice(&self.seller_pubkey.to_bytes()); buf.extend_from_slice(&self.current_block.to_le_bytes()); buf }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("CloseAuctionParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); } Ok(CloseAuctionParamsV1 { auction_id: read_base(&data[0..32])?, winner_bid_id: read_base(&data[32..64])?, seller_pubkey: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CloseAuctionParamsV1: invalid seller_pubkey: {}", e)))?, current_block: u64::from_le_bytes(data[96..104].try_into().unwrap()) }) }
 }
 
 /// State update for `Auction::CloseAuctionV1`
-#[derive(Debug, Clone)]
-pub struct CloseAuctionUpdateV1 {
-    pub auction_id: AuctionId,
-    pub winner_bid_id: BidId,
-    pub auction: Auction,
-    pub winner_bid: Option<Bid>,
-}
+#[derive(Debug, Clone)] pub struct CloseAuctionUpdateV1 { pub auction_id: AuctionId, pub winner_bid_id: BidId, pub auction: Auction, pub winner_bid: Option<Bid> }
 
 /// Parameters for `Auction::ClaimWinningsV1`
-#[derive(Debug, Clone,)]
-pub struct ClaimWinningsParamsV1 {
-    /// Auction ID
-    pub auction_id: AuctionId,
-    /// Winner's bid ID
-    pub winner_bid_id: BidId,
-    /// Winner's public key
-    pub winner_pubkey: PublicKey,
-    /// Winner's secret (for proof)
-    pub winner_secret: pallas::Base,
+#[derive(Debug, Clone,)] pub struct ClaimWinningsParamsV1 { pub auction_id: AuctionId, pub winner_bid_id: BidId, pub winner_pubkey: PublicKey, pub winner_secret: pallas::Base }
+impl ClaimWinningsParamsV1 {
+    pub const ENCODED_SIZE: usize = 128;
+    pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(Self::ENCODED_SIZE); buf.extend_from_slice(&self.auction_id.to_repr()); buf.extend_from_slice(&self.winner_bid_id.to_repr()); buf.extend_from_slice(&self.winner_pubkey.to_bytes()); buf.extend_from_slice(&self.winner_secret.to_repr()); buf }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("ClaimWinningsParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); } Ok(ClaimWinningsParamsV1 { auction_id: read_base(&data[0..32])?, winner_bid_id: read_base(&data[32..64])?, winner_pubkey: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ClaimWinningsParamsV1: invalid winner_pubkey: {}", e)))?, winner_secret: read_base(&data[96..128])? }) }
 }
 
 /// State update for `Auction::ClaimWinningsV1`
-#[derive(Debug, Clone)]
-pub struct ClaimWinningsUpdateV1 {
-    pub auction_id: AuctionId,
-    pub winner_bid_id: BidId,
-    pub auction: Auction,
-}
+#[derive(Debug, Clone)] pub struct ClaimWinningsUpdateV1 { pub auction_id: AuctionId, pub winner_bid_id: BidId, pub auction: Auction }
 
 /// Parameters for `Auction::SettleAuctionV1`
-#[derive(Debug, Clone,)]
-pub struct SettleAuctionParamsV1 {
-    /// Auction ID
-    pub auction_id: AuctionId,
-    /// Seller's public key
-    pub seller_pubkey: PublicKey,
-    /// Highest bid amount
-    pub highest_bid_amount: u64,
-    /// Settlement nullifier
-    pub settlement_nullifier: pallas::Base,
-    /// Seller's secret (for proof)
-    pub seller_secret: pallas::Base,
+#[derive(Debug, Clone,)] pub struct SettleAuctionParamsV1 { pub auction_id: AuctionId, pub seller_pubkey: PublicKey, pub highest_bid_amount: u64, pub settlement_nullifier: pallas::Base, pub seller_secret: pallas::Base }
+impl SettleAuctionParamsV1 {
+    pub const ENCODED_SIZE: usize = 136;
+    pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(Self::ENCODED_SIZE); buf.extend_from_slice(&self.auction_id.to_repr()); buf.extend_from_slice(&self.seller_pubkey.to_bytes()); buf.extend_from_slice(&self.highest_bid_amount.to_le_bytes()); buf.extend_from_slice(&self.settlement_nullifier.to_repr()); buf.extend_from_slice(&self.seller_secret.to_repr()); buf }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("SettleAuctionParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); } Ok(SettleAuctionParamsV1 { auction_id: read_base(&data[0..32])?, seller_pubkey: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("SettleAuctionParamsV1: invalid seller_pubkey: {}", e)))?, highest_bid_amount: u64::from_le_bytes(data[64..72].try_into().unwrap()), settlement_nullifier: read_base(&data[72..104])?, seller_secret: read_base(&data[104..136])? }) }
 }
 
 /// State update for `Auction::SettleAuctionV1`
-#[derive(Debug, Clone)]
-pub struct SettleAuctionUpdateV1 {
-    pub auction_id: AuctionId,
-    pub settlement_nullifier: pallas::Base,
-    pub auction: Auction,
-}
+#[derive(Debug, Clone)] pub struct SettleAuctionUpdateV1 { pub auction_id: AuctionId, pub settlement_nullifier: pallas::Base, pub auction: Auction }
 
 /// Parameters for `Auction::RefundBidV1`
-#[derive(Debug, Clone,)]
-pub struct RefundBidParamsV1 {
-    /// Bid ID
-    pub bid_id: BidId,
-    /// Bidder's public key
-    pub bidder_pubkey: PublicKey,
-    /// Refund nullifier
-    pub refund_nullifier: pallas::Base,
-    /// Bidder's secret (for proof)
-    pub bidder_secret: pallas::Base,
+#[derive(Debug, Clone,)] pub struct RefundBidParamsV1 { pub bid_id: BidId, pub bidder_pubkey: PublicKey, pub refund_nullifier: pallas::Base, pub bidder_secret: pallas::Base }
+impl RefundBidParamsV1 {
+    pub const ENCODED_SIZE: usize = 128;
+    pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(Self::ENCODED_SIZE); buf.extend_from_slice(&self.bid_id.to_repr()); buf.extend_from_slice(&self.bidder_pubkey.to_bytes()); buf.extend_from_slice(&self.refund_nullifier.to_repr()); buf.extend_from_slice(&self.bidder_secret.to_repr()); buf }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("RefundBidParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); } Ok(RefundBidParamsV1 { bid_id: read_base(&data[0..32])?, bidder_pubkey: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("RefundBidParamsV1: invalid bidder_pubkey: {}", e)))?, refund_nullifier: read_base(&data[64..96])?, bidder_secret: read_base(&data[96..128])? }) }
 }
 
 /// State update for `Auction::RefundBidV1`
