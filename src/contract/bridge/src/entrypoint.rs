@@ -864,7 +864,7 @@ fn process_config_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkL
     // Verify ZK proof authorizes this config update (governance key holder)
     // Host-side ZK verification ensures prover knows governance secret
     let nullifiers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.config_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.config_nullifier.to_bytes())? {
         return Err(BridgeError::UnauthorizedConfigUpdate.into());
     }
 
@@ -1126,7 +1126,7 @@ fn process_reassign_withdrawal_instruction(
 
     // Verify the new relayer is registered
     let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
-    let relayer_key = serialize(&params.new_relayer);
+    let relayer_key = params.new_relayer.to_bytes();
     if !wasm::db::db_contains_key(relayers_db, &relayer_key)? {
         msg!("[bridge::ReassignWithdrawalV1] ERROR: New relayer not registered");
         return Err(BridgeError::RelayerNotRegistered.into())
@@ -1274,7 +1274,7 @@ fn apply_withdraw_update(cid: ContractId, update: WithdrawUpdateV1) -> ContractR
         external_tx_hash: None,
         withdrawn_at: get_current_timestamp(info_db)?,
     };
-    wasm::db::db_set(withdrawals_db, &build_withdrawal_key(&update.nullifier.to_bytes()), &serialize(&withdrawal))?;
+    wasm::db::db_set(withdrawals_db, &build_withdrawal_key(&update.nullifier.to_bytes()), &withdrawal.encode())?;
 
     // Record pending withdrawal for timeout/cancel tracking
     let pending = PendingWithdrawal {
@@ -1353,7 +1353,7 @@ fn apply_execute_guaranteed_withdraw_update(cid: ContractId, update: ExecuteGuar
         .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
     withdrawal.executed = true;
-    wasm::db::db_set(withdrawals_db, &withdrawal_key, &serialize(&withdrawal))?;
+    wasm::db::db_set(withdrawals_db, &withdrawal_key, &withdrawal.encode())?;
 
     // Remove the pending record (no longer needed after execution)
     let pending_key = build_pending_key(&update.nullifier.to_bytes());
@@ -1855,7 +1855,7 @@ fn apply_register_relayer_update(cid: ContractId, update: RegisterRelayerUpdateV
         fee_schedule_id: None,
     };
 
-    wasm::db::db_set(relayers_db, &compute_relayer_key(&update.relayer_pub), &serialize(&info))?;
+    wasm::db::db_set(relayers_db, &compute_relayer_key(&update.relayer_pub), &info.encode())?;
 
     msg!("[bridge::apply_update] Relayer registered: {:?}", update.relayer_pub);
     Ok(())
@@ -1946,7 +1946,7 @@ fn apply_accept_withdrawal_update(cid: ContractId, update: AcceptWithdrawalUpdat
         let mut info: RelayerInfo = deserialize(&relayer_data)
             .map_err(|_| ContractError::IoError("decode error".to_string()))?;
         info.total_withdrawals = info.total_withdrawals.saturating_add(1);
-        wasm::db::db_set(relayers_db, &relayer_key, &serialize(&info))?;
+        wasm::db::db_set(relayers_db, &relayer_key, &info.encode())?;
     }
 
     msg!("[bridge::apply_update] Withdrawal accepted: nullifier={:?}, relayer={:?}",
@@ -2048,7 +2048,7 @@ fn apply_register_fee_schedule_update(cid: ContractId, update: RegisterFeeSchedu
         .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
     info.fee_schedule_id = Some(update.fee_schedule_id);
-    wasm::db::db_set(relayers_db, &relayer_key, &serialize(&info))?;
+    wasm::db::db_set(relayers_db, &relayer_key, &info.encode())?;
 
     msg!("[bridge::apply_update] Fee schedule registered for {:?}", update.relayer_pub);
     Ok(())
