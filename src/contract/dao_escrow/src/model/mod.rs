@@ -72,7 +72,8 @@
 
 use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, poseidon_hash, BaseBlind, IntentNullifier, PublicKey, ScalarBlind, TokenId},
-    pasta::pallas,
+    error::ContractError,
+    pasta::{group::GroupEncoding, pallas},
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
@@ -921,4 +922,37 @@ pub struct DeactivateCapabilityRequirementParamsV1 {
 pub struct DeactivateCapabilityRequirementUpdateV1 {
     pub dao_escrow_bulla: DaoEscrowBulla,
     pub role: Vec<u8>,
+}
+
+// ============================================================================
+// RHO-CALCULUS EXPLICIT ENCODE/DECODE
+// ============================================================================
+
+impl FeeConfig {
+    pub const ENCODED_SIZE: usize = 9;
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(9); b.push(self.version); b.extend_from_slice(&self.treasury_share.to_le_bytes()); b.extend_from_slice(&self.endowment_share.to_le_bytes()); b }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 9 { return Err(ContractError::IoError(format!("FeeConfig: expected 9 bytes, got {}", data.len()))); }
+        Ok(FeeConfig { version: data[0], treasury_share: u32::from_le_bytes(data[1..5].try_into().unwrap()), endowment_share: u32::from_le_bytes(data[5..9].try_into().unwrap()) })
+    }
+}
+
+impl Membership {
+    pub const ENCODED_SIZE: usize = 153;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(153);
+        b.push(self.version);
+        b.extend_from_slice(&self.note.to_bytes());
+        b.extend_from_slice(&self.dao_escrow_bulla.to_bytes());
+        b.extend_from_slice(&self.member_pubkey.to_bytes());
+        b.extend_from_slice(&self.value.to_le_bytes());
+        b.extend_from_slice(&self.token_id.to_bytes());
+        b.extend_from_slice(&self.expiry.to_le_bytes());
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 153 { return Err(ContractError::IoError(format!("Membership: expected 153 bytes, got {}", data.len()))); }
+        Ok(Membership { version: data[0], note: MembershipNote(Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Membership: invalid note".into()))?), dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Membership: invalid dao_escrow_bulla".into()))?), member_pubkey: PublicKey::from_bytes(data[65..97].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Membership: invalid member_pubkey: {}", e)))?, value: u64::from_le_bytes(data[97..105].try_into().unwrap()), token_id: TokenId::from_bytes(data[105..137].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Membership: invalid token_id: {}", e)))?, expiry: u64::from_le_bytes(data[137..145].try_into().unwrap()), created_at: u64::from_le_bytes(data[145..153].try_into().unwrap()) })
+    }
 }
