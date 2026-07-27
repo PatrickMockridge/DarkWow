@@ -556,6 +556,8 @@ impl Claim {
 // PARAMS AND UPDATES
 // ============================================================================
 
+fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap())).ok_or_else(|| ContractError::IoError("invalid base".into())) }
+
 /// Parameters for InitializeV1
 #[derive(Debug, Clone,)]
 pub struct InitializeParamsV1 {
@@ -573,6 +575,7 @@ pub struct InitializeParamsV1 {
     pub instance_seed: [u8; 32],
 }
 
+impl InitializeParamsV1 { pub fn encode(&self) -> Vec<u8> { let cfg = encode_config(&self.config); let mut b = Vec::with_capacity(89+cfg.len()); b.extend_from_slice(&self.house_pub.to_bytes()); b.extend_from_slice(&cfg); b.extend_from_slice(&self.duration.to_le_bytes()); b.extend_from_slice(&self.claim_duration.to_le_bytes()); b.extend_from_slice(&self.rolled_over.to_le_bytes()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 89 { return Err(ContractError::IoError(format!("InitializeParamsV1: too short ({} bytes)", data.len()))); } let hp_bytes: [u8;32] = data[0..32].try_into().unwrap(); let house_pub = PublicKey::from_bytes(hp_bytes).map_err(|e| ContractError::IoError(format!("InitializeParamsV1: invalid house_pub: {}", e)))?; let tier_count = data[46] as usize; let cfg_end = 47 + tier_count * PrizeTierConfig::ENCODED_SIZE; let config = decode_config(&data[32..cfg_end])?; let pos = cfg_end; let duration = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); let claim_duration = u64::from_le_bytes(data[pos+8..pos+16].try_into().unwrap()); let rolled_over = u64::from_le_bytes(data[pos+16..pos+24].try_into().unwrap()); let instance_seed: [u8;32] = data[pos+24..pos+56].try_into().unwrap(); Ok(InitializeParamsV1 { house_pub, config, duration, claim_duration, rolled_over, instance_seed }) } }
 
 /// Update produced by InitializeV1
 #[derive(Debug, Clone)]
@@ -670,6 +673,8 @@ pub struct BuyTicketParamsV1 {
     pub instance_seed: [u8; 32],
 }
 
+impl BuyTicketParamsV1 { pub const ENCODED_SIZE: usize = 200; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(200); b.extend_from_slice(&self.player_pub.to_bytes()); b.extend_from_slice(&self.commitment.to_repr()); b.extend_from_slice(&self.token_id.to_repr()); b.extend_from_slice(&self.value.to_le_bytes()); b.extend_from_slice(&self.value_commit.to_bytes()); b.extend_from_slice(&self.signature.to_repr()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 200 { return Err(ContractError::IoError(format!("BuyTicketParamsV1: expected 200 bytes, got {}", data.len()))); } let player_pub = PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("BuyTicketParamsV1: invalid player_pub: {}", e)))?; let commitment = read_base(&data[32..64])?; let token_id = read_base(&data[64..96])?; let value = u64::from_le_bytes(data[96..104].try_into().unwrap()); let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[104..136].try_into().unwrap())).ok_or_else(|| ContractError::IoError("BuyTicketParamsV1: invalid value_commit".into()))?; let signature = read_base(&data[136..168])?; let instance_seed: [u8;32] = data[168..200].try_into().unwrap(); Ok(BuyTicketParamsV1 { player_pub, commitment, token_id, value, value_commit, signature, instance_seed }) } }
+
 /// Update produced by BuyTicketV1
 #[derive(Debug, Clone)]
 pub struct BuyTicketUpdateV1 {
@@ -751,6 +756,8 @@ pub struct DrawWinnersParamsV1 {
     /// Nonce for randomness
     pub nonce: pallas::Base,
 }
+
+impl DrawWinnersParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.lottery_id.to_repr()); b.extend_from_slice(&self.nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("DrawWinnersParamsV1: expected 64 bytes, got {}", data.len()))); } Ok(DrawWinnersParamsV1 { lottery_id: read_base(&data[0..32])?, nonce: read_base(&data[32..64])? }) } }
 
 /// Update produced by DrawWinnersV1
 #[derive(Debug, Clone)]
@@ -836,6 +843,8 @@ pub struct RevealTicketParamsV1 {
     pub matches: u8,
 }
 
+impl RevealTicketParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(66+self.numbers.len()); b.extend_from_slice(&self.ticket_id.to_repr()); b.push(self.numbers.len() as u8); b.extend_from_slice(&self.numbers); b.extend_from_slice(&self.nonce.to_repr()); b.extend_from_slice(&self.revealed_commitment.to_repr()); b.push(self.matches); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 66 { return Err(ContractError::IoError(format!("RevealTicketParamsV1: too short ({} bytes)", data.len()))); } let ticket_id = read_base(&data[0..32])?; let num_len = data[32] as usize; let end = 33+num_len; if data.len() < end+33 { return Err(ContractError::IoError("RevealTicketParamsV1: numbers truncated".into())); } let numbers = data[33..end].to_vec(); let nonce = read_base(&data[end..end+32])?; let revealed_commitment = read_base(&data[end+32..end+64])?; let matches = data[end+64]; Ok(RevealTicketParamsV1 { ticket_id, numbers, nonce, revealed_commitment, matches }) } }
+
 /// Update produced by RevealTicketV1
 #[derive(Debug, Clone)]
 pub struct RevealTicketUpdateV1 {
@@ -914,6 +923,8 @@ pub struct ClaimPrizeParamsV1 {
     pub matches: u8,
 }
 
+impl ClaimPrizeParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(34+self.proof.len()); b.extend_from_slice(&self.ticket_id.to_repr()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.push(self.tier); b.push(self.matches); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 35 { return Err(ContractError::IoError("ClaimPrizeParamsV1: too short".into())); } let ticket_id = read_base(&data[0..32])?; let proof_len = data[32] as usize; let end = 33+proof_len; if data.len() != end+2 { return Err(ContractError::IoError(format!("ClaimPrizeParamsV1: expected {} bytes, got {}", end+2, data.len()))); } let proof = data[33..end].to_vec(); let tier = data[end]; let matches = data[end+1]; Ok(ClaimPrizeParamsV1 { ticket_id, proof, tier, matches }) } }
+
 /// Update produced by ClaimPrizeV1
 #[derive(Debug, Clone)]
 pub struct ClaimPrizeUpdateV1 {
@@ -964,6 +975,8 @@ pub struct ExpireLotteryParamsV1 {
     /// Lottery ID to expire
     pub lottery_id: LotteryId,
 }
+
+impl ExpireLotteryParamsV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { self.lottery_id.to_repr().to_vec() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("ExpireLotteryParamsV1: expected 32 bytes, got {}", data.len()))); } Ok(ExpireLotteryParamsV1 { lottery_id: read_base(&data[0..32])? }) } }
 
 /// Update produced by ExpireLotteryV1
 #[derive(Debug, Clone)]
