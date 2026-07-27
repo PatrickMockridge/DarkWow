@@ -87,7 +87,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         LotteryFunction::BuyTicketV1 => {
-            let params: crate::model::BuyTicketParamsV1 = deserialize(&self_.data[1..])?;
+            let params = crate::model::BuyTicketParamsV1::decode(&self_.data[1..])?;
             let player_x = params.player_pub.x().expect("pk not identity");
             let player_y = params.player_pub.y().expect("pk not identity");
             let ticket_id = poseidon_hash([
@@ -114,7 +114,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             }
         }
         LotteryFunction::RevealTicketV1 => {
-            let params: crate::model::RevealTicketParamsV1 = deserialize(&self_.data[1..])?;
+            let params = crate::model::RevealTicketParamsV1::decode(&self_.data[1..])?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::LOTTERY_CONTRACT_ZKAS_REVEAL_NS_V2.to_string(),

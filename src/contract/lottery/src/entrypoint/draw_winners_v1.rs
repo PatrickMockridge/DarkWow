@@ -37,7 +37,7 @@ pub fn lottery_draw_winners_process_instruction_v1(
     calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: DrawWinnersParamsV1 = deserialize(&self_.data[1..])?;
+    let params = DrawWinnersParamsV1::decode(&self_.data[1..])?;
 
     msg!("[lottery::draw_winners] Drawing winners for lottery: {:?}", params.lottery_id);
 

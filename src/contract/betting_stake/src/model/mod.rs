@@ -28,7 +28,7 @@
 use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, PublicKey, schnorr::Signature},
     error::ContractError,
-    pasta::pallas,
+    pasta::{group::GroupEncoding, pallas},
 };
 
 use crate::EARNINGS_BP;

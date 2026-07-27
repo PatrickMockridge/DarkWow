@@ -58,7 +58,7 @@ pub fn dice_commit_bet_process_instruction_v1(
     calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: CommitBetParamsV1 = deserialize(&self_.data[1..])?;
+    let params = CommitBetParamsV1::decode(&self_.data[1..])?;
 
     // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled for bet locking
     let this_call = &calls[call_idx];

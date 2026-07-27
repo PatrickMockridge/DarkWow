@@ -40,7 +40,7 @@ pub fn lottery_reveal_ticket_process_instruction_v1(
     calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: RevealTicketParamsV1 = deserialize(&self_.data[1..])?;
+    let params = RevealTicketParamsV1::decode(&self_.data[1..])?;
 
     msg!("[lottery::reveal_ticket] Revealing ticket: {:?}", params.ticket_id);
 

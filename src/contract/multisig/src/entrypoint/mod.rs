@@ -229,7 +229,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         MultiSigFunction::CreateGroupV1 => {
-            let params: CreateGroupParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params = CreateGroupParamsV1::decode(&self_.data.data[1..])?;
             if params.pubkeys.is_empty() { return Err(MultiSigError::EmptyKeyList.into()); }
             if params.threshold == 0 || params.threshold as usize > params.pubkeys.len() {
                 return Err(MultiSigError::InvalidThreshold.into());
@@ -246,7 +246,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             }))?;
         }
         MultiSigFunction::SignV1 => {
-            let params: SignParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params = SignParamsV1::decode(&self_.data.data[1..])?;
             let groups_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_GROUPS_TREE)?;
             if !wasm::db::db_contains_key(groups_db, &params.group_id.to_bytes())? {
                 return Err(MultiSigError::GroupNotFound.into());
@@ -266,7 +266,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             }))?;
         }
         MultiSigFunction::FinalizeV1 => {
-            let params: FinalizeParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params = FinalizeParamsV1::decode(&self_.data.data[1..])?;
             let groups_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_GROUPS_TREE)?;
             let data = wasm::db::db_get(groups_db, &params.group_id.to_bytes())?
                 .ok_or(MultiSigError::GroupNotFound)?;

@@ -33,7 +33,7 @@ use dwow_sdk::{
         tx_hash_to_base, PublicKey,
     },
     error::ContractError,
-    pasta::pallas,
+    pasta::{group::GroupEncoding, pallas},
 };
 
 use crate::error::DiceError;

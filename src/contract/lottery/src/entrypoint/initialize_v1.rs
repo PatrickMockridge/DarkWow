@@ -38,7 +38,7 @@ pub fn lottery_initialize_process_instruction_v1(
     calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: InitializeParamsV1 = deserialize(&self_.data[1..])?;
+    let params = InitializeParamsV1::decode(&self_.data[1..])?;
 
     msg!("[lottery::initialize] Initializing new lottery");
     msg!("  num_picks: {}", params.config.num_picks);

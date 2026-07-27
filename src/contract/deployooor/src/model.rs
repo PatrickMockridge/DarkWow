@@ -25,6 +25,8 @@ use dwow_sdk::crypto::{pasta_prelude::PrimeField, ContractId, PublicKey};
 use dwow_sdk::error::ContractError;
 use dwow_sdk::pasta::pallas;
 
+fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap())).ok_or_else(|| ContractError::IoError("invalid base".into())) }
+
 /// State update for `Deploy::Deploy`
 #[derive(Clone, Debug)]
 pub struct DeployUpdateV1 {

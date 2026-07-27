@@ -59,7 +59,7 @@ pub fn lottery_claim_prize_process_instruction_v1(
     calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: ClaimPrizeParamsV1 = deserialize(&self_.data[1..])?;
+    let params = ClaimPrizeParamsV1::decode(&self_.data[1..])?;
 
     // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled for prize payout
     let this_call = &calls[call_idx];

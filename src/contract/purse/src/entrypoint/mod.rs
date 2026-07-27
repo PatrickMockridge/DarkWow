@@ -204,13 +204,13 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         PurseFunction::DepositV1 => {
-            let params: DepositParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params = DepositParamsV1::decode(&self_.data.data[1..])?;
             msg!("[purse::deposit_v1] Deposit {} to purse {:?}", params.deposit_amount, params.purse_id);
             let update = DepositUpdateV1 { purse_id: params.purse_id, new_balance_commit: params.new_balance_commit, deposit_amount: params.deposit_amount };
             wasm::util::set_return_data(&encode_deposit_update_v1(&update))?;
         }
         PurseFunction::WithdrawV1 => {
-            let params: WithdrawParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params = WithdrawParamsV1::decode(&self_.data.data[1..])?;
             msg!("[purse::withdraw_v1] Withdraw {} from purse {:?}", params.withdraw_amount, params.purse_id);
             let nullifiers_db = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(nullifiers_db, &params.nullifier.to_bytes())? {
@@ -220,7 +220,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&encode_withdraw_update_v1(&update))?;
         }
         PurseFunction::BalanceV1 => {
-            let _params: BalanceParamsV1 = deserialize(&self_.data.data[1..])?;
+            let _params = BalanceParamsV1::decode(&self_.data.data[1..])?;
             msg!("[purse::balance_v1] Balance check");
         }
         PurseFunction::InitializeV1 => {

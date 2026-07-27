@@ -28,7 +28,7 @@
 use dwow_sdk::{
     crypto::{draw_unique_range, poseidon_hash, pasta_prelude::PrimeField, PublicKey},
     error::ContractError,
-    pasta::pallas,
+    pasta::{group::GroupEncoding, pallas},
 };
 
 use crate::error::LotteryError;

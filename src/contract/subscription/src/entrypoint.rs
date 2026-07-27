@@ -220,7 +220,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             update_usage_v1(cid, params)?
         }
         SubscriptionFunction::DaoControlV1 => {
-            let params: DaoControlParamsV1 = deserialize(&self_.data[1..])?;
+            let params = DaoControlParamsV1::decode(&self_.data[1..])?;
             dao_control_v1(cid, call_idx, calls, params)?
         }
         SubscriptionFunction::InitializeV1 => {
