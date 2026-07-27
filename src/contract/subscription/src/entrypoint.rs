@@ -161,7 +161,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         SubscriptionFunction::UpdateUsageV1 => {
-            let params: UpdateUsageParamsV1 = deserialize(&self_.data[1..])?;
+            let params= UpdateUsageParamsV1::decode(&self_.data[1..])?;
             let derived_id = poseidon_hash([
                 params.subscription_id.inner(),
                 params.subscriber_pub_x,
@@ -199,15 +199,15 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let update_bytes = match func {
         SubscriptionFunction::SubscribeV1 => {
-            let params: SubscribeParamsV1 = deserialize(&self_.data[1..])?;
+            let params= SubscribeParamsV1::decode(&self_.data[1..])?;
             subscribe_v1(cid, call_idx, calls, params)?
         }
         SubscriptionFunction::CancelV1 => {
-            let params: CancelParamsV1 = deserialize(&self_.data[1..])?;
+            let params= CancelParamsV1::decode(&self_.data[1..])?;
             cancel_v1(cid, params)?
         }
         SubscriptionFunction::RenewV1 => {
-            let params: RenewParamsV1 = deserialize(&self_.data[1..])?;
+            let params= RenewParamsV1::decode(&self_.data[1..])?;
             renew_v1(cid, call_idx, calls, params)?
         }
         SubscriptionFunction::VerifyAccessV1 => {
@@ -216,7 +216,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             vec![]
         }
         SubscriptionFunction::UpdateUsageV1 => {
-            let params: UpdateUsageParamsV1 = deserialize(&self_.data[1..])?;
+            let params= UpdateUsageParamsV1::decode(&self_.data[1..])?;
             update_usage_v1(cid, params)?
         }
         SubscriptionFunction::DaoControlV1 => {

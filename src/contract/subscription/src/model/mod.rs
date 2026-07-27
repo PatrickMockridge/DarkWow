@@ -48,7 +48,6 @@ use dwow_sdk::{
     pasta::pallas,
     pasta::group::GroupEncoding,
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // Bridge impls: dwow_serial::Encodable/Decodable delegate to rho-calculus
 // encode/decode so param structs can derive SerialEncodable/SerialDecodable
@@ -488,8 +487,10 @@ impl SubscriptionCapability {
 // PARAMETER TYPES (for contract calls)
 // ============================================================================
 
+fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap())).ok_or_else(|| ContractError::IoError("invalid base".into())) }
+
 /// Parameters for `Subscription::SubscribeV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct SubscribeParamsV1 {
     /// Plan ID to subscribe to
     pub plan_id: u32,
@@ -516,6 +517,8 @@ pub struct SubscribeParamsV1 {
     pub instance_seed: [u8; 32],
 }
 
+impl SubscribeParamsV1 { pub fn encode(&self) -> Vec<u8> { let mp_cap = self.merkle_proof.len()*32; let dmp_cap = self.dao_merkle_proof.as_ref().map_or(0,|v| 1+v.len()*32); let mut b = Vec::with_capacity(170+mp_cap+dmp_cap); b.extend_from_slice(&self.plan_id.to_le_bytes()); b.extend_from_slice(&self.subscriber_pubkey.to_bytes()); b.extend_from_slice(&self.commitment.to_repr()); b.extend_from_slice(&self.value_commit.to_bytes()); b.push(self.merkle_proof.len() as u8); for p in &self.merkle_proof { b.extend_from_slice(&p.to_repr()); } b.extend_from_slice(&self.merkle_root.to_repr()); b.push(self.dao_escrow_bulla.is_some() as u8); if let Some(v) = self.dao_escrow_bulla { b.extend_from_slice(&v.to_repr()); } b.push(self.dao_membership_note.is_some() as u8); if let Some(v) = self.dao_membership_note { b.extend_from_slice(&v.to_repr()); } b.push(self.dao_escrow_merkle_root.is_some() as u8); if let Some(v) = self.dao_escrow_merkle_root { b.extend_from_slice(&v.to_repr()); } b.push(self.dao_merkle_proof.is_some() as u8); if let Some(ref v) = self.dao_merkle_proof { b.push(v.len() as u8); for p in v { b.extend_from_slice(&p.to_repr()); } } b.push(self.dao_leaf_pos.is_some() as u8); if let Some(v) = self.dao_leaf_pos { b.extend_from_slice(&v.to_le_bytes()); } b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 170 { return Err(ContractError::IoError("SubscribeParamsV1: too short".into())); } let plan_id = u32::from_le_bytes(data[0..4].try_into().unwrap()); let subscriber_pubkey = PublicKey::from_bytes(data[4..36].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("SubscribeParamsV1: invalid subscriber_pubkey: {}", e)))?; let commitment = read_base(&data[36..68])?; let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[68..100].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SubscribeParamsV1: invalid value_commit".into()))?; let mp_count = data[100] as usize; let mut pos = 101+mp_count*32; if data.len() < pos { return Err(ContractError::IoError("SubscribeParamsV1: merkle_proof truncated".into())); } let mut merkle_proof = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_proof.push(read_base(&data[101+i*32..101+(i+1)*32])?); } let merkle_root = read_base(&data[pos-32..pos])?; let mut read_opt = |pos: &mut usize| -> Option<pallas::Base> { if data[*pos] != 0 { *pos += 1; let v = read_base(&data[*pos..*pos+32]).ok()?; *pos += 32; Some(v) } else { *pos += 1; None } }; let mut read_opt_u32 = |pos: &mut usize| -> Option<u32> { if data[*pos] != 0 { let v = u32::from_le_bytes(data[*pos+1..*pos+5].try_into().unwrap()); *pos += 5; Some(v) } else { *pos += 1; None } }; let has_dao_mp = data[pos] != 0; pos += 1; let dao_merkle_proof = if has_dao_mp { let c = data[pos] as usize; pos += 1; let mut v = Vec::with_capacity(c); for i in 0..c { v.push(read_base(&data[pos..pos+32])?); pos += 32; } Some(v) } else { None }; Ok(SubscribeParamsV1 { plan_id, subscriber_pubkey, commitment, value_commit, merkle_proof, merkle_root, dao_escrow_bulla: read_opt(&mut pos), dao_membership_note: read_opt(&mut pos), dao_escrow_merkle_root: read_opt(&mut pos), dao_merkle_proof, dao_leaf_pos: read_opt_u32(&mut pos), instance_seed: data[pos..pos+32].try_into().unwrap() }) } }
+
 /// State update for `Subscription::SubscribeV1`
 #[derive(Debug, Clone)]
 pub struct SubscribeUpdateV1 {
@@ -524,7 +527,7 @@ pub struct SubscribeUpdateV1 {
 }
 
 /// Parameters for `Subscription::CancelV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CancelParamsV1 {
     /// Subscription ID
     pub subscription_id: SubscriptionId,
@@ -538,6 +541,8 @@ pub struct CancelParamsV1 {
     pub recipient_pubkey: PublicKey,
 }
 
+impl CancelParamsV1 { pub const ENCODED_SIZE: usize = 136; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(136); b.extend_from_slice(&self.subscription_id.to_repr()); b.extend_from_slice(&self.subscriber_secret.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.current_block.to_le_bytes()); b.extend_from_slice(&self.recipient_pubkey.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 160 { return Err(ContractError::IoError(format!("CancelParamsV1: expected 136 bytes, got {}", data.len()))); } Ok(CancelParamsV1 { subscription_id: read_base(&data[0..32])?, subscriber_secret: read_base(&data[32..64])?, spent_nullifier: read_base(&data[64..96])?, current_block: u64::from_le_bytes(data[96..104].try_into().unwrap()), recipient_pubkey: PublicKey::from_bytes(data[104..136].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CancelParamsV1: invalid recipient_pubkey: {}", e)))? }) } }
+
 /// State update for `Subscription::CancelV1`
 #[derive(Debug, Clone)]
 pub struct CancelUpdateV1 {
@@ -550,7 +555,7 @@ pub struct CancelUpdateV1 {
 }
 
 /// Parameters for `Subscription::RenewV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct RenewParamsV1 {
     /// Existing subscription ID
     pub subscription_id: SubscriptionId,
@@ -566,6 +571,8 @@ pub struct RenewParamsV1 {
     pub merkle_proof: Vec<pallas::Base>,
 }
 
+impl RenewParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(137+self.merkle_proof.len()*32); b.extend_from_slice(&self.subscription_id.to_repr()); b.extend_from_slice(&self.subscriber_secret.to_repr()); b.extend_from_slice(&self.new_lock_until_block.to_le_bytes()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.extend_from_slice(&self.value_commit.to_bytes()); b.push(self.merkle_proof.len() as u8); for p in &self.merkle_proof { b.extend_from_slice(&p.to_repr()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 137 { return Err(ContractError::IoError("RenewParamsV1: too short".into())); } let subscription_id = read_base(&data[0..32])?; let subscriber_secret = read_base(&data[32..64])?; let new_lock_until_block = u64::from_le_bytes(data[64..72].try_into().unwrap()); let spent_nullifier = read_base(&data[72..104])?; let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[104..136].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RenewParamsV1: invalid value_commit".into()))?; let mp_count = data[136] as usize; if data.len() != 137+mp_count*32 { return Err(ContractError::IoError(format!("RenewParamsV1: expected {} bytes, got {}", 137+mp_count*32, data.len()))); } let mut merkle_proof = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_proof.push(read_base(&data[137+i*32..137+(i+1)*32])?); } Ok(RenewParamsV1 { subscription_id, subscriber_secret, new_lock_until_block, spent_nullifier, value_commit, merkle_proof }) } }
+
 /// State update for `Subscription::RenewV1`
 #[derive(Debug, Clone)]
 pub struct RenewUpdateV1 {
@@ -578,7 +585,7 @@ pub struct RenewUpdateV1 {
 }
 
 /// Parameters for `Subscription::VerifyAccessV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct VerifyAccessParamsV1 {
     /// Subscription ID being verified
     pub subscription_id: SubscriptionId,
@@ -588,8 +595,10 @@ pub struct VerifyAccessParamsV1 {
     pub nonce: pallas::Base,
 }
 
+impl VerifyAccessParamsV1 { pub const ENCODED_SIZE: usize = 96; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(96); b.extend_from_slice(&self.subscription_id.to_repr()); b.extend_from_slice(&self.capability.to_repr()); b.extend_from_slice(&self.nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 96 { return Err(ContractError::IoError(format!("VerifyAccessParamsV1: expected 96 bytes, got {}", data.len()))); } Ok(VerifyAccessParamsV1 { subscription_id: read_base(&data[0..32])?, capability: read_base(&data[32..64])?, nonce: read_base(&data[64..96])? }) } }
+
 /// Parameters for `Subscription::UpdateUsageV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct UpdateUsageParamsV1 {
     /// Subscription ID
     pub subscription_id: SubscriptionId,
@@ -609,6 +618,8 @@ pub struct UpdateUsageParamsV1 {
     pub merkle_proof: Vec<pallas::Base>,
 }
 
+impl UpdateUsageParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(201+self.merkle_proof.len()*32); b.extend_from_slice(&self.subscription_id.to_repr()); b.extend_from_slice(&self.subscriber_pub_x.to_repr()); b.extend_from_slice(&self.subscriber_pub_y.to_repr()); b.extend_from_slice(&self.subscriber_secret.to_repr()); b.extend_from_slice(&self.current_block.to_le_bytes()); b.extend_from_slice(&self.nonce.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b.push(self.merkle_proof.len() as u8); for p in &self.merkle_proof { b.extend_from_slice(&p.to_repr()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 201 { return Err(ContractError::IoError("UpdateUsageParamsV1: too short".into())); } let subscription_id = read_base(&data[0..32])?; let subscriber_pub_x = read_base(&data[32..64])?; let subscriber_pub_y = read_base(&data[64..96])?; let subscriber_secret = read_base(&data[96..128])?; let current_block = u64::from_le_bytes(data[128..136].try_into().unwrap()); let nonce = read_base(&data[136..168])?; let spent_nullifier = read_base(&data[168..200])?; let mp_count = data[200] as usize; if data.len() != 201+mp_count*32 { return Err(ContractError::IoError(format!("UpdateUsageParamsV1: expected {} bytes, got {}", 201+mp_count*32, data.len()))); } let mut merkle_proof = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_proof.push(read_base(&data[201+i*32..201+(i+1)*32])?); } Ok(UpdateUsageParamsV1 { subscription_id, subscriber_pub_x, subscriber_pub_y, subscriber_secret, current_block, nonce, spent_nullifier, merkle_proof }) } }
+
 /// State update for `Subscription::UpdateUsageV1`
 #[derive(Debug, Clone)]
 pub struct UpdateUsageUpdateV1 {
@@ -625,7 +636,7 @@ pub struct UpdateUsageUpdateV1 {
 }
 
 /// Parameters for `Subscription::DaoControlV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub enum DaoControlParamsV1 {
     /// Update plan parameters
     UpdatePlan(Plan),
