@@ -514,7 +514,7 @@ impl RefundBidUpdateV1 {
 }
 
 /// Parameters for `Auction::CreateAuctionV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CreateAuctionParamsV1 {
     /// Seller's public key
     pub seller_pubkey: PublicKey,
@@ -537,6 +537,44 @@ pub struct CreateAuctionParamsV1 {
     pub instance_seed: [u8; 32],
 }
 
+impl CreateAuctionParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 266 + self.merkle_proof.len() * 32;
+        let mut buf = Vec::with_capacity(cap);
+        buf.extend_from_slice(&self.seller_pubkey.to_bytes());
+        buf.extend_from_slice(&self.item_commitment.to_repr());
+        buf.extend_from_slice(&self.reserve_price.to_le_bytes());
+        buf.extend_from_slice(&self.token_id.to_repr());
+        buf.extend_from_slice(&self.deadline_block.to_le_bytes());
+        buf.extend_from_slice(&self.auction_id.to_repr());
+        buf.extend_from_slice(&self.seller_commitment.to_repr());
+        buf.push(self.merkle_proof.len() as u8);
+        for p in &self.merkle_proof { buf.extend_from_slice(&p.to_repr()); }
+        buf.extend_from_slice(&self.merkle_root.to_repr());
+        buf.extend_from_slice(&self.instance_seed);
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 234 { return Err(ContractError::IoError("CreateAuctionParamsV1: too short".into())); }
+        let seller_pubkey = PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateAuctionParamsV1: invalid seller_pubkey: {}", e)))?;
+        let item_commitment = read_base(&data[32..64])?;
+        let reserve_price = u64::from_le_bytes(data[64..72].try_into().unwrap());
+        let token_id = read_base(&data[72..104])?;
+        let deadline_block = u64::from_le_bytes(data[104..112].try_into().unwrap());
+        let auction_id = read_base(&data[112..144])?;
+        let seller_commitment = read_base(&data[144..176])?;
+        let proof_count = data[176] as usize;
+        let mp_end = 177 + proof_count * 32;
+        if data.len() < mp_end + 64 { return Err(ContractError::IoError("CreateAuctionParamsV1: merkle_proof truncated".into())); }
+        let mut merkle_proof = Vec::with_capacity(proof_count);
+        for i in 0..proof_count { merkle_proof.push(read_base(&data[177 + i*32..177 + (i+1)*32])?); }
+        let merkle_root = read_base(&data[mp_end..mp_end+32])?;
+        let instance_seed: [u8; 32] = data[mp_end+32..mp_end+64].try_into().unwrap();
+        Ok(CreateAuctionParamsV1 { seller_pubkey, item_commitment, reserve_price, token_id, deadline_block, auction_id, seller_commitment, merkle_proof, merkle_root, instance_seed })
+    }
+}
+
 /// State update for `Auction::CreateAuctionV1`
 #[derive(Debug, Clone)]
 pub struct CreateAuctionUpdateV1 {
@@ -547,7 +585,7 @@ pub struct CreateAuctionUpdateV1 {
 }
 
 /// Parameters for `Auction::PlaceBidV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct PlaceBidParamsV1 {
     /// Auction ID
     pub auction_id: AuctionId,
@@ -580,7 +618,7 @@ pub struct PlaceBidUpdateV1 {
 }
 
 /// Parameters for `Auction::CloseAuctionV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CloseAuctionParamsV1 {
     /// Auction ID
     pub auction_id: AuctionId,
@@ -602,7 +640,7 @@ pub struct CloseAuctionUpdateV1 {
 }
 
 /// Parameters for `Auction::ClaimWinningsV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ClaimWinningsParamsV1 {
     /// Auction ID
     pub auction_id: AuctionId,
@@ -623,7 +661,7 @@ pub struct ClaimWinningsUpdateV1 {
 }
 
 /// Parameters for `Auction::SettleAuctionV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct SettleAuctionParamsV1 {
     /// Auction ID
     pub auction_id: AuctionId,
@@ -646,7 +684,7 @@ pub struct SettleAuctionUpdateV1 {
 }
 
 /// Parameters for `Auction::RefundBidV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct RefundBidParamsV1 {
     /// Bid ID
     pub bid_id: BidId,
