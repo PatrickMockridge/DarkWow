@@ -1089,6 +1089,90 @@ impl LpShare {
     }
 }
 
+impl Market {
+    pub fn encode(&self) -> Vec<u8> {
+        let outcomes_bytes: usize = self.outcomes.iter().map(|s| 1 + s.len()).sum();
+        let cap = 203 + self.description.len() + outcomes_bytes + self.outcome_pools.len() * 8;
+        let mut b = Vec::with_capacity(cap);
+        b.push(self.version);
+        b.extend_from_slice(&self.market_id.to_repr());
+        b.extend_from_slice(&self.creator.to_bytes());
+        // description (u8-prefixed String)
+        b.push(self.description.len() as u8);
+        b.extend_from_slice(self.description.as_bytes());
+        // outcomes (u8 count, each u8-prefixed String)
+        b.push(self.outcomes.len() as u8);
+        for s in &self.outcomes { b.push(s.len() as u8); b.extend_from_slice(s.as_bytes()); }
+        b.extend_from_slice(&self.oracle_id.to_repr());
+        b.extend_from_slice(&self.commission_bp.to_le_bytes());
+        b.push(self.market_type as u8);
+        b.push(self.state as u8);
+        b.extend_from_slice(&self.back_volume.to_le_bytes());
+        b.extend_from_slice(&self.lay_volume.to_le_bytes());
+        b.extend_from_slice(&self.matched_volume.to_le_bytes());
+        b.extend_from_slice(&self.total_pool.to_le_bytes());
+        b.extend_from_slice(&self.total_lp_shares.to_le_bytes());
+        b.push(self.outcome_pools.len() as u8);
+        for v in &self.outcome_pools { b.extend_from_slice(&v.to_le_bytes()); }
+        b.extend_from_slice(&self.protocol_fee.to_le_bytes());
+        b.extend_from_slice(&self.lp_fee.to_le_bytes());
+        b.extend_from_slice(&self.close_block.to_le_bytes());
+        b.push(self.resolved_at.is_some() as u8);
+        if let Some(r) = self.resolved_at { b.extend_from_slice(&r.to_le_bytes()); }
+        b.push(self.winning_outcome.is_some() as u8);
+        if let Some(w) = self.winning_outcome { b.push(w); }
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b.extend_from_slice(&self.instance_seed);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 203 { return Err(ContractError::IoError(format!("Market: expected at least 203 bytes, got {}", data.len()))); }
+        let version = data[0];
+        let market_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Market: invalid market_id".into()))?;
+        let creator = PublicKey::from_bytes(data[33..65].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Market: invalid creator: {}", e)))?;
+        let desc_len = data[65] as usize;
+        if data.len() < 66 + desc_len { return Err(ContractError::IoError("Market: data too short for description".into())); }
+        let description = String::from_utf8(data[66..66 + desc_len].to_vec()).map_err(|e| ContractError::IoError(format!("Market: invalid description: {}", e)))?;
+        let out_pos = 66 + desc_len;
+        let out_count = data[out_pos] as usize;
+        let mut pos = out_pos + 1;
+        let mut outcomes = Vec::with_capacity(out_count);
+        for _ in 0..out_count {
+            if data.len() < pos + 1 { return Err(ContractError::IoError("Market: data too short for outcome".into())); }
+            let slen = data[pos] as usize;
+            pos += 1;
+            if data.len() < pos + slen { return Err(ContractError::IoError("Market: outcome data truncated".into())); }
+            outcomes.push(String::from_utf8(data[pos..pos + slen].to_vec()).map_err(|e| ContractError::IoError(format!("Market: invalid outcome: {}", e)))?);
+            pos += slen;
+        }
+        if data.len() < pos + 32 + 4 + 1 + 1 + 40 { return Err(ContractError::IoError("Market: data too short for numeric fields".into())); }
+        let oracle_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Market: invalid oracle_id".into()))?; pos += 32;
+        let commission_bp = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()); pos += 4;
+        let market_type = MarketType::try_from(data[pos])?; pos += 1;
+        let state = MarketState::try_from(data[pos])?; pos += 1;
+        let back_volume = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
+        let lay_volume = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
+        let matched_volume = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
+        let total_pool = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
+        let total_lp_shares = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
+        let pool_count = data[pos] as usize; pos += 1;
+        if data.len() < pos + pool_count * 8 { return Err(ContractError::IoError("Market: data too short for outcome_pools".into())); }
+        let mut outcome_pools = Vec::with_capacity(pool_count);
+        for _ in 0..pool_count { outcome_pools.push(u64::from_le_bytes(data[pos..pos+8].try_into().unwrap())); pos += 8; }
+        if data.len() < pos + 4 + 4 + 8 + 1 + 1 + 8 + 32 { return Err(ContractError::IoError("Market: data too short for trailing fields".into())); }
+        let protocol_fee = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()); pos += 4;
+        let lp_fee = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()); pos += 4;
+        let close_block = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
+        let has_resolved = data[pos] != 0; pos += 1;
+        let resolved_at = if has_resolved { let v = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8; Some(v) } else { None };
+        let has_winner = data[pos] != 0; pos += 1;
+        let winning_outcome = if has_winner { let v = data[pos]; pos += 1; Some(v) } else { None };
+        let created_at = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
+        let instance_seed: [u8; 32] = data[pos..pos+32].try_into().unwrap();
+        Ok(Market { version, market_id, creator, description, outcomes, oracle_id, commission_bp, market_type, state, back_volume, lay_volume, matched_volume, total_pool, total_lp_shares, outcome_pools, protocol_fee, lp_fee, close_block, resolved_at, winning_outcome, created_at, instance_seed })
+    }
+}
+
 impl Order {
     pub const ENCODED_SIZE: usize = 192;
     pub fn encode(&self) -> Vec<u8> {
