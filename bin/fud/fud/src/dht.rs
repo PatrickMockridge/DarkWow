@@ -184,12 +184,12 @@ impl DhtHandler for Fud {
                 .event_publisher
                 .notify(DhtEvent::PingReceived {
                     from: channel.clone(),
-                    result: Err(Error::InvalidSignature),
+                    result: Err(Error::Custom("Invalid signature".to_string())),
                 })
                 .await;
             self.dht.cleanup_channel(channel.clone()).await;
             channel.ban().await;
-            return Err(Error::InvalidSignature)
+            return Err(Error::Custom("Invalid signature".to_string()))
         }
 
         // Verify PoW

@@ -168,7 +168,6 @@ pub fn build_submit_deliverable_tx(
     Ok(Transaction {
         calls,
         proofs: vec![],
-        signatures: vec![],
         tx_commitment,
         nullifiers: vec![],
     })
