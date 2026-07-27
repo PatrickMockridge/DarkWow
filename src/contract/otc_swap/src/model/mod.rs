@@ -41,7 +41,6 @@ use dwow_sdk::{
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// OTC Swap unique identifier (hash of swap data)
 pub type SwapId = pallas::Base;
@@ -253,7 +252,7 @@ impl OtcSwap {
 }
 
 /// Parameters for `OtcSwap::CreateSwapV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CreateSwapParamsV1 {
     /// Alice's public key (swap creator)
     pub alice_pubkey: PublicKey,
@@ -273,6 +272,31 @@ pub struct CreateSwapParamsV1 {
     pub commitment: SwapId,
     /// Per-instance seed for deriving capability-scoped keys
     pub instance_seed: [u8; 32],
+}
+
+impl CreateSwapParamsV1 {
+    pub const ENCODED_SIZE: usize = 216;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.alice_pubkey.to_bytes()); buf.extend_from_slice(&self.bob_pubkey.to_bytes());
+        buf.extend_from_slice(&self.send_value.to_le_bytes()); buf.extend_from_slice(&self.send_token_id.to_repr());
+        buf.extend_from_slice(&self.recv_value.to_le_bytes()); buf.extend_from_slice(&self.recv_token_id.to_repr());
+        buf.extend_from_slice(&self.timeout.to_le_bytes()); buf.extend_from_slice(&self.commitment.to_repr());
+        buf.extend_from_slice(&self.instance_seed); buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("CreateSwapParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()))); }
+        let alice_pubkey = PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateSwapParamsV1: invalid alice_pubkey: {}", e)))?;
+        let bob_pubkey = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateSwapParamsV1: invalid bob_pubkey: {}", e)))?;
+        let send_value = u64::from_le_bytes(data[64..72].try_into().unwrap());
+        let send_token_id = read_base(&data[72..104])?;
+        let recv_value = u64::from_le_bytes(data[104..112].try_into().unwrap());
+        let recv_token_id = read_base(&data[112..144])?;
+        let timeout = u64::from_le_bytes(data[144..152].try_into().unwrap());
+        let commitment = read_base(&data[152..184])?;
+        let instance_seed: [u8; 32] = data[184..216].try_into().unwrap();
+        Ok(CreateSwapParamsV1 { alice_pubkey, bob_pubkey, send_value, send_token_id, recv_value, recv_token_id, timeout, commitment, instance_seed })
+    }
 }
 
 /// State update for `OtcSwap::CreateSwapV1`
@@ -306,7 +330,7 @@ impl CreateSwapUpdateV1 {
 }
 
 /// Parameters for `OtcSwap::FundSwapV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct FundSwapParamsV1 {
     /// Swap ID
     pub swap_id: SwapId,
@@ -316,6 +340,29 @@ pub struct FundSwapParamsV1 {
     pub merkle_proof: Vec<pallas::Base>,
     /// ZK proof public inputs
     pub merkle_root: MerkleNode,
+}
+
+impl FundSwapParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 66 + self.merkle_proof.len() * 32;
+        let mut buf = Vec::with_capacity(cap);
+        buf.extend_from_slice(&self.swap_id.to_repr()); buf.extend_from_slice(&self.value_commit.to_bytes());
+        buf.push(self.merkle_proof.len() as u8);
+        for p in &self.merkle_proof { buf.extend_from_slice(&p.to_repr()); }
+        buf.extend_from_slice(&self.merkle_root.to_bytes()); buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 67 { return Err(ContractError::IoError("FundSwapParamsV1: too short".into())); }
+        let swap_id = read_base(&data[0..32])?;
+        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("FundSwapParamsV1: invalid value_commit".into()))?;
+        let proof_count = data[64] as usize;
+        let mp_end = 65 + proof_count * 32;
+        if data.len() < mp_end + 32 { return Err(ContractError::IoError("FundSwapParamsV1: merkle_proof truncated".into())); }
+        let mut merkle_proof = Vec::with_capacity(proof_count);
+        for i in 0..proof_count { merkle_proof.push(read_base(&data[65+i*32..65+(i+1)*32])?); }
+        let merkle_root = MerkleNode::from_bytes(data[mp_end..mp_end+32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("FundSwapParamsV1: invalid merkle_root".into()))?;
+        Ok(FundSwapParamsV1 { swap_id, value_commit, merkle_proof, merkle_root })
+    }
 }
 
 /// State update for `OtcSwap::FundSwapV1`
@@ -349,7 +396,7 @@ impl FundSwapUpdateV1 {
 }
 
 /// Parameters for `OtcSwap::ExecuteSwapV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ExecuteSwapParamsV1 {
     /// Swap ID
     pub swap_id: SwapId,
@@ -362,6 +409,8 @@ pub struct ExecuteSwapParamsV1 {
     /// Bob's recipient pubkey (for Alice's coins to Bob)
     pub bob_recipient: PublicKey,
 }
+
+impl ExecuteSwapParamsV1 { pub const ENCODED_SIZE: usize = 160; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(160); buf.extend_from_slice(&self.swap_id.to_repr()); buf.extend_from_slice(&self.bob_secret.to_repr()); buf.extend_from_slice(&self.spent_nullifier.to_repr()); buf.extend_from_slice(&self.alice_recipient.to_bytes()); buf.extend_from_slice(&self.bob_recipient.to_bytes()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 160 { return Err(ContractError::IoError(format!("ExecuteSwapParamsV1: expected 160 bytes, got {}", data.len()))); } Ok(ExecuteSwapParamsV1 { swap_id: read_base(&data[0..32])?, bob_secret: read_base(&data[32..64])?, spent_nullifier: read_base(&data[64..96])?, alice_recipient: PublicKey::from_bytes(data[96..128].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ExecuteSwapParamsV1: invalid alice_recipient: {}", e)))?, bob_recipient: PublicKey::from_bytes(data[128..160].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ExecuteSwapParamsV1: invalid bob_recipient: {}", e)))? }) } }
 
 /// State update for `OtcSwap::ExecuteSwapV1`
 #[derive(Debug, Clone)]
@@ -405,7 +454,7 @@ impl ExecuteSwapUpdateV1 {
 }
 
 /// Parameters for `OtcSwap::CancelSwapV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CancelSwapParamsV1 {
     /// Swap ID
     pub swap_id: SwapId,
@@ -419,6 +468,9 @@ pub struct CancelSwapParamsV1 {
     pub timeout: u64,
     /// Recipient public key for refund
     pub recipient_pubkey: PublicKey,
+}
+
+impl CancelSwapParamsV1 { pub const ENCODED_SIZE: usize = 144; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(144); buf.extend_from_slice(&self.swap_id.to_repr()); buf.extend_from_slice(&self.alice_secret.to_repr()); buf.extend_from_slice(&self.spent_nullifier.to_repr()); buf.extend_from_slice(&self.current_block.to_le_bytes()); buf.extend_from_slice(&self.timeout.to_le_bytes()); buf.extend_from_slice(&self.recipient_pubkey.to_bytes()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 144 { return Err(ContractError::IoError(format!("CancelSwapParamsV1: expected 144 bytes, got {}", data.len()))); } Ok(CancelSwapParamsV1 { swap_id: read_base(&data[0..32])?, alice_secret: read_base(&data[32..64])?, spent_nullifier: read_base(&data[64..96])?, current_block: u64::from_le_bytes(data[96..104].try_into().unwrap()), timeout: u64::from_le_bytes(data[104..112].try_into().unwrap()), recipient_pubkey: PublicKey::from_bytes(data[112..144].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CancelSwapParamsV1: invalid recipient_pubkey: {}", e)))? }) }
 }
 
 /// State update for `OtcSwap::CancelSwapV1`

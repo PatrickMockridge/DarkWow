@@ -139,19 +139,19 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         OtcSwapFunction::CreateSwapV1 => {
-            let params: CreateSwapParamsV1 = deserialize(&self_.data[1..])?;
+            let params= CreateSwapParamsV1::decode(&self_.data[1..])?;
             swap_create_get_metadata_v1(cid, call_idx, calls, params)?
         }
         OtcSwapFunction::FundSwapV1 => {
-            let params: FundSwapParamsV1 = deserialize(&self_.data[1..])?;
+            let params= FundSwapParamsV1::decode(&self_.data[1..])?;
             swap_fund_get_metadata_v1(cid, call_idx, calls, params)?
         }
         OtcSwapFunction::ExecuteSwapV1 => {
-            let params: ExecuteSwapParamsV1 = deserialize(&self_.data[1..])?;
+            let params= ExecuteSwapParamsV1::decode(&self_.data[1..])?;
             swap_execute_get_metadata_v1(cid, call_idx, calls, params)?
         }
         OtcSwapFunction::CancelSwapV1 => {
-            let params: CancelSwapParamsV1 = deserialize(&self_.data[1..])?;
+            let params= CancelSwapParamsV1::decode(&self_.data[1..])?;
             swap_cancel_get_metadata_v1(cid, call_idx, calls, params)?
         }
         OtcSwapFunction::InitializeV1 => vec![],
