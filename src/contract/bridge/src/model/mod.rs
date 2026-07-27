@@ -31,7 +31,8 @@
 //! - User alone controls withdrawal via their secret
 
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
-use dwow_sdk::pasta::pallas;
+use dwow_sdk::error::ContractError;
+use dwow_sdk::pasta::{group::GroupEncoding, pallas};
 use dwow_serial::{SerialDecodable, SerialEncodable};
 use dwow_sdk::crypto::{IntentCommitment, IntentNullifier, PublicKey};
 
@@ -1076,3 +1077,175 @@ pub struct GovernanceReportUpdateV1 {
 // 4. Double-spend prevention via nullifiers
 //
 // ================================================================
+
+// ============================================================================
+// RHO-CALCULUS EXPLICIT ENCODE/DECODE
+// ============================================================================
+
+impl ChainBalanceEntry {
+    pub const ENCODED_SIZE: usize = 25;
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(25); b.push(self.chain as u8); b.extend_from_slice(&self.total_deposited.to_le_bytes()); b.extend_from_slice(&self.total_withdrawn.to_le_bytes()); b.extend_from_slice(&self.outstanding.to_le_bytes()); b }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 25 { return Err(ContractError::IoError(format!("ChainBalanceEntry: expected 25 bytes, got {}", data.len()))); }
+        Ok(ChainBalanceEntry { chain: ExternalChain::try_from(data[0])?, total_deposited: u64::from_le_bytes(data[1..9].try_into().unwrap()), total_withdrawn: u64::from_le_bytes(data[9..17].try_into().unwrap()), outstanding: u64::from_le_bytes(data[17..25].try_into().unwrap()) })
+    }
+}
+
+impl Deposit {
+    pub const ENCODED_SIZE: usize = 59;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(59);
+        b.push(self.version);
+        b.extend_from_slice(&self.commitment.to_bytes());
+        b.extend_from_slice(&self.amount.to_le_bytes());
+        b.push(self.chain as u8);
+        b.extend_from_slice(&self.external_height.to_le_bytes());
+        b.push(self.claimed as u8);
+        b.extend_from_slice(&self.registered_at.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 59 { return Err(ContractError::IoError(format!("Deposit: expected 59 bytes, got {}", data.len()))); }
+        Ok(Deposit { version: data[0], commitment: IntentCommitment::from_bytes(data[1..33].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Deposit: invalid commitment: {}", e)))?, amount: u64::from_le_bytes(data[33..41].try_into().unwrap()), chain: ExternalChain::try_from(data[41])?, external_height: u64::from_le_bytes(data[42..50].try_into().unwrap()), claimed: data[50] != 0, registered_at: u64::from_le_bytes(data[51..59].try_into().unwrap()) })
+    }
+}
+
+impl Withdrawal {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 82 + if self.external_tx_hash.is_some() { 32 } else { 0 };
+        let mut b = Vec::with_capacity(cap);
+        b.push(self.version);
+        b.extend_from_slice(&self.nullifier.to_bytes());
+        b.extend_from_slice(&self.recipient_hash);
+        b.extend_from_slice(&self.amount.to_le_bytes());
+        b.push(self.executed as u8);
+        b.push(self.external_tx_hash.is_some() as u8);
+        if let Some(ref h) = self.external_tx_hash { b.extend_from_slice(h); }
+        b.extend_from_slice(&self.withdrawn_at.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 82 { return Err(ContractError::IoError(format!("Withdrawal: expected at least 82 bytes, got {}", data.len()))); }
+        let version = data[0];
+        let nullifier = IntentNullifier::from_bytes(data[1..33].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Withdrawal: invalid nullifier: {}", e)))?;
+        let recipient_hash: [u8; 32] = data[33..65].try_into().unwrap();
+        let amount = u64::from_le_bytes(data[65..73].try_into().unwrap());
+        let executed = data[73] != 0;
+        let has_tx = data[74] != 0;
+        let (external_tx_hash, pos) = if has_tx {
+            (Some(data[75..107].try_into().unwrap()), 107usize)
+        } else { (None, 75usize) };
+        let withdrawn_at = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap());
+        Ok(Withdrawal { version, nullifier, recipient_hash, amount, executed, external_tx_hash, withdrawn_at })
+    }
+}
+
+impl RelayerInfo {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 66 + if self.fee_schedule_id.is_some() { 32 } else { 0 };
+        let mut b = Vec::with_capacity(cap);
+        b.push(self.version);
+        b.extend_from_slice(&self.pubkey.to_bytes());
+        b.extend_from_slice(&self.registered_at.to_le_bytes());
+        b.extend_from_slice(&self.total_slashed.to_le_bytes());
+        b.extend_from_slice(&self.total_withdrawals.to_le_bytes());
+        b.extend_from_slice(&self.total_successful.to_le_bytes());
+        b.push(self.is_active as u8);
+        b.push(self.fee_schedule_id.is_some() as u8);
+        if let Some(ref id) = self.fee_schedule_id { b.extend_from_slice(id); }
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 66 { return Err(ContractError::IoError(format!("RelayerInfo: expected at least 66 bytes, got {}", data.len()))); }
+        Ok(RelayerInfo { version: data[0], pubkey: PublicKey::from_bytes(data[1..33].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("RelayerInfo: invalid pubkey: {}", e)))?, registered_at: u64::from_le_bytes(data[33..41].try_into().unwrap()), total_slashed: u64::from_le_bytes(data[41..49].try_into().unwrap()), total_withdrawals: u64::from_le_bytes(data[49..57].try_into().unwrap()), total_successful: u64::from_le_bytes(data[57..65].try_into().unwrap()), is_active: data[65] != 0, fee_schedule_id: if data[66] != 0 { Some(data[67..99].try_into().unwrap()) } else { None } })
+    }
+}
+
+// --- Bridge update structs ---
+
+impl ReassignWithdrawalUpdateV1 {
+    pub const ENCODED_SIZE: usize = 64;
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.nullifier.to_bytes()); b.extend_from_slice(&self.new_relayer.to_bytes()); b }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 64 { return Err(ContractError::IoError(format!("ReassignWithdrawalUpdateV1: expected 64 bytes, got {}", data.len()))); }
+        Ok(ReassignWithdrawalUpdateV1 { nullifier: IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ReassignWithdrawalUpdateV1: invalid nullifier: {}", e)))?, new_relayer: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ReassignWithdrawalUpdateV1: invalid new_relayer: {}", e)))? })
+    }
+}
+
+impl RefundHtlcUpdateV1 {
+    pub const ENCODED_SIZE: usize = 32;
+    pub fn encode(&self) -> Vec<u8> { self.swap_id.to_vec() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 32 { return Err(ContractError::IoError(format!("RefundHtlcUpdateV1: expected 32 bytes, got {}", data.len()))); }
+        Ok(RefundHtlcUpdateV1 { swap_id: data[0..32].try_into().unwrap() })
+    }
+}
+
+impl CancelWithdrawUpdateV1 {
+    pub const ENCODED_SIZE: usize = 32;
+    pub fn encode(&self) -> Vec<u8> { self.nullifier.to_bytes().to_vec() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 32 { return Err(ContractError::IoError(format!("CancelWithdrawUpdateV1: expected 32 bytes, got {}", data.len()))); }
+        Ok(CancelWithdrawUpdateV1 { nullifier: IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CancelWithdrawUpdateV1: invalid nullifier: {}", e)))? })
+    }
+}
+
+impl ExecuteGuaranteedWithdrawUpdateV1 {
+    pub const ENCODED_SIZE: usize = 32;
+    pub fn encode(&self) -> Vec<u8> { self.nullifier.to_bytes().to_vec() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 32 { return Err(ContractError::IoError(format!("ExecuteGuaranteedWithdrawUpdateV1: expected 32 bytes, got {}", data.len()))); }
+        Ok(ExecuteGuaranteedWithdrawUpdateV1 { nullifier: IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ExecuteGuaranteedWithdrawUpdateV1: invalid nullifier: {}", e)))? })
+    }
+}
+
+impl RegisterRelayerUpdateV1 {
+    pub const ENCODED_SIZE: usize = 40;
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(40); b.extend_from_slice(&self.relayer_pub.to_bytes()); b.extend_from_slice(&self.registered_at.to_le_bytes()); b }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 40 { return Err(ContractError::IoError(format!("RegisterRelayerUpdateV1: expected 40 bytes, got {}", data.len()))); }
+        Ok(RegisterRelayerUpdateV1 { relayer_pub: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("RegisterRelayerUpdateV1: invalid relayer_pub: {}", e)))?, registered_at: u64::from_le_bytes(data[32..40].try_into().unwrap()) })
+    }
+}
+
+impl ClaimHtlcUpdateV1 {
+    pub const ENCODED_SIZE: usize = 64;
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.swap_id); b.extend_from_slice(&self.secret.to_repr()); b }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 64 { return Err(ContractError::IoError(format!("ClaimHtlcUpdateV1: expected 64 bytes, got {}", data.len()))); }
+        Ok(ClaimHtlcUpdateV1 { swap_id: data[0..32].try_into().unwrap(), secret: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ClaimHtlcUpdateV1: invalid secret".into()))? })
+    }
+}
+
+impl CreateHtlcUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 73 + self.external_sender.len() + self.external_recipient.len();
+        let mut b = Vec::with_capacity(cap);
+        b.extend_from_slice(&self.swap_id);
+        b.extend_from_slice(&self.hash.to_repr());
+        b.extend_from_slice(&self.timelock.to_le_bytes());
+        b.extend_from_slice(&self.amount.to_le_bytes());
+        b.push(self.chain as u8);
+        b.push(self.external_sender.len() as u8);
+        b.extend_from_slice(&self.external_sender);
+        b.push(self.external_recipient.len() as u8);
+        b.extend_from_slice(&self.external_recipient);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 73 { return Err(ContractError::IoError(format!("CreateHtlcUpdateV1: expected at least 73 bytes, got {}", data.len()))); }
+        let swap_id: [u8; 32] = data[0..32].try_into().unwrap();
+        let hash = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CreateHtlcUpdateV1: invalid hash".into()))?;
+        let timelock = u64::from_le_bytes(data[64..72].try_into().unwrap());
+        let amount = u64::from_le_bytes(data[72..80].try_into().unwrap());
+        let chain = ExternalChain::try_from(data[80])?;
+        let sender_len = data[81] as usize;
+        if data.len() < 82 + sender_len + 1 { return Err(ContractError::IoError("CreateHtlcUpdateV1: data too short".into())); }
+        let external_sender = data[82..82+sender_len].to_vec();
+        let recip_len = data[82+sender_len] as usize;
+        let expected = 83 + sender_len + recip_len;
+        if data.len() != expected { return Err(ContractError::IoError(format!("CreateHtlcUpdateV1: expected {} bytes, got {}", expected, data.len()))); }
+        let external_recipient = data[83+sender_len..expected].to_vec();
+        Ok(CreateHtlcUpdateV1 { swap_id, hash, timelock, amount, external_sender, external_recipient, chain })
+    }
+}
