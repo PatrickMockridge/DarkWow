@@ -805,10 +805,10 @@ pub struct PayInterestUpdateV1 {
 }
 
 impl PayInterestUpdateV1 {
-    pub const ENCODED_SIZE: usize = 665;
+    pub const ENCODED_SIZE: usize = 625;
 
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(665);
+        let mut b = Vec::with_capacity(625);
         b.extend_from_slice(&self.updated_coin.encode());
         b.extend_from_slice(&self.interest_coin.encode());
         b.extend_from_slice(&self.bond_token_commit.to_repr());
@@ -818,9 +818,9 @@ impl PayInterestUpdateV1 {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 665 {
+        if data.len() != 625 {
             return Err(ContractError::IoError(format!(
-                "PayInterestUpdateV1: expected 665 bytes, got {}",
+                "PayInterestUpdateV1: expected 625 bytes, got {}",
                 data.len()
             )));
         }

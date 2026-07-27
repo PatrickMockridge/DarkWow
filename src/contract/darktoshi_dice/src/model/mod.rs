@@ -134,11 +134,11 @@ pub struct Bet {
     pub instance_seed: [u8; 32],
 }
 
-/// Fixed encoded size for Bet: 298 bytes.
-pub const BET_ENCODED_SIZE: usize = 298;
+/// Fixed encoded size for Bet: 362 bytes.
+pub const BET_ENCODED_SIZE: usize = 362;
 
 impl Bet {
-    /// Encode Bet into a fixed-size byte vector (298 bytes).
+    /// Encode Bet into a fixed-size byte vector (362 bytes).
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(BET_ENCODED_SIZE);
         b.push(self.version);
@@ -177,7 +177,7 @@ impl Bet {
         b
     }
 
-    /// Decode Bet from a byte slice (298 bytes expected).
+    /// Decode Bet from a byte slice (362 bytes expected).
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != BET_ENCODED_SIZE {
             return Err(ContractError::IoError("Invalid Bet length".to_string()))
@@ -310,7 +310,7 @@ pub struct CommitBetParamsV1 {
 /// State update for `CommitBetV1`.
 ///
 /// Per rho-calculus: explicit encode/decode for bridge (module boundary crossing).
-/// Fixed encoding: 286 bytes.
+/// Fixed encoding: 350 bytes.
 #[derive(Debug, Clone)]
 pub struct CommitBetUpdateV1 {
     pub bet_id: BetId,
@@ -329,10 +329,10 @@ pub struct CommitBetUpdateV1 {
     pub instance_seed: [u8; 32],
 }
 
-pub const COMMIT_BET_UPDATE_ENCODED_SIZE: usize = 286;
+pub const COMMIT_BET_UPDATE_ENCODED_SIZE: usize = 350;
 
 impl CommitBetUpdateV1 {
-    /// Encode into a fixed-size byte vector (286 bytes).
+    /// Encode into a fixed-size byte vector (350 bytes).
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(COMMIT_BET_UPDATE_ENCODED_SIZE);
         let (px, py) = self.player_pub.xy().expect("pk not identity");
@@ -361,7 +361,7 @@ impl CommitBetUpdateV1 {
         b
     }
 
-    /// Decode from a byte slice (286 bytes expected).
+    /// Decode from a byte slice (350 bytes expected).
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != COMMIT_BET_UPDATE_ENCODED_SIZE {
             return Err(ContractError::IoError("Invalid CommitBetUpdateV1 length".to_string()))

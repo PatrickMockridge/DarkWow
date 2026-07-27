@@ -61,10 +61,10 @@ pub struct RelayerEndowmentAccount {
 }
 
 impl RelayerEndowmentAccount {
-    pub const ENCODED_SIZE: usize = 166;
+    pub const ENCODED_SIZE: usize = 134;
 
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(166);
+        let mut b = Vec::with_capacity(134);
         b.push(self.version);
         b.extend_from_slice(&self.instance_seed);
         b.extend_from_slice(&self.relayer_pub.to_bytes());
@@ -82,9 +82,9 @@ impl RelayerEndowmentAccount {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 166 {
+        if data.len() != 134 {
             return Err(ContractError::IoError(format!(
-                "RelayerEndowmentAccount: expected 166 bytes, got {}",
+                "RelayerEndowmentAccount: expected 134 bytes, got {}",
                 data.len()
             )));
         }
@@ -132,10 +132,10 @@ pub struct EndowmentDeployment {
 
 impl EndowmentDeployment {
     /// Max encoded size (with Some for Option)
-    pub const ENCODED_SIZE: usize = 199;
+    pub const ENCODED_SIZE: usize = 135;
 
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(199);
+        let mut b = Vec::with_capacity(135);
         b.push(self.version);
         b.extend_from_slice(&self.deployment_id.to_repr());
         b.extend_from_slice(&self.relayer_pub.to_bytes());
@@ -156,15 +156,15 @@ impl EndowmentDeployment {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        let min_len = 199 - 8; // minimum without Option value bytes
+        let min_len = 127; // minimum without Option value bytes
         if data.len() < min_len {
             return Err(ContractError::IoError(format!(
                 "EndowmentDeployment: expected at least {} bytes, got {}",
                 min_len, data.len()
             )));
         }
-        let tag = data[190];
-        let expected_len = if tag == 0 { min_len + 1 } else { 199 };
+        let tag = data[125];
+        let expected_len = if tag == 0 { 127 } else { 135 };
         if data.len() != expected_len {
             return Err(ContractError::IoError(format!(
                 "EndowmentDeployment: expected {} bytes, got {}",
@@ -173,7 +173,7 @@ impl EndowmentDeployment {
         }
         let withdraw_requested_at = match tag {
             0 => None,
-            1 => Some(u64::from_le_bytes(data[191..199].try_into().unwrap())),
+            1 => Some(u64::from_le_bytes(data[126..134].try_into().unwrap())),
             _ => return Err(ContractError::IoError(
                 "EndowmentDeployment: invalid withdraw_requested_at tag".into()
             )),
@@ -190,7 +190,7 @@ impl EndowmentDeployment {
             accumulated_fees: u64::from_le_bytes(data[109..117].try_into().unwrap()),
             deployed_at: u64::from_le_bytes(data[117..125].try_into().unwrap()),
             withdraw_requested_at,
-            withdrawn: data[if tag == 0 { 191 } else { 199 } - 1] != 0,
+            withdrawn: data[if tag == 0 { 126 } else { 134 }] != 0,
         })
     }
 }
@@ -239,10 +239,10 @@ pub struct InitializeUpdateV1 {
 }
 
 impl InitializeUpdateV1 {
-    pub const ENCODED_SIZE: usize = 108;
+    pub const ENCODED_SIZE: usize = 76;
 
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(108);
+        let mut b = Vec::with_capacity(76);
         b.extend_from_slice(&self.instance_seed);
         b.extend_from_slice(&self.relayer_pub.to_bytes());
         b.extend_from_slice(&self.default_backer_cut_bp.to_le_bytes());
@@ -251,9 +251,9 @@ impl InitializeUpdateV1 {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 108 {
+        if data.len() != 76 {
             return Err(ContractError::IoError(format!(
-                "InitializeUpdateV1: expected 108 bytes, got {}",
+                "InitializeUpdateV1: expected 76 bytes, got {}",
                 data.len()
             )));
         }
@@ -358,10 +358,10 @@ pub struct DeployCapitalUpdateV1 {
 }
 
 impl DeployCapitalUpdateV1 {
-    pub const ENCODED_SIZE: usize = 180;
+    pub const ENCODED_SIZE: usize = 156;
 
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(180);
+        let mut b = Vec::with_capacity(156);
         b.extend_from_slice(&self.instance_seed);
         b.extend_from_slice(&self.deployment_id.to_repr());
         b.extend_from_slice(&self.relayer_pub.to_bytes());
@@ -374,9 +374,9 @@ impl DeployCapitalUpdateV1 {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 180 {
+        if data.len() != 156 {
             return Err(ContractError::IoError(format!(
-                "DeployCapitalUpdateV1: expected 180 bytes, got {}",
+                "DeployCapitalUpdateV1: expected 156 bytes, got {}",
                 data.len()
             )));
         }
