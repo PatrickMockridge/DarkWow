@@ -25,7 +25,8 @@
 
 use dwow_sdk::{
     crypto::{poseidon_hash, PublicKey},
-    pasta::pallas,
+    error::ContractError,
+    pasta::{group::GroupEncoding, pallas},
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
@@ -728,4 +729,76 @@ pub fn calculate_slash(
         .ok_or(InsuranceMarketError::ArithmeticOverflow)?
         / 10000;
     Ok(proportional_slash.min(bond_amount))
+}
+
+// ============================================================================
+// RHO-CALCULUS EXPLICIT ENCODE/DECODE
+// ============================================================================
+
+impl RiskType {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(77 + self.description.len());
+        b.push(self.version);
+        b.extend_from_slice(&self.id.to_repr());
+        b.push(self.category as u8);
+        b.push(self.description.len() as u8);
+        b.extend_from_slice(&self.description);
+        b.extend_from_slice(&self.base_premium_rate.to_le_bytes());
+        b.extend_from_slice(&self.min_bond_rate.to_le_bytes());
+        b.extend_from_slice(&self.oracle_pubkey.to_bytes());
+        b.push(self.active as u8);
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 77 { return Err(ContractError::IoError(format!("RiskType: expected at least 77 bytes, got {}", data.len()))); }
+        let version = data[0];
+        let id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RiskType: invalid id".into()))?;
+        let category = RiskCategory::try_from(data[33])?;
+        let desc_len = data[34] as usize;
+        if data.len() != 77 + desc_len { return Err(ContractError::IoError(format!("RiskType: expected {} bytes, got {}", 77 + desc_len, data.len()))); }
+        let description = data[35..35+desc_len].to_vec();
+        let base_premium_rate = u32::from_le_bytes(data[35+desc_len..39+desc_len].try_into().unwrap());
+        let min_bond_rate = u32::from_le_bytes(data[39+desc_len..43+desc_len].try_into().unwrap());
+        let oracle_pubkey = PublicKey::from_bytes(data[43+desc_len..75+desc_len].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("RiskType: invalid oracle_pubkey: {}", e)))?;
+        let active = data[75+desc_len] != 0;
+        let created_at = u64::from_le_bytes(data[76+desc_len..84+desc_len].try_into().unwrap());
+        Ok(RiskType { version, id, category, description, base_premium_rate, min_bond_rate, oracle_pubkey, active, created_at })
+    }
+}
+
+impl Coverage {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 163 + if self.claim_id.is_some() { 32 } else { 0 };
+        let mut b = Vec::with_capacity(cap);
+        b.push(self.version);
+        b.extend_from_slice(&self.id.to_repr());
+        b.extend_from_slice(&self.market_id.to_repr());
+        b.extend_from_slice(&self.buyer.to_bytes());
+        b.extend_from_slice(&self.underwriter_id.to_repr());
+        b.extend_from_slice(&self.amount.to_le_bytes());
+        b.extend_from_slice(&self.premium_paid.to_le_bytes());
+        b.push(self.state as u8);
+        b.extend_from_slice(&self.starts_at.to_le_bytes());
+        b.extend_from_slice(&self.expires_at.to_le_bytes());
+        b.push(self.claim_id.is_some() as u8);
+        if let Some(ref cid) = self.claim_id { b.extend_from_slice(&cid.to_repr()); }
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 163 { return Err(ContractError::IoError(format!("Coverage: expected at least 163 bytes, got {}", data.len()))); }
+        let version = data[0];
+        let id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Coverage: invalid id".into()))?;
+        let market_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Coverage: invalid market_id".into()))?;
+        let buyer = PublicKey::from_bytes(data[65..97].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Coverage: invalid buyer: {}", e)))?;
+        let underwriter_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[97..129].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Coverage: invalid underwriter_id".into()))?;
+        let amount = u64::from_le_bytes(data[129..137].try_into().unwrap());
+        let premium_paid = u64::from_le_bytes(data[137..145].try_into().unwrap());
+        let state = CoverageState::try_from(data[145])?;
+        let starts_at = u64::from_le_bytes(data[146..154].try_into().unwrap());
+        let expires_at = u64::from_le_bytes(data[154..162].try_into().unwrap());
+        let has_claim = data[162] != 0;
+        let claim_id = if has_claim { Some(Option::<pallas::Base>::from(pallas::Base::from_repr(data[163..195].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Coverage: invalid claim_id".into()))?) } else { None };
+        Ok(Coverage { version, id, market_id, buyer, underwriter_id, amount, premium_paid, state, starts_at, expires_at, claim_id })
+    }
 }
