@@ -756,7 +756,8 @@ fn dao_control_apply_v1(cid: ContractId, update: DaoControlUpdateV1) -> Contract
                 }
             };
             plan.active = active;
-            let plan_data = serialize(&plan);
+            let mut plan_data = vec![];
+            dwow_serial::Encodable::encode(&plan, &mut plan_data).map_err(|e| ContractError::IoError(e.to_string()))?;
             wasm::db::db_set(plans_db, &plan_id.to_le_bytes(), &plan_data)?;
             msg!("[subscription::dao_control_apply_v1] Plan {} active status: {}", plan_id, active);
         }
