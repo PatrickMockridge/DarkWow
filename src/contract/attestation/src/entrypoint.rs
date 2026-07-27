@@ -185,7 +185,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         AttestationFunction::CreateAttestationV1 => {
-            let params: CreateAttestationParamsV1 = match deserialize(&self_.data[1..]) {
+            let params = match CreateAttestationParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize CreateAttestationParamsV1: {:?}", e);
@@ -201,7 +201,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::CreateClaimV1 => {
-            let params: CreateClaimParamsV1 = match deserialize(&self_.data[1..]) {
+            let params = match CreateClaimParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize CreateClaimParamsV1: {:?}", e);
@@ -217,7 +217,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::VerifyClaimV1 => {
-            let params: VerifyClaimParamsV1 = match deserialize(&self_.data[1..]) {
+            let params = match VerifyClaimParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize VerifyClaimParamsV1: {:?}", e);
@@ -235,7 +235,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::ConsumeClaimV1 => {
-            let params: ConsumeClaimParamsV1 = match deserialize(&self_.data[1..]) {
+            let params = match ConsumeClaimParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize ConsumeClaimParamsV1: {:?}", e);
@@ -255,7 +255,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::CheckNotRevokedV1 => {
-            let params: CheckNotRevokedParamsV1 = match deserialize(&self_.data[1..]) {
+            let params = match CheckNotRevokedParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize CheckNotRevokedParamsV1: {:?}", e);
@@ -297,7 +297,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::VerifyChainV1 => {
-            let params: VerifyChainParamsV1 = match deserialize(&self_.data[1..]) {
+            let params = match VerifyChainParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize VerifyChainParamsV1: {:?}", e);
@@ -337,7 +337,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::AttestSlashV1 => {
-            let params: AttestSlashParamsV1 = match deserialize(&self_.data[1..]) {
+            let params = match AttestSlashParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize AttestSlashParamsV1: {:?}", e);
@@ -353,7 +353,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::CommitFeeScheduleV1 => {
-            let params: CommitFeeScheduleParamsV1 = match deserialize(&self_.data[1..]) {
+            let params = match CommitFeeScheduleParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize CommitFeeScheduleParamsV1: {:?}", e);
@@ -393,35 +393,35 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let update_bytes = match func {
         AttestationFunction::CreateAttestationV1 => {
-            let params: CreateAttestationParamsV1 = deserialize(&self_.data[1..])?;
+            let params= CreateAttestationParamsV1::decode(&self_.data[1..])?;
             create_attestation_v1(cid, params)?
         }
         AttestationFunction::RevokeAttestationV1 => {
-            let params: RevokeAttestationParamsV1 = deserialize(&self_.data[1..])?;
+            let params= RevokeAttestationParamsV1::decode(&self_.data[1..])?;
             revoke_attestation_v1(cid, params)?
         }
         AttestationFunction::ExpireAttestationV1 => {
-            let params: ExpireAttestationParamsV1 = deserialize(&self_.data[1..])?;
+            let params= ExpireAttestationParamsV1::decode(&self_.data[1..])?;
             expire_attestation_v1(cid, params)?
         }
         AttestationFunction::CreateClaimV1 => {
-            let params: CreateClaimParamsV1 = deserialize(&self_.data[1..])?;
+            let params= CreateClaimParamsV1::decode(&self_.data[1..])?;
             create_claim_v1(cid, params)?
         }
         AttestationFunction::VerifyClaimV1 => {
-            let params: VerifyClaimParamsV1 = deserialize(&self_.data[1..])?;
+            let params= VerifyClaimParamsV1::decode(&self_.data[1..])?;
             verify_claim_v1(cid, params)?
         }
         AttestationFunction::ConsumeClaimV1 => {
-            let params: ConsumeClaimParamsV1 = deserialize(&self_.data[1..])?;
+            let params= ConsumeClaimParamsV1::decode(&self_.data[1..])?;
             consume_claim_v1(cid, params)?
         }
         AttestationFunction::ValidateClaimV1 => {
-            let params: ValidateClaimParamsV1 = deserialize(&self_.data[1..])?;
+            let params= ValidateClaimParamsV1::decode(&self_.data[1..])?;
             validate_claim_v1(cid, params)?
         }
         AttestationFunction::CheckNotRevokedV1 => {
-            let params: CheckNotRevokedParamsV1 = deserialize(&self_.data[1..])?;
+            let params= CheckNotRevokedParamsV1::decode(&self_.data[1..])?;
             check_not_revoked_v1(cid, params)?
         }
         AttestationFunction::DelegateAttestationV1 => {
@@ -429,7 +429,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             delegate_attestation_v1(cid, params)?
         }
         AttestationFunction::VerifyChainV1 => {
-            let params: VerifyChainParamsV1 = deserialize(&self_.data[1..])?;
+            let params= VerifyChainParamsV1::decode(&self_.data[1..])?;
             verify_chain_v1(cid, params)?
         }
         AttestationFunction::UpdateDelegationV1 => {
@@ -437,11 +437,11 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             update_delegation_v1(cid, params)?
         }
         AttestationFunction::AttestSlashV1 => {
-            let params: AttestSlashParamsV1 = deserialize(&self_.data[1..])?;
+            let params= AttestSlashParamsV1::decode(&self_.data[1..])?;
             attest_slash_v1(cid, params)?
         }
         AttestationFunction::CommitFeeScheduleV1 => {
-            let params: CommitFeeScheduleParamsV1 = deserialize(&self_.data[1..])?;
+            let params= CommitFeeScheduleParamsV1::decode(&self_.data[1..])?;
             commit_fee_schedule_v1(cid, params)?
         }
     };
