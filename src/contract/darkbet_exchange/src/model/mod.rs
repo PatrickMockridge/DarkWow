@@ -1025,6 +1025,70 @@ pub const MAX_OUTCOMES: u8 = 20;
 // Per type-system.md §2.2: bytes round-trip is forbidden.
 // Per contract-wasm-type-system.md §3.1: SHALL use explicit encode/decode.
 
+impl Position {
+    pub const ENCODED_SIZE: usize = 155;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(155);
+        b.push(self.version);
+        b.extend_from_slice(&self.position_id.to_repr());
+        b.extend_from_slice(&self.market_id.to_repr());
+        b.extend_from_slice(&self.owner.to_bytes());
+        b.push(self.outcome);
+        b.extend_from_slice(&self.amount.to_le_bytes());
+        b.extend_from_slice(&self.potential_payout.to_le_bytes());
+        b.push(self.state as u8);
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b.extend_from_slice(&self.instance_seed);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 155 { return Err(ContractError::IoError(format!("Position: expected 155 bytes, got {}", data.len()))); }
+        Ok(Position {
+            version: data[0],
+            position_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Position: invalid position_id".into()))?,
+            market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Position: invalid market_id".into()))?,
+            owner: PublicKey::from_bytes(data[65..97].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Position: invalid owner: {}", e)))?,
+            outcome: data[97],
+            amount: u64::from_le_bytes(data[98..106].try_into().unwrap()),
+            potential_payout: u64::from_le_bytes(data[106..114].try_into().unwrap()),
+            state: PositionState::try_from(data[114])?,
+            created_at: u64::from_le_bytes(data[115..123].try_into().unwrap()),
+            instance_seed: data[123..155].try_into().unwrap(),
+        })
+    }
+}
+
+impl LpShare {
+    pub const ENCODED_SIZE: usize = 154;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(154);
+        b.push(self.version);
+        b.extend_from_slice(&self.lp_share_id.to_repr());
+        b.extend_from_slice(&self.market_id.to_repr());
+        b.extend_from_slice(&self.provider.to_bytes());
+        b.extend_from_slice(&self.shares.to_le_bytes());
+        b.extend_from_slice(&self.earned_fees.to_le_bytes());
+        b.push(self.state as u8);
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b.extend_from_slice(&self.instance_seed);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 154 { return Err(ContractError::IoError(format!("LpShare: expected 154 bytes, got {}", data.len()))); }
+        Ok(LpShare {
+            version: data[0],
+            lp_share_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("LpShare: invalid lp_share_id".into()))?,
+            market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("LpShare: invalid market_id".into()))?,
+            provider: PublicKey::from_bytes(data[65..97].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("LpShare: invalid provider: {}", e)))?,
+            shares: u64::from_le_bytes(data[97..105].try_into().unwrap()),
+            earned_fees: u64::from_le_bytes(data[105..113].try_into().unwrap()),
+            state: LpShareState::try_from(data[113])?,
+            created_at: u64::from_le_bytes(data[114..122].try_into().unwrap()),
+            instance_seed: data[122..154].try_into().unwrap(),
+        })
+    }
+}
+
 impl Order {
     pub const ENCODED_SIZE: usize = 192;
     pub fn encode(&self) -> Vec<u8> {
