@@ -524,7 +524,7 @@ fn revoke_attestation_v1(cid: ContractId, params: RevokeAttestationParamsV1) -> 
     // State update handled in process_update — just validate here
 
     msg!("[attestation::revoke_attestation_v1] Attestation revoked successfully");
-    Ok(serialize(&RevokeAttestationUpdateV1 { attestation_id: params.attestation_id }))
+    Ok(RevokeAttestationUpdateV1 { attestation_id: params.attestation_id }.encode())
 }
 
 fn expire_attestation_v1(cid: ContractId, params: ExpireAttestationParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -563,7 +563,7 @@ fn expire_attestation_v1(cid: ContractId, params: ExpireAttestationParamsV1) -> 
     // State update handled in process_update — just validate here
 
     msg!("[attestation::expire_attestation_v1] Attestation expired successfully");
-    Ok(serialize(&ExpireAttestationUpdateV1 { attestation_id: params.attestation_id }))
+    Ok(ExpireAttestationUpdateV1 { attestation_id: params.attestation_id }.encode())
 }
 
 fn create_claim_v1(cid: ContractId, params: CreateClaimParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -924,7 +924,7 @@ fn validate_claim_v1(cid: ContractId, params: ValidateClaimParamsV1) -> Result<V
     };
 
     msg!("[attestation::validate_claim_v1] Validation result: {:?}", valid);
-    Ok(serialize(&ValidateClaimUpdateV1 { claim_id: params.claim_id, valid }))
+    Ok(ValidateClaimUpdateV1 { claim_id: params.claim_id, valid }.encode())
 }
 
 fn check_not_revoked_v1(cid: ContractId, params: CheckNotRevokedParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -949,7 +949,7 @@ fn check_not_revoked_v1(cid: ContractId, params: CheckNotRevokedParamsV1) -> Res
     }
 
     msg!("[attestation::check_not_revoked_v1] Nonce {:?} is not revoked", params.nonce);
-    Ok(serialize(&CheckNotRevokedUpdateV1 { is_not_revoked: true, proof_hash }))
+    Ok(CheckNotRevokedUpdateV1 { is_not_revoked: true, proof_hash }.encode())
 }
 
 fn delegate_attestation_v1(cid: ContractId, params: DelegateAttestationParamsV1) -> Result<Vec<u8>, ContractError> {
@@ -1015,7 +1015,7 @@ fn verify_chain_v1(cid: ContractId, params: VerifyChainParamsV1) -> Result<Vec<u
     }
 
     msg!("[attestation::verify_chain_v1] Chain verification passed");
-    Ok(serialize(&VerifyChainUpdateV1 { success: true }))
+    Ok(VerifyChainUpdateV1 { success: true }.encode())
 }
 
 fn update_delegation_v1(cid: ContractId, params: UpdateDelegationParamsV1) -> Result<Vec<u8>, ContractError> {
