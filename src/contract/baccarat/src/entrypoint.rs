@@ -85,7 +85,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         BaccaratFunction::CommitBetV1 => {
-            let params: crate::model::CommitBetParamsV1 = deserialize(&self_.data[1..])?;
+            let params= crate::model::CommitBetParamsV1::decode(&self_.data[1..])?;
             let player_x = params.player_pub.x().expect("pk not identity");
             let player_y = params.player_pub.y().expect("pk not identity");
             let bet_id = poseidon_hash([
@@ -114,7 +114,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             }
         }
         BaccaratFunction::DrawCardsV1 => {
-            let params: crate::model::DrawCardsParamsV1 = deserialize(&self_.data[1..])?;
+            let params= crate::model::DrawCardsParamsV1::decode(&self_.data[1..])?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             let secret_nonce_commit = poseidon_hash([params.secret_nonce]);
             zk_public_inputs.push((
@@ -126,7 +126,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         BaccaratFunction::HouseCloseV1 => {
-            let params: crate::model::HouseCloseParamsV1 = deserialize(&self_.data[1..])?;
+            let params= crate::model::HouseCloseParamsV1::decode(&self_.data[1..])?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BACCARAT_CONTRACT_ZKAS_HOUSE_CLOSE_NS_V2.to_string(),
@@ -137,7 +137,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         BaccaratFunction::SettleBetV1 => {
-            let params: crate::model::SettleBetParamsV1 = deserialize(&self_.data[1..])?;
+            let params= crate::model::SettleBetParamsV1::decode(&self_.data[1..])?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BACCARAT_CONTRACT_ZKAS_SETTLE_NS_V2.to_string(),

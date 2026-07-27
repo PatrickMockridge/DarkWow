@@ -31,7 +31,6 @@ use dwow_sdk::{
     pasta::{group::GroupEncoding, pallas},
     tx::TransactionHash,
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // ============================================================================
 // CARD AND HAND TYPES
@@ -597,12 +596,32 @@ impl CommitBetUpdateV1 {
 }
 
 /// Parameters for DrawCardsV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct DrawCardsParamsV1 {
     /// Bet ID to draw cards for
     pub bet_id: BetId,
     /// Secret nonce (for verification)
     pub secret_nonce: pallas::Base,
+}
+
+impl DrawCardsParamsV1 {
+    pub const ENCODED_SIZE: usize = 64;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.bet_id.to_repr());
+        buf.extend_from_slice(&self.secret_nonce.to_repr());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("DrawCardsParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        let bet_id = read_base(&data[0..32])?;
+        let secret_nonce = read_base(&data[32..64])?;
+        Ok(DrawCardsParamsV1 { bet_id, secret_nonce })
+    }
 }
 
 /// Update produced by DrawCardsV1
@@ -674,10 +693,26 @@ impl DrawCardsUpdateV1 {
 }
 
 /// Parameters for SettleBetV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct SettleBetParamsV1 {
     /// Bet ID to settle
     pub bet_id: BetId,
+}
+
+impl SettleBetParamsV1 {
+    pub const ENCODED_SIZE: usize = 32;
+
+    pub fn encode(&self) -> Vec<u8> {
+        self.bet_id.to_repr().to_vec()
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("SettleBetParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        let bet_id = read_base(&data[0..32])?;
+        Ok(SettleBetParamsV1 { bet_id })
+    }
 }
 
 /// Update produced by SettleBetV1
@@ -716,7 +751,7 @@ impl SettleBetUpdateV1 {
 }
 
 /// Parameters for HouseCloseV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct HouseCloseParamsV1 {
     /// Bet ID to close
     pub bet_id: BetId,
@@ -726,6 +761,30 @@ pub struct HouseCloseParamsV1 {
     pub house_pub_y: pallas::Base,
     /// Close nullifier = H(bet_id, house_secret) — replay protection
     pub close_nullifier: pallas::Base,
+}
+
+impl HouseCloseParamsV1 {
+    pub const ENCODED_SIZE: usize = 128;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.bet_id.to_repr());
+        buf.extend_from_slice(&self.house_pub_x.to_repr());
+        buf.extend_from_slice(&self.house_pub_y.to_repr());
+        buf.extend_from_slice(&self.close_nullifier.to_repr());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("HouseCloseParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        let bet_id = read_base(&data[0..32])?;
+        let house_pub_x = read_base(&data[32..64])?;
+        let house_pub_y = read_base(&data[64..96])?;
+        let close_nullifier = read_base(&data[96..128])?;
+        Ok(HouseCloseParamsV1 { bet_id, house_pub_x, house_pub_y, close_nullifier })
+    }
 }
 
 /// Update produced by HouseCloseV1
