@@ -23,7 +23,6 @@
 
 //! Data structures for pool_stake contract calls
 
-use dwow_serial::{SerialDecodable, SerialEncodable};
 use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, PublicKey},
     error::ContractError,
@@ -356,7 +355,7 @@ impl CoverageAllocation {
 // ============================================================================
 
 /// Parameters for creating a new pool
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CreatePoolParamsV1 {
     /// Instance seed for per-capability key derivation
     pub instance_seed: [u8; 32],
@@ -429,7 +428,7 @@ impl CreatePoolUpdateV1 {
 }
 
 /// Parameters for joining a pool (staking)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct JoinPoolParamsV1 {
     /// Instance seed for per-capability key derivation
     pub instance_seed: [u8; 32],
@@ -527,7 +526,7 @@ impl JoinPoolUpdateV1 {
 }
 
 /// Parameters for leaving a pool
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct LeavePoolParamsV1 {
     /// Stake ID to unstake
     pub stake_id: pallas::Base,
@@ -571,7 +570,7 @@ impl LeavePoolUpdateV1 {
 }
 
 /// Parameters for allocating coverage to a withdrawal
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct AllocateCoverageParamsV1 {
     /// Pool to allocate from
     pub pool_id: pallas::Base,
@@ -686,7 +685,7 @@ impl AllocateCoverageUpdateV1 {
 }
 
 /// Parameters for releasing coverage after success
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ReleaseCoverageParamsV1 {
     /// Allocation ID to release
     pub allocation_id: pallas::Base,
@@ -737,7 +736,7 @@ impl ReleaseCoverageUpdateV1 {
 }
 
 /// Parameters for slashing coverage after failure
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct SlashCoverageParamsV1 {
     /// Allocation ID to slash
     pub allocation_id: pallas::Base,
@@ -805,7 +804,7 @@ impl SlashCoverageUpdateV1 {
 }
 
 /// Parameters for claiming accumulated fees
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ClaimFeesParamsV1 {
     /// Stake ID to claim fees for
     pub stake_id: pallas::Base,
@@ -851,7 +850,7 @@ impl ClaimFeesUpdateV1 {
 }
 
 /// Parameters for updating pool configuration
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct UpdatePoolConfigParamsV1 {
     /// Pool to update
     pub pool_id: pallas::Base,
@@ -907,7 +906,7 @@ impl UpdatePoolConfigUpdateV1 {
 // ============================================================================
 
 /// Parameters for rebalancing pool member shares based on reputation
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct RebalancePoolSharesParamsV1 {
     /// Pool ID to rebalance
     pub pool_id: pallas::Base,
