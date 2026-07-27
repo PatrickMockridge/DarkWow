@@ -24,7 +24,6 @@
 use dwow_sdk::crypto::{pasta_prelude::PrimeField, ContractId, PublicKey};
 use dwow_sdk::error::ContractError;
 use dwow_sdk::pasta::pallas;
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// State update for `Deploy::Deploy`
 #[derive(Clone, Debug)]
@@ -67,11 +66,13 @@ impl DeployUpdateV1 {
 
 /// Parameters for `Deploy::Lock`
 // ANCHOR: deploy-lock-params
-#[derive(Clone, Debug, SerialEncodable, SerialDecodable)]
+#[derive(Clone, Debug)]
 pub struct LockParamsV1 {
     /// Public key used to sign the transaction and derive the `ContractId`
     pub public_key: PublicKey,
 }
+
+impl LockParamsV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { self.public_key.to_bytes().to_vec() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("LockParamsV1: expected 32 bytes, got {}", data.len()))); } Ok(LockParamsV1 { public_key: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("LockParamsV1: invalid public_key: {}", e)))? }) } }
 // ANCHOR_END: deploy-lock-params
 
 /// State update for `Deploy::Lock`
