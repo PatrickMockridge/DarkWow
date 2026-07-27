@@ -56,7 +56,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let func = MultiSigFunction::try_from(self_.data[0])?;
     let metadata: Vec<u8> = match func {
         MultiSigFunction::CreateGroupV1 => {
-            let params: CreateGroupParamsV1 = match deserialize(&self_.data[1..]) {
+            let params = match CreateGroupParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[multisig::get_metadata] Error: Failed to deserialize CreateGroupParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             let t = pallas::Base::from(params.threshold as u64);
@@ -76,7 +76,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             meta
         }
         MultiSigFunction::SignV1 => {
-            let params: SignParamsV1 = match deserialize(&self_.data[1..]) {
+            let params = match SignParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[multisig::get_metadata] Error: Failed to deserialize SignParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -90,7 +90,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             meta
         }
         MultiSigFunction::FinalizeV1 => {
-            let params: FinalizeParamsV1 = match deserialize(&self_.data[1..]) {
+            let params = match FinalizeParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[multisig::get_metadata] Error: Failed to deserialize FinalizeParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
