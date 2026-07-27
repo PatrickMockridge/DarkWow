@@ -192,7 +192,7 @@ impl Attestation {
         let cd_end = 99 + cd_count * 32;
         if data.len() < cd_end + 1 { return Err(ContractError::IoError("Attestation: data too short for claim_data".into())); }
         let mut claim_data = Vec::with_capacity(cd_count);
-        for i in 0..cd_count { claim_data.push(Option::<pallas::Base>::from(pallas::Base::from_repr(data[99 + i*32..99 + (i+1)*32].try_into().unwrap())).ok_or_else(|| ContractError::IoError(format!("Attestation: invalid claim_data[{}]", i))?)); }
+        for i in 0..cd_count { claim_data.push(Option::<pallas::Base>::from(pallas::Base::from_repr(data[99 + i*32..99 + (i+1)*32].try_into().unwrap())).ok_or_else(|| ContractError::IoError(format!("Attestation: invalid claim_data[{}]", i)))?); }
         let md_len = data[cd_end] as usize;
         let md_end = cd_end + 1 + md_len;
         if data.len() < md_end + 10 { return Err(ContractError::IoError("Attestation: data too short for metadata+state".into())); }
@@ -720,7 +720,7 @@ pub struct AttestSlashParamsV1 {
 }
 
 /// Attestation ID derived from slash event
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct AttestSlashUpdateV1 {
     pub attestation_id: AttestationId,
     pub slash_amount: u64,
@@ -756,7 +756,7 @@ pub struct CommitFeeScheduleParamsV1 {
 }
 
 /// Update for fee schedule commitment
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CommitFeeScheduleUpdateV1 {
     pub attestation_id: pallas::Base,
     pub base_fee_bp: u64,

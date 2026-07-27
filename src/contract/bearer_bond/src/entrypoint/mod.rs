@@ -39,7 +39,7 @@
 
 use dwow_sdk::{
     crypto::{
-        pasta_prelude::{Curve, CurveAffine},
+        pasta_prelude::{Curve, CurveAffine, PrimeField},
         ContractId,
     },
     dark_tree::DarkLeaf,

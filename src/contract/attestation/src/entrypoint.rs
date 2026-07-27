@@ -1318,7 +1318,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         AttestationFunction::CommitFeeScheduleV1 => {
             let update = CommitFeeScheduleUpdateV1::decode(&update_data[1..])?;
             let db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_ATTESTATIONS_TREE)?;
-            wasm::db::db_set(db, &update.attestation_id.to_bytes(), &update.attestation.encode())?;
+            wasm::db::db_set(db, &update.attestation_id.to_repr(), &update.attestation.encode())?;
             let index_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_INDEX_TREE)?;
             wasm::db::db_set(index_db, &update.index_key_bytes, &[])?;
             msg!(

@@ -48,7 +48,7 @@
 //! - BurnStakeV1 (0x05): Issuer retires staking pool.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::Group, ContractId, MerkleNode},
+    crypto::{pasta_prelude::{Group, PrimeField}, ContractId, MerkleNode},
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
 };
@@ -284,7 +284,7 @@ impl BondCoin {
             )));
         }
         Ok(BondCoin {
-            value_commit: Option::<pallas::Point>::from(pallas::Point::from_bytes(&data[0..32].try_into().unwrap()).into())
+            value_commit: Option::<pallas::Point>::from(pallas::Point::from_bytes(&data[0..32].try_into().unwrap()))
                 .ok_or_else(|| ContractError::IoError("BondCoin: invalid value_commit".into()))?,
             token_commit: pallas::Base::from_repr(data[32..64].try_into().unwrap())
                 .into_option()
@@ -476,7 +476,7 @@ impl BondInput {
             )));
         }
         Ok(BondInput {
-            value_commit: Option::<pallas::Point>::from(pallas::Point::from_bytes(&data[0..32].try_into().unwrap()).into())
+            value_commit: Option::<pallas::Point>::from(pallas::Point::from_bytes(&data[0..32].try_into().unwrap()))
                 .ok_or_else(|| ContractError::IoError("BondInput: invalid value_commit".into()))?,
             token_commit: pallas::Base::from_repr(data[32..64].try_into().unwrap())
                 .into_option()
