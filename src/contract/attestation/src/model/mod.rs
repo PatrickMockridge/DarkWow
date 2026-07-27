@@ -586,14 +586,29 @@ pub struct DelegateAttestationParamsV1 {
 }
 
 /// State update for DelegateAttestationV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct DelegateAttestationUpdateV1 {
-    /// The delegation ID
     pub delegation_id: pallas::Base,
-    /// Whether delegation was successful
     pub success: bool,
-    /// Delegation parameters to store
     pub delegation_params: DelegateAttestationParamsV1,
+}
+
+impl DelegateAttestationUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let params_bytes = dwow_serial::serialize(&self.delegation_params);
+        let mut b = Vec::with_capacity(33 + params_bytes.len());
+        b.extend_from_slice(&self.delegation_id.to_repr());
+        b.push(self.success as u8);
+        b.extend_from_slice(&params_bytes);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 33 { return Err(ContractError::IoError(format!("DelegateAttestationUpdateV1: expected at least 33 bytes, got {}", data.len()))); }
+        let delegation_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DelegateAttestationUpdateV1: invalid delegation_id".into()))?;
+        let success = data[32] != 0;
+        let delegation_params = dwow_serial::deserialize(&data[33..])?;
+        Ok(DelegateAttestationUpdateV1 { delegation_id, success, delegation_params })
+    }
 }
 
 /// Parameters for checking not revoked
@@ -662,14 +677,29 @@ pub struct UpdateDelegationParamsV1 {
 }
 
 /// State update for UpdateDelegationV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct UpdateDelegationUpdateV1 {
-    /// Whether the update was successful
     pub success: bool,
-    /// Original attestation ID being updated
     pub original_attestation_id: pallas::Base,
-    /// Updated delegation parameters to store
     pub updated_params: UpdateDelegationParamsV1,
+}
+
+impl UpdateDelegationUpdateV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let params_bytes = dwow_serial::serialize(&self.updated_params);
+        let mut b = Vec::with_capacity(33 + params_bytes.len());
+        b.push(self.success as u8);
+        b.extend_from_slice(&self.original_attestation_id.to_repr());
+        b.extend_from_slice(&params_bytes);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 33 { return Err(ContractError::IoError(format!("UpdateDelegationUpdateV1: expected at least 33 bytes, got {}", data.len()))); }
+        let success = data[0] != 0;
+        let original_attestation_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UpdateDelegationUpdateV1: invalid original_attestation_id".into()))?;
+        let updated_params = dwow_serial::deserialize(&data[33..])?;
+        Ok(UpdateDelegationUpdateV1 { success, original_attestation_id, updated_params })
+    }
 }
 
 // ============================================================================
@@ -792,9 +822,34 @@ impl VerifyChainUpdateV1 {
 }
 
 impl AttestSlashUpdateV1 {
-    pub const ENCODED_SIZE: usize = 65;
-    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(65); b.extend_from_slice(&self.attestation_id.to_repr()); b.extend_from_slice(&self.slash_amount.to_le_bytes()); b.push(self.revoked as u8); b }
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != Self::ENCODED_SIZE { return Err(ContractError::IoError(format!("AttestSlashUpdateV1: expected 65 bytes, got {}", data.len()))); } Ok(AttestSlashUpdateV1 { attestation_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("AttestSlashUpdateV1: invalid attestation_id".into()))?, slash_amount: u64::from_le_bytes(data[32..40].try_into().unwrap()), revoked: data[64] != 0 }) }
+    pub fn encode(&self) -> Vec<u8> {
+        let att = self.attestation.encode();
+        let mut b = Vec::with_capacity(81 + att.len() + self.index_key_bytes.len());
+        b.extend_from_slice(&self.attestation_id.to_bytes());
+        b.extend_from_slice(&self.slash_amount.to_le_bytes());
+        b.extend_from_slice(&self.withdrawal_id.to_repr());
+        b.extend_from_slice(&self.block_height.to_le_bytes());
+        b.extend_from_slice(&att);
+        b.push(self.index_key_bytes.len() as u8);
+        b.extend_from_slice(&self.index_key_bytes);
+        b.push(self.is_new as u8);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 81 { return Err(ContractError::IoError(format!("AttestSlashUpdateV1: expected at least 81 bytes, got {}", data.len()))); }
+        let attestation_id = AttestationId::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("AttestSlashUpdateV1: invalid attestation_id".into()))?;
+        let slash_amount = u64::from_le_bytes(data[32..40].try_into().unwrap());
+        let withdrawal_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[40..72].try_into().unwrap())).ok_or_else(|| ContractError::IoError("AttestSlashUpdateV1: invalid withdrawal_id".into()))?;
+        let block_height = u64::from_le_bytes(data[72..80].try_into().unwrap());
+        let attestation = Attestation::decode(&data[80..])?;
+        let ikb_pos = 80 + attestation.encode().len();
+        if data.len() < ikb_pos + 2 { return Err(ContractError::IoError("AttestSlashUpdateV1: data too short".into())); }
+        let ikb_len = data[ikb_pos] as usize;
+        if data.len() != ikb_pos + 2 + ikb_len { return Err(ContractError::IoError(format!("AttestSlashUpdateV1: size mismatch"))); }
+        let index_key_bytes = data[ikb_pos + 1..ikb_pos + 1 + ikb_len].to_vec();
+        let is_new = data[ikb_pos + 1 + ikb_len] != 0;
+        Ok(AttestSlashUpdateV1 { attestation_id, slash_amount, withdrawal_id, block_height, attestation, index_key_bytes, is_new })
+    }
 }
 
 impl CommitFeeScheduleUpdateV1 {
