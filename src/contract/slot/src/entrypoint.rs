@@ -208,19 +208,19 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> GenericResult<()> {
             Ok(())
         }
         SlotFunction::CommitSpinV1 => {
-            let update: CommitSpinUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CommitSpinUpdateV1::decode(&update_data[1..])?;
             commit_spin_process_update_v1(cid, update)
         }
         SlotFunction::RevealSpinV1 => {
-            let update: crate::model::RevealSpinUpdateV1 = deserialize(&update_data[1..])?;
+            let update = RevealSpinUpdateV1::decode(&update_data[1..])?;
             reveal_spin_process_update_v1(cid, update)
         }
         SlotFunction::SettleSpinV1 => {
-            let update: crate::model::SettleSpinUpdateV1 = deserialize(&update_data[1..])?;
+            let update = SettleSpinUpdateV1::decode(&update_data[1..])?;
             settle_spin_process_update_v1(cid, update)
         }
         SlotFunction::CancelSpinV1 => {
-            let update: crate::model::CancelSpinUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CancelSpinUpdateV1::decode(&update_data[1..])?;
             cancel_spin_process_update_v1(cid, update)
         }
     }
@@ -254,7 +254,7 @@ fn initialize_process_instruction_v1(
 
     // Store config
     let config_db = wasm::db::db_lookup(cid, CONFIG_TREE)?;
-    wasm::db::db_set(config_db, b"config", &serialize(&config))?;
+    wasm::db::db_set(config_db, b"config", &config.encode())?;
 
     msg!("[slot::initialize] Slot contract initialized with video slot config");
     Ok(vec![])
@@ -319,7 +319,7 @@ fn commit_spin_process_instruction_v1(
     let config_db = wasm::db::db_lookup(cid, CONFIG_TREE)?;
     let config_data = wasm::db::db_get(config_db, b"config")?;
     let config: GameConfig = match config_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => GameConfig::decode(&data)?,
         None => {
             // Auto-initialize if not set
             return Err(SlotError::HouseNotInitialized.into())
@@ -352,7 +352,7 @@ fn commit_spin_process_instruction_v1(
 
     // Check spin doesn't already exist
     let spins_db = wasm::db::db_lookup(cid, SPINS_TREE)?;
-    if wasm::db::db_contains_key(spins_db, &serialize(&spin_id))? {
+    if wasm::db::db_contains_key(spins_db, &spin_id.to_repr())? {
         return Err(SlotError::SpinAlreadyExists.into())
     }
 
@@ -384,7 +384,7 @@ fn commit_spin_process_instruction_v1(
         spin_id,
         settle_block
     );
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn commit_spin_process_update_v1(cid: ContractId, update: CommitSpinUpdateV1) -> GenericResult<()> {
@@ -412,7 +412,7 @@ fn commit_spin_process_update_v1(cid: ContractId, update: CommitSpinUpdateV1) ->
         instance_seed: update.instance_seed,
     };
 
-    wasm::db::db_set(db, &serialize(&update.spin_id), &serialize(&spin))?;
+    wasm::db::db_set(db, &update.spin_id.to_repr(), &spin.encode())?;
     msg!("[slot::commit_spin::update] Spin stored");
 
     Ok(())
@@ -434,8 +434,8 @@ fn reveal_spin_process_instruction_v1(
 
     // Look up spin
     let spins_db = wasm::db::db_lookup(cid, SPINS_TREE)?;
-    let mut spin: Spin = match wasm::db::db_get(spins_db, &serialize(&params.spin_id))? {
-        Some(data) => deserialize(&data)?,
+    let mut spin: Spin = match wasm::db::db_get(spins_db, &params.spin_id.to_repr())? {
+        Some(data) => Spin::decode(&data)?,
         None => return Err(SlotError::SpinNotFound.into()),
     };
 
@@ -456,7 +456,7 @@ fn reveal_spin_process_instruction_v1(
     let config_db = wasm::db::db_lookup(cid, CONFIG_TREE)?;
     let config_data = wasm::db::db_get(config_db, b"config")?;
     let config: GameConfig = match config_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => GameConfig::decode(&data)?,
         None => return Err(SlotError::HouseNotInitialized.into()),
     };
 
@@ -480,9 +480,9 @@ fn reveal_spin_process_instruction_v1(
         state: spin.state,
     };
 
-    wasm::db::db_set(spins_db, &serialize(&spin.id), &serialize(&spin))?;
+    wasm::db::db_set(spins_db, &spin.id.to_repr(), &spin.encode())?;
     msg!("[slot::reveal_spin] Spin {:?} revealed", spin.id);
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn reveal_spin_process_update_v1(
@@ -542,8 +542,8 @@ fn settle_spin_process_instruction_v1(
 
     // Look up spin
     let spins_db = wasm::db::db_lookup(cid, SPINS_TREE)?;
-    let mut spin: Spin = match wasm::db::db_get(spins_db, &serialize(&params.spin_id))? {
-        Some(data) => deserialize(&data)?,
+    let mut spin: Spin = match wasm::db::db_get(spins_db, &params.spin_id.to_repr())? {
+        Some(data) => Spin::decode(&data)?,
         None => return Err(SlotError::SpinNotFound.into()),
     };
 
@@ -556,7 +556,7 @@ fn settle_spin_process_instruction_v1(
     let config_db = wasm::db::db_lookup(cid, CONFIG_TREE)?;
     let config_data = wasm::db::db_get(config_db, b"config")?;
     let config: GameConfig = match config_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => GameConfig::decode(&data)?,
         None => return Err(SlotError::HouseNotInitialized.into()),
     };
 
@@ -596,13 +596,13 @@ fn settle_spin_process_instruction_v1(
         state: spin.state,
     };
 
-    wasm::db::db_set(spins_db, &serialize(&spin.id), &serialize(&spin))?;
+    wasm::db::db_set(spins_db, &spin.id.to_repr(), &spin.encode())?;
     msg!(
         "[slot::settle_spin] Spin {:?} settled, payout: {}",
         spin.id,
         payout
     );
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn settle_spin_process_update_v1(
@@ -665,8 +665,8 @@ fn cancel_spin_process_instruction_v1(
 
     // Look up spin
     let spins_db = wasm::db::db_lookup(cid, SPINS_TREE)?;
-    let mut spin: Spin = match wasm::db::db_get(spins_db, &serialize(&params.spin_id))? {
-        Some(data) => deserialize(&data)?,
+    let mut spin: Spin = match wasm::db::db_get(spins_db, &params.spin_id.to_repr())? {
+        Some(data) => Spin::decode(&data)?,
         None => return Err(SlotError::SpinNotFound.into()),
     };
 
@@ -700,9 +700,9 @@ fn cancel_spin_process_instruction_v1(
         state: spin.state,
     };
 
-    wasm::db::db_set(spins_db, &serialize(&spin.id), &serialize(&spin))?;
+    wasm::db::db_set(spins_db, &spin.id.to_repr(), &spin.encode())?;
     msg!("[slot::cancel_spin] Spin {:?} cancelled, house takes: {}", spin.id, house_take);
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 fn cancel_spin_process_update_v1(

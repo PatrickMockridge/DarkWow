@@ -689,6 +689,112 @@ pub fn derive_spin_id(
 // RHO-CALCULUS EXPLICIT ENCODE/DECODE
 // ============================================================================
 
+impl ReelStrip {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(1 + self.symbols.len());
+        b.push(self.symbols.len() as u8);
+        for s in &self.symbols { b.push(s.0); }
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() { return Err(ContractError::IoError("ReelStrip: empty data".into())); }
+        let n = data[0] as usize;
+        if data.len() != 1 + n { return Err(ContractError::IoError(format!("ReelStrip: expected {} bytes, got {}", 1 + n, data.len()))); }
+        Ok(ReelStrip { symbols: data[1..1+n].iter().map(|&b| Symbol(b)).collect() })
+    }
+}
+
+impl Payline {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(5 + self.rows.len());
+        b.extend_from_slice(&self.id.to_le_bytes());
+        b.push(self.rows.len() as u8);
+        b.extend_from_slice(&self.rows);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 5 { return Err(ContractError::IoError(format!("Payline: expected at least 5 bytes, got {}", data.len()))); }
+        let id = u32::from_le_bytes(data[0..4].try_into().unwrap());
+        let n = data[4] as usize;
+        if data.len() != 5 + n { return Err(ContractError::IoError(format!("Payline: expected {} bytes, got {}", 5 + n, data.len()))); }
+        Ok(Payline { id, rows: data[5..5+n].to_vec() })
+    }
+}
+
+impl PaytableEntry {
+    pub const ENCODED_SIZE: usize = 10;
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(10); b.push(self.symbol.0); b.push(self.count); b.extend_from_slice(&self.multiplier.to_le_bytes()); b }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 10 { return Err(ContractError::IoError(format!("PaytableEntry: expected 10 bytes, got {}", data.len()))); }
+        Ok(PaytableEntry { symbol: Symbol(data[0]), count: data[1], multiplier: u64::from_le_bytes(data[2..10].try_into().unwrap()) })
+    }
+}
+
+impl Paytable {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(1 + self.entries.len() * 10);
+        b.push(self.entries.len() as u8);
+        for e in &self.entries { b.extend_from_slice(&e.encode()); }
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() { return Err(ContractError::IoError("Paytable: empty data".into())); }
+        let n = data[0] as usize;
+        if data.len() != 1 + n * 10 { return Err(ContractError::IoError(format!("Paytable: expected {} bytes, got {}", 1 + n * 10, data.len()))); }
+        let mut entries = Vec::with_capacity(n);
+        for i in 0..n { entries.push(PaytableEntry::decode(&data[1+i*10..1+(i+1)*10])?); }
+        Ok(Paytable { entries })
+    }
+}
+
+impl GameConfig {
+    pub fn encode(&self) -> Vec<u8> {
+        let reels_bytes: usize = self.reels.iter().map(|r| 1 + r.symbols.len()).sum();
+        let paylines_bytes: usize = self.paylines.iter().map(|p| 5 + p.rows.len()).sum();
+        let cap = 17 + reels_bytes + paylines_bytes;
+        let mut b = Vec::with_capacity(cap);
+        b.push(self.version);
+        b.extend_from_slice(&(self.reel_count as u64).to_le_bytes());
+        b.extend_from_slice(&(self.row_count as u64).to_le_bytes());
+        b.push(self.reels.len() as u8);
+        for r in &self.reels { b.extend_from_slice(&r.encode()); }
+        b.push(self.paylines.len() as u8);
+        for p in &self.paylines { b.extend_from_slice(&p.encode()); }
+        b.extend_from_slice(&self.house_edge.to_le_bytes());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 17 { return Err(ContractError::IoError(format!("GameConfig: expected at least 17 bytes, got {}", data.len()))); }
+        let version = data[0];
+        let reel_count = u64::from_le_bytes(data[1..9].try_into().unwrap()) as usize;
+        let row_count = u64::from_le_bytes(data[9..17].try_into().unwrap()) as usize;
+        let reel_n = data[17] as usize;
+        let mut pos = 18;
+        let mut reels = Vec::with_capacity(reel_n);
+        for _ in 0..reel_n {
+            if data.len() < pos + 1 { return Err(ContractError::IoError("GameConfig: data too short for reel".into())); }
+            let rn = data[pos] as usize;
+            if data.len() < pos + 1 + rn { return Err(ContractError::IoError("GameConfig: reel data truncated".into())); }
+            reels.push(ReelStrip { symbols: data[pos+1..pos+1+rn].iter().map(|&b| Symbol(b)).collect() });
+            pos += 1 + rn;
+        }
+        if data.len() < pos + 1 { return Err(ContractError::IoError("GameConfig: data too short for paylines".into())); }
+        let pl_n = data[pos] as usize; pos += 1;
+        let mut paylines = Vec::with_capacity(pl_n);
+        for _ in 0..pl_n {
+            if data.len() < pos + 5 { return Err(ContractError::IoError("GameConfig: payline data truncated".into())); }
+            let id = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap());
+            let rn = data[pos+4] as usize; pos += 5;
+            if data.len() < pos + rn { return Err(ContractError::IoError("GameConfig: payline rows truncated".into())); }
+            paylines.push(Payline { id, rows: data[pos..pos+rn].to_vec() });
+            pos += rn;
+        }
+        if data.len() < pos + 4 { return Err(ContractError::IoError("GameConfig: data too short for house_edge".into())); }
+        let house_edge = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap());
+        Ok(GameConfig { version, reel_count, row_count, reels, paylines, house_edge })
+    }
+}
+
 impl SpinResult {
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::with_capacity(1 + self.positions.len() * 8);
