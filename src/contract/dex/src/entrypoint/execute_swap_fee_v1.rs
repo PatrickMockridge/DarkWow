@@ -183,7 +183,7 @@ pub(crate) fn dex_execute_swap_fee_process_update_v1(
 
     swap.state = SwapState::Executed;
 
-    wasm::db::db_set(swaps_db, &update.swap_id, &serialize(&swap))?;
+    wasm::db::db_set(swaps_db, &update.swap_id, &swap.encode())?;
 
     wasm::db::db_del(participants_db, &swap.proposer_nullifier.to_bytes())?;
     wasm::db::db_del(participants_db, &swap.acceptor_nullifier.to_bytes())?;

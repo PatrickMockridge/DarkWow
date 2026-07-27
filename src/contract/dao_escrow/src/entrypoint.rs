@@ -427,7 +427,7 @@ fn initialize_v1(cid: ContractId, params: model::InitializeParamsV1) -> Contract
     };
 
     msg!("[dao_escrow::initialize_v1] Endowment initialized: {:?}", endowment_bulla);
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// InitializeV1 apply - store new endowment
@@ -483,7 +483,7 @@ fn update_v1(cid: ContractId, params: model::UpdateParamsV1) -> ContractResult {
     let update = model::UpdateUpdateV1 { bulla: params.bulla };
 
     msg!("[dao_escrow::update_v1] Endowment update prepared: {:?}", params.bulla);
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// UpdateV1 apply - update endowment parameters
@@ -561,7 +561,7 @@ fn pay_premium_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
     };
 
     msg!("[dao_escrow::pay_premium_v1] Premium processed: {:?}", params.membership_note);
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// PayPremiumV1 apply - store membership note and update endowment
@@ -683,7 +683,7 @@ if false {
     };
 
     msg!("[dao_escrow::withdraw_v1] Withdrawal processed: {}", params.value);
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// WithdrawV1 apply - update endowment totals
@@ -722,7 +722,7 @@ fn enable_drain_protection_v1(
     };
 
     msg!("[dao_escrow::enable_drain_protection_v1] Drain protection update prepared");
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// EnableDrainProtectionV1 apply
@@ -844,7 +844,7 @@ if false {
         params.value,
         params.recipient_pubkey
     );
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// EndowmentWithdrawV1 apply - update endowment totals
@@ -976,7 +976,7 @@ if false {
         params.value,
         params.recipient_pubkey
     );
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// TreasurySpendV1 apply - update treasury totals
@@ -1256,7 +1256,7 @@ fn propose_claim_v1(
     };
 
     msg!("[dao_escrow::propose_claim_v1] Claim proposed: {:?}", params.claim_id);
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// ProposeClaimV1 apply - store proposal and record nullifier
@@ -1338,7 +1338,7 @@ fn vote_claim_v1(
             passed: false,
             expired: true,
         };
-        let _ = wasm::util::set_return_data(&serialize(&update));
+        let _ = wasm::util::set_return_data(&update.encode());
         return Ok(())
     }
 
@@ -1370,7 +1370,7 @@ fn vote_claim_v1(
     };
 
     msg!("[dao_escrow::vote_claim_v1] Vote recorded: {:?}", params.claim_id);
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// VoteClaimV1 apply - update vote tally and proposal state
@@ -1472,7 +1472,7 @@ if false {
     };
 
     msg!("[dao_escrow::execute_claim_v1] Claim executed");
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// ExecuteClaimV1 apply - mark proposal as executed
@@ -1523,7 +1523,7 @@ fn register_capability_requirement_v1(
     };
 
     msg!("[dao_escrow::register_capability_requirement_v1] Requirement registered");
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// RegisterCapabilityRequirementV1 apply - store capability requirement
@@ -1604,7 +1604,7 @@ fn verify_member_capability_v1(
     };
 
     msg!("[dao_escrow::verify_member_capability_v1] Capability verified");
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// VerifyMemberCapabilityV1 apply - record verification (currently no-op, logs only)
@@ -1676,7 +1676,7 @@ if false {
     };
 
     msg!("[dao_escrow::resolve_dispute_v1] Dispute resolved");
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// ResolveDisputeV1 apply - store dispute resolution record
@@ -1732,7 +1732,7 @@ fn cancel_claim_v1(
     };
 
     msg!("[dao_escrow::cancel_claim_v1] Claim cancelled");
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// CancelClaimV1 apply - update proposal state to cancelled
@@ -1796,7 +1796,7 @@ fn deactivate_capability_requirement_v1(
     };
 
     msg!("[dao_escrow::deactivate_capability_requirement_v1] Capability requirement deactivation computed");
-    wasm::util::set_return_data(&serialize(&update))
+    wasm::util::set_return_data(&update.encode())
 }
 
 /// DeactivateCapabilityRequirementV1 apply — writes the deactivation to state

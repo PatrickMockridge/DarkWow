@@ -46,6 +46,7 @@ use dwow_sdk::crypto::{IntentCommitment, IntentNullifier, PublicKey};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use dwow_sdk::error::ContractError;
 use dwow_sdk::pasta::{group::GroupEncoding, pallas};
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Capability identifier: hash of name + credential requirement
 #[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]

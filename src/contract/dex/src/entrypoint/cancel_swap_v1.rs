@@ -230,7 +230,7 @@ pub(crate) fn dex_cancel_swap_process_update_v1(
     swap.state = SwapState::Cancelled;
 
     // Store updated swap
-    wasm::db::db_set(swaps_db, &update.swap_id, &serialize(&swap))?;
+    wasm::db::db_set(swaps_db, &update.swap_id, &swap.encode())?;
 
     // Remove the participant's nullifier (they get refunded)
     // In a full implementation, we would also call the money contract

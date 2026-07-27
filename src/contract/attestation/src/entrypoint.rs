@@ -1278,7 +1278,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         AttestationFunction::DelegateAttestationV1 => {
             let update = DelegateAttestationUpdateV1::decode(&update_data[1..])?;
             let delegations_db = wasm::db::db_lookup(cid, ATTESTATION_CONTRACT_DELEGATIONS_TREE)?;
-            wasm::db::db_set(delegations_db, &update.delegation_id.to_repr(), &serialize(&update.delegation_params))?;
+            wasm::db::db_set(delegations_db, &update.delegation_id.to_repr(), &dwow_serial::serialize(&update.delegation_params))?;
             msg!(
                 "[attestation::process_update] DelegateAttestation: {:?} success={:?}",
                 update.delegation_id,

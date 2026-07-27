@@ -52,11 +52,11 @@ pub(crate) fn dex_set_transparency_level_process_instruction_v1(
     // Verify ZK proof authorizes this operation (governance key holder)
     let config_db = wasm::db::db_lookup(cid, DEX_CONTRACT_CONFIG_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, DEX_CONTRACT_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.gov_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.gov_nullifier.to_repr())? {
         return Err(DexError::NotAuthorized.into());
     }
     // Record nullifier for replay protection
-    wasm::db::db_set(nullifiers_db, &serialize(&params.gov_nullifier), &[])?;
+    wasm::db::db_set(nullifiers_db, &params.gov_nullifier.to_repr(), &[])?;
 
     // Update transparency level in config
     wasm::db::db_set(config_db, DEX_CONTRACT_TRANSPARENCY_LEVEL_KEY, &[params.level as u8])?;

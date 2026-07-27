@@ -198,7 +198,7 @@ pub(crate) fn dex_create_swap_process_update_v1(
     };
 
     // Store the swap
-    wasm::db::db_set(swaps_db, &update.swap_id, &serialize(&swap))?;
+    wasm::db::db_set(swaps_db, &update.swap_id, &swap.encode())?;
 
     // Store proposer's nullifier to prevent double-spending
     // Using nullifier as key instead of lock_commitment

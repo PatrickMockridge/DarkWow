@@ -278,7 +278,7 @@ pub(crate) fn dex_execute_swap_process_update_v1(
     swap.state = SwapState::Executed;
 
     // Store updated swap
-    wasm::db::db_set(swaps_db, &update.swap_id, &serialize(&swap))?;
+    wasm::db::db_set(swaps_db, &update.swap_id, &swap.encode())?;
 
     // Remove participants (funds have been transferred via promissory_note::otc_swap_v1)
     // The atomic token swap is executed via bundled promissory_note::otc_swap_v1 child calls.

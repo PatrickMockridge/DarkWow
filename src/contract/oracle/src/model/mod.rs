@@ -34,7 +34,7 @@ use dwow_sdk::{
 };
 
 /// Oracle unique identifier
-#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct OracleId(pub pallas::Base);
 
 impl OracleId {
@@ -43,11 +43,17 @@ impl OracleId {
     pub fn from_bytes(bytes: &[u8; 32]) -> Option<Self> {
         pallas::Base::from_repr(*bytes).into_option().map(OracleId)
     }
+    pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 32 { return Err(ContractError::IoError("OracleId: expected 32 bytes".into())); }
+        Self::from_bytes(data.try_into().unwrap())
+            .ok_or_else(|| ContractError::IoError("OracleId: invalid".into()))
+    }
 }
 
 /// Attestation ID — matches dwow_attestation_contract::model::AttestationId exactly.
 /// Both contracts must agree on this type definition.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct AttestationId(pub pallas::Base);
 
 impl AttestationId {
@@ -55,6 +61,12 @@ impl AttestationId {
     pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
     pub fn from_bytes(bytes: &[u8; 32]) -> Option<Self> {
         pallas::Base::from_repr(*bytes).into_option().map(AttestationId)
+    }
+    pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 32 { return Err(ContractError::IoError("AttestationId: expected 32 bytes".into())); }
+        Self::from_bytes(data.try_into().unwrap())
+            .ok_or_else(|| ContractError::IoError("AttestationId: invalid".into()))
     }
 }
 
@@ -151,7 +163,7 @@ impl Oracle {
 }
 
 /// Parameters for registering a new oracle
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RegisterOracleParamsV1 {
     /// ZK proof for oracle registration
     pub proof: Vec<u8>,
@@ -165,8 +177,47 @@ pub struct RegisterOracleParamsV1 {
     pub data_type: String,
 }
 
+impl RegisterOracleParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 2 + self.proof.len() + 32 + 32 + 1 + self.name.len() + 1 + self.data_type.len();
+        let mut buf = Vec::with_capacity(cap);
+        buf.extend_from_slice(&(self.proof.len() as u16).to_le_bytes());
+        buf.extend_from_slice(&self.proof);
+        buf.extend_from_slice(&self.oracle_id.to_bytes());
+        buf.extend_from_slice(&self.oracle_pub.to_bytes());
+        buf.push(self.name.len() as u8);
+        buf.extend_from_slice(self.name.as_bytes());
+        buf.push(self.data_type.len() as u8);
+        buf.extend_from_slice(self.data_type.as_bytes());
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 66 { return Err(ContractError::IoError("RegisterOracleParamsV1: too short".into())); }
+        let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
+        let mut pos = 2 + proof_len;
+        if data.len() < pos + 32 + 32 + 1 { return Err(ContractError::IoError("RegisterOracleParamsV1: truncated".into())); }
+        let proof = data[2..pos].to_vec();
+        let oracle_id = OracleId::from_bytes(data[pos..pos+32].try_into().unwrap())
+            .ok_or_else(|| ContractError::IoError("RegisterOracleParamsV1: invalid oracle_id".into()))?;
+        pos += 32;
+        let oracle_pub = PublicKey::from_bytes(data[pos..pos+32].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("RegisterOracleParamsV1: invalid oracle_pub: {}", e)))?;
+        pos += 32;
+        let name_len = data[pos] as usize; pos += 1;
+        if data.len() < pos + name_len + 1 { return Err(ContractError::IoError("RegisterOracleParamsV1: name truncated".into())); }
+        let name = String::from_utf8(data[pos..pos+name_len].to_vec())
+            .map_err(|e| ContractError::IoError(format!("RegisterOracleParamsV1: invalid name: {}", e)))?;
+        pos += name_len;
+        let dtype_len = data[pos] as usize; pos += 1;
+        if data.len() != pos + dtype_len { return Err(ContractError::IoError("RegisterOracleParamsV1: data_type truncated".into())); }
+        let data_type = String::from_utf8(data[pos..pos+dtype_len].to_vec())
+            .map_err(|e| ContractError::IoError(format!("RegisterOracleParamsV1: invalid data_type: {}", e)))?;
+        Ok(RegisterOracleParamsV1 { proof, oracle_id, oracle_pub, name, data_type })
+    }
+}
+
 /// Parameters for pushing a new value
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct PushValueParamsV1 {
     /// ZK proof for value push
     pub proof: Vec<u8>,
@@ -174,6 +225,31 @@ pub struct PushValueParamsV1 {
     pub oracle_id: OracleId,
     /// New value
     pub value: pallas::Base,
+}
+
+impl PushValueParamsV1 {
+    pub const ENCODED_SIZE_HINT: usize = 66;
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 2 + self.proof.len() + 32 + 32;
+        let mut buf = Vec::with_capacity(cap);
+        buf.extend_from_slice(&(self.proof.len() as u16).to_le_bytes());
+        buf.extend_from_slice(&self.proof);
+        buf.extend_from_slice(&self.oracle_id.to_bytes());
+        buf.extend_from_slice(&self.value.to_repr());
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 66 { return Err(ContractError::IoError("PushValueParamsV1: too short".into())); }
+        let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
+        let pos = 2 + proof_len;
+        if data.len() != pos + 64 { return Err(ContractError::IoError("PushValueParamsV1: wrong length".into())); }
+        let proof = data[2..pos].to_vec();
+        let oracle_id = OracleId::from_bytes(data[pos..pos+32].try_into().unwrap())
+            .ok_or_else(|| ContractError::IoError("PushValueParamsV1: invalid oracle_id".into()))?;
+        let value = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("PushValueParamsV1: invalid value".into()))?;
+        Ok(PushValueParamsV1 { proof, oracle_id, value })
+    }
 }
 
 /// Parameters for creating an attestation for external data
