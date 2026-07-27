@@ -72,6 +72,26 @@ impl dwow_serial::Decodable for SubscriptionId {
     }
 }
 
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncEncodable for SubscriptionId {
+    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
+        let bytes = self.to_bytes();
+        use dwow_serial::AsyncWriteExt;
+        w.write_slice_async(&bytes).await?;
+        Ok(32)
+    }
+}
+
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncDecodable for SubscriptionId {
+    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
+        let mut buf = [0u8; 32];
+        use dwow_serial::AsyncReadExt;
+        d.read_slice_async(&mut buf).await?;
+        Self::decode(&buf).map_err(|e| std::io::Error::other(format!("{e}")))
+    }
+}
+
 impl dwow_serial::Encodable for Plan {
     fn encode<W: Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
         let mut len = 0;
@@ -107,7 +127,7 @@ impl dwow_serial::Encodable for Plan {
 
 impl dwow_serial::Decodable for Plan {
     fn decode<D: Read>(d: &mut D) -> Result<Self, std::io::Error> {
-        use dwow_sdk::pasta_curves::group::GroupEncoding;
+        use dwow_sdk::pasta::group::GroupEncoding;
 
         let mut buf1 = [0u8; 1];
         d.read_exact(&mut buf1)?;
@@ -148,6 +168,108 @@ impl dwow_serial::Decodable for Plan {
         d.read_exact(&mut buf1)?;
         let required_dao_escrow = if buf1[0] != 0 {
             d.read_exact(&mut buf32)?;
+            Some(Option::<pallas::Base>::from(pallas::Base::from_repr(buf32))
+                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Plan: invalid required_dao_escrow"))?)
+        } else {
+            None
+        };
+
+        Ok(Plan {
+            version,
+            id,
+            name_hash,
+            price,
+            token_id,
+            duration_blocks,
+            treasury_share,
+            endowment_share,
+            active,
+            dao_escrow_discount,
+            required_dao_escrow,
+        })
+    }
+}
+
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncEncodable for Plan {
+    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
+        let mut len = 0;
+        use dwow_serial::AsyncWriteExt;
+        w.write_slice_async(&[self.version]).await?;
+        len += 1;
+        w.write_slice_async(&self.id.to_le_bytes()).await?;
+        len += 4;
+        w.write_slice_async(&self.name_hash.to_repr()).await?;
+        len += 32;
+        w.write_slice_async(&self.price.to_le_bytes()).await?;
+        len += 8;
+        w.write_slice_async(&self.token_id.to_repr()).await?;
+        len += 32;
+        w.write_slice_async(&self.duration_blocks.to_le_bytes()).await?;
+        len += 8;
+        w.write_slice_async(&self.treasury_share.to_le_bytes()).await?;
+        len += 4;
+        w.write_slice_async(&self.endowment_share.to_le_bytes()).await?;
+        len += 4;
+        w.write_slice_async(&[self.active as u8]).await?;
+        len += 1;
+        w.write_slice_async(&self.dao_escrow_discount.to_le_bytes()).await?;
+        len += 4;
+        w.write_slice_async(&[self.required_dao_escrow.is_some() as u8]).await?;
+        len += 1;
+        if let Some(ref v) = self.required_dao_escrow {
+            w.write_slice_async(&v.to_repr()).await?;
+            len += 32;
+        }
+        Ok(len)
+    }
+}
+
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncDecodable for Plan {
+    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
+        use dwow_sdk::pasta::group::GroupEncoding;
+        use dwow_serial::AsyncReadExt;
+
+        let mut buf1 = [0u8; 1];
+        d.read_slice_async(&mut buf1).await?;
+        let version = buf1[0];
+
+        let mut buf4 = [0u8; 4];
+        d.read_slice_async(&mut buf4).await?;
+        let id = u32::from_le_bytes(buf4);
+
+        let mut buf32 = [0u8; 32];
+        d.read_slice_async(&mut buf32).await?;
+        let name_hash = Option::<pallas::Base>::from(pallas::Base::from_repr(buf32))
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Plan: invalid name_hash"))?;
+
+        let mut buf8 = [0u8; 8];
+        d.read_slice_async(&mut buf8).await?;
+        let price = u64::from_le_bytes(buf8);
+
+        d.read_slice_async(&mut buf32).await?;
+        let token_id = Option::<pallas::Base>::from(pallas::Base::from_repr(buf32))
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Plan: invalid token_id"))?;
+
+        d.read_slice_async(&mut buf8).await?;
+        let duration_blocks = u64::from_le_bytes(buf8);
+
+        d.read_slice_async(&mut buf4).await?;
+        let treasury_share = u32::from_le_bytes(buf4);
+
+        d.read_slice_async(&mut buf4).await?;
+        let endowment_share = u32::from_le_bytes(buf4);
+
+        d.read_slice_async(&mut buf1).await?;
+        let active = buf1[0] != 0;
+
+        d.read_slice_async(&mut buf4).await?;
+        let dao_escrow_discount = u32::from_le_bytes(buf4);
+
+        d.read_slice_async(&mut buf1).await?;
+        let required_dao_escrow = if buf1[0] != 0 {
+            d.read_slice_async(&mut buf32).await?;
             Some(Option::<pallas::Base>::from(pallas::Base::from_repr(buf32))
                 .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Plan: invalid required_dao_escrow"))?)
         } else {

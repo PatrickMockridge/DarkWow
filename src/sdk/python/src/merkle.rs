@@ -43,7 +43,7 @@ impl MerkleTree {
     }
 
     fn append(&mut self, node: &Bound<Fp>) -> bool {
-        self.0.append(MerkleNode::from(node.borrow().deref().0))
+        self.0.append(dwow_sdk::crypto::MerkleNode::from_base(node.borrow().deref().0))
     }
 
     fn mark(&mut self) -> u32 {

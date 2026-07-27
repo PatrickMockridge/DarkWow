@@ -52,6 +52,25 @@ impl dwow_serial::Decodable for BetType {
     }
 }
 
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncEncodable for BetType {
+    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
+        use dwow_serial::AsyncWriteExt;
+        w.write_slice_async(&[*self as u8]).await?;
+        Ok(1)
+    }
+}
+
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncDecodable for BetType {
+    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
+        let mut buf = [0u8; 1];
+        use dwow_serial::AsyncReadExt;
+        d.read_slice_async(&mut buf).await?;
+        Self::try_from(buf[0]).map_err(|e| std::io::Error::other(format!("{e}")))
+    }
+}
+
 impl dwow_serial::Encodable for RouletteTableState {
     fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
         w.write_all(&[*self as u8])?;
@@ -63,6 +82,25 @@ impl dwow_serial::Decodable for RouletteTableState {
     fn decode<D: std::io::Read>(d: &mut D) -> Result<Self, std::io::Error> {
         let mut buf = [0u8; 1];
         d.read_exact(&mut buf)?;
+        Self::try_from(buf[0]).map_err(|e| std::io::Error::other(format!("{e}")))
+    }
+}
+
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncEncodable for RouletteTableState {
+    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
+        use dwow_serial::AsyncWriteExt;
+        w.write_slice_async(&[*self as u8]).await?;
+        Ok(1)
+    }
+}
+
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncDecodable for RouletteTableState {
+    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
+        let mut buf = [0u8; 1];
+        use dwow_serial::AsyncReadExt;
+        d.read_slice_async(&mut buf).await?;
         Self::try_from(buf[0]).map_err(|e| std::io::Error::other(format!("{e}")))
     }
 }

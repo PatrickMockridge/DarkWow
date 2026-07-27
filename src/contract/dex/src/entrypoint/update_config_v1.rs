@@ -25,8 +25,9 @@
 //!
 //! Allows governance to update DEX configuration parameters.
 
+use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use dwow_sdk::{error::ContractError, msg, pasta::pallas, wasm};
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 
 use crate::{
     error::DexError,
@@ -52,11 +53,11 @@ pub(crate) fn dex_update_config_process_instruction_v1(
     // Verify ZK proof authorizes this config update (governance key holder)
     let config_db = wasm::db::db_lookup(cid, DEX_CONTRACT_CONFIG_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, DEX_CONTRACT_NULLIFIERS_TREE)?;
-    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.gov_nullifier))? {
+    if wasm::db::db_contains_key(nullifiers_db, &params.gov_nullifier.to_repr())? {
         return Err(DexError::NotAuthorized.into());
     }
     // Record nullifier for replay protection
-    wasm::db::db_set(nullifiers_db, &serialize(&params.gov_nullifier), &[])?;
+    wasm::db::db_set(nullifiers_db, &params.gov_nullifier.to_repr(), &[])?;
 
     // Update timeout in config
     wasm::db::db_set(config_db, DEX_CONTRACT_TIMEOUT, &params.timeout.to_le_bytes())?;

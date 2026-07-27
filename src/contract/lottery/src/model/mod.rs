@@ -132,6 +132,32 @@ impl dwow_serial::Decodable for LotteryConfig {
     }
 }
 
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncEncodable for LotteryConfig {
+    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
+        let bytes = encode_config(self);
+        use dwow_serial::AsyncWriteExt;
+        w.write_slice_async(&bytes).await?;
+        Ok(bytes.len())
+    }
+}
+
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncDecodable for LotteryConfig {
+    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
+        let mut prefix = [0u8; 15];
+        use dwow_serial::AsyncReadExt;
+        d.read_slice_async(&mut prefix).await?;
+        let tier_count = prefix[14] as usize;
+        let tiers_size = tier_count * PrizeTierConfig::ENCODED_SIZE;
+        let mut buf = Vec::with_capacity(15 + tiers_size);
+        buf.extend_from_slice(&prefix);
+        buf.resize(15 + tiers_size, 0);
+        d.read_slice_async(&mut buf[15..]).await?;
+        decode_config(&buf).map_err(|e| std::io::Error::other(format!("{e}")))
+    }
+}
+
 impl LotteryConfig {
     /// Validate the lottery configuration
     pub fn validate(&self) -> Result<(), LotteryError> {

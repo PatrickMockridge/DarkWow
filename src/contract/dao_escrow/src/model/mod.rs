@@ -96,6 +96,29 @@ impl dwow_serial::Decodable for DaoEscrowBulla {
     }
 }
 
+#[cfg(feature = "async")]
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncEncodable for DaoEscrowBulla {
+    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
+        let bytes = self.to_bytes();
+        use dwow_serial::AsyncWriteExt;
+        w.write_slice_async(&bytes).await?;
+        Ok(32)
+    }
+}
+
+#[cfg(feature = "async")]
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncDecodable for DaoEscrowBulla {
+    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
+        let mut buf = [0u8; 32];
+        use dwow_serial::AsyncReadExt;
+        d.read_slice_async(&mut buf).await?;
+        Self::from_bytes(buf)
+            .ok_or_else(|| std::io::Error::other("DaoEscrowBulla: invalid field element"))
+    }
+}
+
 impl dwow_serial::Encodable for MembershipNote {
     fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
         let bytes = self.to_bytes();
@@ -108,6 +131,29 @@ impl dwow_serial::Decodable for MembershipNote {
     fn decode<D: std::io::Read>(d: &mut D) -> Result<Self, std::io::Error> {
         let mut buf = [0u8; 32];
         d.read_exact(&mut buf)?;
+        Self::from_bytes(buf)
+            .ok_or_else(|| std::io::Error::other("MembershipNote: invalid field element"))
+    }
+}
+
+#[cfg(feature = "async")]
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncEncodable for MembershipNote {
+    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
+        let bytes = self.to_bytes();
+        use dwow_serial::AsyncWriteExt;
+        w.write_slice_async(&bytes).await?;
+        Ok(32)
+    }
+}
+
+#[cfg(feature = "async")]
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncDecodable for MembershipNote {
+    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
+        let mut buf = [0u8; 32];
+        use dwow_serial::AsyncReadExt;
+        d.read_slice_async(&mut buf).await?;
         Self::from_bytes(buf)
             .ok_or_else(|| std::io::Error::other("MembershipNote: invalid field element"))
     }
@@ -130,6 +176,29 @@ impl dwow_serial::Decodable for ClaimId {
     }
 }
 
+#[cfg(feature = "async")]
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncEncodable for ClaimId {
+    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
+        let bytes = self.to_bytes();
+        use dwow_serial::AsyncWriteExt;
+        w.write_slice_async(&bytes).await?;
+        Ok(32)
+    }
+}
+
+#[cfg(feature = "async")]
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncDecodable for ClaimId {
+    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
+        let mut buf = [0u8; 32];
+        use dwow_serial::AsyncReadExt;
+        d.read_slice_async(&mut buf).await?;
+        Self::from_bytes(buf)
+            .ok_or_else(|| std::io::Error::other("ClaimId: invalid field element"))
+    }
+}
+
 impl dwow_serial::Encodable for ProposalId {
     fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
         let bytes = self.to_bytes();
@@ -142,6 +211,29 @@ impl dwow_serial::Decodable for ProposalId {
     fn decode<D: std::io::Read>(d: &mut D) -> Result<Self, std::io::Error> {
         let mut buf = [0u8; 32];
         d.read_exact(&mut buf)?;
+        Self::from_bytes(buf)
+            .ok_or_else(|| std::io::Error::other("ProposalId: invalid field element"))
+    }
+}
+
+#[cfg(feature = "async")]
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncEncodable for ProposalId {
+    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
+        let bytes = self.to_bytes();
+        use dwow_serial::AsyncWriteExt;
+        w.write_slice_async(&bytes).await?;
+        Ok(32)
+    }
+}
+
+#[cfg(feature = "async")]
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncDecodable for ProposalId {
+    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
+        let mut buf = [0u8; 32];
+        use dwow_serial::AsyncReadExt;
+        d.read_slice_async(&mut buf).await?;
         Self::from_bytes(buf)
             .ok_or_else(|| std::io::Error::other("ProposalId: invalid field element"))
     }
@@ -815,7 +907,7 @@ pub struct VoteRecord {
 // ============================================================================
 
 /// Reference to an oracle attestation used for dispute resolution
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct OracleAttestationRef {
     pub version: u8,
     /// Attestation ID from the attestation contract
@@ -1031,7 +1123,7 @@ pub struct DeactivateCapabilityRequirementUpdateV1 {
 
 impl UpdateUpdateV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { self.bulla.to_bytes().to_vec() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("UpdateUpdateV1: expected 32 bytes, got {}", data.len()))); } Ok(UpdateUpdateV1 { bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UpdateUpdateV1: invalid bulla".into()))?) }) } }
 
-impl InitializeUpdateV1 { pub const ENCODED_SIZE: usize = 128; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(128); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.bulla.to_bytes()); b.extend_from_slice(&self.owner_pubkey.to_bytes()); b.extend_from_slice(&self.bulla_blind.inner().to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 128 { return Err(ContractError::IoError(format!("InitializeUpdateV1: expected 128 bytes, got {}", data.len()))); } Ok(InitializeUpdateV1 { instance_seed: data[0..32].try_into().unwrap(), bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("InitializeUpdateV1: invalid bulla".into()))?), owner_pubkey: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("InitializeUpdateV1: invalid owner_pubkey: {}", e)))?, bulla_blind: BaseBlind::from_raw(Option::<pallas::Base>::from(pallas::Base::from_repr(data[96..128].try_into().unwrap())).ok_or_else(|| ContractError::IoError("InitializeUpdateV1: invalid bulla_blind".into()))?) }) } }
+impl InitializeUpdateV1 { pub const ENCODED_SIZE: usize = 128; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(128); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.bulla.to_bytes()); b.extend_from_slice(&self.owner_pubkey.to_bytes()); b.extend_from_slice(&self.bulla_blind.inner().to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 128 { return Err(ContractError::IoError(format!("InitializeUpdateV1: expected 128 bytes, got {}", data.len()))); } Ok(InitializeUpdateV1 { instance_seed: data[0..32].try_into().unwrap(), bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("InitializeUpdateV1: invalid bulla".into()))?), owner_pubkey: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("InitializeUpdateV1: invalid owner_pubkey: {}", e)))?, bulla_blind: dwow_sdk::crypto::Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(data[96..128].try_into().unwrap())).ok_or_else(|| ContractError::IoError("InitializeUpdateV1: invalid bulla_blind".into()))?) }) } }
 
 impl PayPremiumUpdateV1 { pub const ENCODED_SIZE: usize = 152; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(152); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.membership_note.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.member_count.to_le_bytes()); b.extend_from_slice(&self.member_pubkey.to_bytes()); b.extend_from_slice(&self.token_id.to_bytes()); b.extend_from_slice(&self.expiry.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 152 { return Err(ContractError::IoError(format!("PayPremiumUpdateV1: expected 152 bytes, got {}", data.len()))); } Ok(PayPremiumUpdateV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumUpdateV1: invalid dao_escrow_bulla".into()))?), membership_note: MembershipNote(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumUpdateV1: invalid membership_note".into()))?), amount: u64::from_le_bytes(data[64..72].try_into().unwrap()), member_count: u64::from_le_bytes(data[72..80].try_into().unwrap()), member_pubkey: PublicKey::from_bytes(data[80..112].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PayPremiumUpdateV1: invalid member_pubkey: {}", e)))?, token_id: TokenId::from_bytes(data[112..144].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PayPremiumUpdateV1: invalid token_id: {}", e)))?, expiry: u64::from_le_bytes(data[144..152].try_into().unwrap()) }) } }
 

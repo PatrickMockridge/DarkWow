@@ -48,7 +48,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm,
 };
-use dwow_serial::{deserialize, serialize, Decodable, Encodable};
+use dwow_serial::{deserialize, Decodable, Encodable};
 
 use crate::{
     error::DexError,
@@ -165,7 +165,7 @@ pub(crate) fn dex_create_swap_process_instruction_v1(
         open_execution: params.open_execution,
     };
 
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// `process_update` function for `Dex::CreateSwapV1`

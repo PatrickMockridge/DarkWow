@@ -577,7 +577,7 @@ impl Swap {
 // ============================================================================
 
 /// Update struct for CreateSwapV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CreateSwapUpdateV1 {
     /// The swap ID
     pub swap_id: [u8; 32],
@@ -605,8 +605,75 @@ pub struct CreateSwapUpdateV1 {
     pub open_execution: bool,
 }
 
+impl CreateSwapUpdateV1 {
+    /// Exact encoded size: 8×[u8;32] + 4×u64 + bool = 289 bytes.
+    pub const ENCODED_SIZE: usize = 289;
+
+    /// Rho-calculus deterministic encode.
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.swap_id);
+        b.extend_from_slice(&self.proposer_pub_x);
+        b.extend_from_slice(&self.proposer_pub_y);
+        b.extend_from_slice(&self.offer_token);
+        b.extend_from_slice(&self.offer_amount.to_le_bytes());
+        b.extend_from_slice(&self.request_token);
+        b.extend_from_slice(&self.request_amount.to_le_bytes());
+        b.extend_from_slice(&self.proposer_lock.to_bytes());
+        b.extend_from_slice(&self.proposer_nullifier.to_bytes());
+        b.extend_from_slice(&self.created_at.to_le_bytes());
+        b.extend_from_slice(&self.expires_at.to_le_bytes());
+        b.push(self.open_execution as u8);
+        b
+    }
+
+    /// Rho-calculus deterministic decode.
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "CreateSwapUpdateV1::decode buffer too short: {} < {}",
+                data.len(),
+                Self::ENCODED_SIZE,
+            )))
+        }
+        let d = &data[..Self::ENCODED_SIZE];
+
+        let swap_id: [u8; 32] = d[0..32].try_into().unwrap();
+        let proposer_pub_x: [u8; 32] = d[32..64].try_into().unwrap();
+        let proposer_pub_y: [u8; 32] = d[64..96].try_into().unwrap();
+        let offer_token: [u8; 32] = d[96..128].try_into().unwrap();
+        let offer_amount = u64::from_le_bytes(d[128..136].try_into().unwrap());
+        let request_token: [u8; 32] = d[136..168].try_into().unwrap();
+        let request_amount = u64::from_le_bytes(d[168..176].try_into().unwrap());
+
+        let proposer_lock = IntentCommitment::from_bytes(d[176..208].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("CreateSwapUpdateV1::decode proposer_lock: {}", e)))?;
+        let proposer_nullifier = IntentNullifier::from_bytes(d[208..240].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("CreateSwapUpdateV1::decode proposer_nullifier: {}", e)))?;
+
+        let created_at = u64::from_le_bytes(d[240..248].try_into().unwrap());
+        let expires_at = u64::from_le_bytes(d[248..256].try_into().unwrap());
+        let open_execution = d[256] != 0;
+
+        Ok(Self {
+            swap_id,
+            proposer_pub_x,
+            proposer_pub_y,
+            offer_token,
+            offer_amount,
+            request_token,
+            request_amount,
+            proposer_lock,
+            proposer_nullifier,
+            created_at,
+            expires_at,
+            open_execution,
+        })
+    }
+}
+
 /// Update struct for AcceptSwapV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct AcceptSwapUpdateV1 {
     /// The swap ID
     pub swap_id: [u8; 32],
@@ -620,8 +687,46 @@ pub struct AcceptSwapUpdateV1 {
     pub acceptor_nullifier: IntentNullifier,
 }
 
+impl AcceptSwapUpdateV1 {
+    /// Exact encoded size: 5×[u8;32] = 160 bytes.
+    pub const ENCODED_SIZE: usize = 160;
+
+    /// Rho-calculus deterministic encode.
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.swap_id);
+        b.extend_from_slice(&self.acceptor_pub_x);
+        b.extend_from_slice(&self.acceptor_pub_y);
+        b.extend_from_slice(&self.acceptor_lock.to_bytes());
+        b.extend_from_slice(&self.acceptor_nullifier.to_bytes());
+        b
+    }
+
+    /// Rho-calculus deterministic decode.
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "AcceptSwapUpdateV1::decode buffer too short: {} < {}",
+                data.len(),
+                Self::ENCODED_SIZE,
+            )))
+        }
+        let d = &data[..Self::ENCODED_SIZE];
+
+        let swap_id: [u8; 32] = d[0..32].try_into().unwrap();
+        let acceptor_pub_x: [u8; 32] = d[32..64].try_into().unwrap();
+        let acceptor_pub_y: [u8; 32] = d[64..96].try_into().unwrap();
+        let acceptor_lock = IntentCommitment::from_bytes(d[96..128].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("AcceptSwapUpdateV1::decode acceptor_lock: {}", e)))?;
+        let acceptor_nullifier = IntentNullifier::from_bytes(d[128..160].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("AcceptSwapUpdateV1::decode acceptor_nullifier: {}", e)))?;
+
+        Ok(Self { swap_id, acceptor_pub_x, acceptor_pub_y, acceptor_lock, acceptor_nullifier })
+    }
+}
+
 /// Update struct for ExecuteSwapV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ExecuteSwapUpdateV1 {
     /// The swap ID
     pub swap_id: [u8; 32],
@@ -631,8 +736,42 @@ pub struct ExecuteSwapUpdateV1 {
     pub bob_nullifier: IntentNullifier,
 }
 
+impl ExecuteSwapUpdateV1 {
+    /// Exact encoded size: 3×[u8;32] = 96 bytes.
+    pub const ENCODED_SIZE: usize = 96;
+
+    /// Rho-calculus deterministic encode.
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.swap_id);
+        b.extend_from_slice(&self.alice_nullifier.to_bytes());
+        b.extend_from_slice(&self.bob_nullifier.to_bytes());
+        b
+    }
+
+    /// Rho-calculus deterministic decode.
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "ExecuteSwapUpdateV1::decode buffer too short: {} < {}",
+                data.len(),
+                Self::ENCODED_SIZE,
+            )))
+        }
+        let d = &data[..Self::ENCODED_SIZE];
+
+        let swap_id: [u8; 32] = d[0..32].try_into().unwrap();
+        let alice_nullifier = IntentNullifier::from_bytes(d[32..64].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("ExecuteSwapUpdateV1::decode alice_nullifier: {}", e)))?;
+        let bob_nullifier = IntentNullifier::from_bytes(d[64..96].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("ExecuteSwapUpdateV1::decode bob_nullifier: {}", e)))?;
+
+        Ok(Self { swap_id, alice_nullifier, bob_nullifier })
+    }
+}
+
 /// Update struct for CancelSwapV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CancelSwapUpdateV1 {
     /// The swap ID
     pub swap_id: [u8; 32],
@@ -640,6 +779,39 @@ pub struct CancelSwapUpdateV1 {
     pub nullifier: IntentNullifier,
     /// Whether the proposer cancelled (true) or acceptor (false)
     pub is_proposer: bool,
+}
+
+impl CancelSwapUpdateV1 {
+    /// Exact encoded size: 2×[u8;32] + bool = 65 bytes.
+    pub const ENCODED_SIZE: usize = 65;
+
+    /// Rho-calculus deterministic encode.
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(Self::ENCODED_SIZE);
+        b.extend_from_slice(&self.swap_id);
+        b.extend_from_slice(&self.nullifier.to_bytes());
+        b.push(self.is_proposer as u8);
+        b
+    }
+
+    /// Rho-calculus deterministic decode.
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!(
+                "CancelSwapUpdateV1::decode buffer too short: {} < {}",
+                data.len(),
+                Self::ENCODED_SIZE,
+            )))
+        }
+        let d = &data[..Self::ENCODED_SIZE];
+
+        let swap_id: [u8; 32] = d[0..32].try_into().unwrap();
+        let nullifier = IntentNullifier::from_bytes(d[32..64].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("CancelSwapUpdateV1::decode nullifier: {}", e)))?;
+        let is_proposer = d[64] != 0;
+
+        Ok(Self { swap_id, nullifier, is_proposer })
+    }
 }
 
 // ============================================================================

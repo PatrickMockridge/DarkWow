@@ -108,6 +108,26 @@ impl dwow_serial::Decodable for ExternalChain {
     }
 }
 
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncEncodable for ExternalChain {
+    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
+        let b = *self as u8;
+        use dwow_serial::AsyncWriteExt;
+        w.write_slice_async(&[b]).await?;
+        Ok(1)
+    }
+}
+
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncDecodable for ExternalChain {
+    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
+        let mut buf = [0u8; 1];
+        use dwow_serial::AsyncReadExt;
+        d.read_slice_async(&mut buf).await?;
+        Self::try_from(buf[0]).map_err(|e| std::io::Error::other(format!("{e}")))
+    }
+}
+
 /// Chain-specific deposit proof data.
 ///
 /// Each variant carries the proof data needed to verify a deposit on that
@@ -1212,9 +1232,9 @@ impl PendingWithdrawal {
         let feed_mode = data[pos]; pos += 1;
         let guarantee_premium = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
         let has_stake = data[pos] != 0; pos += 1;
-        let (stake_lock_id, pos) = if has_stake { (Some(data[pos..pos+32].try_into().unwrap()), pos + 32) } else { (None, pos) };
+        let (stake_lock_id, mut pos) = if has_stake { (Some(data[pos..pos+32].try_into().unwrap()), pos + 32) } else { (None, pos) };
         let has_reassign = data[pos] != 0; pos += 1;
-        let (reassignable_after, pos) = if has_reassign { (Some(u64::from_le_bytes(data[pos..pos+8].try_into().unwrap())), pos + 8) } else { (None, pos) };
+        let (reassignable_after, mut pos) = if has_reassign { (Some(u64::from_le_bytes(data[pos..pos+8].try_into().unwrap())), pos + 8) } else { (None, pos) };
         let has_hb = data[pos] != 0; pos += 1;
         let (heartbeat_at, _) = if has_hb { (Some(u64::from_le_bytes(data[pos..pos+8].try_into().unwrap())), pos + 8) } else { (None, pos) };
         Ok(PendingWithdrawal { version, nullifier, recipient_hash, amount, timeout_height, relayer, submitted_at, cancelled, feed_mode, guarantee_premium, stake_lock_id, reassignable_after, heartbeat_at })
@@ -1261,7 +1281,7 @@ impl HtlcSwapInfo {
         let state = data[pos]; pos += 1;
         let created_at = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); pos += 8;
         let has_claimed = data[pos] != 0; pos += 1;
-        let (claimed_at, pos) = if has_claimed { (Some(u64::from_le_bytes(data[pos..pos+8].try_into().unwrap())), pos + 8) } else { (None, pos) };
+        let (claimed_at, mut pos) = if has_claimed { (Some(u64::from_le_bytes(data[pos..pos+8].try_into().unwrap())), pos + 8) } else { (None, pos) };
         let has_refunded = data[pos] != 0; pos += 1;
         let (refunded_at, _) = if has_refunded { (Some(u64::from_le_bytes(data[pos..pos+8].try_into().unwrap())), pos + 8) } else { (None, pos) };
         Ok(HtlcSwapInfo { version, swap_id, hash, timelock, amount, external_sender, external_recipient, state, created_at, claimed_at, refunded_at })

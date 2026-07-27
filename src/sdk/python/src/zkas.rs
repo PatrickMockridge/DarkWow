@@ -180,7 +180,7 @@ impl ZkCircuit {
     fn witness_merklepath(&mut self, w: Vec<Bound<Fp>>) {
         assert!(w.len() == 32);
         let path: Vec<MerkleNode> =
-            w.iter().map(|x| MerkleNode::from(x.borrow().deref().0)).collect();
+            w.iter().map(|x| dwow_sdk::crypto::MerkleNode::from_base(x.borrow().deref().0)).collect();
         self.1.push(zk::vm::Witness::MerklePath(Value::known(path.try_into().unwrap())));
     }
 

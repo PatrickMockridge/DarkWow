@@ -69,7 +69,7 @@ impl Transaction {
     pub fn signatures(&self) -> Vec<Vec<Signature>> {
         // Schnorr signatures removed per contract-standards.md §3.
         // Return empty vecs matching call layout for backward compatibility.
-        vec![vec![]; self.0.calls.len()]
+        (0..self.0.calls.len()).map(|_| vec![]).collect()
     }
 
     pub fn calls(&self) -> Vec<DarkLeafContractCall> {
@@ -96,7 +96,6 @@ impl Transaction {
             call_dict.set_item("proofs", self.0.proofs.get(i).unwrap().iter().len())?;
             // Schnorr signatures removed per contract-standards.md §3.
             call_dict.set_item("signatures", Vec::<String>::new())?;
-            )?;
             calls.push(call_dict);
         }
 

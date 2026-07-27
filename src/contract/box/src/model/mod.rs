@@ -22,6 +22,27 @@ impl dwow_serial::Decodable for BoxId {
     }
 }
 
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncEncodable for BoxId {
+    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
+        let bytes = self.to_bytes();
+        use dwow_serial::AsyncWriteExt;
+        w.write_slice_async(&bytes).await?;
+        Ok(32)
+    }
+}
+
+#[dwow_serial::async_trait]
+impl dwow_serial::AsyncDecodable for BoxId {
+    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
+        let mut buf = [0u8; 32];
+        use dwow_serial::AsyncReadExt;
+        d.read_slice_async(&mut buf).await?;
+        Self::from_bytes(&buf)
+            .ok_or_else(|| std::io::Error::other("BoxId: invalid field element"))
+    }
+}
+
 /// Box unique identifier — Poseidon hash of creator public key and nonce.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct BoxId(pub pallas::Base);

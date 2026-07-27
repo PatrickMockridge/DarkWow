@@ -221,6 +221,41 @@ pub struct InitializeParams {
     pub promissory_note_contract_id: ContractId,
 }
 
+impl InitializeParams {
+    /// Encode initialization parameters to binary format.
+    pub fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
+        let mut buf = Vec::new();
+        buf.push(self.model.clone() as u8);
+        buf.extend_from_slice(&self.min_collateralization_ratio.to_le_bytes());
+        buf.extend_from_slice(&self.liquidation_threshold.to_le_bytes());
+        buf.extend_from_slice(&self.liquidation_penalty.to_le_bytes());
+        buf.extend_from_slice(&self.base_rate.to_le_bytes());
+        buf.extend_from_slice(&self.pi_kp.to_le_bytes());
+        buf.extend_from_slice(&self.pi_ki.to_le_bytes());
+        buf.extend_from_slice(&self.twap_window.to_le_bytes());
+        buf.extend_from_slice(&self.price_deviation_threshold.to_le_bytes());
+        buf.push(self.collateral_params.len() as u8);
+        for cp in &self.collateral_params {
+            buf.push(cp.collateral_type.clone() as u8);
+            buf.extend_from_slice(&cp.haircut.to_le_bytes());
+            buf.extend_from_slice(&cp.liquidation_threshold.to_le_bytes());
+            buf.extend_from_slice(&cp.max_debt_share.to_le_bytes());
+        }
+        buf.push(self.dead_man_switch.enabled as u8);
+        buf.extend_from_slice(&self.dead_man_switch.timeout_blocks.to_le_bytes());
+        buf.push(self.dead_man_switch.action.clone() as u8);
+        buf.extend_from_slice(&self.dead_man_switch.last_action_block.to_le_bytes());
+        buf.extend_from_slice(&self.token_authority_pub.to_bytes());
+        buf.push(self.create_token as u8);
+        buf.extend_from_slice(&self.token_symbol);
+        buf.extend_from_slice(&self.deployer_auth.to_repr());
+        buf.extend_from_slice(&self.promissory_note_contract_id.to_bytes());
+        let len = buf.len();
+        w.write_all(&buf)?;
+        Ok(len)
+    }
+}
+
 /// Deposit collateral into the pool
 #[derive(Debug, Clone)]
 pub struct DepositCollateralParams {

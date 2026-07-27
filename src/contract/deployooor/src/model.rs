@@ -24,6 +24,7 @@
 use dwow_sdk::crypto::{pasta_prelude::PrimeField, ContractId, PublicKey};
 use dwow_sdk::error::ContractError;
 use dwow_sdk::pasta::pallas;
+use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// State update for `Deploy::Deploy`
 #[derive(Clone, Debug)]
@@ -66,7 +67,7 @@ impl DeployUpdateV1 {
 
 /// Parameters for `Deploy::Lock`
 // ANCHOR: deploy-lock-params
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, SerialEncodable, SerialDecodable)]
 pub struct LockParamsV1 {
     /// Public key used to sign the transaction and derive the `ContractId`
     pub public_key: PublicKey,

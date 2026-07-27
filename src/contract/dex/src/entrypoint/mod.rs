@@ -319,19 +319,19 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Ok(())
         }
         DexFunction::CreateSwapV1 => {
-            let update: CreateSwapUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CreateSwapUpdateV1::decode(&update_data[1..])?;
             dex_create_swap_process_update_v1(cid, update)
         }
         DexFunction::AcceptSwapV1 => {
-            let update: AcceptSwapUpdateV1 = deserialize(&update_data[1..])?;
+            let update = AcceptSwapUpdateV1::decode(&update_data[1..])?;
             dex_accept_swap_process_update_v1(cid, update)
         }
         DexFunction::ExecuteSwapV1 => {
-            let update: ExecuteSwapUpdateV1 = deserialize(&update_data[1..])?;
+            let update = ExecuteSwapUpdateV1::decode(&update_data[1..])?;
             dex_execute_swap_process_update_v1(cid, update)
         }
         DexFunction::CancelSwapV1 => {
-            let update: CancelSwapUpdateV1 = deserialize(&update_data[1..])?;
+            let update = CancelSwapUpdateV1::decode(&update_data[1..])?;
             dex_cancel_swap_process_update_v1(cid, update)
         }
         DexFunction::UpdateConfigV1 => {
@@ -343,11 +343,11 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Ok(())
         }
         DexFunction::ExecuteSwapFeeV1 => {
-            let update: ExecuteSwapUpdateV1 = deserialize(&update_data[1..])?;
+            let update = ExecuteSwapUpdateV1::decode(&update_data[1..])?;
             dex_execute_swap_fee_process_update_v1(cid, update)
         }
         DexFunction::ExecuteSwapSlippageV1 => {
-            let update: ExecuteSwapUpdateV1 = deserialize(&update_data[1..])?;
+            let update = ExecuteSwapUpdateV1::decode(&update_data[1..])?;
             dex_execute_swap_slippage_process_update_v1(cid, update)
         }
     }

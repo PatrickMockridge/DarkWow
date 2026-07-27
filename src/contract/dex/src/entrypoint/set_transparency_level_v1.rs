@@ -26,7 +26,7 @@
 //! Allows governance to change the transparency level post-deployment.
 
 use dwow_sdk::{error::ContractError, msg, pasta::pallas, wasm};
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 
 use crate::{
     error::DexError,

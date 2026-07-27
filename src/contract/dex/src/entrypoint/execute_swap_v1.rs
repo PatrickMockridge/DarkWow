@@ -67,7 +67,7 @@ use dwow_sdk::{
     wasm,
 };
 use dwow_promissory_note_contract::validation::validate_child_contract_id;
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 
 use crate::{
     error::DexError,
@@ -201,7 +201,7 @@ pub(crate) fn dex_execute_swap_process_instruction_v1(
     let swaps_db = wasm::db::db_lookup(cid, DEX_CONTRACT_SWAPS_TREE)?;
     let swap_data = wasm::db::db_get(swaps_db, &params.swap_id)?;
     let swap: Swap = match swap_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Swap::decode(&data)?,
         None => {
             msg!("[ExecuteSwapV1] Error: Swap not found");
             return Err(DexError::SwapNotFound.into())
@@ -253,7 +253,7 @@ pub(crate) fn dex_execute_swap_process_instruction_v1(
         bob_nullifier: params.bob_nullifier,
     };
 
-    Ok(serialize(&update))
+    Ok(update.encode())
 }
 
 /// `process_update` function for `Dex::ExecuteSwapV1`
@@ -267,7 +267,7 @@ pub(crate) fn dex_execute_swap_process_update_v1(
     // Load existing swap
     let swap_data = wasm::db::db_get(swaps_db, &update.swap_id)?;
     let mut swap: Swap = match swap_data {
-        Some(data) => deserialize(&data)?,
+        Some(data) => Swap::decode(&data)?,
         None => {
             msg!("[ExecuteSwapV1] Error: Swap not found during update");
             return Err(DexError::SwapNotFound.into())

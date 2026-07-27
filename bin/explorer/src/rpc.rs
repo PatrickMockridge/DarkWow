@@ -243,7 +243,7 @@ impl ExplBlock {
         Self {
             height: block.header.height.get(),
             hash: header_display_hash(&block.header),
-            version: block.header.version,
+            version: block.header.version.get(),
             previous_hash: block.header.previous.to_string(),
             nonce: block.header.nonce as u64,
             timestamp: block.header.timestamp.get(),
