@@ -1417,24 +1417,26 @@ impl RegisterFeeScheduleUpdateV1 {
 }
 
 impl GovernanceReportUpdateV1 {
-    pub const ENCODED_SIZE: usize = 33;
+    pub const ENCODED_SIZE: usize = 65;
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(33);
+        let mut b = Vec::with_capacity(65);
         b.push(self.chain as u8);
         b.extend_from_slice(&self.total_deposited.to_le_bytes());
         b.extend_from_slice(&self.total_withdrawn.to_le_bytes());
         b.extend_from_slice(&self.outstanding.to_le_bytes());
         b.extend_from_slice(&self.report_block.to_le_bytes());
+        b.extend_from_slice(&self.reporter_pub.to_bytes());
         b
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 33 { return Err(ContractError::IoError(format!("GovernanceReportUpdateV1: expected 33 bytes, got {}", data.len()))); }
+        if data.len() != 65 { return Err(ContractError::IoError(format!("GovernanceReportUpdateV1: expected 65 bytes, got {}", data.len()))); }
         Ok(GovernanceReportUpdateV1 {
             chain: ExternalChain::try_from(data[0])?,
             total_deposited: u64::from_le_bytes(data[1..9].try_into().unwrap()),
             total_withdrawn: u64::from_le_bytes(data[9..17].try_into().unwrap()),
             outstanding: u64::from_le_bytes(data[17..25].try_into().unwrap()),
             report_block: u64::from_le_bytes(data[25..33].try_into().unwrap()),
+            reporter_pub: PublicKey::from_bytes(data[33..65].try_into().unwrap())?,
         })
     }
 }
