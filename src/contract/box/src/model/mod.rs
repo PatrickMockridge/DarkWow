@@ -91,10 +91,16 @@ pub struct PutParamsV1 {
 }
 
 /// Put update.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct PutUpdateV1 {
     pub box_id: BoxId,
     pub new_contents_commit: pallas::Base,
+}
+
+impl PutUpdateV1 {
+    pub const ENCODED_SIZE: usize = 64;
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.box_id.to_bytes()); b.extend_from_slice(&self.new_contents_commit.to_repr()); b }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("PutUpdateV1: expected 64 bytes, got {}", data.len()))); } Ok(PutUpdateV1 { box_id: BoxId::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("PutUpdateV1: invalid box_id".into()))?, new_contents_commit: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PutUpdateV1: invalid new_contents_commit".into()))? }) }
 }
 
 /// Take parameters.
@@ -110,8 +116,14 @@ pub struct TakeParamsV1 {
 }
 
 /// Take update.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct TakeUpdateV1 {
     pub box_id: BoxId,
     pub nullifier: Nullifier,
+}
+
+impl TakeUpdateV1 {
+    pub const ENCODED_SIZE: usize = 64;
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.box_id.to_bytes()); b.extend_from_slice(&self.nullifier.to_bytes()); b }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("TakeUpdateV1: expected 64 bytes, got {}", data.len()))); } Ok(TakeUpdateV1 { box_id: BoxId::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("TakeUpdateV1: invalid box_id".into()))?, nullifier: Nullifier::from_bytes(data[32..64].try_into().unwrap())? }) }
 }
