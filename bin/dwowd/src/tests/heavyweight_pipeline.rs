@@ -188,10 +188,7 @@ fn test_heavyweight_promissory_note() -> std::result::Result<(), Box<dyn std::er
         chain.init_genesis().await?;
         let harness = PromissoryNoteHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let wasm = include_bytes!("../../../../src/contract/promissory_note/dwow_promissory_note_contract.wasm");
-        let cid = chain.deploy(&harness, "promissory_note", wasm).await?;
-        println!("Contract deployed");
+        let cid = *dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID;  // deployed at genesis
 
         let auth_parent = pallas::Base::from(1u64);
         let user_data = pallas::Base::from(2u64);
@@ -453,23 +450,11 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
     smol::block_on(async {
         use crate::tests::blockchain::HeavyweightPipeline;
 
-        // Deploy NativeToken at a derived ContractId separate from the
-        // genesis-deployed NATIVE_TOKEN_CONTRACT_ID. The coinbase's
-        // PoWRewardV1 (0x05) targets NATIVE_TOKEN_CONTRACT_ID and our
-        // test's mint_pow_reward targets the derived contract — validate
-        // block_structure now filters by contract_id, so no collision.
         let chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
         let harness = NativeTokenHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-
-        let wasm = include_bytes!("../../../../src/contract/native_token/dwow_native_token_contract.wasm");
-        let contract_id = chain.deploy(&harness, "native_token", wasm).await?;
-        println!("Contract deployed at {:?}", contract_id);
-        // native_token uses ix[0] dispatch — execution.rs routes raw call_data
-        // only for NATIVE_TOKEN_CONTRACT_ID. All calls MUST use the genesis-deployed
-        // native_token at that ID, not the derived deployment ID.
-        let native_cid = *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
+        let cid = *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;  // deployed at genesis
         let secret = SecretKey::from_bytes([2u8; 32]).unwrap();
         let public = PublicKey::from_secret(secret.clone());
         let keypair = Keypair { secret, public };
@@ -1515,9 +1500,7 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
         chain.init_genesis().await?;
         let harness = AttestationHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-        let wasm = include_bytes!("../../../../src/contract/attestation/dwow_attestation_contract.wasm");
-        let cid = chain.deploy(&harness, "attestation", wasm).await?;
-        println!("Contract deployed");
+        let cid = *dwow_sdk::crypto::ATTESTATION_CONTRACT_ID;  // deployed at genesis
         let attestor_secret = pallas::Base::from(10u64);
         let attestor_pub = PublicKey::from_secret(SecretKey::from_base(attestor_secret));
         let claimant_secret = pallas::Base::from(20u64);
@@ -1851,9 +1834,7 @@ fn test_heavyweight_oracle() -> std::result::Result<(), Box<dyn std::error::Erro
         chain.init_genesis().await?;
         let harness = OracleHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-        let wasm = include_bytes!("../../../../src/contract/oracle/dwow_oracle_contract.wasm");
-        let cid = chain.deploy(&harness, "oracle", wasm).await?;
-        println!("Contract deployed");
+        let cid = *dwow_sdk::crypto::ORACLE_CONTRACT_ID;  // deployed at genesis
 
         let oracle_secret = pallas::Base::from(10u64);
         let oracle_pub = PublicKey::from_secret(SecretKey::from_base(oracle_secret));
@@ -2158,9 +2139,7 @@ fn test_heavyweight_deployooor() -> std::result::Result<(), Box<dyn std::error::
         chain.init_genesis().await?;
         let harness = DeployooorHarness::spawn();
         println!("Harness spawned (no ZK circuits — pure WASM)");
-        let wasm = include_bytes!("../../../../src/contract/deployooor/dwow_deployooor_contract.wasm");
-        let cid = chain.deploy(&harness, "deployooor", wasm).await?;
-        println!("Contract deployed");
+        let cid = *dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;  // deployed at genesis
         let secret = SecretKey::from_bytes([9u8; 32]).unwrap();
         let public = PublicKey::from_secret(secret.clone());
         let keypair = Keypair { secret, public };
@@ -3175,9 +3154,7 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
         chain.init_genesis().await?;
         let harness = IdentityHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-        let wasm = include_bytes!("../../../../src/contract/identity/dwow_identity_contract.wasm");
-        let cid = chain.deploy(&harness, "identity", wasm).await?;
-        println!("Contract deployed");
+        let cid = *dwow_sdk::crypto::IDENTITY_CONTRACT_ID;  // deployed at genesis
 
         let issuer_secret = pallas::Base::from(10u64);
         let issuer_pub = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
@@ -3390,9 +3367,7 @@ fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn st
         // Deploy Identity
         let id_harness = IdentityHarness::spawn();
         println!("Identity harness: {:?}", id_harness.circuits());
-        let id_wasm = include_bytes!("../../../../src/contract/identity/dwow_identity_contract.wasm");
-        let _id_contract_id = chain.deploy(&id_harness, "identity", id_wasm).await?;
-        println!("  Identity deployed");
+        let _id_contract_id = *dwow_sdk::crypto::IDENTITY_CONTRACT_ID;  // deployed at genesis
 
         // Deploy Labor Market (with milestone_payment binary now registered)
         let lm_harness = LaborMarketHarness::spawn();
@@ -3408,12 +3383,10 @@ fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn st
         let _dao_contract_id = chain.deploy(&dao_harness, "dao_escrow", dao_wasm).await?;
         println!("  DAO-Escrow deployed");
 
-        // Deploy Attestation
+        // Attestation already deployed at genesis
         let att_harness = AttestationHarness::spawn();
         println!("Attestation harness: {:?}", att_harness.circuits());
-        let att_wasm = include_bytes!("../../../../src/contract/attestation/dwow_attestation_contract.wasm");
-        let _att_contract_id = chain.deploy(&att_harness, "attestation", att_wasm).await?;
-        println!("  Attestation deployed");
+        let _att_contract_id = *dwow_sdk::crypto::ATTESTATION_CONTRACT_ID;  // deployed at genesis
 
         // ------------------------------------------------------------------
         // Step 2: DAO initializes governance (dao_escrow::InitializeV1)
@@ -3644,8 +3617,7 @@ async fn setup_native_token_pipeline(
     let chain = BlockPipeline::new().await?;
     chain.init_genesis().await?;
     let harness = NativeTokenHarness::spawn();
-    let wasm = include_bytes!("../../../../src/contract/native_token/dwow_native_token_contract.wasm");
-    let cid = chain.deploy(&harness, "native_token", wasm).await?;
+    let cid = *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;  // deployed at genesis
 
     let secret = SecretKey::from_bytes([2u8; 32])?;
     let public = PublicKey::from_secret(secret.clone());
@@ -4398,9 +4370,7 @@ fn test_heavyweight_box() -> std::result::Result<(), Box<dyn std::error::Error>>
         chain.init_genesis().await?;
         let harness = BoxHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-        let wasm = include_bytes!("../../../../src/contract/box/dwow_box_contract.wasm");
-        let cid = chain.deploy(&harness, "box", wasm).await?;
-        println!("Contract deployed");
+        let cid = *dwow_sdk::crypto::BOX_CONTRACT_ID;  // deployed at genesis
 
         // --- PutV1 (0x01) ---
         println!("  Test: put");
@@ -4442,6 +4412,7 @@ fn test_heavyweight_box() -> std::result::Result<(), Box<dyn std::error::Error>>
 #[test]
 fn test_heavyweight_purse() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::PurseHarness;
+    use dwow_sdk::crypto::PURSE_CONTRACT_ID;
     use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== Purse Heavyweight: All Endpoints ===");
@@ -4450,10 +4421,8 @@ fn test_heavyweight_purse() -> std::result::Result<(), Box<dyn std::error::Error
         let chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
         let harness = PurseHarness::spawn();
-        println!("Harness spawned with circuits: {:?}", harness.circuits());
-        let wasm = include_bytes!("../../../../src/contract/purse/dwow_purse_contract.wasm");
-        let cid = chain.deploy(&harness, "purse", wasm).await?;
-        println!("Contract deployed");
+        let cid = *PURSE_CONTRACT_ID;  // deployed at genesis — do NOT re-deploy
+        println!("Purse contract at genesis: {}", cid);
 
         // --- DepositV1 (0x01) ---
         println!("  Test: deposit");
@@ -4471,13 +4440,21 @@ fn test_heavyweight_purse() -> std::result::Result<(), Box<dyn std::error::Error
             "accept_block must advance height after DepositV1");
         println!("    accept_block height OK");
 
-        // --- WithdrawV1 (0x02) — harness validation only ---
-        // accept_block deferred: apply() IoError("Unknown") in process_update
-        // deserialization of WithdrawUpdateV1 (Nullifier + Point encoding)
-        println!("  Test: withdraw (harness)");
+        // --- WithdrawV1 (0x02) ---
+        println!("  Test: withdraw");
         let withdraw = harness.withdraw(50)?;
         assert!(!withdraw.call_data.is_empty());
         println!("    call_data={}B", withdraw.call_data.len());
+
+        println!("  Exec: WithdrawV1 through accept_block");
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &withdraw.call_data, vec![withdraw.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
+            "accept_block must advance height after WithdrawV1");
+        println!("    accept_block height OK");
 
         // --- BalanceV1 (0x03) — harness validation only ---
         // accept_block deferred: same IoError pattern as WithdrawV1
@@ -4494,7 +4471,7 @@ fn test_heavyweight_purse() -> std::result::Result<(), Box<dyn std::error::Error
 #[test]
 fn test_heavyweight_multisig() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::MultiSigHarness;
-    use dwow_sdk::crypto::{PublicKey, SecretKey};
+    use dwow_sdk::crypto::{MULTISIG_CONTRACT_ID, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
     use crate::tests::blockchain::HeavyweightPipeline;
 
@@ -4504,10 +4481,8 @@ fn test_heavyweight_multisig() -> std::result::Result<(), Box<dyn std::error::Er
         let chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
         let harness = MultiSigHarness::spawn();
-        println!("Harness spawned with circuits: {:?}", harness.circuits());
-        let wasm = include_bytes!("../../../../src/contract/multisig/dwow_multisig_contract.wasm");
-        let cid = chain.deploy(&harness, "multisig", wasm).await?;
-        println!("Contract deployed");
+        let cid = *MULTISIG_CONTRACT_ID;  // deployed at genesis — do NOT re-deploy
+        println!("MultiSig contract at genesis: {}", cid);
 
         let message_hash = pallas::Base::from(2u64);
         let signer_secret = pallas::Base::from(3u64);
@@ -4553,11 +4528,17 @@ fn test_heavyweight_multisig() -> std::result::Result<(), Box<dyn std::error::Er
         assert!(!finalize.call_data.is_empty());
         println!("    call_data={}B", finalize.call_data.len());
 
-        // FinalizeV1 accept_block deferred: apply() IoError("Unknown") in process_update
-        // (same deserialization pattern as purse WithdrawV1/BalanceV1)
-        println!("    FinalizeV1 harness validation OK (accept_block deferred)");
+        println!("  Exec: FinalizeV1 through accept_block");
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &finalize.call_data, vec![finalize.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before,
+            "accept_block must advance height after FinalizeV1");
+        println!("    accept_block height OK");
 
-        println!("=== All MultiSig endpoints OK (CreateGroup+Sign accept_block, Finalize harness) ===");
+        println!("=== All MultiSig endpoints OK (full accept_block) ===");
         Ok(())
     })
 }
