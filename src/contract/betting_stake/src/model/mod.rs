@@ -30,7 +30,6 @@ use dwow_sdk::{
     error::ContractError,
     pasta::pallas,
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::EARNINGS_BP;
 
@@ -147,7 +146,7 @@ impl Stake {
 // =============================================================================
 
 /// Parameters for InitializeV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct InitializeParamsV1 {
     /// Instance seed for per-capability key derivation
     pub instance_seed: [u8; 32],
@@ -163,6 +162,35 @@ pub struct InitializeParamsV1 {
     pub signature: Signature,
 }
 
+impl InitializeParamsV1 {
+    pub const ENCODED_SIZE: usize = 165;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.instance_seed);
+        buf.extend_from_slice(&self.betting_contract_id.to_repr());
+        buf.extend_from_slice(&self.house_edge_bp.to_le_bytes());
+        buf.push(self.risk_profile);
+        buf.extend_from_slice(&self.nonce.to_repr());
+        buf.extend_from_slice(&dwow_serial::serialize(&self.signature));
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 101 { return Err(ContractError::IoError("InitializeParamsV1: too short".into())); }
+        let instance_seed: [u8; 32] = data[0..32].try_into().unwrap();
+        let betting_contract_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("InitializeParamsV1: invalid betting_contract_id".into()))?;
+        let house_edge_bp = u32::from_le_bytes(data[64..68].try_into().unwrap());
+        let risk_profile = data[68];
+        let nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[69..101].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("InitializeParamsV1: invalid nonce".into()))?;
+        let signature = dwow_serial::deserialize(&data[101..])
+            .map_err(|e| ContractError::IoError(format!("InitializeParamsV1: invalid signature: {:?}", e)))?;
+        Ok(InitializeParamsV1 { instance_seed, betting_contract_id, house_edge_bp, risk_profile, nonce, signature })
+    }
+}
+
 /// Update produced by InitializeV1
 #[derive(Debug, Clone)]
 pub struct InitializeUpdateV1 {
@@ -175,7 +203,7 @@ pub struct InitializeUpdateV1 {
 }
 
 /// Parameters for StakeV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct StakeParamsV1 {
     /// Instance seed for per-capability key derivation
     pub instance_seed: [u8; 32],
@@ -197,6 +225,47 @@ pub struct StakeParamsV1 {
     pub user_data: pallas::Base,
 }
 
+impl StakeParamsV1 {
+    pub const ENCODED_SIZE: usize = 264;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.instance_seed);
+        buf.extend_from_slice(&self.table_id.to_repr());
+        buf.extend_from_slice(&self.staker_pub.to_bytes());
+        buf.extend_from_slice(&self.amount.to_le_bytes());
+        buf.extend_from_slice(&self.nonce.to_repr());
+        buf.extend_from_slice(&self.value_commit.to_bytes());
+        buf.extend_from_slice(&self.staker_nullifier.to_repr());
+        buf.extend_from_slice(&self.spend_hook.to_repr());
+        buf.extend_from_slice(&self.user_data.to_repr());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("StakeParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        let instance_seed: [u8; 32] = data[0..32].try_into().unwrap();
+        let table_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("StakeParamsV1: invalid table_id".into()))?;
+        let staker_pub = PublicKey::from_bytes(data[64..96].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("StakeParamsV1: invalid staker_pub: {}", e)))?;
+        let amount = u64::from_le_bytes(data[96..104].try_into().unwrap());
+        let nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[104..136].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("StakeParamsV1: invalid nonce".into()))?;
+        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[136..168].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("StakeParamsV1: invalid value_commit".into()))?;
+        let staker_nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(data[168..200].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("StakeParamsV1: invalid staker_nullifier".into()))?;
+        let spend_hook = Option::<pallas::Base>::from(pallas::Base::from_repr(data[200..232].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("StakeParamsV1: invalid spend_hook".into()))?;
+        let user_data = Option::<pallas::Base>::from(pallas::Base::from_repr(data[232..264].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("StakeParamsV1: invalid user_data".into()))?;
+        Ok(StakeParamsV1 { instance_seed, table_id, staker_pub, amount, nonce, value_commit, staker_nullifier, spend_hook, user_data })
+    }
+}
+
 /// Update produced by StakeV1
 #[derive(Debug, Clone)]
 pub struct StakeUpdateV1 {
@@ -212,7 +281,7 @@ pub struct StakeUpdateV1 {
 }
 
 /// Parameters for UnstakeV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct UnstakeParamsV1 {
     /// Stake ID to unstake
     pub stake_id: pallas::Base,
@@ -234,6 +303,48 @@ pub struct UnstakeParamsV1 {
     pub user_data: pallas::Base,
 }
 
+impl UnstakeParamsV1 {
+    pub const ENCODED_SIZE: usize = 264;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.stake_id.to_repr());
+        buf.extend_from_slice(&self.table_id.to_repr());
+        buf.extend_from_slice(&self.staker_pub.to_bytes());
+        buf.extend_from_slice(&self.original_amount.to_le_bytes());
+        buf.extend_from_slice(&self.nonce.to_repr());
+        buf.extend_from_slice(&self.value_commit.to_bytes());
+        buf.extend_from_slice(&self.staker_nullifier.to_repr());
+        buf.extend_from_slice(&self.spend_hook.to_repr());
+        buf.extend_from_slice(&self.user_data.to_repr());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("UnstakeParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        let stake_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("UnstakeParamsV1: invalid stake_id".into()))?;
+        let table_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("UnstakeParamsV1: invalid table_id".into()))?;
+        let staker_pub = PublicKey::from_bytes(data[64..96].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("UnstakeParamsV1: invalid staker_pub: {}", e)))?;
+        let original_amount = u64::from_le_bytes(data[96..104].try_into().unwrap());
+        let nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[104..136].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("UnstakeParamsV1: invalid nonce".into()))?;
+        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[136..168].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("UnstakeParamsV1: invalid value_commit".into()))?;
+        let staker_nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(data[168..200].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("UnstakeParamsV1: invalid staker_nullifier".into()))?;
+        let spend_hook = Option::<pallas::Base>::from(pallas::Base::from_repr(data[200..232].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("UnstakeParamsV1: invalid spend_hook".into()))?;
+        let user_data = Option::<pallas::Base>::from(pallas::Base::from_repr(data[232..264].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("UnstakeParamsV1: invalid user_data".into()))?;
+        Ok(UnstakeParamsV1 { stake_id, table_id, staker_pub, original_amount, nonce, value_commit, staker_nullifier, spend_hook, user_data })
+    }
+}
+
 /// Update produced by UnstakeV1
 #[derive(Debug, Clone)]
 pub struct UnstakeUpdateV1 {
@@ -244,7 +355,7 @@ pub struct UnstakeUpdateV1 {
 }
 
 /// Parameters for ClaimEarningsV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ClaimEarningsParamsV1 {
     /// Stake ID to claim earnings for
     pub stake_id: pallas::Base,
@@ -262,6 +373,42 @@ pub struct ClaimEarningsParamsV1 {
     pub staker_nullifier: pallas::Base,
 }
 
+impl ClaimEarningsParamsV1 {
+    pub const ENCODED_SIZE: usize = 232;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.stake_id.to_repr());
+        buf.extend_from_slice(&self.table_id.to_repr());
+        buf.extend_from_slice(&self.staker_pub.to_bytes());
+        buf.extend_from_slice(&self.current_amount.to_le_bytes());
+        buf.extend_from_slice(&self.nonce.to_repr());
+        buf.extend_from_slice(&self.value_commit.to_bytes());
+        buf.extend_from_slice(&self.staker_nullifier.to_repr());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("ClaimEarningsParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        let stake_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("ClaimEarningsParamsV1: invalid stake_id".into()))?;
+        let table_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("ClaimEarningsParamsV1: invalid table_id".into()))?;
+        let staker_pub = PublicKey::from_bytes(data[64..96].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("ClaimEarningsParamsV1: invalid staker_pub: {}", e)))?;
+        let current_amount = u64::from_le_bytes(data[96..104].try_into().unwrap());
+        let nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[104..136].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("ClaimEarningsParamsV1: invalid nonce".into()))?;
+        let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[136..168].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("ClaimEarningsParamsV1: invalid value_commit".into()))?;
+        let staker_nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(data[168..200].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("ClaimEarningsParamsV1: invalid staker_nullifier".into()))?;
+        Ok(ClaimEarningsParamsV1 { stake_id, table_id, staker_pub, current_amount, nonce, value_commit, staker_nullifier })
+    }
+}
+
 /// Update produced by ClaimEarningsV1
 #[derive(Debug, Clone)]
 pub struct ClaimEarningsUpdateV1 {
@@ -272,7 +419,7 @@ pub struct ClaimEarningsUpdateV1 {
 }
 
 /// Parameters for UpdateRiskV1 (called by betting contracts when payouts occur)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct UpdateRiskParamsV1 {
     /// Table ID
     pub table_id: pallas::Base,
@@ -284,6 +431,35 @@ pub struct UpdateRiskParamsV1 {
     pub betting_contract_id: pallas::Base,
     /// Nonce for table_id derivation (public input for ZK proof)
     pub nonce: pallas::Base,
+}
+
+impl UpdateRiskParamsV1 {
+    pub const ENCODED_SIZE: usize = 112;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.table_id.to_repr());
+        buf.extend_from_slice(&self.payout_amount.to_le_bytes());
+        buf.extend_from_slice(&self.house_share.to_le_bytes());
+        buf.extend_from_slice(&self.betting_contract_id.to_repr());
+        buf.extend_from_slice(&self.nonce.to_repr());
+        buf
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("UpdateRiskParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        let table_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("UpdateRiskParamsV1: invalid table_id".into()))?;
+        let payout_amount = u64::from_le_bytes(data[32..40].try_into().unwrap());
+        let house_share = u64::from_le_bytes(data[40..48].try_into().unwrap());
+        let betting_contract_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[48..80].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("UpdateRiskParamsV1: invalid betting_contract_id".into()))?;
+        let nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[80..112].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("UpdateRiskParamsV1: invalid nonce".into()))?;
+        Ok(UpdateRiskParamsV1 { table_id, payout_amount, house_share, betting_contract_id, nonce })
+    }
 }
 
 /// Update produced by UpdateRiskV1

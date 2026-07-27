@@ -94,7 +94,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         BettingStakeFunction::InitializeV1 => {
-            let params: crate::model::InitializeParamsV1 = deserialize(&self_.data[1..])?;
+            let params= crate::model::InitializeParamsV1::decode(&self_.data[1..])?;
             let table_id = poseidon_hash([params.betting_contract_id, params.nonce]);
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
@@ -106,7 +106,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         BettingStakeFunction::StakeV1 => {
-            let params: crate::model::StakeParamsV1 = deserialize(&self_.data[1..])?;
+            let params= crate::model::StakeParamsV1::decode(&self_.data[1..])?;
             let staker_x = params.staker_pub.x().expect("pk not identity");
             let staker_y = params.staker_pub.y().expect("pk not identity");
             let stake_id = poseidon_hash([
@@ -133,7 +133,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             }
         }
         BettingStakeFunction::UpdateRiskV1 => {
-            let params: crate::model::UpdateRiskParamsV1 = deserialize(&self_.data[1..])?;
+            let params= crate::model::UpdateRiskParamsV1::decode(&self_.data[1..])?;
             let table_id = poseidon_hash([params.betting_contract_id, params.nonce]);
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
@@ -145,7 +145,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         BettingStakeFunction::UnstakeV1 => {
-            let params: crate::model::UnstakeParamsV1 = deserialize(&self_.data[1..])?;
+            let params= crate::model::UnstakeParamsV1::decode(&self_.data[1..])?;
             let staker_x = params.staker_pub.x().expect("pk not identity");
             let staker_y = params.staker_pub.y().expect("pk not identity");
             let stake_id = poseidon_hash([
@@ -172,7 +172,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             }
         }
         BettingStakeFunction::ClaimEarningsV1 => {
-            let params: crate::model::ClaimEarningsParamsV1 = deserialize(&self_.data[1..])?;
+            let params= crate::model::ClaimEarningsParamsV1::decode(&self_.data[1..])?;
             let staker_x = params.staker_pub.x().expect("pk not identity");
             let staker_y = params.staker_pub.y().expect("pk not identity");
             let stake_id = poseidon_hash([
@@ -334,7 +334,7 @@ fn staking_initialize_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: InitializeParamsV1 = deserialize(&self_.data[1..])?;
+    let params= InitializeParamsV1::decode(&self_.data[1..])?;
 
     msg!("[betting_stake::initialize] Initializing staking for contract");
 
@@ -426,7 +426,7 @@ fn staking_stake_process_instruction_v1(
     }
 
     let self_ = &calls[call_idx].data;
-    let params: StakeParamsV1 = deserialize(&self_.data[1..])?;
+    let params= StakeParamsV1::decode(&self_.data[1..])?;
 
     msg!("[betting_stake::stake] Staking {} against table", params.amount);
 
@@ -565,7 +565,7 @@ fn staking_unstake_process_instruction_v1(
     }
 
     let self_ = &calls[call_idx].data;
-    let params: UnstakeParamsV1 = deserialize(&self_.data[1..])?;
+    let params= UnstakeParamsV1::decode(&self_.data[1..])?;
 
     msg!("[betting_stake::unstake] Unstaking request");
 
@@ -697,7 +697,7 @@ fn staking_claim_earnings_process_instruction_v1(
     }
 
     let self_ = &calls[call_idx].data;
-    let params: ClaimEarningsParamsV1 = deserialize(&self_.data[1..])?;
+    let params= ClaimEarningsParamsV1::decode(&self_.data[1..])?;
 
     msg!("[betting_stake::claim] Claiming earnings");
 
@@ -790,7 +790,7 @@ fn staking_update_risk_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: UpdateRiskParamsV1 = deserialize(&self_.data[1..])?;
+    let params= UpdateRiskParamsV1::decode(&self_.data[1..])?;
 
     msg!("[betting_stake::update_risk] Processing payout of {}", params.payout_amount);
 
