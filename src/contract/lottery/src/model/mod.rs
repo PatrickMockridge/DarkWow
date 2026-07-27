@@ -30,7 +30,6 @@ use dwow_sdk::{
     error::ContractError,
     pasta::pallas,
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::error::LotteryError;
 use crate::{MAX_NUM_PICKS, MAX_NUMBER_RANGE, MAX_PRIZE_TIERS};
@@ -558,7 +557,7 @@ impl Claim {
 // ============================================================================
 
 /// Parameters for InitializeV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct InitializeParamsV1 {
     /// House public key
     pub house_pub: PublicKey,
@@ -653,7 +652,7 @@ impl InitializeUpdateV1 {
 }
 
 /// Parameters for BuyTicketV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct BuyTicketParamsV1 {
     /// Player's public key
     pub player_pub: PublicKey,
@@ -745,7 +744,7 @@ impl BuyTicketUpdateV1 {
 }
 
 /// Parameters for DrawWinnersV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct DrawWinnersParamsV1 {
     /// Lottery ID
     pub lottery_id: LotteryId,
@@ -823,7 +822,7 @@ impl DrawWinnersUpdateV1 {
 }
 
 /// Parameters for RevealTicketV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct RevealTicketParamsV1 {
     /// Ticket ID
     pub ticket_id: TicketId,
@@ -903,7 +902,7 @@ impl RevealTicketUpdateV1 {
 }
 
 /// Parameters for ClaimPrizeV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ClaimPrizeParamsV1 {
     /// Ticket ID to claim
     pub ticket_id: TicketId,
@@ -960,7 +959,7 @@ impl ClaimPrizeUpdateV1 {
 }
 
 /// Parameters for ExpireLotteryV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ExpireLotteryParamsV1 {
     /// Lottery ID to expire
     pub lottery_id: LotteryId,
