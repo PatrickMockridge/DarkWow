@@ -31,6 +31,7 @@ use dwow_sdk::{
     wasm,
 };
 use dwow_serial::{deserialize, serialize};
+use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id,
     validate_child_value_commit,

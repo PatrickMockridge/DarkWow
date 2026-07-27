@@ -24,7 +24,7 @@
 //! PurchaseCoverageV1 Implementation
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::{Curve, CurveAffine}, poseidon_hash, ContractId},
+    crypto::{pasta_prelude::{Curve, CurveAffine, PrimeField}, poseidon_hash, ContractId},
     error::ContractError,
     msg,
     pasta::pallas,

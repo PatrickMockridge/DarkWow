@@ -271,64 +271,64 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             Err(InsuranceMarketError::InvalidParameter("Use init".to_string()).into())
         }
         InsuranceMarketFunction::RegisterRiskTypeV1 => {
-            let update: RegisterRiskTypeUpdateV1 = deserialize(&update_data[1..])?;
+            let update: RegisterRiskTypeUpdateV1 = RegisterRiskTypeUpdateV1::decode(&update_data[1..])?;
             insurance_market_register_risk_type_process_update_v1(cid, update)
         }
         InsuranceMarketFunction::CreateMarketV1 => {
-            let update: CreateMarketUpdateV1 = deserialize(&update_data[1..])?;
+            let update: CreateMarketUpdateV1 = CreateMarketUpdateV1::decode(&update_data[1..])?;
             insurance_market_create_market_process_update_v1(cid, update)
         }
         InsuranceMarketFunction::UnderwriteV1 => {
-            let update: UnderwriteUpdateV1 = deserialize(&update_data[1..])?;
+            let update: UnderwriteUpdateV1 = UnderwriteUpdateV1::decode(&update_data[1..])?;
             insurance_market_underwrite_process_update_v1(cid, update)
         }
         InsuranceMarketFunction::PurchaseCoverageV1 => {
-            let update: PurchaseCoverageUpdateV1 = deserialize(&update_data[1..])?;
+            let update: PurchaseCoverageUpdateV1 = PurchaseCoverageUpdateV1::decode(&update_data[1..])?;
             insurance_market_purchase_coverage_process_update_v1(cid, update)
         }
         InsuranceMarketFunction::FileClaimV1 => {
-            let update: FileClaimUpdateV1 = deserialize(&update_data[1..])?;
+            let update: FileClaimUpdateV1 = FileClaimUpdateV1::decode(&update_data[1..])?;
             insurance_market_file_claim_process_update_v1(cid, update)
         }
         InsuranceMarketFunction::ResolveClaimV1 => {
-            let update: ResolveClaimUpdateV1 = deserialize(&update_data[1..])?;
+            let update: ResolveClaimUpdateV1 = ResolveClaimUpdateV1::decode(&update_data[1..])?;
             insurance_market_resolve_claim_process_update_v1(cid, update)
         }
         InsuranceMarketFunction::WithdrawPremiumV1 => {
-            let update: WithdrawPremiumUpdateV1 = deserialize(&update_data[1..])?;
+            let update: WithdrawPremiumUpdateV1 = WithdrawPremiumUpdateV1::decode(&update_data[1..])?;
             insurance_market_withdraw_premium_process_update_v1(cid, update)
         }
         InsuranceMarketFunction::UpdatePremiumV1 => {
-            let update: UpdatePremiumUpdateV1 = deserialize(&update_data[1..])?;
+            let update: update_premium_v1::UpdatePremiumUpdateV1 = update_premium_v1::UpdatePremiumUpdateV1::decode(&update_data[1..])?;
             insurance_market_update_premium_process_update_v1(cid, update)
         }
         // O-Cap enabled functions
         InsuranceMarketFunction::UnderwriteWithCapabilityV1 => {
-            let update: UnderwriteWithCapabilityUpdateV1 = deserialize(&update_data[1..])?;
+            let update: UnderwriteWithCapabilityUpdateV1 = UnderwriteWithCapabilityUpdateV1::decode(&update_data[1..])?;
             insurance_market_underwrite_with_capability_process_update_v1(cid, update)
         }
         InsuranceMarketFunction::PurchaseCoverageWithCapabilityV1 => {
-            let update: PurchaseCoverageWithCapabilityUpdateV1 = deserialize(&update_data[1..])?;
+            let update: PurchaseCoverageWithCapabilityUpdateV1 = PurchaseCoverageWithCapabilityUpdateV1::decode(&update_data[1..])?;
             insurance_market_purchase_coverage_with_capability_process_update_v1(cid, update)
         }
         InsuranceMarketFunction::PurchaseCoverageWithDAGV1 => {
-            let update: PurchaseCoverageWithDAGUpdateV1 = deserialize(&update_data[1..])?;
+            let update: PurchaseCoverageWithDAGUpdateV1 = PurchaseCoverageWithDAGUpdateV1::decode(&update_data[1..])?;
             insurance_market_purchase_coverage_with_dag_process_update_v1(cid, update)
         }
         InsuranceMarketFunction::ResolveClaimWithCapabilityV1 => {
-            let update: ResolveClaimWithCapabilityUpdateV1 = deserialize(&update_data[1..])?;
+            let update: ResolveClaimWithCapabilityUpdateV1 = ResolveClaimWithCapabilityUpdateV1::decode(&update_data[1..])?;
             insurance_market_resolve_claim_with_capability_process_update_v1(cid, update)
         }
         InsuranceMarketFunction::DeactivateUnderwriterV1 => {
-            let update: DeactivateUnderwriterUpdateV1 = deserialize(&update_data[1..])?;
+            let update: DeactivateUnderwriterUpdateV1 = DeactivateUnderwriterUpdateV1::decode(&update_data[1..])?;
             insurance_market_deactivate_underwriter_process_update_v1(cid, update)
         }
         InsuranceMarketFunction::CloseMarketV1 => {
-            let update: CloseMarketUpdateV1 = deserialize(&update_data[1..])?;
+            let update: CloseMarketUpdateV1 = CloseMarketUpdateV1::decode(&update_data[1..])?;
             insurance_market_close_market_process_update_v1(cid, update)
         }
         InsuranceMarketFunction::RetireRiskTypeV1 => {
-            let update: RetireRiskTypeUpdateV1 = deserialize(&update_data[1..])?;
+            let update: RetireRiskTypeUpdateV1 = RetireRiskTypeUpdateV1::decode(&update_data[1..])?;
             insurance_market_retire_risk_type_process_update_v1(cid, update)
         }
     }

@@ -52,7 +52,8 @@ use dwow_promissory_note_contract::validation::{
 
 use crate::error::SlotError;
 use crate::model::{
-    video_paytable, CommitSpinParamsV1, CommitSpinUpdateV1, GameConfig, Spin, SpinId, SpinState,
+    video_paytable, CancelSpinUpdateV1, CommitSpinParamsV1, CommitSpinUpdateV1, GameConfig,
+    RevealSpinUpdateV1, SettleSpinUpdateV1, Spin, SpinId, SpinState,
 };
 use crate::SlotFunction;
 use crate::{

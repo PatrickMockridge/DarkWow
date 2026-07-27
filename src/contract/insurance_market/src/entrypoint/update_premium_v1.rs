@@ -27,6 +27,7 @@
 
 use dwow_sdk::{error::ContractError, msg, pasta::pallas, wasm};
 use dwow_serial::deserialize;
+use dwow_sdk::crypto::pasta_prelude::PrimeField;
 
 use crate::error::InsuranceMarketError;
 use crate::model::UpdatePremiumParamsV1;

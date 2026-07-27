@@ -24,7 +24,7 @@
 //! DarkBet Exchange Contract Entrypoint
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, schnorr::SchnorrPublic, ContractId},
+    crypto::{poseidon_hash, pasta_prelude::PrimeField, schnorr::SchnorrPublic, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta::pallas, wasm, ContractCall,
@@ -1094,7 +1094,7 @@ fn darkbet_buy_position_process_update_v1(
 
     // Update market pool
     let market_data = wasm::db::db_get(markets_db, &update.market_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-    let mut market: Market = deserialize(&market_data)?;
+    let mut market: Market = Market::decode(&market_data)?;
     market.total_pool += update.amount;
     market.outcome_pools[update.outcome as usize] += update.amount;
     wasm::db::db_set(markets_db, &market.market_id.to_repr(), &market.encode())?;
@@ -1223,7 +1223,7 @@ fn darkbet_add_liquidity_process_update_v1(
 
     // Get market to calculate shares
     let market_data = wasm::db::db_get(markets_db, &update.market_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-    let mut market: Market = deserialize(&market_data)?;
+    let mut market: Market = Market::decode(&market_data)?;
 
     // Store LP share (shares_minted already calculated in instruction)
     let lp_share = LpShare::new(update.market_id, update.provider, update.shares_minted, update.created_at, update.instance_seed);
@@ -1651,13 +1651,13 @@ fn darkbet_settle_market_process_instruction_v1(
     if params.match_ids.len() > crate::DARKBET_EXCHANGE_MAX_SETTLE_MATCHES {
         msg!("[darkbet_exchange::settle_market] Too many match IDs: {} (max {})",
             params.match_ids.len(), crate::DARKBET_EXCHANGE_MAX_SETTLE_MATCHES);
-        return Err(DarkbetExchangeError::Custom(1).into());
+        return Err(DarkbetError::InternalError("Too many match IDs".to_string()).into());
     }
     for &match_id in &params.match_ids {
         let match_data = wasm::db::db_get(matches_db, &match_id.to_repr())?
             .ok_or(DarkbetError::MatchNotFound)?;
 
-        let m: Match = deserialize(&match_data)?;
+        let m: Match = Match::decode(&match_data)?;
 
         // Verify match belongs to this market
         if m.market_id != params.market_id {
@@ -1724,7 +1724,7 @@ fn darkbet_settle_market_process_update_v1(
         let match_data = wasm::db::db_get(matches_db, &match_id.to_repr())?
             .ok_or(DarkbetError::MatchNotFound)?;
 
-        let mut m: Match = deserialize(&match_data)?;
+        let mut m: Match = Match::decode(&match_data)?;
         m.state = MatchState::Settled;
 
         wasm::db::db_set(matches_db, &match_id.to_repr(), &m.encode())?;
@@ -1792,7 +1792,7 @@ fn darkbet_cancel_order_process_instruction_v1(
         lay_order_data.ok_or(DarkbetError::OrderNotFound)?
     };
 
-    let order: Order = deserialize(&order_data)?;
+    let order: Order = Order::decode(&order_data)?;
     if order.state != OrderState::Open {
         return Err(DarkbetError::OrderAlreadyMatched.into())
     }
@@ -1833,11 +1833,11 @@ fn darkbet_cancel_order_process_update_v1(
 
     // Update order state (try back first, then lay)
     if let Some(order_data) = wasm::db::db_get(back_orders_db, &update.order_id.to_repr())? {
-        let mut order: Order = deserialize(&order_data)?;
+        let mut order: Order = Order::decode(&order_data)?;
         order.state = OrderState::Cancelled;
         wasm::db::db_set(back_orders_db, &update.order_id.to_repr(), &order.encode())?;
     } else if let Some(order_data) = wasm::db::db_get(lay_orders_db, &update.order_id.to_repr())? {
-        let mut order: Order = deserialize(&order_data)?;
+        let mut order: Order = Order::decode(&order_data)?;
         order.state = OrderState::Cancelled;
         wasm::db::db_set(lay_orders_db, &update.order_id.to_repr(), &order.encode())?;
     }

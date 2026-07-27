@@ -32,6 +32,7 @@ use dwow_sdk::{
     pasta::{group::GroupEncoding, pallas},
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
+use dwow_sdk::crypto::pasta_prelude::PrimeField;
 
 // ============================================================================
 // ENUMS
@@ -53,6 +54,21 @@ pub enum MarketState {
     Cancelled = 4,
 }
 
+impl TryFrom<u8> for MarketState {
+    type Error = ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(Self::Open),
+            1 => Ok(Self::Closed),
+            2 => Ok(Self::Resolved),
+            3 => Ok(Self::Settled),
+            4 => Ok(Self::Cancelled),
+            _ => Err(ContractError::InvalidFunction),
+        }
+    }
+}
+
 /// Market type: determines the matching mechanism
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
 #[repr(u8)]
@@ -61,6 +77,18 @@ pub enum MarketType {
     OrderBook = 0,
     /// AMM pool style: positions priced via constant-product formula
     AmmPool = 1,
+}
+
+impl TryFrom<u8> for MarketType {
+    type Error = ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(Self::OrderBook),
+            1 => Ok(Self::AmmPool),
+            _ => Err(ContractError::InvalidFunction),
+        }
+    }
 }
 
 /// Order types (order-book mode)
@@ -73,6 +101,18 @@ pub enum OrderType {
     Lay = 1,
 }
 
+impl TryFrom<u8> for OrderType {
+    type Error = ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(Self::Back),
+            1 => Ok(Self::Lay),
+            _ => Err(ContractError::InvalidFunction),
+        }
+    }
+}
+
 /// Outcome types for resolved markets
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
 #[repr(u8)]
@@ -83,6 +123,19 @@ pub enum Outcome {
     Yes = 1,
     /// Market cancelled or void
     Void = 2,
+}
+
+impl TryFrom<u8> for Outcome {
+    type Error = ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(Self::No),
+            1 => Ok(Self::Yes),
+            2 => Ok(Self::Void),
+            _ => Err(ContractError::InvalidFunction),
+        }
+    }
 }
 
 /// Order state (order-book mode)
@@ -99,6 +152,20 @@ pub enum OrderState {
     Expired = 3,
 }
 
+impl TryFrom<u8> for OrderState {
+    type Error = ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(Self::Open),
+            1 => Ok(Self::Matched),
+            2 => Ok(Self::Cancelled),
+            3 => Ok(Self::Expired),
+            _ => Err(ContractError::InvalidFunction),
+        }
+    }
+}
+
 /// Match state (order-book mode)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
 #[repr(u8)]
@@ -109,6 +176,19 @@ pub enum MatchState {
     Settled = 1,
     /// Market cancelled, funds refunded
     Cancelled = 2,
+}
+
+impl TryFrom<u8> for MatchState {
+    type Error = ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(Self::Pending),
+            1 => Ok(Self::Settled),
+            2 => Ok(Self::Cancelled),
+            _ => Err(ContractError::InvalidFunction),
+        }
+    }
 }
 
 /// Position state (AMM mode)
@@ -123,6 +203,19 @@ pub enum PositionState {
     Refunded = 2,
 }
 
+impl TryFrom<u8> for PositionState {
+    type Error = ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(Self::Active),
+            1 => Ok(Self::Claimed),
+            2 => Ok(Self::Refunded),
+            _ => Err(ContractError::InvalidFunction),
+        }
+    }
+}
+
 /// LP share state (AMM mode)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
 #[repr(u8)]
@@ -133,12 +226,24 @@ pub enum LpShareState {
     Removed = 1,
 }
 
+impl TryFrom<u8> for LpShareState {
+    type Error = ContractError;
+
+    fn try_from(b: u8) -> Result<Self, Self::Error> {
+        match b {
+            0 => Ok(Self::Active),
+            1 => Ok(Self::Removed),
+            _ => Err(ContractError::InvalidFunction),
+        }
+    }
+}
+
 // ============================================================================
 // MARKET
 // ============================================================================
 
 /// A betting market supporting both order-book and AMM modes
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Market {
     pub version: u8,
     /// Unique market ID (Poseidon hash of market params)
@@ -366,7 +471,7 @@ impl Market {
 // ============================================================================
 
 /// Base order structure (order-book mode)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Order {
     pub version: u8,
     /// Unique order ID
@@ -502,7 +607,7 @@ impl Order {
 // ============================================================================
 
 /// A matched bet between back and lay
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Match {
     pub version: u8,
     /// Unique match ID
@@ -570,7 +675,7 @@ impl Match {
 // ============================================================================
 
 /// A position/bet in an AMM pool market
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Position {
     pub version: u8,
     /// Unique position identifier
@@ -629,7 +734,7 @@ impl Position {
 }
 
 /// Liquidity provider share in an AMM pool
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct LpShare {
     pub version: u8,
     /// Unique LP share identifier
@@ -713,7 +818,7 @@ pub struct CreateMarketParamsV1 {
 }
 
 /// Update from CreateMarketV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CreateMarketUpdateV1 {
     pub market_id: pallas::Base,
     pub creator: PublicKey,
@@ -752,7 +857,7 @@ pub struct PlaceBackParamsV1 {
 }
 
 /// Update from PlaceBackV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct PlaceBackUpdateV1 {
     pub order_id: pallas::Base,
     pub market_id: pallas::Base,
@@ -784,7 +889,7 @@ pub struct PlaceLayParamsV1 {
 }
 
 /// Update from PlaceLayV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct PlaceLayUpdateV1 {
     pub order_id: pallas::Base,
     pub market_id: pallas::Base,
@@ -815,7 +920,7 @@ pub struct MatchOrdersParamsV1 {
 }
 
 /// Update from MatchOrdersV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct MatchOrdersUpdateV1 {
     pub match_id: pallas::Base,
     pub market_id: pallas::Base,
@@ -853,7 +958,7 @@ pub struct BuyPositionParamsV1 {
 }
 
 /// Update from BuyPositionV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct BuyPositionUpdateV1 {
     pub position_id: pallas::Base,
     pub market_id: pallas::Base,
@@ -883,7 +988,7 @@ pub struct AddLiquidityParamsV1 {
 }
 
 /// Update from AddLiquidityV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct AddLiquidityUpdateV1 {
     pub lp_share_id: pallas::Base,
     pub market_id: pallas::Base,
@@ -909,7 +1014,7 @@ pub struct RemoveLiquidityParamsV1 {
 }
 
 /// Update from RemoveLiquidityV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RemoveLiquidityUpdateV1 {
     pub market_id: pallas::Base,
     pub lp_share_id: pallas::Base,
@@ -935,7 +1040,7 @@ pub struct ClaimWinningsParamsV1 {
 }
 
 /// Update from ClaimWinningsV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ClaimWinningsUpdateV1 {
     pub position_id: pallas::Base,
     pub payout: u64,
@@ -960,7 +1065,7 @@ pub struct ResolveMarketParamsV1 {
 }
 
 /// Update from ResolveMarketV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ResolveMarketUpdateV1 {
     pub market_id: pallas::Base,
     pub winning_outcome: u8,
@@ -977,7 +1082,7 @@ pub struct SettleMarketParamsV1 {
 }
 
 /// Update from SettleMarketV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct SettleMarketUpdateV1 {
     pub market_id: pallas::Base,
     pub match_ids: Vec<pallas::Base>,
@@ -998,7 +1103,7 @@ pub struct CancelOrderParamsV1 {
 }
 
 /// Update from CancelOrderV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CancelOrderUpdateV1 {
     pub order_id: pallas::Base,
     pub refund_amount: u64,

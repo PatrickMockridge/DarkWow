@@ -26,7 +26,7 @@
 //! Allows purchasing coverage with an O-Cap capability token for authorization.
 
 use dwow_sdk::{
-    crypto::pasta_prelude::{Curve, CurveAffine},
+    crypto::pasta_prelude::{Curve, CurveAffine, PrimeField},
     error::ContractError,
     msg,
     wasm,

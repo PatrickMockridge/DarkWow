@@ -85,7 +85,7 @@ impl Symbol {
 }
 
 /// A reel strip (sequence of symbols that cycles)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ReelStrip {
     /// Symbols on this reel (cycled during spin)
     pub symbols: Vec<Symbol>,
@@ -113,7 +113,7 @@ impl ReelStrip {
 }
 
 /// A single spin result (one position per reel)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct SpinResult {
     /// Positions for each reel (used to look up symbols from reel strips)
     pub positions: Vec<u64>,
@@ -133,7 +133,7 @@ impl SpinResult {
 
 /// Payline definition (which positions form a line)
 /// Format: indices into the visible window per reel
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Payline {
     /// Payline ID
     pub id: u32,
@@ -164,7 +164,7 @@ impl Payline {
 }
 
 /// A winning combination
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Win {
     /// Payline ID
     pub payline_id: u32,
@@ -181,7 +181,7 @@ pub struct Win {
 // ============================================================================
 
 /// Game configuration (set during initialization)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct GameConfig {
     pub version: u8,
     /// Number of reels
@@ -197,7 +197,7 @@ pub struct GameConfig {
 }
 
 /// Paytable entry
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct PaytableEntry {
     /// Symbol
     pub symbol: Symbol,
@@ -208,7 +208,7 @@ pub struct PaytableEntry {
 }
 
 /// A complete paytable (defines all winning combinations)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Paytable {
     /// Entries sorted by count descending
     pub entries: Vec<PaytableEntry>,
@@ -396,7 +396,7 @@ impl TryFrom<u8> for SpinState {
 pub type SpinId = pallas::Base;
 
 /// A spin/bet stored on-chain
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Spin {
     pub version: u8,
     /// Unique spin ID
@@ -472,7 +472,7 @@ pub struct CommitSpinParamsV1 {
 }
 
 /// Update produced by CommitSpinV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CommitSpinUpdateV1 {
     pub spin_id: SpinId,
     pub player_pub: PublicKey,
@@ -501,7 +501,7 @@ pub struct RevealSpinParamsV1 {
 }
 
 /// Update produced by RevealSpinV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RevealSpinUpdateV1 {
     pub spin_id: SpinId,
     pub positions: Vec<u64>,
@@ -518,7 +518,7 @@ pub struct SettleSpinParamsV1 {
 }
 
 /// Update produced by SettleSpinV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct SettleSpinUpdateV1 {
     pub spin_id: SpinId,
     pub wins: Vec<Win>,
@@ -534,7 +534,7 @@ pub struct CancelSpinParamsV1 {
 }
 
 /// Update produced by CancelSpinV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CancelSpinUpdateV1 {
     pub spin_id: SpinId,
     pub house_take: u64,
@@ -703,6 +703,7 @@ pub fn derive_spin_id(
         blind,
         token_id,
     ])
+}
 
 // ============================================================================
 // RHO-CALCULUS EXPLICIT ENCODE/DECODE

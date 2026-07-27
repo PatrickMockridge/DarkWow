@@ -25,6 +25,7 @@
 
 use dwow_sdk::{error::ContractError, msg, wasm};
 use dwow_serial::{deserialize, serialize};
+use dwow_sdk::crypto::pasta_prelude::PrimeField;
 
 use crate::error::InsuranceMarketError;
 use crate::model::{CloseMarketParamsV1, CloseMarketUpdateV1};
@@ -44,7 +45,7 @@ pub fn insurance_market_close_market_process_instruction_v1(
     let markets_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_MARKETS_TREE)?;
     let market_bytes =
         wasm::db::db_get(markets_db, &params.market_id.to_repr())?.ok_or(ContractError::DbGetEmpty)?;
-    let market: crate::model::InsuranceMarket = deserialize(&market_bytes)?;
+    let market: crate::model::InsuranceMarket = crate::model::InsuranceMarket::decode(&market_bytes)?;
 
     if !market.active {
         return Err(InsuranceMarketError::MarketNotActive.into())

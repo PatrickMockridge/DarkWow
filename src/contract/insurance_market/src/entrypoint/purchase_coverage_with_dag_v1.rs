@@ -27,7 +27,7 @@
 //! This is used when coverage tiers require proof of certain qualifications.
 
 use dwow_sdk::{
-    crypto::pasta_prelude::{Curve, CurveAffine},
+    crypto::pasta_prelude::{Curve, CurveAffine, PrimeField},
     error::ContractError,
     msg,
     pasta::pallas,

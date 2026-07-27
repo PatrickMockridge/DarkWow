@@ -24,7 +24,7 @@
 //! Insurance Market Contract Data Models
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey},
+    crypto::{poseidon_hash, pasta_prelude::PrimeField, PublicKey},
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
 };
@@ -135,7 +135,7 @@ impl TryFrom<u8> for ClaimState {
 // ============================================================================
 
 /// Represents a registered risk type
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RiskType {
     pub version: u8,
     /// Unique risk type identifier
@@ -157,7 +157,7 @@ pub struct RiskType {
 }
 
 /// Represents an insurance market for a specific risk
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct InsuranceMarket {
     pub version: u8,
     /// Unique market identifier
@@ -191,7 +191,7 @@ pub struct InsuranceMarket {
 }
 
 /// Represents an underwriter's position
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Underwriter {
     pub version: u8,
     /// Unique underwriter identifier
@@ -221,7 +221,7 @@ pub struct Underwriter {
 }
 
 /// Represents an insurance coverage policy
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Coverage {
     pub version: u8,
     /// Unique coverage identifier
@@ -247,7 +247,7 @@ pub struct Coverage {
 }
 
 /// Represents an insurance claim
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct Claim {
     pub version: u8,
     /// Unique claim identifier
@@ -273,7 +273,7 @@ pub struct Claim {
 }
 
 /// Endowment pool for LP capital
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct EndowmentPool {
     pub version: u8,
     /// Unique pool identifier
@@ -307,7 +307,7 @@ pub struct RegisterRiskTypeParamsV1 {
 }
 
 /// State update for `RegisterRiskTypeV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RegisterRiskTypeUpdateV1 {
     pub risk_type_id: RiskTypeId,
     pub category: RiskCategory,
@@ -334,7 +334,7 @@ pub struct CreateMarketParamsV1 {
 }
 
 /// State update for `CreateMarketV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CreateMarketUpdateV1 {
     pub market_id: MarketId,
     pub risk_type: RiskTypeId,
@@ -359,7 +359,7 @@ pub struct UnderwriteParamsV1 {
 }
 
 /// State update for `UnderwriteV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct UnderwriteUpdateV1 {
     pub underwriter_id: UnderwriterId,
     pub market_id: MarketId,
@@ -381,7 +381,7 @@ pub struct PurchaseCoverageParamsV1 {
 }
 
 /// State update for `PurchaseCoverageV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct PurchaseCoverageUpdateV1 {
     pub coverage_id: CoverageId,
     pub market_id: MarketId,
@@ -406,7 +406,7 @@ pub struct FileClaimParamsV1 {
 }
 
 /// State update for `FileClaimV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct FileClaimUpdateV1 {
     pub claim_id: ClaimId,
     pub coverage_id: CoverageId,
@@ -429,7 +429,7 @@ pub struct ResolveClaimParamsV1 {
 }
 
 /// State update for `ResolveClaimV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ResolveClaimUpdateV1 {
     pub claim_id: ClaimId,
     pub coverage_id: CoverageId,
@@ -449,7 +449,7 @@ pub struct WithdrawPremiumParamsV1 {
 }
 
 /// State update for `WithdrawPremiumV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct WithdrawPremiumUpdateV1 {
     pub underwriter_id: UnderwriterId,
     pub amount: u64,
@@ -481,7 +481,7 @@ pub struct UnderwriteWithCapabilityParamsV1 {
 }
 
 /// State update for `UnderwriteWithCapabilityV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct UnderwriteWithCapabilityUpdateV1 {
     pub underwriter_id: UnderwriterId,
     pub market_id: MarketId,
@@ -508,7 +508,7 @@ pub struct PurchaseCoverageWithCapabilityParamsV1 {
 }
 
 /// State update for `PurchaseCoverageWithCapabilityV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct PurchaseCoverageWithCapabilityUpdateV1 {
     pub coverage_id: CoverageId,
     pub market_id: MarketId,
@@ -540,7 +540,7 @@ pub struct PurchaseCoverageWithDAGParamsV1 {
 }
 
 /// State update for `PurchaseCoverageWithDAGV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct PurchaseCoverageWithDAGUpdateV1 {
     pub coverage_id: CoverageId,
     pub market_id: MarketId,
@@ -571,7 +571,7 @@ pub struct ResolveClaimWithCapabilityParamsV1 {
 }
 
 /// State update for `ResolveClaimWithCapabilityV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ResolveClaimWithCapabilityUpdateV1 {
     pub claim_id: ClaimId,
     pub coverage_id: CoverageId,
@@ -594,7 +594,7 @@ pub struct DeactivateUnderwriterParamsV1 {
 }
 
 /// State update for `DeactivateUnderwriterV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct DeactivateUnderwriterUpdateV1 {
     pub underwriter_id: UnderwriterId,
 }
@@ -606,7 +606,7 @@ pub struct CloseMarketParamsV1 {
 }
 
 /// State update for `CloseMarketV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CloseMarketUpdateV1 {
     pub market_id: MarketId,
 }
@@ -618,7 +618,7 @@ pub struct RetireRiskTypeParamsV1 {
 }
 
 /// State update for `RetireRiskTypeV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct RetireRiskTypeUpdateV1 {
     pub risk_type_id: RiskTypeId,
 }
@@ -886,9 +886,9 @@ impl InsuranceMarket {
         let closes_at = u64::from_le_bytes(data[118..126].try_into().unwrap());
         let mut pos = 126;
         let has_uw = data[pos] != 0; pos += 1;
-        let (required_underwriter_capability, pos) = if has_uw { (Some(data[pos..pos+32].try_into().unwrap()), pos + 32) } else { (None, pos) };
+        let (required_underwriter_capability, mut pos) = if has_uw { (Some(data[pos..pos+32].try_into().unwrap()), pos + 32) } else { (None, pos) };
         let has_buy = data[pos] != 0; pos += 1;
-        let (required_buyer_capability, pos) = if has_buy { (Some(data[pos..pos+32].try_into().unwrap()), pos + 32) } else { (None, pos) };
+        let (required_buyer_capability, mut pos) = if has_buy { (Some(data[pos..pos+32].try_into().unwrap()), pos + 32) } else { (None, pos) };
         let has_dag = data[pos] != 0; pos += 1;
         let (required_dag_id, _) = if has_dag { (Some(data[pos..pos+32].try_into().unwrap()), pos + 32) } else { (None, pos) };
         Ok(InsuranceMarket { version, id, risk_type, premium_rate, total_coverage, coverage_sold, coverage_period, deductible, max_coverage_per_buyer, active, created_at, closes_at, required_underwriter_capability, required_buyer_capability, required_dag_id })
@@ -939,11 +939,11 @@ impl ResolveClaimUpdateV1 { pub const ENCODED_SIZE: usize = 137; pub fn encode(&
 
 impl FileClaimUpdateV1 { pub const ENCODED_SIZE: usize = 169; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(169); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&self.coverage_id.to_repr()); b.extend_from_slice(&self.market_id.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.push(self.state as u8); b.extend_from_slice(&self.created_at.to_le_bytes()); b.extend_from_slice(&self.oracle_signature.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 169 { return Err(ContractError::IoError(format!("FileClaimUpdateV1: expected 169 bytes, got {}", data.len()))); } Ok(FileClaimUpdateV1 { claim_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("FileClaimUpdateV1: invalid claim_id".into()))?, coverage_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("FileClaimUpdateV1: invalid coverage_id".into()))?, market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap())).ok_or_else(|| ContractError::IoError("FileClaimUpdateV1: invalid market_id".into()))?, amount: u64::from_le_bytes(data[96..104].try_into().unwrap()), state: ClaimState::try_from(data[104])?, created_at: u64::from_le_bytes(data[105..113].try_into().unwrap()), oracle_signature: Option::<pallas::Base>::from(pallas::Base::from_repr(data[113..145].try_into().unwrap())).ok_or_else(|| ContractError::IoError("FileClaimUpdateV1: invalid oracle_signature".into()))? }) } }
 
-impl DeactivateUnderwriterUpdateV1 { pub const ENCODED_SIZE: usize = 33; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(33); b.extend_from_slice(&self.underwriter_id.to_repr()); b.push(self.active as u8); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 33 { return Err(ContractError::IoError(format!("DeactivateUnderwriterUpdateV1: expected 33 bytes, got {}", data.len()))); } Ok(DeactivateUnderwriterUpdateV1 { underwriter_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DeactivateUnderwriterUpdateV1: invalid underwriter_id".into()))?, active: data[32] != 0 }) } }
+impl DeactivateUnderwriterUpdateV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(32); b.extend_from_slice(&self.underwriter_id.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("DeactivateUnderwriterUpdateV1: expected 32 bytes, got {}", data.len()))); } Ok(DeactivateUnderwriterUpdateV1 { underwriter_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DeactivateUnderwriterUpdateV1: invalid underwriter_id".into()))? }) } }
 
-impl CloseMarketUpdateV1 { pub const ENCODED_SIZE: usize = 33; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(33); b.extend_from_slice(&self.market_id.to_repr()); b.push(self.active as u8); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 33 { return Err(ContractError::IoError(format!("CloseMarketUpdateV1: expected 33 bytes, got {}", data.len()))); } Ok(CloseMarketUpdateV1 { market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CloseMarketUpdateV1: invalid market_id".into()))?, active: data[32] != 0 }) } }
+impl CloseMarketUpdateV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(32); b.extend_from_slice(&self.market_id.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("CloseMarketUpdateV1: expected 32 bytes, got {}", data.len()))); } Ok(CloseMarketUpdateV1 { market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CloseMarketUpdateV1: invalid market_id".into()))? }) } }
 
-impl RetireRiskTypeUpdateV1 { pub const ENCODED_SIZE: usize = 33; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(33); b.extend_from_slice(&self.risk_type_id.to_repr()); b.push(self.active as u8); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 33 { return Err(ContractError::IoError(format!("RetireRiskTypeUpdateV1: expected 33 bytes, got {}", data.len()))); } Ok(RetireRiskTypeUpdateV1 { risk_type_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RetireRiskTypeUpdateV1: invalid risk_type_id".into()))?, active: data[32] != 0 }) } }
+impl RetireRiskTypeUpdateV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(32); b.extend_from_slice(&self.risk_type_id.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("RetireRiskTypeUpdateV1: expected 32 bytes, got {}", data.len()))); } Ok(RetireRiskTypeUpdateV1 { risk_type_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RetireRiskTypeUpdateV1: invalid risk_type_id".into()))? }) } }
 
 impl CreateMarketUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
@@ -979,9 +979,9 @@ impl CreateMarketUpdateV1 {
         let created_at = u64::from_le_bytes(data[100..108].try_into().unwrap());
         let mut pos = 108;
         let has_uw = data[pos] != 0; pos += 1;
-        let (required_underwriter_capability, pos) = if has_uw { (Some(data[pos..pos+32].try_into().unwrap()), pos + 32) } else { (None, pos) };
+        let (required_underwriter_capability, mut pos) = if has_uw { (Some(data[pos..pos+32].try_into().unwrap()), pos + 32) } else { (None, pos) };
         let has_buy = data[pos] != 0; pos += 1;
-        let (required_buyer_capability, pos) = if has_buy { (Some(data[pos..pos+32].try_into().unwrap()), pos + 32) } else { (None, pos) };
+        let (required_buyer_capability, mut pos) = if has_buy { (Some(data[pos..pos+32].try_into().unwrap()), pos + 32) } else { (None, pos) };
         let has_dag = data[pos] != 0; pos += 1;
         let (required_dag_id, _) = if has_dag { (Some(data[pos..pos+32].try_into().unwrap()), pos + 32) } else { (None, pos) };
         Ok(CreateMarketUpdateV1 { market_id, risk_type, premium_rate, total_coverage, coverage_period, deductible, max_coverage_per_buyer, created_at, required_underwriter_capability, required_buyer_capability, required_dag_id })
@@ -1015,6 +1015,14 @@ impl RegisterRiskTypeUpdateV1 {
         Ok(RegisterRiskTypeUpdateV1 { risk_type_id, category, description, base_premium_rate, min_bond_rate, oracle_pubkey, created_at })
     }
 }
+
+impl UnderwriteWithCapabilityUpdateV1 { pub const ENCODED_SIZE: usize = 152; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(152); b.extend_from_slice(&self.underwriter_id.to_repr()); b.extend_from_slice(&self.market_id.to_repr()); b.extend_from_slice(&self.owner.to_bytes()); b.extend_from_slice(&self.bond_amount.to_le_bytes()); b.extend_from_slice(&self.coverage_provided.to_le_bytes()); b.extend_from_slice(&self.required_capability_id); b.extend_from_slice(&self.created_at.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 152 { return Err(ContractError::IoError(format!("UnderwriteWithCapabilityUpdateV1: expected 152 bytes, got {}", data.len()))); } Ok(UnderwriteWithCapabilityUpdateV1 { underwriter_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UnderwriteWithCapabilityUpdateV1: invalid underwriter_id".into()))?, market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UnderwriteWithCapabilityUpdateV1: invalid market_id".into()))?, owner: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("UnderwriteWithCapabilityUpdateV1: invalid owner: {}", e)))?, bond_amount: u64::from_le_bytes(data[96..104].try_into().unwrap()), coverage_provided: u64::from_le_bytes(data[104..112].try_into().unwrap()), required_capability_id: data[112..144].try_into().unwrap(), created_at: u64::from_le_bytes(data[144..152].try_into().unwrap()) }) } }
+
+impl PurchaseCoverageWithCapabilityUpdateV1 { pub const ENCODED_SIZE: usize = 224; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(224); b.extend_from_slice(&self.coverage_id.to_repr()); b.extend_from_slice(&self.market_id.to_repr()); b.extend_from_slice(&self.underwriter_id.to_repr()); b.extend_from_slice(&self.buyer.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.premium_paid.to_le_bytes()); b.extend_from_slice(&self.starts_at.to_le_bytes()); b.extend_from_slice(&self.expires_at.to_le_bytes()); b.extend_from_slice(&self.required_capability_id); b.extend_from_slice(&self.buyer_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 224 { return Err(ContractError::IoError(format!("PurchaseCoverageWithCapabilityUpdateV1: expected 224 bytes, got {}", data.len()))); } Ok(PurchaseCoverageWithCapabilityUpdateV1 { coverage_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PurchaseCoverageWithCapabilityUpdateV1: invalid coverage_id".into()))?, market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PurchaseCoverageWithCapabilityUpdateV1: invalid market_id".into()))?, underwriter_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PurchaseCoverageWithCapabilityUpdateV1: invalid underwriter_id".into()))?, buyer: PublicKey::from_bytes(data[96..128].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PurchaseCoverageWithCapabilityUpdateV1: invalid buyer: {}", e)))?, amount: u64::from_le_bytes(data[128..136].try_into().unwrap()), premium_paid: u64::from_le_bytes(data[136..144].try_into().unwrap()), starts_at: u64::from_le_bytes(data[144..152].try_into().unwrap()), expires_at: u64::from_le_bytes(data[152..160].try_into().unwrap()), required_capability_id: data[160..192].try_into().unwrap(), buyer_nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[192..224].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PurchaseCoverageWithCapabilityUpdateV1: invalid buyer_nullifier".into()))? }) } }
+
+impl PurchaseCoverageWithDAGUpdateV1 { pub const ENCODED_SIZE: usize = 228; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(228); b.extend_from_slice(&self.coverage_id.to_repr()); b.extend_from_slice(&self.market_id.to_repr()); b.extend_from_slice(&self.underwriter_id.to_repr()); b.extend_from_slice(&self.buyer.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.premium_paid.to_le_bytes()); b.extend_from_slice(&self.starts_at.to_le_bytes()); b.extend_from_slice(&self.expires_at.to_le_bytes()); b.extend_from_slice(&self.required_dag_id); b.extend_from_slice(&self.dag_path_satisfied.to_le_bytes()); b.extend_from_slice(&self.buyer_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 228 { return Err(ContractError::IoError(format!("PurchaseCoverageWithDAGUpdateV1: expected 228 bytes, got {}", data.len()))); } Ok(PurchaseCoverageWithDAGUpdateV1 { coverage_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PurchaseCoverageWithDAGUpdateV1: invalid coverage_id".into()))?, market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PurchaseCoverageWithDAGUpdateV1: invalid market_id".into()))?, underwriter_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PurchaseCoverageWithDAGUpdateV1: invalid underwriter_id".into()))?, buyer: PublicKey::from_bytes(data[96..128].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PurchaseCoverageWithDAGUpdateV1: invalid buyer: {}", e)))?, amount: u64::from_le_bytes(data[128..136].try_into().unwrap()), premium_paid: u64::from_le_bytes(data[136..144].try_into().unwrap()), starts_at: u64::from_le_bytes(data[144..152].try_into().unwrap()), expires_at: u64::from_le_bytes(data[152..160].try_into().unwrap()), required_dag_id: data[160..192].try_into().unwrap(), dag_path_satisfied: u32::from_le_bytes(data[192..196].try_into().unwrap()), buyer_nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[196..228].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PurchaseCoverageWithDAGUpdateV1: invalid buyer_nullifier".into()))? }) } }
+
+impl ResolveClaimWithCapabilityUpdateV1 { pub const ENCODED_SIZE: usize = 121; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(121); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&self.coverage_id.to_repr()); b.push(self.is_valid as u8); b.extend_from_slice(&self.payout_amount.to_le_bytes()); b.extend_from_slice(&self.slash_amount.to_le_bytes()); b.extend_from_slice(&self.resolved_at.to_le_bytes()); b.extend_from_slice(&self.oracle_signature.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 121 { return Err(ContractError::IoError(format!("ResolveClaimWithCapabilityUpdateV1: expected 121 bytes, got {}", data.len()))); } Ok(ResolveClaimWithCapabilityUpdateV1 { claim_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ResolveClaimWithCapabilityUpdateV1: invalid claim_id".into()))?, coverage_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ResolveClaimWithCapabilityUpdateV1: invalid coverage_id".into()))?, is_valid: data[64] != 0, payout_amount: u64::from_le_bytes(data[65..73].try_into().unwrap()), slash_amount: u64::from_le_bytes(data[73..81].try_into().unwrap()), resolved_at: u64::from_le_bytes(data[81..89].try_into().unwrap()), oracle_signature: Option::<pallas::Base>::from(pallas::Base::from_repr(data[89..121].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ResolveClaimWithCapabilityUpdateV1: invalid oracle_signature".into()))? }) } }
 
 impl Underwriter {
     pub const ENCODED_SIZE: usize = 154;
