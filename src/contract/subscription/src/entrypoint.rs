@@ -57,7 +57,6 @@ use dwow_promissory_note_contract::validation::{
     validate_child_contract_id, validate_child_value_commit,
 };
 use dwow_serial::deserialize;
-use dwow_serial::serialize;
 use dwow_serial::Encodable;
 
 use crate::{

@@ -581,7 +581,7 @@ fn pay_premium_apply_v1(cid: ContractId, update: model::PayPremiumUpdateV1) -> C
         created_at: wasm::util::get_verifying_block_height()?.get(),
     };
 
-    wasm::db::db_set(membership_db, &update.membership_note.to_bytes(), &serialize(&membership))?;
+    wasm::db::db_set(membership_db, &update.membership_note.to_bytes(), &membership.encode())?;
 
     // Update endowment totals
     let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_bytes())?;
@@ -590,7 +590,7 @@ fn pay_premium_apply_v1(cid: ContractId, update: model::PayPremiumUpdateV1) -> C
         // Purse::DepositV1 child call handles balance update.
         // endowment_purse_id is the Purse instance reference, not a raw counter.
         endowment.member_count += 1;
-        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &serialize(&endowment))?;
+        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &endowment.encode())?;
     }
 
     msg!("[dao_escrow::pay_premium_apply_v1] Membership stored: {:?}", update.membership_note);
@@ -694,7 +694,7 @@ fn withdraw_apply_v1(cid: ContractId, update: model::WithdrawUpdateV1) -> Contra
     if let Some(data) = endowment_data {
         let mut endowment: model::DaoEscrow = deserialize(&data)?;
         // Purse handles balance update: endowment_purse_id is the instance reference
-        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &serialize(&endowment))?;
+        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &endowment.encode())?;
     }
 
     msg!("[dao_escrow::withdraw_apply_v1] Endowment updated: new total = {}", update.amount);
@@ -737,7 +737,7 @@ fn enable_drain_protection_apply_v1(
         let mut endowment: model::DaoEscrow = deserialize(&data)?;
         endowment.drain_protection_enabled = true;
         endowment.drain_protection_bulla = Some(update.drain_protection_bulla);
-        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &serialize(&endowment))?;
+        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &endowment.encode())?;
     }
 
     msg!("[dao_escrow::enable_drain_protection_apply_v1] Drain protection enabled");
@@ -858,7 +858,7 @@ fn endowment_withdraw_apply_v1(
     if let Some(data) = endowment_data {
         let mut endowment: model::DaoEscrow = deserialize(&data)?;
         // Purse handles balance update: endowment_purse_id is the instance reference
-        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &serialize(&endowment))?;
+        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &endowment.encode())?;
     }
 
     msg!(
@@ -990,7 +990,7 @@ fn treasury_spend_apply_v1(
     if let Some(data) = endowment_data {
         let mut endowment: model::DaoEscrow = deserialize(&data)?;
         // Purse handles treasury balance: treasury_purse_id is the instance reference
-        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &serialize(&endowment))?;
+        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &endowment.encode())?;
     }
 
     msg!(
@@ -1350,7 +1350,7 @@ fn vote_claim_v1(
         msg!("[dao_escrow::vote_claim_v1] ERROR: Already voted");
         return Err(DaoEscrowError::AlreadyVoted.into());
     }
-    wasm::db::db_set(nullifiers_db, &vote_nullifier.to_repr(), &serialize(&true))?;
+    wasm::db::db_set(nullifiers_db, &vote_nullifier.to_repr(), &[1u8])?;
 
     // Count vote — MultiSig delegation: each SignV1 = one vote
     let (yes_votes, no_votes) = match params.vote {

@@ -517,7 +517,7 @@ pub struct ConsumeClaimParamsV1 {
 }
 
 /// State update for ConsumeClaimV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ConsumeClaimUpdateV1 {
     /// The consumed claim ID
     pub claim_id: ClaimId,
@@ -623,7 +623,7 @@ pub struct CheckNotRevokedParamsV1 {
 }
 
 /// State update for CheckNotRevokedV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct CheckNotRevokedUpdateV1 {
     /// Whether the nonce is not revoked
     pub is_not_revoked: bool,
@@ -649,7 +649,7 @@ pub struct VerifyChainParamsV1 {
 }
 
 /// State update for VerifyChainV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct VerifyChainUpdateV1 {
     /// Whether chain verification passed
     pub success: bool,
