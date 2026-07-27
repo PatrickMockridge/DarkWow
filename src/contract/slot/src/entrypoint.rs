@@ -104,7 +104,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> GenericResult<()> {
 
     let metadata = match func {
         SlotFunction::CommitSpinV1 => {
-            let params: CommitSpinParamsV1 = deserialize(&self_.data[1..])?;
+            let params= CommitSpinParamsV1::decode(&self_.data[1..])?;
             slot_commit_bet_get_metadata_v1(params)?
         }
         SlotFunction::RevealSpinV1 => {
@@ -273,7 +273,7 @@ fn commit_spin_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> GenericResult<Vec<u8>> {
     let self_ = &calls[call_idx].data;
-    let params: CommitSpinParamsV1 = deserialize(&self_.data[1..])?;
+    let params= CommitSpinParamsV1::decode(&self_.data[1..])?;
 
     // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled for bet locking
     let this_call = &calls[call_idx];

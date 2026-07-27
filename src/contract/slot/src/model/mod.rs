@@ -41,7 +41,6 @@ use dwow_sdk::{
     pasta::{group::GroupEncoding, pallas},
     tx::TransactionHash,
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // ============================================================================
 // CORE SLOT TYPES
@@ -447,8 +446,10 @@ impl Spin {
 // PARAMS AND UPDATES
 // ============================================================================
 
+fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap())).ok_or_else(|| ContractError::IoError("invalid base".into())) }
+
 /// Parameters for CommitSpinV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CommitSpinParamsV1 {
     /// Player's public key
     pub player_pub: PublicKey,
@@ -471,6 +472,8 @@ pub struct CommitSpinParamsV1 {
     pub instance_seed: [u8; 32],
 }
 
+impl CommitSpinParamsV1 { pub const ENCODED_SIZE: usize = 209; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(209); b.extend_from_slice(&self.player_pub.to_bytes()); b.extend_from_slice(&self.bet_value.to_le_bytes()); b.extend_from_slice(&self.paylines_played.to_le_bytes()); b.extend_from_slice(&self.secret_nonce.to_repr()); b.extend_from_slice(&self.blind.to_repr()); b.extend_from_slice(&self.house_edge.to_le_bytes()); b.push(self.confirmation_depth); b.extend_from_slice(&self.token_id.to_repr()); b.extend_from_slice(&self.value_commit.to_bytes()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 209 { return Err(ContractError::IoError(format!("CommitSpinParamsV1: expected 209 bytes, got {}", data.len()))); } let player_pub = PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CommitSpinParamsV1: invalid player_pub: {}", e)))?; let bet_value = u64::from_le_bytes(data[32..40].try_into().unwrap()); let paylines_played = u32::from_le_bytes(data[40..44].try_into().unwrap()); let secret_nonce = read_base(&data[44..76])?; let blind = read_base(&data[76..108])?; let house_edge = u32::from_le_bytes(data[108..112].try_into().unwrap()); let confirmation_depth = data[112]; let token_id = read_base(&data[113..145])?; let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[145..177].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CommitSpinParamsV1: invalid value_commit".into()))?; let instance_seed: [u8;32] = data[177..209].try_into().unwrap(); Ok(CommitSpinParamsV1 { player_pub, bet_value, paylines_played, secret_nonce, blind, house_edge, confirmation_depth, token_id, value_commit, instance_seed }) } }
+
 /// Update produced by CommitSpinV1
 #[derive(Debug, Clone)]
 pub struct CommitSpinUpdateV1 {
@@ -492,7 +495,7 @@ pub struct CommitSpinUpdateV1 {
 }
 
 /// Parameters for RevealSpinV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct RevealSpinParamsV1 {
     /// Spin ID to reveal
     pub spin_id: SpinId,
@@ -500,38 +503,21 @@ pub struct RevealSpinParamsV1 {
     pub secret_nonce: pallas::Base,
 }
 
+impl RevealSpinParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.spin_id.to_repr()); b.extend_from_slice(&self.secret_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("RevealSpinParamsV1: expected 64 bytes, got {}", data.len()))); } Ok(RevealSpinParamsV1 { spin_id: read_base(&data[0..32])?, secret_nonce: read_base(&data[32..64])? }) } }
+
 /// Update produced by RevealSpinV1
-#[derive(Debug, Clone)]
-pub struct RevealSpinUpdateV1 {
-    pub spin_id: SpinId,
-    pub positions: Vec<u64>,
-    pub state: SpinState,
-}
+#[derive(Debug, Clone)] pub struct RevealSpinUpdateV1 { pub spin_id: SpinId, pub positions: Vec<u64>, pub state: SpinState }
 
 /// Parameters for SettleSpinV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct SettleSpinParamsV1 {
-    /// Spin ID to settle
-    pub spin_id: SpinId,
-    /// Expected payout (must match ZK circuit public input)
-    pub payout: u64,
-}
+#[derive(Debug, Clone,)] pub struct SettleSpinParamsV1 { pub spin_id: SpinId, pub payout: u64 }
+impl SettleSpinParamsV1 { pub const ENCODED_SIZE: usize = 40; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(40); b.extend_from_slice(&self.spin_id.to_repr()); b.extend_from_slice(&self.payout.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 40 { return Err(ContractError::IoError(format!("SettleSpinParamsV1: expected 40 bytes, got {}", data.len()))); } Ok(SettleSpinParamsV1 { spin_id: read_base(&data[0..32])?, payout: u64::from_le_bytes(data[32..40].try_into().unwrap()) }) } }
 
 /// Update produced by SettleSpinV1
-#[derive(Debug, Clone)]
-pub struct SettleSpinUpdateV1 {
-    pub spin_id: SpinId,
-    pub wins: Vec<Win>,
-    pub payout: u64,
-    pub state: SpinState,
-}
+#[derive(Debug, Clone)] pub struct SettleSpinUpdateV1 { pub spin_id: SpinId, pub wins: Vec<Win>, pub payout: u64, pub state: SpinState }
 
 /// Parameters for CancelSpinV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct CancelSpinParamsV1 {
-    /// Spin ID to cancel
-    pub spin_id: SpinId,
-}
+#[derive(Debug, Clone,)] pub struct CancelSpinParamsV1 { pub spin_id: SpinId }
+impl CancelSpinParamsV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { self.spin_id.to_repr().to_vec() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("CancelSpinParamsV1: expected 32 bytes, got {}", data.len()))); } Ok(CancelSpinParamsV1 { spin_id: read_base(&data[0..32])? }) } }
 
 /// Update produced by CancelSpinV1
 #[derive(Debug, Clone)]
