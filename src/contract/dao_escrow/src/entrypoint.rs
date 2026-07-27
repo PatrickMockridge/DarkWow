@@ -329,19 +329,19 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 
     match func {
         DaoEscrowFunction::InitializeV1 => {
-            let update: model::InitializeUpdateV1 = deserialize(&update_data[1..])?;
+            let update = model::InitializeUpdateV1::decode(&update_data[1..])?;
             initialize_apply_v1(cid, update)
         }
         DaoEscrowFunction::UpdateV1 => {
-            let update: model::UpdateUpdateV1 = deserialize(&update_data[1..])?;
+            let update = model::UpdateUpdateV1::decode(&update_data[1..])?;
             update_apply_v1(cid, update)
         }
         DaoEscrowFunction::PayPremiumV1 => {
-            let update: model::PayPremiumUpdateV1 = deserialize(&update_data[1..])?;
+            let update = model::PayPremiumUpdateV1::decode(&update_data[1..])?;
             pay_premium_apply_v1(cid, update)
         }
         DaoEscrowFunction::WithdrawV1 => {
-            let update: model::WithdrawUpdateV1 = deserialize(&update_data[1..])?;
+            let update = model::WithdrawUpdateV1::decode(&update_data[1..])?;
             withdraw_apply_v1(cid, update)
         }
         DaoEscrowFunction::EndowmentWithdrawV1 => {
@@ -1532,7 +1532,7 @@ fn register_capability_requirement_apply_v1(
     update: model::RegisterCapabilityRequirementUpdateV1,
 ) -> ContractResult {
     let caps_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_CAPABILITY_REQUIREMENTS_TREE)?;
-    wasm::db::db_set(caps_db, &update.role, &serialize(&update.requirement))?;
+    wasm::db::db_set(caps_db, &update.role, &update.requirement.encode())?;
     msg!("[dao_escrow::register_capability_requirement_apply_v1] Capability requirement stored");
     Ok(())
 }
@@ -1811,7 +1811,7 @@ fn deactivate_capability_requirement_apply_v1(
         ))?;
     let mut requirement: model::CapabilityRequirement = deserialize(&req_data)?;
     requirement.active = false;
-    wasm::db::db_set(caps_db, &update.role, &serialize(&requirement))?;
+    wasm::db::db_set(caps_db, &update.role, &requirement.encode())?;
     msg!("[dao_escrow::deactivate_capability_requirement_apply_v1] Capability requirement deactivation written");
     Ok(())
 }
