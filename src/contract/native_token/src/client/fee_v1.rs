@@ -235,7 +235,7 @@ pub fn create_fee_proof(
     };
 
     let prover_witnesses = vec![
-        Witness::Base(Value::known(input.secret.inner())),
+        Witness::Base(Value::known(*input.secret.inner())),
         Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
         Witness::MerklePath(Value::known({
             let mut path = input.merkle_path.clone();
@@ -248,7 +248,7 @@ pub fn create_fee_proof(
             }
             path.try_into().unwrap()
         })),
-        Witness::Base(Value::known(input.ephemeral_signature_secret.inner())),
+        Witness::Base(Value::known(*input.ephemeral_signature_secret.inner())),
         Witness::Base(Value::known(*sig_coords.x())),
         Witness::Base(Value::known(*sig_coords.y())),
         Witness::Base(Value::known(pallas::Base::from(input.value))),

@@ -173,7 +173,7 @@ pub fn create_transfer_mint_proof(
         .expect("Cumulative commitment cannot be the identity element");
 
     // Compute nullifier: nf = poseidon_hash(coin_secret.inner(), coin)
-    let nf = poseidon_hash([coin_secret.inner(), coin.inner()]);
+    let nf = poseidon_hash([*coin_secret.inner(), coin.inner()]);
 
     let tx_binding = poseidon_hash([tx_commitment, tx_nonce]);
 
@@ -191,7 +191,7 @@ pub fn create_transfer_mint_proof(
         Witness::Base(Value::known(user_data)),
         Witness::Base(Value::known(coin_blind.inner())),
         // coin_secret — per-block derived key sk_H. Required for nullifier constraint.
-        Witness::Base(Value::known(coin_secret.inner())),
+        Witness::Base(Value::known(*coin_secret.inner())),
         Witness::Scalar(Value::known(value_blind.clone().inner())),
         Witness::Base(Value::known(token_blind.clone().inner())),
         // Cumulative supply chain witnesses
@@ -256,7 +256,7 @@ pub fn create_transfer_burn_proof(
     // Derive per-burn unique signature_secret from coin_secret + nullifier.
     // This binds the signer to the coin owner (fixes H2) while keeping
     // signature_public unlinkable across burns (nullifier is unique per coin).
-    let signature_secret = SecretKey::from_base(poseidon_hash([secret.inner(), nullifier.inner()]));
+    let signature_secret = SecretKey::from_base(poseidon_hash([*secret.inner(), nullifier.inner()]));
     let signature_public = PublicKey::from_secret(signature_secret.clone());
 
     // Calculate merkle root from coin and merkle path
@@ -287,12 +287,12 @@ pub fn create_transfer_burn_proof(
     };
 
     let prover_witnesses = vec![
-        Witness::Base(Value::known(secret.inner())),
+        Witness::Base(Value::known(*secret.inner())),
         Witness::Base(Value::known(pallas::Base::from(witness.value))),
         Witness::Base(Value::known(witness.token_id)),
         Witness::Base(Value::known(input.spend_hook.inner())),
         Witness::Base(Value::known(witness.user_data)),
-        Witness::Base(Value::known(witness.coin_blind.inner())),
+        Witness::Base(Value::known(witness.coin_blind.clone().inner())),
         Witness::Scalar(Value::known(value_blind.clone().inner())),
         Witness::Base(Value::known(token_blind.clone().inner())),
         Witness::Base(Value::known(user_data_blind.clone().inner())),
@@ -301,7 +301,7 @@ pub fn create_transfer_burn_proof(
         // Per-burn signature_secret = poseidon_hash(coin_secret, nullifier).
         // Cryptographically bound to coin_secret (fixes H2) but unique per burn
         // (different nullifier → different signature_public — unlinkable).
-        Witness::Base(Value::known(signature_secret.inner())),
+        Witness::Base(Value::known(*signature_secret.inner())),
         Witness::Base(Value::known(signature_public.x().expect("pk not identity"))),
         Witness::Base(Value::known(signature_public.y().expect("pk not identity"))),
         Witness::Base(Value::known(tx_commitment)),
