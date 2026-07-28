@@ -272,7 +272,7 @@ impl BurnCallBuilder {
             }
             .to_coin();
 
-            let value_commit = pedersen_commitment_u64(input.value, value_blind);
+            let value_commit = pedersen_commitment_u64(input.value, value_blind.clone());
             let token_commit = poseidon_hash([input.token_id, token_blind.clone().inner()]);
             let nullifier = Nullifier::new(secret.clone(), coin.inner());
 

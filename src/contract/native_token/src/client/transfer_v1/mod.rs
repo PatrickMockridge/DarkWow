@@ -165,7 +165,7 @@ impl TransferCallBuilder {
 
             // Pre-compute the Pedersen commitments that the proof function
             // requires via the TransferCallInput (model::Input) parameter.
-            let value_commit = pedersen_commitment_u64(witness.value, value_blind);
+            let value_commit = pedersen_commitment_u64(witness.value, value_blind.clone());
             let token_commit = poseidon_hash([witness.token_id, token_blind.clone().inner()]);
             let user_data_enc = poseidon_hash([witness.user_data, user_data_blind.clone().inner()]);
             let call_input = crate::model::Input {

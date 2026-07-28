@@ -394,8 +394,8 @@ impl FeeCallBuilder {
         let nullifier = Nullifier::new(self.input.secret.clone(), input_coin.inner());
         let signature_public = PublicKey::from_secret(self.input.ephemeral_signature_secret.clone());
         let input_user_data_enc = poseidon_hash([self.input.user_data, pallas::Base::zero()]);
-        let input_value_commit = pedersen_commitment_u64(self.input.value, input_value_blind);
-        let output_value_commit = pedersen_commitment_u64(output_value, output_value_blind);
+        let input_value_commit = pedersen_commitment_u64(self.input.value, input_value_blind.clone());
+        let output_value_commit = pedersen_commitment_u64(output_value, output_value_blind.clone());
         let token_commit = poseidon_hash([self.input.token_id, token_blind.clone().inner()]);
         let output_coin = CoinAttributes {
             version: 0,
