@@ -160,14 +160,14 @@ impl TransferCallBuilder {
         let mut input_blind_sum = pallas::Scalar::zero();
         for (witness, secret, spend_hook) in &self.inputs {
             let value_blind = ScalarBlind::random(rng);
-            input_blind_sum += value_blind.inner();
+            input_blind_sum += value_blind.clone().inner();
             let user_data_blind = BaseBlind::random(rng);
 
             // Pre-compute the Pedersen commitments that the proof function
             // requires via the TransferCallInput (model::Input) parameter.
             let value_commit = pedersen_commitment_u64(witness.value, value_blind);
-            let token_commit = poseidon_hash([witness.token_id, token_blind.inner()]);
-            let user_data_enc = poseidon_hash([witness.user_data, user_data_blind.inner()]);
+            let token_commit = poseidon_hash([witness.token_id, token_blind.clone().inner()]);
+            let user_data_enc = poseidon_hash([witness.user_data, user_data_blind.clone().inner()]);
             let call_input = crate::model::Input {
                 value_commit,
                 token_commit,
@@ -253,8 +253,8 @@ impl TransferCallBuilder {
                 spend_hook: output.spend_hook.inner(),
                 user_data: output.user_data,
                 coin_blind: output.blind.inner(),
-                value_blind: value_blind.inner(),
-                token_blind: token_blind.inner(),
+                value_blind: value_blind.clone().inner(),
+                token_blind: token_blind.clone().inner(),
                 memo: vec![],
             };
             let encrypted_note =
