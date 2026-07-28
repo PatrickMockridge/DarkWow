@@ -28,7 +28,6 @@ use dwow_sdk::{
     error::ContractError,
     pasta::pallas,
 };
-use dwow_serial::{deserialize, serialize, SerialDecodable, SerialEncodable};
 
 /// Unique identifier for the protected fund (derived from DAO-Escrow bulla)
 pub type FundId = pallas::Base;
