@@ -1391,6 +1391,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
                 }
 
                 Opcode::LessThanLoose => {
+                    assert!(k_table_loaded, "K-table must be loaded before LessThan chip executes");
                     trace!(target: "zk::vm", "Executing `LessThanLoose{:?}` opcode", opcode.1);
                     let args = &opcode.1;
 

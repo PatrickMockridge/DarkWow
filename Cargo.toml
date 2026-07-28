@@ -120,7 +120,7 @@ tor-hscrypto = {version = "0.37.0", optional = true}
 tor-hsservice = {version = "0.37.0", optional = true}
 tor-proto = {version = "0.37.0", optional = true}
 tor-cell = {version = "0.37.0", optional = true}
-quinn-smol = {git="https://github.com/parazyd/quinn", branch="main", default-features = false, features = ["rustls-ring", "runtime-smol"], optional = true}
+quinn-smol = {git="https://github.com/parazyd/quinn", rev="6c06de3bee346033e370c41f3a43a831f17d1869", default-features = false, features = ["rustls-ring", "runtime-smol"], optional = true}
 
 # TLS cert utilities
 ed25519-compact = {version = "2.2.0", optional = true}
@@ -424,7 +424,7 @@ dht = [
 halo2_proofs = {path = "vendor/halo2/halo2_proofs"}
 halo2_gadgets = {path = "vendor/halo2/halo2_gadgets"}
 # Forked "url" crate with added P2P schemas
-url = {git="https://github.com/darkrenaissance/rust-url", branch="v257"}
+url = {git="https://github.com/darkrenaissance/rust-url", rev="69fa32c0b1af622bf6e5d4aa28b36d1095565a6b"}
 
 [[bench]]
 name = "zk_arith"

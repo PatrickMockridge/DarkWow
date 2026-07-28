@@ -121,7 +121,7 @@ fn create_fee_collect_proof(
     tx_nonce: pallas::Base,
 ) -> Result<(Proof, FeeCollectRevealed)> {
     let value_commit = pedersen_commitment_u64(output.value, value_blind);
-    let token_commit = poseidon_hash([output.token_id.inner(), token_blind.inner()]);
+    let token_commit = poseidon_hash([output.token_id.inner(), token_blind.clone().inner()]);
     let (pub_x, pub_y) = output.public_key.xy().expect("pk not identity");
 
     let coin = output.to_coin();
@@ -153,8 +153,8 @@ fn create_fee_collect_proof(
         Witness::Base(Value::known(output.user_data)),                      // 6: coin_user_data
         Witness::Base(Value::known(output.blind.inner())),                  // 7: coin_blind
         Witness::Base(Value::known(coin_secret.inner())),                   // 8: coin_secret
-        Witness::Scalar(Value::known(value_blind.inner())),                 // 9: value_blind
-        Witness::Base(Value::known(token_blind.inner())),                   // 10: token_blind
+        Witness::Scalar(Value::known(value_blind.clone().inner())),                 // 9: value_blind
+        Witness::Base(Value::known(token_blind.clone().inner())),                   // 10: token_blind
         Witness::Base(Value::known(tx_commitment)),                         // 11: tx_commitment
         Witness::Base(Value::known(tx_nonce)),                              // 12: tx_nonce
     ];
@@ -252,8 +252,8 @@ impl FeeCollectCallBuilder {
             spend_hook: pallas::Base::ZERO,
             user_data: pallas::Base::ZERO,
             coin_blind: coin_blind.inner(),
-            value_blind: value_blind.inner(),
-            token_blind: token_blind.inner(),
+            value_blind: value_blind.clone().inner(),
+            token_blind: token_blind.clone().inner(),
             memo: vec![],
         };
 

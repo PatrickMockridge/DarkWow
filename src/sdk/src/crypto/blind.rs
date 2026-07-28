@@ -44,14 +44,41 @@ impl EncDecode for pallas::Base {}
 impl EncDecode for pallas::Scalar {}
 
 /// Blinding factor used in bullas. Every bulla should contain one.
+/// Copy and Clone removed per C3 — blinding factors SHALL NOT be
+/// implicitly duplicated. Drop zeroizes the inner field element.
 #[cfg(feature = "async")]
-#[derive(Debug, Copy, Clone, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Eq, PartialEq, SerialEncodable, SerialDecodable)]
 pub struct Blind<F: Field + EncDecode + AsyncEncodable + AsyncDecodable>(pub F);
 
 /// Blinding factor used in bullas. Every bulla should contain one.
+/// Copy and Clone removed per C3 — blinding factors SHALL NOT be
+/// implicitly duplicated. Drop zeroizes the inner field element.
 #[cfg(not(feature = "async"))]
-#[derive(Debug, Copy, Clone, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Eq, PartialEq, SerialEncodable, SerialDecodable)]
 pub struct Blind<F: Field + EncDecode>(pub F);
+
+// Clone is explicit (not derived) — blinding factors SHALL NOT be
+// implicitly duplicated. See C3 constraint (keypair.rs:71-76).
+impl<F: Field + EncDecode> Clone for Blind<F> {
+    fn clone(&self) -> Self {
+        Self(self.0)
+    }
+}
+
+// Zeroize the inner field element on drop — blinding factors are
+// security-critical for Pedersen commitment hiding. Same pattern
+// as SecretKey (keypair.rs:79-92).
+impl<F: Field + EncDecode> Drop for Blind<F> {
+    fn drop(&mut self) {
+        unsafe {
+            core::ptr::write_bytes(
+                &mut self.0 as *mut F as *mut u8,
+                0,
+                core::mem::size_of::<F>(),
+            );
+        }
+    }
+}
 
 impl<F: Field + EncDecode> Blind<F> {
     pub const ZERO: Self = Self(F::ZERO);

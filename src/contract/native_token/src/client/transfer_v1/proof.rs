@@ -147,7 +147,7 @@ pub fn create_transfer_mint_proof(
     tx_nonce: pallas::Base,
 ) -> Result<(Proof, TransferMintRevealed)> {
     let value_commit = pedersen_commitment_u64(output.value, value_blind);
-    let token_commit = poseidon_hash([output.token_id.inner(), token_blind.inner()]);
+    let token_commit = poseidon_hash([output.token_id.inner(), token_blind.clone().inner()]);
     let (pub_x, pub_y) = output.public_key.xy().expect("pk not identity");
 
     let coin_attrs = CoinAttributes {
@@ -192,8 +192,8 @@ pub fn create_transfer_mint_proof(
         Witness::Base(Value::known(coin_blind.inner())),
         // coin_secret — per-block derived key sk_H. Required for nullifier constraint.
         Witness::Base(Value::known(coin_secret.inner())),
-        Witness::Scalar(Value::known(value_blind.inner())),
-        Witness::Base(Value::known(token_blind.inner())),
+        Witness::Scalar(Value::known(value_blind.clone().inner())),
+        Witness::Base(Value::known(token_blind.clone().inner())),
         // Cumulative supply chain witnesses
         Witness::Base(Value::known(pallas::Base::from(old_cumulative_value))),
         Witness::Scalar(Value::known(old_cumulative_blind)),
@@ -293,9 +293,9 @@ pub fn create_transfer_burn_proof(
         Witness::Base(Value::known(input.spend_hook.inner())),
         Witness::Base(Value::known(witness.user_data)),
         Witness::Base(Value::known(witness.coin_blind.inner())),
-        Witness::Scalar(Value::known(value_blind.inner())),
-        Witness::Base(Value::known(token_blind.inner())),
-        Witness::Base(Value::known(user_data_blind.inner())),
+        Witness::Scalar(Value::known(value_blind.clone().inner())),
+        Witness::Base(Value::known(token_blind.clone().inner())),
+        Witness::Base(Value::known(user_data_blind.clone().inner())),
         Witness::Uint32(Value::known(u64::from(witness.leaf_position).try_into().unwrap())),
         Witness::MerklePath(Value::known(witness.merkle_path.clone().try_into().unwrap())),
         // Per-burn signature_secret = poseidon_hash(coin_secret, nullifier).

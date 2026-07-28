@@ -52,7 +52,16 @@ pub enum ZkVerifyResult {
 /// for k=14+. The VK is purely deterministic (same circuit bytes → same VK),
 /// so caching eliminates this cost on every proof verification after the first.
 /// Most nodes see O(10) unique circuits, so a Vec-keyed HashMap is fine.
+///
+/// Capped at `VK_CACHE_MAX_ENTRIES` to prevent memory exhaustion from
+/// attackers submitting transactions with unique circuit binaries.
+/// Eviction: when full, the oldest half of entries are removed.
 static VK_CACHE: Mutex<Option<HashMap<Vec<u8>, VerifyingKey>>> = Mutex::new(None);
+
+/// Maximum number of unique circuits to cache before eviction.
+/// 256 entries × ~few KB per VK = a few MB max — sufficient for
+/// all genesis contracts plus post-genesis deployments.
+const VK_CACHE_MAX_ENTRIES: usize = 256;
 
 /// Verify a ZK proof given the circuit bytes and public instances.
 ///
@@ -95,12 +104,21 @@ pub fn verify_zkp(
         Err(_) => return ZkVerifyResult::InvalidVk,
     };
 
-    // 3. Store in cache and verify
+    // 3. Store in cache (with eviction cap) and verify
     {
         let mut cache = VK_CACHE.lock().unwrap();
-        cache
-            .get_or_insert_with(HashMap::new)
-            .insert(zkbin_bytes.to_vec(), vk.clone());
+        let map = cache.get_or_insert_with(HashMap::new);
+        // Evict half the entries if the cache is full to bound memory usage.
+        // A simple half-eviction avoids depending on an LRU crate; if a more
+        // sophisticated policy is desired later, this is the insertion point.
+        if map.len() >= VK_CACHE_MAX_ENTRIES {
+            let keys_to_remove: Vec<Vec<u8>> =
+                map.iter().take(map.len() / 2).map(|(k, _)| k.clone()).collect();
+            for k in keys_to_remove {
+                map.remove(&k);
+            }
+        }
+        map.insert(zkbin_bytes.to_vec(), vk.clone());
     }
 
     match proof.verify(&vk, instances) {

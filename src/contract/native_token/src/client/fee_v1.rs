@@ -206,7 +206,7 @@ pub fn create_fee_proof(
     let output_value_commit = pedersen_commitment_u64(output.value, output_value_blind);
 
     // Token commitment (DRKW token = zero, ↓denominate)
-    let token_commit = poseidon_hash([input.token_id, token_blind.inner()]);
+    let token_commit = poseidon_hash([input.token_id, token_blind.clone().inner()]);
 
     // Create output coin
     let output_coin_attrs = CoinAttributes {
@@ -252,7 +252,7 @@ pub fn create_fee_proof(
         Witness::Base(Value::known(*sig_coords.x())),
         Witness::Base(Value::known(*sig_coords.y())),
         Witness::Base(Value::known(pallas::Base::from(input.value))),
-        Witness::Scalar(Value::known(input_value_blind.inner())),
+        Witness::Scalar(Value::known(input_value_blind.clone().inner())),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
         Witness::Base(Value::known(input.coin_blind)),
@@ -260,10 +260,10 @@ pub fn create_fee_proof(
         Witness::Base(Value::known(pallas::Base::from(output.value))),
         Witness::Base(Value::known(output_spend_hook)),
         Witness::Base(Value::known(output_user_data)),
-        Witness::Scalar(Value::known(output_value_blind.inner())),
+        Witness::Scalar(Value::known(output_value_blind.clone().inner())),
         Witness::Base(Value::known(output_coin_blind)),
         Witness::Base(Value::known(input.token_id)),
-        Witness::Base(Value::known(token_blind.inner())),
+        Witness::Base(Value::known(token_blind.clone().inner())),
         // Fee value (constrained in circuit: output_value + fee == input_value)
         Witness::Base(Value::known(pallas::Base::from(fee))),
         Witness::Base(Value::known(input.tx_commitment)),
@@ -345,7 +345,7 @@ impl FeeCallBuilder {
             value: output_value,
             spend_hook: self.output.spend_hook,
             user_data: self.output.user_data,
-            coin_blind: output_coin_blind.inner(),
+            coin_blind: output_coin_blind.clone().inner(),
         };
 
         // Create fee proof
@@ -358,7 +358,7 @@ impl FeeCallBuilder {
             output_value_blind,
             self.output.spend_hook,
             self.output.user_data,
-            output_coin_blind.inner(),
+            output_coin_blind.clone().inner(),
             token_blind,
             self.fee,
             self.input.tx_commitment,
@@ -396,7 +396,7 @@ impl FeeCallBuilder {
         let input_user_data_enc = poseidon_hash([self.input.user_data, pallas::Base::zero()]);
         let input_value_commit = pedersen_commitment_u64(self.input.value, input_value_blind);
         let output_value_commit = pedersen_commitment_u64(output_value, output_value_blind);
-        let token_commit = poseidon_hash([self.input.token_id, token_blind.inner()]);
+        let token_commit = poseidon_hash([self.input.token_id, token_blind.clone().inner()]);
         let output_coin = CoinAttributes {
             version: 0,
             public_key: self.output.recipient,
@@ -424,9 +424,9 @@ impl FeeCallBuilder {
             token_id: self.input.token_id,
             spend_hook: self.output.spend_hook,
             user_data: self.output.user_data,
-            coin_blind: output_coin_blind.inner(),
-            value_blind: output_value_blind.inner(),
-            token_blind: token_blind.inner(),
+            coin_blind: output_coin_blind.clone().inner(),
+            value_blind: output_value_blind.clone().inner(),
+            token_blind: token_blind.clone().inner(),
             memo: vec![],
         };
         let encrypted_note = if crate::deterministic_zk_enabled() {
@@ -452,7 +452,7 @@ impl FeeCallBuilder {
             params: FeeParamsV1 {
                 input: params_input,
                 output: params_output,
-                fee_value_blind: input_value_blind.inner(),
+                fee_value_blind: input_value_blind.clone().inner(),
                 fee_token_blind: token_blind,
                 fee: self.fee,
                 tx_binding: pallas::Base::zero(),

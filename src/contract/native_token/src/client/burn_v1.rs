@@ -125,9 +125,9 @@ pub fn create_burn_proof(
         current
     };
 
-    let user_data_enc = poseidon_hash([input.user_data, user_data_blind.inner()]);
-    let value_commit = pedersen_commitment_u64(input.value, value_blind);
-    let token_commit = poseidon_hash([input.token_id, token_blind.inner()]);
+    let user_data_enc = poseidon_hash([input.user_data, user_data_blind.clone().inner()]);
+    let value_commit = pedersen_commitment_u64(input.value, value_blind.clone());
+    let token_commit = poseidon_hash([input.token_id, token_blind.clone().inner()]);
 
     let public_inputs = BurnRevealed {
         nullifier,
@@ -148,9 +148,9 @@ pub fn create_burn_proof(
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
         Witness::Base(Value::known(input.coin_blind)),
-        Witness::Scalar(Value::known(value_blind.inner())),
-        Witness::Base(Value::known(token_blind.inner())),
-        Witness::Base(Value::known(user_data_blind.inner())),
+        Witness::Scalar(Value::known(value_blind.clone().inner())),
+        Witness::Base(Value::known(token_blind.clone().inner())),
+        Witness::Base(Value::known(user_data_blind.clone().inner())),
         Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
         Witness::MerklePath(Value::known({
             let mut path = input.merkle_path.clone();
@@ -273,7 +273,7 @@ impl BurnCallBuilder {
             .to_coin();
 
             let value_commit = pedersen_commitment_u64(input.value, value_blind);
-            let token_commit = poseidon_hash([input.token_id, token_blind.inner()]);
+            let token_commit = poseidon_hash([input.token_id, token_blind.clone().inner()]);
             let nullifier = Nullifier::new(secret.clone(), coin.inner());
 
             // Calculate merkle root
@@ -291,7 +291,7 @@ impl BurnCallBuilder {
                 current
             };
 
-            let user_data_enc = poseidon_hash([input.user_data, user_data_blind.inner()]);
+            let user_data_enc = poseidon_hash([input.user_data, user_data_blind.clone().inner()]);
 
             inputs.push(Input {
                 value_commit,

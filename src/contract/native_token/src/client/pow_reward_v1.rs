@@ -211,8 +211,8 @@ impl PoWRewardCallBuilder {
             spend_hook,
             user_data,
             coin_blind: coin_blind.inner(),
-            value_blind: value_blind.inner(),
-            token_blind: token_blind.inner(),
+            value_blind: value_blind.clone().inner(),
+            token_blind: token_blind.clone().inner(),
             memo: vec![],
         };
 

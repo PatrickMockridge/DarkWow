@@ -896,7 +896,7 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     }
 
     // Verify value commitment matches clear input
-    if pedersen_commitment_u64(pr.input.value, pr.input.value_blind) != pr.output.value_commit {
+    if pedersen_commitment_u64(pr.input.value, pr.input.value_blind.clone()) != pr.output.value_commit {
         msg!("[pow_reward_v1] Error: Value commitment mismatch");
         return Err(NativeTokenError::ValueMismatch.into())
     }
