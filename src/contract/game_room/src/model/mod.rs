@@ -28,7 +28,6 @@ use dwow_sdk::{
     error::ContractError,
     pasta::pallas,
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Game room identifier
 pub type RoomId = pallas::Base;
@@ -44,7 +43,7 @@ pub type BetId = pallas::Base;
 // ============================================================================
 
 /// Room state
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq,)]
 pub enum RoomState {
     Open = 0,
     Active = 1,
@@ -65,7 +64,7 @@ impl TryFrom<u8> for RoomState {
 }
 
 /// Pot state
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq,)]
 pub enum PotState {
     Open = 0,
     Closed = 1,
@@ -86,7 +85,7 @@ impl TryFrom<u8> for PotState {
 }
 
 /// Bet type
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq,)]
 pub enum BetType {
     Ante = 0,
     Blind = 1,
@@ -115,7 +114,7 @@ impl TryFrom<u8> for BetType {
 }
 
 /// Entropy source mode
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq,)]
 pub enum EntropyMode {
     BlockHash = 0,
     TrustedSetup = 1,
@@ -763,8 +762,10 @@ impl Bet {
 // PARAMETER TYPES (for contract calls)
 // ============================================================================
 
+fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap())).ok_or_else(|| ContractError::IoError("invalid base".into())) }
+
 /// Parameters for CreateRoomV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CreateRoomParamsV1 {
     pub owner: PublicKey,
     pub token_id: pallas::Base,
@@ -779,93 +780,36 @@ pub struct CreateRoomParamsV1 {
     pub instance_seed: [u8; 32],
 }
 
-/// Parameters for DepositV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct DepositParamsV1 {
-    pub room_id: RoomId,
-    pub player: PublicKey,
-    pub amount: u64,
-    pub instance_seed: [u8; 32],
-}
+impl CreateRoomParamsV1 { pub const ENCODED_SIZE: usize = 156; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(156); b.extend_from_slice(&self.owner.to_bytes()); b.extend_from_slice(&self.token_id.to_repr()); b.extend_from_slice(&self.min_stake.to_le_bytes()); b.extend_from_slice(&self.max_stake.to_le_bytes()); b.push(self.entropy_mode as u8); b.push(self.confirmation_depth); b.push(self.required_entropy_contributions); b.extend_from_slice(&self.entropy_contribution_deadline.to_le_bytes()); b.push(self.max_players); b.extend_from_slice(&self.nonce.to_repr()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 124 { return Err(ContractError::IoError(format!("CreateRoomParamsV1: expected 124 bytes, got {}", data.len()))); } Ok(CreateRoomParamsV1 { owner: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateRoomParamsV1: invalid owner: {}", e)))?, token_id: read_base(&data[32..64])?, min_stake: u64::from_le_bytes(data[64..72].try_into().unwrap()), max_stake: u64::from_le_bytes(data[72..80].try_into().unwrap()), entropy_mode: EntropyMode::try_from(data[80])?, confirmation_depth: data[81], required_entropy_contributions: data[82], entropy_contribution_deadline: u64::from_le_bytes(data[83..91].try_into().unwrap()), max_players: data[91], nonce: read_base(&data[92..124])?, instance_seed: data[124..156].try_into().unwrap() }) } }
 
-/// Parameters for WithdrawV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct WithdrawParamsV1 {
-    pub room_id: RoomId,
-    pub player: PublicKey,
-    pub amount: u64,
-}
+#[derive(Debug, Clone,)] pub struct DepositParamsV1 { pub room_id: RoomId, pub player: PublicKey, pub amount: u64, pub instance_seed: [u8; 32] }
+impl DepositParamsV1 { pub const ENCODED_SIZE: usize = 104; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(104); b.extend_from_slice(&self.room_id.to_repr()); b.extend_from_slice(&self.player.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 104 { return Err(ContractError::IoError(format!("DepositParamsV1: expected 104 bytes, got {}", data.len()))); } Ok(DepositParamsV1 { room_id: read_base(&data[0..32])?, player: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("DepositParamsV1: invalid player: {}", e)))?, amount: u64::from_le_bytes(data[64..72].try_into().unwrap()), instance_seed: data[72..104].try_into().unwrap() }) } }
 
-/// Parameters for PlaceBetV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct PlaceBetParamsV1 {
-    pub room_id: RoomId,
-    pub pot_id: PotId,
-    pub player: PublicKey,
-    pub amount: u64,
-    pub bet_type: BetType,
-    pub nonce: pallas::Base,
-    pub block_height: pallas::Base,
-}
+#[derive(Debug, Clone,)] pub struct WithdrawParamsV1 { pub room_id: RoomId, pub player: PublicKey, pub amount: u64 }
+impl WithdrawParamsV1 { pub const ENCODED_SIZE: usize = 72; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(72); b.extend_from_slice(&self.room_id.to_repr()); b.extend_from_slice(&self.player.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 72 { return Err(ContractError::IoError(format!("WithdrawParamsV1: expected 72 bytes, got {}", data.len()))); } Ok(WithdrawParamsV1 { room_id: read_base(&data[0..32])?, player: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("WithdrawParamsV1: invalid player: {}", e)))?, amount: u64::from_le_bytes(data[64..72].try_into().unwrap()) }) } }
 
-/// Parameters for RaiseV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct RaiseParamsV1 {
-    pub room_id: RoomId,
-    pub player: PublicKey,
-    pub amount: u64,
-    pub nonce: pallas::Base,
-}
+#[derive(Debug, Clone,)] pub struct PlaceBetParamsV1 { pub room_id: RoomId, pub pot_id: PotId, pub player: PublicKey, pub amount: u64, pub bet_type: BetType, pub nonce: pallas::Base, pub block_height: pallas::Base }
+impl PlaceBetParamsV1 { pub const ENCODED_SIZE: usize = 169; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(169); b.extend_from_slice(&self.room_id.to_repr()); b.extend_from_slice(&self.pot_id.to_repr()); b.extend_from_slice(&self.player.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.push(self.bet_type as u8); b.extend_from_slice(&self.nonce.to_repr()); b.extend_from_slice(&self.block_height.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 170 { return Err(ContractError::IoError(format!("PlaceBetParamsV1: expected 170 bytes, got {}", data.len()))); } Ok(PlaceBetParamsV1 { room_id: read_base(&data[0..32])?, pot_id: read_base(&data[32..64])?, player: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PlaceBetParamsV1: invalid player: {}", e)))?, amount: u64::from_le_bytes(data[96..104].try_into().unwrap()), bet_type: BetType::try_from(data[104])?, nonce: read_base(&data[105..137])?, block_height: read_base(&data[137..169])? }) } }
 
-/// Parameters for CallV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct CallParamsV1 {
-    pub room_id: RoomId,
-    pub player: PublicKey,
-    pub nonce: pallas::Base,
-}
+#[derive(Debug, Clone,)] pub struct RaiseParamsV1 { pub room_id: RoomId, pub player: PublicKey, pub amount: u64, pub nonce: pallas::Base }
+impl RaiseParamsV1 { pub const ENCODED_SIZE: usize = 104; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(104); b.extend_from_slice(&self.room_id.to_repr()); b.extend_from_slice(&self.player.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 104 { return Err(ContractError::IoError(format!("RaiseParamsV1: expected 104 bytes, got {}", data.len()))); } Ok(RaiseParamsV1 { room_id: read_base(&data[0..32])?, player: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("RaiseParamsV1: invalid player: {}", e)))?, amount: u64::from_le_bytes(data[64..72].try_into().unwrap()), nonce: read_base(&data[72..104])? }) } }
 
-/// Parameters for FoldV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct FoldParamsV1 {
-    pub room_id: RoomId,
-    pub player: PublicKey,
-}
+#[derive(Debug, Clone,)] pub struct CallParamsV1 { pub room_id: RoomId, pub player: PublicKey, pub nonce: pallas::Base }
+impl CallParamsV1 { pub const ENCODED_SIZE: usize = 96; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(96); b.extend_from_slice(&self.room_id.to_repr()); b.extend_from_slice(&self.player.to_bytes()); b.extend_from_slice(&self.nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 96 { return Err(ContractError::IoError(format!("CallParamsV1: expected 96 bytes, got {}", data.len()))); } Ok(CallParamsV1 { room_id: read_base(&data[0..32])?, player: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CallParamsV1: invalid player: {}", e)))?, nonce: read_base(&data[64..96])? }) } }
 
-/// Parameters for ClosePotV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct ClosePotParamsV1 {
-    pub room_id: RoomId,
-    pub pot_id: PotId,
-}
+#[derive(Debug, Clone,)] pub struct FoldParamsV1 { pub room_id: RoomId, pub player: PublicKey }
+impl FoldParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.room_id.to_repr()); b.extend_from_slice(&self.player.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("FoldParamsV1: expected 64 bytes, got {}", data.len()))); } Ok(FoldParamsV1 { room_id: read_base(&data[0..32])?, player: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("FoldParamsV1: invalid player: {}", e)))? }) } }
 
-/// Parameters for SettlePotV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct SettlePotParamsV1 {
-    pub caller: PublicKey,
-    pub room_id: RoomId,
-    pub pot_id: PotId,
-    pub winners: Vec<(PublicKey, u64)>,
-    pub signature: Vec<u8>,
-    pub nonce: pallas::Base,
-    pub pot_total: u64,
-}
+#[derive(Debug, Clone,)] pub struct ClosePotParamsV1 { pub room_id: RoomId, pub pot_id: PotId }
+impl ClosePotParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.room_id.to_repr()); b.extend_from_slice(&self.pot_id.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("ClosePotParamsV1: expected 64 bytes, got {}", data.len()))); } Ok(ClosePotParamsV1 { room_id: read_base(&data[0..32])?, pot_id: read_base(&data[32..64])? }) } }
 
-/// Parameters for ContributeEntropyV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct ContributeEntropyParamsV1 {
-    pub room_id: RoomId,
-    pub player: PublicKey,
-    pub commitment: pallas::Base,
-    pub reveal: Option<pallas::Base>,
-}
+#[derive(Debug, Clone,)] pub struct SettlePotParamsV1 { pub caller: PublicKey, pub room_id: RoomId, pub pot_id: PotId, pub winners: Vec<(PublicKey, u64)>, pub signature: Vec<u8>, pub nonce: pallas::Base, pub pot_total: u64 }
+impl SettlePotParamsV1 { pub fn encode(&self) -> Vec<u8> { let wc: usize = self.winners.iter().map(|_| 40).sum(); let mut b = Vec::with_capacity(98+wc+self.signature.len()); b.extend_from_slice(&self.caller.to_bytes()); b.extend_from_slice(&self.room_id.to_repr()); b.extend_from_slice(&self.pot_id.to_repr()); b.push(self.winners.len() as u8); for (pk, amt) in &self.winners { b.extend_from_slice(&pk.to_bytes()); b.extend_from_slice(&amt.to_le_bytes()); } b.push(self.signature.len() as u8); b.extend_from_slice(&self.signature); b.extend_from_slice(&self.nonce.to_repr()); b.extend_from_slice(&self.pot_total.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 98 { return Err(ContractError::IoError("SettlePotParamsV1: too short".into())); } let caller = PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("SettlePotParamsV1: invalid caller: {}", e)))?; let room_id = read_base(&data[32..64])?; let pot_id = read_base(&data[64..96])?; let wc = data[96] as usize; let mut pos = 97+wc*40; if data.len() < pos+1 { return Err(ContractError::IoError("SettlePotParamsV1: winners truncated".into())); } let mut winners = Vec::with_capacity(wc); for i in 0..wc { let s = 97+i*40; let pk = PublicKey::from_bytes(data[s..s+32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("SettlePotParamsV1: invalid winner pk[{}]: {}", i, e)))?; let amt = u64::from_le_bytes(data[s+32..s+40].try_into().unwrap()); winners.push((pk, amt)); } let sig_len = data[pos] as usize; pos += 1; if data.len() < pos+sig_len+40 { return Err(ContractError::IoError("SettlePotParamsV1: signature truncated".into())); } let signature = data[pos..pos+sig_len].to_vec(); pos += sig_len; let nonce = read_base(&data[pos..pos+32])?; let pot_total = u64::from_le_bytes(data[pos+32..pos+40].try_into().unwrap()); Ok(SettlePotParamsV1 { caller, room_id, pot_id, winners, signature, nonce, pot_total }) } }
 
-/// Parameters for ClaimV1
-///
-/// Money Integration: This function REQUIRES promissory_note::transfer_v1 child calls to be
-/// bundled for distributing the prize payout to the winner. The child call should
-/// transfer the claimed amount to the winner's public key.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)] pub struct ContributeEntropyParamsV1 { pub room_id: RoomId, pub player: PublicKey, pub commitment: pallas::Base, pub reveal: Option<pallas::Base> }
+impl ContributeEntropyParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(98); b.extend_from_slice(&self.room_id.to_repr()); b.extend_from_slice(&self.player.to_bytes()); b.extend_from_slice(&self.commitment.to_repr()); b.push(self.reveal.is_some() as u8); if let Some(v) = self.reveal { b.extend_from_slice(&v.to_repr()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 97 { return Err(ContractError::IoError("ContributeEntropyParamsV1: too short".into())); } let room_id = read_base(&data[0..32])?; let player = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ContributeEntropyParamsV1: invalid player: {}", e)))?; let commitment = read_base(&data[64..96])?; let has_reveal = data[96] != 0; let reveal = if has_reveal { if data.len() != 129 { return Err(ContractError::IoError(format!("ContributeEntropyParamsV1: expected 129 bytes, got {}", data.len()))); } Some(read_base(&data[97..129])?) } else { None }; Ok(ContributeEntropyParamsV1 { room_id, player, commitment, reveal }) } }
+
+#[derive(Debug, Clone,)]
 pub struct ClaimParamsV1 {
     pub room_id: RoomId,
     pub pot_id: PotId,
@@ -876,6 +820,8 @@ pub struct ClaimParamsV1 {
     pub proof: Vec<u8>,
     pub nonce: pallas::Base,
 }
+
+impl ClaimParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(130+self.proof.len()); b.extend_from_slice(&self.room_id.to_repr()); b.extend_from_slice(&self.pot_id.to_repr()); b.extend_from_slice(&self.winner.to_bytes()); b.extend_from_slice(&self.payout_amount.to_le_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 130 { return Err(ContractError::IoError("ClaimParamsV1: too short".into())); } let room_id = read_base(&data[0..32])?; let pot_id = read_base(&data[32..64])?; let winner = PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ClaimParamsV1: invalid winner: {}", e)))?; let payout_amount = u64::from_le_bytes(data[96..104].try_into().unwrap()); let proof_len = data[104] as usize; let pos = 105+proof_len; if data.len() < pos+32 { return Err(ContractError::IoError("ClaimParamsV1: proof truncated".into())); } let proof = data[105..pos].to_vec(); let nonce = read_base(&data[pos..pos+32])?; Ok(ClaimParamsV1 { room_id, pot_id, winner, payout_amount, proof, nonce }) } }
 
 // ============================================================================
 // BRIDGE UPDATE STRUCTS
