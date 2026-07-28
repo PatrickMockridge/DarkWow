@@ -203,7 +203,7 @@ pub fn create_fee_proof(
 
     // Value commitments (Pedersen)
     let input_value_commit = pedersen_commitment_u64(input.value, input_value_blind);
-    let output_value_commit = pedersen_commitment_u64(output.value, output_value_blind);
+    let output_value_commit = pedersen_commitment_u64(output.value, output_value_blind.clone());
 
     // Token commitment (DRKW token = zero, ↓denominate)
     let token_commit = poseidon_hash([input.token_id, token_blind.clone().inner()]);
