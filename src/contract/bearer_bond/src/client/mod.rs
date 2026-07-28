@@ -54,7 +54,6 @@ use dwow_sdk::{
     crypto::ContractId,
     pasta::pallas,
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// ZK circuit binary constants
 pub mod zkbins;
@@ -90,7 +89,7 @@ pub mod pay_interest_v1;
 /// the ZK-committed attributes (value, token_id, spend_hook, user_data,
 /// maturity_block, blinds) and the bond-specific metadata (principal,
 /// last_claim_block, issuer_contract) that travels as plaintext on the BondCoin.
-#[derive(Debug, Clone, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Eq, PartialEq, )]
 pub struct BearerBondNote {
     /// Principal value staked
     pub principal: u64,

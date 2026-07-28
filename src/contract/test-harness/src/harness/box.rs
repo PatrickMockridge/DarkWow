@@ -34,7 +34,6 @@ use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, poseidon_hash, Nullifier, PublicKey, SecretKey},
     pasta::pallas,
 };
-use dwow_serial::{Encodable, SerialEncodable};
 use rand::rngs::OsRng;
 
 /// Box Harness for isolated testing

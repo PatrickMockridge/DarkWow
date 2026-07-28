@@ -76,7 +76,6 @@ use dwow_sdk::{
     crypto::{IntentNullifier, PublicKey, SecretKey},
     pasta::pallas,
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::model::{
     CancelClaimParamsV1, CapabilityProof, ClaimId, ClaimType, DaoEscrowBulla,
@@ -131,7 +130,7 @@ impl InitializeBuilder {
     }
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct InitializeParams {
     pub owner_pubkey: PublicKey,
     pub gov_token_id: pallas::Base,
@@ -187,7 +186,7 @@ impl PayPremiumBuilder {
     }
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct PayPremiumParams {
     pub dao_escrow_bulla: DaoEscrowBulla,
     pub value: u64,

@@ -36,7 +36,6 @@ use dwow_sdk::{
     },
     pasta::pallas,
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::model::{Coin, Output};
 
@@ -61,7 +60,7 @@ pub mod transfer_v1;
 /// PromissoryNote holds the inner attributes of a Coin.
 ///
 /// Note that value_blind is pallas::Scalar (Pedersen blinding), not pallas::Base.
-#[derive(Debug, Clone, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Eq, PartialEq, )]
 pub struct PromissoryNote {
     /// Value of the coin
     pub value: u64,

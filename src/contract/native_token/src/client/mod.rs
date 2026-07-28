@@ -26,7 +26,6 @@
 //! This module implements the client-side API for NativeToken contract interaction.
 
 use dwow_sdk::pasta::pallas;
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// ZK circuit binary constants
 pub mod zkbins;
@@ -94,7 +93,7 @@ impl ContractClient for NativeTokenClient {
 /// It does not store the public key since it's encrypted for that key,
 /// and so is not needed to infer the coin attributes.
 /// All other coin attributes must be present.
-#[derive(Debug, Clone, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Eq, PartialEq, )]
 pub struct NativeToken {
     /// Value of the coin
     pub value: u64,

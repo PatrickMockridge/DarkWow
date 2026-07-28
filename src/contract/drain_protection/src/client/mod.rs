@@ -90,7 +90,6 @@ use dwow_sdk::{
     error::ContractError,
     pasta::pallas,
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::model::{
     DrainConfig, ExitParamsV1, FundId, LockParamsV1, ProposeParamsV1, RateLimit,
@@ -337,7 +336,7 @@ impl ExecuteBuilder {
     }
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct ExecuteParams {
     pub proposal_id: pallas::Base,
     pub signature: pallas::Base,
@@ -483,7 +482,7 @@ impl TransferBuilder {
     }
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct TransferParams {
     pub amount: u64,
     pub recipient: PublicKey,
