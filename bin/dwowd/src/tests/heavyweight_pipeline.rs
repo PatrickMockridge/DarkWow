@@ -428,6 +428,28 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
         assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
+        // --- set_transparency_level (0x06) ---
+        println!("  Test: set_transparency_level");
+        let stl = harness.set_transparency_level(0)?;
+        assert!(!stl.call_data.is_empty());
+        println!("    call_data={}B", stl.call_data.len());
+
+        // --- update_config (0x05) ---
+        println!("  Test: update_config");
+        let uc = harness.update_config(200, 50)?;
+        assert!(!uc.call_data.is_empty());
+        println!("    call_data={}B", uc.call_data.len());
+
+        // Submit governance calls
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &stl.call_data, vec![stl.proof])?
+            .with_call(cid, &harness, &uc.call_data, vec![uc.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
+        println!("    accept_block height OK");
+
         println!("=== All DEX endpoints OK ===");
         Ok(())
     })
@@ -4208,7 +4230,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
 #[test]
 fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::BearerBondHarness;
-    use dwow_sdk::crypto::PublicKey;
+    use dwow_sdk::crypto::{Keypair, SecretKey};
     use dwow_sdk::pasta::pallas;
     use crate::tests::blockchain::HeavyweightPipeline;
 
@@ -4224,7 +4246,139 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
         let cid = chain.deploy(&harness, "bearer_bond", wasm).await?;
         println!("Contract deployed");
 
-        // --- prove_coverage ---
+        let keypair = Keypair::new(SecretKey::from_base(pallas::Base::from(42)));
+        let pubkey = keypair.public;
+
+        // --- issue_stake (0x01) ---
+        println!("  Test: issue_stake");
+        use dwow_bearer_bond_contract::client::issue_stake_v1::IssueStakeCallInput;
+        let is_input = IssueStakeCallInput {
+            series_token_id: pallas::Base::from(1u64),
+            interest_rate_bps: 500,
+            maturity_block: 1000,
+            bond_amount: 10000,
+            min_coverage_bps: 15000,
+            issuer_pub: pubkey,
+        };
+        let is = harness.issue_stake(is_input)?;
+        assert!(!is.call_data.is_empty());
+
+        // --- burn_stake (0x02) ---
+        println!("  Test: burn_stake");
+        use dwow_bearer_bond_contract::client::burn_stake_v1::BurnStakeCallInput;
+        let bs_input = BurnStakeCallInput {
+            coin: pallas::Base::from(99u64),
+            value_commit: pallas::Base::from(100u64),
+            token_commit: pallas::Base::from(1u64),
+            merkle_root: pallas::Base::from(2u64),
+            user_data_enc: pallas::Base::zero(),
+            spend_hook: pallas::Base::zero(),
+            signature_public: pallas::Base::from(42u64),
+        };
+        let bs = harness.burn_stake(vec![bs_input])?;
+        assert!(!bs.call_data.is_empty());
+
+        // --- transfer_stake (0x03) ---
+        println!("  Test: transfer_stake");
+        use dwow_bearer_bond_contract::client::transfer_stake_v1::{TransferStakeCallInput, TransferStakeCallOutput};
+        let ts_input = TransferStakeCallInput {
+            coin: pallas::Base::from(50u64),
+            value_commit: pallas::Base::from(200u64),
+            token_commit: pallas::Base::from(1u64),
+            merkle_root: pallas::Base::from(2u64),
+            user_data_enc: pallas::Base::zero(),
+            spend_hook: pallas::Base::zero(),
+            signature_public: pallas::Base::from(42u64),
+        };
+        let ts_output = TransferStakeCallOutput {
+            coin: pallas::Base::from(51u64),
+            value_commit: pallas::Base::from(200u64),
+            token_commit: pallas::Base::from(1u64),
+            spend_hook: pallas::Base::zero(),
+        };
+        let ts = harness.transfer_stake(vec![ts_input], vec![ts_output])?;
+        assert!(!ts.call_data.is_empty());
+
+        // --- request_interest (0x04) ---
+        println!("  Test: request_interest");
+        use dwow_bearer_bond_contract::client::request_interest_v1::RequestInterestCallInput;
+        let ri_input = RequestInterestCallInput {
+            coin: pallas::Base::from(99u64),
+            value_commit: pallas::Base::from(100u64),
+            token_commit: pallas::Base::from(1u64),
+            merkle_root: pallas::Base::from(2u64),
+            user_data_enc: pallas::Base::zero(),
+            spend_hook: pallas::Base::zero(),
+            signature_public: pallas::Base::from(42u64),
+            last_claim_block: 10,
+            interest_rate_bps: 500,
+            maturity_block: 1000,
+            current_block: 100,
+        };
+        let ri = harness.request_interest(ri_input)?;
+        assert!(!ri.call_data.is_empty());
+
+        // --- unstake (0x05) ---
+        println!("  Test: unstake");
+        use dwow_bearer_bond_contract::client::unstake_v1::{UnstakeCallInput, UnstakeCallOutput};
+        let us_input = UnstakeCallInput {
+            coin: pallas::Base::from(99u64),
+            value_commit: pallas::Base::from(100u64),
+            token_commit: pallas::Base::from(1u64),
+            merkle_root: pallas::Base::from(2u64),
+            user_data_enc: pallas::Base::zero(),
+            spend_hook: pallas::Base::zero(),
+            signature_public: pallas::Base::from(42u64),
+            principal_amount: 10000,
+            maturity_block: 1000,
+            current_block: 1001,
+        };
+        let us_output = UnstakeCallOutput {
+            coin: pallas::Base::from(52u64),
+            value_commit: pallas::Base::from(10000u64),
+            token_commit: pallas::Base::from(1u64),
+            spend_hook: pallas::Base::zero(),
+        };
+        let us = harness.unstake(us_input, us_output)?;
+        assert!(!us.call_data.is_empty());
+
+        // --- emergency_unstake (0x06) ---
+        println!("  Test: emergency_unstake");
+        use dwow_bearer_bond_contract::client::emergency_unstake_v1::{EmergencyUnstakeCallInput, EmergencyUnstakeCallOutput};
+        let eu_input = EmergencyUnstakeCallInput {
+            coin: pallas::Base::from(99u64),
+            value_commit: pallas::Base::from(100u64),
+            token_commit: pallas::Base::from(1u64),
+            merkle_root: pallas::Base::from(2u64),
+            user_data_enc: pallas::Base::zero(),
+            spend_hook: pallas::Base::zero(),
+            signature_public: pallas::Base::from(42u64),
+            principal_amount: 10000,
+            coverage_ratio_bps: 14000,
+            min_coverage_bps: 15000,
+        };
+        let eu_output = EmergencyUnstakeCallOutput {
+            coin: pallas::Base::from(53u64),
+            value_commit: pallas::Base::from(10000u64),
+            token_commit: pallas::Base::from(1u64),
+            spend_hook: pallas::Base::zero(),
+        };
+        let eu = harness.emergency_unstake(eu_input, eu_output)?;
+        assert!(!eu.call_data.is_empty());
+
+        // --- pay_interest (0x07) ---
+        println!("  Test: pay_interest");
+        use dwow_bearer_bond_contract::client::pay_interest_v1::PayInterestCallInput;
+        let pi_input = PayInterestCallInput {
+            series_token_id: pallas::Base::from(1u64),
+            recipient_pub: pubkey,
+            interest_amount: 500,
+            claim_block: 100,
+        };
+        let pi = harness.pay_interest(pi_input)?;
+        assert!(!pi.call_data.is_empty());
+
+        // --- prove_coverage (0x08) ---
         println!("  Test: prove_coverage");
         use dwow_bearer_bond_contract::client::prove_coverage_v1::ProveCoverageCallInput;
         let pc_input = ProveCoverageCallInput {
@@ -4239,13 +4393,28 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
         };
         let pc = harness.prove_coverage(pc_input)?;
         assert!(!pc.call_data.is_empty());
-        println!("    call_data={}B", pc.call_data.len());
 
+        // Submit all calls in blocks
+        let h_before = chain.height();
         chain.block()?
+            .with_call(cid, &harness, &is.call_data, is.proofs.clone())?
+            .with_call(cid, &harness, &bs.call_data, bs.proofs.clone())?
+            .with_call(cid, &harness, &ts.call_data, ts.proofs.clone())?
+            .with_fee_collect()?
+            .submit().await?;
+        chain.block()?
+            .with_call(cid, &harness, &ri.call_data, ri.proofs.clone())?
+            .with_call(cid, &harness, &us.call_data, us.proofs.clone())?
+            .with_call(cid, &harness, &eu.call_data, eu.proofs.clone())?
+            .with_fee_collect()?
+            .submit().await?;
+        chain.block()?
+            .with_call(cid, &harness, &pi.call_data, pi.proofs.clone())?
             .with_call(cid, &harness, &pc.call_data, pc.proofs.clone())?
             .with_fee_collect()?
             .submit().await?;
-        println!("    accept_block height OK");
+        assert!(chain.height() > h_before);
+        println!("    accept_block height OK (from {} to {})", h_before, chain.height());
 
         println!("=== BearerBond Heavyweight: PASSED ===");
         Ok(())
