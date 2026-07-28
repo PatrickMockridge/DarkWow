@@ -150,7 +150,7 @@ impl PoWRewardCallBuilder {
         const DOMAIN_VALUE_BLIND: u64 = 1;
         const DOMAIN_TOKEN_BLIND: u64 = 2;
         const DOMAIN_COIN_BLIND: u64 = 3;
-        let sk_base = self.secret.inner();
+        let sk_base = *self.secret.inner();
         let h_base = pallas::Base::from(self.block_height.get());
         // value_blind: Blind<pallas::Scalar> (ScalarBlind)
         let value_blind: ScalarBlind = Blind(pallas::Scalar::from_repr(
