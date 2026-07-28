@@ -728,10 +728,10 @@ fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Erro
         // Derive instance-scoped keys — same wallet, different instance = different key
         let buyer_instance_sk = buyer_wallet_sk.derive_instance(&contract_id, &instance_seed).unwrap();
         let buyer_pub = PublicKey::from_secret(buyer_instance_sk.clone());
-        let buyer_secret = buyer_instance_sk.inner();
+        let buyer_secret = *buyer_instance_sk.inner();
         let seller_instance_sk = seller_wallet_sk.derive_instance(&contract_id, &instance_seed).unwrap();
         let seller_pub = PublicKey::from_secret(seller_instance_sk.clone());
-        let seller_secret = seller_instance_sk.inner();
+        let seller_secret = *seller_instance_sk.inner();
 
         // --- create_escrow ---
         println!("  Test: create_escrow");
@@ -874,10 +874,10 @@ fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Er
 
         let buyer_instance_sk = buyer_wallet_sk.derive_instance(&contract_id, &instance_seed).unwrap();
         let buyer_pub = PublicKey::from_secret(buyer_instance_sk.clone());
-        let buyer_secret = buyer_instance_sk.inner();
+        let buyer_secret = *buyer_instance_sk.inner();
         let seller_instance_sk = seller_wallet_sk.derive_instance(&contract_id, &instance_seed).unwrap();
         let seller_pub = PublicKey::from_secret(seller_instance_sk.clone());
-        let _seller_secret = seller_instance_sk.inner();
+        let _seller_secret = *seller_instance_sk.inner();
 
         // --- create_escrow (ZK proof generation) ---
         println!("  Test: create_escrow");
@@ -957,7 +957,7 @@ fn test_heavyweight_stablecoin() -> std::result::Result<(), Box<dyn std::error::
 
         // --- mint_stable ---
         println!("  Test: mint_stable");
-        let mint = harness.mint_stable(owner_secret, 10000, 5000, 1000, collateral_blind, debt_blind, pos.position_commitment)?;
+        let mint = harness.mint_stable(owner_secret, 10000, 5000, 1000, collateral_blind.clone(), debt_blind.clone(), pos.position_commitment)?;
         assert!(!mint.call_data.is_empty());
         println!("    call_data={}B", mint.call_data.len());
 
@@ -2188,7 +2188,7 @@ fn test_heavyweight_deployooor() -> std::result::Result<(), Box<dyn std::error::
         let lock = harness.build_lock_call(keypair)?;
         println!("    public_key OK");
         let mut lock_cd = vec![0x01];
-        lock.params.encode(&mut lock_cd)?;
+        lock_cd.extend_from_slice(&lock.params.encode());
         println!("  Exec: LockV1 through accept_block (0 ZK circuits)");
         let hb = chain.height();
         chain.block()?
@@ -2458,7 +2458,7 @@ fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- house_close ---
         println!("  Test: house_close");
-        let close = harness.house_close(commit.bet_id, house_secret.inner(), house_pub.x().expect("pk not identity"), house_pub.y().expect("pk not identity"), pallas::Base::from(500u64), pallas::Base::from(501u64))?;
+        let close = harness.house_close(commit.bet_id, *house_secret.inner(), house_pub.x().expect("pk not identity"), house_pub.y().expect("pk not identity"), pallas::Base::from(500u64), pallas::Base::from(501u64))?;
         assert!(!close.call_data.is_empty());
         println!("    call_data={}B", close.call_data.len());
 
@@ -2706,7 +2706,7 @@ fn test_heavyweight_darkbet_exchange() -> std::result::Result<(), Box<dyn std::e
 
         // --- remove_liquidity ---
         println!("  Test: remove_liquidity");
-        let rl = harness.remove_liquidity(pallas::Base::from(1u64), owner_x, owner_y, 100, pallas::Base::from(1u64))?;
+        let rl = harness.remove_liquidity(owner_x, pallas::Base::from(1u64), pallas::Base::from(100u64))?;
         assert!(!rl.call_data.is_empty());
 
         // Submit remaining calls
@@ -4431,7 +4431,7 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
             leaf_position: 0, merkle_path: vec![],
             secret: pallas::Base::from(42u64),
             ephemeral_signature_secret: pallas::Base::from(12u64),
-            coverage_report: CoverageReport { series_token_id: pallas::Base::from(1u64), total_outstanding: 10000, total_interest_obligation: 500, reserve_amount: 20000, coverage_ratio_bps: 19000, report_block: 1 },
+            coverage_report: dwow_bearer_bond_contract::model::CoverageReport { series_token_id: pallas::Base::from(1u64), total_outstanding: 10000, total_interest_obligation: 500, reserve_amount: 20000, coverage_ratio_bps: 19000, report_block: 1 },
             tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
         };
         let eu_output = EmergencyUnstakeCallOutput {

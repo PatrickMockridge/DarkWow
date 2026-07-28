@@ -546,7 +546,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
 
         // Deterministic ephemeral key for AEAD encryption
         let ephem = SecretKey::from_base(poseidon_hash([
-            master_sk_wallet.inner(),
+            *master_sk_wallet.inner(),
             pallas::Base::from(0xBEEF_BEEF_BEEF_BEEFu64),
         ]));
 
@@ -1001,7 +1001,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
 
         // ── Build AEAD note + synthetic block ──────────────
         let ephem = SecretKey::from_base(poseidon_hash([
-            master_sk.inner(),
+            *master_sk.inner(),
             pallas::Base::from(0xBEEF_BEEF_BEEF_BEEFu64),
         ]));
 
