@@ -218,8 +218,7 @@ fn process_instruction(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> Contract
 
     match func {
         DrainProtectionFunction::InitializeV1 => {
-            let params: crate::model::InitializeParamsV1 =
-                deserialize(&self_.data.data[1..])?;
+            let params = crate::model::InitializeParamsV1::decode(&self_.data.data[1..])?;
             let update = init_fund_process_instruction_v1(cid, params)?;
             let _ = wasm::util::set_return_data(&update);
         }
@@ -234,8 +233,7 @@ fn process_instruction(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> Contract
             let _ = wasm::util::set_return_data(&update);
         }
         DrainProtectionFunction::ExecuteV1 => {
-            let params: crate::model::ExecuteParamsV1 =
-                deserialize(&self_.data.data[1..])?;
+            let params = crate::model::ExecuteParamsV1::decode(&self_.data.data[1..])?;
             let update = execute_process_instruction_v1(cid, params)?;
             let _ = wasm::util::set_return_data(&update);
         }
@@ -287,8 +285,7 @@ fn process_instruction(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> Contract
                 validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
             }
 
-            let params: crate::model::TransferParamsV1 =
-                deserialize(&self_.data.data[1..])?;
+            let params = crate::model::TransferParamsV1::decode(&self_.data.data[1..])?;
             let update = transfer_process_instruction_v1(cid, params, &child_call.data)?;
             let _ = wasm::util::set_return_data(&update);
         }
@@ -303,8 +300,7 @@ fn process_instruction(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> Contract
             let _ = wasm::util::set_return_data(&update);
         }
         DrainProtectionFunction::UpdateConfigV1 => {
-            let params: crate::model::UpdateConfigParamsV1 =
-                deserialize(&self_.data.data[1..])?;
+            let params = crate::model::UpdateConfigParamsV1::decode(&self_.data.data[1..])?;
             let update = update_config_process_instruction_v1(cid, params)?;
             let _ = wasm::util::set_return_data(&update);
         }
