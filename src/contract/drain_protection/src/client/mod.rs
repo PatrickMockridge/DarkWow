@@ -86,7 +86,8 @@
 pub mod zkbins;
 
 use dwow_sdk::{
-    crypto::{PublicKey, SecretKey},
+    crypto::{pasta_prelude::PrimeField, PublicKey, SecretKey},
+    error::ContractError,
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
