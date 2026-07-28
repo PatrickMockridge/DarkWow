@@ -80,7 +80,7 @@ pub fn insurance_market_underwrite_process_instruction_v1(
     }
 
     let self_ = &calls[call_idx].data;
-    let params: UnderwriteParamsV1 = deserialize(&self_.data[1..])?;
+    let params = UnderwriteParamsV1::decode(&self_.data[1..])?;
 
     msg!("[insurance_market::underwrite] Registering as underwriter");
     msg!("  market_id: {:?}", params.market_id);

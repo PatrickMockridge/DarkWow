@@ -43,7 +43,7 @@ pub fn insurance_market_create_market_process_instruction_v1(
     calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: CreateMarketParamsV1 = deserialize(&self_.data[1..])?;
+    let params = CreateMarketParamsV1::decode(&self_.data[1..])?;
 
     msg!("[insurance_market::create_market] Creating new insurance market");
     msg!("  risk_type_id: {:?}", params.risk_type_id);

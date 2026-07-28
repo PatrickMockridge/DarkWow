@@ -81,7 +81,7 @@ pub fn insurance_market_purchase_coverage_process_instruction_v1(
     }
 
     let self_ = &calls[call_idx].data;
-    let params: PurchaseCoverageParamsV1 = deserialize(&self_.data[1..])?;
+    let params = PurchaseCoverageParamsV1::decode(&self_.data[1..])?;
 
     msg!("[insurance_market::purchase_coverage] Purchasing coverage");
     msg!("  market_id: {:?}", params.market_id);

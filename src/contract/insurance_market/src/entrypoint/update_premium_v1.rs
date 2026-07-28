@@ -54,7 +54,7 @@ pub fn insurance_market_update_premium_process_instruction_v1(
     calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: UpdatePremiumParamsV1 = deserialize(&self_.data[1..])?;
+    let params = UpdatePremiumParamsV1::decode(&self_.data[1..])?;
 
     msg!(
         "[insurance_market::update_premium] Updating premium for market {:?}",

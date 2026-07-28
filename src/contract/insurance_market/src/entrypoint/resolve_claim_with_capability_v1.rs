@@ -47,7 +47,7 @@ pub fn insurance_market_resolve_claim_with_capability_process_instruction_v1(
     calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: ResolveClaimWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+    let params = ResolveClaimWithCapabilityParamsV1::decode(&self_.data[1..])?;
 
     msg!("[insurance_market::resolve_claim_with_cap] Resolving claim with capability");
     msg!("  claim_id: {:?}", params.claim_id);

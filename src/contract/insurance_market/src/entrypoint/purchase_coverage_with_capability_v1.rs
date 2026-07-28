@@ -52,7 +52,7 @@ pub fn insurance_market_purchase_coverage_with_capability_process_instruction_v1
     calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: PurchaseCoverageWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+    let params = PurchaseCoverageWithCapabilityParamsV1::decode(&self_.data[1..])?;
 
     msg!("[insurance_market::purchase_coverage_with_cap] Purchasing coverage with capability");
     msg!("  market_id: {:?}", params.market_id);

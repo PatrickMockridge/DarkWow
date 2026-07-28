@@ -79,7 +79,7 @@ pub fn insurance_market_resolve_claim_process_instruction_v1(
     }
 
     let self_ = &calls[call_idx].data;
-    let params: ResolveClaimParamsV1 = deserialize(&self_.data[1..])?;
+    let params = ResolveClaimParamsV1::decode(&self_.data[1..])?;
 
     msg!("[insurance_market::resolve_claim] Resolving claim");
     msg!("  claim_id: {:?}", params.claim_id);

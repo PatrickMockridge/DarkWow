@@ -74,7 +74,7 @@ pub fn insurance_market_withdraw_premium_process_instruction_v1(
     }
 
     let self_ = &calls[call_idx].data;
-    let params: WithdrawPremiumParamsV1 = deserialize(&self_.data[1..])?;
+    let params = WithdrawPremiumParamsV1::decode(&self_.data[1..])?;
 
     msg!("[insurance_market::withdraw_premium] Withdrawing premium");
     msg!("  underwriter_id: {:?}", params.underwriter_id);

@@ -38,7 +38,7 @@ pub fn insurance_market_retire_risk_type_process_instruction_v1(
     calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: RetireRiskTypeParamsV1 = deserialize(&self_.data[1..])?;
+    let params = RetireRiskTypeParamsV1::decode(&self_.data[1..])?;
 
     msg!("[insurance_market::retire_risk_type] Retiring risk type {:?}", params.risk_type_id);
 

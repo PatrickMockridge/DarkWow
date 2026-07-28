@@ -38,7 +38,7 @@ pub fn insurance_market_file_claim_process_instruction_v1(
     calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: FileClaimParamsV1 = deserialize(&self_.data[1..])?;
+    let params = FileClaimParamsV1::decode(&self_.data[1..])?;
 
     msg!("[insurance_market::file_claim] Filing claim");
     msg!("  coverage_id: {:?}", params.coverage_id);

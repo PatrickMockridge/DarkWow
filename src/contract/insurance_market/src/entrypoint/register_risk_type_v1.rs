@@ -38,7 +38,7 @@ pub fn insurance_market_register_risk_type_process_instruction_v1(
     calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: RegisterRiskTypeParamsV1 = deserialize(&self_.data[1..])?;
+    let params = RegisterRiskTypeParamsV1::decode(&self_.data[1..])?;
 
     msg!("[insurance_market::register_risk_type] Registering new risk type");
     msg!("  category: {:?}", params.category);

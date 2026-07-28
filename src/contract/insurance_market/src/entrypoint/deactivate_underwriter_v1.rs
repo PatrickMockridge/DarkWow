@@ -38,7 +38,7 @@ pub fn insurance_market_deactivate_underwriter_process_instruction_v1(
     calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: DeactivateUnderwriterParamsV1 = deserialize(&self_.data[1..])?;
+    let params = DeactivateUnderwriterParamsV1::decode(&self_.data[1..])?;
 
     msg!("[insurance_market::deactivate_underwriter] Deactivating underwriter {:?}", params.underwriter_id);
 
