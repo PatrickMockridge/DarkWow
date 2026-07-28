@@ -2678,6 +2678,62 @@ fn test_heavyweight_darkbet_exchange() -> std::result::Result<(), Box<dyn std::e
         assert!(chain.height() > h_before);
         println!("    accept_block height OK");
 
+        // --- place_back ---
+        println!("  Test: place_back");
+        let pb = harness.place_back(owner_x, pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(100u64))?;
+        assert!(!pb.call_data.is_empty());
+        println!("    call_data={}B", pb.call_data.len());
+
+        // --- place_lay ---
+        println!("  Test: place_lay");
+        let pl = harness.place_lay(owner_x, pallas::Base::from(1u64), pallas::Base::from(3u64), pallas::Base::from(200u64))?;
+        assert!(!pl.call_data.is_empty());
+
+        // --- match_orders ---
+        println!("  Test: match_orders");
+        let mo = harness.match_orders(pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64))?;
+        assert!(!mo.call_data.is_empty());
+
+        // --- resolve_market ---
+        println!("  Test: resolve_market");
+        let rm = harness.resolve_market(pallas::Base::from(1u64), 0, vec![])?;
+        assert!(!rm.call_data.is_empty());
+
+        // --- cancel_order ---
+        println!("  Test: cancel_order");
+        let co = harness.cancel_order(pallas::Base::from(1u64), owner_x)?;
+        assert!(!co.call_data.is_empty());
+
+        // --- remove_liquidity ---
+        println!("  Test: remove_liquidity");
+        let rl = harness.remove_liquidity(pallas::Base::from(1u64), owner_x, owner_y, 100, pallas::Base::from(1u64))?;
+        assert!(!rl.call_data.is_empty());
+
+        // --- settle_market ---
+        println!("  Test: settle_market");
+        let sm = harness.settle_market(pallas::Base::from(1u64), 0)?;
+        assert!(!sm.call_data.is_empty());
+
+        // Submit remaining calls
+        let h_before = chain.height();
+        chain.block()?
+            .with_call(cid, &harness, &pb.call_data, vec![pb.proof])?
+            .with_call(cid, &harness, &pl.call_data, vec![pl.proof])?
+            .with_call(cid, &harness, &mo.call_data, vec![mo.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        chain.block()?
+            .with_call(cid, &harness, &rm.call_data, vec![rm.proof])?
+            .with_call(cid, &harness, &co.call_data, vec![co.proof])?
+            .with_call(cid, &harness, &rl.call_data, vec![rl.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        chain.block()?
+            .with_call(cid, &harness, &sm.call_data, vec![sm.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
+
         println!("=== All DarkbetExchange endpoints OK ===");
         Ok(())
     })
@@ -2831,6 +2887,40 @@ fn test_heavyweight_lottery() -> std::result::Result<(), Box<dyn std::error::Err
             .submit().await?;
         assert!(chain.height() > h_before);
         println!("    accept_block height OK");
+
+        // --- initialize ---
+        println!("  Test: initialize");
+        let init = harness.initialize(100, 200, 1000)?;
+        assert!(!init.call_data.is_empty());
+        println!("    call_data={}B", init.call_data.len());
+
+        // --- draw_winners ---
+        println!("  Test: draw_winners");
+        let draw = harness.draw_winners(pallas::Base::from(1u64), pallas::Base::from(99u64))?;
+        assert!(!draw.call_data.is_empty());
+
+        // --- claim_prize ---
+        println!("  Test: claim_prize");
+        let claim = harness.claim_prize(pallas::Base::from(1u64), player_secret)?;
+        assert!(!claim.call_data.is_empty());
+
+        // --- expire_lottery ---
+        println!("  Test: expire_lottery");
+        let expire = harness.expire_lottery(pallas::Base::from(1u64))?;
+        assert!(!expire.call_data.is_empty());
+
+        // Submit governance calls
+        chain.block()?
+            .with_call(cid, &harness, &init.call_data, vec![init.proof])?
+            .with_call(cid, &harness, &draw.call_data, vec![draw.proof])?
+            .with_call(cid, &harness, &claim.call_data, vec![claim.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        chain.block()?
+            .with_call(cid, &harness, &expire.call_data, vec![expire.proof])?
+            .with_fee_collect()?
+            .submit().await?;
+        assert!(chain.height() > h_before);
 
         println!("=== All Lottery endpoints OK ===");
         Ok(())
