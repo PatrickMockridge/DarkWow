@@ -51,7 +51,7 @@ pub fn decode_deployooor_function_params(
             Box::new(params)
         }
         DeployFunction::LockV1 => {
-            let params: deployooor_model::LockParamsV1 = deserialize(&data[1..])?;
+            let params = deployooor_model::LockParamsV1::decode(&data[1..])?;
             Box::new(params)
         }
     };

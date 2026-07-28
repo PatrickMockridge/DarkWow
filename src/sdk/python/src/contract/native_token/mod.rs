@@ -51,11 +51,11 @@ pub fn decode_native_token_function_params(
 ) -> dwow_core::Result<Box<dyn FunctionParams>> {
     let res: Box<dyn FunctionParams> = match NativeTokenFunction::try_from(function_index)? {
         NativeTokenFunction::FeeV1 => {
-            let params: native_token_model::FeeParamsV1 = deserialize(&data[9..])?;
+            let params = native_token_model::FeeParamsV1::decode(&data[9..])?;
             Box::new(params)
         }
         NativeTokenFunction::PoWRewardV1 => {
-            let params: native_token_model::PoWRewardParamsV1 = deserialize(&data[1..])?;
+            let params = native_token_model::PoWRewardParamsV1::decode(&data[1..])?;
             Box::new(params)
         }
         _ => return Err(dwow_core::Error::ParseFailed("unsupported NativeToken function")),
