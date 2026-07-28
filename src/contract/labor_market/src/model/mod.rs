@@ -575,8 +575,7 @@ pub struct AcceptJobParamsV1 {
     pub worker_pub_y: pallas::Base,
 }
 
-impl AcceptJobParamsV1 {
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+impl AcceptJobParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+96); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 97 {
             return Err(ContractError::IoError(format!(
                 "AcceptJobParamsV1: expected at least 97 bytes, got {}",
@@ -632,8 +631,7 @@ pub struct SubmitDeliverableParamsV1 {
     pub spent_nullifier: pallas::Base,
 }
 
-impl SubmitDeliverableParamsV1 {
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+impl SubmitDeliverableParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+160); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 161 {
             return Err(ContractError::IoError(format!(
                 "SubmitDeliverableParamsV1: expected at least 161 bytes, got {}",
@@ -697,8 +695,7 @@ pub struct SubmitGitDeliverableParamsV1 {
     pub spent_nullifier: pallas::Base,
 }
 
-impl SubmitGitDeliverableParamsV1 {
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+impl SubmitGitDeliverableParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+160); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.claim_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 161 {
             return Err(ContractError::IoError(format!(
                 "SubmitGitDeliverableParamsV1: expected at least 161 bytes, got {}",
@@ -760,8 +757,7 @@ pub struct ConfirmDeliveryParamsV1 {
     pub spent_nullifier: pallas::Base,
 }
 
-impl ConfirmDeliveryParamsV1 {
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+impl ConfirmDeliveryParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+128); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 129 {
             return Err(ContractError::IoError(format!(
                 "ConfirmDeliveryParamsV1: expected at least 129 bytes, got {}",
@@ -821,8 +817,7 @@ pub struct DisputeParamsV1 {
     pub spent_nullifier: pallas::Base,
 }
 
-impl DisputeParamsV1 {
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+impl DisputeParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+160); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.disputer_pub_x.to_repr()); b.extend_from_slice(&self.disputer_pub_y.to_repr()); b.extend_from_slice(&self.dao_escrow_bulla.to_repr()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 161 {
             return Err(ContractError::IoError(format!(
                 "DisputeParamsV1: expected at least 161 bytes, got {}",
@@ -890,8 +885,7 @@ pub struct RefundParamsV1 {
     pub spent_nullifier: pallas::Base,
 }
 
-impl RefundParamsV1 {
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+impl RefundParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+152); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.milestone_count.to_le_bytes()); b.extend_from_slice(&self.completed_payment.to_le_bytes()); b.extend_from_slice(&self.refund_amount.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 153 {
             return Err(ContractError::IoError(format!(
                 "RefundParamsV1: expected at least 153 bytes, got {}",
@@ -1211,8 +1205,7 @@ pub struct ConfirmMilestoneParamsV1 {
     pub spent_nullifier: pallas::Base,
 }
 
-impl ConfirmMilestoneParamsV1 {
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+impl ConfirmMilestoneParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+164); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.milestone_index.to_le_bytes()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.payment_release.to_le_bytes()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 141 {
             return Err(ContractError::IoError(format!(
                 "ConfirmMilestoneParamsV1: expected at least 141 bytes, got {}",
@@ -1476,8 +1469,7 @@ pub struct AcceptJobWithCapabilityParamsV1 {
     pub capability_secret: [u8; 32],
 }
 
-impl AcceptJobWithCapabilityParamsV1 {
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+impl AcceptJobWithCapabilityParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+1+self.capability_proof.len()+160); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.required_capability_id.to_repr()); b.push(self.capability_proof.len() as u8); b.extend_from_slice(&self.capability_proof); b.extend_from_slice(&self.capability_secret); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 170 {
             return Err(ContractError::IoError(format!(
                 "AcceptJobWithCapabilityParamsV1: expected at least 170 bytes, got {}",

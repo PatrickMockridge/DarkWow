@@ -174,7 +174,7 @@ impl PromissoryNoteHarness {
         .build()?;
 
         let mut call_data = vec![0x00u8]; // RegisterTypeV1
-        call_data.extend_from_slice(&debris.params.encode());
+        call_data.extend_from_slice(&token_debris.params.encode());
 
         Ok(TokenCreationResult {
             call_data,

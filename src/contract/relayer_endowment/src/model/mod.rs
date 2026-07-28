@@ -212,6 +212,7 @@ pub struct InitializeParamsV1 {
 
 impl InitializeParamsV1 {
     pub const ENCODED_SIZE: usize = 68;
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(68); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.default_backer_cut_bp.to_le_bytes()); b.extend_from_slice(&self.signature_public.to_bytes()); b }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 68 {
@@ -288,6 +289,7 @@ pub struct DeployCapitalParamsV1 {
 }
 
 impl DeployCapitalParamsV1 {
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(100); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.relayer_pub.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.backer_cut_bp.to_le_bytes()); b.extend_from_slice(&self.signature_public.to_bytes()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 140 {
             return Err(ContractError::IoError(format!(
@@ -469,6 +471,7 @@ pub struct ClaimFeesParamsV1 {
 
 impl ClaimFeesParamsV1 {
     pub const ENCODED_SIZE: usize = 104;
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(104); b.extend_from_slice(&self.deployment_id.to_repr()); b.extend_from_slice(&self.backer_pub_x); b.extend_from_slice(&self.backer_pub_y); b.extend_from_slice(&self.fee_share.to_le_bytes()); b }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 104 {

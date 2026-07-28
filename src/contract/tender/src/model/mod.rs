@@ -591,6 +591,7 @@ pub struct CreateTenderParamsV1 {
 }
 
 impl CreateTenderParamsV1 {
+    pub fn encode(&self) -> Vec<u8> { let tb = self.title.as_bytes(); let mut b = Vec::with_capacity(1+self.proof.len()+1+tb.len()+169); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.requester_pub_x.to_repr()); b.extend_from_slice(&self.requester_pub_y.to_repr()); b.push(tb.len() as u8); b.extend_from_slice(tb); b.extend_from_slice(&self.specification.to_repr()); b.extend_from_slice(&self.attestation_id.to_repr()); b.extend_from_slice(&self.min_bid.to_le_bytes()); b.extend_from_slice(&self.max_bid.to_le_bytes()); b.extend_from_slice(&self.bid_deadline.to_le_bytes()); b.extend_from_slice(&self.reveal_deadline.to_le_bytes()); b.extend_from_slice(&self.delivery_deadline.to_le_bytes()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         // Minimum: 1(proof_len)+32(tender_id)+32+32+1(title_len)+32+32+8+8+8+8+8 = 201
         if data.len() < 201 {
@@ -738,6 +739,7 @@ pub struct SubmitBidParamsV1 {
 }
 
 impl SubmitBidParamsV1 {
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+169); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.bidder_pub_x.to_repr()); b.extend_from_slice(&self.bidder_pub_y.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.claim_id.to_repr()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 171 {
             return Err(ContractError::IoError(format!(
@@ -860,6 +862,7 @@ pub struct RevealBidParamsV1 {
 }
 
 impl RevealBidParamsV1 {
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+72); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.revealed_amount.to_le_bytes()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 73 {
             return Err(ContractError::IoError(format!(
@@ -1022,6 +1025,7 @@ pub struct SelectWinnerParamsV1 {
 }
 
 impl SelectWinnerParamsV1 {
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+168); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.winner_bid_id.to_repr()); b.extend_from_slice(&self.requester_pub_x.to_repr()); b.extend_from_slice(&self.requester_pub_y.to_repr()); b.extend_from_slice(&self.winner_pub_x.to_repr()); b.extend_from_slice(&self.winner_pub_y.to_repr()); b.extend_from_slice(&self.winning_amount.to_le_bytes()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 201 {
             return Err(ContractError::IoError(format!(
@@ -1518,6 +1522,7 @@ pub struct SubmitBidWithCapabilityParamsV1 {
 }
 
 impl SubmitBidWithCapabilityParamsV1 {
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(2+self.proof.len()+self.encrypted_payload.len()+201); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.bidder_pub_x.to_repr()); b.extend_from_slice(&self.bidder_pub_y.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.claim_id.to_repr()); b.push(self.encrypted_payload.len() as u8); b.extend_from_slice(&self.encrypted_payload); b.extend_from_slice(&self.required_capability_id); b.extend_from_slice(&self.capability_predicate_result.to_repr()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 236 {
             return Err(ContractError::IoError(format!(
