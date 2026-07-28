@@ -23,8 +23,6 @@
 
 use std::collections::HashMap;
 
-use crate::impl_boundary_codec;
-
 pub use dwow_sdk::dark_tree::DarkLeaf;
 use dwow_sdk::{
     crypto::PublicKey,
@@ -235,6 +233,7 @@ crate::impl_p2p_message!(
     &[crate::net::barb_trait::BarbId::Spend, crate::net::barb_trait::BarbId::Verify]
 );
 
+#[cfg(any(feature = "net-wire", feature = "net-wallet", feature = "net"))]
 crate::impl_boundary_codec!(
     Transaction,
     TX_MAX_BYTES,
