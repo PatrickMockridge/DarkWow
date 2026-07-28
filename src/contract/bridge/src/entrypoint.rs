@@ -162,7 +162,7 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
             config_nullifier: pallas::Base::zero(),
         }
     } else {
-        UpdateConfigParams::decode(&mut std::io::Cursor::new(ix))
+        UpdateConfigParams::decode(ix)
             .map_err(|_| ContractError::IoError("Decode error".to_string()))?
     };
 
