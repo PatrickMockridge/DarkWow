@@ -23,6 +23,8 @@
 
 use std::collections::HashMap;
 
+use crate::impl_boundary_codec;
+
 pub use dwow_sdk::dark_tree::DarkLeaf;
 use dwow_sdk::{
     crypto::PublicKey,
