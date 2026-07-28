@@ -239,23 +239,23 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
 
     let metadata = match func {
         GameRoomFunction::CreateRoomV1 => {
-            let params: model::CreateRoomParamsV1 = dwow_serial::deserialize(&self_.data[1..])?;
+            let params = model::CreateRoomParamsV1::decode(&self_.data[1..])?;
             create_room_get_metadata_v1(params)?
         }
         GameRoomFunction::DepositV1 => {
-            let params: model::DepositParamsV1 = dwow_serial::deserialize(&self_.data[1..])?;
+            let params = model::DepositParamsV1::decode(&self_.data[1..])?;
             deposit_get_metadata_v1(params)?
         }
         GameRoomFunction::PlaceBetV1 => {
-            let params: model::PlaceBetParamsV1 = dwow_serial::deserialize(&self_.data[1..])?;
+            let params = model::PlaceBetParamsV1::decode(&self_.data[1..])?;
             place_bet_get_metadata_v1(params)?
         }
         GameRoomFunction::SettlePotV1 => {
-            let params: model::SettlePotParamsV1 = dwow_serial::deserialize(&self_.data[1..])?;
+            let params = model::SettlePotParamsV1::decode(&self_.data[1..])?;
             settle_pot_get_metadata_v1(params)?
         }
         GameRoomFunction::ClaimV1 => {
-            let params: model::ClaimParamsV1 = dwow_serial::deserialize(&self_.data[1..])?;
+            let params = model::ClaimParamsV1::decode(&self_.data[1..])?;
             claim_get_metadata_v1(params)?
         }
         // WithdrawV1, RaiseV1, CallV1, FoldV1, ClosePotV1, ContributeEntropyV1
