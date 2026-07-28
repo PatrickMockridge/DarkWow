@@ -182,7 +182,7 @@ impl BridgeHarness {
         };
 
         let mut call_data = vec![0x01];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(DepositResult { call_data, proof, public_inputs })
     }
@@ -238,7 +238,7 @@ impl BridgeHarness {
         };
 
         let mut call_data = vec![0x02];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(WithdrawResult { call_data, proof, public_inputs })
     }
@@ -405,7 +405,7 @@ impl BridgeHarness {
         };
 
         let mut call_data = vec![0x03];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(UpdateConfigResult { call_data, proof })
     }

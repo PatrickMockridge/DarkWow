@@ -236,7 +236,7 @@ impl LaborMarketHarness {
         };
 
         let mut call_data = vec![0x00];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(CreateJobResult { call_data, job_id, proof, public_inputs })
     }
@@ -263,7 +263,7 @@ impl LaborMarketHarness {
         };
 
         let mut call_data = vec![0x01];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(AcceptJobResult { call_data, proof, public_inputs })
     }
@@ -302,7 +302,7 @@ impl LaborMarketHarness {
         };
 
         let mut call_data = vec![0x02];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(SubmitDeliverableResult { call_data, proof, public_inputs })
     }
@@ -341,7 +341,7 @@ impl LaborMarketHarness {
         };
 
         let mut call_data = vec![0x03];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(SubmitGitDeliverableResult { call_data, proof, public_inputs })
     }
@@ -369,7 +369,7 @@ impl LaborMarketHarness {
         };
 
         let mut call_data = vec![0x04];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(ConfirmDeliveryResult { call_data, proof, public_inputs })
     }
@@ -406,7 +406,7 @@ impl LaborMarketHarness {
         };
 
         let mut call_data = vec![0x05];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(DisputeResult { call_data, proof, public_inputs })
     }
@@ -454,7 +454,7 @@ impl LaborMarketHarness {
         };
 
         let mut call_data = vec![0x06];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(RefundResult { call_data, proof, public_inputs })
     }
@@ -497,7 +497,7 @@ impl LaborMarketHarness {
         };
 
         let mut call_data = vec![0x0d];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(AcceptJobWithCapabilityResult { call_data, proof, public_inputs })
     }
@@ -542,7 +542,7 @@ impl LaborMarketHarness {
         };
 
         let mut call_data = vec![0x0a];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(ConfirmMilestoneResult { call_data, proof, public_inputs })
     }

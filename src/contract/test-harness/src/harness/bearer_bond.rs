@@ -106,7 +106,7 @@ impl BearerBondHarness {
         .build()?;
 
         let mut call_data = vec![0x01];
-        debris.params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&debris.params.encode());
 
         Ok(IssueStakeResult { call_data, proofs: debris.proofs })
     }
@@ -124,7 +124,7 @@ impl BearerBondHarness {
         .build()?;
 
         let mut call_data = vec![0x02];
-        debris.params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&debris.params.encode());
 
         Ok(BurnStakeResult { call_data, proofs: debris.proofs })
     }
@@ -146,7 +146,7 @@ impl BearerBondHarness {
         .build()?;
 
         let mut call_data = vec![0x03];
-        debris.params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&debris.params.encode());
 
         Ok(TransferStakeResult { call_data, proofs: debris.proofs })
     }
@@ -164,7 +164,7 @@ impl BearerBondHarness {
         .build()?;
 
         let mut call_data = vec![0x04];
-        debris.params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&debris.params.encode());
 
         Ok(RequestInterestResult { call_data, proofs: debris.proofs })
     }
@@ -186,7 +186,7 @@ impl BearerBondHarness {
         .build()?;
 
         let mut call_data = vec![0x05];
-        debris.params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&debris.params.encode());
 
         Ok(UnstakeResult { call_data, proofs: debris.proofs })
     }
@@ -208,7 +208,7 @@ impl BearerBondHarness {
         .build()?;
 
         let mut call_data = vec![0x06];
-        debris.params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&debris.params.encode());
 
         Ok(EmergencyUnstakeResult { call_data, proofs: debris.proofs })
     }
@@ -226,7 +226,7 @@ impl BearerBondHarness {
         .build()?;
 
         let mut call_data = vec![0x07];
-        debris.params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&debris.params.encode());
 
         Ok(PayInterestResult { call_data, proofs: debris.proofs })
     }
@@ -244,7 +244,7 @@ impl BearerBondHarness {
         .build()?;
 
         let mut call_data = vec![0x08];
-        debris.params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&debris.params.encode());
 
         Ok(ProveCoverageResult { call_data, proofs: debris.proofs })
     }

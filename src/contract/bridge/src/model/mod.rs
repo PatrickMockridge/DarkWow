@@ -190,6 +190,48 @@ pub struct DepositParams {
     pub chain_proof: ExternalChainProof,
 }
 
+impl DepositParams {
+    pub fn encode(&self) -> Vec<u8> {
+        let cp_bytes = dwow_serial::serialize(&self.chain_proof);
+        let mut b = Vec::with_capacity(107 + self.merkle_proof.len()*32 + self.proof.len() + cp_bytes.len());
+        b.extend_from_slice(&self.commitment.to_bytes());
+        b.extend_from_slice(&self.recipient_pub.to_bytes());
+        b.extend_from_slice(&self.bridge_nonce.to_le_bytes());
+        b.extend_from_slice(&(self.chain as u8).to_le_bytes());
+        b.extend_from_slice(&self.external_block_hash);
+        b.push(self.merkle_proof.len() as u8);
+        for h in &self.merkle_proof { b.extend_from_slice(h); }
+        b.extend_from_slice(&self.external_state_root);
+        b.extend_from_slice(&self.fee.to_le_bytes());
+        b.push(self.proof.len() as u8);
+        b.extend_from_slice(&self.proof);
+        b.extend_from_slice(&(cp_bytes.len() as u32).to_le_bytes());
+        b.extend_from_slice(&cp_bytes);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 107 { return Err(ContractError::IoError("DepositParams: too short".into())); }
+        let commitment = IntentCommitment::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("DepositParams: invalid commitment".into()))?;
+        let recipient_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("DepositParams: invalid recipient_pub: {}", e)))?;
+        let bridge_nonce = u64::from_le_bytes(data[64..72].try_into().unwrap());
+        let chain = ExternalChain::try_from(data[72]).map_err(|_| ContractError::IoError("DepositParams: invalid chain".into()))?;
+        let external_block_hash: [u8;32] = data[73..105].try_into().unwrap();
+        let mp_count = data[105] as usize; let mp_end = 106+mp_count*32;
+        if data.len() < mp_end+32+8+1 { return Err(ContractError::IoError("DepositParams: truncated".into())); }
+        let mut merkle_proof = Vec::with_capacity(mp_count);
+        for i in 0..mp_count { merkle_proof.push(data[106+i*32..106+(i+1)*32].try_into().unwrap()); }
+        let external_state_root: [u8;32] = data[mp_end..mp_end+32].try_into().unwrap();
+        let fee = u64::from_le_bytes(data[mp_end+32..mp_end+40].try_into().unwrap());
+        let proof_len = data[mp_end+40] as usize; let p = mp_end+41+proof_len;
+        if data.len() < p+4 { return Err(ContractError::IoError("DepositParams: proof truncated".into())); }
+        let proof = data[mp_end+41..p].to_vec();
+        let cp_len = u32::from_le_bytes(data[p..p+4].try_into().unwrap()) as usize;
+        if data.len() != p+4+cp_len { return Err(ContractError::IoError(format!("DepositParams: expected {} bytes, got {}", p+4+cp_len, data.len()))); }
+        let chain_proof = dwow_serial::deserialize(&data[p+4..]).map_err(|e| ContractError::IoError(format!("DepositParams: invalid chain_proof: {:?}", e)))?;
+        Ok(DepositParams { commitment, recipient_pub, bridge_nonce, chain, external_block_hash, merkle_proof, external_state_root, fee, proof, chain_proof })
+    }
+}
+
 /// Bridge withdrawal parameters
 ///
 /// Security: Withdrawal is authorized by the depositor alone via their secret.
@@ -232,6 +274,40 @@ pub struct WithdrawParams {
     pub max_fee_bp: Option<u64>,
 }
 
+impl WithdrawParams {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(119 + self.proof.len());
+        b.extend_from_slice(&self.nullifier.to_bytes());
+        b.extend_from_slice(&self.recipient_hash);
+        b.extend_from_slice(&self.deposit_leaf.to_repr());
+        b.extend_from_slice(&self.amount.to_le_bytes());
+        b.push(self.proof.len() as u8);
+        b.extend_from_slice(&self.proof);
+        b.extend_from_slice(&self.fee.to_le_bytes());
+        b.extend_from_slice(&self.timeout_height.to_le_bytes());
+        b.push(self.feed_mode);
+        b.push(self.max_fee_bp.is_some() as u8);
+        if let Some(v) = self.max_fee_bp { b.extend_from_slice(&v.to_le_bytes()); }
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 119 { return Err(ContractError::IoError("WithdrawParams: too short".into())); }
+        let nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("WithdrawParams: invalid nullifier".into()))?;
+        let recipient_hash: [u8;32] = data[32..64].try_into().unwrap();
+        let deposit_leaf = Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap())).ok_or_else(|| ContractError::IoError("WithdrawParams: invalid deposit_leaf".into()))?;
+        let amount = u64::from_le_bytes(data[96..104].try_into().unwrap());
+        let proof_len = data[104] as usize; let p = 105+proof_len;
+        if data.len() < p+16+1+1+1 { return Err(ContractError::IoError("WithdrawParams: proof truncated".into())); }
+        let proof = data[105..p].to_vec();
+        let fee = u64::from_le_bytes(data[p..p+8].try_into().unwrap());
+        let timeout_height = u64::from_le_bytes(data[p+8..p+16].try_into().unwrap());
+        let feed_mode = data[p+16];
+        let has_mfb = data[p+17] != 0;
+        let max_fee_bp = if has_mfb { if data.len() != p+26 { return Err(ContractError::IoError(format!("WithdrawParams: expected {} bytes, got {}", p+26, data.len()))); } Some(u64::from_le_bytes(data[p+18..p+26].try_into().unwrap())) } else { None };
+        Ok(WithdrawParams { nullifier, recipient_hash, deposit_leaf, amount, proof, fee, timeout_height, feed_mode, max_fee_bp })
+    }
+}
+
 /// Bridge configuration update parameters
 ///
 /// Security: Only callable by authorized governance (DAO).
@@ -260,6 +336,8 @@ pub struct UpdateConfigParams {
     /// Nullifier = H(gov_pub_x, gov_pub_y, gov_secret) for ZK replay protection
     pub config_nullifier: pallas::Base,
 }
+
+impl UpdateConfigParams { pub const ENCODED_SIZE: usize = 132; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(132); b.extend_from_slice(&self.deposit_fee.to_le_bytes()); b.extend_from_slice(&self.withdrawal_fee.to_le_bytes()); b.extend_from_slice(&self.min_confirmations.to_le_bytes()); b.extend_from_slice(&self.max_deposit.to_le_bytes()); b.extend_from_slice(&self.max_withdrawal.to_le_bytes()); b.extend_from_slice(&self.gov_pub_x.to_repr()); b.extend_from_slice(&self.gov_pub_y.to_repr()); b.extend_from_slice(&self.config_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 132 { return Err(ContractError::IoError(format!("UpdateConfigParams: expected 132 bytes, got {}", data.len()))); } Ok(UpdateConfigParams { deposit_fee: u64::from_le_bytes(data[0..8].try_into().unwrap()), withdrawal_fee: u64::from_le_bytes(data[8..16].try_into().unwrap()), min_confirmations: u32::from_le_bytes(data[16..20].try_into().unwrap()), max_deposit: u64::from_le_bytes(data[20..28].try_into().unwrap()), max_withdrawal: u64::from_le_bytes(data[28..36].try_into().unwrap()), gov_pub_x: Option::<pallas::Base>::from(pallas::Base::from_repr(data[36..68].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UpdateConfigParams: invalid gov_pub_x".into()))?, gov_pub_y: Option::<pallas::Base>::from(pallas::Base::from_repr(data[68..100].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UpdateConfigParams: invalid gov_pub_y".into()))?, config_nullifier: Option::<pallas::Base>::from(pallas::Base::from_repr(data[100..132].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UpdateConfigParams: invalid config_nullifier".into()))? }) } }
 
 /// Stored deposit record
 ///
