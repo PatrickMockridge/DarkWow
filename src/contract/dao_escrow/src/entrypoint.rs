@@ -170,18 +170,18 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         DaoEscrowFunction::VoteClaimV1 => vote_claim_get_metadata(cid, call_idx, &calls),
         DaoEscrowFunction::VerifyMemberCapabilityV1 => verify_member_cap_get_metadata(cid, call_idx, &calls),
         DaoEscrowFunction::ResolveDisputeV1 => resolve_dispute_get_metadata(cid, call_idx, &calls),
-        _ => vec![],
-    };
+        _ => Ok(vec![]),
+    }?;
 
     wasm::util::set_return_data(&metadata)
 }
 
 /// Metadata for InitializeV1 (0x00)
-fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>]) -> Vec<u8> {
+fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>]) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = match model::InitializeParamsV1::decode(&self_.data[1..]) {
         Ok(p) => p,
-        Err(_) => return vec![],
+        Err(_) => return Ok(vec![]),
     };
 
     let (owner_pub_x, owner_pub_y) = params.owner_pubkey.xy().expect("pk not identity");
@@ -205,21 +205,21 @@ fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk:
     )];
 
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    metadata
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// Metadata for PayPremiumV1 (0x02)
-fn pay_premium_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>]) -> Vec<u8> {
+fn pay_premium_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>]) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = match model::PayPremiumParamsV1::decode(&self_.data[1..]) {
         Ok(p) => p,
-        Err(_) => return vec![],
+        Err(_) => return Ok(vec![]),
     };
 
     let value_coords = params.value_commit.to_affine().coordinates();
     if value_coords.is_none().into() {
-        return vec![];
+        return Ok(vec![]);
     }
     let value_coords = value_coords.unwrap();
 
@@ -234,8 +234,8 @@ fn pay_premium_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk
     )];
 
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    metadata
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 // ============================================================================
@@ -1086,11 +1086,11 @@ fn propose_claim_get_metadata(
     _cid: ContractId,
     call_idx: usize,
     calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>],
-) -> Vec<u8> {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = match model::ProposeClaimParamsV1::decode(&self_.data[1..]) {
         Ok(p) => p,
-        Err(_) => return vec![],
+        Err(_) => return Ok(vec![]),
     };
 
     let cap_id_fp = pallas::Base::from_repr(params.capability_proof.capability_id).into_option()
@@ -1108,8 +1108,8 @@ fn propose_claim_get_metadata(
     )];
 
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    metadata
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// Metadata for VoteClaimV1 (0x08)
@@ -1117,11 +1117,11 @@ fn vote_claim_get_metadata(
     _cid: ContractId,
     call_idx: usize,
     calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>],
-) -> Vec<u8> {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = match model::VoteClaimParamsV1::decode(&self_.data[1..]) {
         Ok(p) => p,
-        Err(_) => return vec![],
+        Err(_) => return Ok(vec![]),
     };
 
     let cap_id_fp = pallas::Base::from_repr(params.capability_proof.capability_id).into_option()
@@ -1138,8 +1138,8 @@ fn vote_claim_get_metadata(
     )];
 
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    metadata
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// Metadata for VerifyMemberCapabilityV1 (0x0b)
@@ -1147,11 +1147,11 @@ fn verify_member_cap_get_metadata(
     _cid: ContractId,
     call_idx: usize,
     calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>],
-) -> Vec<u8> {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = match model::VerifyMemberCapabilityParamsV1::decode(&self_.data[1..]) {
         Ok(p) => p,
-        Err(_) => return vec![],
+        Err(_) => return Ok(vec![]),
     };
 
     let cap_id_fp = pallas::Base::from_repr(params.capability_proof.capability_id).into_option()
@@ -1167,8 +1167,8 @@ fn verify_member_cap_get_metadata(
     )];
 
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    metadata
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// Metadata for ResolveDisputeV1 (0x0c)
@@ -1176,11 +1176,11 @@ fn resolve_dispute_get_metadata(
     _cid: ContractId,
     call_idx: usize,
     calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>],
-) -> Vec<u8> {
+) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = match model::ResolveDisputeParamsV1::decode(&self_.data[1..]) {
         Ok(p) => p,
-        Err(_) => return vec![],
+        Err(_) => return Ok(vec![]),
     };
 
     let cap_id_fp = pallas::Base::from_repr(params.capability_proof.capability_id).into_option()
@@ -1198,8 +1198,8 @@ fn resolve_dispute_get_metadata(
     )];
 
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    metadata
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 // ============================================================================
@@ -1338,7 +1338,7 @@ fn vote_claim_v1(
             passed: false,
             expired: true,
         };
-        let _ = wasm::util::set_return_data(&update.encode());
+        wasm::util::set_return_data(&update.encode())?;
         return Ok(())
     }
 

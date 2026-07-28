@@ -239,7 +239,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let func = BridgeFunction::try_from(self_.data[0])?;
 
     let metadata = match func {
-        BridgeFunction::InitializeV1 => vec![],
+        BridgeFunction::InitializeV1 => Ok(vec![]),
         BridgeFunction::DepositV1 => deposit_get_metadata(&self_.data[1..]),
         BridgeFunction::WithdrawV1 => withdraw_get_metadata(&self_.data[1..]),
         BridgeFunction::UpdateConfigV1 => {
@@ -251,20 +251,20 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
-            metadata
+            Ok(metadata)
         }
-        BridgeFunction::CancelWithdrawV1 => vec![],
-        BridgeFunction::ExecuteGuaranteedWithdrawV1 => vec![],
-        BridgeFunction::CreateHtlcV1 => vec![],
-        BridgeFunction::ClaimHtlcV1 => vec![],
-        BridgeFunction::RefundHtlcV1 => vec![],
-        BridgeFunction::ReassignWithdrawalV1 => vec![],
-        BridgeFunction::RegisterRelayerV1 => vec![],
-        BridgeFunction::AcceptWithdrawalV1 => vec![],
-        BridgeFunction::VerifyRelayerReputationV1 => vec![],
-        BridgeFunction::RegisterFeeScheduleV1 => vec![],
-        BridgeFunction::GovernanceReportV1 => vec![],
-    };
+        BridgeFunction::CancelWithdrawV1 => Ok(vec![]),
+        BridgeFunction::ExecuteGuaranteedWithdrawV1 => Ok(vec![]),
+        BridgeFunction::CreateHtlcV1 => Ok(vec![]),
+        BridgeFunction::ClaimHtlcV1 => Ok(vec![]),
+        BridgeFunction::RefundHtlcV1 => Ok(vec![]),
+        BridgeFunction::ReassignWithdrawalV1 => Ok(vec![]),
+        BridgeFunction::RegisterRelayerV1 => Ok(vec![]),
+        BridgeFunction::AcceptWithdrawalV1 => Ok(vec![]),
+        BridgeFunction::VerifyRelayerReputationV1 => Ok(vec![]),
+        BridgeFunction::RegisterFeeScheduleV1 => Ok(vec![]),
+        BridgeFunction::GovernanceReportV1 => Ok(vec![]),
+    }?;
 
     wasm::util::set_return_data(&metadata)
 }
@@ -273,10 +273,10 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 ///
 /// Public input: commitment — binds the ZK proof to the deposit commitment
 /// so the verifier checks it matches the tx data.
-fn deposit_get_metadata(data: &[u8]) -> Vec<u8> {
+fn deposit_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
     use dwow_sdk::pasta::pallas;
 
-    let params = match DepositParams::decode(data) { Ok(p) => p, Err(_) => return vec![] };
+    let params = match DepositParams::decode(data) { Ok(p) => p, Err(_) => return Ok(vec![]) };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((
@@ -285,10 +285,10 @@ fn deposit_get_metadata(data: &[u8]) -> Vec<u8> {
     ));
 
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
+    zk_public_inputs.encode(&mut metadata)?;
     let signature_pubkeys: Vec<pallas::Base> = vec![];
-    signature_pubkeys.encode(&mut metadata).unwrap();
-    metadata
+    signature_pubkeys.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// Metadata for WithdrawV1 ZK proof verification.
@@ -298,18 +298,18 @@ fn deposit_get_metadata(data: &[u8]) -> Vec<u8> {
 ///   2. deposit_leaf = poseidon_hash(secret, amount)
 ///   3. derived_recipient = poseidon_hash(recipient_hash)
 ///   4. token_minimum (from bridge config)
-fn withdraw_get_metadata(data: &[u8]) -> Vec<u8> {
+fn withdraw_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
     use dwow_sdk::crypto::poseidon_hash;
     use dwow_sdk::pasta::pallas;
 
-    let params = match WithdrawParams::decode(data) { Ok(p) => p, Err(_) => return vec![] };
+    let params = match WithdrawParams::decode(data) { Ok(p) => p, Err(_) => return Ok(vec![]) };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
     let nullifier = params.nullifier.inner();
     let recipient_base = match pallas::Base::from_repr(params.recipient_hash).into() {
         Some(b) => b,
-        None => return vec![],
+        None => return Ok(vec![]),
     };
     let derived_recipient = poseidon_hash([recipient_base]);
 
@@ -323,10 +323,10 @@ fn withdraw_get_metadata(data: &[u8]) -> Vec<u8> {
     ));
 
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
+    zk_public_inputs.encode(&mut metadata)?;
     let signature_pubkeys: Vec<pallas::Base> = vec![];
-    signature_pubkeys.encode(&mut metadata).unwrap();
-    metadata
+    signature_pubkeys.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 // ============================================================================
