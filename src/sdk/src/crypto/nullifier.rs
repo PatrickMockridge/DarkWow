@@ -62,7 +62,7 @@ impl Nullifier {
     /// Create a new Nullifier from spending key and coin hash.
     /// `nf = poseidon_hash(secret, coin)`.
     pub fn new(secret: SecretKey, coin_hash: pallas::Base) -> Self {
-        Self(poseidon_hash([secret.inner(), coin_hash]))
+        Self(poseidon_hash([*secret.inner(), coin_hash]))
     }
 
     /// Create a `Nullifier` from 32 bytes. Rejects non-canonical field elements

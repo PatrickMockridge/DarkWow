@@ -197,7 +197,7 @@ impl PrivateIntent {
 
         let nullifier = poseidon_hash([
             pallas::Base::from(INTENT_NULLIFIER_DOMAIN),
-            owner_secret.inner(),
+            *owner_secret.inner(),
             self.namespace,
             self.nonce,
             self.commitment().inner(),

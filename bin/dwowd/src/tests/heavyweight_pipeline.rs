@@ -2709,11 +2709,6 @@ fn test_heavyweight_darkbet_exchange() -> std::result::Result<(), Box<dyn std::e
         let rl = harness.remove_liquidity(pallas::Base::from(1u64), owner_x, owner_y, 100, pallas::Base::from(1u64))?;
         assert!(!rl.call_data.is_empty());
 
-        // --- settle_market ---
-        println!("  Test: settle_market");
-        let sm = harness.settle_market(pallas::Base::from(1u64), 0)?;
-        assert!(!sm.call_data.is_empty());
-
         // Submit remaining calls
         let h_before = chain.height();
         chain.block()?
@@ -2726,10 +2721,6 @@ fn test_heavyweight_darkbet_exchange() -> std::result::Result<(), Box<dyn std::e
             .with_call(cid, &harness, &rm.call_data, vec![rm.proof])?
             .with_call(cid, &harness, &co.call_data, vec![co.proof])?
             .with_call(cid, &harness, &rl.call_data, vec![rl.proof])?
-            .with_fee_collect()?
-            .submit().await?;
-        chain.block()?
-            .with_call(cid, &harness, &sm.call_data, vec![sm.proof])?
             .with_fee_collect()?
             .submit().await?;
         assert!(chain.height() > h_before);
@@ -4342,13 +4333,14 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
         // --- issue_stake (0x01) ---
         println!("  Test: issue_stake");
         use dwow_bearer_bond_contract::client::issue_stake_v1::IssueStakeCallInput;
+        use dwow_sdk::crypto::ContractId;
         let is_input = IssueStakeCallInput {
-            series_token_id: pallas::Base::from(1u64),
-            interest_rate_bps: 500,
-            maturity_block: 1000,
-            bond_amount: 10000,
-            min_coverage_bps: 15000,
-            issuer_pub: pubkey,
+            principal: 10000, maturity_block: 1000, min_claim: 1,
+            issuer_contract: ContractId::from_bytes([1u8;32]).unwrap(),
+            token_id: pallas::Base::from(1u64), staker: pallas::Base::from(2u64),
+            spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
+            coin_blind: pallas::Base::from(3u64),
+            tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
         };
         let is = harness.issue_stake(is_input)?;
         assert!(!is.call_data.is_empty());
@@ -4357,13 +4349,13 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
         println!("  Test: burn_stake");
         use dwow_bearer_bond_contract::client::burn_stake_v1::BurnStakeCallInput;
         let bs_input = BurnStakeCallInput {
-            coin: pallas::Base::from(99u64),
-            value_commit: pallas::Base::from(100u64),
-            token_commit: pallas::Base::from(1u64),
-            merkle_root: pallas::Base::from(2u64),
-            user_data_enc: pallas::Base::zero(),
-            spend_hook: pallas::Base::zero(),
-            signature_public: pallas::Base::from(42u64),
+            principal: 500, token_id: pallas::Base::from(1u64),
+            spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
+            coin_blind: pallas::Base::from(5u64), maturity_block: 1000,
+            leaf_position: 0, merkle_path: vec![],
+            secret: pallas::Base::from(42u64),
+            ephemeral_signature_secret: pallas::Base::from(8u64),
+            tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
         };
         let bs = harness.burn_stake(vec![bs_input])?;
         assert!(!bs.call_data.is_empty());
@@ -4372,19 +4364,21 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
         println!("  Test: transfer_stake");
         use dwow_bearer_bond_contract::client::transfer_stake_v1::{TransferStakeCallInput, TransferStakeCallOutput};
         let ts_input = TransferStakeCallInput {
-            coin: pallas::Base::from(50u64),
-            value_commit: pallas::Base::from(200u64),
-            token_commit: pallas::Base::from(1u64),
-            merkle_root: pallas::Base::from(2u64),
-            user_data_enc: pallas::Base::zero(),
-            spend_hook: pallas::Base::zero(),
-            signature_public: pallas::Base::from(42u64),
+            principal: 500, token_id: pallas::Base::from(1u64),
+            spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
+            coin_blind: pallas::Base::from(5u64), last_claim_block: 10,
+            maturity_block: 1000, leaf_position: 0, merkle_path: vec![],
+            secret: pallas::Base::from(42u64),
+            ephemeral_signature_secret: pallas::Base::from(9u64),
+            issuer_contract: ContractId::from_bytes([1u8;32]).unwrap(),
+            tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
         };
         let ts_output = TransferStakeCallOutput {
-            coin: pallas::Base::from(51u64),
-            value_commit: pallas::Base::from(200u64),
-            token_commit: pallas::Base::from(1u64),
-            spend_hook: pallas::Base::zero(),
+            recipient: pallas::Base::from(10u64), principal: 500,
+            token_id: pallas::Base::from(1u64), spend_hook: pallas::Base::zero(),
+            user_data: pallas::Base::zero(), coin_blind: pallas::Base::from(6u64),
+            last_claim_block: 10, maturity_block: 1000,
+            issuer_contract: ContractId::from_bytes([1u8;32]).unwrap(),
         };
         let ts = harness.transfer_stake(vec![ts_input], vec![ts_output])?;
         assert!(!ts.call_data.is_empty());
@@ -4393,17 +4387,15 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
         println!("  Test: request_interest");
         use dwow_bearer_bond_contract::client::request_interest_v1::RequestInterestCallInput;
         let ri_input = RequestInterestCallInput {
-            coin: pallas::Base::from(99u64),
-            value_commit: pallas::Base::from(100u64),
-            token_commit: pallas::Base::from(1u64),
-            merkle_root: pallas::Base::from(2u64),
-            user_data_enc: pallas::Base::zero(),
-            spend_hook: pallas::Base::zero(),
-            signature_public: pallas::Base::from(42u64),
-            last_claim_block: 10,
-            interest_rate_bps: 500,
-            maturity_block: 1000,
-            current_block: 100,
+            principal: 500, token_id: pallas::Base::from(1u64),
+            spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
+            coin_blind: pallas::Base::from(5u64), last_claim_block: 10,
+            maturity_block: 1000, claim_block: 100, min_claim: 1,
+            leaf_position: 0, merkle_path: vec![],
+            secret: pallas::Base::from(42u64),
+            ephemeral_signature_secret: pallas::Base::from(10u64),
+            payment_key: pallas::Base::from(42u64),
+            tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
         };
         let ri = harness.request_interest(ri_input)?;
         assert!(!ri.call_data.is_empty());
@@ -4412,22 +4404,19 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
         println!("  Test: unstake");
         use dwow_bearer_bond_contract::client::unstake_v1::{UnstakeCallInput, UnstakeCallOutput};
         let us_input = UnstakeCallInput {
-            coin: pallas::Base::from(99u64),
-            value_commit: pallas::Base::from(100u64),
-            token_commit: pallas::Base::from(1u64),
-            merkle_root: pallas::Base::from(2u64),
-            user_data_enc: pallas::Base::zero(),
-            spend_hook: pallas::Base::zero(),
-            signature_public: pallas::Base::from(42u64),
-            principal_amount: 10000,
-            maturity_block: 1000,
+            principal: 500, token_id: pallas::Base::from(1u64),
+            spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
+            coin_blind: pallas::Base::from(5u64), maturity_block: 1000,
+            leaf_position: 0, merkle_path: vec![],
+            secret: pallas::Base::from(42u64),
+            ephemeral_signature_secret: pallas::Base::from(11u64),
             current_block: 1001,
+            payout: 500, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
         };
         let us_output = UnstakeCallOutput {
-            coin: pallas::Base::from(52u64),
-            value_commit: pallas::Base::from(10000u64),
-            token_commit: pallas::Base::from(1u64),
-            spend_hook: pallas::Base::zero(),
+            recipient: pallas::Base::from(10u64), token_id: pallas::Base::from(1u64),
+            spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
+            coin_blind: pallas::Base::from(6u64),
         };
         let us = harness.unstake(us_input, us_output)?;
         assert!(!us.call_data.is_empty());
@@ -4436,22 +4425,19 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
         println!("  Test: emergency_unstake");
         use dwow_bearer_bond_contract::client::emergency_unstake_v1::{EmergencyUnstakeCallInput, EmergencyUnstakeCallOutput};
         let eu_input = EmergencyUnstakeCallInput {
-            coin: pallas::Base::from(99u64),
-            value_commit: pallas::Base::from(100u64),
-            token_commit: pallas::Base::from(1u64),
-            merkle_root: pallas::Base::from(2u64),
-            user_data_enc: pallas::Base::zero(),
-            spend_hook: pallas::Base::zero(),
-            signature_public: pallas::Base::from(42u64),
-            principal_amount: 10000,
-            coverage_ratio_bps: 14000,
-            min_coverage_bps: 15000,
+            principal: 500, token_id: pallas::Base::from(1u64),
+            spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
+            coin_blind: pallas::Base::from(5u64), maturity_block: 1000,
+            leaf_position: 0, merkle_path: vec![],
+            secret: pallas::Base::from(42u64),
+            ephemeral_signature_secret: pallas::Base::from(12u64),
+            coverage_report: CoverageReport { series_token_id: pallas::Base::from(1u64), total_outstanding: 10000, total_interest_obligation: 500, reserve_amount: 20000, coverage_ratio_bps: 19000, report_block: 1 },
+            tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
         };
         let eu_output = EmergencyUnstakeCallOutput {
-            coin: pallas::Base::from(53u64),
-            value_commit: pallas::Base::from(10000u64),
-            token_commit: pallas::Base::from(1u64),
-            spend_hook: pallas::Base::zero(),
+            recipient: pallas::Base::from(10u64), token_id: pallas::Base::from(1u64),
+            spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
+            coin_blind: pallas::Base::from(6u64),
         };
         let eu = harness.emergency_unstake(eu_input, eu_output)?;
         assert!(!eu.call_data.is_empty());
@@ -4460,10 +4446,11 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
         println!("  Test: pay_interest");
         use dwow_bearer_bond_contract::client::pay_interest_v1::PayInterestCallInput;
         let pi_input = PayInterestCallInput {
-            series_token_id: pallas::Base::from(1u64),
-            recipient_pub: pubkey,
-            interest_amount: 500,
-            claim_block: 100,
+            bond_token_commit: pallas::Base::from(1u64), claim_block: 100,
+            interest_amount: 500, token_id: pallas::Base::from(1u64),
+            payment_key: pallas::Base::from(42u64), spend_hook: pallas::Base::zero(),
+            user_data: pallas::Base::zero(), coin_blind: pallas::Base::from(7u64),
+            tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
         };
         let pi = harness.pay_interest(pi_input)?;
         assert!(!pi.call_data.is_empty());

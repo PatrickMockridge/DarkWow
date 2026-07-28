@@ -159,7 +159,7 @@ impl Hashable for MerkleNode {
                         .chain(left.inner().to_le_bits().iter().by_vals().take(L_ORCHARD_MERKLE))
                         .chain(right.inner().to_le_bits().iter().by_vals().take(L_ORCHARD_MERKLE)),
                 )
-                .unwrap_or(pallas::Base::zero()),
+                .expect("MerkleCRH Sinsemilla hash failure — input length or domain overflow"),
         )
     }
 

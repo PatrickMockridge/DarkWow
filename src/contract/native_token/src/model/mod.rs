@@ -403,6 +403,9 @@ pub struct FeeParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
+impl dwow_serial::Encodable for FeeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for FeeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl FeeParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let input_bytes = self.input.encode();
@@ -483,6 +486,9 @@ pub struct PoWRewardParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
+impl dwow_serial::Encodable for PoWRewardParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for PoWRewardParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl PoWRewardParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let input_bytes = self.input.encode();
@@ -559,6 +565,9 @@ pub struct TransferParamsV1 {
     /// Transaction nonce: unique per transaction
     pub tx_nonce: pallas::Base,
 }
+
+impl dwow_serial::Encodable for TransferParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for TransferParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl TransferParamsV1 {
     pub fn encode(&self) -> Vec<u8> {

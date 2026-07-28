@@ -93,9 +93,12 @@ impl Drop for SecretKey {
 }
 
 impl SecretKey {
-    /// Get the inner object wrapped by `SecretKey`
-    pub fn inner(&self) -> pallas::Base {
-        self.0
+    /// Get a reference to the inner field element.
+    /// Returns a reference (not a copy) — key material SHALL NOT be
+    /// implicitly duplicated. Callers that need an owned value must
+    /// explicitly dereference or clone.
+    pub fn inner(&self) -> &pallas::Base {
+        &self.0
     }
 
     /// Generate a new `SecretKey` given a source of randomness
@@ -190,7 +193,7 @@ impl PublicKey {
 
     /// Derive a new `PublicKey` object given a `SecretKey`
     pub fn from_secret(s: SecretKey) -> Self {
-        let p = NullifierK.generator() * fp_mod_fv(s.inner());
+        let p = NullifierK.generator() * fp_mod_fv(*s.inner());
         Self(p)
     }
 

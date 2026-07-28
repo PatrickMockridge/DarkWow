@@ -219,6 +219,9 @@ pub struct InitializeParams {
     pub promissory_note_contract_id: ContractId,
 }
 
+impl dwow_serial::Encodable for InitializeParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for InitializeParams { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl InitializeParams {
     /// Encode to canonical bytes (ρ-calculus: quote).
     pub fn encode(&self) -> Vec<u8> {
