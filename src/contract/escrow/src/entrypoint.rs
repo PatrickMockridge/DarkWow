@@ -146,23 +146,23 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         EscrowFunction::CreateEscrowV1 => {
-            let params: CreateEscrowParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CreateEscrowParamsV1::decode(&self_.data[1..])?;
             escrow_create_get_metadata_v1(cid, call_idx, calls, params)?
         }
         EscrowFunction::FundV1 => {
-            let params: FundEscrowParamsV1 = deserialize(&self_.data[1..])?;
+            let params = FundEscrowParamsV1::decode(&self_.data[1..])?;
             escrow_fund_get_metadata_v1(cid, call_idx, calls, params)?
         }
         EscrowFunction::ClaimV1 => {
-            let params: ClaimEscrowParamsV1 = deserialize(&self_.data[1..])?;
+            let params = ClaimEscrowParamsV1::decode(&self_.data[1..])?;
             escrow_claim_get_metadata_v1(cid, call_idx, calls, params)?
         }
         EscrowFunction::RefundV1 => {
-            let params: RefundEscrowParamsV1 = deserialize(&self_.data[1..])?;
+            let params = RefundEscrowParamsV1::decode(&self_.data[1..])?;
             escrow_refund_get_metadata_v1(cid, call_idx, calls, params)?
         }
         EscrowFunction::CancelV1 => {
-            let params: CancelEscrowParamsV1 = deserialize(&self_.data[1..])?;
+            let params = CancelEscrowParamsV1::decode(&self_.data[1..])?;
             escrow_cancel_get_metadata_v1(cid, call_idx, calls, params)?
         }
         EscrowFunction::InitializeV1 => vec![],
@@ -354,27 +354,27 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         EscrowFunction::CreateEscrowV1 => {
-            let params: CreateEscrowParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params = CreateEscrowParamsV1::decode(&self_.data.data[1..])?;
             let update = escrow_create_process_instruction_v1(cid, call_idx, calls, params)?;
             let _ = wasm::util::set_return_data(&update);
         }
         EscrowFunction::FundV1 => {
-            let params: FundEscrowParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params = FundEscrowParamsV1::decode(&self_.data.data[1..])?;
             let update = escrow_fund_process_instruction_v1(cid, call_idx, calls, params)?;
             let _ = wasm::util::set_return_data(&update);
         }
         EscrowFunction::ClaimV1 => {
-            let params: ClaimEscrowParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params = ClaimEscrowParamsV1::decode(&self_.data.data[1..])?;
             let update = escrow_claim_process_instruction_v1(cid, call_idx, calls, params)?;
             let _ = wasm::util::set_return_data(&update);
         }
         EscrowFunction::RefundV1 => {
-            let params: RefundEscrowParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params = RefundEscrowParamsV1::decode(&self_.data.data[1..])?;
             let update = escrow_refund_process_instruction_v1(cid, call_idx, calls, params)?;
             let _ = wasm::util::set_return_data(&update);
         }
         EscrowFunction::CancelV1 => {
-            let params: CancelEscrowParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params = CancelEscrowParamsV1::decode(&self_.data.data[1..])?;
             let update = escrow_cancel_process_instruction_v1(cid, call_idx, calls, params)?;
             let _ = wasm::util::set_return_data(&update);
         }
