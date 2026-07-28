@@ -230,9 +230,10 @@ crate::impl_p2p_message!(
         sleep_step: 500,
         expiry_time: NanoTimestamp::from_secs(5),
     },
-    &[crate::net::barb_trait::BarbId::Spend, crate::net::barb_trait::BarbId::Verify]
+    &[crate::barb::BarbId::Spend, crate::barb::BarbId::Verify]
 );
 
+#[cfg(any(feature = "net-wire", feature = "net-wallet", feature = "net"))]
 crate::impl_boundary_codec!(
     Transaction,
     TX_MAX_BYTES,
