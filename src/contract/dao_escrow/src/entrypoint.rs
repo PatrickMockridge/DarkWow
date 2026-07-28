@@ -179,7 +179,7 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 /// Metadata for InitializeV1 (0x00)
 fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>]) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: model::InitializeParamsV1 = match deserialize(&self_.data[1..]) {
+    let params = match model::InitializeParamsV1::decode(&self_.data[1..]) {
         Ok(p) => p,
         Err(_) => return vec![],
     };
@@ -212,7 +212,7 @@ fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk:
 /// Metadata for PayPremiumV1 (0x02)
 fn pay_premium_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>]) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: model::PayPremiumParamsV1 = match deserialize(&self_.data[1..]) {
+    let params = match model::PayPremiumParamsV1::decode(&self_.data[1..]) {
         Ok(p) => p,
         Err(_) => return vec![],
     };
@@ -253,59 +253,59 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         DaoEscrowFunction::InitializeV1 => {
-            let params: model::InitializeParamsV1 = deserialize(&self_.data[1..])?;
+            let params = model::InitializeParamsV1::decode(&self_.data[1..])?;
             initialize_v1(cid, params)
         }
         DaoEscrowFunction::UpdateV1 => {
-            let params: model::UpdateParamsV1 = deserialize(&self_.data[1..])?;
+            let params = model::UpdateParamsV1::decode(&self_.data[1..])?;
             update_v1(cid, params)
         }
         DaoEscrowFunction::PayPremiumV1 => {
-            let params: model::PayPremiumParamsV1 = deserialize(&self_.data[1..])?;
+            let params = model::PayPremiumParamsV1::decode(&self_.data[1..])?;
             pay_premium_v1(cid, call_idx, calls, params)
         }
         DaoEscrowFunction::WithdrawV1 => {
-            let params: model::WithdrawParamsV1 = deserialize(&self_.data[1..])?;
+            let params = model::WithdrawParamsV1::decode(&self_.data[1..])?;
             withdraw_v1(cid, call_idx, calls, params)
         }
         DaoEscrowFunction::EndowmentWithdrawV1 => {
-            let params: model::EndowmentWithdrawParamsV1 = deserialize(&self_.data[1..])?;
+            let params = model::EndowmentWithdrawParamsV1::decode(&self_.data[1..])?;
             endowment_withdraw_v1(cid, call_idx, calls, params)
         }
         DaoEscrowFunction::TreasurySpendV1 => {
-            let params: model::TreasurySpendParamsV1 = deserialize(&self_.data[1..])?;
+            let params = model::TreasurySpendParamsV1::decode(&self_.data[1..])?;
             treasury_spend_v1(cid, call_idx, calls, params)
         }
         DaoEscrowFunction::EnableDrainProtectionV1 => {
-            let params: model::EnableDrainProtectionParamsV1 = deserialize(&self_.data[1..])?;
+            let params = model::EnableDrainProtectionParamsV1::decode(&self_.data[1..])?;
             enable_drain_protection_v1(cid, params)
         }
         DaoEscrowFunction::ProposeClaimV1 => {
-            let params: model::ProposeClaimParamsV1 = deserialize(&self_.data[1..])?;
+            let params = model::ProposeClaimParamsV1::decode(&self_.data[1..])?;
             propose_claim_v1(cid, call_idx, calls, params)
         }
         DaoEscrowFunction::VoteClaimV1 => {
-            let params: model::VoteClaimParamsV1 = deserialize(&self_.data[1..])?;
+            let params = model::VoteClaimParamsV1::decode(&self_.data[1..])?;
             vote_claim_v1(cid, call_idx, calls, params)
         }
         DaoEscrowFunction::ExecuteClaimV1 => {
-            let params: model::ExecuteClaimParamsV1 = deserialize(&self_.data[1..])?;
+            let params = model::ExecuteClaimParamsV1::decode(&self_.data[1..])?;
             execute_claim_v1(cid, call_idx, calls, params)
         }
         DaoEscrowFunction::RegisterCapabilityRequirementV1 => {
-            let params: model::RegisterCapabilityRequirementParamsV1 = deserialize(&self_.data[1..])?;
+            let params = model::RegisterCapabilityRequirementParamsV1::decode(&self_.data[1..])?;
             register_capability_requirement_v1(cid, params)
         }
         DaoEscrowFunction::VerifyMemberCapabilityV1 => {
-            let params: model::VerifyMemberCapabilityParamsV1 = deserialize(&self_.data[1..])?;
+            let params = model::VerifyMemberCapabilityParamsV1::decode(&self_.data[1..])?;
             verify_member_capability_v1(cid, call_idx, calls, params)
         }
         DaoEscrowFunction::ResolveDisputeV1 => {
-            let params: model::ResolveDisputeParamsV1 = deserialize(&self_.data[1..])?;
+            let params = model::ResolveDisputeParamsV1::decode(&self_.data[1..])?;
             resolve_dispute_v1(cid, call_idx, calls, params)
         }
         DaoEscrowFunction::CancelClaimV1 => {
-            let params: model::CancelClaimParamsV1 = deserialize(&self_.data[1..])?;
+            let params = model::CancelClaimParamsV1::decode(&self_.data[1..])?;
             cancel_claim_v1(cid, params)
         }
         DaoEscrowFunction::SetGovernanceConfigV1 | DaoEscrowFunction::SetGovernanceActiveV1 => {
@@ -313,7 +313,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             Ok(())
         }
         DaoEscrowFunction::DeactivateCapabilityRequirementV1 => {
-            let params: model::DeactivateCapabilityRequirementParamsV1 = deserialize(&self_.data[1..])?;
+            let params = model::DeactivateCapabilityRequirementParamsV1::decode(&self_.data[1..])?;
             deactivate_capability_requirement_v1(cid, params)
         }
     }
@@ -1088,7 +1088,7 @@ fn propose_claim_get_metadata(
     calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>],
 ) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: model::ProposeClaimParamsV1 = match deserialize(&self_.data[1..]) {
+    let params = match model::ProposeClaimParamsV1::decode(&self_.data[1..]) {
         Ok(p) => p,
         Err(_) => return vec![],
     };
@@ -1119,7 +1119,7 @@ fn vote_claim_get_metadata(
     calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>],
 ) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: model::VoteClaimParamsV1 = match deserialize(&self_.data[1..]) {
+    let params = match model::VoteClaimParamsV1::decode(&self_.data[1..]) {
         Ok(p) => p,
         Err(_) => return vec![],
     };
@@ -1149,7 +1149,7 @@ fn verify_member_cap_get_metadata(
     calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>],
 ) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: model::VerifyMemberCapabilityParamsV1 = match deserialize(&self_.data[1..]) {
+    let params = match model::VerifyMemberCapabilityParamsV1::decode(&self_.data[1..]) {
         Ok(p) => p,
         Err(_) => return vec![],
     };
@@ -1178,7 +1178,7 @@ fn resolve_dispute_get_metadata(
     calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>],
 ) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
-    let params: model::ResolveDisputeParamsV1 = match deserialize(&self_.data[1..]) {
+    let params = match model::ResolveDisputeParamsV1::decode(&self_.data[1..]) {
         Ok(p) => p,
         Err(_) => return vec![],
     };
