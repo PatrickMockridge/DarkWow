@@ -123,7 +123,7 @@ impl RouletteHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(InitializeResult { call_data })
     }
@@ -172,7 +172,7 @@ impl RouletteHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(PlaceBetResult { call_data, bet_id: public_inputs.bet_id, nullifier: public_inputs.nullifier, proof })
     }
@@ -209,7 +209,7 @@ impl RouletteHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(SpinWheelResult { call_data, proof })
     }
@@ -238,7 +238,7 @@ impl RouletteHarness {
         )?;
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(SettleBetsResult { call_data, proof })
     }
@@ -273,7 +273,7 @@ impl RouletteHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(HouseCloseResult { call_data, proof })
     }

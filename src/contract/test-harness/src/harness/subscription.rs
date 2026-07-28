@@ -220,7 +220,7 @@ impl SubscriptionHarness {
         };
 
         let mut call_data = vec![0x01];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(SubscribeResult { call_data, proof, public_inputs })
     }
@@ -286,7 +286,7 @@ impl SubscriptionHarness {
         };
 
         let mut call_data = vec![0x04];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(VerifyAccessResult { call_data, proof, public_inputs })
     }
@@ -330,7 +330,7 @@ impl SubscriptionHarness {
         };
 
         let mut call_data = vec![0x06];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(UpdateUsageResult { call_data, proof, public_inputs })
     }
@@ -358,7 +358,7 @@ impl SubscriptionHarness {
         };
 
         let mut call_data = vec![0x02];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(CancelResult { call_data, proof })
     }
@@ -388,7 +388,7 @@ impl SubscriptionHarness {
         };
 
         let mut call_data = vec![0x03];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(RenewResult { call_data, proof })
     }

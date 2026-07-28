@@ -112,7 +112,7 @@ impl OtcSwapHarness {
         };
 
         let mut call_data = vec![0x00];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(CreateSwapResult { call_data, proof, swap_id: public_inputs.commitment })
     }
@@ -143,7 +143,7 @@ impl OtcSwapHarness {
         };
 
         let mut call_data = vec![0x01];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(FundSwapResult { call_data, proof })
     }
@@ -172,7 +172,7 @@ impl OtcSwapHarness {
         };
 
         let mut call_data = vec![0x02];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(ExecuteSwapResult { call_data, proof })
     }
@@ -203,7 +203,7 @@ impl OtcSwapHarness {
         };
 
         let mut call_data = vec![0x03];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(CancelSwapResult { call_data, proof })
     }

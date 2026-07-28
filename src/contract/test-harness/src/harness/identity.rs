@@ -176,7 +176,7 @@ impl IdentityHarness {
         // Build InitializeParams
         let params = InitializeParams { version: 1 };
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(InitializeResult { call_data })
     }
@@ -232,7 +232,7 @@ impl IdentityHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(IssueCredentialResult { call_data, public_inputs, proof })
     }
@@ -275,7 +275,7 @@ impl IdentityHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(CreateClaimResult { call_data, public_inputs, proof })
     }
@@ -322,7 +322,7 @@ impl IdentityHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(CreateClaimL1Result { call_data, public_inputs, proof })
     }
@@ -367,7 +367,7 @@ impl IdentityHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(CreateClaimL1V2Result { call_data, public_inputs, proof })
     }
@@ -415,7 +415,7 @@ impl IdentityHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(CreateClaimMultiResult { call_data, public_inputs, proof })
     }
@@ -461,7 +461,7 @@ impl IdentityHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(CreateClaimRatioResult { call_data, public_inputs, proof })
     }
@@ -503,7 +503,7 @@ impl IdentityHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(CreateClaimDagHarnessResult { call_data, public_inputs, proof })
     }
@@ -556,7 +556,7 @@ impl IdentityHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(VerifyCapabilityResult { call_data, public_inputs, proof })
     }
@@ -579,7 +579,7 @@ impl IdentityHarness {
             fee: 0,
         };
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
         Ok(RegisterCapabilityHarnessResult { call_data })
     }
 
@@ -599,7 +599,7 @@ impl IdentityHarness {
             fee: 0,
         };
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
         Ok(IssueCapabilityHarnessResult { call_data })
     }
 
@@ -620,7 +620,7 @@ impl IdentityHarness {
             fee: 0,
         };
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
         Ok(RevokeCapabilityHarnessResult { call_data })
     }
 }

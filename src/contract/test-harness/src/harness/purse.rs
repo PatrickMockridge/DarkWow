@@ -119,7 +119,7 @@ impl PurseHarness {
             tx_binding, tx_nonce,
         };
         let mut call_data = vec![0x01u8];
-        params.encode(&mut call_data).map_err(|e| dwow_core::Error::Custom(format!("encode: {:?}", e)))?;
+        call_data.extend_from_slice(&params.encode());
         Ok(DepositPurseResult { call_data, proof })
     }
 
@@ -184,7 +184,7 @@ impl PurseHarness {
             tx_binding, tx_nonce,
         };
         let mut call_data = vec![0x02u8];
-        params.encode(&mut call_data).map_err(|e| dwow_core::Error::Custom(format!("encode: {:?}", e)))?;
+        call_data.extend_from_slice(&params.encode());
         Ok(WithdrawPurseResult { call_data, proof })
     }
 
@@ -240,7 +240,7 @@ impl PurseHarness {
             tx_binding, tx_nonce,
         };
         let mut call_data = vec![0x03u8];
-        params.encode(&mut call_data).map_err(|e| dwow_core::Error::Custom(format!("encode: {:?}", e)))?;
+        call_data.extend_from_slice(&params.encode());
         Ok(BalancePurseResult { call_data, proof })
     }
 }

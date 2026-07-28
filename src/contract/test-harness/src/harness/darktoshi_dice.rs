@@ -198,7 +198,7 @@ impl DarkToshiDiceHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(CommitBetResult { call_data, public_inputs, proof })
     }
@@ -212,7 +212,7 @@ impl DarkToshiDiceHarness {
         let params = RevealRollParamsV1 { bet_id, secret_nonce };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(RevealRollResult { call_data })
     }
@@ -247,7 +247,7 @@ impl DarkToshiDiceHarness {
         let params = SettleBetParamsV1 { bet_id, proof: vec![], roll_hash: pallas::Base::zero() };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(SettleBetResult { call_data, public_inputs, proof })
     }
@@ -282,7 +282,7 @@ impl DarkToshiDiceHarness {
         };
 
         let mut call_data = vec![0x02];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(HouseCloseResult { call_data, public_inputs, proof })
     }

@@ -158,7 +158,7 @@ impl EscrowHarness {
             value,
             token_id,
             timeout,
-            commitment: public_inputs.commitment,
+            commitment: EscrowId(public_inputs.commitment),
             merkle_root: MerkleNode::new(pallas::Base::zero()),
             instance_seed,
         };
@@ -170,7 +170,7 @@ impl EscrowHarness {
 
         // Encode call data (function_id will be added by pipeline.exec())
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(CreateEscrowResult { call_data, proof, public_inputs })
     }
@@ -207,7 +207,7 @@ impl EscrowHarness {
 
         // Build FundEscrowParamsV1
         let params = FundEscrowParamsV1 {
-            escrow_id,
+            escrow_id: EscrowId(escrow_id),
             value_commit,
             merkle_proof: vec![],
             merkle_root: MerkleNode::new(public_inputs.merkle_root),
@@ -215,7 +215,7 @@ impl EscrowHarness {
 
         // Encode call data (function_id will be added by pipeline.exec())
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(FundEscrowResult { call_data, proof, public_inputs })
     }
@@ -244,7 +244,7 @@ impl EscrowHarness {
 
         // Build ClaimEscrowParamsV1
         let params = ClaimEscrowParamsV1 {
-            escrow_id,
+            escrow_id: EscrowId(escrow_id),
             seller_secret,
             spent_nullifier: public_inputs.spent_nullifier,
             recipient_pubkey,
@@ -252,7 +252,7 @@ impl EscrowHarness {
 
         // Encode call data (function_id will be added by pipeline.exec())
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(ClaimEscrowResult { call_data, proof, public_inputs })
     }
@@ -287,7 +287,7 @@ impl EscrowHarness {
 
         // Build RefundEscrowParamsV1
         let params = RefundEscrowParamsV1 {
-            escrow_id,
+            escrow_id: EscrowId(escrow_id),
             buyer_secret,
             spent_nullifier: public_inputs.spent_nullifier,
             current_block,
@@ -297,7 +297,7 @@ impl EscrowHarness {
 
         // Encode call data (function_id will be added by pipeline.exec())
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(RefundEscrowResult { call_data, proof, public_inputs })
     }

@@ -135,7 +135,7 @@ impl InsuranceMarketHarness {
         )?;
 
         let mut call_data = vec![0x09];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(UnderwriteResult { call_data, proof, public_inputs })
     }
@@ -156,7 +156,7 @@ impl InsuranceMarketHarness {
         )?;
 
         let mut call_data = vec![0x0a];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(PurchaseCoverageResult { call_data, proof, public_inputs })
     }
@@ -171,7 +171,7 @@ impl InsuranceMarketHarness {
         let proof = Proof::create(&self.purchase_coverage_v1_pk, &[c], &[], rand::rngs::OsRng)
             .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
         let mut call_data = vec![0x04];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
         Ok(PurchaseCoverageV1Result { call_data, proof })
     }
 
@@ -185,7 +185,7 @@ impl InsuranceMarketHarness {
         let proof = Proof::create(&self.purchase_coverage_dag_pk, &[c], &[], rand::rngs::OsRng)
             .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
         let mut call_data = vec![0x0b];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
         Ok(PurchaseCoverageDagResult { call_data, proof })
     }
 }

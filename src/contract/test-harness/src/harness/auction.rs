@@ -166,7 +166,7 @@ impl AuctionHarness {
         };
 
         let mut call_data = vec![0x00];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(CreateAuctionResult { call_data, auction_id: public_inputs.auction_id, proof, public_inputs })
     }
@@ -212,7 +212,7 @@ impl AuctionHarness {
         };
 
         let mut call_data = vec![0x01];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(PlaceBidResult { call_data, bid_id: public_inputs.bid_id, proof, public_inputs })
     }
@@ -250,7 +250,7 @@ impl AuctionHarness {
         };
 
         let mut call_data = vec![0x02];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(CloseAuctionResult { call_data, proof, public_inputs })
     }
@@ -284,7 +284,7 @@ impl AuctionHarness {
         };
 
         let mut call_data = vec![0x03];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(ClaimWinningsResult { call_data, proof, public_inputs })
     }
@@ -319,7 +319,7 @@ impl AuctionHarness {
         };
 
         let mut call_data = vec![0x04];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(SettleAuctionResult { call_data, proof, public_inputs })
     }
@@ -351,7 +351,7 @@ impl AuctionHarness {
         };
 
         let mut call_data = vec![0x05];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(RefundBidResult { call_data, proof, public_inputs })
     }

@@ -141,7 +141,7 @@ impl BettingStakeHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(InitializeResult { call_data, proof })
     }
@@ -185,7 +185,7 @@ impl BettingStakeHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(StakeResult { call_data, proof })
     }
@@ -228,7 +228,7 @@ impl BettingStakeHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(UnstakeResult { call_data, proof })
     }
@@ -266,7 +266,7 @@ impl BettingStakeHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(ClaimEarningsResult { call_data, proof })
     }
@@ -303,7 +303,7 @@ impl BettingStakeHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(UpdateRiskResult { call_data, proof })
     }

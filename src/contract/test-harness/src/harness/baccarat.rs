@@ -188,7 +188,7 @@ impl BaccaratHarness {
 
         // Encode call data (function_id will be added by pipeline.exec())
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(CommitBetResult { call_data, proof, public_inputs, bet_id })
     }
@@ -219,7 +219,7 @@ impl BaccaratHarness {
         let params = DrawCardsParamsV1 { bet_id, secret_nonce };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(DrawCardsResult { call_data, proof, public_inputs, bet_id })
     }
@@ -255,7 +255,7 @@ impl BaccaratHarness {
         let params = SettleBetParamsV1 { bet_id };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(SettleBetResult { call_data, proof, public_inputs })
     }
@@ -293,7 +293,7 @@ impl BaccaratHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(HouseCloseResult { call_data, proof, public_inputs, bet_id })
     }

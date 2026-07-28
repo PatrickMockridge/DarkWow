@@ -90,7 +90,7 @@ fn test_pow_reward_call_builder() -> Result<(), Box<dyn std::error::Error>> {
 
     // Verify the call data can be serialized/deserialized correctly
     let mut data = vec![NativeTokenFunction::PoWRewardV1 as u8];
-    debris.params.encode(&mut data)?;
+    data.extend_from_slice(&debris.params.encode());
 
     info!(target: "test_harness::native_token", "PoWRewardCallBuilder test PASSED");
     Ok(())
@@ -139,7 +139,7 @@ fn test_burn_call_builder() -> Result<(), Box<dyn std::error::Error>> {
 
     // Verify the call data can be serialized/deserialized correctly
     let mut data = vec![NativeTokenFunction::BurnV1 as u8];
-    debris.params.encode(&mut data)?;
+    data.extend_from_slice(&debris.params.encode());
 
     info!(target: "test_harness::native_token", "BurnCallBuilder test PASSED");
     Ok(())

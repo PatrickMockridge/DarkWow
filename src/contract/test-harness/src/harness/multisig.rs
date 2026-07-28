@@ -82,7 +82,7 @@ impl MultiSigHarness {
             proof: proof_bytes, tx_binding, tx_nonce,
         };
         let mut call_data = vec![0x01u8];
-        params.encode(&mut call_data).map_err(|e| dwow_core::Error::Custom(format!("encode: {:?}", e)))?;
+        call_data.extend_from_slice(&params.encode());
         Ok(CreateGroupResult { call_data, proof, group_id })
     }
 
@@ -113,7 +113,7 @@ impl MultiSigHarness {
             proof: proof_bytes, tx_binding, tx_nonce,
         };
         let mut call_data = vec![0x02u8];
-        params.encode(&mut call_data).map_err(|e| dwow_core::Error::Custom(format!("encode: {:?}", e)))?;
+        call_data.extend_from_slice(&params.encode());
         Ok(SignResult { call_data, proof })
     }
 
@@ -142,7 +142,7 @@ impl MultiSigHarness {
             message_hash, proof: proof_bytes, tx_binding, tx_nonce,
         };
         let mut call_data = vec![0x03u8];
-        params.encode(&mut call_data).map_err(|e| dwow_core::Error::Custom(format!("encode: {:?}", e)))?;
+        call_data.extend_from_slice(&params.encode());
         Ok(FinalizeResult { call_data, proof })
     }
 }

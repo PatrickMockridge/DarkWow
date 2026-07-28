@@ -132,7 +132,7 @@ impl SlotHarness {
             instance_seed: [0u8; 32],
         };
         let mut call_data = vec![0x01];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(CommitSpinResult { call_data, proof, public_inputs })
     }
@@ -150,7 +150,7 @@ impl SlotHarness {
 
         let params = RevealSpinParamsV1 { spin_id, secret_nonce };
         let mut call_data = vec![0x02];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(RevealSpinResult { call_data, proof, public_inputs })
     }

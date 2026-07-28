@@ -138,7 +138,7 @@ impl PoolStakeHarness {
             instance_seed: [0u8; 32],
         };
         let mut call_data = vec![0x00];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         let pool_id = public_inputs.derived_pool_id;
         Ok(CreatePoolResult { call_data, proof, public_inputs, pool_id })
@@ -177,7 +177,7 @@ impl PoolStakeHarness {
             instance_seed: [0u8; 32],
         };
         let mut call_data = vec![0x01];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         let stake_id = public_inputs.derived_member_id;
         Ok(JoinPoolResult { call_data, proof, public_inputs, stake_id })
@@ -190,7 +190,7 @@ impl PoolStakeHarness {
     ) -> Result<LeavePoolResult, Box<dyn std::error::Error>> {
         let params = LeavePoolParamsV1 { stake_id };
         let mut call_data = vec![0x02];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(LeavePoolResult { call_data })
     }
@@ -226,7 +226,7 @@ impl PoolStakeHarness {
             derived_allocation_id: public_inputs.derived_allocation_id,
         };
         let mut call_data = vec![0x03];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         let allocation_id = public_inputs.derived_allocation_id;
         Ok(AllocateCoverageResult { call_data, proof, public_inputs, allocation_id })
@@ -259,7 +259,7 @@ impl PoolStakeHarness {
             derived_slash_id: public_inputs.derived_slash_id,
         };
         let mut call_data = vec![0x05];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         let slash_id = public_inputs.derived_slash_id;
         Ok(SlashCoverageResult { call_data, proof, public_inputs, slash_id })

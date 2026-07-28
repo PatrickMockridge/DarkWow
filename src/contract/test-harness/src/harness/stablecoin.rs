@@ -232,7 +232,7 @@ impl StablecoinHarness {
         };
 
         let mut call_data = vec![0x01]; // OpenPositionV1
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(OpenPositionResult {
             call_data,
@@ -284,7 +284,7 @@ impl StablecoinHarness {
         };
 
         let mut call_data = vec![0x04]; // MintStableV1
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(MintStableResult {
             call_data,
@@ -338,7 +338,7 @@ impl StablecoinHarness {
         };
 
         let mut call_data = vec![0x06]; // LiquidateV1
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(LiquidateResult {
             call_data,
@@ -392,7 +392,7 @@ impl StablecoinHarness {
         };
 
         let mut call_data = vec![0x08]; // GovernanceReportV1
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(GovernanceReportResult {
             call_data,
@@ -439,7 +439,7 @@ impl StablecoinHarness {
         };
 
         let mut call_data = vec![0x09]; // AccrueInterestV1
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(AccrueInterestResult {
             call_data,
@@ -468,7 +468,7 @@ impl StablecoinHarness {
         params.deployer_auth = public_inputs.deployer_auth;
 
         let mut call_data = vec![0x00];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(InitializeResult { call_data, proof })
     }
@@ -484,7 +484,7 @@ impl StablecoinHarness {
             .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
 
         let mut call_data = vec![0x02];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(AddCollateralResult { call_data, proof })
     }
@@ -500,7 +500,7 @@ impl StablecoinHarness {
             .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
 
         let mut call_data = vec![0x03];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(RemoveCollateralResult { call_data, proof })
     }
@@ -516,7 +516,7 @@ impl StablecoinHarness {
             .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
 
         let mut call_data = vec![0x05];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(RepayStableResult { call_data, proof })
     }
@@ -532,7 +532,7 @@ impl StablecoinHarness {
             .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
 
         let mut call_data = vec![0x07];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(UpdateConfigResult { call_data, proof })
     }

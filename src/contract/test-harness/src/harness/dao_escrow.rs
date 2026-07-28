@@ -178,7 +178,7 @@ impl DaoEscrowHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(InitializeResult { call_data, public_inputs, proof })
     }
@@ -238,7 +238,7 @@ impl DaoEscrowHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(PayPremiumResult { call_data, public_inputs, proof })
     }
@@ -260,7 +260,7 @@ impl DaoEscrowHarness {
             instance_seed: [0u8; 32],
         };
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
         Ok(call_data)
     }
 
@@ -278,7 +278,7 @@ impl DaoEscrowHarness {
             capability_proof: None,
         };
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
         Ok(WithdrawResult { call_data })
     }
 
@@ -299,7 +299,7 @@ impl DaoEscrowHarness {
             proposal_id: None,
         };
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
         Ok(EndowmentWithdrawResult { call_data })
     }
 
@@ -319,7 +319,7 @@ impl DaoEscrowHarness {
             capability_proof: None,
         };
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
         Ok(TreasurySpendResult { call_data })
     }
 
@@ -372,7 +372,7 @@ impl DaoEscrowHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(ProposeClaimResult { call_data, public_inputs, proof })
     }
@@ -417,7 +417,7 @@ impl DaoEscrowHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(VoteClaimHarnessResult { call_data, public_inputs, proof })
     }
@@ -450,7 +450,7 @@ impl DaoEscrowHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(VerifyMemberCapabilityResult { call_data, public_inputs, proof })
     }
@@ -503,7 +503,7 @@ impl DaoEscrowHarness {
         };
 
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(ResolveDisputeHarnessResult { call_data, public_inputs, proof })
     }
@@ -527,7 +527,7 @@ impl DaoEscrowHarness {
             value,
         };
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
         Ok(ExecuteClaimResult { call_data })
     }
 
@@ -546,7 +546,7 @@ impl DaoEscrowHarness {
             identity_contract_bulla,
         };
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
         Ok(RegisterCapabilityRequirementResult { call_data })
     }
 
@@ -563,7 +563,7 @@ impl DaoEscrowHarness {
             proposer_pubkey,
         };
         let mut call_data = vec![];
-        params.encode(&mut call_data)?;
+        call_data.extend_from_slice(&params.encode());
         Ok(CancelClaimResult { call_data })
     }
 }

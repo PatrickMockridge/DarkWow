@@ -143,7 +143,7 @@ impl BoxHarness {
             tx_nonce,
         };
         let mut call_data = vec![0x01u8]; // PutV1 function selector
-        params.encode(&mut call_data).map_err(|e| dwow_core::Error::Custom(format!("encode: {:?}", e)))?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(BoxPutResult { call_data, proof })
     }
@@ -208,7 +208,7 @@ impl BoxHarness {
             tx_nonce,
         };
         let mut call_data = vec![0x02u8]; // TakeV1 function selector
-        params.encode(&mut call_data).map_err(|e| dwow_core::Error::Custom(format!("encode: {:?}", e)))?;
+        call_data.extend_from_slice(&params.encode());
 
         Ok(BoxTakeResult { call_data, proof })
     }
