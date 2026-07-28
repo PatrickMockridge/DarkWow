@@ -810,6 +810,56 @@ Reference: `src/contract/native_token/src/entrypoint/mod.rs` (error patterns
 throughout), `type-system.md` §4 (error types as barbs), §4.2 (error propagation
 audit requirements).
 
+### 5.6 No `.unwrap()` in Contract Entrypoint Code
+
+`.unwrap()` SHALL NOT appear in contract entrypoint code. This includes metadata
+functions, exec handlers, apply handlers, and state accessors. Every `Result`
+SHALL be propagated via `?` to a context that returns `ContractResult` or
+`Result<_, ContractError>`.
+
+**Rationale — genesis contracts are templates.** Genesis contract code is copied
+by every new contract developer. A `.unwrap()` that is locally safe (e.g.,
+`Vec::write` is infallible on a `Vec<u8>` writer) becomes a production hazard
+when copied into a context where it is NOT safe (e.g., a network writer, a
+file descriptor, a fixed-size buffer). The copier trusts the genesis pattern
+and does not question why `.unwrap()` was used. Type-enforced error propagation
+protects downstream copiers from themselves — the compiler rejects misuse, not
+the code reviewer.
+
+**Exception — locally provable invariants.** `try_into().unwrap()` on a slice
+whose length was validated on the immediately preceding line is permitted
+(§9.1 I2). The validation is visible and the invariant is locally provable.
+Similarly, `.coordinates().unwrap()` on a `CtOption` whose `.is_none()` was
+checked on the preceding line is permitted. The rule targets *invisible*
+infallibility — `.encode(&mut Vec<u8>).unwrap()` where `Vec::write` never fails
+but the caller cannot see that from the call site.
+
+**The correct pattern:**
+
+```rust
+// BEFORE (violation): hidden infallibility — Vec::write never fails
+fn helper(params: &[u8]) -> Vec<u8> {
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata).unwrap();  // panics on non-Vec writer
+    metadata
+}
+
+// AFTER (compliant): type-enforced error propagation
+fn helper(params: &[u8]) -> Result<Vec<u8>, ContractError> {
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;  // compiler enforces error handling
+    Ok(metadata)
+}
+```
+
+**Design principle — write code that is safe when copied verbatim.** If a
+pattern requires the copier to understand WHY it's safe before using it, the
+pattern is wrong. Genesis contracts SHALL use only patterns that are safe
+to copy blindly into any context. The `?` operator on `Result` is universally
+safe — it either propagates the error or the compiler rejects the call site.
+`.unwrap()` is never universally safe — its safety depends on context that
+the copier may not understand.
+
 ## 6. Witness Binding Types
 
 ### 6.1 The Witness Binding Gap
@@ -1202,25 +1252,58 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 
 ### 11.5 Metadata Dispatch
 
+Metadata helper functions SHALL return `Result<Vec<u8>, ContractError>` and use
+`?` propagation — never `.unwrap()`. The main `get_metadata` dispatch SHALL
+propagate errors from helpers via `?`. This is the pattern used by the canonical
+genesis contracts: Purse, Box, Identity, Oracle, Attestation, and Deployooor.
+
 ```rust
-fn get_metadata(cid: ContractId, ix: &[u8]) -> Vec<u8> {
+/// Per-function metadata helper — returns encoded ZK public inputs + signatures.
+fn transfer_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
+    let params = TransferParamsV1::decode(params).map_err(|_| {
+        // Empty metadata on decode failure — host will reject (no proofs to verify).
+        return ContractError::IoError("transfer_metadata: decode failed".into());
+    })?;
+
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    let signature_pubkeys: Vec<pallas::Base> = vec![]; // Schnorr signatures prohibited
+
+    // ... populate zk_public_inputs from params ...
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    signature_pubkeys.encode(&mut metadata)?;
+    Ok(metadata)
+}
+
+/// Main metadata dispatch — host entrypoint.
+fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     let func = match ExampleFunction::try_from(ix[0]) {
         Ok(f) => f,
-        Err(_) => return vec![], // unknown function → empty metadata → host rejection
+        Err(_) => {
+            wasm::util::set_return_data(&vec![]);
+            return Ok(()); // unknown function → empty metadata → host rejection
+        }
     };
     let params = &ix[1..];
 
-    let (zk_public_inputs, signature_pubkeys) = match func {
+    let metadata = match func {
         ExampleFunction::TransferV1 => transfer_metadata(cid, params),
         // ...
-    };
+    }?; // ? propagates errors from helpers
 
-    let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    signature_pubkeys.encode(&mut metadata).unwrap();
-    metadata
+    wasm::util::set_return_data(&metadata)
 }
 ```
+
+Key rules:
+- Helper functions return `Result<Vec<u8>, ContractError>`, never bare `Vec<u8>`
+- `.encode(&mut metadata)?` propagates encoding errors — no `.unwrap()`
+- The caller uses `?` on the match expression to propagate helper errors
+- Empty metadata on decode failure SHALL use explicit `return Ok(vec![])` or a
+  typed error — not a silent `.unwrap()` that panics when copied to a non-Vec writer
+- This pattern makes it IMPOSSIBLE to write `.unwrap()` by accident — the compiler
+  requires `?` or explicit handling because the return type is `Result`
 
 ### 11.6 State Accessor
 

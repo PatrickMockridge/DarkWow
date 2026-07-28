@@ -255,7 +255,7 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         PromissoryNoteFunction::RevokeV1 => burn_get_metadata(cid, call_idx, calls),
         PromissoryNoteFunction::TransferV1 => transfer_get_metadata(cid, call_idx, calls),
         PromissoryNoteFunction::OtcSwapV1 => otc_swap_get_metadata(cid, call_idx, calls),
-    };
+    }?;
 
     wasm::util::set_return_data(&metadata)
 }
@@ -269,9 +269,9 @@ fn point_coords(pt: pallas::Point) -> (pallas::Base, pallas::Base) {
 
 /// Metadata for RegisterTypeV1
 /// Circuit instances: token_id, token_auth_parent, coin, value_commit_x, value_commit_y
-fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
+fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx];
-    let params= match TokenMintParamsV1::decode(&self_.data.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+    let params= match TokenMintParamsV1::decode(&self_.data.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<pallas::Base> = vec![];
@@ -293,16 +293,16 @@ fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
     ));
 
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    signature_pubkeys.encode(&mut metadata).unwrap();
-    metadata
+    zk_public_inputs.encode(&mut metadata)?;
+    signature_pubkeys.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// Metadata for IssueV1
 /// Circuit instances: token_root, mint_public, coin, value_commit_x, value_commit_y, token_id, spend_hook
-fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
+fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params= match MintParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+    let params= match MintParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -328,19 +328,19 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
     ));
 
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    signature_pubkeys.encode(&mut metadata).unwrap();
-    metadata
+    zk_public_inputs.encode(&mut metadata)?;
+    signature_pubkeys.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// Metadata for RevokeV1
 /// Circuit instances: nullifier, value_commit_x, value_commit_y, token_commit,
 ///                     merkle_root, user_data_enc, spend_hook, signature_public
-fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
+fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params = match BurnParamsV1::decode(&self_.data[1..]) {
         Ok(p) => p,
-        Err(_) => return vec![],
+        Err(_) => return Ok(vec![]),
     };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -369,18 +369,18 @@ fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
     }
 
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    signature_pubkeys.encode(&mut metadata).unwrap();
-    metadata
+    zk_public_inputs.encode(&mut metadata)?;
+    signature_pubkeys.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// Metadata for TransferV1 (atomic burn + blind output)
 /// Burn instances: nullifier, value_commit_x, value_commit_y, token_commit,
 ///                  merkle_root, user_data_enc, spend_hook, signature_public
 /// BlindOutput instances: coin, value_commit_x, value_commit_y, token_commit, spend_hook
-fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
+fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params= match TransferParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+    let params= match TransferParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -420,9 +420,9 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
     }
 
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    signature_pubkeys.encode(&mut metadata).unwrap();
-    metadata
+    zk_public_inputs.encode(&mut metadata)?;
+    signature_pubkeys.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 // ============================================================================
@@ -927,9 +927,9 @@ fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
 ///                 merkle_root, user_data_enc, spend_hook, signature_public
 /// Redeem instance: coin, value_commit_x, value_commit_y, token_commit, coin_value, spend_hook
 /// The entrypoint sets coin_value = 0; the circuit constrains it as a public input.
-fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
+fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params= match RedeemParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+    let params= match RedeemParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -968,9 +968,9 @@ fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
     ));
 
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    signature_pubkeys.encode(&mut metadata).unwrap();
-    metadata
+    zk_public_inputs.encode(&mut metadata)?;
+    signature_pubkeys.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// RedeemV1 instruction — burns the input coin and creates a zero-value receipt.
@@ -1055,9 +1055,9 @@ fn apply_redeem(cid: ContractId, update: RedeemUpdateV1) -> ContractResult {
 
 /// Metadata for OtcSwapV1 (atomic burn + mint for cross-token swap)
 /// Same proof structure as TransferV1: Burn for inputs, BlindOutput for outputs.
-fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
+fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params= match OtcSwapParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+    let params= match OtcSwapParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -1097,9 +1097,9 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
     }
 
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    signature_pubkeys.encode(&mut metadata).unwrap();
-    metadata
+    zk_public_inputs.encode(&mut metadata)?;
+    signature_pubkeys.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// OtcSwapV1 instruction - atomic token swap between two parties

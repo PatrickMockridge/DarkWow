@@ -4,46 +4,6 @@ use dwow_sdk::{
     pasta::pallas,
 };
 
-impl dwow_serial::Encodable for BoxId {
-    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
-        let bytes = self.to_bytes();
-        w.write_all(&bytes)?;
-        Ok(32)
-    }
-}
-
-impl dwow_serial::Decodable for BoxId {
-    fn decode<D: std::io::Read>(d: &mut D) -> Result<Self, std::io::Error> {
-        let mut buf = [0u8; 32];
-        d.read_exact(&mut buf)?;
-        Self::from_bytes(&buf)
-            .ok_or_else(|| std::io::Error::other("BoxId: invalid field element"))
-    }
-}
-
-#[cfg(feature = "client")]
-#[dwow_serial::async_trait]
-impl dwow_serial::AsyncEncodable for BoxId {
-    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
-        let bytes = self.to_bytes();
-        use dwow_serial::AsyncWriteExt;
-        w.write_slice_async(&bytes).await?;
-        Ok(32)
-    }
-}
-
-#[cfg(feature = "client")]
-#[dwow_serial::async_trait]
-impl dwow_serial::AsyncDecodable for BoxId {
-    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
-        let mut buf = [0u8; 32];
-        use dwow_serial::AsyncReadExt;
-        d.read_slice_async(&mut buf).await?;
-        Self::from_bytes(&buf)
-            .ok_or_else(|| std::io::Error::other("BoxId: invalid field element"))
-    }
-}
-
 /// Box unique identifier — Poseidon hash of creator public key and nonce.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct BoxId(pub pallas::Base);
@@ -59,6 +19,21 @@ impl BoxId {
 
     pub fn from_bytes(bytes: &[u8; 32]) -> Option<Self> {
         pallas::Base::from_repr(*bytes).into_option().map(BoxId)
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        self.to_bytes().to_vec()
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 32 {
+            return Err(ContractError::IoError(format!(
+                "BoxId: expected 32 bytes, got {}",
+                data.len()
+            )));
+        }
+        Self::from_bytes(data.try_into().unwrap())
+            .ok_or_else(|| ContractError::IoError("BoxId: invalid field element".into()))
     }
 }
 

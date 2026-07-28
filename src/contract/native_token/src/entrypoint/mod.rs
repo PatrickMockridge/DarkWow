@@ -232,21 +232,21 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         NativeTokenFunction::SpendV1 => spend_get_metadata(cid, params),
         NativeTokenFunction::PoWRewardV1 => pow_reward_get_metadata(cid, params),
         NativeTokenFunction::FeeCollectV1 => fee_collect_get_metadata(cid, params),
-    };
+    }?;
 
     wasm::util::set_return_data(&metadata)
 }
 
 /// Metadata for FeeV1
-fn fee_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
+fn fee_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
     // FeeV1 call data after the selector: [fee u64 LE (8)][FeeParamsV1] —
     // the SAME layout `fee_v1` (process) and the block balance checker
     // (proof_of_token_balance::process_fee_call) parse.
     if params.len() < 9 {
         msg!("[native_token::fee_get_metadata] Error: Params too short ({} bytes, need >= 9)", params.len());
-        return vec![];
+        return Ok(vec![]);
     }
-    let fee_params = match FeeParamsV1::decode(&params[8..]) { Ok(p) => p, Err(e) => { msg!("[native_token::fee_get_metadata] Error: Failed to decode FeeParamsV1: {:?}", e); return vec![]; } };
+    let fee_params = match FeeParamsV1::decode(&params[8..]) { Ok(p) => p, Err(e) => { msg!("[native_token::fee_get_metadata] Error: Failed to decode FeeParamsV1: {:?}", e); return Ok(vec![]); } };
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -259,13 +259,13 @@ fn fee_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     let input_value_coords = fee_params.input.value_commit.to_affine().coordinates();
     if input_value_coords.is_none().into() {
         msg!("[native_token::fee_get_metadata] Error: Input value commitment is identity (cannot extract coordinates)");
-        return vec![];
+        return Ok(vec![]);
     }
     let input_value_coords = input_value_coords.unwrap();
     let output_value_coords = fee_params.output.value_commit.to_affine().coordinates();
     if output_value_coords.is_none().into() {
         msg!("[native_token::fee_get_metadata] Error: Output value commitment is identity (cannot extract coordinates)");
-        return vec![];
+        return Ok(vec![]);
     }
     let output_value_coords = output_value_coords.unwrap();
     let (sig_x, sig_y) = fee_params.input.signature_public.xy().expect("pk not identity");
@@ -292,15 +292,15 @@ fn fee_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
 
     // Serialize everything gathered and return it
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    signature_pubkeys.encode(&mut metadata).unwrap();
-    metadata
+    zk_public_inputs.encode(&mut metadata)?;
+    signature_pubkeys.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// Metadata for BurnV1
-fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
-    if params.is_empty() { msg!("[native_token::burn_get_metadata] Error: Empty params"); return vec![]; }
-    let bp = match BurnParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode params: {:?}", e); return vec![]; } };
+fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
+    if params.is_empty() { msg!("[native_token::burn_get_metadata] Error: Empty params"); return Ok(vec![]); }
+    let bp = match BurnParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode params: {:?}", e); return Ok(vec![]); } };
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -311,7 +311,7 @@ fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
         let value_coords = input.value_commit.to_affine().coordinates();
         if value_coords.is_none().into() {
             msg!("[native_token] Error: Value commitment is identity (cannot extract coordinates)");
-            return vec![];
+            return Ok(vec![]);
         }
         let value_coords = value_coords.unwrap();
         let (sig_x, sig_y) = input.signature_public.xy().expect("pk not identity");
@@ -335,15 +335,15 @@ fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     }
 
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    signature_pubkeys.encode(&mut metadata).unwrap();
-    metadata
+    zk_public_inputs.encode(&mut metadata)?;
+    signature_pubkeys.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// Metadata for TransferV1
-fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
-    if params.is_empty() { msg!("[native_token::transfer_get_metadata] Error: Empty params"); return vec![]; }
-    let tp = match TransferParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode params: {:?}", e); return vec![]; } };
+fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
+    if params.is_empty() { msg!("[native_token::transfer_get_metadata] Error: Empty params"); return Ok(vec![]); }
+    let tp = match TransferParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode params: {:?}", e); return Ok(vec![]); } };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3). sig_x/sig_y remain in ZK inputs.
@@ -355,7 +355,7 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
         let value_coords = input.value_commit.to_affine().coordinates();
         if value_coords.is_none().into() {
             msg!("[native_token] Error: Value commitment is identity (cannot extract coordinates)");
-            return vec![];
+            return Ok(vec![]);
         }
         let value_coords = value_coords.unwrap();
         zk_public_inputs.push((
@@ -380,7 +380,7 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
         let value_coords = output.value_commit.to_affine().coordinates();
         if value_coords.is_none().into() {
             msg!("[native_token] Error: Value commitment is identity (cannot extract coordinates)");
-            return vec![];
+            return Ok(vec![]);
         }
         let value_coords = value_coords.unwrap();
         // Transfer mints: cumulative supply doesn't advance (only coinbase does).
@@ -406,15 +406,15 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     }
 
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    signature_pubkeys.encode(&mut metadata).unwrap();
-    metadata
+    zk_public_inputs.encode(&mut metadata)?;
+    signature_pubkeys.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 /// Metadata for SpendV1
-fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
-    if params.is_empty() { msg!("[native_token::spend_get_metadata] Error: Empty params"); return vec![]; }
-    let sp = match SpendParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode params: {:?}", e); return vec![]; } };
+fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
+    if params.is_empty() { msg!("[native_token::spend_get_metadata] Error: Empty params"); return Ok(vec![]); }
+    let sp = match SpendParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode params: {:?}", e); return Ok(vec![]); } };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3). sig_x/sig_y remain in ZK inputs.
@@ -423,13 +423,13 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     let input_value_coords = sp.input.value_commit.to_affine().coordinates();
     if input_value_coords.is_none().into() {
         msg!("[native_token] Error: Input value commitment is identity (cannot extract coordinates)");
-        return vec![];
+        return Ok(vec![]);
     }
     let input_value_coords = input_value_coords.unwrap();
     let output_value_coords = sp.output.value_commit.to_affine().coordinates();
     if output_value_coords.is_none().into() {
         msg!("[native_token] Error: Output value commitment is identity (cannot extract coordinates)");
-        return vec![];
+        return Ok(vec![]);
     }
     let output_value_coords = output_value_coords.unwrap();
     let (sig_x, sig_y) = sp.input.signature_public.xy().expect("pk not identity");
@@ -467,9 +467,9 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     ));
 
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    signature_pubkeys.encode(&mut metadata).unwrap();
-    metadata
+    zk_public_inputs.encode(&mut metadata)?;
+    signature_pubkeys.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 // ============================================================================
@@ -836,9 +836,9 @@ fn burn_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 // POW REWARD - Distribute block rewards (CONSENSUS CRITICAL)
 // ============================================================================
 
-fn pow_reward_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
-    if params.is_empty() { msg!("[native_token::pow_reward_get_metadata] Error: Empty params"); return vec![]; }
-    let pr = match PoWRewardParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode params: {:?}", e); return vec![]; } };
+fn pow_reward_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
+    if params.is_empty() { msg!("[native_token::pow_reward_get_metadata] Error: Empty params"); return Ok(vec![]); }
+    let pr = match PoWRewardParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode params: {:?}", e); return Ok(vec![]); } };
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -849,14 +849,14 @@ fn pow_reward_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     let value_coords = pr.output.value_commit.to_affine().coordinates();
     if value_coords.is_none().into() {
         msg!("[native_token] Error: Output value commitment is identity (cannot extract coordinates)");
-        return vec![];
+        return Ok(vec![]);
     }
     let value_coords = value_coords.unwrap();
 
     let cumcom_coords = pr.new_cumulative_commit.to_affine().coordinates();
     if cumcom_coords.is_none().into() {
         msg!("[native_token::pow_reward_get_metadata] Error: Cumulative commitment cannot be identity");
-        return vec![];
+        return Ok(vec![]);
     }
     let cumcom_coords = cumcom_coords.unwrap();
 
@@ -877,9 +877,9 @@ fn pow_reward_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
 
     // Serialize everything gathered and return it
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    signature_pubkeys.encode(&mut metadata).unwrap();
-    metadata
+    zk_public_inputs.encode(&mut metadata)?;
+    signature_pubkeys.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
@@ -1097,15 +1097,15 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 // FEE COLLECT — Forward accumulated fees to miner (CONSENSUS CRITICAL)
 // ============================================================================
 
-fn fee_collect_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
-    if params.is_empty() { msg!("[native_token::fee_collect_get_metadata] Error: Empty params"); return vec![]; }
-    let fc = match FeeCollectParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode params: {:?}", e); return vec![]; } };
+fn fee_collect_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
+    if params.is_empty() { msg!("[native_token::fee_collect_get_metadata] Error: Empty params"); return Ok(vec![]); }
+    let fc = match FeeCollectParamsV1::decode(params) { Ok(p) => p, Err(e) => { msg!("[native_token] Error: Failed to decode params: {:?}", e); return Ok(vec![]); } };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let value_coords = fc.output.value_commit.to_affine().coordinates();
     if value_coords.is_none().into() {
         msg!("[native_token] Error: Output value commitment is identity (cannot extract coordinates)");
-        return vec![];
+        return Ok(vec![]);
     }
     let value_coords = value_coords.unwrap();
 
@@ -1126,11 +1126,11 @@ fn fee_collect_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     ));
 
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
+    zk_public_inputs.encode(&mut metadata)?;
     // FeeCollectV1: no signature public key (miner identity proven via nullifier)
     let empty_sigs: Vec<dwow_sdk::crypto::PublicKey> = vec![];
-    empty_sigs.encode(&mut metadata).unwrap();
-    metadata
+    empty_sigs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
