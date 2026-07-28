@@ -117,7 +117,7 @@ pub fn create_generic_proof(
                 ));
             }
             WitnessSource::Secret => {
-                Value::known(provider.secret().inner())
+                Value::known(*provider.secret().inner())
             }
             WitnessSource::MerklePath => {
                 let _path = provider.merkle_path();

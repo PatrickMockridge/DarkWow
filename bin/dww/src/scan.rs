@@ -401,7 +401,7 @@ fn match_nullifiers(
         // Try each secret — the nullifier is poseidon_hash(secret, commitment).
         // Per Cornerstone 1: secrets come from AccountManager, passed by caller.
         for secret in secrets {
-            let nullifier = poseidon_hash([secret.inner(), commitment]);
+            let nullifier = poseidon_hash([*secret.inner(), commitment]);
             if published_fps.contains(&&nullifier) {
                 revoked.push((cap.cap_id.clone(), height.get()));
                 break;

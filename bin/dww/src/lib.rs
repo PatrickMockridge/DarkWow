@@ -843,9 +843,9 @@ impl WalletStateProvider for Dww {
                 },
                 asset_id: c.asset_id,
                 leaf_position: c.leaf_position,
-                cap_blind: c.cap_blind,
-                value_blind: c.value_blind,
-                asset_blind: c.asset_blind,
+                cap_blind: c.cap_blind.clone(),
+                value_blind: c.value_blind.clone(),
+                asset_blind: c.asset_blind.clone(),
                 spend_hook: c.spend_hook,
                 user_data: c.user_data,
             })
@@ -1135,7 +1135,7 @@ impl Dww {
             value: selected.value,
             token_id: DRKW_TOKEN_ID.inner(),
             user_data,
-            coin_blind: selected.cap_blind,
+            coin_blind: selected.cap_blind.clone(),
             leaf_position: selected.leaf_position,
             merkle_path,
         };
