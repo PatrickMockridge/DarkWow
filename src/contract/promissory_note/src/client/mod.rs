@@ -60,24 +60,48 @@ pub mod transfer_v1;
 /// PromissoryNote holds the inner attributes of a Coin.
 ///
 /// Note that value_blind is pallas::Scalar (Pedersen blinding), not pallas::Base.
-#[derive(Debug, Clone, Eq, PartialEq, )]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct PromissoryNote {
-    /// Value of the coin
     pub value: u64,
-    /// Token ID of the coin
     pub token_id: pallas::Base,
-    /// Spend hook used for protocol-owned liquidity
     pub spend_hook: pallas::Base,
-    /// User data used by protocol when spend hook is enabled
     pub user_data: pallas::Base,
-    /// Blinding factor for the coin
     pub coin_blind: pallas::Base,
-    /// Blinding factor for the value (Pedersen commitment)
     pub value_blind: pallas::Scalar,
-    /// Blinding factor for the token ID
     pub token_blind: pallas::Base,
-    /// Attached memo (arbitrary data)
     pub memo: Vec<u8>,
+}
+
+// Manual Encodable/Decodable bridge impls required by AeadEncryptedNote API.
+// Per spec §3.1.1: client-side note types (not sled-stored) may use dwow_serial.
+impl dwow_serial::Encodable for PromissoryNote {
+    fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
+        let mut len = 0;
+        len += dwow_serial::Encodable::encode(&self.value, w)?;
+        len += dwow_serial::Encodable::encode(&self.token_id, w)?;
+        len += dwow_serial::Encodable::encode(&self.spend_hook, w)?;
+        len += dwow_serial::Encodable::encode(&self.user_data, w)?;
+        len += dwow_serial::Encodable::encode(&self.coin_blind, w)?;
+        len += dwow_serial::Encodable::encode(&self.value_blind, w)?;
+        len += dwow_serial::Encodable::encode(&self.token_blind, w)?;
+        len += dwow_serial::Encodable::encode(&self.memo, w)?;
+        Ok(len)
+    }
+}
+
+impl dwow_serial::Decodable for PromissoryNote {
+    fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> {
+        Ok(PromissoryNote {
+            value: dwow_serial::Decodable::decode(d)?,
+            token_id: dwow_serial::Decodable::decode(d)?,
+            spend_hook: dwow_serial::Decodable::decode(d)?,
+            user_data: dwow_serial::Decodable::decode(d)?,
+            coin_blind: dwow_serial::Decodable::decode(d)?,
+            value_blind: dwow_serial::Decodable::decode(d)?,
+            token_blind: dwow_serial::Decodable::decode(d)?,
+            memo: dwow_serial::Decodable::decode(d)?,
+        })
+    }
 }
 
 /// Verify a received coin by decrypting the AEAD note and checking all commitments.

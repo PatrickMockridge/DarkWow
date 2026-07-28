@@ -373,6 +373,15 @@ pub struct IssueStakeParamsV1 {
 }
 
 impl IssueStakeParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(72 + BondCoin::ENCODED_SIZE);
+        b.extend_from_slice(&self.min_claim.to_le_bytes());
+        b.extend_from_slice(&self.issuer_contract.to_bytes());
+        b.extend_from_slice(&self.token_id.to_repr());
+        b.extend_from_slice(&self.coin.encode());
+        b
+    }
+
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 72 + BondCoin::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -524,6 +533,15 @@ pub struct TransferStakeParamsV1 {
 }
 
 impl TransferStakeParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(2 + self.inputs.len() * BondInput::ENCODED_SIZE + self.outputs.len() * BondCoin::ENCODED_SIZE);
+        b.push(self.inputs.len() as u8);
+        for input in &self.inputs { b.extend_from_slice(&input.encode()); }
+        b.push(self.outputs.len() as u8);
+        for output in &self.outputs { b.extend_from_slice(&output.encode()); }
+        b
+    }
+
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 2 {
             return Err(ContractError::IoError("TransferStakeParamsV1: data too short".into()));
@@ -693,6 +711,15 @@ pub struct RequestInterestParamsV1 {
 }
 
 impl RequestInterestParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(BondInput::ENCODED_SIZE + 48);
+        b.extend_from_slice(&self.bond_input.encode());
+        b.extend_from_slice(&self.claim_block.to_le_bytes());
+        b.extend_from_slice(&self.payment_key.to_repr());
+        b.extend_from_slice(&self.min_claim.to_le_bytes());
+        b
+    }
+
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < BondInput::ENCODED_SIZE + 48 {
             return Err(ContractError::IoError(format!(
@@ -920,6 +947,13 @@ pub struct UnstakeParamsV1 {
 }
 
 impl UnstakeParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(BondInput::ENCODED_SIZE + 8);
+        b.extend_from_slice(&self.bond_input.encode());
+        b.extend_from_slice(&self.current_block.to_le_bytes());
+        b
+    }
+
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < BondInput::ENCODED_SIZE + 8 {
             return Err(ContractError::IoError(format!(

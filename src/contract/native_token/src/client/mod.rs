@@ -93,22 +93,45 @@ impl ContractClient for NativeTokenClient {
 /// It does not store the public key since it's encrypted for that key,
 /// and so is not needed to infer the coin attributes.
 /// All other coin attributes must be present.
-#[derive(Debug, Clone, Eq, PartialEq, )]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct NativeToken {
-    /// Value of the coin
     pub value: u64,
-    /// Token ID of the coin
     pub token_id: pallas::Base,
-    /// Spend hook used for protocol-owned liquidity.
     pub spend_hook: pallas::Base,
-    /// User data used by protocol when spend hook is enabled
     pub user_data: pallas::Base,
-    /// Blinding factor for the coin
     pub coin_blind: pallas::Base,
-    /// Blinding factor for the value pedersen commitment
     pub value_blind: pallas::Scalar,
-    /// Blinding factor for the token ID pedersen commitment
     pub token_blind: pallas::Base,
-    /// Attached memo (arbitrary data)
     pub memo: Vec<u8>,
+}
+
+// Manual Encodable/Decodable bridge impls required by AeadEncryptedNote API.
+impl dwow_serial::Encodable for NativeToken {
+    fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
+        let mut len = 0;
+        len += dwow_serial::Encodable::encode(&self.value, w)?;
+        len += dwow_serial::Encodable::encode(&self.token_id, w)?;
+        len += dwow_serial::Encodable::encode(&self.spend_hook, w)?;
+        len += dwow_serial::Encodable::encode(&self.user_data, w)?;
+        len += dwow_serial::Encodable::encode(&self.coin_blind, w)?;
+        len += dwow_serial::Encodable::encode(&self.value_blind, w)?;
+        len += dwow_serial::Encodable::encode(&self.token_blind, w)?;
+        len += dwow_serial::Encodable::encode(&self.memo, w)?;
+        Ok(len)
+    }
+}
+
+impl dwow_serial::Decodable for NativeToken {
+    fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> {
+        Ok(NativeToken {
+            value: dwow_serial::Decodable::decode(d)?,
+            token_id: dwow_serial::Decodable::decode(d)?,
+            spend_hook: dwow_serial::Decodable::decode(d)?,
+            user_data: dwow_serial::Decodable::decode(d)?,
+            coin_blind: dwow_serial::Decodable::decode(d)?,
+            value_blind: dwow_serial::Decodable::decode(d)?,
+            token_blind: dwow_serial::Decodable::decode(d)?,
+            memo: dwow_serial::Decodable::decode(d)?,
+        })
+    }
 }
