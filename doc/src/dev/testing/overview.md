@@ -17,11 +17,11 @@ public-facing (LAN/internet).
 
 | Level | Name | Scope | Runtime | Commands |
 |-------|------|-------|---------|----------|
-| 1 | Lightweight | Unit tests, integration tests, **Deployooor-based deployment** (real production path, no ZK) | Seconds | `cargo test`, `cargo test -p dwowd test_pipeline` |
+| 1 | Lightweight | Unit tests, integration tests (all 32 contracts), **Deployooor-based deployment** (real production path, no ZK), encode/decode round-trip tests | Seconds | `cargo test`, `cargo test -p dwowd test_pipeline`, `cargo test -p <contract> --test integration` |
 | — | **Python Simulations** | **Contract state machines, authorization flows, business rules, edge cases** (no ZK, no crypto — pure logic) | Milliseconds | `python3 -c "from sim.contracts..."` |
 | — | **Python Consensus Models** | **Block production, PoW, uncle-merkle, chain reorg, VM concurrency, finality, merge mining** (1:1 Rust specification, 34/34 tests, 8 VM scenarios) | Milliseconds | `python3 contrib/model/chain_validation_model.py`, `python3 contrib/model/vm_state_model.py`, `python3 contrib/model/merge_mining_model.py` |
-| 1.5 | **Pre-Production Bridge** | **Production-path integration: real ZK proofs, real AEAD encryption, real accept_block, real wallet scan** (BlockTarget::MAX, deterministic ZK). Enforces MoC gate before Docker pipeline. | ~2-7 min | `cargo test --release -p dwowd --lib -- test_wallet_coinbase_scan_only test_canonical_call_failure_rejects_block test_merge_mined_block_acceptance test_merge_mined_block_deterministic` |
-| 2 | Heavyweight | Contract **functions, ZK proofs, uncle-merkle block execution** (deployment not tested — uses direct path for setup) | Minutes | `cargo test --release -p dwowd test_<contract>_heavyweight` |
+| 1.5 | **Pre-Production Bridge** | **Production-path integration: real ZK proofs, real AEAD encryption, real accept_block, real wallet scan** (BlockTarget::MAX, deterministic ZK). Enforces MoC gate before Docker pipeline. Nullifier replay + scan determinism verified. | ~2-7 min | `cargo test --release -p dwowd --lib -- test_wallet_coinbase_scan_only test_canonical_call_failure_rejects_block test_merge_mined_block_acceptance test_merge_mined_block_deterministic test_wallet_capability_scan` |
+| 2 | Heavyweight | Contract **functions, ZK proofs, uncle-merkle block execution** — all 32 contracts with exhaustive function coverage. Deployment not tested (uses direct path for setup). | Minutes | `./bin/dwowd/src/tests/heavyweight.sh --all`, `cargo test --release -p dwowd test_<contract>_heavyweight` |
 | 3 | Containerized Localnet | Multi-node Docker testnet (seed + mining nodes), P2P, RandomX, bridge lifecycle, wallet, 6 modes, 21 phases, composable flags | Persistent | `./test_pipeline.sh --mode native\|merge\|bridge\|wallet\|join-native\|join-merge` in `contrib/docker/darkwow-testnet/` |
 | 4 | Containerized Devnet | Public-facing mining node for shared devnets over LAN/internet | Persistent | `docker run --network=host -e IS_SEED=true darkwow-devnet` |
 | Wallet | Wallet capabilities | L1: Bash CLI (seconds). L2: Rust in-process (20 tests, <2s). L3: Docker container (persistent). | Seconds to Persistent | `./bin/dww/test_capability_lightweight.sh`, `cargo test -p dwow_wallet --lib -- capability::tests`, `./contrib/docker/darkwow-testnet/test-wallet.sh` |
@@ -461,9 +461,11 @@ execution, wallet scan, merge-mining, or strict-mode rejection paths.
 
 | Component | Path |
 |-----------|------|
-| Contract unit/integration tests | `src/contract/<name>/tests/` |
+| Contract unit/integration tests | `src/contract/<name>/tests/` — all 32 contracts have `integration.rs` |
+| Contract ZK circuit tests | `src/contract/<name>/tests/zk_circuit_test.sh` — all 22 ZK-enabled contracts |
 | Test harness crate (32 contracts) | `src/contract/test-harness/` |
 | ZK coverage CI audit test | `src/contract/test-harness/tests/zk_audit.rs` |
+| Encode/decode round-trip test | `src/contract/test-harness/tests/encode_roundtrip.rs` |
 | Relayer unit tests (Level 1) | `bin/universal_relayer/src/` |
 | Relayer lightweight test runner | `bin/universal_relayer/test_relayer_lightweight.sh` |
 | Daemon integration tests | `bin/dwowd/src/tests/` |

@@ -26,10 +26,13 @@ tested separately by Level 1 (Lightweight) through the Deployooor contract.
 
 | Component | Location | What It Verifies |
 |-----------|----------|-----------------|
-| HeavyweightPipeline | `bin/dwowd/src/tests/heavyweight_pipeline.rs` | Contract functions, ZK proofs, state transitions, uncle-merkle execution |
-| ContractHarness trait | `src/contract/test-harness/src/harness.rs` | Per-contract ZK circuit access |
-| Contract harness modules (32) | `src/contract/test-harness/src/harness/` | Proof generation for each contract |
-| CI ZK audit test | `src/contract/test-harness/tests/zk_audit.rs` | Decodes all 99 harness-loaded `.zk.bin` files, cross-checks harness `circuits()` |
+| HeavyweightPipeline | `bin/dwowd/src/tests/heavyweight_pipeline.rs` | All 32 contracts with exhaustive function coverage, uncle-merkle execution, cross-contract pipelines |
+| Heavyweight runner | `bin/dwowd/src/tests/heavyweight.sh` | Single-command runner: `./heavyweight.sh --all` (43 tests), `--dex`, `--block-execution`, per-contract flags |
+| ContractHarness trait | `src/contract/test-harness/src/harness.rs` | Per-contract ZK circuit access + `verify_zk_coverage()` pre-deploy gate |
+| Contract harness modules (32) | `src/contract/test-harness/src/harness/` | Proof generation for each contract — all functions have harness methods |
+| ZK audit test | `src/contract/test-harness/tests/zk_audit.rs` | Verifies all 32 harnesses: `verify_zk_coverage()` on every circuit, non-empty `circuits()`, matching `name()` |
+| Encode round-trip test | `src/contract/test-harness/tests/encode_roundtrip.rs` | Deterministic encode/decode for migrated contracts (purse, box, multisig, bearer_bond) |
+| ZK circuit tests (22 contracts) | `src/contract/<name>/tests/zk_circuit_test.sh` | Compiles every `.zk` source file to `.zk.bin`, verifies non-zero output |
 
 ## ContractHarness Trait
 
