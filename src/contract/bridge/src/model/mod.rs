@@ -147,6 +147,32 @@ pub enum ExternalChainProof {
     Ethereum,
 }
 
+impl dwow_serial::Encodable for ExternalChainProof { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.to_owned().to_bytes_vec(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ExternalChainProof { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut buf = vec![]; d.read_to_end(&mut buf)?; Self::from_bytes(&buf).map_err(|e| std::io::Error::other(format!("{:?}", e))) } }
+
+impl ExternalChainProof {
+    fn to_bytes_vec(&self) -> Vec<u8> {
+        match self {
+            Self::Monero(p) => { let inner = dwow_serial::serialize(p); let mut b = Vec::with_capacity(1+inner.len()); b.push(0u8); b.extend_from_slice(&inner); b }
+            Self::Zcash(p) => { let inner = dwow_serial::serialize(p); let mut b = Vec::with_capacity(1+inner.len()); b.push(1u8); b.extend_from_slice(&inner); b }
+            Self::Aztec(p) => { let inner = dwow_serial::serialize(p); let mut b = Vec::with_capacity(1+inner.len()); b.push(2u8); b.extend_from_slice(&inner); b }
+            Self::Litecoin(p) => { let inner = dwow_serial::serialize(p); let mut b = Vec::with_capacity(1+inner.len()); b.push(3u8); b.extend_from_slice(&inner); b }
+            Self::Ethereum => vec![4u8],
+        }
+    }
+    fn from_bytes(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() { return Err(ContractError::IoError("ExternalChainProof: empty".into())); }
+        match data[0] {
+            0 => Ok(Self::Monero(dwow_serial::deserialize(&data[1..]).map_err(|e| ContractError::IoError(format!("ExternalChainProof: invalid Monero: {:?}", e)))?)),
+            1 => Ok(Self::Zcash(dwow_serial::deserialize(&data[1..]).map_err(|e| ContractError::IoError(format!("ExternalChainProof: invalid Zcash: {:?}", e)))?)),
+            2 => Ok(Self::Aztec(dwow_serial::deserialize(&data[1..]).map_err(|e| ContractError::IoError(format!("ExternalChainProof: invalid Aztec: {:?}", e)))?)),
+            3 => Ok(Self::Litecoin(dwow_serial::deserialize(&data[1..]).map_err(|e| ContractError::IoError(format!("ExternalChainProof: invalid Litecoin: {:?}", e)))?)),
+            4 => Ok(Self::Ethereum),
+            _ => Err(ContractError::InvalidFunction),
+        }
+    }
+}
+
 /// Bridge deposit parameters
 ///
 /// Security: Deposit creates a commitment H(secret, amount, bridge_address).
