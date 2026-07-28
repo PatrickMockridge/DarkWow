@@ -157,7 +157,7 @@ pub fn create_transfer_mint_proof(
         token_id: output.token_id,
         spend_hook: FuncId::from_base(spend_hook),
         user_data,
-        blind: coin_blind,
+        blind: coin_blind.clone(),
     };
     debug!(target: "contract::native_token::client::transfer::proof", "Created coin: {coin_attrs:?}");
     let coin = coin_attrs.to_coin();
@@ -246,7 +246,7 @@ pub fn create_transfer_burn_proof(
         token_id: TokenId::from_base(witness.token_id),
         spend_hook: input.spend_hook,
         user_data: witness.user_data,
-        blind: witness.coin_blind,
+        blind: witness.coin_blind.clone(),
     }
     .to_coin();
 

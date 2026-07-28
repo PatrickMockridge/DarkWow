@@ -209,7 +209,7 @@ impl FeeCollectCallBuilder {
         let public_key = PublicKey::from_secret(self.secret.clone());
 
         // Deterministic blinds — spec §3.6, domains 10-12.
-        let sk_base = self.secret.inner();
+        let sk_base = *self.secret.inner();
         let h_base = pallas::Base::from(self.block_height.get());
         let value_blind: ScalarBlind = Blind(pallas::Scalar::from_repr(
             poseidon_hash([sk_base, h_base, pallas::Base::from(DOMAIN_VALUE_BLIND)]).to_repr(),
@@ -229,7 +229,7 @@ impl FeeCollectCallBuilder {
             token_id: TokenId::from_base(token_id),
             spend_hook: FuncId::none(),
             user_data: pallas::Base::ZERO,
-            blind: coin_blind,
+            blind: coin_blind.clone(),
         };
 
         // Dedicated FeeCollect_V1 circuit — spec §3.5. No cumulative supply.
@@ -238,8 +238,8 @@ impl FeeCollectCallBuilder {
             &self.fee_collect_pk,
             &output,
             self.secret.clone(),
-            value_blind,
-            token_blind,
+            value_blind.clone(),
+            token_blind.clone(),
             self.block_height,
             self.tx_commitment,
             self.tx_nonce,

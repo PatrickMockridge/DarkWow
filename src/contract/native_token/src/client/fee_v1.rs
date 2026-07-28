@@ -202,7 +202,7 @@ pub fn create_fee_proof(
     let input_user_data_enc = poseidon_hash([input.user_data, pallas::Base::zero()]);
 
     // Value commitments (Pedersen)
-    let input_value_commit = pedersen_commitment_u64(input.value, input_value_blind);
+    let input_value_commit = pedersen_commitment_u64(input.value, input_value_blind.clone());
     let output_value_commit = pedersen_commitment_u64(output.value, output_value_blind.clone());
 
     // Token commitment (DRKW token = zero, ↓denominate)

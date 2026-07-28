@@ -410,7 +410,7 @@ impl ContributeEntropyV1Builder {
     /// Create a new ContributeEntropyV1 builder
     pub fn new(room_id: RoomId, player: PublicKey) -> Self {
         let secret = SecretKey::random(&mut rand::rngs::OsRng);
-        let commitment = poseidon_hash([secret.inner(), pallas::Base::zero()]);
+        let commitment = poseidon_hash([*secret.inner(), pallas::Base::zero()]);
         Self { room_id, player, commitment, reveal: None }
     }
 

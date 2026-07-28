@@ -168,8 +168,8 @@ impl PoWRewardCallBuilder {
         let c_input = ClearInput {
             value,
             token_id,
-            value_blind,
-            token_blind,
+            value_blind: value_blind.clone(),
+            token_blind: token_blind.clone(),
             signature_public: PublicKey::from_secret(self.ephemeral_signature_secret.clone()),
         };
 
@@ -185,7 +185,7 @@ impl PoWRewardCallBuilder {
             token_id: TokenId::from_base(token_id),
             spend_hook: FuncId::from_base(spend_hook),
             user_data,
-            blind: coin_blind,
+            blind: coin_blind.clone(),
         };
 
         debug!(target: "contract::native_token::client::pow_reward", "Creating token mint proof for output");
@@ -193,12 +193,12 @@ impl PoWRewardCallBuilder {
             &self.mint_zkbin,
             &self.mint_pk,
             &output,
-            self.secret.clone(),          // sk_H — per-block derived coin secret for nullifier
-            value_blind,
-            token_blind,
+            self.secret.clone(),
+            value_blind.clone(),
+            token_blind.clone(),
             spend_hook,
             user_data,
-            coin_blind,
+            coin_blind.clone(),
             self.old_total_supply, // from sled — actual TOTAL_SUPPLY before this block
             self.old_cumulative_blind,
             self.tx_commitment,

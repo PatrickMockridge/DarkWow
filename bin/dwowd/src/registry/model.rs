@@ -172,7 +172,7 @@ pub async fn build_linear_coinbase(
     // Deterministic ephemeral key derived from sk_H — consensus-coinbase.md §2.7:
     // "no random keys." Domain-separated from the blind derivation domains.
     let ephemeral_secret = SecretKey::from_base(dwow_sdk::crypto::poseidon_hash([
-        sk_h.inner(),
+        *sk_h.inner(),
         pallas::Base::from(0xE7E7_E7E7_E7E7_E7E7u64),
     ]));
 
@@ -305,7 +305,7 @@ pub async fn build_linear_coinbase(
     // (PoWRewardCallBuilder, pow_reward_v1.rs:164-167). Exposed so tests can build
     // fee/burn call_data referencing coinbase coins without decrypting the AEAD note.
     let coin_blind = poseidon_hash([
-        sk_h.inner(),
+        *sk_h.inner(),
         pallas::Base::from(height.get()),
         pallas::Base::from(3u64), // DOMAIN_COIN_BLIND
     ]);
