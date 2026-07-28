@@ -130,7 +130,7 @@ impl NativeTokenHarness {
         // (pow_reward_v1.rs:164-167, DOMAIN_COIN_BLIND=3). Exposed so tests
         // can build fee/burn call_data referencing the minted coin.
         let coin_blind = poseidon_hash([
-            secret.inner(),
+            *secret.inner(),
             pallas::Base::from(block_height.get()),
             pallas::Base::from(3u64),
         ]);

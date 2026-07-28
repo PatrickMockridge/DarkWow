@@ -164,7 +164,7 @@ impl BettingStakeHarness {
         let input = StakeV1CallData::new(
             table_id,
             staker_pub,
-            staker_secret.inner(),
+            *staker_secret.inner(),
             amount,
             token_id,
             nonce,
@@ -205,7 +205,7 @@ impl BettingStakeHarness {
         let input = UnstakeV1CallData::new(
             stake.table_id,
             stake.staker_pub,
-            staker_secret.inner(),
+            *staker_secret.inner(),
             stake.original_amount,
             stake.current_amount,
             stake.accumulated_earnings,
@@ -246,7 +246,7 @@ impl BettingStakeHarness {
         let input = ClaimV1CallData::new(
             stake.table_id,
             stake.staker_pub,
-            staker_secret.inner(),
+            *staker_secret.inner(),
             stake.current_amount,
             stake.accumulated_earnings,
             stake.token_id,
