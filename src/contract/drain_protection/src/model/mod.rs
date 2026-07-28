@@ -480,14 +480,14 @@ impl ProtectedFund {
         buf.extend_from_slice(&self.total_funds.to_le_bytes());
         buf.extend_from_slice(&self.spend_authority.to_bytes());
         buf.push(self.lock_state as u8);
-        // rate_limit: use dwow_serial (has SerialEncodable)
-        let rl_enc = serialize(&self.rate_limit);
+        // rate_limit
+        let rl_enc = self.rate_limit.encode();
         buf.extend_from_slice(&(rl_enc.len() as u32).to_le_bytes());
         buf.extend_from_slice(&rl_enc);
         buf.extend_from_slice(&self.multisig_group_id.to_repr());
         buf.extend_from_slice(&self.purse_id.to_repr());
-        // drain_config: use dwow_serial (has SerialEncodable)
-        let dc_enc = serialize(&self.drain_config);
+        // drain_config
+        let dc_enc = self.drain_config.encode();
         buf.extend_from_slice(&(dc_enc.len() as u32).to_le_bytes());
         buf.extend_from_slice(&dc_enc);
         // members: Vec<MemberWeight>
@@ -531,7 +531,7 @@ impl ProtectedFund {
         if pos + 4 > data.len() { return Err(ContractError::IoError("ProtectedFund: data too short for rate_limit len".into())); }
         let rl_len = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()) as usize; pos += 4;
         if pos + rl_len > data.len() { return Err(ContractError::IoError("ProtectedFund: data too short for rate_limit".into())); }
-        let rate_limit: RateLimit = deserialize(&data[pos..pos+rl_len])?; pos += rl_len;
+        let rate_limit = RateLimit::decode(&data[pos..pos+rl_len])?; pos += rl_len;
         let multisig_group_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("ProtectedFund: invalid multisig_group_id".into()))?; pos += 32;
         let purse_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
@@ -540,7 +540,7 @@ impl ProtectedFund {
         if pos + 4 > data.len() { return Err(ContractError::IoError("ProtectedFund: data too short for drain_config len".into())); }
         let dc_len = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()) as usize; pos += 4;
         if pos + dc_len > data.len() { return Err(ContractError::IoError("ProtectedFund: data too short for drain_config".into())); }
-        let drain_config: DrainConfig = deserialize(&data[pos..pos+dc_len])?; pos += dc_len;
+        let drain_config = DrainConfig::decode(&data[pos..pos+dc_len])?; pos += dc_len;
         // members
         if pos >= data.len() { return Err(ContractError::IoError("ProtectedFund: data too short for members count".into())); }
         let member_count = data[pos] as usize; pos += 1;
