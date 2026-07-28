@@ -143,69 +143,27 @@ impl Default for ExitQueueConfig {
         Self { max_exit_per_epoch_bps: 1000, epoch_blocks: 600, min_queue_blocks: 10, force_fcfs: true }
     }
 }
+impl ExitQueueConfig { pub const ENCODED_SIZE: usize = 25; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(25); b.extend_from_slice(&self.max_exit_per_epoch_bps.to_le_bytes()); b.extend_from_slice(&self.epoch_blocks.to_le_bytes()); b.extend_from_slice(&self.min_queue_blocks.to_le_bytes()); b.push(self.force_fcfs as u8); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 25 { return Err(ContractError::IoError(format!("ExitQueueConfig: expected 25 bytes, got {}", data.len()))); } Ok(ExitQueueConfig { max_exit_per_epoch_bps: u64::from_le_bytes(data[0..8].try_into().unwrap()), epoch_blocks: u64::from_le_bytes(data[8..16].try_into().unwrap()), min_queue_blocks: u64::from_le_bytes(data[16..24].try_into().unwrap()), force_fcfs: data[24] != 0 }) } }
 
-#[derive(Debug, Clone,)]
-pub struct CircuitBreakerConfig {
-    pub trigger_threshold_bps: u64,
-    pub window_blocks: u64,
-    pub pause_duration_blocks: u64,
-    pub auto_resume: bool,
-    pub notify_guardians: bool,
-}
+#[derive(Debug, Clone,)] pub struct CircuitBreakerConfig { pub trigger_threshold_bps: u64, pub window_blocks: u64, pub pause_duration_blocks: u64, pub auto_resume: bool, pub notify_guardians: bool }
+impl Default for CircuitBreakerConfig { fn default() -> Self { Self { trigger_threshold_bps: 1000, window_blocks: 100, pause_duration_blocks: 600, auto_resume: false, notify_guardians: true } } }
+impl CircuitBreakerConfig { pub const ENCODED_SIZE: usize = 26; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(26); b.extend_from_slice(&self.trigger_threshold_bps.to_le_bytes()); b.extend_from_slice(&self.window_blocks.to_le_bytes()); b.extend_from_slice(&self.pause_duration_blocks.to_le_bytes()); b.push(self.auto_resume as u8); b.push(self.notify_guardians as u8); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 26 { return Err(ContractError::IoError(format!("CircuitBreakerConfig: expected 26 bytes, got {}", data.len()))); } Ok(CircuitBreakerConfig { trigger_threshold_bps: u64::from_le_bytes(data[0..8].try_into().unwrap()), window_blocks: u64::from_le_bytes(data[8..16].try_into().unwrap()), pause_duration_blocks: u64::from_le_bytes(data[16..24].try_into().unwrap()), auto_resume: data[24] != 0, notify_guardians: data[25] != 0 }) } }
 
-impl Default for CircuitBreakerConfig {
-    fn default() -> Self {
-        Self { trigger_threshold_bps: 1000, window_blocks: 100, pause_duration_blocks: 600, auto_resume: false, notify_guardians: true }
-    }
-}
+#[derive(Debug, Clone,)] pub struct ObservationPeriodConfig { pub threshold_bps: u64, pub observation_blocks: u64, pub allow_emergency_bypass: bool, pub emergency_bypass_quorum_bps: u64 }
+impl Default for ObservationPeriodConfig { fn default() -> Self { Self { threshold_bps: 500, observation_blocks: 48 * 6, allow_emergency_bypass: true, emergency_bypass_quorum_bps: 9000 } } }
+impl ObservationPeriodConfig { pub const ENCODED_SIZE: usize = 25; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(25); b.extend_from_slice(&self.threshold_bps.to_le_bytes()); b.extend_from_slice(&self.observation_blocks.to_le_bytes()); b.push(self.allow_emergency_bypass as u8); b.extend_from_slice(&self.emergency_bypass_quorum_bps.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 25 { return Err(ContractError::IoError(format!("ObservationPeriodConfig: expected 25 bytes, got {}", data.len()))); } Ok(ObservationPeriodConfig { threshold_bps: u64::from_le_bytes(data[0..8].try_into().unwrap()), observation_blocks: u64::from_le_bytes(data[8..16].try_into().unwrap()), allow_emergency_bypass: data[16] != 0, emergency_bypass_quorum_bps: u64::from_le_bytes(data[17..25].try_into().unwrap()) }) } }
 
-#[derive(Debug, Clone,)]
-pub struct ObservationPeriodConfig {
-    pub threshold_bps: u64,
-    pub observation_blocks: u64,
-    pub allow_emergency_bypass: bool,
-    pub emergency_bypass_quorum_bps: u64,
-}
+#[derive(Debug, Clone,)] pub struct SplitProposalsConfig { pub threshold_bps: u64, pub max_chunk_bps: u64, pub chunk_delay_blocks: u64, pub separate_vote_each_chunk: bool }
+impl Default for SplitProposalsConfig { fn default() -> Self { Self { threshold_bps: 1000, max_chunk_bps: 1000, chunk_delay_blocks: 600, separate_vote_each_chunk: true } } }
+impl SplitProposalsConfig { pub const ENCODED_SIZE: usize = 25; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(25); b.extend_from_slice(&self.threshold_bps.to_le_bytes()); b.extend_from_slice(&self.max_chunk_bps.to_le_bytes()); b.extend_from_slice(&self.chunk_delay_blocks.to_le_bytes()); b.push(self.separate_vote_each_chunk as u8); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 25 { return Err(ContractError::IoError(format!("SplitProposalsConfig: expected 25 bytes, got {}", data.len()))); } Ok(SplitProposalsConfig { threshold_bps: u64::from_le_bytes(data[0..8].try_into().unwrap()), max_chunk_bps: u64::from_le_bytes(data[8..16].try_into().unwrap()), chunk_delay_blocks: u64::from_le_bytes(data[16..24].try_into().unwrap()), separate_vote_each_chunk: data[24] != 0 }) } }
 
-impl Default for ObservationPeriodConfig {
-    fn default() -> Self {
-        Self { threshold_bps: 500, observation_blocks: 48 * 6, allow_emergency_bypass: true, emergency_bypass_quorum_bps: 9000 }
-    }
-}
+#[derive(Debug, Clone,)] pub enum ReserveSpendAuthority { EmergencyVoteOnly, GuardianMultisig, BothRequired }
+impl TryFrom<u8> for ReserveSpendAuthority { type Error = ContractError; fn try_from(v: u8) -> Result<Self, Self::Error> { match v { 0 => Ok(Self::EmergencyVoteOnly), 1 => Ok(Self::GuardianMultisig), 2 => Ok(Self::BothRequired), _ => Err(ContractError::InvalidFunction) } } }
+impl ReserveSpendAuthority { pub fn encode(&self) -> Vec<u8> { vec![self.clone() as u8] } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.is_empty() { return Err(ContractError::IoError("ReserveSpendAuthority: empty".into())); } Self::try_from(data[0]) } }
 
-#[derive(Debug, Clone,)]
-pub struct SplitProposalsConfig {
-    pub threshold_bps: u64,
-    pub max_chunk_bps: u64,
-    pub chunk_delay_blocks: u64,
-    pub separate_vote_each_chunk: bool,
-}
-
-impl Default for SplitProposalsConfig {
-    fn default() -> Self {
-        Self { threshold_bps: 1000, max_chunk_bps: 1000, chunk_delay_blocks: 600, separate_vote_each_chunk: true }
-    }
-}
-
-#[derive(Debug, Clone,)]
-pub enum ReserveSpendAuthority {
-    EmergencyVoteOnly,
-    GuardianMultisig,
-    BothRequired,
-}
-
-#[derive(Debug, Clone,)]
-pub struct NoLossReserveConfig {
-    pub reserve_bps: u64,
-    pub reserve_spend_authority: ReserveSpendAuthority,
-    pub min_reserve_absolute: u64,
-}
-
-impl Default for NoLossReserveConfig {
-    fn default() -> Self {
-        Self { reserve_bps: 2000, reserve_spend_authority: ReserveSpendAuthority::EmergencyVoteOnly, min_reserve_absolute: 100 }
-    }
-}
+#[derive(Debug, Clone,)] pub struct NoLossReserveConfig { pub reserve_bps: u64, pub reserve_spend_authority: ReserveSpendAuthority, pub min_reserve_absolute: u64 }
+impl Default for NoLossReserveConfig { fn default() -> Self { Self { reserve_bps: 2000, reserve_spend_authority: ReserveSpendAuthority::EmergencyVoteOnly, min_reserve_absolute: 100 } } }
+impl NoLossReserveConfig { pub const ENCODED_SIZE: usize = 17; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(17); b.extend_from_slice(&self.reserve_bps.to_le_bytes()); b.extend_from_slice(&self.reserve_spend_authority.encode()); b.extend_from_slice(&self.min_reserve_absolute.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 17 { return Err(ContractError::IoError(format!("NoLossReserveConfig: expected 17 bytes, got {}", data.len()))); } Ok(NoLossReserveConfig { reserve_bps: u64::from_le_bytes(data[0..8].try_into().unwrap()), reserve_spend_authority: ReserveSpendAuthority::decode(&data[8..9])?, min_reserve_absolute: u64::from_le_bytes(data[9..17].try_into().unwrap()) }) } }
 
 #[derive(Debug, Clone,)]
 pub struct DeadMansSwitchConfig {
@@ -215,6 +173,8 @@ pub struct DeadMansSwitchConfig {
     pub enable_social_recovery: bool,
     pub social_recovery_timelock_blocks: u64,
 }
+
+impl DeadMansSwitchConfig { pub const ENCODED_SIZE: usize = 33; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(33); b.extend_from_slice(&self.inactivity_threshold_blocks.to_le_bytes()); b.extend_from_slice(&self.auto_rate_limit_bps.to_le_bytes()); b.extend_from_slice(&self.notification_blocks.to_le_bytes()); b.push(self.enable_social_recovery as u8); b.extend_from_slice(&self.social_recovery_timelock_blocks.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 33 { return Err(ContractError::IoError(format!("DeadMansSwitchConfig: expected 33 bytes, got {}", data.len()))); } Ok(DeadMansSwitchConfig { inactivity_threshold_blocks: u64::from_le_bytes(data[0..8].try_into().unwrap()), auto_rate_limit_bps: u64::from_le_bytes(data[8..16].try_into().unwrap()), notification_blocks: u64::from_le_bytes(data[16..24].try_into().unwrap()), enable_social_recovery: data[24] != 0, social_recovery_timelock_blocks: u64::from_le_bytes(data[25..33].try_into().unwrap()) }) } }
 
 impl Default for DeadMansSwitchConfig {
     fn default() -> Self {
