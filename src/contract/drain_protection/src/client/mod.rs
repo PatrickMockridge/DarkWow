@@ -157,12 +157,33 @@ impl InitializeBuilder {
     }
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct InitializeParams {
     pub fund_id: FundId,
     pub spend_authority: PublicKey,
     pub dao_escrow_bulla: pallas::Base,
     pub drain_config: DrainConfig,
+}
+
+impl InitializeParams {
+    pub fn encode(&self) -> Vec<u8> {
+        let dc = self.drain_config.encode();
+        let mut b = Vec::with_capacity(97+dc.len());
+        b.extend_from_slice(&self.fund_id.to_repr());
+        b.extend_from_slice(&self.spend_authority.to_bytes());
+        b.extend_from_slice(&self.dao_escrow_bulla.to_repr());
+        b.extend_from_slice(&dc);
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 97 { return Err(ContractError::IoError("InitializeParams: too short".into())); }
+        Ok(InitializeParams {
+            fund_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("InitializeParams: invalid fund_id".into()))?,
+            spend_authority: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("InitializeParams: invalid spend_authority: {}", e)))?,
+            dao_escrow_bulla: Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap())).ok_or_else(|| ContractError::IoError("InitializeParams: invalid dao_escrow_bulla".into()))?,
+            drain_config: DrainConfig::decode(&data[96..])?,
+        })
+    }
 }
 
 /// Builder for `DrainProtection::ProposeV1`
