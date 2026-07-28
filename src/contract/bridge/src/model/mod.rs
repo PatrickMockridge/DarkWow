@@ -156,11 +156,11 @@ impl dwow_serial::Decodable for XmrDepositProof { fn decode<D: std::io::Read>(d:
 impl dwow_serial::Encodable for ZcashDepositProof { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let mut buf = Vec::with_capacity(122 + self.merkle_path.len()*32 + self.spend_proof.len() + self.output_proof.len()); buf.extend_from_slice(&self.nullifier); buf.extend_from_slice(&self.commitment); buf.extend_from_slice(&self.anchor); buf.push(self.merkle_path.len() as u8); for h in &self.merkle_path { buf.extend_from_slice(h); } buf.push(self.spend_proof.len() as u8); buf.extend_from_slice(&self.spend_proof); buf.push(self.output_proof.len() as u8); buf.extend_from_slice(&self.output_proof); buf.extend_from_slice(&self.randomized_pub_key); buf.extend_from_slice(&self.randomness); buf.extend_from_slice(&self.amount.to_le_bytes()); buf.extend_from_slice(&self.block_height.to_le_bytes()); buf.extend_from_slice(&self.confirmations.to_le_bytes()); w.write_all(&buf)?; Ok(buf.len()) } }
 impl dwow_serial::Decodable for ZcashDepositProof { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut buf = vec![]; d.read_to_end(&mut buf)?; if buf.len() < 122 { return Err(std::io::Error::other("ZcashDepositProof: too short")); } let nullifier: [u8;32] = buf[0..32].try_into().unwrap(); let commitment: [u8;32] = buf[32..64].try_into().unwrap(); let anchor: [u8;32] = buf[64..96].try_into().unwrap(); let mp_count = buf[96] as usize; let mut pos = 97+mp_count*32; if buf.len() < pos+2 { return Err(std::io::Error::other("ZcashDepositProof: merkle_path truncated")); } let mut merkle_path = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_path.push(buf[97+i*32..97+(i+1)*32].try_into().unwrap()); } let sp_len = buf[pos] as usize; pos += 1; if buf.len() < pos+sp_len { return Err(std::io::Error::other("ZcashDepositProof: spend_proof truncated")); } let spend_proof = buf[pos..pos+sp_len].to_vec(); pos += sp_len; let op_len = buf[pos] as usize; pos += 1; if buf.len() < pos+op_len { return Err(std::io::Error::other("ZcashDepositProof: output_proof truncated")); } let output_proof = buf[pos..pos+op_len].to_vec(); pos += op_len; if buf.len() < pos+88 { return Err(std::io::Error::other("ZcashDepositProof: trailing truncated")); } let randomized_pub_key: [u8;32] = buf[pos..pos+32].try_into().unwrap(); pos += 32; let randomness: [u8;32] = buf[pos..pos+32].try_into().unwrap(); pos += 32; let amount = u64::from_le_bytes(buf[pos..pos+8].try_into().unwrap()); let block_height = u64::from_le_bytes(buf[pos+8..pos+16].try_into().unwrap()); let confirmations = u64::from_le_bytes(buf[pos+16..pos+24].try_into().unwrap()); Ok(ZcashDepositProof { nullifier, commitment, anchor, merkle_path, spend_proof, output_proof, randomized_pub_key, randomness, amount, block_height, confirmations }) } }
 
-impl dwow_serial::Encodable for AztecDepositProof { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let mut buf = Vec::with_capacity(98 + self.merkle_path.len()*32 + self.proof_bytes.len()); buf.extend_from_slice(&self.nullifier); buf.extend_from_slice(&self.commitment); buf.extend_from_slice(&self.anchor); buf.push(self.merkle_path.len() as u8); for h in &self.merkle_path { buf.extend_from_slice(h); } buf.push(self.proof_bytes.len() as u8); buf.extend_from_slice(&self.proof_bytes); buf.extend_from_slice(&self.public_value.to_le_bytes()); w.write_all(&buf)?; Ok(buf.len()) } }
-impl dwow_serial::Decodable for AztecDepositProof { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut buf = vec![]; d.read_to_end(&mut buf)?; if buf.len() < 97 { return Err(std::io::Error::other("AztecDepositProof: too short")); } let nullifier: [u8;32] = buf[0..32].try_into().unwrap(); let commitment: [u8;32] = buf[32..64].try_into().unwrap(); let anchor: [u8;32] = buf[64..96].try_into().unwrap(); let mp_count = buf[96] as usize; let mut pos = 97+mp_count*32; if buf.len() < pos+1 { return Err(std::io::Error::other("AztecDepositProof: merkle_path truncated")); } let mut merkle_path = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_path.push(buf[97+i*32..97+(i+1)*32].try_into().unwrap()); } let pb_len = buf[pos] as usize; pos += 1; if buf.len() < pos+pb_len { return Err(std::io::Error::other("AztecDepositProof: proof_bytes truncated")); } let proof_bytes = buf[pos..pos+pb_len].to_vec(); pos += pb_len; let public_value = u64::from_le_bytes(buf[pos..pos+8].try_into().unwrap()); Ok(AztecDepositProof { nullifier, commitment, anchor, merkle_path, proof_bytes, public_value }) } }
+impl dwow_serial::Encodable for AztecDepositProof { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let mut buf = Vec::with_capacity(98 + self.merkle_path.len()*32 + self.proof_bytes.len()); buf.extend_from_slice(&self.nullifier); buf.extend_from_slice(&self.commitment); buf.extend_from_slice(&self.anchor); buf.push(self.merkle_path.len() as u8); for h in &self.merkle_path { buf.extend_from_slice(h); } buf.push(self.proof_bytes.len() as u8); buf.extend_from_slice(&self.proof_bytes); buf.extend_from_slice(&self.value.to_le_bytes()); buf.extend_from_slice(&self.asset_id.to_le_bytes()); buf.extend_from_slice(&self.rollup_height.to_le_bytes()); buf.extend_from_slice(&self.eth_block_height.to_le_bytes()); buf.extend_from_slice(&self.confirmations.to_le_bytes()); buf.extend_from_slice(&self.rollup_tx_hash); w.write_all(&buf)?; Ok(buf.len()) } }
+impl dwow_serial::Decodable for AztecDepositProof { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut buf = vec![]; d.read_to_end(&mut buf)?; if buf.len() < 97 { return Err(std::io::Error::other("AztecDepositProof: too short")); } let nullifier: [u8;32] = buf[0..32].try_into().unwrap(); let commitment: [u8;32] = buf[32..64].try_into().unwrap(); let anchor: [u8;32] = buf[64..96].try_into().unwrap(); let mp_count = buf[96] as usize; let mut pos = 97+mp_count*32; if buf.len() < pos+1 { return Err(std::io::Error::other("AztecDepositProof: merkle_path truncated")); } let mut merkle_path = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_path.push(buf[97+i*32..97+(i+1)*32].try_into().unwrap()); } let pb_len = buf[pos] as usize; pos += 1; if buf.len() < pos+pb_len+68 { return Err(std::io::Error::other("AztecDepositProof: truncated")); } let proof_bytes = buf[pos..pos+pb_len].to_vec(); pos += pb_len; let value = u64::from_le_bytes(buf[pos..pos+8].try_into().unwrap()); let asset_id = u32::from_le_bytes(buf[pos+8..pos+12].try_into().unwrap()); let rollup_height = u64::from_le_bytes(buf[pos+12..pos+20].try_into().unwrap()); let eth_block_height = u64::from_le_bytes(buf[pos+20..pos+28].try_into().unwrap()); let confirmations = u64::from_le_bytes(buf[pos+28..pos+36].try_into().unwrap()); let rollup_tx_hash: [u8;32] = buf[pos+36..pos+68].try_into().unwrap(); Ok(AztecDepositProof { nullifier, commitment, anchor, merkle_path, proof_bytes, value, asset_id, rollup_height, eth_block_height, confirmations, rollup_tx_hash }) } }
 
-impl dwow_serial::Encodable for LitecoinDepositProof { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let mut buf = Vec::with_capacity(51 + self.merkle_proof.len()*32); buf.extend_from_slice(&self.tx_hash); buf.extend_from_slice(&self.output_index.to_le_bytes()); buf.extend_from_slice(&self.amount.to_le_bytes()); buf.push(self.merkle_proof.len() as u8); for h in &self.merkle_proof { buf.extend_from_slice(h); } buf.extend_from_slice(&self.coinbase_hash); buf.extend_from_slice(&self.confirmations.to_le_bytes()); w.write_all(&buf)?; Ok(buf.len()) } }
-impl dwow_serial::Decodable for LitecoinDepositProof { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut buf = vec![]; d.read_to_end(&mut buf)?; if buf.len() < 51 { return Err(std::io::Error::other("LitecoinDepositProof: too short")); } let tx_hash: [u8;32] = buf[0..32].try_into().unwrap(); let output_index = u64::from_le_bytes(buf[32..40].try_into().unwrap()); let amount = u64::from_le_bytes(buf[40..48].try_into().unwrap()); let mp_count = buf[48] as usize; let mp_end = 49+mp_count*32; if buf.len() < mp_end+40 { return Err(std::io::Error::other("LitecoinDepositProof: truncated")); } let mut merkle_proof = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_proof.push(buf[49+i*32..49+(i+1)*32].try_into().unwrap()); } let coinbase_hash: [u8;32] = buf[mp_end..mp_end+32].try_into().unwrap(); let confirmations = u64::from_le_bytes(buf[mp_end+32..mp_end+40].try_into().unwrap()); Ok(LitecoinDepositProof { tx_hash, output_index, amount, merkle_proof, coinbase_hash, confirmations }) } }
+impl dwow_serial::Encodable for LitecoinDepositProof { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let rp = if let Some(ref v) = self.range_proof { v.clone() } else { vec![] }; let mut buf = Vec::with_capacity(52 + self.merkle_proof.len()*32 + rp.len()); buf.extend_from_slice(&self.tx_hash); buf.extend_from_slice(&self.output_index.to_le_bytes()); buf.extend_from_slice(&self.amount.to_le_bytes()); buf.push(self.merkle_proof.len() as u8); for h in &self.merkle_proof { buf.extend_from_slice(h); } buf.extend_from_slice(&self.block_merkle_root); buf.extend_from_slice(&self.block_height.to_le_bytes()); buf.extend_from_slice(&self.confirmations.to_le_bytes()); buf.push(self.confidential_commitment.is_some() as u8); if let Some(ref cc) = self.confidential_commitment { buf.extend_from_slice(cc); } buf.push(self.range_proof.is_some() as u8); buf.extend_from_slice(&rp); buf.push(self.is_confidential as u8); w.write_all(&buf)?; Ok(buf.len()) } }
+impl dwow_serial::Decodable for LitecoinDepositProof { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut buf = vec![]; d.read_to_end(&mut buf)?; if buf.len() < 52 { return Err(std::io::Error::other("LitecoinDepositProof: too short")); } let tx_hash: [u8;32] = buf[0..32].try_into().unwrap(); let output_index = u64::from_le_bytes(buf[32..40].try_into().unwrap()); let amount = u64::from_le_bytes(buf[40..48].try_into().unwrap()); let mp_count = buf[48] as usize; let mut pos = 49+mp_count*32; if buf.len() < pos+50 { return Err(std::io::Error::other("LitecoinDepositProof: truncated")); } let mut merkle_proof = Vec::with_capacity(mp_count); for i in 0..mp_count { merkle_proof.push(buf[49+i*32..49+(i+1)*32].try_into().unwrap()); } let block_merkle_root: [u8;32] = buf[pos..pos+32].try_into().unwrap(); pos += 32; let block_height = u64::from_le_bytes(buf[pos..pos+8].try_into().unwrap()); pos += 8; let confirmations = u64::from_le_bytes(buf[pos..pos+8].try_into().unwrap()); pos += 8; let has_cc = buf[pos] != 0; pos += 1; let confidential_commitment = if has_cc { let cc: [u8;32] = buf[pos..pos+32].try_into().unwrap(); pos += 32; Some(cc) } else { None }; let has_rp = buf[pos] != 0; pos += 1; let range_proof = if has_rp { let rp = buf[pos..].to_vec(); Some(rp) } else { None }; let is_confidential = if has_rp { true } else { buf[pos] != 0 }; Ok(LitecoinDepositProof { tx_hash, output_index, amount, merkle_proof, block_merkle_root, block_height, confirmations, confidential_commitment, range_proof, is_confidential }) } }
 
 /// Bridge deposit parameters
 ///
@@ -851,17 +851,8 @@ pub struct PendingWithdrawal {
 /// When a withdrawal times out (current block > timeout_height),
 /// the user can submit a cancellation to reclaim their funds.
 #[derive(Debug, Clone,)]
-pub struct CancelWithdrawParams {
-    /// Nullifier of the withdrawal to cancel
-    pub nullifier: IntentNullifier,
-
-    /// Original signature or proof that this withdrawal was valid
-    /// This ensures only the original submitter can cancel
-    pub proof: Vec<u8>,
-
-    /// Current block height (for timeout verification)
-    pub current_block: u64,
-}
+pub struct CancelWithdrawParams { pub nullifier: IntentNullifier, pub proof: Vec<u8>, pub current_block: u64 }
+impl CancelWithdrawParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(41+self.proof.len()); b.extend_from_slice(&self.nullifier.to_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.current_block.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 41 { return Err(ContractError::IoError("CancelWithdrawParams: too short".into())); } let nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("CancelWithdrawParams: invalid nullifier".into()))?; let proof_len = data[32] as usize; if data.len() != 33+proof_len+8 { return Err(ContractError::IoError(format!("CancelWithdrawParams: expected {} bytes, got {}", 33+proof_len+8, data.len()))); } let proof = data[33..33+proof_len].to_vec(); let current_block = u64::from_le_bytes(data[33+proof_len..33+proof_len+8].try_into().unwrap()); Ok(CancelWithdrawParams { nullifier, proof, current_block }) } }
 
 /// Parameters for executing a guaranteed withdrawal with pool stake coverage
 ///
@@ -884,22 +875,16 @@ pub struct ExecuteGuaranteedWithdrawParams {
     pub execution_data: Vec<u8>,
 }
 
+impl ExecuteGuaranteedWithdrawParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(34+self.pool_stake_proof.len()+self.relayer_sig.len()+self.execution_data.len()); b.extend_from_slice(&self.nullifier.to_bytes()); b.push(self.pool_stake_proof.len() as u8); b.extend_from_slice(&self.pool_stake_proof); b.push(self.relayer_sig.len() as u8); b.extend_from_slice(&self.relayer_sig); b.push(self.execution_data.len() as u8); b.extend_from_slice(&self.execution_data); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 34 { return Err(ContractError::IoError("ExecuteGuaranteedWithdrawParams: too short".into())); } let nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("ExecuteGuaranteedWithdrawParams: invalid nullifier".into()))?; let psp_len = data[32] as usize; let mut pos = 33+psp_len; if data.len() < pos+1 { return Err(ContractError::IoError("ExecuteGuaranteedWithdrawParams: truncated".into())); } let pool_stake_proof = data[33..pos].to_vec(); let rs_len = data[pos] as usize; pos += 1; if data.len() < pos+rs_len+1 { return Err(ContractError::IoError("ExecuteGuaranteedWithdrawParams: truncated".into())); } let relayer_sig = data[pos..pos+rs_len].to_vec(); pos += rs_len; let ed_len = data[pos] as usize; pos += 1; if data.len() != pos+ed_len { return Err(ContractError::IoError(format!("ExecuteGuaranteedWithdrawParams: expected {} bytes, got {}", pos+ed_len, data.len()))); } let execution_data = data[pos..].to_vec(); Ok(ExecuteGuaranteedWithdrawParams { nullifier, pool_stake_proof, relayer_sig, execution_data }) } }
+
 /// Parameters for reassigning a withdrawal to a new relayer
 ///
 /// When a relayer has been offline past `reassignable_after`,
 /// another relayer can claim the withdrawal. The original relayer's
 /// stake is partially slashed for abandonment.
 #[derive(Debug, Clone,)]
-pub struct ReassignWithdrawalParamsV1 {
-    /// Nullifier of the withdrawal to reassign
-    pub nullifier: IntentNullifier,
-
-    /// New relayer address taking over
-    pub new_relayer: PublicKey,
-
-    /// Current block height for timeout verification
-    pub current_block: u64,
-}
+pub struct ReassignWithdrawalParamsV1 { pub nullifier: IntentNullifier, pub new_relayer: PublicKey, pub current_block: u64 }
+impl ReassignWithdrawalParamsV1 { pub const ENCODED_SIZE: usize = 72; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(72); b.extend_from_slice(&self.nullifier.to_bytes()); b.extend_from_slice(&self.new_relayer.to_bytes()); b.extend_from_slice(&self.current_block.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 72 { return Err(ContractError::IoError(format!("ReassignWithdrawalParamsV1: expected 72 bytes, got {}", data.len()))); } Ok(ReassignWithdrawalParamsV1 { nullifier: IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("ReassignWithdrawalParamsV1: invalid nullifier".into()))?, new_relayer: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ReassignWithdrawalParamsV1: invalid new_relayer: {}", e)))?, current_block: u64::from_le_bytes(data[64..72].try_into().unwrap()) }) } }
 
 /// Update for reassigning a withdrawal to a new relayer
 #[derive(Debug, Clone)]
@@ -934,27 +919,17 @@ pub struct CreateHtlcParams {
     pub deposit_proof: Vec<u8>,
 }
 
+impl CreateHtlcParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(51+self.external_recipient.len()+self.deposit_proof.len()); b.extend_from_slice(&self.swap_id); b.extend_from_slice(&self.hash.to_repr()); b.extend_from_slice(&self.timelock.to_le_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.push(self.external_recipient.len() as u8); b.extend_from_slice(&self.external_recipient); b.push(self.chain as u8); b.push(self.deposit_proof.len() as u8); b.extend_from_slice(&self.deposit_proof); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 51 { return Err(ContractError::IoError("CreateHtlcParams: too short".into())); } let swap_id: [u8;32] = data[0..32].try_into().unwrap(); let hash = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CreateHtlcParams: invalid hash".into()))?; let timelock = u64::from_le_bytes(data[64..72].try_into().unwrap()); let amount = u64::from_le_bytes(data[72..80].try_into().unwrap()); let er_len = data[80] as usize; let mut pos = 81+er_len; if data.len() < pos+1 { return Err(ContractError::IoError("CreateHtlcParams: recipient truncated".into())); } let external_recipient = data[81..pos].to_vec(); let chain = ExternalChain::try_from(data[pos]).map_err(|_| ContractError::IoError("CreateHtlcParams: invalid chain".into()))?; pos += 1; let dp_len = data[pos] as usize; pos += 1; if data.len() != pos+dp_len { return Err(ContractError::IoError(format!("CreateHtlcParams: expected {} bytes, got {}", pos+dp_len, data.len()))); } let deposit_proof = data[pos..].to_vec(); Ok(CreateHtlcParams { swap_id, hash, timelock, amount, external_recipient, chain, deposit_proof }) } }
+
 /// Parameters for claiming an HTLC (when secret is revealed)
 #[derive(Debug, Clone,)]
-pub struct ClaimHtlcParams {
-    /// Swap ID of the HTLC
-    pub swap_id: [u8; 32],
-    /// The secret that unlocks the HTLC
-    pub secret: dwow_sdk::pasta::pallas::Base,
-}
+pub struct ClaimHtlcParams { pub swap_id: [u8; 32], pub secret: dwow_sdk::pasta::pallas::Base }
+impl ClaimHtlcParams { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.swap_id); b.extend_from_slice(&self.secret.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("ClaimHtlcParams: expected 64 bytes, got {}", data.len()))); } Ok(ClaimHtlcParams { swap_id: data[0..32].try_into().unwrap(), secret: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ClaimHtlcParams: invalid secret".into()))? }) } }
 
-/// Parameters for refunding an HTLC (after timelock)
-#[derive(Debug, Clone,)]
-pub struct RefundHtlcParams {
-    /// Swap ID of the HTLC
-    pub swap_id: [u8; 32],
-    /// Current block height (for timelock verification)
-    pub current_block: u64,
-}
+#[derive(Debug, Clone,)] pub struct RefundHtlcParams { pub swap_id: [u8; 32], pub current_block: u64 }
+impl RefundHtlcParams { pub const ENCODED_SIZE: usize = 40; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(40); b.extend_from_slice(&self.swap_id); b.extend_from_slice(&self.current_block.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 40 { return Err(ContractError::IoError(format!("RefundHtlcParams: expected 40 bytes, got {}", data.len()))); } Ok(RefundHtlcParams { swap_id: data[0..32].try_into().unwrap(), current_block: u64::from_le_bytes(data[32..40].try_into().unwrap()) }) } }
 
-/// Update data for HTLC creation
-#[derive(Debug, Clone)]
-pub struct CreateHtlcUpdateV1 {
+#[derive(Debug, Clone)] pub struct CreateHtlcUpdateV1 {
     pub swap_id: [u8; 32],
     pub hash: dwow_sdk::pasta::pallas::Base,
     pub timelock: u64,
@@ -1043,10 +1018,8 @@ pub struct RelayerSlash {
 
 /// Parameters for registering a relayer with the bridge
 #[derive(Debug, Clone,)]
-pub struct RegisterRelayerParams {
-    /// Relayer's public key
-    pub relayer_pub: PublicKey,
-}
+pub struct RegisterRelayerParams { pub relayer_pub: PublicKey }
+impl RegisterRelayerParams { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { self.relayer_pub.to_bytes().to_vec() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("RegisterRelayerParams: expected 32 bytes, got {}", data.len()))); } Ok(RegisterRelayerParams { relayer_pub: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("RegisterRelayerParams: invalid relayer_pub: {}", e)))? }) } }
 
 /// Stored relayer info
 #[derive(Debug, Clone)]
@@ -1074,14 +1047,8 @@ pub struct RegisterRelayerUpdateV1 {
 
 /// Parameters for a relayer accepting a pending withdrawal
 #[derive(Debug, Clone,)]
-pub struct AcceptWithdrawalParams {
-    /// Nullifier of the withdrawal to accept
-    pub nullifier: IntentNullifier,
-    /// Relayer's public key
-    pub relayer_pub: PublicKey,
-    /// Committed max fee in basis points (binding — exceeding = slashable)
-    pub max_fee_bp: u64,
-}
+pub struct AcceptWithdrawalParams { pub nullifier: IntentNullifier, pub relayer_pub: PublicKey, pub max_fee_bp: u64 }
+impl AcceptWithdrawalParams { pub const ENCODED_SIZE: usize = 72; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(72); b.extend_from_slice(&self.nullifier.to_bytes()); b.extend_from_slice(&self.relayer_pub.to_bytes()); b.extend_from_slice(&self.max_fee_bp.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 72 { return Err(ContractError::IoError(format!("AcceptWithdrawalParams: expected 72 bytes, got {}", data.len()))); } Ok(AcceptWithdrawalParams { nullifier: IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("AcceptWithdrawalParams: invalid nullifier".into()))?, relayer_pub: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("AcceptWithdrawalParams: invalid relayer_pub: {}", e)))?, max_fee_bp: u64::from_le_bytes(data[64..72].try_into().unwrap()) }) } }
 
 /// Accept withdrawal update
 #[derive(Debug, Clone)]
@@ -1098,33 +1065,20 @@ pub struct AcceptWithdrawalUpdateV1 {
 
 /// Parameters for verifying a relayer's reputation
 #[derive(Debug, Clone,)]
-pub struct VerifyRelayerReputationParams {
-    /// Relayer's public key to check
-    pub relayer_pub: PublicKey,
-}
+pub struct VerifyRelayerReputationParams { pub relayer_pub: PublicKey }
+impl VerifyRelayerReputationParams { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { self.relayer_pub.to_bytes().to_vec() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("VerifyRelayerReputationParams: expected 32 bytes, got {}", data.len()))); } Ok(VerifyRelayerReputationParams { relayer_pub: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("VerifyRelayerReputationParams: invalid relayer_pub: {}", e)))? }) } }
 
 /// Reputation info returned to caller
 #[derive(Debug, Clone,)]
-pub struct ReputationInfo {
-    pub slash_count: u64,
-    pub success_count: u64,
-    pub total_volume: u64,
-    pub settlement_frequency: u64,
-    pub is_registered: bool,
-}
-
-// ============================================================================
-// FEE SCHEDULE (Phase 3 hardening)
-// ============================================================================
+pub struct ReputationInfo { pub slash_count: u64, pub success_count: u64, pub total_volume: u64, pub settlement_frequency: u64, pub is_registered: bool }
+impl ReputationInfo { pub const ENCODED_SIZE: usize = 33; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(33); b.extend_from_slice(&self.slash_count.to_le_bytes()); b.extend_from_slice(&self.success_count.to_le_bytes()); b.extend_from_slice(&self.total_volume.to_le_bytes()); b.extend_from_slice(&self.settlement_frequency.to_le_bytes()); b.push(self.is_registered as u8); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 33 { return Err(ContractError::IoError(format!("ReputationInfo: expected 33 bytes, got {}", data.len()))); } Ok(ReputationInfo { slash_count: u64::from_le_bytes(data[0..8].try_into().unwrap()), success_count: u64::from_le_bytes(data[8..16].try_into().unwrap()), total_volume: u64::from_le_bytes(data[16..24].try_into().unwrap()), settlement_frequency: u64::from_le_bytes(data[24..32].try_into().unwrap()), is_registered: data[32] != 0 }) } }
 
 /// Parameters for registering a fee schedule
-#[derive(Debug, Clone,)]
-pub struct RegisterFeeScheduleParams {
-    /// Relayer's public key
-    pub relayer_pub: PublicKey,
-    /// Fee schedule attestation ID (from attestation contract)
-    pub fee_schedule_id: [u8; 32],
-}
+#[derive(Debug, Clone,)] pub struct RegisterFeeScheduleParams { pub relayer_pub: PublicKey, pub fee_schedule_id: [u8; 32] }
+impl RegisterFeeScheduleParams { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.relayer_pub.to_bytes()); b.extend_from_slice(&self.fee_schedule_id); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("RegisterFeeScheduleParams: expected 64 bytes, got {}", data.len()))); } Ok(RegisterFeeScheduleParams { relayer_pub: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("RegisterFeeScheduleParams: invalid relayer_pub: {}", e)))?, fee_schedule_id: data[32..64].try_into().unwrap() }) } }
+
+impl dwow_serial::Encodable for ReputationInfo { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Encodable for UpdateConfigParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 
 /// Register fee schedule update
 #[derive(Debug, Clone)]
