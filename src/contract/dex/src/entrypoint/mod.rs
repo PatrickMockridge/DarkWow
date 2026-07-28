@@ -173,7 +173,7 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
             transparency_config: Default::default(),
         }
     } else {
-        InitializeParams::decode(&mut std::io::Cursor::new(ix))
+        InitializeParams::decode(&ix[1..])
             .map_err(|_| dwow_sdk::error::ContractError::IoError("Decode error".to_string()))?
     };
 

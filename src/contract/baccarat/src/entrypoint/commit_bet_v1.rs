@@ -153,14 +153,13 @@ pub fn baccarat_commit_bet_process_instruction_v1(
 
     // Look up house edge from contract info or use default
     let info_db = wasm::db::db_lookup(cid, BACCARAT_CONTRACT_INFO_TREE)?;
-    let stored_house_edge_bytes = wasm::db::db_get(info_db, BACCARAT_CONTRACT_HOUSE_EDGE)?
-        .unwrap_or_else(|| DEFAULT_HOUSE_EDGE.to_le_bytes().to_vec());
-    let stored_house_edge = u32::from_le_bytes(
-        stored_house_edge_bytes.as_slice().try_into().map_err(|_| {
-            msg!("[baccarat::commit_bet] Error: Corrupt state — house_edge wrong size: {}", stored_house_edge_bytes.len());
+    let stored_house_edge = match wasm::db::db_get(info_db, BACCARAT_CONTRACT_HOUSE_EDGE)? {
+        Some(bytes) => u32::from_le_bytes(bytes.as_slice().try_into().map_err(|_| {
+            msg!("[baccarat::commit_bet] Error: Corrupt state — house_edge wrong size: {}", bytes.len());
             ContractError::IoError("Corrupt state: house_edge wrong size".to_string())
-        })?
-    );
+        })?),
+        None => DEFAULT_HOUSE_EDGE,
+    };
 
     let house_edge = if params.house_edge == 0 { stored_house_edge } else { params.house_edge };
     validate_house_edge(house_edge)?;

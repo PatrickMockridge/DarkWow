@@ -72,8 +72,7 @@
 //! - On-chain Merkle root verification
 //! - Event-based state synchronization between contracts
 
-use dwow_serial::{SerialDecodable, SerialEncodable};
-use dwow_sdk::crypto::{IntentCommitment, IntentNullifier, PublicKey};
+use dwow_sdk::crypto::{pasta_prelude::PrimeField, IntentCommitment, IntentNullifier, PublicKey};
 use dwow_sdk::error::ContractError;
 use dwow_sdk::pasta::pallas;
 
@@ -101,18 +100,12 @@ pub struct InitializeParams {
     /// DEX fee (basis points)
     pub fee: u64,
     /// Trusted Merkle root of the money contract's coin tree
-    ///
-    /// # Security Warning
-    ///
-    /// This root is TRUSTED and not verified. It should match the money contract's
-    /// current Merkle root at initialization time. If incorrect, the DEX cannot
-    /// detect invalid lock_proofs.
-    ///
-    /// This is a workaround for lack of cross-contract ZK composition opcodes.
     pub trusted_money_merkle_root: [u8; 32],
     /// Transparency configuration for this DEX deployment
     pub transparency_config: TransparencyConfig,
 }
+
+impl InitializeParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(69); b.extend_from_slice(&self.timeout.to_le_bytes()); b.extend_from_slice(&self.fee.to_le_bytes()); b.extend_from_slice(&self.trusted_money_merkle_root); b.push(self.transparency_config.level as u8); b.extend_from_slice(&self.transparency_config.price_band_size.to_le_bytes()); b.extend_from_slice(&self.transparency_config.volume_bucket_size.to_le_bytes()); b.extend_from_slice(&self.transparency_config.anonymity_group_size.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 69 { return Err(ContractError::IoError(format!("InitializeParams: expected 69 bytes, got {}", data.len()))); } let timeout = u32::from_le_bytes(data[0..4].try_into().unwrap()); let fee = u64::from_le_bytes(data[4..12].try_into().unwrap()); let trusted_money_merkle_root: [u8;32] = data[12..44].try_into().unwrap(); let level = TransparencyLevel::try_from(data[44]).map_err(|_| ContractError::IoError("InitializeParams: invalid transparency level".into()))?; let price_band_size = u64::from_le_bytes(data[45..53].try_into().unwrap()); let volume_bucket_size = u64::from_le_bytes(data[53..61].try_into().unwrap()); let anonymity_group_size = u64::from_le_bytes(data[61..69].try_into().unwrap()); Ok(InitializeParams { timeout, fee, trusted_money_merkle_root, transparency_config: TransparencyConfig { level, price_band_size, volume_bucket_size, anonymity_group_size } }) } }
 
 /// Create swap proposal parameters
 ///
@@ -191,7 +184,7 @@ impl CreateSwapParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_
 /// public key.
 ///
 /// The signature commits to: swap_id || lock_commitment
-#[derive(Debug, Clone, SerialDecodable, SerialEncodable)]
+#[derive(Debug, Clone)]
 pub struct AcceptSwapParams {
     /// Swap ID being accepted
     pub swap_id: [u8; 32],
@@ -218,6 +211,8 @@ pub struct AcceptSwapParams {
     /// Default: false
     pub immediate_execute: bool,
 }
+
+impl AcceptSwapParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(138+self.lock_proof.len()*32); b.extend_from_slice(&self.swap_id); b.extend_from_slice(&self.lock_commitment.to_bytes()); b.extend_from_slice(&self.nullifier.to_bytes()); b.push(self.lock_proof.len() as u8); for h in &self.lock_proof { b.extend_from_slice(h); } b.extend_from_slice(&self.signature_public.to_bytes()); b.extend_from_slice(&self.fee.to_le_bytes()); b.push(self.immediate_execute as u8); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 137 { return Err(ContractError::IoError("AcceptSwapParams: too short".into())); } let swap_id: [u8;32] = data[0..32].try_into().unwrap(); let lock_commitment = IntentCommitment::from_bytes(data[32..64].try_into().unwrap()).map_err(|_| ContractError::IoError("AcceptSwapParams: invalid lock_commitment".into()))?; let nullifier = IntentNullifier::from_bytes(data[64..96].try_into().unwrap()).map_err(|_| ContractError::IoError("AcceptSwapParams: invalid nullifier".into()))?; let lp_count = data[96] as usize; let lp_end = 97+lp_count*32; if data.len() < lp_end+32+8+1 { return Err(ContractError::IoError("AcceptSwapParams: lock_proof truncated".into())); } let mut lock_proof = Vec::with_capacity(lp_count); for i in 0..lp_count { lock_proof.push(data[97+i*32..97+(i+1)*32].try_into().unwrap()); } let signature_public = PublicKey::from_bytes(data[lp_end..lp_end+32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("AcceptSwapParams: invalid signature_public: {}", e)))?; let fee = u64::from_le_bytes(data[lp_end+32..lp_end+40].try_into().unwrap()); let immediate_execute = data[lp_end+40] != 0; Ok(AcceptSwapParams { swap_id, lock_commitment, nullifier, lock_proof, signature_public, fee, immediate_execute }) } }
 
 /// Execute swap parameters
 ///
@@ -297,109 +292,61 @@ pub struct CancelSwapParams {
 impl CancelSwapParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(97+self.proof.len()); b.extend_from_slice(&self.swap_id); b.extend_from_slice(&self.secret); b.extend_from_slice(&self.nullifier.to_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.fee.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 97 { return Err(ContractError::IoError("CancelSwapParams: too short".into())); } let swap_id: [u8;32] = data[0..32].try_into().unwrap(); let secret: [u8;32] = data[32..64].try_into().unwrap(); let nullifier = IntentNullifier::from_bytes(data[64..96].try_into().unwrap()).map_err(|_| ContractError::IoError("CancelSwapParams: invalid nullifier".into()))?; let proof_len = data[96] as usize; if data.len() != 97+proof_len+8 { return Err(ContractError::IoError(format!("CancelSwapParams: expected {} bytes, got {}", 97+proof_len+8, data.len()))); } let proof = data[97..97+proof_len].to_vec(); let fee = u64::from_le_bytes(data[97+proof_len..97+proof_len+8].try_into().unwrap()); Ok(CancelSwapParams { swap_id, secret, nullifier, proof, fee }) } }
 
 /// Execute swap with fee parameters
-///
-/// This allows executing a swap with a fee deducted from the received amount.
-/// Fee calculation: fee = fill_amount * fee_bps / 10000
 #[derive(Debug, Clone,)]
 pub struct ExecuteSwapFeeParams {
-    /// Swap ID to execute
     pub swap_id: [u8; 32],
-
-    /// Prover's secret for Alice's lock
     pub alice_secret: [u8; 32],
-
-    /// Prover's secret for Bob's lock
     pub bob_secret: [u8; 32],
-
-    /// Alice's lock commitment
     pub alice_lock: IntentCommitment,
-
-    /// Bob's lock commitment
     pub bob_lock: IntentCommitment,
-
-    /// Alice's nullifier
     pub alice_nullifier: IntentNullifier,
-
-    /// Bob's nullifier
     pub bob_nullifier: IntentNullifier,
-
-    /// Fee basis points (e.g., 30 = 0.3%)
     pub fee_bps: u64,
-
-    /// ZK proof
     pub proof: Vec<u8>,
-
-    /// Fee paid for execution
     pub fee: u64,
 }
+
+impl ExecuteSwapFeeParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(241+self.proof.len()); b.extend_from_slice(&self.swap_id); b.extend_from_slice(&self.alice_secret); b.extend_from_slice(&self.bob_secret); b.extend_from_slice(&self.alice_lock.to_bytes()); b.extend_from_slice(&self.bob_lock.to_bytes()); b.extend_from_slice(&self.alice_nullifier.to_bytes()); b.extend_from_slice(&self.bob_nullifier.to_bytes()); b.extend_from_slice(&self.fee_bps.to_le_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.fee.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 241 { return Err(ContractError::IoError("ExecuteSwapFeeParams: too short".into())); } let swap_id: [u8;32] = data[0..32].try_into().unwrap(); let alice_secret: [u8;32] = data[32..64].try_into().unwrap(); let bob_secret: [u8;32] = data[64..96].try_into().unwrap(); let alice_lock = IntentCommitment::from_bytes(data[96..128].try_into().unwrap()).map_err(|_| ContractError::IoError("ExecuteSwapFeeParams: invalid alice_lock".into()))?; let bob_lock = IntentCommitment::from_bytes(data[128..160].try_into().unwrap()).map_err(|_| ContractError::IoError("ExecuteSwapFeeParams: invalid bob_lock".into()))?; let alice_nullifier = IntentNullifier::from_bytes(data[160..192].try_into().unwrap()).map_err(|_| ContractError::IoError("ExecuteSwapFeeParams: invalid alice_nullifier".into()))?; let bob_nullifier = IntentNullifier::from_bytes(data[192..224].try_into().unwrap()).map_err(|_| ContractError::IoError("ExecuteSwapFeeParams: invalid bob_nullifier".into()))?; let fee_bps = u64::from_le_bytes(data[224..232].try_into().unwrap()); let proof_len = data[232] as usize; if data.len() != 233+proof_len+8 { return Err(ContractError::IoError(format!("ExecuteSwapFeeParams: expected {} bytes, got {}", 233+proof_len+8, data.len()))); } let proof = data[233..233+proof_len].to_vec(); let fee = u64::from_le_bytes(data[233+proof_len..233+proof_len+8].try_into().unwrap()); Ok(ExecuteSwapFeeParams { swap_id, alice_secret, bob_secret, alice_lock, bob_lock, alice_nullifier, bob_nullifier, fee_bps, proof, fee }) } }
 
 /// Execute swap with slippage tolerance parameters
-///
-/// This allows executing a swap where the received amount can vary
-/// within a slippage tolerance.
-/// Slippage tolerance: received >= min_expected * (1 - slippage_bps / 10000)
 #[derive(Debug, Clone,)]
 pub struct ExecuteSwapSlippageParams {
-    /// Swap ID to execute
     pub swap_id: [u8; 32],
-
-    /// Prover's secret for Alice's lock
     pub alice_secret: [u8; 32],
-
-    /// Prover's secret for Bob's lock
     pub bob_secret: [u8; 32],
-
-    /// Alice's lock commitment
     pub alice_lock: IntentCommitment,
-
-    /// Bob's lock commitment
     pub bob_lock: IntentCommitment,
-
-    /// Alice's nullifier
     pub alice_nullifier: IntentNullifier,
-
-    /// Bob's nullifier
     pub bob_nullifier: IntentNullifier,
-
-    /// Slippage tolerance in basis points (e.g., 50 = 0.5%)
     pub slippage_bps: u64,
-
-    /// ZK proof
     pub proof: Vec<u8>,
-
-    /// Fee paid for execution
     pub fee: u64,
 }
+
+impl ExecuteSwapSlippageParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(241+self.proof.len()); b.extend_from_slice(&self.swap_id); b.extend_from_slice(&self.alice_secret); b.extend_from_slice(&self.bob_secret); b.extend_from_slice(&self.alice_lock.to_bytes()); b.extend_from_slice(&self.bob_lock.to_bytes()); b.extend_from_slice(&self.alice_nullifier.to_bytes()); b.extend_from_slice(&self.bob_nullifier.to_bytes()); b.extend_from_slice(&self.slippage_bps.to_le_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.fee.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 241 { return Err(ContractError::IoError("ExecuteSwapSlippageParams: too short".into())); } let swap_id: [u8;32] = data[0..32].try_into().unwrap(); let alice_secret: [u8;32] = data[32..64].try_into().unwrap(); let bob_secret: [u8;32] = data[64..96].try_into().unwrap(); let alice_lock = IntentCommitment::from_bytes(data[96..128].try_into().unwrap()).map_err(|_| ContractError::IoError("ExecuteSwapSlippageParams: invalid alice_lock".into()))?; let bob_lock = IntentCommitment::from_bytes(data[128..160].try_into().unwrap()).map_err(|_| ContractError::IoError("ExecuteSwapSlippageParams: invalid bob_lock".into()))?; let alice_nullifier = IntentNullifier::from_bytes(data[160..192].try_into().unwrap()).map_err(|_| ContractError::IoError("ExecuteSwapSlippageParams: invalid alice_nullifier".into()))?; let bob_nullifier = IntentNullifier::from_bytes(data[192..224].try_into().unwrap()).map_err(|_| ContractError::IoError("ExecuteSwapSlippageParams: invalid bob_nullifier".into()))?; let slippage_bps = u64::from_le_bytes(data[224..232].try_into().unwrap()); let proof_len = data[232] as usize; if data.len() != 233+proof_len+8 { return Err(ContractError::IoError(format!("ExecuteSwapSlippageParams: expected {} bytes, got {}", 233+proof_len+8, data.len()))); } let proof = data[233..233+proof_len].to_vec(); let fee = u64::from_le_bytes(data[233+proof_len..233+proof_len+8].try_into().unwrap()); Ok(ExecuteSwapSlippageParams { swap_id, alice_secret, bob_secret, alice_lock, bob_lock, alice_nullifier, bob_nullifier, slippage_bps, proof, fee }) } }
 
 /// Update configuration parameters
 #[derive(Debug, Clone,)]
 pub struct UpdateConfigParams {
-    /// New timeout (in blocks)
     pub timeout: u32,
-    /// New fee (basis points)
     pub fee: u64,
-    /// Governance public key X (ZK-verified)
     pub gov_pub_x: pallas::Base,
-    /// Governance public key Y (ZK-verified)
     pub gov_pub_y: pallas::Base,
-    /// Governance nullifier for ZK replay protection
     pub gov_nullifier: pallas::Base,
 }
 
+impl UpdateConfigParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(108); b.extend_from_slice(&self.timeout.to_le_bytes()); b.extend_from_slice(&self.fee.to_le_bytes()); b.extend_from_slice(&self.gov_pub_x.to_repr()); b.extend_from_slice(&self.gov_pub_y.to_repr()); b.extend_from_slice(&self.gov_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 108 { return Err(ContractError::IoError(format!("UpdateConfigParams: expected 108 bytes, got {}", data.len()))); } let timeout = u32::from_le_bytes(data[0..4].try_into().unwrap()); let fee = u64::from_le_bytes(data[4..12].try_into().unwrap()); let gov_pub_x = Option::<pallas::Base>::from(pallas::Base::from_repr(data[12..44].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UpdateConfigParams: invalid gov_pub_x".into()))?; let gov_pub_y = Option::<pallas::Base>::from(pallas::Base::from_repr(data[44..76].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UpdateConfigParams: invalid gov_pub_y".into()))?; let gov_nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(data[76..108].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UpdateConfigParams: invalid gov_nullifier".into()))?; Ok(UpdateConfigParams { timeout, fee, gov_pub_x, gov_pub_y, gov_nullifier }) } }
+
 /// Set transparency level parameters
-///
-/// Allows governance to change transparency level post-deployment.
 #[derive(Debug, Clone,)]
 pub struct SetTransparencyLevelParams {
-    /// New transparency level
     pub level: TransparencyLevel,
-    /// Governance public key X (ZK-verified)
     pub gov_pub_x: pallas::Base,
-    /// Governance public key Y (ZK-verified)
     pub gov_pub_y: pallas::Base,
-    /// Governance nullifier for ZK replay protection
     pub gov_nullifier: pallas::Base,
 }
+
+impl SetTransparencyLevelParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(97); b.push(self.level as u8); b.extend_from_slice(&self.gov_pub_x.to_repr()); b.extend_from_slice(&self.gov_pub_y.to_repr()); b.extend_from_slice(&self.gov_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 97 { return Err(ContractError::IoError(format!("SetTransparencyLevelParams: expected 97 bytes, got {}", data.len()))); } let level = TransparencyLevel::try_from(data[0])?; let gov_pub_x = Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SetTransparencyLevelParams: invalid gov_pub_x".into()))?; let gov_pub_y = Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SetTransparencyLevelParams: invalid gov_pub_y".into()))?; let gov_nullifier = Option::<pallas::Base>::from(pallas::Base::from_repr(data[65..97].try_into().unwrap())).ok_or_else(|| ContractError::IoError("SetTransparencyLevelParams: invalid gov_nullifier".into()))?; Ok(SetTransparencyLevelParams { level, gov_pub_x, gov_pub_y, gov_nullifier }) } }
 
 /// Set full transparency configuration parameters
 ///
@@ -846,14 +793,23 @@ impl CancelSwapUpdateV1 {
 /// deployment time and can be adjusted by governance post-deployment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq,)]
 pub enum TransparencyLevel {
-    /// Level 0: Complete darkness - no amounts, parties, or trade data revealed
     Dark = 0,
-    /// Level 1: Aggregate market data only - price ranges, volume bands
     Aggregate = 1,
-    /// Level 2: Anonymized trades - unlinkable trade data
     Anonymized = 2,
-    /// Level 3: Full transparency - opt-in full disclosure
     Full = 3,
+}
+
+impl TryFrom<u8> for TransparencyLevel {
+    type Error = ContractError;
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        match v {
+            0 => Ok(Self::Dark),
+            1 => Ok(Self::Aggregate),
+            2 => Ok(Self::Anonymized),
+            3 => Ok(Self::Full),
+            _ => Err(ContractError::IoError(format!("TransparencyLevel: invalid value {}", v))),
+        }
+    }
 }
 
 /// Default price band size for Aggregate level (in token units)
