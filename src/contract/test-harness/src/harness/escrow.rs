@@ -42,7 +42,7 @@ use dwow_escrow_contract::client::{
     refund_v1::{RefundEscrowCallData, create_refund_escrow_proof, RefundEscrowPublicInputs},
 };
 use dwow_escrow_contract::model::{
-    CreateEscrowParamsV1, FundEscrowParamsV1, ClaimEscrowParamsV1, RefundEscrowParamsV1,
+    CreateEscrowParamsV1, EscrowId, FundEscrowParamsV1, ClaimEscrowParamsV1, RefundEscrowParamsV1,
 };
 
 /// Escrow Harness for isolated testing

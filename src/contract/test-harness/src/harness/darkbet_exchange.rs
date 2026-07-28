@@ -244,7 +244,7 @@ impl DarkbetExchangeHarness {
         };
 
         let mut call_data = vec![];
-        call_data.extend_from_slice(&params.encode());
+        params.encode(&mut call_data)?;
 
         Ok(CreateMarketResult { call_data, public_inputs, proof })
     }
@@ -290,7 +290,7 @@ impl DarkbetExchangeHarness {
         };
 
         let mut call_data = vec![];
-        call_data.extend_from_slice(&params.encode());
+        params.encode(&mut call_data)?;
 
         Ok(BuyPositionResult { call_data, public_inputs, proof })
     }
@@ -331,7 +331,7 @@ impl DarkbetExchangeHarness {
         };
 
         let mut call_data = vec![];
-        call_data.extend_from_slice(&params.encode());
+        params.encode(&mut call_data)?;
 
         Ok(ClaimWinningsResult { call_data, public_inputs, proof })
     }
@@ -373,7 +373,7 @@ impl DarkbetExchangeHarness {
         };
 
         let mut call_data = vec![];
-        call_data.extend_from_slice(&params.encode());
+        params.encode(&mut call_data)?;
 
         Ok(AddLiquidityResult { call_data, public_inputs, proof })
     }

@@ -176,7 +176,7 @@ impl TenderHarness {
             delivery_deadline,
         };
         let mut call_data = vec![0x00];
-        call_data.extend_from_slice(&params.encode());
+        params.encode(&mut call_data)?;
         Ok(CreateTenderResult { call_data, proof, public_inputs, tender_id })
     }
 
@@ -215,7 +215,7 @@ impl TenderHarness {
             encrypted_payload,
         };
         let mut call_data = vec![0x01];
-        call_data.extend_from_slice(&params.encode());
+        params.encode(&mut call_data)?;
         Ok(SubmitBidResult { call_data, proof, public_inputs })
     }
 
@@ -247,7 +247,7 @@ impl TenderHarness {
             revealed_amount,
         };
         let mut call_data = vec![0x02];
-        call_data.extend_from_slice(&params.encode());
+        params.encode(&mut call_data)?;
         Ok(RevealBidResult { call_data, proof, public_inputs })
     }
 
@@ -285,7 +285,7 @@ impl TenderHarness {
             winning_amount,
         };
         let mut call_data = vec![0x04];
-        call_data.extend_from_slice(&params.encode());
+        params.encode(&mut call_data)?;
         Ok(SelectWinnerResult { call_data, proof, public_inputs })
     }
 
@@ -338,7 +338,7 @@ impl TenderHarness {
             capability_predicate_result,
         };
         let mut call_data = vec![0x08];
-        call_data.extend_from_slice(&params.encode());
+        params.encode(&mut call_data)?;
         Ok(SubmitBidWithCapabilityResult { call_data, proof, public_inputs })
     }
 }

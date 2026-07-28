@@ -235,7 +235,7 @@ impl DexHarness {
         };
 
         let mut call_data = vec![0x01]; // CreateSwapV1
-        call_data.extend_from_slice(&params.encode());
+        params.encode(&mut call_data)?;
 
         Ok(CreateSwapResult {
             call_data,
@@ -281,7 +281,7 @@ impl DexHarness {
         };
 
         let mut call_data = vec![0x02]; // AcceptSwapV1
-        call_data.extend_from_slice(&params.encode());
+        params.encode(&mut call_data)?;
 
         Ok(AcceptSwapResult {
             call_data,
@@ -342,7 +342,7 @@ impl DexHarness {
         };
 
         let mut call_data = vec![0x03]; // ExecuteSwapV1
-        call_data.extend_from_slice(&params.encode());
+        params.encode(&mut call_data)?;
 
         Ok(ExecuteSwapResult {
             call_data,
@@ -384,7 +384,7 @@ impl DexHarness {
         };
 
         let mut call_data = vec![0x04]; // CancelSwapV1
-        call_data.extend_from_slice(&params.encode());
+        params.encode(&mut call_data)?;
 
         Ok(CancelSwapResult {
             call_data,

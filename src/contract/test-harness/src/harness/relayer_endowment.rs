@@ -120,7 +120,7 @@ impl RelayerEndowmentHarness {
         };
 
         let mut call_data = vec![];
-        call_data.extend_from_slice(&params.encode());
+        params.encode(&mut call_data)?;
 
         Ok(InitializeResult { call_data, proof, public_inputs })
     }
@@ -164,7 +164,7 @@ impl RelayerEndowmentHarness {
         };
 
         let mut call_data = vec![];
-        call_data.extend_from_slice(&params.encode());
+        params.encode(&mut call_data)?;
 
         Ok(DeployCapitalResult { call_data, proof, public_inputs })
     }
@@ -193,7 +193,7 @@ impl RelayerEndowmentHarness {
         };
 
         let mut call_data = vec![];
-        call_data.extend_from_slice(&params.encode());
+        params.encode(&mut call_data)?;
 
         Ok(ClaimFeesResult { call_data, proof, public_inputs })
     }
