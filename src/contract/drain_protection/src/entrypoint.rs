@@ -163,7 +163,7 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
 
     let metadata = match func {
         DrainProtectionFunction::ExitV1 => {
-            let params: ExitParamsV1 = deserialize(&self_.data[1..])?;
+            let params= ExitParamsV1::decode(&self_.data[1..])?;
             drain_protection_exit_get_metadata_v1(params)?
         }
         // V2 circuits registered (exit_v2, execute_v2, initialize_v2, lock_v2,
@@ -224,12 +224,12 @@ fn process_instruction(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> Contract
             let _ = wasm::util::set_return_data(&update);
         }
         DrainProtectionFunction::ProposeV1 => {
-            let params: ProposeParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params= ProposeParamsV1::decode(&self_.data.data[1..])?;
             let update = propose_process_instruction_v1(cid, params)?;
             let _ = wasm::util::set_return_data(&update);
         }
         DrainProtectionFunction::VoteV1 => {
-            let params: VoteParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params= VoteParamsV1::decode(&self_.data.data[1..])?;
             let update = vote_process_instruction_v1(cid, params)?;
             let _ = wasm::util::set_return_data(&update);
         }
@@ -261,7 +261,7 @@ fn process_instruction(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> Contract
                 validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
             }
 
-            let params: ExitParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params= ExitParamsV1::decode(&self_.data.data[1..])?;
             let update = exit_process_instruction_v1(cid, params, &child_call.data)?;
             let _ = wasm::util::set_return_data(&update);
         }
@@ -293,12 +293,12 @@ fn process_instruction(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> Contract
             let _ = wasm::util::set_return_data(&update);
         }
         DrainProtectionFunction::LockV1 => {
-            let params: LockParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params= LockParamsV1::decode(&self_.data.data[1..])?;
             let update = lock_process_instruction_v1(cid, params)?;
             let _ = wasm::util::set_return_data(&update);
         }
         DrainProtectionFunction::UnlockV1 => {
-            let params: UnlockParamsV1 = deserialize(&self_.data.data[1..])?;
+            let params= UnlockParamsV1::decode(&self_.data.data[1..])?;
             let update = unlock_process_instruction_v1(cid, params)?;
             let _ = wasm::util::set_return_data(&update);
         }

@@ -37,7 +37,7 @@ use dwow_serial::{SerialDecodable, SerialEncodable};
 use dwow_sdk::crypto::{IntentCommitment, IntentNullifier, PublicKey};
 
 /// Deterministic bridge address: poseidon_hash(recipient_pub.xy(), nonce)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq,)]
 pub struct BridgeAddress(pallas::Base);
 impl BridgeAddress {
     pub fn inner(&self) -> pallas::Base { self.0 }
@@ -136,7 +136,7 @@ impl dwow_serial::AsyncDecodable for ExternalChain {
 /// chain.  Replaces the four `Option<T>` fields that previously existed on
 /// `DepositParams` — the enum guarantees exactly one proof is present and
 /// makes the chain type self-evident from the variant.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub enum ExternalChainProof {
     Monero(XmrDepositProof),
     Zcash(ZcashDepositProof),
@@ -151,7 +151,7 @@ pub enum ExternalChainProof {
 ///
 /// Security: Deposit creates a commitment H(secret, amount, bridge_address).
 /// Only the depositor knows `secret`, so only they can later withdraw.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct DepositParams {
     /// Commitment hash from user's secret (uses generic PrivateIntent commitment)
     /// commitment = poseidon_hash([9001, owner_x, owner_y, namespace, payload_hash, expiry, nonce, blind])
@@ -196,7 +196,7 @@ pub struct DepositParams {
 /// No VSS/threshold signing required.
 ///
 /// Nullifier = H(secret) proves deposit ownership without revealing secret.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct WithdrawParams {
     /// Nullifier = H(secret) - proves deposit exists and hasn't been withdrawn
     /// Uses generic PrivateIntent nullifier: poseidon_hash([9002, owner_secret, namespace, nonce, commitment])
@@ -236,7 +236,7 @@ pub struct WithdrawParams {
 ///
 /// Security: Only callable by authorized governance (DAO).
 /// This doesn't affect user funds - only operational parameters.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct UpdateConfigParams {
     /// New deposit fee
     pub deposit_fee: u64,
@@ -341,7 +341,7 @@ pub struct Withdrawal {
 /// This structure contains the cryptographic proof required to verify
 /// an XMR deposit on the Monero chain without revealing the user's
 /// spend key.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct XmrDepositProof {
     /// Monero transaction hash (cn_fast_hash / keccak256 of tx serialization)
     pub tx_hash: [u8; 32],
@@ -377,7 +377,7 @@ pub struct XmrDepositProof {
 ///
 /// For Monero, this proves ownership of the one-time address private key
 /// without revealing the key itself.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct DleqProof {
     /// First challenge response
     pub challenge_response_1: [u8; 32],
@@ -416,7 +416,7 @@ pub struct DleqProof {
 /// This structure contains the cryptographic proofs required to verify
 /// a Zcash Sapling deposit on the Zcash chain without revealing the
 /// user's spend key or transaction details.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ZcashDepositProof {
     /// Nullifier derived from note (proves note hasn't been spent)
     /// Computed as: note_nullifier = blake2s(labeled_communication, ...)
@@ -463,7 +463,7 @@ pub struct ZcashDepositProof {
 ///
 /// For withdrawal, the user burns wZEC on DarkWow and specifies
 /// a Zcash shielded destination via a hashed recipient address.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ZcashWithdrawParams {
     /// Nullifier proving the wZEC hasn't been spent
     pub nullifier: IntentNullifier,
@@ -519,7 +519,7 @@ pub struct ZcashWithdrawParams {
 /// This structure contains the cryptographic proofs required to verify
 /// an Aztec deposit on the Ethereum rollup without revealing the
 /// user's transaction details or balance.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct AztecDepositProof {
     /// Nullifier derived from note (proves note hasn't been spent)
     /// Computed as: nullifier = pedersen_hash(note_secret, asset_id)
@@ -564,7 +564,7 @@ pub struct AztecDepositProof {
 ///
 /// For withdrawal, the user burns wETH/wDAI on DarkWow and specifies
 /// an Aztec destination via a hashed recipient address.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct AztecWithdrawParams {
     /// Nullifier proving the wrapped token hasn't been spent
     pub nullifier: IntentNullifier,
@@ -621,7 +621,7 @@ pub struct AztecWithdrawParams {
 /// This structure contains the cryptographic proof required to verify
 /// a Litecoin deposit on the Litecoin chain. Supports both standard
 /// transparent UTXO deposits and MimbleWimble MWEB confidential deposits.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct LitecoinDepositProof {
     /// Transaction hash of the LTC deposit
     pub tx_hash: [u8; 32],
@@ -660,7 +660,7 @@ pub struct LitecoinDepositProof {
 ///
 /// For withdrawal, the user burns wLTC on DarkWow and specifies
 /// a Litecoin destination via a hashed recipient address.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct LitecoinWithdrawParams {
     /// Nullifier proving the wLTC hasn't been spent
     pub nullifier: IntentNullifier,
@@ -689,7 +689,7 @@ pub struct LitecoinWithdrawParams {
 ///
 /// For withdrawal, the user burns wXMR on DarkWow and specifies
 /// a Monero destination via a hashed recipient address.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct XmrWithdrawParams {
     /// Nullifier proving the wXMR hasn't been spent
     pub nullifier: IntentNullifier,
@@ -759,7 +759,7 @@ pub struct PendingWithdrawal {
 ///
 /// When a withdrawal times out (current block > timeout_height),
 /// the user can submit a cancellation to reclaim their funds.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CancelWithdrawParams {
     /// Nullifier of the withdrawal to cancel
     pub nullifier: IntentNullifier,
@@ -776,7 +776,7 @@ pub struct CancelWithdrawParams {
 ///
 /// For guaranteed withdrawals, the relayer must prove they have allocated
 /// coverage from the pool_stake contract before execution is allowed.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ExecuteGuaranteedWithdrawParams {
     /// Nullifier of the withdrawal to execute
     pub nullifier: IntentNullifier,
@@ -798,7 +798,7 @@ pub struct ExecuteGuaranteedWithdrawParams {
 /// When a relayer has been offline past `reassignable_after`,
 /// another relayer can claim the withdrawal. The original relayer's
 /// stake is partially slashed for abandonment.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ReassignWithdrawalParamsV1 {
     /// Nullifier of the withdrawal to reassign
     pub nullifier: IntentNullifier,
@@ -825,7 +825,7 @@ pub struct ReassignWithdrawalUpdateV1 {
 // ============================================================================
 
 /// Parameters for creating an HTLC that coordinates with atomic swap
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CreateHtlcParams {
     /// Swap ID (matches atomic_swap SwapId)
     pub swap_id: [u8; 32],
@@ -844,7 +844,7 @@ pub struct CreateHtlcParams {
 }
 
 /// Parameters for claiming an HTLC (when secret is revealed)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ClaimHtlcParams {
     /// Swap ID of the HTLC
     pub swap_id: [u8; 32],
@@ -853,7 +853,7 @@ pub struct ClaimHtlcParams {
 }
 
 /// Parameters for refunding an HTLC (after timelock)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct RefundHtlcParams {
     /// Swap ID of the HTLC
     pub swap_id: [u8; 32],
@@ -899,7 +899,7 @@ pub struct ExecuteGuaranteedWithdrawUpdateV1 {
 }
 
 /// HTLC state enum for database storage
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub enum HtlcSwapState {
     Pending = 0,
     Claimable = 1,
@@ -928,7 +928,7 @@ pub struct HtlcSwapInfo {
 /// Records relayer misbehavior for potential slashing.
 /// If a relayer fails to execute a withdrawal within timeout,
 /// they can be slashed as punishment.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct RelayerSlash {
     /// Relayer address
     pub relayer: Option<PublicKey>,
@@ -951,7 +951,7 @@ pub struct RelayerSlash {
 // ============================================================================
 
 /// Parameters for registering a relayer with the bridge
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct RegisterRelayerParams {
     /// Relayer's public key
     pub relayer_pub: PublicKey,
@@ -982,7 +982,7 @@ pub struct RegisterRelayerUpdateV1 {
 // ============================================================================
 
 /// Parameters for a relayer accepting a pending withdrawal
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct AcceptWithdrawalParams {
     /// Nullifier of the withdrawal to accept
     pub nullifier: IntentNullifier,
@@ -1006,14 +1006,14 @@ pub struct AcceptWithdrawalUpdateV1 {
 // ============================================================================
 
 /// Parameters for verifying a relayer's reputation
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct VerifyRelayerReputationParams {
     /// Relayer's public key to check
     pub relayer_pub: PublicKey,
 }
 
 /// Reputation info returned to caller
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ReputationInfo {
     pub slash_count: u64,
     pub success_count: u64,
@@ -1027,7 +1027,7 @@ pub struct ReputationInfo {
 // ============================================================================
 
 /// Parameters for registering a fee schedule
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct RegisterFeeScheduleParams {
     /// Relayer's public key
     pub relayer_pub: PublicKey,
@@ -1056,7 +1056,7 @@ pub struct RegisterFeeScheduleUpdateV1 {
 /// chain deposits exist — those live on BTC/XMR/ZEC/etc. The governance
 /// report proves **internal accounting consistency**: the bridge is not
 /// minting unbacked wrapped tokens out of thin air.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct GovernanceReportParams {
     /// External chain being reported on
     pub chain: ExternalChain,

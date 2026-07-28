@@ -243,7 +243,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         BridgeFunction::DepositV1 => deposit_get_metadata(&self_.data[1..]),
         BridgeFunction::WithdrawV1 => withdraw_get_metadata(&self_.data[1..]),
         BridgeFunction::UpdateConfigV1 => {
-            let params: UpdateConfigParams = deserialize(&self_.data[1..])?;
+            let params= UpdateConfigParams::decode(&self_.data[1..])?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 BRIDGE_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2.to_string(),
@@ -276,7 +276,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 fn deposit_get_metadata(data: &[u8]) -> Vec<u8> {
     use dwow_sdk::pasta::pallas;
 
-    let params: DepositParams = match deserialize(data) { Ok(p) => p, Err(_) => return vec![] };
+    let params = match DepositParams::decode(data) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((
@@ -302,7 +302,7 @@ fn withdraw_get_metadata(data: &[u8]) -> Vec<u8> {
     use dwow_sdk::crypto::poseidon_hash;
     use dwow_sdk::pasta::pallas;
 
-    let params: WithdrawParams = match deserialize(data) { Ok(p) => p, Err(_) => return vec![] };
+    let params = match WithdrawParams::decode(data) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
@@ -391,7 +391,7 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
     }
 
     let self_ = &calls[call_idx].data;
-    let params: DepositParams = deserialize(&self_.data[1..])?;
+    let params= DepositParams::decode(&self_.data[1..])?;
 
     msg!("[bridge::process_instruction] Processing deposit: commitment={:?}, chain={:?}", &params.commitment, &params.chain);
 
@@ -779,7 +779,7 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
     }
 
     let self_ = &calls[call_idx].data;
-    let params: WithdrawParams = deserialize(&self_.data[1..])?;
+    let params= WithdrawParams::decode(&self_.data[1..])?;
 
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
@@ -859,7 +859,7 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
 /// Process configuration update instruction
 fn process_config_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: UpdateConfigParams = deserialize(&self_.data[1..])?;
+    let params= UpdateConfigParams::decode(&self_.data[1..])?;
 
     // Verify ZK proof authorizes this config update (governance key holder)
     // Host-side ZK verification ensures prover knows governance secret
@@ -907,7 +907,7 @@ fn process_cancel_withdraw_instruction(
     }
 
     let self_ = &calls[call_idx].data;
-    let params: CancelWithdrawParams = deserialize(&self_.data[1..])?;
+    let params= CancelWithdrawParams::decode(&self_.data[1..])?;
 
     msg!("[bridge::CancelWithdrawV1] Cancelling withdrawal: nullifier={:?}, current_block={}", &params.nullifier, params.current_block);
 
@@ -1004,7 +1004,7 @@ fn process_execute_guaranteed_withdraw_instruction(
     }
 
     let self_ = &calls[call_idx].data;
-    let params: ExecuteGuaranteedWithdrawParams = deserialize(&self_.data[1..])?;
+    let params= ExecuteGuaranteedWithdrawParams::decode(&self_.data[1..])?;
 
     msg!("[bridge::ExecuteGuaranteedWithdrawV1] Executing guaranteed withdrawal: nullifier={:?}", params.nullifier);
 
@@ -1076,7 +1076,7 @@ fn process_reassign_withdrawal_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[_call_idx].data;
-    let params: ReassignWithdrawalParamsV1 = deserialize(&self_.data[1..])?;
+    let params= ReassignWithdrawalParamsV1::decode(&self_.data[1..])?;
 
     msg!("[bridge::ReassignWithdrawalV1] Reassigning withdrawal: nullifier={:?}, new_relayer={:?}",
         &params.nullifier, &params.new_relayer);
@@ -1169,7 +1169,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             apply_withdraw_update(cid, update)
         }
         BridgeFunction::UpdateConfigV1 => {
-            let params: UpdateConfigParams = deserialize(&update_data[1..])?;
+            let params= UpdateConfigParams::decode(&update_data[1..])?;
             apply_config_update(cid, params)
         }
         BridgeFunction::CancelWithdrawV1 => {
@@ -1505,7 +1505,7 @@ fn process_governance_report_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: GovernanceReportParams = deserialize(&self_.data[1..])?;
+    let params= GovernanceReportParams::decode(&self_.data[1..])?;
 
     // Read on-chain config DB values
     let config_db = wasm::db::db_lookup(cid, "config")?;
@@ -1652,7 +1652,7 @@ fn process_create_htlc_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: CreateHtlcParams = deserialize(&self_.data[1..])?;
+    let params= CreateHtlcParams::decode(&self_.data[1..])?;
 
     msg!("[bridge::process_instruction] CreateHtlc: swap_id={:?}, chain={:?}", params.swap_id, params.chain);
 
@@ -1689,7 +1689,7 @@ fn process_claim_htlc_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: ClaimHtlcParams = deserialize(&self_.data[1..])?;
+    let params= ClaimHtlcParams::decode(&self_.data[1..])?;
 
     msg!("[bridge::process_instruction] ClaimHtlc: swap_id={:?}", params.swap_id);
 
@@ -1729,7 +1729,7 @@ fn process_refund_htlc_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: RefundHtlcParams = deserialize(&self_.data[1..])?;
+    let params= RefundHtlcParams::decode(&self_.data[1..])?;
 
     msg!("[bridge::process_instruction] RefundHtlc: swap_id={:?}, block={}", params.swap_id, params.current_block);
 
@@ -1868,7 +1868,7 @@ fn process_register_relayer_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: RegisterRelayerParams = deserialize(&self_.data[1..])?;
+    let params= RegisterRelayerParams::decode(&self_.data[1..])?;
 
     msg!("[bridge::RegisterRelayerV1] Registering relayer: {:?}", &params.relayer_pub);
 
@@ -1920,7 +1920,7 @@ fn process_accept_withdrawal_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: AcceptWithdrawalParams = deserialize(&self_.data[1..])?;
+    let params= AcceptWithdrawalParams::decode(&self_.data[1..])?;
 
     msg!("[bridge::AcceptWithdrawalV1] Accepting withdrawal: nullifier={:?}, relayer={:?}",
         &params.nullifier, &params.relayer_pub);
@@ -2012,7 +2012,7 @@ fn process_verify_relayer_reputation_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: VerifyRelayerReputationParams = deserialize(&self_.data[1..])?;
+    let params= VerifyRelayerReputationParams::decode(&self_.data[1..])?;
 
     msg!("[bridge::VerifyRelayerReputationV1] Querying reputation for {:?}", &params.relayer_pub);
 
@@ -2058,7 +2058,7 @@ fn process_register_fee_schedule_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: RegisterFeeScheduleParams = deserialize(&self_.data[1..])?;
+    let params= RegisterFeeScheduleParams::decode(&self_.data[1..])?;
 
     msg!("[bridge::RegisterFeeScheduleV1] Registering fee schedule for {:?}", &params.relayer_pub);
 

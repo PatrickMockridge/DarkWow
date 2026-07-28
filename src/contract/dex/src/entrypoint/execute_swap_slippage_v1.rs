@@ -51,7 +51,7 @@ pub(crate) fn dex_execute_swap_slippage_get_metadata_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: ExecuteSwapSlippageParams = deserialize(&self_.data[1..])?;
+    let params= ExecuteSwapSlippageParams::decode(&self_.data[1..])?;
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
@@ -81,7 +81,7 @@ pub(crate) fn dex_execute_swap_slippage_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx];
-    let params: ExecuteSwapSlippageParams = deserialize(&self_.data.data[1..])?;
+    let params= ExecuteSwapSlippageParams::decode(&self_.data.data[1..])?;
 
     msg!("[ExecuteSwapSlippageV1] Executing swap with slippage: id={:?}", &params.swap_id);
 

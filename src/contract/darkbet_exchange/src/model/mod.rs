@@ -39,7 +39,7 @@ use dwow_sdk::crypto::pasta_prelude::PrimeField;
 // ============================================================================
 
 /// Market states
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq,)]
 #[repr(u8)]
 pub enum MarketState {
     /// Market created, accepting orders
@@ -70,7 +70,7 @@ impl TryFrom<u8> for MarketState {
 }
 
 /// Market type: determines the matching mechanism
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq,)]
 #[repr(u8)]
 pub enum MarketType {
     /// Order-book style: back/lay orders matched peer-to-peer via DEX
@@ -92,7 +92,7 @@ impl TryFrom<u8> for MarketType {
 }
 
 /// Order types (order-book mode)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq,)]
 #[repr(u8)]
 pub enum OrderType {
     /// Bet that outcome WILL happen
@@ -114,7 +114,7 @@ impl TryFrom<u8> for OrderType {
 }
 
 /// Outcome types for resolved markets
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq,)]
 #[repr(u8)]
 pub enum Outcome {
     /// Outcome did not occur (lay wins)
@@ -139,7 +139,7 @@ impl TryFrom<u8> for Outcome {
 }
 
 /// Order state (order-book mode)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq,)]
 #[repr(u8)]
 pub enum OrderState {
     /// Order is open and waiting to be matched
@@ -167,7 +167,7 @@ impl TryFrom<u8> for OrderState {
 }
 
 /// Match state (order-book mode)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq,)]
 #[repr(u8)]
 pub enum MatchState {
     /// Match created, waiting for resolution
@@ -192,7 +192,7 @@ impl TryFrom<u8> for MatchState {
 }
 
 /// Position state (AMM mode)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq,)]
 #[repr(u8)]
 pub enum PositionState {
     /// Position is active
@@ -217,7 +217,7 @@ impl TryFrom<u8> for PositionState {
 }
 
 /// LP share state (AMM mode)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq,)]
 #[repr(u8)]
 pub enum LpShareState {
     /// LP shares are active
@@ -791,7 +791,7 @@ impl LpShare {
 // ============================================================================
 
 /// Parameters for CreateMarketV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CreateMarketParamsV1 {
     /// Market description
     pub description: String,
@@ -838,7 +838,7 @@ pub struct CreateMarketUpdateV1 {
 // --------------------------------------------------------------------------
 
 /// Parameters for PlaceBackV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct PlaceBackParamsV1 {
     /// Market to bet on
     pub market_id: pallas::Base,
@@ -870,7 +870,7 @@ pub struct PlaceBackUpdateV1 {
 }
 
 /// Parameters for PlaceLayV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct PlaceLayParamsV1 {
     /// Market to bet against
     pub market_id: pallas::Base,
@@ -903,7 +903,7 @@ pub struct PlaceLayUpdateV1 {
 }
 
 /// Parameters for MatchOrdersV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct MatchOrdersParamsV1 {
     /// Market ID
     pub market_id: pallas::Base,
@@ -937,7 +937,7 @@ pub struct MatchOrdersUpdateV1 {
 // --------------------------------------------------------------------------
 
 /// Parameters for BuyPositionV1 (AMM mode)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct BuyPositionParamsV1 {
     /// Market to buy position in
     pub market_id: pallas::Base,
@@ -971,7 +971,7 @@ pub struct BuyPositionUpdateV1 {
 }
 
 /// Parameters for AddLiquidityV1 (AMM mode)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct AddLiquidityParamsV1 {
     /// Market to add liquidity to
     pub market_id: pallas::Base,
@@ -1001,7 +1001,7 @@ pub struct AddLiquidityUpdateV1 {
 }
 
 /// Parameters for RemoveLiquidityV1 (AMM mode)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct RemoveLiquidityParamsV1 {
     /// Market to remove liquidity from
     pub market_id: pallas::Base,
@@ -1025,7 +1025,7 @@ pub struct RemoveLiquidityUpdateV1 {
 }
 
 /// Parameters for ClaimWinningsV1 (AMM mode)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ClaimWinningsParamsV1 {
     /// Position ID to claim
     pub position_id: pallas::Base,
@@ -1052,7 +1052,7 @@ pub struct ClaimWinningsUpdateV1 {
 // --------------------------------------------------------------------------
 
 /// Parameters for ResolveMarketV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ResolveMarketParamsV1 {
     /// Market to resolve
     pub market_id: pallas::Base,
@@ -1073,7 +1073,7 @@ pub struct ResolveMarketUpdateV1 {
 }
 
 /// Parameters for SettleMarketV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct SettleMarketParamsV1 {
     /// Market to settle
     pub market_id: pallas::Base,
@@ -1092,7 +1092,7 @@ pub struct SettleMarketUpdateV1 {
 }
 
 /// Parameters for CancelOrderV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CancelOrderParamsV1 {
     /// Order to cancel
     pub order_id: pallas::Base,

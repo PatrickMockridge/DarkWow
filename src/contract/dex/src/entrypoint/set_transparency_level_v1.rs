@@ -45,7 +45,7 @@ pub(crate) fn dex_set_transparency_level_process_instruction_v1(
     calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: SetTransparencyLevelParams = deserialize(&self_.data[1..])?;
+    let params= SetTransparencyLevelParams::decode(&self_.data[1..])?;
 
     msg!("[SetTransparencyLevelV1] Setting transparency level to: {:?}", params.level);
 

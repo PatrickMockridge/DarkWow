@@ -267,11 +267,11 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         DexFunction::ExecuteSwapV1 => dex_execute_swap_get_metadata_v1(cid, call_idx, calls)?,
         DexFunction::CancelSwapV1 => dex_cancel_swap_get_metadata_v1(cid, call_idx, calls)?,
         DexFunction::UpdateConfigV1 => {
-            let params: UpdateConfigParams = deserialize(&self_.data[1..])?;
+            let params= UpdateConfigParams::decode(&self_.data[1..])?;
             dex_update_config_get_metadata_v1(params)?
         }
         DexFunction::SetTransparencyLevelV1 => {
-            let params: SetTransparencyLevelParams = deserialize(&self_.data[1..])?;
+            let params= SetTransparencyLevelParams::decode(&self_.data[1..])?;
             dex_set_transparency_get_metadata_v1(params)?
         }
         DexFunction::ExecuteSwapFeeV1 => dex_execute_swap_fee_get_metadata_v1(cid, call_idx, calls)?,

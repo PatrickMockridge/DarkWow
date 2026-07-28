@@ -78,7 +78,7 @@ pub(crate) fn dex_cancel_swap_get_metadata_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: CancelSwapParams = deserialize(&self_.data[1..])?;
+    let params= CancelSwapParams::decode(&self_.data[1..])?;
 
     // Public inputs for the ZK proof verification
     // The order must match the `constrain_instance` calls in cancel_swap_v1.zk:
@@ -120,7 +120,7 @@ pub(crate) fn dex_cancel_swap_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx];
-    let params: CancelSwapParams = deserialize(&self_.data.data[1..])?;
+    let params= CancelSwapParams::decode(&self_.data.data[1..])?;
 
     msg!("[CancelSwapV1] Cancelling swap: id={:?}", &params.swap_id);
 

@@ -94,7 +94,7 @@ pub const DEX_NAMESPACE: u64 = 0x0003;
 /// - Aggregate: Price ranges and volume bands only
 /// - Anonymized: Anonymized trade data
 /// - Full: Everything revealed
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct InitializeParams {
     /// Swap timeout in blocks
     pub timeout: u32,
@@ -131,7 +131,7 @@ pub struct InitializeParams {
 /// public key.
 ///
 /// The signature commits to: swap_id || offer_token || offer_amount || request_token || request_amount
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CreateSwapParams {
     /// Swap ID (computed from commitment)
     pub swap_id: [u8; 32],
@@ -229,7 +229,7 @@ pub struct AcceptSwapParams {
 ///
 /// SECURITY: The prover MUST also provide alice_lock and bob_lock which must
 /// match the proposer's stored lock for the ZK proof to be valid.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ExecuteSwapParams {
     /// Swap ID to execute
     pub swap_id: [u8; 32],
@@ -271,7 +271,7 @@ pub struct ExecuteSwapParams {
 /// This nullifier is passed in this struct to allow the contract to:
 /// 1. Verify it as a public input to the ZK proof
 /// 2. Check it against on-chain state to prevent double-cancellation
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CancelSwapParams {
     /// Swap ID to cancel
     pub swap_id: [u8; 32],
@@ -294,7 +294,7 @@ pub struct CancelSwapParams {
 ///
 /// This allows executing a swap with a fee deducted from the received amount.
 /// Fee calculation: fee = fill_amount * fee_bps / 10000
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ExecuteSwapFeeParams {
     /// Swap ID to execute
     pub swap_id: [u8; 32],
@@ -332,7 +332,7 @@ pub struct ExecuteSwapFeeParams {
 /// This allows executing a swap where the received amount can vary
 /// within a slippage tolerance.
 /// Slippage tolerance: received >= min_expected * (1 - slippage_bps / 10000)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ExecuteSwapSlippageParams {
     /// Swap ID to execute
     pub swap_id: [u8; 32],
@@ -366,7 +366,7 @@ pub struct ExecuteSwapSlippageParams {
 }
 
 /// Update configuration parameters
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct UpdateConfigParams {
     /// New timeout (in blocks)
     pub timeout: u32,
@@ -383,7 +383,7 @@ pub struct UpdateConfigParams {
 /// Set transparency level parameters
 ///
 /// Allows governance to change transparency level post-deployment.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct SetTransparencyLevelParams {
     /// New transparency level
     pub level: TransparencyLevel,
@@ -398,14 +398,14 @@ pub struct SetTransparencyLevelParams {
 /// Set full transparency configuration parameters
 ///
 /// Allows governance to change transparency level AND parameters post-deployment.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct SetTransparencyConfigParams {
     /// New transparency configuration
     pub config: TransparencyConfig,
 }
 
 /// Swap state
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub enum SwapState {
     /// Swap created, waiting for acceptor
     Created,
@@ -838,7 +838,7 @@ impl CancelSwapUpdateV1 {
 /// Different DEX deployments serve different users with different
 /// privacy/compliance needs. The transparency level is set at
 /// deployment time and can be adjusted by governance post-deployment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq,)]
 pub enum TransparencyLevel {
     /// Level 0: Complete darkness - no amounts, parties, or trade data revealed
     Dark = 0,
@@ -866,7 +866,7 @@ const DEFAULT_ANONYMITY_GROUP_SIZE: u64 = 10;
 ///
 /// This config determines what data is emitted in events and what
 /// circuit capabilities are enabled at each transparency level.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct TransparencyConfig {
     /// Current transparency level
     pub level: TransparencyLevel,

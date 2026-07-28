@@ -115,7 +115,7 @@ pub enum LockState {
     Locked = 1,
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct RateLimit {
     pub base_rate_bps: u64,
     pub averaging_window_blocks: u64,
@@ -128,7 +128,7 @@ impl Default for RateLimit {
     }
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ExitQueueConfig {
     pub max_exit_per_epoch_bps: u64,
     pub epoch_blocks: u64,
@@ -142,7 +142,7 @@ impl Default for ExitQueueConfig {
     }
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct CircuitBreakerConfig {
     pub trigger_threshold_bps: u64,
     pub window_blocks: u64,
@@ -157,7 +157,7 @@ impl Default for CircuitBreakerConfig {
     }
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ObservationPeriodConfig {
     pub threshold_bps: u64,
     pub observation_blocks: u64,
@@ -171,7 +171,7 @@ impl Default for ObservationPeriodConfig {
     }
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct SplitProposalsConfig {
     pub threshold_bps: u64,
     pub max_chunk_bps: u64,
@@ -185,14 +185,14 @@ impl Default for SplitProposalsConfig {
     }
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub enum ReserveSpendAuthority {
     EmergencyVoteOnly,
     GuardianMultisig,
     BothRequired,
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct NoLossReserveConfig {
     pub reserve_bps: u64,
     pub reserve_spend_authority: ReserveSpendAuthority,
@@ -205,7 +205,7 @@ impl Default for NoLossReserveConfig {
     }
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct DeadMansSwitchConfig {
     pub inactivity_threshold_blocks: u64,
     pub auto_rate_limit_bps: u64,
@@ -220,7 +220,7 @@ impl Default for DeadMansSwitchConfig {
     }
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct DrainConfig {
     pub guardian_multisig_group_id: pallas::Base,
     pub exit_queue: Option<ExitQueueConfig>,
@@ -276,7 +276,7 @@ pub struct ProtectedFund {
 // PARAMS (keep SerialEncodable/SerialDecodable)
 // ============================================================================
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct InitializeParamsV1 {
     pub instance_seed: [u8; 32],
     pub fund_id: FundId,
@@ -291,7 +291,7 @@ pub struct InitializeUpdateV1 {
     pub fund_id: FundId,
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ProposeParamsV1 {
     pub message_hash: pallas::Base,
     pub multisig_group_id: pallas::Base,
@@ -305,7 +305,7 @@ pub struct ProposeUpdateV1 {
     pub proposal_id: pallas::Base,
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct VoteParamsV1 {
     pub proposal_id: pallas::Base,
     pub voter_pubkey: PublicKey,
@@ -320,7 +320,7 @@ pub struct VoteUpdateV1 {
     pub no_votes: u64,
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ExecuteParamsV1 {
     pub proposal_id: pallas::Base,
     pub signature: pallas::Base,
@@ -332,7 +332,7 @@ pub struct ExecuteUpdateV1 {
     pub action: pallas::Base,
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct ExitParamsV1 {
     pub fund_id: FundId,
     pub member_pubkey: PublicKey,
@@ -352,7 +352,7 @@ pub struct ExitUpdateV1 {
     pub haircut_collected: u64,
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct TransferParamsV1 {
     pub fund_id: FundId,
     pub amount: u64,
@@ -369,7 +369,7 @@ pub struct TransferUpdateV1 {
     pub rate_limited: bool,
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct LockParamsV1 {
     pub fund_id: FundId,
     pub duration_blocks: u64,
@@ -381,7 +381,7 @@ pub struct LockUpdateV1 {
     pub locked_until: u64,
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct UnlockParamsV1 {
     pub fund_id: FundId,
     pub signature: pallas::Base,
@@ -392,7 +392,7 @@ pub struct UnlockUpdateV1 {
     pub unlocked_at: u64,
 }
 
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone,)]
 pub struct UpdateConfigParamsV1 {
     pub fund_id: FundId,
     pub rate_limit: Option<RateLimit>,

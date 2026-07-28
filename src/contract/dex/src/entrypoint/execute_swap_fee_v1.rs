@@ -51,7 +51,7 @@ pub(crate) fn dex_execute_swap_fee_get_metadata_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: ExecuteSwapFeeParams = deserialize(&self_.data[1..])?;
+    let params= ExecuteSwapFeeParams::decode(&self_.data[1..])?;
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
@@ -81,7 +81,7 @@ pub(crate) fn dex_execute_swap_fee_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx];
-    let params: ExecuteSwapFeeParams = deserialize(&self_.data.data[1..])?;
+    let params= ExecuteSwapFeeParams::decode(&self_.data.data[1..])?;
 
     msg!("[ExecuteSwapFeeV1] Executing swap with fee: id={:?}", &params.swap_id);
 

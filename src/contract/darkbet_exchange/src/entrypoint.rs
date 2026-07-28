@@ -145,7 +145,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         DarkbetFunction::CreateMarketV1 => {
-            let params: CreateMarketParamsV1 = deserialize(&self_.data[1..])?;
+            let params= CreateMarketParamsV1::decode(&self_.data[1..])?;
             let cx = params.creator_pub.x().expect("pk not identity");
             let cy = params.creator_pub.y().expect("pk not identity");
             let close_block = current_block + params.duration_blocks;
@@ -164,7 +164,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             metadata
         }
         DarkbetFunction::AddLiquidityV1 => {
-            let params: AddLiquidityParamsV1 = deserialize(&self_.data[1..])?;
+            let params= AddLiquidityParamsV1::decode(&self_.data[1..])?;
             let px = params.provider.x().expect("pk not identity");
             let py = params.provider.y().expect("pk not identity");
             let lp_share_id = poseidon_hash([
@@ -190,7 +190,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             }
         }
         DarkbetFunction::BuyPositionV1 => {
-            let params: BuyPositionParamsV1 = deserialize(&self_.data[1..])?;
+            let params= BuyPositionParamsV1::decode(&self_.data[1..])?;
             let ox = params.owner.x().expect("pk not identity");
             let oy = params.owner.y().expect("pk not identity");
             let position_id = poseidon_hash([
@@ -217,7 +217,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             }
         }
         DarkbetFunction::ClaimWinningsV1 => {
-            let params: ClaimWinningsParamsV1 = deserialize(&self_.data[1..])?;
+            let params= ClaimWinningsParamsV1::decode(&self_.data[1..])?;
             let ox = params.owner.x().expect("pk not identity");
             let oy = params.owner.y().expect("pk not identity");
             let claim_id = poseidon_hash([
@@ -344,7 +344,7 @@ fn darkbet_create_market_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: CreateMarketParamsV1 = deserialize(&self_.data[1..])?;
+    let params= CreateMarketParamsV1::decode(&self_.data[1..])?;
 
     msg!("[darkbet::create_market] Creating market: {}", params.description);
 
@@ -490,7 +490,7 @@ fn darkbet_place_back_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: PlaceBackParamsV1 = deserialize(&self_.data[1..])?;
+    let params= PlaceBackParamsV1::decode(&self_.data[1..])?;
 
     msg!("[darkbet::place_back] Placing back order on market {:?}", params.market_id);
 
@@ -636,7 +636,7 @@ fn darkbet_place_lay_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: PlaceLayParamsV1 = deserialize(&self_.data[1..])?;
+    let params= PlaceLayParamsV1::decode(&self_.data[1..])?;
 
     msg!("[darkbet::place_lay] Placing lay order on market {:?}", params.market_id);
 
@@ -791,7 +791,7 @@ fn darkbet_match_orders_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: MatchOrdersParamsV1 = deserialize(&self_.data[1..])?;
+    let params= MatchOrdersParamsV1::decode(&self_.data[1..])?;
 
     msg!("[darkbet::match_orders] Matching back {:?} with lay {:?}", params.back_order_id, params.lay_order_id);
 
@@ -977,7 +977,7 @@ fn darkbet_buy_position_process_instruction_v1(
     }
 
     let self_ = &calls[call_idx].data;
-    let params: BuyPositionParamsV1 = deserialize(&self_.data[1..])?;
+    let params= BuyPositionParamsV1::decode(&self_.data[1..])?;
 
     msg!(
         "[darkbet::buy_position] Buying position on market {:?}, outcome {}",
@@ -1142,7 +1142,7 @@ fn darkbet_add_liquidity_process_instruction_v1(
     }
 
     let self_ = &calls[call_idx].data;
-    let params: AddLiquidityParamsV1 = deserialize(&self_.data[1..])?;
+    let params= AddLiquidityParamsV1::decode(&self_.data[1..])?;
 
     msg!(
         "[darkbet::add_liquidity] Adding {} liquidity to market {:?}",
@@ -1274,7 +1274,7 @@ fn darkbet_remove_liquidity_process_instruction_v1(
     }
 
     let self_ = &calls[call_idx].data;
-    let params: RemoveLiquidityParamsV1 = deserialize(&self_.data[1..])?;
+    let params= RemoveLiquidityParamsV1::decode(&self_.data[1..])?;
 
     msg!(
         "[darkbet::remove_liquidity] Removing LP share {:?} from market {:?}",
@@ -1419,7 +1419,7 @@ fn darkbet_claim_winnings_process_instruction_v1(
     }
 
     let self_ = &calls[call_idx].data;
-    let params: ClaimWinningsParamsV1 = deserialize(&self_.data[1..])?;
+    let params= ClaimWinningsParamsV1::decode(&self_.data[1..])?;
 
     msg!("[darkbet::claim_winnings] Claiming winnings for position {:?}", params.position_id);
 
@@ -1507,7 +1507,7 @@ fn darkbet_resolve_market_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: ResolveMarketParamsV1 = deserialize(&self_.data[1..])?;
+    let params= ResolveMarketParamsV1::decode(&self_.data[1..])?;
 
     msg!("[darkbet::resolve_market] Resolving market {:?}", params.market_id);
 
@@ -1621,7 +1621,7 @@ fn darkbet_settle_market_process_instruction_v1(
     }
 
     let self_ = &calls[call_idx].data;
-    let params: SettleMarketParamsV1 = deserialize(&self_.data[1..])?;
+    let params= SettleMarketParamsV1::decode(&self_.data[1..])?;
 
     msg!(
         "[darkbet::settle_market] Settling {} matches for market {:?}",
@@ -1775,7 +1775,7 @@ fn darkbet_cancel_order_process_instruction_v1(
     }
 
     let self_ = &calls[call_idx].data;
-    let params: CancelOrderParamsV1 = deserialize(&self_.data[1..])?;
+    let params= CancelOrderParamsV1::decode(&self_.data[1..])?;
 
     msg!("[darkbet::cancel_order] Cancelling order {:?}", params.order_id);
 

@@ -46,7 +46,7 @@ pub(crate) fn dex_update_config_process_instruction_v1(
     calls: Vec<dwow_sdk::dark_tree::DarkLeaf<dwow_sdk::ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: UpdateConfigParams = deserialize(&self_.data[1..])?;
+    let params= UpdateConfigParams::decode(&self_.data[1..])?;
 
     msg!("[UpdateConfigV1] Updating config: timeout={}, fee={}", params.timeout, params.fee);
 
