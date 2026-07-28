@@ -983,6 +983,50 @@ When reviewing ZK circuits, add these checks to the existing audit checklist:
 - [ ] Every `zero_cond(value, leaf)` before `merkle_root` is preceded by `less_than_strict(ZERO, value)`
 - [ ] Circuit files that are copies of other circuits declare their provenance and have all origin fixes applied
 
+### Lesson 21: Serialization-Derived Safety — Explicit Encoding as Defense-in-Depth
+
+**The vulnerability**: All 33 contracts originally used `#[derive(SerialEncodable,
+SerialDecodable)]` on state structs and parameter types. The derive macros produce
+opaque byte blobs that bypass every validating constructor. `Nullifier`'s derived
+`Decodable` reads `pallas::Base` directly — it never calls `Nullifier::from_bytes()`
+and silently accepts zero and non-canonical values. A `serialize(&purse)` was observed
+to silently produce 9 bytes instead of 129 — the derived `Decodable` accepted this,
+producing a corrupt Purse with zeroed fields. The error surfaced only as
+`ContractError::IoError("Unknown")` at the WASM boundary.
+
+**The fix**: Every contract now uses explicit `encode()`/`decode()` methods with
+fixed byte layouts and per-field validation through named constructors:
+
+```rust
+// AFTER — see src/contract/purse/src/model/mod.rs
+fn decode_purse(data: &[u8]) -> Result<Purse, ContractError> {
+    if data.len() != 129 {
+        return Err(ContractError::IoError(format!(
+            "Purse: expected 129 bytes, got {}", data.len()
+        )));
+    }
+    let purse_id = PurseId::from_bytes(data[1..33].try_into().unwrap())
+        .ok_or_else(|| ContractError::IoError("Purse: invalid purse_id".into()))?;
+    // Every field through its validating constructor — no derive bypass.
+}
+```
+
+**Migration scope**: 33 contracts, ~1500 lines changed. Every `SerialEncodable`/
+`SerialDecodable` derive removed from every contract model, entrypoint, and client
+file. Additional code-quality fixes applied: `.unwrap()` → `?` in metadata helpers
+(44 occurrences), `let _ =` removed from `set_return_data` (5), `unwrap_or_else`
+replaced with explicit `match` (1), dead imports removed (2), legacy bridge impls
+converted to standalone methods (30+ impls across 6 contracts).
+
+**The principle**: **Every type crossing a persistence boundary must use explicit
+encoding with validating constructors.** Derive macros operate below the type system
+and silently accept invalid data. Fixed byte layouts with per-field validation ensure
+corrupt state is detected at the field level. The compiler cannot verify derive macros;
+it CAN verify that every `from_bytes`/`from_repr` call site validates its input.
+
+**Reference**: [Contract WASM Standards & Best Practices](../arch/contract-wasm-standards-best-practices.md)
+for the full specification, canonical patterns, and migration checklist.
+
 ---
 
 ## Flakey Patterns: Recognition and Prevention
@@ -1233,6 +1277,9 @@ Not every plaintext field on a params struct is a flakey pattern. Some amounts M
 - [ ] Every `Base` constant in the `.zk` source has a corresponding handler in the VM synthesizer
 - [ ] Merkle hash functions match between circuit (`merkle_root` opcode) and SDK (`MerkleNode::combine`) — Sinsemilla vs Poseidon divergence blocks testability
 - [ ] `to_vec()` instance count matches the circuit's `constrain_instance` count — mismatched counts cause silent proving failures
+- [ ] Contract uses explicit `encode()`/`decode()`, not `#[derive(SerialEncodable, SerialDecodable)]` — see [Contract WASM Standards & Best Practices](../arch/contract-wasm-standards-best-practices.md)
+- [ ] Zero `.unwrap()` in entrypoint code — metadata helpers return `Result<Vec<u8>, ContractError>` and use `?` propagation
+- [ ] Zero `let _ =` in entrypoint code — all results propagated or explicitly handled
 
 ---
 
