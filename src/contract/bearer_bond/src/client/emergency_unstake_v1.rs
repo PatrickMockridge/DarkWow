@@ -254,7 +254,7 @@ fn create_emergency_unstake_burn_proof(
         current
     };
 
-    let value_commit = pedersen_commitment_u64(input.principal, value_blind);
+    let value_commit = pedersen_commitment_u64(input.principal, value_blind.clone());
     let token_commit = poseidon_hash([input.token_id, token_id_blind.inner()]);
     let user_data_enc = poseidon_hash([input.user_data, user_data_blind.inner()]);
     let signature_public = poseidon_hash([input.ephemeral_signature_secret]);
