@@ -37,13 +37,12 @@
 //! 3. NO changes to bridge core contract needed
 
 use async_trait::async_trait;
-use dwow_sdk::{error::ContractResult, pasta::pallas};
-use dwow_serial::{SerialDecodable, SerialEncodable};
+use dwow_sdk::{crypto::pasta_prelude::PrimeField, error::ContractResult, error::ContractError, pasta::pallas};
 
 use crate::light_client::{MerkleProof, FinalityProof};
 
 /// Chain identifier
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ChainId {
     Ethereum = 0,
     Monero = 1,
@@ -53,197 +52,87 @@ pub enum ChainId {
 }
 
 impl ChainId {
-    /// Convert from u8 to ChainId
     pub fn from_u8(v: u8) -> Option<Self> {
         match v {
-            0 => Some(Self::Ethereum),
-            1 => Some(Self::Monero),
-            2 => Some(Self::Zcash),
-            3 => Some(Self::Aztec),
-            4 => Some(Self::Litecoin),
-            _ => None,
+            0 => Some(Self::Ethereum), 1 => Some(Self::Monero), 2 => Some(Self::Zcash),
+            3 => Some(Self::Aztec), 4 => Some(Self::Litecoin), _ => None,
         }
     }
-
-    /// Convert to u8
-    pub fn as_u8(&self) -> u8 {
-        *self as u8
+    pub fn as_u8(&self) -> u8 { *self as u8 }
+    pub fn encode(&self) -> Vec<u8> { vec![self.as_u8()] }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() { return Err(ContractError::IoError("ChainId: empty".into())); }
+        Self::from_u8(data[0]).ok_or_else(|| ContractError::IoError(format!("ChainId: unknown {}", data[0])))
     }
 }
 
-/// Transaction hash type (generic, chain-specific implementation)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct TxHash {
-    /// Chain identifier
-    pub chain: ChainId,
-    /// Raw transaction hash bytes
-    pub hash: [u8; 32],
-}
+/// Transaction hash type
+#[derive(Debug, Clone)]
+pub struct TxHash { pub chain: ChainId, pub hash: [u8; 32], }
+
+impl TxHash { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(33); b.push(self.chain.as_u8()); b.extend_from_slice(&self.hash); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 33 { return Err(ContractError::IoError(format!("TxHash: expected 33 bytes, got {}", data.len()))); } Ok(TxHash { chain: ChainId::decode(&data[0..1])?, hash: data[1..33].try_into().unwrap() }) } }
 
 /// Deposit parameters from external chain
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct ExternalDeposit {
-    /// Source chain
-    pub chain: ChainId,
-    /// Deposit amount in smallest unit
-    pub amount: u64,
-    /// Recipient capability on destination chain
-    pub recipient_cap: [u8; 32],
-    /// Block hash containing the deposit
-    pub block_hash: [u8; 32],
-    /// Merkle proof of deposit inclusion
-    pub merkle_proof: MerkleProof,
-    /// Finality proof (if chain has finality)
-    pub finality_proof: Option<FinalityProof>,
-    /// Chain-specific deposit data
-    pub chain_data: ChainData,
+    pub chain: ChainId, pub amount: u64, pub recipient_cap: [u8; 32],
+    pub block_hash: [u8; 32], pub merkle_proof: MerkleProof,
+    pub finality_proof: Option<FinalityProof>, pub chain_data: ChainData,
 }
 
 /// Chain-specific deposit data
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub enum ChainData {
-    /// Ethereum: contract address and log index
-    Ethereum {
-        contract: [u8; 20],
-        log_index: u64,
-    },
-    /// Monero: transaction hash and output index
-    Monero {
-        tx_hash: [u8; 32],
-        output_index: u64,
-        amount: u64,
-    },
-    /// Zcash: nullifier and commitment
-    Zcash {
-        nullifier: [u8; 32],
-        commitment: [u8; 32],
-        anchor: [u8; 32],
-    },
-    /// Aztec: note data
-    Aztec {
-        nullifier: [u8; 32],
-        commitment: [u8; 32],
-        proof_bytes: Vec<u8>,
-    },
-    /// Litecoin: transaction data
-    Litecoin {
-        tx_hash: [u8; 32],
-        output_index: u64,
-        is_confidential: bool,
-    },
+    Ethereum { contract: [u8; 20], log_index: u64 },
+    Monero { tx_hash: [u8; 32], output_index: u64, amount: u64 },
+    Zcash { nullifier: [u8; 32], commitment: [u8; 32], anchor: [u8; 32] },
+    Aztec { nullifier: [u8; 32], commitment: [u8; 32], proof_bytes: Vec<u8> },
+    Litecoin { tx_hash: [u8; 32], output_index: u64, is_confidential: bool },
 }
 
-/// Verified deposit after light client verification
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct VerifiedDeposit {
-    /// Source chain
-    pub chain: ChainId,
-    /// Verified amount
-    pub amount: u64,
-    /// Recipient capability
-    pub recipient_cap: [u8; 32],
-    /// Deposit commitment for bridge state
-    pub commitment: [u8; 32],
-}
+impl ChainData { pub fn encode(&self) -> Vec<u8> { match self { Self::Ethereum{contract,log_index}=>{let mut b=Vec::with_capacity(29);b.push(0);b.extend_from_slice(contract);b.extend_from_slice(&log_index.to_le_bytes());b} Self::Monero{tx_hash,output_index,amount}=>{let mut b=Vec::with_capacity(49);b.push(1);b.extend_from_slice(tx_hash);b.extend_from_slice(&output_index.to_le_bytes());b.extend_from_slice(&amount.to_le_bytes());b} Self::Zcash{nullifier,commitment,anchor}=>{let mut b=Vec::with_capacity(97);b.push(2);b.extend_from_slice(nullifier);b.extend_from_slice(commitment);b.extend_from_slice(anchor);b} Self::Aztec{nullifier,commitment,proof_bytes}=>{let mut b=Vec::with_capacity(66+proof_bytes.len());b.push(3);b.extend_from_slice(nullifier);b.extend_from_slice(commitment);b.push(proof_bytes.len() as u8);b.extend_from_slice(proof_bytes);b} Self::Litecoin{tx_hash,output_index,is_confidential}=>{let mut b=Vec::with_capacity(42);b.push(4);b.extend_from_slice(tx_hash);b.extend_from_slice(&output_index.to_le_bytes());b.push(*is_confidential as u8);b} } } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.is_empty() { return Err(ContractError::IoError("ChainData: empty".into())); } match data[0] { 0=>{ if data.len()!=29 { return Err(ContractError::IoError("ChainData::Ethereum: bad len".into())); } Ok(Self::Ethereum{contract:data[1..21].try_into().unwrap(),log_index:u64::from_le_bytes(data[21..29].try_into().unwrap())}) } 1=>{ if data.len()!=49 { return Err(ContractError::IoError("ChainData::Monero: bad len".into())); } Ok(Self::Monero{tx_hash:data[1..33].try_into().unwrap(),output_index:u64::from_le_bytes(data[33..41].try_into().unwrap()),amount:u64::from_le_bytes(data[41..49].try_into().unwrap())}) } 2=>{ if data.len()!=97 { return Err(ContractError::IoError("ChainData::Zcash: bad len".into())); } Ok(Self::Zcash{nullifier:data[1..33].try_into().unwrap(),commitment:data[33..65].try_into().unwrap(),anchor:data[65..97].try_into().unwrap()}) } 3=>{ if data.len()<66 { return Err(ContractError::IoError("ChainData::Aztec: too short".into())); } let pb_len=data[65] as usize; if data.len()!=66+pb_len { return Err(ContractError::IoError("ChainData::Aztec: bad len".into())); } Ok(Self::Aztec{nullifier:data[1..33].try_into().unwrap(),commitment:data[33..65].try_into().unwrap(),proof_bytes:data[66..66+pb_len].to_vec()}) } 4=>{ if data.len()!=42 { return Err(ContractError::IoError("ChainData::Litecoin: bad len".into())); } Ok(Self::Litecoin{tx_hash:data[1..33].try_into().unwrap(),output_index:u64::from_le_bytes(data[33..41].try_into().unwrap()),is_confidential:data[41]!=0}) } _=>Err(ContractError::IoError(format!("ChainData: unknown variant {}",data[0]))) } } }
 
-/// Withdrawal request parameters
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct WithdrawalRequest {
-    /// Source chain (where withdrawal executes)
-    pub chain: ChainId,
-    /// Nullifier proving deposit ownership
-    pub nullifier: [u8; 32],
-    /// Recipient address on external chain (hashed)
-    pub recipient_hash: [u8; 32],
-    /// Amount to withdraw
-    pub amount: u64,
-    /// Relayer fee
-    pub fee: u64,
-}
+/// Deposit parameters from external chain
+impl ExternalDeposit { pub fn encode(&self) -> Vec<u8> { let mp = self.merkle_proof.encode(); let fp = self.finality_proof.as_ref().map(|f| f.encode()); let cd = self.chain_data.encode(); let mut b = Vec::with_capacity(74+mp.len()+fp.as_ref().map_or(1,|v| 1+v.len())+cd.len()); b.push(self.chain.as_u8()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.recipient_cap); b.extend_from_slice(&self.block_hash); let mp_len: u32 = mp.len() as u32; b.extend_from_slice(&mp_len.to_le_bytes()); b.extend_from_slice(&mp); b.push(self.finality_proof.is_some() as u8); if let Some(ref f) = self.finality_proof { let fb = f.encode(); let fb_len: u32 = fb.len() as u32; b.extend_from_slice(&fb_len.to_le_bytes()); b.extend_from_slice(&fb); } let cd_len: u32 = cd.len() as u32; b.extend_from_slice(&cd_len.to_le_bytes()); b.extend_from_slice(&cd); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 78 { return Err(ContractError::IoError("ExternalDeposit: too short".into())); } let chain = ChainId::decode(&data[0..1])?; let amount = u64::from_le_bytes(data[1..9].try_into().unwrap()); let recipient_cap: [u8;32] = data[9..41].try_into().unwrap(); let block_hash: [u8;32] = data[41..73].try_into().unwrap(); let mp_len = u32::from_le_bytes(data[73..77].try_into().unwrap()) as usize; if data.len() < 77+mp_len { return Err(ContractError::IoError("ExternalDeposit: mp truncated".into())); } let merkle_proof = MerkleProof::decode(&data[77..77+mp_len])?; let mut pos = 77+mp_len; if data.len() < pos+1 { return Err(ContractError::IoError("ExternalDeposit: fp flag missing".into())); } let has_fp = data[pos] != 0; pos += 1; let finality_proof = if has_fp { if data.len() < pos+4 { return Err(ContractError::IoError("ExternalDeposit: fp len truncated".into())); } let fp_len = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()) as usize; pos += 4; if data.len() < pos+fp_len { return Err(ContractError::IoError("ExternalDeposit: fp truncated".into())); } let fp = FinalityProof::decode(&data[pos..pos+fp_len])?; pos += fp_len; Some(fp) } else { None }; if data.len() < pos+4 { return Err(ContractError::IoError("ExternalDeposit: cd len missing".into())); } let cd_len = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()) as usize; pos += 4; let chain_data = ChainData::decode(&data[pos..pos+cd_len])?; Ok(ExternalDeposit { chain, amount, recipient_cap, block_hash, merkle_proof, finality_proof, chain_data }) } }
 
-/// Verified withdrawal ready for execution
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct VerifiedWithdrawal {
-    /// Chain where withdrawal executes
-    pub chain: ChainId,
-    /// Nullifier
-    pub nullifier: [u8; 32],
-    /// Decoded recipient address
-    pub recipient_address: Vec<u8>,
-    /// Amount in smallest unit
-    pub amount: u64,
-    /// Transaction fee
-    pub fee: u64,
-}
+/// Verified deposit
+#[derive(Debug, Clone)]
+pub struct VerifiedDeposit { pub chain: ChainId, pub amount: u64, pub recipient_cap: [u8; 32], pub commitment: [u8; 32], }
+impl VerifiedDeposit { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(73); b.push(self.chain.as_u8()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.recipient_cap); b.extend_from_slice(&self.commitment); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 73 { return Err(ContractError::IoError(format!("VerifiedDeposit: expected 73 bytes, got {}", data.len()))); } Ok(VerifiedDeposit { chain: ChainId::decode(&data[0..1])?, amount: u64::from_le_bytes(data[1..9].try_into().unwrap()), recipient_cap: data[9..41].try_into().unwrap(), commitment: data[41..73].try_into().unwrap() }) } }
+
+/// Withdrawal request
+#[derive(Debug, Clone)]
+pub struct WithdrawalRequest { pub chain: ChainId, pub nullifier: [u8; 32], pub recipient_hash: [u8; 32], pub amount: u64, pub fee: u64, }
+impl WithdrawalRequest { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(81); b.push(self.chain.as_u8()); b.extend_from_slice(&self.nullifier); b.extend_from_slice(&self.recipient_hash); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.fee.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 81 { return Err(ContractError::IoError(format!("WithdrawalRequest: expected 81 bytes, got {}", data.len()))); } Ok(WithdrawalRequest { chain: ChainId::decode(&data[0..1])?, nullifier: data[1..33].try_into().unwrap(), recipient_hash: data[33..65].try_into().unwrap(), amount: u64::from_le_bytes(data[65..73].try_into().unwrap()), fee: u64::from_le_bytes(data[73..81].try_into().unwrap()) }) } }
+
+/// Verified withdrawal
+#[derive(Debug, Clone)]
+pub struct VerifiedWithdrawal { pub chain: ChainId, pub nullifier: [u8; 32], pub recipient_address: Vec<u8>, pub amount: u64, pub fee: u64, }
+impl VerifiedWithdrawal { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(50+self.recipient_address.len()); b.push(self.chain.as_u8()); b.extend_from_slice(&self.nullifier); b.push(self.recipient_address.len() as u8); b.extend_from_slice(&self.recipient_address); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.fee.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 50 { return Err(ContractError::IoError("VerifiedWithdrawal: too short".into())); } let chain = ChainId::decode(&data[0..1])?; let nullifier: [u8;32] = data[1..33].try_into().unwrap(); let addr_len = data[33] as usize; let addr_end = 34+addr_len; if data.len() < addr_end+16 { return Err(ContractError::IoError("VerifiedWithdrawal: truncated".into())); } Ok(VerifiedWithdrawal { chain, nullifier, recipient_address: data[34..addr_end].to_vec(), amount: u64::from_le_bytes(data[addr_end..addr_end+8].try_into().unwrap()), fee: u64::from_le_bytes(data[addr_end+8..addr_end+16].try_into().unwrap()) }) } }
 
 // ============================================================================
-// HTLC Types (for Cross-Chain Atomic Swaps)
+// HTLC Types
 // ============================================================================
 
-/// HTLC state for cross-chain coordination
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
-pub enum HtlcState {
-    /// HTLC created, waiting for counterparty
-    Pending = 0,
-    /// Counterparty deposited, funds can be claimed
-    Claimable = 1,
-    /// Funds claimed by recipient
-    Claimed = 2,
-    /// Refunded after timelock expiration
-    Refunded = 3,
-}
+/// HTLC state
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HtlcState { Pending = 0, Claimable = 1, Claimed = 2, Refunded = 3, }
 
 impl TryFrom<u8> for HtlcState {
     type Error = dwow_sdk::error::ContractError;
-
-    fn try_from(b: u8) -> Result<Self, Self::Error> {
-        match b {
-            0 => Ok(Self::Pending),
-            1 => Ok(Self::Claimable),
-            2 => Ok(Self::Claimed),
-            3 => Ok(Self::Refunded),
-            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
-        }
-    }
+    fn try_from(b: u8) -> Result<Self, Self::Error> { match b { 0 => Ok(Self::Pending), 1 => Ok(Self::Claimable), 2 => Ok(Self::Claimed), 3 => Ok(Self::Refunded), _ => Err(dwow_sdk::error::ContractError::InvalidFunction), } }
 }
 
-/// HTLC swap data for cross-chain atomic swap coordination
-///
-/// This struct tracks the state of an HTLC that coordinates with
-/// the DarkWow atomic swap contract. The bridge executes claims/refunds
-/// on external chains when the atomic swap state changes.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct HtlcSwap {
-    /// Swap ID (matches atomic_swap SwapId)
-    pub swap_id: [u8; 32],
-    /// Hash that locks the HTLC (poseidon_hash(secret))
-    pub hash: pallas::Base,
-    /// Timelock block height (after which refund is allowed)
-    pub timelock: u64,
-    /// Amount locked
-    pub amount: u64,
-    /// Sender's address/representation on external chain
-    pub external_sender: Vec<u8>,
-    /// Recipient's address/representation on external chain
-    pub external_recipient: Vec<u8>,
-    /// Current state of the HTLC
-    pub state: HtlcState,
-    /// Block height when created
-    pub created_at: u64,
-}
+impl HtlcState { pub fn encode(&self) -> Vec<u8> { vec![*self as u8] } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.is_empty() { return Err(ContractError::IoError("HtlcState: empty".into())); } Self::try_from(data[0]) } }
 
-/// HTLC deposit parameters for verification
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct HtlcDeposit {
-    /// Swap ID to verify against
-    pub swap_id: [u8; 32],
-    /// Expected hash (should match HTLC.hash)
-    pub expected_hash: pallas::Base,
-    /// Expected timelock
-    pub timelock: u64,
-    /// External chain deposit data
-    pub deposit: ExternalDeposit,
-}
+/// HTLC swap data
+#[derive(Debug, Clone)]
+pub struct HtlcSwap { pub swap_id: [u8; 32], pub hash: pallas::Base, pub timelock: u64, pub amount: u64, pub external_sender: Vec<u8>, pub external_recipient: Vec<u8>, pub state: HtlcState, pub created_at: u64, }
+impl HtlcSwap { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(82+self.external_sender.len()+self.external_recipient.len()); b.extend_from_slice(&self.swap_id); b.extend_from_slice(&self.hash.to_repr()); b.extend_from_slice(&self.timelock.to_le_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.push(self.external_sender.len() as u8); b.extend_from_slice(&self.external_sender); b.push(self.external_recipient.len() as u8); b.extend_from_slice(&self.external_recipient); b.push(self.state as u8); b.extend_from_slice(&self.created_at.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 82 { return Err(ContractError::IoError("HtlcSwap: too short".into())); } let swap_id: [u8;32] = data[0..32].try_into().unwrap(); let hash = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("HtlcSwap: invalid hash".into()))?; let timelock = u64::from_le_bytes(data[64..72].try_into().unwrap()); let amount = u64::from_le_bytes(data[72..80].try_into().unwrap()); let sender_len = data[80] as usize; let mut pos = 81+sender_len; if data.len() < pos+1 { return Err(ContractError::IoError("HtlcSwap: sender truncated".into())); } let external_sender = data[81..pos].to_vec(); let recip_len = data[pos] as usize; pos += 1; if data.len() < pos+recip_len+1+8 { return Err(ContractError::IoError("HtlcSwap: recipient truncated".into())); } let external_recipient = data[pos..pos+recip_len].to_vec(); pos += recip_len; let state = HtlcState::decode(&data[pos..pos+1])?; pos += 1; let created_at = u64::from_le_bytes(data[pos..pos+8].try_into().unwrap()); Ok(HtlcSwap { swap_id, hash, timelock, amount, external_sender, external_recipient, state, created_at }) } }
+
+/// HTLC deposit parameters
+#[derive(Debug, Clone)]
+pub struct HtlcDeposit { pub swap_id: [u8; 32], pub expected_hash: pallas::Base, pub timelock: u64, pub deposit: ExternalDeposit, }
 
 /// ChainHandler trait - implemented by each external chain
 ///

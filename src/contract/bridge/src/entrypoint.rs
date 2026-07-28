@@ -870,7 +870,7 @@ fn process_config_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkL
 
     msg!("[bridge::process_instruction] Configuration update: ZK proof verified");
 
-    wasm::util::set_return_data(&serialize(&params))
+    wasm::util::set_return_data(&params.encode())
 }
 
 /// Process cancel withdrawal instruction
@@ -1421,7 +1421,7 @@ fn apply_config_update(cid: ContractId, params: UpdateConfigParams) -> ContractR
 // ============================================================================
 
 /// Update data for deposit
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct DepositUpdateV1 {
     pub commitment: dwow_sdk::crypto::IntentCommitment,
     pub recipient_pub: PublicKey,
@@ -1756,8 +1756,8 @@ fn process_refund_htlc_instruction(
         return Err(BridgeError::InvalidFunction.into())
     }
     // Defense in depth: verify not already claimed
-    if htlc.claimed_at.is_some() {
-        msg!("[bridge::process_instruction] ERROR: HTLC already claimed at block {}", htlc.claimed_at.unwrap());
+    if let Some(claimed_at) = htlc.claimed_at {
+        msg!("[bridge::process_instruction] ERROR: HTLC already claimed at block {}", claimed_at);
         return Err(BridgeError::InvalidFunction.into())
     }
 
@@ -2044,7 +2044,7 @@ fn process_verify_relayer_reputation_instruction(
         reputation.is_registered, reputation.slash_count, reputation.success_count);
 
     // Read-only — return data directly, no update struct needed
-    wasm::util::set_return_data(&serialize(&reputation))
+    wasm::util::set_return_data(&reputation.encode())
 }
 
 // ============================================================================

@@ -40,60 +40,124 @@
 //! - `ZecLightClient`: Zcash lightwalletd
 
 use async_trait::async_trait;
-use dwow_serial::{SerialDecodable, SerialEncodable};
+use dwow_sdk::error::ContractError;
 
 /// Confirmation level for deposits
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfirmationLevel {
-    /// Transaction in mempool (unconfirmed)
     Mempool,
-    /// N blocks deep
     Confirmed(u64),
-    /// Finalized (consensus guaranteed)
     Finalized,
 }
 
+impl ConfirmationLevel {
+    pub fn encode(&self) -> Vec<u8> {
+        match self {
+            Self::Mempool => vec![0],
+            Self::Confirmed(n) => { let mut b = vec![1]; b.extend_from_slice(&n.to_le_bytes()); b }
+            Self::Finalized => vec![2],
+        }
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() { return Err(ContractError::IoError("ConfirmationLevel: empty".into())); }
+        match data[0] {
+            0 => Ok(Self::Mempool),
+            1 => { if data.len() != 9 { return Err(ContractError::IoError("ConfirmationLevel: Confirmed needs 9 bytes".into())); } Ok(Self::Confirmed(u64::from_le_bytes(data[1..9].try_into().unwrap()))) }
+            2 => Ok(Self::Finalized),
+            _ => Err(ContractError::IoError(format!("ConfirmationLevel: unknown variant {}", data[0]))),
+        }
+    }
+}
+
 /// Merkle proof for transaction inclusion
-///
-/// Contains the authentication path from a leaf
-/// to the Merkle root.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct MerkleProof {
-    /// Position of the leaf in the tree (0-indexed)
     pub position: u32,
-    /// Authentication path (sibling hashes)
     pub path: Vec<[u8; 32]>,
 }
 
+impl MerkleProof {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(5 + self.path.len() * 32);
+        b.extend_from_slice(&self.position.to_le_bytes());
+        b.push(self.path.len() as u8);
+        for h in &self.path { b.extend_from_slice(h); }
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 5 { return Err(ContractError::IoError("MerkleProof: too short".into())); }
+        let position = u32::from_le_bytes(data[0..4].try_into().unwrap());
+        let count = data[4] as usize;
+        if data.len() != 5 + count * 32 { return Err(ContractError::IoError(format!("MerkleProof: expected {} bytes, got {}", 5+count*32, data.len()))); }
+        let mut path = Vec::with_capacity(count);
+        for i in 0..count { path.push(data[5+i*32..5+(i+1)*32].try_into().unwrap()); }
+        Ok(MerkleProof { position, path })
+    }
+}
+
 /// Finality proof for chains with consensus finality
-///
-/// Proves that a block has been finalized according
-/// to the chain's consensus rules.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct FinalityProof {
-    /// Hash of the finalized block
     pub block_hash: [u8; 32],
-    /// Height of the finalized block
     pub block_height: u64,
-    /// Finality checkpoint hash
     pub checkpoint_hash: [u8; 32],
-    /// Proof path from block to checkpoint
     pub proof: Vec<[u8; 32]>,
 }
 
+impl FinalityProof {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(73 + self.proof.len() * 32);
+        b.extend_from_slice(&self.block_hash);
+        b.extend_from_slice(&self.block_height.to_le_bytes());
+        b.extend_from_slice(&self.checkpoint_hash);
+        b.push(self.proof.len() as u8);
+        for h in &self.proof { b.extend_from_slice(h); }
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 73 { return Err(ContractError::IoError("FinalityProof: too short".into())); }
+        let block_hash: [u8;32] = data[0..32].try_into().unwrap();
+        let block_height = u64::from_le_bytes(data[32..40].try_into().unwrap());
+        let checkpoint_hash: [u8;32] = data[40..72].try_into().unwrap();
+        let count = data[72] as usize;
+        if data.len() != 73 + count * 32 { return Err(ContractError::IoError(format!("FinalityProof: expected {} bytes, got {}", 73+count*32, data.len()))); }
+        let mut proof = Vec::with_capacity(count);
+        for i in 0..count { proof.push(data[73+i*32..73+(i+1)*32].try_into().unwrap()); }
+        Ok(FinalityProof { block_hash, block_height, checkpoint_hash, proof })
+    }
+}
+
 /// Block header data
-///
-/// Lightweight header verification without full block data.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone)]
 pub struct BlockHeader {
-    /// Block hash
     pub hash: [u8; 32],
-    /// Block height
     pub height: u64,
-    /// Timestamp
     pub timestamp: u64,
-    /// Merkle root
     pub merkle_root: [u8; 32],
+}
+
+impl BlockHeader {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(80);
+        b.extend_from_slice(&self.hash);
+        b.extend_from_slice(&self.height.to_le_bytes());
+        b.extend_from_slice(&self.timestamp.to_le_bytes());
+        b.extend_from_slice(&self.merkle_root);
+        b
+    }
+
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 80 { return Err(ContractError::IoError(format!("BlockHeader: expected 80 bytes, got {}", data.len()))); }
+        Ok(BlockHeader {
+            hash: data[0..32].try_into().unwrap(),
+            height: u64::from_le_bytes(data[32..40].try_into().unwrap()),
+            timestamp: u64::from_le_bytes(data[40..48].try_into().unwrap()),
+            merkle_root: data[48..80].try_into().unwrap(),
+        })
+    }
 }
 
 /// Light client errors
