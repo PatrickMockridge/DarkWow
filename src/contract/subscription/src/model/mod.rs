@@ -719,6 +719,9 @@ impl SubscriptionId {
                 )
             })
     }
+
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
 }
 
 impl SubscriptionState {
