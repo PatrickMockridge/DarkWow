@@ -351,7 +351,7 @@ pub struct ClearInput {
 }
 
 impl ClearInput {
-    pub const ENCODED_SIZE: usize = 168;
+    pub const ENCODED_SIZE: usize = 136;
 
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
@@ -423,16 +423,16 @@ impl FeeParamsV1 {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        let input = Input::decode(data)?;
+        let input = Input::decode(&data[..Input::ENCODED_SIZE])?;
         let input_len = Input::ENCODED_SIZE;
         if data.len() < input_len + 130 {
             return Err(ContractError::IoError(format!(
                 "FeeParamsV1: expected at least {} bytes, got {}", input_len + 130, data.len()
             )));
         }
-        let output = Output::decode(&data[input_len..])?;
-        let output_bytes = output.encode();
-        let pos = input_len + output_bytes.len();
+        let output_len = 130 + u16::from_le_bytes(data[input_len+128..input_len+130].try_into().unwrap()) as usize;
+        let output = Output::decode(&data[input_len..input_len + output_len])?;
+        let pos = input_len + output_len;
         if data.len() < pos + 136 {
             return Err(ContractError::IoError(format!(
                 "FeeParamsV1: expected at least {} bytes, got {}", pos + 136, data.len()
@@ -508,16 +508,16 @@ impl PoWRewardParamsV1 {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        let input = ClearInput::decode(data)?;
+        let input = ClearInput::decode(&data[..ClearInput::ENCODED_SIZE])?;
         let input_len = ClearInput::ENCODED_SIZE;
         if data.len() < input_len + 130 {
             return Err(ContractError::IoError(format!(
                 "PoWRewardParamsV1: expected at least {} bytes, got {}", input_len + 130, data.len()
             )));
         }
-        let output = Output::decode(&data[input_len..])?;
-        let output_bytes = output.encode();
-        let pos = input_len + output_bytes.len();
+        let output_len = 130 + u16::from_le_bytes(data[input_len+128..input_len+130].try_into().unwrap()) as usize;
+        let output = Output::decode(&data[input_len..input_len + output_len])?;
+        let pos = input_len + output_len;
         if data.len() < pos + 200 {
             return Err(ContractError::IoError(format!(
                 "PoWRewardParamsV1: expected at least {} bytes, got {}", pos + 200, data.len()
@@ -653,11 +653,11 @@ impl SpendParamsV1 {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        let input = Input::decode(data)?;
-        let pos = Input::ENCODED_SIZE;
-        let output = Output::decode(&data[pos..])?;
-        let output_bytes = output.encode();
-        let pos = pos + output_bytes.len();
+        let input = Input::decode(&data[..Input::ENCODED_SIZE])?;
+        let in_len = Input::ENCODED_SIZE;
+        let out_len = 130 + u16::from_le_bytes(data[in_len+128..in_len+130].try_into().unwrap()) as usize;
+        let output = Output::decode(&data[in_len..in_len + out_len])?;
+        let pos = in_len + out_len;
         if data.len() < pos + 64 {
             return Err(ContractError::IoError(format!("SpendParamsV1: expected at least {} bytes, got {}", pos + 64, data.len())));
         }
@@ -760,9 +760,9 @@ impl FeeCollectParamsV1 {
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 105 { return Err(ContractError::IoError("FeeCollectParamsV1: too short".into())); }
         let total_fees = u64::from_le_bytes(data[0..8].try_into().unwrap());
-        let output = Output::decode(&data[8..])?;
-        let output_bytes = output.encode();
-        let pos = 8 + output_bytes.len();
+        let out_len = 130 + u16::from_le_bytes(data[8+128..8+130].try_into().unwrap()) as usize;
+        let output = Output::decode(&data[8..8 + out_len])?;
+        let pos = 8 + out_len;
         if data.len() < pos + 96 { return Err(ContractError::IoError(format!("FeeCollectParamsV1: expected at least {} bytes, got {}", pos + 96, data.len()))); }
         let nullifier = Nullifier::from_bytes(data[pos..pos+32].try_into().unwrap())
             .map_err(|e| ContractError::IoError(format!("FeeCollectParamsV1: invalid nullifier: {}", e)))?;
