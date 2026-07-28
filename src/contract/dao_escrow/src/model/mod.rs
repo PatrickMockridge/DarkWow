@@ -73,9 +73,8 @@
 use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, poseidon_hash, BaseBlind, IntentNullifier, PublicKey, ScalarBlind, TokenId},
     error::ContractError,
-    pasta::pallas,
+    pasta::{group::GroupEncoding, pallas},
 };
-use dwow_serial::{SerialDecodable, SerialEncodable};
 
 // dwow_serial bridge impls for newtypes (rho-calculus ↔ dwow_serial)
 
@@ -468,7 +467,7 @@ impl Membership {
 // ============================================================================
 
 /// Parameters for `DaoEscrow::InitializeV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct InitializeParamsV1 {
     /// Instance seed for per-capability key derivation
     pub instance_seed: [u8; 32],
@@ -500,7 +499,7 @@ pub struct InitializeUpdateV1 {
 }
 
 /// Parameters for `DaoEscrow::UpdateV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct UpdateParamsV1 {
     /// DAO-Escrow bulla
     pub bulla: DaoEscrowBulla,
@@ -514,7 +513,7 @@ pub struct UpdateUpdateV1 {
 }
 
 /// Parameters for `DaoEscrow::PayPremiumV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct PayPremiumParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -556,7 +555,7 @@ pub struct PayPremiumUpdateV1 {
 }
 
 /// Parameters for `DaoEscrow::WithdrawV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct WithdrawParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -584,7 +583,7 @@ pub struct WithdrawUpdateV1 {
 // ============================================================================
 
 /// Parameters for enabling DrainProtection on an existing DAO-Escrow
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct EnableDrainProtectionParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -618,7 +617,7 @@ impl ClaimId {
 }
 
 /// Vote type for claims
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, )]
 pub enum VoteType {
     /// Yes vote
     Yes = 0,
@@ -626,20 +625,14 @@ pub enum VoteType {
     No = 1,
 }
 
-impl TryFrom<u8> for VoteType {
-    type Error = dwow_sdk::error::ContractError;
+impl TryFrom<u8> for VoteType { type Error = dwow_sdk::error::ContractError; fn try_from(b: u8) -> Result<Self, Self::Error> { match b { 0=>Ok(Self::Yes),1=>Ok(Self::No),_=>Err(dwow_sdk::error::ContractError::InvalidFunction) } } }
+impl VoteType { pub fn encode(&self) -> Vec<u8> { vec![*self as u8] } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.is_empty() { return Err(ContractError::IoError("VoteType: empty".into())); } Self::try_from(data[0]) } }
 
-    fn try_from(b: u8) -> Result<Self, Self::Error> {
-        match b {
-            0 => Ok(Self::Yes),
-            1 => Ok(Self::No),
-            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
-        }
-    }
-}
+impl TryFrom<u8> for ClaimType { type Error = dwow_sdk::error::ContractError; fn try_from(b: u8) -> Result<Self, Self::Error> { match b { 0=>Ok(Self::Endowment),1=>Ok(Self::Treasury),2=>Ok(Self::Dispute),_=>Err(dwow_sdk::error::ContractError::InvalidFunction) } } }
+impl ClaimType { pub fn encode(&self) -> Vec<u8> { vec![*self as u8] } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.is_empty() { return Err(ContractError::IoError("ClaimType: empty".into())); } Self::try_from(data[0]) } }
 
 /// Parameters for proposing a claim (endowment, treasury, or dispute)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct ProposeClaimParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -683,7 +676,7 @@ pub struct ProposeClaimUpdateV1 {
 }
 
 /// Parameters for voting on a claim
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct VoteClaimParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -718,7 +711,7 @@ pub struct VoteClaimUpdateV1 {
 // ============================================================================
 
 /// Parameters for executing an approved endowment withdrawal (claim)
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct EndowmentWithdrawParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -752,7 +745,7 @@ pub struct EndowmentWithdrawUpdateV1 {
 // ============================================================================
 
 /// Parameters for executing an approved treasury spend
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct TreasurySpendParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -785,7 +778,7 @@ pub struct TreasurySpendUpdateV1 {
 
 /// A capability proof from the Identity contract.
 /// Referenced by dao_escrow to verify capability-based authorization.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct CapabilityProof {
     /// Capability identifier (from Identity contract)
     pub capability_id: [u8; 32],
@@ -824,7 +817,7 @@ pub struct CapabilityRequirement {
 // ============================================================================
 
 /// Type of claim or proposal
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, )]
 pub enum ClaimType {
     /// Claim against endowment (insurance)
     Endowment = 0,
@@ -832,19 +825,6 @@ pub enum ClaimType {
     Treasury = 1,
     /// Dispute resolution via oracle
     Dispute = 2,
-}
-
-impl TryFrom<u8> for ClaimType {
-    type Error = dwow_sdk::error::ContractError;
-
-    fn try_from(b: u8) -> Result<Self, Self::Error> {
-        match b {
-            0 => Ok(Self::Endowment),
-            1 => Ok(Self::Treasury),
-            2 => Ok(Self::Dispute),
-            _ => Err(dwow_sdk::error::ContractError::InvalidFunction),
-        }
-    }
 }
 
 // ============================================================================
@@ -985,7 +965,7 @@ pub struct VoteRecord {
 // ============================================================================
 
 /// Reference to an oracle attestation used for dispute resolution
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct OracleAttestationRef {
     pub version: u8,
     /// Attestation ID from the attestation contract
@@ -1031,7 +1011,7 @@ pub struct DisputeResolution {
 // ============================================================================
 
 /// Parameters for `ExecuteClaimV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct ExecuteClaimParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -1061,7 +1041,7 @@ pub struct ExecuteClaimUpdateV1 {
 // ============================================================================
 
 /// Parameters for `RegisterCapabilityRequirementV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct RegisterCapabilityRequirementParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -1089,7 +1069,7 @@ pub struct RegisterCapabilityRequirementUpdateV1 {
 // ============================================================================
 
 /// Parameters for `VerifyMemberCapabilityV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct VerifyMemberCapabilityParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -1113,7 +1093,7 @@ pub struct VerifyMemberCapabilityUpdateV1 {
 // ============================================================================
 
 /// Parameters for `ResolveDisputeV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct ResolveDisputeParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -1151,7 +1131,7 @@ pub struct ResolveDisputeUpdateV1 {
 // ============================================================================
 
 /// Parameters for `CancelClaimV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct CancelClaimParamsV1 {
     /// DAO-Escrow bulla
     pub dao_escrow_bulla: DaoEscrowBulla,
@@ -1180,7 +1160,7 @@ pub struct CancelClaimUpdateV1 {
 // manage governance configuration and activation.
 
 /// Parameters for `DeactivateCapabilityRequirementV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, )]
 pub struct DeactivateCapabilityRequirementParamsV1 {
     pub dao_escrow_bulla: DaoEscrowBulla,
     pub role: Vec<u8>,
@@ -1196,6 +1176,43 @@ pub struct DeactivateCapabilityRequirementUpdateV1 {
 // ============================================================================
 // RHO-CALCULUS EXPLICIT ENCODE/DECODE
 // ============================================================================
+
+// --- Parameter structs ---
+
+impl InitializeParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(162); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.dao_bulla.to_bytes()); b.extend_from_slice(&self.owner_pubkey.to_bytes()); b.extend_from_slice(&self.endowment_token_id.to_bytes()); b.extend_from_slice(&self.bulla_blind.inner().to_repr()); b.push(self.enable_drain_protection as u8); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 162 { return Err(ContractError::IoError(format!("InitializeParamsV1: expected 162 got {}", data.len()))); } Ok(InitializeParamsV1 { instance_seed: data[0..32].try_into().unwrap(), dao_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("InitializeParamsV1: invalid dao_bulla".into()))?), owner_pubkey: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("InitializeParamsV1: invalid owner_pubkey: {}", e)))?, endowment_token_id: TokenId::from_bytes(data[96..128].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("InitializeParamsV1: invalid endowment_token_id: {}", e)))?, bulla_blind: dwow_sdk::crypto::Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(data[128..160].try_into().unwrap())).ok_or_else(|| ContractError::IoError("InitializeParamsV1: invalid bulla_blind".into()))?), enable_drain_protection: data[160] != 0 }) } }
+
+impl UpdateParamsV1 { pub fn encode(&self) -> Vec<u8> { self.bulla.to_bytes().to_vec() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("UpdateParamsV1: expected 32 got {}", data.len()))); } Ok(UpdateParamsV1 { bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UpdateParamsV1: invalid bulla".into()))?) }) } }
+
+impl PayPremiumParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(216); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.membership_note.to_bytes()); b.extend_from_slice(&self.value_commit.to_bytes()); b.extend_from_slice(&self.value.to_le_bytes()); b.extend_from_slice(&self.token_id.to_bytes()); b.extend_from_slice(&self.expiry.to_le_bytes()); b.extend_from_slice(&self.membership_blind.inner().to_repr()); b.extend_from_slice(&self.value_blind.inner().to_repr()); b.extend_from_slice(&self.member_pubkey.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 216 { return Err(ContractError::IoError(format!("PayPremiumParamsV1: expected 216 got {}", data.len()))); } Ok(PayPremiumParamsV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumParamsV1: invalid dao_escrow_bulla".into()))?), membership_note: MembershipNote(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumParamsV1: invalid membership_note".into()))?), value_commit: Option::<pallas::Point>::from(pallas::Point::from_bytes(data[64..96].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumParamsV1: invalid value_commit".into()))?, value: u64::from_le_bytes(data[96..104].try_into().unwrap()), token_id: TokenId::from_bytes(data[104..136].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PayPremiumParamsV1: invalid token_id: {}", e)))?, expiry: u64::from_le_bytes(data[136..144].try_into().unwrap()), membership_blind: dwow_sdk::crypto::Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(data[144..176].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumParamsV1: invalid membership_blind".into()))?), value_blind: dwow_sdk::crypto::Blind(Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(data[176..208].try_into().unwrap())).ok_or_else(|| ContractError::IoError("PayPremiumParamsV1: invalid value_blind".into()))?), member_pubkey: PublicKey::from_bytes(data[208..240].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PayPremiumParamsV1: invalid member_pubkey: {}", e)))? }) } }
+
+impl WithdrawParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(97); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.value.to_le_bytes()); b.extend_from_slice(&self.recipient_pubkey.to_bytes()); b.push(self.capability_proof.is_some() as u8); if let Some(ref cp) = self.capability_proof { b.extend_from_slice(&cp.encode()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 73 { return Err(ContractError::IoError("WithdrawParamsV1: too short".into())); } let dao_escrow_bulla = DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("WithdrawParamsV1: invalid dao_escrow_bulla".into()))?); let value = u64::from_le_bytes(data[32..40].try_into().unwrap()); let recipient_pubkey = PublicKey::from_bytes(data[40..72].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("WithdrawParamsV1: invalid recipient_pubkey: {}", e)))?; let has_cp = data[72] != 0; let capability_proof = if has_cp { let cp = CapabilityProof::decode(&data[73..])?; Some(cp) } else { None }; Ok(WithdrawParamsV1 { dao_escrow_bulla, value, recipient_pubkey, capability_proof }) } }
+
+impl EnableDrainProtectionParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.drain_protection_bulla.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("EnableDrainProtectionParamsV1: expected 64 got {}", data.len()))); } Ok(EnableDrainProtectionParamsV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("EnableDrainProtectionParamsV1: invalid dao_escrow_bulla".into()))?), drain_protection_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("EnableDrainProtectionParamsV1: invalid drain_protection_bulla".into()))?) }) } }
+
+impl ProposeClaimParamsV1 { pub fn encode(&self) -> Vec<u8> { let cp = self.capability_proof.encode(); let mut b = Vec::with_capacity(195+cp.len()); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.claim_id.to_bytes()); b.extend_from_slice(&self.value.to_le_bytes()); b.extend_from_slice(&self.description_hash.to_repr()); b.extend_from_slice(&self.recipient_pubkey.to_bytes()); b.extend_from_slice(&self.proposer_pubkey.to_bytes()); b.push(self.claim_type as u8); b.extend_from_slice(&cp); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 195 { return Err(ContractError::IoError("ProposeClaimParamsV1: too short".into())); } let dao_escrow_bulla = DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ProposeClaimParamsV1: invalid dao_escrow_bulla".into()))?); let claim_id = ClaimId(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ProposeClaimParamsV1: invalid claim_id".into()))?); let value = u64::from_le_bytes(data[64..72].try_into().unwrap()); let description_hash = Option::<pallas::Base>::from(pallas::Base::from_repr(data[72..104].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ProposeClaimParamsV1: invalid description_hash".into()))?; let recipient_pubkey = PublicKey::from_bytes(data[104..136].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ProposeClaimParamsV1: invalid recipient_pubkey: {}", e)))?; let proposer_pubkey = PublicKey::from_bytes(data[136..168].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ProposeClaimParamsV1: invalid proposer_pubkey: {}", e)))?; let claim_type = ClaimType::decode(&data[168..169])?; let capability_proof = CapabilityProof::decode(&data[169..])?; Ok(ProposeClaimParamsV1 { dao_escrow_bulla, claim_id, value, description_hash, recipient_pubkey, proposer_pubkey, claim_type, capability_proof }) } }
+
+impl VoteClaimParamsV1 { pub fn encode(&self) -> Vec<u8> { let cp = self.capability_proof.encode(); let mut b = Vec::with_capacity(98+cp.len()); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.claim_id.to_bytes()); b.push(self.vote as u8); b.extend_from_slice(&self.voter_pubkey.to_bytes()); b.extend_from_slice(&cp); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 98 { return Err(ContractError::IoError("VoteClaimParamsV1: too short".into())); } Ok(VoteClaimParamsV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("VoteClaimParamsV1: invalid dao_escrow_bulla".into()))?), claim_id: ClaimId(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("VoteClaimParamsV1: invalid claim_id".into()))?), vote: VoteType::decode(&data[64..65])?, voter_pubkey: PublicKey::from_bytes(data[65..97].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("VoteClaimParamsV1: invalid voter_pubkey: {}", e)))?, capability_proof: CapabilityProof::decode(&data[97..])? }) } }
+
+impl EndowmentWithdrawParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(138); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.claim_id.to_bytes()); b.extend_from_slice(&self.recipient_pubkey.to_bytes()); b.extend_from_slice(&self.value.to_le_bytes()); b.push(self.capability_proof.is_some() as u8); if let Some(ref cp) = self.capability_proof { b.extend_from_slice(&cp.encode()); } b.push(self.proposal_id.is_some() as u8); if let Some(ref pid) = self.proposal_id { b.extend_from_slice(&pid.to_repr()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 105 { return Err(ContractError::IoError("EndowmentWithdrawParamsV1: too short".into())); } let dao_escrow_bulla = DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("EndowmentWithdrawParamsV1: invalid dao_escrow_bulla".into()))?); let claim_id = ClaimId(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("EndowmentWithdrawParamsV1: invalid claim_id".into()))?); let recipient_pubkey = PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("EndowmentWithdrawParamsV1: invalid recipient_pubkey: {}", e)))?; let value = u64::from_le_bytes(data[96..104].try_into().unwrap()); let has_cp = data[104] != 0; let mut pos = 105; let capability_proof = if has_cp { let cp = CapabilityProof::decode(&data[pos..])?; pos += cp.encode().len(); Some(cp) } else { None }; let has_pid = if pos < data.len() { data[pos] } else { 0 }; pos += 1; let proposal_id = if has_pid != 0 { if data.len() < pos+32 { return Err(ContractError::IoError("EndowmentWithdrawParamsV1: proposal_id truncated".into())); } let pid = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("EndowmentWithdrawParamsV1: invalid proposal_id".into()))?; Some(pid) } else { None }; Ok(EndowmentWithdrawParamsV1 { dao_escrow_bulla, claim_id, recipient_pubkey, value, capability_proof, proposal_id }) } }
+
+impl TreasurySpendParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(105); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.proposal_id.to_repr()); b.extend_from_slice(&self.recipient_pubkey.to_bytes()); b.extend_from_slice(&self.value.to_le_bytes()); b.push(self.capability_proof.is_some() as u8); if let Some(ref cp) = self.capability_proof { b.extend_from_slice(&cp.encode()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 105 { return Err(ContractError::IoError("TreasurySpendParamsV1: too short".into())); } Ok(TreasurySpendParamsV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("TreasurySpendParamsV1: invalid dao_escrow_bulla".into()))?), proposal_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("TreasurySpendParamsV1: invalid proposal_id".into()))?, recipient_pubkey: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("TreasurySpendParamsV1: invalid recipient_pubkey: {}", e)))?, value: u64::from_le_bytes(data[96..104].try_into().unwrap()), capability_proof: if data[104] != 0 { Some(CapabilityProof::decode(&data[105..])?) } else { None } }) } }
+
+impl ResolveDisputeParamsV1 { pub fn encode(&self) -> Vec<u8> { let cp = self.capability_proof.encode(); let mut b = Vec::with_capacity(137+cp.len()+self.attestations.len()*105); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.proposal_id.to_bytes()); b.push(self.attestations.len() as u8); for a in &self.attestations { b.extend_from_slice(&a.encode()); } b.extend_from_slice(&cp); b.extend_from_slice(&self.payout_amount.to_le_bytes()); b.extend_from_slice(&self.payout_recipient.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 137 { return Err(ContractError::IoError("ResolveDisputeParamsV1: too short".into())); } let count = data[64] as usize; let mut pos = 65; let mut attestations = Vec::with_capacity(count); for _ in 0..count { attestations.push(OracleAttestationRef::decode(&data[pos..pos+105])?); pos += 105; } let remaining = &data[pos..]; let remaining_len = remaining.len(); if remaining_len < 40 { return Err(ContractError::IoError("ResolveDisputeParamsV1: trailing too short".into())); } let cp = CapabilityProof::decode(&remaining[..remaining_len-40])?; Ok(ResolveDisputeParamsV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ResolveDisputeParamsV1: invalid dao_escrow_bulla".into()))?), proposal_id: ProposalId(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ResolveDisputeParamsV1: invalid proposal_id".into()))?), attestations, capability_proof: cp, payout_amount: u64::from_le_bytes(remaining[remaining_len-40..remaining_len-32].try_into().unwrap()), payout_recipient: PublicKey::from_bytes(remaining[remaining_len-32..].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ResolveDisputeParamsV1: invalid payout_recipient: {}", e)))? }) } }
+
+impl ExecuteClaimParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(104); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.proposal_id.to_bytes()); b.extend_from_slice(&self.recipient_pubkey.to_bytes()); b.extend_from_slice(&self.value.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 104 { return Err(ContractError::IoError(format!("ExecuteClaimParamsV1: expected 104 got {}", data.len()))); } Ok(ExecuteClaimParamsV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ExecuteClaimParamsV1: invalid dao_escrow_bulla".into()))?), proposal_id: ProposalId(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ExecuteClaimParamsV1: invalid proposal_id".into()))?), recipient_pubkey: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ExecuteClaimParamsV1: invalid recipient_pubkey: {}", e)))?, value: u64::from_le_bytes(data[96..104].try_into().unwrap()) }) } }
+
+
+impl CancelClaimParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(96); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&self.claim_id.to_bytes()); b.extend_from_slice(&self.proposer_pubkey.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 96 { return Err(ContractError::IoError(format!("CancelClaimParamsV1: expected 96 got {}", data.len()))); } Ok(CancelClaimParamsV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CancelClaimParamsV1: invalid dao_escrow_bulla".into()))?), claim_id: ClaimId(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CancelClaimParamsV1: invalid claim_id".into()))?), proposer_pubkey: PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CancelClaimParamsV1: invalid proposer_pubkey: {}", e)))? }) } }
+
+impl RegisterCapabilityRequirementParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(65+self.role.len()); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.push(self.role.len() as u8); b.extend_from_slice(&self.role); b.extend_from_slice(&self.capability_id); b.extend_from_slice(&self.identity_contract_bulla.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 65 { return Err(ContractError::IoError("RegisterCapabilityRequirementParamsV1: too short".into())); } let role_len = data[32] as usize; if data.len() != 65+role_len { return Err(ContractError::IoError(format!("RegisterCapabilityRequirementParamsV1: expected {} got {}", 65+role_len, data.len()))); } Ok(RegisterCapabilityRequirementParamsV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RegisterCapabilityRequirementParamsV1: invalid dao_escrow_bulla".into()))?), role: data[33..33+role_len].to_vec(), capability_id: data[33+role_len..65+role_len].try_into().unwrap(), identity_contract_bulla: Option::<pallas::Base>::from(pallas::Base::from_repr(data[65+role_len..97+role_len].try_into().unwrap())).ok_or_else(|| ContractError::IoError("RegisterCapabilityRequirementParamsV1: invalid identity_contract_bulla".into()))? }) } }
+
+impl VerifyMemberCapabilityParamsV1 { pub fn encode(&self) -> Vec<u8> { let cp = self.capability_proof.encode(); let mut b = Vec::with_capacity(32+cp.len()+32); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.extend_from_slice(&cp); b.extend_from_slice(&self.holder_pubkey.to_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 64 { return Err(ContractError::IoError("VerifyMemberCapabilityParamsV1: too short".into())); } let dao_escrow_bulla = DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("VerifyMemberCapabilityParamsV1: invalid dao_escrow_bulla".into()))?); let holder_pubkey = PublicKey::from_bytes(data[data.len()-32..].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("VerifyMemberCapabilityParamsV1: invalid holder_pubkey: {}", e)))?; let capability_proof = CapabilityProof::decode(&data[32..data.len()-32])?; Ok(VerifyMemberCapabilityParamsV1 { dao_escrow_bulla, capability_proof, holder_pubkey }) } }
+
+impl DeactivateCapabilityRequirementParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(33+self.role.len()); b.extend_from_slice(&self.dao_escrow_bulla.to_bytes()); b.push(self.role.len() as u8); b.extend_from_slice(&self.role); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 33 { return Err(ContractError::IoError("DeactivateCapabilityRequirementParamsV1: too short".into())); } let role_len = data[32] as usize; if data.len() != 33+role_len { return Err(ContractError::IoError(format!("DeactivateCapabilityRequirementParamsV1: expected {} got {}", 33+role_len, data.len()))); } Ok(DeactivateCapabilityRequirementParamsV1 { dao_escrow_bulla: DaoEscrowBulla(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DeactivateCapabilityRequirementParamsV1: invalid dao_escrow_bulla".into()))?), role: data[33..33+role_len].to_vec() }) } }
+
+impl CapabilityProof { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(161+self.proof.len()); b.extend_from_slice(&self.capability_id); b.extend_from_slice(&self.capability_secret); b.extend_from_slice(&self.nullifier.to_bytes()); b.extend_from_slice(&self.issuer_pub); b.extend_from_slice(&self.predicate_result); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 161 { return Err(ContractError::IoError("CapabilityProof: too short".into())); } let proof_len = data[160] as usize; if data.len() != 161+proof_len { return Err(ContractError::IoError(format!("CapabilityProof: expected {} got {}", 161+proof_len, data.len()))); } Ok(CapabilityProof { capability_id: data[0..32].try_into().unwrap(), capability_secret: data[32..64].try_into().unwrap(), nullifier: IntentNullifier::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CapabilityProof: invalid nullifier: {}", e)))?, issuer_pub: data[96..128].try_into().unwrap(), predicate_result: data[128..160].try_into().unwrap(), proof: data[161..161+proof_len].to_vec() }) } }
+
+impl OracleAttestationRef { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(105); b.push(self.version); b.extend_from_slice(&self.attestation_id.to_repr()); b.extend_from_slice(&self.oracle_id.to_repr()); b.extend_from_slice(&self.attested_value.to_repr()); b.extend_from_slice(&self.attested_at.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 105 { return Err(ContractError::IoError(format!("OracleAttestationRef: expected 105 got {}", data.len()))); } Ok(OracleAttestationRef { version: data[0], attestation_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[1..33].try_into().unwrap())).ok_or_else(|| ContractError::IoError("OracleAttestationRef: invalid attestation_id".into()))?, oracle_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(|| ContractError::IoError("OracleAttestationRef: invalid oracle_id".into()))?, attested_value: Option::<pallas::Base>::from(pallas::Base::from_repr(data[65..97].try_into().unwrap())).ok_or_else(|| ContractError::IoError("OracleAttestationRef: invalid attested_value".into()))?, attested_at: u64::from_le_bytes(data[97..105].try_into().unwrap()) }) } }
 
 // --- Bridge update structs ---
 
