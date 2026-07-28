@@ -234,7 +234,7 @@ impl TransferCallBuilder {
                 token_blind,
                 output.spend_hook.inner(),
                 output.user_data,
-                Blind(output.blind.inner()),
+                Blind(output.blind.clone().inner()),
                 0,                       // old_cumulative_value (identity for non-coinbase)
                 pallas::Scalar::zero(),   // old_cumulative_blind (identity for non-coinbase)
                 self.tx_commitment,
@@ -252,7 +252,7 @@ impl TransferCallBuilder {
                 token_id: output.token_id.inner(),
                 spend_hook: output.spend_hook.inner(),
                 user_data: output.user_data,
-                coin_blind: output.blind.inner(),
+                coin_blind: output.blind.clone().inner(),
                 value_blind: value_blind.clone().inner(),
                 token_blind: token_blind.clone().inner(),
                 memo: vec![],

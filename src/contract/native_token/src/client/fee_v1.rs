@@ -404,7 +404,7 @@ impl FeeCallBuilder {
             token_id: TokenId::from_base(self.input.token_id),
             spend_hook: FuncId::from_base(self.output.spend_hook),
             user_data: self.output.user_data,
-            blind: output_coin_blind,
+            blind: output_coin_blind.clone(),
         }
         .to_coin();
 

@@ -189,7 +189,7 @@ pub fn create_transfer_mint_proof(
         Witness::Base(Value::known(output.token_id.inner())),
         Witness::Base(Value::known(spend_hook)),
         Witness::Base(Value::known(user_data)),
-        Witness::Base(Value::known(coin_blind.inner())),
+        Witness::Base(Value::known(coin_blind.clone().inner())),
         // coin_secret — per-block derived key sk_H. Required for nullifier constraint.
         Witness::Base(Value::known(*coin_secret.inner())),
         Witness::Scalar(Value::known(value_blind.clone().inner())),
@@ -292,7 +292,7 @@ pub fn create_transfer_burn_proof(
         Witness::Base(Value::known(witness.token_id)),
         Witness::Base(Value::known(input.spend_hook.inner())),
         Witness::Base(Value::known(witness.user_data)),
-        Witness::Base(Value::known(witness.coin_blind.clone().inner())),
+        Witness::Base(Value::known(BaseBlind::clone(&witness.coin_blind).inner())),
         Witness::Scalar(Value::known(value_blind.clone().inner())),
         Witness::Base(Value::known(token_blind.clone().inner())),
         Witness::Base(Value::known(user_data_blind.clone().inner())),

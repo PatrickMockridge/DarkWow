@@ -210,7 +210,7 @@ impl PoWRewardCallBuilder {
             token_id: output.token_id.inner(),
             spend_hook,
             user_data,
-            coin_blind: coin_blind.inner(),
+            coin_blind: coin_blind.clone().inner(),
             value_blind: value_blind.clone().inner(),
             token_blind: token_blind.clone().inner(),
             memo: vec![],
