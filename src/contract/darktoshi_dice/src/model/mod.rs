@@ -41,21 +41,6 @@ use crate::{MAX_HOUSE_EDGE, MAX_TARGET, MIN_HOUSE_EDGE, ROLL_RANGE};
 
 // dwow_serial bridge impls for BetState
 
-impl dwow_serial::Encodable for BetState {
-    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
-        w.write_all(&[*self as u8])?;
-        Ok(1)
-    }
-}
-
-impl dwow_serial::Decodable for BetState {
-    fn decode<D: std::io::Read>(d: &mut D) -> Result<Self, std::io::Error> {
-        let mut buf = [0u8; 1];
-        d.read_exact(&mut buf)?;
-        Self::try_from(buf[0]).map_err(|e| std::io::Error::other(format!("{e}")))
-    }
-}
-
 // ============================================================================
 // STATE TYPES
 // ============================================================================

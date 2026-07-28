@@ -76,168 +76,6 @@ use dwow_sdk::{
     pasta::{group::GroupEncoding, pallas},
 };
 
-// dwow_serial bridge impls for newtypes (rho-calculus ↔ dwow_serial)
-
-impl dwow_serial::Encodable for DaoEscrowBulla {
-    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
-        let bytes = self.to_bytes();
-        w.write_all(&bytes)?;
-        Ok(32)
-    }
-}
-
-impl dwow_serial::Decodable for DaoEscrowBulla {
-    fn decode<D: std::io::Read>(d: &mut D) -> Result<Self, std::io::Error> {
-        let mut buf = [0u8; 32];
-        d.read_exact(&mut buf)?;
-        Self::from_bytes(buf)
-            .ok_or_else(|| std::io::Error::other("DaoEscrowBulla: invalid field element"))
-    }
-}
-
-#[cfg(feature = "client")]
-#[dwow_serial::async_trait]
-impl dwow_serial::AsyncEncodable for DaoEscrowBulla {
-    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
-        let bytes = self.to_bytes();
-        use dwow_serial::AsyncWriteExt;
-        w.write_slice_async(&bytes).await?;
-        Ok(32)
-    }
-}
-
-#[cfg(feature = "client")]
-#[dwow_serial::async_trait]
-impl dwow_serial::AsyncDecodable for DaoEscrowBulla {
-    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
-        let mut buf = [0u8; 32];
-        use dwow_serial::AsyncReadExt;
-        d.read_slice_async(&mut buf).await?;
-        Self::from_bytes(buf)
-            .ok_or_else(|| std::io::Error::other("DaoEscrowBulla: invalid field element"))
-    }
-}
-
-impl dwow_serial::Encodable for MembershipNote {
-    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
-        let bytes = self.to_bytes();
-        w.write_all(&bytes)?;
-        Ok(32)
-    }
-}
-
-impl dwow_serial::Decodable for MembershipNote {
-    fn decode<D: std::io::Read>(d: &mut D) -> Result<Self, std::io::Error> {
-        let mut buf = [0u8; 32];
-        d.read_exact(&mut buf)?;
-        Self::from_bytes(buf)
-            .ok_or_else(|| std::io::Error::other("MembershipNote: invalid field element"))
-    }
-}
-
-#[cfg(feature = "client")]
-#[dwow_serial::async_trait]
-impl dwow_serial::AsyncEncodable for MembershipNote {
-    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
-        let bytes = self.to_bytes();
-        use dwow_serial::AsyncWriteExt;
-        w.write_slice_async(&bytes).await?;
-        Ok(32)
-    }
-}
-
-#[cfg(feature = "client")]
-#[dwow_serial::async_trait]
-impl dwow_serial::AsyncDecodable for MembershipNote {
-    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
-        let mut buf = [0u8; 32];
-        use dwow_serial::AsyncReadExt;
-        d.read_slice_async(&mut buf).await?;
-        Self::from_bytes(buf)
-            .ok_or_else(|| std::io::Error::other("MembershipNote: invalid field element"))
-    }
-}
-
-impl dwow_serial::Encodable for ClaimId {
-    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
-        let bytes = self.to_bytes();
-        w.write_all(&bytes)?;
-        Ok(32)
-    }
-}
-
-impl dwow_serial::Decodable for ClaimId {
-    fn decode<D: std::io::Read>(d: &mut D) -> Result<Self, std::io::Error> {
-        let mut buf = [0u8; 32];
-        d.read_exact(&mut buf)?;
-        Self::from_bytes(buf)
-            .ok_or_else(|| std::io::Error::other("ClaimId: invalid field element"))
-    }
-}
-
-#[cfg(feature = "client")]
-#[dwow_serial::async_trait]
-impl dwow_serial::AsyncEncodable for ClaimId {
-    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
-        let bytes = self.to_bytes();
-        use dwow_serial::AsyncWriteExt;
-        w.write_slice_async(&bytes).await?;
-        Ok(32)
-    }
-}
-
-#[cfg(feature = "client")]
-#[dwow_serial::async_trait]
-impl dwow_serial::AsyncDecodable for ClaimId {
-    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
-        let mut buf = [0u8; 32];
-        use dwow_serial::AsyncReadExt;
-        d.read_slice_async(&mut buf).await?;
-        Self::from_bytes(buf)
-            .ok_or_else(|| std::io::Error::other("ClaimId: invalid field element"))
-    }
-}
-
-impl dwow_serial::Encodable for ProposalId {
-    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
-        let bytes = self.to_bytes();
-        w.write_all(&bytes)?;
-        Ok(32)
-    }
-}
-
-impl dwow_serial::Decodable for ProposalId {
-    fn decode<D: std::io::Read>(d: &mut D) -> Result<Self, std::io::Error> {
-        let mut buf = [0u8; 32];
-        d.read_exact(&mut buf)?;
-        Self::from_bytes(buf)
-            .ok_or_else(|| std::io::Error::other("ProposalId: invalid field element"))
-    }
-}
-
-#[cfg(feature = "client")]
-#[dwow_serial::async_trait]
-impl dwow_serial::AsyncEncodable for ProposalId {
-    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
-        let bytes = self.to_bytes();
-        use dwow_serial::AsyncWriteExt;
-        w.write_slice_async(&bytes).await?;
-        Ok(32)
-    }
-}
-
-#[cfg(feature = "client")]
-#[dwow_serial::async_trait]
-impl dwow_serial::AsyncDecodable for ProposalId {
-    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
-        let mut buf = [0u8; 32];
-        use dwow_serial::AsyncReadExt;
-        d.read_slice_async(&mut buf).await?;
-        Self::from_bytes(buf)
-            .ok_or_else(|| std::io::Error::other("ProposalId: invalid field element"))
-    }
-}
-
 /// DAO-Escrow unique identifier (hash of parameters)
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct DaoEscrowBulla(pub pallas::Base);
@@ -249,6 +87,11 @@ impl DaoEscrowBulla {
     }
     pub fn is_zero(&self) -> bool { self.0 == pallas::Base::zero() }
     pub fn zero() -> Self { Self(pallas::Base::zero()) }
+    pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 32 { return Err(ContractError::IoError(format!("expected 32 got {}", data.len()))); }
+        Self::from_bytes(data.try_into().unwrap()).ok_or_else(|| ContractError::IoError("invalid field element".into()))
+    }
 }
 
 /// Membership note identifier
@@ -262,6 +105,11 @@ impl MembershipNote {
     }
     pub fn is_zero(&self) -> bool { self.0 == pallas::Base::zero() }
     pub fn zero() -> Self { Self(pallas::Base::zero()) }
+    pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 32 { return Err(ContractError::IoError(format!("expected 32 got {}", data.len()))); }
+        Self::from_bytes(data.try_into().unwrap()).ok_or_else(|| ContractError::IoError("invalid field element".into()))
+    }
 }
 
 // ============================================================================
@@ -614,6 +462,11 @@ impl ClaimId {
         Option::<pallas::Base>::from(pallas::Base::from_repr(x)).map(Self)
     }
     pub fn is_zero(&self) -> bool { self.0 == pallas::Base::zero() }
+    pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 32 { return Err(ContractError::IoError(format!("expected 32 got {}", data.len()))); }
+        Self::from_bytes(data.try_into().unwrap()).ok_or_else(|| ContractError::IoError("invalid field element".into()))
+    }
 }
 
 /// Vote type for claims
@@ -878,6 +731,11 @@ impl ProposalId {
         Option::<pallas::Base>::from(pallas::Base::from_repr(x)).map(Self)
     }
     pub fn is_zero(&self) -> bool { self.0 == pallas::Base::zero() }
+    pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != 32 { return Err(ContractError::IoError(format!("expected 32 got {}", data.len()))); }
+        Self::from_bytes(data.try_into().unwrap()).ok_or_else(|| ContractError::IoError("invalid field element".into()))
+    }
 }
 
 /// A governance proposal (claim against endowment or treasury spend)

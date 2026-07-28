@@ -93,73 +93,42 @@ pub struct LotteryConfig {
     pub prize_tiers: Vec<PrizeTierConfig>,
 }
 
-/// Encode LotteryConfig to bytes (convenience wrapper over the Encodable trait impl).
+/// Encode LotteryConfig to bytes.
 pub fn encode_config(config: &LotteryConfig) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(15 + config.prize_tiers.len() * PrizeTierConfig::ENCODED_SIZE);
-    dwow_serial::Encodable::encode(config, &mut buf).unwrap();
-    buf
+    config.encode()
 }
 
-/// Decode LotteryConfig from bytes (convenience wrapper over the Decodable trait impl).
+/// Decode LotteryConfig from bytes.
 pub fn decode_config(data: &[u8]) -> Result<LotteryConfig, ContractError> {
-    use std::io::Cursor;
-    <LotteryConfig as dwow_serial::Decodable>::decode(&mut Cursor::new(data))
-        .map_err(|e| ContractError::IoError(format!("LotteryConfig decode: {e}")))
-}
-
-// Trait impls for derive compatibility (ρ-calculus bridge — used by Param structs that
-// still derive SerialEncodable/SerialDecodable but embed this type).
-impl dwow_serial::Encodable for LotteryConfig {
-    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<usize, std::io::Error> {
-        let bytes = encode_config(self);
-        w.write_all(&bytes)?;
-        Ok(bytes.len())
-    }
-}
-
-impl dwow_serial::Decodable for LotteryConfig {
-    fn decode<D: std::io::Read>(d: &mut D) -> Result<Self, std::io::Error> {
-        let mut prefix = [0u8; 15];
-        d.read_exact(&mut prefix)?;
-        let tier_count = prefix[14] as usize;
-        let tiers_size = tier_count * PrizeTierConfig::ENCODED_SIZE;
-        let mut buf = Vec::with_capacity(15 + tiers_size);
-        buf.extend_from_slice(&prefix);
-        buf.resize(15 + tiers_size, 0);
-        d.read_exact(&mut buf[15..])?;
-        decode_config(&buf).map_err(|e| std::io::Error::other(format!("{e}")))
-    }
-}
-
-#[cfg(feature = "client")]
-#[dwow_serial::async_trait]
-impl dwow_serial::AsyncEncodable for LotteryConfig {
-    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(&self, w: &mut W) -> Result<usize, std::io::Error> {
-        let bytes = encode_config(self);
-        use dwow_serial::AsyncWriteExt;
-        w.write_slice_async(&bytes).await?;
-        Ok(bytes.len())
-    }
-}
-
-#[cfg(feature = "client")]
-#[dwow_serial::async_trait]
-impl dwow_serial::AsyncDecodable for LotteryConfig {
-    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self, std::io::Error> {
-        let mut prefix = [0u8; 15];
-        use dwow_serial::AsyncReadExt;
-        d.read_slice_async(&mut prefix).await?;
-        let tier_count = prefix[14] as usize;
-        let tiers_size = tier_count * PrizeTierConfig::ENCODED_SIZE;
-        let mut buf = Vec::with_capacity(15 + tiers_size);
-        buf.extend_from_slice(&prefix);
-        buf.resize(15 + tiers_size, 0);
-        d.read_slice_async(&mut buf[15..]).await?;
-        decode_config(&buf).map_err(|e| std::io::Error::other(format!("{e}")))
-    }
+    LotteryConfig::decode(data)
 }
 
 impl LotteryConfig {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(15 + self.prize_tiers.len() * PrizeTierConfig::ENCODED_SIZE);
+        buf.push(self.num_picks);
+        buf.push(self.number_range);
+        buf.extend_from_slice(&self.house_edge_bp.to_le_bytes());
+        buf.extend_from_slice(&self.ticket_price.to_le_bytes());
+        buf.push(self.prize_tiers.len() as u8);
+        for tier in &self.prize_tiers { buf.extend_from_slice(&tier.encode()); }
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 15 { return Err(ContractError::IoError(format!("LotteryConfig: expected >=15 got {}", data.len()))); }
+        let num_picks = data[0];
+        let number_range = data[1];
+        let house_edge_bp = u32::from_le_bytes(data[2..6].try_into().unwrap());
+        let ticket_price = u64::from_le_bytes(data[6..14].try_into().unwrap());
+        let tier_count = data[14] as usize;
+        let tiers_size = tier_count * PrizeTierConfig::ENCODED_SIZE;
+        if data.len() != 15 + tiers_size { return Err(ContractError::IoError(format!("LotteryConfig: expected {} got {}", 15+tiers_size, data.len()))); }
+        let mut prize_tiers = Vec::with_capacity(tier_count);
+        for i in 0..tier_count {
+            prize_tiers.push(PrizeTierConfig::decode(&data[15+i*PrizeTierConfig::ENCODED_SIZE..15+(i+1)*PrizeTierConfig::ENCODED_SIZE])?);
+        }
+        Ok(LotteryConfig { num_picks, number_range, house_edge_bp, ticket_price, prize_tiers })
+    }
     /// Validate the lottery configuration
     pub fn validate(&self) -> Result<(), LotteryError> {
         if self.num_picks == 0 || self.num_picks > MAX_NUM_PICKS {
