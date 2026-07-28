@@ -93,8 +93,8 @@ impl CommitSpinV1Builder {
             contract_id,
             bet_value,
             paylines_played: 1,
-            secret_nonce: secret.inner(),
-            blind: blind_secret.inner(),
+            secret_nonce: *secret.inner(),
+            blind: *blind_secret.inner(),
             house_edge: 500, // Default 5%
             confirmation_depth: 3,
             token_id,

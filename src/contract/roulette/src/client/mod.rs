@@ -158,7 +158,7 @@ impl PlaceBetV1Builder {
             bet_type,
             numbers,
             amount,
-            secret_nonce: secret.inner(),
+            secret_nonce: *secret.inner(),
             instance_seed,
         }
     }
@@ -240,7 +240,7 @@ impl SpinWheelV1Builder {
         Self {
             table_id,
             house_pub,
-            nonce: secret.inner(),
+            nonce: *secret.inner(),
         }
     }
 

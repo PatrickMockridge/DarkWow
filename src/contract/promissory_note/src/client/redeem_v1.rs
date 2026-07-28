@@ -240,8 +240,8 @@ impl RedeemCallBuilder {
             &self.redeem_zkbin,
             &self.redeem_pk,
             &self.output,
-            receipt_value_blind,
-            receipt_token_id_blind,
+            receipt_value_blind.clone(),
+            receipt_token_id_blind.clone(),
             self.tx_commitment,
             self.tx_nonce,
         )?;

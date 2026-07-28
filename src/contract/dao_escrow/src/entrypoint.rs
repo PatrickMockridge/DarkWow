@@ -415,7 +415,7 @@ fn initialize_v1(cid: ContractId, params: model::InitializeParamsV1) -> Contract
         params.dao_bulla,
         &params.owner_pubkey,
         params.endowment_token_id,
-        params.bulla_blind,
+        params.bulla_blind.clone(),
     );
 
     // Create update

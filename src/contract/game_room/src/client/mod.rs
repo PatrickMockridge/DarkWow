@@ -113,7 +113,7 @@ impl CreateRoomV1Builder {
             required_entropy_contributions: 0,
             entropy_contribution_deadline: 0,
             max_players: 10,
-            nonce: secret.inner(),
+            nonce: *secret.inner(),
             instance_seed,
         })
     }
@@ -250,7 +250,7 @@ impl PlaceBetV1Builder {
         let instance_secret = wallet_secret.derive_instance(&contract_id, &instance_seed)?;
         let player = PublicKey::from_secret(instance_secret);
         let secret = SecretKey::random(&mut rand::rngs::OsRng);
-        Ok(Self { wallet_secret, contract_id, room_id, pot_id, player, amount, bet_type, nonce: secret.inner(), block_height: pallas::Base::zero(), instance_seed })
+        Ok(Self { wallet_secret, contract_id, room_id, pot_id, player, amount, bet_type, nonce: *secret.inner(), block_height: pallas::Base::zero(), instance_seed })
     }
 
     /// Set nonce (for reproducibility)
@@ -291,7 +291,7 @@ impl RaiseV1Builder {
     /// Create a new RaiseV1 builder
     pub fn new(room_id: RoomId, player: PublicKey, amount: u64) -> Self {
         let secret = SecretKey::random(&mut rand::rngs::OsRng);
-        Self { room_id, player, amount, nonce: secret.inner() }
+        Self { room_id, player, amount, nonce: *secret.inner() }
     }
 
     /// Build the raise parameters
@@ -311,7 +311,7 @@ impl CallV1Builder {
     /// Create a new CallV1 builder
     pub fn new(room_id: RoomId, player: PublicKey) -> Self {
         let secret = SecretKey::random(&mut rand::rngs::OsRng);
-        Self { room_id, player, nonce: secret.inner() }
+        Self { room_id, player, nonce: *secret.inner() }
     }
 
     /// Build the call parameters

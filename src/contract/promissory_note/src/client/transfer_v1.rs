@@ -245,8 +245,8 @@ impl TransferCallBuilder {
                 &self.blind_output_zkbin,
                 &self.blind_output_pk,
                 &output,
-                value_blind,
-                token_id_blind,
+                value_blind.clone(),
+                token_id_blind.clone(),
                 pallas::Base::zero(),
                 pallas::Base::zero(),
             )?;

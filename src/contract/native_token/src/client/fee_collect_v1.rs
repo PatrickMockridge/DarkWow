@@ -127,7 +127,7 @@ fn create_fee_collect_proof(
     let coin = output.to_coin();
 
     // Nullifier: nf = poseidon_hash(coin_secret, C) — spec §3.4
-    let nf = poseidon_hash([*coin_secret.inner(), coin.inner()]);
+    let nf = poseidon_hash([**coin_secret.inner(), coin.inner()]);
 
     // tx_binding = poseidon_hash(tx_commitment, tx_nonce) — spec §3.5 (D11).
     // MUST be the hash, not the raw tx_commitment: with (0, 0) inputs the
@@ -152,7 +152,7 @@ fn create_fee_collect_proof(
         Witness::Base(Value::known(output.spend_hook.inner())),             // 5: coin_spend_hook
         Witness::Base(Value::known(output.user_data)),                      // 6: coin_user_data
         Witness::Base(Value::known(output.blind.inner())),                  // 7: coin_blind
-        Witness::Base(Value::known(*coin_secret.inner())),                   // 8: coin_secret
+        Witness::Base(Value::known(**coin_secret.inner())),                   // 8: coin_secret
         Witness::Scalar(Value::known(value_blind.clone().inner())),                 // 9: value_blind
         Witness::Base(Value::known(token_blind.clone().inner())),                   // 10: token_blind
         Witness::Base(Value::known(tx_commitment)),                         // 11: tx_commitment
@@ -165,7 +165,7 @@ fn create_fee_collect_proof(
     // (sk_H, height, domain=14). Same seed → identical proof bytes on every
     // validator re-execution.
     let seed: [u8; 32] = poseidon_hash([
-        coin_secret.inner(),
+        *coin_secret.inner(),
         pallas::Base::from(block_height.get()),
         pallas::Base::from(DOMAIN_PROOF_RNG),
     ])

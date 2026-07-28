@@ -251,9 +251,9 @@ impl BurnCallBuilder {
                 &self.burn_zkbin,
                 &self.burn_pk,
                 &input,
-                value_blind,
-                token_blind,
-                user_data_blind,
+                value_blind.clone(),
+                token_blind.clone(),
+                user_data_blind.clone(),
                 secret.clone(),
             )?;
 

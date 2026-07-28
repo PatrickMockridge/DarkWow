@@ -177,7 +177,7 @@ impl CreateSwapCallData {
             // Base amount_blind
             Witness::Base(Value::known(self.amount_blind)),
             // Base ephemeral_signature_secret
-            Witness::Base(Value::known(self.ephemeral_signature_secret.inner())),
+            Witness::Base(Value::known(*self.ephemeral_signature_secret.inner())),
             // Base signature_public_x
             Witness::Base(Value::known(self.signature_public.x().expect("pk not identity"))),
             // Base signature_public_y
