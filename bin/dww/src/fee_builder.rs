@@ -223,8 +223,7 @@ pub fn build_fee_and_finalize_tx(
     let mut fee_call_data = vec![0x00u8]; // FeeV1 function code
     DEFAULT_FEE.encode(&mut fee_call_data)
         .map_err(|e| Error::Custom(format!("Failed to encode fee value: {:?}", e)))?;
-    fee_debris.params.encode(&mut fee_call_data)
-        .map_err(|e| Error::Custom(format!("Failed to encode fee params: {:?}", e)))?;
+    fee_call_data.extend_from_slice(&fee_debris.params.encode());
 
     let fee_call = ContractCall {
         contract_id: *NATIVE_TOKEN_CONTRACT_ID,

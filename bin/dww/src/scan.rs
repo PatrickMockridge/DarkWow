@@ -553,15 +553,15 @@ fn scan_native_token_contract_calls(
             let mut cursor = std::io::Cursor::new(&call.data[1..]);
             // V.2: NullifierRecord stores typed Nullifier, not raw pallas::Base
             let published: Vec<dwow_chain::Nullifier> = match function_code {
-                0x03 => match TransferParamsV1::decode(&mut cursor) {
+                0x03 => match TransferParamsV1::decode(&cursor.get_ref()[cursor.position() as usize..]) {
                     Ok(p) => p.inputs.iter().map(|inp| inp.nullifier).collect(),
                     Err(_) => vec![],
                 },
-                0x02 => match BurnParamsV1::decode(&mut cursor) {
+                0x02 => match BurnParamsV1::decode(&cursor.get_ref()[cursor.position() as usize..]) {
                     Ok(p) => p.inputs.iter().map(|inp| inp.nullifier).collect(),
                     Err(_) => vec![],
                 },
-                0x04 => match SpendParamsV1::decode(&mut cursor) {
+                0x04 => match SpendParamsV1::decode(&cursor.get_ref()[cursor.position() as usize..]) {
                     Ok(p) => vec![p.input.nullifier],
                     Err(_) => vec![],
                 },
@@ -644,8 +644,8 @@ fn scan_block(
             if cid == *DEPLOYOOOR_CONTRACT_ID {
                 let function_code = call.data.first().copied().unwrap_or(0xFF);
                 if function_code == 0x00 {
-                    if let Ok(params) = DeployParamsV1::decode(
-                        &mut std::io::Cursor::new(&call.data[1..])
+                    if let Ok(params) = dwow_serial::deserialize::<DeployParamsV1>(
+                        &call.data[1..]
                     ) {
                         let contract_id = ContractId::derive_public(params.public_key);
                         let contract_id_str = bs58::encode(contract_id.to_bytes()).into_string();

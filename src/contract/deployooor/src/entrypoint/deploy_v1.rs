@@ -51,7 +51,7 @@ pub(crate) fn deploy_get_metadata_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx];
-    let params = DeployParamsV1::decode(&self_.data.data[1..])?;
+    let params: DeployParamsV1 = deserialize(&self_.data.data[1..])?;
 
     // Public inputs for the ZK proofs we have to verify
     let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
@@ -74,7 +74,7 @@ pub(crate) fn deploy_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx];
-    let params = DeployParamsV1::decode(&self_.data.data[1..])?;
+    let params: DeployParamsV1 = deserialize(&self_.data.data[1..])?;
 
     // In this function, we have to check that the contract isn't locked.
     let lock_db = wasm::db::db_lookup(cid, DEPLOY_CONTRACT_LOCK_TREE)?;

@@ -558,7 +558,7 @@ impl Explorer {
                     });
                 } else if func == DeployFunction::LockV1 as u8 {
                     let params: LockParamsV1 =
-                        deserialize_async(&call.data[1..]).await.unwrap();
+                        LockParamsV1::decode(&call.data[1..]).unwrap();
                     let contract_id = ContractId::derive_public(params.public_key);
 
                     info!(
