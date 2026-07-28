@@ -799,6 +799,14 @@ pub struct PayInterestParamsV1 {
 }
 
 impl PayInterestParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(40 + BondCoin::ENCODED_SIZE);
+        b.extend_from_slice(&self.bond_token_commit.to_repr());
+        b.extend_from_slice(&self.claim_block.to_le_bytes());
+        b.extend_from_slice(&self.interest_coin.encode());
+        b
+    }
+
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 40 + BondCoin::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -879,6 +887,13 @@ pub struct EmergencyUnstakeParamsV1 {
 }
 
 impl EmergencyUnstakeParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(BondInput::ENCODED_SIZE + CoverageReport::ENCODED_SIZE);
+        b.extend_from_slice(&self.bond_input.encode());
+        b.extend_from_slice(&self.coverage_report.encode());
+        b
+    }
+
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < BondInput::ENCODED_SIZE + CoverageReport::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -1147,6 +1162,19 @@ pub struct ProveCoverageParamsV1 {
 }
 
 impl ProveCoverageParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(72 + self.proof.len());
+        b.extend_from_slice(&self.series_token_id.to_repr());
+        b.extend_from_slice(&self.total_outstanding.to_le_bytes());
+        b.extend_from_slice(&self.total_interest_obligation.to_le_bytes());
+        b.extend_from_slice(&self.reserve_amount.to_le_bytes());
+        b.extend_from_slice(&self.coverage_ratio_bps.to_le_bytes());
+        b.extend_from_slice(&self.report_block.to_le_bytes());
+        b.push(self.proof.len() as u8);
+        b.extend_from_slice(&self.proof);
+        b
+    }
+
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 72 {
             return Err(ContractError::IoError(format!(

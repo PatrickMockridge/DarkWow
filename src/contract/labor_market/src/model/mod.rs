@@ -488,6 +488,7 @@ pub struct CreateJobParamsV1 {
 }
 
 impl CreateJobParamsV1 {
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(41+self.proof.len()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.attestation_id.to_repr()); b.push(self.delivery_type); b.extend_from_slice(&self.payment_amount.to_le_bytes()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 185 {
             return Err(ContractError::IoError(format!(
