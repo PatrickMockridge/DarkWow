@@ -173,7 +173,7 @@ impl InitializeParamsV1 {
         buf.extend_from_slice(&self.house_edge_bp.to_le_bytes());
         buf.push(self.risk_profile);
         buf.extend_from_slice(&self.nonce.to_repr());
-        buf.extend_from_slice(&dwow_serial::serialize(&self.signature));
+        buf.extend_from_slice(&self.signature.encode());
         buf
     }
 
@@ -186,8 +186,8 @@ impl InitializeParamsV1 {
         let risk_profile = data[68];
         let nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[69..101].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("InitializeParamsV1: invalid nonce".into()))?;
-        let signature = dwow_serial::deserialize(&data[101..])
-            .map_err(|e| ContractError::IoError(format!("InitializeParamsV1: invalid signature: {:?}", e)))?;
+        let signature = Signature::decode(&data[101..165])
+            .ok_or_else(|| ContractError::IoError("InitializeParamsV1: invalid signature".into()))?;
         Ok(InitializeParamsV1 { instance_seed, betting_contract_id, house_edge_bp, risk_profile, nonce, signature })
     }
 }

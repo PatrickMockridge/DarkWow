@@ -653,7 +653,7 @@ pub enum DaoControlParamsV1 {
 impl DaoControlParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         match self {
-            Self::UpdatePlan(plan) => { let inner = dwow_serial::serialize(plan); let mut b = Vec::with_capacity(1+inner.len()); b.push(0u8); b.extend_from_slice(&inner); b }
+            Self::UpdatePlan(plan) => { let inner = plan.encode(); let mut b = Vec::with_capacity(1+inner.len()); b.push(0u8); b.extend_from_slice(&inner); b }
             Self::SetPlanActive { plan_id, active } => { let mut b = Vec::with_capacity(6); b.push(1u8); b.extend_from_slice(&plan_id.to_le_bytes()); b.push(*active as u8); b }
             Self::EmergencyPause { pause, reason } => { let mut b = Vec::with_capacity(34); b.push(2u8); b.push(*pause as u8); b.extend_from_slice(&reason.to_repr()); b }
             Self::EndowmentWithdraw { amount, recipient } => { let mut b = Vec::with_capacity(41); b.push(3u8); b.extend_from_slice(&amount.to_le_bytes()); b.extend_from_slice(&recipient.to_bytes()); b }
@@ -663,7 +663,7 @@ impl DaoControlParamsV1 {
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.is_empty() { return Err(ContractError::IoError("DaoControlParamsV1: empty".into())); }
         match data[0] {
-            0 => { let plan = dwow_serial::deserialize(&data[1..]).map_err(|e| ContractError::IoError(format!("DaoControlParamsV1: invalid Plan: {:?}", e)))?; Ok(Self::UpdatePlan(plan)) }
+            0 => { let plan = Plan::decode(&data[1..])?; Ok(Self::UpdatePlan(plan)) }
             1 => { if data.len() < 6 { return Err(ContractError::IoError("DaoControlParamsV1: SetPlanActive truncated".into())); } Ok(Self::SetPlanActive { plan_id: u32::from_le_bytes(data[1..5].try_into().unwrap()), active: data[5] != 0 }) }
             2 => { if data.len() < 34 { return Err(ContractError::IoError("DaoControlParamsV1: EmergencyPause truncated".into())); } Ok(Self::EmergencyPause { pause: data[1] != 0, reason: Option::<pallas::Base>::from(pallas::Base::from_repr(data[2..34].try_into().unwrap())).ok_or_else(|| ContractError::IoError("DaoControlParamsV1: invalid reason".into()))? }) }
             3 => { if data.len() < 41 { return Err(ContractError::IoError("DaoControlParamsV1: EndowmentWithdraw truncated".into())); } Ok(Self::EndowmentWithdraw { amount: u64::from_le_bytes(data[1..9].try_into().unwrap()), recipient: PublicKey::from_bytes(data[9..41].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("DaoControlParamsV1: invalid recipient: {}", e)))? }) }
@@ -1005,6 +1005,28 @@ impl Plan {
             dao_escrow_discount,
             required_dao_escrow,
         })
+    }
+
+    /// Encode to canonical bytes (ρ-calculus: quote).
+    /// Fixed 99 + 32 optional = 131 max.
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = if self.required_dao_escrow.is_some() { 131 } else { 99 };
+        let mut b = Vec::with_capacity(cap);
+        b.push(self.version);
+        b.extend_from_slice(&self.id.to_le_bytes());
+        b.extend_from_slice(&self.name_hash.to_repr());
+        b.extend_from_slice(&self.price.to_le_bytes());
+        b.extend_from_slice(&self.token_id.to_repr());
+        b.extend_from_slice(&self.duration_blocks.to_le_bytes());
+        b.extend_from_slice(&self.treasury_share.to_le_bytes());
+        b.extend_from_slice(&self.endowment_share.to_le_bytes());
+        b.push(self.active as u8);
+        b.extend_from_slice(&self.dao_escrow_discount.to_le_bytes());
+        b.push(self.required_dao_escrow.is_some() as u8);
+        if let Some(ref v) = self.required_dao_escrow {
+            b.extend_from_slice(&v.to_repr());
+        }
+        b
     }
 }
 

@@ -46,6 +46,27 @@ impl Signature {
     pub fn dummy() -> Self {
         Self { commit: pallas::Point::identity(), response: pallas::Scalar::zero() }
     }
+
+    /// Encode to canonical fixed-width bytes (64 bytes: commit || response).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(64);
+        buf.extend_from_slice(&self.commit.to_bytes());
+        buf.extend_from_slice(&self.response.to_repr());
+        buf
+    }
+
+    /// Decode from canonical fixed-width bytes (64 bytes: commit || response).
+    /// Returns None if the bytes are invalid.
+    pub fn decode(data: &[u8]) -> Option<Self> {
+        if data.len() != 64 {
+            return None;
+        }
+        let bytes32: &[u8; 32] = data[0..32].try_into().ok()?;
+        let commit = pallas::Point::from_bytes(bytes32).into_option()?;
+        let bytes32: &[u8; 32] = data[32..64].try_into().ok()?;
+        let response = pallas::Scalar::from_repr(*bytes32).into_option()?;
+        Some(Self { commit, response })
+    }
 }
 
 /// Trait for secret keys that implements a signature creation
