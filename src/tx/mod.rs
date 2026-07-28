@@ -233,7 +233,6 @@ crate::impl_p2p_message!(
     &[crate::net::barb_trait::BarbId::Spend, crate::net::barb_trait::BarbId::Verify]
 );
 
-#[cfg(any(feature = "net-wire", feature = "net-wallet", feature = "net"))]
 crate::impl_boundary_codec!(
     Transaction,
     TX_MAX_BYTES,

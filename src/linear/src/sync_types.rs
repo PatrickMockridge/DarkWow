@@ -159,9 +159,9 @@ impl<'de> Deserialize<'de> for BlockHash {
 
 // §8.2.1: BlockHash exhibits ↓verify — a process holding a BlockHash can
 // prove it knows a specific chain position.
-impl dwow_core::net::barb_trait::ExhibitsBarb for BlockHash {
-    fn exhibited_barbs() -> &'static [dwow_core::net::barb_trait::BarbId] {
-        &[dwow_core::net::barb_trait::BarbId::Verify]
+impl dwow_core::barb::ExhibitsBarb for BlockHash {
+    fn exhibited_barbs() -> &'static [dwow_core::barb::BarbId] {
+        &[dwow_core::barb::BarbId::Verify]
     }
 }
 
