@@ -986,6 +986,7 @@ pub struct BurnStakeParamsV1 {
 }
 
 impl BurnStakeParamsV1 {
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.inputs.len()*BondInput::ENCODED_SIZE); b.push(self.inputs.len() as u8); for input in &self.inputs { b.extend_from_slice(&input.encode()); } b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.is_empty() {
             return Err(ContractError::IoError("BurnStakeParamsV1: empty data".into()));
