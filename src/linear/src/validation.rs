@@ -293,11 +293,8 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
     // Phase 0.4 nullifier zero-check (HAZOP compliance fix):
     // Previously deferred to WASM Phase 4. Now enforced at structural validation
     // for fail-fast — reject blocks with zero coinbase nullifier before PoW/WASM.
-    let pow_params: dwow_native_token_contract::model::PoWRewardParamsV1 =
-        dwow_serial::deserialize(&pow_call.data[1..])
-            .map_err(|e| LinearError::BlockStructure(
-                format!("PoWRewardV1 params deserialization failed: {}", e)
-            ))?;
+    let pow_params = dwow_native_token_contract::model::PoWRewardParamsV1::decode(&pow_call.data[1..])
+        .map_err(|e| LinearError::BlockStructure(format!("PoWRewardV1 params decode failed: {:?}", e)))?;
     if pow_params.nullifier.is_zero() {
         return Err(LinearError::BlockStructure(
             "coinbase nullifier is zero — must be non-zero per consensus rule".into()

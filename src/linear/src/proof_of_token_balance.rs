@@ -190,8 +190,7 @@ fn process_fee_call(
     }
     let fee: u64 =
         deserialize(&data[1..9]).map_err(|e| BalanceError::Deserialize(e.to_string()))?;
-    let params: FeeParamsV1 =
-        deserialize(&data[9..]).map_err(|e| BalanceError::Deserialize(e.to_string()))?;
+    let params = FeeParamsV1::decode(&data[9..]).map_err(|e| BalanceError::Deserialize(format!("{:?}", e)))?;
 
     // Only track DRKW (native token). Guard prevents spam-token fee injection
     // into the DRKW mass balance equation.
@@ -218,8 +217,7 @@ fn process_burn_call(
     darkw_token_commit: pallas::Base,
 ) -> Result<(), BalanceError> {
     // BurnV1 call data: [selector:1][BurnParamsV1...]
-    let params: BurnParamsV1 =
-        deserialize(&data[1..]).map_err(|e| BalanceError::Deserialize(e.to_string()))?;
+    let params = BurnParamsV1::decode(&data[1..]).map_err(|e| BalanceError::Deserialize(format!("{:?}", e)))?;
 
     for input in &params.inputs {
         if input.token_commit == darkw_token_commit {
@@ -239,8 +237,7 @@ fn process_transfer_call(
     darkw_token_commit: pallas::Base,
 ) -> Result<(), BalanceError> {
     // TransferV1 call data: [selector:1][TransferParamsV1...]
-    let params: TransferParamsV1 =
-        deserialize(&data[1..]).map_err(|e| BalanceError::Deserialize(e.to_string()))?;
+    let params = TransferParamsV1::decode(&data[1..]).map_err(|e| BalanceError::Deserialize(format!("{:?}", e)))?;
 
     for input in &params.inputs {
         if input.token_commit == darkw_token_commit {
@@ -264,8 +261,7 @@ fn process_spend_call(
     darkw_token_commit: pallas::Base,
 ) -> Result<(), BalanceError> {
     // SpendV1 call data: [selector:1][SpendParamsV1...]
-    let params: SpendParamsV1 =
-        deserialize(&data[1..]).map_err(|e| BalanceError::Deserialize(e.to_string()))?;
+    let params = SpendParamsV1::decode(&data[1..]).map_err(|e| BalanceError::Deserialize(format!("{:?}", e)))?;
 
     if params.input.token_commit == darkw_token_commit {
         *total_inputs = *total_inputs + params.input.value_commit;
