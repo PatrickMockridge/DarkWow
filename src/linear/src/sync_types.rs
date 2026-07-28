@@ -302,10 +302,10 @@ mod p2p_impls {
         expiry_time: NanoTimestamp::from_secs(5),
     };
 
-    const SYNC_BARBS: &'static [dwow_core::net::barb_trait::BarbId] = &[
-        dwow_core::net::barb_trait::BarbId::Verify,
-        dwow_core::net::barb_trait::BarbId::SyncBarrier,
-        dwow_core::net::barb_trait::BarbId::GossipForward,
+    const SYNC_BARBS: &'static [dwow_core::barb::BarbId] = &[
+        dwow_core::barb::BarbId::Verify,
+        dwow_core::barb::BarbId::SyncBarrier,
+        dwow_core::barb::BarbId::GossipForward,
     ];
 
     impl_p2p_message!(GetBlocks, "lineargetblocks", MAX_SMALL, 1, SYNC_METERING, SYNC_BARBS);
