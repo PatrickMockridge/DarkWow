@@ -118,8 +118,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         InsuranceMarketFunction::UnderwriteWithCapabilityV1 => {
-            let params: UnderwriteWithCapabilityParamsV1 = match deserialize(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to deserialize UnderwriteWithCapabilityParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
+            let params = match UnderwriteWithCapabilityParamsV1::decode(&self_.data[1..]) {
+                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to decode UnderwriteWithCapabilityParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             underwrite_with_capability_get_metadata_v1(params)?
         }

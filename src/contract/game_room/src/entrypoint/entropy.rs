@@ -44,7 +44,7 @@ pub(crate) fn process_contribute_entropy_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params: ContributeEntropyParamsV1 = dwow_serial::deserialize(&self_.data[1..])?;
+    let params = ContributeEntropyParamsV1::decode(&self_.data[1..])?;
 
     msg!("[Entropy] Contribute entropy to room {:?}", params.room_id);
 

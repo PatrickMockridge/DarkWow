@@ -62,7 +62,7 @@ pub(crate) fn game_room_claim_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: ClaimParamsV1 = dwow_serial::deserialize(&self_.data[1..])?;
+    let params = ClaimParamsV1::decode(&self_.data[1..])?;
 
     msg!(
         "[Claim] Claiming pot {:?} in room {:?} for winner {:?}, amount: {}",

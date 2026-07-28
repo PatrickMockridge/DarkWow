@@ -47,7 +47,7 @@ pub(crate) fn game_room_deposit_process_instruction_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params: DepositParamsV1 = dwow_serial::deserialize(&self_.data[1..])?;
+    let params = DepositParamsV1::decode(&self_.data[1..])?;
 
     msg!("[Deposit] Depositing {} to room {:?}", params.amount, params.room_id);
 
