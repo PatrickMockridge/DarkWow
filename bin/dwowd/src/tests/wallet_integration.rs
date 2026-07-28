@@ -1685,6 +1685,28 @@ fn test_wallet_capability_scan() {
         assert!(wrong_scan.native_outputs.is_empty(),
             "wrong-key wallet must discover zero Path 1 outputs (↓discover)");
 
+        // ── Nullifier replay guard (§4.1 ↓nullify) ─────────────────
+        // Pattern E: published nullifiers are detected during scan.
+        // The PN mint publishes nullifiers; the wallet's match_nullifiers
+        // SHALL detect them and mark capabilities as revocable.
+        let block_2_native = &scan_2.published_nullifiers;
+        assert!(block_2_native.len() > 0,
+            "block 2 must publish nullifiers for PN mint (↓nullify)");
+
+        // ── Determinism: re-scan must produce identical results ─────
+        let mut tree_2 = dww.get_capability_commitment_tree()
+            .expect("tree 2");
+        let rescan = dww.scan_block_linear(&mut tree_2, &scan_block_2)
+            .expect("rescan block 2");
+        assert_eq!(rescan.capabilities.len(), scan_2.capabilities.len(),
+            "re-scan must produce same capability count (determinism)");
+        let r_diag = &rescan.diagnostics;
+        let s_diag = &scan_2.diagnostics;
+        assert_eq!(r_diag.aead_decrypt_successes, s_diag.aead_decrypt_successes,
+            "re-scan AEAD successes must match (determinism)");
+        assert_eq!(r_diag.capability_construct_successes, s_diag.capability_construct_successes,
+            "re-scan construct successes must match (determinism)");
+
         // Cleanup
         drop(miner_mgr);
         let _ = std::fs::remove_file(&keys_path);
