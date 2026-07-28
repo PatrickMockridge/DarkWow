@@ -210,9 +210,9 @@ impl UnstakeCallBuilder {
             &self.burn_zkbin,
             &self.burn_pk,
             &self.input,
-            value_blind,
-            token_id_blind,
-            user_data_blind,
+            value_blind.clone(),
+            token_id_blind.clone(),
+            user_data_blind.clone(),
         )?;
 
         proofs.push(burn_proof);

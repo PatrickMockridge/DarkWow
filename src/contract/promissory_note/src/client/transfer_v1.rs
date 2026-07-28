@@ -338,7 +338,7 @@ fn create_transfer_burn_proof(
     };
 
     // Value commitment - Pedersen (additively homomorphic)
-    let value_commit = pedersen_commitment_u64(input.value, value_blind);
+    let value_commit = pedersen_commitment_u64(input.value, value_blind.clone());
 
     // Token commitment
     let token_commit = poseidon_hash([input.token_id, token_id_blind.inner()]);
@@ -413,7 +413,7 @@ fn create_transfer_blind_output_proof(
     let coin = attrs.to_coin();
 
     // Value commitment - Pedersen (additively homomorphic)
-    let value_commit = pedersen_commitment_u64(output.value, value_blind);
+    let value_commit = pedersen_commitment_u64(output.value, value_blind.clone());
 
     // Token commitment - now ZK-constrained in BlindOutputV1
     let token_commit = poseidon_hash([output.token_id, token_id_blind.inner()]);

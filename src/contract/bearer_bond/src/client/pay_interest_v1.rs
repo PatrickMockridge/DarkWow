@@ -131,8 +131,8 @@ impl PayInterestCallBuilder {
             &self.blind_output_zkbin,
             &self.blind_output_pk,
             &self.input,
-            value_blind,
-            token_id_blind,
+            value_blind.clone(),
+            token_id_blind.clone(),
         )?;
 
         let interest_coin = crate::model::BondCoin {

@@ -148,7 +148,7 @@ impl TokenMintCallBuilder {
         let coin = attrs.to_coin();
 
         // Value commitment - Pedersen (additively homomorphic)
-        let value_commit = pedersen_commitment_u64(self.input.value, value_blind);
+        let value_commit = pedersen_commitment_u64(self.input.value, value_blind.clone());
 
         // Token commitment (hides token_id)
         let token_commit = poseidon_hash([token_id, self.input.token_blind]);

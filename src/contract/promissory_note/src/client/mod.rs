@@ -146,7 +146,7 @@ pub fn verify_received_capability(output: &Output, secret: &SecretKey) -> Result
 
     // 4. Verify Pedersen value_commit matches the decrypted value and blind.
     let value_blind = Blind(note.value_blind);
-    let expected_value_commit = pedersen_commitment_u64(note.value, value_blind);
+    let expected_value_commit = pedersen_commitment_u64(note.value, value_blind.clone());
     if expected_value_commit != output.value_commit {
         return Err(dwow_sdk::error::ContractError::Custom(
             crate::error::PromissoryNoteError::ValueMismatch as u32,

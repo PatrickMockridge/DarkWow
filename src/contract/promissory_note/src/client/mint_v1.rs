@@ -132,7 +132,7 @@ impl MintCallBuilder {
         let coin = attrs.to_coin();
 
         // Value commitment - Pedersen (additively homomorphic)
-        let value_commit = pedersen_commitment_u64(self.input.value, value_blind);
+        let value_commit = pedersen_commitment_u64(self.input.value, value_blind.clone());
 
         // Calculate token_registry_root from Merkle path
         let token_registry_root = {
