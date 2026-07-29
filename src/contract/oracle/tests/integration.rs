@@ -60,8 +60,8 @@ fn test_oracle_encoding() {
         is_active: true,
     };
 
-    let encoded = serialize(&oracle);
-    let decoded: Oracle = deserialize(&encoded).unwrap();
+    let encoded = oracle.encode();
+    let decoded = Oracle::decode(&encoded).unwrap();
 
     assert_eq!(decoded.id, oracle.id);
     assert_eq!(decoded.name, oracle.name);

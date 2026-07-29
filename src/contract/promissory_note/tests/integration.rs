@@ -139,7 +139,7 @@ mod tests {
         let user_data = pallas::Base::zero();
         let blind = Blind(pallas::Base::from(3));
 
-        let coin = Coin::from_attributes(public_key, value, token_id, spend_hook, user_data, blind);
+        let coin = Coin::from_attributes(public_key, value, token_id, spend_hook, user_data, blind.clone());
 
         let expected = poseidon_hash([
             public_key,
@@ -215,8 +215,8 @@ mod tests {
     #[test]
     fn test_nullifier_serialization() {
         let nullifier = Nullifier::new(pallas::Base::from(123), pallas::Base::from(456));
-        let encoded = serialize(&nullifier);
-        let decoded: Nullifier = deserialize(&encoded).unwrap();
+        let encoded = nullifier.encode();
+        let decoded = Nullifier::decode(&encoded).unwrap();
         assert_eq!(decoded.inner(), nullifier.inner());
     }
 
@@ -230,8 +230,8 @@ mod tests {
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
         );
-        let encoded = serialize(&coin);
-        let decoded: Coin = deserialize(&encoded).unwrap();
+        let encoded = coin.encode();
+        let decoded: Coin = Coin::decode(&encoded).unwrap();
         assert_eq!(decoded.inner(), coin.inner());
     }
 

@@ -121,8 +121,8 @@ fn test_attestation_encoding() {
         expires_at: Some(100000),
     };
 
-    let encoded = serialize(&attestation);
-    let decoded = deserialize::<Attestation>(&encoded).unwrap();
+    let encoded = attestation.encode();
+    let decoded = Attestation::decode(&encoded).unwrap();
 
     assert_eq!(decoded.id, attestation.id);
     assert_eq!(decoded.claim_type, attestation.claim_type);
@@ -148,8 +148,8 @@ fn test_claim_encoding() {
         consumed_at: None,
     };
 
-    let encoded = serialize(&claim);
-    let decoded = deserialize::<Claim>(&encoded).unwrap();
+    let encoded = claim.encode();
+    let decoded = Claim::decode(&encoded).unwrap();
 
     assert_eq!(decoded.id, claim.id);
     assert_eq!(decoded.predicate, claim.predicate);

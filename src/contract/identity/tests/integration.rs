@@ -207,8 +207,8 @@ fn test_credential_encoding() {
         expires_at: 2000,
     };
 
-    let encoded = serialize(&credential);
-    let decoded: Credential = deserialize(&encoded).unwrap();
+    let encoded = credential.encode();
+    let decoded = Credential::decode(&encoded).unwrap();
 
     assert_eq!(decoded.nullifier, credential.nullifier);
     assert_eq!(decoded.revoked, false);
@@ -224,8 +224,8 @@ fn test_issuer_encoding() {
         trusted: true,
     };
 
-    let encoded = serialize(&issuer);
-    let decoded: Issuer = deserialize(&encoded).unwrap();
+    let encoded = issuer.encode();
+    let decoded = Issuer::decode(&encoded).unwrap();
 
     assert_eq!(decoded.pub_key, issuer.pub_key);
     assert_eq!(decoded.name, issuer.name);
@@ -246,8 +246,8 @@ fn test_claim_encoding() {
         expires_at: 2000,
     };
 
-    let encoded = serialize(&claim);
-    let decoded: Claim = deserialize(&encoded).unwrap();
+    let encoded = claim.encode();
+    let decoded = Claim::decode(&encoded).unwrap();
 
     assert_eq!(decoded.nullifier, claim.nullifier);
     assert_eq!(decoded.predicate_result, vec![1]);
