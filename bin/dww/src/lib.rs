@@ -723,7 +723,7 @@ impl Dww {
             "AEAD self-test encrypt failed: {:?}", e
         )))?;
 
-        let decrypted: Vec<u8> = encrypted.decrypt(&secret)
+        let decrypted: Vec<u8> = encrypted.decrypt(&secret, 0)
             .map_err(|e| Error::Custom(format!(
                 "AEAD self-test decrypt failed: {:?}", e
             )))?;

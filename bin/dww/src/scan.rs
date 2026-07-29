@@ -471,7 +471,7 @@ fn discover_native_token_outputs(
         let mut decrypted = false;
         for secret in &trial_secrets {
             diagnostics.aead_decrypt_attempts += 1;
-            if let Ok(decrypted_note) = generic_note.decrypt::<NativeToken>(secret) {
+            if let Ok(decrypted_note) = generic_note.decrypt::<NativeToken>(secret, height.get()) {
                 tracing::info!(target: "dww::scan",
                     "[native_token] step=3 aead_decrypt status=OK");
                 diagnostics.aead_decrypt_successes += 1;
@@ -758,7 +758,7 @@ fn scan_block(
 
                     let mut path2_decrypted = false;
                     for secret in &trial_secrets {
-                        let Ok(raw) = generic_note.decrypt_raw(secret) else { continue };
+                        let Ok(raw) = generic_note.decrypt_raw(secret, height.get()) else { continue };
                         // Path 2: generic manifest-driven type-construction.
                         // From here every failure DROPS the note (clean skip);
                         // there is no native fallback.
