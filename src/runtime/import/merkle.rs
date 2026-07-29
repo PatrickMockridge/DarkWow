@@ -68,7 +68,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Failed to make slice from ptr"
         );
-        return dwow_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::MERKLE_MEMORY_FAULT
     };
 
     let mut buf = vec![0_u8; len as usize];
@@ -77,7 +77,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Failed to read from memory slice: {e}"
         );
-        return dwow_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::MERKLE_MEMORY_FAULT
     };
 
     // The buffer should deserialize into:
@@ -97,7 +97,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
                 target: "runtime::merkle::merkle_add",
                 "[WASM] [{cid}] merkle_add(): Failed to decode db_info DbHandle: {e}"
             );
-            return dwow_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::MERKLE_DECODE_FAILED
         }
     };
     let db_info_index = db_info_index as usize;
@@ -109,7 +109,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
                 target: "runtime::merkle::merkle_add",
                 "[WASM] [{cid}] merkle_add(): Failed to decode db_roots DbHandle: {e}"
             );
-            return dwow_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::MERKLE_DECODE_FAILED
         }
     };
     let db_roots_index = db_roots_index as usize;
@@ -122,7 +122,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Requested DbHandle that is out of bounds"
         );
-        return dwow_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::MERKLE_HANDLE_OUT_OF_BOUNDS
     }
     let db_info = &db_handles[db_info_index];
     let db_roots = &db_handles[db_roots_index];
@@ -144,7 +144,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
                 target: "runtime::merkle::merkle_add",
                 "[WASM] [{cid}] merkle_add(): Failed to decode key vec: {e}"
             );
-            return dwow_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::MERKLE_DECODE_FAILED
         }
     };
 
@@ -156,7 +156,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
                 target: "runtime::merkle::merkle_add",
                 "[WASM] [{cid}] merkle_add(): Failed to decode key vec: {e}"
             );
-            return dwow_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::MERKLE_DECODE_FAILED
         }
     };
 
@@ -168,7 +168,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
                 target: "runtime::merkle::merkle_add",
                 "[WASM] [{cid}] merkle_add(): Failed to decode MerkleNode: {e}"
             );
-            return dwow_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::MERKLE_DECODE_FAILED
         }
     };
 
@@ -178,7 +178,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Mismatch between given length, and cursor length"
         );
-        return dwow_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::MERKLE_CURSOR_MISMATCH
     }
 
     // Read the current tree using simple_db for deterministic access
@@ -189,7 +189,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
                 target: "runtime::merkle::merkle_add",
                 "[WASM] [{cid}] merkle_add(): Internal error getting from tree: {e}"
             );
-            return dwow_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::DB_GET_FAILED
         }
     };
 
@@ -198,7 +198,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Return data is empty"
         );
-        return dwow_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::DB_GET_EMPTY
     };
 
     debug!(
@@ -220,7 +220,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
                 target: "runtime::merkle::merkle_add",
                 "[WASM] [{cid}] merkle_add(): Unable to read set size: {e}"
             );
-            return dwow_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::MERKLE_DECODE_FAILED
         }
     };
 
@@ -231,7 +231,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
                 target: "runtime::merkle::merkle_add",
                 "[WASM] [{cid}] merkle_add(): Unable to deserialize Merkle tree: {e}"
             );
-            return dwow_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::MERKLE_DECODE_FAILED
         }
     };
 
@@ -250,7 +250,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Couldn't reserialize modified tree"
         );
-        return dwow_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::MERKLE_ENCODE_FAILED
     }
 
     // Apply changes to simple_db
@@ -262,7 +262,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             tree_key.iter().take(8).collect::<Vec<_>>(),
             e
         );
-        return dwow_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::DB_SET_FAILED
     }
 
     // Here we add the Merkle root to our set of roots
@@ -272,7 +272,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Unable to read the root of tree"
         );
-        return dwow_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::MERKLE_ROOT_NOT_FOUND
     };
 
     debug!(
@@ -292,7 +292,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Couldn't insert to db_roots tree"
         );
-        return dwow_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::DB_SET_FAILED
     }
 
     // Write a pointer to the latest known root
@@ -306,7 +306,7 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
             target: "runtime::merkle::merkle_add",
             "[WASM] [{cid}] merkle_add(): Couldn't insert latest root to db_info tree"
         );
-        return dwow_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::DB_SET_FAILED
     }
 
     // Subtract used gas.

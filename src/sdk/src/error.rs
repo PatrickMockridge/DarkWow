@@ -106,6 +106,24 @@ pub enum ContractError {
 
     #[error("Monotree error: {0}")]
     MonotreeError(String),
+
+    #[error("Merkle decode failed")]
+    MerkleDecodeFailed,
+
+    #[error("Merkle memory fault")]
+    MerkleMemoryFault,
+
+    #[error("Merkle handle out of bounds")]
+    MerkleHandleOutOfBounds,
+
+    #[error("Merkle cursor mismatch")]
+    MerkleCursorMismatch,
+
+    #[error("Merkle encode failed")]
+    MerkleEncodeFailed,
+
+    #[error("Merkle root not found")]
+    MerkleRootNotFound,
 }
 
 /// Builtin return values occupy the upper 32 bits
@@ -139,6 +157,12 @@ pub const DATA_TOO_LARGE: i64 = to_builtin!(21);
 pub const HEX_FMT_ERR: i64 = to_builtin!(22);
 pub const NUM_CAST_ERR: i64 = to_builtin!(23);
 pub const MONOTREE_ERROR: i64 = to_builtin!(24);
+pub const MERKLE_DECODE_FAILED: i64 = to_builtin!(25);
+pub const MERKLE_MEMORY_FAULT: i64 = to_builtin!(26);
+pub const MERKLE_HANDLE_OUT_OF_BOUNDS: i64 = to_builtin!(27);
+pub const MERKLE_CURSOR_MISMATCH: i64 = to_builtin!(28);
+pub const MERKLE_ENCODE_FAILED: i64 = to_builtin!(29);
+pub const MERKLE_ROOT_NOT_FOUND: i64 = to_builtin!(30);
 
 impl From<ContractError> for i64 {
     fn from(err: ContractError) -> Self {
@@ -166,6 +190,12 @@ impl From<ContractError> for i64 {
             ContractError::HexFmtErr => HEX_FMT_ERR,
             ContractError::NumCastError => NUM_CAST_ERR,
             ContractError::MonotreeError(_) => MONOTREE_ERROR,
+            ContractError::MerkleDecodeFailed => MERKLE_DECODE_FAILED,
+            ContractError::MerkleMemoryFault => MERKLE_MEMORY_FAULT,
+            ContractError::MerkleHandleOutOfBounds => MERKLE_HANDLE_OUT_OF_BOUNDS,
+            ContractError::MerkleCursorMismatch => MERKLE_CURSOR_MISMATCH,
+            ContractError::MerkleEncodeFailed => MERKLE_ENCODE_FAILED,
+            ContractError::MerkleRootNotFound => MERKLE_ROOT_NOT_FOUND,
             ContractError::Custom(error) => {
                 if error == 0 {
                     CUSTOM_ZERO
@@ -204,6 +234,12 @@ impl From<i64> for ContractError {
             HEX_FMT_ERR => Self::HexFmtErr,
             NUM_CAST_ERR => Self::NumCastError,
             MONOTREE_ERROR => Self::MonotreeError("Unknown".to_string()),
+            MERKLE_DECODE_FAILED => Self::MerkleDecodeFailed,
+            MERKLE_MEMORY_FAULT => Self::MerkleMemoryFault,
+            MERKLE_HANDLE_OUT_OF_BOUNDS => Self::MerkleHandleOutOfBounds,
+            MERKLE_CURSOR_MISMATCH => Self::MerkleCursorMismatch,
+            MERKLE_ENCODE_FAILED => Self::MerkleEncodeFailed,
+            MERKLE_ROOT_NOT_FOUND => Self::MerkleRootNotFound,
             _ => Self::Custom(error as u32),
         }
     }
