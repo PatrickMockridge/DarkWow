@@ -1349,6 +1349,58 @@ Two patterns identified in the review require network-level infrastructure not y
 
 ---
 
+## Error Propagation — Defense in Depth
+
+The hard path (contracts using Merkle inclusion proofs for private resource
+identities, per [privacy.md](../../arch/privacy.md)) carries an extra dimension
+of constraint. Every host function in the Merkle tree, SMT, and database
+infrastructure becomes a failure point. When these fail with non-descriptive
+errors, root-causing takes hours instead of minutes.
+
+### The Rule
+
+Every failure site in a host function that serves hard-path contracts MUST
+return a distinct error code. `ContractError::Internal` (error code 2) SHALL
+NOT be used as a catch-all for multiple failure conditions. Each distinct
+failure SHALL have its own `ContractError` variant.
+
+### Example: merkle_add
+
+The `merkle_add` host function had 18 distinct failure sites. All 18 returned
+`ContractError::Internal` (error code 2). When PromissoryNote's heavyweight
+test failed at `apply()`, the error message was `ContractError(Internal)` —
+impossible to determine which of the 18 sites fired.
+
+After replacing the 18 `INTERNAL_ERROR` returns with 6 distinct variants
+(`MerkleDecodeFailed`, `MerkleMemoryFault`, `MerkleHandleOutOfBounds`,
+`MerkleCursorMismatch`, `MerkleEncodeFailed`, `MerkleRootNotFound`) plus
+reusing 3 existing variants (`DbGetFailed`, `DbGetEmpty`, `DbSetFailed`),
+the error became self-describing: `ContractError(DbGetEmpty)`.
+
+This immediately identified the failure: the Merkle tree data key was not
+found in the database. The root cause was then found in minutes (a guard
+condition in `init_contract` that skipped tree initialization).
+
+### Checklist for New Host Functions
+
+When adding a host function that serves hard-path contracts:
+
+- [ ] Every `Err` return path has a distinct `ContractError` variant
+- [ ] The variant name describes what failed (not a generic `Internal`)
+- [ ] The host-side `error!()` log includes contract ID and relevant keys
+- [ ] No two failure sites share the same error code
+- [ ] New variants follow the `ComponentOperationFailed` naming convention
+
+### The `INTERNAL_ERROR` Prohibition
+
+`ContractError::Internal` SHALL NOT be used in host functions that have more
+than one failure mode. It is a reserved code for genuinely unrecoverable
+conditions (WASM memory faults, host environment crashes). Every recoverable
+failure — missing data, corrupt data, handle out of bounds, deserialization
+failure — SHALL have its own code.
+
+---
+
 ## References
 
 - [NativeToken](./native_token.md) — Consensus token with zero business logic

@@ -941,6 +941,31 @@ safe — it either propagates the error or the compiler rejects the call site.
 `.unwrap()` is never universally safe — its safety depends on context that
 the copier may not understand.
 
+### 5.7 Host Function Error Code Requirements
+
+The host provides functions to contracts via the WASM import interface
+(`src/runtime/import/`). Each host function returns an `i64` error code
+through the `to_builtin!` macro. The contract maps this back to a
+`ContractError` variant via `ContractError::from(ret)`.
+
+`ContractError::Internal` SHALL NOT be used in host functions that have
+more than one failure mode. It is a reserved code for genuinely unrecoverable
+conditions (WASM memory faults, host environment crashes). Every recoverable
+failure — missing data, corrupt data, handle out of bounds, deserialization
+failure — SHALL have its own `ContractError` variant with a distinct error code.
+
+**Rationale**: The hard path (contracts using Merkle inclusion proofs, per
+[privacy.md](privacy.md)) carries an extra dimension of constraint. Host
+functions like `merkle_add` and `sparse_merkle_insert_batch` have 15-20
+distinct failure sites. If all return `ContractError::Internal`, every
+failure is a multi-hour investigation. Distinct error codes make each failure
+self-describing — the variant name identifies the failure site.
+
+**Pattern**: New host functions SHALL follow the `ComponentOperationFailed`
+naming convention. Existing functions with `INTERNAL_ERROR` returns SHALL be
+audited and replaced with distinct variants. See [safety.md](../dev/contracts/safety.md)
+for the host function error code checklist.
+
 ## 6. Witness Binding Types
 
 ### 6.1 The Witness Binding Gap

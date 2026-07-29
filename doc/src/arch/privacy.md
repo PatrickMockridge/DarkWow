@@ -70,3 +70,31 @@ This is an ongoing problem. The infrastructure will improve. The ceiling will
 rise. But there will always be a point where the extra dimension demands more
 from the type system than it can safely give. At that point, the proven path
 is not a failure — it is the correct engineering decision.
+
+## 4. Failure Modes of the Hard Path
+
+The hard path's extra dimension of constraint produces a characteristic failure
+pattern: **nebulous errors with simple root causes.**
+
+Example: PromissoryNote's heavyweight test failed with `ContractError(Internal)`
+from the `merkle_add` host function. The 18 possible error sites all produced
+the same non-descriptive error code. After fixing error propagation (18 distinct
+codes), the error resolved to `ContractError(DbGetEmpty)` — the Merkle tree
+data was never written.
+
+Root cause: `init_contract` initialized Merkle trees inside a `match db_lookup()`
+guard. If `db_lookup` succeeded (tree handle already existed), all tree
+initialization was skipped. The fix was two lines — move the tree init outside
+the guard so it always runs.
+
+The pattern:
+1. Hard-path contract fails with a non-descriptive error
+2. The error hides behind a generic catch-all (18 sites → 1 error code)
+3. Proper error propagation reveals the true failure
+4. The root cause is simple — a guard condition, a missing init, a stale pointer
+5. The fix is trivial — but finding it required the error to be self-describing
+
+**Lesson**: Error propagation is not optional on the hard path. Every failure
+site in a host function that serves hard-path contracts MUST return a distinct,
+self-describing error. The extra dimension of constraint multiplies failure
+modes; without distinct errors, each one is a multi-hour investigation.

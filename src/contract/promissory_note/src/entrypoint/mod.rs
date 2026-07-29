@@ -185,11 +185,15 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         )?;
     }
 
-    // Set up info database
+    // Set up info database (always resolve handle, init if needed)
     let info_db = match wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_INFO_TREE) {
         Ok(v) => v,
-        Err(_) => {
-            let info_db = wasm::db::db_init(cid, PROMISSORY_NOTE_CONTRACT_INFO_TREE)?;
+        Err(_) => wasm::db::db_init(cid, PROMISSORY_NOTE_CONTRACT_INFO_TREE)?,
+    };
+
+    // Initialize Merkle trees if not already present (defense in depth:
+    // tree may not exist even if info_db handle resolves)
+    if !wasm::db::db_contains_key(info_db, PROMISSORY_NOTE_CONTRACT_COIN_MERKLE_TREE)? {
 
             // Create Merkle tree for coins
             let mut coin_tree = MerkleTree::new(1);
@@ -227,10 +231,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
                 PROMISSORY_NOTE_CONTRACT_LATEST_TOKEN_REGISTRY_ROOT,
                 &EMPTY_TOKEN_REGISTRY_TREE_ROOT,
             )?;
-
-            info_db
-        }
-    };
+    }
 
     wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_DB_VERSION, env!("CARGO_PKG_VERSION").as_bytes())?;
 
