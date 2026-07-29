@@ -59,7 +59,7 @@ impl dwow_serial::Decodable for PutParams { fn decode<D: std::io::Read>(d: &mut 
 impl PutParams {
     pub fn encode(&self) -> Vec<u8> {
         let path_bytes: Vec<u8> = self.merkle_path.iter().flat_map(|b| b.to_repr()).collect();
-        let mut b = Vec::with_capacity(260 + path_bytes.len() + self.proof.len());
+        let mut b = Vec::with_capacity(292 + path_bytes.len() + self.proof.len());
         b.extend_from_slice(&self.box_id.to_bytes());
         b.extend_from_slice(&self.old_state_nonce.to_repr());
         b.extend_from_slice(&self.new_state_nonce.to_repr());
@@ -78,17 +78,18 @@ impl PutParams {
         b
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        let hdr = 260usize; // fixed header before merkle_path
+        let hdr = 292usize;
         if data.len() < hdr + 1024 { return Err(ContractError::IoError("PutParams: too short".into())); }
         let box_id = BoxId::decode(&data[0..32])?;
         let old_state_nonce = read_base(&data[32..64])?;
         let new_state_nonce = read_base(&data[64..96])?;
         let old_contents_commit = read_base(&data[96..128])?;
         let new_contents_commit = read_base(&data[128..160])?;
-        let nullifier = read_base(&data[160..192])?;
-        let expected_root = read_base(&data[192..224])?;
-        let owner = PublicKey::from_bytes(data[224..256].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PutParams: invalid owner: {}", e)))?;
-        let leaf_pos = u32::from_le_bytes(data[256..260].try_into().unwrap());
+        let new_leaf = read_base(&data[160..192])?;
+        let nullifier = read_base(&data[192..224])?;
+        let expected_root = read_base(&data[224..256])?;
+        let owner = PublicKey::from_bytes(data[256..288].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PutParams: invalid owner: {}", e)))?;
+        let leaf_pos = u32::from_le_bytes(data[288..292].try_into().unwrap());
         let mut merkle_path = [pallas::Base::zero(); 32];
         for i in 0..32 { merkle_path[i] = read_base(&data[hdr + i*32 .. hdr + (i+1)*32])?; }
         let path_end = hdr + 1024;
@@ -98,7 +99,7 @@ impl PutParams {
         let pos2 = path_end + 1 + proof_len;
         let tx_binding = read_base(&data[pos2..pos2+32])?;
         let tx_nonce = read_base(&data[pos2+32..pos2+64])?;
-        Ok(PutParams { box_id, old_state_nonce, new_state_nonce, old_contents_commit, new_contents_commit, nullifier, expected_root, owner, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
+        Ok(PutParams { box_id, old_state_nonce, new_state_nonce, old_contents_commit, new_contents_commit, new_leaf, nullifier, expected_root, owner, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
     }
 }
 
