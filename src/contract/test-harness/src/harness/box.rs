@@ -126,6 +126,7 @@ impl BoxHarness {
         let params = dwow_box_contract::model::PutParams {
             box_id: dwow_box_contract::model::BoxId(box_id),
             old_state_nonce, new_state_nonce, old_contents_commit, new_contents_commit,
+            new_leaf,
             nullifier,
             expected_root: expected_root.inner(),
             owner: PublicKey::from_secret(SecretKey::from_base(owner_secret)),
