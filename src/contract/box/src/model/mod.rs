@@ -40,6 +40,7 @@ pub struct PutParams {
     pub new_state_nonce: pallas::Base,
     pub old_contents_commit: pallas::Base,
     pub new_contents_commit: pallas::Base,
+    pub merkle_root: pallas::Base,
     pub owner: PublicKey,
     pub leaf_pos: u32,
     pub merkle_path: MerklePath,
@@ -59,6 +60,7 @@ impl PutParams {
         b.extend_from_slice(&self.new_state_nonce.to_repr());
         b.extend_from_slice(&self.old_contents_commit.to_repr());
         b.extend_from_slice(&self.new_contents_commit.to_repr());
+        b.extend_from_slice(&self.merkle_root.to_repr());
         b.extend_from_slice(&self.owner.to_bytes());
         b.extend_from_slice(&self.leaf_pos.to_le_bytes());
         b.extend_from_slice(&path_bytes);
@@ -75,18 +77,19 @@ impl PutParams {
         let new_state_nonce = read_base(&data[64..96])?;
         let old_contents_commit = read_base(&data[96..128])?;
         let new_contents_commit = read_base(&data[128..160])?;
-        let owner = PublicKey::from_bytes(data[160..192].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PutParams: invalid owner: {}", e)))?;
-        let leaf_pos = u32::from_le_bytes(data[192..196].try_into().unwrap());
+        let merkle_root = read_base(&data[160..192])?;
+        let owner = PublicKey::from_bytes(data[192..224].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PutParams: invalid owner: {}", e)))?;
+        let leaf_pos = u32::from_le_bytes(data[224..228].try_into().unwrap());
         let mut merkle_path = [pallas::Base::zero(); 32];
-        for i in 0..32 { merkle_path[i] = read_base(&data[196 + i*32 .. 196 + (i+1)*32])?; }
-        let path_end = 196 + 32*32;
+        for i in 0..32 { merkle_path[i] = read_base(&data[228 + i*32 .. 228 + (i+1)*32])?; }
+        let path_end = 228 + 32*32;
         let proof_len = data[path_end] as usize;
         let pos = path_end + 1;
         let proof = data[pos..pos+proof_len].to_vec();
         let pos2 = pos + proof_len;
         let tx_binding = read_base(&data[pos2..pos2+32])?;
         let tx_nonce = read_base(&data[pos2+32..pos2+64])?;
-        Ok(PutParams { box_id, old_state_nonce, new_state_nonce, old_contents_commit, new_contents_commit, owner, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
+        Ok(PutParams { box_id, old_state_nonce, new_state_nonce, old_contents_commit, new_contents_commit, merkle_root, owner, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
     }
 }
 
@@ -115,6 +118,7 @@ pub struct TakeParams {
     pub box_id: BoxId,
     pub contents_commit: pallas::Base,
     pub state_nonce: pallas::Base,
+    pub merkle_root: pallas::Base,
     pub owner: PublicKey,
     pub leaf_pos: u32,
     pub merkle_path: MerklePath,
@@ -132,6 +136,7 @@ impl TakeParams {
         b.extend_from_slice(&self.box_id.to_bytes());
         b.extend_from_slice(&self.contents_commit.to_repr());
         b.extend_from_slice(&self.state_nonce.to_repr());
+        b.extend_from_slice(&self.merkle_root.to_repr());
         b.extend_from_slice(&self.owner.to_bytes());
         b.extend_from_slice(&self.leaf_pos.to_le_bytes());
         b.extend_from_slice(&path_bytes);
@@ -146,18 +151,19 @@ impl TakeParams {
         let box_id = BoxId::decode(&data[0..32])?;
         let contents_commit = read_base(&data[32..64])?;
         let state_nonce = read_base(&data[64..96])?;
-        let owner = PublicKey::from_bytes(data[96..128].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("TakeParams: invalid owner: {}", e)))?;
-        let leaf_pos = u32::from_le_bytes(data[128..132].try_into().unwrap());
+        let merkle_root = read_base(&data[96..128])?;
+        let owner = PublicKey::from_bytes(data[128..160].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("TakeParams: invalid owner: {}", e)))?;
+        let leaf_pos = u32::from_le_bytes(data[160..164].try_into().unwrap());
         let mut merkle_path = [pallas::Base::zero(); 32];
-        for i in 0..32 { merkle_path[i] = read_base(&data[132 + i*32 .. 132 + (i+1)*32])?; }
-        let proof_len_pos = 132 + 32*32;
+        for i in 0..32 { merkle_path[i] = read_base(&data[164 + i*32 .. 164 + (i+1)*32])?; }
+        let proof_len_pos = 164 + 32*32;
         let proof_len = data[proof_len_pos] as usize;
         let pos = proof_len_pos + 1;
         let proof = data[pos..pos+proof_len].to_vec();
         let pos2 = pos + proof_len;
         let tx_binding = read_base(&data[pos2..pos2+32])?;
         let tx_nonce = read_base(&data[pos2+32..pos2+64])?;
-        Ok(TakeParams { box_id, contents_commit, state_nonce, owner, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
+        Ok(TakeParams { box_id, contents_commit, state_nonce, merkle_root, owner, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
     }
 }
 

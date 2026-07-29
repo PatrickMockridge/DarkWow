@@ -10,6 +10,7 @@ witness "Put" {
     Base new_state_nonce,
     Base old_contents_commit,
     Base new_contents_commit,
+    Base expected_root,
     Base owner_secret,
     Base owner_pub,
     Uint32 leaf_pos,
@@ -32,10 +33,11 @@ circuit "Put" {
     nullifier_old = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, old_state_nonce);
     constrain_instance(nullifier_old);
 
-    # Merkle inclusion of old box state
+    # Merkle inclusion of old box state — constrain against expected_root
     box_leaf_old = poseidon_hash(DOMAIN_SIGNATURE_SECRET, box_id, old_contents_commit, old_state_nonce);
     root = merkle_root(leaf_pos, path, box_leaf_old);
-    constrain_instance(root);
+    constrain_equal_base(root, expected_root);
+    constrain_instance(expected_root);
 
     # New contents commit
     constrain_instance(new_contents_commit);

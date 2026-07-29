@@ -8,6 +8,7 @@ witness "Take" {
     Base box_id,
     Base contents_commit,
     Base state_nonce,
+    Base expected_root,
     Base owner_secret,
     Base owner_pub,
     Uint32 leaf_pos,
@@ -30,10 +31,11 @@ circuit "Take" {
     nullifier = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, state_nonce);
     constrain_instance(nullifier);
 
-    # Merkle inclusion of current box state
+    # Merkle inclusion of current box state — constrain against expected_root
     box_leaf = poseidon_hash(DOMAIN_SIGNATURE_SECRET, box_id, contents_commit, state_nonce);
     root = merkle_root(leaf_pos, path, box_leaf);
-    constrain_instance(root);
+    constrain_equal_base(root, expected_root);
+    constrain_instance(expected_root);
 
     # Transaction binding
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);

@@ -112,7 +112,7 @@ fn put_get_metadata(params: PutParams) -> Result<Vec<u8>, ContractError> {
     ]);
     zk_inputs.push((BOX_CONTRACT_ZKAS_PUT_NS.to_string(), vec![
         nullifier_old,
-        pallas::Base::zero(), // merkle_root — from proof
+        params.merkle_root,
         params.new_contents_commit,
         params.tx_binding, params.tx_nonce,
     ]));
@@ -130,7 +130,7 @@ fn take_get_metadata(params: TakeParams) -> Result<Vec<u8>, ContractError> {
     ]);
     zk_inputs.push((BOX_CONTRACT_ZKAS_TAKE_NS.to_string(), vec![
         nullifier_val,
-        pallas::Base::zero(), // merkle_root — from proof
+        params.merkle_root,
         params.tx_binding, params.tx_nonce,
     ]));
     let mut metadata = vec![];
