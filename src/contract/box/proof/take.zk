@@ -1,10 +1,10 @@
 k = 11;
 field = "pallas";
 
-constant "TakeV3" {
+constant "Take" {
 }
 
-witness "TakeV3" {
+witness "Take" {
     Base box_id,
     Base contents_commit,
     Base state_nonce,
@@ -17,13 +17,12 @@ witness "TakeV3" {
     Base tx_binding,
 }
 
-circuit "TakeV3" {
-    # Domain constants (HAZOP RC3)
+circuit "Take" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
 
-    # Ownership proof (Poseidon-based — o-cap authorization)
+    # Ownership proof — Poseidon-based
     derived_owner = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret);
     constrain_equal_base(derived_owner, owner_pub);
 

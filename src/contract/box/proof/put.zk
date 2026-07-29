@@ -1,10 +1,10 @@
 k = 11;
 field = "pallas";
 
-constant "PutV3" {
+constant "Put" {
 }
 
-witness "PutV3" {
+witness "Put" {
     Base box_id,
     Base old_state_nonce,
     Base new_state_nonce,
@@ -19,26 +19,25 @@ witness "PutV3" {
     Base tx_binding,
 }
 
-circuit "PutV3" {
-    # Domain constants (HAZOP RC3)
+circuit "Put" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
 
-    # Ownership proof (Poseidon-based — o-cap authorization)
+    # Ownership proof — Poseidon-based
     derived_owner = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret);
     constrain_equal_base(derived_owner, owner_pub);
 
-    # Nullifier for OLD state (NEW — consumes previous box state)
+    # Nullifier for old state
     nullifier_old = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, old_state_nonce);
     constrain_instance(nullifier_old);
 
-    # Merkle inclusion of OLD box state (NEW — from burn_v2.zk pattern)
+    # Merkle inclusion of old box state
     box_leaf_old = poseidon_hash(DOMAIN_SIGNATURE_SECRET, box_id, old_contents_commit, old_state_nonce);
     root = merkle_root(leaf_pos, path, box_leaf_old);
     constrain_instance(root);
 
-    # New contents commit (public input)
+    # New contents commit
     constrain_instance(new_contents_commit);
 
     # Transaction binding
