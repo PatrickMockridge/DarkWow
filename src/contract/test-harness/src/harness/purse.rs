@@ -33,10 +33,11 @@ use dwow_core::{
 };
 use dwow_sdk::{
     crypto::{
-        pasta_prelude::PrimeField, pedersen_commitment_u64, poseidon_hash,
+        blind::ScalarBlind, pasta_prelude::PrimeField,
+        pedersen_commitment_u64, poseidon_hash,
         MerkleNode, MerkleTree, PublicKey, SecretKey,
     },
-    pasta::pallas,
+    pasta::{group::GroupEncoding, pallas},
 };
 use rand::rngs::OsRng;
 
@@ -92,12 +93,12 @@ impl PurseHarness {
         let old_leaf = poseidon_hash([purse_id, pallas::Base::from(old_balance), state_nonce]);
         tree.append(MerkleNode::from_base(old_leaf));
         let leaf_pos_mark = tree.mark().unwrap();
-        let path = tree.witness(leaf_pos_mark, 0).unwrap();
-        let leaf_pos = u32::try_from(leaf_pos_mark.position()).unwrap();
+        let path: Vec<MerkleNode> = tree.witness(leaf_pos_mark, 0).unwrap();
+        let leaf_pos = u32::try_from(u64::from(leaf_pos_mark)).unwrap();
 
-        let old_blind = pallas::Scalar::from(1u64);
-        let dep_blind = pallas::Scalar::from(2u64);
-        let new_blind = pallas::Scalar::from(3u64);
+        let old_blind = ScalarBlind::from(1u64);
+        let dep_blind = ScalarBlind::from(2u64);
+        let new_blind = ScalarBlind::from(3u64);
         let old_commit = pedersen_commitment_u64(old_balance, old_blind);
         let new_commit = pedersen_commitment_u64(new_balance, new_blind);
         let old_coords = old_commit.to_affine().coordinates().unwrap();
@@ -106,16 +107,16 @@ impl PurseHarness {
         let witnesses = vec![
             Witness::Base(Value::known(purse_id)),
             Witness::Base(Value::known(pallas::Base::from(old_balance))),
-            Witness::Scalar(Value::known(old_blind)),
+            Witness::Scalar(Value::known(old_blind.inner())),
             Witness::Base(Value::known(pallas::Base::from(amount))),
-            Witness::Scalar(Value::known(dep_blind)),
+            Witness::Scalar(Value::known(dep_blind.inner())),
             Witness::Base(Value::known(pallas::Base::from(new_balance))),
-            Witness::Scalar(Value::known(new_blind)),
+            Witness::Scalar(Value::known(new_blind.inner())),
             Witness::Base(Value::known(state_nonce)),
             Witness::Base(Value::known(owner_secret)),
             Witness::Base(Value::known(owner_pub)),
             Witness::Uint32(Value::known(leaf_pos)),
-            Witness::MerklePath(Value::known(path)),
+            Witness::MerklePath(Value::known(path.clone().try_into().unwrap())),
             Witness::Base(Value::known(tx_commitment)),
             Witness::Base(Value::known(tx_nonce)),
             Witness::Base(Value::known(tx_binding)),
@@ -142,7 +143,7 @@ impl PurseHarness {
             new_balance,
             state_nonce,
             leaf_pos,
-            merkle_path: path,
+            merkle_path: path.iter().map(|n| n.inner()).collect::<Vec<_>>().try_into().unwrap(),
             owner: PublicKey::from_secret(SecretKey::from_base(owner_secret)),
             proof: proof_bytes,
             tx_binding,
@@ -172,11 +173,11 @@ impl PurseHarness {
         let old_leaf = poseidon_hash([purse_id, pallas::Base::from(old_balance), state_nonce]);
         tree.append(MerkleNode::from_base(old_leaf));
         let leaf_pos_mark = tree.mark().unwrap();
-        let path = tree.witness(leaf_pos_mark, 0).unwrap();
-        let leaf_pos = u32::try_from(leaf_pos_mark.position()).unwrap();
+        let path: Vec<MerkleNode> = tree.witness(leaf_pos_mark, 0).unwrap();
+        let leaf_pos = u32::try_from(u64::from(leaf_pos_mark)).unwrap();
 
-        let old_blind = pallas::Scalar::from(1u64);
-        let new_blind = pallas::Scalar::from(3u64);
+        let old_blind = ScalarBlind::from(1u64);
+        let new_blind = ScalarBlind::from(3u64);
         let old_commit = pedersen_commitment_u64(old_balance, old_blind);
         let new_commit = pedersen_commitment_u64(new_balance, new_blind);
         let old_coords = old_commit.to_affine().coordinates().unwrap();
@@ -185,16 +186,16 @@ impl PurseHarness {
         let witnesses = vec![
             Witness::Base(Value::known(purse_id)),
             Witness::Base(Value::known(pallas::Base::from(old_balance))),
-            Witness::Scalar(Value::known(old_blind)),
+            Witness::Scalar(Value::known(old_blind.inner())),
             Witness::Base(Value::known(pallas::Base::from(amount))),
-            Witness::Scalar(Value::known(pallas::Scalar::from(2u64))),
+            Witness::Scalar(Value::known(ScalarBlind::from(2u64).inner())),
             Witness::Base(Value::known(pallas::Base::from(new_balance))),
-            Witness::Scalar(Value::known(new_blind)),
+            Witness::Scalar(Value::known(new_blind.inner())),
             Witness::Base(Value::known(state_nonce)),
             Witness::Base(Value::known(owner_secret)),
             Witness::Base(Value::known(owner_pub)),
             Witness::Uint32(Value::known(leaf_pos)),
-            Witness::MerklePath(Value::known(path)),
+            Witness::MerklePath(Value::known(path.clone().try_into().unwrap())),
             Witness::Base(Value::known(tx_commitment)),
             Witness::Base(Value::known(tx_nonce)),
             Witness::Base(Value::known(tx_binding)),
@@ -220,7 +221,7 @@ impl PurseHarness {
             new_balance,
             state_nonce,
             leaf_pos,
-            merkle_path: path,
+            merkle_path: path.iter().map(|n| n.inner()).collect::<Vec<_>>().try_into().unwrap(),
             owner: PublicKey::from_secret(SecretKey::from_base(owner_secret)),
             proof: proof_bytes,
             tx_binding,
@@ -244,7 +245,7 @@ impl PurseHarness {
         let tx_nonce = pallas::Base::from(300u64);
         let tx_binding = poseidon_hash([tx_commitment, tx_nonce]);
 
-        let balance_blind = pallas::Scalar::from(1u64);
+        let balance_blind = ScalarBlind::from(1u64);
         let balance_commit = pedersen_commitment_u64(balance, balance_blind);
         let coords = balance_commit.to_affine().coordinates().unwrap();
         let token_commit = poseidon_hash([token_id, token_blind]);
@@ -255,20 +256,20 @@ impl PurseHarness {
         let state_leaf = poseidon_hash([purse_id, pallas::Base::from(balance), state_nonce]);
         tree.append(MerkleNode::from_base(state_leaf));
         let leaf_pos_mark = tree.mark().unwrap();
-        let path = tree.witness(leaf_pos_mark, 0).unwrap();
-        let leaf_pos = u32::try_from(leaf_pos_mark.position()).unwrap();
+        let path: Vec<MerkleNode> = tree.witness(leaf_pos_mark, 0).unwrap();
+        let leaf_pos = u32::try_from(u64::from(leaf_pos_mark)).unwrap();
 
         let witnesses = vec![
             Witness::Base(Value::known(purse_id)),
             Witness::Base(Value::known(token_id)),
             Witness::Base(Value::known(pallas::Base::from(balance))),
-            Witness::Scalar(Value::known(balance_blind)),
+            Witness::Scalar(Value::known(balance_blind.inner())),
             Witness::Base(Value::known(state_nonce)),
             Witness::Base(Value::known(owner_secret)),
             Witness::Base(Value::known(owner_pub)),
             Witness::Base(Value::known(token_blind)),
             Witness::Uint32(Value::known(leaf_pos)),
-            Witness::MerklePath(Value::known(path)),
+            Witness::MerklePath(Value::known(path.clone().try_into().unwrap())),
             Witness::Base(Value::known(tx_commitment)),
             Witness::Base(Value::known(tx_nonce)),
             Witness::Base(Value::known(tx_binding)),
@@ -293,7 +294,7 @@ impl PurseHarness {
             balance,
             state_nonce,
             leaf_pos,
-            merkle_path: path,
+            merkle_path: path.iter().map(|n| n.inner()).collect::<Vec<_>>().try_into().unwrap(),
             owner: PublicKey::from_secret(SecretKey::from_base(owner_secret)),
             proof: proof_bytes,
             tx_binding,

@@ -1,7 +1,7 @@
 //! Encode/decode round-trip tests — verify migrated contracts produce
 //! deterministic, idempotent encoding.
 
-use dwow_sdk::crypto::{Keypair, Nullifier, PublicKey, SecretKey};
+use dwow_sdk::crypto::{Keypair, PublicKey, SecretKey};
 use dwow_sdk::pasta::pallas;
 
 fn dummy_pubkey() -> PublicKey {
@@ -26,7 +26,8 @@ macro_rules! assert_roundtrip {
 
 #[test]
 fn test_purse_encode_roundtrip() {
-    use dwow_purse_contract::model::{Purse, PurseId, DepositParamsV1, WithdrawParamsV1};
+    use dwow_purse_contract::model::{Purse, PurseId, DepositParams, WithdrawParams};
+    let path = [pallas::Base::zero(); 32];
 
     let purse = Purse {
         version: 0,
@@ -37,11 +38,14 @@ fn test_purse_encode_roundtrip() {
     };
     assert_roundtrip!(purse);
 
-    let deposit = DepositParamsV1 {
+    let deposit = DepositParams {
         purse_id: PurseId(pallas::Base::from(99u64)),
+        old_balance: 0,
         deposit_amount: 1000,
-        old_balance_commit: dummy_point(),
-        new_balance_commit: dummy_point(),
+        new_balance: 1000,
+        state_nonce: pallas::Base::from(1u64),
+        leaf_pos: 0,
+        merkle_path: path,
         owner: dummy_pubkey(),
         proof: vec![1, 2, 3],
         tx_binding: pallas::Base::from(200u64),
@@ -49,12 +53,14 @@ fn test_purse_encode_roundtrip() {
     };
     assert_roundtrip!(deposit);
 
-    let withdraw = WithdrawParamsV1 {
+    let withdraw = WithdrawParams {
         purse_id: PurseId(pallas::Base::from(99u64)),
+        old_balance: 1000,
         withdraw_amount: 500,
-        old_balance_commit: dummy_point(),
-        new_balance_commit: dummy_point(),
-        nullifier: Nullifier::from_bytes([42u8; 32]).unwrap(),
+        new_balance: 500,
+        state_nonce: pallas::Base::from(2u64),
+        leaf_pos: 1,
+        merkle_path: path,
         owner: dummy_pubkey(),
         proof: vec![4, 5, 6],
         tx_binding: pallas::Base::from(200u64),
@@ -65,7 +71,7 @@ fn test_purse_encode_roundtrip() {
 
 #[test]
 fn test_box_encode_roundtrip() {
-    use dwow_box_contract::model::{BoxRecord, BoxId, PutParamsV1, TakeParamsV1};
+    use dwow_box_contract::model::{BoxRecord, BoxId, PutParams, TakeParams};
 
     let record = BoxRecord {
         version: 0,

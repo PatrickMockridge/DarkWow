@@ -106,8 +106,8 @@ impl BoxHarness {
         let old_leaf = poseidon_hash([box_id, old_contents_commit, old_state_nonce]);
         tree.append(MerkleNode::from_base(old_leaf));
         let leaf_pos_mark = tree.mark().unwrap();
-        let path = tree.witness(leaf_pos_mark, 0).unwrap();
-        let leaf_pos = u32::try_from(leaf_pos_mark.position()).unwrap();
+        let path: Vec<MerkleNode> = tree.witness(leaf_pos_mark, 0).unwrap();
+        let leaf_pos = u32::try_from(u64::from(leaf_pos_mark)).unwrap();
         let root = tree.root(0).unwrap();
 
         let witnesses = vec![
@@ -119,7 +119,7 @@ impl BoxHarness {
             Witness::Base(Value::known(owner_secret)),
             Witness::Base(Value::known(owner_pub)),
             Witness::Uint32(Value::known(leaf_pos)),
-            Witness::MerklePath(Value::known(path)),
+            Witness::MerklePath(Value::known(path.clone().try_into().unwrap())),
             Witness::Base(Value::known(tx_commitment)),
             Witness::Base(Value::known(tx_nonce)),
             Witness::Base(Value::known(tx_binding)),
@@ -146,7 +146,7 @@ impl BoxHarness {
             new_contents_commit,
             owner: PublicKey::from_secret(SecretKey::from_base(owner_secret)),
             leaf_pos,
-            merkle_path: path,
+            merkle_path: path.iter().map(|n| n.inner()).collect::<Vec<_>>().try_into().unwrap(),
             proof: proof_bytes,
             tx_binding,
             tx_nonce,
@@ -175,8 +175,8 @@ impl BoxHarness {
         let state_leaf = poseidon_hash([box_id, contents_commit, state_nonce]);
         tree.append(MerkleNode::from_base(state_leaf));
         let leaf_pos_mark = tree.mark().unwrap();
-        let path = tree.witness(leaf_pos_mark, 0).unwrap();
-        let leaf_pos = u32::try_from(leaf_pos_mark.position()).unwrap();
+        let path: Vec<MerkleNode> = tree.witness(leaf_pos_mark, 0).unwrap();
+        let leaf_pos = u32::try_from(u64::from(leaf_pos_mark)).unwrap();
         let root = tree.root(0).unwrap();
 
         let witnesses = vec![
@@ -186,7 +186,7 @@ impl BoxHarness {
             Witness::Base(Value::known(owner_secret)),
             Witness::Base(Value::known(owner_pub)),
             Witness::Uint32(Value::known(leaf_pos)),
-            Witness::MerklePath(Value::known(path)),
+            Witness::MerklePath(Value::known(path.clone().try_into().unwrap())),
             Witness::Base(Value::known(tx_commitment)),
             Witness::Base(Value::known(tx_nonce)),
             Witness::Base(Value::known(tx_binding)),
@@ -210,7 +210,7 @@ impl BoxHarness {
             state_nonce,
             owner: PublicKey::from_secret(SecretKey::from_base(owner_secret)),
             leaf_pos,
-            merkle_path: path,
+            merkle_path: path.iter().map(|n| n.inner()).collect::<Vec<_>>().try_into().unwrap(),
             proof: proof_bytes,
             tx_binding,
             tx_nonce,
