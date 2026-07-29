@@ -1,0 +1,48 @@
+k = 11;
+field = "pallas";
+
+constant "TakeV3" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "TakeV3" {
+    Base box_id,
+    Base contents_commit,
+    Base state_nonce,
+    Base owner_secret,
+    Base owner_pub_x,
+    Base owner_pub_y,
+    Uint32 leaf_pos,
+    MerklePath path,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "TakeV3" {
+    # Domain constants (HAZOP RC3 — inherited from V2)
+    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_SIGNATURE_SECRET = witness_base(7);
+
+    # Ownership proof (Schnorr-style — from take_v2.zk)
+    owner_pub = ec_mul_base(owner_secret, NULLIFIER_K);
+    derived_pub_x = ec_get_x(owner_pub);
+    derived_pub_y = ec_get_y(owner_pub);
+    constrain_equal_base(derived_pub_x, owner_pub_x);
+    constrain_equal_base(derived_pub_y, owner_pub_y);
+
+    # Nullifier for current state (from take_v2.zk, domain-separated, with state_nonce)
+    nullifier = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, state_nonce);
+    constrain_instance(nullifier);
+
+    # Merkle inclusion of current box state (NEW — replaces constrain_instance(box_id))
+    box_leaf = poseidon_hash(DOMAIN_SIGNATURE_SECRET, box_id, contents_commit, state_nonce);
+    root = merkle_root(leaf_pos, path, box_leaf);
+    constrain_instance(root);
+
+    # Transaction binding (from take_v2.zk)
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+}

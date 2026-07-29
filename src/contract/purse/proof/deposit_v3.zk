@@ -1,0 +1,78 @@
+k = 11;
+field = "pallas";
+
+constant "DepositV3" {
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+}
+
+witness "DepositV3" {
+    Base purse_id,
+    Base old_balance,
+    Scalar old_balance_blind,
+    Base deposit_amount,
+    Scalar deposit_blind,
+    Base new_balance,
+    Scalar new_balance_blind,
+    Base state_nonce,
+    Base owner_secret,
+    Base owner_pub,
+    Uint32 leaf_pos,
+    MerklePath path,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "DepositV3" {
+    # Domain constants (HAZOP RC3)
+    DOMAIN_NULLIFIER = witness_base(1);
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_SIGNATURE_SECRET = witness_base(7);
+
+    # Ownership proof (Poseidon-style — from deposit_v2.zk)
+    derived_owner = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret);
+    constrain_equal_base(derived_owner, owner_pub);
+
+    # Nullifier for OLD state (NEW — consumes previous purse state)
+    nullifier_old = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, purse_id, state_nonce);
+    constrain_instance(nullifier_old);
+
+    # Merkle inclusion of OLD purse state (NEW)
+    purse_leaf_old = poseidon_hash(DOMAIN_SIGNATURE_SECRET, purse_id, old_balance, state_nonce);
+    root = merkle_root(leaf_pos, path, purse_leaf_old);
+    constrain_instance(root);
+
+    # Pedersen balance conservation (from deposit_v2.zk)
+    old_vcv = ec_mul_short(old_balance, VALUE_COMMIT_VALUE);
+    old_vcr = ec_mul(old_balance_blind, VALUE_COMMIT_RANDOM);
+    old_commit = ec_add(old_vcv, old_vcr);
+    dep_vcv = ec_mul_short(deposit_amount, VALUE_COMMIT_VALUE);
+    dep_vcr = ec_mul(deposit_blind, VALUE_COMMIT_RANDOM);
+    dep_commit = ec_add(dep_vcv, dep_vcr);
+    new_vcv = ec_mul_short(new_balance, VALUE_COMMIT_VALUE);
+    new_vcr = ec_mul(new_balance_blind, VALUE_COMMIT_RANDOM);
+    new_commit = ec_add(new_vcv, new_vcr);
+    sum_commit = ec_add(old_commit, dep_commit);
+    constrain_equal_point(sum_commit, new_commit);
+
+    # Integer addition check (from deposit_v2.zk)
+    computed_new = base_add(old_balance, deposit_amount);
+    constrain_equal_base(computed_new, new_balance);
+
+    # Pedersen commitment public inputs (from deposit_v2.zk)
+    constrain_instance(ec_get_x(old_commit));
+    constrain_instance(ec_get_y(old_commit));
+    constrain_instance(ec_get_x(new_commit));
+
+    # Transaction binding (from deposit_v2.zk)
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+    constrain_instance(ec_get_y(new_commit));
+
+    # Range proofs (from deposit_v2.zk)
+    range_check(64, old_balance);
+    range_check(64, deposit_amount);
+    range_check(64, new_balance);
+}
