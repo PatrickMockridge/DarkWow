@@ -79,14 +79,16 @@ impl PurseHarness {
 
     pub fn deposit(&self, amount: u64) -> Result<PurseDepositResult> {
         let owner_secret = pallas::Base::from(42u64);
-        let owner_pub = poseidon_hash([owner_secret]);
+        // DOMAIN_SIGNATURE_SECRET = 7
+        let owner_pub = poseidon_hash([pallas::Base::from(7), owner_secret]);
         let purse_id = pallas::Base::from(1u64);
         let state_nonce = pallas::Base::zero();
         let old_balance: u64 = 0;
         let new_balance: u64 = amount;
         let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
-        let tx_binding = poseidon_hash([tx_commitment, tx_nonce]);
+        // DOMAIN_TX_BINDING = 3
+        let tx_binding = poseidon_hash([pallas::Base::from(3), tx_commitment, tx_nonce]);
 
         let nullifier_old = poseidon_hash([purse_id, state_nonce]);
 
@@ -159,14 +161,16 @@ impl PurseHarness {
 
     pub fn withdraw(&self, amount: u64) -> Result<PurseWithdrawResult> {
         let owner_secret = pallas::Base::from(42u64);
-        let owner_pub = poseidon_hash([owner_secret]);
+        // DOMAIN_SIGNATURE_SECRET = 7
+        let owner_pub = poseidon_hash([pallas::Base::from(7), owner_secret]);
         let purse_id = pallas::Base::from(1u64);
         let state_nonce = pallas::Base::from(1u64);
         let old_balance: u64 = 100;
         let new_balance: u64 = old_balance - amount;
         let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
-        let tx_binding = poseidon_hash([tx_commitment, tx_nonce]);
+        // DOMAIN_TX_BINDING = 3
+        let tx_binding = poseidon_hash([pallas::Base::from(3), tx_commitment, tx_nonce]);
 
         let nullifier_val = poseidon_hash([purse_id, state_nonce]);
 
@@ -237,7 +241,8 @@ impl PurseHarness {
 
     pub fn balance(&self) -> Result<PurseBalanceResult> {
         let owner_secret = pallas::Base::from(42u64);
-        let owner_pub = poseidon_hash([owner_secret]);
+        // DOMAIN_SIGNATURE_SECRET = 7
+        let owner_pub = poseidon_hash([pallas::Base::from(7), owner_secret]);
         let purse_id = pallas::Base::from(1u64);
         let token_id = pallas::Base::from(1u64);
         let balance: u64 = 100;
@@ -245,7 +250,8 @@ impl PurseHarness {
         let token_blind = pallas::Base::from(5u64);
         let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
-        let tx_binding = poseidon_hash([tx_commitment, tx_nonce]);
+        // DOMAIN_TX_BINDING = 3
+        let tx_binding = poseidon_hash([pallas::Base::from(3), tx_commitment, tx_nonce]);
 
         let balance_blind = ScalarBlind::from(1u64);
         let balance_commit = pedersen_commitment_u64(balance, balance_blind.clone());

@@ -87,7 +87,8 @@ impl BoxHarness {
         // Public inputs: nullifier_old, root, new_contents_commit, tx_binding, tx_nonce
 
         let owner_secret = pallas::Base::from(42u64);
-        let owner_pub = poseidon_hash([owner_secret]);
+        // DOMAIN_SIGNATURE_SECRET = witness_base(7) = pallas::Base::from(7)
+        let owner_pub = poseidon_hash([pallas::Base::from(7), owner_secret]);
         let box_id = pallas::Base::from(1u64);
         let old_state_nonce = pallas::Base::zero();
         let new_state_nonce = pallas::Base::from(1u64);
@@ -96,7 +97,8 @@ impl BoxHarness {
         let new_contents_commit = poseidon_hash([capability_data]);
         let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
-        let tx_binding = poseidon_hash([tx_commitment, tx_nonce]);
+        // DOMAIN_TX_BINDING = witness_base(3) = pallas::Base::from(3)
+        let tx_binding = poseidon_hash([pallas::Base::from(3), tx_commitment, tx_nonce]);
 
         // Nullifier for old state
         let nullifier_old = poseidon_hash([box_id, old_state_nonce]);
@@ -162,13 +164,15 @@ impl BoxHarness {
 
     pub fn take(&self) -> Result<BoxTakeResult> {
         let owner_secret = pallas::Base::from(42u64);
-        let owner_pub = poseidon_hash([owner_secret]);
+        // DOMAIN_SIGNATURE_SECRET = witness_base(7) = pallas::Base::from(7)
+        let owner_pub = poseidon_hash([pallas::Base::from(7), owner_secret]);
         let box_id = pallas::Base::from(1u64);
         let state_nonce = pallas::Base::from(1u64);
         let contents_commit = pallas::Base::from(100u64);
         let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
-        let tx_binding = poseidon_hash([tx_commitment, tx_nonce]);
+        // DOMAIN_TX_BINDING = witness_base(3) = pallas::Base::from(3)
+        let tx_binding = poseidon_hash([pallas::Base::from(3), tx_commitment, tx_nonce]);
 
         let nullifier_val = poseidon_hash([box_id, state_nonce]);
 
