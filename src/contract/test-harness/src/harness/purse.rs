@@ -33,11 +33,12 @@ use dwow_core::{
 };
 use dwow_sdk::{
     crypto::{
-        blind::ScalarBlind, pasta_prelude::PrimeField,
+        blind::ScalarBlind,
+        pasta_prelude::{CurveAffine, PrimeField},
         pedersen_commitment_u64, poseidon_hash,
         MerkleNode, MerkleTree, PublicKey, SecretKey,
     },
-    pasta::{group::{Curve, CurveAffine, GroupEncoding}, pallas},
+    pasta::{group::{Curve, GroupEncoding}, pallas},
 };
 use rand::rngs::OsRng;
 
