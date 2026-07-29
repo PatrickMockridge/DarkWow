@@ -37,7 +37,7 @@ use dwow_sdk::{
         pedersen_commitment_u64, poseidon_hash,
         MerkleNode, MerkleTree, PublicKey, SecretKey,
     },
-    pasta::{group::GroupEncoding, pallas},
+    pasta::{group::{Curve, CurveAffine, GroupEncoding}, pallas},
 };
 use rand::rngs::OsRng;
 
