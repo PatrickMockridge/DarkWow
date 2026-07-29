@@ -171,9 +171,14 @@ brought the remaining 2 into conformance.
 ### 3.1 The Rule
 
 Primitive ID types (`BoxId`, `SubscriptionId`, `ClaimId`, `DaoEscrowBulla`,
-etc.) SHALL have standalone `encode()`/`decode()` methods. Old `dwow_serial`
-`Encodable`/`Decodable` bridge impls SHALL be removed once all consumers
-have migrated.
+etc.) and sled-only state types (Coin, Nullifier, Purse, etc.) SHALL have
+standalone `encode()`/`decode()` methods. These types SHALL NOT have
+`dwow_serial::Encodable`/`Decodable` bridge impls — they never cross the
+exec→apply boundary (see contract-wasm-type-system.md §3.1 Boundary 3).
+
+`*ParamsV1` and `*UpdateV1` structs SHALL retain thin bridge impls delegating
+to their inherent methods per contract-wasm-type-system.md §3.1.3 — these are
+required by test code, client helpers, and the exec→apply boundary.
 
 ### 3.2 The Pattern
 
@@ -358,7 +363,9 @@ When bringing a contract up to this standard, verify:
 - [ ] Every state struct has `pub fn encode(&self) -> Vec<u8>`
 - [ ] Every state struct has `pub fn decode(data: &[u8]) -> Result<Self, ContractError>`
 - [ ] Every primitive ID type has `encode()` and `decode()`
-- [ ] No `dwow_serial::Encodable`/`Decodable` bridge impls remain
+- [ ] Every `*ParamsV1` and `*UpdateV1` struct has thin Encodable+Decodable bridge
+      impls delegating to inherent encode()/decode() per contract-wasm-type-system.md §3.1.3
+- [ ] No bridge impls on sled-only state types (Coin, Nullifier, Purse, BoxId, etc.)
 - [ ] Zero `.unwrap()` in entrypoint metadata functions
 - [ ] All metadata helpers return `Result<Vec<u8>, ContractError>`
 - [ ] No `let _ =` in entrypoint code

@@ -61,6 +61,32 @@ contract with a bespoke wallet path is NativeToken (consensus-critical: block
 rewards, fee payment, supply audit). Every other contract — genesis or
 user-deployed — SHALL work through the generic manifest-driven machinery.
 
+### 0.5 Contract Taxonomy — Consensus vs Capability
+
+DarkWow distinguishes two categories of contract. The distinction is architectural,
+not a privilege hierarchy:
+
+**Consensus contracts** (NativeToken, Deployooor) serve the blockchain itself.
+NativeToken SHALL provide coinbases, fee payment, and transfers ONLY. Deployooor
+SHALL deploy WASM binaries. Consensus contracts SHALL NOT: freeze assets, enforce
+ACLs, implement governance hooks, compose with DeFi contracts, wrap tokens for
+other contracts, or dispatch to cross-contract calls. They are rock-dumb by design
+— every feature removed is an attack surface eliminated.
+
+**Capability contracts** (PromissoryNote, all genesis and user-deployed contracts)
+compose via generated/shared/revoked capabilities. They use manifest-driven wallet
+discovery (wallet.md §2, Path 2). Their authorization flows through ZK proofs and
+nullifiers, not identity or ACL. PromissoryNote is the DeFi token layer — it mints,
+burns, transfers, and revokes capabilities that compose across contracts.
+
+A consensus contract SHALL NOT contain code for any other contract. No bridge
+logic. No wrapping. No DeFi composition. If a DeFi contract needs native token,
+it builds its own bespoke infrastructure — it wraps the native token's coin type
+in its own capability, with its own circuits and its own manifest. This is a
+DESIGN RULE, not a limitation. Per the memory rule `native-token-rock-dumb`: coins
+ARE capabilities via nullifiers; DeFi complexity lives in PromissoryNote and
+user-deployed contracts.
+
 ## 1. Contract Entrypoint Types
 
 ### 1.1 The Four Canonical Entrypoints
@@ -143,9 +169,14 @@ deserializes as `Vec<DarkLeaf<ContractCall>>` and the current call is indexed by
 
 ### 1.4 Parameter Encoding
 
-Parameters SHALL be serialized via `dwow_serial` (`Encodable`/`Decodable`). The
-parameter type SHALL be a named struct (`XxxParamsV1`), not a raw tuple or
-`Vec<u8>`. The contract SHALL validate parameter lengths before deserialization:
+Parameters SHALL be serializable via `dwow_serial` (`Encodable`/`Decodable`).
+Every `*ParamsV1` struct SHALL provide a thin bridge impl that delegates to the
+struct's inherent `encode()`/`decode()` methods. The inherent methods SHALL use
+fixed byte layouts with validating constructors (§3.1). Derive macros
+(`SerialEncodable`/`SerialDecodable`) SHALL NOT be used — they bypass validating
+constructors. The parameter type SHALL be a named struct (`XxxParamsV1`), not a
+raw tuple or `Vec<u8>`. The contract SHALL validate parameter lengths before
+deserialization:
 
 ```rust
 fn fee_v1(cid: ContractId, params: &[u8]) -> ContractResult {
@@ -320,43 +351,70 @@ required_barbs), `src/contract/identity/manifest.toml` (actions with required_ba
 
 ## 3. State Type System
 
-### 3.1 State Architecture
+### 3.1 Encoding Taxonomy — Three Boundaries
 
-Contract state lives in sled trees. Each tree is identified by
-`blake3(contract_id.to_bytes() || tree_name.as_bytes())` — the output of
-`ContractId::hash_state_id()` (`src/sdk/src/crypto/contract_id.rs:228`).
-The WASM accesses state through host functions: `wasm::db::db_get`,
-`wasm::db::db_set`, `wasm::db::db_lookup`, `wasm::db::db_contains_key`,
-`wasm::db::db_delete` (`src/sdk/src/wasm/db.rs`).
+There are THREE distinct encoding boundaries in a contract. Each uses a different
+mechanism. Confusing them is the root cause of every encoding regression found in
+the 2026-07-29 HAZOP review.
 
-State values cross the sled boundary as raw bytes. The contract SHALL encode
-on write and decode on read using explicit per-type functions with a **fixed
-canonical byte layout**. Each field SHALL be converted through its validating
-constructor.
+**Boundary 1 — Entrypoint parameters (external → exec).** Call data arrives from
+an externally-constructed transaction (Rust host, wallet client, RPC). The exec
+entrypoint SHALL deserialize parameters via the type's inherent `decode()` method:
 
-Encoding SHALL use `to_bytes()` / `to_repr()` / `to_le_bytes()` on each field.
-Decoding SHALL use `from_bytes()` / `from_repr()` / `from_le_bytes()` on each
-field — the named constructor that validates the type's invariants. The
-ρ-calculus property `eval(quote(x)) ∼ x` SHALL hold: `decode(encode(val)) == val`
-for all valid values, and invalid bytes SHALL be rejected by the validating
-constructors.
+```rust
+let params = FooParamsV1::decode(params)?;
+```
 
-**`dwow_serial::serialize()` and `deserialize()` with derive macros
-(`SerialEncodable`/`SerialDecodable`) SHALL NOT be used for state values
-crossing the sled boundary.** Derive macros bypass validating constructors:
-`Nullifier`'s derived `Decodable` reads `pallas::Base` directly — it never
-calls `Nullifier::from_bytes()` and silently accepts zero and non-canonical
-values. This is the same class of error as `unwrap()` on a fallible conversion
-or a bare integer cast — the type system cannot enforce correctness. See
-§3.1.1 for the documented anti-pattern.
+Each `*ParamsV1` struct SHALL provide both:
+- An inherent `pub fn decode(data: &[u8]) -> Result<Self, ContractError>` with
+  fixed byte layout and validating constructors
+- A thin bridge impl `impl dwow_serial::Decodable for FooParamsV1` that delegates
+  to the inherent method (see §3.1.2 for the canonical pattern)
 
-This applies to all state reads and writes in `process_update` (apply phase).
-The `process_instruction` → `process_update` bridge SHALL also use explicit
-encoding (see §11.4, §11.8). Wire-format serialization via `dwow_serial` for
-entrypoint parameters (`deserialize(&self_.data.data[1..])`) is permitted for
-the exec entrypoint where the data originates from an externally-constructed
-transaction, but SHALL be replaced with explicit decoding in the apply
-entrypoint where the data is produced by the contract itself.
+**Boundary 2 — Exec→Apply bridge (internal).** The exec entrypoint produces an
+update struct consumed by the apply entrypoint. This bridge SHALL use custom
+`encode_*_update_v1()` / `decode_*_update_v1()` functions:
+
+Exec side:
+```rust
+wasm::util::set_return_data(&encode_foo_update_v1(&update))?;
+```
+
+Apply side:
+```rust
+let update = decode_foo_update_v1(&update_data[1..])?;
+```
+
+The custom bridge functions SHALL delegate to the struct's inherent `encode()`/
+`decode()` methods. Each `*UpdateV1` struct SHALL also provide thin bridge impls
+for `dwow_serial::Encodable`/`Decodable` delegating to the inherent methods,
+for use by test code and client helpers (see §3.1.2).
+
+Reference implementations: native_token (encode_fee_update_v1, decode_fee_update_v1
+etc. at `src/contract/native_token/src/entrypoint/mod.rs`), purse, box, deployooor.
+
+**Boundary 3 — Sled state (persistence).** Values written to and read from sled
+trees SHALL use the type's inherent `encode()`/`decode()` methods directly. These
+methods SHALL use fixed byte layouts with validating constructors (§3.1.1).
+`dwow_serial` derive macros (`SerialEncodable`/`SerialDecodable`) SHALL NOT be
+applied to types stored in sled trees — they bypass validating constructors and
+produce opaque byte blobs with no compile-time format guarantee.
+
+Sled-only types (Coin, Nullifier, Purse, BoxId, GroupId, and other internal
+state types) SHALL have inherent `encode()`/`decode()` methods. They SHALL NOT
+have `dwow_serial` bridge impls — they never cross the exec→apply boundary.
+
+**Summary table:**
+
+| Boundary | Dispatched by | Method | Bridge impl required? |
+|----------|-------------|--------|----------------------|
+| External → exec | `process_instruction` | `FooParamsV1::decode(params)?` | YES (Decodable) |
+| Exec → apply | `process_instruction` → `process_update` | `encode_foo_update_v1()` / `decode_foo_update_v1()` | YES (Enc+Dec) |
+| Sled state | `db_set` / `db_get` | `foo.encode()` / `Foo::decode(&data)?` | NO |
+
+### 3.1.1 Explicit Encoding Rules
+
+The explicit encode/decode pattern SHALL follow these rules.
 
 **Encoding pattern:**
 
@@ -403,7 +461,7 @@ Rules:
 - No `unwrap_or` — every validation failure is a `ContractError` with field context.
 - Pre-allocate exact capacity in encode: `Vec::with_capacity(FIXED_SIZE)`.
 
-### 3.1.1 Anti-Pattern: Derive-Based serialize/deserialize for State Values
+### 3.1.2 Anti-Pattern: Derive-Based serialize/deserialize for State Values
 
 `SerialEncodable`/`SerialDecodable` derive macros SHALL NOT be applied to
 types stored in sled trees. The derive macros produce opaque byte blobs with
@@ -441,6 +499,26 @@ let purse = Purse::decode(&data)?;
 
 **Detection:** A tripwire test SHALL grep for `serialize(&` in `db_set` argument
 position on non-scalar types. A match SHALL fail CI.
+
+### 3.1.3 Canonical Bridge Impl Pattern
+
+For every `*ParamsV1` and `*UpdateV1` struct that crosses the exec→apply boundary,
+provide thin bridge impls immediately before the struct's `impl` block. These
+delegate to the struct's inherent `encode()`/`decode()` methods — they do NOT
+bypass validating constructors:
+
+```rust
+impl dwow_serial::Encodable for FeeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for FeeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+```
+
+These are one-liners. They exist for test code, client helpers, and the rare case
+where a Params struct is deserialized via `dwow_serial::deserialize()` in exec
+entrypoints. They SHALL NOT be added to sled-only state types (Coin, Nullifier,
+Purse, BoxId, GroupId, etc.) — those never cross the exec→apply boundary.
+
+Reference: `src/contract/native_token/src/model/mod.rs` lines 407-408, 490-491,
+570-571, 1033-1034.
 
 ### 3.2 State Keys Are Typed
 
@@ -576,11 +654,14 @@ fn write_total_supply(info_db: DbHandle, supply: u64) -> Result<(), ContractErro
 
 ### 3.7 State Key Canonical Encoding
 
-The canonical byte encoding of a state key SHALL be via `dwow_serial::serialize()`.
+The canonical byte encoding of a state key SHALL be via the type's typed
+`to_bytes()` / `to_le_bytes()` / `to_repr()` method, as defined in §3.2.
 Keys SHALL be constructed from typed values, not from raw byte buffers.
 `BlockHeight` keys SHALL use `BlockHeight::to_le_bytes()` per
 [type-system.md §2.3](type-system.md). `ContractId` keys SHALL use
 `ContractId::to_bytes()` per [type-system.md §2.2](type-system.md).
+Composite keys SHALL concatenate the typed representations of their
+components.
 
 ### 3.8 Execution Overlay Semantics
 
@@ -1113,8 +1194,11 @@ lacking `From<u64>` and `Default`, the same technique as `BlockHeight`
 ([type-system.md §2.3](type-system.md)).
 
 **I4 — Named parameter structs.** Every function parameter SHALL be a named
-struct with `#[derive(SerialEncodable, SerialDecodable)]`. Raw `Vec<u8>` SHALL
-NOT be passed as parameters without deserialization to a named type.
+struct with inherent `encode()`/`decode()` methods AND thin bridge impls for
+`dwow_serial::Encodable`/`Decodable` that delegate to the inherent methods
+(see §3.1.3). `#[derive(SerialEncodable, SerialDecodable)]` SHALL NOT be used
+— it bypasses validating constructors (§3.1.1). Raw `Vec<u8>` SHALL NOT be
+passed as parameters without deserialization to a named type.
 
 ### 9.2 Mechanically Verifiable (Manifest-WASM Cross-Check)
 
@@ -1232,6 +1316,10 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
 ### 11.4 Apply Dispatch
 
+The apply entrypoint uses custom `decode_*_update_v1()` functions to deserialize
+the update from the bridge (Boundary 2 of §3.1). These SHALL delegate to the
+struct's inherent `decode()` method.
+
 ```rust
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     if update_data.is_empty() {
@@ -1242,13 +1330,25 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 
     match func {
         ExampleFunction::TransferV1 => {
-            let update: TransferUpdateV1 = deserialize(&update_data[1..])?;
+            let update = decode_transfer_update_v1(&update_data[1..])?;
             apply_transfer(cid, update)
         }
         // ...
     }
 }
 ```
+
+The `decode_transfer_update_v1` helper is a thin wrapper:
+```rust
+fn decode_transfer_update_v1(data: &[u8]) -> Result<TransferUpdateV1, ContractError> {
+    TransferUpdateV1::decode(data)
+}
+```
+
+This pattern isolates the bridge encoding from the struct's inherent method,
+making it straightforward to change either independently. See native_token
+(`src/contract/native_token/src/entrypoint/mod.rs`), purse, box, and deployooor
+for reference implementations.
 
 ### 11.5 Metadata Dispatch
 
@@ -1307,20 +1407,26 @@ Key rules:
 
 ### 11.6 State Accessor
 
+State values crossing the sled boundary SHALL use inherent `encode()`/`decode()`
+methods (Boundary 3 of §3.1), never `dwow_serial::serialize()`/`deserialize()`.
+Keys SHALL use typed `to_bytes()`/`to_le_bytes()` methods per §3.2.
+
 ```rust
 /// Tree name constant — SHALL be declared in manifest's `[[trees]]`.
 const EXAMPLE_TREE: &str = "example";
 
-/// Key type — SHALL be serialized via dwow_serial.
-const TOTAL_SUPPLY_KEY: &str = "total_supply";
+/// Key — SHALL use typed to_le_bytes per §3.2.
+const TOTAL_SUPPLY_KEY: u64 = 0;
 
 fn read_u64_state(cid: ContractId, tree: &str, key: &[u8]) -> Result<u64, ContractError> {
     let db = wasm::db::db_lookup(cid, tree)?;
     match wasm::db::db_get(db, key)? {
-        Some(data) => deserialize(&data).map_err(|e| {
-            msg!("[example] Error: Failed to deserialize state key {:?}: {:?}", key, e);
-            ContractError::IoError("Corrupt state: deserialization failed".to_string())
-        }),
+        Some(data) => {
+            let bytes: [u8; 8] = data.try_into().map_err(|_| {
+                ContractError::IoError("Corrupt state: wrong size".to_string())
+            })?;
+            Ok(u64::from_le_bytes(bytes))
+        }
         None => {
             msg!("[example] Error: State key {:?} not found", key);
             Err(ContractError::IoError("Missing state key".to_string()))
@@ -1333,8 +1439,8 @@ fn read_u64_state(cid: ContractId, tree: &str, key: &[u8]) -> Result<u64, Contra
 
 ```rust
 fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
-    // 1. Deserialize and validate parameters
-    let pr: TransferParamsV1 = deserialize(params)?;
+    // 1. Deserialize and validate parameters via inherent decode() (Boundary 1)
+    let pr = TransferParamsV1::decode(params)?;
 
     // 2. Enforce declared barbs
     // ↓denominate: verify token commitment
@@ -1351,9 +1457,9 @@ fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(ExampleError::DuplicateNullifier.into());
     }
 
-    // ↓prove-inclusion: verify Merkle root
+    // ↓prove-inclusion: verify Merkle root (use typed to_bytes, not serialize)
     let roots_db = wasm::db::db_lookup(cid, ROOTS_TREE)?;
-    if !wasm::db::db_contains_key(roots_db, &serialize(&pr.input.merkle_root))? {
+    if !wasm::db::db_contains_key(roots_db, &pr.input.merkle_root.to_bytes())? {
         msg!("[example::transfer_v1] Error: Merkle root not found");
         return Err(ExampleError::MerkleRootNotFound.into());
     }
@@ -1364,13 +1470,19 @@ fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         coin: pr.output.coin,
     };
 
-    // 4. Return update for apply phase
-    wasm::util::set_return_data(&serialize(&(ExampleFunction::TransferV1 as u8, update)));
+    // 4. Return update via custom bridge function (Boundary 2)
+    wasm::util::set_return_data(&encode_transfer_update_v1(&update))?;
     Ok(())
 }
 ```
 
 ### 11.8 Function Handler (apply)
+
+The apply handler receives a fully-decoded update struct from the bridge
+(Boundary 2 of §3.1). Host function arguments (`merkle_add`, `sparse_merkle_insert_batch`)
+use `dwow_serial::serialize()` — this is the host FFI boundary (Boundary 4),
+distinct from the three contract boundaries. The types being serialized are
+`DbHandle` + primitive values, not contract-defined structs.
 
 ```rust
 fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {

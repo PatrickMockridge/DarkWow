@@ -204,13 +204,20 @@ and `.get()` accessors at the boundaries.
 
 ## Template
 
+Below is the minimum viable contract entrypoint. `InitializeParams` and `DoThingParams`
+require thin `dwow_serial::Encodable`/`Decodable` bridge impls delegating to inherent
+`encode()`/`decode()` methods — see contract-wasm-type-system.md §3.1.3 for the
+canonical pattern. Derive macros (`SerialEncodable`/`SerialDecodable`) SHALL NOT be
+used — they bypass validating constructors.
+
 ```rust
 // Minimum viable init_contract
 pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
-    let params: InitializeParams = if ix.is_empty() {
+    let params = if ix.is_empty() {
         InitializeParams::default()
     } else {
-        deserialize(ix).map_err(|_| ContractError::IoError("Invalid init params".to_string()))?
+        InitializeParams::decode(ix)
+            .map_err(|_| ContractError::IoError("Invalid init params".to_string()))?
     };
 
     let info_db = wasm::db::db_init(cid, CONTRACT_INFO_TREE)?;
@@ -237,15 +244,15 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let metadata = match func {
         MyFunction::DoThingV1 => do_thing_get_metadata(ix),
         // ...
-    };
+    }?;  // ? propagates errors from metadata helpers
     wasm::util::set_return_data(&metadata);
     Ok(())
 }
 
-// Minimum viable metadata function
-fn do_thing_get_metadata(params: &[u8]) -> Vec<u8> {
-    let Ok(p) = deserialize::<DoThingParams>(&params[1..]) else {
-        return vec![];
+// Minimum viable metadata function — returns Result, never panics
+fn do_thing_get_metadata(params: &[u8]) -> Result<Vec<u8>, ContractError> {
+    let Ok(p) = DoThingParams::decode(&params[1..]) else {
+        return Ok(vec![]);  // empty metadata on decode failure
     };
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((
@@ -253,10 +260,10 @@ fn do_thing_get_metadata(params: &[u8]) -> Vec<u8> {
         vec![p.nullifier.inner(), p.commitment.inner()],
     ));
     let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
+    zk_public_inputs.encode(&mut metadata)?;     // ? not .unwrap()
     let signature_pubkeys: Vec<PublicKey> = Vec::new();
-    signature_pubkeys.encode(&mut metadata).unwrap();
-    metadata
+    signature_pubkeys.encode(&mut metadata)?;     // ? not .unwrap()
+    Ok(metadata)
 }
 ```
 
