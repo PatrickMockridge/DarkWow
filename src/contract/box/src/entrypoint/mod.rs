@@ -106,11 +106,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
 fn put_get_metadata(params: PutParams) -> Result<Vec<u8>, ContractError> {
     let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let nullifier_old = dwow_sdk::crypto::poseidon_hash([
-        params.box_id.inner(), params.old_state_nonce,
-    ]);
     zk_inputs.push((BOX_CONTRACT_ZKAS_PUT_NS.to_string(), vec![
-        nullifier_old,
+        params.nullifier,
         params.merkle_root,
         params.new_contents_commit,
         params.tx_binding, params.tx_nonce,
@@ -124,11 +121,8 @@ fn put_get_metadata(params: PutParams) -> Result<Vec<u8>, ContractError> {
 
 fn take_get_metadata(params: TakeParams) -> Result<Vec<u8>, ContractError> {
     let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let nullifier_val = dwow_sdk::crypto::poseidon_hash([
-        params.box_id.inner(), params.state_nonce,
-    ]);
     zk_inputs.push((BOX_CONTRACT_ZKAS_TAKE_NS.to_string(), vec![
-        nullifier_val,
+        params.nullifier,
         params.merkle_root,
         params.tx_binding, params.tx_nonce,
     ]));

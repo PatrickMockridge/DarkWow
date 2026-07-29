@@ -8,6 +8,7 @@ witness "Take" {
     Base box_id,
     Base contents_commit,
     Base state_nonce,
+    Base nullifier_witness,
     Base expected_root,
     Base owner_secret,
     Base owner_pub,
@@ -27,9 +28,10 @@ circuit "Take" {
     derived_owner = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret);
     constrain_equal_base(derived_owner, owner_pub);
 
-    # Nullifier for current state
+    # Nullifier for current state — caller provides expected value in witness[3]
     nullifier = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, state_nonce);
-    constrain_instance(nullifier);
+    constrain_equal_base(nullifier, nullifier_witness);
+    constrain_instance(nullifier_witness);
 
     # Merkle inclusion of current box state — constrain against expected_root
     box_leaf = poseidon_hash(DOMAIN_SIGNATURE_SECRET, box_id, contents_commit, state_nonce);

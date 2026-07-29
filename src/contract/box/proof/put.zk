@@ -10,6 +10,7 @@ witness "Put" {
     Base new_state_nonce,
     Base old_contents_commit,
     Base new_contents_commit,
+    Base nullifier_witness,
     Base expected_root,
     Base owner_secret,
     Base owner_pub,
@@ -29,9 +30,10 @@ circuit "Put" {
     derived_owner = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret);
     constrain_equal_base(derived_owner, owner_pub);
 
-    # Nullifier for old state
+    # Nullifier for old state — caller provides expected value in witness[5]
     nullifier_old = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, old_state_nonce);
-    constrain_instance(nullifier_old);
+    constrain_equal_base(nullifier_old, nullifier_witness);
+    constrain_instance(nullifier_witness);
 
     # Merkle inclusion of old box state — constrain against expected_root
     box_leaf_old = poseidon_hash(DOMAIN_SIGNATURE_SECRET, box_id, old_contents_commit, old_state_nonce);

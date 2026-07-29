@@ -100,8 +100,8 @@ impl BoxHarness {
         // DOMAIN_TX_BINDING = witness_base(3) = pallas::Base::from(3)
         let tx_binding = poseidon_hash([pallas::Base::from(3), tx_commitment, tx_nonce]);
 
-        // Nullifier for old state
-        let nullifier_old = poseidon_hash([box_id, old_state_nonce]);
+        // Nullifier for old state — DOMAIN_NULLIFIER=1, matches circuit
+        let nullifier_old = poseidon_hash([pallas::Base::from(1), owner_secret, box_id, old_state_nonce]);
 
         // Build Merkle tree: sentinel leaf + old state leaf
         let mut tree = MerkleTree::new(1);
@@ -119,6 +119,7 @@ impl BoxHarness {
             Witness::Base(Value::known(new_state_nonce)),
             Witness::Base(Value::known(old_contents_commit)),
             Witness::Base(Value::known(new_contents_commit)),
+            Witness::Base(Value::known(nullifier_old)),
             Witness::Base(Value::known(root.inner())),
             Witness::Base(Value::known(owner_secret)),
             Witness::Base(Value::known(owner_pub)),
@@ -148,6 +149,7 @@ impl BoxHarness {
             new_state_nonce,
             old_contents_commit,
             new_contents_commit,
+            nullifier: nullifier_old,
             merkle_root: root.inner(),
             owner: PublicKey::from_secret(SecretKey::from_base(owner_secret)),
             leaf_pos,
@@ -174,7 +176,8 @@ impl BoxHarness {
         // DOMAIN_TX_BINDING = witness_base(3) = pallas::Base::from(3)
         let tx_binding = poseidon_hash([pallas::Base::from(3), tx_commitment, tx_nonce]);
 
-        let nullifier_val = poseidon_hash([box_id, state_nonce]);
+        // Nullifier — DOMAIN_NULLIFIER=1, matches circuit
+        let nullifier_val = poseidon_hash([pallas::Base::from(1), owner_secret, box_id, state_nonce]);
 
         // Build Merkle tree: sentinel + filled state leaf
         let mut tree = MerkleTree::new(1);
@@ -190,6 +193,7 @@ impl BoxHarness {
             Witness::Base(Value::known(box_id)),
             Witness::Base(Value::known(contents_commit)),
             Witness::Base(Value::known(state_nonce)),
+            Witness::Base(Value::known(nullifier_val)),
             Witness::Base(Value::known(root.inner())),
             Witness::Base(Value::known(owner_secret)),
             Witness::Base(Value::known(owner_pub)),
@@ -216,6 +220,7 @@ impl BoxHarness {
             box_id: dwow_box_contract::model::BoxId(box_id),
             contents_commit,
             state_nonce,
+            nullifier: nullifier_val,
             merkle_root: root.inner(),
             owner: PublicKey::from_secret(SecretKey::from_base(owner_secret)),
             leaf_pos,
