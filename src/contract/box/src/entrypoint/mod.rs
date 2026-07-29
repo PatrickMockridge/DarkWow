@@ -92,11 +92,9 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         box_tree.encode(&mut box_tree_data)?;
         wasm::db::db_set(info_db, BOX_CONTRACT_BOX_MERKLE_TREE, &box_tree_data)?;
 
-        // Write initial root pointer
-        let root = box_tree.root(0).ok_or_else(|| {
-            ContractError::IoError("Box init: failed to get root".into())
-        })?;
-        wasm::db::db_set(info_db, BOX_CONTRACT_LATEST_BOX_ROOT, &root.to_bytes())?;
+        // Write initial root from precomputed constant — tree.root(0) requires
+        // Sinsemilla hash which is not available during Deploy section.
+        wasm::db::db_set(info_db, BOX_CONTRACT_LATEST_BOX_ROOT, &EMPTY_BOX_TREE_ROOT)?;
     }
 
     Ok(())

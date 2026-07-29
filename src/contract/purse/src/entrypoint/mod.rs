@@ -96,10 +96,9 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         purse_tree.encode(&mut purse_tree_data)?;
         wasm::db::db_set(info_db, PURSE_CONTRACT_PURSE_MERKLE_TREE, &purse_tree_data)?;
 
-        let root = purse_tree.root(0).ok_or_else(|| {
-            ContractError::IoError("Purse init: failed to get root".into())
-        })?;
-        wasm::db::db_set(info_db, PURSE_CONTRACT_LATEST_PURSE_ROOT, &root.to_bytes())?;
+        // Write initial root from precomputed constant — tree.root(0) requires
+        // Sinsemilla hash which is not available during Deploy section.
+        wasm::db::db_set(info_db, PURSE_CONTRACT_LATEST_PURSE_ROOT, &EMPTY_PURSE_TREE_ROOT)?;
     }
 
     Ok(())
