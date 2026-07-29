@@ -43,6 +43,7 @@ pub struct PutParams {
     pub new_state_nonce: pallas::Base,
     pub old_contents_commit: pallas::Base,
     pub new_contents_commit: pallas::Base,
+    pub new_leaf: pallas::Base,
     pub nullifier: pallas::Base,
     pub expected_root: pallas::Base,
     pub owner: PublicKey,
@@ -64,6 +65,7 @@ impl PutParams {
         b.extend_from_slice(&self.new_state_nonce.to_repr());
         b.extend_from_slice(&self.old_contents_commit.to_repr());
         b.extend_from_slice(&self.new_contents_commit.to_repr());
+        b.extend_from_slice(&self.new_leaf.to_repr());
         b.extend_from_slice(&self.nullifier.to_repr());
         b.extend_from_slice(&self.expected_root.to_repr());
         b.extend_from_slice(&self.owner.to_bytes());
@@ -103,15 +105,16 @@ impl PutParams {
 #[derive(Debug, Clone)]
 pub struct PutUpdate {
     pub nullifier: pallas::Base,
+    pub new_leaf: pallas::Base,
 }
 
 impl dwow_serial::Encodable for PutUpdate { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PutUpdate { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PutUpdate {
-    pub fn encode(&self) -> Vec<u8> { self.nullifier.to_repr().to_vec() }
+    pub fn encode(&self) -> Vec<u8> { let mut v = Vec::with_capacity(64); v.extend_from_slice(&self.nullifier.to_repr()); v.extend_from_slice(&self.new_leaf.to_repr()); v }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != 32 { return Err(ContractError::IoError(format!("PutUpdate: expected 32 bytes, got {}", data.len()))); }
-        Ok(PutUpdate { nullifier: read_base(&data[0..32])? })
+        if data.len() != 64 { return Err(ContractError::IoError(format!("PutUpdate: expected 64 bytes, got {}", data.len()))); }
+        Ok(PutUpdate { nullifier: read_base(&data[0..32])?, new_leaf: read_base(&data[32..64])? })
     }
 }
 

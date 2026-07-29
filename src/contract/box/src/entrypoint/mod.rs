@@ -145,7 +145,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             if wasm::db::db_contains_key(nullifiers_db, &params.nullifier.to_repr())? {
                 return Err(BoxError::DuplicateNullifier.into());
             }
-            let update = PutUpdate { nullifier: params.nullifier };
+            let update = PutUpdate { nullifier: params.nullifier, new_leaf: params.new_leaf };
             wasm::util::set_return_data(&[&[BoxFunction::Put as u8], &update.encode()[..]].concat())?;
         }
         BoxFunction::Take => {
@@ -177,7 +177,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update = PutUpdate::decode(&update_data[1..])?;
             // Append new leaf to Merkle tree
             let info_db = wasm::db::db_lookup(cid, BOX_CONTRACT_INFO_TREE)?;
-            let new_leaf = MerkleNode::from_base(update.nullifier);
+            let new_leaf = MerkleNode::from_base(update.new_leaf);
             wasm::merkle::merkle_add(
                 info_db,
                 wasm::db::db_lookup(cid, BOX_CONTRACT_BOX_ROOTS_TREE)?,

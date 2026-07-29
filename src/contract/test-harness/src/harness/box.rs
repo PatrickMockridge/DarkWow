@@ -77,6 +77,8 @@ impl BoxHarness {
         let old_contents_commit = pallas::Base::zero();
         let capability_data = pallas::Base::from(100u64);
         let new_contents_commit = poseidon_hash([capability_data]);
+        // New leaf for Merkle tree — circuit computes matching formula
+        let new_leaf = poseidon_hash([dom_sig_secret, box_id, new_contents_commit, new_state_nonce]);
         let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
 
