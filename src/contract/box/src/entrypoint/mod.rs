@@ -1,7 +1,6 @@
 use dwow_sdk::{
     crypto::{
         pasta_prelude::*,
-        smt::{wasmdb::SmtWasmFp, PoseidonFp, EMPTY_NODES_FP},
         ContractId, MerkleNode, MerkleTree,
     },
     dark_tree::DarkLeaf,
@@ -156,12 +155,10 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             msg!("[box::put] Put into box");
             if params.old_contents_commit != pallas::Base::zero() {
                 let nullifiers_db = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
-                let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-                let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
                 let old_nullifier = dwow_sdk::crypto::poseidon_hash([
                     params.box_id.inner(), params.old_state_nonce,
                 ]);
-                if smt.get_leaf(&old_nullifier) != pallas::Base::zero() {
+                if wasm::db::db_contains_key(nullifiers_db, &old_nullifier.to_repr())? {
                     return Err(BoxError::BoxNotEmpty.into());
                 }
             }
@@ -175,12 +172,10 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let params = TakeParams::decode(&self_.data.data[1..])?;
             msg!("[box::take] Take from box");
             let nullifiers_db = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
-            let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-            let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
             let nullifier_val = dwow_sdk::crypto::poseidon_hash([
                 params.box_id.inner(), params.state_nonce,
             ]);
-            if smt.get_leaf(&nullifier_val) != pallas::Base::zero() {
+            if wasm::db::db_contains_key(nullifiers_db, &nullifier_val.to_repr())? {
                 return Err(BoxError::DuplicateNullifier.into());
             }
             let update = TakeUpdate { nullifier: nullifier_val };
@@ -216,22 +211,13 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
                 &[new_leaf],
             )?;
             let nullifiers_db = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
-            let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-            let mut smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-            smt.insert_batch(vec![(update.nullifier, pallas::Base::one())])?;
-            let new_root = smt.root();
-            wasm::db::db_set(info_db, BOX_CONTRACT_LATEST_NULLIFIER_ROOT, &new_root.to_repr())?;
+            wasm::db::db_set(nullifiers_db, &update.nullifier.to_repr(), &[])?;
             Ok(())
         }
         BoxFunction::Take => {
             let update = TakeUpdate::decode(&update_data[1..])?;
-            let info_db = wasm::db::db_lookup(cid, BOX_CONTRACT_INFO_TREE)?;
             let nullifiers_db = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
-            let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-            let mut smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-            smt.insert_batch(vec![(update.nullifier, pallas::Base::one())])?;
-            let new_root = smt.root();
-            wasm::db::db_set(info_db, BOX_CONTRACT_LATEST_NULLIFIER_ROOT, &new_root.to_repr())?;
+            wasm::db::db_set(nullifiers_db, &update.nullifier.to_repr(), &[])?;
             Ok(())
         }
         BoxFunction::Initialize => {
