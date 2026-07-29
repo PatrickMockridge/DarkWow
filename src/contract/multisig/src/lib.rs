@@ -19,3 +19,8 @@ pub const MULTISIG_CONTRACT_INFO_TREE: &str = "info";
 pub const MULTISIG_CONTRACT_ZKAS_CREATE_GROUP_NS_V1: &str = "CreateGroupV1";
 pub const MULTISIG_CONTRACT_ZKAS_SIGN_NS_V1: &str = "SignV1";
 pub const MULTISIG_CONTRACT_ZKAS_FINALIZE_NS_V1: &str = "FinalizeV1";
+
+// V2 circuit namespaces (domain separation, HAZOP RC3)
+pub const MULTISIG_CONTRACT_ZKAS_CREATE_GROUP_NS_V2: &str = "CreateGroupV2";
+pub const MULTISIG_CONTRACT_ZKAS_SIGN_NS_V2: &str = "SignV2";
+pub const MULTISIG_CONTRACT_ZKAS_FINALIZE_NS_V2: &str = "FinalizeV2";

@@ -34,6 +34,11 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(include_bytes!("../../proof/sign_v1.zk.bin"))?;
     wasm::db::zkas_db_set(include_bytes!("../../proof/finalize_v1.zk.bin"))?;
 
+    // Register V2 circuits (domain separation, HAZOP RC3)
+    wasm::db::zkas_db_set(include_bytes!("../../proof/create_group_v2.zk.bin"))?;
+    wasm::db::zkas_db_set(include_bytes!("../../proof/sign_v2.zk.bin"))?;
+    wasm::db::zkas_db_set(include_bytes!("../../proof/finalize_v2.zk.bin"))?;
+
     if wasm::db::db_lookup(cid, MULTISIG_CONTRACT_GROUPS_TREE).is_err() {
         wasm::db::db_init(cid, MULTISIG_CONTRACT_GROUPS_TREE)?;
     }
