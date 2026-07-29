@@ -124,6 +124,27 @@ pub enum ContractError {
 
     #[error("Merkle root not found")]
     MerkleRootNotFound,
+
+    #[error("SMT decode failed")]
+    SmtDecodeFailed,
+
+    #[error("SMT memory fault")]
+    SmtMemoryFault,
+
+    #[error("SMT handle out of bounds")]
+    SmtHandleOutOfBounds,
+
+    #[error("SMT cursor mismatch")]
+    SmtCursorMismatch,
+
+    #[error("SMT encode failed")]
+    SmtEncodeFailed,
+
+    #[error("SMT data mismatch")]
+    SmtDataMismatch,
+
+    #[error("SMT insert failed")]
+    SmtInsertFailed,
 }
 
 /// Builtin return values occupy the upper 32 bits
@@ -163,6 +184,13 @@ pub const MERKLE_HANDLE_OUT_OF_BOUNDS: i64 = to_builtin!(27);
 pub const MERKLE_CURSOR_MISMATCH: i64 = to_builtin!(28);
 pub const MERKLE_ENCODE_FAILED: i64 = to_builtin!(29);
 pub const MERKLE_ROOT_NOT_FOUND: i64 = to_builtin!(30);
+pub const SMT_DECODE_FAILED: i64 = to_builtin!(31);
+pub const SMT_MEMORY_FAULT: i64 = to_builtin!(32);
+pub const SMT_HANDLE_OUT_OF_BOUNDS: i64 = to_builtin!(33);
+pub const SMT_CURSOR_MISMATCH: i64 = to_builtin!(34);
+pub const SMT_ENCODE_FAILED: i64 = to_builtin!(35);
+pub const SMT_DATA_MISMATCH: i64 = to_builtin!(36);
+pub const SMT_INSERT_FAILED: i64 = to_builtin!(37);
 
 impl From<ContractError> for i64 {
     fn from(err: ContractError) -> Self {
@@ -196,6 +224,13 @@ impl From<ContractError> for i64 {
             ContractError::MerkleCursorMismatch => MERKLE_CURSOR_MISMATCH,
             ContractError::MerkleEncodeFailed => MERKLE_ENCODE_FAILED,
             ContractError::MerkleRootNotFound => MERKLE_ROOT_NOT_FOUND,
+            ContractError::SmtDecodeFailed => SMT_DECODE_FAILED,
+            ContractError::SmtMemoryFault => SMT_MEMORY_FAULT,
+            ContractError::SmtHandleOutOfBounds => SMT_HANDLE_OUT_OF_BOUNDS,
+            ContractError::SmtCursorMismatch => SMT_CURSOR_MISMATCH,
+            ContractError::SmtEncodeFailed => SMT_ENCODE_FAILED,
+            ContractError::SmtDataMismatch => SMT_DATA_MISMATCH,
+            ContractError::SmtInsertFailed => SMT_INSERT_FAILED,
             ContractError::Custom(error) => {
                 if error == 0 {
                     CUSTOM_ZERO
@@ -240,6 +275,13 @@ impl From<i64> for ContractError {
             MERKLE_CURSOR_MISMATCH => Self::MerkleCursorMismatch,
             MERKLE_ENCODE_FAILED => Self::MerkleEncodeFailed,
             MERKLE_ROOT_NOT_FOUND => Self::MerkleRootNotFound,
+            SMT_DECODE_FAILED => Self::SmtDecodeFailed,
+            SMT_MEMORY_FAULT => Self::SmtMemoryFault,
+            SMT_HANDLE_OUT_OF_BOUNDS => Self::SmtHandleOutOfBounds,
+            SMT_CURSOR_MISMATCH => Self::SmtCursorMismatch,
+            SMT_ENCODE_FAILED => Self::SmtEncodeFailed,
+            SMT_DATA_MISMATCH => Self::SmtDataMismatch,
+            SMT_INSERT_FAILED => Self::SmtInsertFailed,
             _ => Self::Custom(error as u32),
         }
     }

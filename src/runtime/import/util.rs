@@ -76,7 +76,7 @@ pub(crate) fn emit_spend_hook(
                 target: "runtime::util::emit_spend_hook",
                 "[WASM] [{cid}] emit_spend_hook(): Invalid target CID length"
             );
-            return dwow_sdk::error::INTERNAL_ERROR
+            return dwow_sdk::error::IO_ERROR
         }
     };
 
@@ -94,7 +94,7 @@ pub(crate) fn emit_spend_hook(
             target: "runtime::util::emit_spend_hook",
             "[WASM] [{cid}] emit_spend_hook(): Multiple spend_hook callbacks not supported"
         );
-        return dwow_sdk::error::INTERNAL_ERROR
+        return dwow_sdk::error::IO_ERROR
     }
 
     env.spend_hook_request.set(Some((target_cid, payload)));
