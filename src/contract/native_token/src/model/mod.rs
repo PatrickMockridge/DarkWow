@@ -640,6 +640,9 @@ pub struct SpendParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
+impl dwow_serial::Encodable for SpendParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for SpendParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl SpendParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let input_bytes = self.input.encode();
@@ -685,6 +688,9 @@ pub struct BurnParamsV1 {
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
+
+impl dwow_serial::Encodable for BurnParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for BurnParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl BurnParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
@@ -745,6 +751,9 @@ pub struct FeeCollectParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
+impl dwow_serial::Encodable for FeeCollectParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for FeeCollectParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl FeeCollectParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let output_bytes = self.output.encode();
@@ -802,6 +811,9 @@ pub struct FeeCollectUpdateV1 {
 // These replace the former #[derive(SerialEncodable, SerialDecodable)] pattern.
 // Each type has fixed byte layout with per-field validating constructors.
 
+impl dwow_serial::Encodable for FeeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for FeeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl FeeUpdateV1 {
     /// Fixed canonical byte size: nullifier(32) + coin(32) + height(8) + fee(8)
     pub const ENCODED_SIZE: usize = 80;
@@ -837,6 +849,9 @@ impl FeeUpdateV1 {
         Ok(FeeUpdateV1 { nullifier, coin, height, fee })
     }
 }
+
+impl dwow_serial::Encodable for BurnUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for BurnUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl BurnUpdateV1 {
     /// Encode to canonical bytes with u8-prefixed nullifier count.
@@ -879,6 +894,9 @@ impl BurnUpdateV1 {
         Ok(BurnUpdateV1 { nullifiers })
     }
 }
+
+impl dwow_serial::Encodable for TransferUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for TransferUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl TransferUpdateV1 {
     /// Encode to canonical bytes: u8 nullifier count + N*32 + u8 coin count + N*32.
@@ -946,6 +964,9 @@ impl TransferUpdateV1 {
     }
 }
 
+impl dwow_serial::Encodable for SpendUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for SpendUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl SpendUpdateV1 {
     /// Fixed canonical byte size: nullifier(32) + coin(32)
     pub const ENCODED_SIZE: usize = 64;
@@ -976,6 +997,9 @@ impl SpendUpdateV1 {
         Ok(SpendUpdateV1 { nullifier, coin })
     }
 }
+
+impl dwow_serial::Encodable for PoWRewardUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for PoWRewardUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl PoWRewardUpdateV1 {
     /// Fixed canonical byte size: coin(32) + height(8) + supply(8) + point(32) + scalar(32)
@@ -1029,6 +1053,9 @@ impl PoWRewardUpdateV1 {
         })
     }
 }
+
+impl dwow_serial::Encodable for FeeCollectUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for FeeCollectUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl FeeCollectUpdateV1 {
     /// Fixed canonical byte size: coin(32) + height(8) + total_fees(8)

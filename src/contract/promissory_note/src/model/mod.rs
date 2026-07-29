@@ -404,6 +404,9 @@ pub struct TokenMintParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
+impl dwow_serial::Encodable for TokenMintParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for TokenMintParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl TokenMintParamsV1 {
     pub const ENCODED_SIZE: usize = 256;
 
@@ -453,6 +456,9 @@ pub struct TokenMintUpdateV1 {
     /// Token authority public key (poseidon_hash of mint_secret)
     pub token_auth_parent: pallas::Base,
 }
+
+impl dwow_serial::Encodable for TokenMintUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for TokenMintUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl TokenMintUpdateV1 {
     pub const ENCODED_SIZE: usize = 96; // 32 + 32 + 32
@@ -507,6 +513,9 @@ pub struct MintParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
+impl dwow_serial::Encodable for MintParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for MintParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl MintParamsV1 {
     pub const ENCODED_SIZE: usize = 256;
 
@@ -556,6 +565,9 @@ pub struct MintUpdateV1 {
     pub new_coin_count: u64,
 }
 
+impl dwow_serial::Encodable for MintUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for MintUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl MintUpdateV1 {
     pub const ENCODED_SIZE: usize = 72; // 32 + 32 + 8
     pub fn encode(&self) -> Vec<u8> {
@@ -591,6 +603,9 @@ pub struct BurnParamsV1 {
     /// Transaction nonce
     pub tx_nonce: pallas::Base,
 }
+
+impl dwow_serial::Encodable for BurnParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for BurnParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl BurnParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
@@ -629,6 +644,9 @@ impl BurnParamsV1 {
 pub struct BurnUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
 }
+
+impl dwow_serial::Encodable for BurnUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for BurnUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl BurnUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
@@ -674,6 +692,9 @@ pub struct TransferParamsV1 {
     /// Transaction nonce
     pub tx_nonce: pallas::Base,
 }
+
+impl dwow_serial::Encodable for TransferParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for TransferParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl TransferParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
@@ -732,6 +753,9 @@ pub struct TransferUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
     pub coins: Vec<Coin>,
 }
+
+impl dwow_serial::Encodable for TransferUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for TransferUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl TransferUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
@@ -805,6 +829,9 @@ pub struct RedeemParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
+impl dwow_serial::Encodable for RedeemParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RedeemParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl RedeemParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let input_bytes = self.input.encode();
@@ -840,6 +867,9 @@ pub struct RedeemUpdateV1 {
     pub nullifier: Nullifier,
     pub coin: Coin,
 }
+
+impl dwow_serial::Encodable for RedeemUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RedeemUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl RedeemUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
@@ -877,6 +907,9 @@ pub struct OtcSwapParamsV1 {
     /// Transaction nonce
     pub tx_nonce: pallas::Base,
 }
+
+impl dwow_serial::Encodable for OtcSwapParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for OtcSwapParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl OtcSwapParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
@@ -935,6 +968,9 @@ pub struct OtcSwapUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
     pub coins: Vec<Coin>,
 }
+
+impl dwow_serial::Encodable for OtcSwapUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for OtcSwapUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl OtcSwapUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {

@@ -89,6 +89,8 @@ pub struct PutParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
+impl dwow_serial::Encodable for PutParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for PutParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PutParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(161+self.proof.len()); b.extend_from_slice(&self.box_id.to_bytes()); b.extend_from_slice(&self.old_contents_commit.to_repr()); b.extend_from_slice(&self.new_contents_commit.to_repr()); b.extend_from_slice(&self.owner.to_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 161 { return Err(ContractError::IoError("PutParamsV1: too short".into())); } let box_id = BoxId::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("PutParamsV1: invalid box_id".into()))?; let old_contents_commit = read_base(&data[32..64])?; let new_contents_commit = read_base(&data[64..96])?; let owner = PublicKey::from_bytes(data[96..128].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PutParamsV1: invalid owner: {}", e)))?; let proof_len = data[128] as usize; if data.len() != 129+proof_len+64 { return Err(ContractError::IoError(format!("PutParamsV1: expected {} bytes, got {}", 129+proof_len+64, data.len()))); } let proof = data[129..129+proof_len].to_vec(); let pos = 129+proof_len; let tx_binding = read_base(&data[pos..pos+32])?; let tx_nonce = read_base(&data[pos+32..pos+64])?; Ok(PutParamsV1 { box_id, old_contents_commit, new_contents_commit, owner, proof, tx_binding, tx_nonce }) } }
 
 /// Put update.
@@ -98,6 +100,8 @@ pub struct PutUpdateV1 {
     pub new_contents_commit: pallas::Base,
 }
 
+impl dwow_serial::Encodable for PutUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for PutUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PutUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
     pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.box_id.to_bytes()); b.extend_from_slice(&self.new_contents_commit.to_repr()); b }
@@ -116,6 +120,8 @@ pub struct TakeParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
+impl dwow_serial::Encodable for TakeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for TakeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl TakeParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(161+self.proof.len()); b.extend_from_slice(&self.box_id.to_bytes()); b.extend_from_slice(&self.contents_commit.to_repr()); b.extend_from_slice(&self.nullifier.to_bytes()); b.extend_from_slice(&self.owner.to_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tx_binding.to_repr()); b.extend_from_slice(&self.tx_nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 161 { return Err(ContractError::IoError("TakeParamsV1: too short".into())); } let box_id = BoxId::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("TakeParamsV1: invalid box_id".into()))?; let contents_commit = read_base(&data[32..64])?; let nullifier = Nullifier::from_bytes(data[64..96].try_into().unwrap())?; let owner = PublicKey::from_bytes(data[96..128].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("TakeParamsV1: invalid owner: {}", e)))?; let proof_len = data[128] as usize; if data.len() != 129+proof_len+64 { return Err(ContractError::IoError(format!("TakeParamsV1: expected {} bytes, got {}", 129+proof_len+64, data.len()))); } let proof = data[129..129+proof_len].to_vec(); let pos = 129+proof_len; let tx_binding = read_base(&data[pos..pos+32])?; let tx_nonce = read_base(&data[pos+32..pos+64])?; Ok(TakeParamsV1 { box_id, contents_commit, nullifier, owner, proof, tx_binding, tx_nonce }) } }
 
 /// Take update.
@@ -125,6 +131,8 @@ pub struct TakeUpdateV1 {
     pub nullifier: Nullifier,
 }
 
+impl dwow_serial::Encodable for TakeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for TakeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl TakeUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
     pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.box_id.to_bytes()); b.extend_from_slice(&self.nullifier.to_bytes()); b }

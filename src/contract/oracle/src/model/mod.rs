@@ -177,6 +177,8 @@ pub struct RegisterOracleParamsV1 {
     pub data_type: String,
 }
 
+impl dwow_serial::Encodable for RegisterOracleParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RegisterOracleParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl RegisterOracleParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let cap = 2 + self.proof.len() + 32 + 32 + 1 + self.name.len() + 1 + self.data_type.len();
@@ -227,6 +229,8 @@ pub struct PushValueParamsV1 {
     pub value: pallas::Base,
 }
 
+impl dwow_serial::Encodable for PushValueParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for PushValueParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PushValueParamsV1 {
     pub const ENCODED_SIZE_HINT: usize = 66;
     pub fn encode(&self) -> Vec<u8> {
@@ -267,6 +271,8 @@ pub struct AttestValueParamsV1 {
     pub threshold: pallas::Base,
 }
 
+impl dwow_serial::Encodable for AttestValueParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for AttestValueParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl AttestValueParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let cap = 2 + self.proof.len() + 32 + 32 + 1 + 32;
@@ -313,6 +319,8 @@ pub struct PushValueCommitmentParamsV1 {
     pub path: Vec<pallas::Base>,
 }
 
+impl dwow_serial::Encodable for PushValueCommitmentParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for PushValueCommitmentParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PushValueCommitmentParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let cap = 2 + self.proof.len() + 32 + 32 + 32 + 32 + 1 + self.path.len() * 32;
@@ -368,6 +376,8 @@ pub struct AggregateParamsV1 {
     pub max_result: pallas::Base,
 }
 
+impl dwow_serial::Encodable for AggregateParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for AggregateParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl AggregateParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let cap = 2 + self.proof.len() + 32 + 32 + 32 + 32;
@@ -411,6 +421,8 @@ pub struct RegisterOracleUpdateV1 {
     pub oracle: Oracle,
 }
 
+impl dwow_serial::Encodable for RegisterOracleUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RegisterOracleUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl RegisterOracleUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let inner = self.oracle.encode();
@@ -443,6 +455,8 @@ pub struct PushValueUpdateV1 {
     pub updated_at: u64,
 }
 
+impl dwow_serial::Encodable for PushValueUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for PushValueUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PushValueUpdateV1 {
     pub const ENCODED_SIZE: usize = 72;
     pub fn encode(&self) -> Vec<u8> {
@@ -474,6 +488,8 @@ pub struct AttestValueUpdateV1 {
     pub attestation_id: AttestationId,
 }
 
+impl dwow_serial::Encodable for AttestValueUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for AttestValueUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl AttestValueUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
     pub fn encode(&self) -> Vec<u8> {
@@ -503,6 +519,8 @@ pub struct PushValueCommitmentUpdateV1 {
     pub commitment: pallas::Base,
 }
 
+impl dwow_serial::Encodable for PushValueCommitmentUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for PushValueCommitmentUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PushValueCommitmentUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
     pub fn encode(&self) -> Vec<u8> {
@@ -533,6 +551,8 @@ pub struct AggregateUpdateV1 {
     pub updated_at: u64,
 }
 
+impl dwow_serial::Encodable for AggregateUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for AggregateUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl AggregateUpdateV1 {
     pub const ENCODED_SIZE: usize = 72;
     pub fn encode(&self) -> Vec<u8> {
@@ -564,6 +584,8 @@ pub struct SetOracleActiveParamsV1 {
     pub is_active: bool,
 }
 
+impl dwow_serial::Encodable for SetOracleActiveParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for SetOracleActiveParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SetOracleActiveParamsV1 {
     pub const ENCODED_SIZE: usize = 33;
     pub fn encode(&self) -> Vec<u8> {
@@ -592,6 +614,8 @@ pub struct SetOracleActiveUpdateV1 {
     pub is_active: bool,
 }
 
+impl dwow_serial::Encodable for SetOracleActiveUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for SetOracleActiveUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SetOracleActiveUpdateV1 {
     pub const ENCODED_SIZE: usize = 33;
     pub fn encode(&self) -> Vec<u8> {

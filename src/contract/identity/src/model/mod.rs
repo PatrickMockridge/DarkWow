@@ -740,6 +740,8 @@ pub struct InitializeUpdateV1 {
     pub created_at: u64,
 }
 
+impl dwow_serial::Encodable for InitializeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for InitializeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl InitializeUpdateV1 {
     pub const ENCODED_SIZE: usize = 12;
     pub fn encode(&self) -> Vec<u8> {
@@ -772,6 +774,8 @@ pub struct IssueCredentialUpdateV1 {
     pub expires_at: u64,
 }
 
+impl dwow_serial::Encodable for IssueCredentialUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for IssueCredentialUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl IssueCredentialUpdateV1 {
     pub const ENCODED_SIZE: usize = 176;
     pub fn encode(&self) -> Vec<u8> {
@@ -815,6 +819,8 @@ pub struct RevokeCredentialUpdateV1 {
     pub revoked: bool,
 }
 
+impl dwow_serial::Encodable for RevokeCredentialUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RevokeCredentialUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl RevokeCredentialUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let cap = 34 + self.reason.len();
@@ -853,6 +859,8 @@ pub struct CreateClaimUpdateV1 {
     pub created_at: u64,
 }
 
+impl dwow_serial::Encodable for CreateClaimUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CreateClaimUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreateClaimUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let cap = 41 + self.claim_type.len();
@@ -890,6 +898,8 @@ pub struct VerifyClaimUpdateV1 {
     pub verified: bool,
 }
 
+impl dwow_serial::Encodable for VerifyClaimUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for VerifyClaimUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl VerifyClaimUpdateV1 {
     pub const ENCODED_SIZE: usize = 33;
     pub fn encode(&self) -> Vec<u8> {
@@ -920,6 +930,8 @@ pub struct RegisterCapabilityUpdateV1 {
     pub max_holders: Option<u64>,
 }
 
+impl dwow_serial::Encodable for RegisterCapabilityUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RegisterCapabilityUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl RegisterCapabilityUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let req = &self.credential_requirement;
@@ -984,6 +996,8 @@ pub struct IssueCapabilityUpdateV1 {
     pub expires_at: u64,
 }
 
+impl dwow_serial::Encodable for IssueCapabilityUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for IssueCapabilityUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl IssueCapabilityUpdateV1 {
     pub const ENCODED_SIZE: usize = 104;
     pub fn encode(&self) -> Vec<u8> {
@@ -1021,6 +1035,8 @@ pub struct VerifyCapabilityUpdateV1 {
     pub verified: bool,
 }
 
+impl dwow_serial::Encodable for VerifyCapabilityUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for VerifyCapabilityUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl VerifyCapabilityUpdateV1 {
     pub const ENCODED_SIZE: usize = 65;
     pub fn encode(&self) -> Vec<u8> {
@@ -1052,6 +1068,8 @@ pub struct RevokeCapabilityUpdateV1 {
     pub holder_pub: PublicKey,
 }
 
+impl dwow_serial::Encodable for RevokeCapabilityUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RevokeCapabilityUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl RevokeCapabilityUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
     pub fn encode(&self) -> Vec<u8> {
@@ -1082,6 +1100,8 @@ pub struct CreateClaimDAGUpdateV1 {
     pub predicate_result: u8,
 }
 
+impl dwow_serial::Encodable for CreateClaimDAGUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CreateClaimDAGUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreateClaimDAGUpdateV1 {
     pub const ENCODED_SIZE: usize = 37;
     pub fn encode(&self) -> Vec<u8> {
@@ -1130,6 +1150,8 @@ pub struct RegisterIssuerUpdateV1 {
     pub registered_at: u64,
 }
 
+impl dwow_serial::Encodable for RegisterIssuerUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RegisterIssuerUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl RegisterIssuerUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let cap = 42 + self.name.len() + self.authorized_schemas.len() * 32;
@@ -1256,6 +1278,8 @@ pub struct UpdateReputationUpdateV1 {
     pub last_updated: u64,
 }
 
+impl dwow_serial::Encodable for UpdateReputationUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for UpdateReputationUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl UpdateReputationUpdateV1 {
     pub const ENCODED_SIZE: usize = 136;
     pub fn encode(&self) -> Vec<u8> {

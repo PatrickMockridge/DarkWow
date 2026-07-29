@@ -36,6 +36,9 @@ pub struct DeployUpdateV1 {
     pub wasm_hash: pallas::Base,
 }
 
+impl dwow_serial::Encodable for DeployUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for DeployUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl DeployUpdateV1 {
     /// Fixed canonical byte size: contract_id(32) + wasm_hash(32)
     pub const ENCODED_SIZE: usize = 64;
@@ -74,6 +77,9 @@ pub struct LockParamsV1 {
     pub public_key: PublicKey,
 }
 
+impl dwow_serial::Encodable for LockParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for LockParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl LockParamsV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { self.public_key.to_bytes().to_vec() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("LockParamsV1: expected 32 bytes, got {}", data.len()))); } Ok(LockParamsV1 { public_key: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("LockParamsV1: invalid public_key: {}", e)))? }) } }
 // ANCHOR_END: deploy-lock-params
 
@@ -83,6 +89,9 @@ pub struct LockUpdateV1 {
     /// The `ContractId` to lock
     pub contract_id: ContractId,
 }
+
+impl dwow_serial::Encodable for LockUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for LockUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl LockUpdateV1 {
     /// Fixed canonical byte size: contract_id(32)
