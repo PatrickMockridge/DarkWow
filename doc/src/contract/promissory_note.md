@@ -457,9 +457,10 @@ For OtcSwapV1, the token_commit pairing is:
 Coin = poseidon_hash(owner_pub, value, token_id, spend_hook, user_data, blind)
 ```
 
-Where `owner_pub = poseidon_hash(secret)` — a Schnorr-style field element
-public key, not an EC point. This keeps the ZK circuits on the base field
-without requiring EC multiplication for key derivation.
+Where `owner_pub = poseidon_hash(DOMAIN_SIGNATURE_SECRET, secret)` — a
+field element public key derived via Poseidon hash. This keeps the ZK
+circuits on the base field without requiring EC multiplication for key
+derivation.
 
 ### Value Commitment (Pedersen)
 
@@ -518,7 +519,8 @@ Promissory Note uses 5 ZK circuits:
 - Coin commitments use **Poseidon** — the standard ZK-friendly hash.
 - Public keys are **field elements** (`H(secret)`), not EC points. This avoids
   EC multiplication in circuits where it isn't needed.
-- Signatures use **Schnorr-style** verification where `signature_public = H(ephemeral_secret)`.
+- Authorization uses **Poseidon-based public key derivation** where
+  `signature_public = poseidon_hash(DOMAIN_SIGNATURE_SECRET, ephemeral_secret)`.
   The ephemeral secret MUST be fresh per transaction (never reuse the wallet
   secret — doing so links all spends to the same on-chain signature_public).
 - `token_commit` is ZK-constrained in both RevokeV1 and TransferV1, enabling
