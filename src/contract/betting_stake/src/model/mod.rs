@@ -387,7 +387,7 @@ impl dwow_serial::Encodable for ClaimEarningsParamsV1 { fn encode<W: std::io::Wr
 impl dwow_serial::Decodable for ClaimEarningsParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl ClaimEarningsParamsV1 {
-    pub const ENCODED_SIZE: usize = 232;
+    pub const ENCODED_SIZE: usize = 200;
 
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
