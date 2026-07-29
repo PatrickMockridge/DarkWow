@@ -95,3 +95,98 @@ The pattern:
 
 **Lesson**: Error propagation is not optional at L1. Every failure site in a
 host function that serves L1 contracts MUST return a distinct error code.
+
+## 5. Architectural Principles — Composition, Encode/Decode, Type System
+
+The following principles govern every ZK circuit ↔ Rust contract boundary.
+They emerged from the July 2026 HAZOP analysis of Box and Purse L1 circuits
+and apply to every contract that uses domain-separated ZK proofs.
+
+### 5.1 The Metadata-Circuit Boundary as ρ-Calculus Quote/Eval
+
+Every `constrain_instance(X)` in a circuit IS a ρ-calculus quote: the circuit
+serializes `X` as a public input. The host verifier reads this public input
+and compares it against the metadata function's return value. This comparison
+IS the ρ-calculus eval: `decode(encode(X)) == X`.
+
+The metadata function MUST produce byte-identical values for every public
+input position. When the circuit computes `X = poseidon_hash(domain, inputs...)`,
+the metadata function must produce the SAME `X`. A mismatch in any of: input
+count, input order, or domain constant value produces a verification failure.
+
+**Witness-only inputs**: Values that depend on witness-only data (`owner_secret`,
+`balance_blind`) cannot be computed by the metadata function. These MUST pass
+through the params struct — the caller pre-computes, the circuit constrains
+via `constrain_equal_base(circuit_value, params_value)` then
+`constrain_instance(params_value)`, and the metadata echoes `params.value`.
+
+**Available inputs**: Values computable from available data (`tx_binding` from
+`tx_commitment + tx_nonce`) can be recomputed by the metadata function — but
+MUST use the same domain constants as the circuit.
+
+### 5.2 Domain-Separated Poseidon as Type Restoration
+
+Per [type-system.md §2](type-system.md): `poseidon_hash` is a type erasure
+boundary. Typed inputs (`Nullifier`, `Commitment`, `AssetId`) all produce the
+same output type (`pallas::Base`). Without domain separation,
+`poseidon_hash(secret, coin)` and `poseidon_hash(secret, box_id)` produce
+indistinguishable outputs — the type distinction is lost at the hash boundary.
+
+Domain constants (`witness_base(N)`) prepended to every hash call restore
+type distinctions. `poseidon_hash(DOMAIN_NULLIFIER, ...)` produces a
+behaviorally distinct output from `poseidon_hash(DOMAIN_COIN_COMMIT, ...)`.
+The domain constant IS the type tag — it proves "this hash was computed for
+purpose X, not purpose Y."
+
+The domain constant vocabulary (7 values, cross-circuit):
+
+| Constant | Purpose |
+|---|---|
+| `witness_base(1)` | Nullifier |
+| `witness_base(2)` | Token commitment |
+| `witness_base(3)` | Transaction binding |
+| `witness_base(4)` | Coin commitment |
+| `witness_base(5)` | Merkle leaf |
+| `witness_base(6)` | User data encryption |
+| `witness_base(7)` | Signature secret / key derivation |
+
+Every `poseidon_hash` call in every circuit MUST prepend the appropriate
+domain constant as its first argument. Every Rust-side computation of the
+same value MUST include the same domain constant.
+
+### 5.3 The Circuit-Harness-Metadata Triad
+
+Three components must agree on every `constrain_instance` value:
+1. **Circuit** (`.zk`): constrains derivation and order, publishes as instances
+2. **Harness** (Rust test): provides public inputs matching circuit instances
+3. **Metadata** (contract entrypoint): returns same values to host verifier
+
+A mismatch at any vertex of this triangle is a protocol violation. The
+harness IS the specification of what the metadata function must return —
+if harness and metadata differ, one is wrong relative to the circuit.
+
+### 5.4 Encode/Decode at Every Boundary
+
+Per [contract-wasm-type-system.md §3.1](contract-wasm-type-system.md): three
+encoding boundaries exist in every contract. The metadata-circ circuit boundary
+adds a fourth: the public input vector.
+
+| Boundary | Invariant |
+|---|---|
+| External → exec | `Params::decode(encode(params)) == params` |
+| Exec → apply | `Update::decode(update_data) == update` |
+| Sled state | `Value::decode(db_get(key)) == value` |
+| Circuit → metadata | `metadata[i] == proof_instance[i]` for all i |
+
+The fourth boundary is the one the HAZOP found broken. The circuit's
+`constrain_instance` order MUST match the metadata function's
+`zk_inputs.push()` order, position for position. The proof's instance
+column MUST match byte-for-byte.
+
+### 5.5 L1 Design Rule
+
+**L1 for transferable o-caps, L2 for static records.** This is not a
+hierarchy of quality. L1 requires Merkle inclusion proofs, nullifier SMTs,
+and domain-separated Poseidon hashes at every boundary. L2 uses direct
+KV lookup with resource IDs as public inputs. The choice is determined
+by whether the resource changes hands between parties.

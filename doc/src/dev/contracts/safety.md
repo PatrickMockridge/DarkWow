@@ -1399,6 +1399,58 @@ conditions (WASM memory faults, host environment crashes). Every recoverable
 failure — missing data, corrupt data, handle out of bounds, deserialization
 failure — SHALL have its own code.
 
+### Lesson 22: Metadata-Circuit Poseidon Hash Drift — The Domain Separation Boundary
+
+**The vulnerability**: The ZK circuit prepends domain constants (`witness_base(N)`)
+as the first input to every `poseidon_hash` call (HAZOP RC3, July 2026). But the
+Rust-side code — the test harness, the contract's `get_metadata` function, and the
+`process_instruction` handlers — all compute the same values WITHOUT domain constants.
+
+The circuit computes `nullifier = poseidon_hash(DOMAIN_NULLIFIER, owner_secret,
+box_id, state_nonce)` — 4 inputs. The harness computes `nullifier =
+poseidon_hash([box_id, state_nonce])` — 2 inputs. Poseidon uses
+`ConstantLength<N>`, so inputs of different arity produce completely different
+outputs.
+
+The proof constrains `nullifier_C` (4-input) as a public input. The metadata
+function returns `nullifier_M` (2-input) as the same public input position.
+The host verifier compares them: `nullifier_C != nullifier_M` → proof verification
+fails. Every `constrain_instance` value derived from a domain-separated hash is
+affected: nullifier, owner_pub, Merkle leaf, tx_binding, derived IDs.
+
+**Scope**: Box and Purse L1 circuits — 8 mismatches in Box, 12+ in Purse across
+all three circuits. Root cause: the RC3 domain-separation migration added domain
+constants to circuits but the Rust-side code was never updated.
+
+**The fix — two patterns**:
+
+**Pattern A (witness-only inputs)**: Pass the value through params. The caller
+pre-computes with correct domain constants and passes in the params struct.
+The circuit constrains `constrain_equal_base(circuit_value, params_value)` then
+`constrain_instance(params_value)`. The metadata function uses `params.value`
+directly. Required when the hash input includes witness-only data (e.g.,
+`owner_secret` in nullifier, `balance_blind` in Pedersen coordinates).
+
+**Pattern B (available inputs)**: Replicate the domain constant in Rust-side hash
+calls. Used for values where all inputs are available in Rust (e.g.,
+`tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)`).
+
+**The principle**: **Every `poseidon_hash` call in a domain-separated circuit
+must have an identical match in the Rust-side code.** The circuit's domain
+constants, the harness's hash calls, and the metadata function's hash calls
+must produce byte-identical outputs. A mismatch in any of: input count, input
+order, or domain constant value produces a proof verification failure. Values
+that depend on witness-only inputs MUST pass through params — the metadata
+function cannot compute them.
+
+**Audit heuristic**: For every `constrain_instance(X)` in a circuit where
+`X = poseidon_hash(domain, inputs...)`, verify the Rust-side metadata function
+and harness compute `X` identically. If the metadata function lacks any input,
+the value must be caller-provided through params.
+
+**DarkWow audit result (2026-07-29)**: Box and Purse L1 circuits all affected.
+Fixed via Pattern A for nullifier/Merkle root, Pattern B for tx_binding/owner_pub.
+
 ---
 
 ## References
