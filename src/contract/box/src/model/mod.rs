@@ -138,3 +138,154 @@ impl TakeUpdateV1 {
     pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.box_id.to_bytes()); b.extend_from_slice(&self.nullifier.to_bytes()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("TakeUpdateV1: expected 64 bytes, got {}", data.len()))); } Ok(TakeUpdateV1 { box_id: BoxId::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("TakeUpdateV1: invalid box_id".into()))?, nullifier: Nullifier::from_bytes(data[32..64].try_into().unwrap())? }) }
 }
+
+// ============================================================================
+// V3 TYPES — Hard path with Merkle inclusion proofs
+// ============================================================================
+
+/// Merkle path for MerkleTree depth-32 inclusion proofs.
+pub type MerklePath = [pallas::Base; 32];
+
+/// Put parameters V3 — hard path with Merkle inclusion + nullifier for old state.
+#[derive(Debug, Clone)]
+pub struct PutParamsV3 {
+    pub box_id: BoxId,
+    pub old_state_nonce: pallas::Base,
+    pub new_state_nonce: pallas::Base,
+    pub old_contents_commit: pallas::Base,
+    pub new_contents_commit: pallas::Base,
+    pub owner: PublicKey,
+    pub leaf_pos: u32,
+    pub merkle_path: MerklePath,
+    pub proof: Vec<u8>,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
+}
+
+impl dwow_serial::Encodable for PutParamsV3 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for PutParamsV3 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+impl PutParamsV3 {
+    pub fn encode(&self) -> Vec<u8> {
+        let path_bytes: Vec<u8> = self.merkle_path.iter().flat_map(|b| b.to_repr()).collect();
+        let mut b = Vec::with_capacity(161 + path_bytes.len() + self.proof.len());
+        b.extend_from_slice(&self.box_id.to_bytes());
+        b.extend_from_slice(&self.old_state_nonce.to_repr());
+        b.extend_from_slice(&self.new_state_nonce.to_repr());
+        b.extend_from_slice(&self.old_contents_commit.to_repr());
+        b.extend_from_slice(&self.new_contents_commit.to_repr());
+        b.extend_from_slice(&self.owner.to_bytes());
+        b.extend_from_slice(&self.leaf_pos.to_le_bytes());
+        b.extend_from_slice(&path_bytes);
+        b.push(self.proof.len() as u8);
+        b.extend_from_slice(&self.proof);
+        b.extend_from_slice(&self.tx_binding.to_repr());
+        b.extend_from_slice(&self.tx_nonce.to_repr());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 161 + 32*32 { return Err(ContractError::IoError("PutParamsV3: too short".into())); }
+        let box_id = BoxId::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("PutParamsV3: invalid box_id".into()))?;
+        let old_state_nonce = read_base(&data[32..64])?;
+        let new_state_nonce = read_base(&data[64..96])?;
+        let old_contents_commit = read_base(&data[96..128])?;
+        let new_contents_commit = read_base(&data[128..160])?;
+        let owner = PublicKey::from_bytes(data[160..192].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("PutParamsV3: invalid owner: {}", e)))?;
+        let leaf_pos = u32::from_le_bytes(data[192..196].try_into().unwrap());
+        let path_end = 196 + 32*32;
+        let mut merkle_path = [pallas::Base::zero(); 32];
+        for i in 0..32 {
+            merkle_path[i] = read_base(&data[196 + i*32 .. 196 + (i+1)*32])?;
+        }
+        let proof_len = data[path_end] as usize;
+        let pos = path_end + 1;
+        if data.len() < pos + proof_len + 64 { return Err(ContractError::IoError(format!("PutParamsV3: expected {} bytes, got {}", pos + proof_len + 64, data.len()))); }
+        let proof = data[pos..pos+proof_len].to_vec();
+        let pos2 = pos + proof_len;
+        let tx_binding = read_base(&data[pos2..pos2+32])?;
+        let tx_nonce = read_base(&data[pos2+32..pos2+64])?;
+        Ok(PutParamsV3 { box_id, old_state_nonce, new_state_nonce, old_contents_commit, new_contents_commit, owner, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
+    }
+}
+
+/// Put update V3 — nullifier + new contents commit for Merkle tree append.
+#[derive(Debug, Clone)]
+pub struct PutUpdateV3 {
+    pub nullifier: pallas::Base,
+    pub new_contents_commit: pallas::Base,
+}
+
+impl dwow_serial::Encodable for PutUpdateV3 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for PutUpdateV3 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+impl PutUpdateV3 {
+    pub const ENCODED_SIZE: usize = 64;
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.nullifier.to_repr()); b.extend_from_slice(&self.new_contents_commit.to_repr()); b }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("PutUpdateV3: expected 64 bytes, got {}", data.len()))); } Ok(PutUpdateV3 { nullifier: read_base(&data[0..32])?, new_contents_commit: read_base(&data[32..64])? }) }
+}
+
+/// Take parameters V3 — hard path with Merkle inclusion + nullifier for old state.
+#[derive(Debug, Clone)]
+pub struct TakeParamsV3 {
+    pub box_id: BoxId,
+    pub contents_commit: pallas::Base,
+    pub state_nonce: pallas::Base,
+    pub owner: PublicKey,
+    pub leaf_pos: u32,
+    pub merkle_path: MerklePath,
+    pub proof: Vec<u8>,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
+}
+
+impl dwow_serial::Encodable for TakeParamsV3 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for TakeParamsV3 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+impl TakeParamsV3 {
+    pub fn encode(&self) -> Vec<u8> {
+        let path_bytes: Vec<u8> = self.merkle_path.iter().flat_map(|b| b.to_repr()).collect();
+        let mut b = Vec::with_capacity(129 + path_bytes.len() + self.proof.len());
+        b.extend_from_slice(&self.box_id.to_bytes());
+        b.extend_from_slice(&self.contents_commit.to_repr());
+        b.extend_from_slice(&self.state_nonce.to_repr());
+        b.extend_from_slice(&self.owner.to_bytes());
+        b.extend_from_slice(&self.leaf_pos.to_le_bytes());
+        b.extend_from_slice(&path_bytes);
+        b.push(self.proof.len() as u8);
+        b.extend_from_slice(&self.proof);
+        b.extend_from_slice(&self.tx_binding.to_repr());
+        b.extend_from_slice(&self.tx_nonce.to_repr());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 129 + 32*32 { return Err(ContractError::IoError("TakeParamsV3: too short".into())); }
+        let box_id = BoxId::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("TakeParamsV3: invalid box_id".into()))?;
+        let contents_commit = read_base(&data[32..64])?;
+        let state_nonce = read_base(&data[64..96])?;
+        let owner = PublicKey::from_bytes(data[96..128].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("TakeParamsV3: invalid owner: {}", e)))?;
+        let leaf_pos = u32::from_le_bytes(data[128..132].try_into().unwrap());
+        let mut merkle_path = [pallas::Base::zero(); 32];
+        for i in 0..32 {
+            merkle_path[i] = read_base(&data[132 + i*32 .. 132 + (i+1)*32])?;
+        }
+        let proof_len_pos = 132 + 32*32;
+        let proof_len = data[proof_len_pos] as usize;
+        let pos = proof_len_pos + 1;
+        if data.len() < pos + proof_len + 64 { return Err(ContractError::IoError(format!("TakeParamsV3: expected {} bytes, got {}", pos + proof_len + 64, data.len()))); }
+        let proof = data[pos..pos+proof_len].to_vec();
+        let pos2 = pos + proof_len;
+        let tx_binding = read_base(&data[pos2..pos2+32])?;
+        let tx_nonce = read_base(&data[pos2+32..pos2+64])?;
+        Ok(TakeParamsV3 { box_id, contents_commit, state_nonce, owner, leaf_pos, merkle_path, proof, tx_binding, tx_nonce })
+    }
+}
+
+/// Take update V3 — just a nullifier (Merkle tree append handled in apply).
+#[derive(Debug, Clone)]
+pub struct TakeUpdateV3 {
+    pub nullifier: pallas::Base,
+}
+
+impl dwow_serial::Encodable for TakeUpdateV3 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for TakeUpdateV3 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+impl TakeUpdateV3 {
+    pub fn encode(&self) -> Vec<u8> { self.nullifier.to_repr().to_vec() }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("TakeUpdateV3: expected 32 bytes, got {}", data.len()))); } Ok(TakeUpdateV3 { nullifier: read_base(&data[0..32])? }) }
+}
