@@ -163,6 +163,9 @@ pub struct InitializeParamsV1 {
     pub signature: Signature,
 }
 
+impl dwow_serial::Encodable for InitializeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for InitializeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl InitializeParamsV1 {
     pub const ENCODED_SIZE: usize = 165;
 
@@ -225,6 +228,9 @@ pub struct StakeParamsV1 {
     /// User data for spend hook callback
     pub user_data: pallas::Base,
 }
+
+impl dwow_serial::Encodable for StakeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for StakeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl StakeParamsV1 {
     pub const ENCODED_SIZE: usize = 264;
@@ -304,6 +310,9 @@ pub struct UnstakeParamsV1 {
     pub user_data: pallas::Base,
 }
 
+impl dwow_serial::Encodable for UnstakeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for UnstakeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl UnstakeParamsV1 {
     pub const ENCODED_SIZE: usize = 264;
 
@@ -374,6 +383,9 @@ pub struct ClaimEarningsParamsV1 {
     pub staker_nullifier: pallas::Base,
 }
 
+impl dwow_serial::Encodable for ClaimEarningsParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ClaimEarningsParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl ClaimEarningsParamsV1 {
     pub const ENCODED_SIZE: usize = 232;
 
@@ -433,6 +445,9 @@ pub struct UpdateRiskParamsV1 {
     /// Nonce for table_id derivation (public input for ZK proof)
     pub nonce: pallas::Base,
 }
+
+impl dwow_serial::Encodable for UpdateRiskParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for UpdateRiskParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl UpdateRiskParamsV1 {
     pub const ENCODED_SIZE: usize = 112;
@@ -624,6 +639,9 @@ impl Stake {
     }
 }
 
+impl dwow_serial::Encodable for InitializeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for InitializeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl InitializeUpdateV1 {
     /// instance_seed(32) + table_id(32) + betting_contract_id(32) + house_edge_bp(4) + risk_profile(1)
     pub const ENCODED_SIZE: usize = 101;
@@ -673,6 +691,9 @@ impl InitializeUpdateV1 {
         })
     }
 }
+
+impl dwow_serial::Encodable for StakeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for StakeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl StakeUpdateV1 {
     /// instance_seed(32) + stake_id(32) + table_id(32) + staker_pub(32)
@@ -745,6 +766,9 @@ impl StakeUpdateV1 {
     }
 }
 
+impl dwow_serial::Encodable for UnstakeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for UnstakeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl UnstakeUpdateV1 {
     /// stake_id(32) + payout_amount(8) + unstake_penalty(8) + staker_nullifier(32)
     pub const ENCODED_SIZE: usize = 80;
@@ -792,6 +816,9 @@ impl UnstakeUpdateV1 {
         })
     }
 }
+
+impl dwow_serial::Encodable for ClaimEarningsUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ClaimEarningsUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl ClaimEarningsUpdateV1 {
     /// stake_id(32) + claimed_amount(8) + remaining_earnings(8) + staker_nullifier(32)
@@ -843,6 +870,9 @@ impl ClaimEarningsUpdateV1 {
         })
     }
 }
+
+impl dwow_serial::Encodable for UpdateRiskUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for UpdateRiskUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl UpdateRiskUpdateV1 {
     /// table_id(32) + total_payout(8) + staker_loss(8) + staker_count(8) + new_total_stake(8)

@@ -163,8 +163,8 @@ fn test_tender_encoding() {
         required_dag_id: None,
     };
 
-    let encoded = serialize(&tender);
-    let decoded: Tender = deserialize(&encoded).unwrap();
+    let encoded = tender.encode();
+    let decoded = Tender::decode(&encoded).unwrap();
 
     assert_eq!(decoded.id, tender.id);
     assert_eq!(decoded.title, tender.title);
@@ -189,8 +189,8 @@ fn test_bid_encoding() {
         created_at: 50000,
     };
 
-    let encoded = serialize(&bid);
-    let decoded: Bid = deserialize(&encoded).unwrap();
+    let encoded = bid.encode();
+    let decoded = Bid::decode(&encoded).unwrap();
 
     assert_eq!(decoded.id, bid.id);
     assert_eq!(decoded.tender_id, bid.tender_id);

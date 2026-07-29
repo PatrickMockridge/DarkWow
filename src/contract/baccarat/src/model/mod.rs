@@ -460,6 +460,9 @@ pub struct CommitBetParamsV1 {
     pub instance_seed: [u8; 32],
 }
 
+impl dwow_serial::Encodable for CommitBetParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CommitBetParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl CommitBetParamsV1 {
     pub const ENCODED_SIZE: usize = 206;
 
@@ -521,6 +524,9 @@ pub struct CommitBetUpdateV1 {
     pub created_at: u64,
     pub instance_seed: [u8; 32],
 }
+
+impl dwow_serial::Encodable for CommitBetUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CommitBetUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl CommitBetUpdateV1 {
     pub const ENCODED_SIZE: usize = 287;
@@ -638,6 +644,9 @@ pub struct DrawCardsUpdateV1 {
     pub state: BetState,
 }
 
+impl dwow_serial::Encodable for DrawCardsUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for DrawCardsUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl DrawCardsUpdateV1 {
     /// Fixed prefix: bet_id(32) + 4 cards(4) + outcome(1) + state(1) = 38
     const FIXED_SIZE: usize = 38;
@@ -723,6 +732,9 @@ pub struct SettleBetUpdateV1 {
     pub state: BetState,
 }
 
+impl dwow_serial::Encodable for SettleBetUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for SettleBetUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl SettleBetUpdateV1 {
     pub const ENCODED_SIZE: usize = 41;
     /// Layout: bet_id(32) + payout(8) + state(1)
@@ -795,6 +807,9 @@ pub struct HouseCloseUpdateV1 {
     pub close_nullifier: pallas::Base,
     pub state: BetState,
 }
+
+impl dwow_serial::Encodable for HouseCloseUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for HouseCloseUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl HouseCloseUpdateV1 {
     pub const ENCODED_SIZE: usize = 73;

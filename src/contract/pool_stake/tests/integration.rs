@@ -93,8 +93,8 @@ fn test_pool_stake_registry_encoding() {
         is_active: true,
     };
 
-    let encoded = serialize(&registry);
-    let decoded: PoolStakeRegistry = deserialize(&encoded).unwrap();
+    let encoded = registry.encode();
+    let decoded = PoolStakeRegistry::decode(&encoded).unwrap();
 
     assert_eq!(decoded.pool_id, registry.pool_id);
     assert_eq!(decoded.total_stake, 1000000);
@@ -123,8 +123,8 @@ fn test_pool_member_stake_encoding() {
         instance_seed: [0u8; 32],
     };
 
-    let encoded = serialize(&stake);
-    let decoded: PoolMemberStake = deserialize(&encoded).unwrap();
+    let encoded = stake.encode();
+    let decoded = PoolMemberStake::decode(&encoded).unwrap();
 
     assert_eq!(decoded.stake_id, stake.stake_id);
     assert_eq!(decoded.original_amount, 1000000);
@@ -152,8 +152,8 @@ fn test_pool_member_stake_with_leave_request() {
         instance_seed: [0u8; 32],
     };
 
-    let encoded = serialize(&stake);
-    let decoded: PoolMemberStake = deserialize(&encoded).unwrap();
+    let encoded = stake.encode();
+    let decoded = PoolMemberStake::decode(&encoded).unwrap();
 
     assert!(decoded.leave_requested_at.is_some());
     assert_eq!(decoded.leave_requested_at.unwrap(), 200);
@@ -174,8 +174,8 @@ fn test_coverage_allocation_encoding() {
         slashed: false,
     };
 
-    let encoded = serialize(&allocation);
-    let decoded: CoverageAllocation = deserialize(&encoded).unwrap();
+    let encoded = allocation.encode();
+    let decoded = CoverageAllocation::decode(&encoded).unwrap();
 
     assert_eq!(decoded.allocation_id, allocation.allocation_id);
     assert_eq!(decoded.amount, 100000);

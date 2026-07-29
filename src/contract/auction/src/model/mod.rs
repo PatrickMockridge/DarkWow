@@ -222,6 +222,8 @@ impl Bid {
 // RHO-CALCULUS EXPLICIT ENCODE/DECODE — STORED TYPES + BRIDGE UPDATES
 // ============================================================================
 
+impl dwow_serial::Encodable for Auction { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for Auction { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl Auction {
     /// version(1) + id(32) + seller_pubkey(32) + item_commitment(32) + reserve_price(8)
     /// + token_id(32) + deadline_block(8) + state(1) + highest_bid(9)
@@ -293,6 +295,8 @@ impl Auction {
     }
 }
 
+impl dwow_serial::Encodable for Bid { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for Bid { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl Bid {
     /// version(1) + id(32) + auction_id(32) + bidder_pubkey(32) + amount(8)
     /// + escrow_id(32) + state(1) + created_at(8) + instance_seed(32)
@@ -336,6 +340,8 @@ impl Bid {
     }
 }
 
+impl dwow_serial::Encodable for CreateAuctionUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CreateAuctionUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreateAuctionUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let auction_enc = self.auction.encode();
@@ -356,6 +362,8 @@ impl CreateAuctionUpdateV1 {
     }
 }
 
+impl dwow_serial::Encodable for PlaceBidUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for PlaceBidUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PlaceBidUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let auction_enc = self.auction.encode();
@@ -410,6 +418,8 @@ impl PlaceBidUpdateV1 {
     }
 }
 
+impl dwow_serial::Encodable for CloseAuctionUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CloseAuctionUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CloseAuctionUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let auction_enc = self.auction.encode();
@@ -443,6 +453,8 @@ impl CloseAuctionUpdateV1 {
     }
 }
 
+impl dwow_serial::Encodable for ClaimWinningsUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ClaimWinningsUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ClaimWinningsUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let auction_enc = self.auction.encode();
@@ -466,6 +478,8 @@ impl ClaimWinningsUpdateV1 {
     }
 }
 
+impl dwow_serial::Encodable for SettleAuctionUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for SettleAuctionUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SettleAuctionUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let auction_enc = self.auction.encode();
@@ -489,6 +503,8 @@ impl SettleAuctionUpdateV1 {
     }
 }
 
+impl dwow_serial::Encodable for RefundBidUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RefundBidUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl RefundBidUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let bid_enc = self.bid.encode();
@@ -538,6 +554,8 @@ pub struct CreateAuctionParamsV1 {
     pub instance_seed: [u8; 32],
 }
 
+impl dwow_serial::Encodable for CreateAuctionParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CreateAuctionParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreateAuctionParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let cap = 266 + self.merkle_proof.len() * 32;
@@ -605,6 +623,8 @@ pub struct PlaceBidParamsV1 {
     pub instance_seed: [u8; 32],
 }
 
+impl dwow_serial::Encodable for PlaceBidParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for PlaceBidParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PlaceBidParamsV1 {
     pub const ENCODED_SIZE: usize = 208;
     pub fn encode(&self) -> Vec<u8> {
@@ -630,6 +650,8 @@ impl PlaceBidParamsV1 {
 
 /// Parameters for `Auction::CloseAuctionV1`
 #[derive(Debug, Clone,)] pub struct CloseAuctionParamsV1 { pub auction_id: AuctionId, pub winner_bid_id: BidId, pub seller_pubkey: PublicKey, pub current_block: u64 }
+impl dwow_serial::Encodable for CloseAuctionParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CloseAuctionParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CloseAuctionParamsV1 {
     pub const ENCODED_SIZE: usize = 104;
     pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(Self::ENCODED_SIZE); buf.extend_from_slice(&self.auction_id.to_repr()); buf.extend_from_slice(&self.winner_bid_id.to_repr()); buf.extend_from_slice(&self.seller_pubkey.to_bytes()); buf.extend_from_slice(&self.current_block.to_le_bytes()); buf }
@@ -641,6 +663,8 @@ impl CloseAuctionParamsV1 {
 
 /// Parameters for `Auction::ClaimWinningsV1`
 #[derive(Debug, Clone,)] pub struct ClaimWinningsParamsV1 { pub auction_id: AuctionId, pub winner_bid_id: BidId, pub winner_pubkey: PublicKey, pub winner_secret: pallas::Base }
+impl dwow_serial::Encodable for ClaimWinningsParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ClaimWinningsParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ClaimWinningsParamsV1 {
     pub const ENCODED_SIZE: usize = 128;
     pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(Self::ENCODED_SIZE); buf.extend_from_slice(&self.auction_id.to_repr()); buf.extend_from_slice(&self.winner_bid_id.to_repr()); buf.extend_from_slice(&self.winner_pubkey.to_bytes()); buf.extend_from_slice(&self.winner_secret.to_repr()); buf }
@@ -652,6 +676,8 @@ impl ClaimWinningsParamsV1 {
 
 /// Parameters for `Auction::SettleAuctionV1`
 #[derive(Debug, Clone,)] pub struct SettleAuctionParamsV1 { pub auction_id: AuctionId, pub seller_pubkey: PublicKey, pub highest_bid_amount: u64, pub settlement_nullifier: pallas::Base, pub seller_secret: pallas::Base }
+impl dwow_serial::Encodable for SettleAuctionParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for SettleAuctionParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SettleAuctionParamsV1 {
     pub const ENCODED_SIZE: usize = 136;
     pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(Self::ENCODED_SIZE); buf.extend_from_slice(&self.auction_id.to_repr()); buf.extend_from_slice(&self.seller_pubkey.to_bytes()); buf.extend_from_slice(&self.highest_bid_amount.to_le_bytes()); buf.extend_from_slice(&self.settlement_nullifier.to_repr()); buf.extend_from_slice(&self.seller_secret.to_repr()); buf }
@@ -663,6 +689,8 @@ impl SettleAuctionParamsV1 {
 
 /// Parameters for `Auction::RefundBidV1`
 #[derive(Debug, Clone,)] pub struct RefundBidParamsV1 { pub bid_id: BidId, pub bidder_pubkey: PublicKey, pub refund_nullifier: pallas::Base, pub bidder_secret: pallas::Base }
+impl dwow_serial::Encodable for RefundBidParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RefundBidParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl RefundBidParamsV1 {
     pub const ENCODED_SIZE: usize = 128;
     pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(Self::ENCODED_SIZE); buf.extend_from_slice(&self.bid_id.to_repr()); buf.extend_from_slice(&self.bidder_pubkey.to_bytes()); buf.extend_from_slice(&self.refund_nullifier.to_repr()); buf.extend_from_slice(&self.bidder_secret.to_repr()); buf }

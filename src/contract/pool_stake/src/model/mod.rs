@@ -378,6 +378,8 @@ pub struct CreatePoolParamsV1 {
     pub derived_pool_id: pallas::Base,
 }
 
+impl dwow_serial::Encodable for CreatePoolParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CreatePoolParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreatePoolParamsV1 { pub const ENCODED_SIZE: usize = 144; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(144); buf.extend_from_slice(&self.instance_seed); buf.extend_from_slice(&self.owner_pub.to_bytes()); buf.extend_from_slice(&self.max_coverage_ratio.to_le_bytes()); buf.extend_from_slice(&self.operator_fee_bp.to_le_bytes()); buf.extend_from_slice(&self.pool_config_hash.to_repr()); buf.extend_from_slice(&self.nonce.to_le_bytes()); buf.extend_from_slice(&self.derived_pool_id.to_repr()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 144 { return Err(ContractError::IoError(format!("CreatePoolParamsV1: expected 144 bytes, got {}", data.len()))); } let instance_seed: [u8;32] = data[0..32].try_into().unwrap(); let owner_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreatePoolParamsV1: invalid owner_pub: {}", e)))?; let max_coverage_ratio = u32::from_le_bytes(data[64..68].try_into().unwrap()); let operator_fee_bp = u32::from_le_bytes(data[68..72].try_into().unwrap()); let pool_config_hash = Option::<pallas::Base>::from(pallas::Base::from_repr(data[72..104].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CreatePoolParamsV1: invalid pool_config_hash".into()))?; let nonce = u64::from_le_bytes(data[104..112].try_into().unwrap()); let derived_pool_id = Option::<pallas::Base>::from(pallas::Base::from_repr(data[112..144].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CreatePoolParamsV1: invalid derived_pool_id".into()))?; Ok(CreatePoolParamsV1 { instance_seed, owner_pub, max_coverage_ratio, operator_fee_bp, pool_config_hash, nonce, derived_pool_id }) } }
 
 /// Update returned after creating a pool
@@ -392,6 +394,8 @@ pub struct CreatePoolUpdateV1 {
     pub created_at: u64,
 }
 
+impl dwow_serial::Encodable for CreatePoolUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CreatePoolUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreatePoolUpdateV1 {
     pub const ENCODED_SIZE: usize = 112; // 32+32+32+4+4+8
 
@@ -459,6 +463,8 @@ pub struct JoinPoolParamsV1 {
     pub value_commit_y: pallas::Base,
 }
 
+impl dwow_serial::Encodable for JoinPoolParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for JoinPoolParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl JoinPoolParamsV1 { pub const ENCODED_SIZE: usize = 272; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(272); buf.extend_from_slice(&self.instance_seed); buf.extend_from_slice(&self.pool_id.to_repr()); buf.extend_from_slice(&self.amount.to_le_bytes()); buf.extend_from_slice(&self.relayer_id); buf.extend_from_slice(&self.member_pub.to_bytes()); buf.extend_from_slice(&self.token_id.to_repr()); buf.extend_from_slice(&self.nonce.to_le_bytes()); buf.extend_from_slice(&self.derived_member_id.to_repr()); buf.extend_from_slice(&self.value_commit_x.to_repr()); buf.extend_from_slice(&self.value_commit_y.to_repr()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 296 { return Err(ContractError::IoError(format!("JoinPoolParamsV1: expected 272 bytes, got {}", data.len()))); } Ok(JoinPoolParamsV1 { instance_seed: data[0..32].try_into().unwrap(), pool_id: read_base(&data[32..64])?, amount: u64::from_le_bytes(data[64..72].try_into().unwrap()), relayer_id: data[72..104].try_into().unwrap(), member_pub: PublicKey::from_bytes(data[104..136].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("JoinPoolParamsV1: invalid member_pub: {}", e)))?, token_id: read_base(&data[136..168])?, nonce: u64::from_le_bytes(data[168..176].try_into().unwrap()), derived_member_id: read_base(&data[176..208])?, value_commit_x: read_base(&data[208..240])?, value_commit_y: read_base(&data[240..272])? }) } }
 
 /// Update returned after joining a pool
@@ -477,6 +483,8 @@ pub struct JoinPoolUpdateV1 {
     pub member_count: u64,
 }
 
+impl dwow_serial::Encodable for JoinPoolUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for JoinPoolUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl JoinPoolUpdateV1 {
     pub const ENCODED_SIZE: usize = 196; // 32+32+32+32+32+8+8+4+8+8
 
@@ -541,6 +549,8 @@ pub struct LeavePoolParamsV1 {
     pub stake_id: pallas::Base,
 }
 
+impl dwow_serial::Encodable for LeavePoolParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for LeavePoolParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl LeavePoolParamsV1 { pub const ENCODED_SIZE: usize = 32; pub fn encode(&self) -> Vec<u8> { self.stake_id.to_repr().to_vec() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("LeavePoolParamsV1: expected 32 bytes, got {}", data.len()))); } Ok(LeavePoolParamsV1 { stake_id: read_base(&data[0..32])? }) } }
 
 /// Update returned after leaving a pool
@@ -551,6 +561,8 @@ pub struct LeavePoolUpdateV1 {
     pub unstake_penalty: u64,
 }
 
+impl dwow_serial::Encodable for LeavePoolUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for LeavePoolUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl LeavePoolUpdateV1 {
     pub const ENCODED_SIZE: usize = 48; // 32+8+8
 
@@ -601,6 +613,8 @@ pub struct AllocateCoverageParamsV1 {
     pub derived_allocation_id: pallas::Base,
 }
 
+impl dwow_serial::Encodable for AllocateCoverageParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for AllocateCoverageParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl AllocateCoverageParamsV1 { pub const ENCODED_SIZE: usize = 184; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(184); buf.extend_from_slice(&self.pool_id.to_repr()); buf.extend_from_slice(&self.withdrawal_nullifier); buf.extend_from_slice(&self.amount.to_le_bytes()); buf.extend_from_slice(&self.timeout_height.to_le_bytes()); buf.extend_from_slice(&self.member_pub.to_bytes()); buf.extend_from_slice(&self.withdrawal_id.to_repr()); buf.extend_from_slice(&self.nonce.to_le_bytes()); buf.extend_from_slice(&self.derived_allocation_id.to_repr()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 184 { return Err(ContractError::IoError(format!("AllocateCoverageParamsV1: expected 184 bytes, got {}", data.len()))); } Ok(AllocateCoverageParamsV1 { pool_id: read_base(&data[0..32])?, withdrawal_nullifier: data[32..64].try_into().unwrap(), amount: u64::from_le_bytes(data[64..72].try_into().unwrap()), timeout_height: u64::from_le_bytes(data[72..80].try_into().unwrap()), member_pub: PublicKey::from_bytes(data[80..112].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("AllocateCoverageParamsV1: invalid member_pub: {}", e)))?, withdrawal_id: read_base(&data[112..144])?, nonce: u64::from_le_bytes(data[144..152].try_into().unwrap()), derived_allocation_id: read_base(&data[152..184])? }) } }
 
 /// Update returned after allocating coverage
@@ -616,6 +630,8 @@ pub struct AllocateCoverageUpdateV1 {
     pub timeout_height: u64,
 }
 
+impl dwow_serial::Encodable for AllocateCoverageUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for AllocateCoverageUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl AllocateCoverageUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let cap = 129 + self.contributing_members.len() * 32;
@@ -706,6 +722,8 @@ pub struct ReleaseCoverageParamsV1 {
     pub owner_pub: PublicKey,
 }
 
+impl dwow_serial::Encodable for ReleaseCoverageParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ReleaseCoverageParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ReleaseCoverageParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(64); buf.extend_from_slice(&self.allocation_id.to_repr()); buf.extend_from_slice(&self.owner_pub.to_bytes()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("ReleaseCoverageParamsV1: expected 64 bytes, got {}", data.len()))); } Ok(ReleaseCoverageParamsV1 { allocation_id: read_base(&data[0..32])?, owner_pub: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ReleaseCoverageParamsV1: invalid owner_pub: {}", e)))? }) } }
 
 /// Update returned after releasing coverage
@@ -717,6 +735,8 @@ pub struct ReleaseCoverageUpdateV1 {
     pub allocated_coverage: u64,
 }
 
+impl dwow_serial::Encodable for ReleaseCoverageUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ReleaseCoverageUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ReleaseCoverageUpdateV1 {
     pub const ENCODED_SIZE: usize = 56; // 32+8+8+8
 
@@ -767,6 +787,8 @@ pub struct SlashCoverageParamsV1 {
     pub derived_slash_id: pallas::Base,
 }
 
+impl dwow_serial::Encodable for SlashCoverageParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for SlashCoverageParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SlashCoverageParamsV1 { pub const ENCODED_SIZE: usize = 144; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(144); buf.extend_from_slice(&self.allocation_id.to_repr()); buf.extend_from_slice(&self.owner_pub.to_bytes()); buf.extend_from_slice(&self.slash_amount.to_le_bytes()); buf.extend_from_slice(&self.user_pub.to_bytes()); buf.extend_from_slice(&self.nonce.to_le_bytes()); buf.extend_from_slice(&self.derived_slash_id.to_repr()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 144 { return Err(ContractError::IoError(format!("SlashCoverageParamsV1: expected 144 bytes, got {}", data.len()))); } Ok(SlashCoverageParamsV1 { allocation_id: read_base(&data[0..32])?, owner_pub: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("SlashCoverageParamsV1: invalid owner_pub: {}", e)))?, slash_amount: u64::from_le_bytes(data[64..72].try_into().unwrap()), user_pub: PublicKey::from_bytes(data[72..104].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("SlashCoverageParamsV1: invalid user_pub: {}", e)))?, nonce: u64::from_le_bytes(data[104..112].try_into().unwrap()), derived_slash_id: read_base(&data[112..144])? }) } }
 
 /// Update returned after slashing coverage
@@ -779,6 +801,8 @@ pub struct SlashCoverageUpdateV1 {
     pub allocated_coverage: u64,
 }
 
+impl dwow_serial::Encodable for SlashCoverageUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for SlashCoverageUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SlashCoverageUpdateV1 {
     pub const ENCODED_SIZE: usize = 88; // 32+8+32+8+8
 
@@ -829,6 +853,8 @@ pub struct ClaimFeesParamsV1 {
     pub owner_pub: PublicKey,
 }
 
+impl dwow_serial::Encodable for ClaimFeesParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ClaimFeesParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ClaimFeesParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(64); buf.extend_from_slice(&self.stake_id.to_repr()); buf.extend_from_slice(&self.owner_pub.to_bytes()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("ClaimFeesParamsV1: expected 64 bytes, got {}", data.len()))); } Ok(ClaimFeesParamsV1 { stake_id: read_base(&data[0..32])?, owner_pub: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ClaimFeesParamsV1: invalid owner_pub: {}", e)))? }) } }
 
 /// Update returned after claiming fees
@@ -839,6 +865,8 @@ pub struct ClaimFeesUpdateV1 {
     pub remaining_fees: u64,
 }
 
+impl dwow_serial::Encodable for ClaimFeesUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ClaimFeesUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ClaimFeesUpdateV1 {
     pub const ENCODED_SIZE: usize = 48; // 32+8+8
 
@@ -881,6 +909,8 @@ pub struct UpdatePoolConfigParamsV1 {
     pub operator_fee_bp: Option<u32>,
 }
 
+impl dwow_serial::Encodable for UpdatePoolConfigParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for UpdatePoolConfigParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl UpdatePoolConfigParamsV1 { pub const ENCODED_SIZE: usize = 74; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(74); buf.extend_from_slice(&self.pool_id.to_repr()); buf.extend_from_slice(&self.owner_pub.to_bytes()); buf.push(self.max_coverage_ratio.is_some() as u8); if let Some(v) = self.max_coverage_ratio { buf.extend_from_slice(&v.to_le_bytes()); } buf.push(self.operator_fee_bp.is_some() as u8); if let Some(v) = self.operator_fee_bp { buf.extend_from_slice(&v.to_le_bytes()); } buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 74 { return Err(ContractError::IoError(format!("UpdatePoolConfigParamsV1: expected 74 bytes, got {}", data.len()))); } let pool_id = read_base(&data[0..32])?; let owner_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("UpdatePoolConfigParamsV1: invalid owner_pub: {}", e)))?; let has_mcr = data[64] != 0; let max_coverage_ratio = if has_mcr { Some(u32::from_le_bytes(data[65..69].try_into().unwrap())) } else { None }; let has_ofb = data[69] != 0; let operator_fee_bp = if has_ofb { Some(u32::from_le_bytes(data[70..74].try_into().unwrap())) } else { None }; Ok(UpdatePoolConfigParamsV1 { pool_id, owner_pub, max_coverage_ratio, operator_fee_bp }) } }
 
 /// Update returned after updating pool config
@@ -891,6 +921,8 @@ pub struct UpdatePoolConfigUpdateV1 {
     pub operator_fee_bp: u32,
 }
 
+impl dwow_serial::Encodable for UpdatePoolConfigUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for UpdatePoolConfigUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl UpdatePoolConfigUpdateV1 {
     pub const ENCODED_SIZE: usize = 40; // 32+4+4
 

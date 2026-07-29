@@ -267,7 +267,25 @@ fn test_create_auction_params_encoding() {
 
 #[test]
 fn test_create_auction_update_encoding() {
-    let update = CreateAuctionUpdateV1 { auction_id: pallas::Base::from(1) };
+    let update = CreateAuctionUpdateV1 {
+        auction_id: pallas::Base::from(1),
+        auction: Auction {
+            version: 0,
+            id: pallas::Base::from(1),
+            seller_pubkey: make_pubkey(1),
+            item_commitment: pallas::Base::from(2),
+            reserve_price: 1000,
+            token_id: pallas::Base::one(),
+            deadline_block: 100000,
+            state: AuctionState::Created,
+            highest_bid: None,
+            highest_bidder: None,
+            highest_bid_id: None,
+            bid_count: 0,
+            created_at: 50000,
+            instance_seed: [0u8; 32],
+        },
+    };
 
     let encoded = serialize(&update);
     let decoded: CreateAuctionUpdateV1 = deserialize(&encoded).unwrap();
@@ -302,6 +320,35 @@ fn test_place_bid_update_encoding() {
         highest_bid: 500,
         highest_bidder: make_pubkey(2),
         highest_bid_id: pallas::Base::from(2),
+        auction: Auction {
+            version: 0,
+            id: pallas::Base::from(1),
+            seller_pubkey: make_pubkey(1),
+            item_commitment: pallas::Base::from(2),
+            reserve_price: 1000,
+            token_id: pallas::Base::one(),
+            deadline_block: 100000,
+            state: AuctionState::Active,
+            highest_bid: Some(500),
+            highest_bidder: Some(make_pubkey(2)),
+            highest_bid_id: Some(pallas::Base::from(2)),
+            bid_count: 1,
+            created_at: 50000,
+            instance_seed: [0u8; 32],
+        },
+        bid: Bid {
+            version: 0,
+            id: pallas::Base::from(2),
+            auction_id: pallas::Base::from(1),
+            bidder_pubkey: make_pubkey(2),
+            amount: 500,
+            escrow_id: pallas::Base::from(3),
+            state: BidState::Active,
+            created_at: 50005,
+            instance_seed: [0u8; 32],
+        },
+        prev_bid_id: None,
+        prev_bid: None,
     };
 
     let encoded = serialize(&update);
@@ -332,6 +379,23 @@ fn test_close_auction_update_encoding() {
     let update = CloseAuctionUpdateV1 {
         auction_id: pallas::Base::from(1),
         winner_bid_id: pallas::Base::from(2),
+        auction: Auction {
+            version: 0,
+            id: pallas::Base::from(1),
+            seller_pubkey: make_pubkey(1),
+            item_commitment: pallas::Base::from(2),
+            reserve_price: 1000,
+            token_id: pallas::Base::one(),
+            deadline_block: 100000,
+            state: AuctionState::Closed,
+            highest_bid: Some(500),
+            highest_bidder: Some(make_pubkey(2)),
+            highest_bid_id: Some(pallas::Base::from(2)),
+            bid_count: 1,
+            created_at: 50000,
+            instance_seed: [0u8; 32],
+        },
+        winner_bid: None,
     };
 
     let encoded = serialize(&update);
@@ -362,6 +426,22 @@ fn test_claim_winnings_update_encoding() {
     let update = ClaimWinningsUpdateV1 {
         auction_id: pallas::Base::from(1),
         winner_bid_id: pallas::Base::from(2),
+        auction: Auction {
+            version: 0,
+            id: pallas::Base::from(1),
+            seller_pubkey: make_pubkey(1),
+            item_commitment: pallas::Base::from(2),
+            reserve_price: 1000,
+            token_id: pallas::Base::one(),
+            deadline_block: 100000,
+            state: AuctionState::Closed,
+            highest_bid: Some(500),
+            highest_bidder: Some(make_pubkey(2)),
+            highest_bid_id: Some(pallas::Base::from(2)),
+            bid_count: 1,
+            created_at: 50000,
+            instance_seed: [0u8; 32],
+        },
     };
 
     let encoded = serialize(&update);
@@ -393,6 +473,22 @@ fn test_settle_auction_update_encoding() {
     let update = SettleAuctionUpdateV1 {
         auction_id: pallas::Base::from(1),
         settlement_nullifier: pallas::Base::from(2),
+        auction: Auction {
+            version: 0,
+            id: pallas::Base::from(1),
+            seller_pubkey: make_pubkey(1),
+            item_commitment: pallas::Base::from(2),
+            reserve_price: 1000,
+            token_id: pallas::Base::one(),
+            deadline_block: 100000,
+            state: AuctionState::Settled,
+            highest_bid: Some(500),
+            highest_bidder: Some(make_pubkey(2)),
+            highest_bid_id: Some(pallas::Base::from(2)),
+            bid_count: 1,
+            created_at: 50000,
+            instance_seed: [0u8; 32],
+        },
     };
 
     let encoded = serialize(&update);
@@ -423,6 +519,17 @@ fn test_refund_bid_update_encoding() {
     let update = RefundBidUpdateV1 {
         bid_id: pallas::Base::from(1),
         refund_nullifier: pallas::Base::from(2),
+        bid: Bid {
+            version: 0,
+            id: pallas::Base::from(1),
+            auction_id: pallas::Base::from(1),
+            bidder_pubkey: make_pubkey(1),
+            amount: 500,
+            escrow_id: pallas::Base::from(3),
+            state: BidState::Refunded,
+            created_at: 50000,
+            instance_seed: [0u8; 32],
+        },
     };
 
     let encoded = serialize(&update);

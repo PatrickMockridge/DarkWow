@@ -291,8 +291,8 @@ fn test_table_stake_registry_encoding() {
         risk_profile: 0,
     };
 
-    let encoded = serialize(&registry);
-    let decoded: TableStakeRegistry = deserialize(&encoded).unwrap();
+    let encoded = registry.encode();
+    let decoded: TableStakeRegistry = TableStakeRegistry::decode(&encoded).unwrap();
 
     assert_eq!(decoded.betting_contract_id, registry.betting_contract_id);
     assert_eq!(decoded.total_stake, registry.total_stake);
@@ -354,8 +354,8 @@ fn test_stake_encoding() {
         is_active: true,
     };
 
-    let encoded = serialize(&stake);
-    let decoded: Stake = deserialize(&encoded).unwrap();
+    let encoded = stake.encode();
+    let decoded: Stake = Stake::decode(&encoded).unwrap();
 
     assert_eq!(decoded.stake_id, stake.stake_id);
     assert_eq!(decoded.table_id, stake.table_id);

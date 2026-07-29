@@ -83,16 +83,16 @@ fn test_dao_escrow_mode_encoding() {
     let treasury = DaoEscrowMode::Treasury;
     let endowment = DaoEscrowMode::TreasuryEndowment;
 
-    let encoded_escrow = serialize(&escrow);
-    let decoded_escrow: DaoEscrowMode = deserialize(&encoded_escrow).unwrap();
+    let encoded_escrow = escrow.encode();
+    let decoded_escrow = DaoEscrowMode::decode(&encoded_escrow).unwrap();
     assert_eq!(decoded_escrow, DaoEscrowMode::Escrow);
 
-    let encoded_treasury = serialize(&treasury);
-    let decoded_treasury: DaoEscrowMode = deserialize(&encoded_treasury).unwrap();
+    let encoded_treasury = treasury.encode();
+    let decoded_treasury = DaoEscrowMode::decode(&encoded_treasury).unwrap();
     assert_eq!(decoded_treasury, DaoEscrowMode::Treasury);
 
-    let encoded_endowment = serialize(&endowment);
-    let decoded_endowment: DaoEscrowMode = deserialize(&encoded_endowment).unwrap();
+    let encoded_endowment = endowment.encode();
+    let decoded_endowment = DaoEscrowMode::decode(&encoded_endowment).unwrap();
     assert_eq!(decoded_endowment, DaoEscrowMode::TreasuryEndowment);
 }
 
@@ -107,8 +107,8 @@ fn test_mode_constants() {
 fn test_fee_config_encoding() {
     let config = FeeConfig { version: 0, treasury_share: 7000, endowment_share: 3000 };
 
-    let encoded = serialize(&config);
-    let decoded: FeeConfig = deserialize(&encoded).unwrap();
+    let encoded = config.encode();
+    let decoded = FeeConfig::decode(&encoded).unwrap();
 
     assert_eq!(decoded.treasury_share, config.treasury_share);
     assert_eq!(decoded.endowment_share, config.endowment_share);
@@ -125,7 +125,7 @@ fn test_dao_escrow_derive_bulla() {
         dao_bulla,
         &owner_pubkey,
         pool_token_id,
-        bulla_blind,
+        bulla_blind.clone(),
     );
 
     // Should be deterministic
@@ -133,7 +133,7 @@ fn test_dao_escrow_derive_bulla() {
         dao_bulla,
         &owner_pubkey,
         pool_token_id,
-        bulla_blind,
+        bulla_blind.clone(),
     );
     assert_eq!(bulla, bulla2);
 
@@ -143,7 +143,7 @@ fn test_dao_escrow_derive_bulla() {
         different_dao,
         &owner_pubkey,
         pool_token_id,
-        bulla_blind,
+        bulla_blind.clone(),
     );
     assert_ne!(bulla, bulla_different);
 }
@@ -163,7 +163,7 @@ fn test_membership_derive_note() {
         value,
         token_id,
         expiry,
-        blind,
+        blind.clone(),
     );
 
     // Should be deterministic
@@ -173,7 +173,7 @@ fn test_membership_derive_note() {
         value,
         token_id,
         expiry,
-        blind,
+        blind.clone(),
     );
     assert_eq!(note, note2);
 
@@ -184,7 +184,7 @@ fn test_membership_derive_note() {
         value + 1,
         token_id,
         expiry,
-        blind,
+        blind.clone(),
     );
     assert_ne!(note, note_different);
 }
@@ -213,8 +213,8 @@ fn test_dao_escrow_encoding() {
         drain_protection_bulla: Some(DaoEscrowBulla(pallas::Base::from(2))),
     };
 
-    let encoded = serialize(&escrow);
-    let decoded: DaoEscrow = deserialize(&encoded).unwrap();
+    let encoded = escrow.encode();
+    let decoded = DaoEscrow::decode(&encoded).unwrap();
 
     assert_eq!(decoded.bulla, escrow.bulla);
     assert_eq!(decoded.mode, escrow.mode);
@@ -235,8 +235,8 @@ fn test_membership_encoding() {
         created_at: 50000,
     };
 
-    let encoded = serialize(&membership);
-    let decoded: Membership = deserialize(&encoded).unwrap();
+    let encoded = membership.encode();
+    let decoded = Membership::decode(&encoded).unwrap();
 
     assert_eq!(decoded.note, membership.note);
     assert_eq!(decoded.value, membership.value);

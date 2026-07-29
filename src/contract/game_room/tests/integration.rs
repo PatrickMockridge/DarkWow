@@ -597,8 +597,8 @@ fn test_room_config_encoding() {
         max_players: 6,
     };
 
-    let encoded = serialize(&config);
-    let decoded: RoomConfig = deserialize(&encoded).unwrap();
+    let encoded = config.encode();
+    let decoded = RoomConfig::decode(&encoded).unwrap();
 
     assert_eq!(decoded.owner_dao, config.owner_dao);
     assert_eq!(decoded.token_id, config.token_id);
@@ -639,8 +639,8 @@ fn test_game_room_encoding() {
         instance_seed: [0u8; 32],
     };
 
-    let encoded = serialize(&room);
-    let decoded: GameRoom = deserialize(&encoded).unwrap();
+    let encoded = room.encode();
+    let decoded = GameRoom::decode(&encoded).unwrap();
 
     assert_eq!(decoded.room_id, room.room_id);
     assert_eq!(decoded.state, room.state);
@@ -661,8 +661,8 @@ fn test_player_account_encoding() {
         instance_seed: [0u8; 32],
     };
 
-    let encoded = serialize(&account);
-    let decoded: PlayerAccount = deserialize(&encoded).unwrap();
+    let encoded = account.encode();
+    let decoded = PlayerAccount::decode(&encoded).unwrap();
 
     assert_eq!(decoded.pubkey, account.pubkey);
     assert_eq!(decoded.last_action_block, account.last_action_block);
@@ -677,8 +677,8 @@ fn test_entropy_contribution_encoding() {
         contributed_at: 100,
     };
 
-    let encoded = serialize(&contrib);
-    let decoded: EntropyContribution = deserialize(&encoded).unwrap();
+    let encoded = contrib.encode();
+    let decoded = EntropyContribution::decode(&encoded).unwrap();
 
     assert_eq!(decoded.commitment, contrib.commitment);
     assert_eq!(decoded.revealed_nonce, contrib.revealed_nonce);
@@ -711,8 +711,8 @@ fn test_pot_encoding() {
         created_at: 50,
     };
 
-    let encoded = serialize(&pot);
-    let decoded: Pot = deserialize(&encoded).unwrap();
+    let encoded = pot.encode();
+    let decoded = Pot::decode(&encoded).unwrap();
 
     assert_eq!(decoded.pot_id, pot.pot_id);
     assert_eq!(decoded.room_id, pot.room_id);
@@ -736,8 +736,8 @@ fn test_bet_encoding() {
         block: 50,
     };
 
-    let encoded = serialize(&bet);
-    let decoded: Bet = deserialize(&encoded).unwrap();
+    let encoded = bet.encode();
+    let decoded = Bet::decode(&encoded).unwrap();
 
     assert_eq!(decoded.bet_id, bet.bet_id);
     assert_eq!(decoded.room_id, bet.room_id);

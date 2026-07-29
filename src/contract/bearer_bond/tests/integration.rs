@@ -23,7 +23,7 @@
 
 //! Bearer Bond contract integration tests
 
-use dwow_serial::{deserialize, serialize};
+
 use dwow_sdk::crypto::ContractId;
 use dwow_sdk::pasta::pallas;
 use dwow_bearer_bond_contract::{
@@ -64,16 +64,16 @@ fn test_function_enum_invalid() {
 #[test]
 fn test_series_status_roundtrip() {
     let status = SeriesStatus::Active;
-    let encoded = serialize(&status);
-    let decoded: SeriesStatus = deserialize(&encoded).unwrap();
+    let encoded = status.encode();
+    let decoded = SeriesStatus::decode(&encoded).unwrap();
     assert!(matches!(decoded, SeriesStatus::Active));
 }
 
 #[test]
 fn test_series_status_all_variants() {
     for status in [SeriesStatus::Active, SeriesStatus::Matured] {
-        let encoded = serialize(&status);
-        let _decoded: SeriesStatus = deserialize(&encoded).unwrap();
+        let encoded = status.encode();
+        let _decoded = SeriesStatus::decode(&encoded).unwrap();
     }
 }
 
@@ -87,8 +87,8 @@ fn test_bond_series_info_serializable() {
         issuer_contract: ContractId::from_base(pallas::Base::from(99)),
         total_staked: 10000,
     };
-    let encoded = serialize(&info);
-    let decoded: BondSeriesInfo = deserialize(&encoded).unwrap();
+    let encoded = info.encode();
+    let decoded = BondSeriesInfo::decode(&encoded).unwrap();
     assert_eq!(decoded.interest_rate_bps, info.interest_rate_bps);
     assert_eq!(decoded.maturity_block, info.maturity_block);
     assert_eq!(decoded.total_staked, info.total_staked);

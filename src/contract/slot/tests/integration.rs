@@ -251,8 +251,8 @@ fn test_spin_result_encoding() {
         positions: vec![5, 10, 15, 20, 25],
     };
 
-    let encoded = serialize(&result);
-    let decoded: SpinResult = deserialize(&encoded).unwrap();
+    let encoded = result.encode();
+    let decoded: SpinResult = SpinResult::decode(&encoded).unwrap();
 
     assert_eq!(decoded.positions, vec![5, 10, 15, 20, 25]);
     assert_eq!(decoded.reel_count(), 5);

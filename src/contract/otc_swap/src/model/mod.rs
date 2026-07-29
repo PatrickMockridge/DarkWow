@@ -276,6 +276,8 @@ pub struct CreateSwapParamsV1 {
     pub instance_seed: [u8; 32],
 }
 
+impl dwow_serial::Encodable for CreateSwapParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CreateSwapParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreateSwapParamsV1 {
     pub const ENCODED_SIZE: usize = 216;
     pub fn encode(&self) -> Vec<u8> {
@@ -308,6 +310,8 @@ pub struct CreateSwapUpdateV1 {
     pub swap_id: SwapId,
 }
 
+impl dwow_serial::Encodable for CreateSwapUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CreateSwapUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreateSwapUpdateV1 {
     pub const ENCODED_SIZE: usize = 32;
 
@@ -344,6 +348,8 @@ pub struct FundSwapParamsV1 {
     pub merkle_root: MerkleNode,
 }
 
+impl dwow_serial::Encodable for FundSwapParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for FundSwapParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl FundSwapParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let cap = 66 + self.merkle_proof.len() * 32;
@@ -374,6 +380,8 @@ pub struct FundSwapUpdateV1 {
     pub swap_id: SwapId,
 }
 
+impl dwow_serial::Encodable for FundSwapUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for FundSwapUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl FundSwapUpdateV1 {
     pub const ENCODED_SIZE: usize = 32;
 
@@ -412,6 +420,8 @@ pub struct ExecuteSwapParamsV1 {
     pub bob_recipient: PublicKey,
 }
 
+impl dwow_serial::Encodable for ExecuteSwapParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ExecuteSwapParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ExecuteSwapParamsV1 { pub const ENCODED_SIZE: usize = 160; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(160); buf.extend_from_slice(&self.swap_id.to_repr()); buf.extend_from_slice(&self.bob_secret.to_repr()); buf.extend_from_slice(&self.spent_nullifier.to_repr()); buf.extend_from_slice(&self.alice_recipient.to_bytes()); buf.extend_from_slice(&self.bob_recipient.to_bytes()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 160 { return Err(ContractError::IoError(format!("ExecuteSwapParamsV1: expected 160 bytes, got {}", data.len()))); } Ok(ExecuteSwapParamsV1 { swap_id: read_base(&data[0..32])?, bob_secret: read_base(&data[32..64])?, spent_nullifier: read_base(&data[64..96])?, alice_recipient: PublicKey::from_bytes(data[96..128].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ExecuteSwapParamsV1: invalid alice_recipient: {}", e)))?, bob_recipient: PublicKey::from_bytes(data[128..160].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ExecuteSwapParamsV1: invalid bob_recipient: {}", e)))? }) } }
 
 /// State update for `OtcSwap::ExecuteSwapV1`
@@ -423,6 +433,8 @@ pub struct ExecuteSwapUpdateV1 {
     pub spent_nullifier: pallas::Base,
 }
 
+impl dwow_serial::Encodable for ExecuteSwapUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ExecuteSwapUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ExecuteSwapUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
 
@@ -472,6 +484,8 @@ pub struct CancelSwapParamsV1 {
     pub recipient_pubkey: PublicKey,
 }
 
+impl dwow_serial::Encodable for CancelSwapParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CancelSwapParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CancelSwapParamsV1 { pub const ENCODED_SIZE: usize = 144; pub fn encode(&self) -> Vec<u8> { let mut buf = Vec::with_capacity(144); buf.extend_from_slice(&self.swap_id.to_repr()); buf.extend_from_slice(&self.alice_secret.to_repr()); buf.extend_from_slice(&self.spent_nullifier.to_repr()); buf.extend_from_slice(&self.current_block.to_le_bytes()); buf.extend_from_slice(&self.timeout.to_le_bytes()); buf.extend_from_slice(&self.recipient_pubkey.to_bytes()); buf } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 144 { return Err(ContractError::IoError(format!("CancelSwapParamsV1: expected 144 bytes, got {}", data.len()))); } Ok(CancelSwapParamsV1 { swap_id: read_base(&data[0..32])?, alice_secret: read_base(&data[32..64])?, spent_nullifier: read_base(&data[64..96])?, current_block: u64::from_le_bytes(data[96..104].try_into().unwrap()), timeout: u64::from_le_bytes(data[104..112].try_into().unwrap()), recipient_pubkey: PublicKey::from_bytes(data[112..144].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CancelSwapParamsV1: invalid recipient_pubkey: {}", e)))? }) }
 }
 
@@ -484,6 +498,8 @@ pub struct CancelSwapUpdateV1 {
     pub spent_nullifier: pallas::Base,
 }
 
+impl dwow_serial::Encodable for CancelSwapUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CancelSwapUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CancelSwapUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
 

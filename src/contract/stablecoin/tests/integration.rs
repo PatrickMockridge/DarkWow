@@ -78,8 +78,8 @@ fn test_debt_pool_encoding() {
         last_update: 1000000,
     };
 
-    let encoded = serialize(&pool);
-    let decoded: DebtPool = deserialize(&encoded).unwrap();
+    let encoded = pool.encode();
+    let decoded: DebtPool = DebtPool::decode(&encoded).unwrap();
 
     assert_eq!(decoded.total_debt, 1000000);
     assert_eq!(decoded.total_collateral, 1500000);
@@ -95,8 +95,8 @@ fn test_collateral_pool_encoding() {
         last_update: 500000,
     };
 
-    let encoded = serialize(&pool);
-    let decoded: CollateralPool = deserialize(&encoded).unwrap();
+    let encoded = pool.encode();
+    let decoded: CollateralPool = CollateralPool::decode(&encoded).unwrap();
 
     assert_eq!(decoded.total_deposited, 500000);
     assert_eq!(decoded.value_ratio, 10000);
@@ -112,8 +112,8 @@ fn test_debt_share_encoding() {
         updated_at: 2000,
     };
 
-    let encoded = serialize(&share);
-    let decoded: DebtShare = deserialize(&encoded).unwrap();
+    let encoded = share.encode();
+    let decoded: DebtShare = DebtShare::decode(&encoded).unwrap();
 
     assert_eq!(decoded.debt_amount, 10000);
     assert_eq!(decoded.created_at, 1000);
@@ -129,8 +129,8 @@ fn test_pi_controller_state_encoding() {
         last_twap: 10000,    // TWAP price
     };
 
-    let encoded = serialize(&state);
-    let decoded: PiControllerState = deserialize(&encoded).unwrap();
+    let encoded = state.encode();
+    let decoded: PiControllerState = PiControllerState::decode(&encoded).unwrap();
 
     assert_eq!(decoded.integral, 1000);
     assert_eq!(decoded.current_rate, 50);
@@ -187,8 +187,8 @@ fn test_dead_man_switch_config_encoding() {
         last_action_block: 0,
     };
 
-    let encoded = serialize(&config);
-    let decoded: DeadManSwitchConfig = deserialize(&encoded).unwrap();
+    let encoded = config.encode();
+    let decoded: DeadManSwitchConfig = DeadManSwitchConfig::decode(&encoded).unwrap();
 
     assert_eq!(decoded.enabled, true);
     assert_eq!(decoded.timeout_blocks, 10000);

@@ -590,6 +590,8 @@ pub struct CreateTenderParamsV1 {
     pub delivery_deadline: u64,
 }
 
+impl dwow_serial::Encodable for CreateTenderParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CreateTenderParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreateTenderParamsV1 {
     pub fn encode(&self) -> Vec<u8> { let tb = self.title.as_bytes(); let mut b = Vec::with_capacity(1+self.proof.len()+1+tb.len()+169); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.requester_pub_x.to_repr()); b.extend_from_slice(&self.requester_pub_y.to_repr()); b.push(tb.len() as u8); b.extend_from_slice(tb); b.extend_from_slice(&self.specification.to_repr()); b.extend_from_slice(&self.attestation_id.to_repr()); b.extend_from_slice(&self.min_bid.to_le_bytes()); b.extend_from_slice(&self.max_bid.to_le_bytes()); b.extend_from_slice(&self.bid_deadline.to_le_bytes()); b.extend_from_slice(&self.reveal_deadline.to_le_bytes()); b.extend_from_slice(&self.delivery_deadline.to_le_bytes()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -695,6 +697,8 @@ pub struct CreateTenderUpdateV1 {
     pub tender_id: TenderId,
 }
 
+impl dwow_serial::Encodable for CreateTenderUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CreateTenderUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreateTenderUpdateV1 {
     pub const ENCODED_SIZE: usize = 32;
 
@@ -738,6 +742,8 @@ pub struct SubmitBidParamsV1 {
     pub encrypted_payload: Vec<u8>,
 }
 
+impl dwow_serial::Encodable for SubmitBidParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for SubmitBidParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SubmitBidParamsV1 {
     pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+169); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.bidder_pub_x.to_repr()); b.extend_from_slice(&self.bidder_pub_y.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.claim_id.to_repr()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -820,6 +826,8 @@ pub struct SubmitBidUpdateV1 {
     pub bid_id: BidId,
 }
 
+impl dwow_serial::Encodable for SubmitBidUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for SubmitBidUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SubmitBidUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
 
@@ -861,6 +869,8 @@ pub struct RevealBidParamsV1 {
     pub revealed_amount: u64,
 }
 
+impl dwow_serial::Encodable for RevealBidParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RevealBidParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl RevealBidParamsV1 {
     pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+72); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.revealed_amount.to_le_bytes()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -911,6 +921,8 @@ pub struct RevealBidUpdateV1 {
     pub bid_id: BidId,
 }
 
+impl dwow_serial::Encodable for RevealBidUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RevealBidUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl RevealBidUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
 
@@ -950,8 +962,18 @@ pub struct CloseTenderParamsV1 {
     pub requester_pub_y: pallas::Base,
 }
 
+impl dwow_serial::Encodable for CloseTenderParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CloseTenderParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CloseTenderParamsV1 {
     pub const ENCODED_SIZE: usize = 96;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(96);
+        b.extend_from_slice(&self.tender_id.to_repr());
+        b.extend_from_slice(&self.requester_pub_x.to_repr());
+        b.extend_from_slice(&self.requester_pub_y.to_repr());
+        b
+    }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 96 {
@@ -981,6 +1003,8 @@ pub struct CloseTenderUpdateV1 {
     pub tender_id: TenderId,
 }
 
+impl dwow_serial::Encodable for CloseTenderUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CloseTenderUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CloseTenderUpdateV1 {
     pub const ENCODED_SIZE: usize = 32;
 
@@ -1024,6 +1048,8 @@ pub struct SelectWinnerParamsV1 {
     pub winning_amount: u64,
 }
 
+impl dwow_serial::Encodable for SelectWinnerParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for SelectWinnerParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SelectWinnerParamsV1 {
     pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+168); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.winner_bid_id.to_repr()); b.extend_from_slice(&self.requester_pub_x.to_repr()); b.extend_from_slice(&self.requester_pub_y.to_repr()); b.extend_from_slice(&self.winner_pub_x.to_repr()); b.extend_from_slice(&self.winner_pub_y.to_repr()); b.extend_from_slice(&self.winning_amount.to_le_bytes()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -1103,6 +1129,8 @@ pub struct SelectWinnerUpdateV1 {
     pub labor_job_id: Option<pallas::Base>,
 }
 
+impl dwow_serial::Encodable for SelectWinnerUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for SelectWinnerUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SelectWinnerUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let cap = 65 + match &self.labor_job_id { Some(_) => 32, None => 0 };
@@ -1167,8 +1195,18 @@ pub struct CancelTenderParamsV1 {
     pub requester_pub_y: pallas::Base,
 }
 
+impl dwow_serial::Encodable for CancelTenderParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CancelTenderParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CancelTenderParamsV1 {
     pub const ENCODED_SIZE: usize = 96;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(96);
+        b.extend_from_slice(&self.tender_id.to_repr());
+        b.extend_from_slice(&self.requester_pub_x.to_repr());
+        b.extend_from_slice(&self.requester_pub_y.to_repr());
+        b
+    }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 96 {
@@ -1198,6 +1236,8 @@ pub struct CancelTenderUpdateV1 {
     pub tender_id: TenderId,
 }
 
+impl dwow_serial::Encodable for CancelTenderUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CancelTenderUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CancelTenderUpdateV1 {
     pub const ENCODED_SIZE: usize = 32;
 
@@ -1233,8 +1273,19 @@ pub struct RejectBidParamsV1 {
     pub requester_pub_y: pallas::Base,
 }
 
+impl dwow_serial::Encodable for RejectBidParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RejectBidParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl RejectBidParamsV1 {
     pub const ENCODED_SIZE: usize = 128;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(128);
+        b.extend_from_slice(&self.tender_id.to_repr());
+        b.extend_from_slice(&self.bid_id.to_repr());
+        b.extend_from_slice(&self.requester_pub_x.to_repr());
+        b.extend_from_slice(&self.requester_pub_y.to_repr());
+        b
+    }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 128 {
@@ -1269,6 +1320,8 @@ pub struct RejectBidUpdateV1 {
     pub bid_id: BidId,
 }
 
+impl dwow_serial::Encodable for RejectBidUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RejectBidUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl RejectBidUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
 

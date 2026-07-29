@@ -89,8 +89,8 @@ fn test_relayer_endowment_account_encoding() {
         total_successful: 0,
     };
 
-    let encoded = serialize(&account);
-    let decoded: RelayerEndowmentAccount = deserialize(&encoded).unwrap();
+    let encoded = account.encode();
+    let decoded = RelayerEndowmentAccount::decode(&encoded).unwrap();
 
     assert_eq!(decoded.relayer_pub, account.relayer_pub);
     assert_eq!(decoded.total_deployed, 5000000);
@@ -118,8 +118,8 @@ fn test_relayer_endowment_account_inactive() {
         total_successful: 0,
     };
 
-    let encoded = serialize(&account);
-    let decoded: RelayerEndowmentAccount = deserialize(&encoded).unwrap();
+    let encoded = account.encode();
+    let decoded = RelayerEndowmentAccount::decode(&encoded).unwrap();
 
     assert!(!decoded.is_active);
     assert_eq!(decoded.total_deployed, 0);
@@ -140,8 +140,8 @@ fn test_endowment_deployment_encoding() {
         withdrawn: false,
     };
 
-    let encoded = serialize(&deployment);
-    let decoded: EndowmentDeployment = deserialize(&encoded).unwrap();
+    let encoded = deployment.encode();
+    let decoded = EndowmentDeployment::decode(&encoded).unwrap();
 
     assert_eq!(decoded.deployment_id, deployment.deployment_id);
     assert_eq!(decoded.relayer_pub, deployment.relayer_pub);
@@ -166,8 +166,8 @@ fn test_endowment_deployment_with_withdrawal_request() {
         withdrawn: false,
     };
 
-    let encoded = serialize(&deployment);
-    let decoded: EndowmentDeployment = deserialize(&encoded).unwrap();
+    let encoded = deployment.encode();
+    let decoded = EndowmentDeployment::decode(&encoded).unwrap();
 
     assert!(decoded.withdraw_requested_at.is_some());
     assert_eq!(decoded.withdraw_requested_at.unwrap(), 200);
@@ -189,8 +189,8 @@ fn test_endowment_deployment_withdrawn() {
         withdrawn: true,
     };
 
-    let encoded = serialize(&deployment);
-    let decoded: EndowmentDeployment = deserialize(&encoded).unwrap();
+    let encoded = deployment.encode();
+    let decoded = EndowmentDeployment::decode(&encoded).unwrap();
 
     assert!(decoded.withdrawn);
 }
@@ -411,8 +411,8 @@ fn test_fee_allocation_encoding() {
         fee_amount: 50000,
     };
 
-    let encoded = serialize(&alloc);
-    let decoded: FeeAllocation = deserialize(&encoded).unwrap();
+    let encoded = alloc.encode();
+    let decoded = FeeAllocation::decode(&encoded).unwrap();
 
     assert_eq!(decoded.deployment_id, alloc.deployment_id);
     assert_eq!(decoded.fee_amount, 50000);

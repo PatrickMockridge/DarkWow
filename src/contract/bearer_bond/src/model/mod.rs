@@ -226,6 +226,14 @@ impl BondSeriesInfo {
     }
 }
 
+impl SeriesStatus {
+    pub fn encode(&self) -> Vec<u8> { vec![*self as u8] }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() { return Err(ContractError::IoError("SeriesStatus: empty data".into())); }
+        SeriesStatus::try_from(data[0])
+    }
+}
+
 // ============================================================================
 // STAKE COIN
 // ============================================================================

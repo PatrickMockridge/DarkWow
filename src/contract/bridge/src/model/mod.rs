@@ -205,6 +205,21 @@ pub struct DepositParams {
     pub chain_proof: ExternalChainProof,
 }
 
+impl dwow_serial::Encodable for DepositParams {
+    fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
+        let b = self.encode();
+        w.write_all(&b)?;
+        Ok(b.len())
+    }
+}
+impl dwow_serial::Decodable for DepositParams {
+    fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> {
+        let mut b = vec![];
+        d.read_to_end(&mut b)?;
+        Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}")))
+    }
+}
+
 impl DepositParams {
     pub fn encode(&self) -> Vec<u8> {
         let cp_bytes = dwow_serial::serialize(&self.chain_proof);
@@ -287,6 +302,21 @@ pub struct WithdrawParams {
 
     /// Optional user-specified max fee in basis points (0 = use contract default)
     pub max_fee_bp: Option<u64>,
+}
+
+impl dwow_serial::Encodable for WithdrawParams {
+    fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
+        let b = self.encode();
+        w.write_all(&b)?;
+        Ok(b.len())
+    }
+}
+impl dwow_serial::Decodable for WithdrawParams {
+    fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> {
+        let mut b = vec![];
+        d.read_to_end(&mut b)?;
+        Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}")))
+    }
 }
 
 impl WithdrawParams {
@@ -1078,7 +1108,9 @@ impl ReputationInfo { pub const ENCODED_SIZE: usize = 33; pub fn encode(&self) -
 impl RegisterFeeScheduleParams { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.relayer_pub.to_bytes()); b.extend_from_slice(&self.fee_schedule_id); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("RegisterFeeScheduleParams: expected 64 bytes, got {}", data.len()))); } Ok(RegisterFeeScheduleParams { relayer_pub: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("RegisterFeeScheduleParams: invalid relayer_pub: {}", e)))?, fee_schedule_id: data[32..64].try_into().unwrap() }) } }
 
 impl dwow_serial::Encodable for ReputationInfo { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ReputationInfo { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl dwow_serial::Encodable for UpdateConfigParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for UpdateConfigParams { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 /// Register fee schedule update
 #[derive(Debug, Clone)]
@@ -1123,6 +1155,21 @@ pub struct GovernanceReportParams {
 
     /// Fee paid for this operation
     pub fee: u64,
+}
+
+impl dwow_serial::Encodable for GovernanceReportParams {
+    fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
+        let b = self.encode();
+        w.write_all(&b)?;
+        Ok(b.len())
+    }
+}
+impl dwow_serial::Decodable for GovernanceReportParams {
+    fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> {
+        let mut b = vec![];
+        d.read_to_end(&mut b)?;
+        Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}")))
+    }
 }
 
 impl GovernanceReportParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(58+self.proof.len()); b.extend_from_slice(&(self.chain as u8).to_le_bytes()); b.extend_from_slice(&self.total_deposited.to_le_bytes()); b.extend_from_slice(&self.total_withdrawn.to_le_bytes()); b.extend_from_slice(&self.outstanding.to_le_bytes()); b.extend_from_slice(&self.reporter_pub.to_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.fee.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 58 { return Err(ContractError::IoError("GovernanceReportParams: too short".into())); } let chain = ExternalChain::try_from(data[0]).map_err(|_| ContractError::IoError("GovernanceReportParams: invalid chain".into()))?; let total_deposited = u64::from_le_bytes(data[1..9].try_into().unwrap()); let total_withdrawn = u64::from_le_bytes(data[9..17].try_into().unwrap()); let outstanding = u64::from_le_bytes(data[17..25].try_into().unwrap()); let reporter_pub = PublicKey::from_bytes(data[25..57].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("GovernanceReportParams: invalid reporter_pub: {}", e)))?; let proof_len = data[57] as usize; if data.len() != 58+proof_len+8 { return Err(ContractError::IoError(format!("GovernanceReportParams: expected {} bytes, got {}", 58+proof_len+8, data.len()))); } let proof = data[58..58+proof_len].to_vec(); let fee = u64::from_le_bytes(data[58+proof_len..58+proof_len+8].try_into().unwrap()); Ok(GovernanceReportParams { chain, total_deposited, total_withdrawn, outstanding, reporter_pub, proof, fee }) } }

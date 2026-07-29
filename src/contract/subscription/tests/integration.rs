@@ -206,8 +206,8 @@ fn test_subscription_encoding() {
         instance_seed: [0u8; 32],
     };
 
-    let encoded = serialize(&subscription);
-    let decoded: Subscription = deserialize(&encoded).unwrap();
+    let encoded = subscription.encode();
+    let decoded: Subscription = Subscription::decode(&encoded).unwrap();
 
     assert_eq!(decoded.id, subscription.id);
     assert_eq!(decoded.plan_id, subscription.plan_id);
@@ -497,8 +497,8 @@ fn test_subscription_encoding_with_rate_limits() {
         instance_seed: [0u8; 32],
     };
 
-    let encoded = serialize(&subscription);
-    let decoded: Subscription = deserialize(&encoded).unwrap();
+    let encoded = subscription.encode();
+    let decoded: Subscription = Subscription::decode(&encoded).unwrap();
 
     assert_eq!(decoded.uses_allowed, 100);
     assert_eq!(decoded.rate_period, 1000);

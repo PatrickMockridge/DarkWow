@@ -104,6 +104,39 @@ pub struct ExitRequest {
     pub processed: bool,
 }
 
+impl ExitRequest {
+    pub const ENCODED_SIZE: usize = 105;
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
+        buf.extend_from_slice(&self.id.to_repr());
+        buf.extend_from_slice(&self.member_pubkey.to_bytes());
+        buf.extend_from_slice(&self.weight.to_le_bytes());
+        buf.extend_from_slice(&self.requested_value.to_le_bytes());
+        buf.extend_from_slice(&self.haircut_bps.to_le_bytes());
+        buf.extend_from_slice(&self.payout_value.to_le_bytes());
+        buf.extend_from_slice(&self.requested_at.to_le_bytes());
+        buf.push(self.processed as u8);
+        buf
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() != Self::ENCODED_SIZE {
+            return Err(ContractError::IoError(format!("ExitRequest: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len())));
+        }
+        Ok(ExitRequest {
+            id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+                .ok_or_else(|| ContractError::IoError("ExitRequest: invalid id".into()))?,
+            member_pubkey: PublicKey::from_bytes(data[32..64].try_into().unwrap())
+                .map_err(|e| ContractError::IoError(format!("ExitRequest: invalid member_pubkey: {:?}", e)))?,
+            weight: u64::from_le_bytes(data[64..72].try_into().unwrap()),
+            requested_value: u64::from_le_bytes(data[72..80].try_into().unwrap()),
+            haircut_bps: u64::from_le_bytes(data[80..88].try_into().unwrap()),
+            payout_value: u64::from_le_bytes(data[88..96].try_into().unwrap()),
+            requested_at: u64::from_le_bytes(data[96..104].try_into().unwrap()),
+            processed: data[104] != 0,
+        })
+    }
+}
+
 // ============================================================================
 // ENUMS AND CONFIG TYPES (keep SerialEncodable — used in params)
 // ============================================================================
@@ -112,6 +145,18 @@ pub struct ExitRequest {
 pub enum LockState {
     Unlocked = 0,
     Locked = 1,
+}
+
+impl LockState {
+    pub fn encode(&self) -> Vec<u8> { vec![*self as u8] }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.is_empty() { return Err(ContractError::IoError("LockState: empty data".into())); }
+        match data[0] {
+            0 => Ok(LockState::Unlocked),
+            1 => Ok(LockState::Locked),
+            _ => Err(ContractError::IoError(format!("LockState: unknown discriminant {}", data[0]))),
+        }
+    }
 }
 
 #[derive(Debug, Clone,)]
@@ -250,6 +295,8 @@ pub struct InitializeParamsV1 {
     pub drain_config: DrainConfig,
 }
 
+impl dwow_serial::Encodable for InitializeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for InitializeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl InitializeParamsV1 { pub fn encode(&self) -> Vec<u8> { let dc = self.drain_config.encode(); let mut b = Vec::with_capacity(97+dc.len()); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.spend_authority.to_bytes()); b.extend_from_slice(&self.dao_escrow_bulla.to_repr()); b.extend_from_slice(&dc); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 97 { return Err(ContractError::IoError("InitializeParamsV1: too short".into())); } let instance_seed: [u8;32] = data[0..32].try_into().unwrap(); let fund_id = read_base(&data[32..64])?; let spend_authority = PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("InitializeParamsV1: invalid spend_authority: {}", e)))?; let dao_escrow_bulla = read_base(&data[96..128])?; let drain_config = DrainConfig::decode(&data[128..])?; Ok(InitializeParamsV1 { instance_seed, fund_id, spend_authority, dao_escrow_bulla, drain_config }) } }
 
 #[derive(Debug, Clone)]
@@ -267,16 +314,22 @@ pub struct ProposeParamsV1 {
     pub proof: Vec<u8>,
 }
 
+impl dwow_serial::Encodable for ProposeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ProposeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ProposeParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(97+self.proof.len()); b.extend_from_slice(&self.message_hash.to_repr()); b.extend_from_slice(&self.multisig_group_id.to_repr()); b.extend_from_slice(&self.prover_pubkey.to_bytes()); b.extend_from_slice(&self.vote_period_blocks.to_le_bytes()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 97 { return Err(ContractError::IoError("ProposeParamsV1: too short".into())); } let message_hash = read_base(&data[0..32])?; let multisig_group_id = read_base(&data[32..64])?; let prover_pubkey = PublicKey::from_bytes(data[64..96].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ProposeParamsV1: invalid prover_pubkey: {}", e)))?; let vote_period_blocks = u64::from_le_bytes(data[96..104].try_into().unwrap()); let proof_len = data[104] as usize; if data.len() != 105+proof_len { return Err(ContractError::IoError(format!("ProposeParamsV1: expected {} bytes, got {}", 105+proof_len, data.len()))); } let proof = data[105..].to_vec(); Ok(ProposeParamsV1 { message_hash, multisig_group_id, prover_pubkey, vote_period_blocks, proof }) } }
 
 #[derive(Debug, Clone)] pub struct ProposeUpdateV1 { pub proposal_id: pallas::Base }
 
 #[derive(Debug, Clone,)] pub struct VoteParamsV1 { pub proposal_id: pallas::Base, pub voter_pubkey: PublicKey, pub vote: bool, pub signature: pallas::Base }
+impl dwow_serial::Encodable for VoteParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for VoteParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl VoteParamsV1 { pub const ENCODED_SIZE: usize = 97; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(97); b.extend_from_slice(&self.proposal_id.to_repr()); b.extend_from_slice(&self.voter_pubkey.to_bytes()); b.push(self.vote as u8); b.extend_from_slice(&self.signature.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 97 { return Err(ContractError::IoError(format!("VoteParamsV1: expected 97 bytes, got {}", data.len()))); } Ok(VoteParamsV1 { proposal_id: read_base(&data[0..32])?, voter_pubkey: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("VoteParamsV1: invalid voter_pubkey: {}", e)))?, vote: data[64] != 0, signature: read_base(&data[65..97])? }) } }
 
 #[derive(Debug, Clone)] pub struct VoteUpdateV1 { pub proposal_id: pallas::Base, pub yes_votes: u64, pub no_votes: u64 }
 
 #[derive(Debug, Clone,)] pub struct ExecuteParamsV1 { pub proposal_id: pallas::Base, pub signature: pallas::Base }
+impl dwow_serial::Encodable for ExecuteParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ExecuteParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ExecuteParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.proposal_id.to_repr()); b.extend_from_slice(&self.signature.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("ExecuteParamsV1: expected 64 bytes, got {}", data.len()))); } Ok(ExecuteParamsV1 { proposal_id: read_base(&data[0..32])?, signature: read_base(&data[32..64])? }) } }
 
 #[derive(Debug, Clone)]
@@ -297,28 +350,38 @@ pub struct ExitParamsV1 {
     pub proof: Vec<u8>,
 }
 
+impl dwow_serial::Encodable for ExitParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ExitParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ExitParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(161+self.proof.len()); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.member_pubkey.to_bytes()); b.extend_from_slice(&self.contribution_weight.to_le_bytes()); b.extend_from_slice(&self.current_block.to_le_bytes()); b.extend_from_slice(&self.dao_escrow_bulla.to_repr()); b.extend_from_slice(&self.dao_membership_note.to_repr()); b.extend_from_slice(&self.effective_weight.to_repr()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 161 { return Err(ContractError::IoError("ExitParamsV1: too short".into())); } let fund_id = read_base(&data[0..32])?; let member_pubkey = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("ExitParamsV1: invalid member_pubkey: {}", e)))?; let contribution_weight = u64::from_le_bytes(data[64..72].try_into().unwrap()); let current_block = u64::from_le_bytes(data[72..80].try_into().unwrap()); let dao_escrow_bulla = read_base(&data[80..112])?; let dao_membership_note = read_base(&data[112..144])?; let effective_weight = read_base(&data[144..176])?; let proof_len = data[176] as usize; if data.len() != 177+proof_len { return Err(ContractError::IoError(format!("ExitParamsV1: expected {} bytes, got {}", 177+proof_len, data.len()))); } let proof = data[177..].to_vec(); Ok(ExitParamsV1 { fund_id, member_pubkey, contribution_weight, current_block, dao_escrow_bulla, dao_membership_note, effective_weight, proof }) } }
 
 #[derive(Debug, Clone)] pub struct ExitUpdateV1 { pub exit_id: pallas::Base, pub member_pubkey: PublicKey, pub payout_value: u64, pub haircut_collected: u64 }
 
 #[derive(Debug, Clone,)] pub struct TransferParamsV1 { pub fund_id: FundId, pub amount: u64, pub recipient: PublicKey, pub signature: pallas::Base, pub exceeds_rate_limit: bool, pub vote_proposal_id: Option<pallas::Base> }
+impl dwow_serial::Encodable for TransferParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for TransferParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl TransferParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(106); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.recipient.to_bytes()); b.extend_from_slice(&self.signature.to_repr()); b.push(self.exceeds_rate_limit as u8); b.push(self.vote_proposal_id.is_some() as u8); if let Some(v) = self.vote_proposal_id { b.extend_from_slice(&v.to_repr()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 106 { return Err(ContractError::IoError("TransferParamsV1: too short".into())); } let fund_id = read_base(&data[0..32])?; let amount = u64::from_le_bytes(data[32..40].try_into().unwrap()); let recipient = PublicKey::from_bytes(data[40..72].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("TransferParamsV1: invalid recipient: {}", e)))?; let signature = read_base(&data[72..104])?; let exceeds_rate_limit = data[104] != 0; let has_vp = data[105] != 0; let vote_proposal_id = if has_vp { if data.len() != 138 { return Err(ContractError::IoError(format!("TransferParamsV1: expected 138 bytes, got {}", data.len()))); } Some(read_base(&data[106..138])?) } else { None }; Ok(TransferParamsV1 { fund_id, amount, recipient, signature, exceeds_rate_limit, vote_proposal_id }) } }
 
 #[derive(Debug, Clone)] pub struct TransferUpdateV1 { pub amount: u64, pub recipient: PublicKey, pub rate_limited: bool }
 
 #[derive(Debug, Clone,)]
 pub struct LockParamsV1 { pub fund_id: FundId, pub duration_blocks: u64, pub signature: pallas::Base }
+impl dwow_serial::Encodable for LockParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for LockParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl LockParamsV1 { pub const ENCODED_SIZE: usize = 72; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(72); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.duration_blocks.to_le_bytes()); b.extend_from_slice(&self.signature.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 72 { return Err(ContractError::IoError(format!("LockParamsV1: expected 72 bytes, got {}", data.len()))); } Ok(LockParamsV1 { fund_id: read_base(&data[0..32])?, duration_blocks: u64::from_le_bytes(data[32..40].try_into().unwrap()), signature: read_base(&data[40..72])? }) } }
 
 #[derive(Debug, Clone)] pub struct LockUpdateV1 { pub locked_until: u64 }
 
 #[derive(Debug, Clone,)] pub struct UnlockParamsV1 { pub fund_id: FundId, pub signature: pallas::Base }
+impl dwow_serial::Encodable for UnlockParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for UnlockParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl UnlockParamsV1 { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.fund_id.to_repr()); b.extend_from_slice(&self.signature.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("UnlockParamsV1: expected 64 bytes, got {}", data.len()))); } Ok(UnlockParamsV1 { fund_id: read_base(&data[0..32])?, signature: read_base(&data[32..64])? }) } }
 
 #[derive(Debug, Clone)] pub struct UnlockUpdateV1 { pub unlocked_at: u64 }
 
 #[derive(Debug, Clone,)]
 pub struct UpdateConfigParamsV1 { pub fund_id: FundId, pub rate_limit: Option<RateLimit>, pub multisig_group_id: Option<pallas::Base>, pub new_spend_authority: Option<PublicKey> }
+impl dwow_serial::Encodable for UpdateConfigParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for UpdateConfigParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl UpdateConfigParamsV1 { pub fn encode(&self) -> Vec<u8> { let rl = if let Some(ref r) = self.rate_limit { r.encode() } else { vec![] }; let mut b = Vec::with_capacity(34+rl.len()); b.extend_from_slice(&self.fund_id.to_repr()); b.push(self.rate_limit.is_some() as u8); b.extend_from_slice(&rl); b.push(self.multisig_group_id.is_some() as u8); if let Some(v) = self.multisig_group_id { b.extend_from_slice(&v.to_repr()); } b.push(self.new_spend_authority.is_some() as u8); if let Some(v) = self.new_spend_authority { b.extend_from_slice(&v.to_bytes()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 34 { return Err(ContractError::IoError("UpdateConfigParamsV1: too short".into())); } let fund_id = read_base(&data[0..32])?; let has_rl = data[32] != 0; let mut pos = 33; let rate_limit = if has_rl { let r = RateLimit::decode(&data[pos..])?; pos += r.encode().len(); Some(r) } else { None }; let has_mg = data[pos] != 0; pos += 1; let multisig_group_id = if has_mg { let v = read_base(&data[pos..pos+32])?; pos += 32; Some(v) } else { None }; let has_sa = data[pos] != 0; let new_spend_authority = if has_sa { if data.len() != pos+33 { return Err(ContractError::IoError(format!("UpdateConfigParamsV1: expected {} bytes, got {}", pos+33, data.len()))); } Some(PublicKey::from_bytes(data[pos+1..pos+33].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("UpdateConfigParamsV1: invalid new_spend_authority: {}", e)))?) } else { None }; Ok(UpdateConfigParamsV1 { fund_id, rate_limit, multisig_group_id, new_spend_authority }) } }
 
 #[derive(Debug, Clone)]
@@ -598,6 +661,8 @@ impl ProtectedFund {
 
 // --- Bridge update structs ---
 
+impl dwow_serial::Encodable for InitializeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for InitializeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl InitializeUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
     pub fn encode(&self) -> Vec<u8> {
@@ -618,6 +683,8 @@ impl InitializeUpdateV1 {
     }
 }
 
+impl dwow_serial::Encodable for ProposeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ProposeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ProposeUpdateV1 {
     pub const ENCODED_SIZE: usize = 32;
     pub fn encode(&self) -> Vec<u8> { self.proposal_id.to_repr().to_vec() }
@@ -632,6 +699,8 @@ impl ProposeUpdateV1 {
     }
 }
 
+impl dwow_serial::Encodable for VoteUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for VoteUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl VoteUpdateV1 {
     pub const ENCODED_SIZE: usize = 48;
     pub fn encode(&self) -> Vec<u8> {
@@ -654,6 +723,8 @@ impl VoteUpdateV1 {
     }
 }
 
+impl dwow_serial::Encodable for ExecuteUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ExecuteUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ExecuteUpdateV1 {
     pub const ENCODED_SIZE: usize = 64;
     pub fn encode(&self) -> Vec<u8> {
@@ -675,6 +746,8 @@ impl ExecuteUpdateV1 {
     }
 }
 
+impl dwow_serial::Encodable for ExitUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ExitUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ExitUpdateV1 {
     pub const ENCODED_SIZE: usize = 80;
     pub fn encode(&self) -> Vec<u8> {
@@ -700,6 +773,8 @@ impl ExitUpdateV1 {
     }
 }
 
+impl dwow_serial::Encodable for TransferUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for TransferUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl TransferUpdateV1 {
     pub const ENCODED_SIZE: usize = 41;
     pub fn encode(&self) -> Vec<u8> {
@@ -722,6 +797,8 @@ impl TransferUpdateV1 {
     }
 }
 
+impl dwow_serial::Encodable for LockUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for LockUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl LockUpdateV1 {
     pub const ENCODED_SIZE: usize = 8;
     pub fn encode(&self) -> Vec<u8> { self.locked_until.to_le_bytes().to_vec() }
@@ -733,6 +810,8 @@ impl LockUpdateV1 {
     }
 }
 
+impl dwow_serial::Encodable for UnlockUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for UnlockUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl UnlockUpdateV1 {
     pub const ENCODED_SIZE: usize = 8;
     pub fn encode(&self) -> Vec<u8> { self.unlocked_at.to_le_bytes().to_vec() }
@@ -744,6 +823,8 @@ impl UnlockUpdateV1 {
     }
 }
 
+impl dwow_serial::Encodable for UpdateConfigUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for UpdateConfigUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl UpdateConfigUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::new();

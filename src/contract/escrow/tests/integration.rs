@@ -105,7 +105,7 @@ fn test_create_escrow_params_encoding() {
         value: 1000,
         token_id: pallas::Base::from(1),
         timeout: 100,
-        commitment: pallas::Base::from(42),
+        commitment: EscrowId(pallas::Base::from(42)),
         merkle_root: make_merkle_node(99),
         instance_seed: [0u8; 32],
     };
@@ -123,7 +123,7 @@ fn test_create_escrow_params_encoding() {
 #[test]
 fn test_create_escrow_update_encoding() {
     let update = CreateEscrowUpdateV1 {
-        escrow_id: pallas::Base::from(1),
+        escrow_id: EscrowId(pallas::Base::from(1)),
     };
 
     let encoded = serialize(&update);
@@ -135,7 +135,7 @@ fn test_create_escrow_update_encoding() {
 #[test]
 fn test_fund_escrow_params_encoding() {
     let params = FundEscrowParamsV1 {
-        escrow_id: pallas::Base::from(1),
+        escrow_id: EscrowId(pallas::Base::from(1)),
         value_commit: pallas::Point::identity(),
         merkle_proof: vec![pallas::Base::from(1), pallas::Base::from(2)],
         merkle_root: make_merkle_node(99),
@@ -151,7 +151,7 @@ fn test_fund_escrow_params_encoding() {
 #[test]
 fn test_fund_escrow_update_encoding() {
     let update = FundEscrowUpdateV1 {
-        escrow_id: pallas::Base::from(1),
+        escrow_id: EscrowId(pallas::Base::from(1)),
     };
 
     let encoded = serialize(&update);
@@ -163,7 +163,7 @@ fn test_fund_escrow_update_encoding() {
 #[test]
 fn test_claim_escrow_params_encoding() {
     let params = ClaimEscrowParamsV1 {
-        escrow_id: pallas::Base::from(1),
+        escrow_id: EscrowId(pallas::Base::from(1)),
         seller_secret: pallas::Base::from(42),
         spent_nullifier: pallas::Base::from(50),
         recipient_pubkey: make_pubkey(3),
@@ -181,7 +181,7 @@ fn test_claim_escrow_params_encoding() {
 #[test]
 fn test_claim_escrow_update_encoding() {
     let update = ClaimEscrowUpdateV1 {
-        escrow_id: pallas::Base::from(1),
+        escrow_id: EscrowId(pallas::Base::from(1)),
         spent_nullifier: pallas::Base::from(50),
     };
 
@@ -195,7 +195,7 @@ fn test_claim_escrow_update_encoding() {
 #[test]
 fn test_refund_escrow_params_encoding() {
     let params = RefundEscrowParamsV1 {
-        escrow_id: pallas::Base::from(1),
+        escrow_id: EscrowId(pallas::Base::from(1)),
         buyer_secret: pallas::Base::from(42),
         spent_nullifier: pallas::Base::from(50),
         current_block: 150,
@@ -215,7 +215,7 @@ fn test_refund_escrow_params_encoding() {
 #[test]
 fn test_refund_escrow_update_encoding() {
     let update = RefundEscrowUpdateV1 {
-        escrow_id: pallas::Base::from(1),
+        escrow_id: EscrowId(pallas::Base::from(1)),
         spent_nullifier: pallas::Base::from(50),
     };
 
@@ -229,7 +229,7 @@ fn test_refund_escrow_update_encoding() {
 #[test]
 fn test_cancel_escrow_params_encoding() {
     let params = CancelEscrowParamsV1 {
-        escrow_id: pallas::Base::from(1),
+        escrow_id: EscrowId(pallas::Base::from(1)),
         buyer_pubkey: make_pubkey(1),
         cancel_nullifier: pallas::Base::zero(),
     };
@@ -244,7 +244,7 @@ fn test_cancel_escrow_params_encoding() {
 #[test]
 fn test_cancel_escrow_update_encoding() {
     let update = CancelEscrowUpdateV1 {
-        escrow_id: pallas::Base::from(1),
+        escrow_id: EscrowId(pallas::Base::from(1)),
         cancel_nullifier: pallas::Base::zero(),
     };
 
@@ -258,7 +258,7 @@ fn test_cancel_escrow_update_encoding() {
 fn test_escrow_encoding() {
     let escrow = Escrow {
 
-        version: 0,        id: pallas::Base::from(1),
+        version: 0,        id: EscrowId(pallas::Base::from(1)),
         buyer_pubkey: make_pubkey(2),
         seller_pubkey: make_pubkey(3),
         value: 1000,
@@ -301,14 +301,14 @@ fn test_escrow_derive_id() {
         Escrow::derive_id(&buyer_pubkey, &seller_pubkey, value, token_id, timeout, buyer_secret, seller_secret);
 
     // Escrow ID should be non-zero
-    assert!(escrow_id != pallas::Base::zero());
+    assert!(!escrow_id.is_zero());
 }
 
 #[test]
 fn test_escrow_compute_nullifier() {
     let escrow = Escrow {
 
-        version: 0,        id: pallas::Base::from(1),
+        version: 0,        id: EscrowId(pallas::Base::from(1)),
         buyer_pubkey: make_pubkey(2),
         seller_pubkey: make_pubkey(3),
         value: 1000,

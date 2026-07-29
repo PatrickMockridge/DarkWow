@@ -269,8 +269,8 @@ fn test_bet_struct_encoding() {
         instance_seed: [0u8; 32],
     };
 
-    let encoded = serialize(&bet);
-    let decoded: Bet = deserialize(&encoded).unwrap();
+    let encoded = bet.encode();
+    let decoded = Bet::decode(&encoded).unwrap();
 
     assert_eq!(decoded.id, bet.id);
     assert_eq!(decoded.bet_value, bet.bet_value);

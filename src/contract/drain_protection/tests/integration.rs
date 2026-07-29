@@ -75,12 +75,12 @@ fn test_lock_state_encoding() {
     let unlocked = LockState::Unlocked;
     let locked = LockState::Locked;
 
-    let encoded_unlocked = serialize(&unlocked);
-    let decoded_unlocked: LockState = deserialize(&encoded_unlocked).unwrap();
+    let encoded_unlocked = unlocked.encode();
+    let decoded_unlocked = LockState::decode(&encoded_unlocked).unwrap();
     assert_eq!(decoded_unlocked, LockState::Unlocked);
 
-    let encoded_locked = serialize(&locked);
-    let decoded_locked: LockState = deserialize(&encoded_locked).unwrap();
+    let encoded_locked = locked.encode();
+    let decoded_locked = LockState::decode(&encoded_locked).unwrap();
     assert_eq!(decoded_locked, LockState::Locked);
 }
 
@@ -133,8 +133,8 @@ fn test_rate_limit_encoding() {
         vote_required_above_bps: 100,
     };
 
-    let encoded = serialize(&rate_limit);
-    let decoded: RateLimit = deserialize(&encoded).unwrap();
+    let encoded = rate_limit.encode();
+    let decoded = RateLimit::decode(&encoded).unwrap();
 
     assert_eq!(decoded.base_rate_bps, rate_limit.base_rate_bps);
     assert_eq!(decoded.averaging_window_blocks, rate_limit.averaging_window_blocks);
@@ -148,8 +148,8 @@ fn test_transfer_record_encoding() {
         amount: 500,
     };
 
-    let encoded = serialize(&record);
-    let decoded: TransferRecord = deserialize(&encoded).unwrap();
+    let encoded = record.encode();
+    let decoded = TransferRecord::decode(&encoded).unwrap();
 
     assert_eq!(decoded.block, record.block);
     assert_eq!(decoded.amount, record.amount);
@@ -168,8 +168,8 @@ fn test_exit_request_encoding() {
         processed: false,
     };
 
-    let encoded = serialize(&request);
-    let decoded: ExitRequest = deserialize(&encoded).unwrap();
+    let encoded = request.encode();
+    let decoded = ExitRequest::decode(&encoded).unwrap();
 
     assert_eq!(decoded.id, request.id);
     assert_eq!(decoded.requested_value, request.requested_value);
@@ -188,8 +188,8 @@ fn test_exit_queue_entry_encoding() {
         processed: false,
     };
 
-    let encoded = serialize(&entry);
-    let decoded: ExitQueueEntry = deserialize(&encoded).unwrap();
+    let encoded = entry.encode();
+    let decoded = ExitQueueEntry::decode(&encoded).unwrap();
 
     assert_eq!(decoded.position, entry.position);
     assert_eq!(decoded.requested_value, entry.requested_value);

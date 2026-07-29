@@ -210,6 +210,8 @@ pub struct InitializeParamsV1 {
     pub signature_public: PublicKey,
 }
 
+impl dwow_serial::Encodable for InitializeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for InitializeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl InitializeParamsV1 {
     pub const ENCODED_SIZE: usize = 68;
     pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(68); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.default_backer_cut_bp.to_le_bytes()); b.extend_from_slice(&self.signature_public.to_bytes()); b }
@@ -239,6 +241,8 @@ pub struct InitializeUpdateV1 {
     pub created_at: u64,
 }
 
+impl dwow_serial::Encodable for InitializeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for InitializeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl InitializeUpdateV1 {
     pub const ENCODED_SIZE: usize = 76;
 
@@ -288,6 +292,8 @@ pub struct DeployCapitalParamsV1 {
     pub max_slash_count: Option<u64>,
 }
 
+impl dwow_serial::Encodable for DeployCapitalParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for DeployCapitalParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl DeployCapitalParamsV1 {
     pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(100); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.relayer_pub.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.backer_cut_bp.to_le_bytes()); b.extend_from_slice(&self.signature_public.to_bytes()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -359,6 +365,8 @@ pub struct DeployCapitalUpdateV1 {
     pub active_deployments: u64,
 }
 
+impl dwow_serial::Encodable for DeployCapitalUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for DeployCapitalUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl DeployCapitalUpdateV1 {
     pub const ENCODED_SIZE: usize = 156;
 
@@ -404,7 +412,10 @@ pub struct WithdrawDeploymentParamsV1 {
     pub deployment_id: pallas::Base,
 }
 
+impl dwow_serial::Encodable for WithdrawDeploymentParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for WithdrawDeploymentParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl WithdrawDeploymentParamsV1 {
+    pub fn encode(&self) -> Vec<u8> { self.deployment_id.to_repr().to_vec() }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 32 {
             return Err(ContractError::IoError(format!(
@@ -428,6 +439,8 @@ pub struct WithdrawDeploymentUpdateV1 {
     pub fees_claimed: u64,
 }
 
+impl dwow_serial::Encodable for WithdrawDeploymentUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for WithdrawDeploymentUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl WithdrawDeploymentUpdateV1 {
     pub const ENCODED_SIZE: usize = 48;
 
@@ -469,6 +482,8 @@ pub struct ClaimFeesParamsV1 {
     pub fee_share: u64,
 }
 
+impl dwow_serial::Encodable for ClaimFeesParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ClaimFeesParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ClaimFeesParamsV1 {
     pub const ENCODED_SIZE: usize = 104;
     pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(104); b.extend_from_slice(&self.deployment_id.to_repr()); b.extend_from_slice(&self.backer_pub_x); b.extend_from_slice(&self.backer_pub_y); b.extend_from_slice(&self.fee_share.to_le_bytes()); b }
@@ -499,6 +514,8 @@ pub struct ClaimFeesUpdateV1 {
     pub remaining_fees: u64,
 }
 
+impl dwow_serial::Encodable for ClaimFeesUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for ClaimFeesUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl ClaimFeesUpdateV1 {
     pub const ENCODED_SIZE: usize = 48;
 
@@ -575,7 +592,21 @@ pub struct SettleFeesParamsV1 {
     pub signature_public: PublicKey,
 }
 
+impl dwow_serial::Encodable for SettleFeesParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for SettleFeesParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SettleFeesParamsV1 {
+    pub fn encode(&self) -> Vec<u8> {
+        let cap = 41 + self.allocations.len() * FeeAllocation::ENCODED_SIZE;
+        let mut b = Vec::with_capacity(cap);
+        b.extend_from_slice(&self.relayer_pub.to_bytes());
+        b.extend_from_slice(&self.total_fees.to_le_bytes());
+        b.push(self.allocations.len() as u8);
+        b.extend_from_slice(&self.signature_public.to_bytes());
+        for alloc in &self.allocations {
+            b.extend_from_slice(&alloc.encode());
+        }
+        b
+    }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 105 {
             return Err(ContractError::IoError(format!(
@@ -614,6 +645,8 @@ pub struct SettleFeesUpdateV1 {
     pub allocations: Vec<FeeAllocation>,
 }
 
+impl dwow_serial::Encodable for SettleFeesUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for SettleFeesUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SettleFeesUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let cap = 49 + self.allocations.len() * FeeAllocation::ENCODED_SIZE;
@@ -666,8 +699,17 @@ pub struct UpdateConfigParamsV1 {
     pub default_backer_cut_bp: u32,
 }
 
+impl dwow_serial::Encodable for UpdateConfigParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for UpdateConfigParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl UpdateConfigParamsV1 {
     pub const ENCODED_SIZE: usize = 36;
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(36);
+        b.extend_from_slice(&self.relayer_pub.to_bytes());
+        b.extend_from_slice(&self.default_backer_cut_bp.to_le_bytes());
+        b
+    }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != 36 {
@@ -690,6 +732,8 @@ pub struct UpdateConfigUpdateV1 {
     pub default_backer_cut_bp: u32,
 }
 
+impl dwow_serial::Encodable for UpdateConfigUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for UpdateConfigUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl UpdateConfigUpdateV1 {
     pub const ENCODED_SIZE: usize = 36;
 

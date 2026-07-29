@@ -750,6 +750,9 @@ pub struct UpdateConfigParams {
     pub config_nullifier: pallas::Base,
 }
 
+impl dwow_serial::Encodable for UpdateConfigParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for UpdateConfigParams { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl UpdateConfigParams {
     /// Fixed canonical byte size: 8×64bit(64) + 3×pallas::Base(96)
     pub const ENCODED_SIZE: usize = 160;
@@ -1403,6 +1406,9 @@ impl DeadManAction {
 // ---- CollateralParams (25 bytes) ----
 // Layout: collateral_type(1) + haircut(8) + liquidation_threshold(8) + max_debt_share(8)
 
+impl dwow_serial::Encodable for CollateralParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for CollateralParams { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+
 impl CollateralParams {
     pub const ENCODED_SIZE: usize = 25;
     pub fn encode(&self) -> Vec<u8> {
@@ -1603,6 +1609,9 @@ impl LiquidationRecord {
 // ---- UpdateConfigUpdateV1 (96 bytes) ----
 // Layout: min_collat_ratio(8) + liq_threshold(8) + liq_penalty(8) + base_rate(8)
 //         + pi_kp(8) + pi_ki(8) + twap_window(8) + price_dev_threshold(8) + config_nullifier(32)
+
+impl dwow_serial::Encodable for UpdateConfigUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for UpdateConfigUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl UpdateConfigUpdateV1 {
     pub const ENCODED_SIZE: usize = 96;
