@@ -98,7 +98,7 @@ fn put_metadata(params: PutParams) -> Result<Vec<u8>, ContractError> {
     zk_inputs.push((BOX_CONTRACT_ZKAS_PUT_NS.to_string(), vec![
         params.nullifier,
         params.expected_root,
-        params.new_contents_commit,
+        params.new_leaf,
         params.tx_binding,
         params.tx_nonce,
     ]));

@@ -22,6 +22,7 @@ witness "Take" {
 circuit "Take" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_MERKLE_LEAF = witness_base(5);
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
 
     # Ownership
@@ -34,7 +35,7 @@ circuit "Take" {
     constrain_instance(nullifier);
 
     # Merkle inclusion
-    box_leaf = poseidon_hash(DOMAIN_SIGNATURE_SECRET, box_id, contents_commit, state_nonce);
+    box_leaf = poseidon_hash(DOMAIN_MERKLE_LEAF, box_id, contents_commit, state_nonce);
     root = merkle_root(leaf_pos, path, box_leaf);
     constrain_equal_base(root, expected_root);
     constrain_instance(expected_root);
