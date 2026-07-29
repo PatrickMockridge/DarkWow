@@ -8,7 +8,7 @@ witness "Take" {
     Base box_id,
     Base contents_commit,
     Base state_nonce,
-    Base nullifier_witness,
+    Base nullifier,
     Base expected_root,
     Base owner_secret,
     Base owner_pub,
@@ -24,23 +24,26 @@ circuit "Take" {
     DOMAIN_TX_BINDING = witness_base(3);
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
 
-    # Ownership proof — Poseidon-based
+    # Ownership
     derived_owner = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret);
     constrain_equal_base(derived_owner, owner_pub);
 
-    # Nullifier for current state — caller provides expected value in witness[3]
-    nullifier = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, state_nonce);
-    constrain_equal_base(nullifier, nullifier_witness);
-    constrain_instance(nullifier_witness);
+    # Nullifier — circuit computes, constrains against caller-provided
+    nullifier_circuit = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, state_nonce);
+    constrain_equal_base(nullifier_circuit, nullifier);
+    constrain_instance(nullifier);
 
-    # Merkle inclusion of current box state — constrain against expected_root
+    # Merkle inclusion
     box_leaf = poseidon_hash(DOMAIN_SIGNATURE_SECRET, box_id, contents_commit, state_nonce);
     root = merkle_root(leaf_pos, path, box_leaf);
     constrain_equal_base(root, expected_root);
     constrain_instance(expected_root);
 
-    # Transaction binding
-    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    # Transaction binding — circuit computes, constrains against caller-provided
+    tx_binding_circuit = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_equal_base(tx_binding_circuit, tx_binding);
     constrain_instance(tx_binding);
+
+    # Transaction nonce — direct witness
     constrain_instance(tx_nonce);
 }

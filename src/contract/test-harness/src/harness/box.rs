@@ -23,21 +23,25 @@
 
 //! Box Test Harness (L1)
 //!
-//! Provides isolated testing for the Box contract with Merkle inclusion proofs.
+//! Generates ZK proofs for Box Put and Take. Every circuit-derived value
+//! is pre-computed here with matching domain constants and passed through
+//! params. The metadata function echoes params directly — no computation.
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use crate::harness::ContractHarness;
 use dwow_sdk::{
     crypto::{
-        pasta_prelude::PrimeField, poseidon_hash, MerkleNode, MerkleTree, PublicKey, SecretKey,
+        pasta_prelude::PrimeField, poseidon_hash,
+        MerkleNode, MerkleTree, PublicKey, SecretKey,
     },
     pasta::pallas,
 };
 use rand::rngs::OsRng;
+
+use crate::harness::ContractHarness;
 
 pub struct BoxHarness {
     put_zkbin: ZkBinary,
@@ -50,45 +54,23 @@ impl BoxHarness {
     pub fn spawn() -> Self {
         let put_bin = include_bytes!("../../../box/proof/put.zk.bin");
         let take_bin = include_bytes!("../../../box/proof/take.zk.bin");
-
         let put_zkbin = ZkBinary::decode(put_bin, false).unwrap();
         let take_zkbin = ZkBinary::decode(take_bin, false).unwrap();
-
-        let put_circuit =
-            ZkCircuit::new(dwow_core::zk::empty_witnesses(&put_zkbin).unwrap(), &put_zkbin);
-        let take_circuit =
-            ZkCircuit::new(dwow_core::zk::empty_witnesses(&take_zkbin).unwrap(), &take_zkbin);
-
-        let put_pk = ProvingKey::build(put_zkbin.k, &put_circuit).expect("ProvingKey::build failed");
-        let take_pk = ProvingKey::build(take_zkbin.k, &take_circuit).expect("ProvingKey::build failed");
-
+        let put_pk = ProvingKey::build(put_zkbin.k, &ZkCircuit::new(dwow_core::zk::empty_witnesses(&put_zkbin).unwrap(), &put_zkbin)).expect("ProvingKey::build failed");
+        let take_pk = ProvingKey::build(take_zkbin.k, &ZkCircuit::new(dwow_core::zk::empty_witnesses(&take_zkbin).unwrap(), &take_zkbin)).expect("ProvingKey::build failed");
         Self { put_zkbin, put_pk, take_zkbin, take_pk }
     }
 
-    pub fn circuits(&self) -> Vec<&'static str> {
-        vec!["Put", "Take"]
-    }
+    pub fn circuits(&self) -> Vec<&'static str> { vec!["Put", "Take"] }
 
     pub fn put(&self) -> Result<BoxPutResult> {
-        // Witness layout (Put circuit):
-        //   0: box_id
-        //   1: old_state_nonce
-        //   2: new_state_nonce
-        //   3: old_contents_commit
-        //   4: new_contents_commit
-        //   5: owner_secret
-        //   6: owner_pub
-        //   7: leaf_pos (Uint32)
-        //   8: path (MerklePath)
-        //   9: tx_commitment
-        //  10: tx_nonce
-        //  11: tx_binding
-        //
-        // Public inputs: nullifier_old, root, new_contents_commit, tx_binding, tx_nonce
+        // Domain constants — must match circuit witness_base(N)
+        let dom_nullifier = pallas::Base::from(1u64);
+        let dom_tx_binding = pallas::Base::from(3u64);
+        let dom_sig_secret = pallas::Base::from(7u64);
 
         let owner_secret = pallas::Base::from(42u64);
-        // DOMAIN_SIGNATURE_SECRET = witness_base(7) = pallas::Base::from(7)
-        let owner_pub = poseidon_hash([pallas::Base::from(7), owner_secret]);
+        let owner_pub = poseidon_hash([dom_sig_secret, owner_secret]);
         let box_id = pallas::Base::from(1u64);
         let old_state_nonce = pallas::Base::zero();
         let new_state_nonce = pallas::Base::from(1u64);
@@ -97,22 +79,20 @@ impl BoxHarness {
         let new_contents_commit = poseidon_hash([capability_data]);
         let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
-        // DOMAIN_TX_BINDING = witness_base(3) = pallas::Base::from(3)
-        let tx_binding = poseidon_hash([pallas::Base::from(3), tx_commitment, tx_nonce]);
 
-        // Nullifier for old state — DOMAIN_NULLIFIER=1, matches circuit
-        let nullifier_old = poseidon_hash([pallas::Base::from(1), owner_secret, box_id, old_state_nonce]);
+        // All circuit-derived values — pre-computed with domain constants
+        let nullifier = poseidon_hash([dom_nullifier, owner_secret, box_id, old_state_nonce]);
+        let tx_binding = poseidon_hash([dom_tx_binding, tx_commitment, tx_nonce]);
 
-        // Build Merkle tree: sentinel leaf + old state leaf
+        // Build Merkle tree with domain-separated leaf hash matching circuit
         let mut tree = MerkleTree::new(1);
-        tree.append(MerkleNode::from_base(pallas::Base::zero()));
-        // Merkle leaf — DOMAIN_SIGNATURE_SECRET=7, matches circuit
-        let old_leaf = poseidon_hash([pallas::Base::from(7), box_id, old_contents_commit, old_state_nonce]);
-        tree.append(MerkleNode::from_base(old_leaf));
-        let leaf_pos_mark = tree.mark().unwrap();
-        let path: Vec<MerkleNode> = tree.witness(leaf_pos_mark, 0).unwrap();
-        let leaf_pos = u32::try_from(u64::from(leaf_pos_mark)).unwrap();
-        let root = tree.root(0).unwrap();
+        tree.append(MerkleNode::from_base(pallas::Base::zero())); // sentinel
+        let leaf = poseidon_hash([dom_sig_secret, box_id, old_contents_commit, old_state_nonce]);
+        tree.append(MerkleNode::from_base(leaf));
+        let mark = tree.mark().unwrap();
+        let path: Vec<MerkleNode> = tree.witness(mark, 0).unwrap();
+        let leaf_pos = u32::try_from(u64::from(mark)).unwrap();
+        let expected_root = tree.root(0).unwrap();
 
         let witnesses = vec![
             Witness::Base(Value::known(box_id)),
@@ -120,8 +100,8 @@ impl BoxHarness {
             Witness::Base(Value::known(new_state_nonce)),
             Witness::Base(Value::known(old_contents_commit)),
             Witness::Base(Value::known(new_contents_commit)),
-            Witness::Base(Value::known(nullifier_old)),
-            Witness::Base(Value::known(root.inner())),
+            Witness::Base(Value::known(nullifier)),
+            Witness::Base(Value::known(expected_root.inner())),
             Witness::Base(Value::known(owner_secret)),
             Witness::Base(Value::known(owner_pub)),
             Witness::Uint32(Value::known(leaf_pos)),
@@ -132,11 +112,7 @@ impl BoxHarness {
         ];
 
         let public_inputs = vec![
-            nullifier_old,
-            root.inner(),
-            new_contents_commit,
-            tx_binding,
-            tx_nonce,
+            nullifier, expected_root.inner(), new_contents_commit, tx_binding, tx_nonce,
         ];
 
         let circuit = ZkCircuit::new(witnesses, &self.put_zkbin);
@@ -144,59 +120,54 @@ impl BoxHarness {
             .map_err(|e| dwow_core::Error::Custom(format!("Proof::create failed: {:?}", e)))?;
 
         let proof_bytes: Vec<u8> = dwow_serial::serialize(&proof);
+        let merkle_path_arr: [pallas::Base; 32] = path.iter().map(|n| n.inner()).collect::<Vec<_>>().try_into().unwrap();
         let params = dwow_box_contract::model::PutParams {
             box_id: dwow_box_contract::model::BoxId(box_id),
-            old_state_nonce,
-            new_state_nonce,
-            old_contents_commit,
-            new_contents_commit,
-            nullifier: nullifier_old,
-            merkle_root: root.inner(),
+            old_state_nonce, new_state_nonce, old_contents_commit, new_contents_commit,
+            nullifier,
+            expected_root: expected_root.inner(),
             owner: PublicKey::from_secret(SecretKey::from_base(owner_secret)),
             leaf_pos,
-            merkle_path: path.iter().map(|n| n.inner()).collect::<Vec<_>>().try_into().unwrap(),
+            merkle_path: merkle_path_arr,
             proof: proof_bytes,
-            tx_binding,
-            tx_nonce,
+            tx_binding, tx_nonce,
         };
-        let mut call_data = vec![0x01u8]; // Put function selector
+        let mut call_data = vec![0x01u8];
         call_data.extend_from_slice(&params.encode());
-
         Ok(BoxPutResult { call_data, proof })
     }
 
     pub fn take(&self) -> Result<BoxTakeResult> {
+        let dom_nullifier = pallas::Base::from(1u64);
+        let dom_tx_binding = pallas::Base::from(3u64);
+        let dom_sig_secret = pallas::Base::from(7u64);
+
         let owner_secret = pallas::Base::from(42u64);
-        // DOMAIN_SIGNATURE_SECRET = witness_base(7) = pallas::Base::from(7)
-        let owner_pub = poseidon_hash([pallas::Base::from(7), owner_secret]);
+        let owner_pub = poseidon_hash([dom_sig_secret, owner_secret]);
         let box_id = pallas::Base::from(1u64);
         let state_nonce = pallas::Base::from(1u64);
         let contents_commit = pallas::Base::from(100u64);
         let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
-        // DOMAIN_TX_BINDING = witness_base(3) = pallas::Base::from(3)
-        let tx_binding = poseidon_hash([pallas::Base::from(3), tx_commitment, tx_nonce]);
 
-        // Nullifier — DOMAIN_NULLIFIER=1, matches circuit
-        let nullifier_val = poseidon_hash([pallas::Base::from(1), owner_secret, box_id, state_nonce]);
+        let nullifier = poseidon_hash([dom_nullifier, owner_secret, box_id, state_nonce]);
+        let tx_binding = poseidon_hash([dom_tx_binding, tx_commitment, tx_nonce]);
 
-        // Build Merkle tree: sentinel + filled state leaf
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));
-        // Merkle leaf — DOMAIN_SIGNATURE_SECRET=7, matches circuit
-        let state_leaf = poseidon_hash([pallas::Base::from(7), box_id, contents_commit, state_nonce]);
-        tree.append(MerkleNode::from_base(state_leaf));
-        let leaf_pos_mark = tree.mark().unwrap();
-        let path: Vec<MerkleNode> = tree.witness(leaf_pos_mark, 0).unwrap();
-        let leaf_pos = u32::try_from(u64::from(leaf_pos_mark)).unwrap();
-        let root = tree.root(0).unwrap();
+        let leaf = poseidon_hash([dom_sig_secret, box_id, contents_commit, state_nonce]);
+        tree.append(MerkleNode::from_base(leaf));
+        let mark = tree.mark().unwrap();
+        let path: Vec<MerkleNode> = tree.witness(mark, 0).unwrap();
+        let leaf_pos = u32::try_from(u64::from(mark)).unwrap();
+        let expected_root = tree.root(0).unwrap();
 
         let witnesses = vec![
             Witness::Base(Value::known(box_id)),
             Witness::Base(Value::known(contents_commit)),
             Witness::Base(Value::known(state_nonce)),
-            Witness::Base(Value::known(nullifier_val)),
-            Witness::Base(Value::known(root.inner())),
+            Witness::Base(Value::known(nullifier)),
+            Witness::Base(Value::known(expected_root.inner())),
             Witness::Base(Value::known(owner_secret)),
             Witness::Base(Value::known(owner_pub)),
             Witness::Uint32(Value::known(leaf_pos)),
@@ -206,34 +177,27 @@ impl BoxHarness {
             Witness::Base(Value::known(tx_binding)),
         ];
 
-        let public_inputs = vec![
-            nullifier_val,
-            root.inner(),
-            tx_binding,
-            tx_nonce,
-        ];
+        let public_inputs = vec![nullifier, expected_root.inner(), tx_binding, tx_nonce];
 
         let circuit = ZkCircuit::new(witnesses, &self.take_zkbin);
         let proof = Proof::create(&self.take_pk, &[circuit], &public_inputs, OsRng)
             .map_err(|e| dwow_core::Error::Custom(format!("Proof::create failed: {:?}", e)))?;
 
         let proof_bytes: Vec<u8> = dwow_serial::serialize(&proof);
+        let merkle_path_arr: [pallas::Base; 32] = path.iter().map(|n| n.inner()).collect::<Vec<_>>().try_into().unwrap();
         let params = dwow_box_contract::model::TakeParams {
             box_id: dwow_box_contract::model::BoxId(box_id),
-            contents_commit,
-            state_nonce,
-            nullifier: nullifier_val,
-            merkle_root: root.inner(),
+            contents_commit, state_nonce,
+            nullifier,
+            expected_root: expected_root.inner(),
             owner: PublicKey::from_secret(SecretKey::from_base(owner_secret)),
             leaf_pos,
-            merkle_path: path.iter().map(|n| n.inner()).collect::<Vec<_>>().try_into().unwrap(),
+            merkle_path: merkle_path_arr,
             proof: proof_bytes,
-            tx_binding,
-            tx_nonce,
+            tx_binding, tx_nonce,
         };
-        let mut call_data = vec![0x02u8]; // Take function selector
+        let mut call_data = vec![0x02u8];
         call_data.extend_from_slice(&params.encode());
-
         Ok(BoxTakeResult { call_data, proof })
     }
 }
@@ -249,12 +213,5 @@ impl ContractHarness for BoxHarness {
     }
 }
 
-pub struct BoxPutResult {
-    pub call_data: Vec<u8>,
-    pub proof: Proof,
-}
-
-pub struct BoxTakeResult {
-    pub call_data: Vec<u8>,
-    pub proof: Proof,
-}
+pub struct BoxPutResult { pub call_data: Vec<u8>, pub proof: Proof }
+pub struct BoxTakeResult { pub call_data: Vec<u8>, pub proof: Proof }
