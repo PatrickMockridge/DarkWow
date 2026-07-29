@@ -31,6 +31,7 @@ use dwow_core::{
     zkas::ZkBinary,
     Result,
 };
+use crate::harness::ContractHarness;
 use dwow_sdk::{
     crypto::{
         blind::ScalarBlind,
@@ -72,9 +73,31 @@ impl PurseHarness {
         Self { balance_zkbin, balance_pk, deposit_zkbin, deposit_pk, withdraw_zkbin, withdraw_pk }
     }
 
-    pub fn circuits(&self) -> Vec<String> {
-        vec!["Balance".to_string(), "Deposit".to_string(), "Withdraw".to_string()]
+    pub fn circuits(&self) -> Vec<&'static str> {
+        vec!["Balance", "Deposit", "Withdraw"]
     }
+}
+
+impl ContractHarness for PurseHarness {
+    fn name(&self) -> &str { "purse" }
+    fn circuits(&self) -> Vec<&'static str> { self.circuits() }
+    fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
+        match ns {
+            "Balance" => Some(&self.balance_zkbin),
+            "Deposit" => Some(&self.deposit_zkbin),
+            "Withdraw" => Some(&self.withdraw_zkbin),
+            _ => None,
+        }
+    }
+    fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
+        match ns {
+            "Balance" => Some(&self.balance_pk),
+            "Deposit" => Some(&self.deposit_pk),
+            "Withdraw" => Some(&self.withdraw_pk),
+            _ => None,
+        }
+    }
+}
 
     pub fn deposit(&self, amount: u64) -> Result<PurseDepositResult> {
         let owner_secret = pallas::Base::from(42u64);
