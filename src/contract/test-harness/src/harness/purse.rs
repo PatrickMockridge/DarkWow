@@ -100,8 +100,8 @@ impl PurseHarness {
         let old_blind = ScalarBlind::from(1u64);
         let dep_blind = ScalarBlind::from(2u64);
         let new_blind = ScalarBlind::from(3u64);
-        let old_commit = pedersen_commitment_u64(old_balance, old_blind);
-        let new_commit = pedersen_commitment_u64(new_balance, new_blind);
+        let old_commit = pedersen_commitment_u64(old_balance, old_blind.clone());
+        let new_commit = pedersen_commitment_u64(new_balance, new_blind.clone());
         let old_coords = old_commit.to_affine().coordinates().unwrap();
         let new_coords = new_commit.to_affine().coordinates().unwrap();
 
@@ -179,8 +179,8 @@ impl PurseHarness {
 
         let old_blind = ScalarBlind::from(1u64);
         let new_blind = ScalarBlind::from(3u64);
-        let old_commit = pedersen_commitment_u64(old_balance, old_blind);
-        let new_commit = pedersen_commitment_u64(new_balance, new_blind);
+        let old_commit = pedersen_commitment_u64(old_balance, old_blind.clone());
+        let new_commit = pedersen_commitment_u64(new_balance, new_blind.clone());
         let old_coords = old_commit.to_affine().coordinates().unwrap();
         let new_coords = new_commit.to_affine().coordinates().unwrap();
 
@@ -247,7 +247,7 @@ impl PurseHarness {
         let tx_binding = poseidon_hash([tx_commitment, tx_nonce]);
 
         let balance_blind = ScalarBlind::from(1u64);
-        let balance_commit = pedersen_commitment_u64(balance, balance_blind);
+        let balance_commit = pedersen_commitment_u64(balance, balance_blind.clone());
         let coords = balance_commit.to_affine().coordinates().unwrap();
         let token_commit = poseidon_hash([token_id, token_blind]);
         let derived_purse_id = poseidon_hash([purse_id, token_id]);
