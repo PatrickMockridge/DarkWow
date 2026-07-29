@@ -351,11 +351,12 @@ required_barbs), `src/contract/identity/manifest.toml` (actions with required_ba
 
 ## 3. State Type System
 
-### 3.1 Encoding Taxonomy — Three Boundaries
+### 3.1 Encoding Taxonomy — Four Boundaries
 
-There are THREE distinct encoding boundaries in a contract. Each uses a different
+There are FOUR distinct encoding boundaries in a contract. Each uses a different
 mechanism. Confusing them is the root cause of every encoding regression found in
-the 2026-07-29 HAZOP review.
+the 2026-07-29 HAZOP review. The fourth boundary was discovered during the Box/Purse
+L1 HAZOP and is the most frequently broken.
 
 **Boundary 1 — Entrypoint parameters (external → exec).** Call data arrives from
 an externally-constructed transaction (Rust host, wallet client, RPC). The exec
@@ -411,6 +412,41 @@ have `dwow_serial` bridge impls — they never cross the exec→apply boundary.
 | External → exec | `process_instruction` | `FooParamsV1::decode(params)?` | YES (Decodable) |
 | Exec → apply | `process_instruction` → `process_update` | `encode_foo_update_v1()` / `decode_foo_update_v1()` | YES (Enc+Dec) |
 | Sled state | `db_set` / `db_get` | `foo.encode()` / `Foo::decode(&data)?` | NO |
+| Circuit → metadata | `get_metadata` → `verify_zkp` | `metadata[i] == proof_instance[i]` for all i | N/A (positional match) |
+
+**Boundary 4 — Circuit public inputs → Metadata return value.** The ZK circuit
+publishes values via `constrain_instance(X)` in a fixed order. The metadata
+function must return a vector of public inputs where `metadata[i] ==
+proof_instance[i]` for every position. This is a positional encoding boundary —
+the order, count, and byte representation must match exactly.
+
+This boundary is the most frequently broken because values cross from the
+circuit domain (zkas assembly, domain-separated Poseidon hashes) to the
+Rust domain (contract entrypoint, SDK hash functions). The HAZOP found that
+every `constrain_instance` value derived from a `poseidon_hash` call was
+mismatched — the circuit used domain-separated hashes (HAZOP RC3) while
+the Rust metadata function used bare hashes without domain constants.
+
+**Two patterns for correct crossing (see privacy.md §5.1):**
+
+**Pattern A — Pass through params**: For values that depend on witness-only
+inputs (`owner_secret`, `balance_blind`), the caller pre-computes the value,
+passes it in the params struct, the circuit constrains
+`constrain_equal_base(circuit_computed, params_value)` then
+`constrain_instance(params_value)`, and the metadata echoes `params.value`.
+This is the only correct pattern when the metadata function lacks the inputs
+to compute the value itself.
+
+**Pattern B — Replicate domain constants**: For values computable from
+available data, the Rust-side metadata function recomputes with the same
+domain constants as the circuit. Every `poseidon_hash` call in the circuit
+prepends a `witness_base(N)` domain constant as its first argument; the
+Rust-side computation MUST prepend `pallas::Base::from(N)` identically.
+
+**The invariant**: `metadata[i] == proof_instance[i]`. A mismatch in any of:
+input count, input order, domain constant value, or hash domain produces a
+proof verification failure. The circuit's `constrain_instance` order IS the
+schema; the metadata function MUST conform.
 
 ### 3.1.1 Explicit Encoding Rules
 
