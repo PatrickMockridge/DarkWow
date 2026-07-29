@@ -106,7 +106,8 @@ impl BoxHarness {
         // Build Merkle tree: sentinel leaf + old state leaf
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));
-        let old_leaf = poseidon_hash([box_id, old_contents_commit, old_state_nonce]);
+        // Merkle leaf — DOMAIN_SIGNATURE_SECRET=7, matches circuit
+        let old_leaf = poseidon_hash([pallas::Base::from(7), box_id, old_contents_commit, old_state_nonce]);
         tree.append(MerkleNode::from_base(old_leaf));
         let leaf_pos_mark = tree.mark().unwrap();
         let path: Vec<MerkleNode> = tree.witness(leaf_pos_mark, 0).unwrap();
@@ -182,7 +183,8 @@ impl BoxHarness {
         // Build Merkle tree: sentinel + filled state leaf
         let mut tree = MerkleTree::new(1);
         tree.append(MerkleNode::from_base(pallas::Base::zero()));
-        let state_leaf = poseidon_hash([box_id, contents_commit, state_nonce]);
+        // Merkle leaf — DOMAIN_SIGNATURE_SECRET=7, matches circuit
+        let state_leaf = poseidon_hash([pallas::Base::from(7), box_id, contents_commit, state_nonce]);
         tree.append(MerkleNode::from_base(state_leaf));
         let leaf_pos_mark = tree.mark().unwrap();
         let path: Vec<MerkleNode> = tree.witness(leaf_pos_mark, 0).unwrap();
