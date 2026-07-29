@@ -2,7 +2,6 @@ k = 11;
 field = "pallas";
 
 constant "PutV3" {
-    EcFixedPointBase NULLIFIER_K,
 }
 
 witness "PutV3" {
@@ -12,8 +11,7 @@ witness "PutV3" {
     Base old_contents_commit,
     Base new_contents_commit,
     Base owner_secret,
-    Base owner_pub_x,
-    Base owner_pub_y,
+    Base owner_pub,
     Uint32 leaf_pos,
     MerklePath path,
     Base tx_commitment,
@@ -22,17 +20,14 @@ witness "PutV3" {
 }
 
 circuit "PutV3" {
-    # Domain constants (HAZOP RC3 — inherited from V2)
+    # Domain constants (HAZOP RC3)
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
 
-    # Ownership proof (Schnorr-style — from put_v2.zk)
-    owner_pub = ec_mul_base(owner_secret, NULLIFIER_K);
-    derived_pub_x = ec_get_x(owner_pub);
-    derived_pub_y = ec_get_y(owner_pub);
-    constrain_equal_base(derived_pub_x, owner_pub_x);
-    constrain_equal_base(derived_pub_y, owner_pub_y);
+    # Ownership proof (Poseidon-based — o-cap authorization)
+    derived_owner = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret);
+    constrain_equal_base(derived_owner, owner_pub);
 
     # Nullifier for OLD state (NEW — consumes previous box state)
     nullifier_old = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, old_state_nonce);
@@ -43,10 +38,10 @@ circuit "PutV3" {
     root = merkle_root(leaf_pos, path, box_leaf_old);
     constrain_instance(root);
 
-    # New contents commit (from put_v2.zk — public input)
+    # New contents commit (public input)
     constrain_instance(new_contents_commit);
 
-    # Transaction binding (from put_v2.zk)
+    # Transaction binding
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
