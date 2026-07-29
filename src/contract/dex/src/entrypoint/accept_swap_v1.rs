@@ -146,16 +146,28 @@ pub(crate) fn dex_accept_swap_process_instruction_v1(
         return Err(DexError::SwapExpired.into())
     }
 
-    // Verify lock_proof against trusted Merkle root
-    // WARNING: This is a TRUSTED SETUP workaround
-    // Proper implementation requires cross-contract ZK composition
+    // FALLBACK — Host-level signature verification (NOT co-equal with in-contract)
+    //
+    // Primary path (target): In-contract ZK circuit constrains the signature
+    //   public key against the lock proof and swap parameters.
+    //
+    // Fallback path (current): Signature verification is deferred to the host
+    //   validator runtime. The contract trusts the host to have verified the
+    //   signature_public key before the swap executes.
+    //   Reason: Cross-contract ZK composition not yet implemented (TRUSTED SETUP workaround).
+    //
+    // ## DEGRADATION RISK
+    // If host verification is bypassed, any party can provide an arbitrary
+    // signature_public and execute swaps as any acceptor.
+    //
+    // ## CONSTRAINT
+    // This MUST be replaced with in-contract signature verification via ZK circuit.
+    // Do NOT add new swap operations that rely on host-level signature verification.
     let config_db = wasm::db::db_lookup(cid, DEX_CONTRACT_CONFIG_TREE)?;
     verify_lock_proof(config_db, &params.lock_commitment.to_bytes(), &params.lock_proof)?;
 
-    // Extract acceptor's public key from signature_public
-    // The signature_public is provided by the client and will be verified
-    // by the ZK circuit once signature derivation is added to the circuit.
-    // For now, we trust that the host has verified the signature.
+    // Extract acceptor's public key — host-verified per FALLBACK documentation above.
+    let (acceptor_pub_x, acceptor_pub_y) = params.signature_public.xy().expect("pk not identity");
     let (acceptor_pub_x, acceptor_pub_y) = params.signature_public.xy().expect("pk not identity");
 
     // Create the update struct with nullifier from params

@@ -28,7 +28,7 @@
 
 use dwow_sdk::{
     blockchain::BlockHeight,
-    crypto::{note::AeadEncryptedNote, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, PublicKey, TokenId},
+    crypto::{constants::DRK_POSEIDON_DOMAIN_COIN_COMMIT, note::AeadEncryptedNote, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, PublicKey, TokenId},
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
 };
@@ -182,6 +182,7 @@ impl CoinAttributes {
         // PublicKey constructor rejects identity, so xy() is always Some
         let (pub_x, pub_y) = self.public_key.xy().expect("pk not identity");
         let coin = poseidon_hash([
+            DRK_POSEIDON_DOMAIN_COIN_COMMIT,
             pub_x,
             pub_y,
             pallas::Base::from(self.value),

@@ -119,7 +119,7 @@ impl dwow_serial::Decodable for PromissoryNote {
 pub fn verify_received_capability(output: &Output, secret: &SecretKey) -> Result<PromissoryNote, dwow_sdk::error::ContractError> {
     // 1. Decrypt the AEAD note. Only the intended recipient can do this —
     //    the AEAD encryption uses Diffie-Hellman with the recipient's public key.
-    let note: PromissoryNote = output.note.decrypt(secret)?;
+    let note: PromissoryNote = output.note.decrypt(secret, 0)?;
 
     // 2. Derive the recipient's address (field element) from their public key.
     //    The coin commitment uses poseidon_hash([public_key_x]) as the "public_key" field,

@@ -132,9 +132,9 @@ pub(crate) fn dex_create_swap_process_instruction_v1(
         return Err(DexError::SwapAlreadyExists.into())
     }
 
-    // Verify lock_proof against trusted Merkle root
-    // WARNING: This is a TRUSTED SETUP workaround
-    // Proper implementation requires cross-contract ZK composition
+    // FALLBACK — Host-level signature verification (NOT co-equal with in-contract)
+    //   Reason: Cross-contract ZK composition not yet implemented (TRUSTED SETUP workaround).
+    //   See accept_swap_v1.rs for full DEGRADATION RISK and CONSTRAINT documentation.
     let config_db = wasm::db::db_lookup(cid, DEX_CONTRACT_CONFIG_TREE)?;
     verify_lock_proof(config_db, &params.lock_commitment.to_bytes(), &params.lock_proof)?;
 

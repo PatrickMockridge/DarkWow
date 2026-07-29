@@ -75,7 +75,7 @@ mod tests {
         let b_blind = ScalarBlind::from(21);
 
         assert_eq!(
-            pedersen_commitment_base(a_value, a_blind) + pedersen_commitment_base(b_value, b_blind),
+            pedersen_commitment_base(a_value, a_blind.clone()) + pedersen_commitment_base(b_value, b_blind.clone()),
             pedersen_commitment_base(a_value + b_value, &a_blind + &b_blind)
         );
 
@@ -83,7 +83,7 @@ mod tests {
         let b_value = 20;
 
         assert_eq!(
-            pedersen_commitment_u64(a_value, a_blind) + pedersen_commitment_u64(b_value, b_blind),
+            pedersen_commitment_u64(a_value, a_blind.clone()) + pedersen_commitment_u64(b_value, b_blind.clone()),
             pedersen_commitment_u64(a_value + b_value, &a_blind + &b_blind)
         );
     }

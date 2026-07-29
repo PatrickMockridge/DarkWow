@@ -33,6 +33,7 @@ use dwow_core::{
 use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
+        constants::{DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_USER_DATA_ENC},
         pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId,
         MerkleNode, PublicKey, ScalarBlind, SecretKey, TokenId,
     },
@@ -125,9 +126,9 @@ pub fn create_burn_proof(
         current
     };
 
-    let user_data_enc = poseidon_hash([input.user_data, user_data_blind.clone().inner()]);
+    let user_data_enc = poseidon_hash([DRK_POSEIDON_DOMAIN_USER_DATA_ENC, input.user_data, user_data_blind.clone().inner()]);
     let value_commit = pedersen_commitment_u64(input.value, value_blind.clone());
-    let token_commit = poseidon_hash([input.token_id, token_blind.clone().inner()]);
+    let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.token_id, token_blind.clone().inner()]);
 
     let public_inputs = BurnRevealed {
         nullifier,
@@ -273,7 +274,7 @@ impl BurnCallBuilder {
             .to_coin();
 
             let value_commit = pedersen_commitment_u64(input.value, value_blind.clone());
-            let token_commit = poseidon_hash([input.token_id, token_blind.clone().inner()]);
+            let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.token_id, token_blind.clone().inner()]);
             let nullifier = Nullifier::new(secret.clone(), coin.inner());
 
             // Calculate merkle root
@@ -291,7 +292,7 @@ impl BurnCallBuilder {
                 current
             };
 
-            let user_data_enc = poseidon_hash([input.user_data, user_data_blind.clone().inner()]);
+            let user_data_enc = poseidon_hash([DRK_POSEIDON_DOMAIN_USER_DATA_ENC, input.user_data, user_data_blind.clone().inner()]);
 
             inputs.push(Input {
                 value_commit,

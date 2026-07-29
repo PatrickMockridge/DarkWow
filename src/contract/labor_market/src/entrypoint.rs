@@ -503,8 +503,25 @@ fn create_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
         return Err(LaborMarketError::InvalidChildCall.into())
     }
 
-    // Verify ZK proof (skipped - ZK verification happens at validator runtime)
-    // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V1)
+    // FALLBACK — Host-level ZK proof verification (NOT co-equal with in-contract)
+    //
+    // Primary path (target): In-contract ZK proof verification within the WASM VM.
+    //
+    // Fallback path (current): Verification delegated to host validator runtime
+    //   via get_metadata. This pattern repeats at 12 call sites in this file
+    //   (create_job, accept_job, confirm_delivery, fund_escrow, release_escrow,
+    //   refund_escrow, create_milestone, dispute_milestone, resolve_dispute,
+    //   create_dispute, dispute_resolve, finalize_contract). All use the same
+    //   FALLBACK rationale and constraints.
+    //   Reason: V1 circuit limitation — in-contract verification not yet wired.
+    //
+    // ## DEGRADATION RISK
+    // If the host verifier is disabled, misconfigured, or bypassed, ALL
+    // labor_market operations accept unverified ZK proofs.
+    //
+    // ## CONSTRAINT
+    // New operations MUST implement in-contract ZK proof verification.
+    // Do NOT add new call sites that rely on this fallback.
 
     // Job is created in the apply phase via update
     msg!("[labor_market::create_job_v1] ZK proof verified successfully");

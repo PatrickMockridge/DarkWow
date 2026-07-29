@@ -276,8 +276,19 @@ impl RpcHandler for DwwRpcHandler {
                     .map_err(|e| err(-32602, &format!("invalid hex: {}", e)))?;
                 let tx: dwow_core::tx::Transaction = dwow_serial::deserialize(&tx_bytes)
                     .map_err(|e| err(-32602, &format!("invalid tx: {}", e)))?;
+                // "wait_for_confirm": bool (optional, default false)
+                //   When true, poll for chain-height advancement before returning.
+                //
+                //   CONFIRMATION MODEL: Best-effort height polling, NOT finality.
+                //   Does not verify the specific transaction was included in a block.
+                //   For finality guarantees, monitor wallet sync status and verify
+                //   capability consumption via wallet.scan.
+                let confirm = params.get("wait_for_confirm")
+                    .and_then(|v| v.as_bool()).unwrap_or(false);
+                let timeout = params.get("confirm_timeout_secs")
+                    .and_then(|v| v.as_u64());
                 let mut output = vec![];
-                let txid = dww.broadcast_tx(&tx, &mut output, false, None, None).await
+                let txid = dww.broadcast_tx(&tx, &mut output, confirm, timeout, None).await
                     .map_err(|e| err(-32000, &format!("broadcast failed: {}", e)))?;
                 Ok(serde_json::json!({"txid": txid, "output": output}))
             }
@@ -336,8 +347,17 @@ impl RpcHandler for DwwRpcHandler {
                         .await
                         .map_err(|e| err(-32000, &format!("invoke_contract: {}", e)))?
                 };
+                // "wait_for_confirm": bool (optional, default false)
+                //   When true, poll for chain-height advancement before returning.
+                //
+                //   CONFIRMATION MODEL: Best-effort height polling, NOT finality.
+                //   Does not verify the specific transaction was included in a block.
+                let confirm = params.get("wait_for_confirm")
+                    .and_then(|v| v.as_bool()).unwrap_or(false);
+                let timeout = params.get("confirm_timeout_secs")
+                    .and_then(|v| v.as_u64());
                 let mut output = vec![];
-                let txid = dww.broadcast_tx(&tx, &mut output, false, None, None).await
+                let txid = dww.broadcast_tx(&tx, &mut output, confirm, timeout, None).await
                     .map_err(|e| err(-32000, &format!("broadcast failed: {}", e)))?;
                 if let Err(e) = dww.mark_tx_exercise(&tx, &mut output) {
                     tracing::error!("mark_tx_exercise failed for txid {}: {}", txid, e);

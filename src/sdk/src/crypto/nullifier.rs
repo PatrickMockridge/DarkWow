@@ -25,7 +25,7 @@ use dwow_serial::{SerialDecodable, SerialEncodable};
 use pasta_curves::{group::ff::PrimeField, pallas};
 use serde::{Deserialize, Serialize};
 
-use super::{poseidon_hash, SecretKey};
+use super::{constants::DRK_POSEIDON_DOMAIN_NULLIFIER, poseidon_hash, SecretKey};
 use crate::error::ContractError;
 
 /// The `Nullifier` is represented as a base field element.
@@ -60,9 +60,11 @@ impl Nullifier {
     }
 
     /// Create a new Nullifier from spending key and coin hash.
-    /// `nf = poseidon_hash(secret, coin)`.
+    /// `nf = poseidon_hash(DOMAIN_NULLIFIER, secret, coin)`.
+    /// Domain-separated per type-system.md §8.1 — matches V2 circuit
+    /// nullifier computation (witness_base(1) in burn_v2.zk et al.).
     pub fn new(secret: SecretKey, coin_hash: pallas::Base) -> Self {
-        Self(poseidon_hash([*secret.inner(), coin_hash]))
+        Self(poseidon_hash([DRK_POSEIDON_DOMAIN_NULLIFIER, *secret.inner(), coin_hash]))
     }
 
     /// Create a `Nullifier` from 32 bytes. Rejects non-canonical field elements

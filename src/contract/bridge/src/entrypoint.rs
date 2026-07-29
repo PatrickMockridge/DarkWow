@@ -402,8 +402,24 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
         return Err(BridgeError::DoubleDeposit.into())
     }
 
-    // Ethereum uses host-level ZK proof verification (no chain-specific proof needed).
-    // All other chains carry a chain-specific proof via the ExternalChainProof enum.
+    // FALLBACK — Host-level ZK proof verification (NOT co-equal with in-contract)
+    //
+    // Primary path (target): In-contract cryptographic verification of
+    //   chain-specific deposit proofs (DLEq, Groth16, Merkle).
+    //
+    // Fallback path (current): Ethereum deposits skip contract-level chain-proof
+    //   verification entirely. Verification is delegated to the host validator
+    //   runtime via the ZK proof in the transaction witness.
+    //   Reason: Ethereum deposit proof verification not yet implemented in-circuit.
+    //
+    // ## DEGRADATION RISK
+    // If the host verifier is disabled, misconfigured, or bypassed, Ethereum
+    // deposits are accepted without any cryptographic verification of the
+    // external chain state.
+    //
+    // ## CONSTRAINT
+    // Do NOT add new chain types that skip in-contract proof verification.
+    // New chains MUST implement verify_<chain>_deposit() with full cryptographic checks.
     if params.chain != ExternalChain::Ethereum {
         match &params.chain_proof {
             ExternalChainProof::Monero(proof) => {
@@ -477,11 +493,23 @@ fn verify_xmr_deposit(_cid: ContractId, proof: &XmrDepositProof) -> ContractResu
         return Err(BridgeError::InvalidCommitment.into())
     }
 
-    // DLEq proof verification NOT YET IMPLEMENTED.
-    // This is a security-critical gap: without DLEq, one-time address ownership
-    // is not cryptographically verified. Bridge deposits trust the caller.
-    // See doc/src/arch/zk/dleq.md for the planned implementation.
-    // FIXME(dleq): implement DLEq proof verification before any mainnet bridge deployment
+    // FALLBACK — No cryptographic proof of deposit address ownership (NOT co-equal)
+    //
+    // Primary path (target): DLEq proof verification proving the depositor
+    //   owns the Monero one-time address. See doc/src/arch/zk/dleq.md.
+    //
+    // Fallback path (current): Deposit accepted without DLEq verification.
+    //   The caller is trusted to have proven address ownership off-chain.
+    //   Reason: DLEq circuit not yet implemented.
+    //
+    // ## DEGRADATION RISK
+    // Any caller can claim any Monero deposit without cryptographic proof
+    // of address ownership. This MUST be resolved before mainnet bridge
+    // deployment — without DLEq, the bridge accepts fabricated deposits.
+    //
+    // ## CONSTRAINT
+    // FIXME(dleq): implement DLEq proof verification before any mainnet bridge deployment.
+    // Do NOT add new deposit types that skip cryptographic ownership proofs.
     msg!("[bridge::verify_xmr_deposit] WARNING: DLEq proof verification not implemented — deposit accepted without cryptographic proof of address ownership");
 
     // In production: Verify Merkle proof to coinbase
@@ -819,8 +847,23 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
     // In production, we would verify the merkle proof here
     let _deposits_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_DEPOSITS_TREE)?;
 
-    // For v1, we trust the ZK proof verification happened at host level
-    // The proof demonstrates knowledge of secret corresponding to a registered deposit
+    // FALLBACK — Host-level ZK proof verification (NOT co-equal with in-contract)
+    //
+    // Primary path (target): In-contract Merkle proof verification of deposit
+    //   existence in the bridge's deposits tree.
+    //
+    // Fallback path (current): For v1, the withdrawal ZK proof is verified at
+    //   the host validator runtime, not in the contract VM. The contract trusts
+    //   the host to have verified that the proof demonstrates knowledge of a
+    //   secret corresponding to a registered deposit.
+    //   Reason: Cross-contract ZK composition not yet implemented.
+    //
+    // ## DEGRADATION RISK
+    // If host verification is bypassed, withdrawals succeed without proving
+    // deposit ownership. This MUST be replaced with in-contract verification.
+    //
+    // ## CONSTRAINT
+    // V2 withdrawal MUST implement in-contract Merkle proof verification.
 
     // Circuit breaker: for guaranteed withdrawals, verify system is not overcommitted
     if params.feed_mode == 1 {

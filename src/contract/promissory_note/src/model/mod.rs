@@ -34,7 +34,7 @@
 //! - TransferV1: Private token transfer
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, BaseBlind, ContractId, FuncId, MerkleNode, TokenId},
+    crypto::{constants::DRK_POSEIDON_DOMAIN_COIN_COMMIT, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, ContractId, FuncId, MerkleNode, TokenId},
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
 };
@@ -222,6 +222,7 @@ impl CoinAttributes {
 
     pub fn to_coin(&self) -> Coin {
         Coin(poseidon_hash([
+            DRK_POSEIDON_DOMAIN_COIN_COMMIT,
             self.public_key,
             pallas::Base::from(self.value),
             self.token_id.inner(),
