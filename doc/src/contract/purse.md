@@ -1,103 +1,94 @@
 # Purse — ZK Fungible Capability Container (L1)
 
-The Purse contract is the DarkWow equivalent of Agoric's ERTP Purse — the
-primitive that holds fungible capabilities (tokens, budget allocations, treasury
-shares). It is an **O-Cap primitive** deployed at genesis (ContractId counter 8).
-Purse is L1: resource IDs are in the ZK witness, Merkle inclusion proofs hide
-which purse is being operated on.
+## The Primitive Capability
 
-## Why Genesis?
-
-In the o-cap model, every principal — wallet, DAO, contract, budget, treasury —
-holds capabilities. A fungible capability (an amount of tokens) is held in a
-Purse. A Purse can belong to a wallet (personal balance), a DAO (treasury), a
-contract (escrow), or a budget (allocated funds). It is the fungible analogue
-of Box (which holds a single transferable capability).
+Purse is the capability to hold fungible value — the ZK-native equivalent of
+Agoric's ERTP Purse. In L1, the Purse is not a persistent balance account.
+Each operation is a consume+create: the old purse state is nullified and a
+new state leaf is appended to the Merkle tree. The purse_id binds state
+transitions in the ZK witness but is never exposed as a public input.
+The balance amount is hidden in a Pedersen commitment; conservation is
+proven via additive homomorphism in the circuit.
 
 ## Operations
 
 | Operation | Opcode | Circuit | What It Proves |
 |-----------|--------|---------|---------------|
-| `Initialize` | 0x00 | — | Initialize the Purse contract (genesis primitive) |
-| `Deposit` | 0x01 | `deposit.zk` | Merkle inclusion of old purse state + Pedersen conservation (old + deposit == new) + nullifier. purse_id in ZK witness. |
-| `Withdraw` | 0x02 | `withdraw.zk` | Merkle inclusion + withdrawal bounds (amount > 0, amount <= balance) + Pedersen conservation + nullifier. purse_id in ZK witness. |
-| `Balance` | 0x03 | `balance.zk` | Merkle inclusion of current purse state. Read-only — no nullifier, no state change. |
+| `Initialize` | 0x00 | — | Genesis initialization |
+| `Deposit` | 0x01 | `deposit.zk` | Poseidon ownership. Nullifier consumes old state. Merkle inclusion of old state. Pedersen conservation: `old_commit + deposit_commit == new_commit`. |
+| `Withdraw` | 0x02 | `withdraw.zk` | Same as Deposit plus: `withdraw_amount > 0`, `withdraw_amount <= old_balance`. |
+| `Balance` | 0x03 | `balance.zk` | Merkle inclusion of current state. Read-only — no nullifier, no consumption. |
 
-## Privacy Model
+## Barbs
 
-Purse is L1 — full privacy via Merkle inclusion proofs. The resource identity
-(`purse_id`) is bound into a Merkle leaf: `poseidon_hash(DOMAIN_SIGNATURE_SECRET,
-purse_id, balance, state_nonce)`. The `merkle_root` opcode proves inclusion.
-Only the Merkle root is exposed as a public input.
+### Deposit
+| Barb | Mechanism |
+|------|-----------|
+| `↓spend` | Circuit constrains `owner_pub == poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret)` |
+| `↓nullify` | Circuit constrains `nullifier == poseidon_hash(DOMAIN_NULLIFIER, owner_secret, purse_id, state_nonce)` |
+| `↓prove-inclusion` | Circuit constrains `merkle_root(leaf_pos, path, leaf) == expected_root` |
+| `↓denominate` | Circuit constrains `token_commit == poseidon_hash(DOMAIN_TOK_COMMIT, token_id, token_blind)` |
+| `↓conserve` | Circuit constrains Pedersen homomorphism: `old_commit + deposit_commit == new_commit` |
+| `↓commit` | Apply appends new leaf to Merkle tree, marks nullifier |
 
-Every state transition (Deposit or Withdraw) follows the append-only + nullifier
-model:
+### Withdraw
+Same as Deposit plus:
+| `↓bound` | Circuit constrains `withdraw_amount > 0` and `withdraw_amount <= old_balance` |
 
-1. The old state leaf is proven to exist via Merkle inclusion proof
-2. A nullifier `poseidon_hash(DOMAIN_NULLIFIER, owner_secret, purse_id, state_nonce)`
-   consumes the old state
-3. A new leaf with the updated balance is appended to the Merkle tree
+### Balance
+| `↓prove-inclusion` | Circuit constrains Merkle inclusion of current state |
+No `↓nullify` — read-only operation.
 
-Balance conservation is proven via Pedersen additive homomorphism in-circuit:
-`old_commit + delta_commit == new_commit`.
+## The Four-Component Flow
 
-The Balance operation is read-only — it proves Merkle inclusion of the current
-state without consuming it (no nullifier).
+Identical structure to Box (see box.md for full description):
 
-An observer cannot determine which purse is being operated on, the balance amount
-(hidden in Pedersen commitment), the token type (hidden in Poseidon commitment),
-or who owns the purse.
-
-### Ownership Proof
-
-Poseidon-based: `derived_owner = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret)`
-constrained against `owner_pub` in the ZK witness. Neither value is a public input.
+1. **Circuit**: All `constrain_instance` values are caller-provided witnesses.
+2. **Params**: Every constrain_instance position maps to a field. Caller pre-computes
+   nullifier, expected_root, Pedersen commitment coordinates, derived IDs.
+3. **Metadata**: Pure echo — `params.field` only.
+4. **Exec**: Nullifier check. **Apply**: merkle_add, db_set.
 
 ## Data Model
 
-Each state transition produces a Merkle leaf:
-
 ```
-purse_leaf = poseidon_hash(DOMAIN_SIGNATURE_SECRET, purse_id, balance, state_nonce)
-nullifier = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, purse_id, state_nonce)
+purse_leaf  = poseidon_hash(DOMAIN_SIGNATURE_SECRET, purse_id, balance, state_nonce)
+nullifier   = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, purse_id, state_nonce)
+owner_pub    = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret)
+balance_commit = pedersen_commit(balance, balance_blind)
 ```
-
-The purse tree is an append-only BridgeTree (depth 32, Sinsemilla hash).
-Nullifiers are stored in a Poseidon Sparse Merkle Tree (depth 255).
 
 ## Database Trees
 
 | Tree | Purpose |
 |------|---------|
 | `purses` | Purse records |
-| `nullifiers` | Spent nullifiers (SMT) |
-| `info` | Contract metadata, Merkle tree data, root pointers |
+| `nullifiers` | Spent nullifiers (flat DB) |
+| `info` | Merkle tree data, root pointers |
 | `purse_roots` | Historical Merkle roots |
-| `nullifier_roots` | Historical nullifier SMT roots |
+
+## Circuit Version
+
+Purse is L1. One circuit per operation — no version suffixes.
+Domain-separated Poseidon hashes throughout.
 
 ## Composing Contracts
 
-Contracts compose with Purse to replace manual `u64` arithmetic on aggregate
-counters. Purse is a genesis primitive — deployed once at genesis (counter 8)
-and every contract calls it as a child.
-
-| Contract | What the Purse Tracks | Child Calls |
-|----------|----------------------|-------------|
-| [escrow](escrow.md) | Locked escrow funds | Deposit on Fund |
-| [drain_protection](drain_protection.md) | Protected fund total | Deposit/Withdraw on Transfer |
-| [dao_escrow](dao_escrow.md) | Treasury, pool, and endowment balances | Deposit on PayPremium, Withdraw on TreasurySpend/EndowmentWithdraw |
-| [subscription](subscription.md) | Subscription deposit | Deposit on Subscribe, Withdraw on Cancel |
-| [pool_stake](pool_stake.md) | Pool total, member stakes, coverage | Deposit on Join, Withdraw on Slash |
-| [betting_stake](betting_stake.md) | Table pool, staker positions, earnings | Deposit on Stake, Withdraw on Unstake |
-| [relayer_endowment](relayer_endowment.md) | Deployed capital, per-deployment fees | Deposit on Deploy, Withdraw on Settle |
-| [labor_market](labor_market.md) | Job payment escrow | Deposit on CreateJob, Withdraw on ConfirmDelivery |
-| [bridge](bridge.md) | Total deposited, total withdrawn | Deposit on Deposit, Withdraw on Withdraw |
-| [stablecoin](stablecoin.md) | Total debt, total collateral, fees | Deposit/Withdraw on Mint/Repay/Liquidate |
+| Contract | What the Purse Tracks |
+|----------|----------------------|
+| [escrow](escrow.md) | Locked escrow funds |
+| [drain_protection](drain_protection.md) | Protected fund total |
+| [dao_escrow](dao_escrow.md) | Treasury, pool, endowment balances |
+| [subscription](subscription.md) | Subscription deposit |
+| [pool_stake](pool_stake.md) | Pool total, member stakes |
+| [bridge](bridge.md) | Total deposited, total withdrawn |
+| [stablecoin](stablecoin.md) | Total debt, collateral, fees |
 
 ## References
 
-- [Object Capability Model](../arch/ocap.md) — Purse in the O-Cap stack
-- [Privacy Model](../arch/privacy.md) — L1 vs L2
-- [Contract WASM Type System](../arch/contract-wasm-type-system.md) — Encoding boundaries
-- [Box](box.md) — The single-capability container (non-fungible analogue of Purse)
+- [Privacy Model](../arch/privacy.md) — L1/L2, consume+create model, architectural principles
+- [Contract WASM Type System](../arch/contract-wasm-type-system.md) — Four encoding boundaries
+- [O-Cap Model](../arch/ocap.md) — Purse in the O-Cap stack
+- [Safety](../dev/contracts/safety.md) — Lesson 22: four-component architecture
+- [Box](box.md) — Single-capability container
 - Source: `src/contract/purse/`

@@ -183,10 +183,55 @@ The fourth boundary is the one the HAZOP found broken. The circuit's
 `zk_inputs.push()` order, position for position. The proof's instance
 column MUST match byte-for-byte.
 
-### 5.5 L1 Design Rule
+### 5.5 The Consume+Create Model — Objects as State-Transition Chains
+
+In L2, Box and Purse were persistent mutable containers. A Box came into
+existence once and remained — you could Put into the same box_id repeatedly.
+A Purse was a persistent balance account — you could Deposit and Withdraw
+against the same purse_id forever. The object was a record with mutable state.
+
+In L1, the object itself follows the revoke/issue + nullifier pattern. Every
+operation consumes the old state and creates a new one. The "object" doesn't
+persist — it's a chain of state transitions linked by a resource ID in the
+ZK witness. This is the same model as PromissoryNote's coins: a coin is
+created (minted), spent (burned with nullifier). The coin doesn't persist —
+it gets consumed and a new coin is created.
+
+**Box — the capability to delegate.** Each Put nullifies the previous box
+state and appends a new state leaf to the Merkle tree. Each Take nullifies
+the current state. The box_id binds transitions together in the witness
+but is never a public input. An observer sees only nullifiers and Merkle
+roots — not which box, not by whom, not what's inside.
+
+**Purse — the capability to hold fungible value.** Each Deposit nullifies
+the old balance state and creates a new one with balance += amount. Each
+Withdraw nullifies and creates with balance -= amount. Balance proves
+Merkle inclusion without consumption (read-only). The balance amount is
+hidden in a Pedersen commitment; conservation is proven via additive
+homomorphism in the circuit.
+
+**The structural pattern.** Every transferable o-cap at L1 follows the same
+four-component architecture:
+
+1. **Circuit** constrains cryptographic relationships. Every public input is
+   a caller-provided witness — the circuit computes a value, constrains it
+   equal to the witness via `constrain_equal_base`, then publishes the witness
+   via `constrain_instance`.
+
+2. **Params** carry every value needed by both circuit and metadata. Each
+   `constrain_instance` position maps to a field in the params struct.
+
+3. **Metadata** echoes params fields directly — no computation, no domain
+   constants, no poseidon_hash, no field arithmetic. Pure echo.
+
+4. **Exec** validates against chain state (nullifier unspent). **Apply**
+   writes state (merkle_add, db_set nullifier). No cryptographic computation
+   in either handler — the circuit already proved everything.
+
+### 5.6 L1 Design Rule
 
 **L1 for transferable o-caps, L2 for static records.** This is not a
-hierarchy of quality. L1 requires Merkle inclusion proofs, nullifier SMTs,
-and domain-separated Poseidon hashes at every boundary. L2 uses direct
-KV lookup with resource IDs as public inputs. The choice is determined
-by whether the resource changes hands between parties.
+hierarchy of quality. L1 requires Merkle inclusion proofs, nullifier
+tracking, and the consume+create model at every state transition. L2
+uses direct KV lookup with resource IDs as public inputs. The choice
+is determined by whether the resource changes hands between parties.

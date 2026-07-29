@@ -1,93 +1,88 @@
 # Box — ZK Capability Container (L1)
 
-The Box contract is the DarkWow equivalent of capability delegation — put a
-capability into a Box, and whoever Takes it receives it. It is an **O-Cap
-primitive** deployed at genesis (ContractId counter 9). Box is L1: resource
-IDs are in the ZK witness, Merkle inclusion proofs hide which box is being
-operated on.
+## The Primitive Capability
 
-## Why Genesis?
-
-In the Agoric o-cap model, Invitations are Payments that grant access to a
-specific contract interaction. Box is the ZK-native equivalent: it holds an
-arbitrary capability and transfers it via linear consumption (nullifier).
-Having a canonical well-known ContractId makes Box available as a composable
-primitive for every contract in the ecosystem.
+Box is the capability to delegate — the ZK-native equivalent of Agoric's
+Invitation. It holds an arbitrary capability and transfers it via linear
+consumption. In L1, the Box is not a persistent mutable container. Each
+operation is a consume+create: the old box state is nullified and a new
+state leaf is appended to the Merkle tree. The box_id binds state transitions
+in the ZK witness but is never exposed as a public input.
 
 ## Operations
 
 | Operation | Opcode | Circuit | What It Proves |
 |-----------|--------|---------|---------------|
-| `Initialize` | 0x00 | — | Initialize the Box contract (genesis primitive) |
-| `Put` | 0x01 | `put.zk` | Merkle inclusion of old box state. Poseidon-based ownership proof. Nullifier consumes old state. New contents commitment appended to Merkle tree. |
-| `Take` | 0x02 | `take.zk` | Merkle inclusion of current box state. Poseidon-based ownership proof. Nullifier consumes state. |
+| `Initialize` | 0x00 | — | Genesis initialization |
+| `Put` | 0x01 | `put.zk` | Poseidon ownership proof. Nullifier consumes old state. Merkle inclusion of old state. New state commitment appended. |
+| `Take` | 0x02 | `take.zk` | Same as Put. Nullifier consumes current state. |
 
-Observer sees only `[nullifier, merkle_root, ...]` — not which box, not by whom,
-not what capability is inside.
+## Barbs
 
-## Privacy Model
+### Put
+| Barb | Mechanism |
+|------|-----------|
+| `↓spend` | Circuit constrains `owner_pub == poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret)` |
+| `↓nullify` | Circuit constrains `nullifier == poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, old_state_nonce)` |
+| `↓prove-inclusion` | Circuit constrains `merkle_root(leaf_pos, path, leaf) == expected_root` where `leaf = poseidon_hash(DOMAIN_SIGNATURE_SECRET, box_id, old_contents_commit, old_state_nonce)` |
+| `↓commit` | Apply appends new leaf to Merkle tree, marks nullifier in DB |
 
-Box is L1 — full privacy via Merkle inclusion proofs. The resource identity
-(`box_id`) is bound into a Merkle leaf: `poseidon_hash(DOMAIN_SIGNATURE_SECRET,
-box_id, contents_commit, state_nonce)`. The `merkle_root` opcode (Sinsemilla,
-depth 32) proves inclusion. Only the Merkle root is exposed as a public input.
+### Take
+Same barbs as Put.
 
-Every state transition follows the append-only + nullifier model:
+## The Four-Component Flow
 
-1. The old state leaf is proven to exist via Merkle inclusion proof
-2. A nullifier `poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, old_state_nonce)`
-   consumes the old state
-3. A new leaf representing the new state is appended to the Merkle tree
+Every operation follows the same architectural pattern:
 
-An observer cannot determine which box is being operated on, who owns it,
-whether two operations target the same box, or what capability is inside.
+1. **Circuit** (`put.zk` / `take.zk`): All `constrain_instance` values are
+   caller-provided witnesses. The circuit computes cryptographic values and
+   constrains them equal to the witnesses via `constrain_equal_base`.
 
-### Ownership Proof
+2. **Params** (`PutParams` / `TakeParams`): Every `constrain_instance` position
+   maps to a field. The caller pre-computes all circuit-derived values
+   (nullifier, expected_root, tx_binding) with matching domain constants.
 
-Poseidon-based: `derived_owner = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret)`
-constrained against `owner_pub` in the ZK witness. Neither value is a public input.
-This is the o-cap authorization model — possession of the secret IS authority.
+3. **Metadata** (`get_metadata`): Pure echo — reads `params.field` directly.
+   No domain constants, no poseidon_hash, no computation.
+
+4. **Exec** (`process_instruction`): Validates nullifier unspent via
+   `db_contains_key`. **Apply** (`process_update`): Appends leaf to Merkle
+   tree via `merkle_add`, marks nullifier via `db_set`.
 
 ## Data Model
 
-Each state transition produces a Merkle leaf:
-
 ```
-box_leaf = poseidon_hash(DOMAIN_SIGNATURE_SECRET, box_id, contents_commit, state_nonce)
-nullifier = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, old_state_nonce)
+box_leaf  = poseidon_hash(DOMAIN_SIGNATURE_SECRET, box_id, contents_commit, state_nonce)
+nullifier = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, state_nonce)
+owner_pub = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret)
 ```
-
-The box tree is an append-only BridgeTree (depth 32, Sinsemilla hash). Each
-Put/Take appends one leaf. Nullifiers are stored in a Poseidon Sparse Merkle
-Tree (depth 255) for replay prevention.
 
 ## Database Trees
 
 | Tree | Purpose |
 |------|---------|
-| `boxes` | Box records |
-| `nullifiers` | Spent nullifiers (SMT) |
-| `info` | Contract metadata, Merkle tree data, root pointers |
+| `nullifiers` | Spent nullifiers (flat DB) |
+| `info` | Merkle tree data, root pointers |
 | `box_roots` | Historical Merkle roots |
-| `nullifier_roots` | Historical nullifier SMT roots |
+
+## Circuit Version
+
+Box is L1. There is one circuit per operation — no version suffixes.
+Circuits use domain-separated Poseidon hashes (HAZOP RC3).
 
 ## Composing Contracts
 
-Contracts compose with Box to delegate capabilities without revealing what is
-being transferred. Box is a genesis primitive — deployed once at genesis
-(counter 9) and every contract calls it as a child.
-
-| Contract | What the Box Delegates | Child Calls |
-|----------|----------------------|-------------|
-| [escrow](escrow.md) | Seller claim authority, buyer refund authority | Take on Claim, Take on Refund |
-| [drain_protection](drain_protection.md) | Spend authority, proposal rights, vote rights | Take on Propose/Vote/Transfer |
-| [subscription](subscription.md) | Subscription capability (READ/WRITE/CANCEL/RENEW/ADMIN) | Take on VerifyAccess |
-| [dao_escrow](dao_escrow.md) | Four governance roles: member_vote, board_treasury, board_endowment, dispute_arbitrator | Take on Propose/Vote/TreasurySpend/EndowmentWithdraw/DisputeResolve |
+| Contract | What the Box Delegates |
+|----------|----------------------|
+| [escrow](escrow.md) | Seller claim authority, buyer refund authority |
+| [drain_protection](drain_protection.md) | Spend authority, proposal rights, vote rights |
+| [subscription](subscription.md) | Subscription capability |
+| [dao_escrow](dao_escrow.md) | Governance roles |
 
 ## References
 
-- [Object Capability Model](../arch/ocap.md) — Box in the O-Cap stack
-- [Privacy Model](../arch/privacy.md) — L1 vs L2
-- [Contract WASM Type System](../arch/contract-wasm-type-system.md) — Encoding boundaries
-- [Wallet Architecture](../arch/wallet.md) — How the wallet interacts with Boxes
+- [Privacy Model](../arch/privacy.md) — L1/L2, consume+create model, architectural principles
+- [Contract WASM Type System](../arch/contract-wasm-type-system.md) — Four encoding boundaries
+- [O-Cap Model](../arch/ocap.md) — Box in the O-Cap stack
+- [Safety](../dev/contracts/safety.md) — Lesson 22: four-component architecture
 - Source: `src/contract/box/`

@@ -1451,6 +1451,44 @@ the value must be caller-provided through params.
 **DarkWow audit result (2026-07-29)**: Box and Purse L1 circuits all affected.
 Fixed via Pattern A for nullifier/Merkle root, Pattern B for tx_binding/owner_pub.
 
+**The structural law — four-component architecture for every L1 operation**:
+
+The fix generalizes to a compositional law. Every L1 operation follows a clean
+four-component separation where the data flow is: caller provides all values →
+circuit constrains → metadata echoes → host verifies → exec validates state →
+apply writes state.
+
+1. **Circuit** (`.zk`): Constrains cryptographic relationships. Every
+   `constrain_instance` value is a caller-provided witness. The circuit
+   computes a value, constrains it equal to the witness via
+   `constrain_equal_base`, then publishes the witness. No circuit-local
+   variable ever appears in `constrain_instance`.
+
+2. **Params** (model): Carries every value needed by both circuit and metadata.
+   Each `constrain_instance` position maps to a field in the params struct.
+
+3. **Metadata** (entrypoint `get_metadata`): Pure echo. Reads `params.field`
+   directly — no domain constants, no `poseidon_hash`, no field arithmetic,
+   no computation of any kind. The metadata function is the specification
+   of the public input vector order.
+
+4. **Exec + Apply** (entrypoint `process_instruction` + `process_update`):
+   Exec validates against chain state only (nullifier unspent, root in DB).
+   Apply writes state only (merkle_add, db_set). Neither handler computes
+   cryptographic values — the circuit already proved everything.
+
+**The invariant**: `metadata[i] == proof_instance[i]` for all i. When the
+metadata function is a pure echo, this invariant holds by construction.
+When the metadata function computes anything, it introduces a second source
+of truth that can drift from the circuit.
+
+**Audit heuristic — the trace test**: For every `constrain_instance(X)` in a
+circuit, trace `X` back to its origin. If `X` is a circuit-local variable
+(computed from `poseidon_hash` or `merkle_root`), the circuit is wrong —
+the pattern requires a caller-provided witness constrained against the
+computed value. If `X` is a witness, trace it through the params struct to
+the metadata function — verify the metadata echoes it without computation.
+
 ---
 
 ## References
