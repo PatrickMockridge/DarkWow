@@ -40,10 +40,10 @@ impl BoxHarness {
         tree.append(MerkleNode::from_base(pallas::Base::zero()));
         let ol = poseidon_hash([dml, bid, occ, osn]);
         tree.append(MerkleNode::from_base(ol));
+        let er = tree.root(0).unwrap(); // BEFORE mark — checkpoint 0 has current state
         let mk = tree.mark().unwrap();
         let p: Vec<MerkleNode> = tree.witness(mk, 0).unwrap();
         let lp = u32::try_from(u64::from(mk)).unwrap();
-        let er = tree.root(0).unwrap();
 
         let w = vec![Witness::Base(Value::known(bid)),Witness::Base(Value::known(osn)),Witness::Base(Value::known(nsn)),Witness::Base(Value::known(occ)),Witness::Base(Value::known(ncc)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er.inner())),Witness::Base(Value::known(nl)),Witness::Base(Value::known(os)),Witness::Base(Value::known(op)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().unwrap())),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb))];
         let pi = vec![nf, er.inner(), nl, tb, tn];
@@ -75,10 +75,10 @@ impl BoxHarness {
         tree.append(MerkleNode::from_base(pallas::Base::zero()));
         let ol = poseidon_hash([dml, bid, cc, sn]);
         tree.append(MerkleNode::from_base(ol));
+        let er = tree.root(0).unwrap(); // BEFORE mark — checkpoint 0 has current state
         let mk = tree.mark().unwrap();
         let p: Vec<MerkleNode> = tree.witness(mk, 0).unwrap();
         let lp = u32::try_from(u64::from(mk)).unwrap();
-        let er = tree.root(0).unwrap();
 
         let w = vec![Witness::Base(Value::known(bid)),Witness::Base(Value::known(cc)),Witness::Base(Value::known(sn)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er.inner())),Witness::Base(Value::known(os)),Witness::Base(Value::known(op)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().unwrap())),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb))];
         let pi = vec![nf, er.inner(), tb, tn];
