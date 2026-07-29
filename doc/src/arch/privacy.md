@@ -124,6 +124,14 @@ via `constrain_equal_base(circuit_value, params_value)` then
 `tx_commitment + tx_nonce`) can be recomputed by the metadata function — but
 MUST use the same domain constants as the circuit.
 
+**Derivation constraint rule**: Every `constrain_instance(X)` MUST be preceded
+by a visible derivation `X = f(witnesses)` in the circuit body. A
+`constrain_instance` of a bare witness with no derivation constraint is a
+free witness — the prover can set it to any value that passes the entrypoint
+check. Per safety.md Lesson 16, this is an Orchard-class vulnerability. The
+derivation may be direct (`constrain_equal_base` against a circuit-computed
+value) or indirect (`X` is also used as input to another constrained value).
+
 ### 5.2 Domain-Separated Poseidon as Type Restoration
 
 Per [type-system.md §2](type-system.md): `poseidon_hash` is a type erasure
@@ -227,6 +235,16 @@ four-component architecture:
 4. **Exec** validates against chain state (nullifier unspent). **Apply**
    writes state (merkle_add, db_set nullifier). No cryptographic computation
    in either handler — the circuit already proved everything.
+
+**Structural rule**: Every value that represents a state transition output
+(new leaf, new commitment, new balance) MUST be constrained in the circuit.
+The circuit constrains both the consumed state (Merkle inclusion) and the
+produced state (leaf formula). The apply handler uses only circuit-constrained
+values — never independently-computed ones. If a Put operation creates a new
+box leaf, the circuit MUST compute the new leaf formula and constrain it equal
+to the caller-provided value. An unconstrained output value is a griefing
+vector: the attacker can insert an arbitrary leaf that doesn't match the
+expected formula, making the resource permanently un-consumable.
 
 ### 5.6 L1 Design Rule
 

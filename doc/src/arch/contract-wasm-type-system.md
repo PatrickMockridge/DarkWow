@@ -448,6 +448,21 @@ input count, input order, domain constant value, or hash domain produces a
 proof verification failure. The circuit's `constrain_instance` order IS the
 schema; the metadata function MUST conform.
 
+**The derivation constraint rule**: Every `constrain_instance(X)` at Boundary
+4 MUST trace to a derivation `X = f(witnesses)` visible in the circuit body.
+The derivation may be:
+
+- **Direct**: `X` is a witness AND is constrained equal to a circuit-computed
+  value via `constrain_equal_base(circuit_computed, X)`.
+- **Indirect**: `X` is used as input to another constrained value AND is
+  published alongside it (e.g., `tx_nonce` published with `tx_binding` which
+  is computed from `tx_nonce` via `poseidon_hash`).
+
+A `constrain_instance` of a bare witness with zero prior use in any constraint
+is a specification violation — the host verifier receives a value the circuit
+never proved anything about. This is an Orchard-class vulnerability (see
+safety.md Lesson 16).
+
 ### 3.1.1 Explicit Encoding Rules
 
 The explicit encode/decode pattern SHALL follow these rules.

@@ -631,6 +631,16 @@ The entrypoint checked `params.mint_public != stored_auth` at line 530, where `s
 
 **Detection heuristic**: For every `constrain_instance` of a value that is checked against on-chain state in the entrypoint, verify the circuit constrains how that value is derived. Grep for the value name in the `.zk` file — if it only appears as `constrain_instance(value)` without any prior derivation constraint, it's a free witness.
 
+**Free-witness audit checklist** (for every `constrain_instance(X)` in a `.zk` circuit):
+- [ ] Is `X` a witness slot? If yes, trace its use in the circuit body.
+- [ ] Is `X` constrained equal to a circuit-computed value via `constrain_equal_base`?
+- [ ] Is `X` used as input to a circuit-computed value that IS published?
+- [ ] Is `X` declared in the witness block but never referenced anywhere? (unused witness)
+
+A witness that satisfies none of the above is a free witness. An unused witness
+is dead code — it occupies a slot in the proving key and params struct but the
+circuit proves nothing about it.
+
 ### Lesson 17: Off-Circuit Value Conservation — The Fee Inflation Vector
 
 **The vulnerability**: NativeToken's `FeeV1` ZK circuit had zero constraint linking `input_value` and `output_value`. The fee subtraction (`output_value = input_value - fee`) was computed off-circuit in the Rust client. The circuit used `input_value` solely in the input coin hash and `output_value` solely in the output coin hash — they were independent witnesses with no relationship enforced.
