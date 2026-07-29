@@ -380,7 +380,7 @@ fn process_issue_credential_instruction(
 
     msg!("[identity::issue_credential] Issuing credential to holder");
 
-    // Credential data stored locally for DAG; possession tracked via Box::PutV1.
+    // Credential data stored locally for DAG; possession tracked via Box::Put.
     let nullifier_bytes = params.nullifier.to_bytes();
     // Check nullifier hasn't been used
     let nullifiers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_NULLIFIERS_TREE)?;
@@ -410,7 +410,7 @@ fn apply_issue_credential_update(cid: ContractId, update: IssueCredentialUpdateV
     let nullifier_bytes = update.nullifier.to_bytes();
 
     // Store credential data for DAG operations.
-    // Possession tracking delegated to Box::PutV1 child call.
+    // Possession tracking delegated to Box::Put child call.
     let credential = Credential {
         nullifier: update.nullifier,
         issuer_pub: update.issuer_pub,
@@ -804,7 +804,7 @@ fn process_issue_capability_instruction(
     // Generate capability secret
     let capability_secret = derive_capability_secret(params.holder_pub, params.capability_id);
 
-    // Possession tracked via Box::PutV1 child call; issuance key not needed.
+    // Possession tracked via Box::Put child call; issuance key not needed.
 
     let update = IssueCapabilityUpdateV1 {
         capability_id: params.capability_id,
@@ -819,7 +819,7 @@ fn process_issue_capability_instruction(
 
 fn apply_issue_capability_update(cid: ContractId, update: IssueCapabilityUpdateV1) -> ContractResult {
     let capabilities_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CAPABILITIES_TREE)?;
-    // Capability possession tracked via Box::PutV1 child call.
+    // Capability possession tracked via Box::Put child call.
     // StoredCapability issuance record removed — Box id is the record.
 
     // Update issued count
@@ -856,7 +856,7 @@ fn process_verify_capability_instruction(
     let _cap_data = wasm::db::db_get(capabilities_db, &cap_bytes)?
         .ok_or(IdentityError::CapabilityNotFound)?;
 
-    // Possession verified via Box::TakeV1 child call.
+    // Possession verified via Box::Take child call.
     // The credential is a Box; TakeV1 proves the caller holds it.
     // Revocation checked via Identity's nullifier tree.
 
@@ -890,7 +890,7 @@ fn process_revoke_capability_instruction(
     msg!("[identity::revoke_capability] Revoking capability");
 
     // Capability possession tracked via Box.
-    // Revocation via Box::TakeV1 nullifier consumption.
+    // Revocation via Box::Take nullifier consumption.
 
     let update = RevokeCapabilityUpdateV1 {
         capability_id: params.capability_id,
