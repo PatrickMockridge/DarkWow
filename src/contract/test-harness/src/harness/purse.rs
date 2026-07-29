@@ -76,28 +76,6 @@ impl PurseHarness {
     pub fn circuits(&self) -> Vec<&'static str> {
         vec!["Balance", "Deposit", "Withdraw"]
     }
-}
-
-impl ContractHarness for PurseHarness {
-    fn name(&self) -> &str { "purse" }
-    fn circuits(&self) -> Vec<&'static str> { self.circuits() }
-    fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
-        match ns {
-            "Balance" => Some(&self.balance_zkbin),
-            "Deposit" => Some(&self.deposit_zkbin),
-            "Withdraw" => Some(&self.withdraw_zkbin),
-            _ => None,
-        }
-    }
-    fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
-        match ns {
-            "Balance" => Some(&self.balance_pk),
-            "Deposit" => Some(&self.deposit_pk),
-            "Withdraw" => Some(&self.withdraw_pk),
-            _ => None,
-        }
-    }
-}
 
     pub fn deposit(&self, amount: u64) -> Result<PurseDepositResult> {
         let owner_secret = pallas::Base::from(42u64);
@@ -328,6 +306,27 @@ impl ContractHarness for PurseHarness {
         call_data.extend_from_slice(&params.encode());
 
         Ok(PurseBalanceResult { call_data, proof })
+    }
+}
+
+impl ContractHarness for PurseHarness {
+    fn name(&self) -> &str { "purse" }
+    fn circuits(&self) -> Vec<&'static str> { self.circuits() }
+    fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
+        match ns {
+            "Balance" => Some(&self.balance_zkbin),
+            "Deposit" => Some(&self.deposit_zkbin),
+            "Withdraw" => Some(&self.withdraw_zkbin),
+            _ => None,
+        }
+    }
+    fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
+        match ns {
+            "Balance" => Some(&self.balance_pk),
+            "Deposit" => Some(&self.deposit_pk),
+            "Withdraw" => Some(&self.withdraw_pk),
+            _ => None,
+        }
     }
 }
 

@@ -68,18 +68,6 @@ impl BoxHarness {
     pub fn circuits(&self) -> Vec<&'static str> {
         vec!["Put", "Take"]
     }
-}
-
-impl ContractHarness for BoxHarness {
-    fn name(&self) -> &str { "box" }
-    fn circuits(&self) -> Vec<&'static str> { self.circuits() }
-    fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
-        match ns { "Put" => Some(&self.put_zkbin), "Take" => Some(&self.take_zkbin), _ => None }
-    }
-    fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
-        match ns { "Put" => Some(&self.put_pk), "Take" => Some(&self.take_pk), _ => None }
-    }
-}
 
     pub fn put(&self) -> Result<BoxPutResult> {
         // Witness layout (Put circuit):
@@ -232,6 +220,17 @@ impl ContractHarness for BoxHarness {
         call_data.extend_from_slice(&params.encode());
 
         Ok(BoxTakeResult { call_data, proof })
+    }
+}
+
+impl ContractHarness for BoxHarness {
+    fn name(&self) -> &str { "box" }
+    fn circuits(&self) -> Vec<&'static str> { self.circuits() }
+    fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
+        match ns { "Put" => Some(&self.put_zkbin), "Take" => Some(&self.take_zkbin), _ => None }
+    }
+    fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
+        match ns { "Put" => Some(&self.put_pk), "Take" => Some(&self.take_pk), _ => None }
     }
 }
 
