@@ -69,7 +69,7 @@ structure ConcurrentProcess where
   concurrencyBarbs : Finset Barb      -- execution barbs (concurrent, merge, etc.)
   canConcurrent : Bool
   canMerge : Bool
-  deriving Repr, BEq
+  deriving Repr
 
 def concurrentProcessBarbs (p : ConcurrentProcess) : Finset Barb :=
   p.authorizationBarbs ∪ p.concurrencyBarbs

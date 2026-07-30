@@ -252,6 +252,27 @@ def purseWithdrawType : CapabilityType purseWithdrawResource withdrawAction :=
       · simp [compose, tokenId, Finset.mem_insert, Finset.mem_singleton]
   }
 
+-- Purse Deposit (consumable via nullifier, identical barbs to Withdraw)
+def purseDepositResource : Resource :=
+  { name := "purse_deposit"
+  , requiredBarbs := {Barb.spend, Barb.commit, Barb.nullify, Barb.dispatch, Barb.denominate}
+  }
+
+def depositAction : Action := { name := "deposit" }
+
+def purseDepositType : CapabilityType purseDepositResource depositAction :=
+  { primitives := [secretKey, coin, nullifier, contractId, tokenId]
+  , coversBarbs := by
+      intro b h
+      simp [purseDepositResource, Finset.mem_insert, Finset.mem_singleton] at h
+      rcases h with (rfl|rfl|rfl|rfl|rfl)
+      · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, coin, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, tokenId, Finset.mem_insert, Finset.mem_singleton]
+  }
+
 -- Identity Credential (selective disclosure)
 def identityCredentialResource : Resource :=
   { name := "identity_credential"

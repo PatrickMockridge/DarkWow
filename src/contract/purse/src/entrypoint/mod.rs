@@ -52,15 +52,15 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 }
 
 fn deposit_metadata(p: DepositParams) -> Result<Vec<u8>, ContractError> {
-    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_DEPOSIT_NS.to_string(), vec![p.nullifier.inner(), p.expected_root, p.old_commit_x, p.old_commit_y, p.new_commit_x, p.new_commit_y, p.new_leaf, p.tx_binding, p.tx_nonce]));
+    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_DEPOSIT_NS.to_string(), vec![p.nullifier.inner(), p.expected_root.inner(), p.old_commit_x, p.old_commit_y, p.new_commit_x, p.new_commit_y, p.new_leaf.inner(), p.tx_binding, p.tx_nonce]));
     let mut m = vec![]; z.encode(&mut m)?; let s: Vec<dwow_sdk::crypto::PublicKey> = vec![]; s.encode(&mut m)?; Ok(m)
 }
 fn withdraw_metadata(p: WithdrawParams) -> Result<Vec<u8>, ContractError> {
-    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_WITHDRAW_NS.to_string(), vec![p.nullifier.inner(), p.expected_root, p.old_commit_x, p.old_commit_y, p.new_commit_x, p.new_commit_y, p.new_leaf, p.tx_binding, p.tx_nonce]));
+    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_WITHDRAW_NS.to_string(), vec![p.nullifier.inner(), p.expected_root.inner(), p.old_commit_x, p.old_commit_y, p.new_commit_x, p.new_commit_y, p.new_leaf.inner(), p.tx_binding, p.tx_nonce]));
     let mut m = vec![]; z.encode(&mut m)?; let s: Vec<dwow_sdk::crypto::PublicKey> = vec![]; s.encode(&mut m)?; Ok(m)
 }
 fn balance_metadata(p: BalanceParams) -> Result<Vec<u8>, ContractError> {
-    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_BALANCE_NS.to_string(), vec![p.derived_purse_id, p.expected_root, p.balance_commit_x, p.balance_commit_y, p.token_commit, p.tx_binding, p.tx_nonce]));
+    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_BALANCE_NS.to_string(), vec![p.derived_purse_id, p.expected_root.inner(), p.balance_commit_x, p.balance_commit_y, p.token_commit, p.tx_binding, p.tx_nonce]));
     let mut m = vec![]; z.encode(&mut m)?; let s: Vec<dwow_sdk::crypto::PublicKey> = vec![]; s.encode(&mut m)?; Ok(m)
 }
 
@@ -79,7 +79,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { msg!("[purse::deposit] Error: Duplicate nullifier"); return Err(PurseError::DuplicateNullifier.into()); }
             let rdb = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?;
-            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_repr())? { msg!("[purse::deposit] Error: Merkle root not found"); return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
+            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[purse::deposit] Error: Merkle root not found"); return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
             let u = DepositUpdate { nullifier: p.nullifier, new_leaf: p.new_leaf };
             wasm::util::set_return_data(&[&[PurseFunction::Deposit as u8], &u.encode()?[..]].concat())?;
         }
@@ -88,14 +88,14 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { msg!("[purse::withdraw] Error: Duplicate nullifier"); return Err(PurseError::DuplicateNullifier.into()); }
             let rdb = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?;
-            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_repr())? { msg!("[purse::withdraw] Error: Merkle root not found"); return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
+            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[purse::withdraw] Error: Merkle root not found"); return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
             let u = WithdrawUpdate { nullifier: p.nullifier, new_leaf: p.new_leaf };
             wasm::util::set_return_data(&[&[PurseFunction::Withdraw as u8], &u.encode()?[..]].concat())?;
         }
         PurseFunction::Balance => {
             let p = BalanceParams::decode(&self_.data.data[1..])?;
             let rdb = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?;
-            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_repr())? { msg!("[purse::balance] Error: Merkle root not found"); return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
+            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[purse::balance] Error: Merkle root not found"); return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
             wasm::util::set_return_data(&[PurseFunction::Balance as u8])?;
         }
         PurseFunction::Initialize => return Err(ContractError::InvalidFunction),
@@ -114,13 +114,13 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         PurseFunction::Deposit => {
             let u = DepositUpdate::decode(&update_data[1..])?; let idb = wasm::db::db_lookup(cid, PURSE_CONTRACT_INFO_TREE)?;
             let rdb = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?;
-            wasm::merkle::merkle_add(idb, rdb, PURSE_CONTRACT_LATEST_PURSE_ROOT, PURSE_CONTRACT_PURSE_MERKLE_TREE, &[MerkleNode::from_base(u.new_leaf)])?;
+            wasm::merkle::merkle_add(idb, rdb, PURSE_CONTRACT_LATEST_PURSE_ROOT, PURSE_CONTRACT_PURSE_MERKLE_TREE, &[u.new_leaf])?;
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?; wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
         }
         PurseFunction::Withdraw => {
             let u = WithdrawUpdate::decode(&update_data[1..])?; let idb = wasm::db::db_lookup(cid, PURSE_CONTRACT_INFO_TREE)?;
             let rdb = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?;
-            wasm::merkle::merkle_add(idb, rdb, PURSE_CONTRACT_LATEST_PURSE_ROOT, PURSE_CONTRACT_PURSE_MERKLE_TREE, &[MerkleNode::from_base(u.new_leaf)])?;
+            wasm::merkle::merkle_add(idb, rdb, PURSE_CONTRACT_LATEST_PURSE_ROOT, PURSE_CONTRACT_PURSE_MERKLE_TREE, &[u.new_leaf])?;
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?; wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
         }
         PurseFunction::Balance => {}

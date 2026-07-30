@@ -9,10 +9,6 @@ use dwow_sdk::{
 };
 use crate::harness::ContractHarness;
 
-fn combine_merkle(level: u8, left: &MerkleNode, right: &MerkleNode) -> MerkleNode {
-    MerkleNode::from_base(poseidon_hash([pallas::Base::from(level as u64), left.inner(), right.inner()]))
-}
-
 pub struct BoxHarness { put_zkbin: ZkBinary, put_pk: ProvingKey, take_zkbin: ZkBinary, take_pk: ProvingKey }
 
 impl BoxHarness {
@@ -32,11 +28,8 @@ impl BoxHarness {
         let mk = tree.mark().expect("tree.mark");
         let p: Vec<MerkleNode> = tree.witness(mk, 0).expect("tree.witness");
         let lp = u32::try_from(u64::from(mk)).expect("position");
-        let mut current = MerkleNode::from_base(leaf);
-        for (level, sibling) in p.iter().enumerate() {
-            current = if (lp as usize) & (1usize << level) == 0 { combine_merkle(level as u8, &current, sibling) } else { combine_merkle(level as u8, sibling, &current) };
-        }
-        (lp, p, current.inner())
+        let root = tree.root(0).expect("tree.root");
+        (lp, p, root.inner())
     }
 
     pub fn put(&self) -> Result<BoxPutResult> {
@@ -53,7 +46,7 @@ impl BoxHarness {
         let mpa:[pallas::Base;32]=p.iter().map(|n|n.inner()).collect::<Vec<_>>().try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
         let nf_val=dwow_sdk::crypto::Nullifier::from_bytes(nf.to_repr()).map_err(|e| dwow_core::Error::Custom(format!("nullifier: {e:?}")))?;
         let params=dwow_box_contract::model::PutParams{box_id:dwow_box_contract::model::BoxId(bid),old_state_nonce:osn,new_state_nonce:nsn,old_contents_commit:occ,new_contents_commit:ncc,nullifier:nf_val,expected_root:dwow_sdk::crypto::MerkleNode::from_base(er),new_leaf:dwow_sdk::crypto::MerkleNode::from_base(nl),leaf_pos:lp,merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn};
-        let mut cd=vec![0x01u8];cd.extend_from_slice(&params.encode());Ok(BoxPutResult{call_data:cd,proof})
+        let mut cd=vec![0x01u8];cd.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);Ok(BoxPutResult{call_data:cd,proof})
     }
 
     pub fn take(&self) -> Result<BoxTakeResult> {
@@ -69,7 +62,7 @@ impl BoxHarness {
         let mpa:[pallas::Base;32]=p.iter().map(|n|n.inner()).collect::<Vec<_>>().try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
         let nf_val=dwow_sdk::crypto::Nullifier::from_bytes(nf.to_repr()).map_err(|e| dwow_core::Error::Custom(format!("nullifier: {e:?}")))?;
         let params=dwow_box_contract::model::TakeParams{box_id:dwow_box_contract::model::BoxId(bid),contents_commit:cc,state_nonce:sn,nullifier:nf_val,expected_root:dwow_sdk::crypto::MerkleNode::from_base(er),leaf_pos:lp,merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn};
-        let mut cd=vec![0x02u8];cd.extend_from_slice(&params.encode());Ok(BoxTakeResult{call_data:cd,proof})
+        let mut cd=vec![0x02u8];cd.extend_from_slice(&params.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);Ok(BoxTakeResult{call_data:cd,proof})
     }
 }
 

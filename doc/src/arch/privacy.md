@@ -253,3 +253,47 @@ hierarchy of quality. L1 requires Merkle inclusion proofs, nullifier
 tracking, and the consume+create model at every state transition. L2
 uses direct KV lookup with resource IDs as public inputs. The choice
 is determined by whether the resource changes hands between parties.
+
+## 6. The L1 Privacy Budget
+
+L1 privacy rests on an **anonymity set** — the set of concurrent objects
+in the Merkle tree that an observer cannot distinguish. This set has a
+practical upper bound: a wallet must be able to scan every new leaf,
+attempt decryption, and match against its known identities within a
+single block interval. If the anonymity set grows beyond what the
+slowest supported wallet can scan, privacy collapses.
+
+The wallet scan bound is `usable_objects ≤ scan_rate × block_interval`.
+This is a structural constraint — it applies to every L1 contract
+regardless of circuit complexity.
+
+### 6.1 Per-Contract Budget
+
+Each L1 contract maintains its own Merkle tree. The anonymity budget is
+**per-contract, not global** — o-cap composition gives each contract an
+independent anonymity set. Adding a new L1 contract does NOT reduce the
+anonymity budget of existing contracts.
+
+This independence is the architectural guarantee of the o-cap model.
+Without it, composing two contracts would merge their anonymity sets,
+and each new contract would fractionally reduce every existing contract's
+privacy. The formal composition theorem proves that o-cap-composed state
+spaces combine additively: each contract's anonymity budget is its own.
+
+### 6.2 The L1 Ceiling
+
+Every L1 contract consumes anonymity budget and circuit complexity budget
+simultaneously. A contract with too many public inputs, too many
+witness-only values, or too many operations per state transition
+approaches a **combinatorial ceiling** where the state-trajectory space
+exceeds practical verification capacity.
+
+The consume+create model (§5.5) is what keeps this space bounded: each
+non-terminal operation nullifies exactly one old state and creates
+exactly one new Merkle leaf. The active object count stays at N. Without
+this invariant, stale objects would accumulate indefinitely, degrading
+anonymity for every user.
+
+The specific bounds and triage criteria derived from the July 2026
+combinatorial analysis of Box and Purse are documented in the hardening
+log book (safety.md Lesson 23).

@@ -413,6 +413,7 @@ have `dwow_serial` bridge impls — they never cross the exec→apply boundary.
 | Exec → apply | `process_instruction` → `process_update` | `encode_foo_update_v1()` / `decode_foo_update_v1()` | YES (Enc+Dec) |
 | Sled state | `db_set` / `db_get` | `foo.encode()` / `Foo::decode(&data)?` | NO |
 | Circuit → metadata | `get_metadata` → `verify_zkp` | `metadata[i] == proof_instance[i]` for all i | N/A (positional match) |
+| Combinatorial | Architectural | consume+create invariant; o-cap disjoint state | N/A (structural invariant) |
 
 **Boundary 4 — Circuit public inputs → Metadata return value.** The ZK circuit
 publishes values via `constrain_instance(X)` in a fixed order. The metadata
@@ -462,6 +463,15 @@ A `constrain_instance` of a bare witness with zero prior use in any constraint
 is a specification violation — the host verifier receives a value the circuit
 never proved anything about. This is an Orchard-class vulnerability (see
 safety.md Lesson 16).
+
+**Boundary 5 — Combinatorial L1 State Space.** Not a data-serialization
+boundary but a state-complexity boundary: the consume+create model keeps
+the active object count bounded at N by nullifying exactly one old state
+and creating exactly one new Merkle leaf per non-terminal operation.
+Without this invariant, stale objects would accumulate unboundedly.
+Specific bounds, the L1 complexity ceiling, the triage table, and the
+formal composition proof are in the hardening log book (safety.md
+Lesson 23).
 
 ### 3.1.1 Explicit Encoding Rules
 

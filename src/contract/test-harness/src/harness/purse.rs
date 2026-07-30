@@ -12,10 +12,6 @@ use dwow_sdk::{
 };
 use crate::harness::ContractHarness;
 
-fn combine_merkle(level: u8, left: &MerkleNode, right: &MerkleNode) -> MerkleNode {
-    MerkleNode::from_base(poseidon_hash([pallas::Base::from(level as u64), left.inner(), right.inner()]))
-}
-
 pub struct PurseHarness { balance_zkbin: ZkBinary, balance_pk: ProvingKey, deposit_zkbin: ZkBinary, deposit_pk: ProvingKey, withdraw_zkbin: ZkBinary, withdraw_pk: ProvingKey }
 
 impl PurseHarness {
@@ -37,11 +33,8 @@ impl PurseHarness {
         let mk = tree.mark().expect("tree.mark");
         let p: Vec<MerkleNode> = tree.witness(mk, 0).expect("tree.witness");
         let lp = u32::try_from(u64::from(mk)).expect("position");
-        let mut current = MerkleNode::from_base(leaf);
-        for (level, sibling) in p.iter().enumerate() {
-            current = if (lp as usize) & (1usize << level) == 0 { combine_merkle(level as u8, &current, sibling) } else { combine_merkle(level as u8, sibling, &current) };
-        }
-        (lp, p, current.inner())
+        let root = tree.root(0).expect("tree.root");
+        (lp, p, root.inner())
     }
 
     fn coords(pt: pallas::Point) -> (pallas::Base, pallas::Base) {
@@ -62,8 +55,8 @@ impl PurseHarness {
         let pi=vec![nf,er,ocx,ocy,ncx,ncy,nl,tb,tn];let c=ZkCircuit::new(w,&self.deposit_zkbin);
         let proof=Proof::create(&self.deposit_pk,&[c],&pi,rand::rngs::OsRng).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
         let pb:Vec<u8>=dwow_serial::serialize(&proof);let mpa:[pallas::Base;32]=p.iter().map(|n|n.inner()).collect::<Vec<_>>().try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
-        let pr=dwow_purse_contract::model::DepositParams{purse_id:dwow_purse_contract::model::PurseId(pid),old_balance:ob,deposit_amount:amount,new_balance:nb,state_nonce:sn,nullifier:dwow_purse_contract::model::Nullifier(nf),expected_root:er,new_leaf:nl,old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:lp,merkle_path:mpa,proof:pb,tx_binding:tb,tx_nonce:tn};
-        let mut cd=vec![0x01u8];cd.extend_from_slice(&pr.encode());Ok(PurseDepositResult{call_data:cd,proof})
+        let pr=dwow_purse_contract::model::DepositParams{purse_id:dwow_purse_contract::model::PurseId(pid),old_balance:ob,deposit_amount:amount,new_balance:nb,state_nonce:sn,nullifier:dwow_purse_contract::model::Nullifier(nf),expected_root:MerkleNode::from_base(er),new_leaf:MerkleNode::from_base(nl),old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:lp,merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn};
+        let mut cd=vec![0x01u8];cd.extend_from_slice(&pr.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);Ok(PurseDepositResult{call_data:cd,proof})
     }
 
     pub fn withdraw(&self, amount: u64) -> Result<PurseWithdrawResult> {
@@ -80,8 +73,8 @@ impl PurseHarness {
         let pi=vec![nf,er,ocx,ocy,ncx,ncy,nl,tb,tn];let c=ZkCircuit::new(w,&self.withdraw_zkbin);
         let proof=Proof::create(&self.withdraw_pk,&[c],&pi,rand::rngs::OsRng).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
         let pb:Vec<u8>=dwow_serial::serialize(&proof);let mpa:[pallas::Base;32]=p.iter().map(|n|n.inner()).collect::<Vec<_>>().try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
-        let pr=dwow_purse_contract::model::WithdrawParams{purse_id:dwow_purse_contract::model::PurseId(pid),old_balance:ob,withdraw_amount:amount,new_balance:nb,state_nonce:sn,nullifier:dwow_purse_contract::model::Nullifier(nf),expected_root:er,new_leaf:nl,old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:lp,merkle_path:mpa,proof:pb,tx_binding:tb,tx_nonce:tn};
-        let mut cd=vec![0x02u8];cd.extend_from_slice(&pr.encode());Ok(PurseWithdrawResult{call_data:cd,proof})
+        let pr=dwow_purse_contract::model::WithdrawParams{purse_id:dwow_purse_contract::model::PurseId(pid),old_balance:ob,withdraw_amount:amount,new_balance:nb,state_nonce:sn,nullifier:dwow_purse_contract::model::Nullifier(nf),expected_root:MerkleNode::from_base(er),new_leaf:MerkleNode::from_base(nl),old_commit_x:ocx,old_commit_y:ocy,new_commit_x:ncx,new_commit_y:ncy,leaf_pos:lp,merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn};
+        let mut cd=vec![0x02u8];cd.extend_from_slice(&pr.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);Ok(PurseWithdrawResult{call_data:cd,proof})
     }
 
     pub fn balance(&self) -> Result<PurseBalanceResult> {
@@ -97,8 +90,8 @@ impl PurseHarness {
         let pi=vec![dpi,er,bcx,bcy,tcom,tb,tn_];let c=ZkCircuit::new(w,&self.balance_zkbin);
         let proof=Proof::create(&self.balance_pk,&[c],&pi,rand::rngs::OsRng).map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {e:?}")))?;
         let pb:Vec<u8>=dwow_serial::serialize(&proof);let mpa:[pallas::Base;32]=p.iter().map(|n|n.inner()).collect::<Vec<_>>().try_into().map_err(|_| dwow_core::Error::Custom("path array".into()))?;
-        let pr=dwow_purse_contract::model::BalanceParams{purse_id:dwow_purse_contract::model::PurseId(pid),token_id:tid,balance:bal,state_nonce:sn,derived_purse_id:dpi,expected_root:er,token_commit:tcom,balance_commit_x:bcx,balance_commit_y:bcy,leaf_pos:lp,merkle_path:mpa,proof:pb,tx_binding:tb,tx_nonce:tn_};
-        let mut cd=vec![0x03u8];cd.extend_from_slice(&pr.encode());Ok(PurseBalanceResult{call_data:cd,proof})
+        let pr=dwow_purse_contract::model::BalanceParams{purse_id:dwow_purse_contract::model::PurseId(pid),token_id:tid,balance:bal,state_nonce:sn,derived_purse_id:dpi,expected_root:MerkleNode::from_base(er),token_commit:tcom,balance_commit_x:bcx,balance_commit_y:bcy,leaf_pos:lp,merkle_path:mpa,proof:vec![],tx_binding:tb,tx_nonce:tn_};
+        let mut cd=vec![0x03u8];cd.extend_from_slice(&pr.encode().map_err(|e| dwow_core::Error::Custom(format!("{e}")))?);Ok(PurseBalanceResult{call_data:cd,proof})
     }
 }
 

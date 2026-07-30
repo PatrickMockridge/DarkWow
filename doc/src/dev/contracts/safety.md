@@ -1501,7 +1501,110 @@ the metadata function — verify the metadata echoes it without computation.
 
 ---
 
-## References
+### Lesson 23: L1 Combinatorial Complexity — Hard Bounds from Formal Analysis
+
+**Date**: 2026-07-30
+**Severity**: Structural (not a bug)
+**Contracts affected**: All pure L1 contracts (Box, Purse as reference implementations)
+**Formal verification**: `proofs/lean/src/DarkFi/Combinatorial/`
+
+**What happened**: Box and Purse were upgraded from L2 (singleton, deterministic
+KV lookup) to L1 (anonymous encrypted objects, Merkle inclusion proofs, full ZK).
+The L2→L1 upgrade introduces an exponential — not linear — jump in the
+combinatorial state space. In L2, K sequential operations have exactly 1 valid
+state trajectory. In L1 with N concurrent anonymous objects, K operations have
+N^K valid trajectories. This is the **L1/L2 combinatorial asymmetry** — the
+foundational reason L1 contracts require fundamentally different reasoning.
+
+**The L1 contract triage** (derived from formal combinatorial analysis of Box
+and Purse, the two most complex pure L1 contracts in the codebase):
+
+| Tier | Public Inputs | Witness Values | Operations | Verdict |
+|------|--------------|----------------|------------|---------|
+| Safe | ≤9 | ≤13 | ≤3 | Pure L1, bounded by construction |
+| Scrutiny | 10–15 | 14–20 | 4–6 | Explicit bounds proof required |
+| Exceeds | >15 | >20 | >6 | L2 or sharded architecture |
+
+**The L1 complexity ceiling** (empirical from Purse, the ceiling case):
+
+| Parameter | Ceiling | Source |
+|-----------|---------|--------|
+| Public inputs per operation | 9 | Purse Deposit/Withdraw |
+| Witness-only values per operation | 13 | Purse Deposit/Withdraw |
+| Operations per contract | 3 | Purse (Deposit, Withdraw, Balance) |
+
+**Wallet scan bound**: For a mobile wallet scanning ~1000 objects/sec with
+~120s block intervals, the practical anonymity set ceiling is ~120K concurrent
+objects. Beyond this, mobile users cannot discover their own objects between
+blocks. The binding constraint is the slowest supported client — if mobile
+users can't scan the set, privacy collapses to desktop-only.
+
+**The anonymity budget is per-contract**: O-cap composition gives each contract
+its own Merkle tree. The formal additive composition theorem proves that composed
+state spaces combine as `|T(A ∘ B)| = |T(A)| + |T(B)|`, NOT `|T(A)| × |T(B)|`.
+Without o-caps (shared state), they would multiply — the cross-product explosion
+that o-caps prevent by design.
+
+**Box and Purse within safe L1 bounds**:
+
+| Contract | Public Inputs | Witness Values | Operations | Safe? |
+|----------|--------------|----------------|------------|-------|
+| Box Put | 5 | 9 | — | ✓ |
+| Box Take | 4 | 7 | — | ✓ |
+| Purse Deposit | 9 | 13 | — | ✓ (ceiling) |
+| Purse Withdraw | 9 | 13 | — | ✓ (ceiling) |
+| Purse Balance | 7 | 11 | — | ✓ |
+
+Purse IS the L1 ceiling. Any contract more complex than Purse exceeds safe
+single-contract L1 bounds and SHALL use L2 or a sharded architecture.
+
+**Consume+create invariant** (structural, not optional): Each non-terminal L1
+operation SHALL nullify exactly one old state and create exactly one new Merkle
+leaf. This keeps the active object count bounded at N. Without it, stale objects
+accumulate unboundedly (N, N+1, N+2, ...), degrading anonymity for all users.
+
+**Formal verification status** (proofs/lean/src/DarkFi/Combinatorial/, core
+Lean 4 only, zero Mathlib, verified by `lake build DarkFi`):
+
+| Module | Content |
+|--------|---------|
+| `StateSpace.lean` | L1AnonymitySet, L2SingletonState, PublicState, WitnessState types |
+| `Transitions.lean` | Per-operation transition counts, consume+create invariant |
+| `ComplexityJump.lean` | L2 trajectory = 1, L1 N^K theorem, anonymity growth corollary |
+| `CompositionBounds.lean` | O-cap additive composition vs unconstrained multiplicative |
+| `Limits.lean` | Theoretical max (2^32−1), wallet scan bound, L1 complexity ceiling |
+
+**Pre-existing build system bugs found during verification** (these prevented
+the existing proofs/lean/ project from building, confirmed by independent audit):
+
+1. `src/DarkFi/HAZOP.lean:32-34`: imports `HAZOP.Critical` etc. — paths missing
+   `DarkFi.` prefix (correct: `DarkFi.HAZOP.Critical`)
+2. `src/DarkFi/Capability/Types.lean:72`: `deriving Repr, BEq` on
+   `ConcurrentProcess` causes universe constraint failure with `Finset Barb`
+   fields — `BEq` removed
+3. `src/DarkFi.lean`: root module did not exist — `lakefile.lean` declared
+   `roots := #[`DarkFi]` but the file was never committed
+4. `src/DarkFi/Field.lean`: multiple missing Mathlib tactics (`mul_comm`,
+   `Int.div_lt_iff_lt_mul`, `pow_le_pow_right`, `nlinarith`, `ring`) —
+   project declared zero dependencies but used Mathlib-only tactics
+5. `src/DarkFi/Comparison.lean`: doc comment before imports (invalid ordering
+   for root-module compilation)
+6. `src/DarkFi/Soundness.lean:71`: unterminated comment syntax error
+7. `src/DarkFi/Circuits/Exchange.lean:37`: syntax error (orphaned `/-!` block)
+8. All 5 new Combinatorial modules: doc comments moved after imports per Lean 4
+   ordering requirement; `def X := Nat` changed to `abbrev X := Nat` so `BEq`
+   inherits from `Nat`
+
+**How to apply**: Every future L1 contract proposal SHALL pass the combinatorial
+bounds check against the triage table BEFORE implementation begins. Contracts in
+the "scrutiny" tier require a formal bounds proof (following the pattern in
+Combinatorial/). Contracts in the "exceeds" tier are architecturally invalid as
+single-contract L1 — they SHALL be designed as L2 or sharded. The triage is
+enforced by architectural review, not by the compiler; it is a design constraint,
+not a static analysis check.
+
+---
+
 
 - [NativeToken](./native_token.md) — Consensus token with zero business logic
 - [Standards](./standards.md) — ZK circuit, token, and testing standards

@@ -29,9 +29,9 @@ These 7 patterns recur across multiple circuits and are the root cause of
 nearly all findings above the LOW threshold.
 -/
 
-import HAZOP.Critical
-import HAZOP.High
-import HAZOP.Elevated
+import DarkFi.HAZOP.Critical
+import DarkFi.HAZOP.High
+import DarkFi.HAZOP.Elevated
 
 namespace HAZOP
 
