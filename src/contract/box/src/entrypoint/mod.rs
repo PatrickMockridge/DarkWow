@@ -120,13 +120,25 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let u = PutUpdate::decode(&update_data[1..])?; let idb = wasm::db::db_lookup(cid, BOX_CONTRACT_INFO_TREE)?;
             let rdb = wasm::db::db_lookup(cid, BOX_CONTRACT_BOX_ROOTS_TREE)?;
             wasm::merkle::merkle_add(idb, rdb, BOX_CONTRACT_LATEST_BOX_ROOT, BOX_CONTRACT_BOX_MERKLE_TREE, &[u.new_leaf])?;
-            // Block-level anchoring (§C.3.7)
+            let ndb = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
+            wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
+            // Block-level anchoring (§C.3.7) — after nullifier write (R7)
             let entry = merkle_anchor::AnchorEntry::new(u.nullifier, cid, u.new_leaf);
             wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;
-            let ndb = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?; wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
         }
         BoxFunction::Take => {
             let u = TakeUpdate::decode(&update_data[1..])?;
+            // Block-level anchoring (§C.3.7) — terminal consumption, anchor with
+            // current contract tree root before nullifying (R3)
+            let idb = wasm::db::db_lookup(cid, BOX_CONTRACT_INFO_TREE)?;
+            if let Some(tree_data) = wasm::db::db_get(idb, BOX_CONTRACT_BOX_MERKLE_TREE)? {
+                let tree: MerkleTree = dwow_serial::deserialize(&tree_data[4..])
+                    .map_err(|e| ContractError::IoError(format!("Take anchor: tree deser: {e}")))?;
+                if let Some(current_root) = tree.root(0) {
+                    let entry = merkle_anchor::AnchorEntry::new(u.nullifier, cid, current_root);
+                    wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;
+                }
+            }
             let ndb = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?; wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
         }
         BoxFunction::Initialize => return Err(ContractError::InvalidFunction),

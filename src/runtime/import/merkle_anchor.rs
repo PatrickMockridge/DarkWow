@@ -68,6 +68,17 @@ pub(crate) fn merkle_anchor_add(
         entry_bytes[i] = cell.get();
     }
 
+    // Validate that the anchor entry's contract_id matches the executing contract
+    // Per HAZOP H5 / Red Team V2: prevent cross-contract anchor forgery
+    if let Ok(entry) = dwow_sdk::crypto::merkle_anchor::AnchorEntry::from_leaf_bytes(&entry_bytes) {
+        if entry.contract_id != env.contract_id {
+            error!("merkle_anchor_add: contract_id mismatch — entry claims {} but executing {}",
+                entry.contract_id, env.contract_id);
+            return to_builtin!(ContractError::IoError(
+                "merkle_anchor_add: contract_id mismatch".into()));
+        }
+    }
+
     // Append to block-level anchor tree via backend
     match env.backend.block_anchor_append(&entry_bytes) {
         Ok(()) => 0,

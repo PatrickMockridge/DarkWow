@@ -164,7 +164,13 @@ extern "C" {
 ///
 /// ρ-calculus: ν(block_tree).ν(contract_tree).P — the nullifier links both
 /// restrictions. See contract-wasm-type-system.md Part C §C.3.7.
+#[cfg(target_arch = "wasm32")]
 pub fn merkle_anchor_add(entry_bytes: &[u8; 96]) -> Result<(), ContractError> {
     let ret = unsafe { merkle_anchor_add_(entry_bytes.as_ptr(), 96) };
     ContractError::from(ret)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn merkle_anchor_add(_entry_bytes: &[u8; 96]) -> Result<(), ContractError> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
 }

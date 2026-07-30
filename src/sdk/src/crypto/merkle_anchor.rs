@@ -36,13 +36,17 @@ use crate::crypto::{ContractId, MerkleNode, Nullifier};
 use crate::error::ContractError;
 use crate::pasta::pallas;
 
-/// Computes the anchored leaf value: `poseidon_hash(contract_id || contract_root)`.
+/// Computes the anchored leaf value: `poseidon_hash(nullifier || contract_id || contract_root)`.
 ///
 /// This is the value stored in the block-level Merkle tree, keyed by nullifier.
-/// The Poseidon hash commits to both the contract identity and the contract tree
-/// root, making the anchor unique per (contract, root) pair.
-pub fn anchor_leaf(contract_id: &ContractId, contract_root: &MerkleNode) -> pallas::Base {
+/// The Poseidon hash commits to the nullifier, contract identity, and contract tree
+/// root, making each anchor entry uniquely bound to its nullifier.
+///
+/// ρ-calculus: the nullifier IS the extruded name linking ν(contract_tree) to
+/// ν(block_tree). Including it in the hash makes the link cryptographically binding.
+pub fn anchor_leaf(nullifier: &Nullifier, contract_id: &ContractId, contract_root: &MerkleNode) -> pallas::Base {
     crate::crypto::poseidon_hash([
+        nullifier.inner(),
         contract_id.inner(),
         contract_root.inner(),
     ])
@@ -183,7 +187,7 @@ pub fn verify_anchored_proof(
     }
 
     // 2. Verify block-level proof: anchor_leaf exists at block_header_root
-    let anchor = anchor_leaf(contract_id, contract_root);
+    let anchor = anchor_leaf(_nullifier, contract_id, contract_root);
     let anchor_node = MerkleNode::from_base(anchor);
     let mut current = anchor_node;
     for sibling in block_proof.iter() {
@@ -232,10 +236,11 @@ mod tests {
     #[test]
     fn test_anchor_leaf_deterministic() {
         let cid = dummy_contract_id();
+        let nf = dummy_nullifier();
         let root = MerkleNode::from_base(pallas::Base::from(1u64));
 
-        let a = anchor_leaf(&cid, &root);
-        let b = anchor_leaf(&cid, &root);
+        let a = anchor_leaf(&nf, &cid, &root);
+        let b = anchor_leaf(&nf, &cid, &root);
         assert_eq!(a, b, "anchor_leaf must be deterministic");
     }
 }

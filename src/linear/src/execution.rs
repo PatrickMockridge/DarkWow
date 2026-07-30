@@ -1114,7 +1114,7 @@ impl RuntimeBackend for TxBackend {
             .unwrap_or_else(|e| e.into_inner());
         let leaf_node = MerkleNode::from_base(
             dwow_sdk::crypto::merkle_anchor::anchor_leaf(
-                &entry.contract_id, &entry.contract_root));
+                &entry.nullifier, &entry.contract_id, &entry.contract_root));
         tree.append(leaf_node);
         Ok(())
     }

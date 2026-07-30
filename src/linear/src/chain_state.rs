@@ -908,6 +908,18 @@ impl CChainState {
                 )));
             }
 
+            // --- Block anchor root verification (BEFORE atomic commit) ---
+            // Per R1: validate anchor root before committing sled state.
+            // On failure, nothing is written to sled — no rollback needed.
+            let computed_anchor_root = self.block_anchor_root();
+            if block.header.nullifier_root != computed_anchor_root {
+                return Err(LinearError::BlockIsInvalid(format!(
+                    "anchor_root mismatch: computed={} header={}",
+                    hex::encode(computed_anchor_root),
+                    hex::encode(block.header.nullifier_root),
+                )));
+            }
+
             // --- Atomic commit (sled cross-tree transaction) ---
             let contracts = contracts_batch.unwrap_or_default();
             let sc_batch = supply_chain_batch.unwrap_or_default();
@@ -978,22 +990,16 @@ impl CChainState {
             }
         }
 
-        // --- Block anchor root verification ---
-        // Per contract-wasm-type-system.md Part C §C.3.7: the block header's
-        // nullifier_root commits to the block-level Merkle tree that anchors
-        // all contract state transitions via their nullifiers.
-        //
-        // Blocks with [0u8; 32] nullifier_root are grandfathered (pre-existing
-        // blocks and test fixtures that predate the two-level anchoring spec).
-        if block.header.nullifier_root != [0u8; 32] {
-            let computed_root = self.block_anchor_root();
-            if computed_root != block.header.nullifier_root {
-                return Err(LinearError::BlockIsInvalid(format!(
-                    "anchor_root mismatch: computed={} header={}",
-                    hex::encode(computed_root),
-                    hex::encode(block.header.nullifier_root),
-                )));
-            }
+        // --- Reset block anchor tree for next block ---
+        // Per R1: the anchor tree is per-block. After commit, reset to
+        // a fresh tree with the empty leaf for the next block's anchors.
+        {
+            let mut tree = self.block_anchor_tree.lock()
+                .unwrap_or_else(|e| e.into_inner());
+            // Reset: replace with fresh tree (old tree is dropped)
+            let mut fresh = MerkleTree::new(100);
+            fresh.append(MerkleNode::empty_leaf());
+            *tree = fresh;
         }
 
         // --- Post-commit uncle_coin_set update ---
