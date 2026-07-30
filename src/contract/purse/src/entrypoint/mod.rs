@@ -148,8 +148,8 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let rdb = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?;
             wasm::merkle::merkle_add(idb, rdb, PURSE_CONTRACT_LATEST_PURSE_ROOT, PURSE_CONTRACT_PURSE_MERKLE_TREE, &[u.new_leaf])?;
             // Block-level anchoring (§C.3.7)
-            // TODO: requires merkle_anchor_add host function (Phase 4)
-            // merkle_anchor::anchor_contract_root(&cid, &u.nullifier, &u.new_leaf)?;
+            let entry = merkle_anchor::AnchorEntry::new(u.nullifier, cid, u.new_leaf);
+            wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?; wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
         }
         PurseFunction::Withdraw => {
@@ -157,8 +157,8 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let rdb = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?;
             wasm::merkle::merkle_add(idb, rdb, PURSE_CONTRACT_LATEST_PURSE_ROOT, PURSE_CONTRACT_PURSE_MERKLE_TREE, &[u.new_leaf])?;
             // Block-level anchoring (§C.3.7)
-            // TODO: requires merkle_anchor_add host function (Phase 4)
-            // merkle_anchor::anchor_contract_root(&cid, &u.nullifier, &u.new_leaf)?;
+            let entry = merkle_anchor::AnchorEntry::new(u.nullifier, cid, u.new_leaf);
+            wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?; wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
         }
         PurseFunction::Balance => {}

@@ -30,6 +30,9 @@ pub(crate) mod db;
 /// Host functions for merkle tree functions
 pub(crate) mod merkle;
 
+/// Host functions for block-level merkle tree anchoring (§C.3.7)
+pub(crate) mod merkle_anchor;
+
 /// Host functions for sparse merkle tree functions
 pub(crate) mod smt;
 

@@ -153,5 +153,18 @@ pub fn sparse_merkle_insert_batch(
 #[link(wasm_import_module = "env")]
 extern "C" {
     fn merkle_add_(ptr: *const u8, len: u32) -> i64;
+    fn merkle_anchor_add_(ptr: *const u8, len: u32) -> i64;
     fn sparse_merkle_insert_batch_(ptr: *const u8, len: u32) -> i64;
+}
+
+/// Append a contract state anchor to the block-level Merkle tree.
+///
+/// The 96-byte entry encodes `(nullifier, contract_id, contract_root)`.
+/// Called during `process_update` (apply) after the contract-local `merkle_add`.
+///
+/// ρ-calculus: ν(block_tree).ν(contract_tree).P — the nullifier links both
+/// restrictions. See contract-wasm-type-system.md Part C §C.3.7.
+pub fn merkle_anchor_add(entry_bytes: &[u8; 96]) -> Result<(), ContractError> {
+    let ret = unsafe { merkle_anchor_add_(entry_bytes.as_ptr(), 96) };
+    ContractError::from(ret)
 }

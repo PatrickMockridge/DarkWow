@@ -83,6 +83,11 @@ pub trait RuntimeBackend: Send + Sync {
     fn get_tx(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>>;
     fn get_tx_location(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>>;
     fn get_block_hash_by_height(&self, height: BlockHeight) -> Result<Option<Vec<u8>>>;
+
+    /// Block-level Merkle tree: append a contract state anchor.
+    /// Called by the `merkle_anchor_add` host function during `process_update`.
+    /// Entry format: 96 bytes (nullifier || contract_id || contract_root).
+    fn block_anchor_append(&self, entry_bytes: &[u8; 96]) -> Result<(), ContractError>;
 }
 
 /// Type-erased pointer to the runtime backend. A single pointer replaces the
@@ -390,6 +395,12 @@ impl Runtime {
                     &mut store,
                     &ctx,
                     import::smt::sparse_merkle_insert_batch,
+                ),
+
+                "merkle_anchor_add_" => Function::new_typed_with_env(
+                    &mut store,
+                    &ctx,
+                    import::merkle_anchor::merkle_anchor_add,
                 ),
 
                 "get_verifying_block_height_" => Function::new_typed_with_env(

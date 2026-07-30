@@ -51,7 +51,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use blake3::Hash as Blake3Hash;
 use randomx::RandomXVM;
@@ -62,10 +62,12 @@ use dwow_core::Error;
 use dwow_serial::Decodable;
 use dwow_sdk::blockchain::{BlockHeight, BlockTarget};
 use dwow_sdk::crypto::{
-    ContractId, ATTESTATION_CONTRACT_ID, BOX_CONTRACT_ID, DEPLOYOOOR_CONTRACT_ID,
+    ContractId, MerkleNode, MerkleTree,
+    ATTESTATION_CONTRACT_ID, BOX_CONTRACT_ID, DEPLOYOOOR_CONTRACT_ID,
     IDENTITY_CONTRACT_ID, MULTISIG_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID, ORACLE_CONTRACT_ID,
     PROMISSORY_NOTE_CONTRACT_ID, PURSE_CONTRACT_ID,
 };
+use dwow_sdk::error::ContractError;
 use dwow_sdk::deploy::DeployParamsV1;
 
 use crate::CChainState;
@@ -97,10 +99,13 @@ pub const MAX_BLOCK_SIZE: usize = 4 * 1024 * 1024;
 /// written by PRIOR blocks. Uncle calls execute against independent clones of
 /// the pre-block state (they were mined against it) and merge canonical-wins.
 pub struct TxBackend {
-    pub overlay: std::sync::Arc<std::sync::Mutex<sled_overlay::SledTreeOverlay>>,
+    pub overlay: Arc<Mutex<sled_overlay::SledTreeOverlay>>,
     pub store: std::sync::Arc<LinearStore>,
     pub height: BlockHeight,
     pub vm: std::sync::Arc<randomx::RandomXVM>,
+    /// Shared block-level anchor tree for two-level Merkle anchoring (§C.3.7).
+    /// Appended to during process_update via the merkle_anchor_add host function.
+    pub block_anchor_tree: Arc<Mutex<MerkleTree>>,
 }
 
 /// Statistics gathered during block execution.
@@ -368,6 +373,7 @@ pub fn execute_block(
             store: store.clone(),
             height: current_height,
             vm: vm.clone(),
+            block_anchor_tree: chain_state.block_anchor_tree.clone(),
         });
 
         // Layer-1 (transaction atomicity): checkpoint before the call; any
@@ -768,11 +774,16 @@ fn deploy_contract_in_overlay(
     );
 
     let deploy_overlay = Arc::new(std::sync::Mutex::new(overlay.clone()));
+    // Deploy path: fresh empty anchor tree (deploy only runs __initialize,
+    // never process_update, so merkle_anchor_add is never called).
+    let mut deploy_anchor_tree = MerkleTree::new(1);
+    deploy_anchor_tree.append(MerkleNode::empty_leaf());
     let backend = Arc::new(TxBackend {
         overlay: Arc::clone(&deploy_overlay),
         store: Arc::new(store),
         height: current_height,
         vm,
+        block_anchor_tree: Arc::new(Mutex::new(deploy_anchor_tree)),
     });
     let mut runtime = dwow_core::runtime::vm_runtime::Runtime::new(
         wasm, backend.clone(), contract_id, current_height,
@@ -1094,5 +1105,17 @@ impl RuntimeBackend for TxBackend {
                 }
             }
         }
+    }
+
+    fn block_anchor_append(&self, entry_bytes: &[u8; 96]) -> Result<(), ContractError> {
+        use dwow_sdk::crypto::merkle_anchor::AnchorEntry;
+        let entry = AnchorEntry::from_leaf_bytes(entry_bytes)?;
+        let mut tree = self.block_anchor_tree.lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let leaf_node = MerkleNode::from_base(
+            dwow_sdk::crypto::merkle_anchor::anchor_leaf(
+                &entry.contract_id, &entry.contract_root));
+        tree.append(leaf_node);
+        Ok(())
     }
 }

@@ -126,7 +126,7 @@ pub struct CChainState {
     /// Block-level Merkle tree for anchoring contract state transitions.
     /// Each leaf is an AnchorEntry (nullifier-keyed contract root).
     /// Depth 32 (Orchard standard), checkpoint capacity 100 for reorg safety.
-    block_anchor_tree: Mutex<MerkleTree>,
+    block_anchor_tree: Arc<Mutex<MerkleTree>>,
     /// Competing blocks at the same height — potential uncles for fork resolution.
     /// When two miners produce blocks at height N simultaneously, the first
     /// received becomes canonical and the second is stored here. The next block
@@ -227,8 +227,10 @@ impl CChainState {
 
         // Block-level anchor tree: incremental Merkle tree for anchoring
         // contract state transitions. Depth 32, checkpoint capacity 100.
+        // Arc for sharing with TxBackend during WASM execution.
         let mut block_anchor_tree = MerkleTree::new(100);
         block_anchor_tree.append(MerkleNode::empty_leaf());
+        let block_anchor_tree = Arc::new(Mutex::new(block_anchor_tree));
 
         Ok(Arc::new(Self {
             store,
@@ -241,7 +243,7 @@ impl CChainState {
             coin_set,
             uncle_coin_set,
             nullifier_set,
-            block_anchor_tree: Mutex::new(block_anchor_tree),
+            block_anchor_tree,
             competing_blocks: Mutex::new(BTreeMap::new()),
             competing_seen: Mutex::new(HashSet::new()),
             connect_lock: Mutex::new(()),
