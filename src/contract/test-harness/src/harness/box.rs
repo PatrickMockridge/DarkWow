@@ -53,7 +53,7 @@ impl BoxHarness {
     pub fn take(&self) -> Result<BoxTakeResult> {
         let dnl=pallas::Base::from(1u64);let dtb=pallas::Base::from(3u64);let dml=pallas::Base::from(5u64);
         let os=pallas::Base::from(42u64);let bid=pallas::Base::from(1u64);let sn=pallas::Base::from(1u64);
-        let cc=pallas::Base::from(100u64);let tc=pallas::Base::from(200u64);let tn=pallas::Base::from(300u64);
+        let cc=poseidon_hash([pallas::Base::from(100u64)]);let tc=pallas::Base::from(200u64);let tn=pallas::Base::from(300u64);
         let nf=poseidon_hash([dnl,os,bid,sn]);let tb=poseidon_hash([dtb,tc,tn]);let ol=poseidon_hash([dml,bid,cc,sn]);
         let (lp,p,root)=Self::build_root(ol);
         let er_base: pallas::Base = root.inner();
