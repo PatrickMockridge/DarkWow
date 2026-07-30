@@ -3,14 +3,12 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum BoxError {
-    #[error("Box not found")]
-    BoxNotFound,
-    #[error("Box is not empty")]
-    BoxNotEmpty,
-    #[error("Box is empty")]
-    BoxEmpty,
+    #[error("Invalid Merkle root")]
+    InvalidMerkleRoot,
     #[error("Duplicate nullifier")]
     DuplicateNullifier,
+    #[error("Parameter decode failure: {field}")]
+    DecodeFailure { field: String },
     #[error("Not authorized")]
     NotAuthorized,
     #[error("Invalid function or parameters")]
@@ -20,12 +18,11 @@ pub enum BoxError {
 impl From<BoxError> for ContractError {
     fn from(e: BoxError) -> Self {
         match e {
-            BoxError::BoxNotFound => Self::Custom(1),
-            BoxError::BoxNotEmpty => Self::Custom(2),
-            BoxError::BoxEmpty => Self::Custom(3),
-            BoxError::DuplicateNullifier => Self::Custom(4),
-            BoxError::NotAuthorized => Self::Custom(5),
-            BoxError::InvalidFunction => Self::Custom(6),
+            BoxError::InvalidMerkleRoot => Self::Custom(1),
+            BoxError::DuplicateNullifier => Self::Custom(2),
+            BoxError::DecodeFailure { .. } => Self::Custom(5),
+            BoxError::NotAuthorized => Self::Custom(3),
+            BoxError::InvalidFunction => Self::Custom(4),
         }
     }
 }

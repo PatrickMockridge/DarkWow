@@ -1849,12 +1849,16 @@ before enforcing barbs. The trajectory identification pipeline is:
 
 1. **Extract nullifier from metadata.** The nullifier is the object's identity
    claim in the anonymity set. It is a public input of the ZK proof.
-2. **Resolve Merkle root.** Using the nullifier and the inclusion proof, determine
-   which Merkle root anchors this object.
-3. **Verify inclusion.** The ZK proof proves the object exists in the tree at the
-   claimed root. The exec entrypoint verifies this root is in the roots DB.
-4. **Check nullifier uniqueness.** The nullifier SHALL NOT already exist in the
-   nullifier SMT. `smt.get_leaf(&nullifier) == pallas::Base::zero()`.
+2. **Resolve Merkle root.** The ZK circuit constrains the Merkle root from the
+   inclusion proof; the host verifier checks this against the proof's public
+   inputs. The exec entrypoint receives the pre-resolved `expected_root` as a
+   parameter.
+3. **Check nullifier uniqueness.** The nullifier SHALL NOT already exist in the
+   nullifier SMT. `smt.get_leaf(&nullifier) == pallas::Base::zero()`. Per §C.2.2,
+   ↓nullify MUST precede ↓prove-inclusion — the O(1) SMT lookup eliminates the
+   most trajectories with the least work.
+4. **Verify inclusion.** The exec entrypoint verifies the Merkle root exists in
+   the roots DB. This confirms the target object is anchored at the claimed root.
 
 After this pipeline, the trajectory space SHALL be exactly 1 — the target object
 is uniquely identified. Only then SHALL the remaining barbs (§C.2) be enforced.

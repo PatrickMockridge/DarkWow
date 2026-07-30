@@ -43,24 +43,56 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?; let self_ = &calls[call_idx].data;
     let func = PurseFunction::try_from(self_.data[0])?;
     let metadata = match func {
-        PurseFunction::Deposit => { let p = DepositParams::decode(&self_.data[1..]).map_err(|e| { msg!("[purse::metadata] deposit: {:?}", e); ContractError::IoError("decode".into()) })?; deposit_metadata(p)? }
-        PurseFunction::Withdraw => { let p = WithdrawParams::decode(&self_.data[1..]).map_err(|e| { msg!("[purse::metadata] withdraw: {:?}", e); ContractError::IoError("decode".into()) })?; withdraw_metadata(p)? }
-        PurseFunction::Balance => { let p = BalanceParams::decode(&self_.data[1..]).map_err(|e| { msg!("[purse::metadata] balance: {:?}", e); ContractError::IoError("decode".into()) })?; balance_metadata(p)? }
+        PurseFunction::Deposit => { let p = DepositParams::decode(&self_.data[1..]).map_err(|e| { msg!("[purse::metadata] deposit: {:?}", e); e })?; deposit_metadata(p)? }
+        PurseFunction::Withdraw => { let p = WithdrawParams::decode(&self_.data[1..]).map_err(|e| { msg!("[purse::metadata] withdraw: {:?}", e); e })?; withdraw_metadata(p)? }
+        PurseFunction::Balance => { let p = BalanceParams::decode(&self_.data[1..]).map_err(|e| { msg!("[purse::metadata] balance: {:?}", e); e })?; balance_metadata(p)? }
         PurseFunction::Initialize => vec![],
     };
     wasm::util::set_return_data(&metadata)
 }
 
 fn deposit_metadata(p: DepositParams) -> Result<Vec<u8>, ContractError> {
-    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_DEPOSIT_NS.to_string(), vec![p.nullifier.inner(), p.expected_root.inner(), p.old_commit_x, p.old_commit_y, p.new_commit_x, p.new_commit_y, p.new_leaf.inner(), p.tx_binding, p.tx_nonce]));
+    // L1 metadata boundary (Boundary 4): type-annotated extraction.
+    // Order MUST match circuit constrain_instance order.
+    let zk_nullifier: pallas::Base = p.nullifier.inner();
+    let zk_expected_root: pallas::Base = p.expected_root.inner();
+    let zk_new_leaf: pallas::Base = p.new_leaf.inner();
+    let zk_old_commit_x: pallas::Base = p.old_commit_x;
+    let zk_old_commit_y: pallas::Base = p.old_commit_y;
+    let zk_new_commit_x: pallas::Base = p.new_commit_x;
+    let zk_new_commit_y: pallas::Base = p.new_commit_y;
+    let zk_tx_binding: pallas::Base = p.tx_binding;
+    let zk_tx_nonce: pallas::Base = p.tx_nonce;
+
+    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_DEPOSIT_NS.to_string(), vec![zk_nullifier, zk_expected_root, zk_old_commit_x, zk_old_commit_y, zk_new_commit_x, zk_new_commit_y, zk_new_leaf, zk_tx_binding, zk_tx_nonce]));
     let mut m = vec![]; z.encode(&mut m)?; let s: Vec<dwow_sdk::crypto::PublicKey> = vec![]; s.encode(&mut m)?; Ok(m)
 }
 fn withdraw_metadata(p: WithdrawParams) -> Result<Vec<u8>, ContractError> {
-    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_WITHDRAW_NS.to_string(), vec![p.nullifier.inner(), p.expected_root.inner(), p.old_commit_x, p.old_commit_y, p.new_commit_x, p.new_commit_y, p.new_leaf.inner(), p.tx_binding, p.tx_nonce]));
+    // L1 metadata boundary (Boundary 4): type-annotated extraction.
+    let zk_nullifier: pallas::Base = p.nullifier.inner();
+    let zk_expected_root: pallas::Base = p.expected_root.inner();
+    let zk_new_leaf: pallas::Base = p.new_leaf.inner();
+    let zk_old_commit_x: pallas::Base = p.old_commit_x;
+    let zk_old_commit_y: pallas::Base = p.old_commit_y;
+    let zk_new_commit_x: pallas::Base = p.new_commit_x;
+    let zk_new_commit_y: pallas::Base = p.new_commit_y;
+    let zk_tx_binding: pallas::Base = p.tx_binding;
+    let zk_tx_nonce: pallas::Base = p.tx_nonce;
+
+    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_WITHDRAW_NS.to_string(), vec![zk_nullifier, zk_expected_root, zk_old_commit_x, zk_old_commit_y, zk_new_commit_x, zk_new_commit_y, zk_new_leaf, zk_tx_binding, zk_tx_nonce]));
     let mut m = vec![]; z.encode(&mut m)?; let s: Vec<dwow_sdk::crypto::PublicKey> = vec![]; s.encode(&mut m)?; Ok(m)
 }
 fn balance_metadata(p: BalanceParams) -> Result<Vec<u8>, ContractError> {
-    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_BALANCE_NS.to_string(), vec![p.derived_purse_id, p.expected_root.inner(), p.balance_commit_x, p.balance_commit_y, p.token_commit, p.tx_binding, p.tx_nonce]));
+    // L1 metadata boundary (Boundary 4): type-annotated extraction.
+    let zk_derived_purse_id: pallas::Base = p.derived_purse_id;
+    let zk_expected_root: pallas::Base = p.expected_root.inner();
+    let zk_balance_commit_x: pallas::Base = p.balance_commit_x;
+    let zk_balance_commit_y: pallas::Base = p.balance_commit_y;
+    let zk_token_commit: pallas::Base = p.token_commit;
+    let zk_tx_binding: pallas::Base = p.tx_binding;
+    let zk_tx_nonce: pallas::Base = p.tx_nonce;
+
+    let mut z = vec![]; z.push((PURSE_CONTRACT_ZKAS_BALANCE_NS.to_string(), vec![zk_derived_purse_id, zk_expected_root, zk_balance_commit_x, zk_balance_commit_y, zk_token_commit, zk_tx_binding, zk_tx_nonce]));
     let mut m = vec![]; z.encode(&mut m)?; let s: Vec<dwow_sdk::crypto::PublicKey> = vec![]; s.encode(&mut m)?; Ok(m)
 }
 
@@ -79,7 +111,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { msg!("[purse::deposit] Error: Duplicate nullifier"); return Err(PurseError::DuplicateNullifier.into()); }
             let rdb = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?;
-            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[purse::deposit] Error: Merkle root not found"); return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
+            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[purse::deposit] Error: Invalid Merkle root"); return Err(PurseError::InvalidMerkleRoot.into()); }
             let u = DepositUpdate { nullifier: p.nullifier, new_leaf: p.new_leaf };
             wasm::util::set_return_data(&[&[PurseFunction::Deposit as u8], &u.encode()?[..]].concat())?;
         }
@@ -88,14 +120,14 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { msg!("[purse::withdraw] Error: Duplicate nullifier"); return Err(PurseError::DuplicateNullifier.into()); }
             let rdb = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?;
-            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[purse::withdraw] Error: Merkle root not found"); return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
+            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[purse::withdraw] Error: Invalid Merkle root"); return Err(PurseError::InvalidMerkleRoot.into()); }
             let u = WithdrawUpdate { nullifier: p.nullifier, new_leaf: p.new_leaf };
             wasm::util::set_return_data(&[&[PurseFunction::Withdraw as u8], &u.encode()?[..]].concat())?;
         }
         PurseFunction::Balance => {
             let p = BalanceParams::decode(&self_.data.data[1..])?;
             let rdb = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?;
-            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[purse::balance] Error: Merkle root not found"); return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
+            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[purse::balance] Error: Invalid Merkle root"); return Err(PurseError::InvalidMerkleRoot.into()); }
             wasm::util::set_return_data(&[PurseFunction::Balance as u8])?;
         }
         PurseFunction::Initialize => return Err(ContractError::InvalidFunction),

@@ -42,19 +42,34 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?; let self_ = &calls[call_idx].data;
     let func = BoxFunction::try_from(self_.data[0])?;
     let metadata = match func {
-        BoxFunction::Put => { let p = PutParams::decode(&self_.data[1..]).map_err(|e| { msg!("[box::metadata] put decode: {:?}", e); ContractError::IoError("decode".into()) })?; put_metadata(p)? }
-        BoxFunction::Take => { let p = TakeParams::decode(&self_.data[1..]).map_err(|e| { msg!("[box::metadata] take decode: {:?}", e); ContractError::IoError("decode".into()) })?; take_metadata(p)? }
+        BoxFunction::Put => { let p = PutParams::decode(&self_.data[1..]).map_err(|e| { msg!("[box::metadata] put decode: {:?}", e); e })?; put_metadata(p)? }
+        BoxFunction::Take => { let p = TakeParams::decode(&self_.data[1..]).map_err(|e| { msg!("[box::metadata] take decode: {:?}", e); e })?; take_metadata(p)? }
         BoxFunction::Initialize => vec![],
     };
     wasm::util::set_return_data(&metadata)
 }
 
 fn put_metadata(p: PutParams) -> Result<Vec<u8>, ContractError> {
-    let mut z = vec![]; z.push((BOX_CONTRACT_ZKAS_PUT_NS.to_string(), vec![p.nullifier.inner(), p.expected_root.inner(), p.new_leaf.inner(), p.tx_binding, p.tx_nonce]));
+    // L1 metadata boundary (Boundary 4): type-annotated extraction.
+    // Order MUST match circuit constrain_instance order.
+    // Each .inner() call is isolated here — nowhere else in the contract.
+    let zk_nullifier: pallas::Base = p.nullifier.inner();
+    let zk_expected_root: pallas::Base = p.expected_root.inner();
+    let zk_new_leaf: pallas::Base = p.new_leaf.inner();
+    let zk_tx_binding: pallas::Base = p.tx_binding;
+    let zk_tx_nonce: pallas::Base = p.tx_nonce;
+
+    let mut z = vec![]; z.push((BOX_CONTRACT_ZKAS_PUT_NS.to_string(), vec![zk_nullifier, zk_expected_root, zk_new_leaf, zk_tx_binding, zk_tx_nonce]));
     let mut m = vec![]; z.encode(&mut m)?; let s: Vec<dwow_sdk::crypto::PublicKey> = vec![]; s.encode(&mut m)?; Ok(m)
 }
 fn take_metadata(p: TakeParams) -> Result<Vec<u8>, ContractError> {
-    let mut z = vec![]; z.push((BOX_CONTRACT_ZKAS_TAKE_NS.to_string(), vec![p.nullifier.inner(), p.expected_root.inner(), p.tx_binding, p.tx_nonce]));
+    // L1 metadata boundary (Boundary 4): type-annotated extraction.
+    let zk_nullifier: pallas::Base = p.nullifier.inner();
+    let zk_expected_root: pallas::Base = p.expected_root.inner();
+    let zk_tx_binding: pallas::Base = p.tx_binding;
+    let zk_tx_nonce: pallas::Base = p.tx_nonce;
+
+    let mut z = vec![]; z.push((BOX_CONTRACT_ZKAS_TAKE_NS.to_string(), vec![zk_nullifier, zk_expected_root, zk_tx_binding, zk_tx_nonce]));
     let mut m = vec![]; z.encode(&mut m)?; let s: Vec<dwow_sdk::crypto::PublicKey> = vec![]; s.encode(&mut m)?; Ok(m)
 }
 
@@ -75,7 +90,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let ndb = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { msg!("[box::put] Error: Duplicate nullifier"); return Err(BoxError::DuplicateNullifier.into()); }
             let rdb = wasm::db::db_lookup(cid, BOX_CONTRACT_BOX_ROOTS_TREE)?;
-            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[box::put] Error: Merkle root not found in roots DB"); return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
+            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[box::put] Error: Invalid Merkle root"); return Err(BoxError::InvalidMerkleRoot.into()); }
             let u = PutUpdate { nullifier: p.nullifier, new_leaf: p.new_leaf };
             wasm::util::set_return_data(&[&[func_tag(func)], &u.encode()?[..]].concat())?;
         }
@@ -84,7 +99,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let ndb = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { msg!("[box::take] Error: Duplicate nullifier"); return Err(BoxError::DuplicateNullifier.into()); }
             let rdb = wasm::db::db_lookup(cid, BOX_CONTRACT_BOX_ROOTS_TREE)?;
-            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[box::take] Error: Merkle root not found in roots DB"); return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
+            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[box::take] Error: Invalid Merkle root"); return Err(BoxError::InvalidMerkleRoot.into()); }
             let u = TakeUpdate { nullifier: p.nullifier };
             wasm::util::set_return_data(&[&[func_tag(func)], &u.encode()?[..]].concat())?;
         }
