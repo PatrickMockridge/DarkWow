@@ -83,6 +83,7 @@ pub use transition_payload::{
 };
 
 /// Merkle node definitions
+pub mod merkle_anchor;
 pub mod merkle_node;
 pub use merkle_node::{MerkleNode, MerkleTree};
 
