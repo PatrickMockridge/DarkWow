@@ -36,6 +36,9 @@ use crate::crypto::{ContractId, MerkleNode, Nullifier};
 use crate::error::ContractError;
 use crate::pasta::pallas;
 
+/// Merkle authentication path (32 Sinsemilla-hashed nodes).
+pub type MerklePath = [MerkleNode; 32];
+
 /// Computes the anchored leaf value: `poseidon_hash(nullifier || contract_id || contract_root)`.
 ///
 /// This is the value stored in the block-level Merkle tree, keyed by nullifier.
@@ -123,8 +126,8 @@ pub fn construct_anchored_proof(
 ) -> Result<(MerklePath, MerkleNode), ContractError> {
     let pos_u64 = u64::from(leaf_position);
     let path: Vec<MerkleNode> = contract_tree
-        .witness(pos_u64, 0)
-        .ok_or_else(|| ContractError::IoError("construct_anchored_proof: witness failed".into()))?;
+        .witness(pos_u64.into(), 0)
+        .map_err(|e| ContractError::IoError(format!("construct_anchored_proof: witness failed: {:?}", e)))?;
     let root = contract_tree
         .root(0)
         .ok_or_else(|| ContractError::IoError("construct_anchored_proof: root failed".into()))?;
@@ -165,7 +168,7 @@ pub fn anchor_contract_root(
 /// Returns `Ok(true)` if both proofs verify against their respective roots.
 pub fn verify_anchored_proof(
     block_header_root: &MerkleNode,
-    _nullifier: &Nullifier,
+    nullifier: &Nullifier,
     contract_proof: &MerklePath,
     contract_leaf: &MerkleNode,
     contract_root: &MerkleNode,
@@ -187,7 +190,7 @@ pub fn verify_anchored_proof(
     }
 
     // 2. Verify block-level proof: anchor_leaf exists at block_header_root
-    let anchor = anchor_leaf(_nullifier, contract_id, contract_root);
+    let anchor = anchor_leaf(nullifier, contract_id, contract_root);
     let anchor_node = MerkleNode::from_base(anchor);
     let mut current = anchor_node;
     for sibling in block_proof.iter() {

@@ -67,7 +67,7 @@ use dwow_sdk::crypto::{
     IDENTITY_CONTRACT_ID, MULTISIG_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID, ORACLE_CONTRACT_ID,
     PROMISSORY_NOTE_CONTRACT_ID, PURSE_CONTRACT_ID,
 };
-use dwow_sdk::error::ContractError;
+use dwow_sdk::pasta::pallas;
 use dwow_sdk::deploy::DeployParamsV1;
 
 use crate::CChainState;
@@ -777,7 +777,7 @@ fn deploy_contract_in_overlay(
     // Deploy path: fresh empty anchor tree (deploy only runs __initialize,
     // never process_update, so merkle_anchor_add is never called).
     let mut deploy_anchor_tree = MerkleTree::new(1);
-    deploy_anchor_tree.append(MerkleNode::empty_leaf());
+    deploy_anchor_tree.append(MerkleNode::from_base(pallas::Base::from(2u64)));
     let backend = Arc::new(TxBackend {
         overlay: Arc::clone(&deploy_overlay),
         store: Arc::new(store),
@@ -1107,9 +1107,10 @@ impl RuntimeBackend for TxBackend {
         }
     }
 
-    fn block_anchor_append(&self, entry_bytes: &[u8; 96]) -> Result<(), ContractError> {
+    fn block_anchor_append(&self, entry_bytes: &[u8; 96]) -> dwow_core::Result<()> {
         use dwow_sdk::crypto::merkle_anchor::AnchorEntry;
-        let entry = AnchorEntry::from_leaf_bytes(entry_bytes)?;
+        let entry = AnchorEntry::from_leaf_bytes(entry_bytes)
+            .map_err(|e| Error::Custom(format!("block_anchor_append: decode: {e:?}")))?;
         let mut tree = self.block_anchor_tree.lock()
             .unwrap_or_else(|e| e.into_inner());
         let leaf_node = MerkleNode::from_base(

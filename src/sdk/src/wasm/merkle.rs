@@ -167,7 +167,10 @@ extern "C" {
 #[cfg(target_arch = "wasm32")]
 pub fn merkle_anchor_add(entry_bytes: &[u8; 96]) -> Result<(), ContractError> {
     let ret = unsafe { merkle_anchor_add_(entry_bytes.as_ptr(), 96) };
-    ContractError::from(ret)
+    if ret < 0 {
+        return Err(ContractError::from(ret))
+    }
+    Ok(())
 }
 
 #[cfg(not(target_arch = "wasm32"))]

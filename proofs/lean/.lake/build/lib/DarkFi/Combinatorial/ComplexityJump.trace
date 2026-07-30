@@ -1,0 +1,5 @@
+{"log":
+ [{"message":
+   ".> LEAN_PATH=././.lake/build/lib LD_LIBRARY_PATH=/opt/ros/jazzy/opt/sdformat_vendor/lib:/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/opt/ros/jazzy/opt/gz_math_vendor/lib:/opt/ros/jazzy/opt/gz_utils_vendor/lib:/opt/ros/jazzy/opt/gz_tools_vendor/lib:/opt/ros/jazzy/opt/gz_cmake_vendor/lib:/opt/ros/jazzy/lib:/home/patrick/miniforge3/lib /home/patrick/.elan/toolchains/leanprover--lean4---v4.12.0/bin/lean ././src/./DarkFi/Combinatorial/ComplexityJump.lean -R ././src/. -o ././.lake/build/lib/DarkFi/Combinatorial/ComplexityJump.olean -i ././.lake/build/lib/DarkFi/Combinatorial/ComplexityJump.ilean -c ././.lake/build/ir/DarkFi/Combinatorial/ComplexityJump.c --json",
+   "level": "trace"}],
+ "depHash": "17385886079767227422"}

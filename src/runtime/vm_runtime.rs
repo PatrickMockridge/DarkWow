@@ -87,7 +87,7 @@ pub trait RuntimeBackend: Send + Sync {
     /// Block-level Merkle tree: append a contract state anchor.
     /// Called by the `merkle_anchor_add` host function during `process_update`.
     /// Entry format: 96 bytes (nullifier || contract_id || contract_root).
-    fn block_anchor_append(&self, entry_bytes: &[u8; 96]) -> Result<(), ContractError>;
+    fn block_anchor_append(&self, entry_bytes: &[u8; 96]) -> crate::Result<()>;
 }
 
 /// Type-erased pointer to the runtime backend. A single pointer replaces the

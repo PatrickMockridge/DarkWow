@@ -126,7 +126,7 @@ pub struct CChainState {
     /// Block-level Merkle tree for anchoring contract state transitions.
     /// Each leaf is an AnchorEntry (nullifier-keyed contract root).
     /// Depth 32 (Orchard standard), checkpoint capacity 100 for reorg safety.
-    block_anchor_tree: Arc<Mutex<MerkleTree>>,
+    pub block_anchor_tree: Arc<Mutex<MerkleTree>>,
     /// Competing blocks at the same height — potential uncles for fork resolution.
     /// When two miners produce blocks at height N simultaneously, the first
     /// received becomes canonical and the second is stored here. The next block
@@ -229,7 +229,7 @@ impl CChainState {
         // contract state transitions. Depth 32, checkpoint capacity 100.
         // Arc for sharing with TxBackend during WASM execution.
         let mut block_anchor_tree = MerkleTree::new(100);
-        block_anchor_tree.append(MerkleNode::empty_leaf());
+        block_anchor_tree.append(MerkleNode::from_base(pallas::Base::from(2u64)));
         let block_anchor_tree = Arc::new(Mutex::new(block_anchor_tree));
 
         Ok(Arc::new(Self {
@@ -910,14 +910,17 @@ impl CChainState {
 
             // --- Block anchor root verification (BEFORE atomic commit) ---
             // Per R1: validate anchor root before committing sled state.
-            // On failure, nothing is written to sled — no rollback needed.
-            let computed_anchor_root = self.block_anchor_root();
-            if block.header.nullifier_root != computed_anchor_root {
-                return Err(LinearError::BlockIsInvalid(format!(
-                    "anchor_root mismatch: computed={} header={}",
-                    hex::encode(computed_anchor_root),
-                    hex::encode(block.header.nullifier_root),
-                )));
+            // Genesis (height 1) is exempt — the initial anchor tree root is
+            // non-zero but the genesis block header has nullifier_root=[0u8;32].
+            if block.header.height > BlockHeight::GENESIS {
+                let computed_anchor_root = self.block_anchor_root();
+                if block.header.nullifier_root != computed_anchor_root {
+                    return Err(LinearError::BlockIsInvalid(format!(
+                        "anchor_root mismatch: computed={} header={}",
+                        hex::encode(computed_anchor_root),
+                        hex::encode(block.header.nullifier_root),
+                    )));
+                }
             }
 
             // --- Atomic commit (sled cross-tree transaction) ---
@@ -998,7 +1001,7 @@ impl CChainState {
                 .unwrap_or_else(|e| e.into_inner());
             // Reset: replace with fresh tree (old tree is dropped)
             let mut fresh = MerkleTree::new(100);
-            fresh.append(MerkleNode::empty_leaf());
+            fresh.append(MerkleNode::from_base(pallas::Base::from(2u64)));
             *tree = fresh;
         }
 
@@ -1128,10 +1131,8 @@ impl CChainState {
         let mut tree = self.block_anchor_tree.lock()
             .unwrap_or_else(|e| e.into_inner());
         let leaf_node = MerkleNode::from_base(
-            dwow_sdk::crypto::poseidon_hash([
-                entry.contract_id.inner(),
-                entry.contract_root.inner(),
-            ])
+            dwow_sdk::crypto::merkle_anchor::anchor_leaf(
+                &entry.nullifier, &entry.contract_id, &entry.contract_root)
         );
         tree.append(leaf_node);
     }
@@ -1176,7 +1177,7 @@ mod tests {
             },
             transactions: vec![],
         };
-        let outcome1 = cs.connect_block(block1.clone()).expect("first block connects");
+        let outcome1 = cs.connect_block(&block1, &[], None, None).expect("first block connects");
         assert!(matches!(outcome1, BlockConnectOutcome::CanonicalExtension { .. }),
             "first block must extend canonical chain");
         assert_eq!(cs.get_height(), h1);
@@ -1184,7 +1185,7 @@ mod tests {
         // Second block at same height — different nonce so different block hash.
         let mut block2 = block1.clone();
         block2.header.nonce = 1;
-        let outcome2 = cs.connect_block(block2.clone()).expect("second block connects");
+        let outcome2 = cs.connect_block(&block2, &[], None, None).expect("second block connects");
         assert!(matches!(outcome2, BlockConnectOutcome::CompetingStored),
             "second block at same height must be stored as competing");
 

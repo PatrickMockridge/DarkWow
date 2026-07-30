@@ -44,16 +44,16 @@
 //!     .submit().await?;
 //! ```
 
-use std::sync::{
+use std::sync::{Arc, Mutex,
     atomic::{AtomicU32, Ordering},
-    Arc,
 };
 
 use dwow_chain::{CChainState, FinalityConfig, PoWConfig};
 use dwow_core::zk::Proof;
 use dwow_core::Result;
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
-use dwow_sdk::crypto::{ContractId, NATIVE_TOKEN_CONTRACT_ID};
+use dwow_sdk::crypto::{ContractId, MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID};
+use dwow_sdk::pasta::pallas;
 use dwow_contract_test_harness::harness::ContractHarness;
 
 /// Result of building a coinbase for the block being assembled.
@@ -183,11 +183,14 @@ impl HeavyweightPipeline {
                 .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?,
         );
         let overlay_arc = Arc::new(std::sync::Mutex::new(overlay.clone()));
+        let mut deploy_anchor = dwow_sdk::crypto::MerkleTree::new(1);
+        deploy_anchor.append(dwow_sdk::crypto::MerkleNode::from_base(pallas::Base::from(2u64)));
         let backend = Arc::new(dwow_chain::execution::TxBackend {
             overlay: Arc::clone(&overlay_arc),
             store: self.chain_state.store.clone(),
             height: BlockHeight::GENESIS,
             vm,
+            block_anchor_tree: Arc::new(Mutex::new(deploy_anchor)),
         });
         let mut runtime = dwow_core::runtime::vm_runtime::Runtime::new(
             wasm, backend, contract_id, BlockHeight::GENESIS,
@@ -232,11 +235,14 @@ impl HeavyweightPipeline {
                 .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?,
         );
         let overlay_arc = Arc::new(std::sync::Mutex::new(overlay.clone()));
+        let mut deploy_anchor = dwow_sdk::crypto::MerkleTree::new(1);
+        deploy_anchor.append(dwow_sdk::crypto::MerkleNode::from_base(pallas::Base::from(2u64)));
         let backend = Arc::new(dwow_chain::execution::TxBackend {
             overlay: Arc::clone(&overlay_arc),
             store: self.chain_state.store.clone(),
             height: BlockHeight::GENESIS,
             vm,
+            block_anchor_tree: Arc::new(Mutex::new(deploy_anchor)),
         });
         let mut runtime = dwow_core::runtime::vm_runtime::Runtime::new(
             wasm, backend, contract_id, BlockHeight::GENESIS,

@@ -146,7 +146,15 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let ndb = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
             wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
             // Block-level anchoring (§C.3.7) — after nullifier write (R7)
-            let entry = merkle_anchor::AnchorEntry::new(u.nullifier, cid, u.new_leaf);
+            // Read the updated tree root for anchoring (QC Fix 3: use root, not leaf)
+            let contract_root = if let Some(tree_data) = wasm::db::db_get(idb, BOX_CONTRACT_BOX_MERKLE_TREE)? {
+                let tree: MerkleTree = dwow_serial::deserialize(&tree_data[4..])
+                    .map_err(|_| ContractError::IoError("anchor: tree deser".into()))?;
+                tree.root(0).unwrap_or(MerkleNode::from_base(pallas::Base::zero()))
+            } else {
+                MerkleNode::from_base(pallas::Base::zero())
+            };
+            let entry = merkle_anchor::AnchorEntry::new(u.nullifier, cid, contract_root);
             wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;
         }
         BoxFunction::Take => {

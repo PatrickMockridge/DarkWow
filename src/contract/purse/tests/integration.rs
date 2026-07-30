@@ -2,7 +2,7 @@
 //! Updated for L1 type system (Part C §C.3.2): Amount, Balance, SDK Nullifier.
 
 use dwow_purse_contract::model::{Amount, Balance, BalanceParams, DepositParams, MerklePosition, Purse, PurseId, StateNonce, WithdrawParams};
-use dwow_sdk::crypto::{Keypair, MerkleNode, Nullifier, PublicKey, SecretKey};
+use dwow_sdk::crypto::{pasta_prelude::PrimeField, Keypair, MerkleNode, Nullifier, PublicKey, SecretKey};
 use dwow_sdk::pasta::{group::GroupEncoding, pallas};
 
 fn dummy_pubkey() -> PublicKey {

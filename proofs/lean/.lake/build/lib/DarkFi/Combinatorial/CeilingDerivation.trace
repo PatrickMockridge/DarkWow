@@ -1,0 +1,23 @@
+{"log":
+ [{"message":
+   ".> LEAN_PATH=././.lake/build/lib LD_LIBRARY_PATH=/opt/ros/jazzy/opt/sdformat_vendor/lib:/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/opt/ros/jazzy/opt/gz_math_vendor/lib:/opt/ros/jazzy/opt/gz_utils_vendor/lib:/opt/ros/jazzy/opt/gz_tools_vendor/lib:/opt/ros/jazzy/opt/gz_cmake_vendor/lib:/opt/ros/jazzy/lib:/home/patrick/miniforge3/lib /home/patrick/.elan/toolchains/leanprover--lean4---v4.12.0/bin/lean ././src/./DarkFi/Combinatorial/CeilingDerivation.lean -R ././src/. -o ././.lake/build/lib/DarkFi/Combinatorial/CeilingDerivation.olean -i ././.lake/build/lib/DarkFi/Combinatorial/CeilingDerivation.ilean -c ././.lake/build/ir/DarkFi/Combinatorial/CeilingDerivation.c --json",
+   "level": "trace"},
+  {"message":
+   "././src/./DarkFi/Combinatorial/CeilingDerivation.lean:182:7: unused variable `hP`\nnote: this linter can be disabled with `set_option linter.unusedVariables false`",
+   "level": "warning"},
+  {"message":
+   "././src/./DarkFi/Combinatorial/CeilingDerivation.lean:183:7: unused variable `hW`\nnote: this linter can be disabled with `set_option linter.unusedVariables false`",
+   "level": "warning"},
+  {"message":
+   "././src/./DarkFi/Combinatorial/CeilingDerivation.lean:184:7: unused variable `hO`\nnote: this linter can be disabled with `set_option linter.unusedVariables false`",
+   "level": "warning"},
+  {"message":
+   "././src/./DarkFi/Combinatorial/CeilingDerivation.lean:189:7: unused variable `hP`\nnote: this linter can be disabled with `set_option linter.unusedVariables false`",
+   "level": "warning"},
+  {"message":
+   "././src/./DarkFi/Combinatorial/CeilingDerivation.lean:190:7: unused variable `hW`\nnote: this linter can be disabled with `set_option linter.unusedVariables false`",
+   "level": "warning"},
+  {"message":
+   "././src/./DarkFi/Combinatorial/CeilingDerivation.lean:191:7: unused variable `hO`\nnote: this linter can be disabled with `set_option linter.unusedVariables false`",
+   "level": "warning"}],
+ "depHash": "5895183135361907228"}

@@ -16,12 +16,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow_sdk::error::ContractError;
+use dwow_sdk::crypto::merkle_anchor::AnchorEntry;
 use tracing::error;
 use wasmer::{FunctionEnvMut, WasmPtr};
 
 use super::acl::acl_allow;
-use crate::runtime::vm_runtime::{ContractSection, Env, to_builtin};
+use crate::runtime::vm_runtime::{ContractSection, Env};
 
 /// Block-level Merkle tree anchoring host function.
 ///
@@ -40,48 +40,67 @@ pub(crate) fn merkle_anchor_add(
     ptr: WasmPtr<u8>,
     len: u32,
 ) -> i64 {
-    let (env, store) = ctx.data_and_store_mut();
+    let (env, mut store) = ctx.data_and_store_mut();
+    let cid = env.contract_id;
 
     // Enforce function ACL — Update section only (same as merkle_add)
     if let Err(e) = acl_allow(env, &[ContractSection::Update]) {
-        return e;
+        error!(
+            target: "runtime::merkle_anchor::merkle_anchor_add",
+            "[WASM] [{cid}] merkle_anchor_add(): Called in unauthorized section: {e}"
+        );
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
+
+    // Subtract used gas
+    env.subtract_gas(&mut store, 1);
+    env.subtract_gas(&mut store, 96 /* entry_bytes.len() as u64 */);
 
     // Validate length
     if len != 96 {
-        return to_builtin!(ContractError::IoError(
-            "merkle_anchor_add: expected 96 bytes".into()));
+        error!(
+            target: "runtime::merkle_anchor::merkle_anchor_add",
+            "[WASM] [{cid}] merkle_anchor_add(): expected 96 bytes, got {len}"
+        );
+        return dwow_sdk::error::IO_ERROR
     }
 
     // Read entry bytes from WASM memory
-    let memory = env.memory_view(&store);
-    let slice = match ptr.slice(&memory, len) {
-        Ok(s) => s,
-        Err(e) => {
-            error!("merkle_anchor_add: memory slice error: {:?}", e);
-            return to_builtin!(ContractError::IoError("merkle_anchor_add: memory access".into()));
-        }
+    let memory_view = env.memory_view(&store);
+    let Ok(mem_slice) = ptr.slice(&memory_view, len) else {
+        error!(
+            target: "runtime::merkle_anchor::merkle_anchor_add",
+            "[WASM] [{cid}] merkle_anchor_add(): memory slice error"
+        );
+        return dwow_sdk::error::IO_ERROR
     };
 
     let mut entry_bytes = [0u8; 96];
-    for (i, cell) in slice.iter().enumerate() {
-        entry_bytes[i] = cell.get();
+    for (i, cell) in mem_slice.iter().enumerate() {
+        entry_bytes[i] = cell.read().unwrap_or(0);
     }
 
-    // Validate that the anchor entry's contract_id matches the executing contract
-    // Per HAZOP H5 / Red Team V2: prevent cross-contract anchor forgery
-    if let Ok(entry) = dwow_sdk::crypto::merkle_anchor::AnchorEntry::from_leaf_bytes(&entry_bytes) {
-        if entry.contract_id != env.contract_id {
-            error!("merkle_anchor_add: contract_id mismatch — entry claims {} but executing {}",
-                entry.contract_id, env.contract_id);
-            return to_builtin!(ContractError::IoError(
-                "merkle_anchor_add: contract_id mismatch".into()));
+    // Validate contract_id matches executing contract (R5)
+    if let Ok(entry) = AnchorEntry::from_leaf_bytes(&entry_bytes) {
+        if entry.contract_id != cid {
+            error!(
+                target: "runtime::merkle_anchor::merkle_anchor_add",
+                "[WASM] [{cid}] merkle_anchor_add(): contract_id mismatch — entry claims {}",
+                entry.contract_id
+            );
+            return dwow_sdk::error::IO_ERROR
         }
     }
 
     // Append to block-level anchor tree via backend
     match env.backend.block_anchor_append(&entry_bytes) {
         Ok(()) => 0,
-        Err(e) => to_builtin!(e),
+        Err(e) => {
+            error!(
+                target: "runtime::merkle_anchor::merkle_anchor_add",
+                "[WASM] [{cid}] merkle_anchor_add(): backend error: {e}"
+            );
+            dwow_sdk::error::IO_ERROR
+        }
     }
 }

@@ -1,0 +1,17 @@
+{"log":
+ [{"message":
+   ".> LEAN_PATH=././.lake/build/lib LD_LIBRARY_PATH=/opt/ros/jazzy/opt/sdformat_vendor/lib:/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/opt/ros/jazzy/opt/gz_math_vendor/lib:/opt/ros/jazzy/opt/gz_utils_vendor/lib:/opt/ros/jazzy/opt/gz_tools_vendor/lib:/opt/ros/jazzy/opt/gz_cmake_vendor/lib:/opt/ros/jazzy/lib:/home/patrick/miniforge3/lib /home/patrick/.elan/toolchains/leanprover--lean4---v4.12.0/bin/lean ././src/./DarkFi/Combinatorial/GeneralTheorem.lean -R ././src/. -o ././.lake/build/lib/DarkFi/Combinatorial/GeneralTheorem.olean -i ././.lake/build/lib/DarkFi/Combinatorial/GeneralTheorem.ilean -c ././.lake/build/ir/DarkFi/Combinatorial/GeneralTheorem.c --json",
+   "level": "trace"},
+  {"message":
+   "././src/./DarkFi/Combinatorial/GeneralTheorem.lean:146:5: unused variable `hL1`\nnote: this linter can be disabled with `set_option linter.unusedVariables false`",
+   "level": "warning"},
+  {"message":
+   "././src/./DarkFi/Combinatorial/GeneralTheorem.lean:188:5: unused variable `h1`\nnote: this linter can be disabled with `set_option linter.unusedVariables false`",
+   "level": "warning"},
+  {"message":
+   "././src/./DarkFi/Combinatorial/GeneralTheorem.lean:189:5: unused variable `h2`\nnote: this linter can be disabled with `set_option linter.unusedVariables false`",
+   "level": "warning"},
+  {"message":
+   "././src/./DarkFi/Combinatorial/GeneralTheorem.lean:211:16: unused variable `hk'`\nnote: this linter can be disabled with `set_option linter.unusedVariables false`",
+   "level": "warning"}],
+ "depHash": "15322327107146290865"}
