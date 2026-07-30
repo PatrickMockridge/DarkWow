@@ -61,7 +61,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
         // PutV1 (0x01): Place a capability into a Box
         Action {
             function_id: 0x01,
-            name: "PutV1".into(),
+            name: "put".into(),
             contract_id,
             description: "Place a capability into a Box — proves Box was empty".into(),
             requires: CapabilityExpression::Any(vec![]),
@@ -76,7 +76,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
         // TakeV1 (0x02): Take a capability from a Box
         Action {
             function_id: 0x02,
-            name: "TakeV1".into(),
+            name: "take".into(),
             contract_id,
             description: "Take a capability from a Box — proves knowledge of box_secret, Box consumed via nullifier".into(),
             requires: CapabilityExpression::Any(vec![box_cap]),

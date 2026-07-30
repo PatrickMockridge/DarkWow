@@ -12,7 +12,6 @@ define_contract_function!(PurseFunction {
 });
 
 pub const PURSE_CONTRACT_DB_VERSION: &str = "purse_version_1";
-pub const PURSE_CONTRACT_PURSES_TREE: &str = "purses";
 pub const PURSE_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
 pub const PURSE_CONTRACT_INFO_TREE: &str = "info";
 
@@ -22,10 +21,8 @@ pub const PURSE_CONTRACT_ZKAS_BALANCE_NS: &str = "Balance";
 
 // Merkle tree infrastructure
 pub const PURSE_CONTRACT_PURSE_ROOTS_TREE: &str = "purse_roots";
-pub const PURSE_CONTRACT_NULLIFIER_ROOTS_TREE: &str = "nullifier_roots";
 pub const PURSE_CONTRACT_PURSE_MERKLE_TREE: &[u8] = b"purse_merkle_tree";
 pub const PURSE_CONTRACT_LATEST_PURSE_ROOT: &[u8] = b"latest_purse_root";
-pub const PURSE_CONTRACT_LATEST_NULLIFIER_ROOT: &[u8] = b"latest_nullifier_root";
 
 // Precalculated root for MerkleTree::new(1) with single ZERO leaf.
 pub const EMPTY_PURSE_TREE_ROOT: [u8; 32] = [

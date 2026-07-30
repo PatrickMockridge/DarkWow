@@ -69,6 +69,7 @@ fn balance_metadata(p: BalanceParams) -> Result<Vec<u8>, ContractError> {
 // ============================================================================
 
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
+    if ix.is_empty() { msg!("[purse::process_instruction] Error: Empty call data"); return Err(ContractError::IoError("Empty call data".to_string())); }
     let call_idx = usize::try_from(wasm::util::get_call_index()?).map_err(|e| ContractError::IoError(format!("call_index: {e}")))?;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?; let self_ = &calls[call_idx];
     let func = PurseFunction::try_from(self_.data.data[0])?;
@@ -76,25 +77,25 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         PurseFunction::Deposit => {
             let p = DepositParams::decode(&self_.data.data[1..])?;
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?;
-            if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { return Err(PurseError::DuplicateNullifier.into()); }
+            if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { msg!("[purse::deposit] Error: Duplicate nullifier"); return Err(PurseError::DuplicateNullifier.into()); }
             let rdb = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?;
-            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_repr())? { return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
+            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_repr())? { msg!("[purse::deposit] Error: Merkle root not found"); return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
             let u = DepositUpdate { nullifier: p.nullifier, new_leaf: p.new_leaf };
-            wasm::util::set_return_data(&[&[PurseFunction::Deposit as u8], &u.encode()[..]].concat())?;
+            wasm::util::set_return_data(&[&[PurseFunction::Deposit as u8], &u.encode()?[..]].concat())?;
         }
         PurseFunction::Withdraw => {
             let p = WithdrawParams::decode(&self_.data.data[1..])?;
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?;
-            if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { return Err(PurseError::DuplicateNullifier.into()); }
+            if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { msg!("[purse::withdraw] Error: Duplicate nullifier"); return Err(PurseError::DuplicateNullifier.into()); }
             let rdb = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?;
-            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_repr())? { return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
+            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_repr())? { msg!("[purse::withdraw] Error: Merkle root not found"); return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
             let u = WithdrawUpdate { nullifier: p.nullifier, new_leaf: p.new_leaf };
-            wasm::util::set_return_data(&[&[PurseFunction::Withdraw as u8], &u.encode()[..]].concat())?;
+            wasm::util::set_return_data(&[&[PurseFunction::Withdraw as u8], &u.encode()?[..]].concat())?;
         }
         PurseFunction::Balance => {
             let p = BalanceParams::decode(&self_.data.data[1..])?;
             let rdb = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?;
-            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_repr())? { return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
+            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_repr())? { msg!("[purse::balance] Error: Merkle root not found"); return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
             wasm::util::set_return_data(&[PurseFunction::Balance as u8])?;
         }
         PurseFunction::Initialize => return Err(ContractError::InvalidFunction),
@@ -107,6 +108,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 // ============================================================================
 
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
+    if update_data.is_empty() { msg!("[purse::process_update] Error: Empty update data"); return Err(ContractError::IoError("Empty update data".to_string())); }
     let func = PurseFunction::try_from(update_data[0])?;
     match func {
         PurseFunction::Deposit => {

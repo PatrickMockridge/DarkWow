@@ -12,7 +12,6 @@ define_contract_function!(BoxFunction {
 });
 
 pub const BOX_CONTRACT_DB_VERSION: &str = "box_version_1";
-pub const BOX_CONTRACT_BOXES_TREE: &str = "boxes";
 pub const BOX_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
 pub const BOX_CONTRACT_INFO_TREE: &str = "info";
 
@@ -21,10 +20,8 @@ pub const BOX_CONTRACT_ZKAS_TAKE_NS: &str = "Take";
 
 // Merkle tree infrastructure
 pub const BOX_CONTRACT_BOX_ROOTS_TREE: &str = "box_roots";
-pub const BOX_CONTRACT_NULLIFIER_ROOTS_TREE: &str = "nullifier_roots";
 pub const BOX_CONTRACT_BOX_MERKLE_TREE: &[u8] = b"box_merkle_tree";
 pub const BOX_CONTRACT_LATEST_BOX_ROOT: &[u8] = b"latest_box_root";
-pub const BOX_CONTRACT_LATEST_NULLIFIER_ROOT: &[u8] = b"latest_nullifier_root";
 
 // Precalculated root for MerkleTree::new(1) with single ZERO leaf.
 pub const EMPTY_BOX_TREE_ROOT: [u8; 32] = [

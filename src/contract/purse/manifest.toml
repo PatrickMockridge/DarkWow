@@ -62,7 +62,7 @@ description = "Merkle tree state and root pointers"
 name = "purse_capability"
 discriminant = 0
 primitives = ["SecretKey", "Nullifier", "MerkleNode", "ContractId", "FuncId", "AssetId"]
-note_schema = []
+note_schema = [{ name = "token_id", type = "pallas_base" }, { name = "balance", type = "u64" }, { name = "commitment", type = "pallas_base" }]
 
 [[actions]]
 function = "deposit"

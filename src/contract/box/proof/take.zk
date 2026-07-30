@@ -11,7 +11,6 @@ witness "Take" {
     Base nullifier,
     Base expected_root,
     Base owner_secret,
-    Base owner_pub,
     Uint32 leaf_pos,
     MerklePath path,
     Base tx_commitment,
@@ -23,12 +22,6 @@ circuit "Take" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
     DOMAIN_MERKLE_LEAF = witness_base(5);
-    DOMAIN_SIGNATURE_SECRET = witness_base(7);
-
-    # Ownership
-    derived_owner = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret);
-    constrain_equal_base(derived_owner, owner_pub);
-
     # Nullifier — circuit computes, constrains against caller-provided
     nullifier_circuit = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, state_nonce);
     constrain_equal_base(nullifier_circuit, nullifier);

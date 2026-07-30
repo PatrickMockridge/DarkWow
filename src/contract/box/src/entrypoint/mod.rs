@@ -50,11 +50,11 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 }
 
 fn put_metadata(p: PutParams) -> Result<Vec<u8>, ContractError> {
-    let mut z = vec![]; z.push((BOX_CONTRACT_ZKAS_PUT_NS.to_string(), vec![p.nullifier.inner(), p.expected_root, p.new_leaf, p.tx_binding, p.tx_nonce]));
+    let mut z = vec![]; z.push((BOX_CONTRACT_ZKAS_PUT_NS.to_string(), vec![p.nullifier.inner(), p.expected_root.inner(), p.new_leaf.inner(), p.tx_binding, p.tx_nonce]));
     let mut m = vec![]; z.encode(&mut m)?; let s: Vec<dwow_sdk::crypto::PublicKey> = vec![]; s.encode(&mut m)?; Ok(m)
 }
 fn take_metadata(p: TakeParams) -> Result<Vec<u8>, ContractError> {
-    let mut z = vec![]; z.push((BOX_CONTRACT_ZKAS_TAKE_NS.to_string(), vec![p.nullifier.inner(), p.expected_root, p.tx_binding, p.tx_nonce]));
+    let mut z = vec![]; z.push((BOX_CONTRACT_ZKAS_TAKE_NS.to_string(), vec![p.nullifier.inner(), p.expected_root.inner(), p.tx_binding, p.tx_nonce]));
     let mut m = vec![]; z.encode(&mut m)?; let s: Vec<dwow_sdk::crypto::PublicKey> = vec![]; s.encode(&mut m)?; Ok(m)
 }
 
@@ -65,6 +65,7 @@ fn take_metadata(p: TakeParams) -> Result<Vec<u8>, ContractError> {
 fn func_tag(f: BoxFunction) -> u8 { match f { BoxFunction::Initialize => 0x00, BoxFunction::Put => 0x01, BoxFunction::Take => 0x02 } }
 
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
+    if ix.is_empty() { msg!("[box::process_instruction] Error: Empty call data"); return Err(ContractError::IoError("Empty call data".to_string())); }
     let call_idx = usize::try_from(wasm::util::get_call_index()?).map_err(|e| ContractError::IoError(format!("call_index: {e}")))?;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?; let self_ = &calls[call_idx];
     let func = BoxFunction::try_from(self_.data.data[0])?;
@@ -72,20 +73,20 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         BoxFunction::Put => {
             let p = PutParams::decode(&self_.data.data[1..])?; msg!("[box::put] Put");
             let ndb = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
-            if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { return Err(BoxError::DuplicateNullifier.into()); }
+            if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { msg!("[box::put] Error: Duplicate nullifier"); return Err(BoxError::DuplicateNullifier.into()); }
             let rdb = wasm::db::db_lookup(cid, BOX_CONTRACT_BOX_ROOTS_TREE)?;
-            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_repr())? { return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
+            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[box::put] Error: Merkle root not found in roots DB"); return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
             let u = PutUpdate { nullifier: p.nullifier, new_leaf: p.new_leaf };
-            wasm::util::set_return_data(&[&[func_tag(func)], &u.encode()[..]].concat())?;
+            wasm::util::set_return_data(&[&[func_tag(func)], &u.encode()?[..]].concat())?;
         }
         BoxFunction::Take => {
             let p = TakeParams::decode(&self_.data.data[1..])?; msg!("[box::take] Take");
             let ndb = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
-            if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { return Err(BoxError::DuplicateNullifier.into()); }
+            if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { msg!("[box::take] Error: Duplicate nullifier"); return Err(BoxError::DuplicateNullifier.into()); }
             let rdb = wasm::db::db_lookup(cid, BOX_CONTRACT_BOX_ROOTS_TREE)?;
-            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_repr())? { return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
+            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[box::take] Error: Merkle root not found in roots DB"); return Err(ContractError::IoError("Merkle root not found in roots DB".into())); }
             let u = TakeUpdate { nullifier: p.nullifier };
-            wasm::util::set_return_data(&[&[func_tag(func)], &u.encode()[..]].concat())?;
+            wasm::util::set_return_data(&[&[func_tag(func)], &u.encode()?[..]].concat())?;
         }
         BoxFunction::Initialize => return Err(ContractError::InvalidFunction),
     };
@@ -97,12 +98,13 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 // ============================================================================
 
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
+    if update_data.is_empty() { msg!("[box::process_update] Error: Empty update data"); return Err(ContractError::IoError("Empty update data".to_string())); }
     let func = BoxFunction::try_from(update_data[0])?;
     match func {
         BoxFunction::Put => {
             let u = PutUpdate::decode(&update_data[1..])?; let idb = wasm::db::db_lookup(cid, BOX_CONTRACT_INFO_TREE)?;
             let rdb = wasm::db::db_lookup(cid, BOX_CONTRACT_BOX_ROOTS_TREE)?;
-            wasm::merkle::merkle_add(idb, rdb, BOX_CONTRACT_LATEST_BOX_ROOT, BOX_CONTRACT_BOX_MERKLE_TREE, &[MerkleNode::from_base(u.new_leaf)])?;
+            wasm::merkle::merkle_add(idb, rdb, BOX_CONTRACT_LATEST_BOX_ROOT, BOX_CONTRACT_BOX_MERKLE_TREE, &[u.new_leaf])?;
             let ndb = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?; wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
         }
         BoxFunction::Take => {
