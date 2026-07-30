@@ -306,6 +306,10 @@ k does not reduce P, W, or O. The problem is structural, not
 circuit-size-related. The triage (safe / scrutiny / exceeds) is proved
 correct in the formal verification.
 
+The complete L1 type system specification — including N^K state space
+formalization, trajectory identification, barb ordering, additive composition,
+and nominal L1 domain types — is at [contract-wasm-type-system.md Part C](contract-wasm-type-system.md).
+
 The formal statement and mechanized proof are in:
 `proofs/lean/src/DarkFi/Combinatorial/GeneralTheorem.lean`
 (theorem `l1_combinatorial_asymmetry`, theorem `safe_l1_classification_sound`,

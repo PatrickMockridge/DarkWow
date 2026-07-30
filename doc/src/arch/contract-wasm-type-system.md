@@ -8,12 +8,38 @@ It SHALL be read in conjunction with the [Type System](type-system.md),
 
 This specification uses SHALL, MUST, SHALL NOT, MUST NOT per RFC 2119.
 
-## 0. Foundation — Contracts as ρ-Calculus Channels
+**Document structure:**
+- **Part A: Shared Foundation** — ρ-calculus foundations, contract taxonomy,
+  entrypoints, state type system, host interface, error propagation, witness
+  binding, compiler-enforced invariants, non-unifiable types, contract patterns.
+  Applies to ALL contracts regardless of privacy level.
+- **Part B: L2 Type System** — barb semantics under 1-trajectory (boolean
+  checks), composition as barb union, wallet scan as flat note discovery,
+  normative L2 transfer pattern.
+- **Part C: L1 Type System** — N^K state space foundation, trajectory
+  identification, barb semantics as trajectory-space partitions, additive-only
+  composition, wallet scan under N^K, nominal L1 domain types, combinatorial
+  error theory, formal verification references.
+
+---
+
+# Part A: Shared Foundation
+
+Part A defines the type system infrastructure common to all contracts.
+It applies regardless of whether the contract operates at L1 (N^K trajectories)
+or L2 (1 trajectory). Where a concept has different semantics under L1,
+Part A states the shared definition and forwards to Part B or Part C for
+privacy-level-specific rules.
+
+For the combinatorial foundation of L1 — the N^K state space and its
+consequences for every type boundary — see Part C §C.0.
+
+## A.0 Foundation — Contracts as ρ-Calculus Channels
 
 The ρ-calculus foundation is defined in [type-system.md §0](type-system.md). This
 section extends that foundation to contract WASM execution.
 
-### 0.1 Contracts Are Named Channels
+### A.0.1 Contracts Are Named Channels
 
 A **contract** IS a named channel in the ρ-calculus. The `ContractId`
 ([type-system.md §8.1](type-system.md)) names the channel. The WASM entrypoints
@@ -29,7 +55,7 @@ the input operation `contract_id?(data).P`.
 | Replication `!P` | The contract WASM is loaded once; every call invokes the same entrypoint |
 | Restriction `νx.P` | Per-contract sled trees — keyed by `blake3(contract_id || tree_name)` |
 
-### 0.2 The Contract as a Replicated Process
+### A.0.2 The Contract as a Replicated Process
 
 A contract with four entrypoints is the replicated parallel composition:
 
@@ -42,7 +68,7 @@ them in strict order: `metadata` → `exec` → (optional `spend_hook`) → `app
 Every invocation is an independent WASM instantiation with its own linear memory
 and gas budget. No state persists between invocations except through sled trees.
 
-### 0.3 The Fundamental Contract Invariant
+### A.0.3 The Fundamental Contract Invariant
 
 > **A contract SHALL accept a ContractCall iff the call's data satisfies
 > the contract's declared barbs.**
@@ -53,7 +79,11 @@ WASM code SHALL enforce those barbs at runtime. A call that does not satisfy the
 declared barbs SHALL return `Err(ContractError::...)`. The host SHALL reject the
 block if a canonical call fails ([consensus.md](consensus/consensus.md) Phase 4).
 
-### 0.4 Contracts Are Instances, Not Special Cases
+**For L1 contracts operating under N^K state trajectories:** the invariant
+is strengthened — barbs must be satisfied FOR THE CORRECT TARGET OBJECT in
+the anonymity set. See Part C §C.0.3.
+
+### A.0.4 Contracts Are Instances, Not Special Cases
 
 Per [type-system.md §13](type-system.md): a contract name is a human-readable
 label for a specific barb composition. It is NOT a special code path. The only
@@ -61,7 +91,7 @@ contract with a bespoke wallet path is NativeToken (consensus-critical: block
 rewards, fee payment, supply audit). Every other contract — genesis or
 user-deployed — SHALL work through the generic manifest-driven machinery.
 
-### 0.5 Contract Taxonomy — Consensus vs Capability
+### A.0.5 Contract Taxonomy — Consensus vs Capability
 
 DarkWow distinguishes two categories of contract. The distinction is architectural,
 not a privilege hierarchy:
@@ -87,9 +117,9 @@ DESIGN RULE, not a limitation. Per the memory rule `native-token-rock-dumb`: coi
 ARE capabilities via nullifiers; DeFi complexity lives in PromissoryNote and
 user-deployed contracts.
 
-## 1. Contract Entrypoint Types
+## A.1 Contract Entrypoint Types
 
-### 1.1 The Four Canonical Entrypoints
+### A.1.1 The Four Canonical Entrypoints
 
 The `dwow_sdk::define_contract!` macro (`src/sdk/src/wasm/entrypoint.rs:82`)
 generates four `#[no_mangle] extern "C"` functions. Each corresponds to a
@@ -117,7 +147,7 @@ Canonical call failure at any step SHALL reject the block. Uncle call failure
 produces `success: false` in `uncle_results` but does not reject the block
 (`execution.rs:325-332, 406-418`).
 
-### 1.2 Function Dispatch
+### A.1.2 Function Dispatch
 
 The first byte of the call data is the **function selector**. The contract SHALL
 define an enum implementing `TryFrom<u8>`. Two patterns exist:
@@ -149,7 +179,7 @@ The dispatch SHALL be exhaustive. `#[deny(unreachable_patterns)]` SHALL be on
 the `match` statement. An unknown selector SHALL return `ContractError::InvalidFunction`
 (`↓bad-gate`). The contract SHALL NOT silently ignore unknown selectors.
 
-### 1.3 Contract Call Payload
+### A.1.3 Contract Call Payload
 
 The WASM runtime copies `ContractCall.data` to linear memory. The format written
 by the host (`src/runtime/vm_runtime.rs:752-760`) is:
@@ -167,12 +197,12 @@ Oracle, Attestation, Identity, Stablecoin, InsuranceMarket), the instruction dat
 deserializes as `Vec<DarkLeaf<ContractCall>>` and the current call is indexed by
 `wasm::util::get_call_index()`.
 
-### 1.4 Parameter Encoding
+### A.1.4 Parameter Encoding
 
 Parameters SHALL be serializable via `dwow_serial` (`Encodable`/`Decodable`).
 Every `*ParamsV1` struct SHALL provide a thin bridge impl that delegates to the
 struct's inherent `encode()`/`decode()` methods. The inherent methods SHALL use
-fixed byte layouts with validating constructors (§3.1). Derive macros
+fixed byte layouts with validating constructors (§A.3.1). Derive macros
 (`SerialEncodable`/`SerialDecodable`) SHALL NOT be used — they bypass validating
 constructors. The parameter type SHALL be a named struct (`XxxParamsV1`), not a
 raw tuple or `Vec<u8>`. The contract SHALL validate parameter lengths before
@@ -192,7 +222,7 @@ fn fee_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
 Reference: `src/contract/native_token/src/entrypoint/mod.rs:466-469`.
 
-### 1.5 Return Value Encoding
+### A.1.5 Return Value Encoding
 
 The `exec` entrypoint writes return data via the `set_return_data` host function:
 
@@ -220,7 +250,7 @@ A contract that fails to call `set_return_data` in `exec` produces an empty
 `Vec<u8>` — the host-side default from `contract_return_data.take().unwrap_or_default()`
 (`vm_runtime.rs:528`). This SHALL cause `apply` to fail with an invalid selector error.
 
-### 1.6 Metadata Contract
+### A.1.6 Metadata Contract
 
 The `metadata` entrypoint SHALL return the ZK public inputs the host needs to verify proofs:
 
@@ -244,17 +274,25 @@ The metadata entrypoint is called BEFORE `exec`, so the host can verify proofs
 and signatures before trusting the contract's state transition. A contract whose
 metadata fails to include a required proof SHALL cause the block to be rejected.
 
+**For L1 metadata under N^K:** the return vector order IS the trajectory
+declaration. See Part C §C.1.2 for the canonical trajectory ordering rule.
+
 Reference: `src/contract/native_token/src/entrypoint/mod.rs:198-217` (get_metadata
 dispatch), `:220-272` (fee_get_metadata).
 
-## 2. Barbs at Contract Entrypoints
+## A.2 Barbs at Contract Entrypoints
 
-### 2.1 The Barb Model
+**For L1 barb semantics under N^K,** see Part C §C.2. Barbs in Part B §B.2
+describe L2 semantics (boolean checks on 1 trajectory). This section (§A.2)
+defines the shared barb model — the vocabulary, declaration rules, and
+entrypoint-to-section mapping — that applies to ALL contracts.
+
+### A.2.1 The Barb Model
 
 A **barb** is an observable action ([type-system.md §1.1](type-system.md)). Every
 contract entrypoint exhibits specific barbs. The manifest declares the barbs at
 the action level (`required_barbs` on `[[actions]]`). The contract WASM code
-SHALL enforce those barbs at runtime. The host ACL (§4.6) enforces barb
+SHALL enforce those barbs at runtime. The host ACL (§A.4.7) enforces barb
 constraints at the section level.
 
 The mapping from barbs to contract operations:
@@ -271,67 +309,7 @@ The mapping from barbs to contract operations:
 | `↓denominate` | Validate asset class | `exec` | Contract: compares token_commit against known asset |
 | `↓derive` | Derive per-instance key | `exec` | Contract: `poseidon_hash([secret, cid, instance])` |
 
-### 2.2 Exec Barbs
-
-The `exec` entrypoint exhibits the barbs that the manifest declares for the
-function's action. For a transfer action declaring
-`required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate", "Denominate"]`,
-the contract SHALL:
-
-1. **`↓gate`** — Dispatch to the correct function handler by the selector byte.
-2. **`↓spend`** — Verify that the nullifier was produced by knowledge of the
-   capability's authorization secret (`poseidon_hash(secret, resource_id)`).
-   The ZK circuit proves secret key knowledge via `ec_mul_base(secret, NULLIFIER_K)`
-   and constrains the nullifier as a public input. No Schnorr signature is involved.
-3. **`↓nullify`** — Check that the input's nullifier is not already in the
-   nullifier SMT (`smt.get_leaf(&nullifier) == pallas::Base::zero()`).
-4. **`↓prove-inclusion`** — Verify that the input's Merkle root exists in the
-   coin roots tree (`db_contains_key(coin_roots_db, &serialize(&merkle_root))`).
-5. **`↓denominate`** — Verify token commitments match the expected asset
-   (`token_commit == poseidon_hash([zero(), zero()])` for native token).
-
-A barb that is declared but not enforced is a lie — the manifest claims a
-security property the code does not provide. A barb that is enforced but not
-declared is a hidden constraint — the wallet's coverage gate cannot verify it,
-and the capability type construction fails.
-
-Reference: `src/contract/native_token/src/entrypoint/mod.rs:466-499` (fee_v1
-barb enforcement), `:768-885` (pow_reward_v1 barb enforcement).
-
-### 2.3 Apply Barbs
-
-The `apply` entrypoint exhibits `↓commit`. It SHALL only write state; it SHALL
-NOT perform validation. All validation SHALL have been done in `exec`. The apply
-entrypoint:
-
-1. Dispatches on the function selector byte from the return data
-2. Deserializes the update struct
-3. Writes to sled trees: `db_set`, `merkle_add`, `sparse_merkle_insert_batch`
-4. SHALL NOT call `db_get`, `db_contains_key`, or any read operation — reads
-   belong in `exec`
-
-The ACL (§4.6) enforces this: `db_set` and `db_del` are only allowed in `Deploy`
-and `Update` sections; read operations are denied in `Update`.
-
-### 2.4 Metadata Barbs
-
-The `metadata` entrypoint exhibits `↓verify`. It SHALL:
-
-1. Dispatch on the function selector byte
-2. Deserialize the function-specific parameters
-3. Surface ALL ZK public inputs for the function's declared circuits (one entry
-   per circuit, each with the ordered list of `pallas::Base` public inputs)
-4. Return empty signature pubkeys `vec![]` — Schnorr signatures are prohibited in contract metadata (contract-standards.md §3)
-5. NOT access state (no `db_get` calls — metadata is a pure function of the call
-   data)
-6. Return empty vectors (not error) on parameter deserialization failure — the
-   host verifier will reject the call because it has no proofs to verify
-
-A metadata entrypoint that returns empty vectors when the manifest declares
-`requires_proof = true` is a spec violation — the host has nothing to verify and
-must trust the contract's `exec` without ZK verification.
-
-### 2.5 Barb Declaration
+### A.2.2 Barb Declaration
 
 Every contract SHALL declare in its manifest which barbs each action requires.
 The contract's WASM code SHALL enforce every declared barb. The relationship is
@@ -349,14 +327,17 @@ Model, Layer 2).
 Reference: `src/contract/native_token/manifest.toml:62-88` (actions with
 required_barbs), `src/contract/identity/manifest.toml` (actions with required_barbs).
 
-## 3. State Type System
+## A.3 State Type System
 
-### 3.1 Encoding Taxonomy — Four Boundaries
+### A.3.1 Encoding Taxonomy — Four Boundaries
 
 There are FOUR distinct encoding boundaries in a contract. Each uses a different
 mechanism. Confusing them is the root cause of every encoding regression found in
 the 2026-07-29 HAZOP review. The fourth boundary was discovered during the Box/Purse
 L1 HAZOP and is the most frequently broken.
+
+**A fifth boundary — the combinatorial L1 state space — applies only to L1
+contracts. See Part C §C.3.**
 
 **Boundary 1 — Entrypoint parameters (external → exec).** Call data arrives from
 an externally-constructed transaction (Rust host, wallet client, RPC). The exec
@@ -370,7 +351,7 @@ Each `*ParamsV1` struct SHALL provide both:
 - An inherent `pub fn decode(data: &[u8]) -> Result<Self, ContractError>` with
   fixed byte layout and validating constructors
 - A thin bridge impl `impl dwow_serial::Decodable for FooParamsV1` that delegates
-  to the inherent method (see §3.1.2 for the canonical pattern)
+  to the inherent method (see §A.3.1.2 for the canonical pattern)
 
 **Boundary 2 — Exec→Apply bridge (internal).** The exec entrypoint produces an
 update struct consumed by the apply entrypoint. This bridge SHALL use custom
@@ -389,14 +370,14 @@ let update = decode_foo_update_v1(&update_data[1..])?;
 The custom bridge functions SHALL delegate to the struct's inherent `encode()`/
 `decode()` methods. Each `*UpdateV1` struct SHALL also provide thin bridge impls
 for `dwow_serial::Encodable`/`Decodable` delegating to the inherent methods,
-for use by test code and client helpers (see §3.1.2).
+for use by test code and client helpers (see §A.3.1.2).
 
 Reference implementations: native_token (encode_fee_update_v1, decode_fee_update_v1
 etc. at `src/contract/native_token/src/entrypoint/mod.rs`), purse, box, deployooor.
 
 **Boundary 3 — Sled state (persistence).** Values written to and read from sled
 trees SHALL use the type's inherent `encode()`/`decode()` methods directly. These
-methods SHALL use fixed byte layouts with validating constructors (§3.1.1).
+methods SHALL use fixed byte layouts with validating constructors (§A.3.1.1).
 `dwow_serial` derive macros (`SerialEncodable`/`SerialDecodable`) SHALL NOT be
 applied to types stored in sled trees — they bypass validating constructors and
 produce opaque byte blobs with no compile-time format guarantee.
@@ -413,7 +394,6 @@ have `dwow_serial` bridge impls — they never cross the exec→apply boundary.
 | Exec → apply | `process_instruction` → `process_update` | `encode_foo_update_v1()` / `decode_foo_update_v1()` | YES (Enc+Dec) |
 | Sled state | `db_set` / `db_get` | `foo.encode()` / `Foo::decode(&data)?` | NO |
 | Circuit → metadata | `get_metadata` → `verify_zkp` | `metadata[i] == proof_instance[i]` for all i | N/A (positional match) |
-| Combinatorial | Architectural | consume+create invariant; o-cap disjoint state | N/A (structural invariant) |
 
 **Boundary 4 — Circuit public inputs → Metadata return value.** The ZK circuit
 publishes values via `constrain_instance(X)` in a fixed order. The metadata
@@ -464,16 +444,7 @@ is a specification violation — the host verifier receives a value the circuit
 never proved anything about. This is an Orchard-class vulnerability (see
 safety.md Lesson 16).
 
-**Boundary 5 — Combinatorial L1 State Space.** Not a data-serialization
-boundary but a state-complexity boundary: the consume+create model keeps
-the active object count bounded at N by nullifying exactly one old state
-and creating exactly one new Merkle leaf per non-terminal operation.
-Without this invariant, stale objects would accumulate unboundedly.
-Specific bounds, the L1 complexity ceiling, the triage table, and the
-formal composition proof are in the hardening log book (safety.md
-Lesson 23).
-
-### 3.1.1 Explicit Encoding Rules
+### A.3.1.1 Explicit Encoding Rules
 
 The explicit encode/decode pattern SHALL follow these rules.
 
@@ -522,7 +493,7 @@ Rules:
 - No `unwrap_or` — every validation failure is a `ContractError` with field context.
 - Pre-allocate exact capacity in encode: `Vec::with_capacity(FIXED_SIZE)`.
 
-### 3.1.2 Anti-Pattern: Derive-Based serialize/deserialize for State Values
+### A.3.1.2 Anti-Pattern: Derive-Based serialize/deserialize for State Values
 
 `SerialEncodable`/`SerialDecodable` derive macros SHALL NOT be applied to
 types stored in sled trees. The derive macros produce opaque byte blobs with
@@ -561,7 +532,7 @@ let purse = Purse::decode(&data)?;
 **Detection:** A tripwire test SHALL grep for `serialize(&` in `db_set` argument
 position on non-scalar types. A match SHALL fail CI.
 
-### 3.1.3 Canonical Bridge Impl Pattern
+### A.3.1.3 Canonical Bridge Impl Pattern
 
 For every `*ParamsV1` and `*UpdateV1` struct that crosses the exec→apply boundary,
 provide thin bridge impls immediately before the struct's `impl` block. These
@@ -581,7 +552,7 @@ Purse, BoxId, GroupId, etc.) — those never cross the exec→apply boundary.
 Reference: `src/contract/native_token/src/model/mod.rs` lines 407-408, 490-491,
 570-571, 1033-1034.
 
-### 3.2 State Keys Are Typed
+### A.3.2 State Keys Are Typed
 
 Every sled key SHALL use the canonical byte representation of a typed value.
 Keys SHALL be constructed via `to_bytes()` / `to_le_bytes()` / `to_repr()`,
@@ -604,14 +575,14 @@ wasm::db::db_get(sigs_db, &nullifier.to_bytes())?;
 let key = b"total_supply_v1";
 ```
 
-### 3.3 State Values Are Typed
+### A.3.3 State Values Are Typed
 
 Every sled value SHALL decode to a known type through that type's explicit
 `decode()` function. The type SHALL be traceable to the contract's model
 definitions (`model/mod.rs`). A value that fails to decode SHALL produce a
 typed error identifying the field that failed validation — never a default.
 
-### 3.4 The `unwrap_or` Prohibition
+### A.3.4 The `unwrap_or` Prohibition
 
 `decode(&data).unwrap_or(default)` and `deserialize(&data).unwrap_or(default)`
 SHALL NOT appear in contract code. This pattern silently substitutes a default
@@ -652,7 +623,7 @@ let current_supply: u64 = match wasm::db::db_get(info_db, TOTAL_SUPPLY)? {
 };
 ```
 
-### 3.5 State Initialization
+### A.3.5 State Initialization
 
 State SHALL be initialized in the `init` entrypoint (`__initialize`, `Deploy`
 section). The `init` entrypoint SHALL:
@@ -684,7 +655,7 @@ let old_cumulative = match wasm::db::db_get(info_db, CUMULATIVE_VALUE_COMMIT)? {
 Reference: `src/contract/native_token/src/entrypoint/mod.rs:91-189` (init_contract),
 `:841-844` (explicit None handling for genesis cumulative supply).
 
-### 3.6 Type-Safe State Wrappers
+### A.3.6 Type-Safe State Wrappers
 
 Contracts SHOULD define typed wrapper functions for state access. Each wrapper
 SHALL have exactly one responsibility: one state key, one type, validated decode.
@@ -713,10 +684,10 @@ fn write_total_supply(info_db: DbHandle, supply: u64) -> Result<(), ContractErro
 }
 ```
 
-### 3.7 State Key Canonical Encoding
+### A.3.7 State Key Canonical Encoding
 
 The canonical byte encoding of a state key SHALL be via the type's typed
-`to_bytes()` / `to_le_bytes()` / `to_repr()` method, as defined in §3.2.
+`to_bytes()` / `to_le_bytes()` / `to_repr()` method, as defined in §A.3.2.
 Keys SHALL be constructed from typed values, not from raw byte buffers.
 `BlockHeight` keys SHALL use `BlockHeight::to_le_bytes()` per
 [type-system.md §2.3](type-system.md). `ContractId` keys SHALL use
@@ -724,7 +695,7 @@ Keys SHALL be constructed from typed values, not from raw byte buffers.
 Composite keys SHALL concatenate the typed representations of their
 components.
 
-### 3.8 Execution Overlay Semantics
+### A.3.8 Execution Overlay Semantics
 
 Contract state reads and writes operate through a `SledTreeOverlay`
 (`src/linear/src/execution.rs`). Within a block:
@@ -742,16 +713,20 @@ Contract state reads and writes operate through a `SledTreeOverlay`
 Uncle calls execute against isolated pre-block clones. Their diffs are merged
 after canonical execution with canonical-wins conflict resolution.
 
-## 4. WASM Host Interface Types
+**Under L1 (N^K trajectories):** Layer 2 sequential visibility IS the
+trajectory identification mechanism — each operation observes the state after
+all previous operations in the same block. See Part C §C.3.6.
 
-### 4.1 Host Function Architecture
+## A.4 WASM Host Interface Types
+
+### A.4.1 Host Function Architecture
 
 The WASM host provides 29 functions to contracts via the `"env"` import module
 (`src/runtime/import/`). All host functions use
 `#[link(wasm_import_module = "env")] extern "C"` with raw pointer+length
 arguments and `i64` return values.
 
-### 4.2 Host Function Categories
+### A.4.2 Host Function Categories
 
 **Database functions** (`src/sdk/src/wasm/db.rs`):
 
@@ -790,7 +765,9 @@ arguments and `i64` return values.
 | `merkle_add_` | `fn(ptr: *const u8, len: u32) -> i64` | Append leaf to Merkle tree | `Update` only |
 | `sparse_merkle_insert_batch_` | `fn(ptr: *const u8, len: u32) -> i64` | Batch insert into SMT | `Update` only |
 
-### 4.3 Object Store Pattern
+**For L1 trajectory-sensitive classification of host functions,** see Part C §C.4.
+
+### A.4.3 Object Store Pattern
 
 Data returned from the host to WASM is NOT written directly into WASM memory.
 Instead:
@@ -805,7 +782,7 @@ This indirection is the host-side boundary defense — the host never writes
 directly into guest memory. The guest controls allocation and the host-side
 object store is cleared between WASM invocations.
 
-### 4.4 Error Code Encoding
+### A.4.4 Error Code Encoding
 
 Host functions signal errors via the `to_builtin!` macro
 (`src/sdk/src/error.rs:112-116`): `i64::MIN + error_code`. Error codes are
@@ -817,7 +794,7 @@ The contract-side `ContractResult` is `Result<(), ContractError>`. The WASM
 entrypoint returns `0_i64` on success and a negative error code on failure.
 The host maps this back through `to_builtin!` to produce the `ContractResult`.
 
-### 4.5 Width Conversions at the FFI Boundary
+### A.4.5 Width Conversions at the FFI Boundary
 
 WASM uses i64 for its ABI. The host SHALL convert `u64` ↔ `i64` at the boundary:
 
@@ -833,7 +810,7 @@ WASM uses i64 for its ABI. The host SHALL convert `u64` ↔ `i64` at the boundar
 appear at the FFI boundary. A value that does not fit in the target type SHALL
 be a `ContractError`, not a silent truncation.
 
-### 4.6 Memory Access Discipline
+### A.4.6 Memory Access Discipline
 
 Every host function that reads WASM memory SHALL:
 
@@ -848,7 +825,7 @@ No host function SHALL trust guest-provided data without validation. The
 `Decodable` implementation SHALL consume exactly the declared fields; any
 remaining bytes SHALL cause a decode error.
 
-### 4.7 ACL Enforcement
+### A.4.7 ACL Enforcement
 
 Every host function SHALL enforce which `ContractSection` it can be called from
 via `acl_allow(env, &[allowed_sections])`. The four ACL sections correspond to
@@ -872,7 +849,7 @@ This is the runtime enforcement of the barb constraints — `↓commit` (state
 writes) is only possible in the `Update` section; `↓verify` (returning metadata)
 is only possible in `Metadata` and `Exec`.
 
-### 4.8 Gas Metering
+### A.4.8 Gas Metering
 
 The wasmer `Metering` middleware charges one gas unit per WASM opcode. Host
 functions additionally charge gas proportional to the operation's cost (data
@@ -891,9 +868,9 @@ to signal the "exhausted" state).
 Reference: `src/runtime/vm_runtime.rs:103` (GAS_LIMIT), `src/linear/src/execution.rs:78`
 (BLOCK_GAS_LIMIT), `execution.rs:421-428` (gas accumulation check).
 
-## 5. Error Propagation
+## A.5 Error Propagation
 
-### 5.1 Error Variants as Barbs
+### A.5.1 Error Variants as Barbs
 
 Per [type-system.md §4](type-system.md), every error variant IS a barb of the
 system. ContractError variants SHALL be semantically distinct and SHALL trigger
@@ -908,14 +885,16 @@ different caller responses:
 | `ValueMismatch` | `↓bad-proof` | Value conservation violated | Reject call |
 | `DuplicateNullifier` | `↓bad-nullifier` | Nullifier already in SMT | Reject call, ban peer |
 
-### 5.2 ContractResult
+**For L1 error semantics under N^K,** see Part C §C.5.
+
+### A.5.2 ContractResult
 
 `ContractResult` SHALL be `Result<(), ContractError>`. Every WASM entrypoint
 SHALL return `ContractResult`. `Ok(())` means the state transition is valid.
 `Err(ContractError::...)` means the call is rejected. There is no partial
 success — a call either fully validates or fully fails.
 
-### 5.3 The `let _` Prohibition
+### A.5.3 The `let _` Prohibition
 
 `let _ = fallible_call()` SHALL NOT appear in contract code. Per
 [type-system.md §4.2.1](type-system.md), the `let _` pattern discards the
@@ -927,7 +906,7 @@ Result without inspecting it. Every Result SHALL be either:
 - Suppressed with `#[allow(unused_results)]` AND a comment explaining why
   the error is intentionally ignored
 
-### 5.4 The `.ok()` Prohibition
+### A.5.4 The `.ok()` Prohibition
 
 `.ok()` SHALL NOT appear in contract code. Per
 [type-system.md §4.2.2](type-system.md), `.ok()` converts `Result<T, E>` to
@@ -935,7 +914,7 @@ Result without inspecting it. Every Result SHALL be either:
 failure IS the signal — "nullifier already spent" vs "Merkle root not found"
 vs "database corrupted" demand different responses.
 
-### 5.5 Error Messages
+### A.5.5 Error Messages
 
 Every error return SHALL be accompanied by a `msg!()` call identifying the
 contract, function, and specific failure:
@@ -952,7 +931,7 @@ Reference: `src/contract/native_token/src/entrypoint/mod.rs` (error patterns
 throughout), `type-system.md` §4 (error types as barbs), §4.2 (error propagation
 audit requirements).
 
-### 5.6 No `.unwrap()` in Contract Entrypoint Code
+### A.5.6 No `.unwrap()` in Contract Entrypoint Code
 
 `.unwrap()` SHALL NOT appear in contract entrypoint code. This includes metadata
 functions, exec handlers, apply handlers, and state accessors. Every `Result`
@@ -970,7 +949,7 @@ the code reviewer.
 
 **Exception — locally provable invariants.** `try_into().unwrap()` on a slice
 whose length was validated on the immediately preceding line is permitted
-(§9.1 I2). The validation is visible and the invariant is locally provable.
+(§A.9.1 I2). The validation is visible and the invariant is locally provable.
 Similarly, `.coordinates().unwrap()` on a `CtOption` whose `.is_none()` was
 checked on the preceding line is permitted. The rule targets *invisible*
 infallibility — `.encode(&mut Vec<u8>).unwrap()` where `Vec::write` never fails
@@ -1002,7 +981,7 @@ safe — it either propagates the error or the compiler rejects the call site.
 `.unwrap()` is never universally safe — its safety depends on context that
 the copier may not understand.
 
-### 5.7 Host Function Error Code Requirements
+### A.5.7 Host Function Error Code Requirements
 
 The host provides functions to contracts via the WASM import interface
 (`src/runtime/import/`). Each host function returns an `i64` error code
@@ -1027,9 +1006,9 @@ naming convention. Existing functions with `INTERNAL_ERROR` returns SHALL be
 audited and replaced with distinct variants. See [safety.md](../dev/contracts/safety.md)
 for the host function error code checklist.
 
-## 6. Witness Binding Types
+## A.6 Witness Binding Types
 
-### 6.1 The Witness Binding Gap
+### A.6.1 The Witness Binding Gap
 
 A zkas binary's witness section (`ZkBinary.witnesses: Vec<VarType>`) is an
 ordered, typed, **unnamed** list. Witness names exist only in the optional
@@ -1047,7 +1026,7 @@ during deploy scan, it SHALL cross-check that every `[[circuits]]` entry's
 `witness_map` matches the corresponding `ZkBinary.witnesses` in length and
 compatible types.
 
-### 6.2 Witness Binding Rule
+### A.6.2 Witness Binding Rule
 
 The manifest's `witness_map` SHALL declare one entry per witness slot, in slot
 order. Each entry names the source of the witness value. The closed vocabulary:
@@ -1063,7 +1042,9 @@ order. Each entry names the source of the witness value. The closed vocabulary:
 | `tx_commitment` | Transaction binding commitment | `Base` |
 | `tx_nonce` | Transaction nonce | `Base` |
 
-### 6.3 Witness Type Checking
+**For L1 trajectory-relative witness binding,** see Part C §C.6.
+
+### A.6.3 Witness Type Checking
 
 The generic prover (`src/sdk/src/prover.rs`) SHALL type-check every
 `witness_map` entry against the slot's declared `VarType`. A mismatch SHALL be
@@ -1086,7 +1067,7 @@ a typed error barb (`↓bad-proof`), never a fallback. The mapping from
 hatch that disables type checking. A circuit that uses `Any` witnesses SHALL
 document why static typing is insufficient.
 
-### 6.4 Circuit Binary Delivery
+### A.6.4 Circuit Binary Delivery
 
 Genesis contracts' zkas binaries are embedded at compile time via `include_bytes!`
 in the `init` entrypoint. User-deployed contracts' binaries travel in the
@@ -1095,7 +1076,7 @@ WASM blob byte-by-byte for `ZkBinary` magic bytes `[0x0B, 0x01, 0xB1, 0x35]`
 (`src/zkas/compiler.rs` `MAGIC_BYTES`). Extracted binaries are stored in the
 wallet's `zkas_binaries` table keyed by `(ContractId, namespace, circuit_name)`.
 
-### 6.5 VarType Vocabulary
+### A.6.5 VarType Vocabulary
 
 The 15 witness variable types from `src/zkas/types.rs`:
 
@@ -1121,9 +1102,9 @@ Reference: `src/zkas/types.rs` (VarType enum), `src/zkas/decoder.rs:52`
 (ZkBinary struct), `src/sdk/src/prover.rs` (witness binding), `wallet.md`
 §6.4.1 (witness-binding rule for generic prover).
 
-## 7. Cross-Contract Composition
+## A.7 Cross-Contract Composition
 
-### 7.1 Composition Rule
+### A.7.1 Composition Rule
 
 When contract A, executing function `f_A` with declared barbs `B_A`, invokes
 contract B's function `f_B` with declared barbs `B_B`, the composite execution
@@ -1135,7 +1116,12 @@ This follows from the composition algebra in [composition.md §1.2](composition.
 the same operation applied at the contract level — the composite state
 transition's barb set is the union of the component barbs.
 
-### 7.2 Inter-Contract Call Interface
+**For L1 composition under N^K,** see Part C §C.7. L2 composition as barb union
+is safe because each contract has exactly 1 state trajectory. Under L1, barb
+union is insufficient — the composition operator must be additive (o-caps),
+not multiplicative (shared state).
+
+### A.7.2 Inter-Contract Call Interface
 
 A contract SHALL invoke another contract through the host. The host SHALL:
 
@@ -1146,9 +1132,9 @@ A contract SHALL invoke another contract through the host. The host SHALL:
 
 The caller SHALL NOT directly access the callee's sled trees. The callee's
 state writes are committed to the shared overlay on success and are visible to
-subsequent calls within the same block (Layer 2 sequential visibility, §3.8).
+subsequent calls within the same block (Layer 2 sequential visibility, §A.3.8).
 
-### 7.3 Inter-Contract State Isolation
+### A.7.3 Inter-Contract State Isolation
 
 Contract A's sled trees SHALL NOT be directly accessible to Contract B. The
 sled tree name includes the contract ID hash — `blake3(contract_id || tree_name)`
@@ -1163,7 +1149,7 @@ with the payload from the burn call. The target contract accesses its OWN state
 through its own sled trees — it never accesses the caller's state. Currently
 only Stablecoin receives spend hooks (to track burned CDP stablecoins).
 
-### 7.4 Re-Entrancy
+### A.7.4 Re-Entrancy
 
 Contract A SHALL NOT invoke Contract A recursively with the same call context.
 The host SHALL detect re-entrancy (same `ContractId` appearing in the call
@@ -1173,9 +1159,13 @@ This is a consensus requirement: re-entrancy in a ZK execution model would
 create circular dependencies in the state transition proof, making it impossible
 to construct a valid witness.
 
-## 8. Wallet-Contract Interface Contract
+**Under L1 (N^K trajectories):** a contract invoking itself on a DIFFERENT
+target object within the same anonymity set is NOT re-entrancy — it is sequential
+consume+create on distinct objects. See Part C §C.7 for the composition rules.
 
-### 8.1 The Two Scan Paths
+## A.8 Wallet-Contract Interface Contract
+
+### A.8.1 The Two Scan Paths
 
 The wallet discovers capabilities through two scan paths
 ([wallet.md §2](wallet.md)):
@@ -1187,7 +1177,9 @@ The wallet discovers capabilities through two scan paths
   resolution → barb composition → `wallet_construct` → `TypedCapability`.
   Works for every contract with a manifest. Zero per-contract code.
 
-### 8.2 Note Format Contract
+**For L1 wallet scan under N^K,** see Part C §C.8.
+
+### A.8.2 Note Format Contract
 
 A contract that produces capabilities SHALL encrypt the capability's primitive
 names in an `AeadEncryptedNote`. The note SHALL be placed in the contract's
@@ -1206,7 +1198,7 @@ cannot discover capabilities it cannot decrypt. A note whose plaintext does not
 match the declared `note_schema` SHALL cause the wallet to drop the capability
 (unknown format → cannot construct type).
 
-### 8.3 Manifest Truthfulness
+### A.8.3 Manifest Truthfulness
 
 A contract's manifest SHALL truthfully declare:
 
@@ -1230,9 +1222,9 @@ A contract's manifest SHALL truthfully declare:
 The wallet's WASM verification layer ([manifest.md](manifest.md) Trust Model,
 Layer 2) SHALL mechanically verify that manifest function declarations match
 WASM exports. Circuit cross-checking against zkas binary witness counts is a
-planned extension (§6.1).
+planned extension (§A.6.1).
 
-### 8.4 Scan Determinism
+### A.8.4 Scan Determinism
 
 The wallet's scan SHALL be deterministic given the same chain state and the same
 `AccountManager` ([wallet.md §1](wallet.md)). Contracts SHALL NOT introduce
@@ -1246,7 +1238,7 @@ non-determinism through:
 - **External calls:** The WASM has no network access. All data SHALL come from
   the call data, the block header, or the sled state.
 
-### 8.5 The Coverage Gate
+### A.8.5 The Coverage Gate
 
 Per [wallet.md §2.2](wallet.md) and [composition.md §1.3](composition.md), the
 wallet's Path 2 applies the **coverage gate**: `wallet_construct` checks whether
@@ -1262,9 +1254,9 @@ because the manifest made false claims is a security vulnerability.
 Reference: `wallet.md` §2.2, `composition.md` §4, `capability.rs:342-368`
 (wallet_construct).
 
-## 9. Compiler-Enforced and Mechanically Verifiable Invariants
+## A.9 Compiler-Enforced and Mechanically Verifiable Invariants
 
-### 9.1 Compiler-Enforced (Rust Type System)
+### A.9.1 Compiler-Enforced (Rust Type System)
 
 **I1 — Function dispatch exhaustiveness.** The `match` on function selector SHALL
 cover all enum variants. `#[deny(unreachable_patterns)]` SHALL be on the match
@@ -1282,11 +1274,11 @@ lacking `From<u64>` and `Default`, the same technique as `BlockHeight`
 **I4 — Named parameter structs.** Every function parameter SHALL be a named
 struct with inherent `encode()`/`decode()` methods AND thin bridge impls for
 `dwow_serial::Encodable`/`Decodable` that delegate to the inherent methods
-(see §3.1.3). `#[derive(SerialEncodable, SerialDecodable)]` SHALL NOT be used
-— it bypasses validating constructors (§3.1.1). Raw `Vec<u8>` SHALL NOT be
+(see §A.3.1.3). `#[derive(SerialEncodable, SerialDecodable)]` SHALL NOT be used
+— it bypasses validating constructors (§A.3.1.1). Raw `Vec<u8>` SHALL NOT be
 passed as parameters without deserialization to a named type.
 
-### 9.2 Mechanically Verifiable (Manifest-WASM Cross-Check)
+### A.9.2 Mechanically Verifiable (Manifest-WASM Cross-Check)
 
 **I5 — Function export match.** Every function declared in the manifest's
 `[[functions]]` SHALL correspond to a branch in the contract's `process_instruction`
@@ -1304,7 +1296,7 @@ contract (`NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1`, etc.) SHALL be declared in
 the manifest's `[[circuits]]` section. Verification: grep for `_ZKAS_` /
 `_NS_V1` constants, compare against manifest circuit names.
 
-### 9.3 Human-Verifiable (Code Review)
+### A.9.3 Human-Verifiable (Code Review)
 
 **I8 — No `let _ =` on Result.** `let _ = any_fallible_call()` SHALL NOT appear
 in contract entrypoint code. Verification: `grep -r "let _ =" src/contract/*/src/entrypoint/`.
@@ -1318,9 +1310,9 @@ contract, function, and specific failure. Verification: manual review.
 
 **I11 — No `unwrap_or` on sled reads.** `db_get(...)?.map(|d| deserialize(&d).unwrap_or(...)).unwrap_or(...)`
 SHALL NOT appear. Every sled read SHALL use explicit `match` with error
-propagation (§3.4). Verification: `grep -r "unwrap_or" src/contract/*/src/entrypoint/`.
+propagation (§A.3.4). Verification: `grep -r "unwrap_or" src/contract/*/src/entrypoint/`.
 
-## 10. Non-Unifiable Types in Contract Code
+## A.10 Non-Unifiable Types in Contract Code
 
 These pairs SHALL NOT be unified in contract code. The compiler SHALL reject
 any attempt to use the left type where the right type is expected.
@@ -1339,14 +1331,21 @@ any attempt to use the left type where the right type is expected.
 | `Coin` (newtype over `pallas::Base`) | `pallas::Base` | `↓commit` ≠ no barbs |
 | `Serialized value` | `Raw bytes` | A `db_get` value SHALL be deserialized to a known type, never passed as `Vec<u8>` |
 | `DbHandle` (opaque i32) | `i32` / `u32` | The handle is an opaque resource; arithmetic on handles is meaningless |
+| `Amount` | `u64` | Non-zero by construction; deposit/withdraw amounts SHALL NOT be unified with balances or raw integers |
+| `Balance` | `u64` | Zero is valid (empty purse); distinct from Amount — adding Amount to Balance requires explicit conversion |
+| `MerklePosition` | `u32` | Validated against Merkle depth at construction; a position is not an array index |
+| `StateNonce` | `pallas::Base` | Per-object sequencing nonce; distinct from Nullifier and MerkleNode |
+| `MerklePath` (elements) | `pallas::Base` | Path elements SHALL be `MerkleNode`, not bare field elements — `↓prove-inclusion` barb applies to every element |
 
-## 11. Contract Type Patterns (Normative)
+**For L1 domain type definitions (Amount, Balance, MerklePosition, StateNonce),** see Part C §C.3.2.
+
+## A.11 Contract Type Patterns (Normative)
 
 This section defines the canonical patterns that SHALL appear in every contract.
 These are not suggestions — they are the specification. Deviation SHALL be
 justified in the contract's documentation.
 
-### 11.1 Function Enum
+### A.11.1 Function Enum
 
 ```rust
 /// Function selectors for Example contract.
@@ -1370,7 +1369,7 @@ impl TryFrom<u8> for ExampleFunction {
 }
 ```
 
-### 11.2 Entrypoint Registration
+### A.11.2 Entrypoint Registration
 
 ```rust
 dwow_sdk::define_contract!(
@@ -1381,7 +1380,7 @@ dwow_sdk::define_contract!(
 );
 ```
 
-### 11.3 Exec Dispatch
+### A.11.3 Exec Dispatch
 
 ```rust
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
@@ -1400,10 +1399,10 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 }
 ```
 
-### 11.4 Apply Dispatch
+### A.11.4 Apply Dispatch
 
 The apply entrypoint uses custom `decode_*_update_v1()` functions to deserialize
-the update from the bridge (Boundary 2 of §3.1). These SHALL delegate to the
+the update from the bridge (Boundary 2 of §A.3.1). These SHALL delegate to the
 struct's inherent `decode()` method.
 
 ```rust
@@ -1436,7 +1435,7 @@ making it straightforward to change either independently. See native_token
 (`src/contract/native_token/src/entrypoint/mod.rs`), purse, box, and deployooor
 for reference implementations.
 
-### 11.5 Metadata Dispatch
+### A.11.5 Metadata Dispatch
 
 Metadata helper functions SHALL return `Result<Vec<u8>, ContractError>` and use
 `?` propagation — never `.unwrap()`. The main `get_metadata` dispatch SHALL
@@ -1491,17 +1490,17 @@ Key rules:
 - This pattern makes it IMPOSSIBLE to write `.unwrap()` by accident — the compiler
   requires `?` or explicit handling because the return type is `Result`
 
-### 11.6 State Accessor
+### A.11.6 State Accessor
 
 State values crossing the sled boundary SHALL use inherent `encode()`/`decode()`
-methods (Boundary 3 of §3.1), never `dwow_serial::serialize()`/`deserialize()`.
-Keys SHALL use typed `to_bytes()`/`to_le_bytes()` methods per §3.2.
+methods (Boundary 3 of §A.3.1), never `dwow_serial::serialize()`/`deserialize()`.
+Keys SHALL use typed `to_bytes()`/`to_le_bytes()` methods per §A.3.2.
 
 ```rust
 /// Tree name constant — SHALL be declared in manifest's `[[trees]]`.
 const EXAMPLE_TREE: &str = "example";
 
-/// Key — SHALL use typed to_le_bytes per §3.2.
+/// Key — SHALL use typed to_le_bytes per §A.3.2.
 const TOTAL_SUPPLY_KEY: u64 = 0;
 
 fn read_u64_state(cid: ContractId, tree: &str, key: &[u8]) -> Result<u64, ContractError> {
@@ -1521,14 +1520,159 @@ fn read_u64_state(cid: ContractId, tree: &str, key: &[u8]) -> Result<u64, Contra
 }
 ```
 
-### 11.7 Function Handler (exec)
+### A.11.7 Function Handler (apply)
+
+The apply handler receives a fully-decoded update struct from the bridge
+(Boundary 2 of §A.3.1). Host function arguments (`merkle_add`, `sparse_merkle_insert_batch`)
+use `dwow_serial::serialize()` — this is the host FFI boundary (Boundary 4),
+distinct from the three contract boundaries. The types being serialized are
+`DbHandle` + primitive values, not contract-defined structs.
+
+```rust
+fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
+    // 1. Write nullifier to SMT
+    let nullifiers_db = wasm::db::db_lookup(cid, NULLIFIERS_TREE)?;
+    wasm::merkle::sparse_merkle_insert_batch(
+        &serialize(&(nullifiers_db, vec![update.nullifier.inner()]))
+    )?;
+
+    // 2. Write coin to Merkle tree
+    let coins_db = wasm::db::db_lookup(cid, COINS_TREE)?;
+    wasm::merkle::merkle_add(&serialize(&(coins_db, update.coin.inner())))?;
+
+    Ok(())
+}
+```
+
+### A.11.8 References
+
+- [Type System Specification](type-system.md) — Primitive types, barbs, nominal newtypes, invariants.
+- [Capability Composition](composition.md) — Barb union, composition algebra, wallet as composition engine.
+- [Wallet Architecture](wallet.md) — Scan paths, capability construction, pure function model.
+- [Contract Manifest](manifest.md) — Interface declarations, TOML format, lifecycle stages.
+- [O-Cap: Emergent Types](ocap.md) — Capability lifecycle grammar, ZK instantiation.
+- [Consensus Specification](consensus/consensus.md) — Phase 4 (WASM execution), execution ordering, atomicity.
+- [Mempool Specification](mempool.md) — Verified transaction admission.
+- Meredith, L.G. and Radestock, M. (2005). "A Reflective Higher-Order Calculus." *ENTCS*.
+- Miller, M.S. (2006). *Robust Composition.* PhD dissertation, Johns Hopkins University.
+
+---
+
+# Part B: L2 Type System
+
+Part B defines the type system semantics for L2 contracts — contracts operating
+with exactly 1 valid state trajectory. In L2, resource IDs are public inputs to
+the ZK circuit. The contract performs direct KV lookup on the resource ID. There
+is no anonymity set and no Merkle inclusion proof.
+
+For L1 contracts (N^K state trajectories), see Part C.
+
+## B.0 L2 Contract Invariant
+
+> **A contract SHALL accept a ContractCall iff the call's data satisfies
+> the contract's declared barbs.**
+
+Under L2, there is exactly 1 state trajectory. The target object is uniquely
+identified by its resource ID (a public input). Satisfying the barbs IS
+sufficient — there is no trajectory ambiguity. The contract does not need
+to identify which of N objects is being targeted; there is exactly 1.
+
+## B.2 Barbs at Contract Entrypoints — L2 Semantics
+
+Under L2 (1 trajectory), barbs are boolean checks. Each barb is a predicate
+on the single valid trajectory. Order is conventional — all checks must pass,
+but the order does not affect the result because there is no trajectory space
+to partition. Checking `↓denominate` before `↓nullify` produces the same
+outcome as the reverse order: both must be true for the single trajectory.
+
+### B.2.1 Exec Barbs — L2
+
+The `exec` entrypoint exhibits the barbs that the manifest declares for the
+function's action. For a transfer action declaring
+`required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate", "Denominate"]`,
+the contract SHALL:
+
+1. **`↓gate`** — Dispatch to the correct function handler by the selector byte.
+2. **`↓spend`** — Verify that the nullifier was produced by knowledge of the
+   capability's authorization secret (`poseidon_hash(secret, resource_id)`).
+   The ZK circuit proves secret key knowledge via `ec_mul_base(secret, NULLIFIER_K)`
+   and constrains the nullifier as a public input. No Schnorr signature is involved.
+3. **`↓nullify`** — Check that the input's nullifier is not already in the
+   nullifier SMT (`smt.get_leaf(&nullifier) == pallas::Base::zero()`).
+4. **`↓prove-inclusion`** — Verify that the input's Merkle root exists in the
+   coin roots tree (`db_contains_key(coin_roots_db, &serialize(&merkle_root))`).
+5. **`↓denominate`** — Verify token commitments match the expected asset
+   (`token_commit == poseidon_hash([zero(), zero()])` for native token).
+
+A barb that is declared but not enforced is a lie — the manifest claims a
+security property the code does not provide. A barb that is enforced but not
+declared is a hidden constraint — the wallet's coverage gate cannot verify it,
+and the capability type construction fails.
+
+Reference: `src/contract/native_token/src/entrypoint/mod.rs:466-499` (fee_v1
+barb enforcement), `:768-885` (pow_reward_v1 barb enforcement).
+
+### B.2.2 Apply Barbs — L2
+
+The `apply` entrypoint exhibits `↓commit`. It SHALL only write state; it SHALL
+NOT perform validation. All validation SHALL have been done in `exec`. The apply
+entrypoint:
+
+1. Dispatches on the function selector byte from the return data
+2. Deserializes the update struct
+3. Writes to sled trees: `db_set`, `merkle_add`, `sparse_merkle_insert_batch`
+4. SHALL NOT call `db_get`, `db_contains_key`, or any read operation — reads
+   belong in `exec`
+
+The ACL (§A.4.7) enforces this: `db_set` and `db_del` are only allowed in `Deploy`
+and `Update` sections; read operations are denied in `Update`.
+
+### B.2.3 Metadata Barbs — L2
+
+The `metadata` entrypoint exhibits `↓verify`. It SHALL:
+
+1. Dispatch on the function selector byte
+2. Deserialize the function-specific parameters
+3. Surface ALL ZK public inputs for the function's declared circuits (one entry
+   per circuit, each with the ordered list of `pallas::Base` public inputs)
+4. Return empty signature pubkeys `vec![]` — Schnorr signatures are prohibited in contract metadata (contract-standards.md §3)
+5. NOT access state (no `db_get` calls — metadata is a pure function of the call
+   data)
+6. Return empty vectors (not error) on parameter deserialization failure — the
+   host verifier will reject the call because it has no proofs to verify
+
+A metadata entrypoint that returns empty vectors when the manifest declares
+`requires_proof = true` is a spec violation — the host has nothing to verify and
+must trust the contract's `exec` without ZK verification.
+
+## B.7 Cross-Contract Composition — L2 Semantics
+
+Under L2, composition is barb union. When contract A invokes contract B, the
+composite execution exhibits `B_A ∪ B_B`. The composite succeeds iff all barbs
+in the union are satisfied. This is safe under L2 because each contract has
+exactly 1 state trajectory — the composition cannot create trajectory ambiguity.
+
+## B.8 Wallet-Contract Interface — L2 Semantics
+
+Under L2, wallet scan is flat note discovery. The wallet:
+
+1. Deserializes call data from `ContractCall.data`
+2. Scans for `AeadEncryptedNote` structures
+3. Attempts AEAD decryption with each wallet secret
+4. On success: decodes plaintext via `decode_note_by_schema()`
+
+The note schema need only carry capability-identifying fields (amount, token_id,
+owner_commit). There is no trajectory to identify — the single object is
+uniquely identified by its resource ID.
+
+## B.11.7 L2 Function Handler (exec)
 
 ```rust
 fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     // 1. Deserialize and validate parameters via inherent decode() (Boundary 1)
     let pr = TransferParamsV1::decode(params)?;
 
-    // 2. Enforce declared barbs
+    // 2. Enforce declared barbs (boolean checks on the single trajectory)
     // ↓denominate: verify token commitment
     if pr.input.token_commit != expected_token_commit {
         msg!("[example::transfer_v1] Error: Token commitment mismatch");
@@ -1562,38 +1706,773 @@ fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 }
 ```
 
-### 11.8 Function Handler (apply)
+---
 
-The apply handler receives a fully-decoded update struct from the bridge
-(Boundary 2 of §3.1). Host function arguments (`merkle_add`, `sparse_merkle_insert_batch`)
-use `dwow_serial::serialize()` — this is the host FFI boundary (Boundary 4),
-distinct from the three contract boundaries. The types being serialized are
-`DbHandle` + primitive values, not contract-defined structs.
+# Part C: L1 Type System
+
+Part C defines the type system for L1 contracts operating under N^K state
+trajectories. The combinatorial proof in `ComplexityJump.lean` establishes
+`T(C, N, K) = N^K` for L1, `T(C, K) = 1` for L2. This is a qualitative
+change — every type boundary, every barb, every error carries different
+semantics under N^K.
+
+Part C SHALL be read after Part A (Shared Foundation). Where Part C restates
+a shared rule, the text forwards to Part A rather than duplicating.
+
+## C.0 Foundation — N^K State Space and ρ-Calculus
+
+### C.0.1 The N^K State Space
+
+**Theorem (ComplexityJump.lean: `l1_exceeds_l2`).** For any L1 contract with
+N concurrent anonymous objects and K sequential operations, the valid state
+trajectory count is `T(C, N, K) = N^K`. For L2, `T(C, K) = 1`.
+
+The proof uses only core Lean 4 (induction on K, `Nat.pow_succ`,
+`Nat.mul_le_mul`). Helper lemmas `pow_ge_one` and `pow_gt_one` establish
+`a^b ≥ 1` for `a ≥ 1` and `a^b > 1` for `a ≥ 2, b ≥ 1`.
+
+**Consequence.** Every operation in an L1 contract targets one of N unspent
+objects. Each of K sequential operations has N independent choices. The total
+trajectory space is N^K — exponential in operations, polynomial in objects.
+
+The consume+create model (Theorem `consumeCreatePreservesCount` in
+`Transitions.lean`) keeps N bounded: each non-terminal operation nullifies
+exactly one old state and creates exactly one new Merkle leaf. Without this
+invariant, stale objects would accumulate unboundedly (N, N+1, N+2, ...),
+degrading anonymity for all users.
+
+### C.0.2 ρ-Calculus Under N^K
+
+The ρ-calculus operators behave differently under N^K. This section defines
+the L1 semantics for each operator.
+
+**Quote/Eval (Serialization/Deserialization).** Under L2, `quote(val)` produces
+canonical bytes and `eval(bytes)` recovers the value. Under L1, `quote(val, pos)`
+produces bytes that encode BOTH the value AND its trajectory position. A value
+at position (operation=2, target_object=5) has a different quote than the same
+value at position (operation=1, target_object=5). The round-trip must preserve
+position: `eval(quote(val, pos), pos')` succeeds iff `pos = pos'`.
+
+**Replication `!P`.** Under L2, `!P` means P can be invoked any number of times
+with no interaction between invocations. Under L1 with consume+create, `!P` is
+bounded to N invocations — the size of the anonymity set. After N consumptions,
+no objects remain. The L1 replication operator is `!^N P` — bounded replication.
+
+**Restriction `νx.P`.** Under L2, `νx.P` creates a fresh name x scoped to P.
+Under L1, `ν(merkle_tree).P` scopes the N^K anonymity set. Inside the restriction,
+operations can observe each other's nullifiers (sequential visibility, Part A
+§A.3.8). Outside the restriction, only the Merkle root and nullifier set are
+visible — not which objects were consumed. The restriction IS the privacy boundary.
+
+**Composition `P|Q`.** Under L2, any interleaving of P's and Q's actions is valid.
+Under L1, composition is either additive (o-caps, disjoint Merkle trees) or
+multiplicative (shared state, privacy collapses). See §C.7.
+
+### C.0.3 The L1 Contract Invariant
+
+> **A contract SHALL accept a ContractCall iff the call's data satisfies
+> the contract's declared barbs FOR THE CORRECT TARGET OBJECT in the
+> anonymity set.**
+
+Under N^K, satisfying barbs is necessary but insufficient. The barbs must be
+evaluated against the correct trajectory position. A nullifier valid for object
+3 but checked against the Merkle root for object 7 passes all barbs but identifies
+the wrong trajectory.
+
+The contract SHALL first narrow the trajectory space from N possibilities to 1
+through trajectory identification (§C.1.3), THEN enforce barbs (§C.2) on the
+identified target.
+
+### C.0.4 L1 vs L2 Semantic Table
+
+| Concept | L2 (1 trajectory) | L1 (N^K trajectories) |
+|---------|-------------------|----------------------|
+| Object identity | Public input (resource ID) | Witness-only (nullifier + Merkle proof) |
+| State lookup | Direct KV: `db_get(resource_id)` | Merkle inclusion: prove object is in tree, verify root |
+| Barb semantics | Boolean predicate on single trajectory | Trajectory-space partition operation |
+| Barb ordering | Conventional (all must pass) | Structural (order determines partition efficiency) |
+| Composition | Barb union: `B_A ∪ B_B` | Additive (o-caps) or multiplicative (shared, prohibited) |
+| Wallet scan | Flat note discovery | Trajectory identification: which of N^K? |
+| Error semantics | "Validation failed" | "Trajectory (nullifier=X, root=Y, pos=Z) is invalid" |
+| State write | Commit to sled | Commit to Merkle tree; state must be trajectory-indistinguishable |
+| Replication | Unlimited `!P` | Bounded `!^N P` (N = anonymity set size) |
+| Metadata return | Flat public input vector | Trajectory declaration — order IS the trajectory |
+
+### C.0.5 Contract Taxonomy — Degenerate vs Non-Degenerate L1
+
+L1 contracts fall into two categories based on their anonymity set size:
+
+**Degenerate L1 (N = 1).** A contract with exactly 1 concurrent object. The
+trajectory count is `1^K = 1` — identical to L2. These contracts use Merkle
+inclusion proofs but have no trajectory ambiguity. Examples: a singleton
+oracle value, a unique identity credential. The L1 type system requirements
+(§C.2-C.8) apply but reduce to L2 semantics when N=1.
+
+**Non-degenerate L1 (N ≥ 2).** A contract with multiple concurrent anonymous
+objects. The trajectory count is `N^K ≥ 2^K`. These contracts require the
+full L1 type system. Examples: Box (N boxes in the Merkle tree), Purse
+(N purses). The combinatorial ceiling (§C.8.3) bounds N at ~120,000 for
+practical wallet scan.
+
+## C.1 Entrypoint Types Under N^K
+
+### C.1.1 Four Canonical Entrypoints
+
+Unchanged from Part A §A.1.1. The four entrypoints serve the same roles
+under L1, but the metadata and exec entrypoints carry additional trajectory
+identification responsibilities.
+
+### C.1.2 Metadata — Canonical Trajectory Ordering Rule
+
+The metadata entrypoint SHALL return ZK public inputs in a canonical order
+that IS the trajectory declaration. The return value
+`Vec<(String, Vec<pallas::Base>)>` SHALL be lexicographically sorted by
+circuit namespace string.
+
+**Rule:** For a contract with K operations, the metadata vector SHALL be
+ordered by circuit namespace. Within a multi-operation contract, operations
+targeting earlier leaf positions SHALL appear before operations targeting
+later positions. The order of the return vector IS the order of operations
+in the trajectory — the host verifier uses this order to verify that proofs
+collectively prove the claimed trajectory.
+
+**Violation example:** If operation A (circuit "Deposit") and operation B
+(circuit "Withdraw") return their public inputs in the order [Withdraw, Deposit],
+the verifier interprets this as: Withdraw happened before Deposit — a different
+trajectory than intended. The proofs verify (each is individually valid), but
+the trajectory is wrong.
+
+### C.1.3 Exec — Trajectory Identification Pipeline
+
+The exec entrypoint SHALL identify which of the N objects is being targeted
+before enforcing barbs. The trajectory identification pipeline is:
+
+1. **Extract nullifier from metadata.** The nullifier is the object's identity
+   claim in the anonymity set. It is a public input of the ZK proof.
+2. **Resolve Merkle root.** Using the nullifier and the inclusion proof, determine
+   which Merkle root anchors this object.
+3. **Verify inclusion.** The ZK proof proves the object exists in the tree at the
+   claimed root. The exec entrypoint verifies this root is in the roots DB.
+4. **Check nullifier uniqueness.** The nullifier SHALL NOT already exist in the
+   nullifier SMT. `smt.get_leaf(&nullifier) == pallas::Base::zero()`.
+
+After this pipeline, the trajectory space SHALL be exactly 1 — the target object
+is uniquely identified. Only then SHALL the remaining barbs (§C.2) be enforced.
+
+### C.1.4 Apply — Trajectory-Commit Verification
+
+The apply entrypoint SHALL verify that it is writing to the correct trajectory.
+Before committing state:
+
+1. Verify that the tree handle passed from exec matches the contract's Merkle
+   tree for the identified trajectory.
+2. Verify that the nullifier being written to the SMT matches the nullifier
+   from exec's trajectory identification.
+3. Verify that the new leaf being added to the Merkle tree is the leaf computed
+   in exec's state transition.
+
+The apply entrypoint SHALL NOT independently determine the trajectory — it SHALL
+only commit the trajectory identified by exec. A mismatch between exec's
+trajectory and apply's writes SHALL be a `ContractError`.
+
+## C.2 Barbs as Trajectory-Space Partitions
+
+### C.2.1 The Barb Model Under N^K
+
+Under L1, barbs are NOT boolean checks on a single trajectory. Each barb is a
+**trajectory-space partition operation** — it divides the set of N^K possible
+trajectories into those that could produce this barb and those that could not.
+
+The 9 barbs from Part A §A.2.1 have the following L1 semantics:
+
+| Barb | L2 Semantics (Boolean) | L1 Semantics (Partition) |
+|------|----------------------|------------------------|
+| `↓dispatch` | Route to correct contract | Route to correct contract's N^K space |
+| `↓gate` | Match function selector | Match function selector AND narrow to operations compatible with this function |
+| `↓verify` | Return public inputs | Declare the trajectory (public input order IS trajectory) |
+| `↓spend` | Verify key possession | Verify key possession for the IDENTIFIED object |
+| `↓nullify` | Check nullifier not in SMT | Reject all trajectories where this nullifier was already consumed. Reduces space from N to N-1 for subsequent operations. |
+| `↓prove-inclusion` | Verify Merkle root in DB | Reject all trajectories where this object doesn't exist at the claimed root. Reduces space to trajectories anchored at this root. |
+| `↓commit` | Write state | Commit the trajectory step; make it irreversible |
+| `↓denominate` | Verify token commitment | Reject trajectories involving wrong asset class. Applied AFTER target identification. |
+| `↓derive` | Derive per-instance key | Derive key for the specific trajectory position |
+
+### C.2.2 Barb Ordering DAG
+
+Under N^K, barb ordering is structural — not conventional. Each barb reduces the
+trajectory space for subsequent barbs. The REQUIRED partial order is:
+
+```
+↓gate ─────────────────────────────────────────────────────────────┐
+     ↓                                                              │
+↓verify (metadata return — declares trajectory, must happen first)  │
+     ↓                                                              │
+↓nullify (O(1) SMT lookup, fastest partition — eliminates the most  │
+          trajectories with the least work)                         │
+     ↓                                                              │
+↓prove-inclusion (Merkle root lookup, O(1) after nullify confirms   │
+                  the object is unspent)                            │
+     ↓                                                              │
+↓spend (key possession check — most expensive, performed LAST among  │
+        security checks because it's only needed after the object   │
+        is confirmed to exist and be unspent)                       │
+     ↓                                                              │
+↓denominate ───────────────────────────────────────────────────────┘
+     ↓
+↓commit (trajectory step complete — write state, make irreversible)
+```
+
+- `↓nullify` MUST precede `↓prove-inclusion`: checking the SMT is O(1);
+  checking the Merkle root in the DB is also O(1), but if the nullifier
+  is already spent, the inclusion check is wasted work AND leaks information
+  about which object was being targeted.
+- `↓nullify` MUST precede `↓spend`: the spend check (ZK proof verification
+  of key possession) is the most expensive operation. It SHALL only be
+  performed after confirming the object is unspent.
+- `↓prove-inclusion` MUST precede `↓denominate`: the asset class check is
+  meaningless if the object doesn't exist.
+
+**Rationale for ordering.** In L2, order is irrelevant — all checks are O(1)
+on the single trajectory, and none leak information (there is no anonymity set).
+Under L1, checking `↓spend` on a spent nullifier wastes the ZK verifier's time.
+Checking `↓denominate` before `↓prove-inclusion` leaks the asset class of a
+potentially nonexistent object.
+
+### C.2.3 Trajectory Identification Sufficiency
+
+The set of enforced barbs SHALL be sufficient to narrow the trajectory space
+from N^K to exactly 1. A contract whose barbs fail to uniquely determine the
+target trajectory has a **trajectory ambiguity vulnerability** — two different
+objects could satisfy the same barbs.
+
+**Sufficiency condition:** After all barbs are enforced, the remaining trajectory
+space SHALL contain exactly 1 trajectory. If N^K/|barb_partition| > 1, the
+contract SHALL add additional identifying barbs (e.g., requiring the leaf position
+to match the expected position for the caller's object).
+
+## C.3 L1 State Type System
+
+### C.3.1 The Five Trajectory-Crossing Boundaries
+
+Part A §A.3.1 defines four encoding boundaries. Boundary 5 — the combinatorial
+L1 state space — is the organizing principle for all five:
+
+1. **External → exec:** Call data crosses into the N^K space. Parameters SHALL
+   carry trajectory identification fields (nullifier, Merkle root, leaf position).
+2. **Exec → apply:** The update struct crosses from trajectory identification
+   (exec) to trajectory commitment (apply). The update SHALL carry the identified
+   trajectory context.
+3. **Sled state:** State writes SHALL be trajectory-indistinguishable — the same
+   byte patterns regardless of which objects were consumed.
+4. **Circuit → metadata:** Public inputs declare the trajectory. The order IS
+   the trajectory. Every public input SHALL trace to a circuit derivation.
+5. **Combinatorial (N^K):** The consume+create model bounds N. O-cap composition
+   keeps state spaces additive. Without both, the state space explodes
+   multiplicatively.
+
+### C.3.2 Nominal L1 Domain Types
+
+L1 contracts SHALL define the following nominal newtypes. Each wraps a primitive
+type with a validating constructor. Each SHALL appear in the non-unifiable types
+table (Part A §A.10).
+
+**Amount** — Wraps `u64`. Non-zero by construction. Zero amounts are rejected
+at decode. Used for deposit/withdraw amounts in Purse.
 
 ```rust
-fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
-    // 1. Write nullifier to SMT
+pub struct Amount(u64);
+impl Amount {
+    pub fn new(v: u64) -> Result<Self, ContractError> {
+        if v == 0 { return Err(ContractError::IoError("Amount: zero not allowed".into())); }
+        Ok(Self(v))
+    }
+    pub fn inner(&self) -> u64 { self.0 }
+    pub fn to_le_bytes(&self) -> [u8; 8] { self.0.to_le_bytes() }
+    pub fn from_le_bytes(b: [u8; 8]) -> Result<Self, ContractError> {
+        Amount::new(u64::from_le_bytes(b))
+    }
+}
+```
+
+The `.inner()` method on Amount SHALL only be called at metadata construction
+points, with type-annotated let-bindings following the same pattern as Nullifier
+and MerkleNode (§C.3.3).
+
+**Balance** — Wraps `u64`. Zero is valid (empty purse). Distinct from Amount —
+adding an Amount to a Balance requires explicit conversion. Balance arithmetic
+SHALL use checked operations. The ZK circuit constrains balance conservation via
+Pedersen commitments; Rust-side balance arithmetic is for metadata computation
+only and SHALL match circuit semantics exactly, including field element wrapping
+behavior.
+
+```rust
+pub struct Balance(u64);
+impl Balance {
+    pub fn new(v: u64) -> Self { Self(v) }
+    pub fn inner(&self) -> u64 { self.0 }
+    pub fn to_le_bytes(&self) -> [u8; 8] { self.0.to_le_bytes() }
+    pub fn from_le_bytes(b: [u8; 8]) -> Self { Self(u64::from_le_bytes(b)) }
+}
+```
+
+**MerklePosition** — Wraps `u32`. Position in the Merkle tree (0 to 2^D-1).
+Validated at construction: the position SHALL be within the tree's capacity.
+Used for leaf_pos fields in all L1 params structs.
+
+```rust
+pub struct MerklePosition(u32);
+impl MerklePosition {
+    pub fn new(v: u32) -> Self { Self(v) }
+    pub fn inner(&self) -> u32 { self.0 }
+    pub fn to_le_bytes(&self) -> [u8; 4] { self.0.to_le_bytes() }
+    pub fn from_le_bytes(b: [u8; 4]) -> Self { Self(u32::from_le_bytes(b)) }
+}
+```
+
+**StateNonce** — Wraps `pallas::Base`. Per-object sequencing nonce. Distinct from
+Nullifier (which identifies consumption) and MerkleNode (which anchors inclusion).
+Used for state_nonce fields in all L1 params structs. Changes with each state
+transition to ensure nullifier uniqueness across operations.
+
+```rust
+pub struct StateNonce(pallas::Base);
+impl StateNonce {
+    pub fn new(v: pallas::Base) -> Self { Self(v) }
+    pub fn inner(&self) -> pallas::Base { self.0 }
+    pub fn to_repr(&self) -> [u8; 32] { self.0.to_repr() }
+    pub fn from_repr(b: [u8; 32]) -> Option<Self> {
+        pallas::Base::from_repr(b).into_option().map(Self)
+    }
+}
+```
+
+### C.3.3 The `.inner()` Prohibition — Combinatorial Justification
+
+A nominal type crossing the Circuit→Metadata boundary SHALL NOT be stripped to
+its inner type at an untyped call site. The ZK metadata vector SHALL carry the
+nominal wrapper through to a SINGLE serialization point where `.inner()` is
+called with type-annotated let-bindings.
+
+**Combinatorial justification.** With K operations each having M public inputs,
+there are `(K*M)!` possible positional permutations of `pallas::Base` values.
+Only one permutation corresponds to the correct trajectory. If all public inputs
+are bare `pallas::Base`, a positional swap is combinatorially undetectable —
+the proof verifies, but against the wrong trajectory.
+
+With nominal types (Nullifier, MerkleNode, Amount, StateNonce), a positional
+swap is a TYPE ERROR. The compiler rejects `MerkleNode` where `Nullifier` is
+expected. The number of valid permutations drops from `(K*M)!` to `K!` (only
+the operation ordering can vary).
+
+**Pattern.** Every metadata function SHALL isolate `.inner()` calls to a single
+point with type-annotated let-bindings:
+
+```rust
+fn deposit_metadata(p: DepositParams) -> Result<Vec<u8>, ContractError> {
+    // L1 metadata boundary (Boundary 4): type-annotated extraction.
+    // Order MUST match circuit constrain_instance order.
+    let zk_nullifier: pallas::Base = p.nullifier.inner();
+    let zk_expected_root: pallas::Base = p.expected_root.inner();
+    let zk_new_leaf: pallas::Base = p.new_leaf.inner();
+    // ... remaining fields with explicit types ...
+    let mut z = vec![];
+    z.push((DEPOSIT_NS.to_string(), vec![zk_nullifier, zk_expected_root, zk_new_leaf, ...]));
+    // ... serialize ...
+}
+```
+
+This pattern SHALL be the ONLY location where `.inner()` is called on nominal
+L1 types. Nowhere else in the contract SHALL `.inner()` strip these types.
+
+### C.3.4 MerklePath Type
+
+The Merkle authentication path type SHALL be `[MerkleNode; 32]`, not
+`[pallas::Base; 32]`. Every path element is a Sinsemilla-hashed Merkle node,
+carrying the `↓prove-inclusion` barb. A bare `pallas::Base` does not carry
+this barb — it is indistinguishable from any other field element in the system.
+
+```rust
+// VIOLATION: path elements are bare field elements.
+type MerklePath = [pallas::Base; 32];
+
+// COMPLIANT: path elements carry the MerkleNode type tag.
+type MerklePath = [MerkleNode; 32];
+```
+
+A MerklePath constructed from bare field elements can be silently substituted
+with any 32 field elements from any source — a nullifier, a state nonce, a
+token commitment. With `MerkleNode`, the type system catches the substitution
+at compile time.
+
+`MerkleNode::from_bytes` accepts zero (unlike `Nullifier::from_bytes` which
+rejects it). Zero MerkleNodes are valid as placeholder values in Merkle tree
+initialization but SHALL NOT be used as sentinel values for "no node present" —
+use `Option<MerkleNode>` for that case. The empty leaf in Orchard Merkle trees
+is `pallas::Base::from(2)`, not zero.
+
+### C.3.5 Nullifier Unification
+
+All L1 contracts SHALL use `dwow_sdk::crypto::Nullifier` as the canonical
+Nullifier type. Contract-local Nullifier definitions are prohibited.
+
+The SDK Nullifier enforces two invariants at construction:
+1. **Canonicality:** `from_bytes` rejects non-canonical field element encodings.
+2. **Non-zero:** `from_bytes` rejects the zero element — a nullifier of zero is
+   semantically equivalent to "no nullifier" and SHALL be rejected at the type
+   boundary.
+
+A contract-local Nullifier that skips the zero check creates a semantic fork:
+the same byte sequence means "spent" in one contract and "unspent" in another.
+With unified Nullifier, the type system prevents this fork.
+
+### C.3.6 Trajectory Invariant Preservation
+
+State writes SHALL be trajectory-indistinguishable — the Merkle tree and
+nullifier SMT after the block SHALL have the same structure regardless of
+which trajectory was taken:
+
+- The Merkle tree SHALL have K new leaves, all at the same positions, regardless
+  of which objects were consumed.
+- The nullifier SMT SHALL have K new entries, all with the same tree shape.
+- Sled encodings SHALL produce the same byte patterns regardless of trajectory.
+
+Any structural difference in the post-state that correlates with trajectory
+selection breaks anonymity. The Layer 2 sequential visibility in the overlay
+(Part A §A.3.8) ensures that operation k observes the state after operations
+1..k-1 — this IS the trajectory ordering within the block.
+
+## C.4 WASM Host Interface — Trajectory-Sensitive Classification
+
+### C.4.1 Trajectory-Sensitive vs Trajectory-Agnostic
+
+Host functions fall into two categories under L1:
+
+**Trajectory-sensitive functions** modify state that anchors N objects. Their
+effect depends on which trajectory is being executed:
+- `merkle_add` — adds a leaf to the Merkle tree that anchors N objects
+- `sparse_merkle_insert_batch` — inserts nullifiers into the SMT
+- `db_set` — writes state that may be trajectory-dependent
+
+**Trajectory-agnostic functions** return data independent of trajectory:
+- `get_verifying_block_height` — block-level, not trajectory-level
+- `get_blockchain_time` — block-level
+- `get_tx_hash`, `get_call_index` — transaction-level
+- `db_get`, `db_contains_key` — read-only (but see §C.4.2 for ordering)
+
+### C.4.2 Ordering Guarantees
+
+Trajectory-sensitive host functions SHALL observe the sequential execution
+order within the block. The Nth call to `merkle_add` in a block SHALL observe
+the tree after the first N-1 calls. The overlay semantics (Part A §A.3.8
+Layer 2) enforce this: all canonical calls share a single overlay, and each
+call observes the committed writes of prior calls.
+
+A contract that violates this ordering (e.g., by reading the Merkle root
+before all prior operations have committed their leaves) SHALL produce an
+incorrect trajectory identification.
+
+## C.5 Error Propagation — Combinatorial Error Theory
+
+### C.5.1 Error Types Under N^K
+
+Under L1, errors are not "validation failures" — they are TRAJECTORY
+IDENTIFICATION EVENTS. An error says "the trajectory I thought I was on
+is invalid." Three classes of L1 error exist:
+
+**Trajectory Collision.** Two operations in the same block claim the same
+nullifier. This is a combinatorial impossibility — the consume+create model
+guarantees each nullifier is unique. A collision indicates either a double-spend
+attack or a contract bug. Error: `DuplicateNullifier`.
+
+**Trajectory Exhaustion.** The (N+1)th consume operation in a block. After N
+consumptions, no unspent objects remain. Error: `TrajectoryExhaustion`
+(new variant — the contract's anonymity set is depleted for this block).
+
+**Trajectory Ambiguity.** After barb enforcement, more than 1 trajectory
+remains possible. The barbs were insufficient to uniquely identify the target.
+Error: `TrajectoryAmbiguity` (new variant — the contract's barbs do not
+provide unique trajectory identification; this is a contract design flaw).
+
+### C.5.2 Error Context Requirements
+
+Every error crossing an L1 boundary SHALL carry:
+
+1. **Contract ID** — which contract's state space
+2. **Function selector** — which operation within the contract
+3. **Boundary identifier** — which of the 5 boundaries failed (1-5, per §C.3.1)
+4. **Field identifier** — which specific field in the params/update struct failed
+5. **Trajectory context** — nullifier, Merkle root, and leaf position that
+   identify the specific trajectory that failed
+
+### C.5.3 IoError Prohibition
+
+`ContractError::IoError(String)` SHALL NOT appear at L1 boundaries. It discards
+all trajectory context and reduces N^K possible error states to a single string.
+`IoError` SHALL be used ONLY at Boundary 3 (sled persistence), where the error
+is genuinely an I/O failure, not a trajectory identification failure.
+
+Merkl root not found in the roots DB SHALL use a typed error variant
+(e.g., `BoxError::InvalidMerkleRoot`, `PurseError::InvalidMerkleRoot`) carrying
+the expected root value. Nullifier already spent SHALL use `DuplicateNullifier`
+carrying the nullifier value. Parameter decode failure SHALL use `DecodeFailure`
+carrying the field name and raw bytes.
+
+## C.6 Witness Binding — Trajectory-Relative Witnesses
+
+### C.6.1 `merkle_path:current` vs `merkle_path:cumulative`
+
+Under L1 with K sequential operations, the Merkle path for operation k depends
+on the state after operations 1..k-1. The witness_map vocabulary (§A.6.2) SHALL
+distinguish two Merkle path sources:
+
+- **`merkle_path:current`** — the Merkle path relative to the pre-block root.
+  Used when the operation is the first in the block (k=1) or when operations
+  are independent (targeting disjoint subtrees).
+- **`merkle_path:cumulative`** — the Merkle path relative to the root after
+  all previous operations in the block. Used when operations are sequential
+  (operation k's path includes leaves from operations 1..k-1).
+
+### C.6.2 Witness Map Trajectory Dependency
+
+The manifest's `witness_map` SHALL declare trajectory-relative witness sources
+for multi-operation contracts. For a contract with Deposit then Withdraw:
+
+```toml
+[[circuits]]
+name = "Deposit"
+witness_map = [
+    # ... Deposit witnesses ...
+    { slot = 18, source = "merkle_path:current" },  # pre-block root
+]
+
+[[circuits]]
+name = "Withdraw"
+witness_map = [
+    # ... Withdraw witnesses ...
+    { slot = 18, source = "merkle_path:cumulative" },  # root after Deposit
+]
+```
+
+## C.7 Composition — Additive Only
+
+### C.7.1 O-Cap Composition
+
+**Theorem (CompositionBounds.lean: `ocap_additive_composition`).** For any two
+L1 contracts A, B composing via o-caps (disjoint Merkle trees, independent
+nullifier sets):
+```
+T(A ∘ B) = T(A) + T(B)
+```
+
+The state spaces are additive — each contract's budget (public inputs, witness
+values, operations) is independent. The composition does not create new
+trajectories; it preserves the trajectory spaces of both contracts.
+
+**Theorem (CompositionBounds.lean: `additive_vs_multiplicative_gap`).** For
+positive parameters, additive composition is strictly smaller than
+multiplicative composition:
+```
+T(A) + T(B) < T(A) × T(B)  for all T(A), T(B) > 1
+```
+
+### C.7.2 Shared-State Composition PROHIBITED
+
+Without o-caps (shared mutable state, shared Merkle tree):
+```
+T(A × B) = T(A) × T(B)
+```
+
+The trajectory spaces multiply — privacy collapses. A contract observing 100
+trajectories composed with another observing 100 trajectories produces 10,000
+trajectories in the shared state space. The anonymity set is destroyed: an
+observer who can distinguish 100 trajectories in either contract can now
+distinguish 10,000 in the composite.
+
+**Shared-state composition of L1 contracts SHALL be a compile-time error.**
+The type system SHALL enforce this by requiring that composed contracts declare
+disjoint tree namespaces in their manifests, verified by the wallet's coverage
+gate.
+
+### C.7.3 Type System Enforcement
+
+The manifest SHALL declare `[[trees]]` for every sled tree. The wallet's
+deployment verification SHALL cross-check that composed contracts' tree
+namespaces are disjoint. Two contracts declaring the same tree namespace
+SHALL cause deployment rejection.
+
+The host enforces isolation at runtime via `blake3(contract_id || tree_name)`
+(Part A §A.7.3) — even if two contracts declare the same tree name, their
+physical sled trees are distinct because the contract ID is part of the key.
+The manifest-level check is defense-in-depth.
+
+## C.8 Wallet Scan — Trajectory Identification
+
+### C.8.1 The Combinatorial Wallet Scan Problem
+
+Under L1, the wallet must solve a trajectory identification problem. Given
+K new Merkle leaves, K new nullifiers, and its set of known objects, the
+wallet must determine:
+
+1. Which of its objects were consumed (by matching nullifiers against its
+   known object nullifiers)
+2. Which new objects were created for it (by trial-decrypting AEAD notes
+   on the new Merkle leaves)
+3. In what order (by matching each operation's pre-state Merkle root against
+   the post-state root of the previous operation)
+
+This is an inverse problem — the wallet sees the effects (new leaves +
+nullifiers) and must recover the trajectory that produced them.
+
+### C.8.2 Required Note Fields for Trajectory Identification
+
+A note schema that lacks trajectory-identifying fields makes trajectory
+identification combinatorially ambiguous. The wallet cannot determine which
+trajectory a note belongs to. An L1 note SHALL include:
+
+- **`nullifier`** — the nullifier of the consumed object. Allows the wallet
+  to match the note to a specific object in its possession.
+- **`merkle_root`** — the Merkle root that anchored the consumed object.
+  Allows the wallet to verify the object existed at block time.
+- **`leaf_position`** — the position of the new leaf in the Merkle tree.
+  Allows the wallet to locate the new object in subsequent blocks.
+
+Without these fields, a note is trajectory-ambiguous — the wallet knows an
+operation happened but cannot determine which of its objects was involved.
+
+### C.8.3 Scan Bound
+
+**Theorem (Limits.lean: `practical_anonymity_bound`).** The practical
+anonymity set size is bounded by wallet scan rate × block interval:
+```
+N ≤ scan_rate × block_interval
+```
+
+For mobile wallets scanning ~1000 objects/second at 120-second block intervals,
+the practical ceiling is N ≤ 120,000 concurrent objects. Beyond this, mobile
+users cannot discover their own objects between blocks — privacy collapses to
+desktop-only users.
+
+The binding constraint is the slowest supported client. The system SHALL target
+N ≤ 120,000 for L1 contracts. Contracts exceeding this bound SHALL use L2 or
+a sharded architecture.
+
+## C.9 Formal Verification References
+
+The following Lean4 theorems at `proofs/lean/src/DarkFi/Combinatorial/` provide
+the formal foundation for Part C. Every normative claim in Part C that references
+N^K, composition, or combinatorial bounds SHALL cite the corresponding theorem.
+
+### C.9.1 ComplexityJump.lean
+
+- **`l1TrajectoryCount N K = N ^ K`** — definition of L1 trajectory count
+- **`l2TrajectoryCount K = 1`** — definition of L2 trajectory count
+- **`l1_exceeds_l2`** — for N ≥ 2, K ≥ 1: `l1TrajectoryCount N K > l2TrajectoryCount K`
+  (proves the combinatorial asymmetry; uses `pow_gt_one` helper lemma)
+- **`pow_ge_one`** — `a^b ≥ 1` for `a ≥ 1` (core Lean, induction on exponent)
+- **`pow_gt_one`** — `a^b > 1` for `a ≥ 2, b ≥ 1` (core Lean, `Nat.pow_succ` + `Nat.mul_le_mul`)
+- **`l2_singleton_trajectory`** — L2 trajectory count is exactly 1, independent of K
+- **`consumeCreatePreservesCount`** (in `Transitions.lean`) — the consume+create
+  model keeps active object count at N
+
+### C.9.2 CompositionBounds.lean
+
+- **`ocap_additive_composition`** — `T(A ∘ B) = T(A) + T(B)` under o-caps
+- **`additive_vs_multiplicative_gap`** — additive < multiplicative for positive params
+- **`unconstrained_composition_explosion`** — `T(A × B) = T(A) × T(B)` without o-caps
+
+### C.9.3 GeneralTheorem.lean
+
+- **`safe_l1_classification_sound`** — classifier correctly identifies safe L1 contracts
+  (iff P ≤ P_CEILING×O ∧ W ≤ W_CEILING×O ∧ O ≤ O_CEILING)
+- **`exceeds_is_terminal`** — increasing circuit size k does not change "exceeds" classification
+  (the problem is structural: too many P, W, or O; not a circuit-size issue)
+- **`l1_combinatorial_asymmetry`** — general form of `l1_exceeds_l2` parameterized
+  over `Halo2L1Contract` structure
+
+### C.9.4 CeilingDerivation.lean
+
+- **`P_CEILING = 9`** — derived from Halo2 circuit structure (k≤15, instance column proportion 1/7)
+- **`W_CEILING = 13`** — derived from witness cell budget per operation
+- **`O_CEILING = 3`** — derived from Merkle proof cost (34 witness values per inclusion)
+- **`p_ceiling_ge_minimum`, `w_ceiling_ge_minimum`, `o_ceiling_ge_minimum`** — formal
+  verification that ceilings meet minimum requirements for L1 contract functionality
+
+### C.9.5 Limits.lean
+
+- **`theoretical_max_objects`** — Merkle depth 32 → 2^32-1 ≈ 4.3 billion max leaves
+  (tree is not the bottleneck)
+- **`merkle_not_bottleneck`** — the theoretical max exceeds any practical need
+- **`practical_anonymity_bound`** — wallet scan rate × block interval bounds N
+- **`PRACTICAL_MAX_OBJECTS = 120000`** — mobile scan rate (1000/s) × block interval (120s)
+
+## C.11 L1 Normative Function Handler Pattern
+
+The L1 function handler extends the shared pattern (Part A §A.11) with trajectory
+identification. Every L1 exec handler SHALL follow this three-step structure.
+
+### C.11.1 Step 1: Trajectory Identification
+
+Extract the target object's identity from the metadata-provided ZK public inputs:
+
+```rust
+fn deposit_v1(cid: ContractId, params: &[u8]) -> ContractResult {
+    // 1. Deserialize parameters via inherent decode() (Boundary 1, Part A §A.3.1)
+    let pr = DepositParams::decode(params)?;
+
+    // 2. TRAJECTORY IDENTIFICATION — narrow N^K to 1
+    //    The nullifier identifies which of N objects is being consumed.
+    //    The Merkle root anchors the object in the tree.
+    //    Together they uniquely identify a trajectory.
+
+    // ↓nullify — O(1) SMT lookup, MUST precede other checks (§C.2.2)
     let nullifiers_db = wasm::db::db_lookup(cid, NULLIFIERS_TREE)?;
-    wasm::merkle::sparse_merkle_insert_batch(
-        &serialize(&(nullifiers_db, vec![update.nullifier.inner()]))
-    )?;
+    if wasm::db::db_contains_key(nullifiers_db, &pr.nullifier.to_bytes())? {
+        msg!("[purse::deposit] Error: Duplicate nullifier — trajectory collision");
+        return Err(PurseError::DuplicateNullifier.into());
+    }
 
-    // 2. Write coin to Merkle tree
-    let coins_db = wasm::db::db_lookup(cid, COINS_TREE)?;
-    wasm::merkle::merkle_add(&serialize(&(coins_db, update.coin.inner())))?;
+    // ↓prove-inclusion — verify Merkle root exists in roots DB
+    //    This confirms the target object exists in the tree.
+    let roots_db = wasm::db::db_lookup(cid, ROOTS_TREE)?;
+    if !wasm::db::db_contains_key(roots_db, &pr.expected_root.to_bytes())? {
+        msg!("[purse::deposit] Error: Merkle root not found — trajectory invalid");
+        return Err(PurseError::InvalidMerkleRoot.into());
+    }
 
+    // Trajectory identified: exactly one object matches this (nullifier, root) pair.
+```
+
+### C.11.2 Step 2: Barb Enforcement Under Trajectory Identification
+
+Enforce remaining barbs on the identified target:
+
+```rust
+    // 3. BARB ENFORCEMENT — on the identified trajectory
+    // ↓denominate — verify asset class (token commitment)
+    // (Additional domain-specific checks go here)
+
+    // 4. Produce state update (consume+create step)
+    let update = DepositUpdate {
+        nullifier: pr.nullifier,
+        new_leaf: pr.new_leaf,
+    };
+```
+
+### C.11.3 Step 3: State Transition with Consume+Create
+
+Commit the trajectory step via the exec→apply bridge:
+
+```rust
+    // 5. Return update via custom bridge function (Boundary 2, Part A §A.3.1)
+    wasm::util::set_return_data(&encode_deposit_update_v1(&update))?;
     Ok(())
 }
 ```
 
-## 12. References
+### C.11.4 Complete Pattern
 
-- [Type System Specification](type-system.md) — Primitive types, barbs, nominal newtypes, invariants.
-- [Capability Composition](composition.md) — Barb union, composition algebra, wallet as composition engine.
-- [Wallet Architecture](wallet.md) — Scan paths, capability construction, pure function model.
-- [Contract Manifest](manifest.md) — Interface declarations, TOML format, lifecycle stages.
-- [O-Cap: Emergent Types](ocap.md) — Capability lifecycle grammar, ZK instantiation.
-- [Consensus Specification](consensus/consensus.md) — Phase 4 (WASM execution), execution ordering, atomicity.
-- [Mempool Specification](mempool.md) — Verified transaction admission.
-- Meredith, L.G. and Radestock, M. (2005). "A Reflective Higher-Order Calculus." *ENTCS*.
-- Miller, M.S. (2006). *Robust Composition.* PhD dissertation, Johns Hopkins University.
+For the full exec handler with trajectory identification, see the Box contract
+at `src/contract/box/src/entrypoint/mod.rs` (Put/Take handlers) and the Purse
+contract at `src/contract/purse/src/entrypoint/mod.rs` (Deposit/Withdraw/Balance
+handlers). Both follow this three-step pattern: trajectory identification
+(nullifier check → Merkle root check) → barb enforcement → state transition.

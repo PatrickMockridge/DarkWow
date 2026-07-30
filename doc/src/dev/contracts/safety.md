@@ -1605,6 +1605,11 @@ not a static analysis check.
 
 **Generalization to All Halo2 L1 Contracts** (2026-07-30):
 
+The complete L1 type system specification — including trajectory identification,
+barb ordering under N^K, additive composition, nominal L1 domain types, and
+combinatorial error theory — is at [contract-wasm-type-system.md Part C](../arch/contract-wasm-type-system.md).
+This lesson summarizes the hardening log; the specification is normative.
+
 The triage above is not specific to Box and Purse. The general theorem
 (`proofs/lean/src/DarkFi/Combinatorial/GeneralTheorem.lean`) proves that for
 ANY Halo2 L1 contract C(k, P, W, O, D) with N concurrent anonymous objects:
