@@ -22,7 +22,8 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let tx_hash = wasm::util::get_tx_hash()?; let call_idx = wasm::util::get_call_index()?;
     let mut roots_value_data = Vec::with_capacity(33); tx_hash.encode(&mut roots_value_data)?; call_idx.encode(&mut roots_value_data)?;
     if wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE).is_err() { wasm::db::db_init(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?; }
-    if wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE).is_err() { let db = wasm::db::db_init(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?; wasm::db::db_set(db, &EMPTY_PURSE_TREE_ROOT, &roots_value_data)?; }
+    let roots_db = match wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE) { Ok(v) => v, Err(_) => wasm::db::db_init(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)? };
+if !wasm::db::db_contains_key(roots_db, &EMPTY_PURSE_TREE_ROOT)? { wasm::db::db_set(roots_db, &EMPTY_PURSE_TREE_ROOT, &roots_value_data)?; }
     let info_db = match wasm::db::db_lookup(cid, PURSE_CONTRACT_INFO_TREE) { Ok(v) => v, Err(_) => wasm::db::db_init(cid, PURSE_CONTRACT_INFO_TREE)? };
     if !wasm::db::db_contains_key(info_db, PURSE_CONTRACT_PURSE_MERKLE_TREE)? {
         let mut tree = MerkleTree::new(1); tree.append(MerkleNode::from_base(pallas::Base::zero()));
