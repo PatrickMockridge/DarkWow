@@ -1768,6 +1768,26 @@ visible — not which objects were consumed. The restriction IS the privacy boun
 Under L1, composition is either additive (o-caps, disjoint Merkle trees) or
 multiplicative (shared state, privacy collapses). See §C.7.
 
+**Nested Restrictions `νy.νx.P`.** The two-level Merkle tree architecture
+IS nested restriction in the ρ-calculus. The inner restriction
+`ν(contract_tree)` scopes the N^K anonymity set per §C.3.6. The outer
+restriction `ν(block_tree)` scopes the block's state. They compose by nesting:
+
+```
+ν(block_tree).(
+  coinbase
+  | ν(box_tree).(Put | Take)
+  | ν(purse_tree).(Deposit | Withdraw | Balance)
+  | ...
+)
+```
+
+The nullifier is extruded through both restrictions — it identifies the
+consumed object inside `ν(contract_tree)` and anchors the contract root
+inside `ν(block_tree)`. Name extrusion through nested restrictions is the
+formal basis for the verification chain: nullifier → contract proof →
+contract root → block proof → block header. See §C.3.7.
+
 ### C.0.3 The L1 Contract Invariant
 
 > **A contract SHALL accept a ContractCall iff the call's data satisfies
@@ -1973,6 +1993,9 @@ L1 state space — is the organizing principle for all five:
 5. **Combinatorial (N^K):** The consume+create model bounds N. O-cap composition
    keeps state spaces additive. Without both, the state space explodes
    multiplicatively.
+6. **Block-Level Anchoring:** The contract-local Merkle tree root SHALL be
+   anchored in the block-level Merkle tree via the shared nullifier. The block
+   header commits to the block tree root. See §C.3.7.
 
 ### C.3.2 Nominal L1 Domain Types
 
@@ -2144,6 +2167,92 @@ Any structural difference in the post-state that correlates with trajectory
 selection breaks anonymity. The Layer 2 sequential visibility in the overlay
 (Part A §A.3.8) ensures that operation k observes the state after operations
 1..k-1 — this IS the trajectory ordering within the block.
+
+### C.3.7 Block-Level Anchoring — Two-Level Merkle Tree
+
+**ρ-calculus foundation.** The contract-local Merkle tree `ν(contract_tree)`
+is an inner restriction. The block-level Merkle tree `ν(block_tree)` is an
+outer restriction. They compose by nesting:
+
+```
+ν(block_tree).(
+  coinbase
+  | ν(box_tree).(Put | Take)
+  | ν(purse_tree).(Deposit | Withdraw | Balance)
+  | ...
+)
+```
+
+The inner restriction scopes the N^K anonymity set. The outer restriction
+scopes the block's state. The block header commits to the outer root.
+
+The nullifier IS the extruded name — created inside `ν(contract_tree)`,
+emitted through the restriction, and visible in `ν(block_tree)`. It links
+the two levels:
+
+- Inside `ν(contract_tree)`: the nullifier identifies the consumed object
+  (position in the Merkle tree, inclusion proof)
+- Inside `ν(block_tree)`: the nullifier identifies the anchored contract
+  root `(contract_id, contract_root)` pair
+
+The same nullifier appears in both trees. Nullifier reuse across levels
+does not degrade anonymity — the nullifier is already public (emitted in
+the block's nullifier set).
+
+**Verification path.** A light client verifying a state transition follows
+the nullifier-linked chain:
+
+```
+nullifier
+  → contract-local Merkle proof (proves object existed in contract tree)
+  → contract tree root
+  → block-level Merkle proof (proves (nullifier, contract_root) is in block tree)
+  → block header (commits to block tree root)
+```
+
+Each step is a Merkle inclusion proof. The nullifier is the key that
+unlocks both proofs. Without the nullifier, the contract tree leaf cannot
+be located. Without the contract tree root, the block tree leaf cannot be
+located. Both proofs are required for full verification.
+
+**Block-Level Anchoring Rule.** The contract-local Merkle tree root SHALL
+be stored as a leaf in the block-level Merkle tree. The leaf key is the
+nullifier; the leaf value is `poseidon_hash(contract_id || contract_tree_root)`.
+The block header SHALL commit to the block tree root via a proper
+incremental Merkle tree (Sinsemilla, depth 32), not a flat blake3 hash.
+
+**Apply-Side Contract Obligation.** Every L1 contract's `process_update`
+SHALL call the block-level `merkle_add` host function AFTER the
+contract-local `merkle_add`. The same nullifier links both calls. The
+function is provided by the shared SDK module
+`dwow_sdk::crypto::merkle_anchor` — contracts SHALL NOT implement their
+own anchoring logic.
+
+```rust
+// In process_update (apply):
+// 1. Contract-local merkle_add
+wasm::merkle::merkle_add(idb, rdb, LATEST_ROOT, MERKLE_TREE, &[u.new_leaf])?;
+// 2. Block-level anchoring (shared SDK module)
+wasm::merkle::merkle_anchor_add(&u.nullifier, &contract_root)?;
+// 3. Nullifier write (unchanged)
+wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
+```
+
+**Wallet Scan.** The wallet identifies its objects by trial-decrypting
+AEAD notes on new Merkle leaves. For each identified object, the wallet
+verifies the two-level proof chain to confirm the state transition is
+anchored in the block header. The nullifier is the lookup key for both
+the contract-local and block-level proofs.
+
+**Shared Infrastructure.** The anchoring functions SHALL be provided by
+`dwow_sdk::crypto::merkle_anchor`, a shared SDK module. Every L1 o-cap
+contract (Box, Purse, PromissoryNote, and all future contracts) uses the
+same module. No per-contract anchoring code is permitted.
+
+**Boundary 6.** This is the sixth encoding boundary (extending Part A
+§A.3.1): the contract-local Merkle tree root crosses into the block-level
+Merkle tree. The nullifier is the link. Without this boundary, contract
+state transitions are not verifiable against the block header.
 
 ## C.4 WASM Host Interface — Trajectory-Sensitive Classification
 
