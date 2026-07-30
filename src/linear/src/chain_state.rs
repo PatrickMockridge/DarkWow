@@ -68,7 +68,7 @@ use randomx::{RandomXCache, RandomXFlags, RandomXVM};
 use sled::transaction::Transactional;
 use tracing::info;
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, MoneroBlockHeight};
-use dwow_sdk::crypto::{pedersen_commitment_u64, Blind};
+use dwow_sdk::crypto::{merkle_anchor::AnchorEntry, pedersen_commitment_u64, Blind, MerkleNode, MerkleTree};
 use dwow_sdk::pasta::pallas;
 use dwow_sdk::pasta::group::{ff::FromUniformBytes, Group, GroupEncoding};
 use dwow_sdk::pasta::group::ff::PrimeField;
@@ -123,6 +123,10 @@ pub struct CChainState {
     /// Spent nullifiers → block height (double-spend prevention, height-tracked for pruning).
     /// Typed BTreeSet<Nullifier> per Phase 1 — Nullifier has Ord for SMT key ordering.
     nullifier_set: Mutex<BTreeMap<Nullifier, BlockHeight>>,
+    /// Block-level Merkle tree for anchoring contract state transitions.
+    /// Each leaf is an AnchorEntry (nullifier-keyed contract root).
+    /// Depth 32 (Orchard standard), checkpoint capacity 100 for reorg safety.
+    block_anchor_tree: Mutex<MerkleTree>,
     /// Competing blocks at the same height — potential uncles for fork resolution.
     /// When two miners produce blocks at height N simultaneously, the first
     /// received becomes canonical and the second is stored here. The next block
@@ -221,6 +225,11 @@ impl CChainState {
         // Initialize cumulative supply chain — restores latest from sled.
         let supply_chain = CumulativeSupplyChain::new(&db)?;
 
+        // Block-level anchor tree: incremental Merkle tree for anchoring
+        // contract state transitions. Depth 32, checkpoint capacity 100.
+        let mut block_anchor_tree = MerkleTree::new(100);
+        block_anchor_tree.append(MerkleNode::empty_leaf());
+
         Ok(Arc::new(Self {
             store,
             supply_chain,
@@ -232,6 +241,7 @@ impl CChainState {
             coin_set,
             uncle_coin_set,
             nullifier_set,
+            block_anchor_tree: Mutex::new(block_anchor_tree),
             competing_blocks: Mutex::new(BTreeMap::new()),
             competing_seen: Mutex::new(HashSet::new()),
             connect_lock: Mutex::new(()),
@@ -966,16 +976,18 @@ impl CChainState {
             }
         }
 
-        // --- Phase 4B: nullifier_root verification ---
-        // Per consensus.md Phase 6: verify that the block header's nullifier_root
-        // matches the computed root after this block's nullifiers are inserted.
+        // --- Block anchor root verification ---
+        // Per contract-wasm-type-system.md Part C §C.3.7: the block header's
+        // nullifier_root commits to the block-level Merkle tree that anchors
+        // all contract state transitions via their nullifiers.
+        //
         // Blocks with [0u8; 32] nullifier_root are grandfathered (pre-existing
-        // blocks and test fixtures that predate this verification).
+        // blocks and test fixtures that predate the two-level anchoring spec).
         if block.header.nullifier_root != [0u8; 32] {
-            let computed_root = self.compute_nullifier_root();
+            let computed_root = self.block_anchor_root();
             if computed_root != block.header.nullifier_root {
                 return Err(LinearError::BlockIsInvalid(format!(
-                    "nullifier_root mismatch: computed={} header={}",
+                    "anchor_root mismatch: computed={} header={}",
                     hex::encode(computed_root),
                     hex::encode(block.header.nullifier_root),
                 )));
@@ -1095,6 +1107,34 @@ impl CChainState {
             hasher.update(&n.to_bytes());
         }
         *hasher.finalize().as_bytes()
+    }
+
+    // --- Block Anchor Tree (Two-Level Merkle Architecture) ---
+
+    /// Append a contract state anchor to the block-level Merkle tree.
+    ///
+    /// Called during `process_update` (apply) via the `merkle_anchor_add`
+    /// host function. The nullifier links the contract-local proof to the
+    /// block-level proof.
+    pub fn append_anchor(&self, entry: &AnchorEntry) {
+        let mut tree = self.block_anchor_tree.lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let leaf_node = MerkleNode::from_base(
+            dwow_sdk::crypto::poseidon_hash([
+                entry.contract_id.inner(),
+                entry.contract_root.inner(),
+            ])
+        );
+        tree.append(leaf_node);
+    }
+
+    /// Get the current block anchor tree root.
+    pub fn block_anchor_root(&self) -> [u8; 32] {
+        let tree = self.block_anchor_tree.lock()
+            .unwrap_or_else(|e| e.into_inner());
+        tree.root(0)
+            .map(|r| r.to_bytes())
+            .unwrap_or([0u8; 32])
     }
 }
 

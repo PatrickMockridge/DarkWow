@@ -26,7 +26,8 @@ impl BoxHarness {
         tree.append(MerkleNode::from_base(pallas::Base::zero()));
         tree.append(MerkleNode::from_base(leaf));
         let mk = tree.mark().expect("tree.mark");
-        let p: Vec<MerkleNode> = tree.witness(mk, 0).expect("tree.witness");
+        // Witness position 1 — the consumed leaf, not the ZERO placeholder
+        let p: Vec<MerkleNode> = tree.witness(mk, 1).expect("tree.witness");
         let lp = u32::try_from(u64::from(mk)).expect("position");
         let root = tree.root(0).expect("tree.root");
         (lp, p, root)

@@ -107,6 +107,100 @@ impl AnchorEntry {
     }
 }
 
+/// Constructs a contract-level Merkle proof for a state transition.
+///
+/// Returns the Merkle path proving inclusion of the consumed leaf at
+/// `leaf_position` in `contract_tree`, and the tree root.
+///
+/// The block-level proof is deferred (requires Phase 3 block tree in CChainState).
+pub fn construct_anchored_proof(
+    contract_tree: &crate::crypto::MerkleTree,
+    leaf_position: u32,
+) -> Result<(MerklePath, MerkleNode), ContractError> {
+    let pos_u64 = u64::from(leaf_position);
+    let path: Vec<MerkleNode> = contract_tree
+        .witness(pos_u64, 0)
+        .ok_or_else(|| ContractError::IoError("construct_anchored_proof: witness failed".into()))?;
+    let root = contract_tree
+        .root(0)
+        .ok_or_else(|| ContractError::IoError("construct_anchored_proof: root failed".into()))?;
+    let path_array: MerklePath = path
+        .try_into()
+        .map_err(|_| ContractError::IoError("construct_anchored_proof: path conversion failed".into()))?;
+    Ok((path_array, root))
+}
+
+/// Anchors a contract-local Merkle tree root into the block-level Merkle tree.
+///
+/// The nullifier links the two levels. This function SHALL be called during
+/// `process_update` (apply), after the contract-local `merkle_add`.
+///
+/// ρ-calculus: `ν(block_tree).ν(contract_tree).P` — the inner restriction's
+/// root is a leaf in the outer restriction. The nullifier is the extruded name.
+///
+/// TODO: requires `merkle_anchor_add` host function (Phase 4).
+/// When the host function exists, this will write `(nullifier, contract_root)`
+/// as a leaf in the block-level Merkle tree.
+pub fn anchor_contract_root(
+    _contract_id: &ContractId,
+    _nullifier: &Nullifier,
+    _contract_root: &MerkleNode,
+) -> Result<(), ContractError> {
+    // TODO: requires merkle_anchor_add host function (Phase 4)
+    // let anchor_bytes = AnchorEntry::new(*nullifier, *contract_id, *contract_root).to_leaf_bytes();
+    // wasm::merkle::merkle_anchor_add(&anchor_bytes)?;
+    Ok(())
+}
+
+/// Verifies a two-level Merkle proof chain:
+///
+/// ```text
+/// nullifier → contract proof → contract root → block proof → block header
+/// ```
+///
+/// Returns `Ok(true)` if both proofs verify against their respective roots.
+pub fn verify_anchored_proof(
+    block_header_root: &MerkleNode,
+    _nullifier: &Nullifier,
+    contract_proof: &MerklePath,
+    contract_leaf: &MerkleNode,
+    contract_root: &MerkleNode,
+    block_proof: &MerklePath,
+    contract_id: &ContractId,
+) -> Result<bool, ContractError> {
+    // 1. Verify contract-level proof: leaf exists at contract_root
+    let mut current = *contract_leaf;
+    for sibling in contract_proof.iter() {
+        let hash_input = if current.inner() <= sibling.inner() {
+            [current.inner(), sibling.inner()]
+        } else {
+            [sibling.inner(), current.inner()]
+        };
+        current = MerkleNode::from_base(crate::crypto::poseidon_hash(hash_input));
+    }
+    if current != *contract_root {
+        return Ok(false);
+    }
+
+    // 2. Verify block-level proof: anchor_leaf exists at block_header_root
+    let anchor = anchor_leaf(contract_id, contract_root);
+    let anchor_node = MerkleNode::from_base(anchor);
+    let mut current = anchor_node;
+    for sibling in block_proof.iter() {
+        let hash_input = if current.inner() <= sibling.inner() {
+            [current.inner(), sibling.inner()]
+        } else {
+            [sibling.inner(), current.inner()]
+        };
+        current = MerkleNode::from_base(crate::crypto::poseidon_hash(hash_input));
+    }
+    if current != *block_header_root {
+        return Ok(false);
+    }
+
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,5 +1,5 @@
 use dwow_sdk::{
-    crypto::{pasta_prelude::*, ContractId, MerkleNode, MerkleTree},
+    crypto::{pasta_prelude::*, merkle_anchor, ContractId, MerkleNode, MerkleTree},
     dark_tree::DarkLeaf, error::{ContractError, ContractResult}, msg, wasm,
     pasta::pallas, ContractCall,
 };
@@ -147,12 +147,18 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let u = DepositUpdate::decode(&update_data[1..])?; let idb = wasm::db::db_lookup(cid, PURSE_CONTRACT_INFO_TREE)?;
             let rdb = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?;
             wasm::merkle::merkle_add(idb, rdb, PURSE_CONTRACT_LATEST_PURSE_ROOT, PURSE_CONTRACT_PURSE_MERKLE_TREE, &[u.new_leaf])?;
+            // Block-level anchoring (§C.3.7)
+            // TODO: requires merkle_anchor_add host function (Phase 4)
+            // merkle_anchor::anchor_contract_root(&cid, &u.nullifier, &u.new_leaf)?;
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?; wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
         }
         PurseFunction::Withdraw => {
             let u = WithdrawUpdate::decode(&update_data[1..])?; let idb = wasm::db::db_lookup(cid, PURSE_CONTRACT_INFO_TREE)?;
             let rdb = wasm::db::db_lookup(cid, PURSE_CONTRACT_PURSE_ROOTS_TREE)?;
             wasm::merkle::merkle_add(idb, rdb, PURSE_CONTRACT_LATEST_PURSE_ROOT, PURSE_CONTRACT_PURSE_MERKLE_TREE, &[u.new_leaf])?;
+            // Block-level anchoring (§C.3.7)
+            // TODO: requires merkle_anchor_add host function (Phase 4)
+            // merkle_anchor::anchor_contract_root(&cid, &u.nullifier, &u.new_leaf)?;
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?; wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
         }
         PurseFunction::Balance => {}
