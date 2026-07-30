@@ -59,42 +59,75 @@ theorem l2_trajectory_independent_of_K (K1 K2 : Nat) :
 /--
 THEOREM: L1 has exactly N^K trajectories for N objects and K operations
 under the simplified model where each operation has N independent choices.
-
-For the lower bound: ≥ N^K (some trajectories may be invalid due to
-double-spend constraints, but N^K is a tight lower bound for small K << N).
 -/
 theorem l1_power_trajectories (N K : Nat) : l1TrajectoryCount N K = N ^ K := by
   unfold l1TrajectoryCount; rfl
+
+/-!
+Helper lemmas for Nat.pow monotonicity.
+These are proved in core Lean using induction on the exponent,
+avoiding the need for Mathlib's Nat.pow_le_pow_right.
+-/
+
+/-- Any nonnegative power of a positive base is at least 1.
+    Proved by induction on the exponent using Nat.pow_succ. -/
+private theorem pow_ge_one (a b : Nat) (ha : a ≥ 1) : a ^ b ≥ 1 := by
+  induction b with
+  | zero =>
+    simp
+  | succ b ih =>
+    rw [Nat.pow_succ, Nat.mul_comm (a ^ b) a]
+    have htemp : a * a ^ b ≥ 1 * 1 := Nat.mul_le_mul ha ih
+    have : 1 * 1 = 1 := by simp
+    rw [this] at htemp
+    exact htemp
+
+/-- For base a ≥ 2 and exponent b ≥ 1: a^b > 1.
+    This is the key combinatorial lemma that replaces the need for
+    Mathlib's Nat.pow_le_pow_right. The proof uses only:
+    - Nat.pow_succ (definitional in core Lean)
+    - Nat.mul_le_mul (core Lean)
+    - omega (core Lean tactic)
+    - decide (core Lean tactic for small constants) -/
+private theorem pow_gt_one (a b : Nat) (ha : a ≥ 2) (hb : b ≥ 1) : a ^ b > 1 := by
+  cases b with
+  | zero =>
+    omega
+  | succ b =>
+    rw [Nat.pow_succ, Nat.mul_comm (a ^ b) a]
+    have ha_pos : a ≥ 1 := by omega
+    have h_pow_ge_one : a ^ b ≥ 1 := pow_ge_one a b ha_pos
+    have h_mul_ge_two : a * a ^ b ≥ 2 * 1 := Nat.mul_le_mul ha h_pow_ge_one
+    have h_two_one : 2 * 1 = 2 := by simp
+    rw [h_two_one] at h_mul_ge_two
+    -- h_mul_ge_two: a * a^b ≥ 2. Since 2 > 1, by transitivity: a * a^b > 1
+    have h_one_lt_two : 1 < 2 := by decide
+    exact Nat.lt_of_lt_of_le h_one_lt_two h_mul_ge_two
 
 /--
 THEOREM: For N ≥ 2 and K ≥ 1, L1 trajectories strictly exceed L2 trajectories.
 
 The gap is N^K vs 1 — even for N=2, K=1 it's 2x. For N=10, K=5 it's 100,000x.
+
+Proof: Since N ≥ 2 and K ≥ 1, N^K > 1^K = 1. The proof uses induction
+on K with Nat.pow_succ and Nat.mul_le_mul — zero Mathlib dependencies.
 -/
 theorem l1_exceeds_l2 (N K : Nat) (hN : N ≥ 2) (hK : K ≥ 1) :
     l1TrajectoryCount N K > l2TrajectoryCount K := by
-  rw [l1_power_trajectories, l2_singleton_trajectory]
-  have hN1 : N ^ K ≥ 2 := by
-    -- First: any power of N ≥ 1 is ≥ 1
-    have pow_ge_one : ∀ (n k : Nat), n ≥ 1 → n ^ k ≥ 1 := by
-      intro n k hn
-      induction k with
-      | zero => simp
-      | succ k ih =>
-        rw [Nat.pow_succ]
-        have : n * n ^ k ≥ 1 * 1 := Nat.mul_le_mul hn ih
-        omega
-    -- N^K ≥ N (since K ≥ 1, N^K = N * N^(K-1) ≥ N * 1 = N)
-    have h_ge_N : N ^ K ≥ N := by
-      induction K with
-      | zero => omega
-      | succ k ih =>
-        rw [Nat.pow_succ]
-        have h_one : N ^ k ≥ 1 := pow_ge_one N k (by omega)
-        have : N * N ^ k ≥ N * 1 := Nat.mul_le_mul_left N h_one
-        simpa using this
-    omega
-  omega
+  unfold l1TrajectoryCount l2TrajectoryCount
+  exact pow_gt_one N K hN hK
+
+/--
+Supplementary validation: For concrete values in the practical range,
+native_decide independently confirms N^K > 1. These are redundant
+given l1_exceeds_l2 but serve as documentation and sanity checks.
+-/
+example : l1TrajectoryCount 2 1 > l2TrajectoryCount 1 := by
+  unfold l1TrajectoryCount l2TrajectoryCount; native_decide
+example : l1TrajectoryCount 5 3 > l2TrajectoryCount 3 := by
+  unfold l1TrajectoryCount l2TrajectoryCount; native_decide
+example : l1TrajectoryCount 10 5 > l2TrajectoryCount 5 := by
+  unfold l1TrajectoryCount l2TrajectoryCount; native_decide
 
 /-! ==========================================================================
    Part 3: Anonymity Set Growth
@@ -107,9 +140,9 @@ theorem l1_exceeds_l2 (N K : Nat) (hN : N ≥ 2) (hK : K ≥ 1) :
 /--
 THEOREM: The anonymity set size equals the number of active objects.
 
-For Box Take: N possible targets
-For Box Put: N possible targets × M possible new contents
-For Purse Deposit/Withdraw: N possible targets × A possible amounts
+For Box Take: N possible targets.
+For Box Put: N possible targets × M possible new contents.
+For Purse Deposit/Withdraw: N possible targets × A possible amounts.
 
 In all cases, the anonymity grows at least linearly with N.
 -/
@@ -124,12 +157,11 @@ than for Take because the new object's contents are also hidden.
 theorem put_anonymity_larger_than_take (N M : Nat) (hN : N ≥ 1) (hM : M ≥ 2) :
     boxPutTransitionCount N M > boxTakeTransitionCount N := by
   unfold boxPutTransitionCount boxTakeTransitionCount
-  have hpos : N > 0 := by omega
-  have h : N * M > N := by
-    calc
-      N * M > N * 1 := Nat.mul_lt_mul_of_pos_left hM hpos
-      _ = N := by simp
-  omega
+  have hM_gt_1 : M > 1 := by omega
+  have hN_pos : N > 0 := by omega
+  calc
+    N * M > N * 1 := Nat.mul_lt_mul_of_pos_left hM_gt_1 hN_pos
+    _ = N := by simp
 
 /--
 THEOREM: Total Box transitions (Put + Take) = N * (M + 1).
@@ -150,7 +182,10 @@ theorem purse_total_linear (N A : Nat) : purseTotalTransitionCount N A = N * (2 
   unfold purseTotalTransitionCount purseMutateTransitionCount purseBalanceQueryCount
   calc
     N * A + N * A + N = N * (A + A) + N := by rw [← Nat.mul_add]
-    _ = N * (2 * A) + N := by simp
+    _ = N * (2 * A) + N := by
+      have : A + A = 2 * A := by omega
+      rw [this]
+    _ = N * (2 * A) + N * 1 := by simp
     _ = N * (2 * A + 1) := by rw [Nat.mul_add]
 
 /-! ==========================================================================
@@ -177,10 +212,13 @@ def theoreticalMaxBoxTransitions : Nat :=
 CONFIRMED: theoreticalMaxBoxTransitions is enormous.
 This is the L1 privacy guarantee: even if an observer knows the exact
 set of possible transitions, they cannot determine which one was taken.
+
+Uses native_decide for concrete Nat.pow evaluation (omega handles
+only linear Presburger arithmetic, not exponentiation).
 -/
 theorem l1_information_theoretic_privacy : theoreticalMaxBoxTransitions > 0 := by
   unfold theoreticalMaxBoxTransitions boxTotalTransitionCount
     boxPutTransitionCount boxTakeTransitionCount
-  omega
+  native_decide
 
 end Combinatorial.ComplexityJump

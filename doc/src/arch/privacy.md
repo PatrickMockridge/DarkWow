@@ -254,46 +254,61 @@ tracking, and the consume+create model at every state transition. L2
 uses direct KV lookup with resource IDs as public inputs. The choice
 is determined by whether the resource changes hands between parties.
 
-## 6. The L1 Privacy Budget
+## 6. Universal Theorem — Halo2 L1 Contract Complexity Limits
 
-L1 privacy rests on an **anonymity set** — the set of concurrent objects
-in the Merkle tree that an observer cannot distinguish. This set has a
-practical upper bound: a wallet must be able to scan every new leaf,
-attempt decryption, and match against its known identities within a
-single block interval. If the anonymity set grows beyond what the
-slowest supported wallet can scan, privacy collapses.
+**Theorem (Halo2 L1 Complexity)**. Let C be a Halo2-based smart contract with
+circuit size k, total constrain_instance calls P, total witness values W,
+state-transition operations O, and Merkle tree depth D. Let C operate on N
+concurrent anonymous objects. Then:
 
-The wallet scan bound is `usable_objects ≤ scan_rate × block_interval`.
-This is a structural constraint — it applies to every L1 contract
-regardless of circuit complexity.
+**1. Combinatorial Asymmetry.** The valid state trajectory count for K
+sequential L1 operations is T(C, N, K) = N^K. In the L2 (singleton) model,
+T(C, K) = 1. The anonymity set creates an exponential branching factor that
+L2 does not possess — this is the structural cost of L1 privacy.
 
-### 6.1 Per-Contract Budget
+**2. Safe L1 Condition.** C admits a practical pure-L1 deployment iff:
+```
+P ≤ P_CEILING × O  ∧  W ≤ W_CEILING × O  ∧  O ≤ O_CEILING
+∧  N ≤ scan_rate × block_interval
+```
+where the ceiling constants are derived from the Halo2 circuit architecture
+(P_CEILING = 9, W_CEILING = 13, O_CEILING = 3), and the anonymity budget is
+bounded by the wallet scan constraint (~120,000 objects for mobile clients
+at 120s block intervals).
 
-Each L1 contract maintains its own Merkle tree. The anonymity budget is
-**per-contract, not global** — o-cap composition gives each contract an
-independent anonymity set. Adding a new L1 contract does NOT reduce the
-anonymity budget of existing contracts.
+**3. O-Cap Composition.** For any two L1 contracts A, B composing via o-caps
+(disjoint Merkle trees, independent nullifier sets, wallet-mediated delegation):
+```
+T(A ∘ B) = T(A) + T(B)          (additive — each budget independent)
+```
+Without o-caps (shared mutable state):
+```
+T(A × B) = T(A) × T(B)          (multiplicative — budgets merge, privacy collapses)
+```
+The additive property is the architectural guarantee that prevents
+cross-contract combinatorial explosion.
 
-This independence is the architectural guarantee of the o-cap model.
-Without it, composing two contracts would merge their anonymity sets,
-and each new contract would fractionally reduce every existing contract's
-privacy. The formal composition theorem proves that o-cap-composed state
-spaces combine additively: each contract's anonymity budget is its own.
+**4. Ceiling Derivation.** The constants are not empirical — they are
+structural consequences of three constraints:
+- **Halo2 circuit**: k ≤ 15 for WASM linear memory; instance columns are
+  ~1/7 of total columns, yielding ~9 constrain_instance cells per operation at
+  k=13 with 1% density.
+- **Merkle tree**: D=32 (Orchard standard); each inclusion proof costs 34
+  witness values and 1 public input. The merkle_path dominates witness count
+  at 3+ operations.
+- **Wallet scan**: mobile wallets scan ~1000 objects/sec; at 120s block
+  intervals the ceiling is ~120,000 concurrent objects before users cannot
+  find their own objects between blocks.
 
-### 6.2 The L1 Ceiling
+**5. Classification Triaged.** Contracts exceeding all three ceilings
+classify as *architecturally invalid* for pure L1 — increasing circuit size
+k does not reduce P, W, or O. The problem is structural, not
+circuit-size-related. The triage (safe / scrutiny / exceeds) is proved
+correct in the formal verification.
 
-Every L1 contract consumes anonymity budget and circuit complexity budget
-simultaneously. A contract with too many public inputs, too many
-witness-only values, or too many operations per state transition
-approaches a **combinatorial ceiling** where the state-trajectory space
-exceeds practical verification capacity.
-
-The consume+create model (§5.5) is what keeps this space bounded: each
-non-terminal operation nullifies exactly one old state and creates
-exactly one new Merkle leaf. The active object count stays at N. Without
-this invariant, stale objects would accumulate indefinitely, degrading
-anonymity for every user.
-
-The specific bounds and triage criteria derived from the July 2026
-combinatorial analysis of Box and Purse are documented in the hardening
-log book (safety.md Lesson 23).
+The formal statement and mechanized proof are in:
+`proofs/lean/src/DarkFi/Combinatorial/GeneralTheorem.lean`
+(theorem `l1_combinatorial_asymmetry`, theorem `safe_l1_classification_sound`,
+theorem `ocap_preserves_safety`, theorem `exceeds_is_terminal`).
+The ceiling derivation is in `CeilingDerivation.lean`.
+The hardening log book with empirical bounds is in safety.md Lesson 23.

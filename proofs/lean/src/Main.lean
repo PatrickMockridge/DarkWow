@@ -14,6 +14,8 @@ import DarkFi.Combinatorial.Transitions
 import DarkFi.Combinatorial.ComplexityJump
 import DarkFi.Combinatorial.CompositionBounds
 import DarkFi.Combinatorial.Limits
+import DarkFi.Combinatorial.CeilingDerivation
+import DarkFi.Combinatorial.GeneralTheorem
 
 open DarkFi.Capability.Types
 open DarkFi.Capability.Composition
@@ -26,6 +28,8 @@ open Combinatorial
 open Combinatorial.Transitions
 open Combinatorial.ComplexityJump
 open Combinatorial.Limits
+open Combinatorial.GeneralTheorem
+open Combinatorial.CeilingDerivation
 
 def PALLAS_PRIME : Int := 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1
 def ltBool (a b : Int) : Bool := a < b
@@ -402,6 +406,73 @@ def main : IO Unit := do
 
   IO.println ""
   IO.println "=== Combinatorial State Space Validation Complete ==="
+
+  -- ============================================================
+  -- PART 6: GENERAL THEOREM — HALO2 L1 CONTRACT CLASSIFICATION
+  -- ============================================================
+
+  IO.println ""
+  IO.println "=== General Theorem: Halo2 L1 Contract Classification ==="
+  IO.println ""
+
+  -- 6a. Classify known contracts
+  let boxClass := classifyL1Contract boxContract
+  let purseClass := classifyL1Contract purseContract
+  IO.println s!"  Box    (k=11, P=9,  W=16, O=2): {boxClass}"
+  IO.println s!"  Purse  (k=13, P=25, W=37, O=3): {purseClass}"
+  assert! boxClass == L1ComplexityClass.safeL1
+  assert! purseClass == L1ComplexityClass.safeL1
+  IO.println "  Box and Purse: safeL1 ✓"
+
+  -- 6b. Classify hypothetical scrutiny-tier contract
+  let defiContract : Halo2L1Contract :=
+    { k := 14
+    , P := 36    -- 12 per op × 3 ops
+    , W := 48    -- 16 per op × 3 ops
+    , O := 4
+    , D := 32
+    , hasNullifier := true
+    , hasMerkleProof := true
+    }
+  let defiClass := classifyL1Contract defiContract
+  IO.println s!"  DeFi   (k=14, P=36, W=48, O=4): {defiClass}"
+  assert! defiClass == L1ComplexityClass.scrutinyL1
+  IO.println "  DeFi hypothetical: scrutinyL1 ✓"
+
+  -- 6c. Classify hypothetical exceeds-tier contract
+  let exceedsContract : Halo2L1Contract :=
+    { k := 16
+    , P := 60    -- 20 per op × 3 ops
+    , W := 90    -- 30 per op × 3 ops
+    , O := 8
+    , D := 32
+    , hasNullifier := true
+    , hasMerkleProof := true
+    }
+  let exceedsClass := classifyL1Contract exceedsContract
+  IO.println s!"  Big    (k=16, P=60, W=90, O=8): {exceedsClass}"
+  assert! exceedsClass == L1ComplexityClass.exceedsL1
+  IO.println "  Exceeds hypothetical: exceedsL1 ✓"
+
+  -- 6d. Verify classification properties
+  IO.println ""
+  IO.println "--- Classification properties ---"
+  IO.println s!"  Is Box L1? {isL1 boxContract}"
+  IO.println s!"  P_CEILING: {P_CEILING}"
+  IO.println s!"  W_CEILING: {W_CEILING}"
+  IO.println s!"  O_CEILING: {O_CEILING}"
+  IO.println s!"  P_SCRUTINY: {P_SCRUTINY}"
+  IO.println s!"  W_SCRUTINY: {W_SCRUTINY}"
+  IO.println s!"  O_SCRUTINY: {O_SCRUTINY}"
+  IO.println s!"  PRACTICAL_MAX_OBJECTS: {PRACTICAL_MAX_OBJECTS}"
+
+  -- 6e. Theorem 4: exceeds is terminal (increasing k doesn't help)
+  let exceedsReclass := classifyL1Contract { exceedsContract with k := 20 }
+  assert! exceedsReclass == L1ComplexityClass.exceedsL1
+  IO.println s!"  Reclassified with k=20: {exceedsReclass} (still exceedsL1) ✓"
+
+  IO.println ""
+  IO.println "=== General Theorem Validation Complete ==="
 
 end Verification
 

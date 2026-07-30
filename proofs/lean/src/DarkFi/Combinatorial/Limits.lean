@@ -79,7 +79,7 @@ seconds, the maximum number of objects it can scan between blocks is S × T.
 Example: S=1000 scans/sec, T=120s → max 120,000 objects.
 -/
 theorem practical_anonymity_bound (scanRate blockInterval : Nat) :
-    scanRate * blockInterval ≤ scanRate * blockInterval := by rfl
+    scanRate * blockInterval ≤ scanRate * blockInterval := Nat.le_refl _
 
 /--
 Typical wallet scan rates:
