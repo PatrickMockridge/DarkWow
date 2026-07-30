@@ -52,7 +52,7 @@ Every operation follows the same architectural pattern:
 ## Data Model
 
 ```
-box_leaf  = poseidon_hash(DOMAIN_SIGNATURE_SECRET, box_id, contents_commit, state_nonce)
+box_leaf  = poseidon_hash(DOMAIN_MERKLE_LEAF, box_id, contents_commit, state_nonce)
 nullifier = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, box_id, state_nonce)
 owner_pub = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret)
 ```
