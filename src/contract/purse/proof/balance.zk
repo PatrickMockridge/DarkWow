@@ -12,6 +12,11 @@ witness "Balance" {
     Base balance,
     Scalar balance_blind,
     Base state_nonce,
+    Base derived_purse_id,
+    Base expected_root,
+    Base token_commit,
+    Base balance_commit_x,
+    Base balance_commit_y,
     Base owner_secret,
     Base owner_pub,
     Base token_blind,
@@ -26,34 +31,41 @@ circuit "Balance" {
     DOMAIN_TOK_COMMIT = witness_base(2);
     DOMAIN_TX_BINDING = witness_base(3);
     DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_MERKLE_LEAF = witness_base(5);
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
 
-    # Purse ID binding
-    derived_purse_id = poseidon_hash(DOMAIN_COIN_COMMIT, owner_pub, token_id, purse_id);
+    # Purse ID binding — circuit computes, constrains against caller-provided
+    dp_circuit = poseidon_hash(DOMAIN_COIN_COMMIT, owner_pub, token_id, purse_id);
+    constrain_equal_base(dp_circuit, derived_purse_id);
     constrain_instance(derived_purse_id);
 
-    # Ownership proof — Poseidon-based
+    # Ownership
     derived_owner = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret);
     constrain_equal_base(derived_owner, owner_pub);
 
-    # Merkle inclusion of current purse state
-    purse_leaf = poseidon_hash(DOMAIN_SIGNATURE_SECRET, purse_id, balance, state_nonce);
+    # Merkle inclusion
+    purse_leaf = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, balance, state_nonce);
     root = merkle_root(leaf_pos, path, purse_leaf);
-    constrain_instance(root);
+    constrain_equal_base(root, expected_root);
+    constrain_instance(expected_root);
 
     # Pedersen balance commitment
     bvcv = ec_mul_short(balance, VALUE_COMMIT_VALUE);
     bvcr = ec_mul(balance_blind, VALUE_COMMIT_RANDOM);
     balance_commit = ec_add(bvcv, bvcr);
-    constrain_instance(ec_get_x(balance_commit));
-    constrain_instance(ec_get_y(balance_commit));
+    constrain_equal_base(ec_get_x(balance_commit), balance_commit_x);
+    constrain_instance(balance_commit_x);
+    constrain_equal_base(ec_get_y(balance_commit), balance_commit_y);
+    constrain_instance(balance_commit_y);
 
-    # Token commitment
-    token_commit = poseidon_hash(DOMAIN_TOK_COMMIT, token_id, token_blind);
+    # Token commitment — circuit computes, constrains against caller-provided
+    tc_circuit = poseidon_hash(DOMAIN_TOK_COMMIT, token_id, token_blind);
+    constrain_equal_base(tc_circuit, token_commit);
     constrain_instance(token_commit);
 
     # Transaction binding
-    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    tb_circuit = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_equal_base(tb_circuit, tx_binding);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
 

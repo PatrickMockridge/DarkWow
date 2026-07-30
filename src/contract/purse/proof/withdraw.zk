@@ -15,6 +15,13 @@ witness "Withdraw" {
     Base new_balance,
     Scalar new_balance_blind,
     Base state_nonce,
+    Base nullifier,
+    Base expected_root,
+    Base new_leaf,
+    Base old_commit_x,
+    Base old_commit_y,
+    Base new_commit_x,
+    Base new_commit_y,
     Base owner_secret,
     Base owner_pub,
     Uint32 leaf_pos,
@@ -27,49 +34,68 @@ witness "Withdraw" {
 circuit "Withdraw" {
     DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_MERKLE_LEAF = witness_base(5);
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
-
     ZERO = witness_base(0);
     ONE = witness_base(1);
 
-    # Ownership proof — Poseidon-based
+    # Ownership
     derived_owner = poseidon_hash(DOMAIN_SIGNATURE_SECRET, owner_secret);
     constrain_equal_base(derived_owner, owner_pub);
 
-    # Withdrawal amount bounds
+    # Withdrawal bounds
     less_than_strict(ZERO, withdraw_amount);
-    is_within_balance = less_than_or_equal(withdraw_amount, old_balance);
-    constrain_equal_base(is_within_balance, ONE);
+    is_within = less_than_or_equal(withdraw_amount, old_balance);
+    constrain_equal_base(is_within, ONE);
 
-    # Nullifier for current state
-    nullifier = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, purse_id, state_nonce);
+    # Nullifier
+    nf_circuit = poseidon_hash(DOMAIN_NULLIFIER, owner_secret, purse_id, state_nonce);
+    constrain_equal_base(nf_circuit, nullifier);
     constrain_instance(nullifier);
 
-    # Merkle inclusion of old purse state
-    purse_leaf_old = poseidon_hash(DOMAIN_SIGNATURE_SECRET, purse_id, old_balance, state_nonce);
-    root = merkle_root(leaf_pos, path, purse_leaf_old);
-    constrain_instance(root);
+    # Merkle inclusion of OLD state
+    old_leaf = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, old_balance, state_nonce);
+    root = merkle_root(leaf_pos, path, old_leaf);
+    constrain_equal_base(root, expected_root);
+    constrain_instance(expected_root);
 
-    # Pedersen balance conservation
+    # Pedersen balance conservation: old_commit == new_commit + withdraw_commit
     old_vcv = ec_mul_short(old_balance, VALUE_COMMIT_VALUE);
     old_vcr = ec_mul(old_balance_blind, VALUE_COMMIT_RANDOM);
     old_commit = ec_add(old_vcv, old_vcr);
     new_vcv = ec_mul_short(new_balance, VALUE_COMMIT_VALUE);
     new_vcr = ec_mul(new_balance_blind, VALUE_COMMIT_RANDOM);
     new_commit = ec_add(new_vcv, new_vcr);
+    wdr_vcv = ec_mul_short(withdraw_amount, VALUE_COMMIT_VALUE);
+    wdr_vcr = ec_mul(withdraw_blind, VALUE_COMMIT_RANDOM);
+    withdraw_commit = ec_add(wdr_vcv, wdr_vcr);
+    reconstructed = ec_add(new_commit, withdraw_commit);
+    constrain_equal_point(reconstructed, old_commit);
+
+    # Pedersen coordinates — caller-provided
+    constrain_equal_base(ec_get_x(old_commit), old_commit_x);
+    constrain_instance(old_commit_x);
+    constrain_equal_base(ec_get_y(old_commit), old_commit_y);
+    constrain_instance(old_commit_y);
+    constrain_equal_base(ec_get_x(new_commit), new_commit_x);
+    constrain_instance(new_commit_x);
+    constrain_equal_base(ec_get_y(new_commit), new_commit_y);
+    constrain_instance(new_commit_y);
+
+    # Integer subtraction check
     computed_new = base_sub(old_balance, withdraw_amount);
     constrain_equal_base(computed_new, new_balance);
 
-    # Pedersen commitment public inputs
-    constrain_instance(ec_get_x(old_commit));
-    constrain_instance(ec_get_y(old_commit));
-    constrain_instance(ec_get_x(new_commit));
+    # NEW state
+    new_leaf_circuit = poseidon_hash(DOMAIN_MERKLE_LEAF, purse_id, new_balance, state_nonce);
+    constrain_equal_base(new_leaf_circuit, new_leaf);
+    constrain_instance(new_leaf);
 
     # Transaction binding
-    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    tb_circuit = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_equal_base(tb_circuit, tx_binding);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    constrain_instance(ec_get_y(new_commit));
 
     # Range proofs
     range_check(64, old_balance);
