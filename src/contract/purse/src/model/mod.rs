@@ -56,14 +56,19 @@ impl StateNonce {
     pub fn from_repr(b: [u8; 32]) -> Option<Self> { pallas::Base::from_repr(b).into_option().map(Self) }
 }
 
+/// On-chain Purse representation (future schema).
+/// Not yet used by entrypoints — currently only exercised in integration tests.
+/// Encoded as 129 bytes: version(1) + purse_id(32) + token_commit(32) +
+/// balance_commit(32) + owner_commit(32).
+/// When wire-format usage begins, this doc comment must be removed.
 #[derive(Debug, Clone)] pub struct Purse { pub version: u8, pub purse_id: PurseId, pub token_commit: pallas::Base, pub balance_commit: pallas::Point, pub owner_commit: pallas::Base }
 impl Purse {
     pub const ENCODED_SIZE: usize = 129;
     pub fn encode(&self) -> Result<Vec<u8>, ContractError> { let mut b=Vec::with_capacity(129); b.push(self.version); b.extend_from_slice(&self.purse_id.to_bytes()); b.extend_from_slice(&self.token_commit.to_repr()); b.extend_from_slice(&self.balance_commit.to_bytes()); b.extend_from_slice(&self.owner_commit.to_repr()); Ok(b) }
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len()!=129 { return Err(ContractError::IoError(format!("Purse: expected 129 bytes, got {}", data.len()))); } Ok(Purse{version:data[0],purse_id:PurseId::decode(&data[1..33])?,token_commit:Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().unwrap())).ok_or_else(||ContractError::IoError("Purse: invalid token_commit".into()))?,balance_commit:Option::<pallas::Point>::from(pallas::Point::from_bytes(data[65..97].try_into().unwrap())).ok_or_else(||ContractError::IoError("Purse: invalid balance_commit".into()))?,owner_commit:Option::<pallas::Base>::from(pallas::Base::from_repr(data[97..129].try_into().unwrap())).ok_or_else(||ContractError::IoError("Purse: invalid owner_commit".into()))?}) }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len()!=129 { return Err(ContractError::IoError(format!("Purse: expected 129 bytes, got {}", data.len()))); } Ok(Purse{version:data[0],purse_id:PurseId::decode(&data[1..33])?,token_commit:Option::<pallas::Base>::from(pallas::Base::from_repr(data[33..65].try_into().map_err(|_|ContractError::IoError("Purse: token_commit slice".into()))?)).ok_or_else(||ContractError::IoError("Purse: invalid token_commit".into()))?,balance_commit:Option::<pallas::Point>::from(pallas::Point::from_bytes(data[65..97].try_into().map_err(|_|ContractError::IoError("Purse: balance_commit slice".into()))?)).ok_or_else(||ContractError::IoError("Purse: invalid balance_commit".into()))?,owner_commit:Option::<pallas::Base>::from(pallas::Base::from_repr(data[97..129].try_into().map_err(|_|ContractError::IoError("Purse: owner_commit slice".into()))?)).ok_or_else(||ContractError::IoError("Purse: invalid owner_commit".into()))?}) }
 }
 
-fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { if data.len()!=32 { return Err(ContractError::IoError(format!("read_base: expected 32 bytes, got {}", data.len()))); } Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().unwrap())).ok_or_else(||ContractError::IoError("invalid base".into())) }
+fn read_base(data: &[u8]) -> Result<pallas::Base, ContractError> { if data.len()!=32 { return Err(ContractError::IoError(format!("read_base: expected 32 bytes, got {}", data.len()))); } Option::<pallas::Base>::from(pallas::Base::from_repr(data.try_into().map_err(|_|ContractError::IoError("read_base: slice conversion failed".into()))?)).ok_or_else(||ContractError::IoError("invalid base".into())) }
 type MerklePath = [MerkleNode; 32];
 
 // ============================================================================
@@ -130,6 +135,11 @@ impl DepositUpdate { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { le
     pub leaf_pos: MerklePosition, pub merkle_path: MerklePath, pub proof: Vec<u8>, pub tx_binding: pallas::Base, pub tx_nonce: pallas::Base,
 }
 
+// WithdrawParams shares DepositParams' wire format (hdr=316).
+// encode/decode delegates to DepositParams with withdraw_amount aliased as
+// deposit_amount. This is intentional — the two operations have identical
+// payload layout. If DepositParams' encoding changes, verify WithdrawParams
+// round-trip tests in tests/integration.rs still pass.
 impl WithdrawParams { pub fn encode(&self) -> Result<Vec<u8>, ContractError> { DepositParams{purse_id:self.purse_id,old_balance:self.old_balance,deposit_amount:self.withdraw_amount,new_balance:self.new_balance,state_nonce:self.state_nonce,nullifier:self.nullifier,expected_root:self.expected_root,new_leaf:self.new_leaf,old_commit_x:self.old_commit_x,old_commit_y:self.old_commit_y,new_commit_x:self.new_commit_x,new_commit_y:self.new_commit_y,leaf_pos:self.leaf_pos,merkle_path:self.merkle_path,proof:self.proof.clone(),tx_binding:self.tx_binding,tx_nonce:self.tx_nonce}.encode() } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { let dp = DepositParams::decode(data)?; Ok(WithdrawParams{purse_id:dp.purse_id,old_balance:dp.old_balance,withdraw_amount:dp.deposit_amount,new_balance:dp.new_balance,state_nonce:dp.state_nonce,nullifier:dp.nullifier,expected_root:dp.expected_root,new_leaf:dp.new_leaf,old_commit_x:dp.old_commit_x,old_commit_y:dp.old_commit_y,new_commit_x:dp.new_commit_x,new_commit_y:dp.new_commit_y,leaf_pos:dp.leaf_pos,merkle_path:dp.merkle_path,proof:dp.proof,tx_binding:dp.tx_binding,tx_nonce:dp.tx_nonce}) } }
 impl dwow_serial::Encodable for WithdrawParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = DepositParams{purse_id:self.purse_id,old_balance:self.old_balance,deposit_amount:self.withdraw_amount,new_balance:self.new_balance,state_nonce:self.state_nonce,nullifier:self.nullifier,expected_root:self.expected_root,new_leaf:self.new_leaf,old_commit_x:self.old_commit_x,old_commit_y:self.old_commit_y,new_commit_x:self.new_commit_x,new_commit_y:self.new_commit_y,leaf_pos:self.leaf_pos,merkle_path:self.merkle_path,proof:self.proof.clone(),tx_binding:self.tx_binding,tx_nonce:self.tx_nonce}.encode().map_err(|e| std::io::Error::other(format!("{e}")))?; w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for WithdrawParams { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }

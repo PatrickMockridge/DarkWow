@@ -66,13 +66,16 @@ impl PurseHarness {
 
     pub fn withdraw(&self, amount: u64) -> Result<PurseWithdrawResult> {
         let dnl=pallas::Base::from(1u64);let dtb=pallas::Base::from(3u64);let dml=pallas::Base::from(5u64);let dss=pallas::Base::from(7u64);
-        let os=pallas::Base::from(42u64);let op=poseidon_hash([dss,os]);let pid=pallas::Base::from(1u64);
-        let sn=pallas::Base::from(1u64);let ob:u64=100;let nb:u64=ob-amount;let tc=pallas::Base::from(200u64);let tn=pallas::Base::from(300u64);
+        // os=43 (not 42): distinct from deposit so nullifier hash(1,os,pid,sn) is unique
+        // sn=0: matches deposit's output nonce so ol=hash(5,1,100,0)=deposit's nl
+        let os=pallas::Base::from(43u64);let op=poseidon_hash([dss,os]);let pid=pallas::Base::from(1u64);
+        let sn=pallas::Base::zero();let ob:u64=100;let nb:u64=ob-amount;let tc=pallas::Base::from(200u64);let tn=pallas::Base::from(300u64);
         let nf=poseidon_hash([dnl,os,pid,sn]);let tb=poseidon_hash([dtb,tc,tn]);
         let nl=poseidon_hash([dml,pid,pallas::Base::from(nb),sn]);let ol=poseidon_hash([dml,pid,pallas::Base::from(ob),sn]);
         let (lp,p,root)=Self::build_root(ol);
         let er_base: pallas::Base = root.inner();
-        let obl=ScalarBlind::from(1u64);let wbl=ScalarBlind::from(2u64);let nbl=ScalarBlind::from(3u64);
+        // obl=5: Pedersen blind balance: obl = nbl + wbl (5 = 3 + 2)
+        let obl=ScalarBlind::from(5u64);let wbl=ScalarBlind::from(2u64);let nbl=ScalarBlind::from(3u64);
         let oc=pedersen_commitment_u64(ob,obl.clone());let nc=pedersen_commitment_u64(nb,nbl.clone());
         let (ocx,ocy)=Self::coords(oc);let (ncx,ncy)=Self::coords(nc);
         let w=vec![Witness::Base(Value::known(pid)),Witness::Base(Value::known(pallas::Base::from(ob))),Witness::Scalar(Value::known(obl.inner())),Witness::Base(Value::known(pallas::Base::from(amount))),Witness::Scalar(Value::known(wbl.inner())),Witness::Base(Value::known(pallas::Base::from(nb))),Witness::Scalar(Value::known(nbl.inner())),Witness::Base(Value::known(sn)),Witness::Base(Value::known(nf)),Witness::Base(Value::known(er_base)),Witness::Base(Value::known(nl)),Witness::Base(Value::known(ocx)),Witness::Base(Value::known(ocy)),Witness::Base(Value::known(ncx)),Witness::Base(Value::known(ncy)),Witness::Base(Value::known(os)),Witness::Base(Value::known(op)),Witness::Uint32(Value::known(lp)),Witness::MerklePath(Value::known(p.clone().try_into().map_err(|_| dwow_core::Error::Custom("path".into()))?)),Witness::Base(Value::known(tc)),Witness::Base(Value::known(tn)),Witness::Base(Value::known(tb))];

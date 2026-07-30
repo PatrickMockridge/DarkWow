@@ -1,3 +1,9 @@
+# Circuit design note:
+# state_nonce is shared across old_leaf, new_leaf, and nullifier.
+# This means the nonce stays constant within a single operation.
+# Multi-operation chaining (Deposit→Withdraw) requires distinct
+# owner_secret values per operation for unique nullifiers.
+# See harness withdraw() — os=43 (vs deposit os=42) for test chaining.
 k = 11;
 field = "pallas";
 
