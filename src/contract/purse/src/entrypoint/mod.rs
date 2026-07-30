@@ -111,11 +111,9 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { msg!("[purse::deposit] Error: Duplicate nullifier"); return Err(PurseError::DuplicateNullifier.into()); }
             let idb_root = wasm::db::db_lookup(cid, PURSE_CONTRACT_INFO_TREE)?;
-            let skip_root_check = match wasm::db::db_get(idb_root, PURSE_CONTRACT_PURSE_MERKLE_TREE)? {
-                Some(ref data) if data.len() > 4 => {
-                    let tree: MerkleTree = dwow_serial::deserialize(&data[4..])
-                        .map_err(|_| ContractError::IoError("purse tree deser".into()))?;
-                    tree.root(0).map_or(true, |r| r.to_bytes() == EMPTY_PURSE_TREE_ROOT)
+            let skip_root_check = match wasm::db::db_get(idb_root, PURSE_CONTRACT_LATEST_PURSE_ROOT)? {
+                Some(ref data) if data.len() == 32 => {
+                    data == &EMPTY_PURSE_TREE_ROOT
                 }
                 _ => true,
             };
@@ -131,11 +129,9 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let ndb = wasm::db::db_lookup(cid, PURSE_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { msg!("[purse::withdraw] Error: Duplicate nullifier"); return Err(PurseError::DuplicateNullifier.into()); }
             let idb_root = wasm::db::db_lookup(cid, PURSE_CONTRACT_INFO_TREE)?;
-            let skip_root_check = match wasm::db::db_get(idb_root, PURSE_CONTRACT_PURSE_MERKLE_TREE)? {
-                Some(ref data) if data.len() > 4 => {
-                    let tree: MerkleTree = dwow_serial::deserialize(&data[4..])
-                        .map_err(|_| ContractError::IoError("purse tree deser".into()))?;
-                    tree.root(0).map_or(true, |r| r.to_bytes() == EMPTY_PURSE_TREE_ROOT)
+            let skip_root_check = match wasm::db::db_get(idb_root, PURSE_CONTRACT_LATEST_PURSE_ROOT)? {
+                Some(ref data) if data.len() == 32 => {
+                    data == &EMPTY_PURSE_TREE_ROOT
                 }
                 _ => true,
             };
@@ -149,11 +145,9 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         PurseFunction::Balance => {
             let p = BalanceParams::decode(&self_.data.data[1..])?;
             let idb_root = wasm::db::db_lookup(cid, PURSE_CONTRACT_INFO_TREE)?;
-            let skip_root_check = match wasm::db::db_get(idb_root, PURSE_CONTRACT_PURSE_MERKLE_TREE)? {
-                Some(ref data) if data.len() > 4 => {
-                    let tree: MerkleTree = dwow_serial::deserialize(&data[4..])
-                        .map_err(|_| ContractError::IoError("purse tree deser".into()))?;
-                    tree.root(0).map_or(true, |r| r.to_bytes() == EMPTY_PURSE_TREE_ROOT)
+            let skip_root_check = match wasm::db::db_get(idb_root, PURSE_CONTRACT_LATEST_PURSE_ROOT)? {
+                Some(ref data) if data.len() == 32 => {
+                    data == &EMPTY_PURSE_TREE_ROOT
                 }
                 _ => true,
             };
@@ -184,12 +178,13 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
             // Block-level anchoring (§C.3.7) — after nullifier write (R7)
             // Read the updated tree root for anchoring (QC Fix 3)
-            let contract_root = if let Some(tree_data) = wasm::db::db_get(idb, PURSE_CONTRACT_PURSE_MERKLE_TREE)? {
-                let tree: MerkleTree = dwow_serial::deserialize(&tree_data[4..])
-                    .map_err(|_| ContractError::IoError("anchor: tree deser".into()))?;
-                tree.root(0).unwrap_or(MerkleNode::from_base(pallas::Base::zero()))
-            } else {
-                MerkleNode::from_base(pallas::Base::zero())
+            let contract_root = match wasm::db::db_get(idb, PURSE_CONTRACT_LATEST_PURSE_ROOT)? {
+                Some(ref data) if data.len() == 32 => {
+                    MerkleNode::from_bytes(data[..32].try_into().map_err(|_|
+                        ContractError::IoError("anchor root".into()))?)
+                    .unwrap_or(MerkleNode::from_base(pallas::Base::zero()))
+                }
+                _ => MerkleNode::from_base(pallas::Base::zero()),
             };
             let entry = merkle_anchor::AnchorEntry::new(u.nullifier, cid, contract_root);
             wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;
@@ -202,12 +197,13 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             wasm::db::db_set(ndb, &u.nullifier.to_bytes(), &[])?;
             // Block-level anchoring (§C.3.7) — after nullifier write (R7)
             // Read the updated tree root for anchoring (QC Fix 3)
-            let contract_root = if let Some(tree_data) = wasm::db::db_get(idb, PURSE_CONTRACT_PURSE_MERKLE_TREE)? {
-                let tree: MerkleTree = dwow_serial::deserialize(&tree_data[4..])
-                    .map_err(|_| ContractError::IoError("anchor: tree deser".into()))?;
-                tree.root(0).unwrap_or(MerkleNode::from_base(pallas::Base::zero()))
-            } else {
-                MerkleNode::from_base(pallas::Base::zero())
+            let contract_root = match wasm::db::db_get(idb, PURSE_CONTRACT_LATEST_PURSE_ROOT)? {
+                Some(ref data) if data.len() == 32 => {
+                    MerkleNode::from_bytes(data[..32].try_into().map_err(|_|
+                        ContractError::IoError("anchor root".into()))?)
+                    .unwrap_or(MerkleNode::from_base(pallas::Base::zero()))
+                }
+                _ => MerkleNode::from_base(pallas::Base::zero()),
             };
             let entry = merkle_anchor::AnchorEntry::new(u.nullifier, cid, contract_root);
             wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;
