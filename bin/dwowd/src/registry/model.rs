@@ -649,7 +649,7 @@ pub async fn generate_linear_block_template(
         ).await?;
 
         let coin_merkle_root = chain_state.compute_root_including_coin(&coinbase.coin);
-        let nullifier_root = chain_state.compute_nullifier_root();
+        let nullifier_root = chain_state.block_anchor_root();
 
         return Ok(LinearBlockTemplate {
             previous: previous_hash,

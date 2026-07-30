@@ -89,8 +89,20 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let p = PutParams::decode(&self_.data.data[1..])?; msg!("[box::put] Put");
             let ndb = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { msg!("[box::put] Error: Duplicate nullifier"); return Err(BoxError::DuplicateNullifier.into()); }
-            let rdb = wasm::db::db_lookup(cid, BOX_CONTRACT_BOX_ROOTS_TREE)?;
-            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[box::put] Error: Invalid Merkle root"); return Err(BoxError::InvalidMerkleRoot.into()); }
+            // Root check: skip when tree has only the ZERO genesis leaf (first operation self-populates)
+            let idb_root = wasm::db::db_lookup(cid, BOX_CONTRACT_INFO_TREE)?;
+            let skip_root_check = match wasm::db::db_get(idb_root, BOX_CONTRACT_BOX_MERKLE_TREE)? {
+                Some(ref data) if data.len() > 4 => {
+                    let tree: MerkleTree = dwow_serial::deserialize(&data[4..])
+                        .map_err(|_| ContractError::IoError("box tree deser".into()))?;
+                    tree.root(0).map_or(true, |r| r.to_bytes() == EMPTY_BOX_TREE_ROOT)
+                }
+                _ => true,
+            };
+            if !skip_root_check {
+                let rdb = wasm::db::db_lookup(cid, BOX_CONTRACT_BOX_ROOTS_TREE)?;
+                if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[box::put] Error: Invalid Merkle root"); return Err(BoxError::InvalidMerkleRoot.into()); }
+            }
             let u = PutUpdate { nullifier: p.nullifier, new_leaf: p.new_leaf };
             wasm::util::set_return_data(&[&[func_tag(func)], &u.encode()?[..]].concat())?;
         }
@@ -98,8 +110,19 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let p = TakeParams::decode(&self_.data.data[1..])?; msg!("[box::take] Take");
             let ndb = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(ndb, &p.nullifier.to_bytes())? { msg!("[box::take] Error: Duplicate nullifier"); return Err(BoxError::DuplicateNullifier.into()); }
-            let rdb = wasm::db::db_lookup(cid, BOX_CONTRACT_BOX_ROOTS_TREE)?;
-            if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[box::take] Error: Invalid Merkle root"); return Err(BoxError::InvalidMerkleRoot.into()); }
+            let idb_root = wasm::db::db_lookup(cid, BOX_CONTRACT_INFO_TREE)?;
+            let skip_root_check = match wasm::db::db_get(idb_root, BOX_CONTRACT_BOX_MERKLE_TREE)? {
+                Some(ref data) if data.len() > 4 => {
+                    let tree: MerkleTree = dwow_serial::deserialize(&data[4..])
+                        .map_err(|_| ContractError::IoError("box tree deser".into()))?;
+                    tree.root(0).map_or(true, |r| r.to_bytes() == EMPTY_BOX_TREE_ROOT)
+                }
+                _ => true,
+            };
+            if !skip_root_check {
+                let rdb = wasm::db::db_lookup(cid, BOX_CONTRACT_BOX_ROOTS_TREE)?;
+                if !wasm::db::db_contains_key(rdb, &p.expected_root.to_bytes())? { msg!("[box::take] Error: Invalid Merkle root"); return Err(BoxError::InvalidMerkleRoot.into()); }
+            }
             let u = TakeUpdate { nullifier: p.nullifier };
             wasm::util::set_return_data(&[&[func_tag(func)], &u.encode()?[..]].concat())?;
         }
