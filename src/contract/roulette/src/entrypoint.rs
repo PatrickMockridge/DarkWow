@@ -91,14 +91,17 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         RouletteFunction::PlaceBetV1 => {
-            // PlaceBet_V1 circuit has no constrain_instance calls — it only
-            // verifies internal constraints (bet_id and nullifier derivation).
-            // Return namespace with empty public inputs so the host still
-            // verifies the proof.
+            // HAZOP C-9 fix: expose table_id and amount as public inputs.
+            // bet_id and nullifier are derived in-circuit from params; to
+            // expose them here we'd need to replicate the circuit's derivation
+            // of nonce from instance_seed + spin_count + block_height.
+            // TODO: replicate full circuit derivation for bet_id + nullifier.
+            let params = PlaceBetParamsV1::decode(&self_.data[1..])?;
+            let (pk_x, pk_y) = params.player_pub.xy().unwrap_or((pallas::Base::zero(), pallas::Base::zero()));
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::ROULETTE_CONTRACT_ZKAS_PLACE_BET_NS_V2.to_string(),
-                vec![],
+                vec![params.table_id, pk_x, pk_y, pallas::Base::from(params.amount)],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;

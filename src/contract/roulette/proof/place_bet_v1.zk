@@ -28,8 +28,21 @@ circuit "PlaceBet_V1" {
 
     # Verify nullifier
     derived_nullifier = poseidon_hash(bet_id, nonce);
+    constrain_equal_base(derived_nullifier, nullifier);
+
+    # Transaction binding
     tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+
+    # HAZOP C-9 fix: expose application-level values as public inputs.
+    # table_id, player_pub_x/y, and amount are the raw inputs; bet_id and
+    # nullifier are derived in-circuit and constrained internally. The
+    # verifier can now check which table, player, and amount the proof is for.
+    # TODO: expose bet_id and nullifier once metadata can replicate circuit
+    # derivation (requires computing nonce from instance_seed + spin_count).
+    constrain_instance(table_id);
+    constrain_instance(player_pub_x);
+    constrain_instance(player_pub_y);
+    constrain_instance(amount);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    constrain_equal_base(derived_nullifier, nullifier);
 }
