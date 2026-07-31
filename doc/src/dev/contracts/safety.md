@@ -678,7 +678,7 @@ Two transactions spending the same coin in the same block both pass their exec-p
 
 The mempool only deduplicates by exact transaction hash — two different transactions spending the same nullifier are not detected as conflicting.
 
-**Status (2026-06-05)**: Documented with a TODO for key-conflict detection in the merge phase. The full fix requires either: (a) semantic nullifier deduplication in the mempool, (b) key-conflict detection in the merge phase (reject blocks with conflicting diffs), or (c) a shared-overlay execution model. This is deferred pending sled_overlay API access for key iteration in diffs.
+**Status (2026-07-31)**: Resolved. The execution pipeline now uses a shared overlay model for canonical calls (call N+1 sees call N's nullifier spend). Uncle-vs-uncle key conflict detection is in place. Deployooor write-key conflict detection is in place. The mempool performs nullifier deduplication at admission time (BTreeSet-based, with chain-state consultation and sled persistence).
 
 **The principle**: **Isolated execution overlays are correct only when combined with conflict detection at merge time.** If every call sees an independent pre-block state, two calls can both "succeed" while making conflicting state changes. The merge phase must detect and reject these conflicts — silent overwrite is not safe for value-bearing state.
 
@@ -821,13 +821,13 @@ The HAZOP examined each circuit through the lens of the ρ-calculus type system:
 
 ### Root Cause Summary
 
-| RC | Class | Circuits | Exploitability | Mechanism |
-|----|-------|----------|----------------|-----------|
-| **RC1** | Witness Non-Binding | 21 circuits | CRITICAL | `constrain_instance` on unconstrained witnesses; `bool_check` on u64 amounts; missing `range_check` |
-| **RC2** | Vacuous Proof Acceptance | 6 circuits | CRITICAL | `zero_cond` feeds `merkle_root` without `less_than_strict(ZERO, value)` guard |
-| **RC3** | Missing Domain Separation | 177 circuits | MEDIUM-HIGH | `poseidon_hash` type erasure — nullifier hash indistinguishable from commitment hash |
-| **RC4** | Arithmetic Domain Confusion | 8 circuits | HIGH | `base_div` (field division via Fermat) applied to u64 integer division |
-| **RC5** | Fix Propagation Failure | 2 circuits | CRITICAL | Copied circuits lack provenance tracking — fixes to origin not propagated to derivatives |
+| RC | Class | Circuits | Exploitability | Mechanism | Remediation Status |
+|----|-------|----------|----------------|-----------|-------------------|
+| **RC1** | Witness Non-Binding | 21 circuits | CRITICAL | `constrain_instance` on unconstrained witnesses; `bool_check` on u64 amounts; missing `range_check` | **Fixed (2026-07-31)** — all 21 circuits; Lean4-verified |
+| **RC2** | Vacuous Proof Acceptance | 6 circuits | CRITICAL | `zero_cond` feeds `merkle_root` without `less_than_strict(ZERO, value)` guard | **Fixed (2026-07-31)** — guards on all 6 circuits |
+| **RC3** | Missing Domain Separation | ~150 V1 remaining | MEDIUM-HIGH | `poseidon_hash` type erasure — nullifier hash indistinguishable from commitment hash | **Partial** — V2 circuits exist for all; CI gate active; bridge + labor_market fully V2; ~150 mechanical migrations remain |
+| **RC4** | Arithmetic Domain Confusion | 8 circuits | HIGH | `base_div` (field division via Fermat) applied to u64 integer division | **Fixed (2026-07-31)** |
+| **RC5** | Fix Propagation Failure | 2 circuits | CRITICAL | Copied circuits lack provenance tracking — fixes to origin not propagated to derivatives | **Fixed (2026-07-31)** — bearer_bond domain fixes propagated |
 
 ### Finding RC1: Witness Non-Binding
 
