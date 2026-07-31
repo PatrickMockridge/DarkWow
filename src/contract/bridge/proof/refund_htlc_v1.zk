@@ -1,0 +1,37 @@
+# Bridge RefundHtlcV1 Circuit — proves refund requester is the original HTLC creator.
+# HAZOP WP-BRIDGE-4: caller must prove they know the sender secret.
+k = 11;
+field = "pallas";
+
+constant "RefundHtlcV1" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "RefundHtlcV1" {
+    Base swap_id,
+    Base sender_secret,
+    Base sender_pub_x,
+    Base sender_pub_y,
+    Base timelock_height,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+
+circuit "RefundHtlcV1" {
+    # Prove sender identity: sender_pub = secret * K
+    sender_pub = ec_mul_base(sender_secret, NULLIFIER_K);
+    derived_pub_x = ec_get_x(sender_pub);
+    derived_pub_y = ec_get_y(sender_pub);
+    constrain_equal_base(derived_pub_x, sender_pub_x);
+    constrain_equal_base(derived_pub_y, sender_pub_y);
+
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+
+    constrain_instance(swap_id);
+    constrain_instance(sender_pub_x);
+    constrain_instance(sender_pub_y);
+    constrain_instance(timelock_height);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+}

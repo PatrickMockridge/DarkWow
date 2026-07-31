@@ -1398,7 +1398,14 @@ fn apply_cancel_withdraw_update(cid: ContractId, update: CancelWithdrawUpdateV1)
     pending.cancelled = true;
     wasm::db::db_set(pending_db, &pending_key, &pending.encode())?;
 
-    msg!("[bridge::apply_update] Withdrawal cancelled: nullifier={:?}", update.nullifier);
+    // HAZOP-05 fix: restore the nullifier on cancellation.
+    // Without this, the deposit is permanently locked — the nullifier was spent
+    // by the withdrawal, but cancellation means the withdrawal never completed.
+    // Removing the nullifier allows the deposit to be withdrawn again.
+    let nullifiers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_NULLIFIERS_TREE)?;
+    wasm::db::db_del(nullifiers_db, &update.nullifier.to_bytes())?;
+
+    msg!("[bridge::apply_update] Withdrawal cancelled: nullifier={:?} (nullifier restored for re-use)", update.nullifier);
     Ok(())
 }
 
