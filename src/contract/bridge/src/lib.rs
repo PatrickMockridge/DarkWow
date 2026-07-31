@@ -125,6 +125,10 @@ pub const BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V2: &str = "DepositV2";
 pub const BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V2: &str = "WithdrawV2";
 /// zkas update config circuit namespace V2 (domain-separated)
 pub const BRIDGE_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2: &str = "UpdateConfigV2";
+/// zkas claim HTLC circuit namespace V1
+pub const BRIDGE_CONTRACT_ZKAS_CLAIM_HTLC_NS_V1: &str = "ClaimHtlcV1";
+/// zkas cancel withdraw circuit namespace V1
+pub const BRIDGE_CONTRACT_ZKAS_CANCEL_WITHDRAW_NS_V1: &str = "CancelWithdrawV1";
 
 // XMR (Monero) specific constants
 /// Number of block confirmations required for XMR deposits
