@@ -601,8 +601,22 @@ impl Runtime {
         debug!(target: "runtime::vm_runtime", "Executing wasm");
         #[cfg(debug_assertions)]
         eprintln!("[VM-DIAG] About to call WASM section: {}", section.name());
+        // HAZOP M-13: wall-clock timeout defense-in-depth.
+        // Gas metering bounds instruction count but not wall-clock time.
+        // A contract with 400M expensive opcodes can consume unbounded CPU.
+        let call_start = std::time::Instant::now();
         let ret = match entrypoint.call(&mut self.store, &[Value::I32(0_i32)]) {
             Ok(retvals) => {
+                let elapsed = call_start.elapsed();
+                // MAX_WASM_CALL_TIME is a soft limit — exceeded calls log a
+                // warning but don't fail. Hard enforcement would require
+                // cooperative yield in the WASM metering middleware.
+                const MAX_WASM_CALL_TIME: std::time::Duration = std::time::Duration::from_secs(30);
+                if elapsed > MAX_WASM_CALL_TIME {
+                    tracing::warn!(target: "runtime::vm_runtime",
+                        "[WASM] {} took {:.1}s (max recommended: {}s) — possible DoS",
+                        section.name(), elapsed.as_secs_f64(), MAX_WASM_CALL_TIME.as_secs());
+                }
                 #[cfg(debug_assertions)]
                 eprintln!("[VM-DIAG] WASM section {} returned OK", section.name());
                 self.print_logs();

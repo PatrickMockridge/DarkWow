@@ -1460,7 +1460,25 @@ fn apply_reassign_withdrawal_update(cid: ContractId, update: ReassignWithdrawalU
 }
 
 /// Apply configuration update
+/// HAZOP M-8 fix: governance-configurable values have sanity bounds to prevent
+/// DoS attacks (e.g., min_confirmations = u32::MAX blocking all deposits).
 fn apply_config_update(cid: ContractId, params: UpdateConfigParams) -> ContractResult {
+    // Sanity bounds on governance-configurable values
+    const MAX_CONFIRMATIONS: u32 = 10_000; // ~7 days at 60s blocks
+    const MAX_FEE: u64 = 1_000_000_000_000; // 1M DRKW — sanity cap
+
+    if params.min_confirmations > MAX_CONFIRMATIONS {
+        msg!("[bridge::process_update] Error: min_confirmations {} exceeds max {}",
+            params.min_confirmations, MAX_CONFIRMATIONS);
+        return Err(BridgeError::InvalidDeposit("min_confirmations too high".into()).into());
+    }
+    if params.deposit_fee > MAX_FEE {
+        return Err(BridgeError::InvalidDeposit("deposit_fee too high".into()).into());
+    }
+    if params.withdrawal_fee > MAX_FEE {
+        return Err(BridgeError::InvalidDeposit("withdrawal_fee too high".into()).into());
+    }
+
     let config_db = wasm::db::db_lookup(cid, "config")?;
 
     wasm::db::db_set(config_db, BRIDGE_DEPOSIT_FEE_KEY, &params.deposit_fee.to_le_bytes())?;

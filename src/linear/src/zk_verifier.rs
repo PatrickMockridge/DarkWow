@@ -208,6 +208,13 @@ pub fn verify_core_tx_with_tables(
             zkp_table.len(),
         )));
     }
+    // HAZOP H-16: proof-to-call index is enforced by the zip of proofs
+    // and zkp_table. A malicious witness that swaps proof ordering would
+    // cause verify_zkp to fail: each proof's VK is derived from the circuit
+    // bytecode keyed by (contract_id, namespace), and different circuits
+    // produce different VKs. Swapped proofs verify against wrong VKs → fail.
+    // load_zkbin additionally validates that the namespace exists in the
+    // contract's store — a swapped namespace would return Err.
     for (call_i, (proofs, call_zkp)) in core_tx
         .proofs
         .iter()
