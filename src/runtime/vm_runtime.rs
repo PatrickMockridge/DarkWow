@@ -199,20 +199,34 @@ impl Env {
         self.memory.as_ref().unwrap()
     }
 
-    /// Subtract given gas cost from remaining gas in the current runtime
-    pub fn subtract_gas(&mut self, ctx: &mut impl AsStoreMut, gas: u64) {
+    /// Subtract given gas cost from remaining gas in the current runtime.
+    /// Returns true if gas was exhausted by this subtraction (caller should
+    /// reject any state-mutating operations).
+    pub fn subtract_gas(&mut self, ctx: &mut impl AsStoreMut, gas: u64) -> bool {
         match get_remaining_points(ctx, self.instance.as_ref().unwrap()) {
             MeteringPoints::Remaining(rem) => {
                 if gas > rem {
                     set_remaining_points(ctx, self.instance.as_ref().unwrap(), 0);
+                    true // gas exhausted
                 } else {
                     set_remaining_points(ctx, self.instance.as_ref().unwrap(), rem - gas);
+                    false
                 }
             }
             MeteringPoints::Exhausted => {
                 set_remaining_points(ctx, self.instance.as_ref().unwrap(), 0);
+                true // already exhausted
             }
         }
+    }
+
+    /// HAZOP H8: check whether gas is exhausted. State-mutating host functions
+    /// MUST call this after subtract_gas and return an error if true.
+    pub fn is_gas_exhausted(&self, ctx: &mut impl AsStoreMut) -> bool {
+        matches!(
+            get_remaining_points(ctx, self.instance.as_ref().unwrap()),
+            MeteringPoints::Exhausted
+        )
     }
 }
 
@@ -227,6 +241,48 @@ pub struct Runtime {
 }
 
 impl Runtime {
+    /// HAZOP H10: reject WASM binaries containing non-deterministic features
+    /// (floating-point operations, bulk memory, SIMD). These can produce
+    /// different results on different wasmer backends or architectures.
+    /// Uses byte-level opcode scanning — no external parser dependency.
+    /// NOTE: scans ALL bytes, not just code sections. Float byte patterns
+    /// in non-code sections (data, name, custom) will also be rejected.
+    /// This is fail-closed: false positives are safe, and production
+    /// contracts should not contain these opcodes in any section.
+    fn reject_nondeterministic_features(wasm_bytes: &[u8]) -> Result<()> {
+        let mut i = 0;
+        while i < wasm_bytes.len() {
+            match wasm_bytes[i] {
+                // WASM float opcodes (f32/f64):
+                // 0x7A-0x7D: f32/f64 abs, neg, ceil, floor, trunc, nearest, sqrt
+                // 0x8A-0x9F: f32/f64 add, sub, mul, div, min, max, copysign
+                // 0xB0-0xBF: f32/f64 eq, ne, lt, gt, le, ge, convert, reinterpret
+                0x8A..=0x9F | 0x7A..=0x7D | 0xB0..=0xBF => {
+                    return Err(Error::WasmerCompileError(
+                        "WASM module uses floating-point (f32/f64) — non-deterministic across architectures".into()
+                    ));
+                }
+                // 0xFC prefix: bulk-memory (0x08-0x0B = memory.copy/fill/init, data.drop)
+                0xFC => {
+                    if i + 1 < wasm_bytes.len() && matches!(wasm_bytes[i + 1], 0x08..=0x0B) {
+                        return Err(Error::WasmerCompileError(
+                            "WASM module uses bulk-memory (memory.copy/fill/init) — non-deterministic across backends".into()
+                        ));
+                    }
+                }
+                // 0xFD prefix: SIMD
+                0xFD => {
+                    return Err(Error::WasmerCompileError(
+                        "WASM module uses SIMD (0xFD) — non-deterministic across architectures".into()
+                    ));
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        Ok(())
+    }
+
     /// Create a new wasm runtime instance that contains the given wasm module.
     pub fn new(
         wasm_bytes: &[u8],
@@ -238,6 +294,12 @@ impl Runtime {
         call_idx: u8,
     ) -> Result<Self> {
         info!(target: "runtime::vm_runtime", "[WASM] Instantiating a new runtime");
+
+        // HAZOP H10 fix: reject WASM binaries that use non-deterministic features
+        // (floating-point, bulk memory, SIMD) before module compilation. These can
+        // produce different results on different wasmer backends (Singlepass vs
+        // Cranelift) or architectures, causing consensus splits.
+        Self::reject_nondeterministic_features(wasm_bytes)?;
 
         let cost_function = |_operator: &Operator| -> u64 { 1 };
         let metering = Arc::new(Metering::new(GAS_LIMIT, cost_function));

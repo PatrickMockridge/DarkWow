@@ -84,15 +84,8 @@ impl TorDialer {
                     let arti_data = datadir.join("arti-data");
                     let arti_cache = datadir.join("arti-cache");
 
-                    // Reset arti folders.
-                    // We unwrap here so we panic in case of errors.
-                    if arti_data.exists() {
-                        remove_dir_all(&arti_data).unwrap();
-                    }
-                    if arti_cache.exists() {
-                        remove_dir_all(&arti_cache).unwrap();
-                    }
-
+                    // HAZOP H19 fix: do NOT delete arti state on startup.
+                    // Arti persists onion service keys internally.
                     let config = TorClientConfigBuilder::from_directories(arti_data, arti_cache)
                         .build()
                         .unwrap();
@@ -190,15 +183,8 @@ impl TorListener {
                     let arti_data = datadir.join("arti-data");
                     let arti_cache = datadir.join("arti-cache");
 
-                    // Reset arti folders.
-                    // We unwrap here so we panic in case of errors.
-                    if arti_data.exists() {
-                        remove_dir_all(&arti_data).unwrap();
-                    }
-                    if arti_cache.exists() {
-                        remove_dir_all(&arti_cache).unwrap();
-                    }
-
+                    // HAZOP H19 fix: do NOT delete arti state on startup.
+                    // Arti persists onion service keys internally.
                     let config = TorClientConfigBuilder::from_directories(arti_data, arti_cache)
                         .build()
                         .unwrap();

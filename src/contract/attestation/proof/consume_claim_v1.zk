@@ -6,12 +6,12 @@ field = "pallas";
 #
 # This circuit proves:
 # - Claimant knows their secret key
-# - Claim is verified and can be consumed
-# - Nullifier is correctly derived
+# - Nullifier is correctly derived from claim_id + claimant_secret
+#   (HAZOP C13 fix — previously a bare witness)
 #
 # Public Inputs (constrain_instance):
 #   - claim_id: The claim being consumed
-#   - nullifier: Nullifier to prevent replay
+#   - nullifier: poseidon_hash(DOMAIN_NULLIFIER, claim_id, claimant_secret)
 #
 # Witnesses:
 #   - claimant_secret: Claimant's secret key
@@ -24,7 +24,7 @@ witness "ConsumeClaim" {
     # The claim being consumed
     Base claim_id,
 
-    # Nullifier to prevent replay
+    # Nullifier to prevent replay (now derived in-circuit)
     Base nullifier,
 
     # Claimant's secret (for nullifier derivation)
@@ -39,6 +39,8 @@ witness "ConsumeClaim" {
 }
 
 circuit "ConsumeClaim" {
+    DOMAIN_NULLIFIER = witness_base(1);
+
     # ==========================================================================
     # PHASE 1: Derive claimant public key from secret
     # ==========================================================================
@@ -53,7 +55,16 @@ circuit "ConsumeClaim" {
     constrain_equal_base(derived_pub_y, claimant_pub_y);
 
     # ==========================================================================
-    # PHASE 2: Expose public inputs
+    # PHASE 2: Derive nullifier from claim_id + claimant_secret
+    # HAZOP C13 fix: previously a bare witness — prover could set arbitrary value.
+    # Now constrained: nullifier = poseidon_hash(DOMAIN_NULLIFIER, claim_id, claimant_secret)
+    # ==========================================================================
+
+    derived_nullifier = poseidon_hash(DOMAIN_NULLIFIER, claim_id, claimant_secret);
+    constrain_equal_base(derived_nullifier, nullifier);
+
+    # ==========================================================================
+    # PHASE 3: Expose public inputs
     # ==========================================================================
 
     constrain_instance(claim_id);
@@ -61,20 +72,7 @@ circuit "ConsumeClaim" {
     constrain_instance(claimant_pub_y);
     constrain_instance(nullifier);
 
-    # ==========================================================================
-    # SOUNDNESS NOTES
-    # ==========================================================================
-    #
-    # This circuit uses ONLY proven opcodes:
-    #   - ec_mul_base: standard EC operations
-    #   - ec_get_x, ec_get_y: standard EC operations
-    #   - constrain_equal_base: equality constraint
-    #   - constrain_instance: public input exposure
-    #
-    # The claim state (verified) is checked by the contract layer.
-    # The ZK proof establishes that the claimant knows their secret AND
     tx_binding = poseidon_hash(tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
-    # the secret corresponds to the claimant_pubkey.
 }

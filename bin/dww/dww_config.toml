@@ -21,7 +21,9 @@ cache_path = "~/.local/share/dwow/dww/localnet/cache"
 wallet_path = "~/.local/share/dwow/dww/localnet/wallet.db"
 
 # Password for the wallet database
-wallet_pass = "testpassword123"
+# HAZOP H12: do not hardcode wallet passwords. The wallet will prompt on first use.
+# Set via environment: export DWOW_WALLET_PASS=your_password
+# wallet_pass = "set-via-env-or-prompt"
 
 # dwowd JSON-RPC endpoint
 endpoint = "tcp://127.0.0.1:48345"
@@ -45,7 +47,9 @@ cache_path = "~/.local/share/dwow/dww/testnet/cache"
 wallet_path = "~/.local/share/dwow/dww/testnet/wallet.db"
 
 # Password for the wallet database
-wallet_pass = "testpassword123"
+# HAZOP H12: do not hardcode wallet passwords. The wallet will prompt on first use.
+# Set via environment: export DWOW_WALLET_PASS=your_password
+# wallet_pass = "set-via-env-or-prompt"
 
 # dwowd JSON-RPC endpoint
 endpoint = "tcp://127.0.0.1:18345"
@@ -76,7 +80,9 @@ cache_path = "~/.local/share/dwow/dww/darkwow-devnet/cache"
 wallet_path = "~/.local/share/dwow/dww/darkwow-devnet/wallet.db"
 
 # Password for the wallet database
-wallet_pass = "testpassword123"
+# HAZOP H12: do not hardcode wallet passwords. The wallet will prompt on first use.
+# Set via environment: export DWOW_WALLET_PASS=your_password
+# wallet_pass = "set-via-env-or-prompt"
 
 # dwowd JSON-RPC endpoint
 endpoint = "tcp://127.0.0.1:28345"
@@ -100,7 +106,9 @@ cache_path = "~/.local/share/dwow/dww/darkwow-testnet/cache"
 wallet_path = "~/.local/share/dwow/dww/darkwow-testnet/wallet.db"
 
 # Password for the wallet database
-wallet_pass = "testpassword123"
+# HAZOP H12: do not hardcode wallet passwords. The wallet will prompt on first use.
+# Set via environment: export DWOW_WALLET_PASS=your_password
+# wallet_pass = "set-via-env-or-prompt"
 
 # dwowd JSON-RPC endpoint (for tx broadcast, fee lookup, ZKAS lookup)
 # Block sync uses P2P via the net section below

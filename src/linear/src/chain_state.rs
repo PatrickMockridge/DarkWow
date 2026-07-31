@@ -155,13 +155,45 @@ impl CChainState {
         let _ = consensus.load(store.consensus_tree());
         // Restore accumulated chain work from sled (survives restarts).
         // Phase 1d: widened to u128 per M1 fix.
+        let mut sled_work: Option<u128> = None;
         if let Some(work_bytes) = store.consensus.get("accumulated_work").ok().flatten() {
             if work_bytes.len() == 16 {
                 let work = u128::from_le_bytes(work_bytes[..16].try_into().unwrap_or([0u8; 16]));
-                consensus.accumulated_work.store(work);
+                sled_work = Some(work);
             }
         }
+
         let height = store.get_height().unwrap_or(BlockHeight::new(0));
+
+        // HAZOP H7 fix: recompute accumulated work from chain data on startup
+        // and validate against the sled-cached value. If they disagree, the
+        // chain-recomputed value is authoritative and the sled cache is corrected.
+        let mut computed_work: u128 = 0;
+        for h in 1..=height.get() {
+            if let Ok(block) = store.get_block(BlockHeight::new(h)) {
+                // Work contributed = 2^32 / target (standard Bitcoin formula)
+                let target = block.header.target.get().max(1);
+                computed_work = computed_work.saturating_add(u128::from(u32::MAX) / u128::from(target));
+            }
+        }
+
+        if let Some(sled_val) = sled_work {
+            if sled_val != computed_work {
+                tracing::warn!(
+                    target: "chain_state",
+                    "Accumulated work mismatch: sled={}, recomputed={}. Using recomputed value and correcting sled.",
+                    sled_val, computed_work,
+                );
+                let work_bytes = computed_work.to_le_bytes().to_vec();
+                let _ = store.consensus.insert("accumulated_work", work_bytes);
+            }
+        } else if computed_work > 0 {
+            // No sled value but chain has blocks — persist the computed value
+            let work_bytes = computed_work.to_le_bytes().to_vec();
+            let _ = store.consensus.insert("accumulated_work", work_bytes);
+        }
+
+        consensus.accumulated_work.store(computed_work);
 
         // Create initial VM with zero key (wrapped in Mutex for thread safety)
         let flags = RandomXFlags::get_recommended_flags() & !RandomXFlags::JIT;
@@ -404,6 +436,22 @@ impl CChainState {
         blocks
     }
 
+    /// HAZOP H25: return all uncle block hashes stored in the sled uncles tree.
+    /// Used at block acceptance to prevent the same uncle from earning rewards
+    /// across multiple canonical blocks.
+    pub fn stored_uncle_hashes(&self) -> std::collections::HashSet<[u8; 32]> {
+        let mut keys = std::collections::HashSet::new();
+        for item in self.store.uncles.iter() {
+            if let Ok((key, _)) = item {
+                let mut arr = [0u8; 32];
+                let len = key.len().min(32);
+                arr[..len].copy_from_slice(&key[..len]);
+                keys.insert(arr);
+            }
+        }
+        keys
+    }
+
     /// Put competing blocks back at a given height (H3.4 fix).
     /// Called by the miner task if block acceptance fails — the competing
     /// blocks were destructively removed by `take_competing_blocks()` and
@@ -522,20 +570,20 @@ impl CChainState {
                     block.hash_with_vm(&*guard).to_string()
                 ));
             }
-            // H1 fix: validate target range for competing blocks.
-            // Stage 2 validation (target == expected_target) cannot be
-            // performed without the fork's timestamp history, but we
-            // can enforce bounds.
+            // HAZOP H5 fix: enforce the same target as the canonical block
+            // at this height. Competing blocks share the same parent, so
+            // get_next_work_required(height) is the correct expected target
+            // for any block at this height regardless of fork.
             {
                 let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
-                let min = consensus.min_target();
-                let max = consensus.max_target();
-                if block.header.target < min || block.header.target > max {
+                let expected = consensus.get_next_work_required(&self.store, block_height)?;
+                if block.header.target != expected {
                     drop(guard);
-                    return Err(LinearError::BlockIsInvalid(
-                        format!("Competing block target {} outside bounds [{}, {}]",
-                            block.header.target, min, max)
-                    ));
+                    return Err(LinearError::InvalidTarget {
+                        expected: expected.get(),
+                        declared: block.header.target.get(),
+                        height: block_height,
+                    });
                 }
                 drop(consensus);
             }
@@ -712,7 +760,7 @@ impl CChainState {
 
         // --- Stage 1 & 2 PoW validation ---
         let expected_target = self.consensus.lock().unwrap_or_else(|e| e.into_inner())
-            .get_next_work_required(&self.store, block_height);
+            .get_next_work_required(&self.store, block_height)?;
 
         // Lock the VM for validation hashing — prevents concurrent RandomX FFI
         let guard = vm.lock().unwrap_or_else(|e| e.into_inner());

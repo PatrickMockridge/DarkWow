@@ -21,7 +21,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::{io, sync::Arc};
+use std::collections::HashMap;
+use std::{io, sync::{Arc, Mutex, OnceLock}};
+
+/// HAZOP H1: in-memory trust store for TLS certificate pinning.
+/// Maps hostname → blake3(cert.der). Persisted to disk by KnownHosts.
+pub(crate) type TrustStore = Arc<Mutex<HashMap<String, [u8; 32]>>>;
 
 use futures_rustls::{
     rustls::{
@@ -113,11 +118,12 @@ fn verify_ed25519_signature(
 #[derive(Debug)]
 pub(crate) struct ServerCertificateVerifier {
     localnet: bool,
+    trust_store: Option<TrustStore>,
 }
 
 impl ServerCertificateVerifier {
-    pub fn new(localnet: bool) -> Self {
-        Self { localnet }
+    pub fn new(localnet: bool, trust_store: Option<TrustStore>) -> Self {
+        Self { localnet, trust_store }
     }
 }
 
@@ -144,6 +150,26 @@ impl ServerCertVerifier for ServerCertificateVerifier {
             validate_dnsname(&cert)?;
         } else {
             tracing::debug!(target: "net::tls", "Localnet mode: skipping DNS name validation");
+        }
+
+        // HAZOP H1: TOFU certificate pinning
+        if !self.localnet {
+            if let Some(ref store) = self.trust_store {
+                let fp = *blake3::hash(end_entity.as_ref()).as_bytes();
+                let hostname = TLS_DNS_NAME;
+                let mut store = store.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(stored) = store.get(hostname) {
+                    if *stored != fp {
+                        error!(target: "net::tls::verify_server_cert",
+                            "HOST IDENTIFICATION HAS CHANGED for {}: cert fingerprint mismatch", hostname);
+                        return Err(rustls::CertificateError::UnknownIssuer.into())
+                    }
+                } else {
+                    store.insert(hostname.to_string(), fp);
+                    tracing::info!(target: "net::tls::verify_server_cert",
+                        "TOFU: stored initial cert fingerprint for {}", hostname);
+                }
+            }
         }
 
         Ok(ServerCertVerified::assertion())
@@ -175,11 +201,12 @@ impl ServerCertVerifier for ServerCertificateVerifier {
 #[derive(Debug)]
 pub(crate) struct ClientCertificateVerifier {
     localnet: bool,
+    trust_store: Option<TrustStore>,
 }
 
 impl ClientCertificateVerifier {
-    pub fn new(localnet: bool) -> Self {
-        Self { localnet }
+    pub fn new(localnet: bool, trust_store: Option<TrustStore>) -> Self {
+        Self { localnet, trust_store }
     }
 }
 
@@ -218,6 +245,26 @@ impl ClientCertVerifier for ClientCertificateVerifier {
             tracing::debug!(target: "net::tls", "Localnet mode: skipping DNS name validation");
         }
 
+        // HAZOP H1: TOFU for inbound client certificates
+        if !self.localnet {
+            if let Some(ref store) = self.trust_store {
+                let fp = *blake3::hash(end_entity.as_ref()).as_bytes();
+                let hostname = TLS_DNS_NAME;
+                let mut store = store.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(stored) = store.get(hostname) {
+                    if *stored != fp {
+                        error!(target: "net::tls::verify_client_cert",
+                            "HOST IDENTIFICATION HAS CHANGED for {}: client cert fingerprint mismatch", hostname);
+                        return Err(rustls::CertificateError::UnknownIssuer.into())
+                    }
+                } else {
+                    store.insert(hostname.to_string(), fp);
+                    tracing::info!(target: "net::tls::verify_client_cert",
+                        "TOFU: stored initial client cert fingerprint for {}", hostname);
+                }
+            }
+        }
+
         Ok(ClientCertVerified::assertion())
     }
 
@@ -244,10 +291,16 @@ impl ClientCertVerifier for ClientCertificateVerifier {
     }
 }
 
+/// HAZOP H1: process-lifetime certificate cache.
+static CACHED_CERT: OnceLock<(CertificateDer<'static>, PrivateKeyDer<'static>)> = OnceLock::new();
+
 /// Generate a self-signed Ed25519 certificate for TLS.
-/// Returns the certificate and private key in DER format.
+/// Cached per process lifetime for TOFU certificate pinning.
 pub(crate) fn generate_certificate() -> io::Result<(CertificateDer<'static>, PrivateKeyDer<'static>)>
 {
+    if let Some(cert) = CACHED_CERT.get() {
+        return Ok((cert.0.clone(), cert.1.clone_key()));
+    }
     let Ok(keypair) = rcgen::KeyPair::generate_for(&rcgen::PKCS_ED25519) else {
         return Err(io::Error::other("Failed to generate TLS keypair"))
     };
@@ -274,7 +327,9 @@ pub(crate) fn generate_certificate() -> io::Result<(CertificateDer<'static>, Pri
         return Err(io::Error::other("Failed to deserialize DER TLS secret"))
     };
 
-    Ok((certificate, secret_key_der))
+    let result = (certificate, secret_key_der);
+    let _ = CACHED_CERT.set((result.0.clone(), result.1.clone_key()));
+    Ok(result)
 }
 
 pub struct TlsUpgrade {
@@ -285,12 +340,12 @@ pub struct TlsUpgrade {
 }
 
 impl TlsUpgrade {
-    pub async fn new(localnet: bool) -> io::Result<Self> {
-        // On each instantiation, generate a new keypair and certificate
+    pub async fn new(localnet: bool, trust_store: Option<TrustStore>) -> io::Result<Self> {
+        // Generate keypair and certificate (cached per process lifetime)
         let (certificate, secret_key_der) = generate_certificate()?;
 
         // Server-side config with localnet flag
-        let client_cert_verifier = Arc::new(ClientCertificateVerifier::new(localnet));
+        let client_cert_verifier = Arc::new(ClientCertificateVerifier::new(localnet, trust_store.clone()));
         let server_config = Arc::new(
             ServerConfig::builder_with_protocol_versions(&[&TLS13])
                 .with_client_cert_verifier(client_cert_verifier)
@@ -299,7 +354,7 @@ impl TlsUpgrade {
         );
 
         // Client-side config with localnet flag
-        let server_cert_verifier = Arc::new(ServerCertificateVerifier::new(localnet));
+        let server_cert_verifier = Arc::new(ServerCertificateVerifier::new(localnet, trust_store));
         let client_config = Arc::new(
             ClientConfig::builder_with_protocol_versions(&[&TLS13])
                 .dangerous()

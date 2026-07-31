@@ -478,6 +478,13 @@ impl Mempool {
         self.txs.lock().await.contains_key(hash)
     }
 
+    /// Check whether a nullifier is already in the mempool (double-spend prevention).
+    /// Used by the wallet for the optimistic read: capabilities whose nullifiers
+    /// are pending in the mempool are not spendable until confirmed or dropped.
+    pub async fn has_nullifier(&self, nullifier: &dwow_chain::Nullifier) -> bool {
+        self.nullifiers.lock().await.contains(nullifier)
+    }
+
     /// Remove a specific transaction by hash.
     pub async fn remove(&self, tx_hash: &[u8; 32]) {
         let hash = blake3::Hash::from_bytes(*tx_hash);

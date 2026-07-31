@@ -60,6 +60,12 @@ pub async fn ntp_request() -> Result<Timestamp> {
 ///
 /// Retry loop is used in case discrepancies are found.
 /// If all retries fail, system clock is considered invalid.
+///
+/// **HAZOP H3 WARNING:** `ntp_request()` sends raw UDP to pool.ntp.org:123,
+/// bypassing any Tor proxy. This leaks the node's real IP address. Any
+/// caller MUST verify that Tor is NOT enabled before invoking this function,
+/// or route the UDP traffic through a SOCKS5 proxy. Currently dead code
+/// (no production callers) — audit any future wiring.
 /// TODO: 1. Add proxy functionality in order not to leak connections
 pub async fn check_clock(peers: &[Url]) -> Result<()> {
     debug!(target: "rpc::clock_sync", "System clock check started...");

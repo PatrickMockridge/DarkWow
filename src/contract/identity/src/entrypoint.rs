@@ -152,9 +152,12 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params = match IssueCredentialParams::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize IssueCredentialParams: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
+            let (ipx, ipy) = params.issuer_pub.xy().expect("pk not identity");
             zk_public_inputs.push((
                 IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V1.to_string(),
-                vec![params.commitment.inner()],
+                // HAZOP ID-2 fix: expose issuer_pub coordinates so the host
+                // verifier binds the proof to a specific registered issuer.
+                vec![params.commitment.inner(), ipx, ipy],
             ));
         }
         IdentityFunction::CreateClaimV1 => {
@@ -362,7 +365,13 @@ fn apply_initialize_update(cid: ContractId, update: InitializeUpdateV1) -> Contr
         &update.version.to_le_bytes(),
     )?;
 
-    msg!("[identity::initialize::update] Config stored");
+    // HAZOP ID-5 fix: lock bootstrap after initialization. Issuer and
+    // capability registration is only permitted during genesis bootstrap.
+    // Post-genesis, new trusted issuers and capabilities require a ZK proof
+    // of bootstrap authority (future circuit work).
+    wasm::db::db_set(config_db, b"bootstrap_locked", &[1])?;
+
+    msg!("[identity::initialize::update] Config stored, bootstrap locked");
     Ok(())
 }
 
@@ -388,6 +397,16 @@ fn process_issue_credential_instruction(
     if nullifier_used.is_some() {
         msg!("[identity::issue_credential] ERROR: Nullifier already used");
         return Err(IdentityError::NullifierAlreadySpent.into());
+    }
+
+    // HAZOP ID-2 fix: verify the issuer is registered in the issuers tree.
+    // The ZK proof (via metadata) proves the prover knows issuer_secret, but
+    // the contract must also confirm the issuer_pub is a known trusted issuer.
+    let issuers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_ISSUERS_TREE)?;
+    let issuer_key = compute_issuer_key(&params.issuer_pub);
+    if !wasm::db::db_contains_key(issuers_db, &issuer_key)? {
+        msg!("[identity::issue_credential] ERROR: Issuer not registered");
+        return Err(IdentityError::IssuerNotTrusted.into());
     }
 
     let update = IssueCredentialUpdateV1 {
@@ -722,6 +741,15 @@ fn process_register_capability_instruction(
     let self_ = &calls[call_idx].data;
     let params = RegisterCapabilityParams::decode(&self_.data[1..])?;
 
+    // HAZOP ID-5 fix: reject capability registration after bootstrap is locked.
+    // Issuers and capabilities are established at genesis; post-genesis
+    // registration requires a ZK proof of bootstrap authority (not yet built).
+    let config_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CONFIG_TREE)?;
+    if wasm::db::db_contains_key(config_db, b"bootstrap_locked")? {
+        msg!("[identity::register_capability] ERROR: Bootstrap locked — capability registration disabled");
+        return Err(IdentityError::IssuerAlreadyRegistered.into());
+    }
+
     msg!("[identity::register_capability] Registering capability");
 
     // Compute capability ID
@@ -1001,6 +1029,13 @@ fn process_register_issuer_instruction(
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params= RegisterIssuerParams::decode(&self_.data[1..])?;
+
+    // HAZOP ID-5 fix: reject issuer registration after bootstrap is locked.
+    let config_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CONFIG_TREE)?;
+    if wasm::db::db_contains_key(config_db, b"bootstrap_locked")? {
+        msg!("[identity::register_issuer] ERROR: Bootstrap locked — issuer registration disabled");
+        return Err(IdentityError::IssuerAlreadyRegistered.into());
+    }
 
     msg!("[identity::register_issuer] Registering issuer");
 

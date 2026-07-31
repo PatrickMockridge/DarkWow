@@ -622,10 +622,11 @@ impl Dww {
             let cid_str = bs58::encode(crate::contract_imports::get_contract_id("native_token")
                 .expect("native_token cid").to_bytes()).into_string();
             let circuits: &[(&str, &[u8])] = &[
-                ("Mint_V1", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN),
-                ("Burn_V1", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V1_BIN),
-                ("Fee_V1", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN),
-                ("FeeCollect_V1", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V1_BIN),
+                // HAZOP V1/V2 fix: align client circuit selection with metadata namespace
+                ("Mint_V2", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN),
+                ("Burn_V2", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V2_BIN),
+                ("Fee_V2", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN),
+                ("FeeCollect_V2", dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V2_BIN),
             ];
             for (name, zkas_bytes) in circuits {
                 // §4.2.1: ZK circuit binary seeding is NOT best-effort —
@@ -1044,7 +1045,7 @@ impl Dww {
     ) -> Result<Transaction> {
         use crate::contract_imports::native_token::{
             DRKW_TOKEN_ID, InputWitness, TransferCallBuilder, TransferCallOutput,
-            NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V1_BIN, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN,
+            NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V2_BIN, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN,
         };
         use dwow_core::zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses};
         use dwow_core::zkas::ZkBinary;
@@ -1092,7 +1093,7 @@ impl Dww {
 
         // Load ZK binaries — proving keys are cached across calls.
         // The PK depends only on the compile-time-embedded zkas binary.
-        let burn_zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V1_BIN, false)
+        let burn_zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V2_BIN, false)
             .map_err(|e| Error::Custom(format!("burn zkbin: {}", e)))?;
         let burn_pk = {
             let mut cache = self.burn_pk_cache.lock().await;
@@ -1103,7 +1104,7 @@ impl Dww {
             }
             cache.as_ref().unwrap().clone()
         };
-        let mint_zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN, false)
+        let mint_zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN, false)
             .map_err(|e| Error::Custom(format!("mint zkbin: {}", e)))?;
         let mint_pk = {
             let mut cache = self.mint_pk_cache.lock().await;
@@ -1120,13 +1121,9 @@ impl Dww {
         // _derive_blind/_seeded_rng).
         let mut rng = StdRng::from_seed(seed);
 
-        // In-circuit binding values — same as every other caller (fee builder,
-        // miner coinbase): the circuit constrains tx_binding =
-        // poseidon(tx_commitment, tx_nonce); the OUTER Transaction.tx_commitment
-        // is computed over the call data by TransactionBuilder::build (the Rust
-        // port of the model's compute_tx_commitment).
-        let tx_commitment = pallas::Base::zero();
-        let tx_nonce = pallas::Base::zero();
+        // HAZOP C7 fix: per-transaction random nonces make tx_binding unique.
+        let tx_commitment = BaseBlind::random(&mut rng).inner();
+        let tx_nonce = BaseBlind::random(&mut rng).inner();
         let spend_hook = pallas::Base::zero();
         let user_data = pallas::Base::zero();
 

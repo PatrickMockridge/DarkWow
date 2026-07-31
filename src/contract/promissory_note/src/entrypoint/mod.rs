@@ -521,6 +521,17 @@ fn token_mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
         return Err(PromissoryNoteError::DuplicateCoin.into())
     }
 
+    // HAZOP P-1 fix: reject duplicate capability namespace registration.
+    // Previously apply_token_mint unconditionally db_set the token_registry_db
+    // entry, overwriting the stored backing capability commitment. Defense-in-depth
+    // against accidental blind reuse or client bugs — a deliberate collision
+    // requires breaking Poseidon's collision resistance.
+    let token_registry_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_TREE)?;
+    if wasm::db::db_contains_key(token_registry_db, &params.token_id.to_bytes())? {
+        msg!("[token_mint_v1] Error: Capability namespace already registered");
+        return Err(PromissoryNoteError::DuplicateCoin.into())
+    }
+
     let update = TokenMintUpdateV1 { token_id: params.token_id, coin: params.coin, token_auth_parent: params.token_auth_parent };
     msg!("[promissory_note::token_mint_v1] Token type created successfully");
     wasm::util::set_return_data(&[&[PromissoryNoteFunction::RegisterTypeV1 as u8], &update.encode()[..]].concat())

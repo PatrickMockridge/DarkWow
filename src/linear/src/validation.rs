@@ -72,8 +72,15 @@ pub fn check_block_header(
     let block_hash = block.hash_with_vm(&vm);
 
     // Stage 1: PoW — hash must meet the block header's own target.
-    // Monero merge-mined blocks skip native RandomX check.
-    if !matches!(block.header.pow_source, PowSource::Monero(_)) {
+    // Monero merge-mined blocks skip native RandomX but MUST carry a valid
+    // coinbase Merkle proof (HAZOP C6).
+    if let PowSource::Monero(monero_data) = &block.header.pow_source {
+        if !monero_data.is_coinbase_valid_merkle_root() {
+            return Err(LinearError::BlockIsInvalid(
+                "Monero coinbase Merkle proof invalid".into()
+            ));
+        }
+    } else {
         let hash_u32 = u32::from_le_bytes(block_hash.as_bytes()[0..4].try_into().unwrap());
         if hash_u32 > block.header.target.get() {
             return Err(LinearError::InvalidPoW(block_hash.to_string()));

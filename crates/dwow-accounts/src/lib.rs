@@ -546,12 +546,13 @@ impl AccountManager {
         self.to_json()
     }
 
-    /// Devnet passphrase for key encryption. Override via DWOW_KEY_PASSPHRASE env.
-    const DEVNET_PASSPHRASE: &str = "darkwow-devnet-key-encryption-v1";
-
-    fn resolve_passphrase() -> String {
+    // HAZOP H23 fix: removed hardcoded DEVNET_PASSPHRASE fallback.
+    // DWOW_KEY_PASSPHRASE is now required — key material encryption
+    // must be explicitly configured, not silently defaulted to a
+    // publicly-known passphrase.
+    fn resolve_passphrase() -> Result<String, String> {
         std::env::var("DWOW_KEY_PASSPHRASE")
-            .unwrap_or_else(|_| Self::DEVNET_PASSPHRASE.to_string())
+            .map_err(|_| "DWOW_KEY_PASSPHRASE environment variable is required for key encryption. Set it to a strong passphrase.".to_string())
     }
 
     fn encrypt_secret(secret_hex: &str) -> Result<String, String> {
@@ -559,7 +560,7 @@ impl AccountManager {
             aead::{Aead, KeyInit, OsRng},
             ChaCha20Poly1305, Nonce,
         };
-        let passphrase = Self::resolve_passphrase();
+        let passphrase = Self::resolve_passphrase()?;
         let mut key = [0u8; 32];
         pbkdf2_hmac_sha256(passphrase.as_bytes(), b"dwow-accounts", 100_000, &mut key);
         let cipher = ChaCha20Poly1305::new_from_slice(&key)
@@ -585,7 +586,7 @@ impl AccountManager {
             aead::{Aead, KeyInit},
             ChaCha20Poly1305, Nonce,
         };
-        let passphrase = Self::resolve_passphrase();
+        let passphrase = Self::resolve_passphrase()?;
         let mut key = [0u8; 32];
         pbkdf2_hmac_sha256(passphrase.as_bytes(), b"dwow-accounts", 100_000, &mut key);
         let cipher = ChaCha20Poly1305::new_from_slice(&key)

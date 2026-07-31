@@ -469,7 +469,12 @@ pub(crate) fn db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
     } else {
         ptr_len as u64 // Still charge for I/O overhead on same-size or smaller writes
     };
-    env.subtract_gas(&mut store, charge);
+    // HAZOP H8 fix: reject state writes after gas exhaustion.
+    if env.subtract_gas(&mut store, charge) {
+        error!(target: "runtime::db::db_set",
+            "[WASM] [{cid}] Gas exhausted — rejecting db_set");
+        return dwow_sdk::error::INTERNAL_ERROR
+    }
 
     // Insert key-value pair into the database corresponding to this contract
     // Use simple_db for deterministic direct sled access

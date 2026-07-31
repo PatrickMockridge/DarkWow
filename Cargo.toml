@@ -282,6 +282,7 @@ upnp-igd = [
 
 # Wire protocol types — message + metering. Smallest net dependency.
 net-wire = [
+    "hex",
     "semver",
     "url",
     "dwow-serial",
@@ -292,9 +293,11 @@ net-wire = [
 net-wallet = [
     "net-wire",
     "async-trait",
+    "blake3",
     "ed25519-compact",
     "futures",
     "futures-rustls",
+    "hex",
     "rcgen",
     "serde",
     "smol",

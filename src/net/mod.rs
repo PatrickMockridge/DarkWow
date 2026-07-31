@@ -53,6 +53,10 @@ pub mod upnp;
 #[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub mod hosts;
 
+/// SSH-style known_hosts for TLS certificate pinning (HAZOP H1 TOFU).
+#[cfg(any(feature = "net-full", feature = "net-wallet"))]
+pub mod known_hosts;
+
 /// Async channel — framed message send/recv with magic bytes.
 #[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub mod channel;

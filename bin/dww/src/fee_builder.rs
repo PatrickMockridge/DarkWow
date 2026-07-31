@@ -41,7 +41,7 @@ use rand::{rngs::StdRng, SeedableRng};
 
 use crate::contract_imports::native_token::{
     DRKW_TOKEN_ID, FeeCallBuilder, FeeCallInput, FeeCallOutput,
-    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN,
+    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN,
 };
 use crate::walletdb::WalletPtr;
 use crate::NATIVE_TOKEN_CONTRACT_ID;
@@ -161,7 +161,7 @@ pub fn build_fee_and_finalize_tx(
     let fee_cap_blind = fee_cap.cap_blind.inner();
 
     // Load fee ZK binary and build fee proof
-    let fee_zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN, false)
+    let fee_zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN, false)
         .map_err(|e| Error::Custom(format!("Failed to decode fee ZK binary: {:?}", e)))?;
 
     let fee_empty_wits = empty_witnesses(&fee_zkbin)?;
@@ -169,13 +169,9 @@ pub fn build_fee_and_finalize_tx(
     let fee_pk = ProvingKey::build(fee_zkbin.k, &fee_circuit)
         .map_err(|e| Error::Custom(format!("ProvingKey::build fee: {:?}", e)))?;
 
-    // Build fee input
-    // tx_commitment: zero — same as every other caller (miner coinbase,
-    // transfer, burn, spend). The ZK circuit does not verify how tx_commitment
-    // is computed — it only constrains tx_binding = poseidon_hash(tx_commitment,
-    // tx_nonce). A zero tx_commitment makes tx_binding a function of tx_nonce
-    // alone, which is sufficient for transaction binding.
-    let tx_commitment: pallas::Base = pallas::Base::zero();
+    // HAZOP C7 fix: per-transaction random nonces make tx_binding unique.
+    let tx_commitment: pallas::Base = BaseBlind::random(&mut rng).inner();
+    let tx_nonce: pallas::Base = BaseBlind::random(&mut rng).inner();
 
     let fee_input = FeeCallInput {
         value: fee_cap.value,
@@ -188,7 +184,7 @@ pub fn build_fee_and_finalize_tx(
         secret: dark_secret.clone(),
         ephemeral_signature_secret: SecretKey::random(&mut rng),
         tx_commitment,
-        tx_nonce: pallas::Base::zero(),
+        tx_nonce,
     };
 
     // Fee output - change goes back to our public key

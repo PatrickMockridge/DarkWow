@@ -28,6 +28,10 @@ use url::Url;
 pub struct RpcSettings {
     pub listen: Url,
     pub disabled_methods: Vec<String>,
+    /// HAZOP H2: optional shared-secret token for RPC authentication.
+    /// When set, the first message on each connection must be an
+    /// `authenticate` request with this token. Empty = no auth (default).
+    pub auth_token: Option<String>,
 }
 
 impl RpcSettings {
@@ -51,7 +55,7 @@ impl RpcSettings {
 
 impl Default for RpcSettings {
     fn default() -> Self {
-        Self { listen: Url::parse("tcp://127.0.0.1:22222").unwrap(), disabled_methods: vec![] }
+        Self { listen: Url::parse("tcp://127.0.0.1:22222").unwrap(), disabled_methods: vec![], auth_token: None }
     }
 }
 
@@ -67,6 +71,11 @@ pub struct RpcSettingsOpt {
     /// Disabled JSON-RPC methods
     #[structopt(long, use_delimiter = true)]
     pub rpc_disabled_methods: Option<Vec<String>>,
+
+    /// HAZOP H2: optional shared-secret for RPC authentication.
+    /// When set, clients must send `authenticate` as their first request.
+    #[structopt(long)]
+    pub rpc_auth_token: Option<String>,
 }
 
 impl From<RpcSettingsOpt> for RpcSettings {
@@ -74,6 +83,7 @@ impl From<RpcSettingsOpt> for RpcSettings {
         Self {
             listen: opt.rpc_listen,
             disabled_methods: opt.rpc_disabled_methods.unwrap_or_default(),
+            auth_token: opt.rpc_auth_token,
         }
     }
 }

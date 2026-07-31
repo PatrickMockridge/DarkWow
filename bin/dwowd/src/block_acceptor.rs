@@ -99,8 +99,9 @@ pub fn accept_block(
                 block.header.height, expected_root, block.header.uncle_merkle_root
             )));
         }
-        // Collect existing uncle hashes from sled for dedup check
-        let existing_keys: std::collections::HashSet<[u8; 32]> = std::collections::HashSet::new();
+        // HAZOP H25 fix: collect existing uncle hashes from sled for cross-block dedup.
+        // Previously always empty — uncles could earn rewards across multiple blocks.
+        let existing_keys: std::collections::HashSet<[u8; 32]> = chain_state.stored_uncle_hashes();
         dwow_chain::validation::check_uncles(
             uncles,
             &proofs,
@@ -144,14 +145,27 @@ pub fn accept_block(
     eprintln!("[accept_block] token balance verified");
 
     // 2. Stage 1 PoW — verify hash meets target BEFORE expensive WASM execution.
-    if !matches!(block.header.pow_source, dwow_chain::PowSource::Monero(_)) {
-        let block_hash = block.hash_with_vm(vm.as_ref());
-        let hash_u32 = u32::from_le_bytes(block_hash.as_bytes()[0..4].try_into().unwrap());
-        if hash_u32 > target.get() {
-            return Err(dwow_core::Error::Custom(format!(
-                "Block {} PoW invalid: hash={:#010x} target={:#010x}",
-                block.header.height, hash_u32, target
-            )));
+    // Monero merge-mined blocks skip native RandomX (the PoW comes from the
+    // Monero chain) but MUST carry a valid coinbase Merkle proof.
+    match &block.header.pow_source {
+        dwow_chain::PowSource::Monero(monero_data) => {
+            // HAZOP C6 fix: verify the Monero-side coinbase Merkle proof.
+            if !monero_data.is_coinbase_valid_merkle_root() {
+                return Err(dwow_core::Error::Custom(format!(
+                    "Block {} Monero coinbase Merkle proof invalid",
+                    block.header.height
+                )));
+            }
+        }
+        _ => {
+            let block_hash = block.hash_with_vm(vm.as_ref());
+            let hash_u32 = u32::from_le_bytes(block_hash.as_bytes()[0..4].try_into().unwrap());
+            if hash_u32 > target.get() {
+                return Err(dwow_core::Error::Custom(format!(
+                    "Block {} PoW invalid: hash={:#010x} target={:#010x}",
+                    block.header.height, hash_u32, target
+                )));
+            }
         }
     }
 

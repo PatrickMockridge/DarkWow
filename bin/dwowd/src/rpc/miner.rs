@@ -154,7 +154,13 @@ impl DwowNode {
         // Post-mining hashing uses hash_block_with_cached_vm which handles locking
         let target = {
             let consensus = chain_state.consensus.lock().unwrap();
-            consensus.get_next_work_required(&chain_state.store, height)
+            match consensus.get_next_work_required(&chain_state.store, height) {
+                Ok(t) => t,
+                Err(e) => {
+                    error!(target: "dwowd::rpc::miner", "get_next_work_required: {e}");
+                    return JsonError::new(InternalError, Some(format!("get_next_work_required: {e}")), id).into()
+                }
+            }
         };
         info!(target: "dwowd::rpc::miner",
             "Mining block at height {} (target={}, previous={})",

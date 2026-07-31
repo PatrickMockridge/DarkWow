@@ -514,15 +514,11 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
                     Ok(txid) => {
                         if !*porcelain { for line in &output { println!("{line}"); } }
-                        // Mark transferred caps as exercised (ocap lifecycle:
-                        // discover → hold → exercise → revoke). Block height is
-                        // unknown at broadcast time (confirm=false); revoke at
-                        // current tip to prevent double-spend. Reorg reconciler
-                        // will un-revoke if the block is reverted.
-                        if let Err(e) = dww.mark_tx_exercise(&tx, &mut output) {
-                            tracing::warn!(target: "dww::dispatch",
-                                "Transfer revoke mark failed (non-fatal): {e:?}");
-                        }
+                        // HAZOP H11 fix: pending tracking is the mempool's
+                        // responsibility. Confirmed revocation happens in the
+                        // scan path when nullifiers appear on-chain. No blind
+                        // optimistic revocation — the mempool rejects double-
+                        // spends at admission time.
                         // --porcelain: diagnostic/testing output — frozen contract for the
                         // pipeline; do not extend. One line: "txid=<hex>".
                         if *porcelain { println!("txid={txid}"); } else { println!("Transferred: {txid}"); }

@@ -35,15 +35,24 @@ use pasta_curves::{
 };
 use rand_core::{CryptoRng, RngCore};
 
-use super::{constants::NullifierK, util::fp_mod_fv, poseidon_hash, ContractId};
+use super::{constants, constants::NullifierK, util::fp_mod_fv, poseidon_hash, ContractId};
 use crate::error::ContractError;
 
 /// Keypair structure holding a `SecretKey` and its respective `PublicKey`.
 /// Copy removed per C3 — key material SHALL NOT be implicitly duplicated.
-#[derive(Clone, PartialEq, Eq, Debug, SerialEncodable, SerialDecodable)]
+#[derive(Clone, PartialEq, Eq, SerialEncodable, SerialDecodable)]
 pub struct Keypair {
     pub secret: SecretKey,
     pub public: PublicKey,
+}
+
+impl core::fmt::Debug for Keypair {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("Keypair")
+            .field("secret", &"<redacted>")
+            .field("public", &self.public)
+            .finish()
+    }
 }
 
 impl Keypair {
@@ -73,8 +82,17 @@ impl Keypair {
 /// Closes: C3 (no secure memory for key material).
 /// Enforces: type-system.md §5 (authority-through-possession — Copy
 /// enables ambient duplication of authority).
-#[derive(Clone, PartialEq, Eq, Debug, SerialEncodable, SerialDecodable)]
+// HAZOP C14 fix: Debug is removed from the derive — a manual impl below
+// renders "<redacted>" to prevent accidental key leakage through formatting.
+// Display (bs58-encoded full secret) is kept for intentional CLI key export.
+#[derive(Clone, PartialEq, Eq, SerialEncodable, SerialDecodable)]
 pub struct SecretKey(pallas::Base);
+
+impl core::fmt::Debug for SecretKey {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.write_str("<redacted>")
+    }
+}
 
 impl Drop for SecretKey {
     fn drop(&mut self) {
@@ -142,7 +160,7 @@ impl SecretKey {
             }
         };
 
-        let hash = poseidon_hash([self.0, contract_id.inner(), instance_elem]);
+        let hash = poseidon_hash([constants::DRK_POSEIDON_DOMAIN_KEY_DERIVE, self.0, contract_id.inner(), instance_elem]);
         Ok(Self(hash))
     }
 }

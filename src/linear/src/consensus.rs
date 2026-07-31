@@ -350,9 +350,9 @@ impl PoWConsensus {
     /// chain history. For height > 1, walks the chain from genesis through
     /// `height - 1`, recomputing the target from each block's timestamp.
     /// Uses the same adjustment algorithm as `adjust_target()`.
-    pub fn get_next_work_required(&self, store: &super::LinearStore, height: BlockHeight) -> BlockTarget {
+    pub fn get_next_work_required(&self, store: &super::LinearStore, height: BlockHeight) -> std::result::Result<BlockTarget, super::LinearError> {
         if height <= BlockHeight::GENESIS {
-            return BlockTarget::MAX;
+            return Ok(BlockTarget::MAX);
         }
 
         // NOTE: This walks the entire chain from genesis — O(height) per call.
@@ -376,23 +376,20 @@ impl PoWConsensus {
                     );
                 }
             } else {
-                // M5 fix: propagate missing-block error to caller instead of
-                // silently returning a partial target. A missing block in the
-                // canonical chain is storage corruption — the caller should
-                // decide how to handle it, not silently accept a wrong target.
+                // HAZOP H4 fix: a missing block in the canonical chain is storage
+                // corruption. Return a hard error so the caller cannot silently
+                // accept a wrong target. Previously returned BlockTarget::MAX as
+                // a sentinel, but no caller checked for it — MAX was treated as
+                // a valid zero-difficulty target.
                 tracing::error!(
                     target: "consensus",
                     "Chain walk failed at height {h} — block missing from store."
                 );
-                // Return BlockTarget::MAX so the caller can detect the anomalous
-                // value. MAX is never a valid target (it means "genesis / any hash")
-                // except at height <= 1, so callers can distinguish corruption
-                // from normal operation.
-                return BlockTarget::MAX;
+                return Err(super::LinearError::BlockNotFound(BlockHeight::new(h)));
             }
         }
 
-        target
+        Ok(target)
     }
 
     /// The initial target this consensus was configured with.

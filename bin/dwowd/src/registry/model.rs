@@ -190,8 +190,9 @@ pub async fn build_linear_coinbase(
         old_cumulative_blind,
         mint_zkbin: (*linear_zk.zkbin).clone(),
         mint_pk: (*linear_zk.provingkey).clone(),
-        tx_nonce: pallas::Base::zero(),
-        tx_commitment: pallas::Base::zero(),
+        // HAZOP C7 fix: deterministic nonce from block height + call index
+        tx_nonce: pallas::Base::from(height.get()),
+        tx_commitment: pallas::Base::from(height.get() + 1),
     }
     .build_with_custom_reward(value.get())?;
 
@@ -376,8 +377,9 @@ pub fn build_fee_collect_tx(
         total_fees,
         fee_collect_zkbin: (*linear_zk.fee_collect_zkbin).clone(),
         fee_collect_pk: (*linear_zk.fee_collect_provingkey).clone(),
-        tx_nonce: pallas::Base::zero(),
-        tx_commitment: pallas::Base::zero(),
+        // HAZOP C7 fix: deterministic nonce from block height
+        tx_nonce: pallas::Base::from(height.get()),
+        tx_commitment: pallas::Base::from(height.get() + 2),
     }
     .build()
     .map_err(|e| {

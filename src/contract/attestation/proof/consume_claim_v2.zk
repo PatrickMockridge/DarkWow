@@ -1,13 +1,33 @@
-# ConsumeClaim_V2 — domain-separated claim consumption.
-# V2 changes from V1 (HAZOP RC3): domain separation on poseidon_hash
+# ConsumeClaim_V2 — domain-separated claim consumption with nullifier derivation.
+# HAZOP C13 fix: V1 nullifier was bare witness; V2 adds in-circuit derivation
+# nullifier = poseidon_hash(DOMAIN_NULLIFIER, claim_id, consumer_secret)
 k = 11; field = "pallas";
 constant "ConsumeClaimV2" { EcFixedPointBase NULLIFIER_K, }
 witness "ConsumeClaimV2" {
-    Base claim_id, Base consumer_secret, Base consumer_pub_x, Base consumer_pub_y,
+    Base claim_id, Base nullifier, Base consumer_secret,
+    Base consumer_pub_x, Base consumer_pub_y,
     Base tx_commitment, Base tx_nonce, Base tx_binding,
 }
 circuit "ConsumeClaimV2" {
+    DOMAIN_NULLIFIER = witness_base(1);
     DOMAIN_TX_BINDING = witness_base(3);
+
+    # Derive consumer public key from secret
+    consumer_pub = ec_mul_base(consumer_secret, NULLIFIER_K);
+    derived_pub_x = ec_get_x(consumer_pub);
+    derived_pub_y = ec_get_y(consumer_pub);
+    constrain_equal_base(derived_pub_x, consumer_pub_x);
+    constrain_equal_base(derived_pub_y, consumer_pub_y);
+
+    # HAZOP C13 fix: derive nullifier in-circuit (was bare witness in V1)
+    derived_nullifier = poseidon_hash(DOMAIN_NULLIFIER, claim_id, consumer_secret);
+    constrain_equal_base(derived_nullifier, nullifier);
+
     tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
-    constrain_instance(tx_binding); constrain_instance(tx_nonce);
+    constrain_instance(claim_id);
+    constrain_instance(consumer_pub_x);
+    constrain_instance(consumer_pub_y);
+    constrain_instance(nullifier);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
 }

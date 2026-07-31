@@ -1287,6 +1287,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         let target = {
             let consensus = chain_state.consensus.lock().unwrap_or_else(|e| e.into_inner());
             consensus.get_next_work_required(&chain_state.store, height)
+                .map_err(|e| dwow_core::Error::Custom(format!("get_next_work_required: {e}")))?
         };
 
         let base_reward = dwow_sdk::blockchain::expected_reward(height);
