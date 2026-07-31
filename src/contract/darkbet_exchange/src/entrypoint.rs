@@ -101,14 +101,6 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         wasm::db::db_init(cid, DARKBET_EXCHANGE_NULLIFIERS_TREE)?;
     }
 
-    let add_liquidity_v1_bincode = include_bytes!("../proof/add_liquidity_v1.zk.bin");
-    wasm::db::zkas_db_set(&add_liquidity_v1_bincode[..])?;
-    let buy_position_v1_bincode = include_bytes!("../proof/buy_position_v1.zk.bin");
-    wasm::db::zkas_db_set(&buy_position_v1_bincode[..])?;
-    let claim_winnings_v1_bincode = include_bytes!("../proof/claim_winnings_v1.zk.bin");
-    wasm::db::zkas_db_set(&claim_winnings_v1_bincode[..])?;
-    let create_market_v1_bincode = include_bytes!("../proof/create_market_v1.zk.bin");
-    wasm::db::zkas_db_set(&create_market_v1_bincode[..])?;
 
     // V2 circuits (HAZOP RC3: domain separation)
     let add_liquidity_v2_bincode = include_bytes!("../proof/add_liquidity_v2.zk.bin");

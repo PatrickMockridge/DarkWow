@@ -93,16 +93,6 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     msg!("[oracle::init_contract] Oracle contract initialized successfully");
 
-    let aggregate_v1_bincode = include_bytes!("../proof/aggregate_v1.zk.bin");
-    wasm::db::zkas_db_set(&aggregate_v1_bincode[..])?;
-    let attest_value_v1_bincode = include_bytes!("../proof/attest_value_v1.zk.bin");
-    wasm::db::zkas_db_set(&attest_value_v1_bincode[..])?;
-    let push_value_commitment_v1_bincode = include_bytes!("../proof/push_value_commitment_v1.zk.bin");
-    wasm::db::zkas_db_set(&push_value_commitment_v1_bincode[..])?;
-    let push_value_v1_bincode = include_bytes!("../proof/push_value_v1.zk.bin");
-    wasm::db::zkas_db_set(&push_value_v1_bincode[..])?;
-    let register_oracle_v1_bincode = include_bytes!("../proof/register_oracle_v1.zk.bin");
-    wasm::db::zkas_db_set(&register_oracle_v1_bincode[..])?;
 
     // Register V2 circuits (domain separation, HAZOP RC3)
     let aggregate_v2_bincode = include_bytes!("../proof/aggregate_v2.zk.bin");

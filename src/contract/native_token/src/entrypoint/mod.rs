@@ -95,15 +95,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // These are LOCAL variables for zkas_db_set(), NOT the client _BIN constants.
     // The client _BIN constants live in client/zkbins.rs (different compilation target).
     // This two-location pattern is inherited from upstream.
-    let mint_v1_bincode = include_bytes!("../../proof/mint_v1.zk.bin");
-    let burn_v1_bincode = include_bytes!("../../proof/burn_v1.zk.bin");
-    let fee_v1_bincode = include_bytes!("../../proof/fee_v1.zk.bin");
-    let fee_collect_v1_bincode = include_bytes!("../../proof/fee_collect_v1.zk.bin");
 
-    wasm::db::zkas_db_set(&mint_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&burn_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&fee_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&fee_collect_v1_bincode[..])?;
 
     // V2 circuits (HAZOP H11: domain separation, M8: coin_public binding)
     let mint_v2_bincode = include_bytes!("../../proof/mint_v2.zk.bin");

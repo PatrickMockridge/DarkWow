@@ -90,14 +90,6 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::db_init(cid, crate::INSURANCE_CONTRACT_CLAIMS_TREE)?;
     wasm::db::db_init(cid, crate::INSURANCE_CONTRACT_ENDOWMENT_TREE)?;
 
-    let purchase_coverage_with_capability_v1_bincode = include_bytes!("../proof/purchase_coverage_with_capability_v1.zk.bin");
-    wasm::db::zkas_db_set(&purchase_coverage_with_capability_v1_bincode[..])?;
-    let underwrite_with_capability_v1_bincode = include_bytes!("../proof/underwrite_with_capability_v1.zk.bin");
-    wasm::db::zkas_db_set(&underwrite_with_capability_v1_bincode[..])?;
-    let purchase_coverage_v1_bincode = include_bytes!("../proof/purchase_coverage_v1.zk.bin");
-    wasm::db::zkas_db_set(&purchase_coverage_v1_bincode[..])?;
-    let purchase_coverage_with_dag_v1_bincode = include_bytes!("../proof/purchase_coverage_with_dag_v1.zk.bin");
-    wasm::db::zkas_db_set(&purchase_coverage_with_dag_v1_bincode[..])?;
 
     let underwrite_with_capability_v2_bincode =
         include_bytes!("../proof/underwrite_with_capability_v2.zk.bin");

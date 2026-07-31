@@ -107,17 +107,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[promissory_note::init_contract] Initializing promissory_note contract (DeFi tokens)");
 
     // Include ZK circuits
-    let token_mint_v1_bincode = include_bytes!("../../proof/token_mint_v1.zk.bin");
-    let mint_v1_bincode = include_bytes!("../../proof/mint_v1.zk.bin");
-    let burn_v1_bincode = include_bytes!("../../proof/burn_v1.zk.bin");
-    let blind_output_v1_bincode = include_bytes!("../../proof/blind_output_v1.zk.bin");
-    let redeem_v1_bincode = include_bytes!("../../proof/redeem_v1.zk.bin");
 
-    wasm::db::zkas_db_set(&token_mint_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&mint_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&burn_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&blind_output_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&redeem_v1_bincode[..])?;
 
     // V2 circuits (HAZOP RC3: domain separation)
     let token_mint_v2_bincode = include_bytes!("../../proof/token_mint_v2.zk.bin");
