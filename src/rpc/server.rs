@@ -345,6 +345,10 @@ pub async fn accept<'a, T: 'a>(
     let mut rate_limit_count: usize = 0;
     let mut rate_limit_window = Instant::now();
 
+    // HAZOP H-10: per-connection authentication when auth_token is configured
+    let auth_required = settings.auth_token.is_some();
+    let mut authenticated = !auth_required;
+
     loop {
         let mut buf = Vec::with_capacity(INIT_BUF_SIZE);
 
@@ -415,6 +419,41 @@ pub async fn accept<'a, T: 'a>(
             continue
         }
         rate_limit_count += 1;
+
+        // HAZOP H-10: authentication gate — reject unauthenticated requests
+        // when auth_token is configured. The first non-authenticate request
+        // must be an authenticate method providing the correct token.
+        if !authenticated {
+            if req.method == "authenticate" {
+                if let Some(ref token) = settings.auth_token {
+                    // Token is expected as a string in the JSON params
+                    if line.contains(token) {
+                        authenticated = true;
+                        let mut writer_lock = writer.lock().await;
+                        let ok: JsonResult = JsonResponse::new(
+                            JsonValue::String("authenticated".to_string()), req.id,
+                        ).into();
+                        let _ = write_to_stream(&mut writer_lock, &ok);
+                        drop(writer_lock);
+                        continue;
+                    }
+                }
+                let mut writer_lock = writer.lock().await;
+                let err: JsonResult = JsonError::new(
+                    ErrorCode::ServerError(1), Some("Invalid authentication token".to_string()), req.id,
+                ).into();
+                let _ = write_to_stream(&mut writer_lock, &err);
+                drop(writer_lock);
+                continue;
+            }
+            let mut writer_lock = writer.lock().await;
+            let err: JsonResult = JsonError::new(
+                ErrorCode::ServerError(1), Some("Authentication required".to_string()), req.id,
+            ).into();
+            let _ = write_to_stream(&mut writer_lock, &err);
+            drop(writer_lock);
+            continue;
+        }
 
         // Create a new task to handle request in the background
         let task = StoppableTask::new();
