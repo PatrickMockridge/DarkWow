@@ -112,13 +112,13 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     msg!("[otc_swap::init_contract] OTC swap contract initialized successfully");
 
-    let create_swap_v1_bincode = include_bytes!("../proof/create_swap_v1.zk.bin");
+    let create_swap_v1_bincode = include_bytes!("../proof/create_swap_v2.zk.bin");
     wasm::db::zkas_db_set(&create_swap_v1_bincode[..])?;
-    let fund_swap_v1_bincode = include_bytes!("../proof/fund_swap_v1.zk.bin");
+    let fund_swap_v1_bincode = include_bytes!("../proof/fund_swap_v2.zk.bin");
     wasm::db::zkas_db_set(&fund_swap_v1_bincode[..])?;
-    let execute_swap_v1_bincode = include_bytes!("../proof/execute_swap_v1.zk.bin");
+    let execute_swap_v1_bincode = include_bytes!("../proof/execute_swap_v2.zk.bin");
     wasm::db::zkas_db_set(&execute_swap_v1_bincode[..])?;
-    let cancel_swap_v1_bincode = include_bytes!("../proof/cancel_swap_v1.zk.bin");
+    let cancel_swap_v1_bincode = include_bytes!("../proof/cancel_swap_v2.zk.bin");
     wasm::db::zkas_db_set(&cancel_swap_v1_bincode[..])?;
 
     Ok(())

@@ -101,11 +101,11 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         wasm::db::db_init(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
     }
 
-    let claim_fees_v1_bincode = include_bytes!("../proof/claim_fees_v1.zk.bin");
+    let claim_fees_v1_bincode = include_bytes!("../proof/claim_fees_v2.zk.bin");
     wasm::db::zkas_db_set(&claim_fees_v1_bincode[..])?;
-    let deploy_capital_v1_bincode = include_bytes!("../proof/deploy_capital_v1.zk.bin");
+    let deploy_capital_v1_bincode = include_bytes!("../proof/deploy_capital_v2.zk.bin");
     wasm::db::zkas_db_set(&deploy_capital_v1_bincode[..])?;
-    let initialize_v1_bincode = include_bytes!("../proof/initialize_v1.zk.bin");
+    let initialize_v1_bincode = include_bytes!("../proof/initialize_v2.zk.bin");
     wasm::db::zkas_db_set(&initialize_v1_bincode[..])?;
 
     Ok(())

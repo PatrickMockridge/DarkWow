@@ -122,11 +122,11 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     msg!("[subscription::init_contract] Subscription contract initialized successfully");
 
-    let subscribe_v1_bincode = include_bytes!("../proof/subscribe_v1.zk.bin");
+    let subscribe_v1_bincode = include_bytes!("../proof/subscribe_v2.zk.bin");
     wasm::db::zkas_db_set(&subscribe_v1_bincode[..])?;
-    let update_usage_v1_bincode = include_bytes!("../proof/update_usage_v1.zk.bin");
+    let update_usage_v1_bincode = include_bytes!("../proof/update_usage_v2.zk.bin");
     wasm::db::zkas_db_set(&update_usage_v1_bincode[..])?;
-    let verify_access_v1_bincode = include_bytes!("../proof/verify_access_v1.zk.bin");
+    let verify_access_v1_bincode = include_bytes!("../proof/verify_access_v2.zk.bin");
     wasm::db::zkas_db_set(&verify_access_v1_bincode[..])?;
 
     Ok(())
@@ -713,7 +713,6 @@ fn dao_control_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tr
                 pallas::Base::from(amount),
             ]);
             validate_child_value_commit(&child_call.data, amount, value_blind)?;
-        }
 
         msg!(
             "[DaoControlV1] EndowmentWithdraw validated: {} to {:?}",

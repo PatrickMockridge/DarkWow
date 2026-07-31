@@ -95,12 +95,12 @@ dwow_sdk::define_contract!(
 pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[auction::init_contract] Initializing auction contract");
 
-    let create_auction_v1_bincode = include_bytes!("../proof/create_auction_v1.zk.bin");
-    let place_bid_v1_bincode = include_bytes!("../proof/place_bid_v1.zk.bin");
-    let close_auction_v1_bincode = include_bytes!("../proof/close_auction_v1.zk.bin");
-    let refund_bid_v1_bincode = include_bytes!("../proof/refund_bid_v1.zk.bin");
-    let claim_winnings_v1_bincode = include_bytes!("../proof/claim_winnings_v1.zk.bin");
-    let settle_auction_v1_bincode = include_bytes!("../proof/settle_auction_v1.zk.bin");
+    let create_auction_v1_bincode = include_bytes!("../proof/create_auction_v2.zk.bin");
+    let place_bid_v1_bincode = include_bytes!("../proof/place_bid_v2.zk.bin");
+    let close_auction_v1_bincode = include_bytes!("../proof/close_auction_v2.zk.bin");
+    let refund_bid_v1_bincode = include_bytes!("../proof/refund_bid_v2.zk.bin");
+    let claim_winnings_v1_bincode = include_bytes!("../proof/claim_winnings_v2.zk.bin");
+    let settle_auction_v1_bincode = include_bytes!("../proof/settle_auction_v2.zk.bin");
 
     wasm::db::zkas_db_set(&create_auction_v1_bincode[..])?;
     wasm::db::zkas_db_set(&place_bid_v1_bincode[..])?;

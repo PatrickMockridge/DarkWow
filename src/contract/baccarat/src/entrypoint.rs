@@ -49,10 +49,10 @@ dwow_sdk::define_contract!(
 /// Initialize the contract
 fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Embed zkas circuits
-    let commit_bet_bincode = include_bytes!("../proof/commit_bet_v1.zk.bin");
-    let draw_cards_bincode = include_bytes!("../proof/draw_cards_v1.zk.bin");
-    let house_close_bincode = include_bytes!("../proof/house_close_v1.zk.bin");
-    let settle_bet_bincode = include_bytes!("../proof/settle_bet_v1.zk.bin");
+    let commit_bet_bincode = include_bytes!("../proof/commit_bet_v2.zk.bin");
+    let draw_cards_bincode = include_bytes!("../proof/draw_cards_v2.zk.bin");
+    let house_close_bincode = include_bytes!("../proof/house_close_v2.zk.bin");
+    let settle_bet_bincode = include_bytes!("../proof/settle_bet_v2.zk.bin");
 
     wasm::db::zkas_db_set(&commit_bet_bincode[..])?;
     wasm::db::zkas_db_set(&draw_cards_bincode[..])?;

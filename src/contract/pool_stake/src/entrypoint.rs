@@ -26,7 +26,7 @@
 use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId, PURSE_CONTRACT_ID},
     dark_tree::DarkLeaf,
-    error::ContractResult,
+    error::{ContractError, ContractResult},
     msg, ContractCall,
     pasta::pallas,
     wasm,
@@ -79,13 +79,13 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         wasm::db::db_init(cid, POOL_STAKE_ALLOCATIONS_TREE)?;
     }
 
-    let allocate_coverage_v1_bincode = include_bytes!("../proof/allocate_coverage_v1.zk.bin");
+    let allocate_coverage_v1_bincode = include_bytes!("../proof/allocate_coverage_v2.zk.bin");
     wasm::db::zkas_db_set(&allocate_coverage_v1_bincode[..])?;
-    let create_pool_v1_bincode = include_bytes!("../proof/create_pool_v1.zk.bin");
+    let create_pool_v1_bincode = include_bytes!("../proof/create_pool_v2.zk.bin");
     wasm::db::zkas_db_set(&create_pool_v1_bincode[..])?;
-    let join_pool_v1_bincode = include_bytes!("../proof/join_pool_v1.zk.bin");
+    let join_pool_v1_bincode = include_bytes!("../proof/join_pool_v2.zk.bin");
     wasm::db::zkas_db_set(&join_pool_v1_bincode[..])?;
-    let slash_coverage_v1_bincode = include_bytes!("../proof/slash_coverage_v1.zk.bin");
+    let slash_coverage_v1_bincode = include_bytes!("../proof/slash_coverage_v2.zk.bin");
     wasm::db::zkas_db_set(&slash_coverage_v1_bincode[..])?;
 
     Ok(())

@@ -119,13 +119,13 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     msg!("[escrow::init_contract] Escrow contract initialized successfully");
 
-    let claim_v1_bincode = include_bytes!("../proof/claim_v1.zk.bin");
+    let claim_v1_bincode = include_bytes!("../proof/claim_v2.zk.bin");
     wasm::db::zkas_db_set(&claim_v1_bincode[..])?;
-    let create_escrow_v1_bincode = include_bytes!("../proof/create_escrow_v1.zk.bin");
+    let create_escrow_v1_bincode = include_bytes!("../proof/create_escrow_v2.zk.bin");
     wasm::db::zkas_db_set(&create_escrow_v1_bincode[..])?;
-    let fund_v1_bincode = include_bytes!("../proof/fund_v1.zk.bin");
+    let fund_v1_bincode = include_bytes!("../proof/fund_v2.zk.bin");
     wasm::db::zkas_db_set(&fund_v1_bincode[..])?;
-    let refund_v1_bincode = include_bytes!("../proof/refund_v1.zk.bin");
+    let refund_v1_bincode = include_bytes!("../proof/refund_v2.zk.bin");
     wasm::db::zkas_db_set(&refund_v1_bincode[..])?;
 
     Ok(())

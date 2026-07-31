@@ -70,13 +70,13 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let info_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, ROULETTE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
 
-    let place_bet_v1_bincode = include_bytes!("../proof/place_bet_v1.zk.bin");
+    let place_bet_v1_bincode = include_bytes!("../proof/place_bet_v2.zk.bin");
     wasm::db::zkas_db_set(&place_bet_v1_bincode[..])?;
-    let spin_wheel_v1_bincode = include_bytes!("../proof/spin_wheel_v1.zk.bin");
+    let spin_wheel_v1_bincode = include_bytes!("../proof/spin_wheel_v2.zk.bin");
     wasm::db::zkas_db_set(&spin_wheel_v1_bincode[..])?;
-    let house_close_v1_bincode = include_bytes!("../proof/house_close_v1.zk.bin");
+    let house_close_v1_bincode = include_bytes!("../proof/house_close_v2.zk.bin");
     wasm::db::zkas_db_set(&house_close_v1_bincode[..])?;
-    let settle_bet_v1_bincode = include_bytes!("../proof/settle_bet_v1.zk.bin");
+    let settle_bet_v1_bincode = include_bytes!("../proof/settle_bet_v2.zk.bin");
     wasm::db::zkas_db_set(&settle_bet_v1_bincode[..])?;
 
     Ok(())
