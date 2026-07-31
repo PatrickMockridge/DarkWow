@@ -26,6 +26,7 @@ wallet architecture, P2P networking, ZK circuits, and deployment infrastructure.
 
 **Regressions identified during audit are tracked separately**
 in the development backlog. See the HAZOP remediation plan for details.
+Remediations at commit `c74ff91b0b34f4dd2da9fcaf8410da45554350e4`.
 
 The most severe upstream vulnerabilities enable: nullifier collision double-spends,
 Merkle proof forgery, key material extraction, fake key generation, remote node
