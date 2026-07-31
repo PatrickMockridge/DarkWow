@@ -17,8 +17,8 @@ use crate::{
     MultiSigFunction,
     MULTISIG_CONTRACT_GROUPS_TREE, MULTISIG_CONTRACT_INFO_TREE,
     MULTISIG_CONTRACT_NULLIFIERS_TREE, MULTISIG_CONTRACT_SIGNATURES_TREE,
-    MULTISIG_CONTRACT_ZKAS_CREATE_GROUP_NS_V1, MULTISIG_CONTRACT_ZKAS_FINALIZE_NS_V1,
-    MULTISIG_CONTRACT_ZKAS_SIGN_NS_V1,
+    MULTISIG_CONTRACT_ZKAS_CREATE_GROUP_NS_V2, MULTISIG_CONTRACT_ZKAS_FINALIZE_NS_V2,
+    MULTISIG_CONTRACT_ZKAS_SIGN_NS_V2,
 };
 
 dwow_sdk::define_contract!(
@@ -70,7 +70,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let (fx, fy) = first_pk.xy().expect("pk not identity");
             let group_id = poseidon_hash([fx, fy, t, n]);
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            zk_inputs.push((MULTISIG_CONTRACT_ZKAS_CREATE_GROUP_NS_V1.to_string(), vec![
+            zk_inputs.push((MULTISIG_CONTRACT_ZKAS_CREATE_GROUP_NS_V2.to_string(), vec![
                 params.tx_binding, params.tx_nonce, group_id, t, n,
             ]));
             // Schnorr signatures prohibited (contract-standards.md §3). Member keys are in ZK public inputs.
@@ -85,7 +85,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p, Err(e) => { msg!("[multisig::get_metadata] Error: Failed to deserialize SignParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            zk_inputs.push((MULTISIG_CONTRACT_ZKAS_SIGN_NS_V1.to_string(), vec![
+            zk_inputs.push((MULTISIG_CONTRACT_ZKAS_SIGN_NS_V2.to_string(), vec![
                 params.tx_binding, params.tx_nonce, params.group_id.inner(), params.message_hash,
             ]));
             let sigs: Vec<PublicKey> = vec![];
@@ -99,7 +99,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p, Err(e) => { msg!("[multisig::get_metadata] Error: Failed to deserialize FinalizeParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            zk_inputs.push((MULTISIG_CONTRACT_ZKAS_FINALIZE_NS_V1.to_string(), vec![
+            zk_inputs.push((MULTISIG_CONTRACT_ZKAS_FINALIZE_NS_V2.to_string(), vec![
                 params.tx_binding, params.tx_nonce, params.group_id.inner(), params.message_hash,
             ]));
             let sigs: Vec<PublicKey> = vec![];
