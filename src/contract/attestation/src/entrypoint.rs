@@ -102,29 +102,7 @@ dwow_sdk::define_contract!(
 pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[attestation::init_contract] Initializing attestation contract");
 
-    let check_not_revoked_v1_bincode = include_bytes!("../proof/check_not_revoked_v1.zk.bin");
-    let consume_claim_v1_bincode = include_bytes!("../proof/consume_claim_v1.zk.bin");
-    let create_attestation_v1_bincode = include_bytes!("../proof/create_attestation_v1.zk.bin");
-    let create_claim_v1_bincode = include_bytes!("../proof/create_claim_v1.zk.bin");
-    let delegate_attestation_v1_bincode = include_bytes!("../proof/delegate_attestation_v1.zk.bin");
-    let update_delegation_v1_bincode = include_bytes!("../proof/update_delegation_v1.zk.bin");
-    let verify_chain_v1_bincode = include_bytes!("../proof/verify_chain_v1.zk.bin");
-    let verify_claim_v1_bincode = include_bytes!("../proof/verify_claim_v1.zk.bin");
-    let attest_slash_v1_bincode = include_bytes!("../proof/attest_slash_v1.zk.bin");
-    let commit_fee_schedule_v1_bincode = include_bytes!("../proof/commit_fee_schedule_v1.zk.bin");
-
-    wasm::db::zkas_db_set(&check_not_revoked_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&consume_claim_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&create_attestation_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&create_claim_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&delegate_attestation_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&update_delegation_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&verify_chain_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&verify_claim_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&attest_slash_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&commit_fee_schedule_v1_bincode[..])?;
-
-    // V2 circuits (HAZOP RC3: domain separation)
+    // V2 circuits (V1 loads removed — rc3 migration) (HAZOP RC3: domain separation)
     let attest_slash_v2_bincode = include_bytes!("../proof/attest_slash_v2.zk.bin");
     wasm::db::zkas_db_set(&attest_slash_v2_bincode[..])?;
     let check_not_revoked_v2_bincode = include_bytes!("../proof/check_not_revoked_v2.zk.bin");
