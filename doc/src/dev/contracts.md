@@ -13,7 +13,7 @@ a developer-focused overview with code examples.
 | [PromissoryNote](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/README.md) | DeFi token layer | Bearer instruments, Pedersen commitments |
 | [NativeToken](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/native_token/README.md) | Consensus token layer | Fee payments, block rewards |
 | [Oracle](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/oracle/README.md) | External data feeds | Stake-based attestations |
-| [DAO-Escrow](../src/contract/dao_escrow/README.md) | Community insurance | DAO-governed endowment |
+| [DAO-Escrow](../../src/contract/dao_escrow/README.md) | Community insurance | DAO-governed endowment |
 | [Auction](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/auction/README.md) | Sealed-bid auctions | Escrow integration |
 | [Attestation](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/attestation/README.md) | Credential verification | Predicate-based claims |
 | [Tender](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/tender/README.md) | Request for proposals | O-Cap capability gating |

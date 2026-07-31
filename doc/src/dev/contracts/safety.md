@@ -1649,6 +1649,23 @@ both contracts classify correctly as safeL1. The classification is verified by
 
 ---
 
+### ZK Infrastructure Hardening (HAZOP 2026-07-31)
+
+Several cross-cutting ZK infrastructure improvements were implemented:
+
+- **Domain separation CI gate:** `scripts/check-circuit-domain-separation.sh` prevents
+  new V1 circuits from being introduced. Any `poseidon_hash(...)` without a `DOMAIN_`
+  prefix argument causes CI failure.
+
+- **VK cache FIFO eviction (M-4):** The verifying key cache (`src/zk/verifier.rs`)
+  uses FIFO eviction with a 256-entry cap, deterministic eviction of oldest entries.
+
+- **Roulette circuit fix (C-9/H-13, Risk 80):** `settle_bet_v1.zk` — `won` was a free
+  witness. Now `won = is_equal_base(bet_number, winning_number)`, derived in-circuit.
+  `payout = zero_cond(won, expected_payout)`. Lean4-backed.
+
+---
+
 
 - [NativeToken](./native_token.md) — Consensus token with zero business logic
 - [Standards](./standards.md) — ZK circuit, token, and testing standards

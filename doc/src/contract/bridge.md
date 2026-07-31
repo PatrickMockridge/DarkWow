@@ -559,6 +559,34 @@ implementation status:
   commitment derivation, the double-deposit check, and the chain-event uniqueness index
   (`blake3(chain_id || external_block_hash)`).
 
+### HAZOP Hardening Features
+
+The bridge underwent HAZOP remediation (2026-07-31) adding defense-in-depth:
+
+1. **In-contract withdrawal deposit check (H-12):** The withdrawal path now verifies
+   the deposit commitment exists in the bridge's deposits tree before allowing the
+   withdrawal. Previously this was trusted to the host ZK verifier — a bypassed host
+   verifier could allow withdrawals without proving deposit ownership.
+
+2. **Nullifier recovery on cancellation (HAZOP-05):** When a withdrawal is cancelled
+   after timeout, the nullifier is deleted from the nullifiers tree, restoring the
+   deposit for re-use. Previously the nullifier was permanently spent, locking the
+   deposit forever even though the withdrawal never completed.
+
+3. **Chain-event uniqueness (HAZOP-13):** Each external chain deposit event is indexed
+   by `blake3(chain_id || external_block_hash)` in a dedicated tree. The same external
+   event cannot be deposited multiple times with different DarkFi commitments (varying
+   `recipient_pub`, `nonce`, `secret`).
+
+4. **Governance config sanity bounds (M-8):** Governance-configurable values have
+   hardcoded maximums: `min_confirmations ≤ 10,000` (~7 days), fees ≤ 1,000,000,000,000
+   (1M DRKW). Prevents governance from DoS-attacking deposits by setting confirmations
+   to `u32::MAX` or fees to `u64::MAX`.
+
+5. **V2 circuit migration (RC3):** All 12 operations now have domain-separated V2 ZK
+   circuits. `get_metadata` routes to V2 namespaces. The CI gate
+   (`scripts/check-circuit-domain-separation.sh`) prevents new undifferentiated hashes.
+
 ### Object Capability Properties
 
 1. **Bridge nodes cannot steal**: They never hold user secrets

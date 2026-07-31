@@ -45,6 +45,24 @@ The linear blockchain uses a **use-it-or-lose-it pin mechanism** for uncle block
 2. Pin reward: 50% at depth 1, halving each depth (25%, 12.5%, 6.25%...)
 3. Uncle chain has a **one-time** option to accept or reject the pin
 4. If accepted: Uncle gets pin reward, canonical absorbs all uncle transactions
+
+### HAZOP Consensus Hardening (2026-07-31)
+
+Several validation gaps were closed as part of the HAZOP remediation:
+
+- **Monero coinbase Merkle proof (H-14, M-3):** Competing blocks and uncle chain
+  extensions now verify `is_coinbase_valid_merkle_root()` for `PowSource::Monero`
+  blocks. Previously only the canonical path checked this — competing/uncle Monero
+  blocks were validated via a meaningless RandomX hash.
+
+- **Uncle chain extension difficulty (H-15):** Blocks extending an uncle chain must
+  meet the proper `get_next_work_required` target for their height. Previously they
+  were only checked against absolute min/max bounds (1 to `u32::MAX`), allowing
+  trivially-easy uncle chain extensions.
+
+- **Block reward upper bound (H-1):** A 2x sanity cap on `total_reward` at the host
+  level prevents runaway inflation if the WASM `pow_reward_v1` contract is compromised.
+  The WASM contract independently enforces the exact emission schedule.
 5. If rejected: Uncle loses coinbase entirely, canonical absorbs transactions anyway
 
 **Why this is elegant:**
