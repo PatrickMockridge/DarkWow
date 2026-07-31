@@ -51,12 +51,21 @@ pub enum ZkVerifyResult {
 /// VK derivation (`keygen_vk`) is O(k * 2^k) — several hundred milliseconds
 /// for k=14+. The VK is purely deterministic (same circuit bytes → same VK),
 /// so caching eliminates this cost on every proof verification after the first.
-/// Most nodes see O(10) unique circuits, so a Vec-keyed HashMap is fine.
 ///
-/// Capped at `VK_CACHE_MAX_ENTRIES` to prevent memory exhaustion from
-/// attackers submitting transactions with unique circuit binaries.
-/// Eviction: when full, the oldest half of entries are removed.
-static VK_CACHE: Mutex<Option<HashMap<Vec<u8>, VerifyingKey>>> = Mutex::new(None);
+/// HAZOP M-4 fix: insertion-order Vec provides FIFO eviction — the oldest
+/// entries are evicted first, which approximates LRU for a read-heavy cache
+/// without adding a dependency on an LRU crate.
+///
+/// Capped at `VK_CACHE_MAX_ENTRIES` to prevent memory exhaustion.
+/// Eviction: when full, the oldest half (by insertion order) is removed.
+struct VkCache {
+    /// Lookup: zkbin bytes → VerifyingKey
+    map: HashMap<Vec<u8>, VerifyingKey>,
+    /// Insertion order (FIFO): oldest entries are at the front
+    order: Vec<Vec<u8>>,
+}
+
+static VK_CACHE: Mutex<Option<VkCache>> = Mutex::new(None);
 
 /// Maximum number of unique circuits to cache before eviction.
 /// 256 entries × ~few KB per VK = a few MB max — sufficient for
@@ -78,8 +87,8 @@ pub fn verify_zkp(
     // 1. Check VK cache
     {
         let cache = VK_CACHE.lock().unwrap();
-        if let Some(ref map) = *cache {
-            if let Some(vk) = map.get(zkbin_bytes) {
+        if let Some(ref vk_cache) = *cache {
+            if let Some(vk) = vk_cache.map.get(zkbin_bytes) {
                 return match proof.verify(vk, instances) {
                     Ok(()) => ZkVerifyResult::Ok,
                     Err(_) => ZkVerifyResult::InvalidProof,
@@ -104,21 +113,28 @@ pub fn verify_zkp(
         Err(_) => return ZkVerifyResult::InvalidVk,
     };
 
-    // 3. Store in cache (with eviction cap) and verify
+    // 3. Store in cache (with FIFO eviction cap) and verify
     {
         let mut cache = VK_CACHE.lock().unwrap();
-        let map = cache.get_or_insert_with(HashMap::new);
-        // Evict half the entries if the cache is full to bound memory usage.
-        // A simple half-eviction avoids depending on an LRU crate; if a more
-        // sophisticated policy is desired later, this is the insertion point.
-        if map.len() >= VK_CACHE_MAX_ENTRIES {
-            let keys_to_remove: Vec<Vec<u8>> =
-                map.iter().take(map.len() / 2).map(|(k, _)| k.clone()).collect();
-            for k in keys_to_remove {
-                map.remove(&k);
+        let vk_cache = cache.get_or_insert_with(|| VkCache {
+            map: HashMap::new(),
+            order: Vec::new(),
+        });
+        // HAZOP M-4 fix: FIFO eviction — remove oldest half by insertion order.
+        // Previously used HashMap::iter().take() which is insertion order on
+        // the default hasher but non-deterministic and non-LRU under churn.
+        if vk_cache.map.len() >= VK_CACHE_MAX_ENTRIES {
+            let evict_count = vk_cache.order.len() / 2;
+            for _ in 0..evict_count {
+                if let Some(old_key) = vk_cache.order.first().cloned() {
+                    vk_cache.map.remove(&old_key);
+                    vk_cache.order.remove(0);
+                }
             }
         }
-        map.insert(zkbin_bytes.to_vec(), vk.clone());
+        let key = zkbin_bytes.to_vec();
+        vk_cache.map.insert(key.clone(), vk.clone());
+        vk_cache.order.push(key);
     }
 
     match proof.verify(&vk, instances) {
