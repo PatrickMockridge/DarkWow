@@ -105,12 +105,12 @@ pub const GAME_ROOM_ZKAS_SETTLE_POT_NS: &str = "SettlePot";
 /// ZK namespace for Claim circuit
 pub const GAME_ROOM_ZKAS_CLAIM_NS: &str = "Claim";
 
-// V1 circuit namespaces (used by harness; harness currently generates V1 proofs)
+// Legacy V1 circuit namespaces (kept for harness compatibility)
 pub const GAME_ROOM_ZKAS_CREATE_ROOM_NS_V1: &str = "CreateRoom";
 pub const GAME_ROOM_ZKAS_DEPOSIT_NS_V1: &str = "Deposit";
 pub const GAME_ROOM_ZKAS_PLACE_BET_NS_V1: &str = "PlaceBet";
 pub const GAME_ROOM_ZKAS_SETTLE_POT_NS_V1: &str = "SettlePot";
-// V2 circuit namespaces (HAZOP RC3: domain separation)
+// V2 circuit namespaces (HAZOP RC3: domain separation — active in get_metadata)
 pub const GAME_ROOM_ZKAS_CREATE_ROOM_NS_V2: &str = "CreateRoomV2";
 pub const GAME_ROOM_ZKAS_DEPOSIT_NS_V2: &str = "DepositV2";
 pub const GAME_ROOM_ZKAS_PLACE_BET_NS_V2: &str = "PlaceBetV2";
@@ -278,7 +278,7 @@ fn create_room_get_metadata_v1(
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs
-        .push((GAME_ROOM_ZKAS_CREATE_ROOM_NS_V1.to_string(), vec![derived_room_id]));
+        .push((GAME_ROOM_ZKAS_CREATE_ROOM_NS_V2.to_string(), vec![derived_room_id]));
 
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -297,7 +297,7 @@ fn deposit_get_metadata_v1(
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        GAME_ROOM_ZKAS_DEPOSIT_NS_V1.to_string(),
+        GAME_ROOM_ZKAS_DEPOSIT_NS_V2.to_string(),
         vec![derived_account_key, derived_player_key],
     ));
 
@@ -329,7 +329,7 @@ fn place_bet_get_metadata_v1(
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        GAME_ROOM_ZKAS_PLACE_BET_NS_V1.to_string(),
+        GAME_ROOM_ZKAS_PLACE_BET_NS_V2.to_string(),
         vec![derived_bet_id, derived_commitment],
     ));
 
@@ -356,7 +356,7 @@ fn settle_pot_get_metadata_v1(
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        GAME_ROOM_ZKAS_SETTLE_POT_NS_V1.to_string(),
+        GAME_ROOM_ZKAS_SETTLE_POT_NS_V2.to_string(),
         vec![derived_room_id, derived_pot_id],
     ));
 
