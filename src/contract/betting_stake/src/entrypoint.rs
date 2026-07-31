@@ -65,11 +65,6 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let claim_v1_bincode = include_bytes!("../proof/claim_v2.zk.bin");
     let update_risk_v1_bincode = include_bytes!("../proof/update_risk_v2.zk.bin");
 
-    wasm::db::zkas_db_set(&init_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&stake_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&unstake_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&claim_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&update_risk_v1_bincode[..])?;
 
     // Initialize database trees
     wasm::db::db_init(cid, BETTING_STAKE_REGISTRY_TREE)?;

@@ -86,11 +86,8 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> GenericResult<()> {
     wasm::db::db_set(info_db, SLOT_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
 
     let commit_bet_v1_bincode = include_bytes!("../proof/commit_bet_v2.zk.bin");
-    wasm::db::zkas_db_set(&commit_bet_v1_bincode[..])?;
     let settle_bet_v1_bincode = include_bytes!("../proof/settle_bet_v2.zk.bin");
-    wasm::db::zkas_db_set(&settle_bet_v1_bincode[..])?;
     let reveal_spin_v1_bincode = include_bytes!("../proof/reveal_spin_v2.zk.bin");
-    wasm::db::zkas_db_set(&reveal_spin_v1_bincode[..])?;
 
     Ok(())
 }

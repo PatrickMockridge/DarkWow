@@ -189,24 +189,6 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     msg!("[stablecoin::init_contract] CDP engine initialized successfully");
 
-    let accrue_interest_v1_bincode = include_bytes!("../proof/accrue_interest_v1.zk.bin");
-    wasm::db::zkas_db_set(&accrue_interest_v1_bincode[..])?;
-    let add_collateral_v1_bincode = include_bytes!("../proof/add_collateral_v1.zk.bin");
-    wasm::db::zkas_db_set(&add_collateral_v1_bincode[..])?;
-    let governance_report_v1_bincode = include_bytes!("../proof/governance_report_v1.zk.bin");
-    wasm::db::zkas_db_set(&governance_report_v1_bincode[..])?;
-    let init_v1_bincode = include_bytes!("../proof/init_v1.zk.bin");
-    wasm::db::zkas_db_set(&init_v1_bincode[..])?;
-    let liquidate_v1_bincode = include_bytes!("../proof/liquidate_v1.zk.bin");
-    wasm::db::zkas_db_set(&liquidate_v1_bincode[..])?;
-    let mint_stable_v1_bincode = include_bytes!("../proof/mint_stable_v1.zk.bin");
-    wasm::db::zkas_db_set(&mint_stable_v1_bincode[..])?;
-    let open_position_v1_bincode = include_bytes!("../proof/open_position_v1.zk.bin");
-    wasm::db::zkas_db_set(&open_position_v1_bincode[..])?;
-    let remove_collateral_v1_bincode = include_bytes!("../proof/remove_collateral_v1.zk.bin");
-    wasm::db::zkas_db_set(&remove_collateral_v1_bincode[..])?;
-    let repay_stable_v1_bincode = include_bytes!("../proof/repay_stable_v1.zk.bin");
-    wasm::db::zkas_db_set(&repay_stable_v1_bincode[..])?;
 
     // V2 circuits (HAZOP RC3: domain separation)
     let init_v2_bincode = include_bytes!("../proof/init_v2.zk.bin");

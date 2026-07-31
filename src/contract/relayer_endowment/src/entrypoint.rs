@@ -102,11 +102,8 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     }
 
     let claim_fees_v1_bincode = include_bytes!("../proof/claim_fees_v2.zk.bin");
-    wasm::db::zkas_db_set(&claim_fees_v1_bincode[..])?;
     let deploy_capital_v1_bincode = include_bytes!("../proof/deploy_capital_v2.zk.bin");
-    wasm::db::zkas_db_set(&deploy_capital_v1_bincode[..])?;
     let initialize_v1_bincode = include_bytes!("../proof/initialize_v2.zk.bin");
-    wasm::db::zkas_db_set(&initialize_v1_bincode[..])?;
 
     Ok(())
 }

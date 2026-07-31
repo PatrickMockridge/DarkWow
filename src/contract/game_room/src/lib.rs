@@ -186,16 +186,6 @@ pub fn init_contract(cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractR
 
     msg!("[game_room::init_contract] Game room contract initialized successfully");
 
-    let claim_v1_bincode = include_bytes!("../proof/claim_v1.zk.bin");
-    wasm::db::zkas_db_set(&claim_v1_bincode[..])?;
-    let create_room_v1_bincode = include_bytes!("../proof/create_room_v1.zk.bin");
-    wasm::db::zkas_db_set(&create_room_v1_bincode[..])?;
-    let deposit_v1_bincode = include_bytes!("../proof/deposit_v1.zk.bin");
-    wasm::db::zkas_db_set(&deposit_v1_bincode[..])?;
-    let place_bet_v1_bincode = include_bytes!("../proof/place_bet_v1.zk.bin");
-    wasm::db::zkas_db_set(&place_bet_v1_bincode[..])?;
-    let settle_pot_v1_bincode = include_bytes!("../proof/settle_pot_v1.zk.bin");
-    wasm::db::zkas_db_set(&settle_pot_v1_bincode[..])?;
 
     // V2 circuits (HAZOP RC3: domain separation)
     let call_v2_bincode = include_bytes!("../proof/call_v2.zk.bin");

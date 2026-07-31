@@ -90,15 +90,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[bearer_bond::init_contract] Initializing bearer_bond contract (fixed-interest staking)");
 
     // Include ZK circuits
-    let burn_v1_bincode = include_bytes!("../../proof/burn_v1.zk.bin");
-    let blind_output_v1_bincode = include_bytes!("../../proof/blind_output_v1.zk.bin");
-    let redeem_v1_bincode = include_bytes!("../../proof/redeem_v1.zk.bin");
-    let prove_coverage_v1_bincode = include_bytes!("../../proof/prove_coverage_v1.zk.bin");
 
-    wasm::db::zkas_db_set(&burn_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&blind_output_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&redeem_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&prove_coverage_v1_bincode[..])?;
 
     let tx_hash = wasm::util::get_tx_hash()?;
     let call_idx = wasm::util::get_call_index()?;

@@ -124,8 +124,6 @@ pub fn init_contract(cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractR
 
     msg!("[drain_protection::init_contract] DrainProtection contract initialized");
 
-    let exit_v1_bincode = include_bytes!("../proof/exit_v1.zk.bin");
-    wasm::db::zkas_db_set(&exit_v1_bincode[..])?;
 
     // V2 circuits (HAZOP RC3: domain separation)
     let execute_v2_bincode = include_bytes!("../proof/execute_v2.zk.bin");

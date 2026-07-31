@@ -173,13 +173,7 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
             .map_err(|_| ContractError::IoError("Decode error".to_string()))?
     };
 
-    let deposit_v1_bincode = include_bytes!("../proof/deposit_v1.zk.bin");
-    let withdraw_v1_bincode = include_bytes!("../proof/withdraw_v1.zk.bin");
-    let update_config_v1_bincode = include_bytes!("../proof/update_config_v1.zk.bin");
 
-    wasm::db::zkas_db_set(&deposit_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&withdraw_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&update_config_v1_bincode[..])?;
 
     // V2 circuits (HAZOP RC3: domain separation)
     let deposit_v2_bincode = include_bytes!("../proof/deposit_v2.zk.bin");
@@ -190,16 +184,6 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(&update_config_v2_bincode[..])?;
 
     // HAZOP WP-BRIDGE: new operation ZK circuits (5 circuits for previously unverified ops)
-    let claim_htlc_v1_bincode = include_bytes!("../proof/claim_htlc_v1.zk.bin");
-    wasm::db::zkas_db_set(&claim_htlc_v1_bincode[..])?;
-    let cancel_withdraw_v1_bincode = include_bytes!("../proof/cancel_withdraw_v1.zk.bin");
-    wasm::db::zkas_db_set(&cancel_withdraw_v1_bincode[..])?;
-    let execute_gw_v1_bincode = include_bytes!("../proof/execute_guaranteed_withdraw_v1.zk.bin");
-    wasm::db::zkas_db_set(&execute_gw_v1_bincode[..])?;
-    let refund_htlc_v1_bincode = include_bytes!("../proof/refund_htlc_v1.zk.bin");
-    wasm::db::zkas_db_set(&refund_htlc_v1_bincode[..])?;
-    let accept_withdrawal_v1_bincode = include_bytes!("../proof/accept_withdrawal_v1.zk.bin");
-    wasm::db::zkas_db_set(&accept_withdrawal_v1_bincode[..])?;
 
     // HAZOP Build 2: V2 counterparts for bridge WP-BRIDGE circuits
     let accept_withdrawal_v2_bincode = include_bytes!("../proof/accept_withdrawal_v2.zk.bin");

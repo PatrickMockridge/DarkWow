@@ -111,12 +111,6 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(&create_claim_v1_multi_bincode[..])?;
     let create_claim_v1_ratio_bincode = include_bytes!("../proof/create_claim_v1_ratio.zk.bin");
     wasm::db::zkas_db_set(&create_claim_v1_ratio_bincode[..])?;
-    let create_claim_v1_bincode = include_bytes!("../proof/create_claim_v1.zk.bin");
-    wasm::db::zkas_db_set(&create_claim_v1_bincode[..])?;
-    let issue_credential_v1_bincode = include_bytes!("../proof/issue_credential_v1.zk.bin");
-    wasm::db::zkas_db_set(&issue_credential_v1_bincode[..])?;
-    let verify_capability_v1_bincode = include_bytes!("../proof/verify_capability_v1.zk.bin");
-    wasm::db::zkas_db_set(&verify_capability_v1_bincode[..])?;
 
     // Register V2 circuits (domain separation, HAZOP RC3)
     let create_claim_v2_bincode = include_bytes!("../proof/create_claim_v2.zk.bin");

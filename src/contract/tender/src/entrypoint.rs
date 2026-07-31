@@ -103,16 +103,11 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[tender::init_contract] Tender contract initialized successfully");
 
     let create_tender_v1_bincode = include_bytes!("../proof/create_tender_v2.zk.bin");
-    wasm::db::zkas_db_set(&create_tender_v1_bincode[..])?;
     let reveal_bid_v1_bincode = include_bytes!("../proof/reveal_bid_v2.zk.bin");
-    wasm::db::zkas_db_set(&reveal_bid_v1_bincode[..])?;
     let select_winner_v1_bincode = include_bytes!("../proof/select_winner_v2.zk.bin");
-    wasm::db::zkas_db_set(&select_winner_v1_bincode[..])?;
     let submit_bid_v1_bincode = include_bytes!("../proof/submit_bid_v2.zk.bin");
-    wasm::db::zkas_db_set(&submit_bid_v1_bincode[..])?;
     let submit_bid_with_capability_v1_bincode =
         include_bytes!("../proof/submit_bid_with_capability_v2.zk.bin");
-    wasm::db::zkas_db_set(&submit_bid_with_capability_v1_bincode[..])?;
 
     Ok(())
 }

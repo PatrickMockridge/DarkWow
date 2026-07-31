@@ -30,9 +30,6 @@ dwow_sdk::define_contract!(
 
 pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[multisig::init_contract] Initializing MultiSig contract");
-    wasm::db::zkas_db_set(include_bytes!("../../proof/create_group_v1.zk.bin"))?;
-    wasm::db::zkas_db_set(include_bytes!("../../proof/sign_v1.zk.bin"))?;
-    wasm::db::zkas_db_set(include_bytes!("../../proof/finalize_v1.zk.bin"))?;
 
     // Register V2 circuits (domain separation, HAZOP RC3)
     wasm::db::zkas_db_set(include_bytes!("../../proof/create_group_v2.zk.bin"))?;

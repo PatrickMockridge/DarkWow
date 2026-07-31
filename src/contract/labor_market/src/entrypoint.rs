@@ -121,24 +121,6 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     msg!("[labor_market::init_contract] Labor market contract initialized successfully");
 
-    let accept_job_v1_bincode = include_bytes!("../proof/accept_job_v1.zk.bin");
-    wasm::db::zkas_db_set(&accept_job_v1_bincode[..])?;
-    let accept_job_with_capability_v1_bincode = include_bytes!("../proof/accept_job_with_capability_v1.zk.bin");
-    wasm::db::zkas_db_set(&accept_job_with_capability_v1_bincode[..])?;
-    let confirm_delivery_v1_bincode = include_bytes!("../proof/confirm_delivery_v1.zk.bin");
-    wasm::db::zkas_db_set(&confirm_delivery_v1_bincode[..])?;
-    let create_job_v1_bincode = include_bytes!("../proof/create_job_v1.zk.bin");
-    wasm::db::zkas_db_set(&create_job_v1_bincode[..])?;
-    let dispute_v1_bincode = include_bytes!("../proof/dispute_v1.zk.bin");
-    wasm::db::zkas_db_set(&dispute_v1_bincode[..])?;
-    let refund_v1_bincode = include_bytes!("../proof/refund_v1.zk.bin");
-    wasm::db::zkas_db_set(&refund_v1_bincode[..])?;
-    let submit_deliverable_v1_bincode = include_bytes!("../proof/submit_deliverable_v1.zk.bin");
-    wasm::db::zkas_db_set(&submit_deliverable_v1_bincode[..])?;
-    let submit_git_deliverable_v1_bincode = include_bytes!("../proof/submit_git_deliverable_v1.zk.bin");
-    wasm::db::zkas_db_set(&submit_git_deliverable_v1_bincode[..])?;
-    let milestone_payment_v1_bincode = include_bytes!("../proof/milestone_payment_v1.zk.bin");
-    wasm::db::zkas_db_set(&milestone_payment_v1_bincode[..])?;
 
     // V2 circuits (HAZOP RC3: domain separation)
     let accept_job_v2_bincode = include_bytes!("../proof/accept_job_v2.zk.bin");

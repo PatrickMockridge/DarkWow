@@ -102,12 +102,6 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let claim_winnings_v1_bincode = include_bytes!("../proof/claim_winnings_v2.zk.bin");
     let settle_auction_v1_bincode = include_bytes!("../proof/settle_auction_v2.zk.bin");
 
-    wasm::db::zkas_db_set(&create_auction_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&place_bid_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&close_auction_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&refund_bid_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&claim_winnings_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&settle_auction_v1_bincode[..])?;
 
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, AUCTION_CONTRACT_INFO_TREE)?;

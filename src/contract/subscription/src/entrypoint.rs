@@ -123,11 +123,8 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[subscription::init_contract] Subscription contract initialized successfully");
 
     let subscribe_v1_bincode = include_bytes!("../proof/subscribe_v2.zk.bin");
-    wasm::db::zkas_db_set(&subscribe_v1_bincode[..])?;
     let update_usage_v1_bincode = include_bytes!("../proof/update_usage_v2.zk.bin");
-    wasm::db::zkas_db_set(&update_usage_v1_bincode[..])?;
     let verify_access_v1_bincode = include_bytes!("../proof/verify_access_v2.zk.bin");
-    wasm::db::zkas_db_set(&verify_access_v1_bincode[..])?;
 
     Ok(())
 }
