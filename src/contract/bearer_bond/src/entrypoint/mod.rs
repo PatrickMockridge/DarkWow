@@ -69,9 +69,9 @@ use crate::{
     BEARER_BOND_CONTRACT_NULLIFIER_ROOTS_TREE,
     BEARER_BOND_CONTRACT_DB_VERSION, BEARER_BOND_CONTRACT_INFO_TREE,
     BEARER_BOND_EMPTY_COINS_ROOT, BEARER_BOND_EMPTY_NULLIFIER_ROOT,
-    BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V1, BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1,
-    BEARER_BOND_CONTRACT_ZKAS_PROVE_COVERAGE_NS_V1,
-    BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V1,
+    BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2, BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V2,
+    BEARER_BOND_CONTRACT_ZKAS_PROVE_COVERAGE_NS_V2,
+    BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V2,
 };
 
 // Generate WASM entrypoints
@@ -197,7 +197,7 @@ fn issue_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<C
     let (vc_x, vc_y) = point_coords(params.coin.value_commit);
 
     zk_public_inputs.push((
-        BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1.to_string(),
+        BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V2.to_string(),
         vec![
             params.coin.token_commit, // coin identifier
             vc_x,
@@ -231,7 +231,7 @@ fn transfer_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
         let (vc_x, vc_y) = point_coords(input.value_commit);
 
         zk_public_inputs.push((
-            BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
+            BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
             vec![
                 input.nullifier.inner(),
                 vc_x,
@@ -250,7 +250,7 @@ fn transfer_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
         let (vc_x, vc_y) = point_coords(output.value_commit);
 
         zk_public_inputs.push((
-            BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1.to_string(),
+            BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V2.to_string(),
             vec![
                 output.token_commit,
                 vc_x,
@@ -287,7 +287,7 @@ fn request_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkL
     let (vc_x, vc_y) = point_coords(params.bond_input.value_commit);
 
     zk_public_inputs.push((
-        BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
+        BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
         vec![
             params.bond_input.nullifier.inner(),
             vc_x,
@@ -323,7 +323,7 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
     let (vc_x, vc_y) = point_coords(params.bond_input.value_commit);
 
     zk_public_inputs.push((
-        BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
+        BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
         vec![
             params.bond_input.nullifier.inner(),
             vc_x,
@@ -339,7 +339,7 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
     // Redeem_V1 proof for the receipt coin (value=0)
     let coin_value = pallas::Base::zero();
     zk_public_inputs.push((
-        BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V1.to_string(),
+        BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V2.to_string(),
         vec![
             params.bond_input.token_commit,
             vc_x,
@@ -373,7 +373,7 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
     let (vc_x, vc_y) = point_coords(params.bond_input.value_commit);
 
     zk_public_inputs.push((
-        BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
+        BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
         vec![
             params.bond_input.nullifier.inner(),
             vc_x,
@@ -390,7 +390,7 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
     let coin_value = pallas::Base::zero();
 
     zk_public_inputs.push((
-        BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V1.to_string(),
+        BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V2.to_string(),
         vec![
             params.bond_input.token_commit, // receipt coin identifier
             vc_x,                            // value_commit x
@@ -424,7 +424,7 @@ fn burn_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
         let (vc_x, vc_y) = point_coords(input.value_commit);
 
         zk_public_inputs.push((
-            BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
+            BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2.to_string(),
             vec![
                 input.nullifier.inner(),
                 vc_x,
@@ -457,7 +457,7 @@ fn prove_coverage_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
     let signature_pubkeys: Vec<pallas::Base> = vec![];
 
     zk_public_inputs.push((
-        BEARER_BOND_CONTRACT_ZKAS_PROVE_COVERAGE_NS_V1.to_string(),
+        BEARER_BOND_CONTRACT_ZKAS_PROVE_COVERAGE_NS_V2.to_string(),
         vec![pallas::Base::from(params.coverage_ratio_bps)],
     ));
 
@@ -484,7 +484,7 @@ fn pay_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
     let (vc_x, vc_y) = point_coords(params.interest_coin.value_commit);
 
     zk_public_inputs.push((
-        BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1.to_string(),
+        BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V2.to_string(),
         vec![
             params.interest_coin.token_commit,  // coin identifier
             vc_x,

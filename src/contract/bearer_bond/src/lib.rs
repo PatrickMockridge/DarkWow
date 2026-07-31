@@ -179,6 +179,11 @@ pub const BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1: &str = "BlindOutput_V1";
 pub const BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V1: &str = "Redeem_V1";
 /// zkas prove_coverage circuit namespace (coverage ratio proof)
 pub const BEARER_BOND_CONTRACT_ZKAS_PROVE_COVERAGE_NS_V1: &str = "ProveCoverage_V1";
+// V2 domain-separated namespace constants
+pub const BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V2: &str = "Burn_V2";
+pub const BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V2: &str = "BlindOutput_V2";
+pub const BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V2: &str = "Redeem_V2";
+pub const BEARER_BOND_CONTRACT_ZKAS_PROVE_COVERAGE_NS_V2: &str = "ProveCoverage_V2";
 
 // ============================================================================
 // ZK CIRCUIT BINARIES (for client-side proof generation)
