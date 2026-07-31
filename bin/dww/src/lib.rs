@@ -1233,87 +1233,70 @@ impl Dww {
     }
 
     /// Mark caps from a transaction as revoked in the wallet database.
+    /// HAZOP WP-7 C4+C5: mark consumed caps as PENDING after broadcast.
+    /// Previously called mark_revoked (which jumped to PROCESSING), and
+    /// relied on detect_transferred (no-op for native token). Now:
+    /// - Extracts nullifiers from tx.nullifiers and matches against held caps
+    ///   using the same poseidon_hash(secret, commitment) as match_nullifiers
+    /// - Sets status = Pending (broadcast, not yet mined)
+    /// - The scan path is the sole authority for PROCESSING/revoked
     pub fn mark_tx_exercise(&self, tx: &Transaction, output: &mut Vec<String>) -> Result<()> {
-        use dwow_sdk::contract_client::CapabilityInfo;
+        use crate::capability::CapStatus;
+        use dwow_sdk::crypto::poseidon_hash;
 
-        // Get all unspent caps as held capabilities
+        // Get all unspent caps
         let unspent_caps = self.wallet.get_held_capabilities(Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get capabilities: {:?}", e)))?;
 
-        let held_capabilities: Vec<CapabilityInfo> = unspent_caps.iter()
-            .map(|c| CapabilityInfo {
-                capability_id: c.cap_id.clone(),
-                // P0.1c: resolve per-cap secret via AccountManager delegation.
-                // §4.2.2: .ok() SHALL NOT appear on cryptographic paths.
-                // §4.2.3: unwrap_or_default() SHALL NOT appear on crypto paths.
-                secret: match c.key_coords.as_ref() {
-                    Some(coords) => match self.account_mgr.resolve_key(coords) {
-                        Ok(k) => bs58::encode(k.expose_secret().inner().to_repr()).into_string(),
-                        Err(e) => {
-                            tracing::warn!(target: "dww::wallet",
-                                "resolve_key failed for cap {}: {:?}",
-                                c.cap_id, e);
-                            String::new()
-                        }
-                    },
-                    None => String::new(),
+        let current_height = match self.chain_height() {
+            Ok(h) => h.get(),
+            Err(e) => {
+                error!("Failed to read chain height for pending mark: {e}");
+                return Ok(());
+            }
+        };
+
+        // C5 fix: extract nullifiers from transaction and match against held caps.
+        // This replaces the broken detect_transferred (no-op for native token).
+        // Same computation as match_nullifiers in scan.rs: poseidon_hash(secret, commitment)
+        let tx_nullifiers: Vec<dwow_sdk::crypto::Nullifier> = tx.nullifiers.iter()
+            .filter(|n| !n.is_zero()).cloned().collect();
+
+        for cap in &unspent_caps {
+            // Only mark caps whose nullifiers appear in this transaction
+            let key = match cap.key_coords.as_ref() {
+                Some(coords) => match self.account_mgr.resolve_key(coords) {
+                    Ok(k) => k.expose_secret().clone(),
+                    Err(_) => continue,
                 },
-            })
-            .collect();
-
-        let client_registry = crate::contract_imports::get_client_registry();
-
-        // For each call in the transaction, dispatch to the contract's client
-        for call in &tx.calls {
-            let contract_id = call.data.contract_id;
-
-            // Look up the contract name from its ID for registry dispatch.
-            // Try the wallet's contract_metadata table first (populated during
-            // chain scan for ALL contracts — genesis and deployed). Falls back
-            // to hardcoded genesis mapping for bootstrap before first scan.
-            let contract_id_str = bs58::encode(contract_id.to_bytes()).into_string();
-            // §4.2.2: .ok() SHALL NOT appear in cryptographic paths.
-            // DB error and "not found" are semantically distinct.
-            let contract_name: Option<String> = match self.wallet
-                .get_contract_name_by_id(&contract_id_str)
-            {
-                Ok(name) => name,
-                Err(e) => {
-                    tracing::warn!(target: "dww::wallet",
-                        "mark_tx_exercise: DB error looking up contract {}: {:?}",
-                        contract_id_str, e);
-                    None
-                }
+                None => continue,
             };
 
-            let Some(name) = contract_name else { continue; };
-            let Some(client) = client_registry.get(&name) else { continue; };
+            let computed_nf = poseidon_hash([
+                dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_NULLIFIER,
+                key.inner().clone(),
+                cap.commitment.inner(),
+            ]);
 
-            let Some(_function_code) = call.data.data.first() else { continue; };
-            let params_data = &call.data.data[1..];
+            let nullifier = dwow_sdk::crypto::Nullifier::from_bytes(
+                computed_nf.to_repr()
+            ).ok();
 
-            // Generic dispatch: each contract's client knows how to decode
-            // its own call data and detect which capabilities were transferred
-            let transferred = client.detect_transferred(params_data, &held_capabilities);
-
-            for capability_id in &transferred {
-                // Use current chain tip as the revoke height; reorg reconciler
-                // will un-revoke if the block is reverted.
-                let current_height = match self.chain_height() {
-                    Ok(h) => h.get(), // G3: persistence boundary — mark_revoked takes u64
-                    Err(e) => {
-                        error!("Failed to read chain height for revoke: {e}");
-                        continue;
+            if let Some(nf) = nullifier {
+                if tx_nullifiers.iter().any(|tn| tn == &nf) {
+                    // C4 fix: set PENDING, not PROCESSING.
+                    // The cap is broadcast but not yet mined.
+                    if let Err(e) = self.wallet.set_cap_status(
+                        &cap.cap_id, CapStatus::Pending, current_height,
+                    ) {
+                        output.push(format!(
+                            "Failed to mark capability {} as pending: {:?}", cap.cap_id, e
+                        ));
+                    } else {
+                        output.push(format!(
+                            "Marked capability {} as pending (broadcast)", cap.cap_id
+                        ));
                     }
-                };
-                if let Err(e) = self.wallet.mark_revoked(capability_id, current_height) {
-                    output.push(format!(
-                        "Failed to mark capability {} as revoked: {:?}", capability_id, e
-                    ));
-                } else {
-                    output.push(format!(
-                        "Marked capability {} as revoked", capability_id
-                    ));
                 }
             }
         }
