@@ -49,8 +49,10 @@ architecture described in §§0-9 below. This section documents what works today
 ### What Is Spec-Only [VISION]
 
 - **Provisional state (§6.5):** Capability spend-state lifecycle
-  (Unspent/Reserved/Spent) not implemented; a simpler immediate-revoke model
-  (`mark_tx_exercise`) is used instead.
+  (Unspent/Pending/Processing/Spent) fully implemented via `CapStatus` enum
+  (`bin/dww/src/capability.rs`). The wallet tracks Pending (broadcast, in mempool),
+  Processing (mined, immature), and Spent (confirmed, ≥100 blocks) with
+  `CONFIRMATION_DEPTH=100` and `MEMPOOL_WINDOW=100` as the confirmation window.
 - **Write-path barb-cover selection (§6.2):** `wallet_construct` is not yet
   used for capability selection on the write path.
 - **Seed discipline (§6.1):** `OsRng` is used directly in dispatch; explicit
@@ -681,19 +683,36 @@ The governing invariant:
 > into `ConfirmedState` (its outputs discovered by scan, its inputs' nullifiers observed);
 > a pending transaction that is dropped is discarded, and its reservations are released.
 
-**Capability spend-state lifecycle.** Each held capability SHALL carry a spend-state:
+**Capability spend-state lifecycle.** Each held capability SHALL carry a spend-state
+(`CapStatus` enum, `bin/dww/src/capability.rs`):
 
 ```
-Unspent ──broadcast──▶ Reserved ──confirmation──▶ Spent
-                          │
-                          └────────drop──────────▶ Unspent
+NULL ──broadcast──▶ Pending ──nullifier on-chain──▶ Processing ──100 blocks──▶ Spent
+  ▲                     │
+  │                     └───100 blocks, no nullifier──▶ NULL (never mined)
+  └──────────────────────────────────────────────────────┘
 ```
 
-`Reserved` excludes the capability from selection (§6.2) but is provisional, not a chain
-fact — the on-chain consumption evidence is the nullifier (§6.3 step 4), observed only
-when the block is scanned. The binary `revoked` marker of the read path is the `Spent`
-terminal state *as observed by scan*; the write path adds the `Reserved` in-between so the
-wallet does not re-select a capability it has already spoken for.
+- **Pending** (`CapStatus::Pending`): Transaction broadcast to mempool. Capability excluded
+  from selection via `c.status.is_none()` filter (`cap_selection.rs`). Set by
+  `mark_tx_exercise()` at broadcast time. Reverts to NULL if `MEMPOOL_WINDOW` (100 blocks)
+  passes without the nullifier appearing on-chain (`expire_pending_caps()`).
+
+- **Processing** (`CapStatus::Processing`): Nullifier observed on-chain via scan. Under
+  `CONFIRMATION_DEPTH` (100 blocks) of maturity. Excluded from selection. Set by
+  `mark_revoked()` during `match_nullifiers()` in the scan path.
+
+- **Spent** (`CapStatus::Spent`): Fully confirmed — nullifier has been on-chain for
+  ≥100 blocks. Permanently unspendable. Advanced from Processing by
+  `check_confirmations()` during scan-time reconciliation.
+
+- **Fallback:** Pending caps whose transactions were never mined (mempool eviction,
+  competing block) are cleared back to NULL after `MEMPOOL_WINDOW` expires. This
+  mirrors the mempool's own timeout (3600s / ~30 blocks) with a generous margin.
+
+The `revoked` field on `CapRecord` is derived from status: `revoked == (status IS Processing OR status IS Spent)`.
+Startup integrity repair (`check_status_revoked_consistency()`) auto-corrects any divergence
+between the two representations after a crash.
 
 **Transaction status lifecycle.** Each transaction the wallet builds SHALL carry a status:
 

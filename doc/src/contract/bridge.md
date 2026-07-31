@@ -317,7 +317,7 @@ DarkWow mints wLTC to user
 | CancelWithdrawV1 | 0x04 | Cancel timed-out withdrawal |
 | ExecuteGuaranteedWithdrawV1 | 0x05 | Execute guaranteed withdrawal with pool stake |
 | CreateHtlcV1 | 0x06 | Create HTLC swap for cross-chain atomic swap |
-| ClaimHtlcV1 | 0x07 | Claim HTLC swap with secret |
+| ClaimHtlcV1 | 0x07 | Claim HTLC with ZK proof of preimage (no plaintext secret) |
 | RefundHtlcV1 | 0x08 | Refund HTLC swap after timelock expiry |
 | ReassignWithdrawalV1 | 0x09 | Reassign stuck withdrawal to a new relayer |
 | RegisterRelayerV1 | 0x0a | Register a relayer pubkey with the bridge |
@@ -535,15 +535,29 @@ DEX on DarkWow:
 
 ### Deposit Security
 
-Each chain has specific verification:
+Deposit verification operates at two levels: (1) the DepositV2 ZK circuit verifies the
+internal commitment derivation (`poseidon_hash(secret, amount, bridge_address)`), and
+(2) chain-specific verification functions check the external chain proof. The current
+implementation status:
 
-| Chain | Verification | Trust Model |
-|-------|-------------|-------------|
-| Ethereum | Merkle proof | Trustless (once confirmed) |
-| Monero | DLEq proof | Honest-but-curious relayer |
-| Zcash | Spend proof | Honest-but-curious relayer |
-| Aztec | Note proof | Aztec rollup (ZK-verified) |
-| Litecoin | Merkle proof | Trustless (once confirmed) |
+| Chain | Current Verification | Target (Mainnet) | Trust Model |
+|-------|---------------------|-------------------|-------------|
+| Ethereum | Host-delegated (no in-contract check) | Merkle-Patricia proof via light client | Trustless (once implemented) |
+| Monero | Structural checks only (DLEq stubbed) | DLEq proof (FIXME(dleq)) | Honest-but-curious relayer |
+| Zcash | Structural checks only (non-empty proofs) | Groth16 spend/output proof verification | Trustless (once implemented) |
+| Aztec | Structural checks only (non-empty proofs) | PLONK note proof verification | Aztec rollup (ZK-verified) |
+| Litecoin | Structural checks only (non-empty proofs) | Merkle proof + Bulletproof range proof | Trustless (once implemented) |
+
+**Current limitations (see `entrypoint.rs` for FIXME/TODO markers):**
+- Ethereum deposit verification is delegated to the host validator runtime — if the host
+  verifier is disabled, deposits are accepted without cryptographic proof.
+- Monero DLEq proof (`FIXME(dleq)`): any caller can claim any Monero deposit. Requires
+  Montgomery curve operations in the zkVM before it can be implemented in-circuit.
+- Zcash/Aztec/Litecoin: proof verification checks only that proof bytes are non-empty.
+  Actual Groth16/PLONK verification requires pairing operations in the zkVM.
+- All chains benefit from the internal DepositV2 circuit which verifies the DarkWow-side
+  commitment derivation, the double-deposit check, and the chain-event uniqueness index
+  (`blake3(chain_id || external_block_hash)`).
 
 ### Object Capability Properties
 

@@ -1238,6 +1238,49 @@ non-determinism through:
 - **External calls:** The WASM has no network access. All data SHALL come from
   the call data, the block header, or the sled state.
 
+### A.9 Circuit Version Migration (V1 → V2)
+
+The contract ZK circuits underwent a V1→V2 migration as part of HAZOP RC3 (domain
+separation). The migration status is:
+
+**What changed:** V1 circuits compute `poseidon_hash(inputs...)` without domain
+constants. V2 circuits prepend domain constants: `poseidon_hash(DOMAIN_TX_BINDING, inputs...)`
+for tx_binding, `poseidon_hash(DOMAIN_NULLIFIER, ...)` for nullifiers, etc.
+
+**Domain constants (7 total):**
+| Constant | witness_base(N) | Purpose |
+|----------|----------------|---------|
+| DOMAIN_NULLIFIER | 1 | Nullifier derivation |
+| DOMAIN_TOKEN_COMMIT | 2 | Token commitment |
+| DOMAIN_TX_BINDING | 3 | Transaction binding hash |
+| DOMAIN_COIN_COMMIT | 4 | Coin commitment |
+| (reserved) | 5 | — |
+| DOMAIN_USER_DATA_ENC | 6 | User data encryption |
+| DOMAIN_SIGNATURE_SECRET | 7 | Ephemeral signature secret |
+
+**Migration status by contract:**
+| Contract | Status | Notes |
+|----------|--------|-------|
+| Bridge | **Fully V2** | All 12 circuits have V2 counterparts; `get_metadata` routes to V2 namespaces |
+| Labor Market | **Fully V2** | 9 circuits expanded from stubs to full V2 with action-tagged nullifiers |
+| Native Token | Fully V2 | fee_v2, burn_v2, mint_v2, fee_collect_v2 |
+| Promissory Note | Fully V2 | burn_v2 (Revoke_V2) with domain-separated nullifier |
+| Stablecoin | Fully V2 | governance_report_v2, liquidate_v2 |
+| Oracle | Fully V2 | aggregate_v2 |
+| Attestation | Fully V2 | consume_claim_v1 fixed (HAZOP C13), V2 exists |
+| Roulette | Fully V2 | place_bet_v2, settle_bet_v2, spin_wheel_v2 (settle_bet_v1 also fixed in-place) |
+| Box | V2 exists | put/take circuits |
+| Purse | V2 exists | deposit/withdraw/balance circuits |
+| Remaining ~150 circuits | **In progress** | V2 circuits exist but `get_metadata` may still reference V1 namespaces |
+
+**CI enforcement:** `scripts/check-circuit-domain-separation.sh` prevents new V1 circuits
+from being introduced. Any `poseidon_hash(...)` without a `DOMAIN_` prefix argument in a
+`.zk` file causes CI failure.
+
+**Naming convention:** The examples in this document use `*V1` naming for historical
+consistency. In production, V2 is the canonical circuit format. New circuits SHALL be
+created as V2 with domain-separated hashes.
+
 ### A.8.5 The Coverage Gate
 
 Per [wallet.md §2.2](wallet.md) and [composition.md §1.3](composition.md), the
