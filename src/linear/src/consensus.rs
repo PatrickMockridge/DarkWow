@@ -410,10 +410,17 @@ impl PoWConsensus {
         max_target: BlockTarget,
     ) -> BlockTarget {
         let n = timestamps.len().min(10);
+        // HAZOP M-2 fix: unify with adjust_target — use checked_sub with
+        // anomaly logging instead of silently saturating decreasing timestamps.
         let start = timestamps.len() - n;
         let mut total_interval = 0u64;
         for i in (start + 1)..timestamps.len() {
-            total_interval += timestamps[i].get().saturating_sub(timestamps[i - 1].get());
+            total_interval += timestamps[i].get().checked_sub(timestamps[i - 1].get()).unwrap_or_else(|| {
+                tracing::warn!(target: "dwow_chain::consensus",
+                    "Decreasing timestamp in compute_adjustment: {} < {}",
+                    timestamps[i], timestamps[i - 1]);
+                0
+            });
         }
         let count = (n - 1) as u64;
         let avg_interval = if count > 0 {

@@ -570,6 +570,16 @@ impl CChainState {
                     block.hash_with_vm(&*guard).to_string()
                 ));
             }
+            // HAZOP H-14 fix: validate Monero merge-mined competing blocks.
+            // The canonical path (block_acceptor.rs:150) checks the Monero
+            // coinbase Merkle proof — the competing path must match.
+            if let crate::PowSource::Monero(monero_data) = &block.header.pow_source {
+                if !monero_data.is_coinbase_valid_merkle_root() {
+                    return Err(LinearError::BlockIsInvalid(
+                        "Competing Monero merge-mined block has invalid coinbase Merkle proof".into()
+                    ));
+                }
+            }
             // HAZOP H5 fix: enforce the same target as the canonical block
             // at this height. Competing blocks share the same parent, so
             // get_next_work_required(height) is the correct expected target
@@ -697,17 +707,20 @@ impl CChainState {
                         block.hash_with_vm(&*guard).to_string()
                     ));
                 }
-                // H2 fix: validate target range for uncle chain extensions.
+                // HAZOP H-15 fix: validate uncle chain extension target using
+                // full difficulty adjustment, not just absolute min/max bounds.
+                // Previously accepted any target between 1 and u32::MAX —
+                // now requires the proper get_next_work_required target.
                 {
                     let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
-                    let min = consensus.min_target();
-                    let max = consensus.max_target();
-                    if block.header.target < min || block.header.target > max {
+                    let expected = consensus.get_next_work_required(&self.store, block_height)?;
+                    if block.header.target != expected {
                         drop(guard);
-                        return Err(LinearError::BlockIsInvalid(
-                            format!("Uncle chain target {} outside bounds [{}, {}]",
-                                block.header.target, min, max)
-                        ));
+                        return Err(LinearError::InvalidTarget {
+                            expected: expected.get(),
+                            declared: block.header.target.get(),
+                            height: block_height,
+                        });
                     }
                     drop(consensus);
                 }
