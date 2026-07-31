@@ -4,6 +4,7 @@
 
 - [DarkWow](intro.md)
 - [Formal Specification](arch/formal-specification.md) ← One page to read
+- [AI Documentation Index](arch/ai-index.md) ← For AI agents: structured map of every key document
 
 ## Persona Paths
 
