@@ -707,6 +707,17 @@ impl CChainState {
                         block.hash_with_vm(&*guard).to_string()
                     ));
                 }
+                // HAZOP M-3 fix: validate Monero merge-mined uncle chain extensions.
+                // The competing block path at same height already has this check
+                // (H-14 fix, line 576). The uncle extension path must match.
+                if let crate::PowSource::Monero(monero_data) = &block.header.pow_source {
+                    if !monero_data.is_coinbase_valid_merkle_root() {
+                        drop(guard);
+                        return Err(LinearError::BlockIsInvalid(
+                            "Uncle extension Monero merge-mined block has invalid coinbase Merkle proof".into()
+                        ));
+                    }
+                }
                 // HAZOP H-15 fix: validate uncle chain extension target using
                 // full difficulty adjustment, not just absolute min/max bounds.
                 // Previously accepted any target between 1 and u32::MAX —

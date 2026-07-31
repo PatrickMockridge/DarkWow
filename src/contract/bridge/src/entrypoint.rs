@@ -102,6 +102,8 @@ use crate::{
 
 const BRIDGE_DB_VERSION_KEY: &[u8] = b"db_version";
 const BRIDGE_DEPOSIT_ROOT_KEY: &[u8] = b"deposit_root";
+/// HAZOP-13: chain-event uniqueness tree — prevents duplicate external deposits
+const BRIDGE_CHAIN_EVENTS_TREE: &str = "chain_events";
 const BRIDGE_MIN_CONFIRMATIONS_KEY: &[u8] = b"min_confirmations";
 const BRIDGE_DEPOSIT_FEE_KEY: &[u8] = b"deposit_fee";
 const BRIDGE_WITHDRAW_FEE_KEY: &[u8] = b"withdraw_fee";
@@ -214,6 +216,8 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     // Initialize deposits tree
     wasm::db::db_init(cid, BRIDGE_CONTRACT_DEPOSITS_TREE)?;
+    // HAZOP-13: chain-event uniqueness — prevent duplicate external deposits
+    wasm::db::db_init(cid, BRIDGE_CHAIN_EVENTS_TREE)?;
 
     // Initialize withdrawals tree
     wasm::db::db_init(cid, BRIDGE_CONTRACT_WITHDRAWALS_TREE)?;
@@ -471,6 +475,19 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
     let deposits_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_DEPOSITS_TREE)?;
     if wasm::db::db_contains_key(deposits_db, &params.commitment.to_bytes())? {
         msg!("[bridge::process_instruction] ERROR: Deposit already registered");
+        return Err(BridgeError::DoubleDeposit.into())
+    }
+
+    // HAZOP-13: prevent same external chain event from being deposited multiple
+    // times with different DarkFi commitments (varying recipient_pub, nonce, secret).
+    // blake3(chain_id || external_block_hash) uniquely identifies the external event.
+    let events_db = wasm::db::db_lookup(cid, BRIDGE_CHAIN_EVENTS_TREE)?;
+    let mut event_key = Vec::with_capacity(1 + params.external_block_hash.len());
+    event_key.push(params.chain.as_u8());
+    event_key.extend_from_slice(&params.external_block_hash);
+    let event_hash = blake3::hash(&event_key);
+    if wasm::db::db_contains_key(events_db, event_hash.as_bytes())? {
+        msg!("[bridge::process_instruction] ERROR: External chain event already deposited");
         return Err(BridgeError::DoubleDeposit.into())
     }
 
@@ -1340,6 +1357,14 @@ fn apply_deposit_update(cid: ContractId, update: DepositUpdateV1) -> ContractRes
 
     // Insert commitment into deposit tree (key = commitment, value = empty for now)
     wasm::db::db_set(deposits_db, &update.commitment.to_bytes(), &[])?;
+
+    // HAZOP-13: store chain-event uniqueness key to prevent duplicate external deposits
+    let events_db = wasm::db::db_lookup(cid, BRIDGE_CHAIN_EVENTS_TREE)?;
+    let mut event_key = Vec::with_capacity(1 + update.external_block_hash.len());
+    event_key.push(update.chain.as_u8());
+    event_key.extend_from_slice(&update.external_block_hash);
+    let event_hash = blake3::hash(&event_key);
+    wasm::db::db_set(events_db, event_hash.as_bytes(), &[])?;
 
     // Store full deposit record
     let deposit = Deposit {
