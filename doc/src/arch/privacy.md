@@ -65,6 +65,58 @@ of quality. L2 is not "worse" than L1 — it is the correct engineering decision
 for the contract's domain. Adding Merkle inclusion proofs to a static record
 adds constraint without adding privacy benefit.
 
+### 2.4 The L1/L2 Fungibility Gradient
+
+The privacy level a contract requires follows directly from its fungibility.
+Fungibility is not binary — it is a gradient, and the L1/L2 distinction maps
+onto it formally.
+
+**The gradient.** A contract's position on the gradient is determined by
+whether the observer's knowledge of "which instance" is equivalent to
+knowledge of "which object." When they are the same, L2 suffices. When they
+differ, L1 is required.
+
+| Contract | Level | Instances | Objects per Instance | Anonymity Model | Fungibility |
+|----------|-------|-----------|---------------------|----------------|-------------|
+| Promissory Note | L1 | 1 genesis | Unlimited coins | Shared tree, coins indistinguishable by type or owner | Fully fungible — every coin looks like every other coin |
+| Purse | L1 | 1 genesis | Unlimited purses | Shared tree, balance hidden in Pedersen commitment | Fungible value — observer sees "a purse was used," not which purse or how much |
+| Box | L1 | 1 genesis | Unlimited boxes | Shared tree, contents hidden in Poseidon commitment | Semi-fungible — observer sees "a box was used," not which box or what it holds |
+| DAO Escrow | L2 | Many (per-DAO) | 1 DAO state | Per-instance sled KV, known as "the DAO" | Non-fungible — each DAO IS a distinct instance with its own rules |
+| Identity | L2 | Many (per-identity) | 1 credential set | Per-instance, ZK selective disclosure | Non-fungible, zero identity leak — the instance does not reveal the person |
+
+**The genesis singleton rule.** L1 contracts deployed at genesis (PromissoryNote,
+Box, Purse) have exactly one instance. Every user of that contract type uses the
+same Merkle tree. The anonymity set is the set of all objects of that type —
+every box in the one box tree, every purse in the one purse tree. An observer
+knows the contract type but cannot distinguish objects within it. This is the
+structural guarantee that prevents L1 from collapsing to degenerate N=1.
+
+**Why DAOs are L2.** A DAO contract deployed at L1 would force every DAO into
+the same template — one Merkle tree, one anonymity set, one state machine. This
+is architecturally wrong: DAOs differ in governance rules, membership criteria,
+treasury structure, and proposal mechanics. Forcing homogeneity eliminates the
+very property that makes a DAO useful. L2 says: deploy your own instance. The
+anonymity set is unnecessary because the DAO's existence as "the DAO" is public
+knowledge — the privacy is in who votes, how much they hold, and what they
+propose, all of which stay in the ZK witness.
+
+**Why Identity is L2.** An identity credential is non-fungible by definition.
+It represents a specific set of attributes bound to a specific holder. The
+instance IS the identity. But unlike a DAO, the instance does not reveal the
+person — "credential #8472 voted" reveals nothing about who holds it.
+Selective disclosure in the ZK circuit controls what attributes are revealed
+and to whom. The privacy boundary is at the person→credential mapping, not at
+the credential→attribute mapping.
+
+**The formal criterion.** A contract SHALL use L1 iff it is deployed as a
+genesis singleton AND its objects are fungible within the type. A contract
+SHALL use L2 iff it is deployed per-instance OR its objects are inherently
+non-fungible (each instance IS the object). The choice is not about "more
+privacy" vs "less privacy" — it is about matching the privacy boundary to
+the fungibility boundary. Adding Merkle inclusion proofs to a non-fungible
+object adds constraint without adding privacy. Skipping Merkle inclusion for
+a fungible object leaks which object was consumed.
+
 ## 3. The Hardness Ceiling
 
 L1 is not a fixed target. As contracts grow in complexity, the extra dimension
