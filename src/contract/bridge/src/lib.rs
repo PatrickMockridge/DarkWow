@@ -132,6 +132,11 @@ pub const BRIDGE_CONTRACT_ZKAS_CANCEL_WITHDRAW_NS_V1: &str = "CancelWithdrawV1";
 pub const BRIDGE_CONTRACT_ZKAS_EXECUTE_GW_NS_V1: &str = "ExecuteGuaranteedWithdrawV1";
 pub const BRIDGE_CONTRACT_ZKAS_REFUND_HTLC_NS_V1: &str = "RefundHtlcV1";
 pub const BRIDGE_CONTRACT_ZKAS_ACCEPT_WITHDRAWAL_NS_V1: &str = "AcceptWithdrawalV1";
+pub const BRIDGE_CONTRACT_ZKAS_ACCEPT_WITHDRAWAL_NS_V2: &str = "AcceptWithdrawalV2";
+pub const BRIDGE_CONTRACT_ZKAS_CANCEL_WITHDRAW_NS_V2: &str = "CancelWithdrawV2";
+pub const BRIDGE_CONTRACT_ZKAS_CLAIM_HTLC_NS_V2: &str = "ClaimHtlcV2";
+pub const BRIDGE_CONTRACT_ZKAS_EXECUTE_GW_NS_V2: &str = "ExecuteGuaranteedWithdrawV2";
+pub const BRIDGE_CONTRACT_ZKAS_REFUND_HTLC_NS_V2: &str = "RefundHtlcV2";
 
 // XMR (Monero) specific constants
 /// Number of block confirmations required for XMR deposits

@@ -1,0 +1,19 @@
+# Bridge ClaimHtlcV2 Circuit — domain-separated HTLC preimage proof.
+# V2: domain separation on both poseidon_hash calls (preimage + tx_binding).
+k = 11; field = "pallas";
+constant "ClaimHtlcV2" {
+    EcFixedPointBase NULLIFIER_K,
+}
+witness "ClaimHtlcV2" {
+    Base swap_id, Base secret, Base derived_hash,
+    Base tx_commitment, Base tx_nonce, Base tx_binding,
+}
+circuit "ClaimHtlcV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_HASH = witness_base(8);
+    computed_hash = poseidon_hash(DOMAIN_HASH, secret);
+    constrain_equal_base(computed_hash, derived_hash);
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(swap_id); constrain_instance(derived_hash);
+    constrain_instance(tx_binding); constrain_instance(tx_nonce);
+}

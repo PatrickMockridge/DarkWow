@@ -81,9 +81,9 @@ use crate::{
     BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V1, BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V1,
     BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V2, BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V2,
     BRIDGE_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2,
-    BRIDGE_CONTRACT_ZKAS_CLAIM_HTLC_NS_V1, BRIDGE_CONTRACT_ZKAS_CANCEL_WITHDRAW_NS_V1,
-    BRIDGE_CONTRACT_ZKAS_EXECUTE_GW_NS_V1, BRIDGE_CONTRACT_ZKAS_REFUND_HTLC_NS_V1,
-    BRIDGE_CONTRACT_ZKAS_ACCEPT_WITHDRAWAL_NS_V1,
+    BRIDGE_CONTRACT_ZKAS_CLAIM_HTLC_NS_V2, BRIDGE_CONTRACT_ZKAS_CANCEL_WITHDRAW_NS_V2,
+    BRIDGE_CONTRACT_ZKAS_EXECUTE_GW_NS_V2, BRIDGE_CONTRACT_ZKAS_REFUND_HTLC_NS_V2,
+    BRIDGE_CONTRACT_ZKAS_ACCEPT_WITHDRAWAL_NS_V2,
     BRIDGE_CONTRACT_KEYS_TREE, BRIDGE_CONTRACT_NULLIFIERS_TREE,
     BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE, BRIDGE_CONTRACT_WITHDRAWALS_TREE,
     BRIDGE_CONTRACT_STATE,
@@ -201,6 +201,18 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     let accept_withdrawal_v1_bincode = include_bytes!("../proof/accept_withdrawal_v1.zk.bin");
     wasm::db::zkas_db_set(&accept_withdrawal_v1_bincode[..])?;
 
+    // HAZOP Build 2: V2 counterparts for bridge WP-BRIDGE circuits
+    let accept_withdrawal_v2_bincode = include_bytes!("../proof/accept_withdrawal_v2.zk.bin");
+    wasm::db::zkas_db_set(&accept_withdrawal_v2_bincode[..])?;
+    let cancel_withdraw_v2_bincode = include_bytes!("../proof/cancel_withdraw_v2.zk.bin");
+    wasm::db::zkas_db_set(&cancel_withdraw_v2_bincode[..])?;
+    let claim_htlc_v2_bincode = include_bytes!("../proof/claim_htlc_v2.zk.bin");
+    wasm::db::zkas_db_set(&claim_htlc_v2_bincode[..])?;
+    let execute_gw_v2_bincode = include_bytes!("../proof/execute_guaranteed_withdraw_v2.zk.bin");
+    wasm::db::zkas_db_set(&execute_gw_v2_bincode[..])?;
+    let refund_htlc_v2_bincode = include_bytes!("../proof/refund_htlc_v2.zk.bin");
+    wasm::db::zkas_db_set(&refund_htlc_v2_bincode[..])?;
+
     // NOTE: xmr_deposit_v1.zk, ltc_deposit_v1.zk, zec_deposit_v1.zk, and
     // azt_deposit_v1.zk exist in proof/ but are deferred to v1.1 cross-chain
     // support — they are not loaded or wired to get_metadata yet.
@@ -281,7 +293,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params = CancelWithdrawParams::decode(&self_.data[1..])?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                BRIDGE_CONTRACT_ZKAS_CANCEL_WITHDRAW_NS_V1.to_string(),
+                BRIDGE_CONTRACT_ZKAS_CANCEL_WITHDRAW_NS_V2.to_string(),
                 vec![params.nullifier.inner()],
             ));
             let mut metadata = vec![];
@@ -294,7 +306,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params = ExecuteGuaranteedWithdrawParams::decode(&self_.data[1..])?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                BRIDGE_CONTRACT_ZKAS_EXECUTE_GW_NS_V1.to_string(),
+                BRIDGE_CONTRACT_ZKAS_EXECUTE_GW_NS_V2.to_string(),
                 vec![params.nullifier.inner()],
             ));
             let mut metadata = vec![];
@@ -314,7 +326,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                BRIDGE_CONTRACT_ZKAS_CLAIM_HTLC_NS_V1.to_string(),
+                BRIDGE_CONTRACT_ZKAS_CLAIM_HTLC_NS_V2.to_string(),
                 vec![swap_id, params.derived_hash],
             ));
             let mut metadata = vec![];
@@ -331,7 +343,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                BRIDGE_CONTRACT_ZKAS_REFUND_HTLC_NS_V1.to_string(),
+                BRIDGE_CONTRACT_ZKAS_REFUND_HTLC_NS_V2.to_string(),
                 vec![swap_id, pallas::Base::from(params.current_block)],
             ));
             let mut metadata = vec![];
@@ -346,7 +358,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let (rx, ry) = params.relayer_pub.xy().unwrap_or((pallas::Base::zero(), pallas::Base::zero()));
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
-                BRIDGE_CONTRACT_ZKAS_ACCEPT_WITHDRAWAL_NS_V1.to_string(),
+                BRIDGE_CONTRACT_ZKAS_ACCEPT_WITHDRAWAL_NS_V2.to_string(),
                 vec![params.nullifier.inner(), rx, ry, pallas::Base::from(params.max_fee_bp)],
             ));
             let mut metadata = vec![];
