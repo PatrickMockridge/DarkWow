@@ -459,9 +459,11 @@ fn escrow_fund_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(EscrowError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     // Child 1: Purse deposit — locks the funded amount in a genesis Purse
     let purse_idx = this_call.children_indexes[1];
@@ -522,9 +524,11 @@ fn escrow_claim_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(EscrowError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     // Child 1: Box take — consumes the seller's claim Box (nullifier prevents double-claim)
     let box_idx = this_call.children_indexes[1];
@@ -606,9 +610,11 @@ fn escrow_refund_process_instruction_v1(
         .ok_or(EscrowError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
     // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     // Access databases
     let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;

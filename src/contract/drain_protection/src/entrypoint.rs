@@ -255,9 +255,11 @@ fn process_instruction(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> Contract
             let promissory_note_bytes = wasm::db::db_get(info_db, DRAIN_PROTECTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
                 .ok_or(DrainProtectionError::InvalidChildCall)?;
             let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-            if promissory_note_cid != ContractId::ZERO {
-                validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+            // HAZOP H-11: fail-closed — reject if promissory_note not configured
+            if promissory_note_cid == ContractId::ZERO {
+                return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
             }
+            validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
             let params= ExitParamsV1::decode(&self_.data.data[1..])?;
             let update = exit_process_instruction_v1(cid, params, &child_call.data)?;
@@ -281,9 +283,11 @@ fn process_instruction(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> Contract
             let promissory_note_bytes = wasm::db::db_get(info_db, DRAIN_PROTECTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
                 .ok_or(DrainProtectionError::InvalidChildCall)?;
             let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-            if promissory_note_cid != ContractId::ZERO {
-                validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+            // HAZOP H-11: fail-closed — reject if promissory_note not configured
+            if promissory_note_cid == ContractId::ZERO {
+                return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
             }
+            validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
             let params = crate::model::TransferParamsV1::decode(&self_.data.data[1..])?;
             let update = transfer_process_instruction_v1(cid, params, &child_call.data)?;

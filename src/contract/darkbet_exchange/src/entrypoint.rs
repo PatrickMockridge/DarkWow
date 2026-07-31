@@ -514,9 +514,11 @@ fn darkbet_place_back_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     // Get and validate market
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
@@ -660,9 +662,11 @@ fn darkbet_place_lay_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     // Get and validate market
     let markets_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE)?;
@@ -972,9 +976,11 @@ fn darkbet_buy_position_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params= BuyPositionParamsV1::decode(&self_.data[1..])?;
@@ -1137,9 +1143,11 @@ fn darkbet_add_liquidity_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params= AddLiquidityParamsV1::decode(&self_.data[1..])?;
@@ -1269,9 +1277,11 @@ fn darkbet_remove_liquidity_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params= RemoveLiquidityParamsV1::decode(&self_.data[1..])?;
@@ -1414,9 +1424,11 @@ fn darkbet_claim_winnings_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params= ClaimWinningsParamsV1::decode(&self_.data[1..])?;
@@ -1616,9 +1628,11 @@ fn darkbet_settle_market_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params= SettleMarketParamsV1::decode(&self_.data[1..])?;
@@ -1770,9 +1784,11 @@ fn darkbet_cancel_order_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params= CancelOrderParamsV1::decode(&self_.data[1..])?;

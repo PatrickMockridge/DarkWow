@@ -521,9 +521,11 @@ fn pay_premium_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
         .ok_or(DaoEscrowError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
     // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     let value_blind = poseidon_hash([
         pallas::Base::from(params.value),
         params.dao_escrow_bulla.inner(),
@@ -639,9 +641,11 @@ fn withdraw_v1(
         .ok_or(DaoEscrowError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
     // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     let value_blind = poseidon_hash([
         pallas::Base::from(params.value),
         params.dao_escrow_bulla.inner(),
@@ -786,9 +790,11 @@ fn endowment_withdraw_v1(
         .ok_or(DaoEscrowError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
     // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     let value_blind = poseidon_hash([
         pallas::Base::from(params.value),
         params.dao_escrow_bulla.inner(),
@@ -910,9 +916,11 @@ fn treasury_spend_v1(
         .ok_or(DaoEscrowError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
     // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     let value_blind = poseidon_hash([
         pallas::Base::from(params.value),
         params.dao_escrow_bulla.inner(),
@@ -1429,9 +1437,11 @@ fn execute_claim_v1(
         .ok_or(DaoEscrowError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
     // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     let value_blind = poseidon_hash([
         pallas::Base::from(params.value),
         params.dao_escrow_bulla.inner(),

@@ -311,10 +311,11 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
                 .ok_or(AuctionError::InvalidChildCall)?;
             let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-            // Only validate if promissory_note_contract_id was configured (non-zero)
-            if promissory_note_cid != ContractId::ZERO {
-                validate_child_contract_id(&calls[child_idx].data.contract_id, &promissory_note_cid)?;
+            // HAZOP H-11: fail-closed — reject if promissory_note not configured
+            if promissory_note_cid == ContractId::ZERO {
+                return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
             }
+            validate_child_contract_id(&calls[child_idx].data.contract_id, &promissory_note_cid)?;
             let params= ClaimWinningsParamsV1::decode(&self_.data[1..])?;
             claim_winnings_v1(cid, params, &calls[child_idx].data.data)
         }
@@ -335,10 +336,11 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
                 .ok_or(AuctionError::InvalidChildCall)?;
             let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-            // Only validate if promissory_note_contract_id was configured (non-zero)
-            if promissory_note_cid != ContractId::ZERO {
-                validate_child_contract_id(&calls[child_idx].data.contract_id, &promissory_note_cid)?;
+            // HAZOP H-11: fail-closed — reject if promissory_note not configured
+            if promissory_note_cid == ContractId::ZERO {
+                return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
             }
+            validate_child_contract_id(&calls[child_idx].data.contract_id, &promissory_note_cid)?;
             let params= SettleAuctionParamsV1::decode(&self_.data[1..])?;
             settle_auction_v1(cid, params, &calls[child_idx].data.data)
         }
@@ -359,10 +361,11 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
                 .ok_or(AuctionError::InvalidChildCall)?;
             let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-            // Only validate if promissory_note_contract_id was configured (non-zero)
-            if promissory_note_cid != ContractId::ZERO {
-                validate_child_contract_id(&calls[child_idx].data.contract_id, &promissory_note_cid)?;
+            // HAZOP H-11: fail-closed — reject if promissory_note not configured
+            if promissory_note_cid == ContractId::ZERO {
+                return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
             }
+            validate_child_contract_id(&calls[child_idx].data.contract_id, &promissory_note_cid)?;
             let params= RefundBidParamsV1::decode(&self_.data[1..])?;
             refund_bid_v1(cid, params, &calls[child_idx].data.data)
         }

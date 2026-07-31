@@ -382,9 +382,11 @@ fn process_deploy_capital_instruction(
     let promissory_note_bytes = wasm::db::db_get(info_db, RELAYER_ENDOWMENT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(RelayerEndowmentError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params = DeployCapitalParamsV1::decode(&self_.data[1..])?;
@@ -547,9 +549,11 @@ fn process_withdraw_deployment_instruction(
     let promissory_note_bytes = wasm::db::db_get(info_db, RELAYER_ENDOWMENT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(RelayerEndowmentError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params = WithdrawDeploymentParamsV1::decode(&self_.data[1..])?;

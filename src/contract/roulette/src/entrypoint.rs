@@ -319,9 +319,11 @@ fn roulette_place_bet_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, ROULETTE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(RouletteError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
@@ -575,9 +577,11 @@ fn roulette_settle_bets_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, ROULETTE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(RouletteError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     msg!("[roulette::settle] Settling {} bets", params.bet_ids.len());
 
@@ -712,9 +716,11 @@ fn roulette_house_close_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, ROULETTE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(RouletteError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     msg!("[roulette::house_close] Closing table {:?}", params.table_id);
 

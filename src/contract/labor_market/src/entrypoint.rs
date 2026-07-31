@@ -487,9 +487,11 @@ fn create_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
     let promissory_note_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(LaborMarketError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
@@ -644,9 +646,11 @@ fn confirm_delivery_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
     let promissory_note_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(LaborMarketError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     // Validate child transfer amount matches job payout
     let jobs_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_JOBS_TREE)?;
@@ -743,9 +747,11 @@ fn refund_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>
     let promissory_note_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(LaborMarketError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
@@ -812,9 +818,11 @@ fn cancel_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
     let promissory_note_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(LaborMarketError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     // Validate child transfer amount matches escrowed payment for refund
     let jobs_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_JOBS_TREE)?;
@@ -1297,9 +1305,11 @@ fn confirm_milestone_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
     let promissory_note_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(LaborMarketError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
@@ -1712,9 +1722,11 @@ fn create_job_with_capability_v1(cid: ContractId, call_idx: usize, calls: Vec<Da
     let promissory_note_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(LaborMarketError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([

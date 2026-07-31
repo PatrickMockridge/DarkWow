@@ -305,9 +305,11 @@ fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree
             ContractError::IoError("subscribe_v1: invalid ContractId bytes".into())
         })?,
     )?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     // Look up the plan to get duration and settings
     let plans_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_PLANS_TREE)?;
@@ -472,9 +474,11 @@ fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::Da
             ContractError::IoError("renew_v1: invalid ContractId bytes".into())
         })?,
     )?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     // Look up the existing subscription
     let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
@@ -699,9 +703,12 @@ fn dao_control_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tr
                 ContractError::IoError("dao_control_v1: invalid ContractId bytes".into())
             })?,
         )?;
-        if promissory_note_cid != ContractId::ZERO {
-            validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
-            let value_blind = poseidon_hash([
+        // HAZOP H-11: fail-closed — reject if promissory_note not configured
+        if promissory_note_cid == ContractId::ZERO {
+            return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
+        }
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+        let value_blind = poseidon_hash([
                 pallas::Base::from(amount),
                 pallas::Base::from(amount),
             ]);

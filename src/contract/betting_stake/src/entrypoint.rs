@@ -421,9 +421,11 @@ fn staking_stake_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, BETTING_STAKE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(BettingStakeError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params= StakeParamsV1::decode(&self_.data[1..])?;
@@ -560,9 +562,11 @@ fn staking_unstake_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, BETTING_STAKE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(BettingStakeError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params= UnstakeParamsV1::decode(&self_.data[1..])?;
@@ -692,9 +696,11 @@ fn staking_claim_earnings_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, BETTING_STAKE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(BettingStakeError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP H-11: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        return Err(ContractError::IoError("promissory_note contract ID not configured".into()));
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params= ClaimEarningsParamsV1::decode(&self_.data[1..])?;
