@@ -1,6 +1,33 @@
-# CreateJob_V2 — domain-separated job creation.
-# V2 (HAZOP RC3): domain separation on poseidon_hash
+# CreateJob_V2 — domain-separated job creation with full circuit logic.
+# HAZOP fix: expanded from stub. Employer pubkey derivation + constrain_instance
+# for employer_pub_x/y + attestation_id.
 k = 14; field = "pallas";
-constant "CreateJobV2" { EcFixedPointBase NULLIFIER_K, }
-witness "CreateJobV2" { Base employer_secret, Base employer_pub_x, Base employer_pub_y, Base tx_commitment, Base tx_nonce, Base tx_binding, }
-circuit "CreateJobV2" { DOMAIN_TX_BINDING = witness_base(3); tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce); constrain_instance(tx_binding); constrain_instance(tx_nonce); }
+constant "CreateJobV2" {
+    EcFixedPointBase NULLIFIER_K,
+}
+witness "CreateJobV2" {
+    Base employer_secret,
+    Base employer_pub_x,
+    Base employer_pub_y,
+    Base attestation_id,
+    Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
+}
+circuit "CreateJobV2" {
+    DOMAIN_TX_BINDING = witness_base(3);
+
+    # Derive employer public key from secret
+    employer_pub = ec_mul_base(employer_secret, NULLIFIER_K);
+    constrain_equal_base(ec_get_x(employer_pub), employer_pub_x);
+    constrain_equal_base(ec_get_y(employer_pub), employer_pub_y);
+
+    # Public inputs
+    constrain_instance(employer_pub_x);
+    constrain_instance(employer_pub_y);
+    constrain_instance(attestation_id);
+
+    tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+}
