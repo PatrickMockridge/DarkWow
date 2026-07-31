@@ -48,14 +48,14 @@ use crate::{
     IDENTITY_CONTRACT_CAPABILITIES_TREE,
     IDENTITY_CONTRACT_REPUTATIONS_TREE, IDENTITY_CONTRACT_INFO_TREE,
     IDENTITY_CONTRACT_BOX_CONTRACT_ID,
-    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1,
-    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_DAG,
-    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_L1,
-    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_L1_V2,
-    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_MULTI,
-    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_RATIO,
-    IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V1,
-    IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V1,
+    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2,
+    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_DAG,
+    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_L1,
+    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_L1_V2,
+    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_MULTI,
+    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_RATIO,
+    IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V2,
+    IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V2,
 };
 
 dwow_sdk::define_contract!(
@@ -154,7 +154,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             let (ipx, ipy) = params.issuer_pub.xy().expect("pk not identity");
             zk_public_inputs.push((
-                IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V1.to_string(),
+                IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V2.to_string(),
                 // HAZOP ID-2 fix: expose issuer_pub coordinates so the host
                 // verifier binds the proof to a specific registered issuer.
                 vec![params.commitment.inner(), ipx, ipy],
@@ -165,7 +165,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize CreateClaimParams: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             zk_public_inputs.push((
-                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1.to_string(),
+                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2.to_string(),
                 vec![params.nullifier.inner()],
             ));
         }
@@ -174,7 +174,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize CreateClaimParamsL1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             zk_public_inputs.push((
-                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_L1.to_string(),
+                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_L1.to_string(),
                 vec![params.nullifier.inner()],
             ));
         }
@@ -183,7 +183,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize CreateClaimParamsL1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             zk_public_inputs.push((
-                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_L1_V2.to_string(),
+                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_L1_V2.to_string(),
                 vec![params.nullifier.inner()],
             ));
         }
@@ -192,7 +192,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize CreateClaimParamsL1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             zk_public_inputs.push((
-                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_MULTI.to_string(),
+                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_MULTI.to_string(),
                 vec![params.nullifier.inner()],
             ));
         }
@@ -201,13 +201,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize CreateClaimParamsL1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             zk_public_inputs.push((
-                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_RATIO.to_string(),
+                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_RATIO.to_string(),
                 vec![params.nullifier.inner()],
             ));
         }
         IdentityFunction::CreateClaimDAGV1 => {
             zk_public_inputs.push((
-                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_DAG.to_string(),
+                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_DAG.to_string(),
                 vec![],
             ));
         }
@@ -216,7 +216,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize VerifyCapabilityParams: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             zk_public_inputs.push((
-                IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V1.to_string(),
+                IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V2.to_string(),
                 vec![params.capability_proof.nullifier.inner()],
             ));
         }
