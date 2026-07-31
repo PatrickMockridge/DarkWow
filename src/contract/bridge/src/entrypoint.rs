@@ -82,6 +82,8 @@ use crate::{
     BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V2, BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V2,
     BRIDGE_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2,
     BRIDGE_CONTRACT_ZKAS_CLAIM_HTLC_NS_V1, BRIDGE_CONTRACT_ZKAS_CANCEL_WITHDRAW_NS_V1,
+    BRIDGE_CONTRACT_ZKAS_EXECUTE_GW_NS_V1, BRIDGE_CONTRACT_ZKAS_REFUND_HTLC_NS_V1,
+    BRIDGE_CONTRACT_ZKAS_ACCEPT_WITHDRAWAL_NS_V1,
     BRIDGE_CONTRACT_KEYS_TREE, BRIDGE_CONTRACT_NULLIFIERS_TREE,
     BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE, BRIDGE_CONTRACT_WITHDRAWALS_TREE,
     BRIDGE_CONTRACT_STATE,
@@ -185,11 +187,17 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     let update_config_v2_bincode = include_bytes!("../proof/update_config_v2.zk.bin");
     wasm::db::zkas_db_set(&update_config_v2_bincode[..])?;
 
-    // HAZOP WP-BRIDGE-1/2: new operation ZK circuits
+    // HAZOP WP-BRIDGE: new operation ZK circuits (5 circuits for previously unverified ops)
     let claim_htlc_v1_bincode = include_bytes!("../proof/claim_htlc_v1.zk.bin");
     wasm::db::zkas_db_set(&claim_htlc_v1_bincode[..])?;
     let cancel_withdraw_v1_bincode = include_bytes!("../proof/cancel_withdraw_v1.zk.bin");
     wasm::db::zkas_db_set(&cancel_withdraw_v1_bincode[..])?;
+    let execute_gw_v1_bincode = include_bytes!("../proof/execute_guaranteed_withdraw_v1.zk.bin");
+    wasm::db::zkas_db_set(&execute_gw_v1_bincode[..])?;
+    let refund_htlc_v1_bincode = include_bytes!("../proof/refund_htlc_v1.zk.bin");
+    wasm::db::zkas_db_set(&refund_htlc_v1_bincode[..])?;
+    let accept_withdrawal_v1_bincode = include_bytes!("../proof/accept_withdrawal_v1.zk.bin");
+    wasm::db::zkas_db_set(&accept_withdrawal_v1_bincode[..])?;
 
     // NOTE: xmr_deposit_v1.zk, ltc_deposit_v1.zk, zec_deposit_v1.zk, and
     // azt_deposit_v1.zk exist in proof/ but are deferred to v1.1 cross-chain
@@ -276,13 +284,53 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.encode(&mut metadata)?;
             Ok(metadata)
         }
-        BridgeFunction::ExecuteGuaranteedWithdrawV1 => Ok(vec![]),
+        // HAZOP WP-BRIDGE-3: relayer auth via ZK proof
+        // TODO: add relayer_pub + fee_cap to ExecuteGuaranteedWithdrawParams model
+        BridgeFunction::ExecuteGuaranteedWithdrawV1 => {
+            let params = ExecuteGuaranteedWithdrawParams::decode(&self_.data[1..])?;
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                BRIDGE_CONTRACT_ZKAS_EXECUTE_GW_NS_V1.to_string(),
+                vec![params.nullifier.inner()],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            Ok(metadata)
+        }
         BridgeFunction::CreateHtlcV1 => Ok(vec![]),
         BridgeFunction::ClaimHtlcV1 => Ok(vec![]),
-        BridgeFunction::RefundHtlcV1 => Ok(vec![]),
+        // HAZOP WP-BRIDGE-4: sender identity via ZK proof
+        // TODO: add sender_pub to RefundHtlcParams model
+        BridgeFunction::RefundHtlcV1 => {
+            let params = RefundHtlcParams::decode(&self_.data[1..])?;
+            let swap_id = match pallas::Base::from_repr(params.swap_id).into_option() {
+                Some(v) => v,
+                None => pallas::Base::zero(),
+            };
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                BRIDGE_CONTRACT_ZKAS_REFUND_HTLC_NS_V1.to_string(),
+                vec![swap_id, pallas::Base::from(params.current_block)],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            Ok(metadata)
+        }
         BridgeFunction::ReassignWithdrawalV1 => Ok(vec![]),
         BridgeFunction::RegisterRelayerV1 => Ok(vec![]),
-        BridgeFunction::AcceptWithdrawalV1 => Ok(vec![]),
+        // HAZOP WP-BRIDGE-5: relayer signature via ZK proof
+        BridgeFunction::AcceptWithdrawalV1 => {
+            let params = AcceptWithdrawalParams::decode(&self_.data[1..])?;
+            let (rx, ry) = params.relayer_pub.xy().unwrap_or((pallas::Base::zero(), pallas::Base::zero()));
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                BRIDGE_CONTRACT_ZKAS_ACCEPT_WITHDRAWAL_NS_V1.to_string(),
+                vec![params.nullifier.inner(), rx, ry, pallas::Base::from(params.max_fee_bp)],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            Ok(metadata)
+        }
         BridgeFunction::VerifyRelayerReputationV1 => Ok(vec![]),
         BridgeFunction::RegisterFeeScheduleV1 => Ok(vec![]),
         BridgeFunction::GovernanceReportV1 => Ok(vec![]),
