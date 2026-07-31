@@ -21,7 +21,6 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 - [subscription](../contract/subscription.md) - Recurring payments via DAO
 
 ### Governance
-- [dao](../contract/dao.md) - Decentralized autonomous organization
 - [dao_escrow](../contract/dao_escrow.md) - DAO-controlled escrow
 
 ### Identity
@@ -70,8 +69,7 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 ## Wallet
 
 - [wallet](./wallet.md) - Full-node wallet architecture, capability-based position resolution
-- [wallet_scanning](./wallet_scanning.md) - Block scanning and coin discovery
-- [wallet_contract_tracking](./wallet_contract_tracking.md) - Contract matching during scanning
+  (covers block scanning, coin discovery, contract tracking, and the capability lifecycle)
 
 ## Reference
 
@@ -85,11 +83,10 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 
 ## Legacy
 
-Historical documents in [./legacy/](.legacy/):
-- [wallet.md](./legacy/wallet.md) - Wallet architecture and key management
-- [consensus_dag.md](./legacy/consensus_dag.md) - Original overlay-DAG consensus
-- [event_graph.md](./legacy/event_graph.md) *(active)* - P2P messaging DAG used by darkirc
-  - [event_graph_network_protocol.md](./legacy/event_graph_network_protocol.md) *(active)*
+Historical documents in [./legacy/](./legacy/):
+- [event_graph.md](./legacy/event_graph.md) — P2P messaging DAG used by darkirc
+  - [event_graph_network_protocol.md](./legacy/event_graph_network_protocol.md)
+- (Legacy wallet.md and consensus_dag.md were removed — see current [wallet.md](./wallet.md) and [consensus.md](./consensus/consensus.md))
 
 ## Directory Structure
 
@@ -97,8 +94,7 @@ Historical documents in [./legacy/](.legacy/):
 doc/src/arch/
 ├── README.md                    # This file - navigation index
 ├── wallet.md                     # Wallet architecture, capability-based position resolution
-├── wallet_scanning.md             # Block scanning and coin discovery
-├── wallet_contract_tracking.md    # Contract matching during scanning
+│                                   #   (covers scanning, coin discovery, contract tracking)
 ├── overview.md                    # Current architecture overview
 ├── identity.md                  # ZK credential system
 ├── monero.md                    # Monero integration
@@ -138,7 +134,7 @@ doc/src/arch/
 doc/src/contract/                # Smart contract design docs
 ├── native_token.md
 ├── promissory_note.md
-├── dao.md
+├── dao_escrow.md
 ├── dao_escrow.md
 ├── dex.md
 ├── stablecoin.md
