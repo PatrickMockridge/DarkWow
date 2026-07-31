@@ -376,6 +376,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
                     Ok(txid) => {
                         for line in &output { println!("{line}"); }
+                        let _ = dww.mark_tx_exercise(&tx, &mut output);
                         println!("Deployed: {txid}");
                     }
                     Err(e) => {
@@ -416,6 +417,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
                     Ok(txid) => {
                         for line in &output { println!("{line}"); }
+                        let _ = dww.mark_tx_exercise(&tx, &mut output);
                         println!("Invoked: {txid}");
                     }
                     Err(e) => {
@@ -451,6 +453,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
                     Ok(txid) => {
                         for line in &output { println!("{line}"); }
+                        let _ = dww.mark_tx_exercise(&tx, &mut output);
                         println!("Locked: {txid}");
                     }
                     Err(e) => {
@@ -514,11 +517,10 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
                     Ok(txid) => {
                         if !*porcelain { for line in &output { println!("{line}"); } }
-                        // HAZOP H11 fix: pending tracking is the mempool's
-                        // responsibility. Confirmed revocation happens in the
-                        // scan path when nullifiers appear on-chain. No blind
-                        // optimistic revocation — the mempool rejects double-
-                        // spends at admission time.
+                        // HAZOP WP-7: mark caps as PENDING at broadcast time.
+                        // The scan path handles PROCESSING→SPENT when nullifiers
+                        // appear on-chain. PENDING prevents double-spend selection.
+                        let _ = dww.mark_tx_exercise(&tx, &mut output);
                         // --porcelain: diagnostic/testing output — frozen contract for the
                         // pipeline; do not extend. One line: "txid=<hex>".
                         if *porcelain { println!("txid={txid}"); } else { println!("Transferred: {txid}"); }
@@ -1009,6 +1011,7 @@ pub async fn dispatch_async(
                 .map_err(|e| Error::Custom(format!("Failed to deserialize tx: {e}")))?;
             let mut output = vec![];
             let txid = dww_r.broadcast_tx(&tx, &mut output, false, None, None).await?;
+            let _ = dww_r.mark_tx_exercise(&tx, &mut output);
             for line in &output { println!("{line}"); }
             println!("Broadcast: {txid}");
             return Ok(());
