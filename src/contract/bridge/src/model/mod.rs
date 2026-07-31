@@ -953,8 +953,46 @@ impl CreateHtlcParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_
 
 /// Parameters for claiming an HTLC (when secret is revealed)
 #[derive(Debug, Clone,)]
-pub struct ClaimHtlcParams { pub swap_id: [u8; 32], pub secret: dwow_sdk::pasta::pallas::Base }
-impl ClaimHtlcParams { pub const ENCODED_SIZE: usize = 64; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(64); b.extend_from_slice(&self.swap_id); b.extend_from_slice(&self.secret.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 64 { return Err(ContractError::IoError(format!("ClaimHtlcParams: expected 64 bytes, got {}", data.len()))); } Ok(ClaimHtlcParams { swap_id: data[0..32].try_into().unwrap(), secret: Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("ClaimHtlcParams: invalid secret".into()))? }) } }
+/// HAZOP H-6 fix: secret replaced with ZK proof bytes.
+/// The claim_htlc_v1.zk circuit proves knowledge of the preimage
+/// without revealing it on-chain. The proof bytes are opaque to the contract
+/// and verified by the zkVM host verifier.
+/// HAZOP H-6 fix: secret replaced with ZK proof + derived hash.
+/// The claim_htlc_v1.zk circuit proves knowledge of the preimage
+/// without revealing it on-chain. derived_hash = poseidon_hash(secret)
+/// is returned as a ZK public input and verified against htlc.hash.
+pub struct ClaimHtlcParams {
+    pub swap_id: [u8; 32],
+    pub proof: Vec<u8>,
+    pub derived_hash: pallas::Base,
+}
+impl ClaimHtlcParams {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(32 + 2 + self.proof.len() + 32);
+        b.extend_from_slice(&self.swap_id);
+        let proof_len = (self.proof.len() as u16).to_le_bytes();
+        b.extend_from_slice(&proof_len);
+        b.extend_from_slice(&self.proof);
+        b.extend_from_slice(&self.derived_hash.to_repr());
+        b
+    }
+    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        if data.len() < 66 {
+            return Err(ContractError::IoError(format!("ClaimHtlcParams: too short: {}", data.len())));
+        }
+        let swap_id: [u8; 32] = data[0..32].try_into().unwrap();
+        let proof_len = u16::from_le_bytes(data[32..34].try_into().unwrap()) as usize;
+        if data.len() < 66 + proof_len {
+            return Err(ContractError::IoError(format!("ClaimHtlcParams: proof truncated")));
+        }
+        let proof = data[34..34 + proof_len].to_vec();
+        let hash_start = 34 + proof_len;
+        let derived_hash = Option::<pallas::Base>::from(
+            pallas::Base::from_repr(data[hash_start..hash_start+32].try_into().unwrap())
+        ).ok_or_else(|| ContractError::IoError("ClaimHtlcParams: invalid derived_hash".into()))?;
+        Ok(ClaimHtlcParams { swap_id, proof, derived_hash })
+    }
+}
 
 #[derive(Debug, Clone,)] pub struct RefundHtlcParams { pub swap_id: [u8; 32], pub current_block: u64 }
 impl RefundHtlcParams { pub const ENCODED_SIZE: usize = 40; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(40); b.extend_from_slice(&self.swap_id); b.extend_from_slice(&self.current_block.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 40 { return Err(ContractError::IoError(format!("RefundHtlcParams: expected 40 bytes, got {}", data.len()))); } Ok(RefundHtlcParams { swap_id: data[0..32].try_into().unwrap(), current_block: u64::from_le_bytes(data[32..40].try_into().unwrap()) }) } }

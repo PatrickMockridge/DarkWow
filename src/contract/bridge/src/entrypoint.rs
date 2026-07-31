@@ -302,7 +302,25 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             Ok(metadata)
         }
         BridgeFunction::CreateHtlcV1 => Ok(vec![]),
-        BridgeFunction::ClaimHtlcV1 => Ok(vec![]),
+        // HAZOP H-6: ZK proof of preimage knowledge instead of plaintext secret
+        BridgeFunction::ClaimHtlcV1 => {
+            let params = ClaimHtlcParams::decode(&self_.data[1..])?;
+            let swap_id = match pallas::Base::from_repr(params.swap_id).into_option() {
+                Some(v) => v,
+                None => {
+                    msg!("[bridge::get_metadata] Invalid swap_id in ClaimHtlcParams");
+                    return Err(ContractError::IoError("Invalid swap_id".into()));
+                }
+            };
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                BRIDGE_CONTRACT_ZKAS_CLAIM_HTLC_NS_V1.to_string(),
+                vec![swap_id, params.derived_hash],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            Ok(metadata)
+        }
         // HAZOP WP-BRIDGE-4: sender identity via ZK proof
         // TODO: add sender_pub to RefundHtlcParams model
         BridgeFunction::RefundHtlcV1 => {
@@ -483,7 +501,7 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
     // blake3(chain_id || external_block_hash) uniquely identifies the external event.
     let events_db = wasm::db::db_lookup(cid, BRIDGE_CHAIN_EVENTS_TREE)?;
     let mut event_key = Vec::with_capacity(1 + params.external_block_hash.len());
-    event_key.push(params.chain.as_u8());
+    event_key.push(params.chain as u8);
     event_key.extend_from_slice(&params.external_block_hash);
     let event_hash = blake3::hash(&event_key);
     if wasm::db::db_contains_key(events_db, event_hash.as_bytes())? {
@@ -1361,7 +1379,7 @@ fn apply_deposit_update(cid: ContractId, update: DepositUpdateV1) -> ContractRes
     // HAZOP-13: store chain-event uniqueness key to prevent duplicate external deposits
     let events_db = wasm::db::db_lookup(cid, BRIDGE_CHAIN_EVENTS_TREE)?;
     let mut event_key = Vec::with_capacity(1 + update.external_block_hash.len());
-    event_key.push(update.chain.as_u8());
+    event_key.push(update.chain as u8);
     event_key.extend_from_slice(&update.external_block_hash);
     let event_hash = blake3::hash(&event_key);
     wasm::db::db_set(events_db, event_hash.as_bytes(), &[])?;
@@ -1875,16 +1893,17 @@ fn process_claim_htlc_instruction(
         return Err(BridgeError::InvalidFunction.into())
     }
 
-    // Verify hash matches
-    use dwow_sdk::crypto::poseidon_hash;
-    let computed_hash = poseidon_hash([params.secret]);
-    if computed_hash != htlc.hash {
-        msg!("[bridge::process_instruction] ERROR: Secret hash mismatch");
+    // HAZOP H-6 fix: verify derived_hash matches htlc.hash.
+    // The ZK proof (claim_htlc_v1.zk) proves knowledge of a secret such that
+    // poseidon_hash(secret) == derived_hash. The verifier checks derived_hash
+    // is a public input. We verify derived_hash matches the stored HTLC hash.
+    if params.derived_hash != htlc.hash {
+        msg!("[bridge::process_instruction] ERROR: Derived hash does not match HTLC hash");
         return Err(BridgeError::InvalidFunction.into())
     }
 
-    // Return update data
-    let update = ClaimHtlcUpdateV1 { swap_id: params.swap_id, secret: params.secret };
+    // Return update data — no plaintext secret in the update
+    let update = ClaimHtlcUpdateV1 { swap_id: params.swap_id, secret: pallas::Base::zero() };
     wasm::util::set_return_data(&update.encode())
 }
 
