@@ -954,6 +954,12 @@ impl Dww {
                     }
                 };
 
+                // HAZOP WP-7: lifecycle reconciliation after each block scan.
+                // Advances PENDING→NULL (expiry) and PROCESSING→SPENT (maturity).
+                let current_height = height.get();
+                let _ = self.expire_pending_caps(current_height);
+                let _ = self.check_confirmations(current_height);
+
                 // Advance verified anchor height if this block has a
                 // verified Caribina (Arweave) anchor.
                 if block.header.anchor_tx_id != [0u8; 32] {

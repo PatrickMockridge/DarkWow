@@ -1303,6 +1303,58 @@ impl Dww {
         Ok(())
     }
 
+    /// HAZOP H1: expire pending caps past MEMPOOL_WINDOW.
+    /// Caps marked PENDING at broadcast that were never mined (mempool
+    /// eviction, competing block) become spendable again after the window.
+    pub fn expire_pending_caps(&self, current_height: u64) -> Result<usize> {
+        use crate::capability::{CapStatus, MEMPOOL_WINDOW};
+        let caps = self.wallet.get_held_capabilities(None)
+            .map_err(|e| Error::Custom(format!("expire_pending: {}", e)))?;
+        let mut expired = 0usize;
+        for cap in &caps {
+            if cap.status == Some(CapStatus::Pending) {
+                if let Some(h) = cap.status_height {
+                    if current_height.saturating_sub(h) > MEMPOOL_WINDOW {
+                        self.wallet.clear_cap_status(&cap.cap_id)
+                            .map_err(|e| Error::Custom(format!("expire_pending clear: {}", e)))?;
+                        expired += 1;
+                    }
+                }
+            }
+        }
+        if expired > 0 {
+            tracing::info!(target: "dww::wallet",
+                "Expired {} pending caps past MEMPOOL_WINDOW ({} blocks)", expired, MEMPOOL_WINDOW);
+        }
+        Ok(expired)
+    }
+
+    /// HAZOP H2: advance PROCESSING caps to SPENT after CONFIRMATION_DEPTH.
+    /// Once a nullifier has been on-chain for >= 100 blocks, the cap is
+    /// permanently confirmed and can be considered fully spent.
+    pub fn check_confirmations(&self, current_height: u64) -> Result<usize> {
+        use crate::capability::{CapStatus, CONFIRMATION_DEPTH};
+        let caps = self.wallet.get_held_capabilities(None)
+            .map_err(|e| Error::Custom(format!("check_confirmations: {}", e)))?;
+        let mut confirmed = 0usize;
+        for cap in &caps {
+            if cap.status == Some(CapStatus::Processing) {
+                if let Some(h) = cap.status_height {
+                    if current_height.saturating_sub(h) >= CONFIRMATION_DEPTH {
+                        self.wallet.set_cap_status(&cap.cap_id, CapStatus::Spent, h)
+                            .map_err(|e| Error::Custom(format!("check_confirmations set_spent: {}", e)))?;
+                        confirmed += 1;
+                    }
+                }
+            }
+        }
+        if confirmed > 0 {
+            tracing::info!(target: "dww::wallet",
+                "Confirmed {} processing caps → spent (>= {} blocks)", confirmed, CONFIRMATION_DEPTH);
+        }
+        Ok(confirmed)
+    }
+
     /// Check if a call is a NativeToken::FeeV1 call
     pub fn is_native_token_fee(&self, call: &ContractCall) -> bool {
         call.contract_id == *NATIVE_TOKEN_CONTRACT_ID &&
