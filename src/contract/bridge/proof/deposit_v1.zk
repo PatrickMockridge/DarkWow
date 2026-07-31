@@ -25,12 +25,7 @@ witness "DepositV1" {
     # Without nonce, all deposits to the same recipient would be linkable on-chain.
     Base bridge_nonce,
 
-    # Hash of the external chain block containing this deposit.
-    # NOTE: This is NOT verified in this circuit. It is accepted as a public input
-    # but the circuit does NOT verify it corresponds to a valid block.
-    # Architecture gap: Requires light client integration to be meaningful.
-    Base external_block_hash,
-
+    # HAZOP M-15: external_block_hash witness removed — was unused in circuit body.
     # Merkle root of the external chain's deposit tree at the confirmed block.
     # The Merkle proof (leaf_pos, path) authenticates the deposit_leaf against this root.
     # NOTE: This root is NOT verified to correspond to external_block_hash.

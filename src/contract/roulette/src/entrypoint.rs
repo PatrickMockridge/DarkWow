@@ -129,6 +129,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.encode(&mut metadata)?;
             metadata
         }
+        // DESIGN RATIONALE (HAZOP M-11): The SettleBetsV1 ZK proof is belt-and-suspenders.
+        // Plaintext validation in process_settle_bets_instruction (check_win,
+        // total_payout accumulation) provides the primary security guarantee.
+        // The ZK circuit constrains payout as a public instance — this catches
+        // bugs in the entrypoint logic but does not add new security properties
+        // beyond what the plaintext path already verifies. The contract's own
+        // state checks are the authoritative verification layer.
         RouletteFunction::SettleBetsV1 => {
             let params= SettleBetsParamsV1::decode(&self_.data[1..])?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
