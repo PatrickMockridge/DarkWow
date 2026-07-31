@@ -69,6 +69,7 @@ impl CapabilityId {
         };
 
         let hash = poseidon_hash([
+            crate::crypto::constants::DRK_POSEIDON_DOMAIN_CAPABILITY_ID,
             contract_id.inner(),
             pallas::Base::from(capability_type as u64),
             instance_elem,

@@ -59,6 +59,8 @@ pub const DRK_POSEIDON_DOMAIN_COIN_COMMIT: pasta_curves::pallas::Base = pasta_cu
 pub const DRK_POSEIDON_DOMAIN_MERKLE_LEAF: pasta_curves::pallas::Base = pasta_curves::pallas::Base::from_raw([5, 0, 0, 0]);
 pub const DRK_POSEIDON_DOMAIN_USER_DATA_ENC: pasta_curves::pallas::Base = pasta_curves::pallas::Base::from_raw([6, 0, 0, 0]);
 pub const DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET: pasta_curves::pallas::Base = pasta_curves::pallas::Base::from_raw([7, 0, 0, 0]);
+pub const DRK_POSEIDON_DOMAIN_KEY_DERIVE: pasta_curves::pallas::Base = pasta_curves::pallas::Base::from_raw([8, 0, 0, 0]);
+pub const DRK_POSEIDON_DOMAIN_CAPABILITY_ID: pasta_curves::pallas::Base = pasta_curves::pallas::Base::from_raw([9, 0, 0, 0]);
 
 pub const MERKLE_DEPTH_ORCHARD: usize = 32;
 

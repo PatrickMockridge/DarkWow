@@ -1314,6 +1314,20 @@ fn apply_spend(cid: ContractId, update: SpendUpdateV1) -> ContractResult {
 
     wasm::db::db_set(nullifiers_db, &update.nullifier.to_bytes(), &[])?;
     wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[])?;
+
+    // Update Merkle tree so the output coin can be spent later.
+    // Without merkle_add, db_contains_key(coin_roots_db, merkle_root)
+    // permanently fails for SpendV1 outputs (audit finding H2).
+    let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
+    let new_coins = vec![MerkleNode::from_base(update.coin.inner())];
+    wasm::merkle::merkle_add(
+        info_db,
+        wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?,
+        NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
+        NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE,
+        &new_coins,
+    )?;
+
     Ok(())
 }
 

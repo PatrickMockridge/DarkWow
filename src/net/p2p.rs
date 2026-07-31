@@ -235,15 +235,20 @@ impl P2p {
             return
         }
 
+        // Snapshot owned values before any async work — the spawned task
+        // needs 'static ownership of everything.
+        let channels = channel_list.to_vec();
+        let executor = self.executor.clone();
+        let sem = self.broadcast_semaphore.clone();
+
         let message = SerializedMessage::new(message).await;
 
-        // Gate concurrent broadcasts — follows the same Semaphore pattern
-        // used by DHT concurrency control (dht/mod.rs:444).
-        let _permit = self.broadcast_semaphore.acquire().await;
-
-        // Spawn a detached task to actually send the message to the channels,
-        // so we don't block wiating channels that are rate limited.
-        self.executor.spawn(broadcast_serialized_to::<M>(message, channel_list.to_vec())).detach();
+        // Acquire the semaphore permit inside the spawned task so it is held
+        // for the lifetime of the broadcast, not dropped when broadcast_to returns.
+        executor.spawn(async move {
+            let _guard = sem.acquire_arc().await;
+            broadcast_serialized_to::<M>(message, channels).await;
+        }).detach();
     }
 
     /// Check whether this node has connections to any peers. This method will

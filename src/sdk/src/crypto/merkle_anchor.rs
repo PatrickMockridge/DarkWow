@@ -49,6 +49,7 @@ pub type MerklePath = [MerkleNode; 32];
 /// ν(block_tree). Including it in the hash makes the link cryptographically binding.
 pub fn anchor_leaf(nullifier: &Nullifier, contract_id: &ContractId, contract_root: &MerkleNode) -> pallas::Base {
     crate::crypto::poseidon_hash([
+        super::constants::DRK_POSEIDON_DOMAIN_MERKLE_LEAF,
         nullifier.inner(),
         contract_id.inner(),
         contract_root.inner(),
