@@ -78,6 +78,7 @@
 
 - [Caveat Emptor: Token Economics & Adversarial Analysis](arch/economics-caveat-emptor.md)
 - [Security Analysis: Contract Audit Findings](arch/security-analysis.md)
+- [Upstream Security Hardening Findings](arch/upstream-security-findings.md)
 - [Quantum Threat Assessment](arch/quantum-threat.md)
 - [Contract Trust Model](arch/contract-trust-model.md)
 
