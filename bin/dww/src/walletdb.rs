@@ -79,7 +79,19 @@ pub struct CapRecord {
     pub value_blind: ScalarBlind,
     /// BaseBlind — asset blinding factor
     pub asset_blind: BaseBlind,
+    /// HAZOP WP-7: capability lifecycle status. NULL = unspent (spendable).
+    /// Pending = broadcast but unmined. Processing = mined, immature.
+    /// Spent = fully confirmed (>= CONFIRMATION_DEPTH blocks).
+    pub status: Option<crate::capability::CapStatus>,
+    /// Block height at which the current status was set.
+    /// For Pending: broadcast height. For Processing/Spent: mined height.
+    pub status_height: Option<u64>,
+    /// HAZOP WP-7: derived from status — true if Processing or Spent.
+    /// Kept for backward compatibility with existing code; set during
+    /// CapRecord construction from SQL rows or constructors.
     pub revoked: bool,
+    /// Height at which the nullifier was seen on-chain. Set alongside status.
+    /// Kept for backward compatibility; mirrors status_height for spent states.
     pub revoked_at_height: Option<u64>,
     pub created_at_height: u64,
     /// Identification record (account index + derivation) that lets the
@@ -260,7 +272,8 @@ impl WalletDb {
                     value_blind_blob, value_blind, asset_blind_blob, asset_blind,
                     contract_id_blob, func_id_blob, capability_discriminant,
                     revoked, revoked_at_height, created_at_height,
-                    capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob
+                    capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob,
+                    status, status_height
              FROM held_capabilities WHERE (?1 IS NULL OR revoked = ?1)
              ORDER BY cap_id",
         )?;
@@ -429,6 +442,11 @@ impl WalletDb {
                     let key_coords: Option<dwow_accounts::KeyCoordinates> =
                         row.get::<_, Option<Vec<u8>>>(28).ok().flatten()
                             .and_then(|v| dwow_serial::deserialize(&v).ok());
+                    // HAZOP WP-7: status columns (29=status TEXT, 30=status_height INTEGER)
+                    let status_str: Option<String> = row.get(29).ok().flatten();
+                    let status = status_str.as_deref()
+                        .and_then(|s| crate::capability::CapStatus::from_str(s));
+                    let status_height: Option<i64> = row.get(30).ok().flatten();
 
                     caps.push(CapRecord {
                         cap_id,
@@ -447,6 +465,8 @@ impl WalletDb {
                         capability_discriminant: capability_discriminant.map(|d| d as u8),
                         revoked: spent_val != 0,
                         revoked_at_height: revoked_at_height.map(|h| u64::try_from(h).unwrap_or(0)),
+                        status,
+                        status_height: status_height.map(|h| u64::try_from(h).unwrap_or(0)),
                         created_at_height: u64::try_from(created_at_height).unwrap_or(0),
                         capability_name,
                         resource,
@@ -681,11 +701,80 @@ impl WalletDb {
     }
 
     /// Mark a held capability as revoked (nullifier published on-chain).
+    /// HAZOP WP-7: also sets status = 'processing' for the confirmation lifecycle.
     pub fn mark_revoked(&self, cap_id: &str, block_height: u64) -> WalletDbResult<()> {
+        use crate::capability::CapStatus;
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         conn.execute(
-            "UPDATE held_capabilities SET revoked = 1, revoked_at_height = ?1 WHERE cap_id = ?2",
+            "UPDATE held_capabilities SET revoked = 1, revoked_at_height = ?1, status = 'processing', status_height = ?1 WHERE cap_id = ?2",
             params![i64::try_from(block_height).unwrap_or(i64::MAX), cap_id],
+        )
+        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+
+    /// HAZOP WP-7: set capability lifecycle status with transition validation.
+    /// Allowed transitions:
+    ///   NULL → Pending (broadcast)
+    ///   Pending → NULL (timeout/expiry)
+    ///   NULL/Pending → Processing (scan detects nullifier)
+    ///   Processing → Spent (maturity reached)
+    /// All other transitions return an error.
+    pub fn set_cap_status(&self, cap_id: &str, new_status: crate::capability::CapStatus, height: u64) -> WalletDbResult<()> {
+        use crate::capability::CapStatus;
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+
+        // Read current status to validate transition
+        let current: Option<String> = conn.query_row(
+            "SELECT status FROM held_capabilities WHERE cap_id = ?1",
+            params![cap_id],
+            |row| row.get(0),
+        ).ok().flatten();
+
+        let current_status = current.as_deref().and_then(|s| CapStatus::from_str(s));
+
+        // Transition validation
+        let valid = match (current_status, new_status) {
+            (None, CapStatus::Pending) => true,           // broadcast
+            (Some(CapStatus::Pending), _) if new_status == CapStatus::Pending => false, // already pending
+            (Some(CapStatus::Pending), CapStatus::Processing) => true, // mined
+            (Some(CapStatus::Processing), CapStatus::Spent) => true,  // matured
+            (_, CapStatus::Pending) if current_status.is_some() => false, // can't pend non-null
+            (Some(CapStatus::Processing), _) if new_status != CapStatus::Spent => false,
+            (Some(CapStatus::Spent), _) => false,         // terminal
+            _ => false,
+        };
+
+        if !valid {
+            return Err(WalletDbError::QueryExecutionFailed);
+        }
+
+        // Also update revoked for Processing/Spent states
+        let revoked_val: Option<i64> = match new_status {
+            CapStatus::Processing | CapStatus::Spent => Some(1),
+            _ => None,
+        };
+
+        if let Some(r) = revoked_val {
+            conn.execute(
+                "UPDATE held_capabilities SET status = ?1, status_height = ?2, revoked = ?3, revoked_at_height = ?2 WHERE cap_id = ?4",
+                params![new_status.as_str(), i64::try_from(height).unwrap_or(i64::MAX), r, cap_id],
+            ).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        } else {
+            conn.execute(
+                "UPDATE held_capabilities SET status = ?1, status_height = ?2, revoked = 0, revoked_at_height = NULL WHERE cap_id = ?3",
+                params![new_status.as_str(), i64::try_from(height).unwrap_or(i64::MAX), cap_id],
+            ).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        }
+        Ok(())
+    }
+
+    /// HAZOP WP-7: clear capability status (return to spendable/unspent).
+    pub fn clear_cap_status(&self, cap_id: &str) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.execute(
+            "UPDATE held_capabilities SET status = NULL, status_height = NULL WHERE cap_id = ?1",
+            params![cap_id],
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
         Ok(())
@@ -711,8 +800,9 @@ impl WalletDb {
                     leaf_position, commitment_blob, contract_id_blob, func_id_blob, capability_discriminant,
                     cap_blind_blob, value_blind_blob, asset_blind_blob,
                     revoked, revoked_at_height, created_at_height,
-                    capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
+                    capability_name, resource, action, primitives_csv, barbs_csv, key_coords_blob,
+                    status, status_height)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
                 params![
                     cap.cap_id,
                     i64::try_from(cap.value).unwrap_or(i64::MAX),
@@ -736,6 +826,8 @@ impl WalletDb {
                     primitives_to_csv(&cap.primitives),
                     barbs_to_csv(&cap.barbs),
                     cap.key_coords.as_ref().map(|k| dwow_serial::serialize(k)),
+                    cap.status.as_ref().map(|s| s.as_str().to_string()),
+                    cap.status_height.map(|h| i64::try_from(h).unwrap_or(i64::MAX)),
                 ],
             )
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;
@@ -831,14 +923,15 @@ impl WalletDb {
         Ok(())
     }
 
-    /// Retain (un-revoke) capabilities revoked after a given block height.
-    /// Used during reorg to restore capabilities that were marked as exercised
-    /// on blocks that no longer exist.
+    /// HAZOP C2 fix: reorg retention — clear both revoked AND status/status_height
+    /// for caps exercised at heights above the reorg target. Previously only
+    /// cleared revoked, leaving status='processing' — a dual-write inconsistency.
     pub fn retain_capabilities_after(&self, height: u64) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let height = i64::try_from(height).unwrap_or(i64::MAX);
         conn.execute(
-            "UPDATE held_capabilities SET revoked = 0, revoked_at_height = NULL
+            "UPDATE held_capabilities SET revoked = 0, revoked_at_height = NULL,
+                status = NULL, status_height = NULL
              WHERE revoked = 1 AND revoked_at_height > ?1",
             params![height],
         )

@@ -69,7 +69,7 @@ pub fn select_caps(
     // Filter to matching asset
     let matching: Vec<&CapRecord> = available
         .iter()
-        .filter(|c| &c.asset_id == asset_id && !c.revoked && c.contract_id == *NATIVE_TOKEN_CONTRACT_ID)
+        .filter(|c| &c.asset_id == asset_id && c.status.is_none() && c.contract_id == *NATIVE_TOKEN_CONTRACT_ID)
         .collect();
 
     if matching.is_empty() {
@@ -144,7 +144,7 @@ pub fn select_fee_cap(
         .iter()
         .filter(|c| {
             &c.asset_id == fee_asset_id
-                && !c.revoked
+                && c.status.is_none()
                 && c.contract_id == *NATIVE_TOKEN_CONTRACT_ID
                 && !exclude_cap_ids.contains(&c.cap_id)
         })
@@ -267,6 +267,7 @@ mod tests {
         let mut caps = vec![
             make_cap("a", "DRKW", 100_000_000),
         ];
+        caps[0].status = Some(CapStatus::Processing);
         caps[0].revoked = true;
         let err = select_caps(&caps, &tid("DRKW"), 50_000_000, 0).unwrap_err();
         assert!(err.to_string().contains("No retained capabilities"));

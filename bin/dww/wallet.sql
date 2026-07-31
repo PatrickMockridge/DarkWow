@@ -51,6 +51,10 @@ CREATE TABLE IF NOT EXISTS held_capabilities (
     asset_blind TEXT,
     revoked INTEGER NOT NULL DEFAULT 0,
     revoked_at_height INTEGER,
+    -- HAZOP WP-7: capability lifecycle status. NULL=unspent,
+    -- 'pending'=broadcast unmined, 'processing'=mined immature, 'spent'=confirmed
+    status TEXT,
+    status_height INTEGER,
     created_at_height INTEGER NOT NULL,
     -- Typed capability composition (ocap.md §6): store the typed composition,
     -- not a cap_id string. Canonical CSV; nullable/empty for native (Path 1)
@@ -68,6 +72,7 @@ CREATE TABLE IF NOT EXISTS held_capabilities (
 
 CREATE INDEX IF NOT EXISTS idx_held_capabilities_asset_id ON held_capabilities(asset_id);
 CREATE INDEX IF NOT EXISTS idx_held_capabilities_revoked ON held_capabilities(revoked);
+CREATE INDEX IF NOT EXISTS idx_held_capabilities_status ON held_capabilities(status);
 
 -- Coin Merkle proofs table: stores Merkle paths
 CREATE TABLE IF NOT EXISTS capability_proofs (

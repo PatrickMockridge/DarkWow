@@ -19,6 +19,49 @@ use crate::{
     walletdb::WalletPtr,
 };
 
+/// Capability status — mirrors the transaction lifecycle.
+/// NULL = unspent (spendable). Other states exclude the cap from selection.
+///
+/// Lifecycle: NULL → Pending (broadcast) → Processing (mined, immature)
+///           → Spent (confirmed, >= CONFIRMATION_DEPTH blocks)
+/// Fallback:  Pending → NULL (never mined, window expired)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CapStatus {
+    /// Transaction broadcast, cap in mempool. Not yet mined.
+    Pending,
+    /// Nullifier on-chain but under CONFIRMATION_DEPTH confirmations.
+    Processing,
+    /// Fully confirmed. Permanently spent.
+    Spent,
+}
+
+impl CapStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CapStatus::Pending => "pending",
+            CapStatus::Processing => "processing",
+            CapStatus::Spent => "spent",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "pending" => Some(CapStatus::Pending),
+            "processing" => Some(CapStatus::Processing),
+            "spent" => Some(CapStatus::Spent),
+            _ => None,
+        }
+    }
+}
+
+/// Blocks before a mined spend is confirmed.
+/// Matches the chain's COINBASE_MATURITY (src/linear/src/lib.rs:53).
+pub const CONFIRMATION_DEPTH: u64 = 100;
+
+/// Blocks before a pending cap is considered abandoned (never mined).
+/// Matches CONFIRMATION_DEPTH for consistency — both are 100 blocks.
+pub const MEMPOOL_WINDOW: u64 = 100;
+
 /// A typed capability — a held CapRecord with manifest-derived metadata.
 /// Resolves "unknown" capabilities to their manifest-declared names.
 #[derive(Debug, Clone)]
