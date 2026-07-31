@@ -81,6 +81,14 @@ const GREYLIST_MAX_LEN: usize = 2000;
 const DARKLIST_MAX_LEN: usize = 1000;
 const BLACKLIST_MAX_LEN: usize = 10000;
 
+/// Maximum entries in the host registry HashMap. Every address from
+/// AddrsMessage gossip creates a Free entry; without a cap, an address
+/// flood can grow the map without bound. Capacity eviction prefers the
+/// oldest Free entries.
+const REGISTRY_MAX_LEN: usize = 20000;
+/// Target size after capacity-based eviction (10% below max).
+const REGISTRY_PRUNE_TARGET_LEN: usize = 18000;
+
 /// How long a host can remain in Free state before being pruned from the registry.
 /// 24 hours is appropriate for long-running daemons.
 const REGISTRY_PRUNE_AGE_SECS: u64 = 86400;
@@ -697,10 +705,38 @@ impl Hosts {
         });
 
         let pruned = before - registry.len();
-        if pruned > 0 {
-            debug!(target: "net::hosts::prune_registry", "Pruned {pruned} stale entries");
+
+        // Capacity-based eviction — prevents unbounded growth from address
+        // flooding. Prefers oldest Free entries. Follows the same MAX_LEN
+        // pattern as the host containers (WHITELIST_MAX_LEN, GREYLIST_MAX_LEN).
+        if registry.len() > REGISTRY_MAX_LEN {
+            let mut free_entries: Vec<(Url, u64)> = registry
+                .iter()
+                .filter_map(|(url, state)| {
+                    if let HostState::Free(age) = state {
+                        Some((url.clone(), *age))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            // Evict oldest first (lowest age = oldest)
+            free_entries.sort_by_key(|(_, age)| *age);
+            let to_remove = registry.len().saturating_sub(REGISTRY_PRUNE_TARGET_LEN);
+            for (url, _) in free_entries.iter().take(to_remove) {
+                registry.remove(url);
+                debug!(
+                    target: "net::hosts::prune_registry",
+                    "Capacity eviction: removed stale Free entry {url}"
+                );
+            }
         }
-        pruned
+
+        let total_pruned = before - registry.len();
+        if total_pruned > 0 {
+            debug!(target: "net::hosts::prune_registry", "Pruned {total_pruned} entries (age + capacity)");
+        }
+        total_pruned
     }
 
     /// Check if a host can be refined.

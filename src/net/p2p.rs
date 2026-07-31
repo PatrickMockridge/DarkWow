@@ -28,7 +28,7 @@ use std::sync::{
 
 use futures::{stream::FuturesUnordered, TryFutureExt};
 use futures_rustls::rustls::crypto::{ring, CryptoProvider};
-use smol::{fs, lock::RwLock as AsyncRwLock, stream::StreamExt};
+use smol::{fs, lock::RwLock as AsyncRwLock, lock::Semaphore, stream::StreamExt};
 use tracing::{debug, error, warn};
 use url::Url;
 
@@ -88,6 +88,12 @@ pub struct P2p {
     pub dnet_enabled: AtomicBool,
     /// The publisher for which we can give dnet info over
     dnet_publisher: PublisherPtr<DnetEvent>,
+    /// Semaphore capping concurrent broadcast tasks.
+    /// Follows the same pattern as DHT concurrency control
+    /// (`dht/mod.rs:444`). Acquired before spawning a detached
+    /// broadcast task in `broadcast_to()`, released when the task
+    /// completes (the permit is moved into the closure).
+    broadcast_semaphore: Arc<Semaphore>,
 }
 
 impl P2p {
@@ -130,6 +136,7 @@ impl P2p {
             session_direct: DirectSession::new(p2p.clone()),
             dnet_enabled: AtomicBool::new(false),
             dnet_publisher: Publisher::new(),
+            broadcast_semaphore: Arc::new(Semaphore::new(64)),
         });
 
         register_default_protocols(self_.clone()).await;
@@ -229,6 +236,10 @@ impl P2p {
         }
 
         let message = SerializedMessage::new(message).await;
+
+        // Gate concurrent broadcasts — follows the same Semaphore pattern
+        // used by DHT concurrency control (dht/mod.rs:444).
+        let _permit = self.broadcast_semaphore.acquire().await;
 
         // Spawn a detached task to actually send the message to the channels,
         // so we don't block wiating channels that are rate limited.

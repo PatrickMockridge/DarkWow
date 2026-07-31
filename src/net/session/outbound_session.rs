@@ -611,6 +611,12 @@ impl PeerDiscoveryBase for PeerDiscovery {
             // Wait to be woken up by notify()
             self.wait().await;
 
+            // Prune the host registry — prevents unbounded HashMap growth
+            // from address gossip. Also called from the refinery session, but
+            // the refinery pauses when connectionless; this call ensures
+            // pruning continues during normal peer discovery cycles.
+            self.p2p().hosts().prune_registry();
+
             // Read the current P2P settings
             let settings = self.p2p().settings().read_arc().await;
             let outbound_peer_discovery_attempt_time =
