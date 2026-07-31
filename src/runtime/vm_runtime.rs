@@ -587,6 +587,17 @@ impl Runtime {
 
         // Allocate enough memory for the payload and copy it into the memory.
         let pages_required = payload.len() / WASM_PAGE_SIZE + 1;
+        // HAZOP M-14: charge gas proportional to memory growth.
+        // Previously memory.grow cost 1 gas per opcode (uniform cost model).
+        // Now charges per page to make memory exhaustion attacks expensive.
+        let current_pages = self.memory_pages();
+        if pages_required as u64 > current_pages {
+            let new_pages = pages_required as u64 - current_pages;
+            let env_mut = self.ctx.as_mut(&mut self.store);
+            if env_mut.charge_gas(&mut self.store, new_pages * WASM_PAGE_SIZE as u64) {
+                return Err(Error::WasmerRuntimeError("Gas exhausted during memory allocation".into()));
+            }
+        }
         self.set_memory_page_size(pages_required as u32)?;
         self.copy_to_memory(&payload)?;
 
@@ -845,6 +856,12 @@ impl Runtime {
         } else {
             format!("Gas used: {gas_used}/{GAS_LIMIT}")
         }
+    }
+
+    /// Get the current number of memory pages.
+    fn memory_pages(&self) -> u64 {
+        let env = self.ctx.as_ref(&self.store);
+        env.memory.as_ref().map_or(0, |m| m.size(&self.store).0 as u64)
     }
 
     /// Set the memory page size. Returns the previous memory size.
