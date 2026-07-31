@@ -22,10 +22,11 @@
  */
 
 use std::{
+    collections::HashMap,
     io::ErrorKind,
     sync::{
         atomic::{AtomicUsize, Ordering::SeqCst},
-        Arc,
+        Arc, Mutex,
     },
 };
 
@@ -57,12 +58,18 @@ use crate::{
 /// Atomic pointer to Acceptor
 pub type AcceptorPtr = Arc<Acceptor>;
 
+/// Max connections permitted from a single IP address.
+/// Prevents a single host from exhausting all inbound slots (MOC M1).
+const MAX_CONNECTIONS_PER_IP: usize = 8;
+
 /// Create inbound socket connections
 pub struct Acceptor {
     channel_publisher: PublisherPtr<Result<ChannelPtr>>,
     task: StoppableTaskPtr,
     session: SessionWeakPtr,
     conn_count: AtomicUsize,
+    /// Per-IP connection count for DoS prevention.
+    ip_counts: Mutex<HashMap<String, usize>>,
     #[cfg(feature = "upnp-igd")]
     port_mappings: AsyncMutex<Vec<Arc<dyn PortMapping>>>,
 }
@@ -75,6 +82,7 @@ impl Acceptor {
             task: StoppableTask::new(),
             session,
             conn_count: AtomicUsize::new(0),
+            ip_counts: Mutex::new(HashMap::new()),
             #[cfg(feature = "upnp-igd")]
             port_mappings: AsyncMutex::new(Vec::new()),
         })
@@ -195,6 +203,20 @@ impl Acceptor {
                         continue
                     }
 
+                    // Per-IP connection limit (MOC M1)
+                    let ip_key = url.host_str().unwrap_or("unknown").to_string();
+                    {
+                        let mut counts = self.ip_counts.lock().unwrap();
+                        let count = counts.get(&ip_key).copied().unwrap_or(0);
+                        if count >= MAX_CONNECTIONS_PER_IP {
+                            warn!(target: "net::acceptor::run_accept_loop",
+                                "[ACCEPTOR] Rejecting {}: per-IP limit ({}) reached",
+                                url, MAX_CONNECTIONS_PER_IP);
+                            continue
+                        }
+                        counts.insert(ip_key.clone(), count + 1);
+                    }
+
                     // Create the new Channel.
                     let session = self.session.clone();
                     info!(
@@ -212,15 +234,18 @@ impl Acceptor {
                     self.conn_count.fetch_add(1, SeqCst);
 
                     // This task will subscribe on the new channel and decrement
-                    // the connection counter. Along with that, it will notify
-                    // the CondVar that might be waiting to allow new connections.
+                    // the connection counter and per-IP count. Along with that,
+                    // it will notify the CondVar that might be waiting to allow
+                    // new connections.
                     let self_ = self.clone();
                     let channel_ = channel.clone();
                     let cv_ = cv.clone();
+                    let ip = ip_key;
                     ex.spawn(async move {
                         let stop_sub = channel_.subscribe_stop().await?;
                         stop_sub.receive().await;
                         self_.conn_count.fetch_sub(1, SeqCst);
+                        self_.ip_counts.lock().unwrap().entry(ip).and_modify(|c| *c = c.saturating_sub(1));
                         cv_.notify();
                         Ok::<(), crate::Error>(())
                     })

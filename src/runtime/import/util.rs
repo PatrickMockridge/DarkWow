@@ -607,6 +607,16 @@ pub(crate) fn get_tx_location(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) ->
     // Subtract used gas. Here we count the length of the looked-up hash.
     env.subtract_gas(&mut store, blake3::OUT_LEN as u64);
 
+    // Gas surcharge proportional to chain height — the backend performs
+    // an O(height) linear block scan (MOC M2). Charge 1 gas per block
+    // as a floor to prevent disproportionate I/O for negligible gas.
+    let Ok(height) = env.backend.last_block_height() else {
+        error!(target: "runtime::util::get_tx_location",
+            "[WASM] [{cid}] get_tx_location(): Failed to get block height");
+        return dwow_sdk::error::DB_GET_FAILED
+    };
+    env.subtract_gas(&mut store, height.inner() as u64);
+
     // Ensure that it is possible to read memory
     let memory_view = env.memory_view(&store);
     let Ok(mem_slice) = ptr.slice(&memory_view, blake3::OUT_LEN as u32) else {
