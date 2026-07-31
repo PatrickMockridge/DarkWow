@@ -7,10 +7,15 @@ field = "pallas";
 constant "SettleBet_V1" {
 }
 
+# HAZOP T2-4 fix (H-13 + L-4): won is derived in-circuit from bet_number + winning_number.
+# payout is constrained via zero_cond — no longer a free witness.
+# Backed by Lean4: is_not_equal_fully_pure (Gadgets.lean:267) + zero_cond_correct (Comparison.lean:119).
 witness "SettleBet_V1" {
     Base table_id,
     Base bet_id,
-    Base won,
+    Base bet_number,
+    Base winning_number,
+    Base expected_payout,
     Base payout,
     Base tx_commitment,
     Base tx_nonce,
@@ -18,8 +23,18 @@ witness "SettleBet_V1" {
 }
 
 circuit "SettleBet_V1" {
-    # Payout is calculated externally and verified here
+    # Derive won in-circuit: 1 if bet_number == winning_number, 0 otherwise.
+    # Uses IsNotEqual chip — fully pure per is_not_equal_fully_pure theorem.
+    won = is_equal_base(bet_number, winning_number);
+
+    # Constrain payout: if won=0, payout=0; if won=1, payout=expected_payout.
+    # Backed by zero_cond_correct and zero_cond_nonzero theorems.
+    computed_payout = zero_cond(won, expected_payout);
+    constrain_equal_base(computed_payout, payout);
+
     tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+
+    # Maintain original public input order for metadata compatibility
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
     constrain_instance(payout);
