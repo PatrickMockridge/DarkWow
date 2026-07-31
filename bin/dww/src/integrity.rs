@@ -108,6 +108,7 @@ impl WalletDb {
         results.extend(self.check_orphaned_caps());
         results.extend(self.check_height_consistency());
         results.extend(self.check_critical_column_nulls());
+        results.extend(self.check_status_revoked_consistency());
         // Block hash validity requires chain_blocks to be populated —
         // skipped silently if no blocks exist yet.
         if let Ok(h) = self.chain_height() {
@@ -117,6 +118,96 @@ impl WalletDb {
         }
 
         Ok(results)
+    }
+
+    /// HAZOP H3: detect and auto-repair status/revoked dual-write divergence.
+    /// After a crash or legacy upgrade, revoked and status can disagree:
+    /// - revoked=1 but status=NULL (legacy caps, or crash during mark_revoked)
+    /// - status=processing/spent but revoked=0 (crash during clear_cap_status)
+    /// This function detects both cases and repairs them, reporting what was fixed.
+    fn check_status_revoked_consistency(&self) -> Vec<IntegrityCheckResult> {
+        let mut results = Vec::new();
+        let conn = match self.conn.lock() {
+            Ok(c) => c,
+            Err(_) => {
+                results.push(IntegrityCheckResult {
+                    check_name: "status-revoked consistency",
+                    passed: false,
+                    severity: IntegritySeverity::Error,
+                    message: "Could not acquire DB lock".into(),
+                    recovery: Some("Restart wallet".into()),
+                });
+                return results;
+            }
+        };
+
+        // Fix 1: revoked=1 but no status → backfill from legacy data
+        let fixed_legacy = conn.execute(
+            "UPDATE held_capabilities SET status = 'processing', status_height = revoked_at_height
+             WHERE revoked = 1 AND status IS NULL",
+            [],
+        );
+        match fixed_legacy {
+            Ok(0) => {}
+            Ok(n) => {
+                results.push(IntegrityCheckResult {
+                    check_name: "status-revoked consistency",
+                    passed: true,
+                    severity: IntegritySeverity::Info,
+                    message: format!("Repaired {n} legacy cap(s): revoked=1 but status was NULL — set to 'processing'"),
+                    recovery: None,
+                });
+            }
+            Err(e) => {
+                results.push(IntegrityCheckResult {
+                    check_name: "status-revoked consistency",
+                    passed: false,
+                    severity: IntegritySeverity::Error,
+                    message: format!("Failed to repair legacy revoked caps: {e}"),
+                    recovery: Some("Manual DB repair required".into()),
+                });
+            }
+        }
+
+        // Fix 2: status=processing/spent but revoked=0 → sync revoked from status
+        let fixed_diverged = conn.execute(
+            "UPDATE held_capabilities SET revoked = 1, revoked_at_height = status_height
+             WHERE status IN ('processing', 'spent') AND revoked = 0",
+            [],
+        );
+        match fixed_diverged {
+            Ok(0) => {}
+            Ok(n) => {
+                results.push(IntegrityCheckResult {
+                    check_name: "status-revoked consistency",
+                    passed: true,
+                    severity: IntegritySeverity::Warn,
+                    message: format!("Repaired {n} cap(s): status was set but revoked was 0 — synced revoked from status"),
+                    recovery: None,
+                });
+            }
+            Err(e) => {
+                results.push(IntegrityCheckResult {
+                    check_name: "status-revoked consistency",
+                    passed: false,
+                    severity: IntegritySeverity::Error,
+                    message: format!("Failed to repair diverged caps: {e}"),
+                    recovery: Some("Manual DB repair required".into()),
+                });
+            }
+        }
+
+        if results.is_empty() {
+            results.push(IntegrityCheckResult {
+                check_name: "status-revoked consistency",
+                passed: true,
+                severity: IntegritySeverity::Info,
+                message: "Status and revoked are consistent".into(),
+                recovery: None,
+            });
+        }
+
+        results
     }
 
     fn check_table_existence(&self) -> Vec<IntegrityCheckResult> {
