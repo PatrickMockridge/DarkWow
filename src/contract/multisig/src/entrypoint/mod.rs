@@ -256,6 +256,14 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             if !wasm::db::db_contains_key(groups_db, &params.group_id.to_bytes())? {
                 return Err(MultiSigError::GroupNotFound.into());
             }
+            // HAZOP H-4 fix: verify signer is a group member
+            let data = wasm::db::db_get(groups_db, &params.group_id.to_bytes())?
+                .ok_or(MultiSigError::GroupNotFound)?;
+            let group = MultiSigGroup::decode(&data)?;
+            if !group.pubkeys.iter().any(|pk| pk == &params.signer_pub) {
+                msg!("[multisig::SignV1] Error: signer is not a member of the group");
+                return Err(MultiSigError::KeyNotInGroup.into());
+            }
             // Nullifier binds signer pubkey to prevent collision across signers
             // Must match FinalizeV1 lookup: poseidon_hash([group_id, msg_hash, pk_x, pk_y])
             let (pk_x, pk_y) = params.signer_pub.xy().expect("pk not identity");
@@ -328,13 +336,11 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         }
         MultiSigFunction::FinalizeV1 => {
             let u = decode_finalize_update_v1(&update_data[1..])?;
+            // HAZOP H-5 fix: delete consumed signatures (previously zeroed value
+            // but kept key — db_contains_key still returned true, enabling replay).
             let sigs_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_SIGNATURES_TREE)?;
             for nf in &u.consumed_nullifiers {
-                if let Some(d) = wasm::db::db_get(sigs_db, &nf.to_bytes())? {
-                    let mut sig = PartialSignature::decode(&d)?;
-                    sig.nullifier = Nullifier::ZERO;
-                    wasm::db::db_set(sigs_db, &nf.to_bytes(), &sig.encode())?;
-                }
+                wasm::db::db_del(sigs_db, &nf.to_bytes())?;
             }
             Ok(())
         }

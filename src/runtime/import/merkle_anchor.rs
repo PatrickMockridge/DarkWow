@@ -52,9 +52,10 @@ pub(crate) fn merkle_anchor_add(
         return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
-    // Subtract used gas
-    env.subtract_gas(&mut store, 1);
-    env.subtract_gas(&mut store, 96 /* entry_bytes.len() as u64 */);
+    // HAZOP RC-C fix: charge_gas checks exhaustion
+    if env.charge_gas(&mut store, 97 /* 1 + 96: entry + value_data */) {
+        return dwow_sdk::error::INTERNAL_ERROR;
+    }
 
     // Validate length
     if len != 96 {

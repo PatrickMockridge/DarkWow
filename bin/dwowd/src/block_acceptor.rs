@@ -216,10 +216,22 @@ pub fn accept_block(
     // for fail-fast — reject under-reward blocks before spawning WASM runtime.
     {
         let expected = dwow_sdk::blockchain::expected_reward(block.header.height);
+        // HAZOP H-1 fix: lower bound — reject under-reward blocks
         if block.header.total_reward < expected {
             return Err(dwow_core::Error::Custom(format!(
                 "Coinbase reward {} below expected_reward({}) = {}",
                 block.header.total_reward, block.header.height, expected
+            )));
+        }
+        // HAZOP H-1 fix: upper bound — defense-in-depth inflation cap.
+        // The WASM pow_reward_v1 contract enforces exact emission, but a 2x
+        // sanity cap at the host level prevents runaway inflation if the
+        // WASM contract is ever compromised.
+        let max = expected.saturating_mul(2);
+        if block.header.total_reward > max {
+            return Err(dwow_core::Error::Custom(format!(
+                "Coinbase reward {} exceeds max {} (2x expected_reward({}) = {})",
+                block.header.total_reward, max, block.header.height, expected
             )));
         }
     }
@@ -281,6 +293,29 @@ pub fn accept_block(
     // The supply_chain_batch.is_none() guard above catches the critical case
     // where cumulative supply state was expected but not written.
     let contracts_batch = outcome.overlay.state.aggregate().unwrap_or_default();
+
+    // 5.5 Coinbase maturity — HAZOP C-6 fix: enforce BEFORE sled commit.
+    // Previously checked post-commit (chain_state.rs:1065) which meant
+    // immature spends were persisted to disk before rejection.
+    // Now enforced here in the pre-commit validation pipeline.
+    for tx in &block.transactions {
+        let is_coinbase = tx.contract_calls.first()
+            .map_or(false, |c| c.data.first() == Some(&0x05)
+                && c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID);
+        if is_coinbase {
+            continue;
+        }
+        for nullifier in &tx.nullifiers {
+            if let Some(created_at) = chain_state.nullifier_height(nullifier) {
+                if block.header.height.saturating_sub(created_at) < dwow_chain::COINBASE_MATURITY {
+                    return Err(dwow_core::Error::Custom(format!(
+                        "Immature coinbase spend at height {}: nullifier created at {}, needs {} blocks maturity",
+                        block.header.height, created_at, dwow_chain::COINBASE_MATURITY
+                    )));
+                }
+            }
+        }
+    }
 
     // 6. Atomic commit — blocks, contracts, supply_chain, consensus, coins,
     // and nullifiers all committed in a single sled transaction.

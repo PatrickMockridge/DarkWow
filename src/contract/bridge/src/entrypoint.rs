@@ -102,6 +102,8 @@ const BRIDGE_DEPOSIT_ROOT_KEY: &[u8] = b"deposit_root";
 const BRIDGE_MIN_CONFIRMATIONS_KEY: &[u8] = b"min_confirmations";
 const BRIDGE_DEPOSIT_FEE_KEY: &[u8] = b"deposit_fee";
 const BRIDGE_WITHDRAW_FEE_KEY: &[u8] = b"withdraw_fee";
+const BRIDGE_MAX_DEPOSIT_KEY: &[u8] = b"max_deposit";
+const BRIDGE_MAX_WITHDRAWAL_KEY: &[u8] = b"max_withdrawal";
 const BRIDGE_TOTAL_DEPOSITED_KEY: &[u8] = b"total_deposited";
 const BRIDGE_TOTAL_WITHDRAWN_KEY: &[u8] = b"total_withdrawn";
 
@@ -222,6 +224,8 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::db::db_set(config_db, BRIDGE_MIN_CONFIRMATIONS_KEY, &params.min_confirmations.to_le_bytes())?;
     wasm::db::db_set(config_db, BRIDGE_DEPOSIT_FEE_KEY, &params.deposit_fee.to_le_bytes())?;
     wasm::db::db_set(config_db, BRIDGE_WITHDRAW_FEE_KEY, &params.withdrawal_fee.to_le_bytes())?;
+    wasm::db::db_set(config_db, BRIDGE_MAX_DEPOSIT_KEY, &params.max_deposit.to_le_bytes())?;
+    wasm::db::db_set(config_db, BRIDGE_MAX_WITHDRAWAL_KEY, &params.max_withdrawal.to_le_bytes())?;
 
     msg!("[bridge::init_contract] Bridge initialized successfully");
     Ok(())
@@ -385,10 +389,12 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
     let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(BridgeError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP RC-F fix: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        msg!("[bridge] Error: promissory_note contract ID not configured");
+        return Err(BridgeError::InvalidChildCall.into());
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params= DepositParams::decode(&self_.data[1..])?;
@@ -801,10 +807,12 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
     let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(BridgeError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP RC-F fix: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        msg!("[bridge] Error: promissory_note contract ID not configured");
+        return Err(BridgeError::InvalidChildCall.into());
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params= WithdrawParams::decode(&self_.data[1..])?;
@@ -944,10 +952,12 @@ fn process_cancel_withdraw_instruction(
     let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(BridgeError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP RC-F fix: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        msg!("[bridge] Error: promissory_note contract ID not configured");
+        return Err(BridgeError::InvalidChildCall.into());
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params= CancelWithdrawParams::decode(&self_.data[1..])?;
@@ -1041,10 +1051,12 @@ fn process_execute_guaranteed_withdraw_instruction(
     let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(BridgeError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::ZERO {
-        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    // HAZOP RC-F fix: fail-closed — reject if promissory_note not configured
+    if promissory_note_cid == ContractId::ZERO {
+        msg!("[bridge] Error: promissory_note contract ID not configured");
+        return Err(BridgeError::InvalidChildCall.into());
     }
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params= ExecuteGuaranteedWithdrawParams::decode(&self_.data[1..])?;
@@ -1454,6 +1466,9 @@ fn apply_config_update(cid: ContractId, params: UpdateConfigParams) -> ContractR
     wasm::db::db_set(config_db, BRIDGE_DEPOSIT_FEE_KEY, &params.deposit_fee.to_le_bytes())?;
     wasm::db::db_set(config_db, BRIDGE_WITHDRAW_FEE_KEY, &params.withdrawal_fee.to_le_bytes())?;
     wasm::db::db_set(config_db, BRIDGE_MIN_CONFIRMATIONS_KEY, &params.min_confirmations.to_le_bytes())?;
+    // HAZOP RC-F fix: write max_deposit/max_withdrawal that were previously parsed but discarded
+    wasm::db::db_set(config_db, BRIDGE_MAX_DEPOSIT_KEY, &params.max_deposit.to_le_bytes())?;
+    wasm::db::db_set(config_db, BRIDGE_MAX_WITHDRAWAL_KEY, &params.max_withdrawal.to_le_bytes())?;
 
     msg!("[bridge::process_update] Configuration updated successfully");
     Ok(())

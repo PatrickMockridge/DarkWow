@@ -6,12 +6,15 @@ witness "SetTransparencyLevelV1" {
     Base gov_nullifier, Base tx_commitment,
     Base tx_nonce,
     Base tx_binding,
+    # HAZOP H-8 fix: pair_id for per-pair unique governance nullifiers
+    Base pair_id,
 }
 circuit "SetTransparencyLevelV1" {
     gov_pub = ec_mul_base(gov_secret, NULLIFIER_K);
     constrain_equal_base(ec_get_x(gov_pub), gov_pub_x);
     constrain_equal_base(ec_get_y(gov_pub), gov_pub_y);
-    computed = poseidon_hash(gov_pub_x, gov_pub_y, gov_secret);
+    # HAZOP H-8 fix: include pair_id for per-operation unique nullifiers
+    computed = poseidon_hash(gov_pub_x, gov_pub_y, gov_secret, pair_id);
     constrain_equal_base(computed, gov_nullifier);
     constrain_instance(gov_pub_x); constrain_instance(gov_pub_y);
     constrain_instance(gov_nullifier); tx_binding = poseidon_hash(tx_commitment, tx_nonce);

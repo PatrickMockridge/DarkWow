@@ -228,6 +228,24 @@ impl Env {
             MeteringPoints::Exhausted
         )
     }
+
+    /// HAZOP RC-C structural fix: charge gas and return an error code if
+    /// exhausted. State-mutating host functions MUST use this single call
+    /// instead of calling subtract_gas directly — the return-value check
+    /// is embedded, making the correct pattern the path of least resistance.
+    ///
+    /// Replaces the error-prone pattern:
+    ///   env.subtract_gas(&mut store, charge);   // return value discarded
+    ///   // ... state mutation proceeds regardless ...
+    /// with a single infallible call:
+    ///   if env.charge_gas(&mut store, charge) { return INTERNAL_ERROR; }
+    pub fn charge_gas(&mut self, ctx: &mut impl AsStoreMut, gas: u64) -> bool {
+        if self.subtract_gas(ctx, gas) {
+            error!(target: "runtime", "Gas exhausted — rejecting state-mutating operation");
+            return true;
+        }
+        false
+    }
 }
 
 /// Define a wasm runtime.
@@ -274,6 +292,15 @@ impl Runtime {
                 0xFD => {
                     return Err(Error::WasmerCompileError(
                         "WASM module uses SIMD (0xFD) — non-deterministic across architectures".into()
+                    ));
+                }
+                // HAZOP H-7 fix: 0xFE prefix — WASM threads/atomics
+                // (atomic.notify, atomic.wait32/64, atomic.fence, atomic RMW ops).
+                // Atomic operations produce non-deterministic results across CPU
+                // architectures and memory models.
+                0xFE => {
+                    return Err(Error::WasmerCompileError(
+                        "WASM module uses threads/atomics (0xFE) — non-deterministic across architectures".into()
                     ));
                 }
                 _ => {}

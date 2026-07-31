@@ -55,12 +55,10 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
         return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
-    // Subtract used gas.
-    // This makes calling the function which returns early have some (small) cost.
-    env.subtract_gas(&mut store, 1);
-
-    // Subtract written bytes as gas
-    env.subtract_gas(&mut store, 33 /* value_data.len() as u64 */);
+    // HAZOP RC-C fix: charge_gas checks exhaustion
+    if env.charge_gas(&mut store, 1 + 33 /* entry + value_data */) {
+        return dwow_sdk::error::INTERNAL_ERROR;
+    }
 
     let memory_view = env.memory_view(&store);
     let Ok(mem_slice) = ptr.slice(&memory_view, len) else {
@@ -315,8 +313,11 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
     // * The size of the Merkle tree we serialized into the db.
     // * The size of the new Merkle roots we wrote into the db.
     drop(db_handles);
+    // HAZOP RC-C fix: charge_gas checks exhaustion
     let spent_gas = coins_len * 32;
-    env.subtract_gas(&mut store, spent_gas as u64);
+    if env.charge_gas(&mut store, spent_gas as u64) {
+        return dwow_sdk::error::INTERNAL_ERROR;
+    }
 
     wasm::entrypoint::SUCCESS
 }

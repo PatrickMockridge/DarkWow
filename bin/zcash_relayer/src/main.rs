@@ -226,9 +226,9 @@ fn derive_address(pub_x: String, pub_y: String, nonce: u64) -> Result<()> {
 
     // Encode as zcash transparent or shielded address
     // For shielded, we'd use bech32 encoding with "zs" prefix
+    // HAZOP C11: do not print bridge secret to stdout
     println!("Bridge Shielded Address (zaddr): zs1...");
     println!("Bridge Transparent Address (taddr): tAD...");
-    println!("Secret (hex): {}", hex::encode(bridge_secret));
     println!("NOTE: This is a Sapling shielded address for receiving ZEC deposits only.");
 
     Ok(())

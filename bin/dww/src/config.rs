@@ -129,11 +129,13 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
         .and_then(|v| v.as_str())
         .unwrap_or("~/.local/share/dwow/dww/wallet.db")
         .to_string();
+    // HAZOP RC-F fix: no default password — must be configured or use env var.
+    // Previously fell back to "changeme" which is trivially decryptable.
     let wallet_pass = network_config
         .get("wallet_pass")
         .and_then(|v| v.as_str())
-        .unwrap_or("changeme")
-        .to_string();
+        .map(|s| s.to_string())
+        .or_else(|| std::env::var("DWOW_WALLET_PASS").ok());
 
     // CLI --production overrides TOML value
     let mut production_mode = network_config
@@ -144,24 +146,32 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
         production_mode = true;
     }
 
-    // Production-mode password validation
+    // HAZOP RC-F fix: validate password strength. Production requires
+    // explicit non-empty, non-weak password (no default fallback).
     if production_mode {
-        if wallet_pass.is_empty() {
+        let pass = wallet_pass.as_deref().unwrap_or("");
+        if pass.is_empty() {
             return Err(Error::Custom(
-                "wallet_pass must not be empty in production mode".into()
+                "wallet_pass must not be empty in production mode. Set it in config or via DWOW_WALLET_PASS env var.".into()
             ));
         }
-        if wallet_pass.len() < 8 {
+        if pass.len() < 8 {
             return Err(Error::Custom(
-                "wallet_pass must be at least 8 characters in production mode".into()
+                "wallet_pass must be at least 8 characters in production mode.".into()
             ));
         }
-        if wallet_pass == "testpassword123" || wallet_pass == "changeme" {
+        if pass == "testpassword123" || pass == "changeme" {
             return Err(Error::Custom(
                 "wallet_pass is a default/weak password. Set a strong password in production mode.".into()
             ));
         }
     }
+
+    // HAZOP RC-F fix: resolve wallet_pass to a String for downstream use.
+    // In non-production mode with no password configured, use an empty
+    // string — the wallet will still encrypt data (empty password means
+    // SQLCipher with zero-length key, which is better than a known default).
+    let wallet_pass = wallet_pass.unwrap_or_default();
 
     let history_path = network_config
         .get("history_path")

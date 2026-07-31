@@ -46,15 +46,18 @@ impl EncDecode for pallas::Scalar {}
 /// Blinding factor used in bullas. Every bulla should contain one.
 /// Copy and Clone removed per C3 — blinding factors SHALL NOT be
 /// implicitly duplicated. Drop zeroizes the inner field element.
+/// HAZOP C10 fix: Debug derive removed — manual impl renders `<redacted>`
+/// to prevent leaking Pedersen commitment blinding factors via `{:?}`.
 #[cfg(feature = "async")]
-#[derive(Debug, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Eq, PartialEq, SerialEncodable, SerialDecodable)]
 pub struct Blind<F: Field + EncDecode + AsyncEncodable + AsyncDecodable>(pub F);
 
 /// Blinding factor used in bullas. Every bulla should contain one.
 /// Copy and Clone removed per C3 — blinding factors SHALL NOT be
 /// implicitly duplicated. Drop zeroizes the inner field element.
+/// HAZOP C10 fix: Debug derive removed — manual impl renders `<redacted>`.
 #[cfg(not(feature = "async"))]
-#[derive(Debug, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Eq, PartialEq, SerialEncodable, SerialDecodable)]
 pub struct Blind<F: Field + EncDecode>(pub F);
 
 // Clone is explicit (not derived) — blinding factors SHALL NOT be
@@ -62,6 +65,15 @@ pub struct Blind<F: Field + EncDecode>(pub F);
 impl<F: Field + EncDecode> Clone for Blind<F> {
     fn clone(&self) -> Self {
         Self(self.0)
+    }
+}
+
+// HAZOP C10 fix: manual Debug impl renders `<redacted>` — prevents
+// accidental leakage of Pedersen commitment blinding factors via `{:?}`.
+// Matches the SecretKey Debug pattern at keypair.rs:91-95.
+impl<F: Field + EncDecode> core::fmt::Debug for Blind<F> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.write_str("<redacted>")
     }
 }
 

@@ -75,9 +75,10 @@ pub(crate) fn db_init(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u
         return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
-    // Subtract used gas. Charge a fixed fee for opening a new sled tree
-    // to prevent unbounded resource consumption.
-    env.subtract_gas(&mut store, 100);
+    // HAZOP RC-C fix: charge_gas logs and returns true if exhausted
+    if env.charge_gas(&mut store, 100) {
+        return dwow_sdk::error::INTERNAL_ERROR;
+    }
 
     // Create a mem slice of the wasm VM memory
     let memory_view = env.memory_view(&store);
@@ -469,11 +470,8 @@ pub(crate) fn db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
     } else {
         ptr_len as u64 // Still charge for I/O overhead on same-size or smaller writes
     };
-    // HAZOP H8 fix: reject state writes after gas exhaustion.
-    if env.subtract_gas(&mut store, charge) {
-        error!(target: "runtime::db::db_set",
-            "[WASM] [{cid}] Gas exhausted — rejecting db_set");
-        return dwow_sdk::error::INTERNAL_ERROR
+    if env.charge_gas(&mut store, charge) {
+        return dwow_sdk::error::INTERNAL_ERROR;
     }
 
     // Insert key-value pair into the database corresponding to this contract
@@ -608,8 +606,9 @@ pub(crate) fn db_del(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
         .db_get(&tree, &key)
         .unwrap_or(None)
         .map_or(0, |d| d.len());
-    // Floor at 1 gas so deletion always consumes at least something
-    env.subtract_gas(&mut store, std::cmp::max(1, existing_len as u64));
+    if env.charge_gas(&mut store, std::cmp::max(1, existing_len as u64)) {
+        return dwow_sdk::error::INTERNAL_ERROR;
+    }
 
     // Remove key-value pair from the database corresponding to this contract
     if let Err(e) = env.backend.db_remove(&tree, &key) {
@@ -959,7 +958,9 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
     // constraint evaluation. Literals and witnesses are just data.
     let gas_cost = (zkbin.opcodes.len() as u64 * 200)
         + ((zkbin.literals.len() + zkbin.witnesses.len()) as u64 * 50);
-    env.subtract_gas(&mut store, gas_cost);
+    if env.charge_gas(&mut store, gas_cost) {
+        return dwow_sdk::error::INTERNAL_ERROR;
+    }
 
     // Because of `Runtime::Deploy`, we should be sure that the zkas db is index zero.
     let db_handles = env.db_handles.borrow();
@@ -1061,7 +1062,9 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
     drop(db_handles);
 
     // Subtract used gas. Here we count the bytes written into the db.
-    env.subtract_gas(&mut store, (key.len() + value.len()) as u64);
+    if env.charge_gas(&mut store, (key.len() + value.len()) as u64) {
+        return dwow_sdk::error::INTERNAL_ERROR;
+    }
 
     wasm::entrypoint::SUCCESS
 }
@@ -1216,7 +1219,9 @@ pub(crate) fn db_set_local(
         return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
-    env.subtract_gas(&mut store, ptr_len as u64);
+    if env.charge_gas(&mut store, ptr_len as u64) {
+        return dwow_sdk::error::INTERNAL_ERROR;
+    }
 
     let memory_view = env.memory_view(&store);
     let Ok(mem_slice) = ptr.slice(&memory_view, ptr_len) else {

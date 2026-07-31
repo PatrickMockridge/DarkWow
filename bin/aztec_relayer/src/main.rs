@@ -236,8 +236,8 @@ fn derive_address(pub_x: String, pub_y: String, nonce: u64) -> Result<()> {
     addr_hasher.update(&bridge_secret);
     let _addr_hash = *addr_hasher.finalize().as_bytes();
 
+    // HAZOP C11: do not print bridge secret to stdout
     println!("Bridge Aztec Address: (private note)");
-    println!("Secret (hex): {}", hex::encode(bridge_secret));
     println!("NOTE: This is an Aztec private note for receiving ETH/DAI deposits.");
     println!("Your deposit amount and identity remain private on Aztec rollup.");
 

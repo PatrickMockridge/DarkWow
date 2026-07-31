@@ -57,8 +57,10 @@ pub(crate) fn emit_spend_hook(
         return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
-    // Subtract gas for the data read
-    env.subtract_gas(&mut store, (target_cid_len + payload_len) as u64);
+    // HAZOP RC-C fix: charge_gas checks exhaustion
+    if env.charge_gas(&mut store, (target_cid_len + payload_len) as u64) {
+        return dwow_sdk::error::INTERNAL_ERROR;
+    }
 
     let memory_view = env.memory_view(&store);
 
@@ -103,6 +105,10 @@ pub(crate) fn emit_spend_hook(
 }
 
 /// Host function for logging strings.
+/// HAZOP L-5: no ACL gate — intentionally callable from any ContractSection.
+/// Logging is not state-mutating in the consensus sense; the log buffer is
+/// ephemeral (per-call) and never committed to sled. Restricting logging
+/// would hinder debugging without providing security benefit.
 pub(crate) fn drk_log(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u32) {
     let (env, mut store) = ctx.data_and_store_mut();
 

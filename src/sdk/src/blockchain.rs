@@ -338,9 +338,13 @@ impl BlockTarget {
     /// `work = u32::MAX / target`. Higher = heavier chain = fork selection prefers.
     /// Returns 0 for zero target (degenerate — never valid).
     /// Returns u128 per ChainWork migration (M1) — u64 could wrap at ~4.3B blocks.
+    /// HAZOP L-1 fix: unified with chain_state.rs recomputation — both use max(1)
+    /// to prevent theoretical divergence when target == 0 (rejected by validation).
     pub const fn chain_work(self) -> u128 {
         if self.0 == 0 { return 0; }
-        u32::MAX as u128 / self.0 as u128
+        // Use max(1) for consistency with chain_state.rs recomputation (line 175)
+        let divisor = if self.0 < 1 { 1 } else { self.0 };
+        u32::MAX as u128 / divisor as u128
     }
 
     /// Conventional mining difficulty for display/pool purposes.

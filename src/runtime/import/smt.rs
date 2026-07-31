@@ -116,9 +116,10 @@ pub(crate) fn sparse_merkle_insert_batch(
         return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
-    // Subtract used gas.
-    // This makes calling the function which returns early have some (small) cost.
-    env.subtract_gas(&mut store, 1);
+    // HAZOP RC-C fix: charge_gas checks exhaustion
+    if env.charge_gas(&mut store, 1) {
+        return dwow_sdk::error::INTERNAL_ERROR;
+    }
 
     let memory_view = env.memory_view(&store);
     let Ok(mem_slice) = ptr.slice(&memory_view, len) else {
@@ -367,11 +368,11 @@ pub(crate) fn sparse_merkle_insert_batch(
         return dwow_sdk::error::DB_SET_FAILED
     }
 
-    // Subtract used gas.
-    // Here we count:
-    // * The number of nullifiers we inserted into the DB
+    // HAZOP RC-C fix: charge_gas checks exhaustion
     drop(db_handles);
-    env.subtract_gas(&mut store, inserted_nullifiers as u64);
+    if env.charge_gas(&mut store, inserted_nullifiers as u64) {
+        return dwow_sdk::error::INTERNAL_ERROR;
+    }
 
     wasm::entrypoint::SUCCESS
 }

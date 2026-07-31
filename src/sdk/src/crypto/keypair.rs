@@ -192,6 +192,10 @@ impl FromStr for SecretKey {
     }
 }
 
+/// HAZOP C11: Display outputs the full secret key as base58.
+/// This is intentionally kept for CLI key export but MUST NOT be
+/// used in production logging, debug output, or P2P messages.
+/// Prefer `Debug` (which renders `<redacted>`) for diagnostics.
 impl core::fmt::Display for SecretKey {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         let disp: String = bs58::encode(self.0.to_repr()).into_string();
