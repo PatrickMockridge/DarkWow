@@ -8,7 +8,7 @@ description = "DarkWow mempool — fee-ordered transaction pool with nullifier d
 [dependencies]
 dwow_chain = {path = "../../src/linear"}
 dwow_core = {path = "../.."}
-dwow-sdk = {path = "../../src/sdk"}
+dwow-sdk = {path = "../../src/sdk", features = ["json"]}
 blake3 = {version = "1", features = ["serde"]}
 sled = "0.34"
 smol = "2"

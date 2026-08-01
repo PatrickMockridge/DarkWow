@@ -271,6 +271,7 @@ pub fn note_field<'a>(fields: &'a [(String, NoteFieldValue)], name: &str) -> Opt
 /// All fields are positional (in schema declaration order) and tag-free —
 /// `dwow_serial` encodes structs strictly by field order with no names or type
 /// tags on the wire.
+#[cfg(feature = "json")]
 pub fn encode_params_by_schema(
     schema: &[ParameterField],
     params_json: &str,

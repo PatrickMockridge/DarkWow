@@ -298,9 +298,17 @@ impl ContractClient for ManifestContractClient {
             .find(|p| p.function == function)
             .map(|p| p.fields.clone())
             .unwrap_or_default();
+        #[cfg(feature = "json")]
         let encoded_params = crate::manifest::encode_params_by_schema(
             &param_schema, params,
         ).map_err(|e| format!("{}: '{}' parameter encoding: {}", self.name, function, e))?;
+        #[cfg(not(feature = "json"))]
+        let encoded_params: Vec<u8> = {
+            // Contracts don't call encode_params_by_schema — they receive
+            // pre-encoded call data. This path exists only for wallet-side
+            // JSON→binary parameter encoding via the generic ContractClient.
+            return Err("JSON parameter encoding not available (enable 'json' feature)".into());
+        };
 
         // circuit_registry route removed (D2 — phantom-code-removed-first).
         // The generic prover (wallet.md §6.4.1) builds proofs from the

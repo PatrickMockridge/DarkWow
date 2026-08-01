@@ -68,7 +68,6 @@ use crate::tests::genesis::GenesisHarness;
 /// Phase 8: Coverage gate — uncovered barbs drop the note.
 /// Phases 9-10: Wrong-key negative + determinism.
 #[test]
-#[test]
 fn test_wallet_integration() {
     dwow_native_token_contract::enable_deterministic_zk();
 

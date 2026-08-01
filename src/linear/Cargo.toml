@@ -36,7 +36,7 @@ ureq = "3"
 monero = { version = "0.21.0" }
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 primitive-types = { version = "0.14.0" }
-dwow-sdk = { path = "../sdk", features = ["async"] }
+dwow-sdk = { path = "../sdk", features = ["async", "json"] }
 dwow_core = { path = "../..", features = ["wasm-runtime"] }
 dwow_native_token_contract = { path = "../../src/contract/native_token", features = ["client"] }
 smol = "2"

@@ -260,52 +260,74 @@ pub struct Runtime {
 
 impl Runtime {
     /// HAZOP H10: reject WASM binaries containing non-deterministic features
-    /// (floating-point operations, bulk memory, SIMD). These can produce
-    /// different results on different wasmer backends or architectures.
-    /// Uses byte-level opcode scanning — no external parser dependency.
-    /// NOTE: scans ALL bytes, not just code sections. Float byte patterns
-    /// in non-code sections (data, name, custom) will also be rejected.
-    /// This is fail-closed: false positives are safe, and production
-    /// contracts should not contain these opcodes in any section.
+    /// (floating-point operations, bulk memory, SIMD) in CODE SECTIONS ONLY.
+    /// Data sections, name sections, and custom sections may contain arbitrary
+    /// byte patterns that happen to match float opcodes — these are false
+    /// positives. Only executed code matters for determinism.
     fn reject_nondeterministic_features(wasm_bytes: &[u8]) -> Result<()> {
-        let mut i = 0;
-        while i < wasm_bytes.len() {
-            match wasm_bytes[i] {
-                // WASM float opcodes (f32/f64):
-                // 0x7A-0x7D: f32/f64 abs, neg, ceil, floor, trunc, nearest, sqrt
-                // 0x8A-0x9F: f32/f64 add, sub, mul, div, min, max, copysign
-                // 0xB0-0xBF: f32/f64 eq, ne, lt, gt, le, ge, convert, reinterpret
-                0x8A..=0x9F | 0x7A..=0x7D | 0xB0..=0xBF => {
-                    return Err(Error::WasmerCompileError(
-                        "WASM module uses floating-point (f32/f64) — non-deterministic across architectures".into()
-                    ));
-                }
-                // 0xFC prefix: bulk-memory (0x08-0x0B = memory.copy/fill/init, data.drop)
-                0xFC => {
-                    if i + 1 < wasm_bytes.len() && matches!(wasm_bytes[i + 1], 0x08..=0x0B) {
-                        return Err(Error::WasmerCompileError(
-                            "WASM module uses bulk-memory (memory.copy/fill/init) — non-deterministic across backends".into()
-                        ));
-                    }
-                }
-                // 0xFD prefix: SIMD
-                0xFD => {
-                    return Err(Error::WasmerCompileError(
-                        "WASM module uses SIMD (0xFD) — non-deterministic across architectures".into()
-                    ));
-                }
-                // HAZOP H-7 fix: 0xFE prefix — WASM threads/atomics
-                // (atomic.notify, atomic.wait32/64, atomic.fence, atomic RMW ops).
-                // Atomic operations produce non-deterministic results across CPU
-                // architectures and memory models.
-                0xFE => {
-                    return Err(Error::WasmerCompileError(
-                        "WASM module uses threads/atomics (0xFE) — non-deterministic across architectures".into()
-                    ));
-                }
-                _ => {}
+        // Parse WASM sections to find code section (id=10).
+        // Format: magic(4) + version(4) + sections...
+        if wasm_bytes.len() < 8 {
+            return Ok(());  // too short to be valid WASM
+        }
+        let mut pos = 8;  // skip magic + version
+        while pos < wasm_bytes.len() {
+            if pos >= wasm_bytes.len() { break; }
+            let section_id = wasm_bytes[pos];
+            pos += 1;
+            // Read LEB128 section size
+            let mut size: u32 = 0;
+            let mut shift = 0;
+            while pos < wasm_bytes.len() {
+                let byte = wasm_bytes[pos];
+                pos += 1;
+                size |= ((byte & 0x7f) as u32) << shift;
+                if byte & 0x80 == 0 { break; }
+                shift += 7;
             }
-            i += 1;
+            if pos + size as usize > wasm_bytes.len() { break; }
+            let section_end = pos + size as usize;
+
+            // Only check code section (id=10) — executed instructions.
+            // Other sections (data, name, custom) may contain byte patterns
+            // that match float opcodes but are never executed.
+            if section_id == 10 {
+                let code_bytes = &wasm_bytes[pos..section_end];
+                let mut i = 0;
+                while i < code_bytes.len() {
+                    match code_bytes[i] {
+                        // WASM float opcodes (f32/f64):
+                        0x8A..=0x9F | 0x7A..=0x7D | 0xB0..=0xBF => {
+                            return Err(Error::WasmerCompileError(
+                                "WASM module uses floating-point (f32/f64) — non-deterministic across architectures".into()
+                            ));
+                        }
+                        // 0xFC prefix: bulk-memory
+                        0xFC => {
+                            if i + 1 < code_bytes.len() && matches!(code_bytes[i + 1], 0x08..=0x0B) {
+                                return Err(Error::WasmerCompileError(
+                                    "WASM module uses bulk-memory — non-deterministic across backends".into()
+                                ));
+                            }
+                        }
+                        // 0xFD prefix: SIMD
+                        0xFD => {
+                            return Err(Error::WasmerCompileError(
+                                "WASM module uses SIMD (0xFD) — non-deterministic across architectures".into()
+                            ));
+                        }
+                        // HAZOP H-7 fix: 0xFE prefix — WASM threads/atomics
+                        0xFE => {
+                            return Err(Error::WasmerCompileError(
+                                "WASM module uses threads/atomics (0xFE) — non-deterministic across architectures".into()
+                            ));
+                        }
+                        _ => {}
+                    }
+                    i += 1;
+                }
+            }
+            pos = section_end;
         }
         Ok(())
     }

@@ -15,6 +15,10 @@ doctest = false
 default = []
 async = ["dwow-serial/async"]
 wasm = []
+# serde_json pulls f64 ops into wasm32 — non-deterministic across architectures.
+# Contracts target wasm32 and must not contain float instructions.
+# Wallet/node enable this feature; contracts do not.
+json = ["dep:serde_json"]
 # Post-mainnet (TBA): cross-shard Merkle SDK types. DO NOT ENABLE
 # before mainnet stable. All function bodies are todo!().
 sharding = []
@@ -26,7 +30,7 @@ thiserror = "2.0.17"
 # Serialization
 dwow-serial = {path = "../serial", features = ["derive", "crypto"]}
 serde = {version = "1.0", features = ["derive"]}
-serde_json = "1.0"
+serde_json = { version = "1.0", optional = true }
 hex = "0.4"
 toml = "0.9"
 
