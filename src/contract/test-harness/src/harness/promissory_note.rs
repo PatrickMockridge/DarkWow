@@ -203,7 +203,7 @@ impl PromissoryNoteHarness {
         // apply_token_mint (RegisterTypeV1) appends token_id at position 1.
         // The proof must use the tree root AFTER both are committed.
         let mut tree = MerkleTree::new(1);
-        tree.append(MerkleNode::from_base(pallas::Base::ZERO)); // guard leaf @ pos 0
+        tree.append(MerkleNode::from_base(pallas::Base::zero())); // guard leaf @ pos 0
         tree.append(MerkleNode::from_base(token_id));           // token leaf @ pos 1
         let leaf_pos_mark = tree.mark().unwrap();
 

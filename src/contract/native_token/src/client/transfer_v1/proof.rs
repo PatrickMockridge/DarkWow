@@ -201,10 +201,7 @@ pub fn create_transfer_mint_proof(
         Witness::Base(Value::known(*cumcom_coords.y())),
         Witness::Base(Value::known(tx_commitment)),
         Witness::Base(Value::known(tx_nonce)),
-        // tx_binding = poseidon_hash(tx_commitment, tx_nonce).
-        // V2 circuits compute this in-circuit AND require it as a witness
-        // for constraint satisfaction (17 witnesses total for burn_v2.zk).
-        Witness::Base(Value::known(public_inputs.tx_binding)),
+        // Mint proof: tx_binding computed in-circuit (mint_v2.zk), not as witness.
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
