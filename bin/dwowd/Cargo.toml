@@ -59,10 +59,6 @@ serde_json = "1.0"
 structopt = "0.3.26"
 structopt-toml = "0.5.1"
 
-[features]
-# Experimental feature gating code paths not yet ready for production.
-# Must be explicitly opted into.
-
 [dev-dependencies]
 dwow-contract-test-harness = {path = "../../src/contract/test-harness"}
 dwow_attestation_contract = {path = "../../src/contract/attestation", features = ["client", "no-entrypoint"]}

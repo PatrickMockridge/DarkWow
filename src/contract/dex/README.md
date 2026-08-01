@@ -155,5 +155,5 @@ net_received = fill_amount - fee;
 ## References
 
 - [DarkWow DEX Architecture Document](../../../doc/src/arch/dex.md)
-- [DarkWow Money Contract](../money/)
+- [Promissory Note](../promissory_note/)
 - [DarkWow Bridge Contract](../bridge/)

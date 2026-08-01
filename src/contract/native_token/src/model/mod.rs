@@ -23,7 +23,7 @@
 
 //! NativeToken data models
 //!
-//! Privacy-first native token design following money_v2 patterns.
+//! Privacy-first native token design following promissory_note patterns.
 //! Uses Pedersen commitments for hidden values and nullifiers for double-spend prevention.
 
 use dwow_sdk::{
@@ -60,10 +60,10 @@ pub const DRKW_TOKEN_COMMITMENT: pallas::Base = pallas::Base::zero();
 pub const MAX_COIN_VALUE: u64 = 1_000_000_000_000;
 
 // ============================================================================
-// COIN STRUCTURES (PRIVACY-FIRST - following money_v2 pattern)
+// COIN STRUCTURES (PRIVACY-FIRST - following promissory_note pattern)
 // ============================================================================
 
-/// A coin - just the hash of coin attributes (like money_v2)
+/// A coin - just the hash of coin attributes (like promissory_note)
 /// This is the coin commitment that gets stored in the Merkle tree
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Coin(pallas::Base);
@@ -99,7 +99,7 @@ impl Coin {
         Ok(Coin(inner))
     }
 
-    /// Create a Coin from coin attributes (same as money_v2::Coin)
+    /// Create a Coin from coin attributes (same as promissory_note::Coin)
     pub fn from_attributes(
         public_key: &PublicKey,
         value: u64,
@@ -196,7 +196,7 @@ impl CoinAttributes {
 }
 
 // ============================================================================
-// INPUT/OUTPUT (TRANSACTION BUILDING BLOCKS - following money_v2 pattern)
+// INPUT/OUTPUT (TRANSACTION BUILDING BLOCKS - following promissory_note pattern)
 // ============================================================================
 
 /// Input to a transaction — proves right to spend a coin.
@@ -281,7 +281,7 @@ pub struct InputWitness {
     pub merkle_path: Vec<MerkleNode>,
 }
 
-/// Output of a transaction - creates new coins (money_v2 style)
+/// Output of a transaction - creates new coins (promissory_note style)
 #[derive(Debug, Clone)]
 pub struct Output {
     /// Pedersen commitment for value (homomorphic)
@@ -384,7 +384,7 @@ impl ClearInput {
 }
 
 // ============================================================================
-// FUNCTION PARAMETERS (matching money_v2 naming)
+// FUNCTION PARAMETERS (matching promissory_note naming)
 // ============================================================================
 
 /// Parameters for FeeV1 - pay network fees (CONSENSUS CRITICAL)

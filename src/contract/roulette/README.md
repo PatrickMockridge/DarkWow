@@ -195,4 +195,4 @@ let winning_number = draw_single(block_hash, nonce, wheel_size);
 - [Lottery Contract](../lottery/) - Parimutuel betting (bridge to insurance)
 - [DarkToshi Dice Contract](../darktoshi_dice/) - Fixed-odds betting reference
 - [Baccarat Contract](../baccarat/) - Multi-round game with capital efficiency
-- [Money V2 Contract](../money_v2/) - Value transfer integration
+- [Promissory Note](../promissory_note/) - Value transfer integration

@@ -196,6 +196,128 @@ pub fn db_del(_db_handle: DbHandle, _key: &[u8]) -> GenericResult<()> {
     Err(ContractError::IoError("wasm host function unavailable".to_string()))
 }
 
+// ── Local (ephemeral) DB functions ──────────────────────────────────
+// These operate on the transaction-local state (TxLocalState) rather
+// than the persistent contract state. Values are discarded when the
+// transaction completes. Used for temporary in-memory storage during
+// contract execution.
+
+/// Look up or create a local (ephemeral) database handle.
+/// Local DBs live in TxLocalState — discarded at tx completion.
+#[cfg(target_arch = "wasm32")]
+pub fn db_lookup_local(cid: ContractId, db_name: &str) -> GenericResult<DbHandle> {
+    unsafe {
+        let mut len = 0;
+        let mut buf = vec![];
+        len += cid.encode(&mut buf)?;
+        len += db_name.to_string().encode(&mut buf)?;
+        let ret = db_lookup_local_(buf.as_ptr(), len as u32);
+        if ret != crate::wasm::entrypoint::SUCCESS {
+            return Err(ContractError::from(ret));
+        }
+        Ok(ret as DbHandle)
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn db_lookup_local(_cid: ContractId, _db_name: &str) -> GenericResult<DbHandle> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
+/// Set a key-value pair in a local (ephemeral) database.
+/// Only callable from update() context.
+#[cfg(target_arch = "wasm32")]
+pub fn db_set_local(db_handle: DbHandle, key: &[u8], value: &[u8]) -> GenericResult<()> {
+    unsafe {
+        let mut len = 0;
+        let mut buf = vec![];
+        len += db_handle.encode(&mut buf)?;
+        len += key.to_vec().encode(&mut buf)?;
+        len += value.to_vec().encode(&mut buf)?;
+        let ret = db_set_local_(buf.as_ptr(), len as u32);
+        if ret != crate::wasm::entrypoint::SUCCESS {
+            return Err(ContractError::from(ret));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn db_set_local(_db_handle: DbHandle, _key: &[u8], _value: &[u8]) -> GenericResult<()> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
+/// Get a value from a local (ephemeral) database.
+#[cfg(target_arch = "wasm32")]
+pub fn db_get_local(db_handle: DbHandle, key: &[u8]) -> GenericResult<Option<Vec<u8>>> {
+    unsafe {
+        let mut len = 0;
+        let mut buf = vec![];
+        len += db_handle.encode(&mut buf)?;
+        len += key.to_vec().encode(&mut buf)?;
+        let ret = db_get_local_(buf.as_ptr(), len as u32);
+        match ret {
+            0 => Ok(None),
+            1 => {
+                let obj = crate::wasm::util::get_object_bytes(0)?;
+                Ok(Some(obj))
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn db_get_local(_db_handle: DbHandle, _key: &[u8]) -> GenericResult<Option<Vec<u8>>> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
+/// Check if a key exists in a local (ephemeral) database.
+#[cfg(target_arch = "wasm32")]
+pub fn db_contains_key_local(db_handle: DbHandle, key: &[u8]) -> GenericResult<bool> {
+    unsafe {
+        let mut len = 0;
+        let mut buf = vec![];
+        len += db_handle.encode(&mut buf)?;
+        len += key.to_vec().encode(&mut buf)?;
+        let ret = db_contains_key_local_(buf.as_ptr(), len as u32);
+        match ret {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn db_contains_key_local(_db_handle: DbHandle, _key: &[u8]) -> GenericResult<bool> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
+/// Delete a key from a local (ephemeral) database.
+/// Only callable from update() context.
+#[cfg(target_arch = "wasm32")]
+pub fn db_del_local(db_handle: DbHandle, key: &[u8]) -> GenericResult<()> {
+    unsafe {
+        let mut len = 0;
+        let mut buf = vec![];
+        len += db_handle.encode(&mut buf)?;
+        len += key.to_vec().encode(&mut buf)?;
+        let ret = db_del_local_(buf.as_ptr(), len as u32);
+        if ret != crate::wasm::entrypoint::SUCCESS {
+            return Err(ContractError::from(ret));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn db_del_local(_db_handle: DbHandle, _key: &[u8]) -> GenericResult<()> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
+// ── Circuit loading ─────────────────────────────────────────────────
+
 /// Only deploy() can call this.
 #[cfg(target_arch = "wasm32")]
 pub fn zkas_db_set(bincode: &[u8]) -> GenericResult<()> {
@@ -228,6 +350,12 @@ extern "C" {
     fn db_contains_key_(ptr: *const u8, len: u32) -> i64;
     fn db_set_(ptr: *const u8, len: u32) -> i64;
     fn db_del_(ptr: *const u8, len: u32) -> i64;
+
+    fn db_lookup_local_(ptr: *const u8, len: u32) -> i64;
+    fn db_set_local_(ptr: *const u8, len: u32) -> i64;
+    fn db_get_local_(ptr: *const u8, len: u32) -> i64;
+    fn db_contains_key_local_(ptr: *const u8, len: u32) -> i64;
+    fn db_del_local_(ptr: *const u8, len: u32) -> i64;
 
     fn zkas_db_set_(ptr: *const u8, len: u32) -> i64;
 }

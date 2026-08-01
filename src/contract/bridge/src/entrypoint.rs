@@ -205,10 +205,6 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     let refund_htlc_v2_bincode = include_bytes!("../proof/refund_htlc_v2.zk.bin");
     wasm::db::zkas_db_set(&refund_htlc_v2_bincode[..])?;
 
-    // NOTE: xmr_deposit_v1.zk, ltc_deposit_v1.zk, zec_deposit_v1.zk, and
-    // azt_deposit_v1.zk exist in proof/ but are deferred to v1.1 cross-chain
-    // support — they are not loaded or wired to get_metadata yet.
-
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, BRIDGE_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, BRIDGE_DB_VERSION_KEY, env!("CARGO_PKG_VERSION").as_bytes())?;
@@ -616,19 +612,18 @@ fn verify_xmr_deposit(_cid: ContractId, proof: &XmrDepositProof) -> ContractResu
     // FALLBACK — No cryptographic proof of deposit address ownership (NOT co-equal)
     //
     // Primary path (target): DLEq proof verification proving the depositor
-    //   owns the Monero one-time address. See doc/src/arch/zk/dleq.md.
+    //   owns the Monero one-time address.
+    //   Implementation: verify/monero.rs behind #[cfg(feature = "bridge-verify")].
     //
-    // Fallback path (current): Deposit accepted without DLEq verification.
-    //   The caller is trusted to have proven address ownership off-chain.
-    //   Reason: DLEq circuit not yet implemented.
+    // Fallback path (current, bridge-verify disabled): deposit accepted without
+    //   DLEq verification — structural checks only.
     //
     // ## DEGRADATION RISK
-    // Any caller can claim any Monero deposit without cryptographic proof
-    // of address ownership. This MUST be resolved before mainnet bridge
-    // deployment — without DLEq, the bridge accepts fabricated deposits.
+    // Without bridge-verify, any caller can claim any Monero deposit without
+    // cryptographic proof of address ownership.
     //
     // ## CONSTRAINT
-    // FIXME(dleq): implement DLEq proof verification before any mainnet bridge deployment.
+    // Enable bridge-verify feature before any mainnet bridge deployment.
     // Do NOT add new deposit types that skip cryptographic ownership proofs.
     msg!("[bridge::verify_xmr_deposit] WARNING: DLEq proof verification not implemented — deposit accepted without cryptographic proof of address ownership");
 

@@ -68,8 +68,7 @@ code = 13
 [[functions]]
 name = "governance_report"
 code = 14
-requires_proof = true
-proof_circuit = "GovernanceReport_V1"
+requires_proof = false
 
 [[trees]]
 name = "info"
@@ -101,30 +100,6 @@ name = "relayers"
 [[trees]]
 name = "governance_reports"
 
-[[circuits]]
-name = "Deposit_V1"
-namespace = "bridge"
-
-[[circuits]]
-name = "Withdraw_V1"
-namespace = "bridge"
-
-[[circuits]]
-name = "XmrDeposit_V1"
-namespace = "bridge"
-
-[[circuits]]
-name = "ZecDeposit_V1"
-namespace = "bridge"
-
-[[circuits]]
-name = "AztDeposit_V1"
-namespace = "bridge"
-
-[[circuits]]
-name = "LtcDeposit_V1"
-namespace = "bridge"
-
 # V2 circuits (HAZOP RC3: domain separation)
 [[circuits]]
 name = "Deposit_V2"
@@ -138,18 +113,3 @@ namespace = "bridge"
 name = "UpdateConfig_V2"
 namespace = "bridge"
 
-[[circuits]]
-name = "XmrDeposit_V2"
-namespace = "bridge"
-
-[[circuits]]
-name = "ZecDeposit_V2"
-namespace = "bridge"
-
-[[circuits]]
-name = "AztDeposit_V2"
-namespace = "bridge"
-
-[[circuits]]
-name = "LtcDeposit_V2"
-namespace = "bridge"

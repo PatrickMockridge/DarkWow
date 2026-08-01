@@ -242,7 +242,7 @@ Baccarat presents a clear yield opportunity for capital providers. See [Betting 
 ## See Also
 
 - [Entropy Module](../entropy/) - Provably fair randomness for all betting contracts
-- [Money Contract](../money_v2/) - Value transfer integration
+- - [Promissory Note](../promissory_note/) - Value transfer integration
 - [DarkToshi Dice Contract](../darktoshi_dice/) - Commit-reveal pattern reference
 - [Betting Capital Staking](../betting_stake/) - Capital provider infrastructure
 - [Roulette Contract](../roulette/) - Fixed-odds betting

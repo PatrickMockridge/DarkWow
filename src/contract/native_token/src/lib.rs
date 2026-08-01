@@ -30,7 +30,7 @@
 //! 2. **Network Fees** - Transaction fee payment must be deterministic
 //! 3. **Privacy Layer** - Privacy on top, never compromising consensus
 //!
-//! ## Token Model (Following money_v2 pattern)
+//! ## Token Model (migrated from prior money_v2 architecture)
 //!
 //! ```text
 //! Coin = pallas::Base  # Hash of coin attributes (pub_x, pub_y, value, token_id, spend_hook, user_data, blind)

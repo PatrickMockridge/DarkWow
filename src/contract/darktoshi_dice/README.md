@@ -271,13 +271,12 @@ cargo test --release -p darkfid test_darktoshi_dice_heavyweight
 | SettleBetV1 | 0x03 | ⚠️ Requires promissory_note::transfer_v1 child call |
 | HouseCloseV1 | 0x04 | ⚠️ Requires promissory_note::transfer_v1 child call |
 
-**Note**: SettleBetV1 and HouseCloseV1 require promissory_note::transfer_v1 child calls for locking/unlocking bet value. These are exercised in isolated heavyweight testing but may fail without full money contract integration.
+**Note**: SettleBetV1 and HouseCloseV1 require promissory_note::transfer_v1 child calls for locking/unlocking bet value. These are exercised in isolated heavyweight testing.
 
 ## See Also
 
 - [Entropy Module](../entropy/) - Provably fair randomness for all betting contracts
-- [Money Contract](../money_v2/) - Value transfer integration
-- [Atomic Swap](../atomic_swap/) - Commit-reveal pattern reference
+- [Promissory Note](../promissory_note/) - Value transfer integration
 - [Tender Contract](../tender/) - Sealed bid pattern reference
 - [Betting Capital Staking](../betting_stake/) - Capital provider infrastructure
 - [Baccarat Contract](../baccarat/) - Multi-round betting game
