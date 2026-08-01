@@ -42,6 +42,9 @@ dwow-sdk = { path = "../../sdk", features = ["wasm"] }
 [features]
 default = []
 no-entrypoint = []
+# Cross-chain cryptographic verification (ETH MPT, DLEq, Groth16, PLONK).
+# Gated so the core zkVM and other contracts see zero changes.
+bridge-verify = []
 client = [
     "dwow_core",
     "dwow-serial/async",

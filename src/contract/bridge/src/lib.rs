@@ -50,6 +50,9 @@ pub mod chain_handler;
 pub mod light_client;
 /// Object Capability module - capability derivation and verification
 pub mod capability;
+/// Cross-chain cryptographic verification (gated behind bridge-verify feature)
+#[cfg(feature = "bridge-verify")]
+pub mod verify;
 
 use dwow_sdk::define_contract_function;
 
