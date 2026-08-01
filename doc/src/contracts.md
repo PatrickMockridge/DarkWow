@@ -4,7 +4,7 @@ This page is the **single source of truth** for every contract in DarkWow.
 Every other document that references the contract catalog links here rather
 than repeating the list.
 
-DarkWow has **32 deployable contracts**: 9 deployed at genesis (counters 2–10)
+DarkWow has **31 deployable contracts** (+1 designed, not yet implemented): 9 deployed at genesis (counters 2–10)
 and 23 deployed post-genesis via Deployooor. There is also a `test-harness`
 crate that is a test utility, not a deployable contract.
 
@@ -57,7 +57,7 @@ from the deployer's public key.
 | [Subscription](contract/subscription.md) | `dwow_subscription_contract` | ⚠️ Experimental | Recurring payments and time-based billing |
 | [Tender](contract/tender.md) | `dwow_tender_contract` | ⚠️ Experimental | Sealed-bid tendering with O-Cap gating |
 
-### Gaming (8)
+### Gaming (8 + 1 designed)
 
 | Contract | Crate | Maturity | Description |
 |----------|-------|----------|-------------|
@@ -65,6 +65,7 @@ from the deployer's public key.
 | [Betting Stake](contract/betting_stake.md) | `dwow_betting_stake_contract` | ⚠️ Experimental | Composable capital staking for betting contracts |
 | [Darkbet Exchange](contract/darkbet_exchange.md) | `dwow_darkbet_exchange_contract` | ⚠️ Experimental | Decentralized betting exchange |
 | [Darktoshi Dice](contract/darktoshi_dice.md) | `dwow_darktoshi_dice_contract` | ⚠️ Experimental | Satoshi Dice clone |
+| [Entropy](contract/entropy.md) | `dwow_entropy_contract` | 🔬 Spec | Provably-fair randomness — designed, not yet implemented |
 | [Game Room](contract/game_room.md) | `dwow_game_room_contract` | ⚠️ Experimental | Multi-game lobby and pot management |
 | [Lottery](contract/lottery.md) | `dwow_lottery_contract` | ⚠️ Experimental | Privacy-preserving pooled lottery |
 | [Roulette](contract/roulette.md) | `dwow_roulette_contract` | ⚠️ Experimental | European/American roulette |

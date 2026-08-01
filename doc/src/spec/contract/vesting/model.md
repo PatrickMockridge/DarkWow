@@ -79,4 +79,4 @@ TODO: add usage example path
 
 [1]: ../../crypto-schemes.md#bulla-commitments
 [2]: ../../crypto-schemes.md#pallas-and-vesta
-[3]: ../money/model.md#coin
+[3]: Coin = H(attributes) — see native_token/src/model/mod.rs

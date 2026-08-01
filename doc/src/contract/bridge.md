@@ -395,14 +395,20 @@ by auditors or light clients.
 
 ## ZK Circuits
 
-| Circuit | Purpose | Chain | Notes |
-|---------|---------|-------|-------|
-| deposit_v1.zk | Prove ETH deposit | Ethereum | Uses `merkle_root` opcode with `MerklePath` type |
-| withdraw_v1.zk | Prove withdrawal authorization | All | Uses `sparse_merkle_root` with `SparseMerklePath` type, `token_minimum` public input |
-| xmr_deposit_v1.zk | Prove Monero deposit (DLEq) | Monero | |
-| zec_deposit_v1.zk | Prove Zcash Sapling deposit | Zcash | |
-| azt_deposit_v1.zk | Prove Aztec rollup deposit | Aztec | |
-| ltc_deposit_v1.zk | Prove Litecoin deposit (MWEB optional) | Litecoin | |
+All circuits are V2 (HAZOP RC3 domain separation). Cross-chain deposit verification
+for Monero/Litecoin/Zcash/Aztec is deferred to post-mainnet and uses the `bridge-verify`
+feature gate (see [bridge README](../../../src/contract/bridge/README.md#feature-gates)).
+
+| Circuit | Purpose | Notes |
+|---------|---------|-------|
+| deposit_v2.zk | Prove deposit authorization | Uses `merkle_root` opcode with `MerklePath` type |
+| withdraw_v2.zk | Prove withdrawal authorization | Uses `sparse_merkle_root` with `SparseMerklePath`, `merkle_root_val` constrains root |
+| update_config_v2.zk | Prove governance authorization | |
+| accept_withdrawal_v2.zk | Prove relayer accepted withdrawal | |
+| cancel_withdraw_v2.zk | Prove withdrawal cancellation | |
+| claim_htlc_v2.zk | Prove HTLC claim with secret | |
+| execute_guaranteed_withdraw_v2.zk | Prove guaranteed withdrawal execution | |
+| refund_htlc_v2.zk | Prove HTLC refund after timeout | |
 
 ## Data Structures
 
@@ -625,10 +631,10 @@ All relayers follow the same pattern:
 ```
 src/contract/bridge/
 ├── proof/
-│   ├── deposit_v1.zk          # Ethereum deposit
-│   ├── withdraw_v1.zk          # Withdrawal
-│   ├── xmr_deposit_v1.zk       # Monero deposit
-│   ├── zec_deposit_v1.zk       # Zcash deposit
+│   ├── deposit_v2.zk          # Deposit authorization (V2)
+│   ├── withdraw_v2.zk          # Withdrawal authorization (V2)
+│   ├── update_config_v2.zk     # Governance config update (V2)
+│   ├── accept_withdrawal_v2.zk # Relayer withdrawal acceptance (V2)
 │   ├── azt_deposit_v1.zk        # Aztec deposit
 │   └── ltc_deposit_v1.zk        # Litecoin deposit
 ├── src/

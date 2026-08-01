@@ -30,27 +30,9 @@ use super::{
         fixed_bases::{
             VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_R_BYTES, VALUE_COMMITMENT_V_BYTES,
         },
-        NullifierK,
     },
     util::fp_mod_fv,
 };
-
-/// Pedersen commitment for a full-width base field element.
-///
-/// **DEPRECATED.** This function uses `NullifierK.generator()` for the value
-/// base (V), which is incompatible with every on-chain zkas circuit — all
-/// circuits declare their `VALUE_COMMIT_VALUE` as a hash-to-curve point
-/// (`EcFixedPointShort`). Using this function produces commitments that fail ZK
-/// verification. Prefer `pedersen_commitment_u64` for all on-chain values.
-#[deprecated(since = "0.6.0", note = "use pedersen_commitment_u64 — this function uses a different generator (NullifierK) incompatible with all zkas circuits")]
-#[allow(non_snake_case)]
-pub fn pedersen_commitment_base(value: pallas::Base, blind: ScalarBlind) -> pallas::Point {
-    let hasher = pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION);
-    let V = NullifierK.generator();
-    let R = hasher(&VALUE_COMMITMENT_R_BYTES);
-
-    V * fp_mod_fv(value) + R * blind.inner()
-}
 
 /// Pedersen commitment for a 64-bit value, in the base field.
 #[allow(non_snake_case)]
@@ -67,16 +49,15 @@ mod tests {
     use super::*;
 
     #[test]
-    #[allow(deprecated)]
     fn pedersen_commitment() {
-        let a_value = pallas::Base::from(10);
+        let a_value: u64 = 10;
         let a_blind = ScalarBlind::from(11);
-        let b_value = pallas::Base::from(20);
+        let b_value: u64 = 20;
         let b_blind = ScalarBlind::from(21);
 
         assert_eq!(
-            pedersen_commitment_base(a_value, a_blind.clone()) + pedersen_commitment_base(b_value, b_blind.clone()),
-            pedersen_commitment_base(a_value + b_value, &a_blind + &b_blind)
+            pedersen_commitment_u64(a_value, a_blind.clone()) + pedersen_commitment_u64(b_value, b_blind.clone()),
+            pedersen_commitment_u64(a_value + b_value, &a_blind + &b_blind)
         );
 
         let a_value = 10;

@@ -303,6 +303,6 @@ and verify $Coin = \t{PoseidonHash}(\mathcal{X}(p.\t{VAPK}),
 There should be a single signature attached, which uses
 $\t{SPK}$ as the signature public key.
 
-[1]: ../money/model.md#coin
+[1]: Coin = H(attributes) — see native_token/src/model/mod.rs
 [2]: ../../crypto-schemes.md#pallas-and-vesta
 [3]: ../../crypto-schemes.md#verifiable-in-band-secret-distribution

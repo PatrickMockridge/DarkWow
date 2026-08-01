@@ -145,6 +145,11 @@ support is activated.
 | ClaimHtlcV1 | 0x07 | Claim HTLC swap with secret |
 | RefundHtlcV1 | 0x08 | Refund HTLC swap after timelock expiry |
 | ReassignWithdrawalV1 | 0x09 | Reassign stuck withdrawal to a new relayer |
+| RegisterRelayerV1 | 0x0a | Register a relayer with stake and reputation |
+| AcceptWithdrawalV1 | 0x0b | Relayer accepts a withdrawal for execution |
+| VerifyRelayerReputationV1 | 0x0c | Query relayer reputation and stake |
+| RegisterFeeScheduleV1 | 0x0d | Register a fee schedule for a relayer |
+| GovernanceReportV1 | 0x0e | Submit a governance accounting report |
 
 ## Implementation Flow
 
@@ -358,7 +363,7 @@ ZK circuits operate in a finite field — the Pallas field defined by prime `p =
 
 **The core challenge**: Proving `a <= b` as integers requires determining whether `a - b` falls in `{0, 1, ..., (p-1)/2}` or `{(p+1)/2, ..., p-1}`. This is straightforward in normal code but requires careful gadget design in circuits.
 
-**See**: [Field Arithmetic Constraints](../../../doc/src/arch/field_arithmetic.md) for the full treatment.
+**See**: [Field Arithmetic Constraints](../../../doc/src/arch/zk/field_arithmetic.md) for the full treatment.
 
 ## Opcode Discovery and Validation
 
@@ -405,7 +410,7 @@ The bridge circuits use standard zkVM opcodes. Future enhancements may require:
 
 For fee thresholds or token-aware minimums, safemath can work **if** you only need to assert the constraint. If you need the result for further logic, LessThanOrEqual is required.
 
-See [Safemath](../../../doc/src/arch/safemath.md) and [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for full analysis.
+See [zkVM Primitive Layer](../../../doc/src/arch/zk/zkvm_primitives.md) for full analysis.
 
 ## Opcode Safety
 
@@ -420,8 +425,7 @@ See [Safemath](../../../doc/src/arch/safemath.md) and [zkVM Primitive Layer](../
 **The bridge's current status**: The withdrawal circuit (`withdraw_v1.zk`) uses `constrain_equal_base`, `range_check`, and `less_than_strict` for minimum amount check. Future enhancements (fee thresholds, token-aware minimums) can use safemath assertion gadgets.
 
 **See**:
-- [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for the full analysis
-- [Safemath](../../../doc/src/arch/safemath.md) for the workaround templates
+- [zkVM Primitive Layer](../../../doc/src/arch/zk/zkvm_primitives.md) for the full analysis
 
 ## Key Blockers
 
@@ -812,17 +816,17 @@ Light client integration to verify `external_block_hash` corresponds to a valid,
 
 ### Soundness Notes
 
-See [Opcodes Reference](../../../doc/src/arch/opcodes.md) for opcode soundness verification. This contract uses only verified-sound opcodes.
+See [Opcodes Reference](../../../doc/src/arch/zk/opcodes.md) for opcode soundness verification. This contract uses only verified-sound opcodes.
 
 **See also**:
-- [Contract MVP Status](../../../doc/src/arch/mvp_status.md) for the full cross-contract analysis
-- [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md) for opcode implementation details
+- [Contract Status](../../../doc/src/contracts.md) for the full cross-contract analysis
+- [zkVM Primitive Layer](../../../doc/src/arch/zk/zkvm_primitives.md) for opcode implementation details
 
 ## References
 
-- [Bridge Architecture Document](../../../doc/src/arch/bridge.md)
+- [Bridge Contract Documentation](../../../doc/src/contract/bridge.md)
 - [DarkWow SDK](../../../src/sdk/)
 - [Halo 2 Documentation](https://halo2.dev/)
 - [Object Capability Model](https://en.wikipedia.org/wiki/Object-capability_model)
 - [Poseidon Hash](https://www.poseidon-hash.info/)
-- [Contract MVP Status](../../../doc/src/arch/mvp_status.md)
+- [Contract Status](../../../doc/src/contracts.md)

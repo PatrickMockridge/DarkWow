@@ -31,7 +31,7 @@ A privacy-preserving blockchain rebuilt around **six design commitments**:
    chain verifiable without ZK proofs. Enforced at every block acceptance path.
    [Read more →](doc/src/arch/consensus/consensus.md#supply-audit-capability)
 
-Zero vendor lock-in. 32 contracts. Hard forks are a feature, not a threat.
+Zero vendor lock-in. 31 deployable contracts (+1 designed). Hard forks are a feature, not a threat.
 
 See [What's Different from Upstream](doc/src/about/differences_from_upstream.md)
 for the full comparison table, and [Philosophy](doc/src/philosophy/philosophy.md)
@@ -89,7 +89,7 @@ zero wallet code changes for new contracts.
 
 ---
 
-32 contracts covering identity, finance, labour, gaming, and infrastructure.
+31 deployable contracts (+1 designed) covering identity, DeFi, DAO, gaming, infrastructure, and markets. See [Contract Status](doc/src/contracts.md) for per-contract details.
 All self-contained with their own ZK circuits, tests, and harnesses.
 
 | Category | Contracts |

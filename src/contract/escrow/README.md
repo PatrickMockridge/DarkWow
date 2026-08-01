@@ -424,8 +424,7 @@ cargo test --release -p darkfid test_escrow_heavyweight
 
 ## References
 
-- [DarkWow Escrow MVP Analysis](../../../doc/src/arch/escrow.md)
 - [DarkWow Promissory Note](../promissory_note/)
-- [zkVM Primitive Layer](../../../doc/src/arch/zkvm_primitives.md)
-- [Contract MVP Status](../../../doc/src/arch/mvp_status.md)
-- [Field Arithmetic Constraints](../../../doc/src/arch/field_arithmetic.md)
+- [zkVM Primitive Layer](../../../doc/src/arch/zk/zkvm_primitives.md)
+- [Contract Status](../../../doc/src/contracts.md)
+- [Field Arithmetic Constraints](../../../doc/src/arch/zk/field_arithmetic.md)
