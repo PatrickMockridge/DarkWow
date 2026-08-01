@@ -59,6 +59,7 @@ members = [
     "src/contract/baccarat",
     "src/contract/insurance_market",
     "src/contract/drain_protection",
+    "src/contract/entropy",
     "src/contract/escrow",
     "src/contract/dao_escrow",
     "src/contract/lottery",

@@ -1,0 +1,40 @@
+# Entropy contract — provably-fair randomness for betting contracts.
+#
+# Designed, not yet implemented. See doc/src/contract/entropy.md.
+#
+# Design: wait for 3 blocks to be mined, hash their headers, produce
+# entropy that no party can predict or manipulate.
+
+[contract]
+name = "entropy"
+
+[[functions]]
+name = "initialize"
+code = 0
+requires_proof = false
+
+[[functions]]
+name = "commit_entropy"
+code = 1
+requires_proof = true
+proof_circuit = "CommitEntropy_V1"
+
+[[functions]]
+name = "reveal_entropy"
+code = 2
+requires_proof = true
+proof_circuit = "RevealEntropy_V1"
+
+[[trees]]
+name = "info"
+
+[[trees]]
+name = "nullifiers"
+
+[[circuits]]
+name = "CommitEntropy_V1"
+namespace = "entropy"
+
+[[circuits]]
+name = "RevealEntropy_V1"
+namespace = "entropy"

@@ -250,21 +250,12 @@ pub fn db_set_local(_db_handle: DbHandle, _key: &[u8], _value: &[u8]) -> Generic
 /// Get a value from a local (ephemeral) database.
 #[cfg(target_arch = "wasm32")]
 pub fn db_get_local(db_handle: DbHandle, key: &[u8]) -> GenericResult<Option<Vec<u8>>> {
-    unsafe {
-        let mut len = 0;
-        let mut buf = vec![];
-        len += db_handle.encode(&mut buf)?;
-        len += key.to_vec().encode(&mut buf)?;
-        let ret = db_get_local_(buf.as_ptr(), len as u32);
-        match ret {
-            0 => Ok(None),
-            1 => {
-                let obj = crate::wasm::util::get_object_bytes(0)?;
-                Ok(Some(obj))
-            }
-            _ => unreachable!(),
-        }
-    }
+    let mut len = 0;
+    let mut buf = vec![];
+    len += db_handle.encode(&mut buf)?;
+    len += key.to_vec().encode(&mut buf)?;
+    let ret = unsafe { db_get_local_(buf.as_ptr(), len as u32) };
+    crate::wasm::util::parse_ret(ret)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
