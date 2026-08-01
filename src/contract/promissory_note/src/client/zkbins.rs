@@ -12,13 +12,5 @@
 //! sites serve different purposes (client proof building vs on-chain circuit
 //! registration) and are compiled into mutually exclusive targets.
 
-/// TokenMint_V1 zkas circuit binary
-pub const PROMISSORY_NOTE_CONTRACT_ZKAS_TOKEN_MINT_V1_BIN: &[u8] =
-/// Mint_V1 zkas circuit binary
-pub const PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_V1_BIN: &[u8] =
-/// Burn_V1 zkas circuit binary
-pub const PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_V1_BIN: &[u8] =
-/// BlindOutput_V1 zkas circuit binary (private output coin formation)
-pub const PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN: &[u8] =
-/// Redeem_V1 zkas circuit binary (receipt coin formation, value=0)
-pub const PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_V1_BIN: &[u8] =
+// V1 circuit constants removed (rc3 Batch 4) — V1 .zk source and .zk.bin files deleted.
+// V2 circuits: see the corresponding V2 constants below (if any exist).

@@ -189,10 +189,6 @@ pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V2: &str = "FeeCollect_V2";
 // Re-exported here for backward compatibility — use client::zkbins directly in new code.
 #[cfg(feature = "client")]
 pub use crate::client::zkbins::{
-    NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V1_BIN,
-    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V1_BIN,
-    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN,
-    NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN,
     NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V2_BIN,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V2_BIN,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN,

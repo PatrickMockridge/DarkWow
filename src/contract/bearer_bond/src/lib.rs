@@ -189,11 +189,4 @@ pub const BEARER_BOND_CONTRACT_ZKAS_PROVE_COVERAGE_NS_V2: &str = "ProveCoverage_
 // ZK CIRCUIT BINARIES (for client-side proof generation)
 // ============================================================================
 
-// ZK circuit binaries moved to client/zkbins.rs behind #[cfg(feature = "client")].
-#[cfg(feature = "client")]
-pub use crate::client::zkbins::{
-    BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN,
-    BEARER_BOND_CONTRACT_ZKAS_BURN_V1_BIN,
-    BEARER_BOND_CONTRACT_ZKAS_PROVE_COVERAGE_V1_BIN,
-    BEARER_BOND_CONTRACT_ZKAS_REDEEM_V1_BIN,
-};
+// V1 ZK circuit binaries removed (rc3 Batch 4) — V1 .zk source and .zk.bin files deleted.

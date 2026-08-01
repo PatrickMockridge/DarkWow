@@ -235,6 +235,7 @@ impl BridgeHarness {
             timeout_height: 0,
             feed_mode: 0,
             max_fee_bp: None,
+            expected_root: pallas::Base::zero(),
         };
 
         let mut call_data = vec![0x02];

@@ -224,15 +224,7 @@ pub const PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V2: &str = "Redeem_V2";
 // ZK CIRCUIT BINARIES (for client-side proof generation)
 // ============================================================================
 
-// ZK circuit binaries moved to client/zkbins.rs behind #[cfg(feature = "client")].
-#[cfg(feature = "client")]
-pub use crate::client::zkbins::{
-    PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN,
-    PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_V1_BIN,
-    PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_V1_BIN,
-    PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_V1_BIN,
-    PROMISSORY_NOTE_CONTRACT_ZKAS_TOKEN_MINT_V1_BIN,
-};
+// V1 ZK circuit binaries removed (rc3 Batch 4) — V1 .zk source and .zk.bin files deleted.
 
 // ============================================================================
 // CONSTANTS

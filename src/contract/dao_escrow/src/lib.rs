@@ -230,16 +230,7 @@ pub const DAO_ESCROW_ZKAS_SET_GOVERNANCE_CONFIG_NS_V2: &str = "SetGovernanceConf
 // ZK CIRCUIT BINARIES (for client-side proof generation)
 // ============================================================================
 
-// ZK circuit binaries moved to client/zkbins.rs behind #[cfg(feature = "client")].
-#[cfg(feature = "client")]
-pub use crate::client::zkbins::{
-    DAO_ESCROW_ZKAS_INIT_V1_BIN,
-    DAO_ESCROW_ZKAS_PAY_PREMIUM_V1_BIN,
-    DAO_ESCROW_ZKAS_PROPOSE_CLAIM_V1_BIN,
-    DAO_ESCROW_ZKAS_RESOLVE_DISPUTE_V1_BIN,
-    DAO_ESCROW_ZKAS_VERIFY_MEMBER_CAP_V1_BIN,
-    DAO_ESCROW_ZKAS_VOTE_CLAIM_V1_BIN,
-};
+// V1 ZK circuit binaries removed (rc3 Batch 4) — V1 .zk source and .zk.bin files deleted.
 
 // ============================================================================
 // DRAIN PROTECTION INTEGRATION

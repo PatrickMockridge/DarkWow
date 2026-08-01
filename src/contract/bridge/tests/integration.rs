@@ -130,6 +130,7 @@ fn test_withdraw_params_encoding() {
         timeout_height: 1000,
         feed_mode: 1,
         max_fee_bp: Some(500),
+        expected_root: pallas::Base::zero(),
     };
 
     let encoded = serialize(&params);
@@ -158,6 +159,7 @@ fn test_withdraw_params_optional_fields() {
         timeout_height: 0,
         feed_mode: 0,
         max_fee_bp: None,
+        expected_root: pallas::Base::zero(),
     };
 
     let encoded = serialize(&params);
