@@ -593,9 +593,23 @@ impl Runtime {
         let current_pages = self.memory_pages();
         if pages_required as u64 > current_pages {
             let new_pages = pages_required as u64 - current_pages;
-            let env_mut = self.ctx.as_mut(&mut self.store);
-            if env_mut.charge_gas(&mut self.store, new_pages * WASM_PAGE_SIZE as u64) {
-                return Err(Error::WasmerRuntimeError("Gas exhausted during memory allocation".into()));
+            let gas_cost = new_pages * WASM_PAGE_SIZE as u64;
+            match get_remaining_points(&mut self.store, &self.instance) {
+                MeteringPoints::Remaining(rem) => {
+                    if gas_cost > rem {
+                        set_remaining_points(&mut self.store, &self.instance, 0);
+                        return Err(Error::WasmerRuntimeError(
+                            "Gas exhausted during memory allocation".into(),
+                        ));
+                    }
+                    set_remaining_points(&mut self.store, &self.instance, rem - gas_cost);
+                }
+                MeteringPoints::Exhausted => {
+                    set_remaining_points(&mut self.store, &self.instance, 0);
+                    return Err(Error::WasmerRuntimeError(
+                        "Gas exhausted during memory allocation".into(),
+                    ));
+                }
             }
         }
         self.set_memory_page_size(pages_required as u32)?;

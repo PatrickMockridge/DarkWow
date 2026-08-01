@@ -621,7 +621,7 @@ pub(crate) fn get_tx_location(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>) ->
             "[WASM] [{cid}] get_tx_location(): Failed to get block height");
         return dwow_sdk::error::DB_GET_FAILED
     };
-    env.subtract_gas(&mut store, height.inner() as u64);
+    env.subtract_gas(&mut store, height.get() as u64);
 
     // Ensure that it is possible to read memory
     let memory_view = env.memory_view(&store);
