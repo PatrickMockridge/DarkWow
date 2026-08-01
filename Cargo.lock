@@ -2520,6 +2520,7 @@ dependencies = [
  "halo2_proofs",
  "lazy_static",
  "rand 0.8.6",
+ "sha2",
  "smol",
  "thiserror 2.0.18",
  "tracing",
