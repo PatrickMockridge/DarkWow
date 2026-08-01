@@ -83,6 +83,54 @@ make proof
 cargo test
 ```
 
+## Feature Gates
+
+### `bridge-verify` — Cross-Chain Cryptographic Verification (DEFAULT: OFF)
+
+The bridge contract ships with cryptographic verification of external chain
+deposits **gated behind the `bridge-verify` Cargo feature**. When disabled (the
+default), the contract performs only structural checks (non-zero fields, minimum
+amounts, confirmation thresholds) on external chain proofs. When enabled, the
+`verify/` module performs real cryptographic verification.
+
+**Why gated?** The full cryptographic verification path adds significant WASM
+binary size and computation cost (pairing-based proof systems, Keccak, SHA-256d,
+curve operations). It is expected to be enabled **post-mainnet**, once the
+operational profile and gas economics of each supported chain are understood.
+
+**Current per-chain status:**
+
+| Chain | Verifier | Status | Cryptographic Checks |
+|-------|----------|--------|---------------------|
+| Ethereum | `verify/ethereum.rs` | **Partial** | RLP decoding + Keccak256; MPT traversal pending |
+| Litecoin | `verify/litecoin.rs` | **Active** | SHA-256d Merkle proof verification |
+| Monero | `verify/monero.rs` | **Active** | Cross-curve DLEq (Discrete Log Equality) proof |
+| Zcash | `verify/zcash.rs` | **Stub (fail-closed)** | Returns `Err` — needs upstream Zcash Sapling parameters |
+| Aztec | `verify/aztec.rs` | **Stub (fail-closed)** | Returns `Err` — needs upstream Aztec rollup VK |
+
+All stubs are **fail-closed**: when `bridge-verify` is enabled, missing
+verifiers return `Err(BridgeError::InvalidDeposit(...))`. No deposit can pass
+without its chain's cryptographic verification being implemented.
+
+**Enabling (post-mainnet):**
+
+```bash
+# Build with cryptographic verification
+cargo build -p dwow_bridge_contract \
+    --features bridge-verify \
+    --target wasm32-unknown-unknown
+
+# The default make target builds WITHOUT bridge-verify:
+make -C src/contract/bridge all
+```
+
+**Post-mainnet roadmap:** Zcash and Aztec verification require importing the
+respective upstream protocol repositories for their verifying key parameters
+(Zcash Sapling spend/output VK on BN254, Aztec rollup PLONK VK). These are
+not derivable from DarkWow's existing Pallas/Vesta halo2 circuits — they are
+external protocol parameters that will be integrated when each chain's bridge
+support is activated.
+
 ## Contract Functions
 
 | Function | ID | Description |
