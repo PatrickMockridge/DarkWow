@@ -296,6 +296,7 @@ impl HeavyweightPipeline {
         self.chain_state.consensus.lock()
             .unwrap_or_else(|e| e.into_inner())
             .get_next_work_required(&self.chain_state.store, next_height)
+            .unwrap_or(BlockTarget::MAX)
     }
 
     // ── Internal helpers ─────────────────────────────────────────────

@@ -33,7 +33,7 @@ use dwow_core::{
 use blake3::Hash as Blake3Hash;
 use dwow_chain::Nullifier;
 use dwow_native_token_contract::{
-    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V1_BIN, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN,
+    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V2_BIN, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN,
 };
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockVersion, SupplyAmount};
 use dwow_sdk::crypto::{
@@ -455,7 +455,7 @@ impl LinearPowRewardZk {
             "Initializing linear ZK mining data...",
         );
 
-        let zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN, false)
+        let zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN, false)
             .map_err(|e| Error::Custom(format!("Failed to decode Mint_V1 ZK binary: {}", e)))?;
 
         let circuit = ZkCircuit::new(empty_witnesses(&zkbin)?, &zkbin);
@@ -468,7 +468,7 @@ impl LinearPowRewardZk {
         );
 
         let fee_collect_zkbin = ZkBinary::decode(
-            NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V1_BIN,
+            NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V2_BIN,
             false,
         )
         .map_err(|e| Error::Custom(format!("Failed to decode FeeCollect_V1 ZK binary: {}", e)))?;

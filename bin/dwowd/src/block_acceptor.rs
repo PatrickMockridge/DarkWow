@@ -34,7 +34,7 @@ use std::sync::Arc;
 
 use dwow_chain::{Block, BlockConnectOutcome, CChainState, UncleBlock};
 use dwow_core::Result;
-use dwow_sdk::blockchain::{BlockHeight, BlockTarget, SupplyAmount};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, SupplyAmount};
 
 use dwow_chain::execution::execute_block;
 use dwow_chain::proof_of_token_balance;
@@ -227,7 +227,7 @@ pub fn accept_block(
         // The WASM pow_reward_v1 contract enforces exact emission, but a 2x
         // sanity cap at the host level prevents runaway inflation if the
         // WASM contract is ever compromised.
-        let max = expected.saturating_mul(2);
+        let max = BlockReward::new(expected.get().saturating_mul(2));
         if block.header.total_reward > max {
             return Err(dwow_core::Error::Custom(format!(
                 "Coinbase reward {} exceeds max {} (2x expected_reward({}) = {})",
