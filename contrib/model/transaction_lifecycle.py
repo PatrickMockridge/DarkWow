@@ -431,6 +431,76 @@ def test_sc8_coinbase_fee_collection():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Gap 14: Strict-Mode Block Rejection
+# ═══════════════════════════════════════════════════════════════════════════
+# Per execution.rs:408-411 — if ANY canonical call fails during WASM
+# execution (metadata, exec, apply, or spend hook), the ENTIRE block
+# is rejected. Uncle calls that fail are skipped (not fatal).
+# This prevents partially-applied state from mixed success/failure blocks.
+
+def validate_block_strict_mode(block_txs: list, chain_state) -> tuple:
+    """Validate block with strict-mode rejection (Gap 14).
+    Returns (accepted: bool, reason: str).
+    If any canonical call fails, entire block rejected.
+    Uncle calls that fail are skipped."""
+    for tx in block_txs:
+        if not tx.get('canonical', True):
+            continue  # Uncle calls: skip on failure, not fatal
+        for call in tx.get('contract_calls', []):
+            cid = call.get('contract_id')
+            if cid is None:
+                continue
+            # Check: does contract WASM exist in chain state?
+            if not chain_state.has_contract(cid):
+                return (False, f"canonical call failed: contract {cid} not found — block rejected (Gap 14 strict mode)")
+    return (True, "all canonical calls passed")
+
+
+def test_gap14_strict_mode_rejection():
+    """Verify Gap 14: canonical call to non-existent contract rejects entire block."""
+    print("  TEST: Gap 14 strict-mode rejection...", end=" ")
+
+    # Setup minimal chain state with genesis
+    class MockChainState:
+        def __init__(self):
+            self.contracts = set()
+            self.height = 1
+        def has_contract(self, cid):
+            return cid in self.contracts
+        def deploy(self, cid):
+            self.contracts.add(cid)
+
+    chain = MockChainState()
+    chain.deploy("native_token")
+
+    # Block with valid coinbase + canonical call to non-existent contract
+    bad_block = [
+        {'canonical': True, 'contract_calls': [
+            {'contract_id': 'native_token', 'data': b'\x05'},  # coinbase — valid
+        ]},
+        {'canonical': True, 'contract_calls': [
+            {'contract_id': 'nonexistent_contract', 'data': b'\x00\x01\x02'},  # BAD
+        ]},
+    ]
+    accepted, reason = validate_block_strict_mode(bad_block, chain)
+    assert not accepted, f"Block with failed canonical call MUST be rejected: {reason}"
+    print(f"PASSED (rejected: {reason})")
+
+    # Block with uncle call failure — should be accepted (uncle skipped)
+    uncle_block = [
+        {'canonical': True, 'contract_calls': [
+            {'contract_id': 'native_token', 'data': b'\x05'},
+        ]},
+        {'canonical': False, 'contract_calls': [  # uncle
+            {'contract_id': 'nonexistent_contract', 'data': b'\x00\x01\x02'},
+        ]},
+    ]
+    accepted, reason = validate_block_strict_mode(uncle_block, chain)
+    assert accepted, f"Block with failed UNCLE call should be accepted: {reason}"
+    print(f"PASSED (uncle skip: {reason})")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Full Lifecycle Integration Test
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -1005,6 +1075,11 @@ if __name__ == '__main__':
             sc_failed += 1
             print(f"  {name}: FAILED — {e}")
     print(f"  SC tests: {sc_passed} passed, {sc_failed} failed")
+    print()
+
+    # ── Gap 14 strict-mode rejection ───────────────────────────────────
+    print("--- Gap 14 Strict-Mode Rejection ---")
+    test_gap14_strict_mode_rejection()
     print()
 
     # ── Full lifecycle ─────────────────────────────────────────────────

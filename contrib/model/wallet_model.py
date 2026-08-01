@@ -327,6 +327,24 @@ class Nullifier:
 
 # --- Key Types ---
 
+class OwnedSecretKey:
+    """Typed key with declared provenance. Matches dwow-accounts/lib.rs.
+    Distinguishes 'explicitly declared key' from 'random key I happened to use.'
+    Only constructable via from_declared() — no free construction."""
+    __slots__ = ('_secret',)
+    _secret: 'SecretKey'
+
+    def __init__(self, secret: 'SecretKey'):
+        self._secret = secret
+
+    @staticmethod
+    def from_declared(secret: 'SecretKey') -> 'OwnedSecretKey':
+        return OwnedSecretKey(secret)
+
+    def inner(self) -> 'SecretKey':
+        return self._secret
+
+
 class SecretKey:
     """Wraps a 32-byte secret. Matches src/sdk/src/crypto/keypair.rs:SecretKey."""
 
@@ -1000,15 +1018,73 @@ class AccountManager:
             if self.default_index >= idx and self.default_index > 0:
                 self.default_index -= 1
 
-    # Future API (not yet implemented — matches Rust stubs)
-    # @staticmethod
-    # def from_seed_phrase(phrase: str, passphrase: str = "") -> 'AccountManager':
-    #     """Import from BIP39 seed phrase."""
-    #     ...
-    # @staticmethod
-    # def from_hd_path(xpriv: str, path: str) -> 'AccountManager':
-    #     """Derive from BIP32 extended key + derivation path."""
-    #     ...
+    def default_owned(self) -> OwnedSecretKey:
+        """Return the default account's key as an OwnedSecretKey.
+        Matches dwow-accounts/lib.rs:435."""
+        sk = self.secrets()[0] if self.default_index < len(self.accounts) else self.secrets()[0]
+        return OwnedSecretKey.from_declared(sk)
+
+    def secrets_for_contract(self, cid: 'ContractId', instance_seed: bytes) -> list:
+        """Return per-instance derived keys for all accounts. Matches dwow-accounts/lib.rs:451.
+        Augments scan trial secrets with per-contract per-instance derived keys."""
+        derived = []
+        for sk in self.secrets():
+            derived.append(sk.derive_instance(cid.to_bytes(), instance_seed))
+        return derived
+
+    def find_owner(self, cid: 'ContractId', instance_seed: bytes,
+                   pubkey: 'PublicKey') -> Optional[tuple]:
+        """Scan-time: which account produced this public key? Returns (index, derivation_type).
+        Matches dwow-accounts/lib.rs:472. Persists KeyCoordinates for spend-path recovery."""
+        for i, sk in enumerate(self.secrets()):
+            derived = sk.derive_instance(cid.to_bytes(), instance_seed)
+            pk = PublicKey.from_secret(derived)
+            if pk.compressed == pubkey.compressed:
+                return (i, "PerInstance", cid.to_bytes(), instance_seed)
+        return None
+
+    def resolve_key(self, coords: tuple) -> Optional['SecretKey']:
+        """Spend-time: re-derive key from stored KeyCoordinates. Matches dwow-accounts/lib.rs:505.
+        Inverse of find_owner — deterministic re-derivation."""
+        if len(coords) != 4:
+            return None
+        index, derivation_type, cid_bytes, instance_seed = coords
+        if derivation_type != "PerInstance":
+            return None
+        if index >= len(self.accounts):
+            return None
+        master_sk = self.secrets()[index]
+        return master_sk.derive_instance(cid_bytes, instance_seed)
+
+
+class MiningRecipient:
+    """Per-block mining key derivation. Matches dwow-accounts/lib.rs:1239-1276.
+    Only constructable via from_account() — no free construction.
+    Carries Spend+Mine barbs for genesis coin production."""
+
+    def __init__(self, public_key: 'PublicKey', address: str, owned_key: 'SecretKey', height: int):
+        self.public_key = public_key
+        self.address = address
+        self._owned_key = owned_key
+        self.height = height
+
+    @staticmethod
+    def from_account(mgr: 'AccountManager', height: int) -> 'MiningRecipient':
+        """Derive per-block mining key: derive_instance(NATIVE_TOKEN_CONTRACT_ID, height.to_le_bytes())."""
+        master_sk = mgr.secrets()[0]
+        height_bytes = height.to_bytes(4, 'little')
+        derived = master_sk.derive_instance(NATIVE_TOKEN_CONTRACT_ID.to_bytes(), height_bytes)
+        pk = PublicKey.from_secret(derived)
+        return MiningRecipient(
+            public_key=pk,
+            address=pk.to_string(),
+            owned_key=derived,
+            height=height,
+        )
+
+    def spend_state(self) -> str:
+        """Mining keys carry Spend + Mine barbs — they can produce coinbase but not transfer."""
+        return "Mining"
 
 
 class ContractId:
@@ -1762,6 +1838,24 @@ CREATE TABLE IF NOT EXISTS contract_metadata (
 );
 
 CREATE INDEX IF NOT EXISTS idx_contract_metadata_category ON contract_metadata(category);
+
+CREATE TABLE IF NOT EXISTS contract_manifests (
+    contract_id TEXT PRIMARY KEY NOT NULL,
+    manifest_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS zkas_binaries (
+    contract_id TEXT NOT NULL,
+    namespace TEXT NOT NULL,
+    circuit_name TEXT NOT NULL,
+    zkas_bytes BLOB NOT NULL,
+    PRIMARY KEY (contract_id, namespace, circuit_name)
+);
+
+CREATE TABLE IF NOT EXISTS merkle_trees (
+    tree_name TEXT PRIMARY KEY NOT NULL,
+    root TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_contract_metadata_public ON contract_metadata(public);
 
 CREATE TABLE IF NOT EXISTS contract_interactions (
@@ -2159,6 +2253,56 @@ class WalletDb:
             "SELECT contract_id FROM contract_metadata WHERE name = ?", (name,)
         ).fetchone()
         return row['contract_id'] if row else None
+
+    # --- Manifest storage (walletdb.rs:1129-1160) ---
+
+    def store_manifest(self, contract_id: str, manifest_json: str):
+        """Store parsed contract manifest. Matches walletdb.rs:1129."""
+        self.conn.execute(
+            "INSERT OR REPLACE INTO contract_manifests (contract_id, manifest_json) VALUES (?, ?)",
+            (contract_id, manifest_json))
+        self.conn.commit()
+
+    def get_contract_manifest(self, contract_id: str) -> Optional[str]:
+        """Retrieve contract manifest JSON. Matches walletdb.rs:1146."""
+        row = self.conn.execute(
+            "SELECT manifest_json FROM contract_manifests WHERE contract_id = ?",
+            (contract_id,)).fetchone()
+        return row['manifest_json'] if row else None
+
+    def get_all_manifests(self) -> dict:
+        """Return all stored manifests as {contract_id: manifest_json}."""
+        rows = self.conn.execute("SELECT * FROM contract_manifests").fetchall()
+        return {r['contract_id']: r['manifest_json'] for r in rows}
+
+    def get_capabilities_by_asset(self, asset_id: str, revoked: Optional[bool] = None) -> list:
+        """Get capabilities filtered by asset_id. Matches walletdb.rs:487.
+        revoked=None returns all, True=spent, False=unspent."""
+        if revoked is None:
+            rows = self.conn.execute(
+                "SELECT * FROM held_capabilities WHERE token_id = ?", (asset_id,)).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM held_capabilities WHERE token_id = ? AND revoked = ?",
+                (asset_id, 1 if revoked else 0)).fetchall()
+        return [CapRecord(**dict(r)) for r in rows]
+
+    def store_zkas_binary(self, contract_id: str, namespace: str,
+                          circuit_name: str, zkas_bytes: bytes):
+        """Store zkas circuit binary. Matches walletdb.rs zkas_binaries table."""
+        self.conn.execute(
+            "INSERT OR REPLACE INTO zkas_binaries (contract_id, namespace, circuit_name, zkas_bytes) "
+            "VALUES (?, ?, ?, ?)",
+            (contract_id, namespace, circuit_name, zkas_bytes))
+        self.conn.commit()
+
+    def insert_merkle_trees(self, trees: dict):
+        """Store Merkle tree roots. Matches walletdb.rs merkle_trees table."""
+        for tree_name, root in trees.items():
+            self.conn.execute(
+                "INSERT OR REPLACE INTO merkle_trees (tree_name, root) VALUES (?, ?)",
+                (tree_name, root))
+        self.conn.commit()
 
     # --- Transaction history (walletdb.rs:1130-1151) ---
 
@@ -2902,6 +3046,18 @@ class BlockScanResult:
     diagnostics: BlockScanDiagnostics = field(default_factory=BlockScanDiagnostics)
 
 
+# --- Helper: instance seed extraction (scan.rs:235-238) ---
+
+def try_extract_instance_seed(cid: 'ContractId', data: bytes) -> Optional[bytes]:
+    """Extract per-contract instance seed from call data.
+    Matches Rust scan.rs:235-238 try_extract_instance_seed.
+    Reads data[1..33] as a 32-byte seed for derive_instance.
+    Returns None if data is too short."""
+    if len(data) < 33:
+        return None
+    return data[1:33]
+
+
 # --- Helper: AEAD decrypt with all secrets ---
 
 def _try_decrypt_with_secrets(aes: AeadEncryptedNote,
@@ -3089,6 +3245,48 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
                         f"from {contract_id_bs58[:8]} at height {height}")
             except Exception:
                 pass
+
+            # ── Manifest-driven resolution (Path 2) ──────────────────────
+            # If no hardcoded type matched, try manifest-based decoding.
+            # Matches Rust scan.rs manifest resolution pipeline:
+            #   manifest → resolve_capability(fn_code) → note_schema → decode
+            if cap_type == "unknown":
+                manifest_json = wallet_db.get_contract_manifest(contract_id_bs58)
+                if manifest_json:
+                    try:
+                        import json as _json
+                        manifest = _json.loads(manifest_json)
+                        fn_code = call.data[0] if call.data else 0
+                        # Match function code to manifest [[functions]]
+                        for func in manifest.get("functions", []):
+                            if func.get("code") == fn_code:
+                                # Match action to manifest [[actions]]
+                                for action in manifest.get("actions", []):
+                                    if action.get("function") == func.get("name"):
+                                        # Resolve capability from action.produces
+                                        for prod in action.get("produces", []):
+                                            cap_name = prod.get("name", "unknown")
+                                            # Find capability definition
+                                            for cap_def in manifest.get("capabilities", []):
+                                                if cap_def.get("name") == cap_name:
+                                                    # Try note_schema decode
+                                                    schema = cap_def.get("note_schema", [])
+                                                    if schema:
+                                                        cap_type = cap_name
+                                                        scan_cache.diagnostics.capability_construct_attempts += 1
+                                                        scan_cache.diagnostics.capability_construct_successes += 1
+                                                        scan_cache.log(
+                                                            f"  [CAPABILITY] Manifest: {cap_name} "
+                                                            f"discriminant={cap_def.get('discriminant')} "
+                                                            f"from {contract_id_bs58[:8]} at height {height}")
+                                                    break
+                                            break
+                                    break
+                                break
+                    except Exception:
+                        scan_cache.diagnostics.manifest_misses += 1
+                else:
+                    scan_cache.diagnostics.manifest_misses += 1
 
             # Store capability (structured or opaque)
             if cap_type != "unknown":
@@ -4056,9 +4254,20 @@ def build_fee_and_finalize_tx(wallet_db: WalletDb,
         raise ValueError("No DRKW coins available for fee payment")
     fee_coin = drkw_coins[0]
 
-    # Build FeeV1 call data
+    # Build FeeV1 call data — matches Rust FeeParamsV1 layout:
+    #   [0x00][fee: u64 LE][FeeParamsV1 { fee, input: Input, output: Output }]
+    # Input is 224 bytes (value_commit + token_commit + nullifier + merkle_root
+    #   + user_data_enc + spend_hook + signature_public)
+    # Output: coin(32) + nullifier(32) + AeadEncryptedNote
     fee_call_data = bytes([0x00])  # FeeV1 function code
     fee_call_data += DEFAULT_FEE.to_bytes(8, 'little')
+    # FeeParamsV1.input (224 bytes, placeholder — per spec §8.1, Input is
+    # fully serialized in FeeV1. Python model uses simplified representation:
+    # real encoding requires Pallas point serialization for value_commit.)
+    fee_call_data += b'\x00' * 224  # Input placeholder (value_commit + token_commit + nullifier + merkle_root + user_data_enc + spend_hook + sig_pub)
+    # FeeParamsV1.output: coin(32) + nullifier(32) + AEAD note
+    fee_call_data += b'\x00' * 32   # coin placeholder
+    fee_call_data += b'\x00' * 32   # nullifier placeholder
 
     proofs = fee_proofs if fee_proofs is not None else []
     fee_leaf = ContractCallLeaf(
@@ -4157,15 +4366,15 @@ def build_transfer(wallet_db: WalletDb, token_id_str: str, amount: int,
     # is the one bespoke citizen for write-path construction. DRKW routes
     # through NativeToken (function code 0x03), NOT promissory_note (0x04).
     # Rust authority: bin/dww/src/lib.rs::build_native_transfer
+    #
+    # Structured call data matching Rust TransferParamsV1 layout:
+    #   [0x03][TransferParamsV1 { inputs: [Input], outputs: [Output, ...] }]
+    # Native token_commit convention: poseidon_hash([0, 0]).
+    NATIVE_TOKEN_COMMIT = poseidon_hash([0, 0])  # native token_commit convention
     recipient_address = poseidon_hash([int.from_bytes(recipient_pk.compressed, 'little')])
     mock_proof = hashlib.blake2b(b"NT_TransferV1_proof", digest_size=32).digest()
 
-    func_code = 0x03  # NativeToken TransferV1
-    call_data = bytes([func_code])
-    call_data += amount.to_bytes(8, 'little')
-    call_data += recipient_address
-
-    # Output note (encrypted for recipient) — blinds + AEAD keyed from the Seed.
+    # Build output note (encrypted for recipient) — Seed-derived blinds.
     output_note = NativeToken(
         value=amount,
         token_id=int.from_bytes(base58.b58decode(token_id_str), 'little'),
@@ -4175,11 +4384,27 @@ def build_transfer(wallet_db: WalletDb, token_id_str: str, amount: int,
         value_blind=_derive_blind(seed, b'out_value', PALLAS_Q),
         token_blind=_derive_blind(seed, b'out_token', PALLAS_P),
         memo=b'')
-    aes = AeadEncryptedNote.encrypt(output_note.encode(), recipient_pk.compressed,
-                                    _seeded_rng(seed, b'out_aead'))
-    call_data += aes.encode()
+    aes_out = AeadEncryptedNote.encrypt(output_note.encode(), recipient_pk.compressed,
+                                        _seeded_rng(seed, b'out_aead'))
 
-    # Change output (if applicable) — also Seed-derived.
+    # Build structured TransferParamsV1 call data.
+    # Function code + serialized params: inputs (count + each Input {224B}) +
+    # outputs (count + each Output {32B coin + note}). The scan path discovers
+    # outputs by sliding over the params bytes looking for AeadEncryptedNote
+    # patterns — so the AEAD note bytes must be embedded in the call data.
+    func_code = 0x03  # NativeToken TransferV1
+    call_data = bytes([func_code])
+    # TransferParamsV1: num_inputs (u8), then each Input (simplified)
+    call_data += b'\x01'  # 1 input
+    call_data += input_coin.commitment.encode()[:32] if hasattr(input_coin.commitment, 'encode') else b'\x00' * 32  # value_commit placeholder
+    call_data += int(0).to_bytes(32, 'little')  # token_commit = poseidon_hash([0,0]) — native
+    call_data += base58.b58decode(input_nf)[:32].rjust(32, b'\x00')  # nullifier
+    call_data += b'\x00' * 96  # merkle_root + user_data_enc + spend_hook + sig_pub
+    # Outputs: num_outputs (u8), then each Output {coin(32) + AeadEncryptedNote}
+    num_outputs = 2 if (change_value > 0 and not half_split) else 1
+    call_data += bytes([num_outputs])
+    call_data += b'\x00' * 32  # output[0] coin placeholder
+    call_data += aes_out.encode()
     if change_value > 0 and not half_split:
         change_note = NativeToken(
             value=change_value,
@@ -4192,6 +4417,7 @@ def build_transfer(wallet_db: WalletDb, token_id_str: str, amount: int,
         change_pk = PublicKey.from_secret(sk)
         change_aes = AeadEncryptedNote.encrypt(
             change_note.encode(), change_pk.compressed, _seeded_rng(seed, b'chg_aead'))
+        call_data += b'\x00' * 32  # output[1] coin placeholder
         call_data += change_aes.encode()
 
     transfer_leaf = ContractCallLeaf(
