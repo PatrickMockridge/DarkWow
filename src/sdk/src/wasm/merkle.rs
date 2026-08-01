@@ -177,3 +177,23 @@ pub fn merkle_anchor_add(entry_bytes: &[u8; 96]) -> Result<(), ContractError> {
 pub fn merkle_anchor_add(_entry_bytes: &[u8; 96]) -> Result<(), ContractError> {
     Err(ContractError::IoError("wasm host function unavailable".to_string()))
 }
+
+// ── Cross-shard proof host functions (post-mainnet scaffolding) ─────
+
+/// Submit a cross-shard proof to the canonical chain.
+/// Post-mainnet (TBA): see doc/src/arch/consensus/scaling.md.
+#[cfg(feature = "sharding")]
+pub fn merkle_shard_proof_add(_proof: &[u8]) -> Result<(), ContractError> {
+    Err(ContractError::IoError(
+        "shard proof host function not yet available (post-mainnet)".into(),
+    ))
+}
+
+/// Submit a settlement batch to the canonical chain.
+/// Post-mainnet (TBA): see doc/src/arch/consensus/scaling.md.
+#[cfg(feature = "sharding")]
+pub fn settlement_batch_submit(_batch: &[u8]) -> Result<(), ContractError> {
+    Err(ContractError::IoError(
+        "settlement batch host function not yet available (post-mainnet)".into(),
+    ))
+}

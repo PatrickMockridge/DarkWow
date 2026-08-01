@@ -64,6 +64,13 @@ pub struct BlockHeader {
     pub height: BlockHeight,
     /// Merkle root of uncle blocks referenced by this canonical block
     pub uncle_merkle_root: [u8; 32],
+    /// Post-mainnet (TBA): Merkle root of all shard state roots in this block.
+    /// See doc/src/arch/consensus/scaling.md.
+    #[cfg(feature = "sharding")]
+    pub shard_state_roots_root: [u8; 32],
+    /// Post-mainnet (TBA): Merkle root of aggregate ZK proofs for this block.
+    #[cfg(feature = "sharding")]
+    pub aggregate_proof_root: [u8; 32],
     /// Total reward being distributed (canonical + uncle shares)
     pub total_reward: BlockReward,
     /// RandomX key for PoW mining (key used to create VM for this block)
@@ -116,6 +123,12 @@ pub struct UncleBlock {
     /// may later accept the pin via `accept_pin()` (use-it-or-lose-it).
     /// `compute_reward()` only pays uncles with `pin_accepted == true`.
     pub pin_confirmed: BlockReward,
+
+    /// Post-mainnet (TBA): this uncle's shard state root.
+    /// None = traditional uncle (no shard role).
+    /// See doc/src/arch/consensus/scaling.md.
+    #[cfg(feature = "sharding")]
+    pub state_root: Option<[u8; 32]>,
 }
 
 impl UncleBlock {
@@ -180,6 +193,14 @@ pub struct UncleProof {
     pub position: u32,
     /// Depth (for reward calculation)
     pub depth: u8,
+
+    /// Post-mainnet (TBA): shard state root if this uncle is a shard block.
+    /// See doc/src/arch/consensus/scaling.md.
+    #[cfg(feature = "sharding")]
+    pub state_root: Option<[u8; 32]>,
+    /// Post-mainnet (TBA): shard identifier (from uncle miner region).
+    #[cfg(feature = "sharding")]
+    pub shard_id: Option<[u8; 32]>,
 }
 
 impl BlockHeader {

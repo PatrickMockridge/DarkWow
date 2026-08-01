@@ -34,6 +34,8 @@ mod error;
 pub mod execution;
 pub mod fee_estimator;
 pub mod schedule;
+#[cfg(feature = "sharding")]
+pub mod shard;
 pub mod finality;
 pub mod proof_of_token_balance;
 mod miner;

@@ -223,6 +223,11 @@ session-seed = []
 refine-session = []
 async-daemonize = ["concurrency"]
 
+# Post-mainnet (TBA): cross-shard Merkle SDK + uncle shard state roots.
+# DO NOT ENABLE before mainnet is stable. Architectural scaffolding only —
+# all function bodies are todo!(). See doc/src/arch/consensus/scaling.md.
+sharding = ["dwow-sdk/sharding"]
+
 async-serial = ["dwow-serial/async"]
 
 async-sdk = [

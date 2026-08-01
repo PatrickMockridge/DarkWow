@@ -15,6 +15,9 @@ doctest = false
 default = []
 async = ["dwow-serial/async"]
 wasm = []
+# Post-mainnet (TBA): cross-shard Merkle SDK types. DO NOT ENABLE
+# before mainnet stable. All function bodies are todo!().
+sharding = []
 
 [dependencies]
 # Error handling

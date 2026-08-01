@@ -36,5 +36,10 @@ pub(crate) mod merkle_anchor;
 /// Host functions for sparse merkle tree functions
 pub(crate) mod smt;
 
+/// Host functions for cross-shard proofs (post-mainnet scaffolding).
+/// See doc/src/arch/consensus/scaling.md.
+#[cfg(feature = "sharding")]
+pub(crate) mod shard;
+
 /// Host functions for utilities
 pub(crate) mod util;
