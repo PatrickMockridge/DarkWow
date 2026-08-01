@@ -159,7 +159,8 @@ impl TokenMintCallBuilder {
             coin,
             value_commit,
             spend_hook: self.input.spend_hook,
-            tx_binding: pallas::Base::zero(),
+            // V2 circuit: tx_binding = poseidon_hash(tx_commitment, tx_nonce). Must match.
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
         };
 
@@ -190,7 +191,8 @@ impl TokenMintCallBuilder {
                 token_auth_parent: self.input.token_auth_parent,
                 token_commit,
                 spend_hook: FuncId::from_base(self.input.spend_hook),
-                tx_binding: pallas::Base::zero(),
+                // V2 circuit: tx_binding = poseidon_hash(tx_commitment, tx_nonce). Must match.
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
                 tx_nonce: self.tx_nonce,
             },
             proofs: vec![proof],
