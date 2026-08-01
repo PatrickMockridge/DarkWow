@@ -460,11 +460,21 @@ fn reveal_spin_process_instruction_v1(
         None => return Err(SlotError::HouseNotInitialized.into()),
     };
 
-    // Get block hash for entropy (unpredictable RandomX PoW output)
-    let block_hash = wasm::util::get_block_hash(wasm::util::get_verifying_block_height()?)?.0;
+    // Collect block hashes across confirmation depth for entropy
+    let verifying_height = wasm::util::get_verifying_block_height()?;
+    let depth = spin.confirmation_depth as u64;
+    let mut entropy_blocks = Vec::with_capacity(depth as usize);
+    for i in 0..depth {
+        let h = verifying_height.get().saturating_sub(i);
+        let block_hash = wasm::util::get_block_hash(
+            dwow_sdk::blockchain::BlockHeight::new(h),
+        )?.0;
+        entropy_blocks.push(dwow_entropy_contract::EntropyBlock { height: h, block_hash });
+    }
+    let seed = dwow_entropy_contract::derive_seed(&entropy_blocks);
 
     let positions = derive_positions_from_entropy(
-        block_hash,
+        seed,
         spin.id,
         params.secret_nonce,
         config.reel_count,
@@ -738,30 +748,22 @@ fn create_3x5_paylines() -> Vec<crate::model::Payline> {
     ]
 }
 
-/// Derive reel positions from block hash entropy
-/// Uses full 32-byte block hash for unpredictability
+/// Derive reel positions from a multi-block entropy seed (via dwow_entropy_contract::derive_seed).
+/// The seed already incorporates multiple block hashes; we mix in spin-specific data for per-reel uniqueness.
 fn derive_positions_from_entropy(
-    block_hash: [u8; 32],
+    seed: u64,
     spin_id: SpinId,
     secret_nonce: Base,
     num_reels: usize,
 ) -> Vec<u64> {
-    let a = u64::from_le_bytes(block_hash[0..8].try_into().unwrap());
-    let b = u64::from_le_bytes(block_hash[8..16].try_into().unwrap());
-    let c = u64::from_le_bytes(block_hash[16..24].try_into().unwrap());
-    let d = u64::from_le_bytes(block_hash[24..32].try_into().unwrap());
-
     let mut positions = Vec::with_capacity(num_reels);
 
     for i in 0..num_reels {
-        // Create entropy for this reel using all 32 bytes of block hash
+        // Create per-reel entropy: Poseidon(seed, spin_id, secret_nonce, reel_index)
         let entropy = poseidon_hash([
+            Base::from(seed),
             spin_id,
             secret_nonce,
-            Base::from(a),
-            Base::from(b),
-            Base::from(c),
-            Base::from(d),
             Base::from(i as u64),
         ]);
 

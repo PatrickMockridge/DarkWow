@@ -70,26 +70,22 @@ pub fn dice_reveal_roll_process_instruction_v1(
         return Err(DiceError::CommitmentMismatch.into())
     }
 
-    // Get block hash for randomness (use verifying block hash, not tx_hash)
-    // tx_hash is player-influenced and breaks the randomness guarantee
+    // Collect block hashes across confirmation_depth for entropy.
+    // Uses dwow_entropy_contract (ported from Mudra Arweave beacon).
     let verifying_height = wasm::util::get_verifying_block_height()?;
-    let block_hash = wasm::util::get_block_hash(verifying_height)?.0;
+    let depth = bet.confirmation_depth as u64;
+    let mut entropy_blocks = Vec::with_capacity(depth as usize);
+    for i in 0..depth {
+        let h = verifying_height.get().saturating_sub(i);
+        let block_hash = wasm::util::get_block_hash(
+            dwow_sdk::blockchain::BlockHeight::new(h),
+        )?.0;
+        entropy_blocks.push(dwow_entropy_contract::EntropyBlock { height: h, block_hash });
+    }
+    let seed = dwow_entropy_contract::derive_seed(&entropy_blocks);
 
-    // Convert block hash bytes to pallas::Base for the depth-based roll calculation
-    let block_hash_a = u64::from_le_bytes(block_hash[0..8].try_into().unwrap());
-    let block_hash_b = u64::from_le_bytes(block_hash[8..16].try_into().unwrap());
-    let block_hash_c = u64::from_le_bytes(block_hash[16..24].try_into().unwrap());
-    let block_hash_d = u64::from_le_bytes(block_hash[24..32].try_into().unwrap());
-
-    let block_hashes = vec![
-        pallas::Base::from(block_hash_a),
-        pallas::Base::from(block_hash_b),
-        pallas::Base::from(block_hash_c),
-        pallas::Base::from(block_hash_d),
-    ];
-
-    // Calculate roll using depth-based approach
-    let roll = calculate_roll_with_depth(&block_hashes, bet.id, params.secret_nonce);
+    // Calculate roll from the seed
+    let roll = calculate_roll_with_depth(pallas::Base::from(seed), bet.id, params.secret_nonce);
 
     msg!("[dice::reveal_roll] Calculated roll: {} (target: {})", roll, bet.target);
 

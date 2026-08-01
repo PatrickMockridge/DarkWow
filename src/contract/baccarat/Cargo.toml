@@ -13,6 +13,7 @@ pasta_curves = "0.5.1"
 blake3 = "1.8.2"
 bs58 = "0.5.1"
 dwow-sdk = { path = "../../sdk", features = ["wasm"] }
+dwow_entropy_contract = { path = "../entropy" }
 dwow-serial = { path = "../../serial", features = ["derive", "crypto"] }
 thiserror = "2.0.17"
 

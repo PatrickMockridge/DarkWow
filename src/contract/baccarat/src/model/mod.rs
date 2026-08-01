@@ -848,15 +848,11 @@ impl HouseCloseUpdateV1 {
 /// Returns (player_hand, banker_hand, player_third_card, banker_third_card)
 /// Third cards are returned separately because their dealing depends on drawing rules
 #[allow(clippy::unused)]
-pub fn deal_cards(block_hashes: &[TransactionHash], bet_id: BetId) -> (Hand, Hand, Option<Card>, Option<Card>) {
-    // Combine entropy from block hashes
-    let mut entropy = bet_id;
-    for (i, hash) in block_hashes.iter().enumerate() {
-        let block_entropy = tx_hash_to_base(&hash.0);
-        entropy = poseidon_hash([entropy, block_entropy, pallas::Base::from(i as u64)]);
-    }
-
-    // Use entropy to seed card selection
+/// Deal cards using a multi-block entropy seed (via dwow_entropy_contract::derive_seed).
+/// The seed already incorporates multiple block hashes; we mix in bet_id for per-game uniqueness.
+pub fn deal_cards_from_seed(seed: u64, bet_id: BetId) -> (Hand, Hand, Option<Card>, Option<Card>) {
+    // Mix seed with bet_id via Poseidon for per-game uniqueness
+    let entropy = poseidon_hash([pallas::Base::from(seed), bet_id]);
     let bytes = entropy.to_repr();
 
     // Create seeds from entropy bytes

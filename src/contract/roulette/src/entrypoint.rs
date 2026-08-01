@@ -487,12 +487,18 @@ fn roulette_spin_wheel_process_instruction_v1(
         return Err(RouletteError::InvalidSignature.into())
     }
 
-    // Get block hash for randomness
-    let block_hash = wasm::util::get_block_hash(current_block)?;
-
-    // Convert block_hash bytes to pallas::Base for entropy
-    let hash_bytes = block_hash.0;
-    let block_hash_base = pallas::Base::from(u64::from_le_bytes(hash_bytes[0..8].try_into().unwrap()));
+    // Collect block hashes across confirmation depth for entropy
+    let depth = 6u64;
+    let mut entropy_blocks = Vec::with_capacity(depth as usize);
+    for i in 0..depth {
+        let h = current_block.get().saturating_sub(i);
+        let block_hash = wasm::util::get_block_hash(
+            dwow_sdk::blockchain::BlockHeight::new(h),
+        )?.0;
+        entropy_blocks.push(dwow_entropy_contract::EntropyBlock { height: h, block_hash });
+    }
+    let seed = dwow_entropy_contract::derive_seed(&entropy_blocks);
+    let block_hash_base = pallas::Base::from(seed);
 
     // Draw winning number
     let winning_number = draw_winning_number(

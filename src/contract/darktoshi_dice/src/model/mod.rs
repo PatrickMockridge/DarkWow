@@ -654,13 +654,14 @@ pub fn derive_nullifier(bet_id: BetId, secret_nonce: pallas::Base) -> BetId {
 /// - K=1: 33% manipulation chance (with 33% hash power)
 /// - K=6: ~0.14% (Bitcoin "6 confirmations" standard)
 /// - K=10: ~0.005%
+/// Calculate a dice roll from a multi-block entropy seed (via dwow_entropy_contract::derive_seed).
+/// The seed already incorporates multiple block hashes; we mix in bet-specific data for uniqueness.
 pub fn calculate_roll_with_depth(
-    block_hashes: &[pallas::Base],
+    seed: pallas::Base,
     bet_id: BetId,
     secret_nonce: pallas::Base,
 ) -> u8 {
-    let combined_hash = combine_block_hashes(block_hashes);
-    let final_entropy = mix_entropy(combined_hash, &[bet_id, secret_nonce]);
+    let final_entropy = poseidon_hash([seed, bet_id, secret_nonce]);
     let bytes = final_entropy.to_repr();
     ((bytes[0] as u64) % (ROLL_RANGE as u64)) as u8
 }

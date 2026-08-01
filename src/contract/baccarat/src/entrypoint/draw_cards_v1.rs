@@ -35,7 +35,7 @@ use dwow_serial::deserialize;
 
 use crate::error::BaccaratError;
 use crate::model::{
-    calculate_outcome, deal_cards, Bet, BetState, DrawCardsParamsV1, DrawCardsUpdateV1,
+    calculate_outcome, deal_cards_from_seed, Bet, BetState, DrawCardsParamsV1, DrawCardsUpdateV1,
 };
 use crate::BACCARAT_CONTRACT_BETS_TREE;
 
@@ -78,22 +78,24 @@ pub fn baccarat_draw_cards_process_instruction_v1(
         return Err(BaccaratError::BetTimeoutNotReached.into())
     }
 
-    // Collect block hashes for entropy using confirmation_depth
-    // We use get_block_hash for cumulative PoW entropy
+    // Collect block hashes across confirmation_depth for entropy
     let confirmation_depth = u64::from(bet.confirmation_depth);
-    let mut block_hashes = vec![];
+    let mut entropy_blocks = Vec::with_capacity(confirmation_depth as usize);
 
     for i in 0..confirmation_depth {
-        let block_height = dwow_sdk::blockchain::BlockHeight::new(current_block.get().saturating_sub(i));
-        let block_hash = wasm::util::get_block_hash(block_height)?;
-        block_hashes.push(block_hash);
+        let h = current_block.get().saturating_sub(i);
+        let block_hash = wasm::util::get_block_hash(
+            dwow_sdk::blockchain::BlockHeight::new(h),
+        )?.0;
+        entropy_blocks.push(dwow_entropy_contract::EntropyBlock { height: h, block_hash });
     }
+    let seed = dwow_entropy_contract::derive_seed(&entropy_blocks);
 
-    msg!("[baccarat::draw_cards] Collected {} block hashes for entropy", block_hashes.len());
+    msg!("[baccarat::draw_cards] Entropy seed: {} from {} blocks", seed, entropy_blocks.len());
 
-    // Deal cards using block hash entropy - now returns all cards properly derived
+    // Deal cards using the entropy seed
     let (mut player_hand, mut banker_hand, player_third, banker_third) =
-        deal_cards(&block_hashes, bet.id);
+        deal_cards_from_seed(seed, bet.id);
 
     msg!("[baccarat::draw_cards] Player hand: {:?}, {:?}", player_hand.card1, player_hand.card2);
     msg!("[baccarat::draw_cards] Banker hand: {:?}, {:?}", banker_hand.card1, banker_hand.card2);

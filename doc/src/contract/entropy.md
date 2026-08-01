@@ -1,167 +1,142 @@
-# Entropy Module
+# Entropy Beacon
 
-A composable module providing provably fair randomness generation using block hash entropy. Used by all DarkWow betting/gambling contracts for drawing outcomes.
+Verifiable randomness from DarkWow block hashes. Ported from the
+[Mudra Arweave entropy beacon](https://codeberg.org/PatrickM123/mudra),
+adapted from Arweave to DarkWow's own chain context.
 
-## Overview
+No single party controls the seed. The anchor height is committed before
+the entropy blocks exist — the seed is unpredictable at commitment time.
 
-The entropy module (`dwow_sdk::crypto::entropy`) provides a unified API for randomness that was previously copy-pasted across multiple contracts:
+## Crate
 
-- **DarkToshi Dice**: Cumulative PoW entropy with confirmation depth
-- **Baccarat**: Card dealing from multiple block hashes
-- **Lottery**: Multiple unique numbers from a range
-- **Slot**: Manual extraction from 32-byte block hash into 4 × u64
-- **Roulette**: Uses own `draw_winning_number()` — does NOT use SDK entropy module
+`dwow_entropy_contract` at [src/contract/entropy/](../../../src/contract/entropy/).
 
-## Security Model
+This is a **pure library crate** (`rlib`), not a standalone contract. Betting
+contracts import it directly — no cross-contract calls, no separate contract state.
 
-Block hash entropy is sourced from Proof-of-Work mining. An attacker with less than 33% hash power has negligible chance to manipulate a single block hash.
+```toml
+[dependencies]
+dwow_entropy_contract = { path = "../entropy" }
+```
 
-### Confirmation Depth Security
+## Protocol
 
-| Depth | Blocks | Manipulation Chance (33% attacker) |
-|-------|--------|-------------------------------------|
-| Low | 1 | ~33% |
-| Medium | 6 | ~0.14% (Bitcoin standard) |
-| High | 10 | ~0.005% |
+```
+1. Record anchor height H = get_last_block_height()
+       │
+2. Wait for N blocks to be mined (H+1 through H+N)
+       │
+3. Collect block hashes for each block
+       │
+4. derive_seed(&blocks) → u64 seed
+       │
+5. Use seed for game outcome (modulo for dice roll, card draw, etc.)
+```
 
-Higher depth means exponentially harder to manipulate, but requires waiting for more block confirmations.
+The anchor is recorded *before* the entropy blocks exist. Block hashes depend on
+all transactions in that block — collusion requires controlling the mining majority.
 
 ## API
 
-### Core Functions
+### `derive_seed(blocks: &[EntropyBlock]) -> u64`
 
-#### `draw_single(block_hash, nonce, range)`
-Draw a single random number in range `[0, range)`.
-
-```rust
-use dwow_sdk::crypto::entropy::draw_single;
-
-// Draw winning number for European roulette (0-36)
-let winning = draw_single(block_hash, nonce, 37);
-```
-
-#### `draw_unique_range(block_hash, seed_nonce, count, range)`
-Draw `count` unique numbers in range `[1, range]`.
+Derives a deterministic u64 seed from a list of block hashes via Blake3. For each
+block, feeds `height.to_le_bytes() || block_hash` into the hasher. Takes the first
+8 bytes of the final hash as a little-endian u64.
 
 ```rust
-use dwow_sdk::crypto::entropy::draw_unique_range;
+use dwow_entropy_contract::{derive_seed, EntropyBlock};
 
-// Draw 6 unique numbers from 1-59 (UK National Lottery)
-let numbers = draw_unique_range(block_hash, seed_nonce, 6, 59);
-assert_eq!(numbers.len(), 6);
+// Collect 3 blocks of entropy after the anchor height
+let mut blocks = Vec::new();
+for h in (anchor + 1)..=(anchor + 3) {
+    blocks.push(EntropyBlock {
+        height: h,
+        block_hash: wasm::util::get_block_hash(BlockHeight::from(h))?.0,
+    });
+}
+
+// Derive seed
+let seed = derive_seed(&blocks);
+
+// Use for game outcome
+let dice_roll = (seed % 6) as u8 + 1;    // 1-6
+let roulette = (seed % 37) as u8;         // 0-36
+let card = (seed % 52) as u8;             // 0-51
 ```
 
-#### `combine_block_hashes(block_hashes)`
-Combine multiple block hashes into single entropy source using cumulative Poseidon hashing.
+### `EntropyBlock`
 
 ```rust
-use dwow_sdk::crypto::entropy::combine_block_hashes;
-
-// Combine 6 blocks for high-security bet resolution
-let entropy = combine_block_hashes(&[hash1, hash2, hash3, hash4, hash5, hash6]);
+pub struct EntropyBlock {
+    pub height: u64,        // block height
+    pub block_hash: [u8; 32],  // 32-byte block hash
+}
 ```
 
-#### `draw_with_depth(block_hashes, nonce, range)`
-Draw using cumulative PoW entropy with confirmation depth.
+## Trust Model
 
-```rust
-use dwow_sdk::crypto::entropy::draw_with_depth;
+- **Commitment before entropy**: The anchor height is recorded before the entropy
+  blocks are mined. No party knows the future block hashes.
+- **No single party controls blocks**: DarkWow block hashes depend on all
+  transactions submitted in that block. Manipulation requires mining majority.
+- **Verifiable provenance**: The block list (heights + hashes) can be stored
+  alongside the seed. Any node can re-derive and confirm `derive_seed(&blocks)`
+  matches the stored seed.
+- **Blake3**: Standard cryptographic hash. No exotic primitives.
 
-// Draw with 6-block confirmation depth
-let roll = draw_with_depth(&[hash1, hash2, hash3, hash4, hash5, hash6], bet_id, 100);
-```
+## Mudra → DarkWow Adaptation
 
-#### `mix_entropy(base, additional)`
-Mix additional entropy sources with a base value.
+| Mudra (Arweave) | DarkWow |
+|-----------------|---------|
+| Post intent to Arweave as timestamp proof | Record anchor height in contract state |
+| Arweave block hashes via `arweave.net/block/height/{h}` | DarkWow block hashes via `wasm::util::get_block_hash(BlockHeight)` |
+| Arweave block time ~2 minutes | DarkWow block time (configurable) |
+| Blake3 derivation | Identical |
+| Intent TXID for replay verification | Stored block list for replay verification |
 
-```rust
-use dwow_sdk::crypto::entropy::mix_entropy;
+## Integration with Betting Contracts
 
-// Combine block entropy with bet-specific data
-let entropy = combine_block_hashes(block_hashes);
-let final_entropy = mix_entropy(entropy, &[bet_id, secret_nonce]);
-```
+All betting contracts that need randomness import `dwow_entropy_contract` and call
+`derive_seed` directly:
 
-#### `tx_hash_to_base(tx_hash)`
-Convert TransactionHash to pallas::Base for entropy use.
+| Contract | Uses entropy? | Notes |
+|----------|--------------|-------|
+| Darktoshi Dice | Yes | Replaces ad-hoc block hash in `reveal_roll_v1` |
+| Lottery | Yes | Replaces user-provided `instance_seed` |
+| Roulette | Yes | Replaces manual `draw_winning_number` from block hash |
+| Baccarat | Yes | Replaces manual `deal_cards` from block hash |
+| Slot | Yes | Replaces manual u64 extraction from block hash bytes |
+| Darkbet Exchange | Yes | Settlement randomness |
+| Betting Stake | No | Staking only — no randomness needed |
+| Game Room | No | Game lobby — randomness delegated to individual games |
 
-```rust
-use dwow_sdk::crypto::entropy::tx_hash_to_base;
+## Test Vectors
 
-let base = tx_hash_to_base(&tx_hash_bytes);
-```
+The crate includes 7 test vectors (`cargo test -p dwow_entropy_contract`):
 
-## Usage in Contracts
+| Test | What it verifies |
+|------|-----------------|
+| `test_derive_seed_deterministic` | Same blocks → same seed |
+| `test_derive_seed_different_blocks` | Different hashes → different seeds |
+| `test_derive_seed_order_matters` | Block order affects seed |
+| `test_derive_seed_single_block` | Single-block edge case |
+| `test_derive_seed_ten_blocks` | 10-block case |
+| `test_derive_seed_known_vector` | `blake3(42 || [0u8; 32])` → `14760227444319121995` |
+| `test_derive_seed_nonzero` | Non-empty input → non-zero output |
 
-### Roulette
+## Security
 
-Roulette uses its own `draw_winning_number()` implementation in
-`src/contract/roulette/src/model/mod.rs`. It extracts entropy manually
-from block hash via `wasm::util::get_block_hash()` rather than using the
-SDK entropy module.
-
-```rust
-// In spin_wheel instruction (actual implementation):
-let block_hash = wasm::util::get_block_hash(current_block as u32)?;
-let winning_number = draw_winning_number(
-    &block_hash.0,
-    table.spin_count,
-    nonce,
-    table.wheel_size as u64,
-);
-```
-
-### Lottery
-```rust
-use dwow_sdk::crypto::entropy::draw_unique_range;
-
-// In draw_winners instruction
-let numbers = draw_unique_range(block_hash, seed_nonce, config.num_picks, config.number_range);
-```
-
-### DarkToshi Dice
-```rust
-use dwow_sdk::crypto::{combine_block_hashes, mix_entropy};
-
-// In reveal_roll instruction
-let block_entropy = combine_block_hashes(&block_hashes);
-let roll_entropy = mix_entropy(block_entropy, &[bet_id, secret_nonce]);
-```
-
-### Baccarat
-```rust
-// In draw_cards instruction (deal_cards function in model/mod.rs)
-// Uses wasm::util::get_block_hash() via WASM runtime, not SDK entropy module
-fn deal_cards(block_hashes: &[TransactionHash], bet_id: BetId)
-    -> (Hand, Hand, Option<Card>, Option<Card>) { ... }
-```
-
-### Slot
-```rust
-// In spin instruction (entrypoint.rs)
-// Extracts from block hash manually via wasm::util::get_block_hash()
-let block_hash = wasm::util::get_block_hash(wasm::util::get_verifying_block_height()?)?.0;
-let a = u64::from_le_bytes(block_hash[0..8].try_into().unwrap());
-let b = u64::from_le_bytes(block_hash[8..16].try_into().unwrap());
-let c = u64::from_le_bytes(block_hash[16..24].try_into().unwrap());
-let d = u64::from_le_bytes(block_hash[24..32].try_into().unwrap());
-```
-
-## Design Principles
-
-1. **Composability**: Single module, reusable functions
-2. **Security by default**: Cumulative PoW entropy available for high-value bets
-3. **Flexibility**: Multiple API levels from simple to advanced
-4. **No external dependencies**: Pure Poseidon hashing
-
-## Future Improvements
-
-- [ ] VRF (Verifiable Random Function) integration for publicly verifiable randomness
-- [ ] BLS threshold signatures for distributed randomness
-- [ ]-commit-reveal with zkSNARK proofs for committed randomness
+- **Confirmation depth**: 1 block already provides strong entropy — the anchor was
+  committed before that block's hash existed. Each additional block defends against
+  deeper chain reorgs. 3 blocks is a practical default; 10 blocks is conservative.
+- **No ZK proof needed**: The security is in the protocol (commitment before entropy
+  blocks exist), not in zero-knowledge proofs. Anyone can re-derive and verify.
+- **Independent verification**: Store the block list (heights + hashes). Any third
+  party can call `derive_seed(&stored_blocks)` and confirm the outcome.
 
 ## See Also
 
-- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
-- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
-- [Contract Safety](safety.md) — Capability safety analysis
+- [Mudra Entropy Beacon](https://codeberg.org/PatrickM123/mudra/src/branch/master/docs/entropy.md) — reference implementation
+- [Darktoshi Dice](../../../src/contract/darktoshi_dice/) — first betting contract to integrate
+- [Baccarat](../../../src/contract/baccarat/) — multi-round game with capital efficiency

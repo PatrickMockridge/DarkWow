@@ -58,20 +58,25 @@ pub fn lottery_draw_winners_process_instruction_v1(
         return Err(LotteryError::DrawNotYetAvailable.into())
     }
 
-    // Get block hash for randomness
-    let tx_block_hash = wasm::util::get_block_hash(current_block)?;
-
-    // Convert block_hash bytes to pallas::Base for entropy
-    // TransactionHash is a wrapper around [u8; 32]
-    let hash_bytes = tx_block_hash.0;
-    let block_hash = pallas::Base::from(u64::from_le_bytes(hash_bytes[0..8].try_into().unwrap()));
+    // Collect block hashes across confirmation depth for entropy
+    let depth = 6u64; // standard confirmation depth
+    let mut entropy_blocks = Vec::with_capacity(depth as usize);
+    for i in 0..depth {
+        let h = current_block.get().saturating_sub(i);
+        let block_hash = wasm::util::get_block_hash(
+            dwow_sdk::blockchain::BlockHeight::new(h),
+        )?.0;
+        entropy_blocks.push(dwow_entropy_contract::EntropyBlock { height: h, block_hash });
+    }
+    let seed = dwow_entropy_contract::derive_seed(&entropy_blocks);
+    let block_hash_base = pallas::Base::from(seed);
 
     // Convert nonce to u64 seed
     let seed_nonce = u64::from_le_bytes(params.nonce.to_repr()[0..8].try_into().unwrap());
 
     // Draw winning numbers
     let winning_numbers = draw_winning_numbers(
-        block_hash,
+        block_hash_base,
         seed_nonce,
         lottery.config.num_picks,
         lottery.config.number_range,
