@@ -328,7 +328,127 @@ impl Runtime {
         // Cranelift) or architectures, causing consensus splits.
         Self::reject_nondeterministic_features(wasm_bytes)?;
 
-        let cost_function = |_operator: &Operator| -> u64 { 1 };
+        // HAZOP M-12: tiered WASM opcode costs.
+        // Bridge crypto ops (BN254 pairings, Keccak, SHA-256d) are 10-100x more
+        // expensive than simple arithmetic — the uniform model undercharges.
+        // Tiers: base=1, memory=2, control=4, math-heavy=8, unreachable ops=256.
+        let cost_function = |operator: &Operator| -> u64 {
+            use Operator::*;
+            match operator {
+                // Tier 1 (1 gas): simple/cheap — locals, globals, nop, drop, const
+                LocalGet { .. } | LocalSet { .. } | LocalTee { .. }
+                | GlobalGet { .. } | GlobalSet { .. }
+                | Nop | Drop | Unreachable | Return | Select
+                | I32Const { .. } | I64Const { .. } | F32Const { .. } | F64Const { .. }
+                | Block { .. } | Loop { .. } | End | Else | Br { .. } | BrIf { .. }
+                | I32Eqz | I64Eqz | I32Eq | I64Eq | I32Ne | I64Ne
+                | I32LtS | I64LtS | I32LtU | I64LtU | I32GtS | I64GtS
+                | I32GtU | I64GtU | I32LeS | I64LeS | I32LeU | I64LeU
+                | I32GeS | I64GeS | I32GeU | I64GeU
+                | I32Clz | I64Clz | I32Ctz | I64Ctz | I32Popcnt | I64Popcnt
+                | I32Add | I64Add | I32Sub | I64Sub | I32And | I64And
+                | I32Or | I64Or | I32Xor | I64Xor | I32Shl | I64Shl
+                | I32ShrS | I64ShrS | I32ShrU | I64ShrU | I32Rotl | I64Rotl
+                | I32Rotr | I64Rotr
+                | I32WrapI64 | I64ExtendI32S | I64ExtendI32U
+                | I32Extend8S | I32Extend16S | I64Extend8S | I64Extend16S | I64Extend32S
+                | I32TruncF32S | I32TruncF32U | I32TruncF64S | I32TruncF64U
+                | I64TruncF32S | I64TruncF32U | I64TruncF64S | I64TruncF64U
+                | F32Abs | F64Abs | F32Neg | F64Neg | F32Ceil | F64Ceil
+                | F32Floor | F64Floor | F32Trunc | F64Trunc | F32Nearest | F64Nearest
+                | F32Sqrt | F64Sqrt
+                | F32Add | F64Add | F32Sub | F64Sub | F32Mul | F64Mul | F32Div | F64Div
+                | F32Min | F64Min | F32Max | F64Max | F32Copysign | F64Copysign
+                | F32Eq | F64Eq | F32Ne | F64Ne | F32Lt | F64Lt | F32Gt | F64Gt
+                | F32Le | F64Le | F32Ge | F64Ge
+                | I32ReinterpretF32 | I64ReinterpretF64 | F32ReinterpretI32 | F64ReinterpretI64
+                | F32ConvertI32S | F32ConvertI32U | F32ConvertI64S | F32ConvertI64U
+                | F64ConvertI32S | F64ConvertI32U | F64ConvertI64S | F64ConvertI64U
+                | RefNull { .. } | RefIsNull | RefFunc { .. }
+                | TableGet { .. } | TableSet { .. } | TableSize { .. } | TableGrow { .. }
+                | TableFill { .. } | TableCopy { .. } | TableInit { .. } | ElemDrop { .. }
+                | MemorySize { .. } => 1,
+
+                // Tier 2 (2 gas): memory load/store — I/O bound
+                I32Load { .. } | I64Load { .. } | F32Load { .. } | F64Load { .. }
+                | I32Load8S { .. } | I32Load8U { .. } | I32Load16S { .. } | I32Load16U { .. }
+                | I64Load8S { .. } | I64Load8U { .. } | I64Load16S { .. } | I64Load16U { .. }
+                | I64Load32S { .. } | I64Load32U { .. }
+                | I32Store { .. } | I64Store { .. } | F32Store { .. } | F64Store { .. }
+                | I32Store8 { .. } | I32Store16 { .. } | I64Store8 { .. }
+                | I64Store16 { .. } | I64Store32 { .. } => 2,
+
+                // Tier 3 (4 gas): control flow — branch/call overhead
+                BrTable { .. } | Call { .. } | CallIndirect { .. } | ReturnCall { .. }
+                | ReturnCallIndirect { .. } => 4,
+
+                // Tier 4 (8 gas): math-heavy — division, multiplication, memory ops
+                I32Mul | I64Mul | I32DivS | I64DivS | I32DivU | I64DivU
+                | I32RemS | I64RemS | I32RemU | I64RemU
+                | MemoryGrow { .. } | MemoryCopy { .. } | MemoryFill { .. }
+                | MemoryInit { .. } | DataDrop { .. } => 8,
+
+                // Tier 5 (256 gas): SIMD + atomics — rejected at load time by
+                // reject_nondeterministic_features, penalized if they somehow execute
+                V128Load { .. } | V128Store { .. } | V128Const { .. }
+                | I8x16Shuffle { .. } | I8x16Swizzle
+                | I8x16Splat | I16x8Splat | I32x4Splat | I64x2Splat | F32x4Splat | F64x2Splat
+                | V128Bitselect | V128AnyTrue | V128Not | V128And | V128AndNot
+                | V128Or | V128Xor
+                | I8x16Eq | I8x16Ne | I8x16LtS | I8x16LtU | I8x16GtS | I8x16GtU
+                | I8x16LeS | I8x16LeU | I8x16GeS | I8x16GeU
+                | I16x8Eq | I16x8Ne | I16x8LtS | I16x8LtU | I16x8GtS | I16x8GtU
+                | I16x8LeS | I16x8LeU | I16x8GeS | I16x8GeU
+                | I32x4Eq | I32x4Ne | I32x4LtS | I32x4LtU | I32x4GtS | I32x4GtU
+                | I32x4LeS | I32x4LeU | I32x4GeS | I32x4GeU
+                | F32x4Eq | F32x4Ne | F32x4Lt | F32x4Gt | F32x4Le | F32x4Ge
+                | F64x2Eq | F64x2Ne | F64x2Lt | F64x2Gt | F64x2Le | F64x2Ge
+                | I8x16Add | I8x16Sub | I16x8Add | I16x8Sub | I32x4Add | I32x4Sub
+                | I64x2Add | I64x2Sub | F32x4Add | F32x4Sub | F32x4Mul | F32x4Div
+                | F64x2Add | F64x2Sub | F64x2Mul | F64x2Div
+                | I8x16MinS | I8x16MinU | I8x16MaxS | I8x16MaxU
+                | I16x8MinS | I16x8MinU | I16x8MaxS | I16x8MaxU
+                | I32x4MinS | I32x4MinU | I32x4MaxS | I32x4MaxU
+                | F32x4Min | F32x4Max | F64x2Min | F64x2Max
+                | I8x16AvgrU | I16x8AvgrU
+                | I8x16Abs | I8x16Neg | I16x8Abs | I16x8Neg | I32x4Abs | I32x4Neg
+                | I64x2Abs | I64x2Neg | F32x4Abs | F32x4Neg | F64x2Abs | F64x2Neg
+                | F32x4Sqrt | F64x2Sqrt
+                | I8x16Shl | I8x16ShrS | I8x16ShrU | I16x8Shl | I16x8ShrS | I16x8ShrU
+                | I32x4Shl | I32x4ShrS | I32x4ShrU | I64x2Shl | I64x2ShrS | I64x2ShrU
+                | MemoryAtomicNotify { .. } | MemoryAtomicWait32 { .. } | MemoryAtomicWait64 { .. }
+                | AtomicFence
+                | I32AtomicLoad { .. } | I64AtomicLoad { .. }
+                | I32AtomicLoad8U { .. } | I32AtomicLoad16U { .. }
+                | I64AtomicLoad8U { .. } | I64AtomicLoad16U { .. } | I64AtomicLoad32U { .. }
+                | I32AtomicStore { .. } | I64AtomicStore { .. }
+                | I32AtomicStore8 { .. } | I32AtomicStore16 { .. }
+                | I64AtomicStore8 { .. } | I64AtomicStore16 { .. } | I64AtomicStore32 { .. }
+                | I32AtomicRmwAdd { .. } | I64AtomicRmwAdd { .. }
+                | I32AtomicRmw8AddU { .. } | I32AtomicRmw16AddU { .. }
+                | I64AtomicRmw8AddU { .. } | I64AtomicRmw16AddU { .. } | I64AtomicRmw32AddU { .. }
+                | I32AtomicRmwSub { .. } | I64AtomicRmwSub { .. }
+                | I32AtomicRmw8SubU { .. } | I32AtomicRmw16SubU { .. }
+                | I64AtomicRmw8SubU { .. } | I64AtomicRmw16SubU { .. } | I64AtomicRmw32SubU { .. }
+                | I32AtomicRmwAnd { .. } | I64AtomicRmwAnd { .. }
+                | I32AtomicRmw8AndU { .. } | I32AtomicRmw16AndU { .. }
+                | I64AtomicRmw8AndU { .. } | I64AtomicRmw16AndU { .. } | I64AtomicRmw32AndU { .. }
+                | I32AtomicRmwOr { .. } | I64AtomicRmwOr { .. }
+                | I32AtomicRmw8OrU { .. } | I32AtomicRmw16OrU { .. }
+                | I64AtomicRmw8OrU { .. } | I64AtomicRmw16OrU { .. } | I64AtomicRmw32OrU { .. }
+                | I32AtomicRmwXor { .. } | I64AtomicRmwXor { .. }
+                | I32AtomicRmw8XorU { .. } | I32AtomicRmw16XorU { .. }
+                | I64AtomicRmw8XorU { .. } | I64AtomicRmw16XorU { .. } | I64AtomicRmw32XorU { .. }
+                | I32AtomicRmwXchg { .. } | I64AtomicRmwXchg { .. }
+                | I32AtomicRmw8XchgU { .. } | I32AtomicRmw16XchgU { .. }
+                | I64AtomicRmw8XchgU { .. } | I64AtomicRmw16XchgU { .. } | I64AtomicRmw32XchgU { .. }
+                | I32AtomicRmwCmpxchg { .. } | I64AtomicRmwCmpxchg { .. }
+                | I32AtomicRmw8CmpxchgU { .. } | I32AtomicRmw16CmpxchgU { .. }
+                | I64AtomicRmw8CmpxchgU { .. } | I64AtomicRmw16CmpxchgU { .. } | I64AtomicRmw32CmpxchgU { .. }
+                => 256,
+                &_ => 256,
+            }
+        };
         let metering = Arc::new(Metering::new(GAS_LIMIT, cost_function));
         let mut compiler_config = Compiler::new();
         compiler_config.push_middleware(metering);
