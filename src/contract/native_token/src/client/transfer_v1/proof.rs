@@ -201,10 +201,10 @@ pub fn create_transfer_mint_proof(
         Witness::Base(Value::known(*cumcom_coords.y())),
         Witness::Base(Value::known(tx_commitment)),
         Witness::Base(Value::known(tx_nonce)),
-        // tx_binding is computed in-circuit (mint_v1.zk line 100):
-        //   tx_binding = poseidon_hash(tx_commitment, tx_nonce)
-        // MOC close-out item 3: the witness slot was dead — removed from
-        // the circuit, removed here.
+        // tx_binding = poseidon_hash(tx_commitment, tx_nonce).
+        // V2 circuits compute this in-circuit AND require it as a witness
+        // for constraint satisfaction (17 witnesses total for burn_v2.zk).
+        Witness::Base(Value::known(public_inputs.tx_binding)),
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
@@ -306,10 +306,10 @@ pub fn create_transfer_burn_proof(
         Witness::Base(Value::known(signature_public.y().expect("pk not identity"))),
         Witness::Base(Value::known(tx_commitment)),
         Witness::Base(Value::known(tx_nonce)),
-        // tx_binding is computed in-circuit (mint_v1.zk line 100):
-        //   tx_binding = poseidon_hash(tx_commitment, tx_nonce)
-        // MOC close-out item 3: the witness slot was dead — removed from
-        // the circuit, removed here.
+        // tx_binding = poseidon_hash(tx_commitment, tx_nonce).
+        // V2 circuits compute this in-circuit AND require it as a witness
+        // for constraint satisfaction (17 witnesses total for burn_v2.zk).
+        Witness::Base(Value::known(public_inputs.tx_binding)),
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

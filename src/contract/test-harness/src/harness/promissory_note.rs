@@ -198,9 +198,13 @@ impl PromissoryNoteHarness {
         user_data: pallas::Base,
         coin_blind: pallas::Base,
     ) -> Result<MintResult> {
-        // Build same Merkle tree structure as used in create_token
+        // Build Merkle tree matching on-chain token registry structure:
+        // init_contract places ZERO guard leaf at position 0, then
+        // apply_token_mint (RegisterTypeV1) appends token_id at position 1.
+        // The proof must use the tree root AFTER both are committed.
         let mut tree = MerkleTree::new(1);
-        tree.append(MerkleNode::from_base(token_id));
+        tree.append(MerkleNode::from_base(pallas::Base::ZERO)); // guard leaf @ pos 0
+        tree.append(MerkleNode::from_base(token_id));           // token leaf @ pos 1
         let leaf_pos_mark = tree.mark().unwrap();
 
         // Get Merkle path for the token leaf

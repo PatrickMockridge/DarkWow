@@ -946,7 +946,13 @@ fn test_wallet_manifest_scan() {
 
         let wallet_ptr = &dww.wallet;
 
-        let master_sk = SecretKey::from_bytes([1u8; 32]).unwrap();
+        // Must match wallet identity from keys_toml: hex "0100...00" = field element 1.
+        // [1u8; 32] = all-ones (different field element) — AEAD decrypt would fail.
+        let master_sk = SecretKey::from_bytes({
+            let mut b = [0u8; 32];
+            b[0] = 0x01;
+            b
+        }).unwrap();
         let wallet_pk = PublicKey::from_secret(master_sk.clone());
         let deployer_pubkey_str = bs58::encode(wallet_pk.to_bytes()).into_string();
 
