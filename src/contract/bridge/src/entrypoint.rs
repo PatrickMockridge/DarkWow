@@ -505,42 +505,27 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
         return Err(BridgeError::DoubleDeposit.into())
     }
 
-    // FALLBACK — Host-level ZK proof verification (NOT co-equal with in-contract)
-    //
-    // Primary path (target): In-contract cryptographic verification of
-    //   chain-specific deposit proofs (DLEq, Groth16, Merkle).
-    //
-    // Fallback path (current): Ethereum deposits skip contract-level chain-proof
-    //   verification entirely. Verification is delegated to the host validator
-    //   runtime via the ZK proof in the transaction witness.
-    //   Reason: Ethereum deposit proof verification not yet implemented in-circuit.
-    //
-    // ## DEGRADATION RISK
-    // If the host verifier is disabled, misconfigured, or bypassed, Ethereum
-    // deposits are accepted without any cryptographic verification of the
-    // external chain state.
-    //
-    // ## CONSTRAINT
-    // Do NOT add new chain types that skip in-contract proof verification.
-    // New chains MUST implement verify_<chain>_deposit() with full cryptographic checks.
-    if params.chain != ExternalChain::Ethereum {
-        match &params.chain_proof {
-            ExternalChainProof::Monero(proof) => {
-                verify_xmr_deposit(cid, proof)?;
+    // HAZOP HAZ-CODE-01: unified verification path.
+    // All chain-specific cryptographic verification is dispatched through
+    // the verify module (feature-gated behind bridge-verify).
+    // Structural checks (amount min, confirmations, non-zero values) are
+    // Layer 1; cryptographic verification is Layer 2.
+    #[cfg(feature = "bridge-verify")]
+    crate::verify::verify_chain_proof(&params.chain_proof, &params.merkle_proof)?;
+    #[cfg(not(feature = "bridge-verify"))]
+    {
+        // Without bridge-verify, perform structural checks only (fail-closed:
+        // reject all non-Ethereum deposits that require cryptographic proofs).
+        if params.chain == ExternalChain::Ethereum {
+            if params.merkle_proof.is_empty() {
+                msg!("[bridge::DepositV1] Error: Ethereum merkle proof is empty");
+                return Err(BridgeError::InvalidMerkleProof.into());
             }
-            ExternalChainProof::Zcash(proof) => {
-                verify_zcash_deposit(cid, proof)?;
-            }
-            ExternalChainProof::Aztec(proof) => {
-                verify_aztec_deposit(cid, proof)?;
-            }
-            ExternalChainProof::Litecoin(proof) => {
-                verify_litecoin_deposit(cid, proof)?;
-            }
-            ExternalChainProof::Ethereum => {
-                // Ethereum deposits use host-level ZK proof verification
-                // (merkle_proof field), unreachable here due to outer if-guard.
-            }
+        } else {
+            msg!("[bridge::DepositV1] Error: bridge-verify feature not enabled — rejecting non-Ethereum deposit");
+            return Err(BridgeError::InvalidDeposit(
+                "Cross-chain verification not compiled (enable bridge-verify feature)".into()
+            ).into());
         }
     }
 

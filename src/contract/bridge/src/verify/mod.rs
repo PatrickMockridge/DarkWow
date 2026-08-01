@@ -37,11 +37,15 @@ mod aztec;
 
 /// Dispatch to the appropriate chain-specific verifier.
 /// Called from `process_deposit_instruction` in entrypoint.rs.
-pub fn verify_chain_proof(proof: &ExternalChainProof, eth_merkle_proof: &[u8]) -> ContractResult {
+pub fn verify_chain_proof(proof: &ExternalChainProof, eth_merkle_proof: &[[u8; 32]]) -> ContractResult {
     match proof {
         ExternalChainProof::Ethereum => {
             #[cfg(feature = "bridge-verify")]
-            { ethereum::verify_mpt_proof(eth_merkle_proof) }
+            {
+                // Flatten Vec<[u8;32]> to flat bytes for MPT verification
+                let flat: Vec<u8> = eth_merkle_proof.iter().flat_map(|h| h.to_vec()).collect();
+                ethereum::verify_mpt_proof(&flat)
+            }
             #[cfg(not(feature = "bridge-verify"))]
             { Err(BridgeError::InvalidDeposit(
                 "Ethereum verification not compiled (enable bridge-verify feature)".into()
