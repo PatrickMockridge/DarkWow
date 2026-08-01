@@ -833,6 +833,8 @@ fn scan_block(
                             action: Some(typed.action.clone()),
                             primitives: typed.primitives.clone(),
                             barbs: typed.barbs.clone(),
+                            status: None,
+                            status_height: None,
                             revoked: false,
                             revoked_at_height: None,
                             created_at_height: height.get(),
@@ -1192,7 +1194,7 @@ mod tests {
         let mut tree = MerkleTree::new(32);
 
         // Step 1: Verify encrypt/decrypt roundtrip
-        let decrypted: dwow_native_token_contract::client::NativeToken = aes.decrypt(&per_block_sk)
+        let decrypted: dwow_native_token_contract::client::NativeToken = aes.decrypt(&per_block_sk, 1u64)
             .expect("F2 FAIL: direct decrypt roundtrip must work");
         assert_eq!(decrypted.value, 50_000_000, "F2 FAIL: decrypted value mismatch");
 
@@ -1211,7 +1213,7 @@ mod tests {
             "F2 FAIL: AeadEncryptedNote::decode at offset 0 of call data params must work");
 
         // Step 1: Verify encrypt/decrypt roundtrip
-        let decrypted: dwow_native_token_contract::client::NativeToken = aes.decrypt(&per_block_sk)
+        let decrypted: dwow_native_token_contract::client::NativeToken = aes.decrypt(&per_block_sk, 1u64)
             .expect("F2 FAIL Step 1: direct decrypt roundtrip must work");
         assert_eq!(decrypted.value, 50_000_000, "F2 FAIL Step 1: decrypted value mismatch");
 
@@ -1235,7 +1237,7 @@ mod tests {
         let params = &call_data[1..]; // skip selector
         let decoded_aes = AeadEncryptedNote::decode(&mut std::io::Cursor::new(params))
             .expect("F2 FAIL Step 4: AES decode from call_data params must work");
-        let decrypted2: dwow_native_token_contract::client::NativeToken = decoded_aes.decrypt(&per_block_sk)
+        let decrypted2: dwow_native_token_contract::client::NativeToken = decoded_aes.decrypt(&per_block_sk, 1u64)
             .expect("F2 FAIL Step 4: decrypt with per_block_sk must work");
         assert_eq!(decrypted2.value, 50_000_000, "F2 FAIL Step 4: manual decrypt value mismatch");
 
@@ -1337,16 +1339,16 @@ mod tests {
 
         // Deterministic ephemeral key (model.rs:168)
         let ephemeral = SecretKey::from_base(dwow_sdk::crypto::poseidon_hash([
-            sk_H.inner(), pallas::Base::from(0xE7E7_E7E7_E7E7_E7E7u64),
+            *sk_H.inner(), pallas::Base::from(0xE7E7_E7E7_E7E7_E7E7u64),
         ]));
 
         // Deterministic blinds (pow_reward_v1.rs — domain-separated)
         let h_base = pallas::Base::from(height as u64);
-        let coin_blind = Blind(poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(3u64)]));
+        let coin_blind = Blind(poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(3u64)]));
         let value_blind = Blind(pallas::Scalar::from_repr(
-            poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(1u64)]).to_repr(),
+            poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(1u64)]).to_repr(),
         ).unwrap());
-        let token_blind = Blind(poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(2u64)]));
+        let token_blind = Blind(poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(2u64)]));
 
         // ── Build NativeToken note ──────────────────────────────────
         let nt = dwow_native_token_contract::client::NativeToken {
@@ -1963,12 +1965,12 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
         let trial_notes = account_mgr.secrets();
         let mut found_commitment = None;
         for trial_sk in &trial_notes {
-            if let Ok(decrypted) = enc_note.decrypt::<dwow_native_token_contract::client::NativeToken>(trial_sk) {
+            if let Ok(decrypted) = enc_note.decrypt::<dwow_native_token_contract::client::NativeToken>(trial_sk, height) {
                 let attrs = dwow_native_token_contract::model::CoinAttributes {
                     version: 0, public_key: _pk, value,
                     token_id: TokenId::DRKW,
                     spend_hook: FuncId::none(),
-                    user_data: pallas::Base::zero(), blind: coin_blind,
+                    user_data: pallas::Base::zero(), blind: coin_blind.clone(),
                 };
                 let coin = attrs.to_coin();
                 found_commitment = Some(coin);
@@ -2291,14 +2293,14 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         let h_base = pallas::Base::from(height as u64);
         // Deterministic ephemeral key (domain 13 per spec §3.6)
         let ephem = SecretKey::from_base(poseidon_hash([
-            sk_H.inner(), h_base, pallas::Base::from(13u64),
+            *sk_H.inner(), h_base, pallas::Base::from(13u64),
         ]));
         // Deterministic blinds (domains 10-12 per spec §3.6)
-        let coin_blind = Blind(poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(12u64)]));
+        let coin_blind = Blind(poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(12u64)]));
         let value_blind = Blind(pallas::Scalar::from_repr(
-            poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(10u64)]).to_repr(),
+            poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(10u64)]).to_repr(),
         ).unwrap());
-        let token_blind = Blind(poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(11u64)]));
+        let token_blind = Blind(poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(11u64)]));
 
         // ── Build the fee coin note (identical structure to coinbase) ──
         let total_fees: u64 = 42_000_000;
@@ -2400,13 +2402,13 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // Transaction 0: PoWRewardV1 (0x05) — domains 1-3
         // ═══════════════════════════════════════════════════════════════
         let ephem_05 = SecretKey::from_base(poseidon_hash([
-            sk_H.inner(), pallas::Base::from(0xE7E7_E7E7_E7E7_E7E7u64),
+            *sk_H.inner(), pallas::Base::from(0xE7E7_E7E7_E7E7_E7E7u64),
         ]));
-        let coin_blind_05 = Blind(poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(3u64)]));
+        let coin_blind_05 = Blind(poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(3u64)]));
         let value_blind_05 = Blind(pallas::Scalar::from_repr(
-            poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(1u64)]).to_repr(),
+            poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(1u64)]).to_repr(),
         ).unwrap());
-        let token_blind_05 = Blind(poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(2u64)]));
+        let token_blind_05 = Blind(poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(2u64)]));
 
         let nt_05 = NativeToken {
             value: coinbase_reward,
@@ -2429,13 +2431,13 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // Transaction 1: FeeCollectV1 (0x06) — domains 10-13
         // ═══════════════════════════════════════════════════════════════
         let ephem_06 = SecretKey::from_base(poseidon_hash([
-            sk_H.inner(), h_base, pallas::Base::from(13u64),
+            *sk_H.inner(), h_base, pallas::Base::from(13u64),
         ]));
-        let coin_blind_06 = Blind(poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(12u64)]));
+        let coin_blind_06 = Blind(poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(12u64)]));
         let value_blind_06 = Blind(pallas::Scalar::from_repr(
-            poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(10u64)]).to_repr(),
+            poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(10u64)]).to_repr(),
         ).unwrap());
-        let token_blind_06 = Blind(poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(11u64)]));
+        let token_blind_06 = Blind(poseidon_hash([*sk_H.inner(), h_base, pallas::Base::from(11u64)]));
 
         let nt_06 = NativeToken {
             value: total_fees,
