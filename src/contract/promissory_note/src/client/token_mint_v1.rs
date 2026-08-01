@@ -177,7 +177,7 @@ impl TokenMintCallBuilder {
             Witness::Scalar(Value::known(value_blind.inner())),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding computed in-circuit
+            Witness::Base(Value::known(poseidon_hash([self.tx_commitment, self.tx_nonce]))), // V2: tx_binding = poseidon_hash(tx_commitment, tx_nonce)
         ];
 
         let circuit = ZkCircuit::new(prover_witnesses, &self.token_mint_zkbin);

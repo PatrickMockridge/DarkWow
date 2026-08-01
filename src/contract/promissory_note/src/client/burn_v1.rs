@@ -245,7 +245,7 @@ pub fn create_burn_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
-        tx_binding: pallas::Base::zero(),
+        tx_binding: poseidon_hash([input.tx_commitment, input.tx_nonce]),
         tx_nonce: input.tx_nonce,
     };
 
@@ -274,7 +274,7 @@ pub fn create_burn_proof(
         Witness::Base(Value::known(signature_secret)),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding computed in-circuit
+        Witness::Base(Value::known(poseidon_hash([input.tx_commitment, input.tx_nonce]))), // V2: tx_binding = poseidon_hash(tx_commitment, tx_nonce)
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

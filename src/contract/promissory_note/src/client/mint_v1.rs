@@ -170,7 +170,7 @@ impl MintCallBuilder {
             Witness::Scalar(Value::known(value_blind.inner())),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding computed in-circuit
+            Witness::Base(Value::known(poseidon_hash([self.tx_commitment, self.tx_nonce]))), // V2: tx_binding = poseidon_hash(tx_commitment, tx_nonce)
         ];
 
         let public_inputs = MintRevealed {
@@ -180,7 +180,7 @@ impl MintCallBuilder {
             value_commit,
             token_id: self.input.token_id,
             spend_hook: self.input.spend_hook,
-            tx_binding: pallas::Base::zero(),
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
         };
 
@@ -195,7 +195,7 @@ impl MintCallBuilder {
                 token_registry_root,
                 mint_public,
                 spend_hook: FuncId::from_base(self.input.spend_hook),
-                tx_binding: pallas::Base::zero(),
+                tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
                 tx_nonce: self.tx_nonce,
             },
             proofs: vec![proof],
