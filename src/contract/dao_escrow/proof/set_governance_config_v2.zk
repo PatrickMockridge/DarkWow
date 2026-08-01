@@ -8,6 +8,8 @@ witness "SetGovernanceConfigV2" {
     Base owner_nullifier, Base tx_commitment,
     Base tx_nonce,
     Base tx_binding,
+    # HAZOP H-8 fix: instance_id for per-instance unique governance nullifiers
+    Base dao_escrow_bulla,
 }
 circuit "SetGovernanceConfigV2" {
     DOMAIN_NULLIFIER = witness_base(1);
@@ -16,7 +18,8 @@ circuit "SetGovernanceConfigV2" {
     owner_pub = ec_mul_base(owner_secret, NULLIFIER_K);
     constrain_equal_base(ec_get_x(owner_pub), owner_pub_x);
     constrain_equal_base(ec_get_y(owner_pub), owner_pub_y);
-    computed = poseidon_hash(DOMAIN_NULLIFIER, owner_pub_x, owner_pub_y, owner_secret);
+    # HAZOP H-8 fix: include dao_escrow_bulla for per-instance unique nullifiers
+    computed = poseidon_hash(DOMAIN_NULLIFIER, owner_pub_x, owner_pub_y, owner_secret, dao_escrow_bulla);
     constrain_equal_base(computed, owner_nullifier);
     constrain_instance(owner_pub_x); constrain_instance(owner_pub_y);
     constrain_instance(owner_nullifier); tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce);
