@@ -6,20 +6,10 @@ license = "AGPL-3.0-only"
 edition = "2021"
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [dependencies]
-dwow-sdk = { path = "../../sdk", features = ["wasm"] }
-dwow-serial = { path = "../../serial", features = ["derive", "crypto"] }
-thiserror = "2.0.17"
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.2.8", features = ["custom"] }
-dwow-sdk = { path = "../../sdk", features = ["wasm"] }
-
-[features]
-default = []
-no-entrypoint = []
+blake3 = "1.8.2"
 
 [lints]
 workspace = true
