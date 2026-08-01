@@ -27,7 +27,7 @@ use dwow_serial::{SerialDecodable, SerialEncodable};
 use pasta_curves::pallas;
 
 use super::{pasta_prelude::*, poseidon_hash, ContractId};
-use crate::{fp_from_bs58, fp_to_bs58, ty_from_fp, ContractError};
+use crate::{fp_from_bs58, fp_to_bs58, ContractError};
 
 pub type FunctionCode = u8;
 

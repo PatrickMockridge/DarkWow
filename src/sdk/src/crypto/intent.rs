@@ -102,7 +102,7 @@ use dwow_serial::{SerialDecodable, SerialEncodable};
 use pasta_curves::{group::ff::PrimeField, pallas};
 
 use super::{poseidon_hash, PublicKey, SecretKey};
-use crate::{fp_from_bs58, fp_to_bs58, ty_from_fp, ContractError};
+use crate::{fp_from_bs58, fp_to_bs58, ContractError};
 
 /// Domain separator for intent commitment hash
 const INTENT_COMMITMENT_DOMAIN: u64 = 9001;
