@@ -302,6 +302,10 @@ pub struct WithdrawParams {
 
     /// Optional user-specified max fee in basis points (0 = use contract default)
     pub max_fee_bp: Option<u64>,
+
+    /// Merkle root the ZK circuit verified this withdrawal against.
+    /// Must exist in the bridge_roots tree (Merkle inclusion check).
+    pub expected_root: pallas::Base,
 }
 
 impl dwow_serial::Encodable for WithdrawParams {
@@ -321,7 +325,7 @@ impl dwow_serial::Decodable for WithdrawParams {
 
 impl WithdrawParams {
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(119 + self.proof.len());
+        let mut b = Vec::with_capacity(151 + self.proof.len());
         b.extend_from_slice(&self.nullifier.to_bytes());
         b.extend_from_slice(&self.recipient_hash);
         b.extend_from_slice(&self.deposit_leaf.to_repr());
@@ -333,23 +337,26 @@ impl WithdrawParams {
         b.push(self.feed_mode);
         b.push(self.max_fee_bp.is_some() as u8);
         if let Some(v) = self.max_fee_bp { b.extend_from_slice(&v.to_le_bytes()); }
+        b.extend_from_slice(&self.expected_root.to_repr());
         b
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 119 { return Err(ContractError::IoError("WithdrawParams: too short".into())); }
+        if data.len() < 151 { return Err(ContractError::IoError("WithdrawParams: too short".into())); }
         let nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("WithdrawParams: invalid nullifier".into()))?;
         let recipient_hash: [u8;32] = data[32..64].try_into().unwrap();
         let deposit_leaf = Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap())).ok_or_else(|| ContractError::IoError("WithdrawParams: invalid deposit_leaf".into()))?;
         let amount = u64::from_le_bytes(data[96..104].try_into().unwrap());
         let proof_len = data[104] as usize; let p = 105+proof_len;
-        if data.len() < p+16+1+1+1 { return Err(ContractError::IoError("WithdrawParams: proof truncated".into())); }
+        if data.len() < p+16+1+1+1+32 { return Err(ContractError::IoError("WithdrawParams: proof truncated".into())); }
         let proof = data[105..p].to_vec();
         let fee = u64::from_le_bytes(data[p..p+8].try_into().unwrap());
         let timeout_height = u64::from_le_bytes(data[p+8..p+16].try_into().unwrap());
         let feed_mode = data[p+16];
         let has_mfb = data[p+17] != 0;
-        let max_fee_bp = if has_mfb { if data.len() != p+26 { return Err(ContractError::IoError(format!("WithdrawParams: expected {} bytes, got {}", p+26, data.len()))); } Some(u64::from_le_bytes(data[p+18..p+26].try_into().unwrap())) } else { None };
-        Ok(WithdrawParams { nullifier, recipient_hash, deposit_leaf, amount, proof, fee, timeout_height, feed_mode, max_fee_bp })
+        let max_fee_bp = if has_mfb { if data.len() < p+26+32 { return Err(ContractError::IoError(format!("WithdrawParams: expected {} bytes, got {}", p+26+32, data.len()))); } Some(u64::from_le_bytes(data[p+18..p+26].try_into().unwrap())) } else { None };
+        let root_pos = if has_mfb { p+26 } else { p+18 };
+        let expected_root = Option::<pallas::Base>::from(pallas::Base::from_repr(data[root_pos..root_pos+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("WithdrawParams: invalid expected_root".into()))?;
+        Ok(WithdrawParams { nullifier, recipient_hash, deposit_leaf, amount, proof, fee, timeout_height, feed_mode, max_fee_bp, expected_root })
     }
 }
 

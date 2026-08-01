@@ -103,6 +103,8 @@ pub const BRIDGE_CONTRACT_HTLCS_TREE: &str = "htlcs";
 pub const BRIDGE_CONTRACT_HTLC_NULLIFIERS_TREE: &str = "htlc_nullifiers";
 pub const BRIDGE_CONTRACT_RELAYERS_TREE: &str = "relayers";
 pub const BRIDGE_CONTRACT_GOVERNANCE_REPORTS_TREE: &str = "governance_reports";
+// Contract Merkle tree (matches Box/Purse pattern — Sinsemilla, depth 32)
+pub const BRIDGE_CONTRACT_BRIDGE_ROOTS_TREE: &str = "bridge_roots";
 
 // These are keys inside the info tree
 pub const BRIDGE_CONTRACT_DB_VERSION: &[u8] = b"db_version";
@@ -112,6 +114,10 @@ pub const PROMISSORY_NOTE_CONTRACT_ID_KEY: &[u8] = b"promissory_note_cid";
 pub const BRIDGE_CONTRACT_PURSE_CONTRACT_ID: &[u8] = b"purse_cid";
 pub const BRIDGE_CONTRACT_STATE: &[u8] = b"state";
 pub const BRIDGE_CONTRACT_EXTERNAL_CHAIN: &[u8] = b"external_chain";
+/// Latest Merkle root of all bridge deposits (Sinsemilla tree, depth 32)
+pub const BRIDGE_CONTRACT_LATEST_BRIDGE_ROOT: &[u8] = b"latest_bridge_root";
+/// Serialized MerkleTree state (BridgeTree<MerkleNode, usize, 32>)
+pub const BRIDGE_CONTRACT_BRIDGE_MERKLE_TREE: &[u8] = b"bridge_merkle_tree";
 
 // zkas circuit namespaces
 /// zkas deposit circuit namespace

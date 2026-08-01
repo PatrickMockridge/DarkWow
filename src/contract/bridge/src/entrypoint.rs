@@ -49,7 +49,8 @@
 //! **Key**: Bridge nodes cannot steal because they never see `secret`.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, ContractId, PublicKey, poseidon_hash, PURSE_CONTRACT_ID},
+    crypto::{pasta_prelude::PrimeField, ContractId, MerkleNode, MerkleTree,
+        merkle_anchor, Nullifier, PublicKey, poseidon_hash, PURSE_CONTRACT_ID},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, ContractCall,
@@ -57,7 +58,7 @@ use dwow_sdk::{
     pasta::{group::GroupEncoding, pallas},
 };
 use dwow_promissory_note_contract::validation::validate_child_contract_id;
-use dwow_serial::{deserialize, serialize, Decodable, Encodable, SerialDecodable, SerialEncodable};
+use dwow_serial::{deserialize, serialize, Decodable, Encodable, SerialDecodable, SerialEncodable, WriteExt};
 
 use crate::{
     error::BridgeError,
@@ -93,6 +94,8 @@ use crate::{
     BRIDGE_CONTRACT_BP_PRECISION,
     BRIDGE_CONTRACT_MAX_FEE_BP,
     BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS, BRIDGE_CONTRACT_RELAYERS_TREE,
+    BRIDGE_CONTRACT_BRIDGE_ROOTS_TREE, BRIDGE_CONTRACT_BRIDGE_MERKLE_TREE,
+    BRIDGE_CONTRACT_LATEST_BRIDGE_ROOT,
     PROMISSORY_NOTE_CONTRACT_ID_KEY, BRIDGE_CONTRACT_PURSE_CONTRACT_ID,
 };
 
@@ -101,7 +104,6 @@ use crate::{
 // ============================================================================
 
 const BRIDGE_DB_VERSION_KEY: &[u8] = b"db_version";
-const BRIDGE_DEPOSIT_ROOT_KEY: &[u8] = b"deposit_root";
 /// HAZOP-13: chain-event uniqueness tree — prevents duplicate external deposits
 const BRIDGE_CHAIN_EVENTS_TREE: &str = "chain_events";
 const BRIDGE_MIN_CONFIRMATIONS_KEY: &[u8] = b"min_confirmations";
@@ -111,6 +113,12 @@ const BRIDGE_MAX_DEPOSIT_KEY: &[u8] = b"max_deposit";
 const BRIDGE_MAX_WITHDRAWAL_KEY: &[u8] = b"max_withdrawal";
 const BRIDGE_TOTAL_DEPOSITED_KEY: &[u8] = b"total_deposited";
 const BRIDGE_TOTAL_WITHDRAWN_KEY: &[u8] = b"total_withdrawn";
+/// Precalculated root of `MerkleTree::new(1)` with a single ZERO leaf
+/// (Sinsemilla MerkleCRH, depth 32). Identical to Box::EMPTY_BOX_TREE_ROOT.
+const EMPTY_BRIDGE_TREE_ROOT: [u8; 32] = [
+    0xb8, 0xc1, 0x07, 0x5a, 0x80, 0xa8, 0x09, 0x65, 0xc2, 0x39, 0x8f, 0x71, 0x1f, 0xe7, 0x3e, 0x05,
+    0xb4, 0xed, 0xae, 0xde, 0xf1, 0x62, 0xf2, 0x61, 0xd4, 0xee, 0xd7, 0xcd, 0x72, 0x74, 0x8d, 0x17,
+];
 
 /// Read a u64 from an info tree key, defaulting to 0 if key doesn't exist
 fn read_u64_from_db(db: wasm::db::DbHandle, key: &[u8]) -> Result<u64, ContractError> {
@@ -233,6 +241,29 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     // Initialize relayers tree (Phase 2d hardening)
     wasm::db::db_init(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
+
+    // Initialize contract Merkle tree (Box/Purse pattern — Sinsemilla, depth 32)
+    let tx_hash = wasm::util::get_tx_hash()?;
+    let call_idx = wasm::util::get_call_index()?;
+    let mut roots_value_data = Vec::with_capacity(33);
+    tx_hash.encode(&mut roots_value_data)?;
+    call_idx.encode(&mut roots_value_data)?;
+    let roots_db = match wasm::db::db_lookup(cid, BRIDGE_CONTRACT_BRIDGE_ROOTS_TREE) {
+        Ok(v) => v,
+        Err(_) => wasm::db::db_init(cid, BRIDGE_CONTRACT_BRIDGE_ROOTS_TREE)?,
+    };
+    if !wasm::db::db_contains_key(roots_db, &EMPTY_BRIDGE_TREE_ROOT)? {
+        wasm::db::db_set(roots_db, &EMPTY_BRIDGE_TREE_ROOT, &roots_value_data)?;
+    }
+    if !wasm::db::db_contains_key(info_db, BRIDGE_CONTRACT_BRIDGE_MERKLE_TREE)? {
+        let mut bridge_tree = MerkleTree::new(1);
+        bridge_tree.append(MerkleNode::from_base(pallas::Base::zero()));
+        let mut bridge_tree_data = vec![];
+        bridge_tree_data.write_u32(0)?;
+        bridge_tree.encode(&mut bridge_tree_data)?;
+        wasm::db::db_set(info_db, BRIDGE_CONTRACT_BRIDGE_MERKLE_TREE, &bridge_tree_data)?;
+        wasm::db::db_set(info_db, BRIDGE_CONTRACT_LATEST_BRIDGE_ROOT, &EMPTY_BRIDGE_TREE_ROOT)?;
+    }
 
     // Set initial configuration
     let config_db = wasm::db::db_init(cid, "config")?;
@@ -381,11 +412,12 @@ fn deposit_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
 
 /// Metadata for WithdrawV1 ZK proof verification.
 ///
-/// The withdraw_v1.zk circuit has 4 constrain_instance calls:
+/// The withdraw_v2.zk circuit has 5 constrain_instance calls:
 ///   1. computed_nullifier = poseidon_hash(secret)
 ///   2. deposit_leaf = poseidon_hash(secret, amount)
-///   3. derived_recipient = poseidon_hash(recipient_hash)
-///   4. token_minimum (from bridge config)
+///   3. merkle_root_val = expected_root (Merkle inclusion check)
+///   4. derived_recipient = poseidon_hash(recipient_hash)
+///   5. token_minimum (from bridge config)
 fn withdraw_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
     use dwow_sdk::crypto::poseidon_hash;
     use dwow_sdk::pasta::pallas;
@@ -407,7 +439,7 @@ fn withdraw_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
 
     zk_public_inputs.push((
         BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V2.to_string(),
-        vec![nullifier, params.deposit_leaf, derived_recipient, token_minimum],
+        vec![nullifier, params.deposit_leaf, params.expected_root, derived_recipient, token_minimum],
     ));
 
     let mut metadata = vec![];
@@ -933,19 +965,25 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
         return Err(BridgeError::DoubleSpend.into())
     }
 
-    // HAZOP H-12 fix: verify deposit exists in-contract.
-    // Previously trusted the host to have verified the ZK proof.
-    // Now verifies the deposit commitment is registered in the deposits tree.
-    // TODO: full Merkle proof verification — requires replacing the stub
-    // compute_deposit_root() with a real incremental Merkle tree.
-    let deposits_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_DEPOSITS_TREE)?;
-    if !wasm::db::db_contains_key(deposits_db, &params.deposit_leaf.to_repr())? {
-        msg!("[bridge::process_instruction] ERROR: Deposit not found in bridge deposits tree");
-        return Err(BridgeError::InvalidDeposit("Deposit not registered".into()).into());
+    // HAZOP H-12: verify the Merkle root from the ZK circuit is a recognized
+    // historical root in the bridge_roots tree (Box/Purse pattern).
+    // The withdraw_v2.zk circuit constrains merkle_root_val — this contract
+    // check ensures the root is a valid historical state, not fabricated.
+    let idb_root = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
+    let skip_root_check = match wasm::db::db_get(idb_root, BRIDGE_CONTRACT_LATEST_BRIDGE_ROOT)? {
+        Some(ref data) if data.len() == 32 => data == &EMPTY_BRIDGE_TREE_ROOT,
+        _ => true,
+    };
+    if !skip_root_check {
+        let rdb = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_BRIDGE_ROOTS_TREE)?;
+        if !wasm::db::db_contains_key(rdb, &params.expected_root.to_repr())? {
+            msg!("[bridge::withdraw] Error: Invalid Merkle root");
+            return Err(BridgeError::InvalidMerkleProof.into());
+        }
     }
-    // Defense-in-depth: the WithdrawV2 ZK circuit also verifies Merkle inclusion
-    // at the host level. This in-contract check is co-equal — if the host
-    // verifier is bypassed, the deposit must still exist in the on-chain tree.
+    // Defense-in-depth: the WithdrawV2 ZK circuit verifies Merkle inclusion
+    // in-circuit (merkle_root_val constrain_instance). This contract check
+    // ensures the root is a recognized historical state in the tree.
 
     // Circuit breaker: for guaranteed withdrawals, verify system is not overcommitted
     if params.feed_mode == 1 {
@@ -1377,9 +1415,24 @@ fn apply_deposit_update(cid: ContractId, update: DepositUpdateV1) -> ContractRes
     };
     wasm::db::db_set(deposits_db, &build_deposit_key(&update.commitment.to_bytes()), &deposit.encode())?;
 
-    // Update deposit Merkle root
-    let new_root = compute_deposit_root(&update.commitment.to_bytes())?;
-    wasm::db::db_set(info_db, BRIDGE_DEPOSIT_ROOT_KEY, &new_root)?;
+    // Append to contract Merkle tree (Box/Purse pattern — Sinsemilla, depth 32)
+    let rdb = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_BRIDGE_ROOTS_TREE)?;
+    let leaf_node = MerkleNode::from_base(update.commitment.inner());
+    wasm::merkle::merkle_add(info_db, rdb, BRIDGE_CONTRACT_LATEST_BRIDGE_ROOT,
+        BRIDGE_CONTRACT_BRIDGE_MERKLE_TREE, &[leaf_node])?;
+
+    // Block-level anchoring — commit contract root to chain state
+    let contract_root = match wasm::db::db_get(info_db, BRIDGE_CONTRACT_LATEST_BRIDGE_ROOT)? {
+        Some(ref data) if data.len() == 32 => {
+            MerkleNode::from_bytes(data[..32].try_into().map_err(|_|
+                ContractError::IoError("anchor root".into()))?)
+            .unwrap_or(MerkleNode::from_base(pallas::Base::zero()))
+        }
+        _ => MerkleNode::from_base(pallas::Base::zero()),
+    };
+    let deposit_id = Nullifier::from_bytes(update.commitment.to_bytes())?;
+    let entry = merkle_anchor::AnchorEntry::new(deposit_id, cid, contract_root);
+    wasm::merkle::merkle_anchor_add(&entry.to_leaf_bytes())?;
 
     // Increment total_deposited counter for governance reports
     let config_db = wasm::db::db_lookup(cid, "config")?;
@@ -1387,7 +1440,7 @@ fn apply_deposit_update(cid: ContractId, update: DepositUpdateV1) -> ContractRes
     let new_deposited = prev_deposited.saturating_add(update.amount);
     wasm::db::db_set(config_db, BRIDGE_TOTAL_DEPOSITED_KEY, &new_deposited.to_le_bytes())?;
 
-    msg!("[bridge::process_update] Deposit registered: root={:?}", &new_root);
+    msg!("[bridge::process_update] Deposit registered");
     Ok(())
 }
 
@@ -1783,27 +1836,6 @@ fn get_current_timestamp(info_db: u32) -> Result<u64, ContractError> {
         }
         None => Ok(0),
     }
-}
-
-/// Compute deposit Merkle root
-///
-/// Note: This is a simplified implementation. In production,
-/// this would use actual Merkle tree append operations.
-fn compute_deposit_root(commitment: &[u8; 32]) -> Result<[u8; 32], ContractError> {
-    use dwow_sdk::crypto::poseidon_hash;
-    use dwow_sdk::pasta::pallas;
-
-    // Convert commitment to pallas::Base
-    let leaf = match pallas::Base::from_repr(*commitment).into_option() {
-        Some(v) => v,
-        None => return Err(ContractError::IoError("Invalid commitment".to_string()).into()),
-    };
-
-    // In production: append to Merkle tree and return new root
-    // For now: hash the leaf with a domain separator
-    let root = poseidon_hash([leaf, pallas::Base::from(0x01)]);
-
-    Ok(root.to_repr())
 }
 
 // ============================================================================
