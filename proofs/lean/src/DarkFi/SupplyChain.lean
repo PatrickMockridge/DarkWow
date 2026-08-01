@@ -27,7 +27,7 @@ verifiable audit trail from genesis to any block height.
 
 - This proof models the invariant validated by `pow_reward_v1` in
   `src/contract/native_token/src/entrypoint/mod.rs:764-869`
-- The Pedersen homomorphism is the same property used in `mint_v1.zk`
+- The Pedersen homomorphism is the same property used in `mint_v2.zk`
   circuit constraints (lines 65-82)
 - The expected_reward function matches `src/sdk/src/blockchain.rs:114`
 - The apply_pow_reward writes match lines 1041-1059 of the entrypoint

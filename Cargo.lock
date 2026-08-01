@@ -3091,6 +3091,7 @@ version = "0.5.0"
 dependencies = [
  "arti-client",
  "async-trait",
+ "blake3",
  "ed25519-compact",
  "futures",
  "futures-rustls",

@@ -144,7 +144,7 @@ theorem zero_cond_nonzero (g : ZeroCondGadget)
 /--
 ## THEOREM: ZeroCond Is Sound for BurnV1
 
-In burn_v1.zk, zero_cond(coin_value, coin) is used so that
+In burn_v2.zk, zero_cond(coin_value, coin) is used so that
 dummy zero-value inputs (value=0) produce coin_incl=0 for the
 Merkle root computation. This matches the tree's zero leaf.
 

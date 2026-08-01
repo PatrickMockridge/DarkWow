@@ -7,11 +7,11 @@ All defs return String or List values for programmatic consumption.
 /-!
 # HAZOP HIGH Tier — Targeted Vulnerability Proofs (Risk 40-59)
 
-## HIGH-1/2: burn_v1.zk zero_cond Merkle Bypass (Risk 42/100)
+## HIGH-1/2: burn_v2.zk zero_cond Merkle Bypass (Risk 42/100)
 When coin_value = 0, zero_cond returns 0 instead of the coin hash. The Merkle proof
 verifies against the tree's zero leaf, not the actual coin.
 
-## HIGH-3: labor_market/refund_v1.zk Refund Check Skip (Risk 42/100)
+## HIGH-3: labor_market/refund_v2.zk Refund Check Skip (Risk 42/100)
 For non-milestone jobs, the refund amount constraint is vacuous — the guard
 passes trivially for any refund_amount.
 
@@ -25,11 +25,11 @@ Any one action consumes the nullifier for all three.
 namespace HAZOP.High
 
 -- ===========================================================================
--- HIGH-1/2: burn_v1.zk — zero_cond Merkle Bypass
+-- HIGH-1/2: burn_v2.zk — zero_cond Merkle Bypass
 -- ===========================================================================
 
 /--
-Models the zero_cond gate used in burn_v1.zk (both PN and NT variants).
+Models the zero_cond gate used in burn_v2.zk (both PN and NT variants).
 
 zero_cond(a, b):
   If a = 0: returns 0 (the value of `a`)
@@ -100,18 +100,18 @@ If the entrypoint enforces at least one real input, zero_cond is unnecessary.
 def burn_v1_zero_cond_fix : String := "less_than_strict(ZERO, coin_value) before zero_cond"
 
 /--
-THEOREM (HIGH-2): Same attack applies to native_token/burn_v1.zk.
+THEOREM (HIGH-2): Same attack applies to native_token/burn_v2.zk.
 
 The NT burn circuit has identical structure: zero_cond(coin_value, coin) at line 70.
 The attack and fix are identical.
 -/
 
 -- ===========================================================================
--- HIGH-3: labor_market/refund_v1.zk — Refund Amount Check Skipped
+-- HIGH-3: labor_market/refund_v2.zk — Refund Amount Check Skipped
 -- ===========================================================================
 
 /--
-Models the refund_v1.zk milestone logic.
+Models the refund_v2.zk milestone logic.
 
 The circuit computes:
   has_milestones = is_not_equal(milestone_count, ZERO)   -- boolean

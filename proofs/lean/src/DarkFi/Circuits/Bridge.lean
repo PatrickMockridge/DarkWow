@@ -12,7 +12,7 @@ xmr_deposit_v1, zec_deposit_v1
 
 Orchard-class audit: verify all constrain_instance calls are derived in-circuit.
 
-Key finding: withdraw_v1.zk has 5 constrain_instance calls, but the metadata
+Key finding: withdraw_v2.zk has 5 constrain_instance calls, but the metadata
 function provides only 4 public inputs. The merkle_root_val from circuit
 line 46 (`constrain_instance(merkle_root_val)`) may not be wired through
 host verification. Documented as residual risk.
@@ -23,7 +23,7 @@ namespace Circuits
 /--
 ## Bridge: WithdrawV1 Circuit Instance-Derivation Binding
 
-File: src/contract/bridge/proof/withdraw_v1.zk (k=14)
+File: src/contract/bridge/proof/withdraw_v2.zk (k=14)
 
 5 constrain_instance calls:
 

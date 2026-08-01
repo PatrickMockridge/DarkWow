@@ -13,7 +13,7 @@ Six circuits with confirmed constraint gaps requiring targeted formal proofs.
 namespace HAZOP.Elevated
 
 -- ===========================================================================
--- ELEV-1: deposit_v1.zk — zero_cond bypass (Risk 35)
+-- ELEV-1: deposit_v2.zk — zero_cond bypass (Risk 35)
 -- ===========================================================================
 
 /--
@@ -33,15 +33,15 @@ def deposit_zero_cond_bypass : String :=
 def depositZeroCondFix : String := "less_than_strict(ZERO, amount) before zero_cond"
 
 -- ===========================================================================
--- ELEV-2: dex/cancel_swap_v1.zk — swap_id Incompatibility (Risk 35)
+-- ELEV-2: dex/cancel_swap_v2.zk — swap_id Incompatibility (Risk 35)
 -- ===========================================================================
 
 /--
 CRITICAL CROSS-CIRCUIT BUG: The cancel circuit computes swap_id differently
 from the create circuit.
 
-create_swap_v1.zk:  swap_id = poseidon_hash(computed_lock, request_token, request_amount)
-cancel_swap_v1.zk:  swap_id = poseidon_hash(lock_commitment)
+create_swap_v2.zk:  swap_id = poseidon_hash(computed_lock, request_token, request_amount)
+cancel_swap_v2.zk:  swap_id = poseidon_hash(lock_commitment)
 
 These are fundamentally different computations:
   H(lock, token, amount)  — 3 field elements as Poseidon input
@@ -78,14 +78,14 @@ def swap_id_mismatch : String :=
 /--
 THEOREM (ELEV-2 fix): Use the same swap_id derivation in cancel.
 
-Fix: cancel_swap_v1.zk must compute:
+Fix: cancel_swap_v2.zk must compute:
   swap_id = poseidon_hash(computed_lock, request_token, request_amount)
-using the same formula as create_swap_v1.zk.
+using the same formula as create_swap_v2.zk.
 -/
 def cancelSwapIdFix : String := "Use create's swap_id formula: H(lock, token, amount)"
 
 -- ===========================================================================
--- ELEV-3: drain_protection/exit_v1.zk — Incomplete Circuit (Risk 35)
+-- ELEV-3: drain_protection/exit_v2.zk — Incomplete Circuit (Risk 35)
 -- ===========================================================================
 
 /--
@@ -110,7 +110,7 @@ def exit_incomplete_circuit : String :=
 def exitCircuitStatus : String := "INCOMPLETE — do not use in production"
 
 -- ===========================================================================
--- ELEV-4: redeem_v1.zk — coin_value Not Checked for Zero (Risk 32)
+-- ELEV-4: redeem_v2.zk — coin_value Not Checked for Zero (Risk 32)
 -- ===========================================================================
 
 /--
@@ -140,7 +140,7 @@ circuit itself rejects non-zero receipt coins.
 def redeemZeroCheckFix : String := "constrain_equal_base(coin_value, ZERO) in-circuit"
 
 -- ===========================================================================
--- ELEV-5: dex/execute_swap_slippage_v1.zk — Field Division Integer Gap (Risk 30)
+-- ELEV-5: dex/execute_swap_slippage_v2.zk — Field Division Integer Gap (Risk 30)
 -- ===========================================================================
 
 /--
@@ -182,7 +182,7 @@ This avoids division entirely and works with integer semantics.
 def slippageFix : String := "Cross-multiplication: numerator <= amount * max_received"
 
 -- ===========================================================================
--- ELEV-6: dex/execute_swap_v1.zk — bool_check on u64 Values (Risk 30)
+-- ELEV-6: dex/execute_swap_v2.zk — bool_check on u64 Values (Risk 30)
 -- ===========================================================================
 
 /--

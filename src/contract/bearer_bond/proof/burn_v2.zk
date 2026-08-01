@@ -41,6 +41,7 @@ circuit "Burn_V2" {
     DOMAIN_TOK_COMMIT = witness_base(2);
     DOMAIN_TX_BINDING = witness_base(3);
     DOMAIN_COIN_COMMIT = witness_base(4);
+    DOMAIN_USER_DATA_ENC = witness_base(6);
     DOMAIN_SIGNATURE_SECRET = witness_base(7);
 
     # Derive public key from secret using Poseidon (not EC)
@@ -86,7 +87,8 @@ circuit "Burn_V2" {
     constrain_instance(root);
 
     # Encrypted user data
-    user_data_enc = poseidon_hash(DOMAIN_COIN_COMMIT, coin_user_data, user_data_blind);
+    # HAZOP H27 fix: use DOMAIN_USER_DATA_ENC, not DOMAIN_COIN_COMMIT
+    user_data_enc = poseidon_hash(DOMAIN_USER_DATA_ENC, coin_user_data, user_data_blind);
     constrain_instance(user_data_enc);
 
     # Reveal spend hook (can be used for cross-contract composition)
@@ -96,7 +98,8 @@ circuit "Burn_V2" {
     # RC5: without this binding, an attacker can sign with an arbitrary
     # signature_secret independent of the coin's secret. Pattern from
     # promissory_note/burn_v1.zk:87-98 (HAZOP H2 fix).
-    derived_signature_secret = poseidon_hash(DOMAIN_COIN_COMMIT, coin_secret, nullifier);
+    # HAZOP H26 fix: use DOMAIN_SIGNATURE_SECRET, not DOMAIN_COIN_COMMIT
+    derived_signature_secret = poseidon_hash(DOMAIN_SIGNATURE_SECRET, coin_secret, nullifier);
     constrain_equal_base(derived_signature_secret, signature_secret);
 
     # Derive signature public key using Schnorr-style Poseidon hash

@@ -20,7 +20,7 @@ namespace Circuits
 /--
 ## Promissory Note: BurnV1 Circuit Instance-Derivation Binding
 
-File: src/contract/promissory_note/proof/burn_v1.zk (k=11)
+File: src/contract/promissory_note/proof/burn_v2.zk (k=11)
 
 8 constrain_instance calls. Every one must be derived in-circuit.
 
@@ -88,7 +88,7 @@ Depends on: poseidon_collision_resistance axiom from HashOps.
 /--
 ## Promissory Note: MintV1 Circuit Instance-Derivation Binding
 
-File: src/contract/promissory_note/proof/mint_v1.zk (k=11)
+File: src/contract/promissory_note/proof/mint_v2.zk (k=11)
 
 7 constrain_instance calls.
 
@@ -142,7 +142,7 @@ All 7 public inputs are now derived in-circuit. Host-verified.
 /--
 ## Promissory Note: TokenMintV1 Circuit Instance-Derivation Binding
 
-File: src/contract/promissory_note/proof/token_mint_v1.zk (k=11)
+File: src/contract/promissory_note/proof/token_mint_v2.zk (k=11)
 
 6 constrain_instance calls.
 
@@ -186,7 +186,7 @@ that defers authorization to the minting phase.
 /--
 ## Promissory Note: BlindOutputV1 Circuit Instance-Derivation Binding
 
-File: src/contract/promissory_note/proof/blind_output_v1.zk (k=11)
+File: src/contract/promissory_note/proof/blind_output_v2.zk (k=11)
 
 5 constrain_instance calls.
 
@@ -222,7 +222,7 @@ coin commitment hash).
 /--
 ## Promissory Note: RedeemV1 Circuit Instance-Derivation Binding
 
-File: src/contract/promissory_note/proof/redeem_v1.zk (k=11)
+File: src/contract/promissory_note/proof/redeem_v2.zk (k=11)
 
 6 constrain_instance calls. UNIQUE: coin_value is exposed as public input
 so the entrypoint can verify it is zero.
@@ -280,7 +280,7 @@ This is a valid defense-in-depth pattern, not an Orchard-class vulnerability.
 /--
 ## BearerBond: BurnV1 Circuit Instance-Derivation Binding
 
-File: src/contract/bearer_bond/proof/burn_v1.zk (k=11)
+File: src/contract/bearer_bond/proof/burn_v2.zk (k=11)
 
 Follows same pattern as PN BurnV1 with an additional `maturity_block` field
 in the coin commitment hash:

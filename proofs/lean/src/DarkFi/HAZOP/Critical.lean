@@ -9,19 +9,19 @@ All defs return String or List values for programmatic consumption.
 
 Four circuits with confirmed exploit vectors requiring immediate deeper formal verification.
 
-## CRIT-1: governance_report_v1.zk (Risk 80/100)
+## CRIT-1: governance_report_v2.zk (Risk 80/100)
 `total_collateral`, `total_debt`, `interest_accrued` are labeled "Public inputs" but NEVER
 `constrain_instance`'d. Any values pass the circuit.
 
-## CRIT-2: liquidate_v1.zk (Risk 72/100)
+## CRIT-2: liquidate_v2.zk (Risk 72/100)
 Price/ratio check computed but NEITHER constrained NOR compared. Liquidation condition
 not enforced — any position is liquidatable regardless of collateralization.
 
-## CRIT-3: withdraw_v1.zk (Risk 63/100)
+## CRIT-3: withdraw_v2.zk (Risk 63/100)
 `recipient_hash` is a free witness not bound to depositor identity. Front-running attack
 steals in-flight withdrawals by changing the recipient.
 
-## CRIT-4: aggregate_v1.zk (Risk 60/100)
+## CRIT-4: aggregate_v2.zk (Risk 60/100)
 Boundary checks `min_result <= result <= max_result` are NO-OP — subtraction computed
 but never used in any constraint.
 -/
@@ -29,11 +29,11 @@ but never used in any constraint.
 namespace HAZOP.Critical
 
 -- ===========================================================================
--- CRIT-1: governance_report_v1.zk — Free Public Inputs
+-- CRIT-1: governance_report_v2.zk — Free Public Inputs
 -- ===========================================================================
 
 /--
-Models the governance_report_v1.zk circuit constraint system.
+Models the governance_report_v2.zk circuit constraint system.
 
 The circuit claims to verify that a governance report's values match on-chain state.
 However, `total_collateral`, `total_debt`, and `interest_accrued` are labeled as
@@ -52,7 +52,7 @@ structure GovernanceReportCircuit where
   reporter_pub_y : Int      -- constrained via signature
 
 /--
-THEOREM (CRIT-1): governance_report_v1.zk accepts arbitrary total_collateral.
+THEOREM (CRIT-1): governance_report_v2.zk accepts arbitrary total_collateral.
 
 Since `total_collateral` is never `constrain_instance`'d, the prover can set it
 to ANY value and the circuit will accept it.
@@ -102,7 +102,7 @@ Fix pattern:
 -/
 
 -- ===========================================================================
--- CRIT-1 (Layer 2): governance_report_v1.zk — Division by zero risk
+-- CRIT-1 (Layer 2): governance_report_v2.zk — Division by zero risk
 -- ===========================================================================
 
 /--
@@ -121,11 +121,11 @@ def governance_report_division_by_zero : String :=
   "CRIT-1 L2: total_debt=0 → collateral_ratio_bps=0 → less_than_strict check wraps in field arithmetic"
 
 -- ===========================================================================
--- CRIT-2: liquidate_v1.zk — Missing Collateralization Check
+-- CRIT-2: liquidate_v2.zk — Missing Collateralization Check
 -- ===========================================================================
 
 /--
-Models the liquidate_v1.zk circuit. The circuit computes `debt_value` and
+Models the liquidate_v2.zk circuit. The circuit computes `debt_value` and
 `collateral_value` but NEVER compares them. The comment at lines 58-64 says
 the ratio check should use `less_than_strict` but this is NOT executed.
 
@@ -182,11 +182,11 @@ def liquidate_free_price : String :=
   "CRIT-2 L2: current_price is free witness; no oracle binding; Mallory can set price=0"
 
 -- ===========================================================================
--- CRIT-3: withdraw_v1.zk — Recipient Hash Front-Running
+-- CRIT-3: withdraw_v2.zk — Recipient Hash Front-Running
 -- ===========================================================================
 
 /--
-Models the withdraw_v1.zk circuit. The `recipient_hash` is a free witness.
+Models the withdraw_v2.zk circuit. The `recipient_hash` is a free witness.
 `derived_recipient = poseidon_hash(recipient_hash)` is `constrain_instance`'d,
 but `recipient_hash` is not bound to the depositor's identity.
 
@@ -255,11 +255,11 @@ The attack is permissionless once the transaction is in the mempool.
 -/
 
 -- ===========================================================================
--- CRIT-4: aggregate_v1.zk — Boundary Check NO-OP
+-- CRIT-4: aggregate_v2.zk — Boundary Check NO-OP
 -- ===========================================================================
 
 /--
-Models the oracle aggregate_v1.zk circuit. The circuit computes:
+Models the oracle aggregate_v2.zk circuit. The circuit computes:
   diff_max = base_sub(max_result, result)
   diff_min = base_sub(result, min_result)
 

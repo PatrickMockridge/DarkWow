@@ -130,7 +130,7 @@ axiom nullifier_determinism (secret coin : Int) : Prop
 /--
 ## Signature Binding — H2 Fix Verification
 
-In burn_v1.zk (both PN and NT), the signature is bound to the coin owner:
+In burn_v2.zk (both PN and NT), the signature is bound to the coin owner:
 
   derived_signature_secret = poseidon_hash(coin_secret, nullifier)
   constrain_equal_base(derived_signature_secret, signature_secret)
@@ -168,7 +168,7 @@ axiom merkle_inclusion_foundation (leaf pos root : Int) (path : List Int) : Prop
 /--
 ## Zero-Cond Soundness — Dummy Input Prevention
 
-In burn_v1.zk: coin_incl = zero_cond(coin_value, coin)
+In burn_v2.zk: coin_incl = zero_cond(coin_value, coin)
 
 When coin_value=0: coin_incl = 0 (matches tree's empty leaf)
 When coin_value≠0: coin_incl = coin (real coin for Merkle proof)
