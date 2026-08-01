@@ -93,6 +93,11 @@ AEAD_KEY_SIZE = 32
 AEAD_NONCE = b'\x00' * 12
 AEAD_TAG_SIZE = 16  # Poly1305 tag
 
+# Domain separator for nullifier computation.
+# Rust: src/sdk/src/crypto/constants.rs: DRK_POSEIDON_DOMAIN_NULLIFIER = pallas::Base::from_raw([1,0,0,0])
+# Poseidon hash input ordering: [DOMAIN, secret, coin_hash]
+DRK_POSEIDON_DOMAIN_NULLIFIER = 1  # pallas::Base::from_raw([1, 0, 0, 0])
+
 
 def fp_sqrt(a: int) -> Optional[int]:
     """Tonelli-Shanks for sqrt mod PALLAS_P."""
@@ -269,11 +274,55 @@ def cap_commitment(pub_x: int, pub_y: int, value: int, token_id: int,
 
 
 def nullifier(secret: int, commitment: bytes) -> bytes:
-    """Compute nullifier N = Poseidon(secret, coin_commitment).
-    Matches Rust Nullifier::new() = poseidon_hash([secret.inner(), coin_hash]).
-    Published on-chain to prevent double-spending."""
+    """Compute nullifier N = Poseidon(DOMAIN, secret, coin_commitment).
+    Matches Rust Nullifier::new() = poseidon_hash([DRK_POSEIDON_DOMAIN_NULLIFIER, secret.inner(), coin_hash]).
+    Published on-chain to prevent double-spending.
+    Domain separator prevents cross-context nullifier collision."""
     coin_int = int.from_bytes(commitment, 'little') % PALLAS_P
-    return poseidon_hash([secret % PALLAS_P, coin_int])
+    return poseidon_hash([DRK_POSEIDON_DOMAIN_NULLIFIER, secret % PALLAS_P, coin_int])
+
+
+class Nullifier:
+    """Typed nullifier — matches src/sdk/src/crypto/nullifier.rs.
+    Wraps pallas::Base with zero-rejection and canonical encoding enforcement.
+    Not raw bytes — the type system prevents confusion with commitments/blinds."""
+    __slots__ = ('_inner',)
+    _inner: int  # pallas::Base
+
+    def __init__(self, inner: int):
+        if inner == 0 or inner >= PALLAS_P:
+            raise ValueError("Nullifier must be non-zero canonical field element")
+        self._inner = inner
+
+    @staticmethod
+    def new(secret: int, coin_hash: int) -> 'Nullifier':
+        """Construct nullifier: poseidon_hash([DOMAIN, secret, coin_hash])."""
+        return Nullifier(poseidon_hash([DRK_POSEIDON_DOMAIN_NULLIFIER, secret % PALLAS_P, coin_hash % PALLAS_P]))
+
+    @staticmethod
+    def from_bytes(data: bytes) -> Optional['Nullifier']:
+        """Decode with zero-rejection and canonical check."""
+        if len(data) != 32:
+            return None
+        inner = int.from_bytes(data, 'little')
+        if inner == 0 or inner >= PALLAS_P:
+            return None
+        return Nullifier(inner)
+
+    def inner(self) -> int:
+        return self._inner
+
+    def to_bytes(self) -> bytes:
+        return self._inner.to_bytes(32, 'little')
+
+    def __eq__(self, other):
+        return isinstance(other, Nullifier) and self._inner == other._inner
+
+    def __hash__(self):
+        return hash(self._inner)
+
+    def __repr__(self):
+        return f"Nullifier({self._inner:#x})"
 
 
 # --- Key Types ---
@@ -1423,6 +1472,13 @@ class TokenInfo:
 #
 # Lifecycle per ocap.md §6 (Create → Discover → Hold → Exercise → Verify → Consume):
 #   CapRecord models the Hold phase — a discovered capability stored in SQLite.
+#
+# WP-7 CapStatus lifecycle (matches bin/dww/src/capability.rs:29):
+#   None (unspent) → "pending" (broadcast, unmined) → "processing" (mined, immature,
+#   < CONFIRMATION_DEPTH) → "spent" (≥ CONFIRMATION_DEPTH blocks). Pending caps
+#   that are never mined expire back to None.
+CONFIRMATION_DEPTH = 100  # blocks before processing → spent
+
 @dataclass
 class CapRecord:
     """Held capability — matches bin/dww/src/walletdb.rs::CapRecord.
@@ -1450,6 +1506,11 @@ class CapRecord:
     action: Optional[str] = None           # From manifest — function name
     primitives: list = field(default_factory=list)   # Vec<Primitive> — typed composition
     barbs: list = field(default_factory=list)        # Vec<Barb> — composed barb set
+    # WP-7 capability status: None=unspent, "pending"=broadcast/unmined,
+    # "processing"=mined/immature, "spent"=confirmed
+    cap_status: Optional[str] = None
+    # Backward-compat: kept in dataclass fields for construction compat.
+    # Use cap_status for new code; revoked is synced via __post_init__.
     revoked: int = 0
     revoked_at_height: Optional[int] = None
     created_at_height: int = 0
@@ -1461,12 +1522,25 @@ class CapRecord:
     token_blind: str = ""                  # Use asset_blind
     reserved_by: Optional[str] = None      # ProvisionalState overlay (wallet.md §6.5)
 
+    def __post_init__(self):
+        """Sync cap_status and revoked. cap_status is authoritative."""
+        if self.cap_status is None and self.revoked:
+            self.cap_status = "spent"
+        elif self.cap_status == "spent" and not self.revoked:
+            self.revoked = 1
+        elif self.cap_status is not None and self.cap_status != "spent":
+            self.revoked = 0
+
     def spend_state(self) -> str:
-        """Effective spend-state (wallet.md §6.5). `revoked` is the confirmed
-        Spent state set by scan (ConfirmedState); `reserved_by` is the
-        provisional overlay (ProvisionalState) and never mutates `revoked`."""
-        if self.revoked:
+        """Effective spend-state (wallet.md §6.5). cap_status is the confirmed
+        Spent state set by scan (ConfirmedState); reserved_by is the
+        provisional overlay (ProvisionalState) and never mutates cap_status."""
+        if self.cap_status == "spent":
             return "Spent"
+        if self.cap_status == "processing":
+            return "Processing"
+        if self.cap_status == "pending":
+            return "Pending"
         if self.reserved_by:
             return "Reserved"
         return "Unspent"
@@ -1629,12 +1703,14 @@ CREATE TABLE IF NOT EXISTS held_capabilities (
     token_blind TEXT NOT NULL,
     revoked INTEGER NOT NULL DEFAULT 0,
     revoked_at_height INTEGER,
+    cap_status TEXT,            -- WP-7: NULL=unspent, pending, processing, spent
     reserved_by TEXT,
     created_at_height INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_held_capabilities_token_id ON held_capabilities(token_id);
 CREATE INDEX IF NOT EXISTS idx_held_capabilities_revoked ON held_capabilities(revoked);
+CREATE INDEX IF NOT EXISTS idx_held_capabilities_cap_status ON held_capabilities(cap_status);
 
 CREATE TABLE IF NOT EXISTS capability_proofs (
     cap_id TEXT PRIMARY KEY NOT NULL,
@@ -1830,10 +1906,15 @@ class WalletDb:
 
     # --- Coins (walletdb.rs:407-665) ---
 
-    def get_held_capabilities(self, revoked: bool) -> List[CapRecord]:
-        rows = self.conn.execute(
-            "SELECT * FROM held_capabilities WHERE revoked = ?", (1 if revoked else 0,)
-        ).fetchall()
+    def get_held_capabilities(self, revoked: Optional[bool] = None) -> List[CapRecord]:
+        """Get held capabilities. revoked=None returns all, True=spent, False=unspent.
+        Matches Rust WalletDb::get_held_capabilities(revoked: Option<bool>)."""
+        if revoked is None:
+            rows = self.conn.execute("SELECT * FROM held_capabilities").fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM held_capabilities WHERE revoked = ?", (1 if revoked else 0,)
+            ).fetchall()
         return [CapRecord(**dict(r)) for r in rows]
 
     def get_capabilities_for_token(self, token_id: str, revoked: bool) -> List[CapRecord]:
@@ -1843,15 +1924,28 @@ class WalletDb:
         ).fetchall()
         return [CapRecord(**dict(r)) for r in rows]
 
-    def mark_revoked(self, cap_id: str, block_height: int):
+    def set_cap_status(self, cap_id: str, status: str, height: int):
+        """WP-7: set capability lifecycle status. Matches walletdb.rs:723."""
+        revoked_val = 1 if status == "spent" else 0
         self.conn.execute(
-            "UPDATE held_capabilities SET revoked = 1, revoked_at_height = ? WHERE cap_id = ?",
-            (block_height, cap_id))
+            "UPDATE held_capabilities SET cap_status = ?, revoked = ?, revoked_at_height = ? WHERE cap_id = ?",
+            (status, revoked_val, height, cap_id))
         self.conn.commit()
+
+    def clear_cap_status(self, cap_id: str):
+        """WP-7: revert cap_status to None (unspent). Matches walletdb.rs:773."""
+        self.conn.execute(
+            "UPDATE held_capabilities SET cap_status = NULL, revoked = 0, revoked_at_height = NULL WHERE cap_id = ?",
+            (cap_id,))
+        self.conn.commit()
+
+    def mark_revoked(self, cap_id: str, block_height: int):
+        """Backward-compat: delegates to set_cap_status('spent')."""
+        self.set_cap_status(cap_id, "spent", block_height)
 
     def mark_retained(self, cap_id: str):
         self.conn.execute(
-            "UPDATE held_capabilities SET revoked = 0, revoked_at_height = NULL WHERE cap_id = ?",
+            "UPDATE held_capabilities SET cap_status = NULL, revoked = 0, revoked_at_height = NULL WHERE cap_id = ?",
             (cap_id,))
         self.conn.commit()
 
@@ -1859,10 +1953,10 @@ class WalletDb:
         self.conn.execute(
             "INSERT OR IGNORE INTO held_capabilities (cap_id, value, token_id, spend_hook, user_data, "
             "leaf_position, secret, cap_blind, value_blind, token_blind, revoked, "
-            "revoked_at_height, created_at_height) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "revoked_at_height, cap_status, created_at_height) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (coin.cap_id, coin.value, coin.token_id, coin.spend_hook, coin.user_data,
              coin.leaf_position, coin.secret, coin.cap_blind, coin.value_blind,
-             coin.token_blind, coin.revoked, coin.revoked_at_height, coin.created_at_height))
+             coin.token_blind, coin.revoked, coin.revoked_at_height, coin.cap_status, coin.created_at_height))
         if proof:
             self.conn.execute(
                 "INSERT OR IGNORE INTO capability_proofs (cap_id, merkle_proof, merkle_root) "
@@ -1892,10 +1986,10 @@ class WalletDb:
     # --- Provisional state: capability reservation + pending txs (wallet.md §6.5) ---
 
     def get_unspent_unreserved(self, token_id: str) -> List[CapRecord]:
-        """Selectable capabilities: unspent (revoked=0) AND unreserved. A cap in
+        """Selectable capabilities: cap_status IS NULL AND unreserved. A cap in
         the Reserved state SHALL NOT be selected (wallet.md §6.2)."""
         rows = self.conn.execute(
-            "SELECT * FROM held_capabilities WHERE token_id = ? AND revoked = 0 "
+            "SELECT * FROM held_capabilities WHERE token_id = ? AND cap_status IS NULL "
             "AND reserved_by IS NULL ORDER BY cap_id", (token_id,)).fetchall()
         return [CapRecord(**dict(r)) for r in rows]
 
@@ -2723,6 +2817,20 @@ class Transaction:
     fee: int = 0  # convenience field — in Rust, fee is extracted by FeeExtractor
     coinbase: Optional[CoinbaseTransaction] = None  # wallet-model convenience field
 
+    def txid(self) -> str:
+        """Derive a deterministic transaction ID from call data + nullifiers.
+        Matches blake3 hash over encoded tx in Rust."""
+        import hashlib
+        h = hashlib.blake2b(digest_size=32, person=b"DarkFi_TxId")
+        for call in self.contract_calls:
+            h.update(call.contract_id)
+            h.update(call.data)
+        for nf in self.nullifiers:
+            h.update(nf)
+        if self.coinbase:
+            h.update(self.coinbase.encrypted_note)
+        return h.hexdigest()[:16]
+
 
 @dataclass
 class BlockHeader:
@@ -2756,6 +2864,7 @@ class ScanCache:
     secrets: List[SecretKey] = field(default_factory=list)
     own_deploy_auths: Dict[bytes, SecretKey] = field(default_factory=dict)
     messages_buffer: List[str] = field(default_factory=list)
+    diagnostics: 'BlockScanDiagnostics' = field(default_factory=lambda: BlockScanDiagnostics())
 
     def log(self, msg: str):
         self.messages_buffer.append(msg)
@@ -2764,6 +2873,33 @@ class ScanCache:
         msgs = self.messages_buffer.copy()
         self.messages_buffer.clear()
         return msgs
+
+
+@dataclass
+class BlockScanDiagnostics:
+    """Per-barrier diagnostic counters. Distinguishes 'nothing to report' from 'everything failed.'
+    Matches Rust scan.rs:202 BlockScanDiagnostics exactly."""
+    aead_decode_attempts: int = 0
+    aead_decrypt_attempts: int = 0
+    aead_decrypt_successes: int = 0
+    capability_construct_attempts: int = 0
+    capability_construct_successes: int = 0
+    nullifiers_matched: int = 0
+    manifest_misses: int = 0
+    derivation_failures: int = 0
+
+
+@dataclass
+class BlockScanResult:
+    """Result of scanning a block — matches Rust scan.rs:185 BlockScanResult.
+    Rich return type instead of bool — caller can inspect diagnostics."""
+    native_outputs: list = field(default_factory=list)       # List[NativeTokenDiscovery]
+    capabilities: list = field(default_factory=list)          # List[CapabilityDiscovery]
+    published_nullifiers: list = field(default_factory=list)  # List[NullifierRecord]
+    deployments: list = field(default_factory=list)           # List[DeploymentDiscovery]
+    zkas_binaries: list = field(default_factory=list)         # List[ZkasBinaryDiscovery]
+    messages: list = field(default_factory=list)              # operator-facing log messages
+    diagnostics: BlockScanDiagnostics = field(default_factory=BlockScanDiagnostics)
 
 
 # --- Helper: AEAD decrypt with all secrets ---
@@ -2987,6 +3123,7 @@ NT_FUNC_BURN_V1 = 0x02
 NT_FUNC_TRANSFER_V1 = 0x03
 NT_FUNC_SPEND_V1 = 0x04
 NT_FUNC_POW_REWARD_V1 = 0x05
+NT_FUNC_FEE_COLLECT_V1 = 0x06    # Miner fee coin discovery — same semantics as PoWRewardV1
 
 
 # --- Coinbase handler (Path 1) ---
@@ -3001,14 +3138,15 @@ def _scan_native_token(tx: Transaction, scan_cache: ScanCache,
     capability path — zero crossover.
 
     Lifecycle handled here:
-      PoWRewardV1 (0x05) → Mint discovery: decrypt output note → insert held_capability
-      TransferV1  (0x03) → Spend detection: check nullifiers → revoke.
-                            Receive discovery: decrypt output notes → insert
-      BurnV1      (0x02) → Spend detection: check nullifiers → revoke
-      SpendV1     (0x04) → Spend detection: check nullifier → revoke.
-                            Change discovery: decrypt output note → insert
-      FeeV1       (0x00) → Spend detection: check nullifier → revoke.
-                            Change discovery: decrypt output note → insert
+      PoWRewardV1  (0x05) → Mint discovery: decrypt output note → insert held_capability
+      FeeCollectV1 (0x06) → Mint discovery: decrypt output note → insert (miner fee coin)
+      TransferV1   (0x03) → Spend detection: check nullifiers → revoke.
+                             Receive discovery: decrypt output notes → insert
+      BurnV1       (0x02) → Spend detection: check nullifiers → revoke
+      SpendV1      (0x04) → Spend detection: check nullifier → revoke.
+                             Change discovery: decrypt output note → insert
+      FeeV1        (0x00) → Spend detection: check nullifier → revoke.
+                             Change discovery: decrypt output note → insert
 
     """
 
@@ -3042,7 +3180,7 @@ def _scan_native_token(tx: Transaction, scan_cache: ScanCache,
         # SpendV1 (0x04): change output
         # FeeV1 (0x00): change output
         if func in (NT_FUNC_POW_REWARD_V1, NT_FUNC_TRANSFER_V1,
-                     NT_FUNC_SPEND_V1, NT_FUNC_FEE_V1):
+                     NT_FUNC_SPEND_V1, NT_FUNC_FEE_V1, NT_FUNC_FEE_COLLECT_V1):
             if _discover_native_token_outputs(params, scan_cache, wallet_db, height, func):
                 found_any = True
 
@@ -3081,7 +3219,7 @@ def _detect_native_token_spends(params: bytes, func: int,
         return
 
     # Check each held cap against published nullifiers
-    held = wallet_db.get_held_capabilities()
+    held = wallet_db.get_held_capabilities(False)
     for cap in held:
         if cap.revoked:
             continue
@@ -3101,9 +3239,11 @@ def _detect_native_token_spends(params: bytes, func: int,
             int.from_bytes(base58.b58decode(cap.cap_blind), 'little'))
         cap_nullifier = nullifier(secret_int, commitment)
         if cap_nullifier in published:
-            cap.revoked = True
+            cap.cap_status = "spent"
+            cap.revoked = 1
             cap.revoked_at_height = height
             wallet_db.mark_revoked(cap.cap_id, height)
+            scan_cache.diagnostics.nullifiers_matched += 1
             scan_cache.log(
                 f"  [NATIVE_TOKEN] Spend detected: cap {cap.cap_id[:8]} "
                 f"revoked at height {height}")
@@ -3115,6 +3255,7 @@ def _discover_native_token_outputs(params: bytes, scan_cache: ScanCache,
     """Discover native token output notes by AEAD decrypting the call params.
 
     PoWRewardV1 (0x05): one output note (the minted coin)
+    FeeCollectV1 (0x06): one output note (miner fee coin — same as PoWReward: claim for new coin, excluded from nullifier extraction)
     TransferV1 (0x03): multiple output notes (receiver coins)
     SpendV1 (0x04): one output note (change coin)
     FeeV1 (0x00): one output note (change coin)
@@ -3134,6 +3275,7 @@ def _discover_native_token_outputs(params: bytes, scan_cache: ScanCache,
         trial_secrets.append(master_sk.derive_instance(nt_cid_bytes, height_bytes))
 
     while off < len(params) - 32:
+        scan_cache.diagnostics.aead_decode_attempts += 1
         try:
             aes, consumed = AeadEncryptedNote.decode(params[off:])
         except Exception:
@@ -3142,10 +3284,12 @@ def _discover_native_token_outputs(params: bytes, scan_cache: ScanCache,
 
         decrypted = False
         for sk in trial_secrets:
+            scan_cache.diagnostics.aead_decrypt_attempts += 1
             note = aes.decrypt_as(sk.inner, NativeToken.decode)
             if note is None:
                 continue
             decrypted = True
+            scan_cache.diagnostics.aead_decrypt_successes += 1
 
             pk = sk.to_public()
             pk_pt = AffinePoint.decompress(pk.compressed)
@@ -3175,7 +3319,7 @@ def _discover_native_token_outputs(params: bytes, scan_cache: ScanCache,
                 height, "NativeToken", note.encode())
 
             func_names = {0x00: "FeeV1", 0x03: "TransferV1",
-                          0x04: "SpendV1", 0x05: "PoWRewardV1"}
+                          0x04: "SpendV1", 0x05: "PoWRewardV1", 0x06: "FeeCollectV1"}
             fname = func_names.get(func, f"0x{func:02x}")
             scan_cache.log(
                 f"  [NATIVE_TOKEN] {fname} output: value={note.value} at height {height}")
@@ -3940,6 +4084,34 @@ def create_spend_hook_call(spend_hook: int, user_data: int,
     data = bytes([hook_func_code])
     data += user_data.to_bytes(32, 'little')
     return ContractCallLeaf(contract_id=hook_cid, data=data)
+
+
+def mark_tx_exercise(wallet_db: WalletDb, tx: 'Transaction', current_height: int):
+    """WP-7 C4+C5: mark consumed caps as Pending after broadcast. M-7 HAZOP fix.
+    Extracts nullifiers from tx, matches against held caps using
+    poseidon_hash([DOMAIN, secret, commitment]), sets cap_status='pending'.
+    Matches Rust lib.rs:1243 mark_tx_exercise."""
+    unspent = wallet_db.get_held_capabilities(False)
+    tx_nullifiers = [bytes(n) if isinstance(n, (bytes, bytearray)) else n.to_bytes()
+                     for n in tx.nullifiers if bytes(n) != b'\x00' * 32]
+    for cap in unspent:
+        if cap.cap_status is not None:
+            continue
+        if not cap.secret:
+            continue
+        import base58
+        secret_int = int.from_bytes(base58.b58decode(cap.secret), 'little')
+        sk = SecretKey(base58.b58decode(cap.secret))
+        pk_pt = AffinePoint.decompress(PublicKey.from_secret(sk).compressed)
+        commitment = cap_commitment(
+            pk_pt.x, pk_pt.y, cap.value,
+            _decode_token_id(cap.token_id),
+            int.from_bytes(base58.b58decode(cap.spend_hook), 'little') if cap.spend_hook else 0,
+            int.from_bytes(base58.b58decode(cap.user_data), 'little') if cap.user_data else 0,
+            int.from_bytes(base58.b58decode(cap.cap_blind), 'little'))
+        nf = nullifier(secret_int, commitment)
+        if nf in tx_nullifiers:
+            wallet_db.set_cap_status(cap.cap_id, "pending", current_height)
 
 
 def build_transfer(wallet_db: WalletDb, token_id_str: str, amount: int,

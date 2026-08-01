@@ -87,7 +87,7 @@ def run_fixture(fixture: dict) -> dict:
         db.insert_alias(alias, token_id)
 
     # Setup scan cache
-    cache = wm.ScanCache(notes_secrets=secrets)
+    cache = wm.ScanCache(secrets=secrets)
 
     # Scan blocks
     for block_fixture in fixture["blocks"]:
@@ -95,7 +95,7 @@ def run_fixture(fixture: dict) -> dict:
         wm.scan_block_linear(block, db, cache)
 
     # Compute results
-    coins = db.get_coins(False)
+    coins = db.get_held_capabilities(False)
     capabilities_records = db.get_capabilities()
 
     # Resolve capabilities
@@ -138,7 +138,7 @@ def _build_block(block_fixture: dict, secrets: List[wm.SecretKey]) -> wm.Block:
         pk = sk.to_public()
         nt = wm.NativeToken(
             value=cb["value"], token_id=0, spend_hook=0, user_data=0,
-            coin_blind=42, value_blind=99, token_blind=77, memo=b"")
+            cap_blind=42, value_blind=99, token_blind=77, memo=b"")
         aes = wm.AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
         block.transactions.append(wm.Transaction(
             coinbase=wm.CoinbaseTransaction(encrypted_note=aes.encode())))
@@ -167,12 +167,12 @@ def _build_block(block_fixture: dict, secrets: List[wm.SecretKey]) -> wm.Block:
             pk = sk.to_public()
             note_type = out["note_type"]
             if note_type == "PromissoryNote":
-                note = wm.PromissoryNote(
+                note = wm.NativeToken(
                     value=out["value"],
                     token_id=out.get("token_id", 1),
                     spend_hook=out.get("spend_hook", 0),
                     user_data=out.get("user_data", 0),
-                    coin_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,
+                    cap_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,
                     value_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_Q,
                     token_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,
                     memo=b"")
@@ -180,7 +180,7 @@ def _build_block(block_fixture: dict, secrets: List[wm.SecretKey]) -> wm.Block:
                 note = wm.NativeToken(
                     value=out["value"],
                     token_id=0, spend_hook=0, user_data=0,
-                    coin_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,
+                    cap_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,
                     value_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_Q,
                     token_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,
                     memo=b"")

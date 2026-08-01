@@ -30,7 +30,7 @@ import blake3
 INITIAL_REWARD: int = 1_383_764_049  # ~13.84 DRKW in base units
 HALF_LIFE_BLOCKS: int = 1_051_920    # blocks (~4 years at 120s blocks), matches Rust
 TAIL_REWARD: int = 79_853_981        # base units per block after main emission
-DECAY_FP: int = 4_294_967_296        # 2^32 fixed-point scale, matches Rust
+DECAY_FP: int = 4_294_964_465        # floor(2^(-1/H) * 2^32), matches Rust fixed_pow_decay()
 
 # NativeToken contract constants (src/contract/native_token/src/lib.rs)
 INFO_TREE_NAME: bytes = b"info"
@@ -120,21 +120,20 @@ def pedersen_commit(value: int, blind: int) -> PedersenPoint:
 # ============================================================================
 
 def expected_reward(height: int) -> int:
-    """Fixed-point exponential decay. Matches src/sdk/src/blockchain.rs:114-139.
-
-    Uses integer-only fixed-point arithmetic for deterministic cross-platform
-    consensus safety. The linear approximation of exponential decay uses
-    32-bit fixed-point scale (DECAY_FP = 2^32).
+    """Coinbase reward at block height using exponential decay.
+    R(h) = max(R0 * 2^(-h/H), R_tail)
+    Binary exponentiation with DECAY_FP = floor(2^(-1/H) * 2^32).
+    Matches Rust blockchain.rs::fixed_pow_decay() with DECAY_FP = 4_294_964_465.
     """
     if height <= 1:
         return 0  # Genesis has zero reward
-    if height > HALF_LIFE_BLOCKS:
-        return TAIL_REWARD
-    h = height - 1
-    numerator = INITIAL_REWARD - TAIL_REWARD
-    decay = (DECAY_FP * h) // HALF_LIFE_BLOCKS
-    pre_reward = (numerator * (DECAY_FP - decay)) // DECAY_FP
-    return TAIL_REWARD + pre_reward
+    DECAY_FP_SHIFT = 32
+    reward = INITIAL_REWARD
+    for _ in range(1, height):
+        reward = (reward * DECAY_FP) >> DECAY_FP_SHIFT
+        if reward <= TAIL_REWARD:
+            return TAIL_REWARD
+    return max(reward, TAIL_REWARD)
 
 
 def expected_cumulative_supply(height: int) -> int:

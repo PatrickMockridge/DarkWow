@@ -37,20 +37,21 @@ MAX_UNCLE_COUNT = 6
 INITIAL_REWARD = 1_383_764_049  # ~13.84 DRKW in base units
 HALF_LIFE_BLOCKS = 1_051_920    # matches Rust: src/sdk/src/blockchain.rs:75
 TAIL_REWARD = 79_853_981         # matches Rust: src/sdk/src/blockchain.rs:82
-DECAY_FP = 4_294_967_296         # 2^32 fixed-point scale
+DECAY_FP = 4_294_964_465         # floor(2^(-1/H) * 2^32), matches Rust fixed_pow_decay()
 
 
 def expected_reward(height: int) -> int:
-    """Fixed-point exponential decay. Matches src/sdk/src/blockchain.rs:114-139."""
+    """Coinbase reward using exponential decay R(h) = max(R0 * 2^(-h/H), R_tail).
+    Matches Rust blockchain.rs::fixed_pow_decay() with DECAY_FP = 4_294_964_465."""
     if height <= 0:
         return 0
-    if height > HALF_LIFE_BLOCKS:
-        return TAIL_REWARD
-    h = height - 1
-    numerator = INITIAL_REWARD - TAIL_REWARD
-    decay = (DECAY_FP * h) // HALF_LIFE_BLOCKS
-    pre_reward = (numerator * (DECAY_FP - decay)) // DECAY_FP
-    return TAIL_REWARD + pre_reward
+    DECAY_FP_SHIFT = 32
+    reward = INITIAL_REWARD
+    for _ in range(1, height):
+        reward = (reward * DECAY_FP) >> DECAY_FP_SHIFT
+        if reward <= TAIL_REWARD:
+            return TAIL_REWARD
+    return max(reward, TAIL_REWARD)
 
 
 def expected_cumulative_supply(height: int) -> int:

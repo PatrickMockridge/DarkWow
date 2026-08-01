@@ -526,7 +526,8 @@ def test_full_miner_wallet_pipeline():
     recipient_am.import_hex(cfg.get_wallet_key("wallet-2"))
     recipient_pk = recipient_am.default_public_key()
 
-    built = wm.build_transfer(db, wm.DRKW_TOKEN_ID_STR, 50_000_000, recipient_pk)
+    built = wm.build_transfer(db, wm.DRKW_TOKEN_ID_STR, 50_000_000, recipient_pk,
+                              seed=b"test_full_pipeline")
     assert built is not None
     assert built.fee == wm.DEFAULT_FEE
     assert len(built.calls) >= 1

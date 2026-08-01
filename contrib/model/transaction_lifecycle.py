@@ -144,18 +144,27 @@ def bridge_chain_block_to_wallet(chain_block: dm.Block,
                 memo=b'',
             )
             note = AeadEncryptedNote.encrypt(nt.encode(), miner_pubkey.compressed)
+            # Build PoWRewardV1 contract_call — the scanner discovers coinbase
+            # outputs by scanning contract_calls for NativeToken calls, not
+            # by reading tx.coinbase. Function code 0x05 = PoWRewardV1.
+            pow_reward_data = bytes([wm.NT_FUNC_POW_REWARD_V1]) + note.encode()
+            pow_reward_call = wm.ContractCall(
+                contract_id=wm.NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+                data=pow_reward_data,
+            )
+            # Also populate coinbase field for nullifier verification (scan_block_linear:2834)
             coinbase_tx = wm.CoinbaseTransaction(
                 encrypted_note=note.encode(),
                 proof=b'',
-                public_inputs=b'',
+                public_inputs=[],
                 coin=b'\x00' * 32,
-                value_commit_x=0,
-                value_commit_y=0,
-                token_commit=0,
+                value_commit_x=b'\x00' * 32,
+                value_commit_y=b'\x00' * 32,
+                token_commit=b'\x00' * 32,
             )
             wallet_txs.append(wm.Transaction(
                 version=1,
-                contract_calls=[],
+                contract_calls=[pow_reward_call],
                 coinbase=coinbase_tx,
             ))
     return wm.Block(

@@ -114,11 +114,22 @@ def chain_to_wallet_block(chain_block: ChainBlock,
         memo=b'')
     aes = wm.AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
 
+    # Build PoWRewardV1 contract_call — the scanner discovers coinbase
+    # outputs by scanning contract_calls for NativeToken calls.
+    # Function code 0x05 = PoWRewardV1.
+    pow_reward_data = bytes([wm.NT_FUNC_POW_REWARD_V1]) + aes.encode()
+    pow_reward_call = wm.ContractCall(
+        contract_id=wm.NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+        data=pow_reward_data,
+    )
+
     return wm.Block(
         header=wm.BlockHeader(height=chain_block.height),
         transactions=[
-            wm.Transaction(coinbase=wm.CoinbaseTransaction(
-                encrypted_note=aes.encode()))
+            wm.Transaction(
+                contract_calls=[pow_reward_call],
+                coinbase=wm.CoinbaseTransaction(
+                    encrypted_note=aes.encode()))
         ])
 
 
@@ -156,7 +167,7 @@ def test_single_wallet_mining():
     for block in wallet_blocks:
         wm.scan_block_linear(block, db, cache)
 
-    coins = db.get_coins(False)
+    coins = db.get_held_capabilities(False)
     assert len(coins) == 10, f"Expected 10 coins, got {len(coins)}"
 
     caps = db.get_capabilities()
@@ -201,7 +212,7 @@ def test_multi_wallet_mining():
             # Each wallet scans all blocks, but only decrypts its own
             wm.scan_block_linear(block, dbs[i], caches[i])
 
-        coins = dbs[i].get_coins(False)
+        coins = dbs[i].get_held_capabilities(False)
         assert len(coins) == 5, f"Wallet {i}: expected 5 coins, got {len(coins)}"
 
         balance = wm.compute_balance(dbs[i])
@@ -329,7 +340,7 @@ def test_reorg_handling():
     for b in blocks_a:
         wm.scan_block_linear(b, db, cache)
 
-    coins_a = db.get_coins(False)
+    coins_a = db.get_held_capabilities(False)
     assert len(coins_a) == 10, f"Chain A: expected 10 coins, got {len(coins_a)}"
 
     # Reorg: reset to height 5, rescan chain B
@@ -339,7 +350,7 @@ def test_reorg_handling():
         if b.header.height > 5:
             wm.scan_block_linear(b, db, cache)
 
-    coins_b = db.get_coins(False)
+    coins_b = db.get_held_capabilities(False)
     # Coins from heights 1-5 survive (5 blocks), heights 6-8 from chain B (3 blocks)
     assert len(coins_b) == 8, f"Chain B after reorg: expected 8 coins, got {len(coins_b)}"
 
@@ -398,18 +409,18 @@ def test_full_pipeline():
     assert len(caps) == 6, f"Expected 6 caps (3 coin + 3 generic), got {len(caps)}"
 
     # Coin selection — use the actual stored token_id
-    coins = db.get_coins(False)
+    coins = db.get_held_capabilities(False)
     stored_token_id = coins[0].token_id
     selected = wm.select_coins(db, stored_token_id, 50_000_000)
     assert len(selected) >= 1
     assert selected[0].value >= 50_000_000
 
     # Spend detection
-    coin_to_spend = db.get_coins(False)[0]
+    coin_to_spend = db.get_held_capabilities(False)[0]
     wm.mark_spent(db, coin_to_spend.cap_id, 10)
     assert wm.is_spent(db, coin_to_spend.cap_id)
 
-    unspent = db.get_coins(False)
+    unspent = db.get_held_capabilities(False)
     assert len(unspent) == 2
 
     db.close()
@@ -630,7 +641,7 @@ def test_mixed_coins_and_contract_caps():
     wm.scan_block_linear(block, db, cache)
 
     # Verify DB state
-    coins = db.get_coins(False)
+    coins = db.get_held_capabilities(False)
     caps = db.get_capabilities()
     assert len(coins) == 1, f"Expected 1 coin, got {len(coins)}"
     assert len(caps) == 6, f"Expected 6 capabilities (1 NT + 5 unknown), got {len(caps)}"
@@ -755,7 +766,7 @@ def test_chain_mined_blocks_with_mixed_capabilities():
         wm.scan_block_linear(blk, db, cache)
 
     # Verify
-    coins = db.get_coins(False)
+    coins = db.get_held_capabilities(False)
     caps = db.get_capabilities()
     assert len(coins) == 5, f"Expected 5 coins, got {len(coins)}"
     assert len(caps) == 9, \

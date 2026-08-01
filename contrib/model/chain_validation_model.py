@@ -57,7 +57,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 # Verified against: src/linear/src/consensus.rs, src/linear/src/block.rs
 # ============================================================================
 U32_MAX = 0xFFFFFFFF
-INITIAL_TARGET = 0x00FFFFFF   # Matches spec: 1-in-256 hashes (~0x00FFFFFF)
+INITIAL_TARGET = 0x0FFFFFFF   # Matches Rust PoWConsensus::default() BlockTarget::new(0x0FFFFFFF)
 MIN_TARGET = 1
 MAX_TARGET = U32_MAX
 TARGET_BLOCK_TIME = 120
@@ -84,15 +84,7 @@ def expected_reward(height: int) -> int:
     The decay constant is pre-computed from H using Python's decimal
     module (exact rational math) and hardcoded — never recomputed.
 
-    NOTE (HAZID H-C3): The Rust implementation uses a LINEAR approximation:
-      R(h) ≈ R_tail + (R0 - R_tail) * (1 - (h-1)/H)
-    This Python model implements the spec's exponential formula, which produces
-    DIFFERENT rewards than the Rust code. At the half-life (h=H+1):
-      Exponential (Python): ~6.92 DRKW
-      Linear (Rust):        ~0.80 DRKW
-    The Rust implementation has a reference exponential function at
-    src/sdk/src/blockchain.rs::expected_reward_exponential() behind
-    #[cfg(feature = \"client\")]. This discrepancy must be resolved before mainnet.
+    Matches Rust blockchain.rs::fixed_pow_decay() with DECAY_FP = 4_294_964_465.
     """
     if height == 0:
         return GENESIS_REWARD
@@ -509,6 +501,12 @@ class BlockHeader:
     height: int = 1
     uncle_merkle_root: bytes = b"\x00" * 32
     randomx_key: bytes = b"\x00" * 32
+    total_reward: int = 0            # BlockReward — sum of canonical + uncle shares
+    # Two-level Merkle tree roots (set after block acceptance)
+    coin_merkle_root: bytes = b"\x00" * 32  # Coin commitment Merkle tree root
+    nullifier_root: bytes = b"\x00" * 32    # Nullifier SMT root after this block
+    # Proof-of-work source (0=Native, 1=Monero)
+    pow_source: int = 0              # 0=Native RandomX, 1=Monero merge-mined
     # Finality fields (Caribina + Monero anchor)
     finality_flags: int = 0          # bitfield: 0x01=Caribina, 0x02=Monero, 0x04=Signaled
     anchor_tx_id: bytes = b"\x00" * 32   # Caribina Arweave tx id
