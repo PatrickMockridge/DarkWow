@@ -29,7 +29,7 @@
 
 use dwow_sdk::{
     crypto::{
-        combine_block_hashes, mix_entropy, pasta_prelude::PrimeField, poseidon_hash,
+        pasta_prelude::PrimeField, poseidon_hash,
         tx_hash_to_base, PublicKey,
     },
     error::ContractError,

@@ -26,10 +26,9 @@
 //! Data structures for Baccarat game state, card handling, and outcome calculation.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, tx_hash_to_base, PublicKey},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, PublicKey},
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
-    tx::TransactionHash,
 };
 
 // ============================================================================
