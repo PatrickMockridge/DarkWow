@@ -72,12 +72,12 @@ pub struct LotteryHarness {
 impl LotteryHarness {
     /// Spawn a new Lottery harness with pre-loaded circuits
     pub fn spawn() -> Self {
-        let commit_ticket_bin = include_bytes!("../../../lottery/proof/commit_ticket_v1.zk.bin");
-        let reveal_ticket_bin = include_bytes!("../../../lottery/proof/reveal_ticket_v1.zk.bin");
-        let claim_prize_bin = include_bytes!("../../../lottery/proof/claim_prize_v1.zk.bin");
-        let draw_winners_bin = include_bytes!("../../../lottery/proof/draw_winners_v1.zk.bin");
-        let expire_lottery_bin = include_bytes!("../../../lottery/proof/expire_lottery_v1.zk.bin");
-        let initialize_bin = include_bytes!("../../../lottery/proof/initialize_v1.zk.bin");
+        let commit_ticket_bin = include_bytes!("../../../lottery/proof/commit_ticket_v2.zk.bin");
+        let reveal_ticket_bin = include_bytes!("../../../lottery/proof/reveal_ticket_v2.zk.bin");
+        let claim_prize_bin = include_bytes!("../../../lottery/proof/claim_prize_v2.zk.bin");
+        let draw_winners_bin = include_bytes!("../../../lottery/proof/draw_winners_v2.zk.bin");
+        let expire_lottery_bin = include_bytes!("../../../lottery/proof/expire_lottery_v2.zk.bin");
+        let initialize_bin = include_bytes!("../../../lottery/proof/initialize_v2.zk.bin");
 
         let commit_ticket_zkbin = ZkBinary::decode(commit_ticket_bin, false).unwrap();
         let reveal_ticket_zkbin = ZkBinary::decode(reveal_ticket_bin, false).unwrap();

@@ -55,10 +55,10 @@ pub struct BearerBondHarness {
 
 impl BearerBondHarness {
     pub fn spawn() -> Self {
-        let blind_output_bin = include_bytes!("../../../bearer_bond/proof/blind_output_v1.zk.bin");
-        let burn_bin = include_bytes!("../../../bearer_bond/proof/burn_v1.zk.bin");
-        let redeem_bin = include_bytes!("../../../bearer_bond/proof/redeem_v1.zk.bin");
-        let prove_coverage_bin = include_bytes!("../../../bearer_bond/proof/prove_coverage_v1.zk.bin");
+        let blind_output_bin = include_bytes!("../../../bearer_bond/proof/blind_output_v2.zk.bin");
+        let burn_bin = include_bytes!("../../../bearer_bond/proof/burn_v2.zk.bin");
+        let redeem_bin = include_bytes!("../../../bearer_bond/proof/redeem_v2.zk.bin");
+        let prove_coverage_bin = include_bytes!("../../../bearer_bond/proof/prove_coverage_v2.zk.bin");
 
         let blind_output_zkbin = ZkBinary::decode(blind_output_bin, false).unwrap();
         let blind_output_circuit = ZkCircuit::new(

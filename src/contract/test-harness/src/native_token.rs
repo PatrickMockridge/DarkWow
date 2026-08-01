@@ -53,7 +53,7 @@ fn test_pow_reward_call_builder() -> Result<(), Box<dyn std::error::Error>> {
     info!(target: "test_harness::native_token", "=== Testing PoWRewardCallBuilder ===");
 
     // Get the ZK binary from the compiled contract
-    let mint_v1_bincode = include_bytes!("../../native_token/proof/mint_v1.zk.bin");
+    let mint_v1_bincode = include_bytes!("../../native_token/proof/mint_v2.zk.bin");
     let zkbin = dwow_core::zkas::ZkBinary::decode(mint_v1_bincode, false)?;
     let circuit = dwow_core::zk::ZkCircuit::new(dwow_core::zk::empty_witnesses(&zkbin)?, &zkbin);
     let pk = dwow_core::zk::ProvingKey::build(zkbin.k, &circuit).expect("ProvingKey::build failed");
@@ -101,7 +101,7 @@ fn test_burn_call_builder() -> Result<(), Box<dyn std::error::Error>> {
     info!(target: "test_harness::native_token", "=== Testing BurnCallBuilder ===");
 
     // Get the ZK binary from the compiled contract
-    let burn_v1_bincode = include_bytes!("../../native_token/proof/burn_v1.zk.bin");
+    let burn_v1_bincode = include_bytes!("../../native_token/proof/burn_v2.zk.bin");
     let zkbin = dwow_core::zkas::ZkBinary::decode(burn_v1_bincode, false)?;
     let circuit = dwow_core::zk::ZkCircuit::new(dwow_core::zk::empty_witnesses(&zkbin)?, &zkbin);
     let pk = dwow_core::zk::ProvingKey::build(zkbin.k, &circuit).expect("ProvingKey::build failed");

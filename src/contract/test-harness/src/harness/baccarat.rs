@@ -69,10 +69,10 @@ pub struct BaccaratHarness {
 impl BaccaratHarness {
     /// Spawn a new Baccarat harness with pre-loaded circuits
     pub fn spawn() -> Self {
-        let commit_bet_bin = include_bytes!("../../../baccarat/proof/commit_bet_v1.zk.bin");
-        let draw_cards_bin = include_bytes!("../../../baccarat/proof/draw_cards_v1.zk.bin");
-        let house_close_bin = include_bytes!("../../../baccarat/proof/house_close_v1.zk.bin");
-        let settle_bet_bin = include_bytes!("../../../baccarat/proof/settle_bet_v1.zk.bin");
+        let commit_bet_bin = include_bytes!("../../../baccarat/proof/commit_bet_v2.zk.bin");
+        let draw_cards_bin = include_bytes!("../../../baccarat/proof/draw_cards_v2.zk.bin");
+        let house_close_bin = include_bytes!("../../../baccarat/proof/house_close_v2.zk.bin");
+        let settle_bet_bin = include_bytes!("../../../baccarat/proof/settle_bet_v2.zk.bin");
 
         let commit_bet_zkbin = ZkBinary::decode(commit_bet_bin, false).unwrap();
         let draw_cards_zkbin = ZkBinary::decode(draw_cards_bin, false).unwrap();

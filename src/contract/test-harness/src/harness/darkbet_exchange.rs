@@ -94,25 +94,25 @@ impl DarkbetExchangeHarness {
     /// Spawn a new DarkbetExchange harness with pre-loaded circuits
     pub fn spawn() -> Self {
         let create_market_bin =
-            include_bytes!("../../../darkbet_exchange/proof/create_market_v1.zk.bin");
+            include_bytes!("../../../darkbet_exchange/proof/create_market_v2.zk.bin");
         let buy_position_bin =
-            include_bytes!("../../../darkbet_exchange/proof/buy_position_v1.zk.bin");
+            include_bytes!("../../../darkbet_exchange/proof/buy_position_v2.zk.bin");
         let claim_winnings_bin =
-            include_bytes!("../../../darkbet_exchange/proof/claim_winnings_v1.zk.bin");
+            include_bytes!("../../../darkbet_exchange/proof/claim_winnings_v2.zk.bin");
         let add_liquidity_bin =
-            include_bytes!("../../../darkbet_exchange/proof/add_liquidity_v1.zk.bin");
+            include_bytes!("../../../darkbet_exchange/proof/add_liquidity_v2.zk.bin");
         let cancel_order_bin =
-            include_bytes!("../../../darkbet_exchange/proof/cancel_order_v1.zk.bin");
+            include_bytes!("../../../darkbet_exchange/proof/cancel_order_v2.zk.bin");
         let match_orders_bin =
-            include_bytes!("../../../darkbet_exchange/proof/match_orders_v1.zk.bin");
+            include_bytes!("../../../darkbet_exchange/proof/match_orders_v2.zk.bin");
         let place_back_bin =
-            include_bytes!("../../../darkbet_exchange/proof/place_back_v1.zk.bin");
+            include_bytes!("../../../darkbet_exchange/proof/place_back_v2.zk.bin");
         let place_lay_bin =
-            include_bytes!("../../../darkbet_exchange/proof/place_lay_v1.zk.bin");
+            include_bytes!("../../../darkbet_exchange/proof/place_lay_v2.zk.bin");
         let remove_liquidity_bin =
-            include_bytes!("../../../darkbet_exchange/proof/remove_liquidity_v1.zk.bin");
+            include_bytes!("../../../darkbet_exchange/proof/remove_liquidity_v2.zk.bin");
         let resolve_market_bin =
-            include_bytes!("../../../darkbet_exchange/proof/resolve_market_v1.zk.bin");
+            include_bytes!("../../../darkbet_exchange/proof/resolve_market_v2.zk.bin");
 
         let create_market_zkbin = ZkBinary::decode(create_market_bin, false).unwrap();
         let buy_position_zkbin = ZkBinary::decode(buy_position_bin, false).unwrap();

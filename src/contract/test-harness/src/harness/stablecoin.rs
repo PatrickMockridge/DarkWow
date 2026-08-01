@@ -102,16 +102,16 @@ pub struct StablecoinHarness {
 impl StablecoinHarness {
     /// Spawn a new Stablecoin harness with pre-loaded circuits
     pub fn spawn() -> Self {
-        let init_bin = include_bytes!("../../../stablecoin/proof/init_v1.zk.bin");
-        let open_bin = include_bytes!("../../../stablecoin/proof/open_position_v1.zk.bin");
-        let mint_bin = include_bytes!("../../../stablecoin/proof/mint_stable_v1.zk.bin");
-        let liquidate_bin = include_bytes!("../../../stablecoin/proof/liquidate_v1.zk.bin");
-        let governance_bin = include_bytes!("../../../stablecoin/proof/governance_report_v1.zk.bin");
-        let accrue_bin = include_bytes!("../../../stablecoin/proof/accrue_interest_v1.zk.bin");
-        let add_collateral_bin = include_bytes!("../../../stablecoin/proof/add_collateral_v1.zk.bin");
-        let remove_collateral_bin = include_bytes!("../../../stablecoin/proof/remove_collateral_v1.zk.bin");
-        let repay_stable_bin = include_bytes!("../../../stablecoin/proof/repay_stable_v1.zk.bin");
-        let update_config_bin = include_bytes!("../../../stablecoin/proof/update_config_v1.zk.bin");
+        let init_bin = include_bytes!("../../../stablecoin/proof/init_v2.zk.bin");
+        let open_bin = include_bytes!("../../../stablecoin/proof/open_position_v2.zk.bin");
+        let mint_bin = include_bytes!("../../../stablecoin/proof/mint_stable_v2.zk.bin");
+        let liquidate_bin = include_bytes!("../../../stablecoin/proof/liquidate_v2.zk.bin");
+        let governance_bin = include_bytes!("../../../stablecoin/proof/governance_report_v2.zk.bin");
+        let accrue_bin = include_bytes!("../../../stablecoin/proof/accrue_interest_v2.zk.bin");
+        let add_collateral_bin = include_bytes!("../../../stablecoin/proof/add_collateral_v2.zk.bin");
+        let remove_collateral_bin = include_bytes!("../../../stablecoin/proof/remove_collateral_v2.zk.bin");
+        let repay_stable_bin = include_bytes!("../../../stablecoin/proof/repay_stable_v2.zk.bin");
+        let update_config_bin = include_bytes!("../../../stablecoin/proof/update_config_v2.zk.bin");
 
         let init_zkbin = ZkBinary::decode(init_bin, false).unwrap();
         let open_position_zkbin = ZkBinary::decode(open_bin, false).unwrap();

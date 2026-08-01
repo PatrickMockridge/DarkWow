@@ -73,10 +73,10 @@ pub struct EscrowHarness {
 impl EscrowHarness {
     /// Spawn a new Escrow harness with pre-loaded circuits
     pub fn spawn() -> Self {
-        let create_bin = include_bytes!("../../../escrow/proof/create_escrow_v1.zk.bin");
-        let fund_bin = include_bytes!("../../../escrow/proof/fund_v1.zk.bin");
-        let claim_bin = include_bytes!("../../../escrow/proof/claim_v1.zk.bin");
-        let refund_bin = include_bytes!("../../../escrow/proof/refund_v1.zk.bin");
+        let create_bin = include_bytes!("../../../escrow/proof/create_escrow_v2.zk.bin");
+        let fund_bin = include_bytes!("../../../escrow/proof/fund_v2.zk.bin");
+        let claim_bin = include_bytes!("../../../escrow/proof/claim_v2.zk.bin");
+        let refund_bin = include_bytes!("../../../escrow/proof/refund_v2.zk.bin");
 
         let create_escrow_zkbin = ZkBinary::decode(create_bin, false).unwrap();
         let fund_zkbin = ZkBinary::decode(fund_bin, false).unwrap();

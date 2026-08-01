@@ -61,13 +61,13 @@ pub struct PoolStakeHarness {
 impl PoolStakeHarness {
     pub fn spawn() -> Self {
         let create_pool_bin =
-            include_bytes!("../../../pool_stake/proof/create_pool_v1.zk.bin");
+            include_bytes!("../../../pool_stake/proof/create_pool_v2.zk.bin");
         let join_pool_bin =
-            include_bytes!("../../../pool_stake/proof/join_pool_v1.zk.bin");
+            include_bytes!("../../../pool_stake/proof/join_pool_v2.zk.bin");
         let allocate_coverage_bin =
-            include_bytes!("../../../pool_stake/proof/allocate_coverage_v1.zk.bin");
+            include_bytes!("../../../pool_stake/proof/allocate_coverage_v2.zk.bin");
         let slash_coverage_bin =
-            include_bytes!("../../../pool_stake/proof/slash_coverage_v1.zk.bin");
+            include_bytes!("../../../pool_stake/proof/slash_coverage_v2.zk.bin");
 
         let create_pool_zkbin = ZkBinary::decode(create_pool_bin, false).unwrap();
         let join_pool_zkbin = ZkBinary::decode(join_pool_bin, false).unwrap();

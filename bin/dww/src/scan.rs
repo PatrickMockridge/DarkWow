@@ -363,7 +363,7 @@ fn build_native_token_cap_record(
         revoked: false,
         revoked_at_height: None,
         created_at_height: height.get(),
-        key_coords: None, // P0.1b: caller should populate via account_mgr.find_owner()
+        status: None, status_height: None, key_coords: None, // P0.1b: caller should populate via account_mgr.find_owner()
     };
 
     let msg = format!(
@@ -1999,7 +1999,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
             capability_discriminant: None, capability_name: None,
             resource: None, action: None, primitives: vec![], barbs: vec![],
             revoked: false, revoked_at_height: None,
-            created_at_height: height, key_coords: None,
+            created_at_height: height, status: None, status_height: None, key_coords: None,
         };
         let merkle_proof = crate::walletdb::MerkleProof { root: String::new(), siblings: vec![] };
         wallet.insert_capability(&record, &merkle_proof)

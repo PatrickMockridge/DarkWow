@@ -76,11 +76,11 @@ impl PromissoryNoteHarness {
     /// Spawn a new PromissoryNote harness with pre-loaded circuits
     pub fn spawn() -> Self {
         // Load circuit binaries
-        let register_type_bin = include_bytes!("../../../promissory_note/proof/token_mint_v1.zk.bin");
-        let issue_bin = include_bytes!("../../../promissory_note/proof/mint_v1.zk.bin");
-        let revoke_bin = include_bytes!("../../../promissory_note/proof/burn_v1.zk.bin");
-        let transfer_bin = include_bytes!("../../../promissory_note/proof/blind_output_v1.zk.bin");
-        let redeem_bin = include_bytes!("../../../promissory_note/proof/redeem_v1.zk.bin");
+        let register_type_bin = include_bytes!("../../../promissory_note/proof/token_mint_v2.zk.bin");
+        let issue_bin = include_bytes!("../../../promissory_note/proof/mint_v2.zk.bin");
+        let revoke_bin = include_bytes!("../../../promissory_note/proof/burn_v2.zk.bin");
+        let transfer_bin = include_bytes!("../../../promissory_note/proof/blind_output_v2.zk.bin");
+        let redeem_bin = include_bytes!("../../../promissory_note/proof/redeem_v2.zk.bin");
 
         let register_type_zkbin = ZkBinary::decode(register_type_bin, false).unwrap();
         let issue_zkbin = ZkBinary::decode(issue_bin, false).unwrap();

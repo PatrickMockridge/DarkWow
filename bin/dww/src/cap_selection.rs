@@ -168,6 +168,7 @@ pub fn select_fee_cap(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::capability::CapStatus;
     use dwow_chain::CoinCommitment;
     use dwow_sdk::crypto::BaseBlind;
     use dwow_sdk::crypto::Blind;
@@ -202,6 +203,8 @@ mod tests {
             action: None,
             primitives: vec![],
             barbs: vec![],
+            status: None,
+            status_height: None,
             revoked: false,
             revoked_at_height: None,
             created_at_height: 0,

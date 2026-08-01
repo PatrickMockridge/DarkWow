@@ -82,27 +82,27 @@ impl GameRoomHarness {
     /// Spawn a new GameRoom harness with pre-loaded circuits
     pub fn spawn() -> Self {
         let create_room_bin =
-            include_bytes!("../../../game_room/proof/create_room_v1.zk.bin");
+            include_bytes!("../../../game_room/proof/create_room_v2.zk.bin");
         let deposit_bin =
-            include_bytes!("../../../game_room/proof/deposit_v1.zk.bin");
+            include_bytes!("../../../game_room/proof/deposit_v2.zk.bin");
         let place_bet_bin =
-            include_bytes!("../../../game_room/proof/place_bet_v1.zk.bin");
+            include_bytes!("../../../game_room/proof/place_bet_v2.zk.bin");
         let settle_pot_bin =
-            include_bytes!("../../../game_room/proof/settle_pot_v1.zk.bin");
+            include_bytes!("../../../game_room/proof/settle_pot_v2.zk.bin");
         let claim_bin =
-            include_bytes!("../../../game_room/proof/claim_v1.zk.bin");
+            include_bytes!("../../../game_room/proof/claim_v2.zk.bin");
         let call_bin =
-            include_bytes!("../../../game_room/proof/call_v1.zk.bin");
+            include_bytes!("../../../game_room/proof/call_v2.zk.bin");
         let close_pot_bin =
-            include_bytes!("../../../game_room/proof/close_pot_v1.zk.bin");
+            include_bytes!("../../../game_room/proof/close_pot_v2.zk.bin");
         let contribute_entropy_bin =
-            include_bytes!("../../../game_room/proof/contribute_entropy_v1.zk.bin");
+            include_bytes!("../../../game_room/proof/contribute_entropy_v2.zk.bin");
         let fold_bin =
-            include_bytes!("../../../game_room/proof/fold_v1.zk.bin");
+            include_bytes!("../../../game_room/proof/fold_v2.zk.bin");
         let raise_bin =
-            include_bytes!("../../../game_room/proof/raise_v1.zk.bin");
+            include_bytes!("../../../game_room/proof/raise_v2.zk.bin");
         let withdraw_bin =
-            include_bytes!("../../../game_room/proof/withdraw_v1.zk.bin");
+            include_bytes!("../../../game_room/proof/withdraw_v2.zk.bin");
 
         let create_room_zkbin = ZkBinary::decode(create_room_bin, false).unwrap();
         let deposit_zkbin = ZkBinary::decode(deposit_bin, false).unwrap();

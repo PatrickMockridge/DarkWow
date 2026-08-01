@@ -63,9 +63,9 @@ pub struct RelayerEndowmentHarness {
 impl RelayerEndowmentHarness {
     /// Spawn a new RelayerEndowment harness with pre-loaded circuits
     pub fn spawn() -> Self {
-        let init_bin = include_bytes!("../../../relayer_endowment/proof/initialize_v1.zk.bin");
-        let deploy_bin = include_bytes!("../../../relayer_endowment/proof/deploy_capital_v1.zk.bin");
-        let claim_bin = include_bytes!("../../../relayer_endowment/proof/claim_fees_v1.zk.bin");
+        let init_bin = include_bytes!("../../../relayer_endowment/proof/initialize_v2.zk.bin");
+        let deploy_bin = include_bytes!("../../../relayer_endowment/proof/deploy_capital_v2.zk.bin");
+        let claim_bin = include_bytes!("../../../relayer_endowment/proof/claim_fees_v2.zk.bin");
 
         let initialize_zkbin = ZkBinary::decode(init_bin, false).unwrap();
         let deploy_capital_zkbin = ZkBinary::decode(deploy_bin, false).unwrap();

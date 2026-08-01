@@ -684,6 +684,8 @@ impl WalletDb {
                         capability_discriminant: capability_discriminant.map(|d| d as u8),
                         revoked: spent_val != 0,
                         revoked_at_height: revoked_at_height.map(|h| u64::try_from(h).unwrap_or(0)),
+                        status: None,
+                        status_height: None,
                         created_at_height: u64::try_from(created_at_height).unwrap_or(0),
                         capability_name,
                         resource,
@@ -1443,7 +1445,7 @@ mod tests {
             action: None,
             primitives: vec![],
             barbs: vec![],
-            key_coords: None,
+            status: None, status_height: None, key_coords: None,
         }
     }
 
@@ -1629,7 +1631,7 @@ mod tests {
             capability_discriminant: None, capability_name: None,
             resource: None, action: None, primitives: vec![], barbs: vec![],
             revoked: false, revoked_at_height: None,
-            created_at_height: 1, key_coords: None,
+            created_at_height: 1, status: None, status_height: None, key_coords: None,
         };
         let proof = super::MerkleProof { root: String::new(), siblings: vec![] };
 

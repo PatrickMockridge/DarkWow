@@ -77,15 +77,15 @@ impl OracleHarness {
     /// Spawn a new Oracle harness with pre-loaded circuits
     pub fn spawn() -> Self {
         let register_oracle_bin =
-            include_bytes!("../../../oracle/proof/register_oracle_v1.zk.bin");
+            include_bytes!("../../../oracle/proof/register_oracle_v2.zk.bin");
         let push_value_commitment_bin =
-            include_bytes!("../../../oracle/proof/push_value_commitment_v1.zk.bin");
+            include_bytes!("../../../oracle/proof/push_value_commitment_v2.zk.bin");
         let aggregate_bin =
-            include_bytes!("../../../oracle/proof/aggregate_v1.zk.bin");
+            include_bytes!("../../../oracle/proof/aggregate_v2.zk.bin");
         let attest_value_bin =
-            include_bytes!("../../../oracle/proof/attest_value_v1.zk.bin");
+            include_bytes!("../../../oracle/proof/attest_value_v2.zk.bin");
         let push_value_bin =
-            include_bytes!("../../../oracle/proof/push_value_v1.zk.bin");
+            include_bytes!("../../../oracle/proof/push_value_v2.zk.bin");
 
         let register_oracle_zkbin =
             ZkBinary::decode(register_oracle_bin, false).unwrap();
