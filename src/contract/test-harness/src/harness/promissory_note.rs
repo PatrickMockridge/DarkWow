@@ -187,8 +187,8 @@ impl PromissoryNoteHarness {
         })
     }
 
-    /// Mint tokens of an existing token type
-    pub fn mint(
+    /// Issue capabilities of an existing type
+    pub fn issue(
         &self,
         issue_secret: pallas::Base,
         token_id: pallas::Base,

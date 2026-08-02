@@ -199,7 +199,7 @@ fn test_heavyweight_promissory_note() -> std::result::Result<(), Box<dyn std::er
 
         // --- create_token ---
         println!("  Test: create_token");
-        let token = harness.create_token(auth_parent, user_data, blind, recipient, 1000, spend_hook, user_data, coin_blind)?;
+        let token = harness.register_type(auth_parent, user_data, blind, recipient, 1000, spend_hook, user_data, coin_blind)?;
         assert!(!token.call_data.is_empty());
         println!("    call_data={}B token_id={:?}", token.call_data.len(), token.token_id);
 
@@ -221,7 +221,7 @@ fn test_heavyweight_promissory_note() -> std::result::Result<(), Box<dyn std::er
 
         // --- mint ---
         println!("  Test: mint");
-        let mint = harness.mint(auth_parent, token.token_id, recipient, 500, spend_hook, user_data, coin_blind)?;
+        let mint = harness.issue(auth_parent, token.token_id, recipient, 500, spend_hook, user_data, coin_blind)?;
         assert!(!mint.call_data.is_empty());
         println!("    call_data={}B", mint.call_data.len());
 

@@ -199,16 +199,25 @@ pub struct BlockScanResult {
 /// Per-barrier diagnostic counters. Every attempt at each scan pipeline stage
 /// is counted. Operators can distinguish "block has no wallet-relevant data"
 /// from "all decrypt/construct attempts failed."
+///
+/// Path 1 counters track native token (consensus-critical). Path 2 counters
+/// track the manifest-driven capability engine (HAZOP 4.6 — type-system.md
+/// §4.2.4: structured diagnostics MUST distinguish failure modes).
 #[derive(Debug, Clone, Default)]
 pub struct BlockScanDiagnostics {
+    // Path 1: native token
     pub aead_decode_attempts: usize,
     pub aead_decrypt_attempts: usize,
     pub aead_decrypt_successes: usize,
     pub capability_construct_attempts: usize,
     pub capability_construct_successes: usize,
     pub nullifiers_matched: usize,
+    // Path 2: manifest-driven capability engine
     pub manifest_misses: usize,
     pub derivation_failures: usize,
+    pub path2_decrypt_attempts: usize,
+    pub path2_decrypt_successes: usize,
+    pub path2_coverage_drops: usize,
 }
 
 impl BlockScanResult {
@@ -758,12 +767,17 @@ fn scan_block(
 
                     let mut path2_decrypted = false;
                     for secret in &trial_secrets {
+                        result.diagnostics.path2_decrypt_attempts += 1;
                         let Ok(raw) = generic_note.decrypt_raw(secret, height.get()) else { continue };
+                        result.diagnostics.path2_decrypt_successes += 1;
                         // Path 2: generic manifest-driven type-construction.
                         // From here every failure DROPS the note (clean skip);
                         // there is no native fallback.
                         let Some(fn_code) = call.data.first().copied() else { break };
-                        let Some(manifest) = manifests.get(&cid) else { break };
+                        let Some(manifest) = manifests.get(&cid) else {
+                            result.diagnostics.manifest_misses += 1;
+                            break;
+                        };
                         let Some(resolved) = manifest.resolve_capability(fn_code) else {
                             tracing::debug!(target: "dww::scan",
                                 "Path2: no capability for fn_code 0x{:02x} in manifest {}",
@@ -774,6 +788,7 @@ fn scan_block(
                         // cover required barbs) is NOT a valid capability — drop the note
                         // per §13 "fix the composition, not the wallet."
                         let Some(typed) = manifest.resolve_capability_type(fn_code) else {
+                            result.diagnostics.path2_coverage_drops += 1;
                             tracing::warn!(target: "dww::scan",
                                 "Path2: coverage gate closed for fn 0x{:02x} contract {} — \
                                  primitives don't cover required barbs (fix the composition, not the wallet)",
@@ -1023,6 +1038,7 @@ impl Dww {
         // Pre-load manifests so the pure scan can resolve capability types from
         // declarations without DB access (ocap.md §7: manifest-driven, zero per-contract code).
         let mut manifests: BTreeMap<ContractId, dwow_sdk::manifest::ContractManifest> = BTreeMap::new();
+        let mut preload_manifest_misses: usize = 0;
         for tx in &block.transactions {
             for call in &tx.contract_calls {
                 let cid = call.contract_id;
@@ -1032,12 +1048,15 @@ impl Dww {
                 let cid_str = bs58::encode(cid.to_bytes()).into_string();
                 if let Ok(Some(m)) = self.wallet.get_contract_manifest(&cid_str) {
                     manifests.insert(cid, m);
+                } else {
+                    preload_manifest_misses += 1;
                 }
             }
         }
 
         // ── Pure scan: no DB access ──────────────────────────
-        let result = scan_block(tree, &self.account_mgr, &manifests, block);
+        let mut result = scan_block(tree, &self.account_mgr, &manifests, block);
+        result.diagnostics.manifest_misses += preload_manifest_misses;
 
         // ── Persist results ──────────────────────────────────
         // Insertions are FATAL on failure: if a cap can't be inserted, the
