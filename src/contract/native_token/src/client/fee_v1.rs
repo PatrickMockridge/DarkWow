@@ -33,6 +33,7 @@ use dwow_core::{
 use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
+        constants::DRK_POSEIDON_DOMAIN_TX_BINDING,
         note::AeadEncryptedNote,
         pasta_prelude::{Curve, CurveAffine},
         pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId, TokenId, MerkleNode,
@@ -161,7 +162,7 @@ pub fn create_fee_proof(
     output_coin_blind: pallas::Base,
     token_blind: BaseBlind,
     fee: u64,
-    _tx_commitment: pallas::Base,
+    tx_commitment: pallas::Base,
 ) -> Result<(Proof, FeeRevealed)> {
     // Derive public key from secret using EC (Schnorr-style)
     let public_key = PublicKey::from_secret(input.secret.clone());
@@ -220,6 +221,15 @@ pub fn create_fee_proof(
     };
     let output_coin = output_coin_attrs.to_coin();
 
+    // Compute tx_binding: binds this proof to a specific transaction.
+    // Must match the tx_binding computed in FeeCallBuilder::build() and
+    // the tx_binding constrained in the ZK circuit.
+    let tx_binding = poseidon_hash([
+        DRK_POSEIDON_DOMAIN_TX_BINDING,
+        tx_commitment,
+        input.tx_nonce,
+    ]);
+
     let public_inputs = FeeRevealed {
         nullifier,
         input_value_commit,
@@ -230,7 +240,7 @@ pub fn create_fee_proof(
         output_coin,
         output_value_commit,
         fee: pallas::Base::from(fee),
-        tx_binding: pallas::Base::zero(),
+        tx_binding,
         tx_nonce: input.tx_nonce,
     };
 
@@ -268,7 +278,7 @@ pub fn create_fee_proof(
         Witness::Base(Value::known(pallas::Base::from(fee))),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding computed in-circuit
+        Witness::Base(Value::known(tx_binding)),
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
@@ -455,8 +465,12 @@ impl FeeCallBuilder {
                 fee_value_blind: input_value_blind.clone().inner(),
                 fee_token_blind: token_blind,
                 fee: self.fee,
-                tx_binding: pallas::Base::zero(),
-                tx_nonce: pallas::Base::zero(),
+                tx_binding: poseidon_hash([
+                    DRK_POSEIDON_DOMAIN_TX_BINDING,
+                    self.input.tx_commitment,
+                    self.input.tx_nonce,
+                ]),
+                tx_nonce: self.input.tx_nonce,
             },
             proofs,
             signature_secrets,

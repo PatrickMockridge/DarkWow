@@ -236,8 +236,22 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             if params.threshold == 0 || params.threshold as usize > params.pubkeys.len() {
                 return Err(MultiSigError::InvalidThreshold.into());
             }
+            // Deduplicate public keys — duplicate keys would let a single
+            // signer count multiple times toward the threshold, bypassing the
+            // multisig security model. Nullifier-based signature tracking in
+            // FinalizeV1 provides partial protection (duplicate keys produce
+            // identical nullifiers which SignV1 rejects), but dedup at creation
+            // time is defense-in-depth.
             let mut pubkeys = Vec::with_capacity(params.pubkeys.len());
-            for b in &params.pubkeys { pubkeys.push(*b); }
+            for b in &params.pubkeys {
+                if !pubkeys.contains(b) {
+                    pubkeys.push(*b);
+                }
+            }
+            // Re-validate threshold against deduplicated count
+            if params.threshold as usize > pubkeys.len() {
+                return Err(MultiSigError::InvalidThreshold.into());
+            }
             let group_id = MultiSigGroup::derive_group_id(&pubkeys[0], params.threshold, pubkeys.len() as u8);
             let groups_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_GROUPS_TREE)?;
             if wasm::db::db_contains_key(groups_db, &group_id.to_bytes())? {

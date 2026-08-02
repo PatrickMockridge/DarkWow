@@ -26,7 +26,9 @@ use std::{
     str::FromStr,
 };
 
-use dwow_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{Decodable, Encodable, SerialDecodable, SerialEncodable};
+#[cfg(feature = "async")]
+use dwow_serial::{AsyncDecodable, AsyncEncodable};
 
 use super::{
     crypto::{ContractId, SecretKey},
@@ -126,7 +128,7 @@ impl Debug for ContractCall {
 /// should sign the entire transaction and any relevant ZK proofs.
 /// This is normally created by external smart contract clients, and used by
 /// the wallet when creating transactions.
-#[derive(Clone, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ContractCallImport {
     /// Single contract call
     call: ContractCall,
@@ -155,5 +157,53 @@ impl ContractCallImport {
     /// Reference the inner secret keys
     pub fn secrets(&self) -> &[SecretKey] {
         &self.secrets
+    }
+}
+
+/// IPC pipe serialization — delegates to SecretKey's explicit Encodable impl.
+impl Encodable for ContractCallImport {
+    fn encode<S: std::io::Write>(&self, s: &mut S) -> std::io::Result<usize> {
+        let mut len = self.call.encode(s)?;
+        len += self.proofs.encode(s)?;
+        len += self.secrets.encode(s)?;
+        Ok(len)
+    }
+}
+
+/// IPC pipe deserialization — delegates to SecretKey's explicit Decodable impl.
+impl Decodable for ContractCallImport {
+    fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> {
+        let call = ContractCall::decode(d)?;
+        let proofs = Vec::<Vec<u8>>::decode(d)?;
+        let secrets = Vec::<SecretKey>::decode(d)?;
+        Ok(ContractCallImport { call, proofs, secrets })
+    }
+}
+
+/// Async IPC pipe serialization — delegates to field AsyncEncodable impls.
+#[cfg(feature = "async")]
+#[dwow_serial::async_trait]
+impl AsyncEncodable for ContractCallImport {
+    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(
+        &self, w: &mut W,
+    ) -> std::io::Result<usize> {
+        let mut len = self.call.encode_async(w).await?;
+        len += self.proofs.encode_async(w).await?;
+        len += self.secrets.encode_async(w).await?;
+        Ok(len)
+    }
+}
+
+/// Async IPC pipe deserialization — delegates to field AsyncDecodable impls.
+#[cfg(feature = "async")]
+#[dwow_serial::async_trait]
+impl AsyncDecodable for ContractCallImport {
+    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(
+        d: &mut D,
+    ) -> std::io::Result<Self> {
+        let call = ContractCall::decode_async(d).await?;
+        let proofs = Vec::<Vec<u8>>::decode_async(d).await?;
+        let secrets = Vec::<SecretKey>::decode_async(d).await?;
+        Ok(ContractCallImport { call, proofs, secrets })
     }
 }

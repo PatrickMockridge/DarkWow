@@ -29,7 +29,8 @@
 //! or additional details.
 
 use dwow_sdk::{
-    crypto::{BOX_CONTRACT_ID, ContractId, pasta_prelude::PrimeField, poseidon_hash, PublicKey},
+    crypto::{BOX_CONTRACT_ID, ContractId, pasta_prelude::PrimeField, poseidon_hash, PublicKey,
+        schnorr::SchnorrPublic},
     dark_tree::DarkLeaf,
     error::ContractResult,
     msg, ContractCall,
@@ -457,11 +458,22 @@ fn process_revoke_credential_instruction(
 
     msg!("[identity::revoke_credential] Revoking credential");
 
-    // Load credential (just to verify it exists)
+    // Load credential
     let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
     let nullifier_bytes = params.nullifier.to_bytes();
-    let _cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
+    let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
+    let credential: Credential = Credential::decode(&cred_data)?;
+
+    // Verify issuer authorization: only the credential issuer may revoke it.
+    // issuer_sig must be a valid Schnorr signature by credential.issuer_pub
+    // over the credential nullifier (binding the revocation to this credential).
+    let sig = dwow_sdk::crypto::schnorr::Signature::decode(&params.issuer_sig)
+        .ok_or(IdentityError::InvalidSignature)?;
+    if !credential.issuer_pub.verify(&nullifier_bytes, &sig) {
+        msg!("[identity::revoke_credential] ERROR: Invalid issuer signature");
+        return Err(IdentityError::InvalidSignature.into());
+    }
 
     let update = RevokeCredentialUpdateV1 {
         nullifier: params.nullifier,
@@ -679,7 +691,12 @@ fn process_create_claim_multi_instruction(
     let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
 
-    let _credential: Credential = Credential::decode(&cred_data)?;
+    let credential: Credential = Credential::decode(&cred_data)?;
+
+    if credential.revoked {
+        msg!("[identity::create_claim_multi] ERROR: Credential is revoked");
+        return Err(IdentityError::CredentialRevoked.into());
+    }
 
     let update = CreateClaimUpdateV1 {
         nullifier: params.nullifier,
@@ -711,7 +728,12 @@ fn process_create_claim_ratio_instruction(
     let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
         .ok_or(IdentityError::CredentialNotFound)?;
 
-    let _credential: Credential = Credential::decode(&cred_data)?;
+    let credential: Credential = Credential::decode(&cred_data)?;
+
+    if credential.revoked {
+        msg!("[identity::create_claim_ratio] ERROR: Credential is revoked");
+        return Err(IdentityError::CredentialRevoked.into());
+    }
 
     let update = CreateClaimUpdateV1 {
         nullifier: params.nullifier,
@@ -902,7 +924,7 @@ fn apply_verify_capability_update(_cid: ContractId, _update: VerifyCapabilityUpd
 // ============================================================================
 
 fn process_revoke_capability_instruction(
-    _cid: ContractId,
+    cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
@@ -923,8 +945,14 @@ fn process_revoke_capability_instruction(
     Ok(update.encode())
 }
 
-fn apply_revoke_capability_update(_cid: ContractId, _update: RevokeCapabilityUpdateV1) -> ContractResult {
-    // Capability possession tracked via Box; revocation via nullifier.
+fn apply_revoke_capability_update(cid: ContractId, update: RevokeCapabilityUpdateV1) -> ContractResult {
+    // Write revocation marker to the nullifiers tree.
+    // Keyed by poseidon_hash(capability_id, holder_pub_x, holder_pub_y)
+    // so that capability-gated entrypoints can check for revocation.
+    let nullifiers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_NULLIFIERS_TREE)?;
+    let (hx, hy) = update.holder_pub.xy().ok_or(IdentityError::InvalidSignature)?;
+    let revoke_key = poseidon_hash([update.capability_id.inner(), hx, hy]);
+    wasm::db::db_set(nullifiers_db, &revoke_key.to_repr(), &[1])?;
     msg!("[identity::revoke_capability::update] Capability revoked");
     Ok(())
 }

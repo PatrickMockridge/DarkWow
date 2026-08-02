@@ -555,14 +555,27 @@ impl AccountManager {
             .map_err(|_| "DWOW_KEY_PASSPHRASE environment variable is required for key encryption. Set it to a strong passphrase.".to_string())
     }
 
+    /// Zeroize a passphrase String and remove it from the environment.
+    /// Prevents key material from persisting in /proc/<pid>/environ and heap.
+    fn zeroize_passphrase(s: &mut String) {
+        unsafe {
+            let bytes = s.as_bytes_mut();
+            for b in bytes.iter_mut() { *b = 0; }
+        }
+        std::env::remove_var("DWOW_KEY_PASSPHRASE");
+    }
+
     fn encrypt_secret(secret_hex: &str) -> Result<String, String> {
         use chacha20poly1305::{
             aead::{Aead, KeyInit, OsRng},
             ChaCha20Poly1305, Nonce,
         };
-        let passphrase = Self::resolve_passphrase()?;
+        let mut passphrase = Self::resolve_passphrase()?;
         let mut key = [0u8; 32];
         pbkdf2_hmac_sha256(passphrase.as_bytes(), b"dwow-accounts", 100_000, &mut key);
+        // Zeroize passphrase and remove from env after use — prevents
+        // key material from persisting in /proc/<pid>/environ and heap.
+        Self::zeroize_passphrase(&mut passphrase);
         let cipher = ChaCha20Poly1305::new_from_slice(&key)
             .map_err(|e| format!("cipher init: {e}"))?;
         let nonce_bytes: [u8; 12] = {
@@ -586,9 +599,10 @@ impl AccountManager {
             aead::{Aead, KeyInit},
             ChaCha20Poly1305, Nonce,
         };
-        let passphrase = Self::resolve_passphrase()?;
+        let mut passphrase = Self::resolve_passphrase()?;
         let mut key = [0u8; 32];
         pbkdf2_hmac_sha256(passphrase.as_bytes(), b"dwow-accounts", 100_000, &mut key);
+        Self::zeroize_passphrase(&mut passphrase);
         let cipher = ChaCha20Poly1305::new_from_slice(&key)
             .map_err(|e| format!("cipher init: {e}"))?;
         use base64::Engine;

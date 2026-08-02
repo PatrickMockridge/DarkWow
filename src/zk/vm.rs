@@ -1530,7 +1530,15 @@ impl Circuit<pallas::Base> for ZkCircuit {
 
                     // Compute a / b = a * b^(p-2) mod p using Fermat's little theorem.
                     //
-                    // Division-by-zero behavior: When b = 0, the 253 mul gates each
+                    // Pallas base field modulus (doc/src/spec/crypto-schemes.md:40):
+                    //   p = 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001
+                    //   p-2 = 0x40000000000000000000000000000000224698fc094cf91b992d30ecffffffff
+                    // Cross-validated against:
+                    //   - vendor/halo2/halo2_gadgets/.../constants.rs:33-35 (T_P constant)
+                    //   - contrib/model/halo2_math.py:17
+                    //   - Python: sage pallas.base_field().characteristic()
+                    //
+                    // Division-by-zero behavior: When b = 0, the 255 mul gates each
                     // enforce c = a * b mod p (see gadget/arithmetic.rs:127-133).
                     // - current starts at b = 0
                     // - Each current = mul(current, current) is forced to 0 * 0 = 0
@@ -1540,26 +1548,37 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     // every intermediate uniquely. Division by zero correctly and
                     // verifiably produces quotient = 0. No separate is_zero constraint
                     // is needed; the mul gates fully constrain this path.
-                    // Verified: HAZOP analysis 2026-07-29.
-                    // p-2 = 0x3ffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffff6b
-                    // Bits that are 0: 2, 4, 7, 32, 254
-                    // All other 250 bits are 1
                     //
                     // Binary exponentiation: result = b^(p-2)
-                    // We compute result = b, then for bits 1..253:
-                    //   result = result^2
-                    //   if bit i is 1: result = result * b
-                    // Finally multiply by a to get a * b^(p-2)
+                    // p-2 is 255 bits. Bit 0 is 1 (p is odd → p-2 is odd).
+                    // For bits 1..254: square current, multiply result if bit is 1.
+                    // Finally multiply by a to get a * b^(p-2).
+                    //
+                    // HAZOP RC4: Previous implementation used hardcoded SKIP_BITS derived
+                    // from an incorrect p-2 constant (0x3fff...ff6b, 254 bits, 250 set bits).
+                    // The correct p-2 has 255 bits with 77 set bits. The old constant was
+                    // off by 181 bits — every BaseDiv result was mathematically wrong while
+                    // proofs still verified (constraints faithfully enforced wrong math).
 
-                    // Bits of p-2 that are 0 (we don't multiply by b at these positions)
-                    const SKIP_BITS: [u64; 5] = [2, 4, 7, 32, 254];
+                    // p-2 in little-endian bytes (Pallas base field)
+                    const PALLAS_P_MINUS_2: [u8; 32] = [
+                        0xff, 0xff, 0xff, 0xff, 0xec, 0x30, 0x2d, 0x99,
+                        0x1b, 0xcf, 0x4c, 0x09, 0xfc, 0x98, 0x46, 0x22,
+                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40,
+                    ];
 
-                    // Initialize result = b (for bit 0 which is 1), current = b^(2^0) = b
+                    // Bit i of p-2 (0-indexed, little-endian byte order)
+                    let bit_set = |i: usize| -> bool {
+                        (PALLAS_P_MINUS_2[i / 8] >> (i % 8)) & 1 == 1
+                    };
+
+                    // Initialize: bit 0 of p-2 is 1 (verified above, FF = 0b11111111)
                     let mut result = b.clone();
                     let mut current = b.clone();
 
-                    // Process bits 1 through 253
-                    for i in 1..=253 {
+                    // Process bits 1 through 254 (p-2 is 255 bits)
+                    for i in 1..=254 {
                         // Square: current = current^2 = b^(2^i)
                         current = arith_chip.as_ref().unwrap().mul(
                             layouter.namespace(|| format!("base_div_pow_{}", i)),
@@ -1567,8 +1586,8 @@ impl Circuit<pallas::Base> for ZkCircuit {
                             &current,
                         )?;
 
-                        // If bit i is 1 (not in SKIP_BITS), multiply result by current
-                        if !SKIP_BITS.contains(&i) {
+                        // If bit i of p-2 is 1, multiply result by current
+                        if bit_set(i) {
                             result = arith_chip.as_ref().unwrap().mul(
                                 layouter.namespace(|| format!("base_div_mul_{}", i)),
                                 &result,

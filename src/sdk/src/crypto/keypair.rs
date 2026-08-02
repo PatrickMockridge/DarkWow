@@ -23,7 +23,9 @@
 
 use core::str::FromStr;
 
-use dwow_serial::{SerialDecodable, SerialEncodable};
+use dwow_serial::{Decodable, Encodable, SerialDecodable, SerialEncodable};
+#[cfg(feature = "async")]
+use dwow_serial::{AsyncDecodable, AsyncEncodable};
 use halo2_gadgets::ecc::chip::FixedPoint;
 use pasta_curves::{
     arithmetic::CurveAffine,
@@ -40,7 +42,9 @@ use crate::error::ContractError;
 
 /// Keypair structure holding a `SecretKey` and its respective `PublicKey`.
 /// Copy removed per C3 — key material SHALL NOT be implicitly duplicated.
-#[derive(Clone, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+/// SerialEncodable/SerialDecodable removed per C2 (key-safety) — manual impls below
+/// gate serialization behind explicit IPC-pipe-only WARNING documentation.
+#[derive(Clone, PartialEq, Eq)]
 pub struct Keypair {
     pub secret: SecretKey,
     pub public: PublicKey,
@@ -68,6 +72,54 @@ impl Keypair {
     }
 }
 
+/// WARNING: Writes raw 32 secret bytes to the wire.
+/// Only used for IPC pipe between client binary and wallet daemon.
+/// Not for network/P2P/RPC — every call site must be audited.
+impl Encodable for Keypair {
+    fn encode<S: std::io::Write>(&self, s: &mut S) -> std::io::Result<usize> {
+        let mut len = self.secret.encode(s)?;
+        len += self.public.encode(s)?;
+        Ok(len)
+    }
+}
+
+/// Reads a full Keypair from wire format (32 secret bytes + 32 public key bytes).
+/// Only used for IPC pipe between client binary and wallet daemon.
+impl Decodable for Keypair {
+    fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> {
+        let secret = SecretKey::decode(d)?;
+        let public = PublicKey::decode(d)?;
+        Ok(Keypair { secret, public })
+    }
+}
+
+/// Async IPC pipe serialization — delegates to SecretKey/PublicKey AsyncEncodable.
+/// See sync Encodable impl WARNING for security constraints.
+#[cfg(feature = "async")]
+#[dwow_serial::async_trait]
+impl AsyncEncodable for Keypair {
+    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(
+        &self, w: &mut W,
+    ) -> std::io::Result<usize> {
+        let mut len = self.secret.encode_async(w).await?;
+        len += self.public.encode_async(w).await?;
+        Ok(len)
+    }
+}
+
+/// Async IPC pipe deserialization — delegates to SecretKey/PublicKey AsyncDecodable.
+#[cfg(feature = "async")]
+#[dwow_serial::async_trait]
+impl AsyncDecodable for Keypair {
+    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(
+        d: &mut D,
+    ) -> std::io::Result<Self> {
+        let secret = SecretKey::decode_async(d).await?;
+        let public = PublicKey::decode_async(d).await?;
+        Ok(Keypair { secret, public })
+    }
+}
+
 // `impl Default for Keypair` (secret = 42) was removed as a key-safety measure.
 // A `Default` identity key is a non-owner-declared, publicly-known secret that can
 // be produced silently via `Default::default()`, `unwrap_or_default()`, derived
@@ -85,7 +137,11 @@ impl Keypair {
 // HAZOP C14 fix: Debug is removed from the derive — a manual impl below
 // renders "<redacted>" to prevent accidental key leakage through formatting.
 // Display (bs58-encoded full secret) is kept for intentional CLI key export.
-#[derive(Clone, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+// SerialEncodable/SerialDecodable removed per C2 (key-safety) — manual impls
+// below gate serialization behind explicit IPC-pipe-only WARNING documentation.
+// This breaks the auto-derive chain: any struct containing SecretKey can no
+// longer silently derive Encodable — it must opt in explicitly.
+#[derive(Clone, PartialEq, Eq)]
 pub struct SecretKey(pallas::Base);
 
 impl core::fmt::Debug for SecretKey {
@@ -173,6 +229,50 @@ impl SecretKey {
     /// not in the type conversion.
     pub fn from_base(x: pallas::Base) -> Self {
         Self(x)
+    }
+}
+
+/// WARNING: Writes raw 32 secret bytes to the wire.
+/// Only used for IPC pipe between client binary and wallet daemon.
+/// Not for network/P2P/RPC — every call site must be audited via grep.
+/// Prefer `inner()` (reference) for in-process crypto operations.
+impl Encodable for SecretKey {
+    fn encode<S: std::io::Write>(&self, s: &mut S) -> std::io::Result<usize> {
+        // Delegate to pallas::Base's Encodable — writes 32 raw bytes.
+        self.0.encode(s)
+    }
+}
+
+/// Reads 32 bytes. Rejects non-canonical field elements.
+/// Only used for IPC pipe between client binary and wallet daemon.
+impl Decodable for SecretKey {
+    fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> {
+        let inner = pallas::Base::decode(d)?;
+        Ok(SecretKey(inner))
+    }
+}
+
+/// Async IPC pipe serialization — delegates to pallas::Base's AsyncEncodable.
+/// See sync Encodable impl WARNING for security constraints.
+#[cfg(feature = "async")]
+#[dwow_serial::async_trait]
+impl AsyncEncodable for SecretKey {
+    async fn encode_async<W: dwow_serial::AsyncWrite + Unpin + Send>(
+        &self, w: &mut W,
+    ) -> std::io::Result<usize> {
+        self.0.encode_async(w).await
+    }
+}
+
+/// Async IPC pipe deserialization — delegates to pallas::Base's AsyncDecodable.
+#[cfg(feature = "async")]
+#[dwow_serial::async_trait]
+impl AsyncDecodable for SecretKey {
+    async fn decode_async<D: dwow_serial::AsyncRead + Unpin + Send>(
+        d: &mut D,
+    ) -> std::io::Result<Self> {
+        let inner = pallas::Base::decode_async(d).await?;
+        Ok(SecretKey(inner))
     }
 }
 

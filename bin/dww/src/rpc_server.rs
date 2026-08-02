@@ -73,16 +73,30 @@ pub async fn listen(handler: Arc<dyn RpcHandler>, socket_path: &str) -> Result<(
         let _ = std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600));
     }
 
-    tracing::info!(target: "dww::wallet::rpc", "RPC server listening on {}", socket_path);
+    // Generate random auth token at startup. Write to file next to socket
+    // with mode 0600. Clients must include this token in every JSON-RPC
+    // request as params.auth_token. Full token comparison (not substring match).
+    let auth_token: [u8; 32] = rand::Rng::gen(&mut rand::rngs::OsRng);
+    let auth_token_hex = hex::encode(auth_token);
+    let token_path = format!("{}.token", socket_path);
+    std::fs::write(&token_path, &auth_token_hex)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&token_path, std::fs::Permissions::from_mode(0o600));
+    }
+
+    tracing::info!(target: "dww::wallet::rpc", "RPC server listening on {} (auth token at {})", socket_path, token_path);
 
     loop {
         let (stream, _) = listener.accept().await
             .map_err(|e| Error::Custom(format!("RPC accept: {}", e)))?;
 
         let handler = handler.clone();
+        let expected_token = auth_token_hex.clone();
         smol::spawn(async move {
             let fut = std::panic::AssertUnwindSafe(
-                handle_connection(handler, stream)
+                handle_connection(handler, stream, &expected_token)
             );
             match futures::FutureExt::catch_unwind(fut).await {
                 Ok(()) => {}
@@ -99,7 +113,7 @@ pub async fn listen(handler: Arc<dyn RpcHandler>, socket_path: &str) -> Result<(
     }
 }
 
-async fn handle_connection(handler: Arc<dyn RpcHandler>, mut stream: UnixStream) {
+async fn handle_connection(handler: Arc<dyn RpcHandler>, mut stream: UnixStream, expected_token: &str) {
     let mut reader = BufReader::new(&mut stream);
     let mut line = String::new();
 
@@ -124,6 +138,25 @@ async fn handle_connection(handler: Arc<dyn RpcHandler>, mut stream: UnixStream)
                 continue;
             }
         };
+
+        // Verify auth token — constant-time full comparison.
+        // Extract token from params.auth_token, rejecting if missing or wrong.
+        let supplied = request.params.get("auth_token")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if supplied.len() != expected_token.len() {
+            write_err(&mut reader, request.id, -32001, "Unauthorized: invalid auth token").await;
+            continue;
+        }
+        // Constant-time byte comparison
+        let mut mismatch: u8 = 0;
+        for (a, b) in supplied.bytes().zip(expected_token.bytes()) {
+            mismatch |= a ^ b;
+        }
+        if mismatch != 0 {
+            write_err(&mut reader, request.id, -32001, "Unauthorized: invalid auth token").await;
+            continue;
+        }
 
         match handler.handle(&request.method, request.id, request.params).await {
             Ok(result) => {

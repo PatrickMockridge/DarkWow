@@ -147,7 +147,10 @@ pub fn check_block_timestamp(
     // Median of last N blocks (time warp protection).
     // This is the deterministic portion of Bitcoin Core's CheckBlockTimestamp.
     // The non-deterministic future-timestamp check is a P2P policy, not a consensus rule.
-    if height > BlockHeight::GENESIS && recent_timestamps.len() >= MEDIAN_BLOCK_COUNT {
+    // Apply median protection when at least one prior timestamp is available.
+    // For blocks 2-11 this uses whatever timestamps exist (fewer than MEDIAN_BLOCK_COUNT),
+    // preventing difficulty/time manipulation during bootstrap.
+    if height > BlockHeight::GENESIS && !recent_timestamps.is_empty() {
         let mut sorted: Vec<BlockTimestamp> = recent_timestamps.to_vec();
         sorted.sort_unstable();
         let median = sorted[sorted.len() / 2];

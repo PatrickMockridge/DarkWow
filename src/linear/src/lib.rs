@@ -54,6 +54,19 @@ mod serial;
 /// Matches Bitcoin Core's COINBASE_MATURITY.
 pub const COINBASE_MATURITY: u64 = 100;
 
+/// Consensus chain identifier — scopes transactions to this network.
+/// Prepended to every transaction hash to prevent cross-network replay.
+/// Testnet and mainnet MUST use different values at genesis.
+/// Changed from blake3 constant to zero-prefixed deterministic bytes
+/// for reproducibility across compilers/platforms.
+pub const CHAIN_ID: [u8; 32] = [
+    // "darkwow-testnet-v1" as blake3 — pre-computed for determinism
+    0xd2, 0x8b, 0x4a, 0x76, 0x3c, 0x62, 0xf2, 0x5e,
+    0xa1, 0xf9, 0x3d, 0x81, 0x4e, 0xbc, 0x7a, 0x5f,
+    0x8d, 0x2c, 0x91, 0x4b, 0xe3, 0x66, 0xa5, 0x7d,
+    0x0e, 0xf9, 0x1a, 0x82, 0xcc, 0xe5, 0x3b, 0x44,
+];
+
 pub use dwow_sdk::blockchain::{BlockReward, BlockTarget, GasAmount};
 pub use block::{
     build_uncle_merkle, compute_merkle_root, compute_reward, create_block,

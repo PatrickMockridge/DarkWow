@@ -301,6 +301,9 @@ impl Transaction {
     pub fn hash(&self) -> Hash {
         let mut h = blake3::Hasher::new();
 
+        // Chain ID: 32 bytes — prevents cross-network transaction replay
+        h.update(&crate::CHAIN_ID);
+
         // version: 1 byte
         h.update(&[self.version.get()]);
 

@@ -33,7 +33,7 @@ use dwow_core::{
 use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
-        constants::{DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_USER_DATA_ENC},
+        constants::{DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_TX_BINDING, DRK_POSEIDON_DOMAIN_USER_DATA_ENC},
         pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId,
         MerkleNode, PublicKey, ScalarBlind, SecretKey, TokenId,
     },
@@ -129,6 +129,11 @@ pub fn create_burn_proof(
     let user_data_enc = poseidon_hash([DRK_POSEIDON_DOMAIN_USER_DATA_ENC, input.user_data, user_data_blind.clone().inner()]);
     let value_commit = pedersen_commitment_u64(input.value, value_blind.clone());
     let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.token_id, token_blind.clone().inner()]);
+    let tx_binding = poseidon_hash([
+        DRK_POSEIDON_DOMAIN_TX_BINDING,
+        input.tx_commitment,
+        input.tx_nonce,
+    ]);
 
     let public_inputs = BurnRevealed {
         nullifier,
@@ -138,7 +143,7 @@ pub fn create_burn_proof(
         spend_hook: input.spend_hook,
         user_data_enc,
         signature_public,
-        tx_binding: pallas::Base::zero(),
+        tx_binding,
         tx_nonce: input.tx_nonce,
     };
 
@@ -169,7 +174,7 @@ pub fn create_burn_proof(
         Witness::Base(Value::known(signature_public.y().expect("pk not identity"))),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
-        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding computed in-circuit
+        Witness::Base(Value::known(tx_binding)),
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
@@ -239,6 +244,10 @@ impl BurnCallBuilder {
         let mut signature_secrets = vec![];
         let mut inputs = vec![];
 
+        // Capture tx_binding values before consuming self.inputs
+        let tx_commitment = self.inputs.first().map(|i| i.tx_commitment).unwrap_or(pallas::Base::zero());
+        let tx_nonce = self.inputs.first().map(|i| i.tx_nonce).unwrap_or(pallas::Base::zero());
+
         for input in self.inputs.into_iter() {
             let secret = input.secret.clone();
             let signature_secret = input.ephemeral_signature_secret.clone();
@@ -306,7 +315,15 @@ impl BurnCallBuilder {
         }
 
         Ok(BurnCallDebris {
-            params: BurnParamsV1 { inputs, tx_binding: pallas::Base::zero(), tx_nonce: pallas::Base::zero() },
+            params: BurnParamsV1 {
+                inputs,
+                tx_binding: poseidon_hash([
+                    DRK_POSEIDON_DOMAIN_TX_BINDING,
+                    tx_commitment,
+                    tx_nonce,
+                ]),
+                tx_nonce,
+            },
             proofs,
             signature_secrets,
         })
