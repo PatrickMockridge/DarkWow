@@ -745,11 +745,11 @@ pub struct SubmitBidParamsV1 {
 impl dwow_serial::Encodable for SubmitBidParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for SubmitBidParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl SubmitBidParamsV1 {
-    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+169); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.bidder_pub_x.to_repr()); b.extend_from_slice(&self.bidder_pub_y.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.claim_id.to_repr()); b }
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(2+self.proof.len()+self.encrypted_payload.len()+168); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.tender_id.to_repr()); b.extend_from_slice(&self.bid_id.to_repr()); b.extend_from_slice(&self.bidder_pub_x.to_repr()); b.extend_from_slice(&self.bidder_pub_y.to_repr()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.claim_id.to_repr()); b.push(self.encrypted_payload.len() as u8); b.extend_from_slice(&self.encrypted_payload); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 171 {
+        if data.len() < 170 {
             return Err(ContractError::IoError(format!(
-                "SubmitBidParamsV1: expected at least 171 bytes, got {}",
+                "SubmitBidParamsV1: expected at least 170 bytes, got {}",
                 data.len()
             )));
         }
