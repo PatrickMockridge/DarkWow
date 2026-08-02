@@ -308,8 +308,7 @@ fn create_transfer_burn_proof(
     // Derive public key from secret using Poseidon (Schnorr-style)
     let public_key = poseidon_hash([input.secret]);
 
-    // Reconstruct coin from the input
-    let attrs = CapAttrs {
+    let commitment = CapAttrs {
         public_key,
         value: input.value,
         token_id: TokenId::from_base(input.token_id),

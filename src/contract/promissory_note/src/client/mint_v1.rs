@@ -189,7 +189,7 @@ impl MintCallBuilder {
 
         Ok(MintCallDebris {
             params: MintParamsV1 {
-                coin,
+                commitment,
                 value_commit,
                 token_id: TokenId::from_base(self.input.token_id),
                 token_registry_root,

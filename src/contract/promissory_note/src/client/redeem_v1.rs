@@ -300,7 +300,7 @@ fn create_redeem_burn_proof(
 ) -> Result<(Proof, RedeemBurnRevealed)> {
     let public_key = poseidon_hash([input.secret]);
 
-    let attrs = CapAttrs {
+    let commitment = CapAttrs {
         public_key,
         value: input.value,
         token_id: TokenId::from_base(input.token_id),

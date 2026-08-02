@@ -289,7 +289,7 @@ impl AttestValueParamsV1 {
         if data.len() < 67 { return Err(ContractError::IoError("AttestValueParamsV1: too short".into())); }
         let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
         let pos = 2 + proof_len;
-        if data.len() != pos + 65 { return Err(ContractError::IoError("AttestValueParamsV1: wrong length".into())); }
+        if data.len() != pos + 97 { return Err(ContractError::IoError("AttestValueParamsV1: wrong length".into())); }
         let proof = data[2..pos].to_vec();
         let oracle_id = OracleId::from_bytes(data[pos..pos+32].try_into().unwrap())
             .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid oracle_id".into()))?;
