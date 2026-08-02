@@ -48,45 +48,45 @@ fn count_constrain_instance(path: &str) -> usize {
 }
 
 #[test]
-fn mint_v1_constrain_instance_count_matches_trait() {
+fn mint_v2_constrain_instance_count_matches_trait() {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/proof/mint_v1.zk"
+        "/proof/mint_v2.zk"
     );
     let count = count_constrain_instance(path);
     assert_eq!(
         count, 9,
-        "mint_v1.zk has {} constrain_instance calls, expected 9. \
+        "mint_v2.zk has {} constrain_instance calls, expected 9. \
          Update CircuitPublicInputs::COUNT for TransferMintRevealed.",
         count
     );
 }
 
 #[test]
-fn burn_v1_constrain_instance_count_matches_trait() {
+fn burn_v2_constrain_instance_count_matches_trait() {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/proof/burn_v1.zk"
+        "/proof/burn_v2.zk"
     );
     let count = count_constrain_instance(path);
     assert_eq!(
         count, 11,
-        "burn_v1.zk has {} constrain_instance calls, expected 11. \
+        "burn_v2.zk has {} constrain_instance calls, expected 11. \
          Update CircuitPublicInputs::COUNT for TransferBurnRevealed.",
         count
     );
 }
 
 #[test]
-fn fee_v1_constrain_instance_count_matches_trait() {
+fn fee_v2_constrain_instance_count_matches_trait() {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/proof/fee_v1.zk"
+        "/proof/fee_v2.zk"
     );
     let count = count_constrain_instance(path);
     assert_eq!(
         count, 14,
-        "fee_v1.zk has {} constrain_instance calls, expected 14. \
+        "fee_v2.zk has {} constrain_instance calls, expected 14. \
          Update CircuitPublicInputs::COUNT for the fee reveal type.",
         count
     );
