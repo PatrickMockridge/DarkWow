@@ -63,7 +63,7 @@ fn point_to_coords(pt: pallas::Point) -> (pallas::Base, pallas::Base) {
 /// Order must match Burn_V1 circuit:
 /// nullifier, value_commit_x, value_commit_y, token_commit, merkle_root,
 /// user_data_enc, spend_hook, signature_public
-pub struct RedeemBurnRevealed {
+pub struct RedeemRevokeRevealed {
     pub nullifier: Nullifier,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
@@ -75,7 +75,7 @@ pub struct RedeemBurnRevealed {
     pub tx_nonce: pallas::Base,
 }
 
-impl RedeemBurnRevealed {
+impl RedeemRevokeRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         let (vc_x, vc_y) = point_to_coords(self.value_commit);
         vec![
@@ -297,7 +297,7 @@ fn create_redeem_burn_proof(
     user_data_blind: BaseBlind,
     tx_commitment: pallas::Base,
     tx_nonce: pallas::Base,
-) -> Result<(Proof, RedeemBurnRevealed)> {
+) -> Result<(Proof, RedeemRevokeRevealed)> {
     let public_key = poseidon_hash([input.secret]);
 
     let commitment = CapAttrs {
@@ -331,7 +331,7 @@ fn create_redeem_burn_proof(
     let user_data_enc = poseidon_hash([input.user_data, user_data_blind.inner()]);
     let signature_public = poseidon_hash([input.ephemeral_signature_secret]);
 
-    let public_inputs = RedeemBurnRevealed {
+    let public_inputs = RedeemRevokeRevealed {
         nullifier,
         value_commit,
         token_commit,

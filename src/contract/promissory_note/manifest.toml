@@ -11,7 +11,7 @@ genesis_inclusion_reason = "Universal DeFi dependency — not consensus-critical
 # ============================================================================
 
 [[functions]]
-name = "token_mint"
+name = "register_type"
 code = 0
 description = "Create a new token type with mint authority. TokenId is derived from auth_parent, user_data, and blind."
 requires_proof = true
@@ -25,14 +25,14 @@ requires_proof = true
 proof_circuit = "Redeem_V1"
 
 [[functions]]
-name = "mint"
+name = "issue"
 code = 2
 description = "Mint new coins of an existing token. Requires mint authority — the caller must prove knowledge of the mint_secret matching the token's stored auth_parent."
 requires_proof = true
 proof_circuit = "Issue_V1"
 
 [[functions]]
-name = "burn"
+name = "revoke"
 code = 3
 description = "Burn coins via BurnV1 — publishes nullifiers to prevent double-spending. Supports spend_hook dispatch to target contracts."
 requires_proof = true
@@ -43,14 +43,14 @@ name = "transfer"
 code = 4
 description = "Atomic burn-and-blind-output via TransferV1. Burns input coins, creates new blind outputs. Enforces value conservation per token_commit."
 requires_proof = true
-proof_circuit = "BlindOutput_V1"
+proof_circuit = "Transfer_V1"
 
 [[functions]]
 name = "otc_swap"
 code = 5
 description = "Peer-to-peer atomic swap via OtcSwapV1. Exactly 2 inputs and 2 outputs. Both parties must sign."
 requires_proof = true
-proof_circuit = "BlindOutput_V1"
+proof_circuit = "Transfer_V1"
 
 # ============================================================================
 # Capabilities
@@ -81,21 +81,21 @@ note_schema = [{ name = "value", type = "u64" }, { name = "commitment", type = "
 # ============================================================================
 
 [[actions]]
-function = "token_mint"
+function = "register_type"
 requires = { type = "none" }
 consumes = []
 produces = [{ name = "mint_authority", description = "Mint authority for the newly created token" }]
 required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
 [[actions]]
-function = "mint"
+function = "issue"
 requires = { type = "all", capabilities = ["mint_authority"] }
 consumes = []
 produces = [{ name = "coin", description = "Newly minted coins" }]
 required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
 [[actions]]
-function = "burn"
+function = "revoke"
 requires = { type = "any", capabilities = ["coin"] }
 consumes = ["coin"]
 produces = []
@@ -179,7 +179,7 @@ name = "Revoke_V1"
 namespace = "promissory_note"
 
 [[circuits]]
-name = "BlindOutput_V1"
+name = "Transfer_V1"
 namespace = "promissory_note"
 
 # ============================================================================
@@ -187,7 +187,7 @@ namespace = "promissory_note"
 # ============================================================================
 
 [[parameters]]
-function = "token_mint"
+function = "register_type"
 fields = [
     { name = "mint_public", type = "public_key" },
     { name = "user_data", type = "pallas_base" },
@@ -195,7 +195,7 @@ fields = [
 ]
 
 [[parameters]]
-function = "mint"
+function = "issue"
 fields = [
     { name = "token_id", type = "pallas_base" },
     { name = "value", type = "u64" },
@@ -215,7 +215,7 @@ fields = [
 ]
 
 [[parameters]]
-function = "burn"
+function = "revoke"
 fields = [
     { name = "coin_ids", type = "pallas_base" },  # variable length
 ]

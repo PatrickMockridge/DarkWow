@@ -49,10 +49,10 @@ use super::PromissoryNote;
 use crate::model::{AeadEncryptedNote, CapAttrs, CapCommitment, Input, Nullifier, Output, TransferParamsV1};
 
 /// Public inputs revealed after burn proof (part of transfer)
-/// Order must match Burn_V1 circuit:
+/// Order must match Revoke_V1 circuit:
 /// nullifier, value_commit_x, value_commit_y, token_commit, merkle_root,
 /// user_data_enc, spend_hook, signature_public
-pub struct TransferBurnRevealed {
+pub struct TransferRevokeRevealed {
     pub nullifier: Nullifier,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
@@ -64,7 +64,7 @@ pub struct TransferBurnRevealed {
     pub tx_nonce: pallas::Base,
 }
 
-impl TransferBurnRevealed {
+impl TransferRevokeRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         let (vc_x, vc_y) = point_to_coords(self.value_commit);
         vec![
@@ -176,14 +176,14 @@ pub struct TransferCallBuilder {
     pub inputs: Vec<TransferCallInput>,
     /// Anonymous outputs being created
     pub outputs: Vec<TransferCallOutput>,
-    /// `Burn_V1` zkas circuit ZkBinary
-    pub burn_zkbin: ZkBinary,
-    /// Proving key for the `Burn_V1` zk circuit
-    pub burn_pk: ProvingKey,
+    /// `Revoke_V1` zkas circuit ZkBinary
+    pub revoke_zkbin: ZkBinary,
+    /// Proving key for the `Revoke_V1` zk circuit
+    pub revoke_pk: ProvingKey,
     /// `BlindOutput_V1` zkas circuit ZkBinary
-    pub blind_output_zkbin: ZkBinary,
+    pub transfer_zkbin: ZkBinary,
     /// Proving key for the `BlindOutput_V1` zk circuit
-    pub blind_output_pk: ProvingKey,
+    pub transfer_pk: ProvingKey,
 }
 
 impl TransferCallBuilder {
@@ -215,8 +215,8 @@ impl TransferCallBuilder {
             let user_data_blind = BaseBlind::random(&mut OsRng);
 
             let (burn_proof, revealed) = create_transfer_burn_proof(
-                &self.burn_zkbin,
-                &self.burn_pk,
+                &self.revoke_zkbin,
+                &self.revoke_pk,
                 &input,
                 value_blind,
                 token_id_blind,
@@ -241,9 +241,9 @@ impl TransferCallBuilder {
             let value_blind = ScalarBlind::random(&mut OsRng);
             let token_id_blind = BaseBlind::random(&mut OsRng);
 
-            let (blind_output_proof, revealed) = create_transfer_blind_output_proof(
-                &self.blind_output_zkbin,
-                &self.blind_output_pk,
+            let (transfer_proof, revealed) = create_transfer_transfer_proof(
+                &self.transfer_zkbin,
+                &self.transfer_pk,
                 &output,
                 value_blind.clone(),
                 token_id_blind.clone(),
@@ -251,7 +251,7 @@ impl TransferCallBuilder {
                 pallas::Base::zero(),
             )?;
 
-            proofs.push(blind_output_proof);
+            proofs.push(transfer_proof);
 
             // Build note with all attributes the recipient needs to verify the coin.
             // token_blind in the note must match token_id_blind used in the ZK proof
@@ -304,7 +304,7 @@ fn create_transfer_burn_proof(
     value_blind: ScalarBlind,
     token_id_blind: BaseBlind,
     user_data_blind: BaseBlind,
-) -> Result<(Proof, TransferBurnRevealed)> {
+) -> Result<(Proof, TransferRevokeRevealed)> {
     // Derive public key from secret using Poseidon (Schnorr-style)
     let public_key = poseidon_hash([input.secret]);
 
@@ -348,7 +348,7 @@ fn create_transfer_burn_proof(
     // Signature public key
     let signature_public = poseidon_hash([input.ephemeral_signature_secret]);
 
-    let public_inputs = TransferBurnRevealed {
+    let public_inputs = TransferRevokeRevealed {
         nullifier,
         value_commit,
         token_commit,
@@ -391,7 +391,7 @@ fn create_transfer_burn_proof(
 ///
 /// Now constrains token_commit so the entrypoint can group inputs and outputs
 /// per token type for value conservation.
-fn create_transfer_blind_output_proof(
+fn create_transfer_transfer_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
     output: &TransferCallOutput,

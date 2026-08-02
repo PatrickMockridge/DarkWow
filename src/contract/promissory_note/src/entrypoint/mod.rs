@@ -61,10 +61,10 @@ use dwow_serial::{deserialize, Encodable, WriteExt};
 use crate::{
     error::{ContractError, PromissoryNoteError},
     model::{
-        BurnParamsV1, BurnSpendHookPayload, BurnUpdateV1,
-        MintParamsV1, MintUpdateV1, OtcSwapParamsV1,
+        RevokeParamsV1, BurnSpendHookPayload, RevokeUpdateV1,
+        IssueParamsV1, IssueUpdateV1, OtcSwapParamsV1,
         OtcSwapUpdateV1, RedeemParamsV1, RedeemUpdateV1,
-        TokenMintParamsV1, TokenMintUpdateV1, TransferParamsV1,
+        RegisterTypeParamsV1, RegisterTypeUpdateV1, TransferParamsV1,
         TransferUpdateV1,
     },
     PromissoryNoteFunction, PROMISSORY_NOTE_CONTRACT_COIN_MERKLE_TREE,
@@ -110,15 +110,15 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
 
     // V2 circuits (HAZOP RC3: domain separation)
-    let token_mint_v2_bincode = include_bytes!("../../proof/token_mint_v2.zk.bin");
-    let mint_v2_bincode = include_bytes!("../../proof/mint_v2.zk.bin");
-    let burn_v2_bincode = include_bytes!("../../proof/burn_v2.zk.bin");
-    let blind_output_v2_bincode = include_bytes!("../../proof/blind_output_v2.zk.bin");
+    let register_type_v2_bincode = include_bytes!("../../proof/register_type_v2.zk.bin");
+    let issue_v2_bincode = include_bytes!("../../proof/issue_v2.zk.bin");
+    let revoke_v2_bincode = include_bytes!("../../proof/revoke_v2.zk.bin");
+    let transfer_v2_bincode = include_bytes!("../../proof/transfer_v2.zk.bin");
     let redeem_v2_bincode = include_bytes!("../../proof/redeem_v2.zk.bin");
-    wasm::db::zkas_db_set(&token_mint_v2_bincode[..])?;
-    wasm::db::zkas_db_set(&mint_v2_bincode[..])?;
-    wasm::db::zkas_db_set(&burn_v2_bincode[..])?;
-    wasm::db::zkas_db_set(&blind_output_v2_bincode[..])?;
+    wasm::db::zkas_db_set(&register_type_v2_bincode[..])?;
+    wasm::db::zkas_db_set(&issue_v2_bincode[..])?;
+    wasm::db::zkas_db_set(&revoke_v2_bincode[..])?;
+    wasm::db::zkas_db_set(&transfer_v2_bincode[..])?;
     wasm::db::zkas_db_set(&redeem_v2_bincode[..])?;
 
     let tx_hash = wasm::util::get_tx_hash()?;
@@ -240,10 +240,10 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     let func = PromissoryNoteFunction::try_from(self_.data[0])?;
 
     let metadata = match func {
-        PromissoryNoteFunction::RegisterTypeV1 => token_mint_get_metadata(cid, call_idx, calls),
+        PromissoryNoteFunction::RegisterTypeV1 => register_type_get_metadata(cid, call_idx, calls),
         PromissoryNoteFunction::RedeemV1 => redeem_get_metadata(cid, call_idx, calls),
-        PromissoryNoteFunction::IssueV1 => mint_get_metadata(cid, call_idx, calls),
-        PromissoryNoteFunction::RevokeV1 => burn_get_metadata(cid, call_idx, calls),
+        PromissoryNoteFunction::IssueV1 => issue_get_metadata(cid, call_idx, calls),
+        PromissoryNoteFunction::RevokeV1 => revoke_get_metadata(cid, call_idx, calls),
         PromissoryNoteFunction::TransferV1 => transfer_get_metadata(cid, call_idx, calls),
         PromissoryNoteFunction::OtcSwapV1 => otc_swap_get_metadata(cid, call_idx, calls),
     }?;
@@ -260,9 +260,9 @@ fn point_coords(pt: pallas::Point) -> (pallas::Base, pallas::Base) {
 
 /// Metadata for RegisterTypeV1
 /// Circuit instances: token_id, token_auth_parent, coin, value_commit_x, value_commit_y
-fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
+fn register_type_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx];
-    let params= match TokenMintParamsV1::decode(&self_.data.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
+    let params= match RegisterTypeParamsV1::decode(&self_.data.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let signature_pubkeys: Vec<pallas::Base> = vec![];
@@ -290,10 +290,10 @@ fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
 }
 
 /// Metadata for IssueV1
-/// Circuit instances: token_root, mint_public, coin, value_commit_x, value_commit_y, token_id, spend_hook
-fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
+/// Circuit instances: token_root, issue_public, coin, value_commit_x, value_commit_y, token_id, spend_hook
+fn issue_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params= match MintParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
+    let params= match IssueParamsV1::decode(&self_.data[1..]) { Ok(p) => p, Err(_) => return Ok(vec![]) };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Schnorr signatures prohibited (contract-standards.md §3).
@@ -301,13 +301,13 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
 
     let (vc_x, vc_y) = point_coords(params.value_commit);
 
-    // IssueV1 circuit expects: token_root, mint_public, coin, vc_x, vc_y, token_id,
+    // IssueV1 circuit expects: token_root, issue_public, coin, vc_x, vc_y, token_id,
     //                          spend_hook, tx_binding, tx_nonce
     zk_public_inputs.push((
         PROMISSORY_NOTE_CONTRACT_ZKAS_ISSUE_NS_V2.to_string(),
         vec![
             params.token_registry_root.inner(),
-            params.mint_public,
+            params.issue_public,
             params.commitment.inner(),
             vc_x,
             vc_y,
@@ -327,9 +327,9 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
 /// Metadata for RevokeV1
 /// Circuit instances: nullifier, value_commit_x, value_commit_y, token_commit,
 ///                     merkle_root, user_data_enc, spend_hook, signature_public
-fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
+fn revoke_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params = match BurnParamsV1::decode(&self_.data[1..]) {
+    let params = match RevokeParamsV1::decode(&self_.data[1..]) {
         Ok(p) => p,
         Err(_) => return Ok(vec![]),
     };
@@ -427,10 +427,10 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let func = PromissoryNoteFunction::try_from(self_.data[0])?;
 
     match func {
-        PromissoryNoteFunction::RegisterTypeV1 => token_mint_v1(cid, call_idx, calls),
+        PromissoryNoteFunction::RegisterTypeV1 => register_type_v1(cid, call_idx, calls),
         PromissoryNoteFunction::RedeemV1 => redeem_v1(cid, call_idx, calls),
-        PromissoryNoteFunction::IssueV1 => mint_v1(cid, call_idx, calls),
-        PromissoryNoteFunction::RevokeV1 => burn_v1(cid, call_idx, calls),
+        PromissoryNoteFunction::IssueV1 => issue_v1(cid, call_idx, calls),
+        PromissoryNoteFunction::RevokeV1 => revoke_v1(cid, call_idx, calls),
         PromissoryNoteFunction::TransferV1 => transfer_v1(cid, call_idx, calls),
         PromissoryNoteFunction::OtcSwapV1 => otc_swap_v1(cid, call_idx, calls),
     }
@@ -498,32 +498,32 @@ fn verify_value_conservation(inputs: &[crate::model::Input], outputs: &[crate::m
 // TOKEN MINT - Create a new token type (stablecoin, wrapped, etc.)
 // ============================================================================
 
-fn token_mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
+fn register_type_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params= TokenMintParamsV1::decode(&self_.data[1..])?;
-    msg!("[promissory_note::token_mint_v1] Creating new token type");
+    let params= RegisterTypeParamsV1::decode(&self_.data[1..])?;
+    msg!("[promissory_note::register_type_v1] Creating new token type");
 
     let coins_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COINS_TREE)?;
 
     // Verify coin doesn't already exist
     if wasm::db::db_contains_key(coins_db, &params.commitment.to_bytes())? {
-        msg!("[token_mint_v1] Error: Coin already exists");
+        msg!("[register_type_v1] Error: Coin already exists");
         return Err(PromissoryNoteError::DuplicateCoin.into())
     }
 
     // HAZOP P-1 fix: reject duplicate capability namespace registration.
-    // Previously apply_token_mint unconditionally db_set the token_registry_db
+    // Previously apply_register_type unconditionally db_set the token_registry_db
     // entry, overwriting the stored backing capability commitment. Defense-in-depth
     // against accidental blind reuse or client bugs — a deliberate collision
     // requires breaking Poseidon's collision resistance.
     let token_registry_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_TREE)?;
     if wasm::db::db_contains_key(token_registry_db, &params.token_id.to_bytes())? {
-        msg!("[token_mint_v1] Error: Capability namespace already registered");
+        msg!("[register_type_v1] Error: Capability namespace already registered");
         return Err(PromissoryNoteError::DuplicateCoin.into())
     }
 
-    let update = TokenMintUpdateV1 { token_id: params.token_id, commitment: params.commitment, token_auth_parent: params.token_auth_parent };
-    msg!("[promissory_note::token_mint_v1] Token type created successfully");
+    let update = RegisterTypeUpdateV1 { token_id: params.token_id, commitment: params.commitment, token_auth_parent: params.token_auth_parent };
+    msg!("[promissory_note::register_type_v1] Token type created successfully");
     wasm::util::set_return_data(&[&[PromissoryNoteFunction::RegisterTypeV1 as u8], &update.encode()[..]].concat())
 }
 
@@ -531,23 +531,23 @@ fn token_mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
 // MINT - Mint tokens of existing token type (proves backing capability)
 // ============================================================================
 
-fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
+fn issue_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params= MintParamsV1::decode(&self_.data[1..])?;
-    msg!("[promissory_note::mint_v1] Minting tokens");
+    let params= IssueParamsV1::decode(&self_.data[1..])?;
+    msg!("[promissory_note::issue_v1] Minting tokens");
 
     let coins_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COINS_TREE)?;
     let token_registry_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_TREE)?;
 
     // Verify coin doesn't already exist
     if wasm::db::db_contains_key(coins_db, &params.commitment.to_bytes())? {
-        msg!("[mint_v1] Error: Coin already exists");
+        msg!("[issue_v1] Error: Coin already exists");
         return Err(PromissoryNoteError::DuplicateCoin.into())
     }
 
     // Verify token_id exists in token registry (must be created via RegisterTypeV1)
     if !wasm::db::db_contains_key(token_registry_db, &params.token_id.to_bytes())? {
-        msg!("[mint_v1] Error: Token not registered");
+        msg!("[issue_v1] Error: Token not registered");
         return Err(PromissoryNoteError::TokenNotRegistered.into())
     }
 
@@ -559,9 +559,9 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     let stored_auth = Option::<pallas::Base>::from(pallas::Base::from_repr(
         stored_auth_bytes.try_into().map_err(|_| ContractError::IoError("Corrupt state: token_auth_parent wrong size".into()))?,
     )).ok_or_else(|| ContractError::IoError("Corrupt state: invalid token_auth_parent".into()))?;
-    if params.mint_public != stored_auth {
-        msg!("[mint_v1] Error: Mint authority mismatch — mint_public does not match stored token_auth_parent");
-        return Err(PromissoryNoteError::InvalidMintAuthority.into())
+    if params.issue_public != stored_auth {
+        msg!("[issue_v1] Error: Mint authority mismatch — issue_public does not match stored token_auth_parent");
+        return Err(PromissoryNoteError::InvalidIssueAuthority.into())
     }
 
     // Verify token_registry_root matches the current on-chain registry root.
@@ -573,7 +573,7 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
         current_root_bytes.try_into().map_err(|_| ContractError::IoError("Corrupt state: LATEST_TOKEN_REGISTRY_ROOT wrong size".into()))?,
     ).ok_or_else(|| ContractError::IoError("Corrupt state: invalid LATEST_TOKEN_REGISTRY_ROOT".into()))?;
     if params.token_registry_root != current_root {
-        msg!("[mint_v1] Error: Token registry root mismatch (stale or replayed proof)");
+        msg!("[issue_v1] Error: Token registry root mismatch (stale or replayed proof)");
         return Err(PromissoryNoteError::TokenNotRegistered.into())
     }
 
@@ -588,7 +588,7 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
         Some(data) => {
             let data_len = data.len();
             let bytes: [u8; 8] = data.try_into().map_err(|_| {
-                msg!("[promissory_note::mint_v1] Error: Corrupt state — coin count wrong size: {}", data_len);
+                msg!("[promissory_note::issue_v1] Error: Corrupt state — coin count wrong size: {}", data_len);
                 ContractError::IoError("Corrupt state: coin count wrong size".to_string())
             })?;
             u64::from_le_bytes(bytes)
@@ -600,12 +600,12 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     };
     let new_coin_count = current_count.saturating_add(1);
 
-    let update = MintUpdateV1 {
+    let update = IssueUpdateV1 {
         commitment: params.commitment,
         token_id: params.token_id,
         new_coin_count,
     };
-    msg!("[promissory_note::mint_v1] Mint valid");
+    msg!("[promissory_note::issue_v1] Mint valid");
     wasm::util::set_return_data(&[&[PromissoryNoteFunction::IssueV1 as u8], &update.encode()[..]].concat())
 }
 
@@ -613,21 +613,21 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
 // BURN - Destroy tokens
 // ============================================================================
 
-fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
+fn revoke_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
     let self_ = &calls[call_idx].data;
-    let params= BurnParamsV1::decode(&self_.data[1..])?;
-    msg!("[promissory_note::burn_v1] Processing burn: {} inputs", params.inputs.len());
+    let params= RevokeParamsV1::decode(&self_.data[1..])?;
+    msg!("[promissory_note::revoke_v1] Processing burn: {} inputs", params.inputs.len());
 
     if params.inputs.is_empty() {
-        return Err(PromissoryNoteError::BurnMissingInputs.into())
+        return Err(PromissoryNoteError::RevokeMissingInputs.into())
     }
 
-    // HAZOP HIGH-1 defense: The burn_v1.zk circuit uses zero_cond(coin_value, coin)
+    // HAZOP HIGH-1 defense: The revoke_v1.zk circuit uses zero_cond(coin_value, coin)
     // for the Merkle proof. When coin_value=0, zero_cond returns 0 (the tree's zero
     // leaf), making the Merkle proof verify against empty positions rather than the
     // actual coin. The entrypoint cannot independently verify coin_value > 0 because
     // values are hidden behind Pedersen commitments. The proper fix is a circuit change:
-    // add less_than_strict(0, coin_value) in burn_v1.zk.
+    // add less_than_strict(0, coin_value) in revoke_v1.zk.
     //
     // Defense-in-depth: the entrypoint verifies (1) Merkle root exists in coin_roots_db,
     // (2) nullifier is unspent, (3) spend_hook consistency. A zero-value burn produces
@@ -644,13 +644,13 @@ fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     for (i, input) in params.inputs.iter().enumerate() {
         // Verify Merkle root exists
         if !wasm::db::db_contains_key(coin_roots_db, &input.merkle_root.to_bytes())? {
-            msg!("[burn_v1] Error: Merkle root not found for input {}", i);
+            msg!("[revoke_v1] Error: Merkle root not found for input {}", i);
             return Err(PromissoryNoteError::TransferMerkleRootNotFound.into())
         }
 
         // Verify nullifier is NOT already spent
         if smt.get_leaf(&input.nullifier.inner()) != pallas::Base::zero() {
-            msg!("[burn_v1] Error: Nullifier already spent for input {}", i);
+            msg!("[revoke_v1] Error: Nullifier already spent for input {}", i);
             return Err(PromissoryNoteError::DuplicateNullifier.into())
         }
 
@@ -664,7 +664,7 @@ fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     if spend_hook.inner() != pallas::Base::zero() {
         for input in &params.inputs[1..] {
             if input.spend_hook != spend_hook {
-                msg!("[burn_v1] Error: Spend hook mismatch in inputs");
+                msg!("[revoke_v1] Error: Spend hook mismatch in inputs");
                 return Err(PromissoryNoteError::SpendHookMismatch.into())
             }
         }
@@ -685,8 +685,8 @@ fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
         wasm::util::emit_spend_hook(&target_cid, &payload_bytes)?;
     }
 
-    let update = BurnUpdateV1 { nullifiers: new_nullifiers };
-    msg!("[promissory_note::burn_v1] Burn valid");
+    let update = RevokeUpdateV1 { nullifiers: new_nullifiers };
+    msg!("[promissory_note::revoke_v1] Burn valid");
     wasm::util::set_return_data(&[&[PromissoryNoteFunction::RevokeV1 as u8], &update.encode()[..]].concat())
 }
 
@@ -767,20 +767,20 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 
     match func {
         PromissoryNoteFunction::RegisterTypeV1 => {
-            let update = TokenMintUpdateV1::decode(&update_data[1..])?;
-            apply_token_mint(cid, update)
+            let update = RegisterTypeUpdateV1::decode(&update_data[1..])?;
+            apply_register_type(cid, update)
         }
         PromissoryNoteFunction::RedeemV1 => {
             let update = RedeemUpdateV1::decode(&update_data[1..])?;
             apply_redeem(cid, update)
         }
         PromissoryNoteFunction::IssueV1 => {
-            let update = MintUpdateV1::decode(&update_data[1..])?;
-            apply_mint(cid, update)
+            let update = IssueUpdateV1::decode(&update_data[1..])?;
+            apply_issue(cid, update)
         }
         PromissoryNoteFunction::RevokeV1 => {
-            let update = BurnUpdateV1::decode(&update_data[1..])?;
-            apply_burn(cid, update)
+            let update = RevokeUpdateV1::decode(&update_data[1..])?;
+            apply_revoke(cid, update)
         }
         PromissoryNoteFunction::TransferV1 => {
             let update = TransferUpdateV1::decode(&update_data[1..])?;
@@ -793,8 +793,8 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     }
 }
 
-fn apply_token_mint(cid: ContractId, update: TokenMintUpdateV1) -> ContractResult {
-    msg!("[promissory_note::apply_token_mint] Adding coin and registering token");
+fn apply_register_type(cid: ContractId, update: RegisterTypeUpdateV1) -> ContractResult {
+    msg!("[promissory_note::apply_register_type] Adding coin and registering token");
 
     let coins_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COINS_TREE)?;
     let info_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_INFO_TREE)?;
@@ -833,8 +833,8 @@ fn apply_token_mint(cid: ContractId, update: TokenMintUpdateV1) -> ContractResul
     Ok(())
 }
 
-fn apply_mint(cid: ContractId, update: MintUpdateV1) -> ContractResult {
-    msg!("[promissory_note::apply_mint] Adding coin to state");
+fn apply_issue(cid: ContractId, update: IssueUpdateV1) -> ContractResult {
+    msg!("[promissory_note::apply_issue] Adding coin to state");
     let coins_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COINS_TREE)?;
     let info_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_INFO_TREE)?;
 
@@ -858,8 +858,8 @@ fn apply_mint(cid: ContractId, update: MintUpdateV1) -> ContractResult {
     Ok(())
 }
 
-fn apply_burn(cid: ContractId, update: BurnUpdateV1) -> ContractResult {
-    msg!("[promissory_note::apply_burn] Marking {} nullifiers", update.nullifiers.len());
+fn apply_revoke(cid: ContractId, update: RevokeUpdateV1) -> ContractResult {
+    msg!("[promissory_note::apply_revoke] Marking {} nullifiers", update.nullifiers.len());
     let nullifiers_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE)?;
     let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
     let mut smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);

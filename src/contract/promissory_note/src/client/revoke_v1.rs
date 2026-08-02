@@ -21,9 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Promissory Note BurnV1 Client API
+//! Promissory Note RevokeV1 Client API
 //!
-//! This module provides the ability to build Burn calls to destroy coins.
+//! This module provides the ability to build Revoke calls to destroy coins.
 //! Uses Pedersen commitments for value — consistent with Transfer/Mint.
 //! Signature uses Schnorr-style where public_key = poseidon_hash(secret).
 
@@ -43,13 +43,13 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{BurnParamsV1, CapAttrs, Input, Nullifier};
+use crate::model::{RevokeParamsV1, CapAttrs, Input, Nullifier};
 
-/// Public inputs revealed after burn proof creation
-/// Order must match Burn_V1 circuit:
+/// Public inputs revealed after revoke proof creation
+/// Order must match Revoke_V1 circuit:
 /// nullifier, value_commit_x, value_commit_y, token_commit, merkle_root,
 /// user_data_enc, spend_hook, signature_public
-pub struct BurnRevealed {
+pub struct RevokeRevealed {
     pub nullifier: Nullifier,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
@@ -61,7 +61,7 @@ pub struct BurnRevealed {
     pub tx_nonce: pallas::Base,
 }
 
-impl BurnRevealed {
+impl RevokeRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         let (vc_x, vc_y) = {
             let affine = self.value_commit.to_affine();
@@ -83,9 +83,9 @@ impl BurnRevealed {
     }
 }
 
-/// Input for building a burn call
-pub struct BurnCallInput {
-    /// Value of the coin being burned
+/// Input for building a revoke call
+pub struct RevokeCallInput {
+    /// Value of the coin being revokeed
     pub value: u64,
     /// Token ID
     pub token_id: pallas::Base,
@@ -103,39 +103,39 @@ pub struct BurnCallInput {
     pub secret: pallas::Base,
     /// Ephemeral signature secret (Schnorr) — MUST be fresh per transaction.
     /// Never reuse the wallet secret here; doing so links all
-    /// burns to the same on-chain signature_public.
+    /// revokes to the same on-chain signature_public.
     pub ephemeral_signature_secret: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
-/// Debris produced by building a Burn call, containing the parameters
+/// Debris produced by building a Revoke call, containing the parameters
 /// and ZK proofs needed to execute the transaction.
-pub struct BurnCallDebris {
+pub struct RevokeCallDebris {
     /// The contract call parameters
-    pub params: BurnParamsV1,
-    /// The ZK proofs for the burn operation
+    pub params: RevokeParamsV1,
+    /// The ZK proofs for the revoke operation
     pub proofs: Vec<Proof>,
 }
 
-/// Struct holding necessary information to build a `PromissoryNote::BurnV1` contract call.
-pub struct BurnCallBuilder {
+/// Struct holding necessary information to build a `PromissoryNote::RevokeV1` contract call.
+pub struct RevokeCallBuilder {
     /// Anonymous inputs
-    pub inputs: Vec<BurnCallInput>,
-    /// `Burn_V1` zkas circuit ZkBinary
-    pub burn_zkbin: ZkBinary,
-    /// Proving key for the `Burn_V1` zk circuit
-    pub burn_pk: ProvingKey,
+    pub inputs: Vec<RevokeCallInput>,
+    /// `Revoke_V1` zkas circuit ZkBinary
+    pub revoke_zkbin: ZkBinary,
+    /// Proving key for the `Revoke_V1` zk circuit
+    pub revoke_pk: ProvingKey,
 }
 
-impl BurnCallBuilder {
-    /// Build the Burn call debris
-    pub fn build(self) -> Result<BurnCallDebris> {
-        debug!(target: "contract::promissory_note::client::burn", "Building PromissoryNote::BurnV1 contract call");
+impl RevokeCallBuilder {
+    /// Build the Revoke call debris
+    pub fn build(self) -> Result<RevokeCallDebris> {
+        debug!(target: "contract::promissory_note::client::revoke", "Building PromissoryNote::RevokeV1 contract call");
 
         if self.inputs.is_empty() {
             return Err(crate::error::ContractError::Custom(
-                crate::error::PromissoryNoteError::BurnMissingInputs as u32,
+                crate::error::PromissoryNoteError::RevokeMissingInputs as u32,
             )
             .into());
         }
@@ -144,14 +144,14 @@ impl BurnCallBuilder {
         let mut inputs = vec![];
 
         for input in self.inputs.into_iter() {
-            // Generate burn proof
+            // Generate revoke proof
             let value_blind = ScalarBlind::random(&mut OsRng);
             let token_id_blind = BaseBlind::random(&mut OsRng);
             let user_data_blind = BaseBlind::random(&mut OsRng);
 
-            let (proof, revealed) = create_burn_proof(
-                &self.burn_zkbin,
-                &self.burn_pk,
+            let (proof, revealed) = create_revoke_proof(
+                &self.revoke_zkbin,
+                &self.revoke_pk,
                 &input,
                 value_blind,
                 token_id_blind,
@@ -172,23 +172,23 @@ impl BurnCallBuilder {
             });
         }
 
-        Ok(BurnCallDebris {
-            params: BurnParamsV1 { inputs, tx_binding: pallas::Base::zero(), tx_nonce: pallas::Base::zero() },
+        Ok(RevokeCallDebris {
+            params: RevokeParamsV1 { inputs, tx_binding: pallas::Base::zero(), tx_nonce: pallas::Base::zero() },
             proofs,
         })
     }
 }
 
-/// Create a ZK proof for burning (destroying) a coin.
+/// Create a ZK proof for revokeing (destroying) a coin.
 /// Value commitment: Pedersen (additively homomorphic).
-pub fn create_burn_proof(
+pub fn create_revoke_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
-    input: &BurnCallInput,
+    input: &RevokeCallInput,
     value_blind: ScalarBlind,
     token_id_blind: BaseBlind,
     user_data_blind: BaseBlind,
-) -> Result<(Proof, BurnRevealed)> {
+) -> Result<(Proof, RevokeRevealed)> {
     // Derive public key from secret using Poseidon (Schnorr-style)
     let public_key = poseidon_hash([input.secret]);
 
@@ -229,14 +229,14 @@ pub fn create_burn_proof(
     // User data encryption
     let user_data_enc = poseidon_hash([input.user_data, user_data_blind.inner()]);
 
-    // Derive per-burn unique signature_secret from coin_secret + nullifier.
+    // Derive per-revoke unique signature_secret from coin_secret + nullifier.
     // poseidon_hash(coin_secret, nullifier) binds the signer to the coin owner
-    // (fixes H2) while keeping signature_public unlinkable across burns
+    // (fixes H2) while keeping signature_public unlinkable across revokes
     // (different nullifier → different signature_secret → different signature_public).
     let signature_secret = poseidon_hash([input.secret, nullifier.inner()]);
     let signature_public = poseidon_hash([signature_secret]);
 
-    let public_inputs = BurnRevealed {
+    let public_inputs = RevokeRevealed {
         nullifier,
         value_commit,
         token_commit,
@@ -267,8 +267,8 @@ pub fn create_burn_proof(
             }
             path.try_into().unwrap()
         })),
-        // Per-burn signature_secret = poseidon_hash(coin_secret, nullifier).
-        // Cryptographically bound to coin_secret (fixes H2) but unique per burn
+        // Per-revoke signature_secret = poseidon_hash(coin_secret, nullifier).
+        // Cryptographically bound to coin_secret (fixes H2) but unique per revoke
         // since each nullifier is unique — signature_public is unlinkable.
         Witness::Base(Value::known(signature_secret)),
         Witness::Base(Value::known(input.tx_commitment)),

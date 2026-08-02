@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Promissory Note TokenMintV1 Client API
+//! Promissory Note RegisterTypeV1 Client API
 //!
 //! This module provides the ability to create new token types.
 //! Examples: stablecoins (USD, EUR), wrapped tokens (wBTC, wETH), etc.
@@ -41,12 +41,12 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{CapAttrs, CapCommitment, TokenMintParamsV1};
+use crate::model::{CapAttrs, CapCommitment, RegisterTypeParamsV1};
 
 /// Public inputs revealed after token mint proof creation
-/// Order must match TokenMint_V1 circuit:
+/// Order must match RegisterType_V1 circuit:
 /// token_id, token_auth_parent, coin, value_commit_x, value_commit_y, spend_hook
-pub struct TokenMintRevealed {
+pub struct RegisterTypeRevealed {
     /// Token ID (derived from auth_parent, user_data, blind)
     pub token_id: pallas::Base,
     /// Token authorization parent (public authority)
@@ -61,7 +61,7 @@ pub struct TokenMintRevealed {
     pub tx_nonce: pallas::Base,
 }
 
-impl TokenMintRevealed {
+impl RegisterTypeRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         let (vc_x, vc_y) = {
             let affine = self.value_commit.to_affine();
@@ -82,7 +82,7 @@ impl TokenMintRevealed {
 }
 
 /// Input for building a token mint call
-pub struct TokenMintCallInput {
+pub struct RegisterTypeCallInput {
     /// Authority parent - who has permission to create this token
     pub token_auth_parent: pallas::Base,
     /// User data for the token
@@ -101,30 +101,30 @@ pub struct TokenMintCallInput {
     pub coin_blind: pallas::Base,
 }
 
-/// Debris produced by building a TokenMint call
-pub struct TokenMintCallDebris {
+/// Debris produced by building a RegisterType call
+pub struct RegisterTypeCallDebris {
     /// The contract call parameters
-    pub params: TokenMintParamsV1,
+    pub params: RegisterTypeParamsV1,
     /// The ZK proofs for the token mint operation
     pub proofs: Vec<Proof>,
 }
 
-/// Struct holding necessary information to build a `PromissoryNote::TokenMintV1` contract call.
-pub struct TokenMintCallBuilder {
+/// Struct holding necessary information to build a `PromissoryNote::RegisterTypeV1` contract call.
+pub struct RegisterTypeCallBuilder {
     /// The input for the token mint
-    pub input: TokenMintCallInput,
-    /// `TokenMint_V1` zkas circuit ZkBinary
-    pub token_mint_zkbin: ZkBinary,
-    /// Proving key for the `TokenMint_V1` zk circuit
-    pub token_mint_pk: ProvingKey,
+    pub input: RegisterTypeCallInput,
+    /// `RegisterType_V1` zkas circuit ZkBinary
+    pub register_type_zkbin: ZkBinary,
+    /// Proving key for the `RegisterType_V1` zk circuit
+    pub register_type_pk: ProvingKey,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
-impl TokenMintCallBuilder {
-    /// Build the TokenMint call debris
-    pub fn build(self) -> Result<TokenMintCallDebris> {
-        debug!(target: "contract::promissory_note::client::token_mint", "Building PromissoryNote::TokenMintV1 contract call");
+impl RegisterTypeCallBuilder {
+    /// Build the RegisterType call debris
+    pub fn build(self) -> Result<RegisterTypeCallDebris> {
+        debug!(target: "contract::promissory_note::client::register_type", "Building PromissoryNote::RegisterTypeV1 contract call");
 
         // Generate blinds
         let value_blind = ScalarBlind::random(&mut OsRng);
@@ -153,7 +153,7 @@ impl TokenMintCallBuilder {
         // Token commitment (hides token_id)
         let token_commit = poseidon_hash([token_id, self.input.token_blind]);
 
-        let public_inputs = TokenMintRevealed {
+        let public_inputs = RegisterTypeRevealed {
             token_id,
             token_auth_parent: self.input.token_auth_parent,
             commitment,
@@ -180,11 +180,11 @@ impl TokenMintCallBuilder {
             Witness::Base(Value::known(poseidon_hash([self.tx_commitment, self.tx_nonce]))), // V2: tx_binding = poseidon_hash(tx_commitment, tx_nonce)
         ];
 
-        let circuit = ZkCircuit::new(prover_witnesses, &self.token_mint_zkbin);
-        let proof = Proof::create(&self.token_mint_pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+        let circuit = ZkCircuit::new(prover_witnesses, &self.register_type_zkbin);
+        let proof = Proof::create(&self.register_type_pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
-        Ok(TokenMintCallDebris {
-            params: TokenMintParamsV1 {
+        Ok(RegisterTypeCallDebris {
+            params: RegisterTypeParamsV1 {
                 commitment,
                 value_commit,
                 token_id: TokenId::from_base(token_id),

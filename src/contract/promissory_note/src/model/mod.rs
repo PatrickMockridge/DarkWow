@@ -364,7 +364,7 @@ impl Output {
 /// Parameters for RegisterTypeV1 - create a new token type
 /// This is how stablecoins, wrapped tokens, etc. are created
 #[derive(Debug, Clone,)]
-pub struct TokenMintParamsV1 {
+pub struct RegisterTypeParamsV1 {
     /// The initial coin minted with this token type
     pub commitment: CapCommitment,
     /// Pedersen value commitment for the initial mint
@@ -383,10 +383,10 @@ pub struct TokenMintParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
-impl dwow_serial::Encodable for TokenMintParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
-impl dwow_serial::Decodable for TokenMintParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+impl dwow_serial::Encodable for RegisterTypeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RegisterTypeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-impl TokenMintParamsV1 {
+impl RegisterTypeParamsV1 {
     pub const ENCODED_SIZE: usize = 256;
 
     pub fn encode(&self) -> Vec<u8> {
@@ -405,41 +405,41 @@ impl TokenMintParamsV1 {
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
-                "TokenMintParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+                "RegisterTypeParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
         let commitment = CapCommitment::decode(&data[0..32])?;
         let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[32..64].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("TokenMintParamsV1: invalid value_commit".into()))?;
+            .ok_or_else(|| ContractError::IoError("RegisterTypeParamsV1: invalid value_commit".into()))?;
         let token_id = TokenId::from_bytes(data[64..96].try_into().unwrap())
-            .map_err(|_| ContractError::IoError("TokenMintParamsV1: invalid token_id".into()))?;
+            .map_err(|_| ContractError::IoError("RegisterTypeParamsV1: invalid token_id".into()))?;
         let token_auth_parent = Option::<pallas::Base>::from(pallas::Base::from_repr(data[96..128].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("TokenMintParamsV1: invalid token_auth_parent".into()))?;
+            .ok_or_else(|| ContractError::IoError("RegisterTypeParamsV1: invalid token_auth_parent".into()))?;
         let token_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(data[128..160].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("TokenMintParamsV1: invalid token_commit".into()))?;
+            .ok_or_else(|| ContractError::IoError("RegisterTypeParamsV1: invalid token_commit".into()))?;
         let spend_hook = FuncId::from_bytes(data[160..192].try_into().unwrap())
-            .map_err(|_| ContractError::IoError("TokenMintParamsV1: invalid spend_hook".into()))?;
+            .map_err(|_| ContractError::IoError("RegisterTypeParamsV1: invalid spend_hook".into()))?;
         let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[192..224].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("TokenMintParamsV1: invalid tx_binding".into()))?;
+            .ok_or_else(|| ContractError::IoError("RegisterTypeParamsV1: invalid tx_binding".into()))?;
         let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[224..256].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("TokenMintParamsV1: invalid tx_nonce".into()))?;
-        Ok(TokenMintParamsV1 { commitment, value_commit, token_id, token_auth_parent, token_commit, spend_hook, tx_binding, tx_nonce })
+            .ok_or_else(|| ContractError::IoError("RegisterTypeParamsV1: invalid tx_nonce".into()))?;
+        Ok(RegisterTypeParamsV1 { commitment, value_commit, token_id, token_auth_parent, token_commit, spend_hook, tx_binding, tx_nonce })
     }
 }
 
 /// State update for RegisterTypeV1
 #[derive(Debug, Clone)]
-pub struct TokenMintUpdateV1 {
+pub struct RegisterTypeUpdateV1 {
     pub token_id: TokenId,
     pub commitment: CapCommitment,
     /// Token authority public key (poseidon_hash of mint_secret)
     pub token_auth_parent: pallas::Base,
 }
 
-impl dwow_serial::Encodable for TokenMintUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
-impl dwow_serial::Decodable for TokenMintUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+impl dwow_serial::Encodable for RegisterTypeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RegisterTypeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-impl TokenMintUpdateV1 {
+impl RegisterTypeUpdateV1 {
     pub const ENCODED_SIZE: usize = 96; // 32 + 32 + 32
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
@@ -451,29 +451,29 @@ impl TokenMintUpdateV1 {
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
-                "TokenMintUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+                "RegisterTypeUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
         let token_id = TokenId::from_bytes(data[0..32].try_into().unwrap())
-            .map_err(|_| ContractError::IoError("TokenMintUpdateV1: invalid token_id".into()))?;
+            .map_err(|_| ContractError::IoError("RegisterTypeUpdateV1: invalid token_id".into()))?;
         let commitment = CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("TokenMintUpdateV1: invalid commitment".into()))?);
+            .ok_or_else(|| ContractError::IoError("RegisterTypeUpdateV1: invalid commitment".into()))?);
         let token_auth_parent = Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("TokenMintUpdateV1: invalid token_auth_parent".into()))?;
-        Ok(TokenMintUpdateV1 { token_id, commitment, token_auth_parent })
+            .ok_or_else(|| ContractError::IoError("RegisterTypeUpdateV1: invalid token_auth_parent".into()))?;
+        Ok(RegisterTypeUpdateV1 { token_id, commitment, token_auth_parent })
     }
 }
 
 /// The token registry maps token_id → token_auth_parent (the current mint authority's
 /// public key). This is a capability datum, not metadata — it's what the rotation
-/// ZK proof validates against (old_mint_public must match the stored authority).
+/// ZK proof validates against (old_issue_public must match the stored authority).
 /// No TokenInfo struct is needed; the registry value is just the serialized
 /// pallas::Base authority key.
 
 /// Parameters for IssueV1 - mint tokens of existing token type
 /// Proves knowledge of the backing secret directly against stored token_auth_parent
 #[derive(Debug, Clone,)]
-pub struct MintParamsV1 {
+pub struct IssueParamsV1 {
     /// The newly minted coin
     pub commitment: CapCommitment,
     /// Pedersen value commitment
@@ -483,7 +483,7 @@ pub struct MintParamsV1 {
     /// Token registry Merkle root (proves token exists)
     pub token_registry_root: MerkleNode,
     /// Backing capability public key (poseidon_hash of backing secret)
-    pub mint_public: pallas::Base,
+    pub issue_public: pallas::Base,
     /// Spend hook for the newly minted coin
     pub spend_hook: FuncId,
     /// Transaction binding (poseidon_hash(tx_commitment, tx_nonce))
@@ -492,10 +492,10 @@ pub struct MintParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
-impl dwow_serial::Encodable for MintParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
-impl dwow_serial::Decodable for MintParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+impl dwow_serial::Encodable for IssueParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for IssueParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-impl MintParamsV1 {
+impl IssueParamsV1 {
     pub const ENCODED_SIZE: usize = 256;
 
     pub fn encode(&self) -> Vec<u8> {
@@ -504,7 +504,7 @@ impl MintParamsV1 {
         buf.extend_from_slice(&self.value_commit.to_bytes());
         buf.extend_from_slice(&self.token_id.to_bytes());
         buf.extend_from_slice(&self.token_registry_root.to_bytes());
-        buf.extend_from_slice(&self.mint_public.to_repr());
+        buf.extend_from_slice(&self.issue_public.to_repr());
         buf.extend_from_slice(&self.spend_hook.to_bytes());
         buf.extend_from_slice(&self.tx_binding.to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
@@ -514,40 +514,40 @@ impl MintParamsV1 {
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
-                "MintParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+                "IssueParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
         let commitment = CapCommitment::decode(&data[0..32])?;
         let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[32..64].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("MintParamsV1: invalid value_commit".into()))?;
+            .ok_or_else(|| ContractError::IoError("IssueParamsV1: invalid value_commit".into()))?;
         let token_id = TokenId::from_bytes(data[64..96].try_into().unwrap())
-            .map_err(|_| ContractError::IoError("MintParamsV1: invalid token_id".into()))?;
+            .map_err(|_| ContractError::IoError("IssueParamsV1: invalid token_id".into()))?;
         let token_registry_root = MerkleNode::from_bytes(data[96..128].try_into().unwrap())
-            .ok_or_else(|| ContractError::IoError("MintParamsV1: invalid token_registry_root".into()))?;
-        let mint_public = Option::<pallas::Base>::from(pallas::Base::from_repr(data[128..160].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("MintParamsV1: invalid mint_public".into()))?;
+            .ok_or_else(|| ContractError::IoError("IssueParamsV1: invalid token_registry_root".into()))?;
+        let issue_public = Option::<pallas::Base>::from(pallas::Base::from_repr(data[128..160].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("IssueParamsV1: invalid issue_public".into()))?;
         let spend_hook = FuncId::from_bytes(data[160..192].try_into().unwrap())
-            .map_err(|_| ContractError::IoError("MintParamsV1: invalid spend_hook".into()))?;
+            .map_err(|_| ContractError::IoError("IssueParamsV1: invalid spend_hook".into()))?;
         let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[192..224].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("MintParamsV1: invalid tx_binding".into()))?;
+            .ok_or_else(|| ContractError::IoError("IssueParamsV1: invalid tx_binding".into()))?;
         let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[224..256].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("MintParamsV1: invalid tx_nonce".into()))?;
-        Ok(MintParamsV1 { commitment, value_commit, token_id, token_registry_root, mint_public, spend_hook, tx_binding, tx_nonce })
+            .ok_or_else(|| ContractError::IoError("IssueParamsV1: invalid tx_nonce".into()))?;
+        Ok(IssueParamsV1 { commitment, value_commit, token_id, token_registry_root, issue_public, spend_hook, tx_binding, tx_nonce })
     }
 }
 
 /// State update for IssueV1
 #[derive(Debug, Clone)]
-pub struct MintUpdateV1 {
+pub struct IssueUpdateV1 {
     pub commitment: CapCommitment,
     pub token_id: TokenId,
     pub new_coin_count: u64,
 }
 
-impl dwow_serial::Encodable for MintUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
-impl dwow_serial::Decodable for MintUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+impl dwow_serial::Encodable for IssueUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for IssueUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-impl MintUpdateV1 {
+impl IssueUpdateV1 {
     pub const ENCODED_SIZE: usize = 72; // 32 + 32 + 8
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
@@ -559,22 +559,22 @@ impl MintUpdateV1 {
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
-                "MintUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+                "IssueUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
         let commitment = CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("MintUpdateV1: invalid commitment".into()))?);
+            .ok_or_else(|| ContractError::IoError("IssueUpdateV1: invalid commitment".into()))?);
         let token_id = TokenId::from_bytes(data[32..64].try_into().unwrap())
-            .map_err(|_| ContractError::IoError("MintUpdateV1: invalid token_id".into()))?;
+            .map_err(|_| ContractError::IoError("IssueUpdateV1: invalid token_id".into()))?;
         let new_coin_count = u64::from_le_bytes(data[64..72].try_into().unwrap());
-        Ok(MintUpdateV1 { commitment, token_id, new_coin_count })
+        Ok(IssueUpdateV1 { commitment, token_id, new_coin_count })
     }
 }
 
 /// Parameters for RevokeV1 - destroy tokens
 /// Reveals nullifier to prove spending without revealing coin content
 #[derive(Debug, Clone,)]
-pub struct BurnParamsV1 {
+pub struct RevokeParamsV1 {
     /// Anonymous inputs being burned
     pub inputs: Vec<Input>,
     /// Transaction binding (poseidon_hash(tx_commitment, tx_nonce))
@@ -583,10 +583,10 @@ pub struct BurnParamsV1 {
     pub tx_nonce: pallas::Base,
 }
 
-impl dwow_serial::Encodable for BurnParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
-impl dwow_serial::Decodable for BurnParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+impl dwow_serial::Encodable for RevokeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RevokeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-impl BurnParamsV1 {
+impl RevokeParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let cap = 1 + self.inputs.len() * Input::ENCODED_SIZE + 64;
         let mut buf = Vec::with_capacity(cap);
@@ -598,36 +598,36 @@ impl BurnParamsV1 {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 65 { return Err(ContractError::IoError("BurnParamsV1: too short".into())); }
+        if data.len() < 65 { return Err(ContractError::IoError("RevokeParamsV1: too short".into())); }
         let count = data[0] as usize;
         let mut pos = 1;
         let mut inputs = Vec::with_capacity(count);
         for i in 0..count {
             if data.len() < pos + Input::ENCODED_SIZE {
-                return Err(ContractError::IoError(format!("BurnParamsV1: input[{}] truncated", i)));
+                return Err(ContractError::IoError(format!("RevokeParamsV1: input[{}] truncated", i)));
             }
             inputs.push(Input::decode(&data[pos..pos + Input::ENCODED_SIZE])?);
             pos += Input::ENCODED_SIZE;
         }
-        if data.len() < pos + 64 { return Err(ContractError::IoError("BurnParamsV1: missing trailing fields".into())); }
+        if data.len() < pos + 64 { return Err(ContractError::IoError("RevokeParamsV1: missing trailing fields".into())); }
         let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("BurnParamsV1: invalid tx_binding".into()))?;
+            .ok_or_else(|| ContractError::IoError("RevokeParamsV1: invalid tx_binding".into()))?;
         let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("BurnParamsV1: invalid tx_nonce".into()))?;
-        Ok(BurnParamsV1 { inputs, tx_binding, tx_nonce })
+            .ok_or_else(|| ContractError::IoError("RevokeParamsV1: invalid tx_nonce".into()))?;
+        Ok(RevokeParamsV1 { inputs, tx_binding, tx_nonce })
     }
 }
 
 /// State update for RevokeV1
 #[derive(Debug, Clone)]
-pub struct BurnUpdateV1 {
+pub struct RevokeUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
 }
 
-impl dwow_serial::Encodable for BurnUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
-impl dwow_serial::Decodable for BurnUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+impl dwow_serial::Encodable for RevokeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for RevokeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-impl BurnUpdateV1 {
+impl RevokeUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(1 + self.nullifiers.len() * 32);
         buf.push(self.nullifiers.len() as u8);
@@ -638,13 +638,13 @@ impl BurnUpdateV1 {
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.is_empty() {
-            return Err(ContractError::IoError("BurnUpdateV1: empty data".into()));
+            return Err(ContractError::IoError("RevokeUpdateV1: empty data".into()));
         }
         let count = data[0] as usize;
         let expected = 1 + count * 32;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
-                "BurnUpdateV1: expected {} bytes for {} nullifiers, got {}", expected, count, data.len()
+                "RevokeUpdateV1: expected {} bytes for {} nullifiers, got {}", expected, count, data.len()
             )));
         }
         let mut nullifiers = Vec::with_capacity(count);
@@ -653,10 +653,10 @@ impl BurnUpdateV1 {
             let nf = Nullifier(Option::<pallas::Base>::from(pallas::Base::from_repr(
                 data[start..start + 32].try_into().unwrap(),
             ))
-            .ok_or_else(|| ContractError::IoError(format!("BurnUpdateV1: invalid nullifier[{}]", i)))?);
+            .ok_or_else(|| ContractError::IoError(format!("RevokeUpdateV1: invalid nullifier[{}]", i)))?);
             nullifiers.push(nf);
         }
-        Ok(BurnUpdateV1 { nullifiers })
+        Ok(RevokeUpdateV1 { nullifiers })
     }
 }
 

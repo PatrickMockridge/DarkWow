@@ -29,9 +29,9 @@
 mod tests {
     use dwow_promissory_note_contract::{
         model::{
-            BurnParamsV1, BurnUpdateV1,
-            CapAttrs, CapCommitment, Input, MintParamsV1, MintUpdateV1, Nullifier, Output,
-            OtcSwapUpdateV1, TokenMintParamsV1, TokenMintUpdateV1,
+            RevokeParamsV1, RevokeUpdateV1,
+            CapAttrs, CapCommitment, Input, IssueParamsV1, IssueUpdateV1, Nullifier, Output,
+            OtcSwapUpdateV1, RegisterTypeParamsV1, RegisterTypeUpdateV1,
             TransferParamsV1, TransferUpdateV1, MAX_COIN_VALUE,
         },
         PromissoryNoteFunction, PROMISSORY_NOTE_MAX_COIN_VALUE,
@@ -237,8 +237,8 @@ mod tests {
     }
 
     #[test]
-    fn test_token_mint_params_serialization() {
-        let params = TokenMintParamsV1 {
+    fn test_register_type_params_serialization() {
+        let params = RegisterTypeParamsV1 {
             commitment: CapCommitment::from_attributes(
                 pallas::Base::from(1),
                 1000,
@@ -256,7 +256,7 @@ mod tests {
             tx_nonce: pallas::Base::zero(),
         };
         let encoded = serialize(&params);
-        let decoded: TokenMintParamsV1 = deserialize(&encoded).unwrap();
+        let decoded: RegisterTypeParamsV1 = deserialize(&encoded).unwrap();
         assert_eq!(decoded.commitment.inner(), params.commitment.inner());
         assert_eq!(decoded.value_commit, params.value_commit);
         assert_eq!(decoded.token_id, params.token_id);
@@ -265,7 +265,7 @@ mod tests {
 
     #[test]
     fn test_mint_params_serialization() {
-        let params = MintParamsV1 {
+        let params = IssueParamsV1 {
             commitment: CapCommitment::from_attributes(
                 pallas::Base::from(4),
                 500,
@@ -277,13 +277,13 @@ mod tests {
             value_commit: pallas::Point::generator(),
             token_id: TokenId::from_base(pallas::Base::from(5)),
             token_registry_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
-            mint_public: pallas::Base::from(3),
+            issue_public: pallas::Base::from(3),
             spend_hook: FuncId::none(),
             tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
         let encoded = serialize(&params);
-        let decoded: MintParamsV1 = deserialize(&encoded).unwrap();
+        let decoded: IssueParamsV1 = deserialize(&encoded).unwrap();
         assert_eq!(decoded.commitment.inner(), params.commitment.inner());
         assert_eq!(decoded.value_commit, params.value_commit);
     }
@@ -299,13 +299,13 @@ mod tests {
             spend_hook: FuncId::none(),
             signature_public: pallas::Base::zero(),
         };
-        let params = BurnParamsV1 {
+        let params = RevokeParamsV1 {
             inputs: vec![input],
             tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         };
         let encoded = serialize(&params);
-        let decoded: BurnParamsV1 = deserialize(&encoded).unwrap();
+        let decoded: RevokeParamsV1 = deserialize(&encoded).unwrap();
         assert_eq!(decoded.inputs.len(), 1);
         assert_eq!(decoded.inputs[0].value_commit, pallas::Point::generator());
     }
@@ -359,8 +359,8 @@ mod tests {
     // ================================================================
 
     #[test]
-    fn test_token_mint_update_serialization() {
-        let update = TokenMintUpdateV1 {
+    fn test_register_type_update_serialization() {
+        let update = RegisterTypeUpdateV1 {
             token_id: TokenId::from_base(pallas::Base::from(1)),
             commitment: CapCommitment::from_attributes(
                 pallas::Base::from(2),
@@ -373,14 +373,14 @@ mod tests {
             token_auth_parent: pallas::Base::zero(),
         };
         let encoded = serialize(&update);
-        let decoded: TokenMintUpdateV1 = deserialize(&encoded).unwrap();
+        let decoded: RegisterTypeUpdateV1 = deserialize(&encoded).unwrap();
         assert_eq!(decoded.token_id, update.token_id);
         assert_eq!(decoded.commitment.inner(), update.commitment.inner());
     }
 
     #[test]
     fn test_mint_update_serialization() {
-        let update = MintUpdateV1 {
+        let update = IssueUpdateV1 {
             commitment: CapCommitment::from_attributes(
                 pallas::Base::from(1),
                 500,
@@ -393,7 +393,7 @@ mod tests {
             new_coin_count: 1,
         };
         let encoded = serialize(&update);
-        let decoded: MintUpdateV1 = deserialize(&encoded).unwrap();
+        let decoded: IssueUpdateV1 = deserialize(&encoded).unwrap();
         assert_eq!(decoded.commitment.inner(), update.commitment.inner());
         assert_eq!(decoded.token_id, update.token_id);
         assert_eq!(decoded.new_coin_count, update.new_coin_count);
@@ -401,14 +401,14 @@ mod tests {
 
     #[test]
     fn test_burn_update_serialization() {
-        let update = BurnUpdateV1 {
+        let update = RevokeUpdateV1 {
             nullifiers: vec![
                 Nullifier::new(pallas::Base::from(1), pallas::Base::from(2)),
                 Nullifier::new(pallas::Base::from(3), pallas::Base::from(4)),
             ],
         };
         let encoded = serialize(&update);
-        let decoded: BurnUpdateV1 = deserialize(&encoded).unwrap();
+        let decoded: RevokeUpdateV1 = deserialize(&encoded).unwrap();
         assert_eq!(decoded.nullifiers.len(), 2);
         assert_eq!(decoded.nullifiers[0].inner(), update.nullifiers[0].inner());
     }

@@ -21,9 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Promissory Note MintV1 Client API
+//! Promissory Note IssueV1 Client API
 //!
-//! This module provides the ability to build Mint calls to create new coins.
+//! This module provides the ability to build Issue calls to create new coins.
 //! Uses Pedersen commitments for value — consistent with Transfer/Burn.
 
 use dwow_core::{
@@ -42,16 +42,16 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{CapAttrs, CapCommitment, MintParamsV1};
+use crate::model::{CapAttrs, CapCommitment, IssueParamsV1};
 
-/// Public inputs revealed after mint proof creation
-/// Order must match Mint_V1 circuit:
-/// token_root, mint_public, coin, value_commit_x, value_commit_y, token_id, spend_hook
-pub struct MintRevealed {
+/// Public inputs revealed after issue proof creation
+/// Order must match Issue_V1 circuit:
+/// token_root, issue_public, coin, value_commit_x, value_commit_y, token_id, spend_hook
+pub struct IssueRevealed {
     /// Merkle root of token registry
     pub token_registry_root: pallas::Base,
     /// Backing capability public key (poseidon_hash of backing secret)
-    pub mint_public: pallas::Base,
+    pub issue_public: pallas::Base,
     /// The coin commitment
     pub commitment: CapCommitment,
     /// The value commitment (Pedersen)
@@ -64,17 +64,17 @@ pub struct MintRevealed {
     pub tx_nonce: pallas::Base,
 }
 
-/// Input for building a mint call
-pub struct MintCallInput {
-    /// Backing capability secret (proves right to mint this token)
-    pub mint_secret: pallas::Base,
+/// Input for building a issue call
+pub struct IssueCallInput {
+    /// Backing capability secret (proves right to issue this token)
+    pub issue_secret: pallas::Base,
     /// Token registry Merkle tree leaf position
     pub token_leaf_pos: u32,
     /// Token registry Merkle path
     pub token_path: Vec<dwow_sdk::crypto::MerkleNode>,
     /// Recipient public key (poseidon_hash of secret)
     pub recipient: pallas::Base,
-    /// Value to mint
+    /// Value to issue
     pub value: u64,
     /// Token ID (hidden commitment)
     pub token_id: pallas::Base,
@@ -86,34 +86,34 @@ pub struct MintCallInput {
     pub coin_blind: pallas::Base,
 }
 
-/// Debris produced by building a Mint call, containing the parameters
+/// Debris produced by building a Issue call, containing the parameters
 /// and ZK proofs needed to execute the transaction.
-pub struct MintCallDebris {
+pub struct IssueCallDebris {
     /// The contract call parameters
-    pub params: MintParamsV1,
-    /// The ZK proofs for the mint operation
+    pub params: IssueParamsV1,
+    /// The ZK proofs for the issue operation
     pub proofs: Vec<Proof>,
 }
 
-/// Struct holding necessary information to build a `PromissoryNote::MintV1` contract call.
-pub struct MintCallBuilder {
-    /// The input for the mint
-    pub input: MintCallInput,
-    /// `Mint_V1` zkas circuit ZkBinary
-    pub mint_zkbin: ZkBinary,
-    /// Proving key for the `Mint_V1` zk circuit
-    pub mint_pk: ProvingKey,
+/// Struct holding necessary information to build a `PromissoryNote::IssueV1` contract call.
+pub struct IssueCallBuilder {
+    /// The input for the issue
+    pub input: IssueCallInput,
+    /// `Issue_V1` zkas circuit ZkBinary
+    pub issue_zkbin: ZkBinary,
+    /// Proving key for the `Issue_V1` zk circuit
+    pub issue_pk: ProvingKey,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
-impl MintCallBuilder {
-    /// Build the Mint call debris
-    pub fn build(self) -> Result<MintCallDebris> {
-        debug!(target: "contract::promissory_note::client::mint", "Building PromissoryNote::MintV1 contract call");
+impl IssueCallBuilder {
+    /// Build the Issue call debris
+    pub fn build(self) -> Result<IssueCallDebris> {
+        debug!(target: "contract::promissory_note::client::issue", "Building PromissoryNote::IssueV1 contract call");
 
-        // Derive mint_public from backing secret
-        let mint_public = poseidon_hash([self.input.mint_secret]);
+        // Derive issue_public from backing secret
+        let issue_public = poseidon_hash([self.input.issue_secret]);
 
         // Generate blinds
         let value_blind = ScalarBlind::random(&mut OsRng);
@@ -152,11 +152,11 @@ impl MintCallBuilder {
         // Create prover witnesses
         let prover_witnesses = vec![
             // Backing capability proof
-            // Note: mint_public is derived in-circuit as poseidon_hash(backing_secret),
-            // so we pass the preimage (mint_secret) as witness[0].
-            // mint_public itself is still witness[1] for constrain_instance exposure.
-            Witness::Base(Value::known(self.input.mint_secret)),
-            Witness::Base(Value::known(mint_public)),
+            // Note: issue_public is derived in-circuit as poseidon_hash(backing_secret),
+            // so we pass the preimage (issue_secret) as witness[0].
+            // issue_public itself is still witness[1] for constrain_instance exposure.
+            Witness::Base(Value::known(self.input.issue_secret)),
+            Witness::Base(Value::known(issue_public)),
             Witness::Uint32(Value::known(self.input.token_leaf_pos)),
             Witness::MerklePath(Value::known(self.input.token_path.clone().try_into().unwrap())),
             // Coin attributes
@@ -173,9 +173,9 @@ impl MintCallBuilder {
             Witness::Base(Value::known(poseidon_hash([self.tx_commitment, self.tx_nonce]))), // V2: tx_binding = poseidon_hash(tx_commitment, tx_nonce)
         ];
 
-        let public_inputs = MintRevealed {
+        let public_inputs = IssueRevealed {
             token_registry_root: token_registry_root.inner(),
-            mint_public,
+            issue_public,
             commitment,
             value_commit,
             token_id: self.input.token_id,
@@ -184,16 +184,16 @@ impl MintCallBuilder {
             tx_nonce: self.tx_nonce,
         };
 
-        let circuit = ZkCircuit::new(prover_witnesses, &self.mint_zkbin);
-        let proof = Proof::create(&self.mint_pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+        let circuit = ZkCircuit::new(prover_witnesses, &self.issue_zkbin);
+        let proof = Proof::create(&self.issue_pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
-        Ok(MintCallDebris {
-            params: MintParamsV1 {
+        Ok(IssueCallDebris {
+            params: IssueParamsV1 {
                 commitment,
                 value_commit,
                 token_id: TokenId::from_base(self.input.token_id),
                 token_registry_root,
-                mint_public,
+                issue_public,
                 spend_hook: FuncId::from_base(self.input.spend_hook),
                 tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
                 tx_nonce: self.tx_nonce,
@@ -203,7 +203,7 @@ impl MintCallBuilder {
     }
 }
 
-impl MintRevealed {
+impl IssueRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         let (vc_x, vc_y) = {
             let affine = self.value_commit.to_affine();
@@ -212,7 +212,7 @@ impl MintRevealed {
         };
         vec![
             self.token_registry_root,
-            self.mint_public,
+            self.issue_public,
             self.commitment.inner(),
             vc_x,
             vc_y,

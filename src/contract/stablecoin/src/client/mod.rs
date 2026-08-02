@@ -34,7 +34,7 @@
 use crate::model::*;
 
 #[cfg(feature = "client")]
-pub use dwow_promissory_note_contract::client::token_mint_v1::TokenMintCallInput;
+pub use dwow_promissory_note_contract::client::register_type_v1::RegisterTypeCallInput;
 
 // ============================================================================
 // ZK Proof Generation Modules

@@ -1449,7 +1449,7 @@ fn test_wallet_capability_scan() {
         let user_data = pallas::Base::from(2u64);
         let coin_blind = pallas::Base::from(6u64);
 
-        let token = pn_harness.create_token(
+        let token = pn_harness.register_type(
             auth_parent, user_data, pallas::Base::from(3u64),
             recipient, 1000, spend_hook, user_data, coin_blind,
         ).expect("create_token call_data");
@@ -1457,7 +1457,7 @@ fn test_wallet_capability_scan() {
             "create_token must produce non-empty call_data");
         let token_call_data = token.call_data.clone();
 
-        let mint = pn_harness.mint(
+        let mint = pn_harness.issue(
             auth_parent, token.token_id, recipient,
             500, spend_hook, user_data, coin_blind,
         ).expect("mint call_data");

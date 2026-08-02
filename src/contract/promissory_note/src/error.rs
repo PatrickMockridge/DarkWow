@@ -77,8 +77,8 @@ pub enum PromissoryNoteError {
     #[error("Missing inputs in transfer")]
     TransferMissingInputs,
 
-    #[error("Burn call must have at least one input")]
-    BurnMissingInputs,
+    #[error("Revoke call must have at least one input")]
+    RevokeMissingInputs,
 
     #[error("Missing outputs in transfer")]
     TransferMissingOutputs,
@@ -111,8 +111,8 @@ pub enum PromissoryNoteError {
     #[error("Invalid child contract ID")]
     InvalidChildContractId,
 
-    #[error("Invalid mint authority: mint_public does not match stored token_auth_parent")]
-    InvalidMintAuthority,
+    #[error("Invalid issue authority: auth_parent does not match stored token_auth_parent")]
+    InvalidIssueAuthority,
 
     #[error("All inputs must have the same spend_hook when spend_hook is non-zero")]
     SpendHookMismatch,

@@ -43,16 +43,16 @@ use crate::model::{CapCommitment, Output};
 pub mod zkbins;
 
 /// `PromissoryNote::RegisterTypeV1` API - create new token type
-pub mod token_mint_v1;
+pub mod register_type_v1;
 
-/// `PromissoryNote::RedeemV1` API - redeem coin, create receipt
+/// `PromissoryNote::RedeemV1` API - redeem, create receipt
 pub mod redeem_v1;
 
-/// `PromissoryNote::IssueV1` API - mint tokens of existing type
-pub mod mint_v1;
+/// `PromissoryNote::IssueV1` API - issue capabilities of existing type
+pub mod issue_v1;
 
 /// `PromissoryNote::RevokeV1` API
-pub mod burn_v1;
+pub mod revoke_v1;
 
 /// `PromissoryNote::TransferV1` API
 pub mod transfer_v1;

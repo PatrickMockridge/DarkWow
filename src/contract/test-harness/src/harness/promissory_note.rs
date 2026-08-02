@@ -37,8 +37,8 @@ use dwow_sdk::{
 
 use dwow_promissory_note_contract::{
     client::{
-        mint_v1::{MintCallBuilder, MintCallInput},
-        token_mint_v1::{TokenMintCallBuilder, TokenMintCallInput},
+        issue_v1::{IssueCallBuilder, IssueCallInput},
+        register_type_v1::{RegisterTypeCallBuilder, RegisterTypeCallInput},
         transfer_v1::{TransferCallBuilder, TransferCallInput, TransferCallOutput},
     },
     model::CapCommitment,
@@ -46,7 +46,7 @@ use dwow_promissory_note_contract::{
 use dwow_serial::Encodable;
 
 // Re-export types for convenience
-pub use dwow_promissory_note_contract::client::mint_v1::MintCallInput as MintInput;
+pub use dwow_promissory_note_contract::client::issue_v1::IssueCallInput as IssueInput;
 
 /// PromissoryNote Harness for isolated testing
 pub struct PromissoryNoteHarness {
@@ -76,10 +76,10 @@ impl PromissoryNoteHarness {
     /// Spawn a new PromissoryNote harness with pre-loaded circuits
     pub fn spawn() -> Self {
         // Load circuit binaries
-        let register_type_bin = include_bytes!("../../../promissory_note/proof/token_mint_v2.zk.bin");
-        let issue_bin = include_bytes!("../../../promissory_note/proof/mint_v2.zk.bin");
-        let revoke_bin = include_bytes!("../../../promissory_note/proof/burn_v2.zk.bin");
-        let transfer_bin = include_bytes!("../../../promissory_note/proof/blind_output_v2.zk.bin");
+        let register_type_bin = include_bytes!("../../../promissory_note/proof/register_type_v2.zk.bin");
+        let issue_bin = include_bytes!("../../../promissory_note/proof/issue_v2.zk.bin");
+        let revoke_bin = include_bytes!("../../../promissory_note/proof/revoke_v2.zk.bin");
+        let transfer_bin = include_bytes!("../../../promissory_note/proof/transfer_v2.zk.bin");
         let redeem_bin = include_bytes!("../../../promissory_note/proof/redeem_v2.zk.bin");
 
         let register_type_zkbin = ZkBinary::decode(register_type_bin, false).unwrap();
@@ -134,10 +134,10 @@ impl PromissoryNoteHarness {
 
     /// Create a new token type
     ///
-    /// Returns token creation result with mint_public for subsequent minting
-    pub fn create_token(
+    /// Returns token creation result with issue_public for subsequent minting
+    pub fn register_type(
         &self,
-        mint_secret: pallas::Base,
+        issue_secret: pallas::Base,
         token_user_data: pallas::Base,
         token_blind: pallas::Base,
         recipient: pallas::Base,
@@ -145,15 +145,15 @@ impl PromissoryNoteHarness {
         spend_hook: pallas::Base,
         user_data: pallas::Base,
         coin_blind: pallas::Base,
-    ) -> Result<TokenCreationResult> {
-        // Derive token_auth_parent = poseidon_hash(mint_secret) — backing capability commitment
-        let token_auth_parent = poseidon_hash([mint_secret]);
+    ) -> Result<RegisterTypeResult> {
+        // Derive token_auth_parent = poseidon_hash(issue_secret) — backing capability commitment
+        let token_auth_parent = poseidon_hash([issue_secret]);
 
         // Derive token_id = poseidon_hash(auth_parent, user_data, blind)
         let token_id = poseidon_hash([token_auth_parent, token_user_data, token_blind]);
 
         // Build token mint proof using the contract's builder
-        let token_input = TokenMintCallInput {
+        let token_input = RegisterTypeCallInput {
             token_auth_parent,
             token_user_data,
             token_blind,
@@ -164,10 +164,10 @@ impl PromissoryNoteHarness {
             coin_blind,
         };
 
-        let token_debris = TokenMintCallBuilder {
+        let token_debris = RegisterTypeCallBuilder {
             input: token_input,
-            token_mint_zkbin: self.register_type_zkbin.clone(),
-            token_mint_pk: self.register_type_pk.clone(),
+            register_type_zkbin: self.register_type_zkbin.clone(),
+            register_type_pk: self.register_type_pk.clone(),
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
@@ -176,10 +176,10 @@ impl PromissoryNoteHarness {
         let mut call_data = vec![0x00u8]; // RegisterTypeV1
         call_data.extend_from_slice(&token_debris.params.encode());
 
-        Ok(TokenCreationResult {
+        Ok(RegisterTypeResult {
             call_data,
             token_id,
-            mint_public: token_auth_parent,
+            issue_public: token_auth_parent,
             commitment:token_debris.params.commitment,
             value_commit: token_debris.params.value_commit,
             token_commit: token_debris.params.token_commit,
@@ -190,14 +190,14 @@ impl PromissoryNoteHarness {
     /// Mint tokens of an existing token type
     pub fn mint(
         &self,
-        mint_secret: pallas::Base,
+        issue_secret: pallas::Base,
         token_id: pallas::Base,
         recipient: pallas::Base,
         value: u64,
         spend_hook: pallas::Base,
         user_data: pallas::Base,
         coin_blind: pallas::Base,
-    ) -> Result<MintResult> {
+    ) -> Result<IssueResult> {
         // Build Merkle tree matching on-chain token registry structure:
         // init_contract places ZERO guard leaf at position 0, then
         // apply_token_mint (RegisterTypeV1) appends token_id at position 1.
@@ -210,8 +210,8 @@ impl PromissoryNoteHarness {
         // Get Merkle path for the token leaf
         let token_path = tree.witness(leaf_pos_mark, 0).unwrap();
 
-        let mint_input = MintCallInput {
-            mint_secret,
+        let issue_input = IssueCallInput {
+            issue_secret,
             token_leaf_pos: u64::from(leaf_pos_mark).try_into().unwrap(),
             token_path,
             recipient,
@@ -222,10 +222,10 @@ impl PromissoryNoteHarness {
             coin_blind,
         };
 
-        let debris = MintCallBuilder {
-            input: mint_input,
-            mint_zkbin: self.issue_zkbin.clone(),
-            mint_pk: self.issue_pk.clone(),
+        let debris = IssueCallBuilder {
+            input: issue_input,
+            issue_zkbin: self.issue_zkbin.clone(),
+            issue_pk: self.issue_pk.clone(),
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
@@ -234,7 +234,7 @@ impl PromissoryNoteHarness {
         let mut call_data = vec![0x02u8]; // IssueV1
         call_data.extend_from_slice(&debris.params.encode());
 
-        Ok(MintResult {
+        Ok(IssueResult {
             call_data,
             commitment:debris.params.commitment,
             value_commit: debris.params.value_commit,
@@ -251,10 +251,10 @@ impl PromissoryNoteHarness {
         let debris = TransferCallBuilder {
             inputs,
             outputs,
-            burn_zkbin: self.revoke_zkbin.clone(),
-            burn_pk: self.revoke_pk.clone(),
-            blind_output_zkbin: self.transfer_zkbin.clone(),
-            blind_output_pk: self.transfer_pk.clone(),
+            revoke_zkbin: self.revoke_zkbin.clone(),
+            revoke_pk: self.revoke_pk.clone(),
+            transfer_zkbin: self.transfer_zkbin.clone(),
+            transfer_pk: self.transfer_pk.clone(),
         }
         .build()?;
 
@@ -277,10 +277,10 @@ impl PromissoryNoteHarness {
         let debris = TransferCallBuilder {
             inputs,
             outputs,
-            burn_zkbin: self.revoke_zkbin.clone(),
-            burn_pk: self.revoke_pk.clone(),
-            blind_output_zkbin: self.transfer_zkbin.clone(),
-            blind_output_pk: self.transfer_pk.clone(),
+            revoke_zkbin: self.revoke_zkbin.clone(),
+            revoke_pk: self.revoke_pk.clone(),
+            transfer_zkbin: self.transfer_zkbin.clone(),
+            transfer_pk: self.transfer_pk.clone(),
         }
         .build()?;
 
@@ -333,10 +333,10 @@ impl super::ContractHarness for PromissoryNoteHarness {
 }
 
 /// Result of token creation
-pub struct TokenCreationResult {
+pub struct RegisterTypeResult {
     pub call_data: Vec<u8>,
     pub token_id: pallas::Base,
-    pub mint_public: pallas::Base,
+    pub issue_public: pallas::Base,
     pub commitment: CapCommitment,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
@@ -344,7 +344,7 @@ pub struct TokenCreationResult {
 }
 
 /// Result of minting
-pub struct MintResult {
+pub struct IssueResult {
     pub call_data: Vec<u8>,
     pub commitment: CapCommitment,
     pub value_commit: pallas::Point,

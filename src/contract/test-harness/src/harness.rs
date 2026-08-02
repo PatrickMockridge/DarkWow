@@ -102,7 +102,7 @@ pub use insurance_market::InsuranceMarketHarness;
 pub use labor_market::LaborMarketHarness;
 pub use lottery::LotteryHarness;
 pub use multisig::MultiSigHarness;
-pub use promissory_note::{PromissoryNoteHarness, TokenCreationResult, MintResult, TransferResult};
+pub use promissory_note::{PromissoryNoteHarness, RegisterTypeResult, IssueResult, TransferResult};
 pub use native_token::{NativeTokenHarness, PoWRewardResult, BurnResult, BurnCallInput};
 pub use oracle::OracleHarness;
 pub use otc_swap::OtcSwapHarness;
