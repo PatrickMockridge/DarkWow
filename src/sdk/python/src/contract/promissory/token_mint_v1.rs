@@ -36,7 +36,7 @@ impl_py_methods!(PromissoryNoteTokenMintParamsV1);
 impl FunctionParams for promissory_model::TokenMintParamsV1 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
-        dict.set_item("coin", format!("{:?}", self.coin))?;
+        dict.set_item("coin", format!("{:?}", self.commitment))?;
         dict.set_item("value_commit", format!("{:?}", self.value_commit))?;
         dict.set_item("token_id", format!("{:?}", self.token_id))?;
         dict.set_item("token_commit", format!("{:?}", self.token_commit))?;
@@ -45,7 +45,7 @@ impl FunctionParams for promissory_model::TokenMintParamsV1 {
 
     fn fmt_pretty(&self, out: &mut String, depth: usize) -> PyResult<()> {
         let prefix = format!("{}├─ ", "   ".repeat(depth));
-        writeln!(out, "{prefix}coin: {:?}", self.coin).unwrap();
+        writeln!(out, "{prefix}coin: {:?}", self.commitment).unwrap();
         writeln!(out, "{prefix}value_commit: {:?}", self.value_commit).unwrap();
         writeln!(out, "{prefix}token_id: {:?}", self.token_id).unwrap();
         writeln!(out, "{prefix}token_commit: {:?}", self.token_commit).unwrap();

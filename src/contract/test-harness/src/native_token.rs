@@ -83,7 +83,7 @@ fn test_pow_reward_call_builder() -> Result<(), Box<dyn std::error::Error>> {
     .build()?;
 
     info!(target: "test_harness::native_token", "PoWReward call built successfully");
-    info!(target: "test_harness::native_token", "  Output coin: {:?}", debris.params.output.coin);
+    info!(target: "test_harness::native_token", "  Output coin: {:?}", debris.params.output.commitment);
     info!(target: "test_harness::native_token", "  Value commit: {:?}", debris.params.output.value_commit);
     info!(target: "test_harness::native_token", "  Token commit: {:?}", debris.params.output.token_commit);
     info!(target: "test_harness::native_token", "  Proofs generated: {}", debris.proofs.len());
