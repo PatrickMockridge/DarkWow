@@ -34,7 +34,7 @@
 //! - TransferV1: Private token transfer
 
 use dwow_sdk::{
-    crypto::{constants::DRK_POSEIDON_DOMAIN_COIN_COMMIT, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, ContractId, FuncId, MerkleNode, TokenId},
+    crypto::{constants::DRK_POSEIDON_DOMAIN_CAP_COMMIT, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, ContractId, FuncId, MerkleNode, TokenId},
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
 };
@@ -111,73 +111,55 @@ impl Nullifier {
 }
 
 // ============================================================================
-// COIN STRUCTURES (PRIVACY-FIRST - Pedersen value commitments)
+// CAPABILITY COMMITMENT STRUCTURES (Pedersen value commitments)
 // ============================================================================
 
-/// A coin - hash of coin attributes using Poseidon only (no EC)
-/// This is the coin commitment that gets stored in the Merkle tree
-/// Coin = poseidon_hash(pub, value, token_id, spend_hook, user_data, blind)
+/// A capability commitment — poseidon_hash of capability attributes.
+/// Stored in the Merkle tree. Not a "coin" — DarkWow has capabilities, not coins.
+/// commitment = poseidon_hash(pub, value, token_id, spend_hook, user_data, blind)
 /// where pub = poseidon_hash(secret) is a field element, not EC point
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct Coin(pallas::Base);
+pub struct CapCommitment(pallas::Base);
 
-impl Coin {
+impl CapCommitment {
     pub const ENCODED_SIZE: usize = 32;
 
-    /// Reference the raw inner base field element
-    pub fn inner(&self) -> pallas::Base {
-        self.0
-    }
-
-    /// Convert the Coin type into 32 raw bytes
-    pub fn to_bytes(&self) -> [u8; 32] {
-        self.0.to_repr()
-    }
+    pub fn inner(&self) -> pallas::Base { self.0 }
+    pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
 
     /// Encode to canonical bytes (ρ-calculus: quote).
-    pub fn encode(&self) -> Vec<u8> {
-        self.to_bytes().to_vec()
-    }
+    pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
-                "Coin: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+                "CapCommitment: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
         let inner = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("Coin: invalid field element".into()))?;
-        Ok(Coin(inner))
+            .ok_or_else(|| ContractError::IoError("CapCommitment: invalid field element".into()))?;
+        Ok(CapCommitment(inner))
     }
 
-    /// Create a Coin from coin attributes
-    /// Promissory Note: public key is poseidon_hash(secret) as a field element
+    /// Create a CapCommitment from capability attributes.
+    /// Promissory Note: public key is poseidon_hash(secret) as a field element.
     pub fn from_attributes(
-        public_key: pallas::Base,
-        value: u64,
-        token_id: TokenId,
-        spend_hook: FuncId,
-        user_data: pallas::Base,
-        blind: BaseBlind,
+        public_key: pallas::Base, value: u64, token_id: TokenId,
+        spend_hook: FuncId, user_data: pallas::Base, blind: BaseBlind,
     ) -> Self {
-        let coin = poseidon_hash([
-            public_key,
-            pallas::Base::from(value),
-            token_id.inner(),
-            spend_hook.inner(),
-            user_data,
-            blind.inner(),
-        ]);
-        Coin(coin)
+        CapCommitment(poseidon_hash([
+            DRK_POSEIDON_DOMAIN_CAP_COMMIT,
+            public_key, pallas::Base::from(value), token_id.inner(),
+            spend_hook.inner(), user_data, blind.inner(),
+        ]))
     }
 }
 
-/// Coin attributes (used in ZK circuits but NOT stored directly)
-/// Promissory Note: public_key is a field element, not EC point
-#[derive(Debug, Clone,)]
-pub struct CoinAttributes {
-    /// Public key as field element: poseidon_hash(secret)
+/// Capability attributes (used in ZK circuits, not stored directly).
+/// Promissory Note: public_key is a field element, not EC point.
+#[derive(Debug, Clone)]
+pub struct CapAttrs {
     pub public_key: pallas::Base,
     pub value: u64,
     pub token_id: TokenId,
@@ -186,7 +168,7 @@ pub struct CoinAttributes {
     pub blind: BaseBlind,
 }
 
-impl CoinAttributes {
+impl CapAttrs {
     pub const ENCODED_SIZE: usize = 168;
 
     pub fn encode(&self) -> Vec<u8> {
@@ -203,32 +185,29 @@ impl CoinAttributes {
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
-                "CoinAttributes: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
+                "CapAttrs: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
         let public_key = Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("CoinAttributes: invalid public_key".into()))?;
+            .ok_or_else(|| ContractError::IoError("CapAttrs: invalid public_key".into()))?;
         let value = u64::from_le_bytes(data[32..40].try_into().unwrap());
         let token_id = TokenId::from_bytes(data[40..72].try_into().unwrap())
-            .map_err(|_| ContractError::IoError("CoinAttributes: invalid token_id".into()))?;
+            .map_err(|_| ContractError::IoError("CapAttrs: invalid token_id".into()))?;
         let spend_hook = FuncId::from_bytes(data[72..104].try_into().unwrap())
-            .map_err(|_| ContractError::IoError("CoinAttributes: invalid spend_hook".into()))?;
+            .map_err(|_| ContractError::IoError("CapAttrs: invalid spend_hook".into()))?;
         let user_data = Option::<pallas::Base>::from(pallas::Base::from_repr(data[104..136].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("CoinAttributes: invalid user_data".into()))?;
+            .ok_or_else(|| ContractError::IoError("CapAttrs: invalid user_data".into()))?;
         let blind = dwow_sdk::crypto::Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(data[136..168].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("CoinAttributes: invalid blind".into()))?);
-        Ok(CoinAttributes { public_key, value, token_id, spend_hook, user_data, blind })
+            .ok_or_else(|| ContractError::IoError("CapAttrs: invalid blind".into()))?);
+        Ok(CapAttrs { public_key, value, token_id, spend_hook, user_data, blind })
     }
 
-    pub fn to_coin(&self) -> Coin {
-        Coin(poseidon_hash([
-            DRK_POSEIDON_DOMAIN_COIN_COMMIT,
-            self.public_key,
-            pallas::Base::from(self.value),
-            self.token_id.inner(),
-            self.spend_hook.inner(),
-            self.user_data,
-            self.blind.inner(),
+    pub fn to_commitment(&self) -> CapCommitment {
+        CapCommitment(poseidon_hash([
+            DRK_POSEIDON_DOMAIN_CAP_COMMIT,
+            self.public_key, pallas::Base::from(self.value),
+            self.token_id.inner(), self.spend_hook.inner(),
+            self.user_data, self.blind.inner(),
         ]))
     }
 }
@@ -331,7 +310,7 @@ pub struct Output {
     /// Commitment for token ID (now ZK-constrained via TransferV1)
     pub token_commit: pallas::Base,
     /// The newly created coin
-    pub coin: Coin,
+    pub commitment: CapCommitment,
     /// AEAD encrypted note - only recipient can decrypt
     pub note: AeadEncryptedNote,
     /// Spend hook — verified by circuit as public input
@@ -345,7 +324,7 @@ impl Output {
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.value_commit.to_bytes());
         buf.extend_from_slice(&self.token_commit.to_repr());
-        buf.extend_from_slice(&self.coin.encode());
+        buf.extend_from_slice(&self.commitment.encode());
         buf.extend_from_slice(&(note_bytes.len() as u16).to_le_bytes());
         buf.extend_from_slice(&note_bytes);
         buf.extend_from_slice(&self.spend_hook.to_bytes());
@@ -362,7 +341,7 @@ impl Output {
             .ok_or_else(|| ContractError::IoError("Output: invalid value_commit".into()))?;
         let token_commit = Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("Output: invalid token_commit".into()))?;
-        let coin = Coin::decode(&data[64..96])?;
+        let commitment = CapCommitment::decode(&data[64..96])?;
         let note_len = u16::from_le_bytes(data[96..98].try_into().unwrap()) as usize;
         let note_end = 98 + note_len;
         if data.len() < note_end + 32 {
@@ -374,7 +353,7 @@ impl Output {
             .map_err(|e| ContractError::IoError(format!("Output: invalid note: {:?}", e)))?;
         let spend_hook = FuncId::from_bytes(data[note_end..note_end + 32].try_into().unwrap())
             .map_err(|_| ContractError::IoError("Output: invalid spend_hook".into()))?;
-        Ok(Output { value_commit, token_commit, coin, note, spend_hook })
+        Ok(Output { value_commit, token_commit, commitment, note, spend_hook })
     }
 }
 
@@ -387,7 +366,7 @@ impl Output {
 #[derive(Debug, Clone,)]
 pub struct TokenMintParamsV1 {
     /// The initial coin minted with this token type
-    pub coin: Coin,
+    pub commitment: CapCommitment,
     /// Pedersen value commitment for the initial mint
     pub value_commit: pallas::Point,
     /// Token ID (derived from auth_parent, user_data, blind)
@@ -412,7 +391,7 @@ impl TokenMintParamsV1 {
 
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.coin.encode());
+        buf.extend_from_slice(&self.commitment.encode());
         buf.extend_from_slice(&self.value_commit.to_bytes());
         buf.extend_from_slice(&self.token_id.to_bytes());
         buf.extend_from_slice(&self.token_auth_parent.to_repr());
@@ -429,7 +408,7 @@ impl TokenMintParamsV1 {
                 "TokenMintParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let coin = Coin::decode(&data[0..32])?;
+        let commitment = CapCommitment::decode(&data[0..32])?;
         let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[32..64].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("TokenMintParamsV1: invalid value_commit".into()))?;
         let token_id = TokenId::from_bytes(data[64..96].try_into().unwrap())
@@ -444,7 +423,7 @@ impl TokenMintParamsV1 {
             .ok_or_else(|| ContractError::IoError("TokenMintParamsV1: invalid tx_binding".into()))?;
         let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[224..256].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("TokenMintParamsV1: invalid tx_nonce".into()))?;
-        Ok(TokenMintParamsV1 { coin, value_commit, token_id, token_auth_parent, token_commit, spend_hook, tx_binding, tx_nonce })
+        Ok(TokenMintParamsV1 { commitment, value_commit, token_id, token_auth_parent, token_commit, spend_hook, tx_binding, tx_nonce })
     }
 }
 
@@ -452,7 +431,7 @@ impl TokenMintParamsV1 {
 #[derive(Debug, Clone)]
 pub struct TokenMintUpdateV1 {
     pub token_id: TokenId,
-    pub coin: Coin,
+    pub commitment: CapCommitment,
     /// Token authority public key (poseidon_hash of mint_secret)
     pub token_auth_parent: pallas::Base,
 }
@@ -465,7 +444,7 @@ impl TokenMintUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
         buf.extend_from_slice(&self.token_id.to_bytes());
-        buf.extend_from_slice(&self.coin.to_bytes());
+        buf.extend_from_slice(&self.commitment.to_bytes());
         buf.extend_from_slice(&self.token_auth_parent.to_repr());
         buf
     }
@@ -477,11 +456,11 @@ impl TokenMintUpdateV1 {
         }
         let token_id = TokenId::from_bytes(data[0..32].try_into().unwrap())
             .map_err(|_| ContractError::IoError("TokenMintUpdateV1: invalid token_id".into()))?;
-        let coin = Coin(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("TokenMintUpdateV1: invalid coin".into()))?);
+        let commitment = CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(data[32..64].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("TokenMintUpdateV1: invalid commitment".into()))?);
         let token_auth_parent = Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("TokenMintUpdateV1: invalid token_auth_parent".into()))?;
-        Ok(TokenMintUpdateV1 { token_id, coin, token_auth_parent })
+        Ok(TokenMintUpdateV1 { token_id, commitment, token_auth_parent })
     }
 }
 
@@ -496,7 +475,7 @@ impl TokenMintUpdateV1 {
 #[derive(Debug, Clone,)]
 pub struct MintParamsV1 {
     /// The newly minted coin
-    pub coin: Coin,
+    pub commitment: CapCommitment,
     /// Pedersen value commitment
     pub value_commit: pallas::Point,
     /// The token ID being minted
@@ -521,7 +500,7 @@ impl MintParamsV1 {
 
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.coin.encode());
+        buf.extend_from_slice(&self.commitment.encode());
         buf.extend_from_slice(&self.value_commit.to_bytes());
         buf.extend_from_slice(&self.token_id.to_bytes());
         buf.extend_from_slice(&self.token_registry_root.to_bytes());
@@ -538,7 +517,7 @@ impl MintParamsV1 {
                 "MintParamsV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let coin = Coin::decode(&data[0..32])?;
+        let commitment = CapCommitment::decode(&data[0..32])?;
         let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[32..64].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("MintParamsV1: invalid value_commit".into()))?;
         let token_id = TokenId::from_bytes(data[64..96].try_into().unwrap())
@@ -553,14 +532,14 @@ impl MintParamsV1 {
             .ok_or_else(|| ContractError::IoError("MintParamsV1: invalid tx_binding".into()))?;
         let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[224..256].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("MintParamsV1: invalid tx_nonce".into()))?;
-        Ok(MintParamsV1 { coin, value_commit, token_id, token_registry_root, mint_public, spend_hook, tx_binding, tx_nonce })
+        Ok(MintParamsV1 { commitment, value_commit, token_id, token_registry_root, mint_public, spend_hook, tx_binding, tx_nonce })
     }
 }
 
 /// State update for IssueV1
 #[derive(Debug, Clone)]
 pub struct MintUpdateV1 {
-    pub coin: Coin,
+    pub commitment: CapCommitment,
     pub token_id: TokenId,
     pub new_coin_count: u64,
 }
@@ -572,7 +551,7 @@ impl MintUpdateV1 {
     pub const ENCODED_SIZE: usize = 72; // 32 + 32 + 8
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.coin.to_bytes());
+        buf.extend_from_slice(&self.commitment.to_bytes());
         buf.extend_from_slice(&self.token_id.to_bytes());
         buf.extend_from_slice(&self.new_coin_count.to_le_bytes());
         buf
@@ -583,12 +562,12 @@ impl MintUpdateV1 {
                 "MintUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
             )));
         }
-        let coin = Coin(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("MintUpdateV1: invalid coin".into()))?);
+        let commitment = CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("MintUpdateV1: invalid commitment".into()))?);
         let token_id = TokenId::from_bytes(data[32..64].try_into().unwrap())
             .map_err(|_| ContractError::IoError("MintUpdateV1: invalid token_id".into()))?;
         let new_coin_count = u64::from_le_bytes(data[64..72].try_into().unwrap());
-        Ok(MintUpdateV1 { coin, token_id, new_coin_count })
+        Ok(MintUpdateV1 { commitment, token_id, new_coin_count })
     }
 }
 
@@ -751,7 +730,7 @@ impl TransferParamsV1 {
 #[derive(Debug, Clone)]
 pub struct TransferUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
-    pub coins: Vec<Coin>,
+    pub commitments: Vec<CapCommitment>,
 }
 
 impl dwow_serial::Encodable for TransferUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
@@ -759,12 +738,12 @@ impl dwow_serial::Decodable for TransferUpdateV1 { fn decode<D: std::io::Read>(d
 
 impl TransferUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
-        let cap = 2 + self.nullifiers.len() * 32 + self.coins.len() * 32;
+        let cap = 2 + self.nullifiers.len() * 32 + self.commitments.len() * 32;
         let mut buf = Vec::with_capacity(cap);
         buf.push(self.nullifiers.len() as u8);
         for nf in &self.nullifiers { buf.extend_from_slice(&nf.to_bytes()); }
-        buf.push(self.coins.len() as u8);
-        for c in &self.coins { buf.extend_from_slice(&c.to_bytes()); }
+        buf.push(self.commitments.len() as u8);
+        for c in &self.commitments { buf.extend_from_slice(&c.to_bytes()); }
         buf
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -782,7 +761,7 @@ impl TransferUpdateV1 {
         let expected = nf_end + 1 + coin_count * 32;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
-                "TransferUpdateV1: expected {} bytes ({} nf + {} coins), got {}",
+                "TransferUpdateV1: expected {} bytes ({} nf + {} commitments), got {}",
                 expected, nf_count, coin_count, data.len()
             )));
         }
@@ -793,14 +772,14 @@ impl TransferUpdateV1 {
                 data[start..start + 32].try_into().unwrap(),
             )).ok_or_else(|| ContractError::IoError(format!("TransferUpdateV1: invalid nullifier[{}]", i)))?));
         }
-        let mut coins = Vec::with_capacity(coin_count);
+        let mut commitments = Vec::with_capacity(coin_count);
         for i in 0..coin_count {
             let start = nf_end + 1 + i * 32;
-            coins.push(Coin(Option::<pallas::Base>::from(pallas::Base::from_repr(
+            commitments.push(CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(
                 data[start..start + 32].try_into().unwrap(),
-            )).ok_or_else(|| ContractError::IoError(format!("TransferUpdateV1: invalid coin[{}]", i)))?));
+            )).ok_or_else(|| ContractError::IoError(format!("TransferUpdateV1: invalid commitment[{}]", i)))?));
         }
-        Ok(TransferUpdateV1 { nullifiers, coins })
+        Ok(TransferUpdateV1 { nullifiers, commitments })
     }
 }
 
@@ -865,7 +844,7 @@ impl RedeemParamsV1 {
 #[derive(Debug, Clone)]
 pub struct RedeemUpdateV1 {
     pub nullifier: Nullifier,
-    pub coin: Coin,
+    pub commitment: CapCommitment,
 }
 
 impl dwow_serial::Encodable for RedeemUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
@@ -876,7 +855,7 @@ impl RedeemUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
         buf.extend_from_slice(&self.nullifier.to_bytes());
-        buf.extend_from_slice(&self.coin.to_bytes());
+        buf.extend_from_slice(&self.commitment.to_bytes());
         buf
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -888,10 +867,10 @@ impl RedeemUpdateV1 {
         let nullifier = Nullifier(Option::<pallas::Base>::from(pallas::Base::from_repr(
             data[0..32].try_into().unwrap(),
         )).ok_or_else(|| ContractError::IoError("RedeemUpdateV1: invalid nullifier".into()))?);
-        let coin = Coin(Option::<pallas::Base>::from(pallas::Base::from_repr(
+        let commitment = CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(
             data[32..64].try_into().unwrap(),
-        )).ok_or_else(|| ContractError::IoError("RedeemUpdateV1: invalid coin".into()))?);
-        Ok(RedeemUpdateV1 { nullifier, coin })
+        )).ok_or_else(|| ContractError::IoError("RedeemUpdateV1: invalid commitment".into()))?);
+        Ok(RedeemUpdateV1 { nullifier, commitment })
     }
 }
 
@@ -966,7 +945,7 @@ impl OtcSwapParamsV1 {
 #[derive(Debug, Clone)]
 pub struct OtcSwapUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
-    pub coins: Vec<Coin>,
+    pub commitments: Vec<CapCommitment>,
 }
 
 impl dwow_serial::Encodable for OtcSwapUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
@@ -974,12 +953,12 @@ impl dwow_serial::Decodable for OtcSwapUpdateV1 { fn decode<D: std::io::Read>(d:
 
 impl OtcSwapUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
-        let cap = 2 + self.nullifiers.len() * 32 + self.coins.len() * 32;
+        let cap = 2 + self.nullifiers.len() * 32 + self.commitments.len() * 32;
         let mut buf = Vec::with_capacity(cap);
         buf.push(self.nullifiers.len() as u8);
         for nf in &self.nullifiers { buf.extend_from_slice(&nf.to_bytes()); }
-        buf.push(self.coins.len() as u8);
-        for c in &self.coins { buf.extend_from_slice(&c.to_bytes()); }
+        buf.push(self.commitments.len() as u8);
+        for c in &self.commitments { buf.extend_from_slice(&c.to_bytes()); }
         buf
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
@@ -997,7 +976,7 @@ impl OtcSwapUpdateV1 {
         let expected = nf_end + 1 + coin_count * 32;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
-                "OtcSwapUpdateV1: expected {} bytes ({} nf + {} coins), got {}",
+                "OtcSwapUpdateV1: expected {} bytes ({} nf + {} commitments), got {}",
                 expected, nf_count, coin_count, data.len()
             )));
         }
@@ -1008,14 +987,14 @@ impl OtcSwapUpdateV1 {
                 data[start..start + 32].try_into().unwrap(),
             )).ok_or_else(|| ContractError::IoError(format!("OtcSwapUpdateV1: invalid nullifier[{}]", i)))?));
         }
-        let mut coins = Vec::with_capacity(coin_count);
+        let mut commitments = Vec::with_capacity(coin_count);
         for i in 0..coin_count {
             let start = nf_end + 1 + i * 32;
-            coins.push(Coin(Option::<pallas::Base>::from(pallas::Base::from_repr(
+            commitments.push(CapCommitment(Option::<pallas::Base>::from(pallas::Base::from_repr(
                 data[start..start + 32].try_into().unwrap(),
-            )).ok_or_else(|| ContractError::IoError(format!("OtcSwapUpdateV1: invalid coin[{}]", i)))?));
+            )).ok_or_else(|| ContractError::IoError(format!("OtcSwapUpdateV1: invalid commitment[{}]", i)))?));
         }
-        Ok(OtcSwapUpdateV1 { nullifiers, coins })
+        Ok(OtcSwapUpdateV1 { nullifiers, commitments })
     }
 }
 

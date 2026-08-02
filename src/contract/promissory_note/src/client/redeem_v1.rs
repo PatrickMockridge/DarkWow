@@ -47,7 +47,7 @@ use rand::rngs::OsRng;
 use tracing::debug;
 
 use super::PromissoryNote;
-use crate::model::{AeadEncryptedNote, Coin, CoinAttributes, Input, Nullifier, Output, RedeemParamsV1};
+use crate::model::{AeadEncryptedNote, CapAttrs, CapCommitment, Input, Nullifier, Output, RedeemParamsV1};
 
 fn point_to_coords(pt: pallas::Point) -> (pallas::Base, pallas::Base) {
     let affine = pt.to_affine();
@@ -97,7 +97,7 @@ impl RedeemBurnRevealed {
 /// Order must match Redeem_V1 circuit:
 /// coin, value_commit_x, value_commit_y, token_commit, coin_value, spend_hook
 pub struct RedeemReceiptRevealed {
-    pub coin: Coin,
+    pub commitment: CapCommitment,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
     pub coin_value: pallas::Base,
@@ -110,7 +110,7 @@ impl RedeemReceiptRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         let (vc_x, vc_y) = point_to_coords(self.value_commit);
         vec![
-            self.coin.inner(),
+            self.commitment.inner(),
             vc_x,
             vc_y,
             self.token_commit,
@@ -269,7 +269,7 @@ impl RedeemCallBuilder {
         let output = Output {
             value_commit: output_revealed.value_commit,
             token_commit: output_revealed.token_commit,
-            coin: output_revealed.coin,
+            commitment: output_revealed.commitment,
             note: encrypted_note,
             spend_hook: FuncId::from_base(self.output.spend_hook),
         };
@@ -300,7 +300,7 @@ fn create_redeem_burn_proof(
 ) -> Result<(Proof, RedeemBurnRevealed)> {
     let public_key = poseidon_hash([input.secret]);
 
-    let coin = CoinAttributes {
+    let attrs = CapAttrs {
         public_key,
         value: input.value,
         token_id: TokenId::from_base(input.token_id),
@@ -308,13 +308,13 @@ fn create_redeem_burn_proof(
         user_data: input.user_data,
         blind: Blind(input.coin_blind),
     }
-    .to_coin();
+    .to_commitment();
 
-    let nullifier = Nullifier::new(input.secret, coin.inner());
+    let nullifier = Nullifier::new(input.secret, commitment.inner());
 
     let merkle_root = {
         let position: u64 = input.leaf_position.into();
-        let mut current = MerkleNode::from_base(coin.inner());
+        let mut current = MerkleNode::from_base(commitment.inner());
         for (level, sibling) in input.merkle_path.iter().enumerate() {
             let level = level as u8;
             current = if position & (1 << level) == 0 {
@@ -385,7 +385,7 @@ fn create_redeem_receipt_proof(
     tx_nonce: pallas::Base,
 ) -> Result<(Proof, RedeemReceiptRevealed)> {
     let coin_value = pallas::Base::zero();
-    let attrs = CoinAttributes {
+    let attrs = CapAttrs {
         public_key: output.recipient,
         value: 0,
         token_id: TokenId::from_base(output.token_id),
@@ -393,13 +393,13 @@ fn create_redeem_receipt_proof(
         user_data: output.user_data,
         blind: Blind(output.coin_blind),
     };
-    let coin = attrs.to_coin();
+    let commitment = attrs.to_commitment();
 
     let value_commit = pedersen_commitment_u64(0, value_blind.clone());
     let token_commit = poseidon_hash([output.token_id, token_id_blind.inner()]);
 
     let public_inputs = RedeemReceiptRevealed {
-        coin,
+        commitment,
         value_commit,
         token_commit,
         coin_value,

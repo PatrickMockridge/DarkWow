@@ -37,7 +37,7 @@ use dwow_sdk::{
     pasta::pallas,
 };
 
-use crate::model::{Coin, Output};
+use crate::model::{CapCommitment, Output};
 
 /// ZK circuit binary constants
 pub mod zkbins;
@@ -130,7 +130,7 @@ pub fn verify_received_capability(output: &Output, secret: &SecretKey) -> Result
 
     // 3. Verify coin commitment matches the decrypted attributes.
     //    This proves the coin was correctly formed and the note wasn't tampered with.
-    let expected_coin = Coin::from_attributes(
+    let expected_commitment = CapCommitment::from_attributes(
         recipient_address,
         note.value,
         TokenId::from_base(note.token_id),
@@ -138,7 +138,7 @@ pub fn verify_received_capability(output: &Output, secret: &SecretKey) -> Result
         note.user_data,
         Blind(note.coin_blind),
     );
-    if expected_coin != output.coin {
+    if expected_commitment != output.commitment {
         return Err(dwow_sdk::error::ContractError::Custom(
             crate::error::PromissoryNoteError::ValueMismatch as u32,
         ));

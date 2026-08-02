@@ -274,7 +274,7 @@ fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
         vec![
             params.token_id.inner(),
             params.token_auth_parent,
-            params.coin.inner(),
+            params.commitment.inner(),
             vc_x,
             vc_y,
             params.spend_hook.inner(),
@@ -308,7 +308,7 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
         vec![
             params.token_registry_root.inner(),
             params.mint_public,
-            params.coin.inner(),
+            params.commitment.inner(),
             vc_x,
             vc_y,
             params.token_id.inner(),
@@ -405,7 +405,7 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
 
         zk_public_inputs.push((
             PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V2.to_string(),
-            vec![output.coin.inner(), vc_x, vc_y, output.token_commit,
+            vec![output.commitment.inner(), vc_x, vc_y, output.token_commit,
                  output.spend_hook.inner(), params.tx_binding, params.tx_nonce],
         ));
     }
@@ -506,7 +506,7 @@ fn token_mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
     let coins_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COINS_TREE)?;
 
     // Verify coin doesn't already exist
-    if wasm::db::db_contains_key(coins_db, &params.coin.to_bytes())? {
+    if wasm::db::db_contains_key(coins_db, &params.commitment.to_bytes())? {
         msg!("[token_mint_v1] Error: Coin already exists");
         return Err(PromissoryNoteError::DuplicateCoin.into())
     }
@@ -522,7 +522,7 @@ fn token_mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
         return Err(PromissoryNoteError::DuplicateCoin.into())
     }
 
-    let update = TokenMintUpdateV1 { token_id: params.token_id, coin: params.coin, token_auth_parent: params.token_auth_parent };
+    let update = TokenMintUpdateV1 { token_id: params.token_id, commitment: params.commitment, token_auth_parent: params.token_auth_parent };
     msg!("[promissory_note::token_mint_v1] Token type created successfully");
     wasm::util::set_return_data(&[&[PromissoryNoteFunction::RegisterTypeV1 as u8], &update.encode()[..]].concat())
 }
@@ -540,7 +540,7 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     let token_registry_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_TREE)?;
 
     // Verify coin doesn't already exist
-    if wasm::db::db_contains_key(coins_db, &params.coin.to_bytes())? {
+    if wasm::db::db_contains_key(coins_db, &params.commitment.to_bytes())? {
         msg!("[mint_v1] Error: Coin already exists");
         return Err(PromissoryNoteError::DuplicateCoin.into())
     }
@@ -601,7 +601,7 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     let new_coin_count = current_count.saturating_add(1);
 
     let update = MintUpdateV1 {
-        coin: params.coin,
+        commitment: params.commitment,
         token_id: params.token_id,
         new_coin_count,
     };
@@ -737,13 +737,13 @@ fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
     }
 
     // Verify outputs are unique
-    let mut new_coins = Vec::new();
+    let mut new_commitments = Vec::new();
     for (i, output) in params.outputs.iter().enumerate() {
-        if wasm::db::db_contains_key(coins_db, &output.coin.to_bytes())? {
+        if wasm::db::db_contains_key(coins_db, &output.commitment.to_bytes())? {
             msg!("[transfer_v1] Error: Duplicate coin in output {}", i);
             return Err(PromissoryNoteError::DuplicateCoin.into())
         }
-        new_coins.push(output.coin);
+        new_commitments.push(output.commitment);
     }
 
     // CROSS-PROOF VALUE CONSERVATION: sum(inputs) == sum(outputs) per token_commit.
@@ -753,7 +753,7 @@ fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
     // this check possible without revealing plaintext values.
     verify_value_conservation(&params.inputs, &params.outputs)?;
 
-    let update = TransferUpdateV1 { nullifiers: new_nullifiers, coins: new_coins };
+    let update = TransferUpdateV1 { nullifiers: new_nullifiers, commitments: new_commitments };
     msg!("[promissory_note::transfer_v1] Transfer valid");
     wasm::util::set_return_data(&[&[PromissoryNoteFunction::TransferV1 as u8], &update.encode()[..]].concat())
 }
@@ -801,7 +801,7 @@ fn apply_token_mint(cid: ContractId, update: TokenMintUpdateV1) -> ContractResul
     let token_registry_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_TREE)?;
 
     // Add coin
-    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[])?;
+    wasm::db::db_set(coins_db, &update.commitment.to_bytes(), &[])?;
 
     // Update coin Merkle tree
     wasm::merkle::merkle_add(
@@ -809,7 +809,7 @@ fn apply_token_mint(cid: ContractId, update: TokenMintUpdateV1) -> ContractResul
         wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE)?,
         PROMISSORY_NOTE_CONTRACT_LATEST_COIN_ROOT,
         PROMISSORY_NOTE_CONTRACT_COIN_MERKLE_TREE,
-        &[MerkleNode::from_base(update.coin.inner())],
+        &[MerkleNode::from_base(update.commitment.inner())],
     )?;
 
     // Store token authority key in registry (capability datum for rotation)
@@ -839,7 +839,7 @@ fn apply_mint(cid: ContractId, update: MintUpdateV1) -> ContractResult {
     let info_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_INFO_TREE)?;
 
     // Add coin
-    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[])?;
+    wasm::db::db_set(coins_db, &update.commitment.to_bytes(), &[])?;
 
     // Update Merkle tree
     wasm::merkle::merkle_add(
@@ -847,7 +847,7 @@ fn apply_mint(cid: ContractId, update: MintUpdateV1) -> ContractResult {
         wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE)?,
         PROMISSORY_NOTE_CONTRACT_LATEST_COIN_ROOT,
         PROMISSORY_NOTE_CONTRACT_COIN_MERKLE_TREE,
-        &[MerkleNode::from_base(update.coin.inner())],
+        &[MerkleNode::from_base(update.commitment.inner())],
     )?;
 
     // Persist updated coin count for this token (infinity-mint hardening)
@@ -882,7 +882,7 @@ fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
     msg!(
         "[promissory_note::apply_transfer] Marking {} nullifiers, adding {} coins",
         update.nullifiers.len(),
-        update.coins.len()
+        update.commitments.len()
     );
 
     let coins_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COINS_TREE)?;
@@ -902,10 +902,10 @@ fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
     wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_LATEST_NULLIFIER_ROOT, &new_root.to_repr())?;
 
     // Add new coins
-    let mut new_coins = Vec::new();
-    for coin in &update.coins {
-        wasm::db::db_set(coins_db, &coin.to_bytes(), &[])?;
-        new_coins.push(MerkleNode::from_base(coin.inner()));
+    let mut new_commitments = Vec::new();
+    for commitment in &update.commitments {
+        wasm::db::db_set(coins_db, &commitment.to_bytes(), &[])?;
+        new_commitments.push(MerkleNode::from_base(commitment.inner()));
     }
 
     // Update Merkle tree
@@ -914,7 +914,7 @@ fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
         wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE)?,
         PROMISSORY_NOTE_CONTRACT_LATEST_COIN_ROOT,
         PROMISSORY_NOTE_CONTRACT_COIN_MERKLE_TREE,
-        &new_coins,
+        &new_commitments,
     )?;
 
     Ok(())
@@ -965,7 +965,7 @@ fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
 
     zk_public_inputs.push((
         PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V2.to_string(),
-        vec![params.output.coin.inner(), rvc_x, rvc_y, params.output.token_commit,
+        vec![params.output.commitment.inner(), rvc_x, rvc_y, params.output.token_commit,
              coin_value, params.tx_binding, params.tx_nonce, params.output.spend_hook.inner()],
     ));
 
@@ -1009,12 +1009,12 @@ fn redeem_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>
     }
 
     // Verify receipt coin is unique
-    if wasm::db::db_contains_key(coins_db, &params.output.coin.to_bytes())? {
+    if wasm::db::db_contains_key(coins_db, &params.output.commitment.to_bytes())? {
         msg!("[redeem_v1] Error: Receipt coin already exists");
         return Err(PromissoryNoteError::DuplicateCoin.into())
     }
 
-    let update = RedeemUpdateV1 { nullifier: params.input.nullifier, coin: params.output.coin };
+    let update = RedeemUpdateV1 { nullifier: params.input.nullifier, commitment: params.output.commitment };
     msg!("[promissory_note::redeem_v1] Redemption valid");
     wasm::util::set_return_data(&[&[PromissoryNoteFunction::RedeemV1 as u8], &update.encode()[..]].concat())
 }
@@ -1037,7 +1037,7 @@ fn apply_redeem(cid: ContractId, update: RedeemUpdateV1) -> ContractResult {
     wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_LATEST_NULLIFIER_ROOT, &new_root.to_repr())?;
 
     // Add receipt coin
-    wasm::db::db_set(coins_db, &update.coin.to_bytes(), &[])?;
+    wasm::db::db_set(coins_db, &update.commitment.to_bytes(), &[])?;
 
     // Update Merkle tree
     wasm::merkle::merkle_add(
@@ -1045,7 +1045,7 @@ fn apply_redeem(cid: ContractId, update: RedeemUpdateV1) -> ContractResult {
         wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE)?,
         PROMISSORY_NOTE_CONTRACT_LATEST_COIN_ROOT,
         PROMISSORY_NOTE_CONTRACT_COIN_MERKLE_TREE,
-        &[MerkleNode::from_base(update.coin.inner())],
+        &[MerkleNode::from_base(update.commitment.inner())],
     )?;
 
     Ok(())
@@ -1093,7 +1093,7 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
 
         zk_public_inputs.push((
             PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V2.to_string(),
-            vec![output.coin.inner(), vc_x, vc_y, output.token_commit,
+            vec![output.commitment.inner(), vc_x, vc_y, output.token_commit,
                  output.spend_hook.inner(), params.tx_binding, params.tx_nonce],
         ));
     }
@@ -1159,13 +1159,13 @@ fn otc_swap_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
     }
 
     // Verify outputs are unique
-    let mut new_coins = Vec::new();
+    let mut new_commitments = Vec::new();
     for (i, output) in params.outputs.iter().enumerate() {
-        if wasm::db::db_contains_key(coins_db, &output.coin.to_bytes())? {
+        if wasm::db::db_contains_key(coins_db, &output.commitment.to_bytes())? {
             msg!("[otc_swap_v1] Error: Duplicate coin in output {}", i);
             return Err(PromissoryNoteError::DuplicateCoin.into())
         }
-        new_coins.push(output.coin);
+        new_commitments.push(output.commitment);
     }
 
     // CROSS-PROOF VALUE CONSERVATION: sum(inputs) == sum(outputs) per token_commit.
@@ -1174,7 +1174,7 @@ fn otc_swap_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
     // must conserve value independently.
     verify_value_conservation(&params.inputs, &params.outputs)?;
 
-    let update = OtcSwapUpdateV1 { nullifiers: new_nullifiers, coins: new_coins };
+    let update = OtcSwapUpdateV1 { nullifiers: new_nullifiers, commitments: new_commitments };
     msg!("[promissory_note::otc_swap_v1] OTC swap valid");
     wasm::util::set_return_data(&[&[PromissoryNoteFunction::OtcSwapV1 as u8], &update.encode()[..]].concat())
 }
@@ -1184,7 +1184,7 @@ fn apply_otc_swap(cid: ContractId, update: OtcSwapUpdateV1) -> ContractResult {
     msg!(
         "[promissory_note::apply_otc_swap] Marking {} nullifiers, adding {} coins",
         update.nullifiers.len(),
-        update.coins.len()
+        update.commitments.len()
     );
 
     let coins_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COINS_TREE)?;
@@ -1204,10 +1204,10 @@ fn apply_otc_swap(cid: ContractId, update: OtcSwapUpdateV1) -> ContractResult {
     wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_LATEST_NULLIFIER_ROOT, &new_root.to_repr())?;
 
     // Add new coins
-    let mut new_coins = Vec::new();
-    for coin in &update.coins {
-        wasm::db::db_set(coins_db, &coin.to_bytes(), &[])?;
-        new_coins.push(MerkleNode::from_base(coin.inner()));
+    let mut new_commitments = Vec::new();
+    for commitment in &update.commitments {
+        wasm::db::db_set(coins_db, &commitment.to_bytes(), &[])?;
+        new_commitments.push(MerkleNode::from_base(commitment.inner()));
     }
 
     // Update Merkle tree
@@ -1216,7 +1216,7 @@ fn apply_otc_swap(cid: ContractId, update: OtcSwapUpdateV1) -> ContractResult {
         wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE)?,
         PROMISSORY_NOTE_CONTRACT_LATEST_COIN_ROOT,
         PROMISSORY_NOTE_CONTRACT_COIN_MERKLE_TREE,
-        &new_coins,
+        &new_commitments,
     )?;
 
     Ok(())

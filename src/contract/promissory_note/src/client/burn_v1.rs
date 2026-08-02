@@ -43,7 +43,7 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{BurnParamsV1, CoinAttributes, Input, Nullifier};
+use crate::model::{BurnParamsV1, CapAttrs, Input, Nullifier};
 
 /// Public inputs revealed after burn proof creation
 /// Order must match Burn_V1 circuit:
@@ -193,7 +193,7 @@ pub fn create_burn_proof(
     let public_key = poseidon_hash([input.secret]);
 
     // Reconstruct coin from the input
-    let coin = CoinAttributes {
+    let attrs = CapAttrs {
         public_key,
         value: input.value,
         token_id: TokenId::from_base(input.token_id),
@@ -201,15 +201,15 @@ pub fn create_burn_proof(
         user_data: input.user_data,
         blind: Blind(input.coin_blind),
     }
-    .to_coin();
+    .to_commitment();
 
     // Calculate nullifier: poseidon_hash(secret, coin)
-    let nullifier = Nullifier::new(input.secret, coin.inner());
+    let nullifier = Nullifier::new(input.secret, commitment.inner());
 
     // Calculate merkle root from coin and merkle path
     let merkle_root = {
         let position: u64 = input.leaf_position.into();
-        let mut current = MerkleNode::from_base(coin.inner());
+        let mut current = MerkleNode::from_base(commitment.inner());
         for (level, sibling) in input.merkle_path.iter().enumerate() {
             let level = level as u8;
             current = if position & (1 << level) == 0 {

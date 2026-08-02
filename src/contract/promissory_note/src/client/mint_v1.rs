@@ -42,7 +42,7 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{Coin, CoinAttributes, MintParamsV1};
+use crate::model::{CapAttrs, CapCommitment, MintParamsV1};
 
 /// Public inputs revealed after mint proof creation
 /// Order must match Mint_V1 circuit:
@@ -53,7 +53,7 @@ pub struct MintRevealed {
     /// Backing capability public key (poseidon_hash of backing secret)
     pub mint_public: pallas::Base,
     /// The coin commitment
-    pub coin: Coin,
+    pub commitment: CapCommitment,
     /// The value commitment (Pedersen)
     pub value_commit: pallas::Point,
     /// The token ID
@@ -119,7 +119,7 @@ impl MintCallBuilder {
         let value_blind = ScalarBlind::random(&mut OsRng);
 
         // Create coin attributes
-        let attrs = CoinAttributes {
+        let attrs = CapAttrs {
             public_key: self.input.recipient,
             value: self.input.value,
             token_id: TokenId::from_base(self.input.token_id),
@@ -129,7 +129,7 @@ impl MintCallBuilder {
         };
 
         // Create coin
-        let coin = attrs.to_coin();
+        let commitment = attrs.to_commitment();
 
         // Value commitment - Pedersen (additively homomorphic)
         let value_commit = pedersen_commitment_u64(self.input.value, value_blind.clone());
@@ -176,7 +176,7 @@ impl MintCallBuilder {
         let public_inputs = MintRevealed {
             token_registry_root: token_registry_root.inner(),
             mint_public,
-            coin,
+            commitment,
             value_commit,
             token_id: self.input.token_id,
             spend_hook: self.input.spend_hook,
@@ -213,7 +213,7 @@ impl MintRevealed {
         vec![
             self.token_registry_root,
             self.mint_public,
-            self.coin.inner(),
+            self.commitment.inner(),
             vc_x,
             vc_y,
             self.token_id,

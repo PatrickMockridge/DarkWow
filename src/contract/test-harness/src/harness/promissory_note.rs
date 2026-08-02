@@ -41,7 +41,7 @@ use dwow_promissory_note_contract::{
         token_mint_v1::{TokenMintCallBuilder, TokenMintCallInput},
         transfer_v1::{TransferCallBuilder, TransferCallInput, TransferCallOutput},
     },
-    model::Coin,
+    model::CapCommitment,
 };
 use dwow_serial::Encodable;
 
@@ -180,7 +180,7 @@ impl PromissoryNoteHarness {
             call_data,
             token_id,
             mint_public: token_auth_parent,
-            coin: token_debris.params.coin,
+            commitment:token_debris.params.commitment,
             value_commit: token_debris.params.value_commit,
             token_commit: token_debris.params.token_commit,
             token_proofs: token_debris.proofs,
@@ -236,7 +236,7 @@ impl PromissoryNoteHarness {
 
         Ok(MintResult {
             call_data,
-            coin: debris.params.coin,
+            commitment:debris.params.commitment,
             value_commit: debris.params.value_commit,
             proofs: debris.proofs,
         })
@@ -337,7 +337,7 @@ pub struct TokenCreationResult {
     pub call_data: Vec<u8>,
     pub token_id: pallas::Base,
     pub mint_public: pallas::Base,
-    pub coin: Coin,
+    pub commitment: CapCommitment,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
     pub token_proofs: Vec<dwow_core::zk::Proof>,
@@ -346,7 +346,7 @@ pub struct TokenCreationResult {
 /// Result of minting
 pub struct MintResult {
     pub call_data: Vec<u8>,
-    pub coin: Coin,
+    pub commitment: CapCommitment,
     pub value_commit: pallas::Point,
     pub proofs: Vec<dwow_core::zk::Proof>,
 }

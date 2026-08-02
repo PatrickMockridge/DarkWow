@@ -30,7 +30,7 @@ mod tests {
     use dwow_promissory_note_contract::{
         model::{
             BurnParamsV1, BurnUpdateV1,
-            Coin, CoinAttributes, Input, MintParamsV1, MintUpdateV1, Nullifier, Output,
+            CapAttrs, CapCommitment, Input, MintParamsV1, MintUpdateV1, Nullifier, Output,
             OtcSwapUpdateV1, TokenMintParamsV1, TokenMintUpdateV1,
             TransferParamsV1, TransferUpdateV1, MAX_COIN_VALUE,
         },
@@ -127,11 +127,11 @@ mod tests {
     }
 
     // ================================================================
-    // Coin tests
+    // CapCommitment tests
     // ================================================================
 
     #[test]
-    fn test_coin_from_attributes() {
+    fn test_commitment_from_attributes() {
         let public_key = pallas::Base::from(1);
         let value = 1000u64;
         let token_id = TokenId::from_base(pallas::Base::from(2));
@@ -139,9 +139,10 @@ mod tests {
         let user_data = pallas::Base::zero();
         let blind = Blind(pallas::Base::from(3));
 
-        let coin = Coin::from_attributes(public_key, value, token_id, spend_hook, user_data, blind.clone());
+        let commitment = CapCommitment::from_attributes(public_key, value, token_id, spend_hook, user_data, blind.clone());
 
         let expected = poseidon_hash([
+            dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_CAP_COMMIT,
             public_key,
             pallas::Base::from(value),
             token_id.inner(),
@@ -149,13 +150,13 @@ mod tests {
             user_data,
             blind.inner(),
         ]);
-        assert_eq!(coin.inner(), expected);
+        assert_eq!(commitment.inner(), expected);
     }
 
     #[test]
-    fn test_coin_inner() {
+    fn test_commitment_inner() {
         let base = pallas::Base::from(42);
-        let coin = Coin::from_attributes(
+        let commitment = CapCommitment::from_attributes(
             base,
             100,
             TokenId::from_base(pallas::Base::zero()),
@@ -163,13 +164,13 @@ mod tests {
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
         );
-        assert_ne!(coin.inner(), pallas::Base::zero());
+        assert_ne!(commitment.inner(), pallas::Base::zero());
     }
 
     #[test]
-    fn test_coin_to_bytes() {
+    fn test_commitment_to_bytes() {
         let public_key = pallas::Base::from(1);
-        let coin = Coin::from_attributes(
+        let commitment = CapCommitment::from_attributes(
             public_key,
             1000,
             TokenId::from_base(pallas::Base::from(2)),
@@ -177,17 +178,17 @@ mod tests {
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
         );
-        let bytes = coin.to_bytes();
+        let bytes = commitment.to_bytes();
         assert_eq!(bytes.len(), 32);
     }
 
     // ================================================================
-    // CoinAttributes tests
+    // CapAttrs tests
     // ================================================================
 
     #[test]
-    fn test_coin_attributes_to_coin() {
-        let attrs = CoinAttributes {
+    fn test_commitment_attributes_to_coin() {
+        let attrs = CapAttrs {
             public_key: pallas::Base::from(1),
             value: 500,
             token_id: TokenId::from_base(pallas::Base::from(2)),
@@ -196,8 +197,8 @@ mod tests {
             blind: Blind(pallas::Base::from(3)),
         };
 
-        let coin = attrs.to_coin();
-        let expected = Coin::from_attributes(
+        let commitment = attrs.to_commitment();
+        let expected = CapCommitment::from_attributes(
             attrs.public_key,
             attrs.value,
             attrs.token_id,
@@ -205,7 +206,7 @@ mod tests {
             attrs.user_data,
             attrs.blind,
         );
-        assert_eq!(coin.inner(), expected.inner());
+        assert_eq!(commitment.inner(), expected.inner());
     }
 
     // ================================================================
@@ -221,8 +222,8 @@ mod tests {
     }
 
     #[test]
-    fn test_coin_serialization() {
-        let coin = Coin::from_attributes(
+    fn test_commitment_serialization() {
+        let commitment = CapCommitment::from_attributes(
             pallas::Base::from(1),
             1000,
             TokenId::from_base(pallas::Base::from(2)),
@@ -230,15 +231,15 @@ mod tests {
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
         );
-        let encoded = coin.encode();
-        let decoded: Coin = Coin::decode(&encoded).unwrap();
-        assert_eq!(decoded.inner(), coin.inner());
+        let encoded = commitment.encode();
+        let decoded: CapCommitment = CapCommitment::decode(&encoded).unwrap();
+        assert_eq!(decoded.inner(), commitment.inner());
     }
 
     #[test]
     fn test_token_mint_params_serialization() {
         let params = TokenMintParamsV1 {
-            coin: Coin::from_attributes(
+            commitment: CapCommitment::from_attributes(
                 pallas::Base::from(1),
                 1000,
                 TokenId::from_base(pallas::Base::from(2)),
@@ -256,7 +257,7 @@ mod tests {
         };
         let encoded = serialize(&params);
         let decoded: TokenMintParamsV1 = deserialize(&encoded).unwrap();
-        assert_eq!(decoded.coin.inner(), params.coin.inner());
+        assert_eq!(decoded.commitment.inner(), params.commitment.inner());
         assert_eq!(decoded.value_commit, params.value_commit);
         assert_eq!(decoded.token_id, params.token_id);
         assert_eq!(decoded.token_commit, params.token_commit);
@@ -265,7 +266,7 @@ mod tests {
     #[test]
     fn test_mint_params_serialization() {
         let params = MintParamsV1 {
-            coin: Coin::from_attributes(
+            commitment: CapCommitment::from_attributes(
                 pallas::Base::from(4),
                 500,
                 TokenId::from_base(pallas::Base::from(5)),
@@ -283,7 +284,7 @@ mod tests {
         };
         let encoded = serialize(&params);
         let decoded: MintParamsV1 = deserialize(&encoded).unwrap();
-        assert_eq!(decoded.coin.inner(), params.coin.inner());
+        assert_eq!(decoded.commitment.inner(), params.commitment.inner());
         assert_eq!(decoded.value_commit, params.value_commit);
     }
 
@@ -324,7 +325,7 @@ mod tests {
         let output = Output {
             value_commit: pallas::Point::generator(),
             token_commit: pallas::Base::from(7),
-            coin: Coin::from_attributes(
+            commitment: CapCommitment::from_attributes(
                 pallas::Base::from(8),
                 50,
                 TokenId::from_base(pallas::Base::from(5)),
@@ -361,7 +362,7 @@ mod tests {
     fn test_token_mint_update_serialization() {
         let update = TokenMintUpdateV1 {
             token_id: TokenId::from_base(pallas::Base::from(1)),
-            coin: Coin::from_attributes(
+            commitment: CapCommitment::from_attributes(
                 pallas::Base::from(2),
                 100,
                 TokenId::from_base(pallas::Base::from(3)),
@@ -374,13 +375,13 @@ mod tests {
         let encoded = serialize(&update);
         let decoded: TokenMintUpdateV1 = deserialize(&encoded).unwrap();
         assert_eq!(decoded.token_id, update.token_id);
-        assert_eq!(decoded.coin.inner(), update.coin.inner());
+        assert_eq!(decoded.commitment.inner(), update.commitment.inner());
     }
 
     #[test]
     fn test_mint_update_serialization() {
         let update = MintUpdateV1 {
-            coin: Coin::from_attributes(
+            commitment: CapCommitment::from_attributes(
                 pallas::Base::from(1),
                 500,
                 TokenId::from_base(pallas::Base::from(2)),
@@ -393,7 +394,7 @@ mod tests {
         };
         let encoded = serialize(&update);
         let decoded: MintUpdateV1 = deserialize(&encoded).unwrap();
-        assert_eq!(decoded.coin.inner(), update.coin.inner());
+        assert_eq!(decoded.commitment.inner(), update.commitment.inner());
         assert_eq!(decoded.token_id, update.token_id);
         assert_eq!(decoded.new_coin_count, update.new_coin_count);
     }
@@ -416,8 +417,8 @@ mod tests {
     fn test_transfer_update_serialization() {
         let update = TransferUpdateV1 {
             nullifiers: vec![Nullifier::new(pallas::Base::from(1), pallas::Base::from(2))],
-            coins: vec![
-                Coin::from_attributes(
+            commitments: vec![
+                CapCommitment::from_attributes(
                     pallas::Base::from(3),
                     50,
                     TokenId::from_base(pallas::Base::from(4)),
@@ -430,14 +431,14 @@ mod tests {
         let encoded = serialize(&update);
         let decoded: TransferUpdateV1 = deserialize(&encoded).unwrap();
         assert_eq!(decoded.nullifiers.len(), 1);
-        assert_eq!(decoded.coins.len(), 1);
+        assert_eq!(decoded.commitments.len(), 1);
     }
 
     #[test]
     fn test_otc_swap_update_serialization() {
         let update = OtcSwapUpdateV1 {
             nullifiers: vec![Nullifier::new(pallas::Base::from(1), pallas::Base::from(2))],
-            coins: vec![Coin::from_attributes(
+            commitments: vec![CapCommitment::from_attributes(
                 pallas::Base::from(3),
                 100,
                 TokenId::from_base(pallas::Base::from(4)),
@@ -449,6 +450,6 @@ mod tests {
         let encoded = serialize(&update);
         let decoded: OtcSwapUpdateV1 = deserialize(&encoded).unwrap();
         assert_eq!(decoded.nullifiers.len(), 1);
-        assert_eq!(decoded.coins.len(), 1);
+        assert_eq!(decoded.commitments.len(), 1);
     }
 }

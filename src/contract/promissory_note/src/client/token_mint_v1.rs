@@ -41,7 +41,7 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{Coin, CoinAttributes, TokenMintParamsV1};
+use crate::model::{CapAttrs, CapCommitment, TokenMintParamsV1};
 
 /// Public inputs revealed after token mint proof creation
 /// Order must match TokenMint_V1 circuit:
@@ -52,7 +52,7 @@ pub struct TokenMintRevealed {
     /// Token authorization parent (public authority)
     pub token_auth_parent: pallas::Base,
     /// The initial coin commitment
-    pub coin: Coin,
+    pub commitment: CapCommitment,
     /// The value commitment (Pedersen)
     pub value_commit: pallas::Point,
     /// Spend hook
@@ -71,7 +71,7 @@ impl TokenMintRevealed {
         vec![
             self.token_id,
             self.token_auth_parent,
-            self.coin.inner(),
+            self.commitment.inner(),
             vc_x,
             vc_y,
             self.spend_hook,
@@ -137,7 +137,7 @@ impl TokenMintCallBuilder {
         ]);
 
         // Create coin attributes
-        let attrs = CoinAttributes {
+        let attrs = CapAttrs {
             public_key: self.input.recipient,
             value: self.input.value,
             token_id: TokenId::from_base(token_id),
@@ -145,7 +145,7 @@ impl TokenMintCallBuilder {
             user_data: self.input.user_data,
             blind: Blind(self.input.coin_blind),
         };
-        let coin = attrs.to_coin();
+        let commitment = attrs.to_commitment();
 
         // Value commitment - Pedersen (additively homomorphic)
         let value_commit = pedersen_commitment_u64(self.input.value, value_blind.clone());
@@ -156,7 +156,7 @@ impl TokenMintCallBuilder {
         let public_inputs = TokenMintRevealed {
             token_id,
             token_auth_parent: self.input.token_auth_parent,
-            coin,
+            commitment,
             value_commit,
             spend_hook: self.input.spend_hook,
             // V2 circuit: tx_binding = poseidon_hash(tx_commitment, tx_nonce). Must match.
@@ -185,7 +185,7 @@ impl TokenMintCallBuilder {
 
         Ok(TokenMintCallDebris {
             params: TokenMintParamsV1 {
-                coin,
+                commitment,
                 value_commit,
                 token_id: TokenId::from_base(token_id),
                 token_auth_parent: self.input.token_auth_parent,

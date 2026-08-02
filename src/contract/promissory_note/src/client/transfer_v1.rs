@@ -46,7 +46,7 @@ use rand::rngs::OsRng;
 use tracing::debug;
 
 use super::PromissoryNote;
-use crate::model::{AeadEncryptedNote, Coin, CoinAttributes, Input, Nullifier, Output, TransferParamsV1};
+use crate::model::{AeadEncryptedNote, CapAttrs, CapCommitment, Input, Nullifier, Output, TransferParamsV1};
 
 /// Public inputs revealed after burn proof (part of transfer)
 /// Order must match Burn_V1 circuit:
@@ -86,7 +86,7 @@ impl TransferBurnRevealed {
 /// Order must match BlindOutput_V1 circuit:
 /// coin, value_commit_x, value_commit_y, token_commit, spend_hook
 pub struct TransferBlindOutputRevealed {
-    pub coin: Coin,
+    pub commitment: CapCommitment,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
     pub spend_hook: pallas::Base,
@@ -98,7 +98,7 @@ impl TransferBlindOutputRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         let (vc_x, vc_y) = point_to_coords(self.value_commit);
         vec![
-            self.coin.inner(),
+            self.commitment.inner(),
             vc_x,
             vc_y,
             self.token_commit,
@@ -281,7 +281,7 @@ impl TransferCallBuilder {
             outputs.push(Output {
                 value_commit: revealed.value_commit,
                 token_commit: revealed.token_commit,
-                coin: revealed.coin,
+                commitment: revealed.commitment,
                 note: encrypted_note,
                 spend_hook: FuncId::from_base(output.spend_hook),
             });
@@ -309,7 +309,7 @@ fn create_transfer_burn_proof(
     let public_key = poseidon_hash([input.secret]);
 
     // Reconstruct coin from the input
-    let coin = CoinAttributes {
+    let attrs = CapAttrs {
         public_key,
         value: input.value,
         token_id: TokenId::from_base(input.token_id),
@@ -317,15 +317,15 @@ fn create_transfer_burn_proof(
         user_data: input.user_data,
         blind: Blind(input.coin_blind),
     }
-    .to_coin();
+    .to_commitment();
 
     // Calculate nullifier
-    let nullifier = Nullifier::new(input.secret, coin.inner());
+    let nullifier = Nullifier::new(input.secret, commitment.inner());
 
     // Calculate merkle root
     let merkle_root = {
         let position: u64 = input.leaf_position.into();
-        let mut current = MerkleNode::from_base(coin.inner());
+        let mut current = MerkleNode::from_base(commitment.inner());
         for (level, sibling) in input.merkle_path.iter().enumerate() {
             let level = level as u8;
             current = if position & (1 << level) == 0 {
@@ -402,7 +402,7 @@ fn create_transfer_blind_output_proof(
     tx_nonce: pallas::Base,
 ) -> Result<(Proof, TransferBlindOutputRevealed)> {
     // Create coin attributes
-    let attrs = CoinAttributes {
+    let attrs = CapAttrs {
         public_key: output.recipient,
         value: output.value,
         token_id: TokenId::from_base(output.token_id),
@@ -410,7 +410,7 @@ fn create_transfer_blind_output_proof(
         user_data: output.user_data,
         blind: Blind(output.coin_blind),
     };
-    let coin = attrs.to_coin();
+    let commitment = attrs.to_commitment();
 
     // Value commitment - Pedersen (additively homomorphic)
     let value_commit = pedersen_commitment_u64(output.value, value_blind.clone());
@@ -419,7 +419,7 @@ fn create_transfer_blind_output_proof(
     let token_commit = poseidon_hash([output.token_id, token_id_blind.inner()]);
 
     let public_inputs =
-        TransferBlindOutputRevealed { coin, value_commit, token_commit, spend_hook: output.spend_hook, tx_binding: pallas::Base::zero(), tx_nonce };
+        TransferBlindOutputRevealed { commitment, value_commit, token_commit, spend_hook: output.spend_hook, tx_binding: pallas::Base::zero(), tx_nonce };
 
     // Witness order must match BlindOutput_V1 circuit:
     // coin_public, coin_value, coin_token_id, coin_spend_hook, coin_user_data,
