@@ -33,7 +33,7 @@ use dwow_sdk::{
         tx_hash_to_base, PublicKey,
     },
     error::ContractError,
-    pasta::{group::GroupEncoding, pallas},
+    pasta::{group::Group, group::GroupEncoding, pallas},
 };
 
 use crate::error::DiceError;
@@ -150,10 +150,14 @@ impl Bet {
         {
             use pasta_curves::arithmetic::CurveAffine;
             use pasta_curves::group::Curve;
-            let vc_affine = self.value_commit.to_affine();
-            let coords = vc_affine.coordinates().expect("value_commit not identity");
-            b.extend_from_slice(&coords.x().to_repr());
-            b.extend_from_slice(&coords.y().to_repr());
+            if bool::from(self.value_commit.is_identity()) {
+                b.extend_from_slice(&[0u8; 64]);
+            } else {
+                let vc_affine = self.value_commit.to_affine();
+                let coords = vc_affine.coordinates().expect("value_commit not identity");
+                b.extend_from_slice(&coords.x().to_repr());
+                b.extend_from_slice(&coords.y().to_repr());
+            }
         }
         b.extend_from_slice(&self.token_id.to_repr());
         b.extend_from_slice(&self.nullifier.to_repr());
@@ -295,7 +299,7 @@ pub struct CommitBetParamsV1 {
 
 impl dwow_serial::Encodable for CommitBetParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CommitBetParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl CommitBetParamsV1 { pub const ENCODED_SIZE: usize = 238; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(238); b.extend_from_slice(&self.player_pub.to_bytes()); b.extend_from_slice(&self.bet_value.to_le_bytes()); b.push(self.target); b.extend_from_slice(&self.secret_nonce.to_repr()); b.extend_from_slice(&self.blind.to_repr()); b.extend_from_slice(&self.token_id.to_repr()); b.extend_from_slice(&self.value_commit.to_bytes()); b.extend_from_slice(&self.signature.to_repr()); b.extend_from_slice(&self.house_edge.to_le_bytes()); b.push(self.confirmation_depth); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 238 { return Err(ContractError::IoError(format!("CommitBetParamsV1: expected 238 bytes, got {}", data.len()))); } let player_pub = decode_public_key(&data[0..32])?; let bet_value = u64::from_le_bytes(data[32..40].try_into().unwrap()); let target = data[40]; let secret_nonce = decode_base(&data[41..73], "secret_nonce")?; let blind = decode_base(&data[73..105], "blind")?; let token_id = decode_base(&data[105..137], "token_id")?; let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[137..169].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CommitBetParamsV1: invalid value_commit".into()))?; let signature = decode_base(&data[169..201], "signature")?; let house_edge = u32::from_le_bytes(data[201..205].try_into().unwrap()); let confirmation_depth = data[205]; let instance_seed: [u8;32] = data[206..238].try_into().unwrap(); Ok(CommitBetParamsV1 { player_pub, bet_value, target, secret_nonce, blind, token_id, value_commit, signature, house_edge, confirmation_depth, instance_seed }) } }
+impl CommitBetParamsV1 { pub const ENCODED_SIZE: usize = 238; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(238); b.extend_from_slice(&self.player_pub.to_bytes()); b.extend_from_slice(&self.bet_value.to_le_bytes()); b.push(self.target); b.extend_from_slice(&self.secret_nonce.to_repr()); b.extend_from_slice(&self.blind.to_repr()); b.extend_from_slice(&self.token_id.to_repr()); b.extend_from_slice(&self.value_commit.to_bytes()); b.extend_from_slice(&self.signature.to_repr()); b.extend_from_slice(&self.house_edge.to_le_bytes()); b.push(self.confirmation_depth); b.extend_from_slice(&self.instance_seed); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 238 { return Err(ContractError::IoError(format!("CommitBetParamsV1: expected 238 bytes, got {}", data.len()))); } let player_pub = PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CommitBetParamsV1: invalid player_pub: {}", e)))?; let bet_value = u64::from_le_bytes(data[32..40].try_into().unwrap()); let target = data[40]; let secret_nonce = decode_base(&data[41..73], "secret_nonce")?; let blind = decode_base(&data[73..105], "blind")?; let token_id = decode_base(&data[105..137], "token_id")?; let value_commit = Option::<pallas::Point>::from(pallas::Point::from_bytes(data[137..169].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CommitBetParamsV1: invalid value_commit".into()))?; let signature = decode_base(&data[169..201], "signature")?; let house_edge = u32::from_le_bytes(data[201..205].try_into().unwrap()); let confirmation_depth = data[205]; let instance_seed: [u8;32] = data[206..238].try_into().unwrap(); Ok(CommitBetParamsV1 { player_pub, bet_value, target, secret_nonce, blind, token_id, value_commit, signature, house_edge, confirmation_depth, instance_seed }) } }
 
 /// State update for `CommitBetV1`.
 ///
@@ -338,10 +342,14 @@ impl CommitBetUpdateV1 {
         {
             use pasta_curves::arithmetic::CurveAffine;
             use pasta_curves::group::Curve;
-            let vc_affine = self.value_commit.to_affine();
-            let coords = vc_affine.coordinates().expect("value_commit not identity");
-            b.extend_from_slice(&coords.x().to_repr());
-            b.extend_from_slice(&coords.y().to_repr());
+            if bool::from(self.value_commit.is_identity()) {
+                b.extend_from_slice(&[0u8; 64]);
+            } else {
+                let vc_affine = self.value_commit.to_affine();
+                let coords = vc_affine.coordinates().expect("value_commit not identity");
+                b.extend_from_slice(&coords.x().to_repr());
+                b.extend_from_slice(&coords.y().to_repr());
+            }
         }
         b.extend_from_slice(&self.token_id.to_repr());
         b.extend_from_slice(&self.house_edge.to_le_bytes());
@@ -594,11 +602,15 @@ fn decode_public_key(data: &[u8]) -> Result<PublicKey, ContractError> {
     PublicKey::try_from(point)
 }
 
-/// Decode a pallas::Point from 64 bytes (x || y, affine).
+/// Decode a pallas::Point from 64 bytes (x || y, affine). All-zero bytes = identity.
 fn decode_point(data: &[u8], _field: &str) -> Result<pallas::Point, ContractError> {
     use pasta_curves::arithmetic::CurveAffine;
+    use pasta_curves::group::Group;
     let x = decode_base(&data[..32], "point_x")?;
     let y = decode_base(&data[32..64], "point_y")?;
+    if x == pallas::Base::zero() && y == pallas::Base::zero() {
+        return Ok(pallas::Point::identity());
+    }
     match Option::<pasta_curves::EpAffine>::from(pasta_curves::EpAffine::from_xy(x, y)) {
         Some(affine) => Ok(pasta_curves::Ep::from(affine)),
         None => Err(ContractError::IoError("Invalid point affine".to_string())),
