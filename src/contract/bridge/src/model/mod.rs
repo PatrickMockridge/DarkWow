@@ -341,7 +341,7 @@ impl WithdrawParams {
         b
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 151 { return Err(ContractError::IoError("WithdrawParams: too short".into())); }
+        if data.len() < 155 { return Err(ContractError::IoError("WithdrawParams: too short".into())); }
         let nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("WithdrawParams: invalid nullifier".into()))?;
         let recipient_hash: [u8;32] = data[32..64].try_into().unwrap();
         let deposit_leaf = Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap())).ok_or_else(|| ContractError::IoError("WithdrawParams: invalid deposit_leaf".into()))?;
