@@ -347,7 +347,7 @@ impl WithdrawParams {
         let deposit_leaf = Option::<pallas::Base>::from(pallas::Base::from_repr(data[64..96].try_into().unwrap())).ok_or_else(|| ContractError::IoError("WithdrawParams: invalid deposit_leaf".into()))?;
         let amount = u64::from_le_bytes(data[96..104].try_into().unwrap());
         let proof_len = data[104] as usize; let p = 105+proof_len;
-        if data.len() < p+16+1+1+1+32 { return Err(ContractError::IoError("WithdrawParams: proof truncated".into())); }
+        if data.len() < p+8+8+1+1+32 { return Err(ContractError::IoError("WithdrawParams: proof truncated".into())); }
         let proof = data[105..p].to_vec();
         let fee = u64::from_le_bytes(data[p..p+8].try_into().unwrap());
         let timeout_height = u64::from_le_bytes(data[p+8..p+16].try_into().unwrap());
