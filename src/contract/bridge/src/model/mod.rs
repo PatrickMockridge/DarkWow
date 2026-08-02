@@ -325,7 +325,7 @@ impl dwow_serial::Decodable for WithdrawParams {
 
 impl WithdrawParams {
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(151 + self.proof.len());
+        let mut b = Vec::with_capacity(155 + self.proof.len());
         b.extend_from_slice(&self.nullifier.to_bytes());
         b.extend_from_slice(&self.recipient_hash);
         b.extend_from_slice(&self.deposit_leaf.to_repr());

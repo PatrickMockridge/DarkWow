@@ -295,58 +295,26 @@ pub struct DeployCapitalParamsV1 {
 impl dwow_serial::Encodable for DeployCapitalParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for DeployCapitalParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl DeployCapitalParamsV1 {
-    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(100); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.relayer_pub.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.backer_cut_bp.to_le_bytes()); b.extend_from_slice(&self.signature_public.to_bytes()); b }
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(142+self.min_success_rate_bp.map_or(0,|_|8)+self.max_slash_count.map_or(0,|_|8)); b.extend_from_slice(&self.instance_seed); b.extend_from_slice(&self.relayer_pub.to_bytes()); b.extend_from_slice(&self.amount.to_le_bytes()); b.extend_from_slice(&self.backer_cut_bp.to_le_bytes()); b.extend_from_slice(&self.signature_public.to_bytes()); b.extend_from_slice(&self.value_commit.to_bytes()); b.push(self.min_success_rate_bp.is_some() as u8); if let Some(v) = self.min_success_rate_bp { b.extend_from_slice(&v.to_le_bytes()); } b.push(self.max_slash_count.is_some() as u8); if let Some(v) = self.max_slash_count { b.extend_from_slice(&v.to_le_bytes()); } b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 140 {
-            return Err(ContractError::IoError(format!(
-                "DeployCapitalParamsV1: expected at least 140 bytes, got {}",
-                data.len()
-            )));
-        }
-        let tag1 = data[140];
-        let mut pos = 141usize;
-        let min_success_rate_bp = match tag1 {
-            0 => None,
-            1 => {
-                if pos + 8 > data.len() {
-                    return Err(ContractError::IoError("DeployCapitalParamsV1: truncated min_success_rate_bp".into()));
-                }
-                let v = Some(u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap()));
-                pos += 8;
-                v
-            }
-            _ => return Err(ContractError::IoError("DeployCapitalParamsV1: invalid min_success_rate_bp tag".into())),
+        if data.len() < 142 { return Err(ContractError::IoError(format!("DeployCapitalParamsV1: expected at least 142 bytes, got {}", data.len()))); }
+        let instance_seed: [u8;32] = data[0..32].try_into().unwrap();
+        let relayer_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("DeployCapitalParamsV1: invalid relayer_pub: {}", e)))?;
+        let amount = u64::from_le_bytes(data[64..72].try_into().unwrap());
+        let backer_cut_bp = u32::from_le_bytes(data[72..76].try_into().unwrap());
+        let signature_public = PublicKey::from_bytes(data[76..108].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("DeployCapitalParamsV1: invalid signature_public: {}", e)))?;
+        let value_commit = {
+            let ct = pallas::Point::from_bytes(&data[108..140].try_into().unwrap());
+            if bool::from(ct.is_some()) { ct.unwrap() } else { return Err(ContractError::IoError("DeployCapitalParamsV1: invalid value_commit".into())); }
         };
-        let tag2 = if pos < data.len() { data[pos] } else {
-            return Err(ContractError::IoError("DeployCapitalParamsV1: missing max_slash_count tag".into()));
-        };
-        pos += 1;
-        let max_slash_count = match tag2 {
-            0 => None,
-            1 => {
-                if pos + 8 > data.len() {
-                    return Err(ContractError::IoError("DeployCapitalParamsV1: truncated max_slash_count".into()));
-                }
-                let v = Some(u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap()));
-                pos += 8;
-                v
-            }
-            _ => return Err(ContractError::IoError("DeployCapitalParamsV1: invalid max_slash_count tag".into())),
-        };
+        let has_m1 = data[140] != 0; let mut pos = 141;
+        let min_success_rate_bp = if has_m1 { if pos+8 > data.len() { return Err(ContractError::IoError("DeployCapitalParamsV1: truncated min".into())); } let v = Some(u64::from_le_bytes(data[pos..pos+8].try_into().unwrap())); pos+=8; v } else { None };
+        let has_m2 = if pos < data.len() { let v = data[pos]; pos+=1; v != 0 } else { false };
+        let max_slash_count = if has_m2 { if pos+8 > data.len() { return Err(ContractError::IoError("DeployCapitalParamsV1: truncated max".into())); } let v = Some(u64::from_le_bytes(data[pos..pos+8].try_into().unwrap())); v } else { None };
         Ok(DeployCapitalParamsV1 {
-            instance_seed: data[0..32].try_into().unwrap(),
-            relayer_pub: PublicKey::from_bytes(data[32..64].try_into().unwrap())?,
-            amount: u64::from_le_bytes(data[64..72].try_into().unwrap()),
-            backer_cut_bp: u32::from_le_bytes(data[72..76].try_into().unwrap()),
-            signature_public: PublicKey::from_bytes(data[76..108].try_into().unwrap())?,
-            value_commit: {
-                let ct = pallas::Point::from_bytes(&data[108..140].try_into().unwrap());
-                if bool::from(ct.is_some()) { ct.unwrap() } else {
-                    return Err(ContractError::IoError("DeployCapitalParamsV1: invalid value_commit".into()));
-                }
-            },
-            min_success_rate_bp,
-            max_slash_count,
+            instance_seed, relayer_pub, amount, backer_cut_bp,
+            signature_public,
+            value_commit, min_success_rate_bp, max_slash_count,
         })
     }
 }
