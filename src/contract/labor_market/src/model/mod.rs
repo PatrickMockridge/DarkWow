@@ -490,11 +490,11 @@ pub struct CreateJobParamsV1 {
 impl dwow_serial::Encodable for CreateJobParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateJobParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreateJobParamsV1 {
-    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(41+self.proof.len()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.attestation_id.to_repr()); b.push(self.delivery_type); b.extend_from_slice(&self.payment_amount.to_le_bytes()); b }
+    pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(233+self.proof.len()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.attestation_id.to_repr()); b.push(self.delivery_type); b.extend_from_slice(&self.payment_amount.to_le_bytes()); b.extend_from_slice(&self.payment_token.to_repr()); b.extend_from_slice(&self.payment_commit_x.to_repr()); b.extend_from_slice(&self.payment_commit_y.to_repr()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 185 {
+        if data.len() < 234 {
             return Err(ContractError::IoError(format!(
-                "CreateJobParamsV1: expected at least 185 bytes, got {}",
+                "CreateJobParamsV1: expected at least 234 bytes, got {}",
                 data.len()
             )));
         }
@@ -899,7 +899,7 @@ pub struct RefundParamsV1 {
 
 impl dwow_serial::Encodable for RefundParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RefundParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl RefundParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+152); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.milestone_count.to_le_bytes()); b.extend_from_slice(&self.completed_payment.to_le_bytes()); b.extend_from_slice(&self.refund_amount.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+impl RefundParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+152); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.employer_pub_x.to_repr()); b.extend_from_slice(&self.employer_pub_y.to_repr()); b.extend_from_slice(&self.milestone_count.to_le_bytes()); b.extend_from_slice(&self.completed_payment.to_le_bytes()); b.extend_from_slice(&self.refund_amount.to_le_bytes()); b.extend_from_slice(&self.spent_nullifier.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < 153 {
             return Err(ContractError::IoError(format!(
                 "RefundParamsV1: expected at least 153 bytes, got {}",
@@ -1577,9 +1577,9 @@ pub struct AcceptJobWithCapabilityParamsV1 {
 impl dwow_serial::Encodable for AcceptJobWithCapabilityParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for AcceptJobWithCapabilityParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl AcceptJobWithCapabilityParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(1+self.proof.len()+1+self.capability_proof.len()+160); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.job_id.to_repr()); b.extend_from_slice(&self.worker_pub_x.to_repr()); b.extend_from_slice(&self.worker_pub_y.to_repr()); b.extend_from_slice(&self.required_capability_id.to_repr()); b.push(self.capability_proof.len() as u8); b.extend_from_slice(&self.capability_proof); b.extend_from_slice(&self.capability_secret); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 170 {
+        if data.len() < 168 {
             return Err(ContractError::IoError(format!(
-                "AcceptJobWithCapabilityParamsV1: expected at least 170 bytes, got {}",
+                "AcceptJobWithCapabilityParamsV1: expected at least 168 bytes, got {}",
                 data.len()
             )));
         }
