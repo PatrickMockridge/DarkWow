@@ -1,3 +1,5 @@
+> **Status:** Historical snapshot (2026-07-31). See [safety.md](../../dev/contracts/safety.md) for verified current status of all findings.
+
 # DarkWow — Independent Red Team Security Audit
 
 **Date:** 2026-07-31

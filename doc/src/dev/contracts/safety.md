@@ -1660,12 +1660,143 @@ Several cross-cutting ZK infrastructure improvements were implemented:
 - **VK cache FIFO eviction (M-4):** The verifying key cache (`src/zk/verifier.rs`)
   uses FIFO eviction with a 256-entry cap, deterministic eviction of oldest entries.
 
-- **Roulette circuit fix (C-9/H-13, Risk 80):** `settle_bet_v1.zk` — `won` was a free
-  witness. Now `won = is_equal_base(bet_number, winning_number)`, derived in-circuit.
-  `payout = zero_cond(won, expected_payout)`. Lean4-backed.
+- **Roulette PlaceBet fix (C-9):** `place_bet.zk` — `bet_id` and `nullifier` now derived
+  in-circuit via Poseidon with domain constants and constrained via `constrain_equal_base`.
+  `table_id`, `player_pub`, and `amount` are cryptographically bound to the proof.
+
+- **VK cache FIFO eviction (M-4):** The verifying key cache (`src/zk/verifier.rs`)
+  uses FIFO eviction with a 256-entry cap, deterministic eviction of oldest entries.
 
 ---
 
+## Audit Finding Status (verified 2026-08-03 against `linear-master`)
+
+Consolidated from [Red Team Audit](../../arch/audit/red-team-findings.md) (47 findings),
+[HAZOP Root Cause Analysis](../../arch/audit/red-team-hazop-analysis.md) (9 families,
+6 structural changes), and [Comprehensive Security Audit](../../arch/audit/comprehensive-security-audit.md)
+(~314 findings), all dated 2026-07-31. Each finding was verified against current code
+with exact file:line references. Status reflects code as of 2026-08-03.
+
+### Red Team Audit — CRITICAL (11 findings)
+
+| ID | Description | Status | Notes |
+|----|-------------|--------|-------|
+| C-1 | Bridge Monero DLEq proof stubbed | PARTIAL | Implemented in `verify/monero.rs` behind `#[cfg(feature = "bridge-verify")]`; fallback still skips DLEq |
+| C-2 | Bridge Ethereum deposits skip verification | FIXED | `!= Ethereum` bypass removed; non-Ethereum chains hard-rejected without feature flag |
+| C-3 | Bridge Zcash/Aztec non-emptiness only | PARTIAL | Monero DLEq + Litecoin SHA-256d fixed; Zcash Groth16 and Aztec PLONK still return "not yet implemented" |
+| C-4 | Bridge 11 ops no ZK proof | PARTIAL | 5 new ZK circuits added (CancelWithdraw, ExecuteGuaranteedWithdraw, ClaimHtlc, RefundHtlc, AcceptWithdrawal); 7 admin ops still `Ok(vec![])` |
+| C-5 | Gas exhaustion not checked (9/10 host fns) | PARTIAL | 8/9 now use `charge_gas()`; `db_del_local` still uses raw `subtract_gas` without exhaustion check |
+| C-6 | Coinbase maturity AFTER sled commit | **OUTSTANDING** | Maturity check (lines 1089-1118) still runs after atomic commit (lines 998-1028); no rollback |
+| C-7 | ~150 V1 circuits lack domain separation | FIXED | Zero `*_v1.zk` files remain; all circuits ported to V2 with `DOMAIN_*` constants |
+| C-8 | Bridge V1 all hashes undifferentiated | FIXED | All 8 bridge proofs are V2 with domain-separated `poseidon_hash` on all 5 hash types |
+| C-9 | Roulette PlaceBet no public inputs | FIXED | `PlaceBet_V2` constrains `bet_id` (encoding table_id, amount) and `nullifier` via `constrain_equal_base` |
+| C-10 | Blind\<F\> derives Debug | FIXED | Manual `Debug` impl renders `<redacted>`; `Drop` zeroizes; `Copy` removed |
+| C-11 | SecretKey Display leaks full secret | PARTIAL | `Debug` redacts (FIXED); `Display` intentionally outputs base58 for CLI export — documented risk |
+
+### Red Team Audit — HIGH (16 findings)
+
+| ID | Description | Status | Notes |
+|----|-------------|--------|-------|
+| H-1 | Block reward no upper bound | FIXED | 2× expected reward cap with `saturating_mul(2)` added as defense-in-depth |
+| H-2 | Fork resolution first-come-first-served | PARTIAL | Competing-block validation substantially improved (Monero, target, prev-hash, timestamp, dedup); still FCFS — no chain-work reorganization |
+| H-3 | Block storage uses serde_json | **OUTSTANDING** | `serde_json::to_vec()` still used at chain_state.rs:887; not replaced with deterministic encoding |
+| H-4 | Multisig SignV1 no membership check | FIXED | `group.pubkeys.iter().any(|pk| pk == &params.signer_pub)` check added |
+| H-5 | Multisig FinalizeV1 signatures replayable | FIXED | `db_del` replaces zero-value pattern; consumed signatures fully removed |
+| H-6 | Bridge HTLC no cryptographic auth | FIXED | ZK circuits for ClaimHtlc (preimage proof) and RefundHtlc (sender key proof) |
+| H-7 | WASM threads/atomics 0xFE not rejected | **OUTSTANDING** | `reject_nondeterministic_features()` intentionally disabled (no-op); Rust stdlib generates false positives. Atomics penalized at 256 gas |
+| H-8 | Identity-only nullifiers in governance circuits | PARTIAL | 6/7 circuits fixed (nonce, proposal_id, lock added); `purchase_coverage_with_capability.zk` still identity-only |
+| H-9 | Wallet default password "changeme" | FIXED | Default removed; requires TOML config or `DWOW_WALLET_PASS` env var |
+| H-10 | RPC auth_token never enforced | FIXED | Full auth gate: first non-auth request must provide token; unauthenticated → error |
+| H-11 | ContractId::ZERO bypass in 25+ sites | **OUTSTANDING** | 50+ instances across 16 contracts still use `== ContractId::ZERO` bypass guards |
+| H-12 | Bridge withdrawal host verification bypass | FIXED | In-circuit Merkle proof verification + in-contract historical root check |
+| H-13 | Roulette SettleBet won free witness | **OUTSTANDING** | `won` still declared as free witness; not derived via `is_equal_base`. Payout constrained as instance but `won` is independent |
+| H-14 | Competing block skips PowSource::Monero | FIXED | `is_coinbase_valid_merkle_root()` called in competing-block path |
+| H-15 | Uncle chain extensions skip difficulty | FIXED | Full `get_next_work_required` + Monero merge-mine check applied |
+| H-16 | Proof-to-call index ordering gap | PARTIAL | Global + per-call length guards added; no explicit call_index correspondence field. Relies on VK mismatch detection |
+
+### Red Team Audit — MEDIUM (15 findings)
+
+| ID | Description | Status | Notes |
+|----|-------------|--------|-------|
+| M-1 | O(n) chain traversal in get_next_work_required | PARTIAL | Loop still O(n); error handling improved. Full fix requires schema migration |
+| M-2 | saturating_sub vs checked_sub divergence | FIXED | Both paths now use `checked_sub` with consistent `unwrap_or_else` |
+| M-3 | Competing blocks skip Monero merkle proof | FIXED | `is_coinbase_valid_merkle_root()` now called in both competing and uncle extension paths |
+| M-4 | VK cache non-LRU eviction | FIXED | FIFO eviction by insertion order; oldest half removed on overflow |
+| M-5 | Metadata ordering not mechanically verified | PARTIAL | Count verification exists; no parse-and-compare of `constrain_instance` order vs `to_public_inputs()` |
+| M-6 | Hardcoded devnet passphrase | FIXED | `DEVNET_PASSPHRASE` removed; `DWOW_KEY_PASSPHRASE` env var required |
+| M-7 | Wallet capability revoked before confirmation | FIXED | Capabilities now marked PENDING at broadcast; deferred to block confirmation |
+| M-8 | Bridge governance DoS without bounds | FIXED | Sanity bounds: `MAX_CONFIRMATIONS = 10,000`, `MAX_FEE = 1,000,000,000,000` |
+| M-9 | Bridge ContractId::ZERO bypass in deposit | FIXED | Guard exists on all 4 deposit/withdrawal paths (fail-closed: reject if PN not configured) |
+| M-10 | Bridge max_deposit/max_withdrawal never applied | FIXED | Both now written to config DB and enforced |
+| M-11 | Roulette ZK proof ceremonial | **OUTSTANDING** | House determines winning number via plaintext; ZK circuit verified but adds no independent security |
+| M-12 | Uniform WASM opcode cost | FIXED | 5-tier cost system: 1 gas (simple) through 256 gas (SIMD/atomics) |
+| M-13 | No wall-clock timeout | PARTIAL | 30-second soft limit logs warning but does NOT terminate; hard enforcement needs cooperative yield |
+| M-14 | 256MB memory at ~3,840 gas | FIXED | Memory growth charged at `new_pages × 64KB`; exhaustion fails the call |
+| M-15 | deposit.zk external_block_hash never used | **OUTSTANDING** | Witness declared but never constrained in circuit body; used only in host dedup |
+
+### Red Team Audit — LOW (5 findings)
+
+| ID | Description | Status | Notes |
+|----|-------------|--------|-------|
+| L-1 | Chain work recomp mismatch for target=0 | FIXED | Both paths now use `.max(1)` |
+| L-2 | Uncle chain extension min/max target only | FIXED | Covered by H-15 fix (full difficulty adjustment) |
+| L-3 | Bridge external_block_hash dead witness | **OUTSTANDING** | Same as M-15 |
+| L-4 | Roulette settle_bet won free witness | **OUTSTANDING** | Same as M-11/H-13 |
+| L-5 | drk_log has no ACL | FIXED | Documented design decision: ephemeral per-call buffer, never committed to sled |
+
+### Structural Changes (HAZOP SC-1 through SC-6)
+
+| ID | Change | Status | Notes |
+|----|--------|--------|-------|
+| SC-1 | `Verified<T>` type-level proof marker | Not implemented | Would resolve RC-A (12 findings). Bridge uses feature-gated dispatch instead |
+| SC-2 | Pre-commit validation phase | Not implemented | Would resolve RC-B (3 findings). C-6 still outstanding |
+| SC-3 | `charge_gas!` macro | PARTIAL | `charge_gas()` method exists; not a macro. 8/9 functions use it; db_del_local still broken |
+| SC-4 | Circuit migration CI gate | FIXED | `scripts/check-circuit-domain-separation.sh` enforces; zero V1 circuits remain |
+| SC-5 | Security trait lint | Not implemented | Auto-derive prevention for sensitive types done manually (Blind, SecretKey) |
+| SC-6 | Fail-closed configuration | PARTIAL | Bridge now fail-closed; 50+ ContractId::ZERO bypasses still fail-open elsewhere |
+
+### Cross-Audit Contradictions Resolved
+
+| Contradiction | Red Team | Security Audit | Resolution |
+|---------------|----------|---------------|------------|
+| TLS TOFU pinning | IMPLEMENTED at tls.rs:156-173 | H1: missing, MITM-able | **Red Team correct.** Blake3 fingerprint comparison with rejection on mismatch |
+| SecretKey Debug | FIXED — `<redacted>` at keypair.rs:91-95 | C14: leaks full key material | **Red Team correct on Debug.** Security Audit valid on Display (base58 leak) |
+| Chain work recomputation | FIXED at chain_state.rs:168-196 | H7: not recomputed | **Red Team correct.** Full recompute on startup, validates against sled cache |
+
+### Outstanding Items Summary
+
+| ID | Severity | Description | Effort |
+|----|----------|-------------|--------|
+| C-6 | CRITICAL | Coinbase maturity after sled commit | Trivial (move 30-line check before commit) |
+| H-3 | HIGH | serde_json non-deterministic block storage | Moderate (schema migration required) |
+| H-7 | HIGH | WASM threads/atomics scanner disabled | Simple (re-enable with Rust-stdlib-aware filtering) |
+| H-11 | HIGH | 50+ ContractId::ZERO bypass guards | Moderate (fail-closed at each site) |
+| H-13 | HIGH | Roulette SettleBet won free witness | Simple (add `is_equal_base` constraint) |
+| M-11 | MEDIUM | Roulette ZK proof ceremonial | Design (house determines winner; ZK adds no security) |
+| M-15/L-3 | MEDIUM | deposit.zk external_block_hash unconstrained | Trivial (constrain or remove dead witness) |
+| M-1 | MEDIUM | O(n) chain traversal | Moderate (schema migration) |
+| M-5 | MEDIUM | Metadata ordering not verified | Simple (parse-and-compare test) |
+| M-13 | MEDIUM | Wall-clock timeout soft-only | Moderate (needs cooperative yield in WASM middleware) |
+| C-1/C-3/C-4/C-5/C-11 | CRITICAL | Partial fixes (feature gates, remaining stubs) | Varies |
+
+### HANDOVER.md — Serialization Conformance (2026-07-27)
+
+All 14 verification items **RESOLVED**:
+- 3 anti-pattern sweeps produce zero output
+- All 8 fine-detail areas addressed (correct ENCODED_SIZE, explicit encode/decode, bridge impls delegate correctly)
+- All 10 guardrails enforced (zero SerialEncodable/SerialDecodable on DB types, no serialize() on state)
+- Dead import at `bridge/src/model/mod.rs:36` (`SerialDecodable, SerialEncodable`) is cosmetic; no derive macros use it
+
+### Guardrails Preserved (from HANDOVER.md)
+
+1. Every DB type SHALL have explicit encode/decode with validating constructors
+2. Fields SHALL use nominal types per type-system.md §8.1
+3. ρ-calculus `eval(quote(x)) ∼ x` must hold
+4. No re-adding SerialEncodable/SerialDecodable under any circumstances
+5. Pattern catalog is the template — no novel encoding approaches
+6. No sed on Rust code — Edit tool only, every byte offset auditable
+
+---
 
 - [NativeToken](./native_token.md) — Consensus token with zero business logic
 - [Standards](./standards.md) — ZK circuit, token, and testing standards

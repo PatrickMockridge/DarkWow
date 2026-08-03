@@ -1,3 +1,5 @@
+> **Status:** Historical snapshot (2026-07-31). See [safety.md](../../dev/contracts/safety.md) for verified current status. This audit has known contradictions with the [Red Team audit](red-team-findings.md) — see [audit README](README.md) for reconciliation.
+
 # DarkWow — Adversarial Security Audit Report
 
 **Date:** 2026-07-31

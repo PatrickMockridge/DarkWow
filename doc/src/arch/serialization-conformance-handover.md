@@ -127,5 +127,7 @@ RAYON_NUM_THREADS=10 cargo test -p dwow_purse_contract -- --nocapture
 ## Key Files
 
 - Spec: `doc/src/arch/contract-wasm-type-system.md` §3.1
-- Plan: `/home/patrick/.claude/plans/ok-if-you-can-gleaming-bonbon.md`
+> **Status:** Historical handover (2026-07-27). All 14 verification items confirmed resolved as of 2026-08-03. See [safety.md](../dev/contracts/safety.md#handovermd--serialization-conformance-2026-07-27) for verification report.
+
+- Plan: (internal development artifact — not in repository)
 - Pattern catalog: 10 canonical patterns from native_token, attestation, oracle, identity, promissory_note

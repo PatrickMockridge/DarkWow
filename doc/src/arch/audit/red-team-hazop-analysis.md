@@ -3,7 +3,9 @@
 **Date:** 2026-07-31
 **Methodology:** HAZOP (Hazard and Operability Study) — systematic, exhaustive safety analysis. Grouping by first root cause — the architectural property that makes each bug class possible — not by symptom. Within each root cause, sorted by criticality (most severe first), then by ease of implementation (cheapest fix first).
 
-**Input:** 47 findings from the [Independent Red Team Audit](RED_TEAM_AUDIT_2026-07-31.md) (11 CRITICAL, 16 HIGH, 15 MEDIUM, 5 LOW)
+> **Status:** Historical snapshot (2026-07-31). See [safety.md](../../dev/contracts/safety.md) for verified current status of all findings and structural changes.
+
+**Input:** 47 findings from the [Independent Red Team Audit](red-team-findings.md) (11 CRITICAL, 16 HIGH, 15 MEDIUM, 5 LOW)
 
 ---
 

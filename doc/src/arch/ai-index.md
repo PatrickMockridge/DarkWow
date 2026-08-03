@@ -130,6 +130,9 @@ The theoretical basis. Read in this order.
   contracts.
 - **[Contract Metadata](contract-metadata.md)** — self-declared on-chain
   metadata (name, symbol, category).
+- **[Circuit Versioning](circuit-versioning.md)** — ZK circuit versioning
+  conventions, V1→V2 migration rationale (HAZOP RC3 domain separation),
+  naming conventions, and manifest-driven versioning going forward.
 
 ### 6.2 Genesis Contracts (L1 — transferable o-caps)
 
@@ -332,3 +335,22 @@ after `genesis.md` and read the corresponding source in `src/contract/<name>/`.
 | Write an AI agent | [AI-Assisted Development](../dev/ai-assisted-development.md) |
 | Find a contract spec | [Contract Catalog](../contracts.md) |
 | Find a formal proof | [GeneralTheorem.lean](../../../proofs/lean/src/DarkFi/Combinatorial/GeneralTheorem.lean) |
+| Review security audit findings | [Contract Safety](../dev/contracts/safety.md) |
+| Check audit status | [Audit Documents](audit/README.md) |
+| Understand serialization conformance | [Serialization Handover](serialization-conformance-handover.md) |
+
+---
+
+## 13. Security Audits & Historical Handover
+
+- **[Contract Safety — Audit Finding Status](../dev/contracts/safety.md)** — Verified status
+  of all security audit findings (Red Team + HAZOP + Comprehensive), consolidated and
+  verified against current code as of 2026-08-03. *Start here for current security posture.*
+- **[Audit Documents](audit/README.md)** — Directory index of the three original audit
+  reports (2026-07-31), preserved as historical snapshots with cross-audit contradiction
+  reconciliation.
+  - **[Red Team Findings](audit/red-team-findings.md)** — 47 findings with file:line verification.
+  - **[Red Team HAZOP Analysis](audit/red-team-hazop-analysis.md)** — 9 root cause families, 6 structural changes.
+  - **[Comprehensive Security Audit](audit/comprehensive-security-audit.md)** — ~314 findings, independent methodology.
+- **[Serialization Conformance Handover](serialization-conformance-handover.md)** —
+  Completed remediation of serialize/deserialize anti-patterns across 32 contracts (2026-07-27).

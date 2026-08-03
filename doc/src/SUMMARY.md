@@ -27,6 +27,7 @@
   - [Contract Deployment Pipeline](arch/dwowd_contract_pipeline.md)
   - [Contract Invocation API](arch/contract_invoke_api.md)
   - [Contract Metadata](arch/contract-metadata.md)
+  - [Circuit Versioning](arch/circuit-versioning.md)
   - [Identity Contract (O-Cap)](arch/identity.md)
   - [Observer (Relay Node)](arch/observer.md)
   - [O-Cap & Composable Privacy](arch/ocap.md)
@@ -81,6 +82,9 @@
 - [Upstream Security Hardening Findings](arch/upstream-security-findings.md)
 - [Quantum Threat Assessment](arch/quantum-threat.md)
 - [Contract Trust Model](arch/contract-trust-model.md)
+- [Independent Red Team Audit](arch/audit/red-team-findings.md)
+- [Red Team HAZOP Root Cause Analysis](arch/audit/red-team-hazop-analysis.md)
+- [Comprehensive Security Audit](arch/audit/comprehensive-security-audit.md)
 
 # Contracts
 
@@ -179,6 +183,7 @@
   - [Contract Safety (Formal Verification)](dev/contracts/safety.md)
   - [Contract Standards](dev/contracts/standards.md)
   - [AuthMint Security Analysis](dev/contracts/auth_mint_security_analysis.md) [HISTORICAL]
+  - [Serialization Conformance Handover](arch/serialization-conformance-handover.md) [HISTORICAL]
   - [Bridge Contract](dev/contracts/bridge.md)
   - [DEX Contract](dev/contracts/dex.md)
   - [Identity Contract](dev/contracts/identity.md)
