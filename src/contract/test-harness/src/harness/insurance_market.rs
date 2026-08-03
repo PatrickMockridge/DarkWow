@@ -196,14 +196,14 @@ impl super::ContractHarness for InsuranceMarketHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["UnderwriteWithCapability", "PurchaseCoverageWithCapability", "PurchaseCoverageV1", "PurchaseCoverageWithDAG"]
+        vec!["UnderwriteWithCapability", "PurchaseCoverageWithCapability", "PurchaseCoverageV2", "PurchaseCoverageWithDAG"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
             "UnderwriteWithCapability" => Some(&self.underwrite_zkbin),
             "PurchaseCoverageWithCapability" => Some(&self.purchase_coverage_zkbin),
-            "PurchaseCoverageV1" => Some(&self.purchase_coverage_v1_zkbin),
+            "PurchaseCoverageV2" => Some(&self.purchase_coverage_v1_zkbin),
             "PurchaseCoverageWithDAG" => Some(&self.purchase_coverage_dag_zkbin),
             _ => None,
         }
@@ -213,7 +213,7 @@ impl super::ContractHarness for InsuranceMarketHarness {
         match ns {
             "UnderwriteWithCapability" => Some(&self.underwrite_pk),
             "PurchaseCoverageWithCapability" => Some(&self.purchase_coverage_pk),
-            "PurchaseCoverageV1" => Some(&self.purchase_coverage_v1_pk),
+            "PurchaseCoverageV2" => Some(&self.purchase_coverage_v1_pk),
             "PurchaseCoverageWithDAG" => Some(&self.purchase_coverage_dag_pk),
             _ => None,
         }

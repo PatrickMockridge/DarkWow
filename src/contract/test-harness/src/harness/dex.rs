@@ -489,41 +489,41 @@ impl super::ContractHarness for DexHarness {
 
     fn circuits(&self) -> Vec<&'static str> {
         vec![
-            "CreateSwapV1",
-            "AcceptSwapV1",
-            "ExecuteSwapV1",
-            "CancelSwapV1",
-            "ExecuteSwapFeeV1",
-            "ExecuteSwapSlippageV1",
-            "SetTransparencyLevelV1",
-            "UpdateConfigV1",
+            "CreateSwapV2",
+            "AcceptSwapV2",
+            "ExecuteSwapV2",
+            "CancelSwapV2",
+            "ExecuteSwapFeeV2",
+            "ExecuteSwapSlippageV2",
+            "SetTransparencyLevelV2",
+            "UpdateConfigV2",
         ]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "CreateSwapV1" => Some(&self.create_swap_zkbin),
-            "AcceptSwapV1" => Some(&self.accept_swap_zkbin),
-            "ExecuteSwapV1" => Some(&self.execute_swap_zkbin),
-            "CancelSwapV1" => Some(&self.cancel_swap_zkbin),
-            "ExecuteSwapFeeV1" => Some(&self.execute_swap_fee_zkbin),
-            "ExecuteSwapSlippageV1" => Some(&self.execute_swap_slippage_zkbin),
-            "SetTransparencyLevelV1" => Some(&self.set_transparency_level_zkbin),
-            "UpdateConfigV1" => Some(&self.update_config_zkbin),
+            "CreateSwapV2" => Some(&self.create_swap_zkbin),
+            "AcceptSwapV2" => Some(&self.accept_swap_zkbin),
+            "ExecuteSwapV2" => Some(&self.execute_swap_zkbin),
+            "CancelSwapV2" => Some(&self.cancel_swap_zkbin),
+            "ExecuteSwapFeeV2" => Some(&self.execute_swap_fee_zkbin),
+            "ExecuteSwapSlippageV2" => Some(&self.execute_swap_slippage_zkbin),
+            "SetTransparencyLevelV2" => Some(&self.set_transparency_level_zkbin),
+            "UpdateConfigV2" => Some(&self.update_config_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "CreateSwapV1" => Some(&self.create_swap_pk),
-            "AcceptSwapV1" => Some(&self.accept_swap_pk),
-            "ExecuteSwapV1" => Some(&self.execute_swap_pk),
-            "CancelSwapV1" => Some(&self.cancel_swap_pk),
-            "ExecuteSwapFeeV1" => Some(&self.execute_swap_fee_pk),
-            "ExecuteSwapSlippageV1" => Some(&self.execute_swap_slippage_pk),
-            "SetTransparencyLevelV1" => Some(&self.set_transparency_level_pk),
-            "UpdateConfigV1" => Some(&self.update_config_pk),
+            "CreateSwapV2" => Some(&self.create_swap_pk),
+            "AcceptSwapV2" => Some(&self.accept_swap_pk),
+            "ExecuteSwapV2" => Some(&self.execute_swap_pk),
+            "CancelSwapV2" => Some(&self.cancel_swap_pk),
+            "ExecuteSwapFeeV2" => Some(&self.execute_swap_fee_pk),
+            "ExecuteSwapSlippageV2" => Some(&self.execute_swap_slippage_pk),
+            "SetTransparencyLevelV2" => Some(&self.set_transparency_level_pk),
+            "UpdateConfigV2" => Some(&self.update_config_pk),
             _ => None,
         }
     }

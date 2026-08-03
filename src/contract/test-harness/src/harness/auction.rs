@@ -364,35 +364,35 @@ impl super::ContractHarness for AuctionHarness {
 
     fn circuits(&self) -> Vec<&'static str> {
         vec![
-            "CreateAuctionV1",
-            "PlaceBidV1",
-            "CloseAuctionV1",
-            "ClaimWinningsV1",
-            "SettleAuctionV1",
-            "RefundBidV1",
+            "CreateAuctionV2",
+            "PlaceBidV2",
+            "CloseAuctionV2",
+            "ClaimWinningsV2",
+            "SettleAuctionV2",
+            "RefundBidV2",
         ]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "CreateAuctionV1" => Some(&self.create_auction_zkbin),
-            "PlaceBidV1" => Some(&self.place_bid_zkbin),
-            "CloseAuctionV1" => Some(&self.close_auction_zkbin),
-            "ClaimWinningsV1" => Some(&self.claim_winnings_zkbin),
-            "SettleAuctionV1" => Some(&self.settle_auction_zkbin),
-            "RefundBidV1" => Some(&self.refund_bid_zkbin),
+            "CreateAuctionV2" => Some(&self.create_auction_zkbin),
+            "PlaceBidV2" => Some(&self.place_bid_zkbin),
+            "CloseAuctionV2" => Some(&self.close_auction_zkbin),
+            "ClaimWinningsV2" => Some(&self.claim_winnings_zkbin),
+            "SettleAuctionV2" => Some(&self.settle_auction_zkbin),
+            "RefundBidV2" => Some(&self.refund_bid_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "CreateAuctionV1" => Some(&self.create_auction_pk),
-            "PlaceBidV1" => Some(&self.place_bid_pk),
-            "CloseAuctionV1" => Some(&self.close_auction_pk),
-            "ClaimWinningsV1" => Some(&self.claim_winnings_pk),
-            "SettleAuctionV1" => Some(&self.settle_auction_pk),
-            "RefundBidV1" => Some(&self.refund_bid_pk),
+            "CreateAuctionV2" => Some(&self.create_auction_pk),
+            "PlaceBidV2" => Some(&self.place_bid_pk),
+            "CloseAuctionV2" => Some(&self.close_auction_pk),
+            "ClaimWinningsV2" => Some(&self.claim_winnings_pk),
+            "SettleAuctionV2" => Some(&self.settle_auction_pk),
+            "RefundBidV2" => Some(&self.refund_bid_pk),
             _ => None,
         }
     }

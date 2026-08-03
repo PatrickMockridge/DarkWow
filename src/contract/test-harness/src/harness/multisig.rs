@@ -149,12 +149,12 @@ impl MultiSigHarness {
 
 impl super::ContractHarness for MultiSigHarness {
     fn name(&self) -> &str { "multisig" }
-    fn circuits(&self) -> Vec<&'static str> { vec!["CreateGroupV1", "FinalizeV1", "SignV1"] }
+    fn circuits(&self) -> Vec<&'static str> { vec!["CreateGroupV2", "FinalizeV2", "SignV2"] }
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
-        match ns { "CreateGroupV1" => Some(&self.create_group_zkbin), "FinalizeV1" => Some(&self.finalize_zkbin), "SignV1" => Some(&self.sign_zkbin), _ => None }
+        match ns { "CreateGroupV2" => Some(&self.create_group_zkbin), "FinalizeV2" => Some(&self.finalize_zkbin), "SignV2" => Some(&self.sign_zkbin), _ => None }
     }
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
-        match ns { "CreateGroupV1" => Some(&self.create_group_pk), "FinalizeV1" => Some(&self.finalize_pk), "SignV1" => Some(&self.sign_pk), _ => None }
+        match ns { "CreateGroupV2" => Some(&self.create_group_pk), "FinalizeV2" => Some(&self.finalize_pk), "SignV2" => Some(&self.sign_pk), _ => None }
     }
 }
 

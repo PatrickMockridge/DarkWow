@@ -292,29 +292,29 @@ impl super::ContractHarness for LotteryHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["CommitTicketV1", "RevealTicketV1", "ClaimPrizeV1", "DrawWinnersV1", "ExpireLotteryV1", "InitializeV1"]
+        vec!["CommitTicketV2", "RevealTicketV2", "ClaimPrizeV2", "DrawWinnersV2", "ExpireLotteryV2", "InitializeV2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "CommitTicketV1" => Some(&self.commit_ticket_zkbin),
-            "RevealTicketV1" => Some(&self.reveal_ticket_zkbin),
-            "ClaimPrizeV1" => Some(&self.claim_prize_zkbin),
-            "DrawWinnersV1" => Some(&self.draw_winners_zkbin),
-            "ExpireLotteryV1" => Some(&self.expire_lottery_zkbin),
-            "InitializeV1" => Some(&self.initialize_zkbin),
+            "CommitTicketV2" => Some(&self.commit_ticket_zkbin),
+            "RevealTicketV2" => Some(&self.reveal_ticket_zkbin),
+            "ClaimPrizeV2" => Some(&self.claim_prize_zkbin),
+            "DrawWinnersV2" => Some(&self.draw_winners_zkbin),
+            "ExpireLotteryV2" => Some(&self.expire_lottery_zkbin),
+            "InitializeV2" => Some(&self.initialize_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "CommitTicketV1" => Some(&self.commit_ticket_pk),
-            "RevealTicketV1" => Some(&self.reveal_ticket_pk),
-            "ClaimPrizeV1" => Some(&self.claim_prize_pk),
-            "DrawWinnersV1" => Some(&self.draw_winners_pk),
-            "ExpireLotteryV1" => Some(&self.expire_lottery_pk),
-            "InitializeV1" => Some(&self.initialize_pk),
+            "CommitTicketV2" => Some(&self.commit_ticket_pk),
+            "RevealTicketV2" => Some(&self.reveal_ticket_pk),
+            "ClaimPrizeV2" => Some(&self.claim_prize_pk),
+            "DrawWinnersV2" => Some(&self.draw_winners_pk),
+            "ExpireLotteryV2" => Some(&self.expire_lottery_pk),
+            "InitializeV2" => Some(&self.initialize_pk),
             _ => None,
         }
     }

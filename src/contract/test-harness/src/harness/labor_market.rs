@@ -555,13 +555,13 @@ impl super::ContractHarness for LaborMarketHarness {
 
     fn circuits(&self) -> Vec<&'static str> {
         vec![
-            "CreateJobV1",
-            "SubmitDeliverableV1",
-            "SubmitGitDeliverableV1",
-            "AcceptJobV1",
-            "ConfirmDeliveryV1",
-            "DisputeV1",
-            "RefundV1",
+            "CreateJobV2",
+            "SubmitDeliverableV2",
+            "SubmitGitDeliverableV2",
+            "AcceptJobV2",
+            "ConfirmDeliveryV2",
+            "DisputeV2",
+            "RefundV2",
             "AcceptJobWithCapability",
             "MilestonePayment",
         ]
@@ -569,13 +569,13 @@ impl super::ContractHarness for LaborMarketHarness {
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "CreateJobV1" => Some(&self.create_job_zkbin),
-            "SubmitDeliverableV1" => Some(&self.submit_deliverable_zkbin),
-            "SubmitGitDeliverableV1" => Some(&self.submit_git_deliverable_zkbin),
-            "AcceptJobV1" => Some(&self.accept_job_zkbin),
-            "ConfirmDeliveryV1" => Some(&self.confirm_delivery_zkbin),
-            "DisputeV1" => Some(&self.dispute_zkbin),
-            "RefundV1" => Some(&self.refund_zkbin),
+            "CreateJobV2" => Some(&self.create_job_zkbin),
+            "SubmitDeliverableV2" => Some(&self.submit_deliverable_zkbin),
+            "SubmitGitDeliverableV2" => Some(&self.submit_git_deliverable_zkbin),
+            "AcceptJobV2" => Some(&self.accept_job_zkbin),
+            "ConfirmDeliveryV2" => Some(&self.confirm_delivery_zkbin),
+            "DisputeV2" => Some(&self.dispute_zkbin),
+            "RefundV2" => Some(&self.refund_zkbin),
             "AcceptJobWithCapability" => Some(&self.accept_job_with_capability_zkbin),
             "MilestonePayment" => Some(&self.milestone_payment_zkbin),
             _ => None,
@@ -584,13 +584,13 @@ impl super::ContractHarness for LaborMarketHarness {
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "CreateJobV1" => Some(&self.create_job_pk),
-            "SubmitDeliverableV1" => Some(&self.submit_deliverable_pk),
-            "SubmitGitDeliverableV1" => Some(&self.submit_git_deliverable_pk),
-            "AcceptJobV1" => Some(&self.accept_job_pk),
-            "ConfirmDeliveryV1" => Some(&self.confirm_delivery_pk),
-            "DisputeV1" => Some(&self.dispute_pk),
-            "RefundV1" => Some(&self.refund_pk),
+            "CreateJobV2" => Some(&self.create_job_pk),
+            "SubmitDeliverableV2" => Some(&self.submit_deliverable_pk),
+            "SubmitGitDeliverableV2" => Some(&self.submit_git_deliverable_pk),
+            "AcceptJobV2" => Some(&self.accept_job_pk),
+            "ConfirmDeliveryV2" => Some(&self.confirm_delivery_pk),
+            "DisputeV2" => Some(&self.dispute_pk),
+            "RefundV2" => Some(&self.refund_pk),
             "AcceptJobWithCapability" => Some(&self.accept_job_with_capability_pk),
             "MilestonePayment" => Some(&self.milestone_payment_pk),
             _ => None,

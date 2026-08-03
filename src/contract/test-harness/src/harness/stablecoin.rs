@@ -545,47 +545,47 @@ impl super::ContractHarness for StablecoinHarness {
 
     fn circuits(&self) -> Vec<&'static str> {
         vec![
-            "InitV1",
-            "OpenPositionV1",
-            "MintStableV1",
-            "LiquidateV1",
-            "GovernanceReportV1",
-            "AccrueInterestV1",
-            "AddCollateralV1",
-            "RemoveCollateralV1",
-            "RepayStableV1",
-            "UpdateConfigV1",
+            "InitV2",
+            "OpenPositionV2",
+            "MintStableV2",
+            "LiquidateV2",
+            "GovernanceReportV2",
+            "AccrueInterestV2",
+            "AddCollateralV2",
+            "RemoveCollateralV2",
+            "RepayStableV2",
+            "UpdateConfigV2",
         ]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "InitV1" => Some(&self.init_zkbin),
-            "OpenPositionV1" => Some(&self.open_position_zkbin),
-            "MintStableV1" => Some(&self.mint_stable_zkbin),
-            "LiquidateV1" => Some(&self.liquidate_zkbin),
-            "GovernanceReportV1" => Some(&self.governance_report_zkbin),
-            "AccrueInterestV1" => Some(&self.accrue_interest_zkbin),
-            "AddCollateralV1" => Some(&self.add_collateral_zkbin),
-            "RemoveCollateralV1" => Some(&self.remove_collateral_zkbin),
-            "RepayStableV1" => Some(&self.repay_stable_zkbin),
-            "UpdateConfigV1" => Some(&self.update_config_zkbin),
+            "InitV2" => Some(&self.init_zkbin),
+            "OpenPositionV2" => Some(&self.open_position_zkbin),
+            "MintStableV2" => Some(&self.mint_stable_zkbin),
+            "LiquidateV2" => Some(&self.liquidate_zkbin),
+            "GovernanceReportV2" => Some(&self.governance_report_zkbin),
+            "AccrueInterestV2" => Some(&self.accrue_interest_zkbin),
+            "AddCollateralV2" => Some(&self.add_collateral_zkbin),
+            "RemoveCollateralV2" => Some(&self.remove_collateral_zkbin),
+            "RepayStableV2" => Some(&self.repay_stable_zkbin),
+            "UpdateConfigV2" => Some(&self.update_config_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "InitV1" => Some(&self.init_pk),
-            "OpenPositionV1" => Some(&self.open_position_pk),
-            "MintStableV1" => Some(&self.mint_stable_pk),
-            "LiquidateV1" => Some(&self.liquidate_pk),
-            "GovernanceReportV1" => Some(&self.governance_report_pk),
-            "AccrueInterestV1" => Some(&self.accrue_interest_pk),
-            "AddCollateralV1" => Some(&self.add_collateral_pk),
-            "RemoveCollateralV1" => Some(&self.remove_collateral_pk),
-            "RepayStableV1" => Some(&self.repay_stable_pk),
-            "UpdateConfigV1" => Some(&self.update_config_pk),
+            "InitV2" => Some(&self.init_pk),
+            "OpenPositionV2" => Some(&self.open_position_pk),
+            "MintStableV2" => Some(&self.mint_stable_pk),
+            "LiquidateV2" => Some(&self.liquidate_pk),
+            "GovernanceReportV2" => Some(&self.governance_report_pk),
+            "AccrueInterestV2" => Some(&self.accrue_interest_pk),
+            "AddCollateralV2" => Some(&self.add_collateral_pk),
+            "RemoveCollateralV2" => Some(&self.remove_collateral_pk),
+            "RepayStableV2" => Some(&self.repay_stable_pk),
+            "UpdateConfigV2" => Some(&self.update_config_pk),
             _ => None,
         }
     }

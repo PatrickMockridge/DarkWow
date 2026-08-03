@@ -211,28 +211,28 @@ impl super::ContractHarness for DrainProtectionHarness {
     fn circuits(&self) -> Vec<&'static str> {
         vec![
             "ExitProof",
-            "ExecuteV1",
-            "InitializeV1",
-            "LockV1",
-            "ProposeV1",
-            "TransferV1",
-            "UnlockV1",
-            "UpdateConfigV1",
-            "VoteV1",
+            "ExecuteV2",
+            "InitializeV2",
+            "LockV2",
+            "ProposeV2",
+            "TransferV2",
+            "UnlockV2",
+            "UpdateConfigV2",
+            "VoteV2",
         ]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
             "ExitProof" => Some(&self.exit_zkbin),
-            "ExecuteV1" => Some(&self.execute_zkbin),
-            "InitializeV1" => Some(&self.initialize_zkbin),
-            "LockV1" => Some(&self.lock_zkbin),
-            "ProposeV1" => Some(&self.propose_zkbin),
-            "TransferV1" => Some(&self.transfer_zkbin),
-            "UnlockV1" => Some(&self.unlock_zkbin),
-            "UpdateConfigV1" => Some(&self.update_config_zkbin),
-            "VoteV1" => Some(&self.vote_zkbin),
+            "ExecuteV2" => Some(&self.execute_zkbin),
+            "InitializeV2" => Some(&self.initialize_zkbin),
+            "LockV2" => Some(&self.lock_zkbin),
+            "ProposeV2" => Some(&self.propose_zkbin),
+            "TransferV2" => Some(&self.transfer_zkbin),
+            "UnlockV2" => Some(&self.unlock_zkbin),
+            "UpdateConfigV2" => Some(&self.update_config_zkbin),
+            "VoteV2" => Some(&self.vote_zkbin),
             _ => None,
         }
     }
@@ -240,14 +240,14 @@ impl super::ContractHarness for DrainProtectionHarness {
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
             "ExitProof" => Some(&self.exit_pk),
-            "ExecuteV1" => Some(&self.execute_pk),
-            "InitializeV1" => Some(&self.initialize_pk),
-            "LockV1" => Some(&self.lock_pk),
-            "ProposeV1" => Some(&self.propose_pk),
-            "TransferV1" => Some(&self.transfer_pk),
-            "UnlockV1" => Some(&self.unlock_pk),
-            "UpdateConfigV1" => Some(&self.update_config_pk),
-            "VoteV1" => Some(&self.vote_pk),
+            "ExecuteV2" => Some(&self.execute_pk),
+            "InitializeV2" => Some(&self.initialize_pk),
+            "LockV2" => Some(&self.lock_pk),
+            "ProposeV2" => Some(&self.propose_pk),
+            "TransferV2" => Some(&self.transfer_pk),
+            "UnlockV2" => Some(&self.unlock_pk),
+            "UpdateConfigV2" => Some(&self.update_config_pk),
+            "VoteV2" => Some(&self.vote_pk),
             _ => None,
         }
     }

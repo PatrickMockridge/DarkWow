@@ -120,25 +120,25 @@ impl super::ContractHarness for DarkToshiDiceHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["CommitBetV1", "HouseCloseV1", "RevealRollV1", "SettleBetV1"]
+        vec!["CommitBetV2", "HouseCloseV2", "RevealRollV2", "SettleBetV2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "CommitBetV1" => Some(&self.commit_bet_zkbin),
-            "HouseCloseV1" => Some(&self.house_close_zkbin),
-            "RevealRollV1" => Some(&self.reveal_roll_zkbin),
-            "SettleBetV1" => Some(&self.settle_bet_zkbin),
+            "CommitBetV2" => Some(&self.commit_bet_zkbin),
+            "HouseCloseV2" => Some(&self.house_close_zkbin),
+            "RevealRollV2" => Some(&self.reveal_roll_zkbin),
+            "SettleBetV2" => Some(&self.settle_bet_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "CommitBetV1" => Some(&self.commit_bet_pk),
-            "HouseCloseV1" => Some(&self.house_close_pk),
-            "RevealRollV1" => Some(&self.reveal_roll_pk),
-            "SettleBetV1" => Some(&self.settle_bet_pk),
+            "CommitBetV2" => Some(&self.commit_bet_pk),
+            "HouseCloseV2" => Some(&self.house_close_pk),
+            "RevealRollV2" => Some(&self.reveal_roll_pk),
+            "SettleBetV2" => Some(&self.settle_bet_pk),
             _ => None,
         }
     }

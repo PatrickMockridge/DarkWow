@@ -350,20 +350,20 @@ impl super::ContractHarness for TenderHarness {
 
     fn circuits(&self) -> Vec<&'static str> {
         vec![
-            "CreateTenderV1",
-            "SubmitBidV1",
-            "RevealBidV1",
-            "SelectWinnerV1",
+            "CreateTenderV2",
+            "SubmitBidV2",
+            "RevealBidV2",
+            "SelectWinnerV2",
             "SubmitBidWithCapability",
         ]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "CreateTenderV1" => Some(&self.create_tender_zkbin),
-            "SubmitBidV1" => Some(&self.submit_bid_zkbin),
-            "RevealBidV1" => Some(&self.reveal_bid_zkbin),
-            "SelectWinnerV1" => Some(&self.select_winner_zkbin),
+            "CreateTenderV2" => Some(&self.create_tender_zkbin),
+            "SubmitBidV2" => Some(&self.submit_bid_zkbin),
+            "RevealBidV2" => Some(&self.reveal_bid_zkbin),
+            "SelectWinnerV2" => Some(&self.select_winner_zkbin),
             "SubmitBidWithCapability" => Some(&self.submit_bid_with_capability_zkbin),
             _ => None,
         }
@@ -371,10 +371,10 @@ impl super::ContractHarness for TenderHarness {
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "CreateTenderV1" => Some(&self.create_tender_pk),
-            "SubmitBidV1" => Some(&self.submit_bid_pk),
-            "RevealBidV1" => Some(&self.reveal_bid_pk),
-            "SelectWinnerV1" => Some(&self.select_winner_pk),
+            "CreateTenderV2" => Some(&self.create_tender_pk),
+            "SubmitBidV2" => Some(&self.submit_bid_pk),
+            "RevealBidV2" => Some(&self.reveal_bid_pk),
+            "SelectWinnerV2" => Some(&self.select_winner_pk),
             "SubmitBidWithCapability" => Some(&self.submit_bid_with_capability_pk),
             _ => None,
         }

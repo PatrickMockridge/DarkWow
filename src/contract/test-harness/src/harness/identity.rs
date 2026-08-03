@@ -632,41 +632,41 @@ impl super::ContractHarness for IdentityHarness {
 
     fn circuits(&self) -> Vec<&'static str> {
         vec![
-            "CreateClaimV1",
+            "CreateClaimV2",
             "CreateClaimV1DAG",
             "CreateClaimV1L1",
             "CreateClaimV1L1V2",
             "CreateClaimV1Multi",
             "CreateClaimV1Ratio",
-            "IssueCredentialV1",
-            "VerifyCapabilityV1",
+            "IssueCredentialV2",
+            "VerifyCapabilityV2",
         ]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "CreateClaimV1" => Some(&self.create_claim_zkbin),
+            "CreateClaimV2" => Some(&self.create_claim_zkbin),
             "CreateClaimV1DAG" => Some(&self.create_claim_dag_zkbin),
             "CreateClaimV1L1" => Some(&self.create_claim_l1_zkbin),
             "CreateClaimV1L1V2" => Some(&self.create_claim_l1_v2_zkbin),
             "CreateClaimV1Multi" => Some(&self.create_claim_multi_zkbin),
             "CreateClaimV1Ratio" => Some(&self.create_claim_ratio_zkbin),
-            "IssueCredentialV1" => Some(&self.issue_credential_zkbin),
-            "VerifyCapabilityV1" => Some(&self.verify_capability_zkbin),
+            "IssueCredentialV2" => Some(&self.issue_credential_zkbin),
+            "VerifyCapabilityV2" => Some(&self.verify_capability_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "CreateClaimV1" => Some(&self.create_claim_pk),
+            "CreateClaimV2" => Some(&self.create_claim_pk),
             "CreateClaimV1DAG" => Some(&self.create_claim_dag_pk),
             "CreateClaimV1L1" => Some(&self.create_claim_l1_pk),
             "CreateClaimV1L1V2" => Some(&self.create_claim_l1_v2_pk),
             "CreateClaimV1Multi" => Some(&self.create_claim_multi_pk),
             "CreateClaimV1Ratio" => Some(&self.create_claim_ratio_pk),
-            "IssueCredentialV1" => Some(&self.issue_credential_pk),
-            "VerifyCapabilityV1" => Some(&self.verify_capability_pk),
+            "IssueCredentialV2" => Some(&self.issue_credential_pk),
+            "VerifyCapabilityV2" => Some(&self.verify_capability_pk),
             _ => None,
         }
     }

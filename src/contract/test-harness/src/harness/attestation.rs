@@ -563,44 +563,44 @@ impl super::ContractHarness for AttestationHarness {
 
     fn circuits(&self) -> Vec<&'static str> {
         vec![
-            "CreateAttestationV1",
-            "CreateClaimV1",
-            "VerifyClaimV1",
-            "ConsumeClaimV1",
-            "DelegateAttestationV1",
-            "AttestSlashV1",
-            "CheckNotRevokedV1",
-            "CommitFeeScheduleV1",
-            "UpdateDelegationV1",
+            "CreateAttestationV2",
+            "CreateClaimV2",
+            "VerifyClaimV2",
+            "ConsumeClaimV2",
+            "DelegateAttestationV2",
+            "AttestSlashV2",
+            "CheckNotRevokedV2",
+            "CommitFeeScheduleV2",
+            "UpdateDelegationV2",
         ]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "CreateAttestationV1" => Some(&self.create_attestation_zkbin),
-            "CreateClaimV1" => Some(&self.create_claim_zkbin),
-            "VerifyClaimV1" => Some(&self.verify_claim_zkbin),
-            "ConsumeClaimV1" => Some(&self.consume_claim_zkbin),
-            "DelegateAttestationV1" => Some(&self.delegate_attestation_zkbin),
-            "AttestSlashV1" => Some(&self.attest_slash_zkbin),
-            "CheckNotRevokedV1" => Some(&self.check_not_revoked_zkbin),
-            "CommitFeeScheduleV1" => Some(&self.commit_fee_schedule_zkbin),
-            "UpdateDelegationV1" => Some(&self.update_delegation_zkbin),
+            "CreateAttestationV2" => Some(&self.create_attestation_zkbin),
+            "CreateClaimV2" => Some(&self.create_claim_zkbin),
+            "VerifyClaimV2" => Some(&self.verify_claim_zkbin),
+            "ConsumeClaimV2" => Some(&self.consume_claim_zkbin),
+            "DelegateAttestationV2" => Some(&self.delegate_attestation_zkbin),
+            "AttestSlashV2" => Some(&self.attest_slash_zkbin),
+            "CheckNotRevokedV2" => Some(&self.check_not_revoked_zkbin),
+            "CommitFeeScheduleV2" => Some(&self.commit_fee_schedule_zkbin),
+            "UpdateDelegationV2" => Some(&self.update_delegation_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "CreateAttestationV1" => Some(&self.create_attestation_pk),
-            "CreateClaimV1" => Some(&self.create_claim_pk),
-            "VerifyClaimV1" => Some(&self.verify_claim_pk),
-            "ConsumeClaimV1" => Some(&self.consume_claim_pk),
-            "DelegateAttestationV1" => Some(&self.delegate_attestation_pk),
-            "AttestSlashV1" => Some(&self.attest_slash_pk),
-            "CheckNotRevokedV1" => Some(&self.check_not_revoked_pk),
-            "CommitFeeScheduleV1" => Some(&self.commit_fee_schedule_pk),
-            "UpdateDelegationV1" => Some(&self.update_delegation_pk),
+            "CreateAttestationV2" => Some(&self.create_attestation_pk),
+            "CreateClaimV2" => Some(&self.create_claim_pk),
+            "VerifyClaimV2" => Some(&self.verify_claim_pk),
+            "ConsumeClaimV2" => Some(&self.consume_claim_pk),
+            "DelegateAttestationV2" => Some(&self.delegate_attestation_pk),
+            "AttestSlashV2" => Some(&self.attest_slash_pk),
+            "CheckNotRevokedV2" => Some(&self.check_not_revoked_pk),
+            "CommitFeeScheduleV2" => Some(&self.commit_fee_schedule_pk),
+            "UpdateDelegationV2" => Some(&self.update_delegation_pk),
             _ => None,
         }
     }

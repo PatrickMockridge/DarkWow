@@ -248,7 +248,7 @@ impl super::ContractHarness for GameRoomHarness {
 
     fn circuits(&self) -> Vec<&'static str> {
         vec!["CreateRoom", "Deposit", "PlaceBet", "SettlePot", "Claim",
-             "CallV1", "ClosePotV1", "ContributeEntropyV1", "FoldV1", "RaiseV1", "WithdrawV1"]
+             "CallV2", "ClosePotV2", "ContributeEntropyV2", "FoldV2", "RaiseV2", "WithdrawV2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
@@ -258,12 +258,12 @@ impl super::ContractHarness for GameRoomHarness {
             "PlaceBet" => Some(&self.place_bet_zkbin),
             "SettlePot" => Some(&self.settle_pot_zkbin),
             "Claim" => Some(&self.claim_zkbin),
-            "CallV1" => Some(&self.call_zkbin),
-            "ClosePotV1" => Some(&self.close_pot_zkbin),
-            "ContributeEntropyV1" => Some(&self.contribute_entropy_zkbin),
-            "FoldV1" => Some(&self.fold_zkbin),
-            "RaiseV1" => Some(&self.raise_zkbin),
-            "WithdrawV1" => Some(&self.withdraw_zkbin),
+            "CallV2" => Some(&self.call_zkbin),
+            "ClosePotV2" => Some(&self.close_pot_zkbin),
+            "ContributeEntropyV2" => Some(&self.contribute_entropy_zkbin),
+            "FoldV2" => Some(&self.fold_zkbin),
+            "RaiseV2" => Some(&self.raise_zkbin),
+            "WithdrawV2" => Some(&self.withdraw_zkbin),
             _ => None,
         }
     }
@@ -275,12 +275,12 @@ impl super::ContractHarness for GameRoomHarness {
             "PlaceBet" => Some(&self.place_bet_pk),
             "SettlePot" => Some(&self.settle_pot_pk),
             "Claim" => Some(&self.claim_pk),
-            "CallV1" => Some(&self.call_pk),
-            "ClosePotV1" => Some(&self.close_pot_pk),
-            "ContributeEntropyV1" => Some(&self.contribute_entropy_pk),
-            "FoldV1" => Some(&self.fold_pk),
-            "RaiseV1" => Some(&self.raise_pk),
-            "WithdrawV1" => Some(&self.withdraw_pk),
+            "CallV2" => Some(&self.call_pk),
+            "ClosePotV2" => Some(&self.close_pot_pk),
+            "ContributeEntropyV2" => Some(&self.contribute_entropy_pk),
+            "FoldV2" => Some(&self.fold_pk),
+            "RaiseV2" => Some(&self.raise_pk),
+            "WithdrawV2" => Some(&self.withdraw_pk),
             _ => None,
         }
     }

@@ -309,25 +309,25 @@ impl super::ContractHarness for EscrowHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["CreateEscrowV1", "FundV1", "ClaimV1", "RefundV1"]
+        vec!["CreateEscrowV2", "FundV2", "ClaimV2", "RefundV2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "CreateEscrowV1" => Some(&self.create_escrow_zkbin),
-            "FundV1" => Some(&self.fund_zkbin),
-            "ClaimV1" => Some(&self.claim_zkbin),
-            "RefundV1" => Some(&self.refund_zkbin),
+            "CreateEscrowV2" => Some(&self.create_escrow_zkbin),
+            "FundV2" => Some(&self.fund_zkbin),
+            "ClaimV2" => Some(&self.claim_zkbin),
+            "RefundV2" => Some(&self.refund_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "CreateEscrowV1" => Some(&self.create_escrow_pk),
-            "FundV1" => Some(&self.fund_pk),
-            "ClaimV1" => Some(&self.claim_pk),
-            "RefundV1" => Some(&self.refund_pk),
+            "CreateEscrowV2" => Some(&self.create_escrow_pk),
+            "FundV2" => Some(&self.fund_pk),
+            "ClaimV2" => Some(&self.claim_pk),
+            "RefundV2" => Some(&self.refund_pk),
             _ => None,
         }
     }

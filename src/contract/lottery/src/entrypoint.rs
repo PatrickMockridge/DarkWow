@@ -49,10 +49,7 @@ dwow_sdk::define_contract!(
 
 /// Initialize the contract
 fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
-    // Embed zkas circuits
-
-    wasm::db::zkas_db_set(&commit_ticket_bincode[..])?;
-    wasm::db::zkas_db_set(&reveal_ticket_bincode[..])?;
+    // Embed zkas circuits (V2 only — V1 binaries removed, rc3 Batch 4)
 
     let commit_ticket_v2_bincode = include_bytes!("../proof/commit_ticket_v2.zk.bin");
     wasm::db::zkas_db_set(&commit_ticket_v2_bincode[..])?;

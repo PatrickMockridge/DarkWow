@@ -256,25 +256,25 @@ impl super::ContractHarness for BearerBondHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["Burn_V1", "BlindOutput_V1", "Redeem_V1", "ProveCoverage_V1"]
+        vec!["Burn_V2", "BlindOutput_V2", "Redeem_V2", "ProveCoverage_V2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "Burn_V1" => Some(&self.burn_zkbin),
-            "BlindOutput_V1" => Some(&self.blind_output_zkbin),
-            "Redeem_V1" => Some(&self.redeem_zkbin),
-            "ProveCoverage_V1" => Some(&self.prove_coverage_zkbin),
+            "Burn_V2" => Some(&self.burn_zkbin),
+            "BlindOutput_V2" => Some(&self.blind_output_zkbin),
+            "Redeem_V2" => Some(&self.redeem_zkbin),
+            "ProveCoverage_V2" => Some(&self.prove_coverage_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "Burn_V1" => Some(&self.burn_pk),
-            "BlindOutput_V1" => Some(&self.blind_output_pk),
-            "Redeem_V1" => Some(&self.redeem_pk),
-            "ProveCoverage_V1" => Some(&self.prove_coverage_pk),
+            "Burn_V2" => Some(&self.burn_pk),
+            "BlindOutput_V2" => Some(&self.blind_output_pk),
+            "Redeem_V2" => Some(&self.redeem_pk),
+            "ProveCoverage_V2" => Some(&self.prove_coverage_pk),
             _ => None,
         }
     }

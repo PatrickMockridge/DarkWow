@@ -420,31 +420,31 @@ impl super::ContractHarness for BridgeHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["DepositV1", "WithdrawV1", "AztDepositV1", "LtcDepositV1", "UpdateConfigV1", "XmrDepositV1", "ZecDepositV1"]
+        vec!["DepositV2", "WithdrawV2", "AztDepositV2", "LtcDepositV2", "UpdateConfigV2", "XmrDepositV2", "ZecDepositV2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "DepositV1" => Some(&self.deposit_zkbin),
-            "WithdrawV1" => Some(&self.withdraw_zkbin),
-            "AztDepositV1" => Some(&self.azt_deposit_zkbin),
-            "LtcDepositV1" => Some(&self.ltc_deposit_zkbin),
-            "UpdateConfigV1" => Some(&self.update_config_zkbin),
-            "XmrDepositV1" => Some(&self.xmr_deposit_zkbin),
-            "ZecDepositV1" => Some(&self.zec_deposit_zkbin),
+            "DepositV2" => Some(&self.deposit_zkbin),
+            "WithdrawV2" => Some(&self.withdraw_zkbin),
+            "AztDepositV2" => Some(&self.azt_deposit_zkbin),
+            "LtcDepositV2" => Some(&self.ltc_deposit_zkbin),
+            "UpdateConfigV2" => Some(&self.update_config_zkbin),
+            "XmrDepositV2" => Some(&self.xmr_deposit_zkbin),
+            "ZecDepositV2" => Some(&self.zec_deposit_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "DepositV1" => Some(&self.deposit_pk),
-            "WithdrawV1" => Some(&self.withdraw_pk),
-            "AztDepositV1" => Some(&self.azt_deposit_pk),
-            "LtcDepositV1" => Some(&self.ltc_deposit_pk),
-            "UpdateConfigV1" => Some(&self.update_config_pk),
-            "XmrDepositV1" => Some(&self.xmr_deposit_pk),
-            "ZecDepositV1" => Some(&self.zec_deposit_pk),
+            "DepositV2" => Some(&self.deposit_pk),
+            "WithdrawV2" => Some(&self.withdraw_pk),
+            "AztDepositV2" => Some(&self.azt_deposit_pk),
+            "LtcDepositV2" => Some(&self.ltc_deposit_pk),
+            "UpdateConfigV2" => Some(&self.update_config_pk),
+            "XmrDepositV2" => Some(&self.xmr_deposit_pk),
+            "ZecDepositV2" => Some(&self.zec_deposit_pk),
             _ => None,
         }
     }

@@ -596,7 +596,7 @@ impl super::ContractHarness for DaoEscrowHarness {
             "VoteClaim",
             "VerifyMemberCapability",
             "ResolveDispute",
-            "SetGovernanceConfigV1",
+            "SetGovernanceConfigV2",
         ]
     }
 
@@ -608,7 +608,7 @@ impl super::ContractHarness for DaoEscrowHarness {
             "VoteClaim" => Some(&self.vote_claim_zkbin),
             "VerifyMemberCapability" => Some(&self.verify_member_capability_zkbin),
             "ResolveDispute" => Some(&self.resolve_dispute_zkbin),
-            "SetGovernanceConfigV1" => Some(&self.set_governance_config_zkbin),
+            "SetGovernanceConfigV2" => Some(&self.set_governance_config_zkbin),
             _ => None,
         }
     }
@@ -621,7 +621,7 @@ impl super::ContractHarness for DaoEscrowHarness {
             "VoteClaim" => Some(&self.vote_claim_pk),
             "VerifyMemberCapability" => Some(&self.verify_member_capability_pk),
             "ResolveDispute" => Some(&self.resolve_dispute_pk),
-            "SetGovernanceConfigV1" => Some(&self.set_governance_config_pk),
+            "SetGovernanceConfigV2" => Some(&self.set_governance_config_pk),
             _ => None,
         }
     }

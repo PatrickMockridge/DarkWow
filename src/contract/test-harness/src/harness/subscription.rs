@@ -400,27 +400,27 @@ impl super::ContractHarness for SubscriptionHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["SubscribeV1", "VerifyAccessV1", "UpdateUsageV1", "CancelV1", "RenewV1"]
+        vec!["SubscribeV2", "VerifyAccessV2", "UpdateUsageV2", "CancelV2", "RenewV2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "SubscribeV1" => Some(&self.subscribe_zkbin),
-            "VerifyAccessV1" => Some(&self.verify_access_zkbin),
-            "UpdateUsageV1" => Some(&self.update_usage_zkbin),
-            "CancelV1" => Some(&self.cancel_zkbin),
-            "RenewV1" => Some(&self.renew_zkbin),
+            "SubscribeV2" => Some(&self.subscribe_zkbin),
+            "VerifyAccessV2" => Some(&self.verify_access_zkbin),
+            "UpdateUsageV2" => Some(&self.update_usage_zkbin),
+            "CancelV2" => Some(&self.cancel_zkbin),
+            "RenewV2" => Some(&self.renew_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "SubscribeV1" => Some(&self.subscribe_pk),
-            "VerifyAccessV1" => Some(&self.verify_access_pk),
-            "UpdateUsageV1" => Some(&self.update_usage_pk),
-            "CancelV1" => Some(&self.cancel_pk),
-            "RenewV1" => Some(&self.renew_pk),
+            "SubscribeV2" => Some(&self.subscribe_pk),
+            "VerifyAccessV2" => Some(&self.verify_access_pk),
+            "UpdateUsageV2" => Some(&self.update_usage_pk),
+            "CancelV2" => Some(&self.cancel_pk),
+            "RenewV2" => Some(&self.renew_pk),
             _ => None,
         }
     }

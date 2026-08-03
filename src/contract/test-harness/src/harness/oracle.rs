@@ -313,12 +313,12 @@ impl super::ContractHarness for OracleHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["RegisterOracleV1", "PushValueCommitment", "Aggregate", "AttestValue", "PushValue"]
+        vec!["RegisterOracleV2", "PushValueCommitment", "Aggregate", "AttestValue", "PushValue"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "RegisterOracleV1" => Some(&self.register_oracle_zkbin),
+            "RegisterOracleV2" => Some(&self.register_oracle_zkbin),
             "PushValueCommitment" => Some(&self.push_value_commitment_zkbin),
             "Aggregate" => Some(&self.aggregate_zkbin),
             "AttestValue" => Some(&self.attest_value_zkbin),
@@ -329,7 +329,7 @@ impl super::ContractHarness for OracleHarness {
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "RegisterOracleV1" => Some(&self.register_oracle_pk),
+            "RegisterOracleV2" => Some(&self.register_oracle_pk),
             "PushValueCommitment" => Some(&self.push_value_commitment_pk),
             "Aggregate" => Some(&self.aggregate_pk),
             "AttestValue" => Some(&self.attest_value_pk),
