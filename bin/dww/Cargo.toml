@@ -17,7 +17,7 @@ crate-type = ["cdylib", "rlib"]
 dwow-accounts = {path = "../../crates/dwow-accounts"}
 dwow_core = {path = "../../", features = ["blockchain", "net-wallet", "async-serial"]}
 dwow_deployooor_contract = {path = "../../src/contract/deployooor", features = ["no-entrypoint", "client"]}
-dwow-sdk = {path = "../../src/sdk", features = ["async", "json"]}
+dwow-sdk = {path = "../../src/sdk", features = ["async", "json", "unsafe-display-secret"]}
 dwow-serial = {path = "../../src/serial", features = ["async", "derive", "url"]}
 dwow_chain = {path = "../../src/linear", features = ["sync-p2p"]}
 async-trait = "0.1"

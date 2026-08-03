@@ -1453,7 +1453,11 @@ pub(crate) fn db_del_local(
         return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
-    env.subtract_gas(&mut store, 1);
+    // HAZOP C-5 fix: check gas exhaustion before state mutation.
+    // Symmetric with all other state-mutating host functions.
+    if env.charge_gas(&mut store, 1) {
+        return dwow_sdk::error::INTERNAL_ERROR;
+    }
 
     let memory_view = env.memory_view(&store);
     let Ok(mem_slice) = ptr.slice(&memory_view, ptr_len) else {

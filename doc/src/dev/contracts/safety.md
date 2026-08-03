@@ -1685,13 +1685,13 @@ with exact file:line references. Status reflects code as of 2026-08-03.
 | C-2 | Bridge Ethereum deposits skip verification | FIXED | `!= Ethereum` bypass removed; non-Ethereum chains hard-rejected without feature flag |
 | C-3 | Bridge Zcash/Aztec non-emptiness only | PARTIAL | Monero DLEq + Litecoin SHA-256d fixed; Zcash Groth16 and Aztec PLONK still return "not yet implemented" |
 | C-4 | Bridge 11 ops no ZK proof | PARTIAL | 5 new ZK circuits added (CancelWithdraw, ExecuteGuaranteedWithdraw, ClaimHtlc, RefundHtlc, AcceptWithdrawal); 7 admin ops still `Ok(vec![])` |
-| C-5 | Gas exhaustion not checked (9/10 host fns) | PARTIAL | 8/9 now use `charge_gas()`; `db_del_local` still uses raw `subtract_gas` without exhaustion check |
+| C-5 | Gas exhaustion not checked (9/10 host fns) | FIXED | All 10/10 host functions now use `charge_gas()` with exhaustion check; `db_del_local` fixed 2026-08-03 |
 | C-6 | Coinbase maturity AFTER sled commit | **OUTSTANDING** | Maturity check (lines 1089-1118) still runs after atomic commit (lines 998-1028); no rollback |
 | C-7 | ~150 V1 circuits lack domain separation | FIXED | Zero `*_v1.zk` files remain; all circuits ported to V2 with `DOMAIN_*` constants |
 | C-8 | Bridge V1 all hashes undifferentiated | FIXED | All 8 bridge proofs are V2 with domain-separated `poseidon_hash` on all 5 hash types |
 | C-9 | Roulette PlaceBet no public inputs | FIXED | `PlaceBet_V2` constrains `bet_id` (encoding table_id, amount) and `nullifier` via `constrain_equal_base` |
 | C-10 | Blind\<F\> derives Debug | FIXED | Manual `Debug` impl renders `<redacted>`; `Drop` zeroizes; `Copy` removed |
-| C-11 | SecretKey Display leaks full secret | PARTIAL | `Debug` redacts (FIXED); `Display` intentionally outputs base58 for CLI export — documented risk |
+| C-11 | SecretKey Display leaks full secret | FIXED | `Debug` redacts; `Display` gated behind `unsafe-display-secret` feature (only dww + darkirc enable it); accidental `{}` formatting is compile error |
 
 ### Red Team Audit — HIGH (16 findings)
 
@@ -1750,7 +1750,7 @@ with exact file:line references. Status reflects code as of 2026-08-03.
 |----|--------|--------|-------|
 | SC-1 | `Verified<T>` type-level proof marker | Not implemented | Would resolve RC-A (12 findings). Bridge uses feature-gated dispatch instead |
 | SC-2 | Pre-commit validation phase | Not implemented | Would resolve RC-B (3 findings). C-6 still outstanding |
-| SC-3 | `charge_gas!` macro | PARTIAL | `charge_gas()` method exists; not a macro. 8/9 functions use it; db_del_local still broken |
+| SC-3 | `charge_gas!` macro | FIXED | `charge_gas()` method exists and used by all 10/10 state-mutating host functions; not a macro but functionally complete |
 | SC-4 | Circuit migration CI gate | FIXED | `scripts/check-circuit-domain-separation.sh` enforces; zero V1 circuits remain |
 | SC-5 | Security trait lint | Not implemented | Auto-derive prevention for sensitive types done manually (Blind, SecretKey) |
 | SC-6 | Fail-closed configuration | PARTIAL | Bridge now fail-closed; 50+ ContractId::ZERO bypasses still fail-open elsewhere |
@@ -1777,7 +1777,7 @@ with exact file:line references. Status reflects code as of 2026-08-03.
 | M-1 | MEDIUM | O(n) chain traversal | Moderate (schema migration) |
 | M-5 | MEDIUM | Metadata ordering not verified | Simple (parse-and-compare test) |
 | M-13 | MEDIUM | Wall-clock timeout soft-only | Moderate (needs cooperative yield in WASM middleware) |
-| C-1/C-3/C-4/C-5/C-11 | CRITICAL | Partial fixes (feature gates, remaining stubs) | Varies |
+| C-1/C-3/C-4 | CRITICAL | Partial fixes (feature gates, remaining stubs) | Varies |
 
 ### HANDOVER.md — Serialization Conformance (2026-07-27)
 

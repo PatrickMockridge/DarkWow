@@ -14,6 +14,7 @@ doctest = false
 [features]
 default = []
 async = ["dwow-serial/async"]
+unsafe-display-secret = []
 wasm = []
 # serde_json pulls f64 ops into wasm32 — non-deterministic across architectures.
 # Contracts target wasm32 and must not contain float instructions.

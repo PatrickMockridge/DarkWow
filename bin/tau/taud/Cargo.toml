@@ -24,7 +24,7 @@ dwow_core = { path = "../../../", features = [
     "rpc",
 ] }
 
-dwow-sdk = {path = "../../../src/sdk", features = ["async"]}
+dwow-sdk = {path = "../../../src/sdk", features = ["async", "unsafe-display-secret"]}
 dwow-serial = {path = "../../../src/serial"}
 
 # Event Graph DB
