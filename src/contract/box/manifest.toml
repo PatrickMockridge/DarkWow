@@ -4,6 +4,7 @@
 
 [contract]
 name = "box"
+category = "Infrastructure"
 version = "1.0.0"
 description = "ZK capability container — linear o-cap delegation (L1)"
 
@@ -56,10 +57,10 @@ note_schema = [{ name = "commitment", type = "pallas_base" }, { name = "state_no
 [[actions]]
 function = "put"
 required_barbs = ["Spend", "Nullify", "ProveInclusion", "Commit", "Dispatch", "Gate"]
-consumes = [{ capability = "box_capability", how = "nullify" }]
-produces = [{ capability = "box_capability", how = "create" }]
+consumes = []
+produces = [{ name = "box_capability" }]
 
 [[actions]]
 function = "take"
 required_barbs = ["Spend", "Nullify", "ProveInclusion", "Commit", "Dispatch", "Gate"]
-consumes = [{ capability = "box_capability", how = "nullify" }]
+consumes = ["box_capability"]

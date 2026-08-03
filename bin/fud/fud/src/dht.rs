@@ -88,7 +88,7 @@ impl From<FudNode> for JsonValue {
 }
 
 /// The values of the DHT are `Vec<FudSeeder>`, mapping resource hashes to lists of [`FudSeeder`]s
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable, Eq)]
+#[derive(Debug, Clone, SerialDecodable, Eq)]
 pub struct FudSeeder {
     /// Resource that this seeder provides
     pub key: blake3::Hash,
@@ -100,6 +100,31 @@ pub struct FudSeeder {
     /// This is not sent to other nodes.
     #[skip_serialize]
     pub timestamp: u64,
+}
+
+impl dwow_serial::Encodable for FudSeeder {
+    fn encode<S: std::io::Write>(&self, s: &mut S) -> std::io::Result<usize> {
+        let mut len = 0;
+        len += dwow_serial::Encodable::encode(&self.key, s)?;
+        len += dwow_serial::Encodable::encode(&self.node, s)?;
+        len += dwow_serial::Encodable::encode(&self.sig, s)?;
+        // timestamp is #[skip_serialize] — not encoded
+        Ok(len)
+    }
+}
+
+#[async_trait]
+impl dwow_serial::AsyncEncodable for FudSeeder {
+    async fn encode_async<S: dwow_serial::AsyncWrite + Unpin + Send>(
+        &self, s: &mut S,
+    ) -> std::io::Result<usize> {
+        let mut len = 0;
+        len += dwow_serial::AsyncEncodable::encode_async(&self.key, s).await?;
+        len += dwow_serial::AsyncEncodable::encode_async(&self.node, s).await?;
+        len += dwow_serial::AsyncEncodable::encode_async(&self.sig, s).await?;
+        // timestamp is #[skip_serialize] — not encoded
+        Ok(len)
+    }
 }
 
 impl PartialEq for FudSeeder {

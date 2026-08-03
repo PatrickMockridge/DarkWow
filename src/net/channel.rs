@@ -28,7 +28,7 @@ use std::{
         atomic::{AtomicBool, AtomicU64, Ordering::SeqCst},
         Arc,
     },
-    time::UNIX_EPOCH,
+    time::{Duration, UNIX_EPOCH},
 };
 
 use dwow_serial::{
@@ -137,7 +137,7 @@ impl Channel {
         let message_subsystem = MessageSubsystem::new();
         Self::setup_dispatchers(&message_subsystem).await;
 
-        let start_time = UNIX_EPOCH.elapsed().unwrap().as_secs();
+        let start_time = UNIX_EPOCH.elapsed().unwrap_or(Duration::ZERO).as_secs();
         let info =
             ChannelInfo::new(resolve_addr, connect_addr.clone(), start_time, transport_mixed);
         let metering_map = AsyncMutex::new(HashMap::new());
@@ -673,7 +673,7 @@ impl Channel {
             }
         };
 
-        let last_seen = UNIX_EPOCH.elapsed().unwrap().as_secs();
+        let last_seen = UNIX_EPOCH.elapsed().unwrap_or(Duration::ZERO).as_secs();
         verbose!(target: "net::channel::ban", "Blacklisting peer={peer}");
         match self.p2p().hosts().move_host(&peer, last_seen, HostColor::Black).await {
             Ok(()) => {

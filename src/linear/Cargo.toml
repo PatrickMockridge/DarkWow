@@ -8,6 +8,7 @@ license = "AGPL-3.0-only"
 [features]
 default = []
 async = ["dwow-serial/async"]
+sharding = []
 # sync-p2p enables P2P message registration for shared sync protocol types.
 # Required by any node (wallet, mining, observer) that sends/receives
 # sync messages via dwow_core::net channels.

@@ -40,13 +40,13 @@ use dwow_core::{
     util::encoding::base64,
 };
 use dwow_sdk::{
+    blockchain::BlockVersion,
     crypto::{
         pasta_prelude::PrimeField, poseidon_hash, ContractId,
         IntentNullifier, PublicKey, SecretKey,
     },
     pasta::pallas,
 };
-use dwow_serial::Encodable;
 use rand::rngs::OsRng;
 use smol::Executor;
 use structopt::StructOpt;
@@ -62,7 +62,7 @@ use dwow_contract_test_harness::harness::bridge::BridgeHarness;
 // ──────────────────────────────────────────────────────────────────────────────
 
 fn bridge_contract_id() -> ContractId {
-    ContractId::from(poseidon_hash([
+    ContractId::from_base(poseidon_hash([
         *dwow_sdk::crypto::contract_id::CONTRACT_ID_PREFIX,
         pallas::Base::zero(),
         pallas::Base::from(10),
@@ -70,7 +70,7 @@ fn bridge_contract_id() -> ContractId {
 }
 
 fn relayer_endowment_contract_id() -> ContractId {
-    ContractId::from(poseidon_hash([
+    ContractId::from_base(poseidon_hash([
         *dwow_sdk::crypto::contract_id::CONTRACT_ID_PREFIX,
         pallas::Base::zero(),
         pallas::Base::from(11),
@@ -337,10 +337,11 @@ let contract_call = dwow_chain::ContractCall {
 
 async fn cmd_generate_keypair() -> Result<()> {
     let secret = SecretKey::random(&mut OsRng);
+    let secret_repr = hex::encode(secret.inner().to_repr());
     let public = PublicKey::from_secret(secret);
 
     println!("public_key:  {}", hex::encode(public.to_bytes()));
-    println!("secret_key:  {}", hex::encode(secret.inner().to_repr()));
+    println!("secret_key:  {}", secret_repr);
 
     Ok(())
 }
@@ -407,9 +408,7 @@ async fn cmd_init_endowment(
     };
 
     let mut call_data = vec![0x00u8]; // InitializeV1
-    params
-        .encode(&mut call_data)
-        .map_err(|e| anyhow!("Failed to encode params: {e}"))?;
+    call_data.extend(params.encode());
 
     eprintln!("Initializing relayer endowment...");
     submit_contract_call(client, &endowment_id, call_data, block_time, timeout).await?;
@@ -431,9 +430,7 @@ async fn cmd_register_relayer(
     let params = RegisterRelayerParams { relayer_pub };
 
     let mut call_data = vec![0x0au8]; // RegisterRelayerV1
-    params
-        .encode(&mut call_data)
-        .map_err(|e| anyhow!("Failed to encode params: {e}"))?;
+    call_data.extend(params.encode());
 
     eprintln!("Registering relayer...");
     submit_contract_call(client, &bridge_id, call_data, block_time, timeout).await?;
@@ -584,9 +581,7 @@ async fn cmd_accept_withdrawal(
     };
 
     let mut call_data = vec![0x0bu8]; // AcceptWithdrawalV1
-    params
-        .encode(&mut call_data)
-        .map_err(|e| anyhow!("Failed to encode params: {e}"))?;
+    call_data.extend(params.encode());
 
     eprintln!("Accepting withdrawal...");
     submit_contract_call(client, &bridge_id, call_data, block_time, timeout).await?;
@@ -615,9 +610,7 @@ async fn cmd_execute_withdrawal(
     };
 
     let mut call_data = vec![0x05u8]; // ExecuteGuaranteedWithdrawV1
-    params
-        .encode(&mut call_data)
-        .map_err(|e| anyhow!("Failed to encode params: {e}"))?;
+    call_data.extend(params.encode());
 
     eprintln!("Executing withdrawal...");
     submit_contract_call(client, &bridge_id, call_data, block_time, timeout).await?;

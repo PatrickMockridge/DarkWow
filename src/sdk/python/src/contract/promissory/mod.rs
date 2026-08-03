@@ -62,15 +62,15 @@ pub fn decode_promissory_function_params(
 ) -> dwow_core::Result<Box<dyn FunctionParams>> {
     let res: Box<dyn FunctionParams> = match PromissoryNoteFunction::try_from(function_index)? {
         PromissoryNoteFunction::RegisterTypeV1 => {
-            let params = promissory_model::TokenMintParamsV1::decode(&data[1..])?;
+            let params = promissory_model::RegisterTypeParamsV1::decode(&data[1..])?;
             Box::new(params)
         }
         PromissoryNoteFunction::IssueV1 => {
-            let params = promissory_model::MintParamsV1::decode(&data[1..])?;
+            let params = promissory_model::IssueParamsV1::decode(&data[1..])?;
             Box::new(params)
         }
         PromissoryNoteFunction::RevokeV1 => {
-            let params = promissory_model::BurnParamsV1::decode(&data[1..])?;
+            let params = promissory_model::RevokeParamsV1::decode(&data[1..])?;
             Box::new(params)
         }
         PromissoryNoteFunction::TransferV1 | PromissoryNoteFunction::OtcSwapV1 => {

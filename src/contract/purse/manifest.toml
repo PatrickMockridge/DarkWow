@@ -4,6 +4,7 @@
 
 [contract]
 name = "purse"
+category = "Infrastructure"
 version = "1.0.0"
 description = "ZK fungible capability container — balance tracking with Pedersen commitments (L1)"
 
@@ -61,21 +62,22 @@ description = "Merkle tree state and root pointers"
 [[capabilities]]
 name = "purse_capability"
 discriminant = 0
-primitives = ["SecretKey", "Nullifier", "MerkleNode", "ContractId", "FuncId", "AssetId"]
+primitives = ["SecretKey", "Commitment", "Nullifier", "MerkleNode", "ContractId", "FuncId", "AssetId"]
 note_schema = [{ name = "token_id", type = "pallas_base" }, { name = "balance", type = "u64" }, { name = "commitment", type = "pallas_base" }]
 
 [[actions]]
 function = "deposit"
 required_barbs = ["Spend", "Nullify", "ProveInclusion", "Commit", "Dispatch", "Gate"]
-consumes = [{ capability = "purse_capability", how = "nullify" }]
-produces = [{ capability = "purse_capability", how = "create" }]
+consumes = ["purse_capability"]
+produces = [{ name = "purse_capability" }]
 
 [[actions]]
 function = "withdraw"
 required_barbs = ["Spend", "Nullify", "ProveInclusion", "Commit", "Dispatch", "Gate"]
-consumes = [{ capability = "purse_capability", how = "nullify" }]
-produces = [{ capability = "purse_capability", how = "create" }]
+consumes = ["purse_capability"]
+produces = [{ name = "purse_capability" }]
 
 [[actions]]
 function = "balance"
+requires = { type = "any", capabilities = ["purse_capability"] }
 required_barbs = ["Spend", "ProveInclusion", "Dispatch", "Gate"]

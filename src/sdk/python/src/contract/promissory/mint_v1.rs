@@ -30,10 +30,10 @@ use super::{impl_py_methods, FunctionParams};
 
 /// [`promissory_model::MintParamsV1`] python binding.
 #[pyclass]
-pub struct PromissoryNoteMintParamsV1(promissory_model::MintParamsV1);
+pub struct PromissoryNoteMintParamsV1(promissory_model::IssueParamsV1);
 impl_py_methods!(PromissoryNoteMintParamsV1);
 
-impl FunctionParams for promissory_model::MintParamsV1 {
+impl FunctionParams for promissory_model::IssueParamsV1 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
         dict.set_item("coin", format!("{:?}", self.commitment))?;

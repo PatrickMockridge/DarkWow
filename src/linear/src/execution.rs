@@ -291,7 +291,7 @@ pub fn execute_block(
                 wasm_bytes,
                 contract_id,
                 call_data,
-                call_idx: call_idx as u8,
+                call_idx: u8::try_from(call_idx).unwrap_or(u8::MAX),
             });
         }
     }
@@ -323,7 +323,7 @@ pub fn execute_block(
                     wasm_bytes,
                     contract_id,
                     call_data,
-                    call_idx: call_idx as u8,
+                    call_idx: u8::try_from(call_idx).unwrap_or(u8::MAX),
                 });
             }
         }

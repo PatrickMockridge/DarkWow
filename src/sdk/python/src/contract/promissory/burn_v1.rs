@@ -30,10 +30,10 @@ use super::{impl_py_methods, FunctionParams};
 
 /// [`promissory_model::BurnParamsV1`] python binding.
 #[pyclass]
-pub struct PromissoryNoteBurnParamsV1(promissory_model::BurnParamsV1);
+pub struct PromissoryNoteBurnParamsV1(promissory_model::RevokeParamsV1);
 impl_py_methods!(PromissoryNoteBurnParamsV1);
 
-impl FunctionParams for promissory_model::BurnParamsV1 {
+impl FunctionParams for promissory_model::RevokeParamsV1 {
     fn to_pydict(&self, py: Python) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
         dict.set_item(

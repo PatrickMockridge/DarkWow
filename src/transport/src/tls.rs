@@ -112,9 +112,9 @@ fn verify_ed25519_signature(
     Ok(HandshakeSignatureValid::assertion())
 }
 
-#[derive(Debug)]
 pub type TrustStore = Arc<std::sync::Mutex<std::collections::HashMap<String, [u8; 32]>>>;
 
+#[derive(Debug)]
 pub struct ServerCertificateVerifier {
     localnet: bool,
     /// HAZOP H1: SSH-style known_hosts for TOFU certificate pinning.

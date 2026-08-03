@@ -126,13 +126,37 @@ pub struct FudPingRequest {
 impl_p2p_message!(FudPingRequest, "FudPingRequest", 0, 0, DEFAULT_METERING_CONFIGURATION);
 
 /// Message representing a ping reply on the network
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+#[derive(Debug, Clone, SerialDecodable)]
 pub struct FudPingReply {
     pub node: FudNode,
     pub random: u64,
     /// Signature of the random u64 from the ping request
     pub sig: Signature,
 }
+
+impl dwow_serial::Encodable for FudPingReply {
+    fn encode<S: std::io::Write>(&self, s: &mut S) -> std::io::Result<usize> {
+        let mut len = 0;
+        len += dwow_serial::Encodable::encode(&self.node, s)?;
+        len += dwow_serial::Encodable::encode(&self.random, s)?;
+        len += dwow_serial::Encodable::encode(&self.sig, s)?;
+        Ok(len)
+    }
+}
+
+#[async_trait]
+impl dwow_serial::AsyncEncodable for FudPingReply {
+    async fn encode_async<S: dwow_serial::AsyncWrite + Unpin + Send>(
+        &self, s: &mut S,
+    ) -> std::io::Result<usize> {
+        let mut len = 0;
+        len += dwow_serial::AsyncEncodable::encode_async(&self.node, s).await?;
+        len += dwow_serial::AsyncEncodable::encode_async(&self.random, s).await?;
+        len += dwow_serial::AsyncEncodable::encode_async(&self.sig, s).await?;
+        Ok(len)
+    }
+}
+
 impl_p2p_message!(FudPingReply, "FudPingReply", 0, 0, DEFAULT_METERING_CONFIGURATION);
 
 /// Message representing a find file/directory request from the network
