@@ -201,13 +201,13 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     // ix = [function_selector] + serialize(params) — individual call dispatched by host
     if ix.is_empty() {
         msg!("[native_token::get_metadata] Error: Empty call data");
-        wasm::util::set_return_data(&vec![]);
+        let _ = wasm::util::set_return_data(&vec![]);
         return Ok(());
     }
     let func = match NativeTokenFunction::try_from(ix[0]) {
         Ok(f) => f,
         Err(_) => {
-            wasm::util::set_return_data(&vec![]);
+            let _ = wasm::util::set_return_data(&vec![]);
             return Ok(());
         }
     };

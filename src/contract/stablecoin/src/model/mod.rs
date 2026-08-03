@@ -49,7 +49,7 @@
 use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, ContractId, IntentCommitment, IntentNullifier, Nullifier, PublicKey},
     error::ContractError,
-    pasta::{group::GroupEncoding, pallas},
+    pasta::pallas,
 };
 /// Namespace for stablecoin intents
 pub const STABLECOIN_NAMESPACE: u64 = 0x0005;

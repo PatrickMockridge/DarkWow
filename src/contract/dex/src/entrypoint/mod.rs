@@ -149,7 +149,6 @@ dwow_sdk::define_contract!(
 ///
 /// See module-level documentation for full security considerations.
 pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
-    use dwow_serial::Decodable;
     use crate::model::InitializeParams;
 
     msg!("[dex::init_contract] Initializing DEX contract");

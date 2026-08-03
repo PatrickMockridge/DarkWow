@@ -55,7 +55,8 @@ use dwow_sdk::{
     error::{ContractError, ContractResult},
     msg, ContractCall,
     wasm,
-    pasta::{group::GroupEncoding, pallas},
+    pasta::pallas,
+    pasta::group::GroupEncoding as _,
 };
 use dwow_promissory_note_contract::validation::validate_child_contract_id;
 use dwow_serial::{deserialize, Decodable, Encodable, WriteExt};
@@ -580,6 +581,7 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
 /// - DLEq verification would use proper elliptic curve cryptography
 /// - Block confirmations would be verified against stored state
 /// - The relayer's observation would be cryptographically authenticated
+#[allow(dead_code)]
 fn verify_xmr_deposit(_cid: ContractId, proof: &XmrDepositProof) -> ContractResult {
     use dwow_sdk::pasta::pallas;
 
@@ -649,6 +651,7 @@ fn verify_xmr_deposit(_cid: ContractId, proof: &XmrDepositProof) -> ContractResu
 /// - Spend proof would be verified using proper zk-SNARK verification
 /// - Merkle path would be verified against the Sapling note commitment tree
 /// - Anchor would be checked against stored block headers
+#[allow(dead_code)]
 fn verify_zcash_deposit(_cid: ContractId, proof: &ZcashDepositProof) -> ContractResult {
     use dwow_sdk::pasta::pallas;
 
@@ -727,6 +730,7 @@ fn verify_zcash_deposit(_cid: ContractId, proof: &ZcashDepositProof) -> Contract
 ///
 /// Aztec is a private rollup on Ethereum, so rollup "blocks" are committed
 /// to Ethereum. We require N Ethereum block confirmations after the rollup.
+#[allow(dead_code)]
 fn verify_aztec_deposit(_cid: ContractId, proof: &AztecDepositProof) -> ContractResult {
     use dwow_sdk::pasta::pallas;
 
@@ -819,6 +823,7 @@ fn verify_aztec_deposit(_cid: ContractId, proof: &AztecDepositProof) -> Contract
 /// - Lower fees
 /// - MimbleWimble extension blocks (MWEB) for privacy
 /// - Scrypt PoW (same family as SHA256)
+#[allow(dead_code)]
 fn verify_litecoin_deposit(_cid: ContractId, proof: &LitecoinDepositProof) -> ContractResult {
     use dwow_sdk::pasta::pallas;
 

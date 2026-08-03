@@ -3,7 +3,7 @@ use dwow_sdk::{
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, wasm,
-    pasta::{group::GroupEncoding, pallas},
+    pasta::pallas,
     ContractCall,
 };
 use dwow_serial::{deserialize, Encodable};
@@ -59,7 +59,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let metadata: Vec<u8> = match func {
         MultiSigFunction::CreateGroupV1 => {
             let params = match CreateGroupParamsV1::decode(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[multisig::get_metadata] Error: Failed to deserialize CreateGroupParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
+                Ok(p) => p, Err(e) => { msg!("[multisig::get_metadata] Error: Failed to deserialize CreateGroupParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             let t = pallas::Base::from(params.threshold as u64);
             let n = pallas::Base::from(params.pubkeys.len() as u64);
@@ -79,7 +79,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         MultiSigFunction::SignV1 => {
             let params = match SignParamsV1::decode(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[multisig::get_metadata] Error: Failed to deserialize SignParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
+                Ok(p) => p, Err(e) => { msg!("[multisig::get_metadata] Error: Failed to deserialize SignParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_inputs.push((MULTISIG_CONTRACT_ZKAS_SIGN_NS_V2.to_string(), vec![
@@ -93,7 +93,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         MultiSigFunction::FinalizeV1 => {
             let params = match FinalizeParamsV1::decode(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[multisig::get_metadata] Error: Failed to deserialize FinalizeParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
+                Ok(p) => p, Err(e) => { msg!("[multisig::get_metadata] Error: Failed to deserialize FinalizeParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_inputs.push((MULTISIG_CONTRACT_ZKAS_FINALIZE_NS_V2.to_string(), vec![

@@ -749,6 +749,7 @@ fn decode_close_auction_update_v1(data: &[u8]) -> Result<CloseAuctionUpdateV1, C
     CloseAuctionUpdateV1::decode(data)
 }
 
+#[allow(dead_code)]
 fn encode_claim_winnings_update_v1(update: &ClaimWinningsUpdateV1) -> Vec<u8> {
     let inner = update.encode();
     let mut buf = Vec::with_capacity(1 + inner.len());

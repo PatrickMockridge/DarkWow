@@ -1,7 +1,7 @@
 use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, poseidon_hash, Nullifier, PublicKey},
     error::ContractError,
-    pasta::{group::GroupEncoding, pallas},
+    pasta::pallas,
 };
 
 /// MultiSig group unique identifier.

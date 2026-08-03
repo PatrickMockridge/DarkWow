@@ -801,6 +801,7 @@ impl Subscription {
     }
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[allow(unused_assignments)]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < Self::MIN_ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
@@ -948,6 +949,7 @@ impl Plan {
     pub const MIN_ENCODED_SIZE: usize = 99;
 
     /// Decode from canonical bytes (ρ-calculus: eval).
+    #[allow(unused_assignments)]
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() < Self::MIN_ENCODED_SIZE {
             return Err(ContractError::IoError(format!(

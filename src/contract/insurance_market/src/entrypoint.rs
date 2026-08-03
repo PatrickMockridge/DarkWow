@@ -111,25 +111,25 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let metadata = match func {
         InsuranceMarketFunction::UnderwriteWithCapabilityV1 => {
             let params = match UnderwriteWithCapabilityParamsV1::decode(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to decode UnderwriteWithCapabilityParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
+                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to decode UnderwriteWithCapabilityParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             underwrite_with_capability_get_metadata_v1(params)?
         }
         InsuranceMarketFunction::PurchaseCoverageV1 => {
             let params = match PurchaseCoverageParamsV1::decode(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to decode PurchaseCoverageParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
+                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to decode PurchaseCoverageParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             purchase_coverage_get_metadata_v1(params)?
         }
         InsuranceMarketFunction::PurchaseCoverageWithCapabilityV1 => {
             let params = match PurchaseCoverageWithCapabilityParamsV1::decode(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to decode PurchaseCoverageWithCapabilityParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
+                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to decode PurchaseCoverageWithCapabilityParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             purchase_coverage_with_capability_get_metadata_v1(params)?
         }
         InsuranceMarketFunction::PurchaseCoverageWithDAGV1 => {
             let params = match PurchaseCoverageWithDAGParamsV1::decode(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to decode PurchaseCoverageWithDAGParamsV1: {:?}", e); wasm::util::set_return_data(&vec![]); return Ok(()); }
+                Ok(p) => p, Err(e) => { msg!("[insurance_market::get_metadata] Error: Failed to decode PurchaseCoverageWithDAGParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             purchase_coverage_with_dag_get_metadata_v1(params)?
         }

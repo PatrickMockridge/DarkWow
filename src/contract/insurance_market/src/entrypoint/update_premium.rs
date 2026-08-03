@@ -41,6 +41,7 @@ pub struct UpdatePremiumUpdateV1 {
 }
 
 impl UpdatePremiumUpdateV1 {
+    #[allow(dead_code)]
     pub const ENCODED_SIZE: usize = 40;
     pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(40); b.extend_from_slice(&self.market_id.to_repr()); b.extend_from_slice(&self.old_premium_rate.to_le_bytes()); b.extend_from_slice(&self.new_premium_rate.to_le_bytes()); b }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 40 { return Err(ContractError::IoError(format!("UpdatePremiumUpdateV1: expected 40 bytes, got {}", data.len()))); } Ok(UpdatePremiumUpdateV1 { market_id: Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("UpdatePremiumUpdateV1: invalid market_id".into()))?, old_premium_rate: u32::from_le_bytes(data[32..36].try_into().unwrap()), new_premium_rate: u32::from_le_bytes(data[36..40].try_into().unwrap()) }) }
