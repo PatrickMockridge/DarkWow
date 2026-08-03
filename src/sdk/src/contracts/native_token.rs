@@ -55,10 +55,11 @@
 // Re-export from dwow_native_token_contract
 pub use dwow_native_token_contract::NativeTokenFunction;
 
-// ZK namespaces
-pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1;
-pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1;
-pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1;
+// ZK namespaces (V2 only — V1 circuits deleted, see doc/src/arch/circuit-versioning.md)
+pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2;
+pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2;
+pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2;
+pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V2;
 
 // Database tree names
 pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_COINS_TREE;

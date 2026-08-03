@@ -69,10 +69,10 @@ pub struct RouletteHarness {
 impl RouletteHarness {
     /// Spawn a new Roulette harness with pre-loaded circuits
     pub fn spawn() -> Self {
-        let place_bet_bin = include_bytes!("../../../roulette/proof/place_bet_v2.zk.bin");
-        let settle_bet_bin = include_bytes!("../../../roulette/proof/settle_bet_v2.zk.bin");
-        let house_close_bin = include_bytes!("../../../roulette/proof/house_close_v2.zk.bin");
-        let spin_wheel_bin = include_bytes!("../../../roulette/proof/spin_wheel_v2.zk.bin");
+        let place_bet_bin = include_bytes!("../../../roulette/proof/place_bet.zk.bin");
+        let settle_bet_bin = include_bytes!("../../../roulette/proof/settle_bet.zk.bin");
+        let house_close_bin = include_bytes!("../../../roulette/proof/house_close.zk.bin");
+        let spin_wheel_bin = include_bytes!("../../../roulette/proof/spin_wheel.zk.bin");
 
         let place_bet_zkbin = ZkBinary::decode(place_bet_bin, false).unwrap();
         let settle_bet_zkbin = ZkBinary::decode(settle_bet_bin, false).unwrap();

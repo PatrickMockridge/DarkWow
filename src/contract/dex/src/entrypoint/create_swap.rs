@@ -48,7 +48,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm,
 };
-use dwow_serial::{deserialize, Decodable, Encodable};
+use dwow_serial::{Decodable, Encodable};
 
 use crate::{
     error::DexError,

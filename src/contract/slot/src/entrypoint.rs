@@ -45,7 +45,7 @@ use dwow_sdk::{
 };
 use pasta_curves::{arithmetic::CurveAffine, group::Curve};
 use dwow_sdk::pasta::pallas::Base;
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id, validate_child_value_commit,
 };
@@ -58,7 +58,6 @@ use crate::model::{
 use crate::SlotFunction;
 use crate::{
     SLOT_CONTRACT_INFO_TREE, SLOT_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
-    SLOT_CONTRACT_ZKAS_COMMIT_NS, SLOT_CONTRACT_ZKAS_REVEAL_NS, SLOT_CONTRACT_ZKAS_SETTLE_NS,
     SLOT_CONTRACT_ZKAS_COMMIT_NS_V2, SLOT_CONTRACT_ZKAS_REVEAL_NS_V2, SLOT_CONTRACT_ZKAS_SETTLE_NS_V2,
 };
 
@@ -85,9 +84,9 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> GenericResult<()> {
     let info_db = wasm::db::db_lookup(cid, SLOT_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, SLOT_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
 
-    let commit_bet_v1_bincode = include_bytes!("../proof/commit_bet_v2.zk.bin");
-    let settle_bet_v1_bincode = include_bytes!("../proof/settle_bet_v2.zk.bin");
-    let reveal_spin_v1_bincode = include_bytes!("../proof/reveal_spin_v2.zk.bin");
+    let _commit_bet_v1_bincode = include_bytes!("../proof/commit_bet.zk.bin");
+    let _settle_bet_v1_bincode = include_bytes!("../proof/settle_bet.zk.bin");
+    let _reveal_spin_v1_bincode = include_bytes!("../proof/reveal_spin.zk.bin");
 
     Ok(())
 }

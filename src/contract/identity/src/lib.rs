@@ -234,26 +234,11 @@ pub const IDENTITY_CONTRACT_INFO_TREE: &str = "identity_info";
 // ZK CIRCUIT NAMESPACES
 // ============================================================================
 
-/// Credential issuance circuit namespace
-pub const IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V1: &str = "IssueCredentialV1";
-/// Claim generation circuit namespace (Level 0 - zk_only)
-pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1: &str = "CreateClaimV1";
-/// Claim generation circuit namespace (Level 1 - selective disclosure)
-pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_L1: &str = "CreateClaimV1L1";
-/// Claim generation circuit namespace (Level 1 v2 - simplified selective)
-pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_L1_V2: &str = "CreateClaimV1L1V2";
-/// Claim generation circuit namespace (DAG-based)
-pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_DAG: &str = "CreateClaimV1DAG";
-/// Multi-credential claim circuit namespace
-pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_MULTI: &str = "CreateClaimV1Multi";
-/// Ratio-based claim circuit namespace
-pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_RATIO: &str = "CreateClaimV1Ratio";
 /// Maximum DAG credentials per create_claim_dag call
 pub const IDENTITY_CONTRACT_MAX_DAG_CREDENTIALS: usize = 100;
-/// Capability verification circuit namespace
-pub const IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V1: &str = "VerifyCapabilityV1";
 
 // V2 circuit namespaces (HAZOP RC3: domain separation)
+// V1 circuits deleted — only V2 circuits exist on disk. See doc/src/arch/circuit-versioning.md.
 /// Issue credential circuit namespace V2 (domain-separated)
 pub const IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V2: &str = "IssueCredentialV2";
 /// Create claim circuit namespace V2 (domain-separated)

@@ -66,9 +66,6 @@ use crate::{
     EscrowFunction, ESCROW_CONTRACT_ESCROWS_TREE, ESCROW_CONTRACT_INFO_TREE,
     ESCROW_CONTRACT_NULLIFIERS_TREE, ESCROW_CONTRACT_SPENT_FLAGS_TREE,
     PROMISSORY_NOTE_CONTRACT_ID_KEY, PURSE_CONTRACT_ID_KEY, BOX_CONTRACT_ID_KEY,
-    ESCROW_CONTRACT_ZKAS_CLAIM_NS_V1, ESCROW_CONTRACT_ZKAS_CREATE_NS_V1,
-    ESCROW_CONTRACT_ZKAS_CANCEL_NS_V1, ESCROW_CONTRACT_ZKAS_FUND_NS_V1,
-    ESCROW_CONTRACT_ZKAS_REFUND_NS_V1,
     ESCROW_CONTRACT_ZKAS_CREATE_NS_V2, ESCROW_CONTRACT_ZKAS_FUND_NS_V2,
     ESCROW_CONTRACT_ZKAS_CLAIM_NS_V2, ESCROW_CONTRACT_ZKAS_REFUND_NS_V2,
     ESCROW_CONTRACT_ZKAS_CANCEL_NS_V2,
@@ -119,10 +116,10 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     msg!("[escrow::init_contract] Escrow contract initialized successfully");
 
-    let claim_v1_bincode = include_bytes!("../proof/claim_v2.zk.bin");
-    let create_escrow_v1_bincode = include_bytes!("../proof/create_escrow_v2.zk.bin");
-    let fund_v1_bincode = include_bytes!("../proof/fund_v2.zk.bin");
-    let refund_v1_bincode = include_bytes!("../proof/refund_v2.zk.bin");
+    let _claim_v1_bincode = include_bytes!("../proof/claim.zk.bin");
+    let _create_escrow_v1_bincode = include_bytes!("../proof/create_escrow.zk.bin");
+    let _fund_v1_bincode = include_bytes!("../proof/fund.zk.bin");
+    let _refund_v1_bincode = include_bytes!("../proof/refund.zk.bin");
 
     Ok(())
 }

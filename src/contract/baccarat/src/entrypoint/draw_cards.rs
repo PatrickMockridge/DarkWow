@@ -31,7 +31,6 @@ use dwow_sdk::{
     msg,
     wasm,
 };
-use dwow_serial::deserialize;
 
 use crate::error::BaccaratError;
 use crate::model::{

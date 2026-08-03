@@ -88,24 +88,24 @@ pub struct AttestationHarness {
 impl AttestationHarness {
     pub fn spawn() -> Self {
         let create_att_bin =
-            include_bytes!("../../../attestation/proof/create_attestation_v2.zk.bin");
+            include_bytes!("../../../attestation/proof/create_attestation.zk.bin");
         let create_claim_bin =
-            include_bytes!("../../../attestation/proof/create_claim_v2.zk.bin");
+            include_bytes!("../../../attestation/proof/create_claim.zk.bin");
         let verify_claim_bin =
-            include_bytes!("../../../attestation/proof/verify_claim_v2.zk.bin");
+            include_bytes!("../../../attestation/proof/verify_claim.zk.bin");
         eprintln!("DEBUG: raw verify_claim_bin len={} first_10_bytes={:02x?}", verify_claim_bin.len(), &verify_claim_bin[..10]);
         let consume_claim_bin =
-            include_bytes!("../../../attestation/proof/consume_claim_v2.zk.bin");
+            include_bytes!("../../../attestation/proof/consume_claim.zk.bin");
         let delegate_bin =
-            include_bytes!("../../../attestation/proof/delegate_attestation_v2.zk.bin");
+            include_bytes!("../../../attestation/proof/delegate_attestation.zk.bin");
         let attest_slash_bin =
-            include_bytes!("../../../attestation/proof/attest_slash_v2.zk.bin");
+            include_bytes!("../../../attestation/proof/attest_slash.zk.bin");
         let check_not_revoked_bin =
-            include_bytes!("../../../attestation/proof/check_not_revoked_v2.zk.bin");
+            include_bytes!("../../../attestation/proof/check_not_revoked.zk.bin");
         let commit_fee_schedule_bin =
-            include_bytes!("../../../attestation/proof/commit_fee_schedule_v2.zk.bin");
+            include_bytes!("../../../attestation/proof/commit_fee_schedule.zk.bin");
         let update_delegation_bin =
-            include_bytes!("../../../attestation/proof/update_delegation_v2.zk.bin");
+            include_bytes!("../../../attestation/proof/update_delegation.zk.bin");
 
         let create_attestation_zkbin = ZkBinary::decode(create_att_bin, false).unwrap();
         let create_claim_zkbin = ZkBinary::decode(create_claim_bin, false).unwrap();

@@ -50,10 +50,7 @@ use dwow_sdk::{
 use dwow_serial::{deserialize, Encodable};
 
 use crate::{
-    TENDER_CONTRACT_ZKAS_CREATE_NS_V1, TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V1,
-    TENDER_CONTRACT_ZKAS_SELECT_WINNER_NS_V1, TENDER_CONTRACT_ZKAS_SUBMIT_BID_NS_V1,
-    TENDER_CONTRACT_ZKAS_SUBMIT_BID_WITH_CAP_NS_V1,
-    TENDER_CONTRACT_ZKAS_CREATE_TENDER_NS_V2, TENDER_CONTRACT_ZKAS_CREATE_NS_V2, TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V2,
+    TENDER_CONTRACT_ZKAS_CREATE_NS_V2, TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V2,
     TENDER_CONTRACT_ZKAS_SUBMIT_BID_NS_V2, TENDER_CONTRACT_ZKAS_SUBMIT_BID_WITH_CAP_NS_V2,
     TENDER_CONTRACT_ZKAS_SELECT_WINNER_NS_V2,
 };
@@ -102,12 +99,12 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     msg!("[tender::init_contract] Tender contract initialized successfully");
 
-    let create_tender_v1_bincode = include_bytes!("../proof/create_tender_v2.zk.bin");
-    let reveal_bid_v1_bincode = include_bytes!("../proof/reveal_bid_v2.zk.bin");
-    let select_winner_v1_bincode = include_bytes!("../proof/select_winner_v2.zk.bin");
-    let submit_bid_v1_bincode = include_bytes!("../proof/submit_bid_v2.zk.bin");
-    let submit_bid_with_capability_v1_bincode =
-        include_bytes!("../proof/submit_bid_with_capability_v2.zk.bin");
+    let _create_tender_v1_bincode = include_bytes!("../proof/create_tender.zk.bin");
+    let _reveal_bid_v1_bincode = include_bytes!("../proof/reveal_bid.zk.bin");
+    let _select_winner_v1_bincode = include_bytes!("../proof/select_winner.zk.bin");
+    let _submit_bid_v1_bincode = include_bytes!("../proof/submit_bid.zk.bin");
+    let _submit_bid_with_capability_v1_bincode =
+        include_bytes!("../proof/submit_bid_with_capability.zk.bin");
 
     Ok(())
 }

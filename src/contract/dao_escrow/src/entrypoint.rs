@@ -40,7 +40,7 @@
 //! ```
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::{Curve, CurveAffine, PrimeField}, poseidon_hash, schnorr::SchnorrPublic, BOX_CONTRACT_ID, ContractId, PURSE_CONTRACT_ID, TokenId},
+    crypto::{pasta_prelude::{Curve, CurveAffine, PrimeField}, poseidon_hash, BOX_CONTRACT_ID, ContractId, PURSE_CONTRACT_ID, TokenId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta::pallas,
@@ -92,19 +92,19 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[dao_escrow::init_contract] Initializing DAO-Escrow contract");
 
     // V2 (V1 loads removed — rc3 migration) circuits (HAZOP RC3: domain separation)
-    let init_v2_bincode = include_bytes!("../proof/init_v2.zk.bin");
+    let init_v2_bincode = include_bytes!("../proof/init.zk.bin");
     wasm::db::zkas_db_set(&init_v2_bincode[..])?;
-    let pay_premium_v2_bincode = include_bytes!("../proof/pay_premium_v2.zk.bin");
+    let pay_premium_v2_bincode = include_bytes!("../proof/pay_premium.zk.bin");
     wasm::db::zkas_db_set(&pay_premium_v2_bincode[..])?;
-    let propose_claim_v2_bincode = include_bytes!("../proof/propose_claim_v2.zk.bin");
+    let propose_claim_v2_bincode = include_bytes!("../proof/propose_claim.zk.bin");
     wasm::db::zkas_db_set(&propose_claim_v2_bincode[..])?;
-    let vote_claim_v2_bincode = include_bytes!("../proof/vote_claim_v2.zk.bin");
+    let vote_claim_v2_bincode = include_bytes!("../proof/vote_claim.zk.bin");
     wasm::db::zkas_db_set(&vote_claim_v2_bincode[..])?;
-    let verify_member_cap_v2_bincode = include_bytes!("../proof/verify_member_capability_v2.zk.bin");
+    let verify_member_cap_v2_bincode = include_bytes!("../proof/verify_member_capability.zk.bin");
     wasm::db::zkas_db_set(&verify_member_cap_v2_bincode[..])?;
-    let resolve_dispute_v2_bincode = include_bytes!("../proof/resolve_dispute_v2.zk.bin");
+    let resolve_dispute_v2_bincode = include_bytes!("../proof/resolve_dispute.zk.bin");
     wasm::db::zkas_db_set(&resolve_dispute_v2_bincode[..])?;
-    let set_governance_config_v2_bincode = include_bytes!("../proof/set_governance_config_v2.zk.bin");
+    let set_governance_config_v2_bincode = include_bytes!("../proof/set_governance_config.zk.bin");
     wasm::db::zkas_db_set(&set_governance_config_v2_bincode[..])?;
 
     // Initialize info tree
@@ -682,7 +682,7 @@ fn withdraw_apply_v1(cid: ContractId, update: model::WithdrawUpdateV1) -> Contra
 
     let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_bytes())?;
     if let Some(data) = endowment_data {
-        let mut endowment = model::DaoEscrow::decode(&data)?;
+        let endowment = model::DaoEscrow::decode(&data)?;
         // Purse handles balance update: endowment_purse_id is the instance reference
         wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &endowment.encode())?;
     }
@@ -848,7 +848,7 @@ fn endowment_withdraw_apply_v1(
 
     let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_bytes())?;
     if let Some(data) = endowment_data {
-        let mut endowment = model::DaoEscrow::decode(&data)?;
+        let endowment = model::DaoEscrow::decode(&data)?;
         // Purse handles balance update: endowment_purse_id is the instance reference
         wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &endowment.encode())?;
     }
@@ -982,7 +982,7 @@ fn treasury_spend_apply_v1(
 
     let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_bytes())?;
     if let Some(data) = endowment_data {
-        let mut endowment = model::DaoEscrow::decode(&data)?;
+        let endowment = model::DaoEscrow::decode(&data)?;
         // Purse handles treasury balance: treasury_purse_id is the instance reference
         wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &endowment.encode())?;
     }
@@ -1450,7 +1450,7 @@ fn execute_claim_v1(
     // Verify endowment has sufficient balance
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
     let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
-    let endowment: model::DaoEscrow = endowment_data
+    let _endowment: model::DaoEscrow = endowment_data
         .map(|d| model::DaoEscrow::decode(&d))
         .transpose()?
         .ok_or_else(|| DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?;

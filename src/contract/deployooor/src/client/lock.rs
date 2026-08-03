@@ -1,0 +1,49 @@
+/* This file is part of DarkWow
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+use dwow_core::Result;
+use dwow_sdk::crypto::Keypair;
+use tracing::debug;
+
+use crate::model::LockParams;
+
+pub struct LockCallDebris {
+    pub params: LockParams,
+}
+
+/// Struct holding necessary information to build a `Deployooor::Lock` contract call.
+pub struct LockCallBuilder {
+    /// Contract deploy keypair
+    pub deploy_keypair: Keypair,
+}
+
+impl LockCallBuilder {
+    pub fn build(&self) -> Result<LockCallDebris> {
+        debug!(target: "contract::deployooor::client::lock", "Building Deployooor::Lock contract call");
+
+        let params = LockParams { public_key: self.deploy_keypair.public };
+        let debris = LockCallDebris { params };
+
+        Ok(debris)
+    }
+}

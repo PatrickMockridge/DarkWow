@@ -27,12 +27,12 @@
 
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use dwow_sdk::{error::ContractError, msg, pasta::pallas, wasm};
-use dwow_serial::{deserialize, Encodable};
+use dwow_serial::Encodable;
 
 use crate::{
     error::DexError,
     model::UpdateConfigParams,
-    DEX_CONTRACT_CONFIG_TREE, DEX_CONTRACT_FEE, DEX_CONTRACT_GOVERNANCE_PUBKEY_KEY,
+    DEX_CONTRACT_CONFIG_TREE, DEX_CONTRACT_FEE,
     DEX_CONTRACT_NULLIFIERS_TREE, DEX_CONTRACT_TIMEOUT,
     DEX_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2,
 };

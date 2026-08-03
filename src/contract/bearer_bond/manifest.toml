@@ -13,37 +13,37 @@ code = 0
 name = "transfer_stake"
 code = 1
 requires_proof = true
-proof_circuit = "BlindOutput_V1"
+proof_circuit = "BlindOutput_V2"
 
 [[functions]]
 name = "request_interest"
 code = 2
 requires_proof = true
-proof_circuit = "Redeem_V1"
+proof_circuit = "Redeem_V2"
 
 [[functions]]
 name = "emergency_unstake"
 code = 3
 requires_proof = true
-proof_circuit = "Redeem_V1"
+proof_circuit = "Redeem_V2"
 
 [[functions]]
 name = "unstake"
 code = 4
 requires_proof = true
-proof_circuit = "Redeem_V1"
+proof_circuit = "Redeem_V2"
 
 [[functions]]
 name = "burn_stake"
 code = 5
 requires_proof = true
-proof_circuit = "Burn_V1"
+proof_circuit = "Burn_V2"
 
 [[functions]]
 name = "prove_coverage"
 code = 6
 requires_proof = true
-proof_circuit = "ProveCoverage_V1"
+proof_circuit = "ProveCoverage_V2"
 
 [[functions]]
 name = "verify_coverage"
@@ -80,17 +80,17 @@ name = "nullifier_roots"
 name = "bonds_info"
 
 [[circuits]]
-name = "Burn_V1"
+name = "Burn_V2"
 namespace = "bearer_bond"
 
 [[circuits]]
-name = "BlindOutput_V1"
+name = "BlindOutput_V2"
 namespace = "bearer_bond"
 
 [[circuits]]
-name = "Redeem_V1"
+name = "Redeem_V2"
 namespace = "bearer_bond"
 
 [[circuits]]
-name = "ProveCoverage_V1"
+name = "ProveCoverage_V2"
 namespace = "bearer_bond"

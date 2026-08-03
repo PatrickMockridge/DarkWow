@@ -79,10 +79,6 @@ use crate::{
     PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_MERKLE_TREE,
     PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_ROOTS_TREE,
     PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_TREE,
-    PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V1, PROMISSORY_NOTE_CONTRACT_ZKAS_ISSUE_NS_V1,
-    PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V1,
-    PROMISSORY_NOTE_CONTRACT_ZKAS_REGISTER_TYPE_NS_V1,
-    PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V1,
     PROMISSORY_NOTE_CONTRACT_ZKAS_REGISTER_TYPE_NS_V2,
     PROMISSORY_NOTE_CONTRACT_ZKAS_ISSUE_NS_V2,
     PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V2,
@@ -110,11 +106,11 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
 
     // V2 circuits (HAZOP RC3: domain separation)
-    let register_type_v2_bincode = include_bytes!("../../proof/register_type_v2.zk.bin");
-    let issue_v2_bincode = include_bytes!("../../proof/issue_v2.zk.bin");
-    let revoke_v2_bincode = include_bytes!("../../proof/revoke_v2.zk.bin");
-    let transfer_v2_bincode = include_bytes!("../../proof/transfer_v2.zk.bin");
-    let redeem_v2_bincode = include_bytes!("../../proof/redeem_v2.zk.bin");
+    let register_type_v2_bincode = include_bytes!("../../proof/register_type.zk.bin");
+    let issue_v2_bincode = include_bytes!("../../proof/issue.zk.bin");
+    let revoke_v2_bincode = include_bytes!("../../proof/revoke.zk.bin");
+    let transfer_v2_bincode = include_bytes!("../../proof/transfer.zk.bin");
+    let redeem_v2_bincode = include_bytes!("../../proof/redeem.zk.bin");
     wasm::db::zkas_db_set(&register_type_v2_bincode[..])?;
     wasm::db::zkas_db_set(&issue_v2_bincode[..])?;
     wasm::db::zkas_db_set(&revoke_v2_bincode[..])?;

@@ -103,30 +103,6 @@ description = "DEX configuration — governance pubkey, timeout, fee"
 name = "info"
 description = "Contract metadata"
 
-[[circuits]]
-name = "CreateSwap_V1"
-namespace = "dex"
-
-[[circuits]]
-name = "AcceptSwap_V1"
-namespace = "dex"
-
-[[circuits]]
-name = "ExecuteSwap_V1"
-namespace = "dex"
-
-[[circuits]]
-name = "CancelSwap_V1"
-namespace = "dex"
-
-[[circuits]]
-name = "ExecuteSwapFee_V1"
-namespace = "dex"
-
-[[circuits]]
-name = "ExecuteSwapSlippage_V1"
-namespace = "dex"
-
 # V2 circuits (HAZOP RC3: domain separation)
 [[circuits]]
 name = "CreateSwap_V2"

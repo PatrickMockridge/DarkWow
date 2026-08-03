@@ -78,15 +78,15 @@ pub struct DrainProtectionHarness {
 impl DrainProtectionHarness {
     /// Spawn a new DrainProtection harness with pre-loaded circuits
     pub fn spawn() -> Self {
-        let exit_bin = include_bytes!("../../../drain_protection/proof/exit_v2.zk.bin");
-        let execute_bin = include_bytes!("../../../drain_protection/proof/execute_v2.zk.bin");
-        let initialize_bin = include_bytes!("../../../drain_protection/proof/initialize_v2.zk.bin");
-        let lock_bin = include_bytes!("../../../drain_protection/proof/lock_v2.zk.bin");
-        let propose_bin = include_bytes!("../../../drain_protection/proof/propose_v2.zk.bin");
-        let transfer_bin = include_bytes!("../../../drain_protection/proof/transfer_v2.zk.bin");
-        let unlock_bin = include_bytes!("../../../drain_protection/proof/unlock_v2.zk.bin");
-        let update_config_bin = include_bytes!("../../../drain_protection/proof/update_config_v2.zk.bin");
-        let vote_bin = include_bytes!("../../../drain_protection/proof/vote_v2.zk.bin");
+        let exit_bin = include_bytes!("../../../drain_protection/proof/exit.zk.bin");
+        let execute_bin = include_bytes!("../../../drain_protection/proof/execute.zk.bin");
+        let initialize_bin = include_bytes!("../../../drain_protection/proof/initialize.zk.bin");
+        let lock_bin = include_bytes!("../../../drain_protection/proof/lock.zk.bin");
+        let propose_bin = include_bytes!("../../../drain_protection/proof/propose.zk.bin");
+        let transfer_bin = include_bytes!("../../../drain_protection/proof/transfer.zk.bin");
+        let unlock_bin = include_bytes!("../../../drain_protection/proof/unlock.zk.bin");
+        let update_config_bin = include_bytes!("../../../drain_protection/proof/update_config.zk.bin");
+        let vote_bin = include_bytes!("../../../drain_protection/proof/vote.zk.bin");
 
         let exit_zkbin = ZkBinary::decode(exit_bin, false).unwrap();
         let execute_zkbin = ZkBinary::decode(execute_bin, false).unwrap();

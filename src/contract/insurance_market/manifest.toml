@@ -47,13 +47,13 @@ code = 8
 name = "underwrite_with_capability"
 code = 9
 requires_proof = true
-proof_circuit = "UnderwriteWithCapability_V1"
+proof_circuit = "UnderwriteWithCapability_V2"
 
 [[functions]]
 name = "purchase_coverage_with_capability"
 code = 10
 requires_proof = true
-proof_circuit = "PurchaseCoverageWithCapability_V1"
+proof_circuit = "PurchaseCoverageWithCapability_V2"
 
 [[functions]]
 name = "purchase_coverage_with_dag"
@@ -97,9 +97,9 @@ name = "endowment"
 name = "info"
 
 [[circuits]]
-name = "UnderwriteWithCapability_V1"
+name = "UnderwriteWithCapability_V2"
 namespace = "insurance_market"
 
 [[circuits]]
-name = "PurchaseCoverageWithCapability_V1"
+name = "PurchaseCoverageWithCapability_V2"
 namespace = "insurance_market"

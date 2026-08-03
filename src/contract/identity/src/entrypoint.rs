@@ -102,33 +102,33 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         wasm::db::db_init(cid, IDENTITY_CONTRACT_REPUTATIONS_TREE)?;
     }
 
-    let create_claim_v1_dag_bincode = include_bytes!("../proof/create_claim_v1_dag.zk.bin");
+    let create_claim_v1_dag_bincode = include_bytes!("../proof/create_claim_dag.zk.bin");
     wasm::db::zkas_db_set(&create_claim_v1_dag_bincode[..])?;
-    let create_claim_v1_l1_v2_bincode = include_bytes!("../proof/create_claim_v1_l1_v2.zk.bin");
+    let create_claim_v1_l1_v2_bincode = include_bytes!("../proof/create_claim_l1_sd.zk.bin");
     wasm::db::zkas_db_set(&create_claim_v1_l1_v2_bincode[..])?;
-    let create_claim_v1_l1_bincode = include_bytes!("../proof/create_claim_v1_l1.zk.bin");
+    let create_claim_v1_l1_bincode = include_bytes!("../proof/create_claim_l1_sd.zk.bin");
     wasm::db::zkas_db_set(&create_claim_v1_l1_bincode[..])?;
-    let create_claim_v1_multi_bincode = include_bytes!("../proof/create_claim_v1_multi.zk.bin");
+    let create_claim_v1_multi_bincode = include_bytes!("../proof/create_claim_multi.zk.bin");
     wasm::db::zkas_db_set(&create_claim_v1_multi_bincode[..])?;
-    let create_claim_v1_ratio_bincode = include_bytes!("../proof/create_claim_v1_ratio.zk.bin");
+    let create_claim_v1_ratio_bincode = include_bytes!("../proof/create_claim_ratio.zk.bin");
     wasm::db::zkas_db_set(&create_claim_v1_ratio_bincode[..])?;
 
     // Register V2 circuits (domain separation, HAZOP RC3)
-    let create_claim_v2_bincode = include_bytes!("../proof/create_claim_v2.zk.bin");
+    let create_claim_v2_bincode = include_bytes!("../proof/create_claim.zk.bin");
     wasm::db::zkas_db_set(&create_claim_v2_bincode[..])?;
-    let create_claim_v2_dag_bincode = include_bytes!("../proof/create_claim_v2_dag.zk.bin");
+    let create_claim_v2_dag_bincode = include_bytes!("../proof/create_claim_dag.zk.bin");
     wasm::db::zkas_db_set(&create_claim_v2_dag_bincode[..])?;
-    let create_claim_v2_l1_bincode = include_bytes!("../proof/create_claim_v2_l1.zk.bin");
+    let create_claim_v2_l1_bincode = include_bytes!("../proof/create_claim_l1_sd.zk.bin");
     wasm::db::zkas_db_set(&create_claim_v2_l1_bincode[..])?;
-    let create_claim_v2_l1_v2_bincode = include_bytes!("../proof/create_claim_v2_l1_v2.zk.bin");
+    let create_claim_v2_l1_v2_bincode = include_bytes!("../proof/create_claim_l1_sd.zk.bin");
     wasm::db::zkas_db_set(&create_claim_v2_l1_v2_bincode[..])?;
-    let create_claim_v2_multi_bincode = include_bytes!("../proof/create_claim_v2_multi.zk.bin");
+    let create_claim_v2_multi_bincode = include_bytes!("../proof/create_claim_multi.zk.bin");
     wasm::db::zkas_db_set(&create_claim_v2_multi_bincode[..])?;
-    let create_claim_v2_ratio_bincode = include_bytes!("../proof/create_claim_v2_ratio.zk.bin");
+    let create_claim_v2_ratio_bincode = include_bytes!("../proof/create_claim_ratio.zk.bin");
     wasm::db::zkas_db_set(&create_claim_v2_ratio_bincode[..])?;
-    let issue_credential_v2_bincode = include_bytes!("../proof/issue_credential_v2.zk.bin");
+    let issue_credential_v2_bincode = include_bytes!("../proof/issue_credential.zk.bin");
     wasm::db::zkas_db_set(&issue_credential_v2_bincode[..])?;
-    let verify_capability_v2_bincode = include_bytes!("../proof/verify_capability_v2.zk.bin");
+    let verify_capability_v2_bincode = include_bytes!("../proof/verify_capability.zk.bin");
     wasm::db::zkas_db_set(&verify_capability_v2_bincode[..])?;
 
     Ok(())
@@ -924,7 +924,7 @@ fn apply_verify_capability_update(_cid: ContractId, _update: VerifyCapabilityUpd
 // ============================================================================
 
 fn process_revoke_capability_instruction(
-    cid: ContractId,
+    _cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {

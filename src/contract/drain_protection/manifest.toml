@@ -9,7 +9,7 @@ dependencies = ["promissory_note", "native_token_v1"]
 name = "initialize"
 code = 0
 requires_proof = true
-proof_circuit = "Initialize_V1"
+proof_circuit = "Initialize_V2"
 
 [[functions]]
 name = "propose"
@@ -27,7 +27,7 @@ code = 3
 name = "exit"
 code = 4
 requires_proof = true
-proof_circuit = "Exit_V1"
+proof_circuit = "Exit_V2"
 
 [[functions]]
 name = "transfer"
@@ -72,5 +72,5 @@ name = "exits"
 name = "votes"
 
 [[circuits]]
-name = "Exit_V1"
+name = "Exit_V2"
 namespace = "drain_protection"

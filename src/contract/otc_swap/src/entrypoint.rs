@@ -66,9 +66,7 @@ use crate::{
     },
     OtcSwapFunction, OTC_SWAP_CONTRACT_INFO_TREE, OTC_SWAP_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
     OTC_SWAP_CONTRACT_NULLIFIERS_TREE,
-    OTC_SWAP_CONTRACT_SWAPS_TREE, OTC_SWAP_CONTRACT_ZKAS_CANCEL_NS_V1,
-    OTC_SWAP_CONTRACT_ZKAS_CREATE_NS_V1, OTC_SWAP_CONTRACT_ZKAS_EXECUTE_NS_V1,
-    OTC_SWAP_CONTRACT_ZKAS_FUND_NS_V1,
+    OTC_SWAP_CONTRACT_SWAPS_TREE,
     OTC_SWAP_CONTRACT_ZKAS_CREATE_NS_V2, OTC_SWAP_CONTRACT_ZKAS_FUND_NS_V2,
     OTC_SWAP_CONTRACT_ZKAS_EXECUTE_NS_V2, OTC_SWAP_CONTRACT_ZKAS_CANCEL_NS_V2,
 };
@@ -112,10 +110,10 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     msg!("[otc_swap::init_contract] OTC swap contract initialized successfully");
 
-    let create_swap_v1_bincode = include_bytes!("../proof/create_swap_v2.zk.bin");
-    let fund_swap_v1_bincode = include_bytes!("../proof/fund_swap_v2.zk.bin");
-    let execute_swap_v1_bincode = include_bytes!("../proof/execute_swap_v2.zk.bin");
-    let cancel_swap_v1_bincode = include_bytes!("../proof/cancel_swap_v2.zk.bin");
+    let _create_swap_v1_bincode = include_bytes!("../proof/create_swap.zk.bin");
+    let _fund_swap_v1_bincode = include_bytes!("../proof/fund_swap.zk.bin");
+    let _execute_swap_v1_bincode = include_bytes!("../proof/execute_swap.zk.bin");
+    let _cancel_swap_v1_bincode = include_bytes!("../proof/cancel_swap.zk.bin");
 
     Ok(())
 }

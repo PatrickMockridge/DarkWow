@@ -96,46 +96,6 @@ name = "liquidations"
 [[trees]]
 name = "governance_reports"
 
-[[circuits]]
-name = "Init_V1"
-namespace = "stablecoin"
-
-[[circuits]]
-name = "Open_V1"
-namespace = "stablecoin"
-
-[[circuits]]
-name = "AddCollateral_V1"
-namespace = "stablecoin"
-
-[[circuits]]
-name = "RemoveCollateral_V1"
-namespace = "stablecoin"
-
-[[circuits]]
-name = "MintStable_V1"
-namespace = "stablecoin"
-
-[[circuits]]
-name = "RepayStable_V1"
-namespace = "stablecoin"
-
-[[circuits]]
-name = "Liquidate_V1"
-namespace = "stablecoin"
-
-[[circuits]]
-name = "GovernanceReport_V1"
-namespace = "stablecoin"
-
-[[circuits]]
-name = "AccrueInterest_V1"
-namespace = "stablecoin"
-
-[[circuits]]
-name = "RedeemStable_V1"
-namespace = "stablecoin"
-
 # V2 circuits (HAZOP RC3: domain separation)
 [[circuits]]
 name = "Init_V2"

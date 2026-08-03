@@ -13,25 +13,25 @@ code = 0
 name = "place_bet"
 code = 1
 requires_proof = true
-proof_circuit = "PlaceBet_V1"
+proof_circuit = "PlaceBet_V2"
 
 [[functions]]
 name = "spin_wheel"
 code = 2
 requires_proof = true
-proof_circuit = "SpinWheel_V1"
+proof_circuit = "SpinWheel_V2"
 
 [[functions]]
 name = "settle_bets"
 code = 3
 requires_proof = true
-proof_circuit = "SettleBet_V1"
+proof_circuit = "SettleBet_V2"
 
 [[functions]]
 name = "house_close"
 code = 4
 requires_proof = true
-proof_circuit = "HouseClose_V1"
+proof_circuit = "HouseClose_V2"
 
 [[capabilities]]
 discriminant = 0
@@ -59,9 +59,9 @@ name = "roulette_history"
 name = "info"
 
 [[circuits]]
-name = "PlaceBet_V1"
+name = "PlaceBet_V2"
 namespace = "roulette"
 
 [[circuits]]
-name = "SettleBet_V1"
+name = "SettleBet_V2"
 namespace = "roulette"

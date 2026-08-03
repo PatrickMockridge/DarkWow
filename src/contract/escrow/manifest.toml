@@ -13,25 +13,25 @@ code = 0
 name = "create_escrow"
 code = 1
 requires_proof = true
-proof_circuit = "CreateEscrow_V1"
+proof_circuit = "CreateEscrow_V2"
 
 [[functions]]
 name = "fund"
 code = 2
 requires_proof = true
-proof_circuit = "Fund_V1"
+proof_circuit = "Fund_V2"
 
 [[functions]]
 name = "claim"
 code = 3
 requires_proof = true
-proof_circuit = "Claim_V1"
+proof_circuit = "Claim_V2"
 
 [[functions]]
 name = "refund"
 code = 4
 requires_proof = true
-proof_circuit = "Refund_V1"
+proof_circuit = "Refund_V2"
 
 [[functions]]
 name = "cancel"
@@ -60,17 +60,17 @@ name = "nullifiers"
 name = "spent_flags"
 
 [[circuits]]
-name = "CreateEscrow_V1"
+name = "CreateEscrow_V2"
 namespace = "escrow"
 
 [[circuits]]
-name = "Fund_V1"
+name = "Fund_V2"
 namespace = "escrow"
 
 [[circuits]]
-name = "Claim_V1"
+name = "Claim_V2"
 namespace = "escrow"
 
 [[circuits]]
-name = "Refund_V1"
+name = "Refund_V2"
 namespace = "escrow"

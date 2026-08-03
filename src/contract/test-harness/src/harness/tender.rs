@@ -77,12 +77,12 @@ pub struct TenderHarness {
 impl TenderHarness {
     /// Spawn a new Tender harness with pre-loaded circuits
     pub fn spawn() -> Self {
-        let create_bin = include_bytes!("../../../tender/proof/create_tender_v2.zk.bin");
-        let submit_bin = include_bytes!("../../../tender/proof/submit_bid_v2.zk.bin");
-        let reveal_bin = include_bytes!("../../../tender/proof/reveal_bid_v2.zk.bin");
-        let select_bin = include_bytes!("../../../tender/proof/select_winner_v2.zk.bin");
+        let create_bin = include_bytes!("../../../tender/proof/create_tender.zk.bin");
+        let submit_bin = include_bytes!("../../../tender/proof/submit_bid.zk.bin");
+        let reveal_bin = include_bytes!("../../../tender/proof/reveal_bid.zk.bin");
+        let select_bin = include_bytes!("../../../tender/proof/select_winner.zk.bin");
         let submit_cap_bin =
-            include_bytes!("../../../tender/proof/submit_bid_with_capability_v2.zk.bin");
+            include_bytes!("../../../tender/proof/submit_bid_with_capability.zk.bin");
 
         let create_tender_zkbin = ZkBinary::decode(create_bin, false).unwrap();
         let submit_bid_zkbin = ZkBinary::decode(submit_bin, false).unwrap();

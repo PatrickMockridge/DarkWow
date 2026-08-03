@@ -88,13 +88,13 @@ pub struct DaoEscrowHarness {
 impl DaoEscrowHarness {
     /// Spawn a new DaoEscrow harness with pre-loaded circuits
     pub fn spawn() -> Self {
-        let init_bin = include_bytes!("../../../dao_escrow/proof/init_v2.zk.bin");
-        let pay_premium_bin = include_bytes!("../../../dao_escrow/proof/pay_premium_v2.zk.bin");
-        let propose_claim_bin = include_bytes!("../../../dao_escrow/proof/propose_claim_v2.zk.bin");
-        let vote_claim_bin = include_bytes!("../../../dao_escrow/proof/vote_claim_v2.zk.bin");
-        let verify_member_cap_bin = include_bytes!("../../../dao_escrow/proof/verify_member_capability_v2.zk.bin");
-        let resolve_dispute_bin = include_bytes!("../../../dao_escrow/proof/resolve_dispute_v2.zk.bin");
-        let set_governance_config_bin = include_bytes!("../../../dao_escrow/proof/set_governance_config_v2.zk.bin");
+        let init_bin = include_bytes!("../../../dao_escrow/proof/init.zk.bin");
+        let pay_premium_bin = include_bytes!("../../../dao_escrow/proof/pay_premium.zk.bin");
+        let propose_claim_bin = include_bytes!("../../../dao_escrow/proof/propose_claim.zk.bin");
+        let vote_claim_bin = include_bytes!("../../../dao_escrow/proof/vote_claim.zk.bin");
+        let verify_member_cap_bin = include_bytes!("../../../dao_escrow/proof/verify_member_capability.zk.bin");
+        let resolve_dispute_bin = include_bytes!("../../../dao_escrow/proof/resolve_dispute.zk.bin");
+        let set_governance_config_bin = include_bytes!("../../../dao_escrow/proof/set_governance_config.zk.bin");
 
         let init_zkbin = ZkBinary::decode(init_bin, false).unwrap();
         let pay_premium_zkbin = ZkBinary::decode(pay_premium_bin, false).unwrap();

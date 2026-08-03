@@ -80,13 +80,13 @@ pub struct BridgeHarness {
 impl BridgeHarness {
     /// Spawn a new Bridge harness with pre-loaded circuits
     pub fn spawn() -> Self {
-        let deposit_bin = include_bytes!("../../../bridge/proof/deposit_v2.zk.bin");
-        let withdraw_bin = include_bytes!("../../../bridge/proof/withdraw_v2.zk.bin");
+        let deposit_bin = include_bytes!("../../../bridge/proof/deposit.zk.bin");
+        let withdraw_bin = include_bytes!("../../../bridge/proof/withdraw.zk.bin");
         // Chain-specific deposits use the same deposit circuit with ExternalChain params.
-        // V2 binaries not yet generated for azt/ltc/xmr/zec — use generic deposit_v2.zk.bin.
+        // V2 binaries not yet generated for azt/ltc/xmr/zec — use generic deposit.zk.bin.
         let azt_deposit_bin = deposit_bin;
         let ltc_deposit_bin = deposit_bin;
-        let update_config_bin = include_bytes!("../../../bridge/proof/update_config_v2.zk.bin");
+        let update_config_bin = include_bytes!("../../../bridge/proof/update_config.zk.bin");
         let xmr_deposit_bin = deposit_bin;
         let zec_deposit_bin = deposit_bin;
 

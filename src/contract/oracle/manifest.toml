@@ -11,31 +11,31 @@ version = "2.0.0"
 name = "register_oracle"
 code = 0
 requires_proof = true
-proof_circuit = "RegisterOracle_V1"
+proof_circuit = "RegisterOracle_V2"
 
 [[functions]]
 name = "push_value"
 code = 1
 requires_proof = true
-proof_circuit = "PushValue_V1"
+proof_circuit = "PushValue_V2"
 
 [[functions]]
 name = "attest_value"
 code = 2
 requires_proof = true
-proof_circuit = "AttestValue_V1"
+proof_circuit = "AttestValue_V2"
 
 [[functions]]
 name = "push_value_commitment"
 code = 3
 requires_proof = true
-proof_circuit = "PushValueCommitment_V1"
+proof_circuit = "PushValueCommitment_V2"
 
 [[functions]]
 name = "aggregate"
 code = 4
 requires_proof = true
-proof_circuit = "Aggregate_V1"
+proof_circuit = "Aggregate_V2"
 
 [[functions]]
 name = "set_oracle_active"
@@ -132,21 +132,21 @@ name = "aggregates"
 description = "Aggregate records"
 
 [[circuits]]
-name = "RegisterOracle_V1"
+name = "RegisterOracle_V2"
 namespace = "oracle"
 
 [[circuits]]
-name = "PushValue_V1"
+name = "PushValue_V2"
 namespace = "oracle"
 
 [[circuits]]
-name = "AttestValue_V1"
+name = "AttestValue_V2"
 namespace = "oracle"
 
 [[circuits]]
-name = "PushValueCommitment_V1"
+name = "PushValueCommitment_V2"
 namespace = "oracle"
 
 [[circuits]]
-name = "Aggregate_V1"
+name = "Aggregate_V2"
 namespace = "oracle"

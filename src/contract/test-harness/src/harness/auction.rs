@@ -63,12 +63,12 @@ pub struct AuctionHarness {
 
 impl AuctionHarness {
     pub fn spawn() -> Self {
-        let create_bin = include_bytes!("../../../auction/proof/create_auction_v2.zk.bin");
-        let bid_bin = include_bytes!("../../../auction/proof/place_bid_v2.zk.bin");
-        let close_bin = include_bytes!("../../../auction/proof/close_auction_v2.zk.bin");
-        let claim_bin = include_bytes!("../../../auction/proof/claim_winnings_v2.zk.bin");
-        let settle_bin = include_bytes!("../../../auction/proof/settle_auction_v2.zk.bin");
-        let refund_bin = include_bytes!("../../../auction/proof/refund_bid_v2.zk.bin");
+        let create_bin = include_bytes!("../../../auction/proof/create_auction.zk.bin");
+        let bid_bin = include_bytes!("../../../auction/proof/place_bid.zk.bin");
+        let close_bin = include_bytes!("../../../auction/proof/close_auction.zk.bin");
+        let claim_bin = include_bytes!("../../../auction/proof/claim_winnings.zk.bin");
+        let settle_bin = include_bytes!("../../../auction/proof/settle_auction.zk.bin");
+        let refund_bin = include_bytes!("../../../auction/proof/refund_bid.zk.bin");
 
         let create_auction_zkbin = ZkBinary::decode(create_bin, false).unwrap();
         let place_bid_zkbin = ZkBinary::decode(bid_bin, false).unwrap();

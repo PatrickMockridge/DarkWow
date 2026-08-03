@@ -1,0 +1,86 @@
+/* This file is part of DarkWow
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+use dwow_core::{ClientFailed, Result};
+use dwow_sdk::{crypto::Keypair, deploy::DeployParams};
+use dwow_serial::Encodable;
+use tracing::{debug, error};
+
+use crate::error::DeployError;
+use crate::DeployFunction;
+
+pub struct DeployCallDebris {
+    pub params: DeployParams,
+}
+
+/// Struct holding necessary information to build a `Deployooor::Deploy` contract call.
+pub struct DeployCallBuilder {
+    /// Contract deploy keypair
+    pub deploy_keypair: Keypair,
+    /// WASM bincode to deploy
+    pub wasm_bincode: Vec<u8>,
+    /// Serialized deployment payload instruction
+    pub deploy_ix: Vec<u8>,
+    /// If true, enforce singleton semantics
+    pub singleton: bool,
+    /// Logical name for singleton check
+    pub singleton_name: String,
+}
+
+impl DeployCallBuilder {
+    pub fn build(&self) -> Result<DeployCallDebris> {
+        debug!(target: "contract::deployooor::client::deploy", "Building Deployooor::Deploy contract call");
+        if self.wasm_bincode.is_empty() {
+            error!(target: "contract::deployooor::client::deploy", "Provided WASM bincode is empty");
+            return Err(ClientFailed::VerifyError(DeployError::WasmBincodeInvalid.to_string()).into())
+        }
+
+        let params = DeployParams {
+            wasm_bincode: self.wasm_bincode.clone(),
+            public_key: self.deploy_keypair.public,
+            ix: self.deploy_ix.clone(),
+            singleton: self.singleton,
+            singleton_name: self.singleton_name.clone(),
+        };
+
+        let debris = DeployCallDebris { params };
+
+        Ok(debris)
+    }
+
+    /// Build the complete call data including the Deploy function code byte.
+    ///
+    /// This produces the byte sequence that goes into `ContractCall.data` for
+    /// the Deployooor contract. The Deploy function code (`0x00`) is
+    /// encapsulated here — callers do not need to prepend it manually.
+    ///
+    /// Returns `[0x00][serialized_DeployParams]`.
+    pub fn build_call_data(&self) -> Result<Vec<u8>> {
+        let debris = self.build()?;
+        let mut data = vec![DeployFunction::Deploy as u8];
+        debris.params.encode(&mut data)
+            .map_err(|e| dwow_core::Error::Custom(
+                format!("encode DeployParams: {}", e)))?;
+        Ok(data)
+    }
+}

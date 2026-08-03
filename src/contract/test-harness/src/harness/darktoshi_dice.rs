@@ -69,10 +69,10 @@ pub struct DarkToshiDiceHarness {
 impl DarkToshiDiceHarness {
     /// Spawn a new DarkToshiDice harness with pre-loaded circuits
     pub fn spawn() -> Self {
-        let commit_bet_bin = include_bytes!("../../../darktoshi_dice/proof/commit_bet_v2.zk.bin");
-        let house_close_bin = include_bytes!("../../../darktoshi_dice/proof/house_close_v2.zk.bin");
-        let reveal_roll_bin = include_bytes!("../../../darktoshi_dice/proof/reveal_roll_v2.zk.bin");
-        let settle_bet_bin = include_bytes!("../../../darktoshi_dice/proof/settle_bet_v2.zk.bin");
+        let commit_bet_bin = include_bytes!("../../../darktoshi_dice/proof/commit_bet.zk.bin");
+        let house_close_bin = include_bytes!("../../../darktoshi_dice/proof/house_close.zk.bin");
+        let reveal_roll_bin = include_bytes!("../../../darktoshi_dice/proof/reveal_roll.zk.bin");
+        let settle_bet_bin = include_bytes!("../../../darktoshi_dice/proof/settle_bet.zk.bin");
 
         let commit_bet_zkbin = ZkBinary::decode(commit_bet_bin, false).unwrap();
         let house_close_zkbin = ZkBinary::decode(house_close_bin, false).unwrap();

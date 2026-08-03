@@ -164,18 +164,8 @@ pub const EMPTY_COINS_TREE_ROOT: [u8; 32] = [
 // ZK CIRCUIT NAMESPACES
 // ============================================================================
 
-/// zkas mint circuit namespace (for genesis and PoW rewards)
-pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1: &str = "Mint_V1";
-/// zkas burn circuit namespace (for spending)
-pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1: &str = "Burn_V1";
-/// zkas fee circuit namespace (for network fees)
-pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1: &str = "Fee_V1";
-/// zkas fee-collect circuit namespace (for the fee collection plate —
-/// consensus-coinbase.md §3.5). Dedicated circuit: 12 witnesses, 7 public
-/// inputs, no cumulative supply chain.
-pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V1: &str = "FeeCollect_V1";
-
 /// V2 circuit namespaces (HAZOP H11: domain separation, M8: coin_public binding)
+/// V1 circuits deleted — only V2 circuits exist on disk. See doc/src/arch/circuit-versioning.md.
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2: &str = "Mint_V2";
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2: &str = "Burn_V2";
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2: &str = "Fee_V2";

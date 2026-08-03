@@ -40,11 +40,10 @@
 use dwow_sdk::{
     crypto::ContractId,
     dark_tree::DarkLeaf,
-    error::{ContractError, ContractResult},
+    error::ContractResult,
     msg,
     wasm, ContractCall,
 };
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
 use dwow_serial::deserialize;
 
 use crate::{
@@ -74,54 +73,53 @@ const DEX_TRANSPARENCY_LEVEL_KEY: &[u8] = b"transparency_level";
 // HELPER FUNCTIONS
 // ============================================================================
 
-use crate::model::TransparencyLevel;
 
 // ============================================================================
 // SUBMODULES
 // ============================================================================
 
-mod create_swap_v1;
-use create_swap_v1::{
+mod create_swap;
+use create_swap::{
     dex_create_swap_get_metadata_v1, dex_create_swap_process_instruction_v1,
     dex_create_swap_process_update_v1,
 };
 
-mod accept_swap_v1;
-use accept_swap_v1::{
+mod accept_swap;
+use accept_swap::{
     dex_accept_swap_get_metadata_v1, dex_accept_swap_process_instruction_v1,
     dex_accept_swap_process_update_v1,
 };
 
-mod execute_swap_v1;
-use execute_swap_v1::{
+mod execute_swap;
+use execute_swap::{
     dex_execute_swap_get_metadata_v1, dex_execute_swap_process_instruction_v1,
     dex_execute_swap_process_update_v1,
 };
 
-mod cancel_swap_v1;
-use cancel_swap_v1::{
+mod cancel_swap;
+use cancel_swap::{
     dex_cancel_swap_get_metadata_v1, dex_cancel_swap_process_instruction_v1,
     dex_cancel_swap_process_update_v1,
 };
 
-mod set_transparency_level_v1;
-use set_transparency_level_v1::{
+mod set_transparency_level;
+use set_transparency_level::{
     dex_set_transparency_get_metadata_v1, dex_set_transparency_level_process_instruction_v1,
 };
 
-mod update_config_v1;
-use update_config_v1::{
+mod update_config;
+use update_config::{
     dex_update_config_get_metadata_v1, dex_update_config_process_instruction_v1,
 };
 
-mod execute_swap_fee_v1;
-use execute_swap_fee_v1::{
+mod execute_swap_fee;
+use execute_swap_fee::{
     dex_execute_swap_fee_get_metadata_v1, dex_execute_swap_fee_process_instruction_v1,
     dex_execute_swap_fee_process_update_v1,
 };
 
-mod execute_swap_slippage_v1;
-use execute_swap_slippage_v1::{
+mod execute_swap_slippage;
+use execute_swap_slippage::{
     dex_execute_swap_slippage_get_metadata_v1, dex_execute_swap_slippage_process_instruction_v1,
     dex_execute_swap_slippage_process_update_v1,
 };
@@ -213,21 +211,21 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
 
 
     // V2 circuits (HAZOP RC3: domain separation)
-    let accept_swap_v2_bincode = include_bytes!("../../proof/accept_swap_v2.zk.bin");
+    let accept_swap_v2_bincode = include_bytes!("../../proof/accept_swap.zk.bin");
     wasm::db::zkas_db_set(&accept_swap_v2_bincode[..])?;
-    let cancel_swap_v2_bincode = include_bytes!("../../proof/cancel_swap_v2.zk.bin");
+    let cancel_swap_v2_bincode = include_bytes!("../../proof/cancel_swap.zk.bin");
     wasm::db::zkas_db_set(&cancel_swap_v2_bincode[..])?;
-    let create_swap_v2_bincode = include_bytes!("../../proof/create_swap_v2.zk.bin");
+    let create_swap_v2_bincode = include_bytes!("../../proof/create_swap.zk.bin");
     wasm::db::zkas_db_set(&create_swap_v2_bincode[..])?;
-    let execute_swap_fee_v2_bincode = include_bytes!("../../proof/execute_swap_fee_v2.zk.bin");
+    let execute_swap_fee_v2_bincode = include_bytes!("../../proof/execute_swap_fee.zk.bin");
     wasm::db::zkas_db_set(&execute_swap_fee_v2_bincode[..])?;
-    let execute_swap_slippage_v2_bincode = include_bytes!("../../proof/execute_swap_slippage_v2.zk.bin");
+    let execute_swap_slippage_v2_bincode = include_bytes!("../../proof/execute_swap_slippage.zk.bin");
     wasm::db::zkas_db_set(&execute_swap_slippage_v2_bincode[..])?;
-    let execute_swap_v2_bincode = include_bytes!("../../proof/execute_swap_v2.zk.bin");
+    let execute_swap_v2_bincode = include_bytes!("../../proof/execute_swap.zk.bin");
     wasm::db::zkas_db_set(&execute_swap_v2_bincode[..])?;
-    let update_config_v2_bincode = include_bytes!("../../proof/update_config_v2.zk.bin");
+    let update_config_v2_bincode = include_bytes!("../../proof/update_config.zk.bin");
     wasm::db::zkas_db_set(&update_config_v2_bincode[..])?;
-    let set_transparency_level_v2_bincode = include_bytes!("../../proof/set_transparency_level_v2.zk.bin");
+    let set_transparency_level_v2_bincode = include_bytes!("../../proof/set_transparency_level.zk.bin");
     wasm::db::zkas_db_set(&set_transparency_level_v2_bincode[..])?;
 
     Ok(())

@@ -21,7 +21,7 @@ code = 2
 name = "reveal_ticket"
 code = 3
 requires_proof = true
-proof_circuit = "RevealTicket_V1"
+proof_circuit = "RevealTicket_V2"
 
 [[functions]]
 name = "claim_prize"
@@ -63,9 +63,9 @@ name = "tickets_roots"
 name = "info"
 
 [[circuits]]
-name = "CommitTicket_V1"
+name = "CommitTicket_V2"
 namespace = "lottery"
 
 [[circuits]]
-name = "RevealTicket_V1"
+name = "RevealTicket_V2"
 namespace = "lottery"

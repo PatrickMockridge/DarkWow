@@ -107,18 +107,18 @@ pub struct LaborMarketHarness {
 impl LaborMarketHarness {
     /// Spawn a new LaborMarket harness with pre-loaded circuits
     pub fn spawn() -> Self {
-        let create_bin = include_bytes!("../../../labor_market/proof/create_job_v2.zk.bin");
-        let submit_bin = include_bytes!("../../../labor_market/proof/submit_deliverable_v2.zk.bin");
+        let create_bin = include_bytes!("../../../labor_market/proof/create_job.zk.bin");
+        let submit_bin = include_bytes!("../../../labor_market/proof/submit_deliverable.zk.bin");
         let submit_git_bin =
-            include_bytes!("../../../labor_market/proof/submit_git_deliverable_v2.zk.bin");
-        let accept_bin = include_bytes!("../../../labor_market/proof/accept_job_v2.zk.bin");
-        let confirm_bin = include_bytes!("../../../labor_market/proof/confirm_delivery_v2.zk.bin");
-        let dispute_bin = include_bytes!("../../../labor_market/proof/dispute_v2.zk.bin");
-        let refund_bin = include_bytes!("../../../labor_market/proof/refund_v2.zk.bin");
+            include_bytes!("../../../labor_market/proof/submit_git_deliverable.zk.bin");
+        let accept_bin = include_bytes!("../../../labor_market/proof/accept_job.zk.bin");
+        let confirm_bin = include_bytes!("../../../labor_market/proof/confirm_delivery.zk.bin");
+        let dispute_bin = include_bytes!("../../../labor_market/proof/dispute.zk.bin");
+        let refund_bin = include_bytes!("../../../labor_market/proof/refund.zk.bin");
         let accept_with_cap_bin =
-            include_bytes!("../../../labor_market/proof/accept_job_with_capability_v2.zk.bin");
+            include_bytes!("../../../labor_market/proof/accept_job_with_capability.zk.bin");
         let milestone_payment_bin =
-            include_bytes!("../../../labor_market/proof/milestone_payment_v2.zk.bin");
+            include_bytes!("../../../labor_market/proof/milestone_payment.zk.bin");
 
         let create_job_zkbin = ZkBinary::decode(create_bin, false).unwrap();
         let submit_deliverable_zkbin = ZkBinary::decode(submit_bin, false).unwrap();

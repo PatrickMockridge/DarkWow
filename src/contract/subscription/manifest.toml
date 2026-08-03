@@ -13,7 +13,7 @@ code = 0
 name = "subscribe"
 code = 1
 requires_proof = true
-proof_circuit = "Subscribe_V1"
+proof_circuit = "Subscribe_V2"
 
 [[functions]]
 name = "cancel"
@@ -27,7 +27,7 @@ code = 3
 name = "verify_access"
 code = 4
 requires_proof = true
-proof_circuit = "VerifyAccess_V1"
+proof_circuit = "VerifyAccess_V2"
 
 [[functions]]
 name = "dao_control"
@@ -37,7 +37,7 @@ code = 5
 name = "update_usage"
 code = 6
 requires_proof = true
-proof_circuit = "UpdateUsage_V1"
+proof_circuit = "UpdateUsage_V2"
 
 [[capabilities]]
 discriminant = 0
@@ -57,13 +57,13 @@ name = "nullifiers"
 name = "plans"
 
 [[circuits]]
-name = "Subscribe_V1"
+name = "Subscribe_V2"
 namespace = "subscription"
 
 [[circuits]]
-name = "VerifyAccess_V1"
+name = "VerifyAccess_V2"
 namespace = "subscription"
 
 [[circuits]]
-name = "UpdateUsage_V1"
+name = "UpdateUsage_V2"
 namespace = "subscription"

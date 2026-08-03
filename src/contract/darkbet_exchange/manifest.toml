@@ -9,7 +9,7 @@ dependencies = ["promissory_note", "native_token_v1"]
 name = "create_market"
 code = 0
 requires_proof = true
-proof_circuit = "CreateMarket_V1"
+proof_circuit = "CreateMarket_V2"
 
 [[functions]]
 name = "place_back"
@@ -39,13 +39,13 @@ code = 6
 name = "buy_position"
 code = 7
 requires_proof = true
-proof_circuit = "BuyPosition_V1"
+proof_circuit = "BuyPosition_V2"
 
 [[functions]]
 name = "add_liquidity"
 code = 8
 requires_proof = true
-proof_circuit = "AddLiquidity_V1"
+proof_circuit = "AddLiquidity_V2"
 
 [[functions]]
 name = "remove_liquidity"
@@ -55,7 +55,7 @@ code = 9
 name = "claim_winnings"
 code = 10
 requires_proof = true
-proof_circuit = "ClaimWinnings_V1"
+proof_circuit = "ClaimWinnings_V2"
 
 [[capabilities]]
 discriminant = 0
@@ -107,17 +107,17 @@ name = "darkbet_nullifiers"
 name = "darkbet_info"
 
 [[circuits]]
-name = "CreateMarket_V1"
+name = "CreateMarket_V2"
 namespace = "darkbet_exchange"
 
 [[circuits]]
-name = "BuyPosition_V1"
+name = "BuyPosition_V2"
 namespace = "darkbet_exchange"
 
 [[circuits]]
-name = "ClaimWinnings_V1"
+name = "ClaimWinnings_V2"
 namespace = "darkbet_exchange"
 
 [[circuits]]
-name = "AddLiquidity_V1"
+name = "AddLiquidity_V2"
 namespace = "darkbet_exchange"

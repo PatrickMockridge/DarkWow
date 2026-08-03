@@ -78,9 +78,9 @@ pub struct SubscriptionHarness {
 impl SubscriptionHarness {
     /// Spawn a new Subscription harness with pre-loaded circuits
     pub fn spawn() -> Self {
-        let subscribe_bin = include_bytes!("../../../subscription/proof/subscribe_v2.zk.bin");
-        let verify_bin = include_bytes!("../../../subscription/proof/verify_access_v2.zk.bin");
-        let update_bin = include_bytes!("../../../subscription/proof/update_usage_v2.zk.bin");
+        let subscribe_bin = include_bytes!("../../../subscription/proof/subscribe.zk.bin");
+        let verify_bin = include_bytes!("../../../subscription/proof/verify_access.zk.bin");
+        let update_bin = include_bytes!("../../../subscription/proof/update_usage.zk.bin");
 
         let subscribe_zkbin = ZkBinary::decode(subscribe_bin, false).unwrap();
         let verify_access_zkbin = ZkBinary::decode(verify_bin, false).unwrap();
@@ -103,8 +103,8 @@ impl SubscriptionHarness {
         let verify_access_pk = ProvingKey::build(verify_access_zkbin.k, &verify_circuit).expect("ProvingKey::build failed");
         let update_usage_pk = ProvingKey::build(update_usage_zkbin.k, &update_circuit).expect("ProvingKey::build failed");
 
-        let cancel_bin = include_bytes!("../../../subscription/proof/cancel_v2.zk.bin");
-        let renew_bin = include_bytes!("../../../subscription/proof/renew_v2.zk.bin");
+        let cancel_bin = include_bytes!("../../../subscription/proof/cancel.zk.bin");
+        let renew_bin = include_bytes!("../../../subscription/proof/renew.zk.bin");
 
         let cancel_zkbin = ZkBinary::decode(cancel_bin, false).unwrap();
         let renew_zkbin = ZkBinary::decode(renew_bin, false).unwrap();

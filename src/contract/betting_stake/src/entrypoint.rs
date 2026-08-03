@@ -59,11 +59,11 @@ dwow_sdk::define_contract!(
 
 /// Initialize the contract
 fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
-    let init_v1_bincode = include_bytes!("../proof/init_v2.zk.bin");
-    let stake_v1_bincode = include_bytes!("../proof/stake_v2.zk.bin");
-    let unstake_v1_bincode = include_bytes!("../proof/unstake_v2.zk.bin");
-    let claim_v1_bincode = include_bytes!("../proof/claim_v2.zk.bin");
-    let update_risk_v1_bincode = include_bytes!("../proof/update_risk_v2.zk.bin");
+    let _init_v1_bincode = include_bytes!("../proof/init.zk.bin");
+    let _stake_v1_bincode = include_bytes!("../proof/stake.zk.bin");
+    let _unstake_v1_bincode = include_bytes!("../proof/unstake.zk.bin");
+    let _claim_v1_bincode = include_bytes!("../proof/claim.zk.bin");
+    let _update_risk_v1_bincode = include_bytes!("../proof/update_risk.zk.bin");
 
 
     // Initialize database trees

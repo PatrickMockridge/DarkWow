@@ -12,7 +12,7 @@ dependencies = ["promissory_note", "native_token_v1"]
 name = "create_attestation"
 code = 0
 requires_proof = true
-proof_circuit = "CreateAttestation_V1"
+proof_circuit = "CreateAttestation_V2"
 
 [[functions]]
 name = "revoke_attestation"
@@ -26,19 +26,19 @@ code = 2
 name = "create_claim"
 code = 3
 requires_proof = true
-proof_circuit = "CreateClaim_V1"
+proof_circuit = "CreateClaim_V2"
 
 [[functions]]
 name = "verify_claim"
 code = 4
 requires_proof = true
-proof_circuit = "VerifyClaim_V1"
+proof_circuit = "VerifyClaim_V2"
 
 [[functions]]
 name = "consume_claim"
 code = 5
 requires_proof = true
-proof_circuit = "ConsumeClaim_V1"
+proof_circuit = "ConsumeClaim_V2"
 
 [[functions]]
 name = "validate_claim"
@@ -48,37 +48,37 @@ code = 6
 name = "check_not_revoked"
 code = 7
 requires_proof = true
-proof_circuit = "CheckNotRevoked_V1"
+proof_circuit = "CheckNotRevoked_V2"
 
 [[functions]]
 name = "delegate_attestation"
 code = 8
 requires_proof = true
-proof_circuit = "DelegateAttestation_V1"
+proof_circuit = "DelegateAttestation_V2"
 
 [[functions]]
 name = "verify_chain"
 code = 9
 requires_proof = true
-proof_circuit = "VerifyChain_V1"
+proof_circuit = "VerifyChain_V2"
 
 [[functions]]
 name = "update_delegation"
 code = 10
 requires_proof = true
-proof_circuit = "UpdateDelegation_V1"
+proof_circuit = "UpdateDelegation_V2"
 
 [[functions]]
 name = "attest_slash"
 code = 11
 requires_proof = true
-proof_circuit = "AttestSlash_V1"
+proof_circuit = "AttestSlash_V2"
 
 [[functions]]
 name = "commit_fee_schedule"
 code = 12
 requires_proof = true
-proof_circuit = "CommitFeeSchedule_V1"
+proof_circuit = "CommitFeeSchedule_V2"
 
 [[capabilities]]
 discriminant = 0
@@ -161,41 +161,41 @@ name = "delegations"
 description = "Delegation records"
 
 [[circuits]]
-name = "CreateAttestation_V1"
+name = "CreateAttestation_V2"
 namespace = "attestation"
 
 [[circuits]]
-name = "CreateClaim_V1"
+name = "CreateClaim_V2"
 namespace = "attestation"
 
 [[circuits]]
-name = "VerifyClaim_V1"
+name = "VerifyClaim_V2"
 namespace = "attestation"
 
 [[circuits]]
-name = "ConsumeClaim_V1"
+name = "ConsumeClaim_V2"
 namespace = "attestation"
 
 [[circuits]]
-name = "CheckNotRevoked_V1"
+name = "CheckNotRevoked_V2"
 namespace = "attestation"
 
 [[circuits]]
-name = "DelegateAttestation_V1"
+name = "DelegateAttestation_V2"
 namespace = "attestation"
 
 [[circuits]]
-name = "VerifyChain_V1"
+name = "VerifyChain_V2"
 namespace = "attestation"
 
 [[circuits]]
-name = "UpdateDelegation_V1"
+name = "UpdateDelegation_V2"
 namespace = "attestation"
 
 [[circuits]]
-name = "AttestSlash_V1"
+name = "AttestSlash_V2"
 namespace = "attestation"
 
 [[circuits]]
-name = "CommitFeeSchedule_V1"
+name = "CommitFeeSchedule_V2"
 namespace = "attestation"

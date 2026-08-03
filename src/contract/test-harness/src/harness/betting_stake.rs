@@ -75,11 +75,11 @@ pub struct BettingStakeHarness {
 impl BettingStakeHarness {
     /// Spawn a new BettingStake harness with pre-loaded circuits
     pub fn spawn() -> Self {
-        let init_bin = include_bytes!("../../../betting_stake/proof/init_v2.zk.bin");
-        let stake_bin = include_bytes!("../../../betting_stake/proof/stake_v2.zk.bin");
-        let unstake_bin = include_bytes!("../../../betting_stake/proof/unstake_v2.zk.bin");
-        let claim_bin = include_bytes!("../../../betting_stake/proof/claim_v2.zk.bin");
-        let update_risk_bin = include_bytes!("../../../betting_stake/proof/update_risk_v2.zk.bin");
+        let init_bin = include_bytes!("../../../betting_stake/proof/init.zk.bin");
+        let stake_bin = include_bytes!("../../../betting_stake/proof/stake.zk.bin");
+        let unstake_bin = include_bytes!("../../../betting_stake/proof/unstake.zk.bin");
+        let claim_bin = include_bytes!("../../../betting_stake/proof/claim.zk.bin");
+        let update_risk_bin = include_bytes!("../../../betting_stake/proof/update_risk.zk.bin");
 
         let init_zkbin = ZkBinary::decode(init_bin, false).unwrap();
         let stake_zkbin = ZkBinary::decode(stake_bin, false).unwrap();

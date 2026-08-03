@@ -30,7 +30,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::deserialize;
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id,

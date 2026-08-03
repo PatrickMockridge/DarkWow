@@ -49,10 +49,10 @@ dwow_sdk::define_contract!(
 /// Initialize the contract
 fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Embed zkas circuits
-    let commit_bet_bincode = include_bytes!("../proof/commit_bet_v2.zk.bin");
-    let reveal_roll_bincode = include_bytes!("../proof/reveal_roll_v2.zk.bin");
-    let house_close_bincode = include_bytes!("../proof/house_close_v2.zk.bin");
-    let settle_bet_bincode = include_bytes!("../proof/settle_bet_v2.zk.bin");
+    let commit_bet_bincode = include_bytes!("../proof/commit_bet.zk.bin");
+    let reveal_roll_bincode = include_bytes!("../proof/reveal_roll.zk.bin");
+    let house_close_bincode = include_bytes!("../proof/house_close.zk.bin");
+    let settle_bet_bincode = include_bytes!("../proof/settle_bet.zk.bin");
 
     wasm::db::zkas_db_set(&commit_bet_bincode[..])?;
     wasm::db::zkas_db_set(&reveal_roll_bincode[..])?;
@@ -195,12 +195,12 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 }
 
 // Modules for function implementations
-mod commit_bet_v1;
-mod reveal_roll_v1;
-mod settle_bet_v1;
-mod house_close_v1;
+mod commit_bet;
+mod reveal_roll;
+mod settle_bet;
+mod house_close;
 
-use commit_bet_v1::*;
-use house_close_v1::*;
-use reveal_roll_v1::*;
-use settle_bet_v1::*;
+use commit_bet::*;
+use house_close::*;
+use reveal_roll::*;
+use settle_bet::*;

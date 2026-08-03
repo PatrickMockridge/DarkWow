@@ -68,10 +68,8 @@ use crate::{
     SubscriptionFunction, SUBSCRIPTION_CONTRACT_INFO_TREE,
     SUBSCRIPTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
     SUBSCRIPTION_CONTRACT_NULLIFIERS_TREE, SUBSCRIPTION_CONTRACT_PLANS_TREE,
-    SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE, SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V1,
-    SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V1, SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V1,
-    SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V2, SUBSCRIPTION_CONTRACT_ZKAS_RENEW_NS_V2,
-    SUBSCRIPTION_CONTRACT_ZKAS_CANCEL_NS_V2, SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_ACCESS_NS_V2, SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V2,
+    SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE,
+    SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V2, SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V2,
     SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V2,
 };
 
@@ -122,9 +120,9 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     msg!("[subscription::init_contract] Subscription contract initialized successfully");
 
-    wasm::db::zkas_db_set(include_bytes!("../proof/subscribe_v2.zk.bin"))?;
-    wasm::db::zkas_db_set(include_bytes!("../proof/update_usage_v2.zk.bin"))?;
-    wasm::db::zkas_db_set(include_bytes!("../proof/verify_access_v2.zk.bin"))?;
+    wasm::db::zkas_db_set(include_bytes!("../proof/subscribe.zk.bin"))?;
+    wasm::db::zkas_db_set(include_bytes!("../proof/update_usage.zk.bin"))?;
+    wasm::db::zkas_db_set(include_bytes!("../proof/verify_access.zk.bin"))?;
 
     Ok(())
 }

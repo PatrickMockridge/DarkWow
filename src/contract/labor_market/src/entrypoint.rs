@@ -50,7 +50,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 use dwow_promissory_note_contract::validation::{validate_child_contract_id, validate_child_value_commit};
 
 use crate::{
@@ -123,23 +123,23 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
 
     // V2 circuits (HAZOP RC3: domain separation)
-    let accept_job_v2_bincode = include_bytes!("../proof/accept_job_v2.zk.bin");
+    let accept_job_v2_bincode = include_bytes!("../proof/accept_job.zk.bin");
     wasm::db::zkas_db_set(&accept_job_v2_bincode[..])?;
-    let accept_job_with_capability_v2_bincode = include_bytes!("../proof/accept_job_with_capability_v2.zk.bin");
+    let accept_job_with_capability_v2_bincode = include_bytes!("../proof/accept_job_with_capability.zk.bin");
     wasm::db::zkas_db_set(&accept_job_with_capability_v2_bincode[..])?;
-    let confirm_delivery_v2_bincode = include_bytes!("../proof/confirm_delivery_v2.zk.bin");
+    let confirm_delivery_v2_bincode = include_bytes!("../proof/confirm_delivery.zk.bin");
     wasm::db::zkas_db_set(&confirm_delivery_v2_bincode[..])?;
-    let create_job_v2_bincode = include_bytes!("../proof/create_job_v2.zk.bin");
+    let create_job_v2_bincode = include_bytes!("../proof/create_job.zk.bin");
     wasm::db::zkas_db_set(&create_job_v2_bincode[..])?;
-    let dispute_v2_bincode = include_bytes!("../proof/dispute_v2.zk.bin");
+    let dispute_v2_bincode = include_bytes!("../proof/dispute.zk.bin");
     wasm::db::zkas_db_set(&dispute_v2_bincode[..])?;
-    let milestone_payment_v2_bincode = include_bytes!("../proof/milestone_payment_v2.zk.bin");
+    let milestone_payment_v2_bincode = include_bytes!("../proof/milestone_payment.zk.bin");
     wasm::db::zkas_db_set(&milestone_payment_v2_bincode[..])?;
-    let refund_v2_bincode = include_bytes!("../proof/refund_v2.zk.bin");
+    let refund_v2_bincode = include_bytes!("../proof/refund.zk.bin");
     wasm::db::zkas_db_set(&refund_v2_bincode[..])?;
-    let submit_deliverable_v2_bincode = include_bytes!("../proof/submit_deliverable_v2.zk.bin");
+    let submit_deliverable_v2_bincode = include_bytes!("../proof/submit_deliverable.zk.bin");
     wasm::db::zkas_db_set(&submit_deliverable_v2_bincode[..])?;
-    let submit_git_deliverable_v2_bincode = include_bytes!("../proof/submit_git_deliverable_v2.zk.bin");
+    let submit_git_deliverable_v2_bincode = include_bytes!("../proof/submit_git_deliverable.zk.bin");
     wasm::db::zkas_db_set(&submit_git_deliverable_v2_bincode[..])?;
 
     Ok(())

@@ -15,42 +15,42 @@ name = "register_type"
 code = 0
 description = "Create a new token type with mint authority. TokenId is derived from auth_parent, user_data, and blind."
 requires_proof = true
-proof_circuit = "RegisterType_V1"
+proof_circuit = "RegisterType_V2"
 
 [[functions]]
 name = "redeem"
 code = 1
 description = "Redeem a coin via RedeemV1 — destroys monetary value, creates zero-value receipt coin as cryptographic proof of redemption."
 requires_proof = true
-proof_circuit = "Redeem_V1"
+proof_circuit = "Redeem_V2"
 
 [[functions]]
 name = "issue"
 code = 2
 description = "Mint new coins of an existing token. Requires mint authority — the caller must prove knowledge of the mint_secret matching the token's stored auth_parent."
 requires_proof = true
-proof_circuit = "Issue_V1"
+proof_circuit = "Issue_V2"
 
 [[functions]]
 name = "revoke"
 code = 3
 description = "Burn coins via BurnV1 — publishes nullifiers to prevent double-spending. Supports spend_hook dispatch to target contracts."
 requires_proof = true
-proof_circuit = "Revoke_V1"
+proof_circuit = "Revoke_V2"
 
 [[functions]]
 name = "transfer"
 code = 4
 description = "Atomic burn-and-blind-output via TransferV1. Burns input coins, creates new blind outputs. Enforces value conservation per token_commit."
 requires_proof = true
-proof_circuit = "Transfer_V1"
+proof_circuit = "Transfer_V2"
 
 [[functions]]
 name = "otc_swap"
 code = 5
 description = "Peer-to-peer atomic swap via OtcSwapV1. Exactly 2 inputs and 2 outputs. Both parties must sign."
 requires_proof = true
-proof_circuit = "Transfer_V1"
+proof_circuit = "Transfer_V2"
 
 # ============================================================================
 # Capabilities
@@ -163,23 +163,23 @@ description = "Historical token registry tree roots indexed by block height"
 # ============================================================================
 
 [[circuits]]
-name = "RegisterType_V1"
+name = "RegisterType_V2"
 namespace = "promissory_note"
 
 [[circuits]]
-name = "Redeem_V1"
+name = "Redeem_V2"
 namespace = "promissory_note"
 
 [[circuits]]
-name = "Issue_V1"
+name = "Issue_V2"
 namespace = "promissory_note"
 
 [[circuits]]
-name = "Revoke_V1"
+name = "Revoke_V2"
 namespace = "promissory_note"
 
 [[circuits]]
-name = "Transfer_V1"
+name = "Transfer_V2"
 namespace = "promissory_note"
 
 # ============================================================================

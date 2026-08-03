@@ -30,7 +30,6 @@ use dwow_sdk::{
     wasm,
 };
 use dwow_sdk::pasta::pallas;
-use dwow_serial::deserialize;
 
 use crate::error::DiceError;
 use crate::model::{calculate_roll_with_depth, Bet, BetState, RevealRollParamsV1, RevealRollUpdateV1};

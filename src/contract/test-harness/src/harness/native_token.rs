@@ -65,9 +65,9 @@ impl NativeTokenHarness {
     /// Spawn a new NativeToken harness with pre-loaded circuits
     pub fn spawn() -> Self {
         // Load circuit binaries
-        let mint_bin = include_bytes!("../../../native_token/proof/mint_v2.zk.bin");
-        let burn_bin = include_bytes!("../../../native_token/proof/burn_v2.zk.bin");
-        let fee_bin = include_bytes!("../../../native_token/proof/fee_v2.zk.bin");
+        let mint_bin = include_bytes!("../../../native_token/proof/mint.zk.bin");
+        let burn_bin = include_bytes!("../../../native_token/proof/burn.zk.bin");
+        let fee_bin = include_bytes!("../../../native_token/proof/fee.zk.bin");
 
         let mint_zkbin = ZkBinary::decode(mint_bin, false).unwrap();
         let burn_zkbin = ZkBinary::decode(burn_bin, false).unwrap();

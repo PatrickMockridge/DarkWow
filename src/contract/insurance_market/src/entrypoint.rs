@@ -45,37 +45,37 @@ dwow_sdk::define_contract!(
 );
 
 // Include entrypoint modules
-mod register_risk_type_v1;
-mod create_market_v1;
-mod underwrite_v1;
-mod purchase_coverage_v1;
-mod file_claim_v1;
-mod resolve_claim_v1;
-mod withdraw_premium_v1;
-mod update_premium_v1;
-mod underwrite_with_capability_v1;
-mod purchase_coverage_with_capability_v1;
-mod purchase_coverage_with_dag_v1;
-mod resolve_claim_with_capability_v1;
-mod deactivate_underwriter_v1;
-mod close_market_v1;
-mod retire_risk_type_v1;
+mod register_risk_type;
+mod create_market;
+mod underwrite;
+mod purchase_coverage;
+mod file_claim;
+mod resolve_claim;
+mod withdraw_premium;
+mod update_premium;
+mod underwrite_with_capability;
+mod purchase_coverage_with_capability;
+mod purchase_coverage_with_dag;
+mod resolve_claim_with_capability;
+mod deactivate_underwriter;
+mod close_market;
+mod retire_risk_type;
 
-use register_risk_type_v1::*;
-use create_market_v1::*;
-use underwrite_v1::*;
-use purchase_coverage_v1::*;
-use file_claim_v1::*;
-use resolve_claim_v1::*;
-use withdraw_premium_v1::*;
-use update_premium_v1::*;
-use underwrite_with_capability_v1::*;
-use purchase_coverage_with_capability_v1::*;
-use purchase_coverage_with_dag_v1::*;
-use resolve_claim_with_capability_v1::*;
-use deactivate_underwriter_v1::*;
-use close_market_v1::*;
-use retire_risk_type_v1::*;
+use register_risk_type::*;
+use create_market::*;
+use underwrite::*;
+use purchase_coverage::*;
+use file_claim::*;
+use resolve_claim::*;
+use withdraw_premium::*;
+use update_premium::*;
+use underwrite_with_capability::*;
+use purchase_coverage_with_capability::*;
+use purchase_coverage_with_dag::*;
+use resolve_claim_with_capability::*;
+use deactivate_underwriter::*;
+use close_market::*;
+use retire_risk_type::*;
 
 /// Initialize the contract
 fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
@@ -92,10 +92,10 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
 
     let underwrite_with_capability_v2_bincode =
-        include_bytes!("../proof/underwrite_with_capability_v2.zk.bin");
+        include_bytes!("../proof/underwrite_with_capability.zk.bin");
     wasm::db::zkas_db_set(&underwrite_with_capability_v2_bincode[..])?;
     let purchase_coverage_with_capability_v2_bincode =
-        include_bytes!("../proof/purchase_coverage_with_capability_v2.zk.bin");
+        include_bytes!("../proof/purchase_coverage_with_capability.zk.bin");
     wasm::db::zkas_db_set(&purchase_coverage_with_capability_v2_bincode[..])?;
 
     Ok(())
@@ -291,7 +291,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             insurance_market_withdraw_premium_process_update_v1(cid, update)
         }
         InsuranceMarketFunction::UpdatePremiumV1 => {
-            let update: update_premium_v1::UpdatePremiumUpdateV1 = update_premium_v1::UpdatePremiumUpdateV1::decode(&update_data[1..])?;
+            let update: update_premium::UpdatePremiumUpdateV1 = update_premium::UpdatePremiumUpdateV1::decode(&update_data[1..])?;
             insurance_market_update_premium_process_update_v1(cid, update)
         }
         // O-Cap enabled functions

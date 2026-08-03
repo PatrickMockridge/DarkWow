@@ -13,7 +13,7 @@ code = 0
 name = "commit_spin"
 code = 1
 requires_proof = true
-proof_circuit = "CommitBet_V1"
+proof_circuit = "CommitBet_V2"
 
 [[functions]]
 name = "reveal_spin"
@@ -23,7 +23,7 @@ code = 2
 name = "settle_spin"
 code = 3
 requires_proof = true
-proof_circuit = "SettleBet_V1"
+proof_circuit = "SettleBet_V2"
 
 [[functions]]
 name = "cancel_spin"
@@ -55,9 +55,9 @@ name = "info"
 name = "house"
 
 [[circuits]]
-name = "CommitBet_V1"
+name = "CommitBet_V2"
 namespace = "slot"
 
 [[circuits]]
-name = "SettleBet_V1"
+name = "SettleBet_V2"
 namespace = "slot"

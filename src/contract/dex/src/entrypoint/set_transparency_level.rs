@@ -26,12 +26,12 @@
 //! Allows governance to change the transparency level post-deployment.
 
 use dwow_sdk::{crypto::pasta_prelude::PrimeField, error::ContractError, msg, pasta::pallas, wasm};
-use dwow_serial::{deserialize, Encodable};
+use dwow_serial::Encodable;
 
 use crate::{
     error::DexError,
     model::SetTransparencyLevelParams,
-    DEX_CONTRACT_CONFIG_TREE, DEX_CONTRACT_GOVERNANCE_PUBKEY_KEY,
+    DEX_CONTRACT_CONFIG_TREE,
     DEX_CONTRACT_NULLIFIERS_TREE, DEX_CONTRACT_TRANSPARENCY_LEVEL_KEY,
     DEX_CONTRACT_ZKAS_SET_TRANSPARENCY_NS_V2,
 };

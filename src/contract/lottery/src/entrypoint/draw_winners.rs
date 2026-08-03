@@ -24,7 +24,6 @@
 //! DrawWinnersV1 Implementation
 
 use dwow_sdk::{crypto::pasta_prelude::PrimeField, error::ContractError, msg, pasta::pallas, wasm};
-use dwow_serial::deserialize;
 
 use crate::error::LotteryError;
 use crate::model::{draw_winning_numbers, DrawWinnersParamsV1, DrawWinnersUpdateV1, LotteryState};

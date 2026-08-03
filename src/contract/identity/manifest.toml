@@ -183,38 +183,6 @@ description = "Issuer reputation scores"
 name = "identity_info"
 description = "Contract metadata"
 
-[[circuits]]
-name = "IssueCredential_V1"
-namespace = "identity"
-
-[[circuits]]
-name = "CreateClaim_V1"
-namespace = "identity"
-
-[[circuits]]
-name = "CreateClaim_V1_L1"
-namespace = "identity"
-
-[[circuits]]
-name = "CreateClaim_V1_L1_V2"
-namespace = "identity"
-
-[[circuits]]
-name = "CreateClaim_V1_DAG"
-namespace = "identity"
-
-[[circuits]]
-name = "CreateClaim_V1_Multi"
-namespace = "identity"
-
-[[circuits]]
-name = "CreateClaim_V1_Ratio"
-namespace = "identity"
-
-[[circuits]]
-name = "VerifyCapability_V1"
-namespace = "identity"
-
 # V2 circuits (HAZOP RC3: domain separation)
 [[circuits]]
 name = "IssueCredential_V2"

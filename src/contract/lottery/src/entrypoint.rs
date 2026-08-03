@@ -30,7 +30,6 @@ use dwow_sdk::{
     pasta::pallas, wasm, ContractCall,
 };
 use dwow_serial::{deserialize, Encodable};
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
 use pasta_curves::group::Curve;
 use pasta_curves::arithmetic::CurveAffine;
 
@@ -51,9 +50,9 @@ dwow_sdk::define_contract!(
 fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Embed zkas circuits (V2 only — V1 binaries removed, rc3 Batch 4)
 
-    let commit_ticket_v2_bincode = include_bytes!("../proof/commit_ticket_v2.zk.bin");
+    let commit_ticket_v2_bincode = include_bytes!("../proof/commit_ticket.zk.bin");
     wasm::db::zkas_db_set(&commit_ticket_v2_bincode[..])?;
-    let reveal_ticket_v2_bincode = include_bytes!("../proof/reveal_ticket_v2.zk.bin");
+    let reveal_ticket_v2_bincode = include_bytes!("../proof/reveal_ticket.zk.bin");
     wasm::db::zkas_db_set(&reveal_ticket_v2_bincode[..])?;
 
     // Initialize database trees
@@ -183,16 +182,16 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
 }
 
 // Modules for function implementations
-mod initialize_v1;
-mod buy_ticket_v1;
-mod draw_winners_v1;
-mod reveal_ticket_v1;
-mod claim_prize_v1;
-mod expire_lottery_v1;
+mod initialize;
+mod buy_ticket;
+mod draw_winners;
+mod reveal_ticket;
+mod claim_prize;
+mod expire_lottery;
 
-use initialize_v1::*;
-use buy_ticket_v1::*;
-use draw_winners_v1::*;
-use reveal_ticket_v1::*;
-use claim_prize_v1::*;
-use expire_lottery_v1::*;
+use initialize::*;
+use buy_ticket::*;
+use draw_winners::*;
+use reveal_ticket::*;
+use claim_prize::*;
+use expire_lottery::*;

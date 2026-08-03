@@ -33,7 +33,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm,
 };
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::Encodable;
 
 use crate::error::InsuranceMarketError;
 use crate::model::{

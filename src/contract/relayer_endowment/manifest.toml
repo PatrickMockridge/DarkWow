@@ -9,13 +9,13 @@ dependencies = ["promissory_note", "native_token_v1"]
 name = "initialize"
 code = 0
 requires_proof = true
-proof_circuit = "Initialize_V1"
+proof_circuit = "Initialize_V2"
 
 [[functions]]
 name = "deploy_capital"
 code = 1
 requires_proof = true
-proof_circuit = "DeployCapital_V1"
+proof_circuit = "DeployCapital_V2"
 
 [[functions]]
 name = "withdraw_deployment"
@@ -25,7 +25,7 @@ code = 2
 name = "claim_relayer_fees"
 code = 3
 requires_proof = true
-proof_circuit = "ClaimFees_V1"
+proof_circuit = "ClaimFees_V2"
 
 [[functions]]
 name = "settle_fees"
@@ -66,13 +66,13 @@ name = "endowment_fees"
 name = "relayer_endowment_info"
 
 [[circuits]]
-name = "Initialize_V1"
+name = "Initialize_V2"
 namespace = "relayer_endowment"
 
 [[circuits]]
-name = "DeployCapital_V1"
+name = "DeployCapital_V2"
 namespace = "relayer_endowment"
 
 [[circuits]]
-name = "ClaimFees_V1"
+name = "ClaimFees_V2"
 namespace = "relayer_endowment"

@@ -191,25 +191,25 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
 
 
     // V2 circuits (HAZOP RC3: domain separation)
-    let init_v2_bincode = include_bytes!("../proof/init_v2.zk.bin");
+    let init_v2_bincode = include_bytes!("../proof/init.zk.bin");
     wasm::db::zkas_db_set(&init_v2_bincode[..])?;
-    let open_position_v2_bincode = include_bytes!("../proof/open_position_v2.zk.bin");
+    let open_position_v2_bincode = include_bytes!("../proof/open_position.zk.bin");
     wasm::db::zkas_db_set(&open_position_v2_bincode[..])?;
-    let add_collateral_v2_bincode = include_bytes!("../proof/add_collateral_v2.zk.bin");
+    let add_collateral_v2_bincode = include_bytes!("../proof/add_collateral.zk.bin");
     wasm::db::zkas_db_set(&add_collateral_v2_bincode[..])?;
-    let remove_collateral_v2_bincode = include_bytes!("../proof/remove_collateral_v2.zk.bin");
+    let remove_collateral_v2_bincode = include_bytes!("../proof/remove_collateral.zk.bin");
     wasm::db::zkas_db_set(&remove_collateral_v2_bincode[..])?;
-    let mint_stable_v2_bincode = include_bytes!("../proof/mint_stable_v2.zk.bin");
+    let mint_stable_v2_bincode = include_bytes!("../proof/mint_stable.zk.bin");
     wasm::db::zkas_db_set(&mint_stable_v2_bincode[..])?;
-    let repay_stable_v2_bincode = include_bytes!("../proof/repay_stable_v2.zk.bin");
+    let repay_stable_v2_bincode = include_bytes!("../proof/repay_stable.zk.bin");
     wasm::db::zkas_db_set(&repay_stable_v2_bincode[..])?;
-    let liquidate_v2_bincode = include_bytes!("../proof/liquidate_v2.zk.bin");
+    let liquidate_v2_bincode = include_bytes!("../proof/liquidate.zk.bin");
     wasm::db::zkas_db_set(&liquidate_v2_bincode[..])?;
-    let governance_report_v2_bincode = include_bytes!("../proof/governance_report_v2.zk.bin");
+    let governance_report_v2_bincode = include_bytes!("../proof/governance_report.zk.bin");
     wasm::db::zkas_db_set(&governance_report_v2_bincode[..])?;
-    let accrue_interest_v2_bincode = include_bytes!("../proof/accrue_interest_v2.zk.bin");
+    let accrue_interest_v2_bincode = include_bytes!("../proof/accrue_interest.zk.bin");
     wasm::db::zkas_db_set(&accrue_interest_v2_bincode[..])?;
-    let update_config_v2_bincode = include_bytes!("../proof/update_config_v2.zk.bin");
+    let update_config_v2_bincode = include_bytes!("../proof/update_config.zk.bin");
     wasm::db::zkas_db_set(&update_config_v2_bincode[..])?;
 
     Ok(())

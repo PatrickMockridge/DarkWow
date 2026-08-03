@@ -58,7 +58,7 @@ use dwow_sdk::{
     pasta::{group::GroupEncoding, pallas},
 };
 use dwow_promissory_note_contract::validation::validate_child_contract_id;
-use dwow_serial::{deserialize, serialize, Decodable, Encodable, SerialDecodable, SerialEncodable, WriteExt};
+use dwow_serial::{deserialize, Decodable, Encodable, WriteExt};
 
 use crate::{
     error::BridgeError,
@@ -68,7 +68,7 @@ use crate::{
         ClaimHtlcParams, ClaimHtlcUpdateV1,
         CreateHtlcParams, CreateHtlcUpdateV1, Deposit, DepositParams,
         ExecuteGuaranteedWithdrawParams, ExecuteGuaranteedWithdrawUpdateV1,
-        ExternalChain, ExternalChainProof, GovernanceReportParams, GovernanceReportUpdateV1,
+        ExternalChain, GovernanceReportParams, GovernanceReportUpdateV1,
         HtlcSwapInfo, HtlcSwapState, PendingWithdrawal,
         ReassignWithdrawalParamsV1, ReassignWithdrawalUpdateV1,
         RefundHtlcParams, RefundHtlcUpdateV1, RegisterFeeScheduleParams,
@@ -77,9 +77,8 @@ use crate::{
         UpdateConfigParams, Withdrawal, WithdrawParams,
         XmrDepositProof, ZcashDepositProof, AztecDepositProof, LitecoinDepositProof,
     },
-    BridgeFunction, BRIDGE_CONTRACT_DEPOSITS_TREE, BRIDGE_CONTRACT_GOVERNANCE_PUBKEY_KEY,
+    BridgeFunction, BRIDGE_CONTRACT_DEPOSITS_TREE,
     BRIDGE_CONTRACT_GOVERNANCE_REPORTS_TREE, BRIDGE_CONTRACT_INFO_TREE,
-    BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V1, BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V1,
     BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V2, BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V2,
     BRIDGE_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2,
     BRIDGE_CONTRACT_ZKAS_CLAIM_HTLC_NS_V2, BRIDGE_CONTRACT_ZKAS_CANCEL_WITHDRAW_NS_V2,
@@ -184,25 +183,25 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
 
 
     // V2 circuits (HAZOP RC3: domain separation)
-    let deposit_v2_bincode = include_bytes!("../proof/deposit_v2.zk.bin");
+    let deposit_v2_bincode = include_bytes!("../proof/deposit.zk.bin");
     wasm::db::zkas_db_set(&deposit_v2_bincode[..])?;
-    let withdraw_v2_bincode = include_bytes!("../proof/withdraw_v2.zk.bin");
+    let withdraw_v2_bincode = include_bytes!("../proof/withdraw.zk.bin");
     wasm::db::zkas_db_set(&withdraw_v2_bincode[..])?;
-    let update_config_v2_bincode = include_bytes!("../proof/update_config_v2.zk.bin");
+    let update_config_v2_bincode = include_bytes!("../proof/update_config.zk.bin");
     wasm::db::zkas_db_set(&update_config_v2_bincode[..])?;
 
     // HAZOP WP-BRIDGE: new operation ZK circuits (5 circuits for previously unverified ops)
 
     // HAZOP Build 2: V2 counterparts for bridge WP-BRIDGE circuits
-    let accept_withdrawal_v2_bincode = include_bytes!("../proof/accept_withdrawal_v2.zk.bin");
+    let accept_withdrawal_v2_bincode = include_bytes!("../proof/accept_withdrawal.zk.bin");
     wasm::db::zkas_db_set(&accept_withdrawal_v2_bincode[..])?;
-    let cancel_withdraw_v2_bincode = include_bytes!("../proof/cancel_withdraw_v2.zk.bin");
+    let cancel_withdraw_v2_bincode = include_bytes!("../proof/cancel_withdraw.zk.bin");
     wasm::db::zkas_db_set(&cancel_withdraw_v2_bincode[..])?;
-    let claim_htlc_v2_bincode = include_bytes!("../proof/claim_htlc_v2.zk.bin");
+    let claim_htlc_v2_bincode = include_bytes!("../proof/claim_htlc.zk.bin");
     wasm::db::zkas_db_set(&claim_htlc_v2_bincode[..])?;
-    let execute_gw_v2_bincode = include_bytes!("../proof/execute_guaranteed_withdraw_v2.zk.bin");
+    let execute_gw_v2_bincode = include_bytes!("../proof/execute_guaranteed_withdraw.zk.bin");
     wasm::db::zkas_db_set(&execute_gw_v2_bincode[..])?;
-    let refund_htlc_v2_bincode = include_bytes!("../proof/refund_htlc_v2.zk.bin");
+    let refund_htlc_v2_bincode = include_bytes!("../proof/refund_htlc.zk.bin");
     wasm::db::zkas_db_set(&refund_htlc_v2_bincode[..])?;
 
     // Initialize info tree

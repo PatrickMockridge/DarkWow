@@ -33,12 +33,12 @@ use crate::{
 };
 
 /// `Deployooor::Deploy` functions
-mod deploy_v1;
-use deploy_v1::{deploy_get_metadata_v1, deploy_process_instruction_v1, deploy_process_update_v1};
+mod deploy;
+use deploy::{deploy_get_metadata_v1, deploy_process_instruction_v1, deploy_process_update_v1};
 
 /// `Deployooor::Lock` functions
-mod lock_v1;
-use lock_v1::{lock_get_metadata_v1, lock_process_instruction_v1, lock_process_update_v1};
+mod lock;
+use lock::{lock_get_metadata_v1, lock_process_instruction_v1, lock_process_update_v1};
 
 dwow_sdk::define_contract!(
     init: init_contract,

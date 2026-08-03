@@ -43,9 +43,9 @@ pub struct MultiSigHarness {
 
 impl MultiSigHarness {
     pub fn spawn() -> Self {
-        let cg = include_bytes!("../../../multisig/proof/create_group_v2.zk.bin");
-        let fi = include_bytes!("../../../multisig/proof/finalize_v2.zk.bin");
-        let si = include_bytes!("../../../multisig/proof/sign_v2.zk.bin");
+        let cg = include_bytes!("../../../multisig/proof/create_group.zk.bin");
+        let fi = include_bytes!("../../../multisig/proof/finalize.zk.bin");
+        let si = include_bytes!("../../../multisig/proof/sign.zk.bin");
         let cg_zk = ZkBinary::decode(cg, false).unwrap();
         let fi_zk = ZkBinary::decode(fi, false).unwrap();
         let si_zk = ZkBinary::decode(si, false).unwrap();

@@ -1798,6 +1798,107 @@ All 14 verification items **RESOLVED**:
 
 ---
 
+## Naming Conventions — Circuits, Manifests, and Entrypoints
+
+The V1→V2 circuit migration (HAZOP RC3 domain separation, May 2026) and the
+subsequent naming consolidation exercise (August 2026) established these
+conventions. Every rule below prevents a specific class of bug that was
+discovered during these efforts. For the full V1→V2 migration rationale,
+see [Circuit Versioning](../../arch/circuit-versioning.md).
+
+### 1. Circuit source filenames carry no version suffix
+
+`.zk` source files are named for the function they prove: `mint.zk`,
+`deposit.zk`, `create_swap.zk`. The circuit version is declared inside the
+file (`circuit "Mint_V2"`), not in the filename.
+
+**Why:** When V1 circuits were deleted during the HAZOP migration, the `.zk`
+filenames stayed the same — only the circuit body changed. Putting the
+version in the filename (`mint_v2.zk`) would have required renaming the file,
+which cascades to Makefile rules, include_bytes! paths, and every tool that
+references that path. The filename describes the function; the circuit inside
+declares which version it is.
+
+### 2. include_bytes! paths must match Makefile output exactly
+
+The Makefile produces `.zk.bin` with the same stem as the `.zk` source file:
+`proof/mint.zk` → `proof/mint.zk.bin`. include_bytes! paths must reference
+the exact filename produced by the build. No version markers in the path.
+
+**Why:** During consolidation, 327 include_bytes! calls referenced
+`_v2.zk.bin` paths that the Makefile never produces. The Makefile uses
+`$(ZK_SRC:.zk=.zk.bin)` — a direct stem-for-stem substitution. Any
+include_bytes! path that adds, removes, or changes any part of the stem
+will fail at compile time with "No such file or directory."
+
+### 3. Circuit names inside .zk files use V2 suffix
+
+Circuit declarations use either `CamelCaseV2` (e.g., `IssueCredentialV2`,
+`DepositV2`) or `Snake_Case_V2` (e.g., `Mint_V2`, `CommitBet_V2`). The
+convention depends on the contract — use whichever style the contract
+already uses, never mix within a single contract.
+
+**Why:** The V2 suffix distinguishes domain-separated circuits from their
+deleted V1 originals. All circuits on disk are V2. A future V3 circuit
+would use a V3 suffix. The suffix is part of the circuit identity — it
+tells you which hardening pass this circuit belongs to.
+
+### 4. Manifest circuit entries match .zk circuit names exactly
+
+`[[circuits]].name` must be identical to the .zk `circuit` declaration string.
+`[[functions]].proof_circuit` must match a declared `[[circuits]].name`.
+The `namespace` field is the contract name (e.g., `"native_token"`).
+
+**Why:** The wallet's generic prover loads circuits by `(ContractId,
+namespace, name)`. A mismatch between the manifest's `name` and the .zk
+circuit declaration causes a lookup failure at proof-generation time.
+During consolidation, manifests were found to reference V1 circuit names
+that no longer exist on disk — the entries were stale by over 3 months.
+
+### 5. Rust namespace constants match .zk circuit names exactly
+
+`pub const CONTRACT_ZKAS_<FUNCTION>_NS_V2: &str = "CircuitNameV2";` must
+reproduce the .zk circuit declaration string character-for-character.
+
+**Why:** These constants are the lookup key used by the contract entrypoint
+to verify ZK proofs. A mismatch means the entrypoint verifies a proof
+against the wrong circuit, or fails to find the circuit at all. During
+consolidation, ~70 V1 namespace constants were found pointing to circuits
+that don't exist — pure dead code that had no effect but disguised which
+circuit was actually in use.
+
+### 6. Enum variants and model types carry V1 as the contract API version
+
+`FeeV1 = 0x00`, `FeeParamsV1`, `CreateSwapParamsV1` — the V1 suffix on
+Rust types is the contract function interface version, NOT the circuit
+version. The function `FeeV1` uses circuit `Fee_V2` — the mapping is
+declared in the manifest, not encoded in the type name.
+
+**Why:** The contract API version and the circuit version are independent
+layers. The API version changes when the function's semantics, parameters,
+or opcode meaning change. The circuit version changes when the ZK proof
+is hardened. They can change independently — a function can keep its V1
+API while its circuit advances to V2, V3, etc. Confusing these two
+layers led to the catastrophic rename attempts that preceded this
+consolidation.
+
+### 7. Entrypoint module filenames carry no version suffix
+
+Module files in `entrypoint/` are named without `_v1`: `commit_bet.rs`,
+not `commit_bet_v1.rs`. The functions inside still use `_v1` naming
+(e.g., `baccarat_commit_bet_process_instruction_v1`), matching the
+contract API version.
+
+**Why:** During a prior refactoring, 39 module files were renamed to drop
+the `_v1` suffix but the corresponding `mod` declarations and `use`
+statements were never updated. This left 6 contracts unable to compile
+for an unknown period. The filename describes which function the module
+handles; the function names inside carry the API version. Keeping the
+module filename suffix-free prevents the class of bug where a file rename
+is not propagated to the mod declaration.
+
+---
+
 - [NativeToken](./native_token.md) — Consensus token with zero business logic
 - [Standards](./standards.md) — ZK circuit, token, and testing standards
 - [Composability](../../contract/composability.md) — Cross-contract child call patterns

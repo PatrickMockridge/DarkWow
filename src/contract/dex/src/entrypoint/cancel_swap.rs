@@ -46,7 +46,6 @@
 //! - The contract verifies nullifiers against on-chain state to prevent double-cancellation
 //! - Determining WHO is cancelling (proposer vs acceptor) requires checking which nullifier matches
 
-use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, ContractId},
     dark_tree::DarkLeaf,

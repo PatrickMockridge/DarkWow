@@ -58,16 +58,13 @@ use dwow_serial::{deserialize, Encodable};
 use crate::{
     error::AuctionError,
     model::{
-        Auction, AuctionState, Bid, BidState, BidId, ClaimWinningsParamsV1,
+        Auction, AuctionState, Bid, BidState, ClaimWinningsParamsV1,
         ClaimWinningsUpdateV1, CloseAuctionParamsV1, CloseAuctionUpdateV1,
         CreateAuctionParamsV1, CreateAuctionUpdateV1, PlaceBidParamsV1, PlaceBidUpdateV1,
         RefundBidParamsV1, RefundBidUpdateV1, SettleAuctionParamsV1, SettleAuctionUpdateV1,
     },
     AuctionFunction, AUCTION_CONTRACT_AUCTIONS_TREE, AUCTION_CONTRACT_BIDS_TREE,
     AUCTION_CONTRACT_INFO_TREE, AUCTION_CONTRACT_NULLIFIERS_TREE,
-    AUCTION_CONTRACT_ZKAS_CREATE_NS_V1, AUCTION_CONTRACT_ZKAS_PLACE_BID_NS_V1,
-    AUCTION_CONTRACT_ZKAS_CLOSE_NS_V1, AUCTION_CONTRACT_ZKAS_CLAIM_WINNINGS_NS_V1,
-    AUCTION_CONTRACT_ZKAS_SETTLE_NS_V1, AUCTION_CONTRACT_ZKAS_REFUND_BID_NS_V1,
     AUCTION_CONTRACT_ZKAS_CREATE_NS_V2, AUCTION_CONTRACT_ZKAS_PLACE_BID_NS_V2,
     AUCTION_CONTRACT_ZKAS_CLOSE_NS_V2, AUCTION_CONTRACT_ZKAS_CLAIM_WINNINGS_NS_V2,
     AUCTION_CONTRACT_ZKAS_SETTLE_NS_V2, AUCTION_CONTRACT_ZKAS_REFUND_BID_NS_V2,
@@ -95,12 +92,12 @@ dwow_sdk::define_contract!(
 pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[auction::init_contract] Initializing auction contract");
 
-    let create_auction_v1_bincode = include_bytes!("../proof/create_auction_v2.zk.bin");
-    let place_bid_v1_bincode = include_bytes!("../proof/place_bid_v2.zk.bin");
-    let close_auction_v1_bincode = include_bytes!("../proof/close_auction_v2.zk.bin");
-    let refund_bid_v1_bincode = include_bytes!("../proof/refund_bid_v2.zk.bin");
-    let claim_winnings_v1_bincode = include_bytes!("../proof/claim_winnings_v2.zk.bin");
-    let settle_auction_v1_bincode = include_bytes!("../proof/settle_auction_v2.zk.bin");
+    let _create_auction_v1_bincode = include_bytes!("../proof/create_auction.zk.bin");
+    let _place_bid_v1_bincode = include_bytes!("../proof/place_bid.zk.bin");
+    let _close_auction_v1_bincode = include_bytes!("../proof/close_auction.zk.bin");
+    let _refund_bid_v1_bincode = include_bytes!("../proof/refund_bid.zk.bin");
+    let _claim_winnings_v1_bincode = include_bytes!("../proof/claim_winnings.zk.bin");
+    let _settle_auction_v1_bincode = include_bytes!("../proof/settle_auction.zk.bin");
 
 
     // Initialize info tree

@@ -9,31 +9,31 @@ dependencies = ["promissory_note", "native_token_v1"]
 name = "initialize"
 code = 0
 requires_proof = true
-proof_circuit = "Init_V1"
+proof_circuit = "Init_V2"
 
 [[functions]]
 name = "stake"
 code = 1
 requires_proof = true
-proof_circuit = "Stake_V1"
+proof_circuit = "Stake_V2"
 
 [[functions]]
 name = "unstake"
 code = 2
 requires_proof = true
-proof_circuit = "Unstake_V1"
+proof_circuit = "Unstake_V2"
 
 [[functions]]
 name = "claim_earnings"
 code = 3
 requires_proof = true
-proof_circuit = "Claim_V1"
+proof_circuit = "Claim_V2"
 
 [[functions]]
 name = "update_risk"
 code = 4
 requires_proof = true
-proof_circuit = "UpdateRisk_V1"
+proof_circuit = "UpdateRisk_V2"
 
 [[capabilities]]
 discriminant = 0
@@ -53,21 +53,21 @@ name = "staking_earnings"
 name = "info"
 
 [[circuits]]
-name = "Init_V1"
+name = "Init_V2"
 namespace = "betting_stake"
 
 [[circuits]]
-name = "Stake_V1"
+name = "Stake_V2"
 namespace = "betting_stake"
 
 [[circuits]]
-name = "Unstake_V1"
+name = "Unstake_V2"
 namespace = "betting_stake"
 
 [[circuits]]
-name = "Claim_V1"
+name = "Claim_V2"
 namespace = "betting_stake"
 
 [[circuits]]
-name = "UpdateRisk_V1"
+name = "UpdateRisk_V2"
 namespace = "betting_stake"

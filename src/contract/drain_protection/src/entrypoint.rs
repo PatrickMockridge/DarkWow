@@ -126,23 +126,23 @@ pub fn init_contract(cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractR
 
 
     // V2 circuits (HAZOP RC3: domain separation)
-    let execute_v2_bincode = include_bytes!("../proof/execute_v2.zk.bin");
+    let execute_v2_bincode = include_bytes!("../proof/execute.zk.bin");
     wasm::db::zkas_db_set(&execute_v2_bincode[..])?;
-    let exit_v2_bincode = include_bytes!("../proof/exit_v2.zk.bin");
+    let exit_v2_bincode = include_bytes!("../proof/exit.zk.bin");
     wasm::db::zkas_db_set(&exit_v2_bincode[..])?;
-    let initialize_v2_bincode = include_bytes!("../proof/initialize_v2.zk.bin");
+    let initialize_v2_bincode = include_bytes!("../proof/initialize.zk.bin");
     wasm::db::zkas_db_set(&initialize_v2_bincode[..])?;
-    let lock_v2_bincode = include_bytes!("../proof/lock_v2.zk.bin");
+    let lock_v2_bincode = include_bytes!("../proof/lock.zk.bin");
     wasm::db::zkas_db_set(&lock_v2_bincode[..])?;
-    let propose_v2_bincode = include_bytes!("../proof/propose_v2.zk.bin");
+    let propose_v2_bincode = include_bytes!("../proof/propose.zk.bin");
     wasm::db::zkas_db_set(&propose_v2_bincode[..])?;
-    let transfer_v2_bincode = include_bytes!("../proof/transfer_v2.zk.bin");
+    let transfer_v2_bincode = include_bytes!("../proof/transfer.zk.bin");
     wasm::db::zkas_db_set(&transfer_v2_bincode[..])?;
-    let unlock_v2_bincode = include_bytes!("../proof/unlock_v2.zk.bin");
+    let unlock_v2_bincode = include_bytes!("../proof/unlock.zk.bin");
     wasm::db::zkas_db_set(&unlock_v2_bincode[..])?;
-    let update_config_v2_bincode = include_bytes!("../proof/update_config_v2.zk.bin");
+    let update_config_v2_bincode = include_bytes!("../proof/update_config.zk.bin");
     wasm::db::zkas_db_set(&update_config_v2_bincode[..])?;
-    let vote_v2_bincode = include_bytes!("../proof/vote_v2.zk.bin");
+    let vote_v2_bincode = include_bytes!("../proof/vote.zk.bin");
     wasm::db::zkas_db_set(&vote_v2_bincode[..])?;
 
     Ok(())
@@ -389,7 +389,7 @@ fn vote_process_instruction_v1(
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[VoteV1] Casting vote on proposal");
 
-    let proposals_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE)?;
+    let _proposals_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE)?;
     let votes_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_VOTES_TREE)?;
 
     // MultiSig composition: voting is MultiSig::SignV1.
@@ -415,7 +415,7 @@ fn execute_process_instruction_v1(
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[ExecuteV1] Executing proposal");
 
-    let proposals_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE)?;
+    let _proposals_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE)?;
     let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
 
     // MultiSig composition: execute validates fund's multisig_group_id is configured.

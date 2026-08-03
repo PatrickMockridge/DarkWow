@@ -13,7 +13,7 @@ code = 0
 name = "commit_bet"
 code = 1
 requires_proof = true
-proof_circuit = "CommitBet_V1"
+proof_circuit = "CommitBet_V2"
 
 [[functions]]
 name = "draw_cards"
@@ -23,7 +23,7 @@ code = 2
 name = "settle_bet"
 code = 3
 requires_proof = true
-proof_circuit = "SettleBet_V1"
+proof_circuit = "SettleBet_V2"
 
 [[functions]]
 name = "house_close"
@@ -52,9 +52,9 @@ name = "info"
 name = "house"
 
 [[circuits]]
-name = "CommitBet_V1"
+name = "CommitBet_V2"
 namespace = "baccarat"
 
 [[circuits]]
-name = "SettleBet_V1"
+name = "SettleBet_V2"
 namespace = "baccarat"

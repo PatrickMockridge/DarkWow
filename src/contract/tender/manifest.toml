@@ -11,19 +11,19 @@ dependencies = ["promissory_note", "native_token_v1"]
 name = "create_tender"
 code = 0
 requires_proof = true
-proof_circuit = "CreateTender_V1"
+proof_circuit = "CreateTender_V2"
 
 [[functions]]
 name = "submit_bid"
 code = 1
 requires_proof = true
-proof_circuit = "SubmitBid_V1"
+proof_circuit = "SubmitBid_V2"
 
 [[functions]]
 name = "reveal_bid"
 code = 2
 requires_proof = true
-proof_circuit = "RevealBid_V1"
+proof_circuit = "RevealBid_V2"
 
 [[functions]]
 name = "close_tender"
@@ -33,7 +33,7 @@ code = 3
 name = "select_winner"
 code = 4
 requires_proof = true
-proof_circuit = "SelectWinner_V1"
+proof_circuit = "SelectWinner_V2"
 
 [[functions]]
 name = "cancel_tender"
@@ -51,7 +51,7 @@ code = 7
 name = "submit_bid_with_capability"
 code = 8
 requires_proof = true
-proof_circuit = "SubmitBidWithCapability_V1"
+proof_circuit = "SubmitBidWithCapability_V2"
 
 [[trees]]
 name = "tenders"
@@ -66,21 +66,21 @@ name = "nullifiers"
 name = "info"
 
 [[circuits]]
-name = "CreateTender_V1"
+name = "CreateTender_V2"
 namespace = "tender"
 
 [[circuits]]
-name = "SubmitBid_V1"
+name = "SubmitBid_V2"
 namespace = "tender"
 
 [[circuits]]
-name = "RevealBid_V1"
+name = "RevealBid_V2"
 namespace = "tender"
 
 [[circuits]]
-name = "SelectWinner_V1"
+name = "SelectWinner_V2"
 namespace = "tender"
 
 [[circuits]]
-name = "SubmitBidWithCapability_V1"
+name = "SubmitBidWithCapability_V2"
 namespace = "tender"

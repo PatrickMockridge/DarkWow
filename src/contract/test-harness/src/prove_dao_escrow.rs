@@ -79,7 +79,7 @@ fn run_init(args: &[String]) {
     let bulla_blind = parse_hex_to_base(&args[3]).expect("Invalid bulla_blind hex");
 
     // Load circuit binary
-    let init_bin = include_bytes!("../../dao_escrow/proof/init_v2.zk.bin");
+    let init_bin = include_bytes!("../../dao_escrow/proof/init.zk.bin");
     let zkbin = ZkBinary::decode(init_bin, false).unwrap();
 
     let circuit = ZkCircuit::new(dwow_core::zk::empty_witnesses(&zkbin).unwrap(), &zkbin);
@@ -117,7 +117,7 @@ fn run_pay_premium(args: &[String]) {
     let expiry: u64 = args[4].parse().expect("Invalid expiry");
 
     // Load circuit binary
-    let pay_premium_bin = include_bytes!("../../dao_escrow/proof/pay_premium_v2.zk.bin");
+    let pay_premium_bin = include_bytes!("../../dao_escrow/proof/pay_premium.zk.bin");
     let zkbin = ZkBinary::decode(pay_premium_bin, false).unwrap();
 
     let circuit = ZkCircuit::new(dwow_core::zk::empty_witnesses(&zkbin).unwrap(), &zkbin);

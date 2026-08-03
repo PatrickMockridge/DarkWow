@@ -29,7 +29,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_serial::{deserialize, Encodable};
+use dwow_serial::Encodable;
 
 use crate::{
     error::DeployError,
@@ -44,7 +44,7 @@ pub(crate) fn lock_get_metadata_v1(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx];
-    let params= LockParamsV1::decode(&self_.data.data[1..])?;
+    let _params= LockParamsV1::decode(&self_.data.data[1..])?;
 
     // Public inputs for the ZK proofs we have to verify
     let zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];

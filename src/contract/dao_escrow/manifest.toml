@@ -77,7 +77,7 @@ code = 13
 name = "set_governance_config"
 code = 14
 requires_proof = true
-proof_circuit = "SetGovernanceConfigV1"
+proof_circuit = "SetGovernanceConfigV2"
 
 [[functions]]
 name = "set_governance_active"
@@ -131,30 +131,6 @@ name = "nullifiers"
 
 [[trees]]
 name = "governance"
-
-[[circuits]]
-name = "Init_V1"
-namespace = "dao_escrow"
-
-[[circuits]]
-name = "PayPremium_V1"
-namespace = "dao_escrow"
-
-[[circuits]]
-name = "ProposeClaim_V1"
-namespace = "dao_escrow"
-
-[[circuits]]
-name = "VoteClaim_V1"
-namespace = "dao_escrow"
-
-[[circuits]]
-name = "VerifyMemberCapability_V1"
-namespace = "dao_escrow"
-
-[[circuits]]
-name = "ResolveDispute_V1"
-namespace = "dao_escrow"
 
 # V2 circuits (HAZOP RC3: domain separation)
 [[circuits]]

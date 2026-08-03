@@ -31,7 +31,6 @@ use dwow_sdk::{
     msg,
     wasm,
 };
-use dwow_serial::{deserialize, serialize};
 
 use crate::error::InsuranceMarketError;
 use crate::model::{

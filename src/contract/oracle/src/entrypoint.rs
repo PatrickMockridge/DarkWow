@@ -54,11 +54,6 @@ use crate::{
     },
     OracleFunction, ORACLE_CONTRACT_ATTESTATIONS_TREE, ORACLE_CONTRACT_INFO_TREE,
     ORACLE_CONTRACT_ORACLES_TREE,
-    ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V1,
-    ORACLE_CONTRACT_ZKAS_PUSH_VALUE_NS_V1,
-    ORACLE_CONTRACT_ZKAS_ATTEST_VALUE_NS_V1,
-    ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V1,
-    ORACLE_CONTRACT_ZKAS_AGGREGATE_NS_V1,
     ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V2,
     ORACLE_CONTRACT_ZKAS_PUSH_VALUE_NS_V2,
     ORACLE_CONTRACT_ZKAS_ATTEST_VALUE_NS_V2,
@@ -95,15 +90,15 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
 
     // Register V2 circuits (domain separation, HAZOP RC3)
-    let aggregate_v2_bincode = include_bytes!("../proof/aggregate_v2.zk.bin");
+    let aggregate_v2_bincode = include_bytes!("../proof/aggregate.zk.bin");
     wasm::db::zkas_db_set(&aggregate_v2_bincode[..])?;
-    let attest_value_v2_bincode = include_bytes!("../proof/attest_value_v2.zk.bin");
+    let attest_value_v2_bincode = include_bytes!("../proof/attest_value.zk.bin");
     wasm::db::zkas_db_set(&attest_value_v2_bincode[..])?;
-    let push_value_commitment_v2_bincode = include_bytes!("../proof/push_value_commitment_v2.zk.bin");
+    let push_value_commitment_v2_bincode = include_bytes!("../proof/push_value_commitment.zk.bin");
     wasm::db::zkas_db_set(&push_value_commitment_v2_bincode[..])?;
-    let push_value_v2_bincode = include_bytes!("../proof/push_value_v2.zk.bin");
+    let push_value_v2_bincode = include_bytes!("../proof/push_value.zk.bin");
     wasm::db::zkas_db_set(&push_value_v2_bincode[..])?;
-    let register_oracle_v2_bincode = include_bytes!("../proof/register_oracle_v2.zk.bin");
+    let register_oracle_v2_bincode = include_bytes!("../proof/register_oracle.zk.bin");
     wasm::db::zkas_db_set(&register_oracle_v2_bincode[..])?;
 
     Ok(())

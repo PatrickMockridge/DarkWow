@@ -9,13 +9,13 @@ dependencies = ["promissory_note", "native_token_v1"]
 name = "create_pool"
 code = 0
 requires_proof = true
-proof_circuit = "CreatePool_V1"
+proof_circuit = "CreatePool_V2"
 
 [[functions]]
 name = "join_pool"
 code = 1
 requires_proof = true
-proof_circuit = "JoinPool_V1"
+proof_circuit = "JoinPool_V2"
 
 [[functions]]
 name = "leave_pool"
@@ -25,7 +25,7 @@ code = 2
 name = "allocate_coverage"
 code = 3
 requires_proof = true
-proof_circuit = "AllocateCoverage_V1"
+proof_circuit = "AllocateCoverage_V2"
 
 [[functions]]
 name = "release_coverage"
@@ -35,7 +35,7 @@ code = 4
 name = "slash_coverage"
 code = 5
 requires_proof = true
-proof_circuit = "SlashCoverage_V1"
+proof_circuit = "SlashCoverage_V2"
 
 [[functions]]
 name = "claim_fees"
@@ -70,17 +70,17 @@ name = "pool_fees"
 name = "pool_stake_info"
 
 [[circuits]]
-name = "CreatePool_V1"
+name = "CreatePool_V2"
 namespace = "pool_stake"
 
 [[circuits]]
-name = "JoinPool_V1"
+name = "JoinPool_V2"
 namespace = "pool_stake"
 
 [[circuits]]
-name = "AllocateCoverage_V1"
+name = "AllocateCoverage_V2"
 namespace = "pool_stake"
 
 [[circuits]]
-name = "SlashCoverage_V1"
+name = "SlashCoverage_V2"
 namespace = "pool_stake"

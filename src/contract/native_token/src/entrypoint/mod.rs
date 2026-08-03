@@ -98,10 +98,10 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
 
     // V2 circuits (HAZOP H11: domain separation, M8: coin_public binding)
-    let mint_v2_bincode = include_bytes!("../../proof/mint_v2.zk.bin");
-    let burn_v2_bincode = include_bytes!("../../proof/burn_v2.zk.bin");
-    let fee_v2_bincode = include_bytes!("../../proof/fee_v2.zk.bin");
-    let fee_collect_v2_bincode = include_bytes!("../../proof/fee_collect_v2.zk.bin");
+    let mint_v2_bincode = include_bytes!("../../proof/mint.zk.bin");
+    let burn_v2_bincode = include_bytes!("../../proof/burn.zk.bin");
+    let fee_v2_bincode = include_bytes!("../../proof/fee.zk.bin");
+    let fee_collect_v2_bincode = include_bytes!("../../proof/fee_collect.zk.bin");
     wasm::db::zkas_db_set(&mint_v2_bincode[..])?;
     wasm::db::zkas_db_set(&burn_v2_bincode[..])?;
     wasm::db::zkas_db_set(&fee_v2_bincode[..])?;

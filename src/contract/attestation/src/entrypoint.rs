@@ -45,7 +45,7 @@ use dwow_sdk::{
     pasta::pallas::{self, Base},
     wasm, ContractCall,
 };
-use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_serial::{deserialize, Encodable};
 
 use crate::{
     model::{
@@ -65,8 +65,6 @@ use crate::{
     ATTESTATION_CONTRACT_CLAIMS_TREE, ATTESTATION_CONTRACT_DELEGATIONS_TREE,
     ATTESTATION_CONTRACT_INDEX_TREE,
     ATTESTATION_CONTRACT_NULLIFIERS_TREE, ATTESTATION_CONTRACT_RATE_LIMIT_TREE,
-    ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V1,
-    ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V1,
     ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V2,
     ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V2,
     ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V2,
@@ -77,14 +75,6 @@ use crate::{
     ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V2,
     ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V2,
     ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V2,
-    ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V1,
-    ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V1,
-    ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V1,
-    ATTESTATION_CONTRACT_ZKAS_CONSUME_CLAIM_NS_V1,
-    ATTESTATION_CONTRACT_ZKAS_CHECK_NOT_REVOKED_NS_V1,
-    ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V1,
-    ATTESTATION_CONTRACT_ZKAS_VERIFY_CHAIN_NS_V1,
-    ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V1,
 };
 
 dwow_sdk::define_contract!(
@@ -103,25 +93,25 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[attestation::init_contract] Initializing attestation contract");
 
     // V2 circuits (V1 loads removed — rc3 migration) (HAZOP RC3: domain separation)
-    let attest_slash_v2_bincode = include_bytes!("../proof/attest_slash_v2.zk.bin");
+    let attest_slash_v2_bincode = include_bytes!("../proof/attest_slash.zk.bin");
     wasm::db::zkas_db_set(&attest_slash_v2_bincode[..])?;
-    let check_not_revoked_v2_bincode = include_bytes!("../proof/check_not_revoked_v2.zk.bin");
+    let check_not_revoked_v2_bincode = include_bytes!("../proof/check_not_revoked.zk.bin");
     wasm::db::zkas_db_set(&check_not_revoked_v2_bincode[..])?;
-    let commit_fee_schedule_v2_bincode = include_bytes!("../proof/commit_fee_schedule_v2.zk.bin");
+    let commit_fee_schedule_v2_bincode = include_bytes!("../proof/commit_fee_schedule.zk.bin");
     wasm::db::zkas_db_set(&commit_fee_schedule_v2_bincode[..])?;
-    let consume_claim_v2_bincode = include_bytes!("../proof/consume_claim_v2.zk.bin");
+    let consume_claim_v2_bincode = include_bytes!("../proof/consume_claim.zk.bin");
     wasm::db::zkas_db_set(&consume_claim_v2_bincode[..])?;
-    let create_attestation_v2_bincode = include_bytes!("../proof/create_attestation_v2.zk.bin");
+    let create_attestation_v2_bincode = include_bytes!("../proof/create_attestation.zk.bin");
     wasm::db::zkas_db_set(&create_attestation_v2_bincode[..])?;
-    let create_claim_v2_bincode = include_bytes!("../proof/create_claim_v2.zk.bin");
+    let create_claim_v2_bincode = include_bytes!("../proof/create_claim.zk.bin");
     wasm::db::zkas_db_set(&create_claim_v2_bincode[..])?;
-    let delegate_attestation_v2_bincode = include_bytes!("../proof/delegate_attestation_v2.zk.bin");
+    let delegate_attestation_v2_bincode = include_bytes!("../proof/delegate_attestation.zk.bin");
     wasm::db::zkas_db_set(&delegate_attestation_v2_bincode[..])?;
-    let update_delegation_v2_bincode = include_bytes!("../proof/update_delegation_v2.zk.bin");
+    let update_delegation_v2_bincode = include_bytes!("../proof/update_delegation.zk.bin");
     wasm::db::zkas_db_set(&update_delegation_v2_bincode[..])?;
-    let verify_chain_v2_bincode = include_bytes!("../proof/verify_chain_v2.zk.bin");
+    let verify_chain_v2_bincode = include_bytes!("../proof/verify_chain.zk.bin");
     wasm::db::zkas_db_set(&verify_chain_v2_bincode[..])?;
-    let verify_claim_v2_bincode = include_bytes!("../proof/verify_claim_v2.zk.bin");
+    let verify_claim_v2_bincode = include_bytes!("../proof/verify_claim.zk.bin");
     wasm::db::zkas_db_set(&verify_claim_v2_bincode[..])?;
 
     // Initialize info tree

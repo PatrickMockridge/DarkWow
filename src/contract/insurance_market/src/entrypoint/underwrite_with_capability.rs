@@ -26,7 +26,6 @@
 //! Allows underwriting with an O-Cap capability token instead of direct authorization.
 
 use dwow_sdk::{error::ContractError, msg, wasm};
-use dwow_serial::{deserialize, serialize};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 
 use crate::error::InsuranceMarketError;

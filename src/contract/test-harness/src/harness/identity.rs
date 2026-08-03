@@ -91,14 +91,14 @@ pub struct IdentityHarness {
 impl IdentityHarness {
     /// Spawn a new Identity harness with pre-loaded circuits
     pub fn spawn() -> Self {
-        let claim_bin = include_bytes!("../../../identity/proof/create_claim_v2.zk.bin");
+        let claim_bin = include_bytes!("../../../identity/proof/create_claim.zk.bin");
         let claim_dag_bin = include_bytes!("../../../identity/proof/create_claim_v1_dag.zk.bin");
         let claim_l1_bin = include_bytes!("../../../identity/proof/create_claim_v1_l1.zk.bin");
-        let claim_l1_v2_bin = include_bytes!("../../../identity/proof/create_claim_v1_l1_v2.zk.bin");
+        let claim_l1_v2_bin = include_bytes!("../../../identity/proof/create_claim_v1_l1.zk.bin");
         let claim_multi_bin = include_bytes!("../../../identity/proof/create_claim_v1_multi.zk.bin");
         let claim_ratio_bin = include_bytes!("../../../identity/proof/create_claim_v1_ratio.zk.bin");
-        let issue_bin = include_bytes!("../../../identity/proof/issue_credential_v2.zk.bin");
-        let verify_bin = include_bytes!("../../../identity/proof/verify_capability_v2.zk.bin");
+        let issue_bin = include_bytes!("../../../identity/proof/issue_credential.zk.bin");
+        let verify_bin = include_bytes!("../../../identity/proof/verify_capability.zk.bin");
 
         let create_claim_zkbin = ZkBinary::decode(claim_bin, false).unwrap();
         let create_claim_dag_zkbin = ZkBinary::decode(claim_dag_bin, false).unwrap();

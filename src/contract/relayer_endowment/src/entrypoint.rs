@@ -44,8 +44,6 @@ use crate::{
     RELAYER_ENDOWMENT_DEPLOYMENTS_TREE, RELAYER_ENDOWMENT_REGISTRY_TREE,
     RELAYER_ENDOWMENT_MIN_DEPLOY, RELAYER_ENDOWMENT_INFO_TREE,
     RELAYER_ENDOWMENT_PROMISSORY_NOTE_CONTRACT_ID,
-    RELAYER_ENDOWMENT_ZKAS_INIT_NS_V1, RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V1,
-    RELAYER_ENDOWMENT_ZKAS_CLAIM_FEES_NS_V1,
     RELAYER_ENDOWMENT_ZKAS_INIT_NS_V2, RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V2,
     RELAYER_ENDOWMENT_ZKAS_CLAIM_FEES_NS_V2,
     RELAYER_ENDOWMENT_FORCE_SETTLEMENT_TIMEOUT,
@@ -101,9 +99,9 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         wasm::db::db_init(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
     }
 
-    let claim_fees_v1_bincode = include_bytes!("../proof/claim_fees_v2.zk.bin");
-    let deploy_capital_v1_bincode = include_bytes!("../proof/deploy_capital_v2.zk.bin");
-    let initialize_v1_bincode = include_bytes!("../proof/initialize_v2.zk.bin");
+    let _claim_fees_v1_bincode = include_bytes!("../proof/claim_fees.zk.bin");
+    let _deploy_capital_v1_bincode = include_bytes!("../proof/deploy_capital.zk.bin");
+    let _initialize_v1_bincode = include_bytes!("../proof/initialize.zk.bin");
 
     Ok(())
 }

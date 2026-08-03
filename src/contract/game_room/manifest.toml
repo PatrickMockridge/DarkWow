@@ -21,25 +21,25 @@ code = 2
 name = "place_bet"
 code = 3
 requires_proof = true
-proof_circuit = "PlaceBet_V1"
+proof_circuit = "PlaceBet_V2"
 
 [[functions]]
 name = "raise"
 code = 4
 requires_proof = true
-proof_circuit = "Raise_V1"
+proof_circuit = "Raise_V2"
 
 [[functions]]
 name = "call"
 code = 5
 requires_proof = true
-proof_circuit = "Call_V1"
+proof_circuit = "Call_V2"
 
 [[functions]]
 name = "fold"
 code = 6
 requires_proof = true
-proof_circuit = "Fold_V1"
+proof_circuit = "Fold_V2"
 
 [[functions]]
 name = "close_pot"
@@ -49,19 +49,19 @@ code = 7
 name = "settle_pot"
 code = 8
 requires_proof = true
-proof_circuit = "SettlePot_V1"
+proof_circuit = "SettlePot_V2"
 
 [[functions]]
 name = "contribute_entropy"
 code = 9
 requires_proof = true
-proof_circuit = "ContributeEntropy_V1"
+proof_circuit = "ContributeEntropy_V2"
 
 [[functions]]
 name = "claim"
 code = 10
 requires_proof = true
-proof_circuit = "Claim_V1"
+proof_circuit = "Claim_V2"
 
 [[capabilities]]
 discriminant = 0
@@ -93,26 +93,6 @@ name = "game_room_nullifiers"
 
 [[trees]]
 name = "game_room_entropy"
-
-[[circuits]]
-name = "CreateRoom_V1"
-namespace = "game_room"
-
-[[circuits]]
-name = "Deposit_V1"
-namespace = "game_room"
-
-[[circuits]]
-name = "PlaceBet_V1"
-namespace = "game_room"
-
-[[circuits]]
-name = "SettlePot_V1"
-namespace = "game_room"
-
-[[circuits]]
-name = "Claim_V1"
-namespace = "game_room"
 
 # V2 circuits (HAZOP RC3: domain separation)
 [[circuits]]

@@ -31,7 +31,6 @@ use dwow_sdk::{
     msg,
     pasta::pallas,
 };
-use dwow_serial::deserialize;
 
 use crate::{error::PromissoryNoteError, model::{RedeemParamsV1, TransferParamsV1}};
 

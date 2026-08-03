@@ -79,10 +79,10 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         wasm::db::db_init(cid, POOL_STAKE_ALLOCATIONS_TREE)?;
     }
 
-    let allocate_coverage_v1_bincode = include_bytes!("../proof/allocate_coverage_v2.zk.bin");
-    let create_pool_v1_bincode = include_bytes!("../proof/create_pool_v2.zk.bin");
-    let join_pool_v1_bincode = include_bytes!("../proof/join_pool_v2.zk.bin");
-    let slash_coverage_v1_bincode = include_bytes!("../proof/slash_coverage_v2.zk.bin");
+    let _allocate_coverage_v1_bincode = include_bytes!("../proof/allocate_coverage.zk.bin");
+    let _create_pool_v1_bincode = include_bytes!("../proof/create_pool.zk.bin");
+    let _join_pool_v1_bincode = include_bytes!("../proof/join_pool.zk.bin");
+    let _slash_coverage_v1_bincode = include_bytes!("../proof/slash_coverage.zk.bin");
 
     Ok(())
 }

@@ -188,27 +188,27 @@ pub fn init_contract(cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractR
 
 
     // V2 circuits (HAZOP RC3: domain separation)
-    let call_v2_bincode = include_bytes!("../proof/call_v2.zk.bin");
+    let call_v2_bincode = include_bytes!("../proof/call.zk.bin");
     wasm::db::zkas_db_set(&call_v2_bincode[..])?;
-    let claim_v2_bincode = include_bytes!("../proof/claim_v2.zk.bin");
+    let claim_v2_bincode = include_bytes!("../proof/claim.zk.bin");
     wasm::db::zkas_db_set(&claim_v2_bincode[..])?;
-    let close_pot_v2_bincode = include_bytes!("../proof/close_pot_v2.zk.bin");
+    let close_pot_v2_bincode = include_bytes!("../proof/close_pot.zk.bin");
     wasm::db::zkas_db_set(&close_pot_v2_bincode[..])?;
-    let contribute_entropy_v2_bincode = include_bytes!("../proof/contribute_entropy_v2.zk.bin");
+    let contribute_entropy_v2_bincode = include_bytes!("../proof/contribute_entropy.zk.bin");
     wasm::db::zkas_db_set(&contribute_entropy_v2_bincode[..])?;
-    let create_room_v2_bincode = include_bytes!("../proof/create_room_v2.zk.bin");
+    let create_room_v2_bincode = include_bytes!("../proof/create_room.zk.bin");
     wasm::db::zkas_db_set(&create_room_v2_bincode[..])?;
-    let deposit_v2_bincode = include_bytes!("../proof/deposit_v2.zk.bin");
+    let deposit_v2_bincode = include_bytes!("../proof/deposit.zk.bin");
     wasm::db::zkas_db_set(&deposit_v2_bincode[..])?;
-    let fold_v2_bincode = include_bytes!("../proof/fold_v2.zk.bin");
+    let fold_v2_bincode = include_bytes!("../proof/fold.zk.bin");
     wasm::db::zkas_db_set(&fold_v2_bincode[..])?;
-    let place_bet_v2_bincode = include_bytes!("../proof/place_bet_v2.zk.bin");
+    let place_bet_v2_bincode = include_bytes!("../proof/place_bet.zk.bin");
     wasm::db::zkas_db_set(&place_bet_v2_bincode[..])?;
-    let raise_v2_bincode = include_bytes!("../proof/raise_v2.zk.bin");
+    let raise_v2_bincode = include_bytes!("../proof/raise.zk.bin");
     wasm::db::zkas_db_set(&raise_v2_bincode[..])?;
-    let settle_pot_v2_bincode = include_bytes!("../proof/settle_pot_v2.zk.bin");
+    let settle_pot_v2_bincode = include_bytes!("../proof/settle_pot.zk.bin");
     wasm::db::zkas_db_set(&settle_pot_v2_bincode[..])?;
-    let withdraw_v2_bincode = include_bytes!("../proof/withdraw_v2.zk.bin");
+    let withdraw_v2_bincode = include_bytes!("../proof/withdraw.zk.bin");
     wasm::db::zkas_db_set(&withdraw_v2_bincode[..])?;
 
     Ok(())

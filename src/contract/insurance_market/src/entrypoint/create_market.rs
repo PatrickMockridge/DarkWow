@@ -29,7 +29,6 @@ use dwow_sdk::{
     msg,
     wasm,
 };
-use dwow_serial::{deserialize, serialize};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 
 use crate::error::InsuranceMarketError;

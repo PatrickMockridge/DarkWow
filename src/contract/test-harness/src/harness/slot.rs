@@ -64,9 +64,9 @@ pub struct SlotHarness {
 impl SlotHarness {
     /// Spawn a new Slot harness with pre-loaded circuits
     pub fn spawn() -> Self {
-        let commit_bet_bin = include_bytes!("../../../slot/proof/commit_bet_v2.zk.bin");
-        let settle_bet_bin = include_bytes!("../../../slot/proof/settle_bet_v2.zk.bin");
-        let reveal_spin_bin = include_bytes!("../../../slot/proof/reveal_spin_v2.zk.bin");
+        let commit_bet_bin = include_bytes!("../../../slot/proof/commit_bet.zk.bin");
+        let settle_bet_bin = include_bytes!("../../../slot/proof/settle_bet.zk.bin");
+        let reveal_spin_bin = include_bytes!("../../../slot/proof/reveal_spin.zk.bin");
 
         let commit_bet_zkbin = ZkBinary::decode(commit_bet_bin, false).unwrap();
         let settle_bet_zkbin = ZkBinary::decode(settle_bet_bin, false).unwrap();

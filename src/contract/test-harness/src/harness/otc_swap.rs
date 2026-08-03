@@ -58,10 +58,10 @@ pub struct OtcSwapHarness {
 
 impl OtcSwapHarness {
     pub fn spawn() -> Self {
-        let create_bin = include_bytes!("../../../otc_swap/proof/create_swap_v2.zk.bin");
-        let fund_bin = include_bytes!("../../../otc_swap/proof/fund_swap_v2.zk.bin");
-        let execute_bin = include_bytes!("../../../otc_swap/proof/execute_swap_v2.zk.bin");
-        let cancel_bin = include_bytes!("../../../otc_swap/proof/cancel_swap_v2.zk.bin");
+        let create_bin = include_bytes!("../../../otc_swap/proof/create_swap.zk.bin");
+        let fund_bin = include_bytes!("../../../otc_swap/proof/fund_swap.zk.bin");
+        let execute_bin = include_bytes!("../../../otc_swap/proof/execute_swap.zk.bin");
+        let cancel_bin = include_bytes!("../../../otc_swap/proof/cancel_swap.zk.bin");
 
         let create_zkbin = ZkBinary::decode(create_bin, false).unwrap();
         let create_circuit = ZkCircuit::new(empty_witnesses(&create_zkbin).unwrap(), &create_zkbin);

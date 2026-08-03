@@ -46,7 +46,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm,
 };
-use dwow_serial::{deserialize, Decodable, Encodable};
+use dwow_serial::{Decodable, Encodable};
 
 use crate::{
     error::DexError,
@@ -167,7 +167,7 @@ pub(crate) fn dex_accept_swap_process_instruction_v1(
     verify_lock_proof(config_db, &params.lock_commitment.to_bytes(), &params.lock_proof)?;
 
     // Extract acceptor's public key — host-verified per FALLBACK documentation above.
-    let (acceptor_pub_x, acceptor_pub_y) = params.signature_public.xy().expect("pk not identity");
+    let (_acceptor_pub_x, _acceptor_pub_y) = params.signature_public.xy().expect("pk not identity");
     let (acceptor_pub_x, acceptor_pub_y) = params.signature_public.xy().expect("pk not identity");
 
     // Create the update struct with nullifier from params

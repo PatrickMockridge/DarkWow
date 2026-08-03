@@ -103,25 +103,25 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
 
     // V2 circuits (HAZOP RC3: domain separation)
-    let add_liquidity_v2_bincode = include_bytes!("../proof/add_liquidity_v2.zk.bin");
+    let add_liquidity_v2_bincode = include_bytes!("../proof/add_liquidity.zk.bin");
     wasm::db::zkas_db_set(&add_liquidity_v2_bincode[..])?;
-    let buy_position_v2_bincode = include_bytes!("../proof/buy_position_v2.zk.bin");
+    let buy_position_v2_bincode = include_bytes!("../proof/buy_position.zk.bin");
     wasm::db::zkas_db_set(&buy_position_v2_bincode[..])?;
-    let cancel_order_v2_bincode = include_bytes!("../proof/cancel_order_v2.zk.bin");
+    let cancel_order_v2_bincode = include_bytes!("../proof/cancel_order.zk.bin");
     wasm::db::zkas_db_set(&cancel_order_v2_bincode[..])?;
-    let claim_winnings_v2_bincode = include_bytes!("../proof/claim_winnings_v2.zk.bin");
+    let claim_winnings_v2_bincode = include_bytes!("../proof/claim_winnings.zk.bin");
     wasm::db::zkas_db_set(&claim_winnings_v2_bincode[..])?;
-    let create_market_v2_bincode = include_bytes!("../proof/create_market_v2.zk.bin");
+    let create_market_v2_bincode = include_bytes!("../proof/create_market.zk.bin");
     wasm::db::zkas_db_set(&create_market_v2_bincode[..])?;
-    let match_orders_v2_bincode = include_bytes!("../proof/match_orders_v2.zk.bin");
+    let match_orders_v2_bincode = include_bytes!("../proof/match_orders.zk.bin");
     wasm::db::zkas_db_set(&match_orders_v2_bincode[..])?;
-    let place_back_v2_bincode = include_bytes!("../proof/place_back_v2.zk.bin");
+    let place_back_v2_bincode = include_bytes!("../proof/place_back.zk.bin");
     wasm::db::zkas_db_set(&place_back_v2_bincode[..])?;
-    let place_lay_v2_bincode = include_bytes!("../proof/place_lay_v2.zk.bin");
+    let place_lay_v2_bincode = include_bytes!("../proof/place_lay.zk.bin");
     wasm::db::zkas_db_set(&place_lay_v2_bincode[..])?;
-    let remove_liquidity_v2_bincode = include_bytes!("../proof/remove_liquidity_v2.zk.bin");
+    let remove_liquidity_v2_bincode = include_bytes!("../proof/remove_liquidity.zk.bin");
     wasm::db::zkas_db_set(&remove_liquidity_v2_bincode[..])?;
-    let resolve_market_v2_bincode = include_bytes!("../proof/resolve_market_v2.zk.bin");
+    let resolve_market_v2_bincode = include_bytes!("../proof/resolve_market.zk.bin");
     wasm::db::zkas_db_set(&resolve_market_v2_bincode[..])?;
 
     Ok(())

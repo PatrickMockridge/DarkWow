@@ -21,7 +21,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use halo2_gadgets::ecc::chip::FixedPoint;
 use pasta_curves::{arithmetic::CurveExt, pallas};
 
 use super::{

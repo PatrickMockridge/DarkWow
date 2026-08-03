@@ -37,13 +37,13 @@
 // V1 circuit constants removed (rc3 Batch 4) — V1 .zk source and .zk.bin files deleted.
 /// Mint_V2 zkas circuit binary
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN: &[u8] =
-    include_bytes!("../../proof/mint_v2.zk.bin");
+    include_bytes!("../../proof/mint.zk.bin");
 /// Burn_V2 zkas circuit binary
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V2_BIN: &[u8] =
-    include_bytes!("../../proof/burn_v2.zk.bin");
+    include_bytes!("../../proof/burn.zk.bin");
 /// Fee_V2 zkas circuit binary
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN: &[u8] =
-    include_bytes!("../../proof/fee_v2.zk.bin");
+    include_bytes!("../../proof/fee.zk.bin");
 /// FeeCollect_V2 zkas circuit binary
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V2_BIN: &[u8] =
-    include_bytes!("../../proof/fee_collect_v2.zk.bin");
+    include_bytes!("../../proof/fee_collect.zk.bin");

@@ -113,14 +113,14 @@ impl DexHarness {
     /// Create a new DEX harness with pre-loaded circuits
     pub fn new() -> Self {
         // Load circuit binaries
-        let create_bin = include_bytes!("../../../dex/proof/create_swap_v2.zk.bin");
-        let accept_bin = include_bytes!("../../../dex/proof/accept_swap_v2.zk.bin");
-        let execute_bin = include_bytes!("../../../dex/proof/execute_swap_v2.zk.bin");
-        let cancel_bin = include_bytes!("../../../dex/proof/cancel_swap_v2.zk.bin");
-        let execute_swap_fee_bin = include_bytes!("../../../dex/proof/execute_swap_fee_v2.zk.bin");
-        let execute_swap_slippage_bin = include_bytes!("../../../dex/proof/execute_swap_slippage_v2.zk.bin");
-        let set_transparency_level_bin = include_bytes!("../../../dex/proof/set_transparency_level_v2.zk.bin");
-        let update_config_bin = include_bytes!("../../../dex/proof/update_config_v2.zk.bin");
+        let create_bin = include_bytes!("../../../dex/proof/create_swap.zk.bin");
+        let accept_bin = include_bytes!("../../../dex/proof/accept_swap.zk.bin");
+        let execute_bin = include_bytes!("../../../dex/proof/execute_swap.zk.bin");
+        let cancel_bin = include_bytes!("../../../dex/proof/cancel_swap.zk.bin");
+        let execute_swap_fee_bin = include_bytes!("../../../dex/proof/execute_swap_fee.zk.bin");
+        let execute_swap_slippage_bin = include_bytes!("../../../dex/proof/execute_swap_slippage.zk.bin");
+        let set_transparency_level_bin = include_bytes!("../../../dex/proof/set_transparency_level.zk.bin");
+        let update_config_bin = include_bytes!("../../../dex/proof/update_config.zk.bin");
 
         let create_swap_zkbin = ZkBinary::decode(create_bin, false).unwrap();
         let accept_swap_zkbin = ZkBinary::decode(accept_bin, false).unwrap();

@@ -1,5 +1,5 @@
 use dwow_sdk::{
-    crypto::{pasta_prelude::*, merkle_anchor, ContractId, MerkleNode, MerkleTree},
+    crypto::{merkle_anchor, ContractId, MerkleNode, MerkleTree},
     dark_tree::DarkLeaf, error::{ContractError, ContractResult}, msg, wasm,
     pasta::pallas, ContractCall,
 };

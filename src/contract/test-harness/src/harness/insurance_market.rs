@@ -67,13 +67,13 @@ impl InsuranceMarketHarness {
     /// Spawn a new InsuranceMarket harness with pre-loaded circuits
     pub fn spawn() -> Self {
         let underwrite_bin =
-            include_bytes!("../../../insurance_market/proof/underwrite_with_capability_v2.zk.bin");
+            include_bytes!("../../../insurance_market/proof/underwrite_with_capability.zk.bin");
         let purchase_bin =
-            include_bytes!("../../../insurance_market/proof/purchase_coverage_with_capability_v2.zk.bin");
+            include_bytes!("../../../insurance_market/proof/purchase_coverage_with_capability.zk.bin");
         let purchase_v1_bin =
-            include_bytes!("../../../insurance_market/proof/purchase_coverage_v2.zk.bin");
+            include_bytes!("../../../insurance_market/proof/purchase_coverage.zk.bin");
         let purchase_dag_bin =
-            include_bytes!("../../../insurance_market/proof/purchase_coverage_with_dag_v2.zk.bin");
+            include_bytes!("../../../insurance_market/proof/purchase_coverage_with_dag.zk.bin");
 
         let underwrite_zkbin = ZkBinary::decode(underwrite_bin, false).unwrap();
         let purchase_coverage_zkbin = ZkBinary::decode(purchase_bin, false).unwrap();

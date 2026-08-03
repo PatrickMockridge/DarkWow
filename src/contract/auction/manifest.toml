@@ -9,37 +9,37 @@ dependencies = ["promissory_note", "native_token_v1"]
 name = "create_auction"
 code = 0
 requires_proof = true
-proof_circuit = "CreateAuction_V1"
+proof_circuit = "CreateAuction_V2"
 
 [[functions]]
 name = "place_bid"
 code = 1
 requires_proof = true
-proof_circuit = "PlaceBid_V1"
+proof_circuit = "PlaceBid_V2"
 
 [[functions]]
 name = "close_auction"
 code = 2
 requires_proof = true
-proof_circuit = "CloseAuction_V1"
+proof_circuit = "CloseAuction_V2"
 
 [[functions]]
 name = "claim_winnings"
 code = 3
 requires_proof = true
-proof_circuit = "ClaimWinnings_V1"
+proof_circuit = "ClaimWinnings_V2"
 
 [[functions]]
 name = "settle_auction"
 code = 4
 requires_proof = true
-proof_circuit = "SettleAuction_V1"
+proof_circuit = "SettleAuction_V2"
 
 [[functions]]
 name = "refund_bid"
 code = 5
 requires_proof = true
-proof_circuit = "RefundBid_V1"
+proof_circuit = "RefundBid_V2"
 
 [[capabilities]]
 discriminant = 0
@@ -69,25 +69,25 @@ name = "nullifiers"
 name = "info"
 
 [[circuits]]
-name = "CreateAuction_V1"
+name = "CreateAuction_V2"
 namespace = "auction"
 
 [[circuits]]
-name = "PlaceBid_V1"
+name = "PlaceBid_V2"
 namespace = "auction"
 
 [[circuits]]
-name = "CloseAuction_V1"
+name = "CloseAuction_V2"
 namespace = "auction"
 
 [[circuits]]
-name = "ClaimWinnings_V1"
+name = "ClaimWinnings_V2"
 namespace = "auction"
 
 [[circuits]]
-name = "SettleAuction_V1"
+name = "SettleAuction_V2"
 namespace = "auction"
 
 [[circuits]]
-name = "RefundBid_V1"
+name = "RefundBid_V2"
 namespace = "auction"
