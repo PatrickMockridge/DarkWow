@@ -36,10 +36,10 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 
 use dwow_escrow_contract::client::{
-    claim_v1::{ClaimEscrowCallData, create_claim_escrow_proof, ClaimEscrowPublicInputs},
-    create_escrow_v1::{CreateEscrowCallData, create_escrow_proof, CreateEscrowPublicInputs},
-    fund_v1::{FundEscrowCallData, create_fund_escrow_proof, FundEscrowPublicInputs},
-    refund_v1::{RefundEscrowCallData, create_refund_escrow_proof, RefundEscrowPublicInputs},
+    claim::{ClaimEscrowCallData, create_claim_escrow_proof, ClaimEscrowPublicInputs},
+    create_escrow::{CreateEscrowCallData, create_escrow_proof, CreateEscrowPublicInputs},
+    fund::{FundEscrowCallData, create_fund_escrow_proof, FundEscrowPublicInputs},
+    refund::{RefundEscrowCallData, create_refund_escrow_proof, RefundEscrowPublicInputs},
 };
 use dwow_escrow_contract::model::{
     CreateEscrowParamsV1, EscrowId, FundEscrowParamsV1, ClaimEscrowParamsV1, RefundEscrowParamsV1,

@@ -27,10 +27,10 @@
 
 pub mod zkbins;
 
-pub mod commit_bet_v1;
-pub mod draw_cards_v1;
-pub mod house_close_v1;
-pub mod settle_bet_v1;
+pub mod commit_bet;
+pub mod draw_cards;
+pub mod house_close;
+pub mod settle_bet;
 
 use dwow_sdk::{
     crypto::{pedersen_commitment_u64, ContractId, PublicKey, ScalarBlind, SecretKey},

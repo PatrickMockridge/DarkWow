@@ -51,19 +51,19 @@
 
 pub mod zkbins;
 
-pub mod accept_swap_v1;
-pub mod cancel_swap_v1;
-pub mod create_swap_v1;
-pub mod execute_swap_fee_v1;
-pub mod execute_swap_slippage_v1;
-pub mod execute_swap_v1;
+pub mod accept_swap;
+pub mod cancel_swap;
+pub mod create_swap;
+pub mod execute_swap_fee;
+pub mod execute_swap_slippage;
+pub mod execute_swap;
 
-pub use accept_swap_v1::{create_accept_swap_proof, AcceptSwapCallData};
-pub use cancel_swap_v1::{create_cancel_swap_proof, CancelSwapCallData};
-pub use create_swap_v1::{create_create_swap_proof, CreateSwapCallData};
-pub use execute_swap_fee_v1::{create_execute_swap_fee_proof, ExecuteSwapFeeCallData};
-pub use execute_swap_slippage_v1::{create_execute_swap_slippage_proof, ExecuteSwapSlippageCallData};
-pub use execute_swap_v1::{create_execute_swap_proof, ExecuteSwapCallData};
+pub use accept_swap::{create_accept_swap_proof, AcceptSwapCallData};
+pub use cancel_swap::{create_cancel_swap_proof, CancelSwapCallData};
+pub use create_swap::{create_create_swap_proof, CreateSwapCallData};
+pub use execute_swap_fee::{create_execute_swap_fee_proof, ExecuteSwapFeeCallData};
+pub use execute_swap_slippage::{create_execute_swap_slippage_proof, ExecuteSwapSlippageCallData};
+pub use execute_swap::{create_execute_swap_proof, ExecuteSwapCallData};
 
 use dwow_sdk::{
     crypto::{poseidon_hash, SecretKey},

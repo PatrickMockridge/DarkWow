@@ -27,10 +27,10 @@
 
 pub mod zkbins;
 
-pub mod initialize_v1;
-pub mod deploy_capital_v1;
-pub mod claim_fees_v1;
-pub mod settle_fees_v1;
+pub mod initialize;
+pub mod deploy_capital;
+pub mod claim_fees;
+pub mod settle_fees;
 
 use dwow_sdk::crypto::PublicKey;
 use crate::model::DeactivateEndowmentParamsV1;

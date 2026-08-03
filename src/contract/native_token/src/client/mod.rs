@@ -31,19 +31,19 @@ use dwow_sdk::pasta::pallas;
 pub mod zkbins;
 
 /// `NativeToken::BurnV1` API
-pub mod burn_v1;
+pub mod burn;
 
 /// `NativeToken::FeeV1` API
-pub mod fee_v1;
+pub mod fee;
 
 /// `NativeToken::FeeCollectV1` API
-pub mod fee_collect_v1;
+pub mod fee_collect;
 
 /// `NativeToken::PoWRewardV1` API
-pub mod pow_reward_v1;
+pub mod pow_reward;
 
-/// `NativeToken::TransferV1` API
-pub mod transfer_v1;
+/// TransferV1 builder — internal use by pow_reward (not a client-dispatched function)
+pub mod transfer;
 
 use dwow_sdk::contract_client::{ContractClient, WalletStateProvider};
 

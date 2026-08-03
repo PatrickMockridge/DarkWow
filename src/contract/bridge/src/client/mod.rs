@@ -58,12 +58,12 @@ use dwow_sdk::error::ContractError;
 // ZK Proof Generation Modules
 // ============================================================================
 
-pub mod deposit_v1;
-pub mod withdraw_v1;
-pub mod ltc_deposit_v1;
-pub mod xmr_deposit_v1;
-pub mod azt_deposit_v1;
-pub mod zec_deposit_v1;
+pub mod deposit;
+pub mod withdraw;
+pub mod ltc_deposit;
+pub mod xmr_deposit;
+pub mod azt_deposit;
+pub mod zec_deposit;
 
 /// Bridge client errors
 #[derive(Debug, thiserror::Error)]

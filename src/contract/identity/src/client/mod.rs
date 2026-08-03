@@ -25,11 +25,11 @@
 
 pub mod zkbins;
 
-pub mod issue_credential_v1;
-pub mod create_claim_v1;
-pub mod create_claim_v1_l1;
-pub mod create_claim_v1_l1_v2;
-pub mod create_claim_v1_multi;
-pub mod create_claim_v1_ratio;
-pub mod create_claim_v1_dag;
-pub mod verify_capability_v1;
+pub mod issue_credential;
+pub mod create_claim;
+pub mod create_claim_threshold;
+pub mod create_claim_l1_sd;
+pub mod create_claim_multi;
+pub mod create_claim_ratio;
+pub mod create_claim_dag;
+pub mod verify_capability;

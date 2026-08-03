@@ -36,24 +36,24 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 
 use dwow_labor_market_contract::client::{
-    accept_job_v1::{AcceptJobV1CallData, AcceptJobV1PublicInputs, accept_job_v1_proof},
-    accept_job_with_capability_v1::{
+    accept_job::{AcceptJobV1CallData, AcceptJobV1PublicInputs, accept_job_v1_proof},
+    accept_job_with_capability::{
         AcceptJobWithCapabilityV1CallData, AcceptJobWithCapabilityV1PublicInputs,
         accept_job_with_capability_v1_proof,
     },
-    confirm_delivery_v1::{
+    confirm_delivery::{
         ConfirmDeliveryV1CallData, ConfirmDeliveryV1PublicInputs, confirm_delivery_v1_proof,
     },
-    create_job_v1::{CreateJobV1CallData, CreateJobV1PublicInputs, create_job_v1_proof},
-    dispute_v1::{DisputeV1CallData, DisputeV1PublicInputs, dispute_v1_proof},
-    milestone_payment_v1::{
+    create_job::{CreateJobV1CallData, CreateJobV1PublicInputs, create_job_v1_proof},
+    dispute::{DisputeV1CallData, DisputeV1PublicInputs, dispute_v1_proof},
+    milestone_payment::{
         MilestonePaymentV1CallData, MilestonePaymentV1PublicInputs, milestone_payment_v1_proof,
     },
-    refund_v1::{RefundV1CallData, RefundV1PublicInputs, refund_v1_proof},
-    submit_deliverable_v1::{
+    refund::{RefundV1CallData, RefundV1PublicInputs, refund_v1_proof},
+    submit_deliverable::{
         SubmitDeliverableV1CallData, SubmitDeliverableV1PublicInputs, submit_deliverable_v1_proof,
     },
-    submit_git_deliverable_v1::{
+    submit_git_deliverable::{
         SubmitGitDeliverableV1CallData, SubmitGitDeliverableV1PublicInputs,
         submit_git_deliverable_v1_proof,
     },

@@ -33,26 +33,26 @@ use dwow_sdk::{crypto::{pasta_prelude::PrimeField, PublicKey}, pasta::pallas};
 use dwow_serial::Encodable;
 
 use dwow_attestation_contract::client::{
-    check_not_revoked_v1::{
+    check_not_revoked::{
         CheckNotRevokedV1CallData, check_not_revoked_v1_proof, CheckNotRevokedV1PublicInputs,
     },
-    consume_claim_v1::{
+    consume_claim::{
         ConsumeClaimV1CallData, consume_claim_v1_proof, ConsumeClaimV1PublicInputs,
     },
-    create_attestation_v1::{
+    create_attestation::{
         CreateAttestationV1CallData, create_attestation_v1_proof, CreateAttestationV1PublicInputs,
     },
-    create_claim_v1::{
+    create_claim::{
         CreateClaimV1CallData, create_claim_v1_proof, CreateClaimV1PublicInputs,
     },
-    delegate_attestation_v1::{
+    delegate_attestation::{
         DelegateAttestationV1CallData, delegate_attestation_v1_proof,
         DelegateAttestationV1PublicInputs,
     },
-    update_delegation_v1::{
+    update_delegation::{
         UpdateDelegationV1CallData, update_delegation_v1_proof, UpdateDelegationV1PublicInputs,
     },
-    verify_claim_v1::{
+    verify_claim::{
         VerifyClaimV1CallData, verify_claim_v1_proof, VerifyClaimV1PublicInputs,
     },
 };

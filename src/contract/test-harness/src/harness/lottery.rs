@@ -36,8 +36,8 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 
 use dwow_lottery_contract::client::{
-    commit_ticket_v1::{CommitTicketV1CallData, create_commit_ticket_v1_proof, CommitTicketV1PublicInputs},
-    reveal_ticket_v1::{RevealTicketV1CallData, create_reveal_ticket_v1_proof, RevealTicketV1PublicInputs},
+    commit_ticket::{CommitTicketV1CallData, create_commit_ticket_v1_proof, CommitTicketV1PublicInputs},
+    reveal_ticket::{RevealTicketV1CallData, create_reveal_ticket_v1_proof, RevealTicketV1PublicInputs},
 };
 use dwow_lottery_contract::model::{BuyTicketParamsV1, RevealTicketParamsV1};
 

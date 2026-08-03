@@ -27,9 +27,9 @@
 
 pub mod zkbins;
 
-pub mod commit_bet_v1;
-pub mod reveal_spin_v1;
-pub mod settle_bet_v1;
+pub mod commit_bet;
+pub mod reveal_spin;
+pub mod settle_bet;
 
 use dwow_sdk::{
     crypto::{poseidon_hash, ContractId, PublicKey, SecretKey},

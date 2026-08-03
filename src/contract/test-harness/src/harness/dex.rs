@@ -52,17 +52,17 @@ fn base_to_bytes(base: pallas::Base) -> [u8; 32] {
 }
 
 use dwow_dex_contract::client::{
-    accept_swap_v1::{create_accept_swap_proof, AcceptSwapCallData, AcceptSwapPublicInputs},
-    cancel_swap_v1::{create_cancel_swap_proof, CancelSwapCallData, CancelSwapPublicInputs},
-    create_swap_v1::{create_create_swap_proof, CreateSwapCallData, CreateSwapPublicInputs},
-    execute_swap_fee_v1::{
+    accept_swap::{create_accept_swap_proof, AcceptSwapCallData, AcceptSwapPublicInputs},
+    cancel_swap::{create_cancel_swap_proof, CancelSwapCallData, CancelSwapPublicInputs},
+    create_swap::{create_create_swap_proof, CreateSwapCallData, CreateSwapPublicInputs},
+    execute_swap_fee::{
         create_execute_swap_fee_proof, ExecuteSwapFeeCallData, ExecuteSwapFeePublicInputs,
     },
-    execute_swap_slippage_v1::{
+    execute_swap_slippage::{
         create_execute_swap_slippage_proof, ExecuteSwapSlippageCallData,
         ExecuteSwapSlippagePublicInputs,
     },
-    execute_swap_v1::{create_execute_swap_proof, ExecuteSwapCallData, ExecuteSwapPublicInputs},
+    execute_swap::{create_execute_swap_proof, ExecuteSwapCallData, ExecuteSwapPublicInputs},
 };
 use dwow_dex_contract::model::{
     AcceptSwapParams, CancelSwapParams, CreateSwapParams, ExecuteSwapParams,

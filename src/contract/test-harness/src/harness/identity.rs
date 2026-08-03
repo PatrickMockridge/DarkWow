@@ -37,14 +37,14 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 
 use dwow_identity_contract::client::{
-    create_claim_v1::{CreateClaimCallData, create_claim_proof, CreateClaimPublicInputs},
-    create_claim_v1_dag::{CreateClaimDagCallData, create_claim_dag_proof, CreateClaimDagPublicInputs},
-    create_claim_v1_l1::{CreateClaimL1CallData, create_claim_l1_proof, CreateClaimL1PublicInputs},
-    create_claim_v1_l1_v2::{CreateClaimL1V2CallData, create_claim_l1_v2_proof, CreateClaimL1V2PublicInputs},
-    create_claim_v1_multi::{CreateClaimMultiCallData, create_claim_multi_proof, CreateClaimMultiPublicInputs},
-    create_claim_v1_ratio::{CreateClaimRatioCallData, create_claim_ratio_proof, CreateClaimRatioPublicInputs},
-    issue_credential_v1::{IssueCredentialCallData, create_issue_credential_proof, IssueCredentialPublicInputs},
-    verify_capability_v1::{VerifyCapabilityCallData, create_verify_capability_proof, VerifyCapabilityPublicInputs},
+    create_claim::{CreateClaimCallData, create_claim_proof, CreateClaimPublicInputs},
+    create_claim_dag::{CreateClaimDagCallData, create_claim_dag_proof, CreateClaimDagPublicInputs},
+    create_claim_threshold::{CreateClaimL1CallData, create_claim_l1_proof, CreateClaimL1PublicInputs},
+    create_claim_l1_sd::{CreateClaimL1V2CallData, create_claim_l1_v2_proof, CreateClaimL1V2PublicInputs},
+    create_claim_multi::{CreateClaimMultiCallData, create_claim_multi_proof, CreateClaimMultiPublicInputs},
+    create_claim_ratio::{CreateClaimRatioCallData, create_claim_ratio_proof, CreateClaimRatioPublicInputs},
+    issue_credential::{IssueCredentialCallData, create_issue_credential_proof, IssueCredentialPublicInputs},
+    verify_capability::{VerifyCapabilityCallData, create_verify_capability_proof, VerifyCapabilityPublicInputs},
 };
 use dwow_identity_contract::model::{
     CapabilityId, CapabilitySecret, CreateClaimParams, CreateClaimParamsL1, InitializeParams, IssueCredentialParams,
@@ -92,11 +92,11 @@ impl IdentityHarness {
     /// Spawn a new Identity harness with pre-loaded circuits
     pub fn spawn() -> Self {
         let claim_bin = include_bytes!("../../../identity/proof/create_claim.zk.bin");
-        let claim_dag_bin = include_bytes!("../../../identity/proof/create_claim_v1_dag.zk.bin");
-        let claim_l1_bin = include_bytes!("../../../identity/proof/create_claim_v1_l1.zk.bin");
-        let claim_l1_v2_bin = include_bytes!("../../../identity/proof/create_claim_v1_l1.zk.bin");
-        let claim_multi_bin = include_bytes!("../../../identity/proof/create_claim_v1_multi.zk.bin");
-        let claim_ratio_bin = include_bytes!("../../../identity/proof/create_claim_v1_ratio.zk.bin");
+        let claim_dag_bin = include_bytes!("../../../identity/proof/create_claim_dag.zk.bin");
+        let claim_l1_bin = include_bytes!("../../../identity/proof/create_claim_threshold.zk.bin");
+        let claim_l1_v2_bin = include_bytes!("../../../identity/proof/create_claim_l1_sd.zk.bin");
+        let claim_multi_bin = include_bytes!("../../../identity/proof/create_claim_multi.zk.bin");
+        let claim_ratio_bin = include_bytes!("../../../identity/proof/create_claim_ratio.zk.bin");
         let issue_bin = include_bytes!("../../../identity/proof/issue_credential.zk.bin");
         let verify_bin = include_bytes!("../../../identity/proof/verify_capability.zk.bin");
 

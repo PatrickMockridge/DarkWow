@@ -33,12 +33,12 @@ use dwow_sdk::{crypto::PublicKey, pasta::pallas};
 use dwow_serial::Encodable;
 
 use dwow_auction_contract::client::{
-    claim_winnings_v1::{ClaimWinningsV1CallData, claim_winnings_v1_proof, ClaimWinningsV1PublicInputs},
-    close_auction_v1::{CloseAuctionV1CallData, close_auction_v1_proof, CloseAuctionV1PublicInputs},
-    create_auction_v1::{CreateAuctionV1CallData, create_auction_v1_proof, CreateAuctionV1PublicInputs},
-    place_bid_v1::{PlaceBidV1CallData, place_bid_v1_proof, PlaceBidV1PublicInputs},
-    refund_bid_v1::{RefundBidV1CallData, refund_bid_v1_proof, RefundBidV1PublicInputs},
-    settle_auction_v1::{SettleAuctionV1CallData, settle_auction_v1_proof, SettleAuctionV1PublicInputs},
+    claim_winnings::{ClaimWinningsV1CallData, claim_winnings_v1_proof, ClaimWinningsV1PublicInputs},
+    close_auction::{CloseAuctionV1CallData, close_auction_v1_proof, CloseAuctionV1PublicInputs},
+    create_auction::{CreateAuctionV1CallData, create_auction_v1_proof, CreateAuctionV1PublicInputs},
+    place_bid::{PlaceBidV1CallData, place_bid_v1_proof, PlaceBidV1PublicInputs},
+    refund_bid::{RefundBidV1CallData, refund_bid_v1_proof, RefundBidV1PublicInputs},
+    settle_auction::{SettleAuctionV1CallData, settle_auction_v1_proof, SettleAuctionV1PublicInputs},
 };
 use dwow_auction_contract::model::{
     CreateAuctionParamsV1, PlaceBidParamsV1, CloseAuctionParamsV1,

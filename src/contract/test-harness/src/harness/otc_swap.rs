@@ -35,10 +35,10 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 
 use dwow_otc_swap_contract::client::{
-    cancel_swap_v1::{cancel_swap_proof, CancelSwapCallData, CancelSwapPublicInputs},
-    create_swap_v1::{create_swap_proof, CreateSwapCallData, CreateSwapPublicInputs},
-    execute_swap_v1::{execute_swap_proof, ExecuteSwapCallData, ExecuteSwapPublicInputs},
-    fund_swap_v1::{fund_swap_proof, FundSwapCallData, FundSwapPublicInputs},
+    cancel_swap::{cancel_swap_proof, CancelSwapCallData, CancelSwapPublicInputs},
+    create_swap::{create_swap_proof, CreateSwapCallData, CreateSwapPublicInputs},
+    execute_swap::{execute_swap_proof, ExecuteSwapCallData, ExecuteSwapPublicInputs},
+    fund_swap::{fund_swap_proof, FundSwapCallData, FundSwapPublicInputs},
 };
 use dwow_otc_swap_contract::model::{
     CancelSwapParamsV1, CreateSwapParamsV1, ExecuteSwapParamsV1, FundSwapParamsV1,

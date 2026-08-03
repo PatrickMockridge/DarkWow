@@ -36,10 +36,10 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 
 use dwow_baccarat_contract::client::{
-    commit_bet_v1::{CommitBetV1CallData, CommitBetV1PublicInputs, create_commit_bet_v1_proof},
-    draw_cards_v1::{DrawCardsCallData, DrawCardsPublicInputs, create_draw_cards_proof},
-    house_close_v1::{HouseCloseCallData, HouseClosePublicInputs, create_house_close_proof},
-    settle_bet_v1::{SettleBetV1CallData, SettleBetV1PublicInputs, create_settle_bet_v1_proof},
+    commit_bet::{CommitBetV1CallData, CommitBetV1PublicInputs, create_commit_bet_v1_proof},
+    draw_cards::{DrawCardsCallData, DrawCardsPublicInputs, create_draw_cards_proof},
+    house_close::{HouseCloseCallData, HouseClosePublicInputs, create_house_close_proof},
+    settle_bet::{SettleBetV1CallData, SettleBetV1PublicInputs, create_settle_bet_v1_proof},
 };
 use dwow_baccarat_contract::model::{
     derive_bet_id, BetId, BetType, CommitBetParamsV1, DrawCardsParamsV1, HouseCloseParamsV1,

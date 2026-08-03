@@ -147,7 +147,7 @@ pub async fn build_linear_coinbase(
     dwow_chain::ContractCall,  // pow_reward_v1 contract call data
     pallas::Base,              // coin_blind — deterministic, same as ZK circuit witness
 )> {
-    use dwow_native_token_contract::client::pow_reward_v1::PoWRewardCallBuilder;
+    use dwow_native_token_contract::client::pow_reward::PoWRewardCallBuilder;
     use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine};
 
     // Cumulative supply state from the single authoritative source.
@@ -333,7 +333,7 @@ pub fn build_fee_collect_tx(
     height: BlockHeight,
     linear_zk: &LinearPowRewardZk,
 ) -> Result<Option<dwow_chain::Transaction>> {
-    use dwow_native_token_contract::client::fee_collect_v1::FeeCollectCallBuilder;
+    use dwow_native_token_contract::client::fee_collect::FeeCollectCallBuilder;
     use dwow_sdk::pasta::pallas;
 
     // Fee summation per spec §3.12: FeeV1 layout is

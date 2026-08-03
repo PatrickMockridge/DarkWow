@@ -38,9 +38,9 @@ use dwow_serial::Encodable;
 
 use dwow_native_token_contract::{
     client::{
-        pow_reward_v1::PoWRewardCallBuilder,
-        burn_v1::BurnCallBuilder,
-        fee_v1::{FeeCallBuilder, FeeCallInput, FeeCallOutput},
+        pow_reward::PoWRewardCallBuilder,
+        burn::BurnCallBuilder,
+        fee::{FeeCallBuilder, FeeCallInput, FeeCallOutput},
     },
     model::{FeeParamsV1, Output},
 };
@@ -245,7 +245,7 @@ impl super::ContractHarness for NativeTokenHarness {
 }
 
 /// Input for burn call (re-exported from native_token contract)
-pub use dwow_native_token_contract::client::burn_v1::BurnCallInput;
+pub use dwow_native_token_contract::client::burn::BurnCallInput;
 
 /// Result of PoW reward minting
 pub struct PoWRewardResult {

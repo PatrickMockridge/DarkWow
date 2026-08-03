@@ -37,9 +37,9 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 
 use dwow_slot_contract::client::{
-    commit_bet_v1::{CommitBetV1CallData, CommitBetV1PublicInputs, create_commit_bet_v1_proof},
-    settle_bet_v1::{SettleBetV1CallData, SettleBetV1PublicInputs, create_settle_bet_v1_proof},
-    reveal_spin_v1::{RevealSpinCallData, RevealSpinPublicInputs, create_reveal_spin_proof},
+    commit_bet::{CommitBetV1CallData, CommitBetV1PublicInputs, create_commit_bet_v1_proof},
+    settle_bet::{SettleBetV1CallData, SettleBetV1PublicInputs, create_settle_bet_v1_proof},
+    reveal_spin::{RevealSpinCallData, RevealSpinPublicInputs, create_reveal_spin_proof},
 };
 use dwow_slot_contract::model::{
     CommitSpinParamsV1, RevealSpinParamsV1,

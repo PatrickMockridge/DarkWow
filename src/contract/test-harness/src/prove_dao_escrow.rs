@@ -40,8 +40,8 @@ use dwow_sdk::{
     pasta::pallas,
 };
 use dwow_dao_escrow_contract::client::{
-    init_v1::{init_v1_proof, InitV1CallData},
-    pay_premium_v1::{pay_premium_v1_proof, PayPremiumV1CallData},
+    init::{init_v1_proof, InitV1CallData},
+    pay_premium::{pay_premium_v1_proof, PayPremiumV1CallData},
 };
 use std::env;
 

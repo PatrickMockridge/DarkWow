@@ -37,16 +37,16 @@ use dwow_sdk::{
 
 use dwow_promissory_note_contract::{
     client::{
-        issue_v1::{IssueCallBuilder, IssueCallInput},
-        register_type_v1::{RegisterTypeCallBuilder, RegisterTypeCallInput},
-        transfer_v1::{TransferCallBuilder, TransferCallInput, TransferCallOutput},
+        issue::{IssueCallBuilder, IssueCallInput},
+        register_type::{RegisterTypeCallBuilder, RegisterTypeCallInput},
+        transfer::{TransferCallBuilder, TransferCallInput, TransferCallOutput},
     },
     model::CapCommitment,
 };
 use dwow_serial::Encodable;
 
 // Re-export types for convenience
-pub use dwow_promissory_note_contract::client::issue_v1::IssueCallInput as IssueInput;
+pub use dwow_promissory_note_contract::client::issue::IssueCallInput as IssueInput;
 
 /// PromissoryNote Harness for isolated testing
 pub struct PromissoryNoteHarness {

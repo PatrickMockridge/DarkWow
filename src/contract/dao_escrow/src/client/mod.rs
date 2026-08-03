@@ -65,12 +65,12 @@
 /// ZK circuit binary constants
 pub mod zkbins;
 
-pub mod init_v1;
-pub mod pay_premium_v1;
-pub mod propose_claim_v1;
-pub mod resolve_dispute_v1;
-pub mod verify_member_capability_v1;
-pub mod vote_claim_v1;
+pub mod init;
+pub mod pay_premium;
+pub mod propose_claim;
+pub mod resolve_dispute;
+pub mod verify_member_capability;
+pub mod vote_claim;
 
 use dwow_sdk::{
     crypto::{IntentNullifier, PublicKey, SecretKey},

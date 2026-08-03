@@ -25,10 +25,10 @@
 
 pub mod zkbins;
 
-pub mod buy_ticket_v1;
-pub mod commit_ticket_v1;
-pub mod reveal_ticket_v1;
+pub mod buy_ticket;
+pub mod commit_ticket;
+pub mod reveal_ticket;
 
-pub use buy_ticket_v1::*;
-pub use commit_ticket_v1::*;
-pub use reveal_ticket_v1::*;
+pub use buy_ticket::*;
+pub use commit_ticket::*;
+pub use reveal_ticket::*;

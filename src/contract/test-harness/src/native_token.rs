@@ -33,8 +33,8 @@ use tracing::info;
 
 use dwow_native_token_contract::{
     client::{
-        burn_v1::{BurnCallBuilder, BurnCallInput},
-        pow_reward_v1::PoWRewardCallBuilder,
+        burn::{BurnCallBuilder, BurnCallInput},
+        pow_reward::PoWRewardCallBuilder,
     },
     NativeTokenFunction,
 };

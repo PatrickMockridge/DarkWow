@@ -59,28 +59,28 @@ use dwow_sdk::{
 pub mod zkbins;
 
 /// `BearerBond::IssueStakeV1` API — create staking pool, mint initial stake coin
-pub mod issue_stake_v1;
+pub mod issue_stake;
 
 /// `BearerBond::TransferStakeV1` API — transfer stake position
-pub mod transfer_stake_v1;
+pub mod transfer_stake;
 
 /// `BearerBond::RequestInterestV1` API — request interest payment (prove ownership)
-pub mod request_interest_v1;
+pub mod request_interest;
 
 /// `BearerBond::EmergencyUnstakeV1` API — exit before maturity on coverage failure
-pub mod emergency_unstake_v1;
+pub mod emergency_unstake;
 
 /// `BearerBond::UnstakeV1` API — withdraw principal at maturity
-pub mod unstake_v1;
+pub mod unstake;
 
 /// `BearerBond::BurnStakeV1` API — retire staking pool
-pub mod burn_stake_v1;
+pub mod burn_stake;
 
 /// `BearerBond::ProveCoverageV1` API — governance: prove solvency
-pub mod prove_coverage_v1;
+pub mod prove_coverage;
 
 /// `BearerBond::PayInterestV1` API — issuer pays a pending interest claim
-pub mod pay_interest_v1;
+pub mod pay_interest;
 
 /// BearerBondNote holds all the attributes of a received stake coin.
 ///

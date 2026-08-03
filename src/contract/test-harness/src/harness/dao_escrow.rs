@@ -37,12 +37,12 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 
 use dwow_dao_escrow_contract::client::{
-    init_v1::{init_v1_proof, InitV1CallData, InitV1PublicInputs},
-    pay_premium_v1::{pay_premium_v1_proof, PayPremiumV1CallData, PayPremiumV1PublicInputs},
-    propose_claim_v1::{propose_claim_v1_proof, ProposeClaimV1CallData, ProposeClaimV1PublicInputs},
-    resolve_dispute_v1::{resolve_dispute_v1_proof, ResolveDisputeV1CallData, ResolveDisputeV1PublicInputs},
-    verify_member_capability_v1::{verify_member_capability_v1_proof, VerifyMemberCapabilityV1CallData, VerifyMemberCapabilityV1PublicInputs},
-    vote_claim_v1::{vote_claim_v1_proof, VoteClaimV1CallData, VoteClaimV1PublicInputs},
+    init::{init_v1_proof, InitV1CallData, InitV1PublicInputs},
+    pay_premium::{pay_premium_v1_proof, PayPremiumV1CallData, PayPremiumV1PublicInputs},
+    propose_claim::{propose_claim_v1_proof, ProposeClaimV1CallData, ProposeClaimV1PublicInputs},
+    resolve_dispute::{resolve_dispute_v1_proof, ResolveDisputeV1CallData, ResolveDisputeV1PublicInputs},
+    verify_member_capability::{verify_member_capability_v1_proof, VerifyMemberCapabilityV1CallData, VerifyMemberCapabilityV1PublicInputs},
+    vote_claim::{vote_claim_v1_proof, VoteClaimV1CallData, VoteClaimV1PublicInputs},
 };
 use dwow_dao_escrow_contract::model::{
     CancelClaimParamsV1, CapabilityProof, ClaimId, DaoEscrowBulla, ClaimType, ExecuteClaimParamsV1,

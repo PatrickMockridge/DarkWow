@@ -36,10 +36,10 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 
 use dwow_roulette_contract::client::{
-    house_close_v1::{HouseCloseCallData, create_house_close_proof},
-    place_bet_v1::{PlaceBetV1CallData, create_place_bet_v1_proof},
-    settle_bet_v1::{SettleBetV1CallData, create_settle_bet_v1_proof},
-    spin_wheel_v1::{SpinWheelCallData, create_spin_wheel_proof},
+    house_close::{HouseCloseCallData, create_house_close_proof},
+    place_bet::{PlaceBetV1CallData, create_place_bet_v1_proof},
+    settle_bet::{SettleBetV1CallData, create_settle_bet_v1_proof},
+    spin_wheel::{SpinWheelCallData, create_spin_wheel_proof},
 };
 use dwow_roulette_contract::model::{
     InitializeParamsV1, PlaceBetParamsV1, SpinWheelParamsV1,

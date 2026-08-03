@@ -29,11 +29,11 @@
 //! ZK proof client modules
 pub mod zkbins;
 
-pub mod create_tender_v1;
-pub mod reveal_bid_v1;
-pub mod select_winner_v1;
-pub mod submit_bid_v1;
-pub mod submit_bid_with_capability_v1;
+pub mod create_tender;
+pub mod reveal_bid;
+pub mod select_winner;
+pub mod submit_bid;
+pub mod submit_bid_with_capability;
 
 use dwow_sdk::{
     crypto::PublicKey,

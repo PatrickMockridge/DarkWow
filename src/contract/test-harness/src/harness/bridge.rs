@@ -36,12 +36,12 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 
 use dwow_bridge_contract::client::{
-    azt_deposit_v1::{AztDepositCallData, AztDepositPublicInputs, create_azt_deposit_proof},
-    deposit_v1::{DepositCallData, DepositPublicInputs, create_deposit_proof},
-    ltc_deposit_v1::{LtcDepositCallData, LtcDepositPublicInputs, create_ltc_deposit_proof},
-    withdraw_v1::{WithdrawCallData, WithdrawPublicInputs, create_withdraw_proof},
-    xmr_deposit_v1::{XmrDepositCallData, XmrDepositPublicInputs, create_xmr_deposit_proof},
-    zec_deposit_v1::{ZecDepositCallData, ZecDepositPublicInputs, create_zec_deposit_proof},
+    azt_deposit::{AztDepositCallData, AztDepositPublicInputs, create_azt_deposit_proof},
+    deposit::{DepositCallData, DepositPublicInputs, create_deposit_proof},
+    ltc_deposit::{LtcDepositCallData, LtcDepositPublicInputs, create_ltc_deposit_proof},
+    withdraw::{WithdrawCallData, WithdrawPublicInputs, create_withdraw_proof},
+    xmr_deposit::{XmrDepositCallData, XmrDepositPublicInputs, create_xmr_deposit_proof},
+    zec_deposit::{ZecDepositCallData, ZecDepositPublicInputs, create_zec_deposit_proof},
 };
 use dwow_bridge_contract::model::{DepositParams, ExternalChain, ExternalChainProof, UpdateConfigParams, WithdrawParams};
 

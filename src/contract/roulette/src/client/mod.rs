@@ -383,7 +383,7 @@ pub fn calculate_payout(amount: u64, bet_type: BetType) -> u64 {
 }
 
 // ZK proof generation modules
-pub mod place_bet_v1;
-pub mod spin_wheel_v1;
-pub mod house_close_v1;
-pub mod settle_bet_v1;
+pub mod place_bet;
+pub mod spin_wheel;
+pub mod house_close;
+pub mod settle_bet;

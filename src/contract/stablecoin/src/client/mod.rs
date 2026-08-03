@@ -34,18 +34,18 @@
 use crate::model::*;
 
 #[cfg(feature = "client")]
-pub use dwow_promissory_note_contract::client::register_type_v1::RegisterTypeCallInput;
+pub use dwow_promissory_note_contract::client::register_type::RegisterTypeCallInput;
 
 // ============================================================================
 // ZK Proof Generation Modules
 // ============================================================================
 
-pub mod initialize_v1;
-pub mod open_position_v1;
-pub mod mint_stable_v1;
-pub mod liquidate_v1;
-pub mod governance_report_v1;
-pub mod accrue_interest_v1;
+pub mod initialize;
+pub mod open_position;
+pub mod mint_stable;
+pub mod liquidate;
+pub mod governance_report;
+pub mod accrue_interest;
 
 // ============================================================================
 // Transaction Builders
@@ -554,7 +554,7 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 
 // Re-export call data types for convenience
-pub use initialize_v1::{create_initialize_proof, InitV1CallData, InitV1PublicInputs};
-pub use open_position_v1::{create_open_position_proof, OpenPositionCallData};
-pub use mint_stable_v1::{create_mint_stable_proof, MintStableCallData};
-pub use liquidate_v1::{create_liquidate_proof, LiquidateCallData};
+pub use initialize::{create_initialize_proof, InitV1CallData, InitV1PublicInputs};
+pub use open_position::{create_open_position_proof, OpenPositionCallData};
+pub use mint_stable::{create_mint_stable_proof, MintStableCallData};
+pub use liquidate::{create_liquidate_proof, LiquidateCallData};

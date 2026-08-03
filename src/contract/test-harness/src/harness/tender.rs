@@ -36,11 +36,11 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 
 use dwow_tender_contract::client::{
-    create_tender_v1::{CreateTenderV1CallData, create_tender_v1_proof, CreateTenderV1PublicInputs},
-    reveal_bid_v1::{RevealBidV1CallData, reveal_bid_v1_proof, RevealBidV1PublicInputs},
-    select_winner_v1::{SelectWinnerV1CallData, select_winner_v1_proof, SelectWinnerV1PublicInputs},
-    submit_bid_v1::{SubmitBidV1CallData, submit_bid_v1_proof, SubmitBidV1PublicInputs},
-    submit_bid_with_capability_v1::{
+    create_tender::{CreateTenderV1CallData, create_tender_v1_proof, CreateTenderV1PublicInputs},
+    reveal_bid::{RevealBidV1CallData, reveal_bid_v1_proof, RevealBidV1PublicInputs},
+    select_winner::{SelectWinnerV1CallData, select_winner_v1_proof, SelectWinnerV1PublicInputs},
+    submit_bid::{SubmitBidV1CallData, submit_bid_v1_proof, SubmitBidV1PublicInputs},
+    submit_bid_with_capability::{
         SubmitBidWithCapabilityV1CallData, submit_bid_with_capability_v1_proof,
         SubmitBidWithCapabilityV1PublicInputs,
     },

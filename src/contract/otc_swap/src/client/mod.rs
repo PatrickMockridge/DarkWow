@@ -25,7 +25,7 @@
 
 pub mod zkbins;
 
-pub mod create_swap_v1;
-pub mod fund_swap_v1;
-pub mod execute_swap_v1;
-pub mod cancel_swap_v1;
+pub mod create_swap;
+pub mod fund_swap;
+pub mod execute_swap;
+pub mod cancel_swap;

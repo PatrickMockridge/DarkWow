@@ -25,7 +25,7 @@
 
 pub mod zkbins;
 
-pub mod rate_limit_v1;
-pub mod subscribe_v1;
-pub mod update_usage_v1;
-pub mod verify_access_v1;
+pub mod rate_limit;
+pub mod subscribe;
+pub mod update_usage;
+pub mod verify_access;

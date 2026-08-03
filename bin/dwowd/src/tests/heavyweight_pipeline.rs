@@ -178,7 +178,7 @@ fn test_heavyweight_promissory_note() -> std::result::Result<(), Box<dyn std::er
     use dwow_contract_test_harness::harness::PromissoryNoteHarness;
     use dwow_sdk::pasta::pallas;
     use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
-    use dwow_promissory_note_contract::client::transfer_v1::{TransferCallInput, TransferCallOutput};
+    use dwow_promissory_note_contract::client::transfer::{TransferCallInput, TransferCallOutput};
     use crate::tests::blockchain::HeavyweightPipeline;
 
     println!("=== PromissoryNote Heavyweight: All Endpoints ===");
@@ -464,7 +464,7 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
     use dwow_contract_test_harness::harness::NativeTokenHarness;
     use dwow_sdk::crypto::{Keypair, MerkleNode, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
-    use dwow_native_token_contract::client::burn_v1::BurnCallInput;
+    use dwow_native_token_contract::client::burn::BurnCallInput;
     use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
 
     println!("=== NativeToken Heavyweight: All Endpoints ===");
@@ -4332,7 +4332,7 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
 
         // --- issue_stake (0x01) ---
         println!("  Test: issue_stake");
-        use dwow_bearer_bond_contract::client::issue_stake_v1::IssueStakeCallInput;
+        use dwow_bearer_bond_contract::client::issue_stake::IssueStakeCallInput;
         use dwow_sdk::crypto::ContractId;
         let is_input = IssueStakeCallInput {
             principal: 10000, maturity_block: 1000, min_claim: 1,
@@ -4347,7 +4347,7 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
 
         // --- burn_stake (0x02) ---
         println!("  Test: burn_stake");
-        use dwow_bearer_bond_contract::client::burn_stake_v1::BurnStakeCallInput;
+        use dwow_bearer_bond_contract::client::burn_stake::BurnStakeCallInput;
         let bs_input = BurnStakeCallInput {
             principal: 500, token_id: pallas::Base::from(1u64),
             spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
@@ -4362,7 +4362,7 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
 
         // --- transfer_stake (0x03) ---
         println!("  Test: transfer_stake");
-        use dwow_bearer_bond_contract::client::transfer_stake_v1::{TransferStakeCallInput, TransferStakeCallOutput};
+        use dwow_bearer_bond_contract::client::transfer_stake::{TransferStakeCallInput, TransferStakeCallOutput};
         let ts_input = TransferStakeCallInput {
             principal: 500, token_id: pallas::Base::from(1u64),
             spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
@@ -4385,7 +4385,7 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
 
         // --- request_interest (0x04) ---
         println!("  Test: request_interest");
-        use dwow_bearer_bond_contract::client::request_interest_v1::RequestInterestCallInput;
+        use dwow_bearer_bond_contract::client::request_interest::RequestInterestCallInput;
         let ri_input = RequestInterestCallInput {
             principal: 500, token_id: pallas::Base::from(1u64),
             spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
@@ -4402,7 +4402,7 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
 
         // --- unstake (0x05) ---
         println!("  Test: unstake");
-        use dwow_bearer_bond_contract::client::unstake_v1::{UnstakeCallInput, UnstakeCallOutput};
+        use dwow_bearer_bond_contract::client::unstake::{UnstakeCallInput, UnstakeCallOutput};
         let us_input = UnstakeCallInput {
             principal: 500, token_id: pallas::Base::from(1u64),
             spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
@@ -4423,7 +4423,7 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
 
         // --- emergency_unstake (0x06) ---
         println!("  Test: emergency_unstake");
-        use dwow_bearer_bond_contract::client::emergency_unstake_v1::{EmergencyUnstakeCallInput, EmergencyUnstakeCallOutput};
+        use dwow_bearer_bond_contract::client::emergency_unstake::{EmergencyUnstakeCallInput, EmergencyUnstakeCallOutput};
         let eu_input = EmergencyUnstakeCallInput {
             principal: 500, token_id: pallas::Base::from(1u64),
             spend_hook: pallas::Base::zero(), user_data: pallas::Base::zero(),
@@ -4444,7 +4444,7 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
 
         // --- pay_interest (0x07) ---
         println!("  Test: pay_interest");
-        use dwow_bearer_bond_contract::client::pay_interest_v1::PayInterestCallInput;
+        use dwow_bearer_bond_contract::client::pay_interest::PayInterestCallInput;
         let pi_input = PayInterestCallInput {
             bond_token_commit: pallas::Base::from(1u64), claim_block: 100,
             interest_amount: 500, token_id: pallas::Base::from(1u64),
@@ -4457,7 +4457,7 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
 
         // --- prove_coverage (0x08) ---
         println!("  Test: prove_coverage");
-        use dwow_bearer_bond_contract::client::prove_coverage_v1::ProveCoverageCallInput;
+        use dwow_bearer_bond_contract::client::prove_coverage::ProveCoverageCallInput;
         let pc_input = ProveCoverageCallInput {
             series_token_id: pallas::Base::from(1u64),
             total_outstanding: 10000,

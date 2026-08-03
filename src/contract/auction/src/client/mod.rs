@@ -25,9 +25,9 @@
 
 pub mod zkbins;
 
-pub mod create_auction_v1;
-pub mod place_bid_v1;
-pub mod close_auction_v1;
-pub mod claim_winnings_v1;
-pub mod settle_auction_v1;
-pub mod refund_bid_v1;
+pub mod create_auction;
+pub mod place_bid;
+pub mod close_auction;
+pub mod claim_winnings;
+pub mod settle_auction;
+pub mod refund_bid;

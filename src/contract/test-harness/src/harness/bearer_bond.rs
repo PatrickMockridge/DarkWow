@@ -31,14 +31,14 @@ use dwow_sdk::crypto::MerkleNode;
 use dwow_serial::Encodable;
 
 use dwow_bearer_bond_contract::client::{
-    burn_stake_v1::{BurnStakeCallBuilder, BurnStakeCallInput},
-    emergency_unstake_v1::{EmergencyUnstakeCallBuilder, EmergencyUnstakeCallInput, EmergencyUnstakeCallOutput},
-    issue_stake_v1::{IssueStakeCallBuilder, IssueStakeCallInput},
-    pay_interest_v1::{PayInterestCallBuilder, PayInterestCallInput},
-    prove_coverage_v1::{ProveCoverageCallBuilder, ProveCoverageCallInput},
-    request_interest_v1::{RequestInterestCallBuilder, RequestInterestCallInput},
-    transfer_stake_v1::{TransferStakeCallBuilder, TransferStakeCallInput, TransferStakeCallOutput},
-    unstake_v1::{UnstakeCallBuilder, UnstakeCallInput, UnstakeCallOutput},
+    burn_stake::{BurnStakeCallBuilder, BurnStakeCallInput},
+    emergency_unstake::{EmergencyUnstakeCallBuilder, EmergencyUnstakeCallInput, EmergencyUnstakeCallOutput},
+    issue_stake::{IssueStakeCallBuilder, IssueStakeCallInput},
+    pay_interest::{PayInterestCallBuilder, PayInterestCallInput},
+    prove_coverage::{ProveCoverageCallBuilder, ProveCoverageCallInput},
+    request_interest::{RequestInterestCallBuilder, RequestInterestCallInput},
+    transfer_stake::{TransferStakeCallBuilder, TransferStakeCallInput, TransferStakeCallOutput},
+    unstake::{UnstakeCallBuilder, UnstakeCallInput, UnstakeCallOutput},
 };
 
 /// Bearer Bond Harness for isolated testing

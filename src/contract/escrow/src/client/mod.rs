@@ -26,11 +26,11 @@
 /// ZK circuit binary constants (client-side proof generation)
 pub mod zkbins;
 
-pub mod create_escrow_v1;
-pub mod fund_v1;
-pub mod claim_v1;
-pub mod refund_v1;
-pub mod cancel_v1;
+pub mod create_escrow;
+pub mod fund;
+pub mod claim;
+pub mod refund;
+pub mod cancel;
 
 // EscrowClient REMOVED (T2a — phantom-code-removed-first, 2026-07-15).
 // The `impl ContractClient` stub was wallet grammar (WalletStateProvider) in a

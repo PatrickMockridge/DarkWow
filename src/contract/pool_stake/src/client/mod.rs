@@ -27,10 +27,10 @@
 
 pub mod zkbins;
 
-pub mod create_pool_v1;
-pub mod join_pool_v1;
-pub mod allocate_coverage_v1;
-pub mod slash_coverage_v1;
+pub mod create_pool;
+pub mod join_pool;
+pub mod allocate_coverage;
+pub mod slash_coverage;
 
 use dwow_sdk::{
     crypto::{poseidon_hash, PublicKey, SecretKey},

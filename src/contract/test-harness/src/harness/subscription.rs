@@ -36,13 +36,13 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 
 use dwow_subscription_contract::client::{
-    subscribe_v1::{
+    subscribe::{
         SubscribeCallData, SubscribePublicInputs, create_subscribe_proof,
     },
-    update_usage_v1::{
+    update_usage::{
         UpdateUsageCallData, UpdateUsagePublicInputs, create_update_usage_proof,
     },
-    verify_access_v1::{
+    verify_access::{
         VerifyAccessCallData, VerifyAccessPublicInputs, create_verify_access_proof,
     },
 };

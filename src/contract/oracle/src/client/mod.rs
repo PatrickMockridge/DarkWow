@@ -25,11 +25,11 @@
 
 pub mod zkbins;
 
-pub mod register_oracle_v1;
-pub mod push_value_v1;
-pub mod attest_value_v1;
-pub mod push_value_commitment_v1;
-pub mod aggregate_v1;
+pub mod register_oracle;
+pub mod push_value;
+pub mod attest_value;
+pub mod push_value_commitment;
+pub mod aggregate;
 
 use dwow_sdk::crypto::PublicKey;
 

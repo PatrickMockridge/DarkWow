@@ -33,11 +33,11 @@ use dwow_core::{
 use dwow_serial::Encodable;
 
 use dwow_insurance_market_contract::client::{
-    underwrite_with_capability_v1::{
+    underwrite_with_capability::{
         UnderwriteWithCapabilityV1CallData, UnderwriteWithCapabilityV1PublicInputs,
         underwrite_with_capability_v1_proof,
     },
-    purchase_coverage_with_capability_v1::{
+    purchase_coverage_with_capability::{
         PurchaseCoverageWithCapabilityV1CallData, PurchaseCoverageWithCapabilityV1PublicInputs,
         purchase_coverage_with_capability_v1_proof,
     },

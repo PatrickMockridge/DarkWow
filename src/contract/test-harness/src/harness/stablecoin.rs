@@ -35,12 +35,12 @@ use dwow_sdk::{
 };
 use dwow_serial::Encodable;
 use dwow_stablecoin_contract::client::{
-    open_position_v1::{OpenPositionCallData, create_open_position_proof},
-    mint_stable_v1::{MintStableCallData, create_mint_stable_proof, MintStablePublicInputs},
-    liquidate_v1::{LiquidateCallData, create_liquidate_proof, LiquidatePublicInputs},
-    governance_report_v1::{GovernanceReportCallData, create_governance_report_proof, GovernanceReportPublicInputs},
-    accrue_interest_v1::{AccrueInterestCallData, create_accrue_interest_proof, AccrueInterestPublicInputs},
-    initialize_v1::{InitV1CallData, create_initialize_proof, InitV1PublicInputs},
+    open_position::{OpenPositionCallData, create_open_position_proof},
+    mint_stable::{MintStableCallData, create_mint_stable_proof, MintStablePublicInputs},
+    liquidate::{LiquidateCallData, create_liquidate_proof, LiquidatePublicInputs},
+    governance_report::{GovernanceReportCallData, create_governance_report_proof, GovernanceReportPublicInputs},
+    accrue_interest::{AccrueInterestCallData, create_accrue_interest_proof, AccrueInterestPublicInputs},
+    initialize::{InitV1CallData, create_initialize_proof, InitV1PublicInputs},
 };
 use dwow_stablecoin_contract::model::{DepositCollateralParams, MintStableParams, LiquidateParams, GovernanceReportParams, AccrueInterestParams};
 

@@ -33,14 +33,14 @@ use dwow_sdk::{crypto::{MerkleNode, PublicKey}, pasta::pallas};
 use dwow_serial::Encodable;
 
 use dwow_oracle_contract::client::{
-    aggregate_v1::{AggregateV1CallData, AggregateV1PublicInputs, aggregate_v1_proof},
-    attest_value_v1::{AttestValueV1CallData, AttestValueV1PublicInputs, attest_value_v1_proof},
-    push_value_commitment_v1::{
+    aggregate::{AggregateV1CallData, AggregateV1PublicInputs, aggregate_v1_proof},
+    attest_value::{AttestValueV1CallData, AttestValueV1PublicInputs, attest_value_v1_proof},
+    push_value_commitment::{
         PushValueCommitmentV1CallData, PushValueCommitmentV1PublicInputs,
         push_value_commitment_v1_proof,
     },
-    push_value_v1::{PushValueV1CallData, PushValueV1PublicInputs, push_value_v1_proof},
-    register_oracle_v1::{
+    push_value::{PushValueV1CallData, PushValueV1PublicInputs, push_value_v1_proof},
+    register_oracle::{
         RegisterOracleV1CallData, register_oracle_v1_proof,
     },
 };

@@ -29,14 +29,14 @@
 //! ZK proof client modules
 pub mod zkbins;
 
-pub mod create_attestation_v1;
-pub mod create_claim_v1;
-pub mod verify_claim_v1;
-pub mod consume_claim_v1;
-pub mod check_not_revoked_v1;
-pub mod delegate_attestation_v1;
-pub mod verify_chain_v1;
-pub mod update_delegation_v1;
+pub mod create_attestation;
+pub mod create_claim;
+pub mod verify_claim;
+pub mod consume_claim;
+pub mod check_not_revoked;
+pub mod delegate_attestation;
+pub mod verify_chain;
+pub mod update_delegation;
 
 use dwow_sdk::{
     crypto::{PublicKey},
