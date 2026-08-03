@@ -32,13 +32,11 @@
 //!
 //! Adapted for CChainState (commit 597691582 refactor).
 
-use std::sync::Arc;
 
 use dwow_chain::{
     Block, BlockHeader, CChainState, ContractCall, Miner, PowSource, Transaction, UncleBlock,
     build_uncle_merkle, create_uncle,
 };
-use dwow_core::Result;
 use dwow_sdk::blockchain::{self, BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, MoneroBlockHeight};
 
 /// Synthetic timestamp for test blocks, spaced 120s per height so the

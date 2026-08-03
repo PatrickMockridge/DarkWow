@@ -26,7 +26,6 @@ use std::collections::HashMap;
 use crate::wallet_util::encode_base10;
 use dwow_sdk::crypto::keypair::{Address, Network, PublicKey, SecretKey, StandardAddress};
 use dwow_sdk::crypto::FuncId;
-use dwow_sdk::pasta::pallas;
 
 use prettytable::{format, row, Table};
 

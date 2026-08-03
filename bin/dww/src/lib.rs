@@ -1458,7 +1458,7 @@ impl Dww {
         function: &str,
         params: Option<&str>,
         proofs: Vec<Vec<u8>>,
-        signing_secrets: Vec<SecretKey>,
+        _signing_secrets: Vec<SecretKey>,
     ) -> Result<Transaction> {
         // Manifest-driven fallback storage — lives outside the or_else chain so
         // the reference survives. Stores both the synthetic metadata AND the
@@ -1569,7 +1569,7 @@ impl Dww {
                 };
                 let mut seed = [0u8; 32];
                 rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
-                let mut tx = crate::fee_builder::build_fee_and_finalize_tx(
+                let tx = crate::fee_builder::build_fee_and_finalize_tx(
                     &self.wallet, &self.account_mgr, leaf, None, None, seed)?;
                 // §6.3 step 7 / mempool admission: ONE signature row per call,
                 // in call order — calls[0] = main (signed by the caller-supplied
@@ -1599,7 +1599,7 @@ impl Dww {
                 };
                 let mut seed = [0u8; 32];
                 rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
-                let mut tx = crate::fee_builder::build_fee_and_finalize_tx(
+                let tx = crate::fee_builder::build_fee_and_finalize_tx(
                     &self.wallet, &self.account_mgr, leaf, None, None, seed,
                 )?;
                 // Per-call signature rows (see the Path A exit above).
@@ -1672,7 +1672,7 @@ impl Dww {
         // Build transaction with fee
         let mut seed = [0u8; 32];
         rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
-        let mut tx = crate::fee_builder::build_fee_and_finalize_tx(
+        let tx = crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, &self.account_mgr, leaf, None, None, seed)?;
         // Per-call signature rows (see the Path A exit above).
 

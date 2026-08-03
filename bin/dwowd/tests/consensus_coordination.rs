@@ -146,7 +146,7 @@ fn test_c1_authority_with_genesis_proceeds_solo() {
         let (wd_done, _wd) = spawn_watchdog("ProceedSolo", 12, 5);
 
         let start = Instant::now();
-        let decision = client.wait_for_peers_or_proceed(true, BlockHeight::new(1)).await;
+        let decision = client.wait_for_peers_or_proceed(Some(dwowd::task::GenesisAuthority::new()), BlockHeight::new(1)).await;
         let elapsed = start.elapsed();
         wd_done.store(true, Ordering::Relaxed);
 
@@ -222,7 +222,7 @@ fn test_c2_authority_at_height_zero_proceeds_solo() {
         let (wd_done, _wd) = spawn_watchdog("ProceedSolo (authority at height 0)", 12, 5);
 
         let start = Instant::now();
-        let decision = client.wait_for_peers_or_proceed(true, BlockHeight::new(0)).await;
+        let decision = client.wait_for_peers_or_proceed(Some(dwowd::task::GenesisAuthority::new()), BlockHeight::new(0)).await;
         let elapsed = start.elapsed();
         wd_done.store(true, Ordering::Relaxed);
 
@@ -284,7 +284,7 @@ fn test_c3_non_authority_with_genesis_returns_retry() {
         let (wd_done, _wd) = spawn_watchdog("Retry (non-authority with genesis)", 12, 5);
 
         let start = Instant::now();
-        let decision_fut = client.wait_for_peers_or_proceed(false, BlockHeight::new(1));
+        let decision_fut = client.wait_for_peers_or_proceed(None, BlockHeight::new(1));
 
         // Test-level timeout wrapper — HAZOP Finding 8 remediation.
         // If the function hangs (H1 regression), this catches it.
@@ -364,7 +364,7 @@ fn test_c4_non_authority_at_height_zero_waits_for_genesis() {
         let (wd_done, _wd) = spawn_watchdog("WaitForGenesis", 35, 5);
 
         let start = Instant::now();
-        let decision = client.wait_for_peers_or_proceed(false, BlockHeight::new(0)).await;
+        let decision = client.wait_for_peers_or_proceed(None, BlockHeight::new(0)).await;
         let elapsed = start.elapsed();
         wd_done.store(true, Ordering::Relaxed);
 

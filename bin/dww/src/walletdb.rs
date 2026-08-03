@@ -705,7 +705,7 @@ impl WalletDb {
     /// Mark a held capability as revoked (nullifier published on-chain).
     /// HAZOP WP-7: also sets status = 'processing' for the confirmation lifecycle.
     pub fn mark_revoked(&self, cap_id: &str, block_height: u64) -> WalletDbResult<()> {
-        use crate::capability::CapStatus;
+        
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         conn.execute(
             "UPDATE held_capabilities SET revoked = 1, revoked_at_height = ?1, status = 'processing', status_height = ?1 WHERE cap_id = ?2",

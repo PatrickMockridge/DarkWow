@@ -34,7 +34,6 @@ use std::str::FromStr;
 
 use dwow_chain::{
     monero::{
-        create_ordered_tx_hashes_from_block,
         fixed_array::FixedByteArray, monero_block_deserialize, utils::create_merkle_proof,
         MoneroPowData,
     },

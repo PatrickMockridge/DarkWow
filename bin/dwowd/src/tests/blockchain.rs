@@ -52,7 +52,7 @@ use dwow_chain::{CChainState, FinalityConfig, PoWConfig};
 use dwow_core::zk::Proof;
 use dwow_core::Result;
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
-use dwow_sdk::crypto::{ContractId, MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID};
+use dwow_sdk::crypto::{ContractId, NATIVE_TOKEN_CONTRACT_ID};
 use dwow_sdk::pasta::pallas;
 use dwow_contract_test_harness::harness::ContractHarness;
 
@@ -267,7 +267,7 @@ impl HeavyweightPipeline {
     }
 
     /// Start building a new block at the next height.
-    pub fn block(&self) -> Result<HeavyweightBlock> {
+    pub fn block(&self) -> Result<HeavyweightBlock<'_>> {
         let h = self.height();
         let next = h.succ();
         let reward = dwow_sdk::blockchain::expected_reward(next);

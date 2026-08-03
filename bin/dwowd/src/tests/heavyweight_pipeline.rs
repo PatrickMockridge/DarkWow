@@ -55,17 +55,14 @@
 //! RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd test_heavyweight
 //! ```
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 
-use dwow_core::{zk::Proof, Result};
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockVersion};
+use dwow_core::zk::Proof;
+use dwow_sdk::blockchain::{BlockReward, BlockTarget};
 use dwow_sdk::crypto::{ContractId, NATIVE_TOKEN_CONTRACT_ID};
-use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use dwow_contract_test_harness::harness::ContractHarness;
 
-use super::genesis::GenesisHarness;
 
 /// Global counter for unique temp file names — prevents race conditions
 /// when multiple HeavyweightPipeline tests run in parallel.
@@ -122,8 +119,8 @@ pub(crate) fn verify_witness_tree(witness: &[u8], label: &str) {
         let cid = leaf.data.contract_id;
         let inner = &leaf.data.data;
         let fn_code = inner.first().copied();
-        let has_children = !leaf.children_indexes.is_empty();
-        let has_parent = leaf.parent_index.is_some();
+        let _has_children = !leaf.children_indexes.is_empty();
+        let _has_parent = leaf.parent_index.is_some();
         eprintln!(
             "[tree-diag]   call[{}]: cid={} fn=0x{:02x?} data_len={} parent={:?} children={}",
             i, cid, fn_code, inner.len(),
@@ -465,7 +462,7 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
     use dwow_sdk::crypto::{Keypair, MerkleNode, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
     use dwow_native_token_contract::client::burn::BurnCallInput;
-    use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
+    
 
     println!("=== NativeToken Heavyweight: All Endpoints ===");
 
@@ -476,7 +473,7 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
         chain.init_genesis().await?;
         let harness = NativeTokenHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
-        let cid = *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;  // deployed at genesis
+        let _cid = *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;  // deployed at genesis
         let secret = SecretKey::from_bytes([2u8; 32]).unwrap();
         let public = PublicKey::from_secret(secret.clone());
         let keypair = Keypair { secret, public };
@@ -696,7 +693,7 @@ fn test_heavyweight_auction() -> std::result::Result<(), Box<dyn std::error::Err
 #[test]
 fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::EscrowHarness;
-    use dwow_sdk::crypto::{ContractId, PublicKey, SecretKey};
+    use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
 
     println!("=== Escrow Heavyweight: All Endpoints ===");
@@ -1158,7 +1155,7 @@ fn test_heavyweight_bridge() -> std::result::Result<(), Box<dyn std::error::Erro
         // from external chain integration. For now, verify keygen + contract
         // deployment succeed, and the proving pipeline is structurally sound.
         let amount = 10000u64;
-        use dwow_sdk::crypto::poseidon_hash;
+        
 
         let empty_path: Vec<MerkleNode> = vec![MerkleNode::new(pallas::Base::from(0u64)); 32];
 
@@ -2311,7 +2308,7 @@ fn test_heavyweight_game_room() -> std::result::Result<(), Box<dyn std::error::E
 #[test]
 fn test_heavyweight_insurance_market() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::InsuranceMarketHarness;
-    use dwow_sdk::crypto::{pasta_prelude::Group, schnorr::Signature, PublicKey, SecretKey};
+    use dwow_sdk::crypto::{pasta_prelude::Group, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
     use crate::tests::blockchain::HeavyweightPipeline;
 
@@ -4118,7 +4115,7 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
 fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::{BridgeHarness, RelayerEndowmentHarness};
     use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
-    use dwow_sdk::crypto::ContractId;
+    
     use dwow_sdk::pasta::pallas;
     use dwow_bridge_contract::model::ExternalChain;
     use crate::tests::blockchain::HeavyweightPipeline;
@@ -4328,7 +4325,7 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
         println!("Contract deployed");
 
         let keypair = Keypair::new(SecretKey::from_base(pallas::Base::from(42)));
-        let pubkey = keypair.public;
+        let _pubkey = keypair.public;
 
         // --- issue_stake (0x01) ---
         println!("  Test: issue_stake");

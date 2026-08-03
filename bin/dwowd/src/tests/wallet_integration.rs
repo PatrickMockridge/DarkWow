@@ -48,11 +48,10 @@
 use std::sync::Arc;
 
 use dwow_chain::{ContractCall, Transaction};
-use dwow_core::Result;
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, MoneroBlockHeight, SupplyAmount};
 use dwow_sdk::crypto::{
     keypair::Network,
-    pasta_prelude::{CurveAffine, Group},
+    pasta_prelude::Group,
     poseidon_hash, ContractId, PublicKey, SecretKey, NATIVE_TOKEN_CONTRACT_ID,
 };
 use dwow_sdk::pasta::pallas;
@@ -215,7 +214,7 @@ fn test_wallet_integration() {
         .expect("accept_block height 2");
 
         assert_eq!(har.block_height(), BlockHeight::new(2));
-        let b2 = har.chain_state.get_block(BlockHeight::new(2)).expect("block 2");
+        let _b2 = har.chain_state.get_block(BlockHeight::new(2)).expect("block 2");
 
         // ================================================================
         // Phase 4: Wallet Construction
@@ -916,7 +915,7 @@ fn test_wallet_manifest_scan() {
     smol::block_on(async {
         use dwow_wallet::Dww;
         use dwow_sdk::crypto::keypair::Network;
-        use dwow_sdk::crypto::pasta_prelude::PrimeField;
+        
         use dwow_chain::{Block, BlockHeader, BlockTarget, BlockReward, PowSource, Transaction, ContractCall};
         use dwow_sdk::blockchain::{BlockTimestamp, BlockVersion, MoneroBlockHeight};
         use dwow_serial::Encodable;
@@ -1436,7 +1435,7 @@ fn test_wallet_capability_scan() {
     smol::block_on(async {
         use dwow_wallet::Dww;
         use dwow_sdk::crypto::keypair::Network;
-        use dwow_sdk::crypto::pasta_prelude::PrimeField;
+        
         use dwow_chain::{Block, BlockHeader, BlockTarget, BlockReward, PowSource, Transaction, ContractCall};
         use dwow_sdk::blockchain::{BlockTimestamp, BlockVersion, MoneroBlockHeight};
         use dwow_serial::Encodable;

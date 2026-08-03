@@ -328,7 +328,7 @@ impl LinearSyncClient {
     /// locally). The universal stuck indicator fires at 120s.
     pub async fn wait_for_peers_or_proceed(
         &self,
-        genesis_authority: bool,
+        genesis_authority: Option<crate::task::GenesisAuthority>,
         local_height: BlockHeight,
     ) -> SyncDecision {
         use std::time::Duration;
@@ -349,7 +349,7 @@ impl LinearSyncClient {
             // At height == 0: create genesis (authority IS the genesis
             // source — HAZOP L2: returning WaitForGenesis to the
             // authority would deadlock; the authority must create it).
-            if genesis_authority && wait_iters >= 10 {
+            if genesis_authority.is_some() && wait_iters >= 10 {
                 info!(
                     target: "dwowd::proto::linear_sync_client",
                     "Genesis authority: no peers after 10s, proceeding solo at height {}",
@@ -363,7 +363,7 @@ impl LinearSyncClient {
             // WaitForGenesis (genesis exists). Must retry outer
             // consensus loop — HAZOP H1: without this, the function
             // loops forever (no exit condition matches).
-            if !genesis_authority && local_height >= BlockHeight::GENESIS && wait_iters >= 10 {
+            if genesis_authority.is_none() && local_height >= BlockHeight::GENESIS && wait_iters >= 10 {
                 info!(
                     target: "dwowd::proto::linear_sync_client",
                     "Non-authority with genesis: no peers after {}s. Returning Retry.",
@@ -388,7 +388,7 @@ impl LinearSyncClient {
                 warn!(
                     target: "dwowd::proto::linear_sync_client",
                     "Still waiting for peers after 120s — local_height={} authority={}",
-                    local_height, genesis_authority,
+                    local_height, genesis_authority.is_some(),
                 );
             }
         }

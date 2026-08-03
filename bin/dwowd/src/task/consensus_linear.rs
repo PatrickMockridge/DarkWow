@@ -226,8 +226,7 @@ pub async fn consensus_linear_init_task(
         // boolean algebra is replaced with type-checkable variants
         // (type-system.md §5.1: "A bare bool SHALL NOT gate consensus-
         // critical paths.").
-        let genesis_authority = config.genesis_authority.is_some();
-        match client.wait_for_peers_or_proceed(genesis_authority, local_height).await {
+        match client.wait_for_peers_or_proceed(config.genesis_authority.clone(), local_height).await {
             SyncDecision::PeersAvailable => {
                 // fall through to tip collection below
             }

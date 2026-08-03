@@ -38,11 +38,9 @@ use dwow_core::Result;
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, MoneroBlockHeight, SupplyAmount};
 use dwow_sdk::crypto::{
     keypair::Network,
-    pasta_prelude::Group,
-    ContractId, PublicKey, SecretKey, NATIVE_TOKEN_CONTRACT_ID,
+    pasta_prelude::Group, NATIVE_TOKEN_CONTRACT_ID,
 };
 use dwow_sdk::pasta::pallas;
-use dwow_serial::Encodable;
 
 use crate::tests::genesis::GenesisHarness;
 

@@ -559,7 +559,7 @@ fn scan_native_token_contract_calls(
         // capabilities. Inserting them would double-count the claim as both a
         // revocation signal and a spend — identical reasoning.
         if matches!(function_code, 0x00 | 0x02 | 0x03 | 0x04) {
-            let mut cursor = std::io::Cursor::new(&call.data[1..]);
+            let cursor = std::io::Cursor::new(&call.data[1..]);
             // V.2: NullifierRecord stores typed Nullifier, not raw pallas::Base
             let published: Vec<dwow_chain::Nullifier> = match function_code {
                 0x03 => match TransferParamsV1::decode(&cursor.get_ref()[cursor.position() as usize..]) {

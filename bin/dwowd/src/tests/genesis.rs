@@ -568,7 +568,7 @@ mod tests {
         dwow_native_token_contract::enable_deterministic_zk();
 
         smol::block_on(async {
-            let (har_a, genesis_block, hash_a) = build_genesis().await;
+            let (_har_a, genesis_block, hash_a) = build_genesis().await;
 
             // Sizing witness: the genesis block (WASM in serde_json byte
             // arrays) exceeds the non-genesis cap — the height-1 size

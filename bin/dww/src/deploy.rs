@@ -95,7 +95,7 @@ impl Dww {
         // by the centralized fee builder.
         let mut seed = [0u8; 32];
         rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
-        let mut tx = crate::fee_builder::build_fee_and_finalize_tx(
+        let tx = crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, &self.account_mgr, deploy_leaf, None, None, seed,
         )?;
 
