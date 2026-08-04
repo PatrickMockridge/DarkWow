@@ -322,7 +322,14 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 }
 
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
-    let func = MultiSigFunction::try_from(update_data[0])?;
+    if update_data.is_empty() {
+        msg!("[multisig::process_update] EMPTY");
+        return Err(ContractError::Custom(254))
+    }
+    let func = match MultiSigFunction::try_from(update_data[0]) {
+        Ok(f) => f,
+        Err(_) => { msg!("[multisig::process_update] BAD 0x{:02x} len={}", update_data[0], update_data.len()); return Err(ContractError::InvalidFunction.into()) }
+    };
     match func {
         MultiSigFunction::CreateGroupV1 => {
             let u = decode_create_group_update_v1(&update_data[1..])?;

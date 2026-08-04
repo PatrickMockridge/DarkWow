@@ -29,6 +29,7 @@ use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, poseidon_hash},
     error::ContractError,
     msg,
+    pasta::pallas,
     wasm,
 };
 

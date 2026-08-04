@@ -64,7 +64,7 @@ impl MultiSigHarness {
         let group_id = poseidon_hash([fx, fy, t, n]);
         let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
-        let tx_binding = poseidon_hash([tx_commitment, tx_commitment, tx_nonce]);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
 
         let witnesses = vec![
             Witness::Base(Value::known(group_id)), Witness::Base(Value::known(t)),
@@ -90,7 +90,7 @@ impl MultiSigHarness {
         let (sx, sy) = signer_pub.xy().expect("pk not identity");
         let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
-        let tx_binding = poseidon_hash([tx_commitment, tx_commitment, tx_nonce]);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
 
         let witnesses = vec![
             Witness::Base(Value::known(group_id)), Witness::Base(Value::known(message_hash)),
@@ -121,7 +121,7 @@ impl MultiSigHarness {
         let approval_commit = poseidon_hash([group_id, message_hash]);
         let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
-        let tx_binding = poseidon_hash([tx_commitment, tx_commitment, tx_nonce]);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);
 
         let witnesses = vec![
             Witness::Base(Value::known(group_id)), Witness::Base(Value::known(message_hash)),
