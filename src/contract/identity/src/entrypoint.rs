@@ -106,7 +106,7 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(&create_claim_v1_dag_bincode[..])?;
     let create_claim_v1_l1_v2_bincode = include_bytes!("../proof/create_claim_l1_sd.zk.bin");
     wasm::db::zkas_db_set(&create_claim_v1_l1_v2_bincode[..])?;
-    let create_claim_v1_l1_bincode = include_bytes!("../proof/create_claim_l1_sd.zk.bin");
+    let create_claim_v1_l1_bincode = include_bytes!("../proof/create_claim_threshold.zk.bin");
     wasm::db::zkas_db_set(&create_claim_v1_l1_bincode[..])?;
     let create_claim_v1_multi_bincode = include_bytes!("../proof/create_claim_multi.zk.bin");
     wasm::db::zkas_db_set(&create_claim_v1_multi_bincode[..])?;

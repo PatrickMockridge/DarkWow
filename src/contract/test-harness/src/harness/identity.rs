@@ -369,7 +369,7 @@ impl IdentityHarness {
             fee: 0,
         };
 
-        let mut call_data = vec![0x06]; // CreateClaimV1L1V2
+        let mut call_data = vec![0x06]; // CreateClaimV2L1V2
         call_data.extend_from_slice(&params.encode());
 
         Ok(CreateClaimL1V2Result { call_data, public_inputs, proof })
@@ -417,7 +417,7 @@ impl IdentityHarness {
             fee: 0,
         };
 
-        let mut call_data = vec![0x07]; // CreateClaimV1Multi
+        let mut call_data = vec![0x07]; // CreateClaimV2Multi
         call_data.extend_from_slice(&params.encode());
 
         Ok(CreateClaimMultiResult { call_data, public_inputs, proof })
@@ -463,7 +463,7 @@ impl IdentityHarness {
             fee: 0,
         };
 
-        let mut call_data = vec![0x08]; // CreateClaimV1Ratio
+        let mut call_data = vec![0x08]; // CreateClaimV2Ratio
         call_data.extend_from_slice(&params.encode());
 
         Ok(CreateClaimRatioResult { call_data, public_inputs, proof })
@@ -653,11 +653,11 @@ impl super::ContractHarness for IdentityHarness {
     fn circuits(&self) -> Vec<&'static str> {
         vec![
             "CreateClaimV2",
-            "CreateClaimV1DAG",
-            "CreateClaimV1L1",
-            "CreateClaimV1L1V2",
-            "CreateClaimV1Multi",
-            "CreateClaimV1Ratio",
+            "CreateClaimV2DAG",
+            "CreateClaimV2L1",
+            "CreateClaimV2L1V2",
+            "CreateClaimV2Multi",
+            "CreateClaimV2Ratio",
             "IssueCredentialV2",
             "VerifyCapabilityV2",
         ]
@@ -666,11 +666,11 @@ impl super::ContractHarness for IdentityHarness {
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
             "CreateClaimV2" => Some(&self.create_claim_zkbin),
-            "CreateClaimV1DAG" => Some(&self.create_claim_dag_zkbin),
-            "CreateClaimV1L1" => Some(&self.create_claim_l1_zkbin),
-            "CreateClaimV1L1V2" => Some(&self.create_claim_l1_v2_zkbin),
-            "CreateClaimV1Multi" => Some(&self.create_claim_multi_zkbin),
-            "CreateClaimV1Ratio" => Some(&self.create_claim_ratio_zkbin),
+            "CreateClaimV2DAG" => Some(&self.create_claim_dag_zkbin),
+            "CreateClaimV2L1" => Some(&self.create_claim_l1_zkbin),
+            "CreateClaimV2L1V2" => Some(&self.create_claim_l1_v2_zkbin),
+            "CreateClaimV2Multi" => Some(&self.create_claim_multi_zkbin),
+            "CreateClaimV2Ratio" => Some(&self.create_claim_ratio_zkbin),
             "IssueCredentialV2" => Some(&self.issue_credential_zkbin),
             "VerifyCapabilityV2" => Some(&self.verify_capability_zkbin),
             _ => None,
@@ -680,11 +680,11 @@ impl super::ContractHarness for IdentityHarness {
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
             "CreateClaimV2" => Some(&self.create_claim_pk),
-            "CreateClaimV1DAG" => Some(&self.create_claim_dag_pk),
-            "CreateClaimV1L1" => Some(&self.create_claim_l1_pk),
-            "CreateClaimV1L1V2" => Some(&self.create_claim_l1_v2_pk),
-            "CreateClaimV1Multi" => Some(&self.create_claim_multi_pk),
-            "CreateClaimV1Ratio" => Some(&self.create_claim_ratio_pk),
+            "CreateClaimV2DAG" => Some(&self.create_claim_dag_pk),
+            "CreateClaimV2L1" => Some(&self.create_claim_l1_pk),
+            "CreateClaimV2L1V2" => Some(&self.create_claim_l1_v2_pk),
+            "CreateClaimV2Multi" => Some(&self.create_claim_multi_pk),
+            "CreateClaimV2Ratio" => Some(&self.create_claim_ratio_pk),
             "IssueCredentialV2" => Some(&self.issue_credential_pk),
             "VerifyCapabilityV2" => Some(&self.verify_capability_pk),
             _ => None,

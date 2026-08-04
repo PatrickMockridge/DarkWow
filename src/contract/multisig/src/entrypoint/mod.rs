@@ -78,9 +78,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             meta
         }
         MultiSigFunction::SignV1 => {
-            let params = match SignParamsV1::decode(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[multisig::get_metadata] Error: Failed to deserialize SignParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
-            };
+            let params = SignParamsV1::decode(&self_.data[1..])?;
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_inputs.push((MULTISIG_CONTRACT_ZKAS_SIGN_NS_V2.to_string(), vec![
                 params.tx_binding, params.tx_nonce, params.group_id.inner(), params.message_hash,
