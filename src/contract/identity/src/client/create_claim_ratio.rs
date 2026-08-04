@@ -101,14 +101,14 @@ impl CreateClaimRatioCallData {
         }
     }
 
-    /// Compute nullifier from credential_secret and commitment
+    /// Compute nullifier from credential_secret and commitment (domain-separated, V2)
     pub fn compute_nullifier(&self) -> pallas::Base {
-        poseidon_hash([self.credential_secret, self.commitment])
+        poseidon_hash([pallas::Base::from(1u64), self.credential_secret, self.commitment])
     }
 
     pub fn compute_public_inputs(&self) -> CreateClaimRatioPublicInputs {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
-        let tx_binding = poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         CreateClaimRatioPublicInputs {
             nullifier: self.compute_nullifier(),
             claim_type: self.claim_type,
@@ -127,7 +127,7 @@ impl CreateClaimRatioCallData {
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
-        let tx_binding = poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
             // Public inputs as witnesses
             Witness::Base(Value::known(self.compute_nullifier())),

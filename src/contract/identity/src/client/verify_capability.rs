@@ -101,19 +101,19 @@ impl VerifyCapabilityCallData {
         }
     }
 
-    /// Compute nullifier from credential_secret and commitment
+    /// Compute nullifier from credential_secret and commitment (domain-separated, V2)
     pub fn compute_nullifier(&self) -> pallas::Base {
-        poseidon_hash([self.credential_secret, self.commitment])
+        poseidon_hash([pallas::Base::from(1u64), self.credential_secret, self.commitment])
     }
 
-    /// Compute capability hash
+    /// Compute capability hash (domain-separated, V2)
     pub fn compute_capability(&self) -> pallas::Base {
-        poseidon_hash([self.capability_secret, self.capability_id])
+        poseidon_hash([pallas::Base::from(1u64), self.capability_secret, self.capability_id])
     }
 
     pub fn compute_public_inputs(&self) -> VerifyCapabilityPublicInputs {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
-        let tx_binding = poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         VerifyCapabilityPublicInputs {
             capability_id: self.capability_id,
             nullifier: self.compute_nullifier(),
@@ -132,7 +132,7 @@ impl VerifyCapabilityCallData {
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
-        let tx_binding = poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
             // Public inputs as witnesses
             Witness::Base(Value::known(self.capability_id)),

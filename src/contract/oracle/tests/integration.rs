@@ -77,6 +77,8 @@ fn test_register_oracle_params_encoding() {
         oracle_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(2))),
         name: "BTC/USD Price Feed".to_string(),
         data_type: "price".to_string(),
+        tx_binding: pallas::Base::zero(),
+        tx_nonce: pallas::Base::zero(),
     };
 
     let encoded = serialize(&params);
@@ -93,6 +95,8 @@ fn test_push_value_params_encoding() {
         proof: vec![1, 2, 3],
         oracle_id: OracleId(pallas::Base::from(1)),
         value: pallas::Base::from(50000),
+        tx_binding: pallas::Base::zero(),
+        tx_nonce: pallas::Base::zero(),
     };
 
     let encoded = serialize(&params);
@@ -110,6 +114,8 @@ fn test_attest_value_params_encoding() {
         attestation_id: AttestationId(pallas::Base::from(2)),
         predicate: 0, // Matches
         threshold: pallas::Base::from(50000),
+        tx_binding: pallas::Base::zero(),
+        tx_nonce: pallas::Base::zero(),
     };
 
     let encoded = serialize(&params);

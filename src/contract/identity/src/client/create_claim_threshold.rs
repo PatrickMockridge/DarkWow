@@ -101,14 +101,14 @@ impl CreateClaimL1CallData {
         }
     }
 
-    /// Compute nullifier from credential_secret and commitment
+    /// Compute nullifier from credential_secret and commitment (domain-separated, V2)
     pub fn compute_nullifier(&self) -> pallas::Base {
-        poseidon_hash([self.credential_secret, self.commitment])
+        poseidon_hash([pallas::Base::from(1u64), self.credential_secret, self.commitment])
     }
 
     pub fn compute_public_inputs(&self) -> CreateClaimL1PublicInputs {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
-        let tx_binding = poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         CreateClaimL1PublicInputs {
             nullifier: self.compute_nullifier(),
             claim_type: self.claim_type,
@@ -127,20 +127,21 @@ impl CreateClaimL1CallData {
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
-        let tx_binding = poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
-            // Public inputs as witnesses
+            // Public inputs as witnesses (per circuit order)
             Witness::Base(Value::known(self.compute_nullifier())),
             Witness::Base(Value::known(self.claim_type)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
             Witness::Base(Value::known(self.schema_hash)),
-            Witness::Base(Value::known(if self.predicate_result { pallas::Base::one() } else { pallas::Base::zero() })),
-            // Private inputs
+            // Private inputs (before predicate_result in circuit order)
             Witness::Base(Value::known(self.credential_secret)),
             Witness::Base(Value::known(self.attribute_value)),
             Witness::Base(Value::known(self.threshold)),
             Witness::Base(Value::known(self.commitment)),
+            // predicate_result follows private inputs in circuit order
+            Witness::Base(Value::known(if self.predicate_result { pallas::Base::one() } else { pallas::Base::zero() })),
             Witness::Base(Value::known(self.delta)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),

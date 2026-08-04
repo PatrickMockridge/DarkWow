@@ -29,7 +29,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{poseidon_hash, MerkleNode, PublicKey},
+    crypto::{poseidon_hash, smt::SMT_FP_DEPTH, MerkleNode, PublicKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -94,9 +94,9 @@ impl PushValueCommitmentV1CallData {
         }
     }
 
-    /// Compute commitment from value and nonce
+    /// Compute commitment from value and nonce (matching circuit: poseidon_hash(pos, value, nonce))
     pub fn compute_commitment(&self) -> pallas::Base {
-        poseidon_hash([self.value, self.nonce])
+        poseidon_hash([pallas::Base::from(self.pos), self.value, self.nonce])
     }
 
     pub fn compute_public_inputs(&self) -> PushValueCommitmentV1PublicInputs {
@@ -115,6 +115,15 @@ impl PushValueCommitmentV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.staker_public.xy().expect("pk not identity");
         let tx_binding = dwow_sdk::crypto::poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
+
+        // Build SparseMerklePath: convert MerkleNode to Base, pad to SMT_FP_DEPTH
+        let mut path_bases = [pallas::Base::zero(); SMT_FP_DEPTH];
+        for (i, node) in self.path.iter().enumerate() {
+            if i < SMT_FP_DEPTH {
+                path_bases[i] = node.inner();
+            }
+        }
+
         vec![
             // Circuit order: oracle_id, staker_secret, staker_pub_x, staker_pub_y, pos, path,
             //   value, nonce, commitment, data_root, tx_commitment, tx_nonce, tx_binding
@@ -122,15 +131,15 @@ impl PushValueCommitmentV1CallData {
             Witness::Base(Value::known(self.staker_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
-            Witness::Uint64(Value::known(self.pos)),
-            Witness::MerklePath(Value::known(self.path.clone().try_into().unwrap())),
+            Witness::Base(Value::known(pallas::Base::from(self.pos))),
+            Witness::SparseMerklePath(Value::known(path_bases)),
             Witness::Base(Value::known(self.value)),
             Witness::Base(Value::known(self.nonce)),
             Witness::Base(Value::known(self.commitment)),
             Witness::Base(Value::known(self.data_root)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(tx_binding)), // tx_binding (computed by circuit)
+            Witness::Base(Value::known(tx_binding)),
         ]
     }
 }

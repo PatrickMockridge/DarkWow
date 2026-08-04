@@ -44,10 +44,12 @@ pub struct CreateAttestationV1PublicInputs {
 }
 
 impl CreateAttestationV1PublicInputs {
+    /// Returns public inputs in circuit constrain_instance() order:
+    /// tx_binding, tx_nonce (matches create_attestation.zk).
+    /// attestor_pub_x/y are stored in params but NOT constrained
+    /// as instances by the current circuit.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
-            self.attestor_pub_x,
-            self.attestor_pub_y,
             self.tx_binding,
             self.tx_nonce,
         ]

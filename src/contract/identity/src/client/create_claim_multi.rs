@@ -125,18 +125,18 @@ impl CreateClaimMultiCallData {
         }
     }
 
-    /// Compute combined nullifier
+    /// Compute combined nullifier (domain-separated, V2)
     pub fn compute_nullifier(&self) -> pallas::Base {
-        let computed_nullifier_1 = poseidon_hash([self.secret_1, self.commitment_1]);
-        let computed_nullifier_2 = poseidon_hash([self.secret_2, self.commitment_2]);
-        let computed_nullifier_3 = poseidon_hash([self.secret_3, self.commitment_3]);
-        let combined = poseidon_hash([computed_nullifier_1, computed_nullifier_2]);
-        poseidon_hash([combined, computed_nullifier_3])
+        let computed_nullifier_1 = poseidon_hash([pallas::Base::from(1u64), self.secret_1, self.commitment_1]);
+        let computed_nullifier_2 = poseidon_hash([pallas::Base::from(1u64), self.secret_2, self.commitment_2]);
+        let computed_nullifier_3 = poseidon_hash([pallas::Base::from(1u64), self.secret_3, self.commitment_3]);
+        let combined = poseidon_hash([pallas::Base::from(1u64), computed_nullifier_1, computed_nullifier_2]);
+        poseidon_hash([pallas::Base::from(1u64), combined, computed_nullifier_3])
     }
 
     pub fn compute_public_inputs(&self) -> CreateClaimMultiPublicInputs {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
-        let tx_binding = poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         CreateClaimMultiPublicInputs {
             nullifier: self.compute_nullifier(),
             claim_type: self.claim_type,
@@ -151,7 +151,7 @@ impl CreateClaimMultiCallData {
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
-        let tx_binding = poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
             // Public inputs as witnesses
             Witness::Base(Value::known(self.compute_nullifier())),

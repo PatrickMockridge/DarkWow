@@ -123,12 +123,12 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params = match RegisterOracleParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize RegisterOracleParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
-            // Circuit constrain_instance: oracle_pub_x, oracle_pub_y
+            // Circuit constrain_instance: oracle_pub_x, oracle_pub_y, tx_binding, tx_nonce
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V2.to_string(),
                 {
                     let (ox, oy) = params.oracle_pub.xy().expect("pk not identity");
-                    vec![ox, oy]
+                    vec![ox, oy, params.tx_binding, params.tx_nonce]
                 },
             ));
         }
@@ -138,14 +138,14 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_PUSH_VALUE_NS_V2.to_string(),
-                vec![params.oracle_id.inner(), params.value],
+                vec![params.oracle_id.inner(), params.value, params.tx_binding, params.tx_nonce],
             ));
         }
         OracleFunction::AttestValueV1 => {
             let params = match AttestValueParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize AttestValueParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
-            // Circuit constrain_instance: oracle_id, attestation_id, predicate, threshold
+            // Circuit constrain_instance: oracle_id, attestation_id, predicate, threshold, tx_binding, tx_nonce
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_ATTEST_VALUE_NS_V2.to_string(),
                 vec![
@@ -153,6 +153,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.attestation_id.inner(),
                     Base::from(params.predicate as u64),
                     params.threshold,
+                    params.tx_binding,
+                    params.tx_nonce,
                 ],
             ));
         }
@@ -160,17 +162,17 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params = match PushValueCommitmentParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize PushValueCommitmentParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
-            // Circuit constrain_instance: oracle_id, commitment, data_root
+            // Circuit constrain_instance: oracle_id, commitment, data_root, tx_binding, tx_nonce
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V2.to_string(),
-                vec![params.oracle_id.inner(), params.commitment, params.data_root],
+                vec![params.oracle_id.inner(), params.commitment, params.data_root, params.tx_binding, params.tx_nonce],
             ));
         }
         OracleFunction::AggregateV1 => {
             let params = match AggregateParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[oracle::get_metadata] Error: Failed to deserialize AggregateParamsV1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
-            // Circuit constrain_instance: oracle_id, result, min_result, max_result
+            // Circuit constrain_instance: oracle_id, result, min_result, max_result, tx_binding, tx_nonce
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_AGGREGATE_NS_V2.to_string(),
                 vec![
@@ -178,6 +180,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.result,
                     params.min_result,
                     params.max_result,
+                    params.tx_binding,
+                    params.tx_nonce,
                 ],
             ));
         }

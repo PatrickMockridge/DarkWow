@@ -163,9 +163,11 @@ impl OracleHarness {
             oracle_pub: oracle_public,
             name,
             data_type,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x00];
         call_data.extend_from_slice(&params.encode());
 
         Ok(RegisterOracleResult {
@@ -193,6 +195,8 @@ impl OracleHarness {
             proof: proof.as_ref().to_vec(),
             oracle_id: OracleId(public_inputs.oracle_id),
             value: public_inputs.value,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x01];
@@ -226,6 +230,8 @@ impl OracleHarness {
             attestation_id: AttestationId(public_inputs.attestation_id),
             predicate: 0, // Matches
             threshold: public_inputs.threshold,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x02];
@@ -262,6 +268,8 @@ impl OracleHarness {
             data_root: public_inputs.data_root,
             pos: pallas::Base::from(pos),
             path: path.iter().map(|n| n.inner()).collect(),
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x03];
@@ -298,6 +306,8 @@ impl OracleHarness {
             result: public_inputs.result,
             min_result: public_inputs.min_result,
             max_result: public_inputs.max_result,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
 
         let mut call_data = vec![0x04];

@@ -106,11 +106,17 @@ impl IssueCredentialCallData {
         }
     }
 
-    /// Compute credential commitment
+    /// Compute credential nullifier from credential_secret and commitment (domain-separated, V2)
+    pub fn compute_nullifier(&self) -> pallas::Base {
+        poseidon_hash([pallas::Base::from(1u64), self.credential_secret, self.compute_commitment()])
+    }
+
+    /// Compute credential commitment (domain-separated, V2)
     pub fn compute_commitment(&self) -> pallas::Base {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
         let (hx, hy) = self.holder_public.xy().expect("pk not identity");
         let credential_data = poseidon_hash([
+            pallas::Base::from(4u64),
             ix,
             iy,
             hx,
@@ -121,6 +127,7 @@ impl IssueCredentialCallData {
             self.attribute_blind,
         ]);
         poseidon_hash([
+            pallas::Base::from(4u64),
             credential_data,
             self.credential_secret,
             pallas::Base::from(self.issued_at),
@@ -131,7 +138,7 @@ impl IssueCredentialCallData {
     pub fn compute_public_inputs(&self) -> IssueCredentialPublicInputs {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
         let (hx, hy) = self.holder_public.xy().expect("pk not identity");
-        let tx_binding = poseidon_hash([hx, self.tx_commitment, self.tx_nonce]);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         IssueCredentialPublicInputs {
             commitment: self.compute_commitment(),
             issuer_pub_x: ix,
@@ -149,7 +156,7 @@ impl IssueCredentialCallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
         let (hx, hy) = self.holder_public.xy().expect("pk not identity");
-        let tx_binding = poseidon_hash([hx, self.tx_commitment, self.tx_nonce]);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
             // Public inputs as witnesses
             Witness::Base(Value::known(self.compute_commitment())),

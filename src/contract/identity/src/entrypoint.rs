@@ -142,13 +142,17 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
 
+    // V2 tx_binding = poseidon_hash(DOMAIN_TX_BINDING=3, tx_commitment=0, tx_nonce=0).
+    // Both tx_commitment and tx_nonce are zero in the client (no replay protection yet),
+    // so tx_binding is a deterministic constant. MUST match the client computation
+    // and the circuit's constrain_instance(tx_binding).
+    let tx_binding = poseidon_hash([Base::from(3u64), Base::zero(), Base::zero()]);
+
     match func {
         IdentityFunction::IssueCredentialV1 => {
             let params = match IssueCredentialParams::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize IssueCredentialParams: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
-            let (hx, _hy) = params.holder_pub.xy().expect("pk not identity");
-            let tx_binding = poseidon_hash([hx, Base::zero(), Base::zero()]);
             zk_public_inputs.push((
                 IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V2.to_string(),
                 vec![params.commitment.inner(), tx_binding, Base::zero()],
@@ -160,7 +164,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2.to_string(),
-                vec![params.nullifier.inner(), Base::zero(), Base::zero()],
+                vec![params.nullifier.inner(), tx_binding, Base::zero()],
             ));
         }
         IdentityFunction::CreateClaimV1L1 => {
@@ -169,7 +173,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_L1.to_string(),
-                vec![params.nullifier.inner(), Base::zero(), Base::zero()],
+                vec![params.nullifier.inner(), tx_binding, Base::zero()],
             ));
         }
         IdentityFunction::CreateClaimV1L1V2 => {
@@ -178,39 +182,37 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_L1_V2.to_string(),
-                vec![params.nullifier.inner(), Base::zero(), Base::zero()],
+                vec![params.nullifier.inner(), tx_binding, Base::zero()],
             ));
         }
         IdentityFunction::CreateClaimV1Multi => {
-            let params = match CreateClaimParamsL1::decode(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize CreateClaimParamsL1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
+            let params = match CreateClaimParams::decode(&self_.data[1..]) {
+                Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize CreateClaimParams: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             zk_public_inputs.push((
                 IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_MULTI.to_string(),
-                vec![params.nullifier.inner(), Base::zero(), Base::zero()],
+                vec![params.nullifier.inner(), tx_binding, Base::zero()],
             ));
         }
         IdentityFunction::CreateClaimV1Ratio => {
-            let params = match CreateClaimParamsL1::decode(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize CreateClaimParamsL1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
+            let params = match CreateClaimParams::decode(&self_.data[1..]) {
+                Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize CreateClaimParams: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             zk_public_inputs.push((
                 IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_RATIO.to_string(),
-                vec![params.nullifier.inner(), Base::zero(), Base::zero()],
+                vec![params.nullifier.inner(), tx_binding, Base::zero()],
             ));
         }
         IdentityFunction::CreateClaimDAGV1 => {
             zk_public_inputs.push((
                 IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_DAG.to_string(),
-                vec![Base::zero(), Base::zero()],
+                vec![tx_binding, Base::zero()],
             ));
         }
         IdentityFunction::VerifyCapabilityV1 => {
             let params = match VerifyCapabilityParams::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize VerifyCapabilityParams: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
-            let (_ix, iy) = params.capability_proof.issuer_pub.xy().expect("pk not identity");
-            let tx_binding = poseidon_hash([iy, Base::zero(), Base::zero()]);
             zk_public_inputs.push((
                 IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V2.to_string(),
                 vec![params.capability_proof.nullifier.inner(), tx_binding, Base::zero()],
@@ -682,7 +684,7 @@ fn process_create_claim_multi_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params= CreateClaimParamsL1::decode(&self_.data[1..])?;
+    let params= CreateClaimParams::decode(&self_.data[1..])?;
 
     msg!("[identity::create_claim_multi] Creating multi-credential claim");
 
@@ -719,7 +721,7 @@ fn process_create_claim_ratio_instruction(
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
-    let params= CreateClaimParamsL1::decode(&self_.data[1..])?;
+    let params= CreateClaimParams::decode(&self_.data[1..])?;
 
     msg!("[identity::create_claim_ratio] Creating ratio-based claim");
 

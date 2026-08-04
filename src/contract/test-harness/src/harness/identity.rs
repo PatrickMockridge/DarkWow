@@ -217,6 +217,9 @@ impl IdentityHarness {
         )?;
 
         // Build IssueCredentialParams
+        // nullifier = poseidon_hash(DOMAIN_NULLIFIER=1, credential_secret, commitment)
+        // MUST match what CreateClaim uses for credential lookup.
+        let credential_nullifier = input.compute_nullifier();
 
         let params = IssueCredentialParams {
             issuer_pub: issuer_public,
@@ -224,7 +227,7 @@ impl IdentityHarness {
             schema_hash: schema_hash.to_repr(),
             encrypted_attributes: vec![],
             commitment: dwow_sdk::crypto::IntentCommitment::from_bytes(public_inputs.commitment.to_repr()).unwrap(),
-            nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes(public_inputs.commitment.to_repr()).unwrap(),
+            nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes(credential_nullifier.to_repr()).unwrap(),
             issued_at,
             expires_at,
             proof: vec![],

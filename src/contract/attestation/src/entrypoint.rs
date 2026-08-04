@@ -159,7 +159,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         AttestationFunction::CreateAttestationV1 => {
-            let params = match CreateAttestationParamsV1::decode(&self_.data[1..]) {
+            let _params = match CreateAttestationParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize CreateAttestationParamsV1: {:?}", e);
@@ -169,13 +169,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V2.to_string(),
                 {
-                    let (ax, ay) = params.attestor_pub.xy().expect("pk not identity");
-                    vec![ax, ay, txb, Base::zero()]
+                    // Circuit constrain_instance order: tx_binding, tx_nonce
+                    vec![txb, Base::zero()]
                 },
             ));
         }
         AttestationFunction::CreateClaimV1 => {
-            let params = match CreateClaimParamsV1::decode(&self_.data[1..]) {
+            let _params = match CreateClaimParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize CreateClaimParamsV1: {:?}", e);
@@ -185,13 +185,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V2.to_string(),
                 {
-                    let (cx, cy) = params.claimant_pub.xy().expect("pk not identity");
-                    vec![params.attestation_id.inner(), cx, cy, txb, Base::zero()]
+                    // Circuit constrain_instance order: tx_binding, tx_nonce
+                    vec![txb, Base::zero()]
                 },
             ));
         }
         AttestationFunction::VerifyClaimV1 => {
-            let params = match VerifyClaimParamsV1::decode(&self_.data[1..]) {
+            let _params = match VerifyClaimParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize VerifyClaimParamsV1: {:?}", e);
@@ -200,15 +200,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V2.to_string(),
-                vec![
-                    params.revocation_root,
-                    params.claim_id.inner(),
-                    params.revealed_result,
-                    params.revocation_root,
-                    params.attestation_data,
-                    txb,
-                    Base::zero(),
-                ],
+                // Circuit constrain_instance order: tx_binding, tx_nonce
+                vec![txb, Base::zero()],
             ));
         }
         AttestationFunction::ConsumeClaimV1 => {
@@ -234,7 +227,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             ));
         }
         AttestationFunction::CheckNotRevokedV1 => {
-            let params = match CheckNotRevokedParamsV1::decode(&self_.data[1..]) {
+            let _params = match CheckNotRevokedParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize CheckNotRevokedParamsV1: {:?}", e);
@@ -243,7 +236,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CHECK_NOT_REVOKED_NS_V2.to_string(),
-                vec![params.revocation_root, params.nonce, txb, Base::zero()],
+                // Circuit constrain_instance order: tx_binding, tx_nonce
+                vec![txb, Base::zero()],
             ));
         }
         AttestationFunction::DelegateAttestationV1 => {
@@ -257,30 +251,17 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V2.to_string(),
                 {
-                    let (dx, dy) = params.delegator_pub.xy().expect("pk not identity");
                     let (ex, ey) = params.delegatee_pub.xy().expect("pk not identity");
-                    vec![
-                    params.chain_root,
-                    params.revocation_root,
-                    params.delegation_id,
-                    params.parent_id,
-                    dx, dy,
-                    ex, ey,
-                    pallas::Base::from(params.delegation_type as u64),
-                    pallas::Base::from(params.max_ratio),
-                    params.revocation_root,
-                    params.chain_root,
-                    pallas::Base::from(params.chain_depth),
-                    pallas::Base::from(params.max_depth),
-                    pallas::Base::from(params.delegator_stake),
-                    pallas::Base::from(params.delegatee_stake),
-                    txb,
-                    Base::zero(),
-                ]}
+                    // Circuit: delegatee_leaf = poseidon_hash(DOMAIN_COIN_COMMIT, delegatee_pub_x, delegatee_pub_y)
+                    // where DOMAIN_COIN_COMMIT = witness_base(4) = tx_nonce = 0
+                    // Circuit constrain_instance order: delegatee_leaf, tx_binding, tx_nonce
+                    let delegatee_leaf = poseidon_hash([Base::zero(), ex, ey]);
+                    vec![delegatee_leaf, txb, Base::zero()]
+                },
             ));
         }
         AttestationFunction::VerifyChainV1 => {
-            let params = match VerifyChainParamsV1::decode(&self_.data[1..]) {
+            let _params = match VerifyChainParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize VerifyChainParamsV1: {:?}", e);
@@ -289,19 +270,12 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_VERIFY_CHAIN_NS_V2.to_string(),
-                vec![
-                    params.delegation_id,
-                    params.parent_id,
-                    params.chain_root,
-                    pallas::Base::from(params.current_depth),
-                    pallas::Base::from(params.max_depth),
-                    txb,
-                    Base::zero(),
-                ],
+                // Circuit constrain_instance order: tx_binding, tx_nonce
+                vec![txb, Base::zero()],
             ));
         }
         AttestationFunction::UpdateDelegationV1 => {
-            let params = match UpdateDelegationParamsV1::decode(&self_.data[1..]) {
+            let _params = match UpdateDelegationParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to decode UpdateDelegationParamsV1: {:?}", e);
@@ -310,21 +284,12 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V2.to_string(),
-                vec![
-                    params.original_attestation_id,
-                    pallas::Base::from(params.delegation_type as u64),
-                    pallas::Base::from(params.current_depth),
-                    pallas::Base::from(params.max_depth),
-                    pallas::Base::from(params.delegator_stake),
-                    pallas::Base::from(params.delegatee_stake),
-                    pallas::Base::from(params.max_ratio),
-                    txb,
-                    Base::zero(),
-                ],
+                // Circuit constrain_instance order: tx_binding, tx_nonce
+                vec![txb, Base::zero()],
             ));
         }
         AttestationFunction::AttestSlashV1 => {
-            let params = match AttestSlashParamsV1::decode(&self_.data[1..]) {
+            let _params = match AttestSlashParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize AttestSlashParamsV1: {:?}", e);
@@ -333,14 +298,12 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V2.to_string(),
-                {
-                    let (rx, ry) = params.relayer_pub.xy().expect("pk not identity");
-                    vec![rx, ry, txb, Base::zero()]
-                },
+                // Circuit constrain_instance order: tx_binding, tx_nonce
+                vec![txb, Base::zero()],
             ));
         }
         AttestationFunction::CommitFeeScheduleV1 => {
-            let params = match CommitFeeScheduleParamsV1::decode(&self_.data[1..]) {
+            let _params = match CommitFeeScheduleParamsV1::decode(&self_.data[1..]) {
                 Ok(p) => p,
                 Err(e) => {
                     msg!("[attestation::get_metadata] Error: Failed to deserialize CommitFeeScheduleParamsV1: {:?}", e);
@@ -349,10 +312,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V2.to_string(),
-                {
-                    let (ax, ay) = params.attestor_pub.xy().expect("pk not identity");
-                    vec![ax, ay, txb, Base::zero()]
-                },
+                // Circuit constrain_instance order: tx_binding, tx_nonce
+                vec![txb, Base::zero()],
             ));
         }
         // RevokeAttestationV1, ExpireAttestationV1, ValidateClaimV1

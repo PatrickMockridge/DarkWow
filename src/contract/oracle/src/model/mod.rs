@@ -175,13 +175,17 @@ pub struct RegisterOracleParamsV1 {
     pub name: String,
     /// Type of data
     pub data_type: String,
+    /// TX binding (poseidon_hash of domain + tx_commitment + tx_nonce)
+    pub tx_binding: pallas::Base,
+    /// TX nonce
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for RegisterOracleParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for RegisterOracleParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl RegisterOracleParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
-        let cap = 2 + self.proof.len() + 32 + 32 + 1 + self.name.len() + 1 + self.data_type.len();
+        let cap = 2 + self.proof.len() + 32 + 32 + 1 + self.name.len() + 1 + self.data_type.len() + 32 + 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&(self.proof.len() as u16).to_le_bytes());
         buf.extend_from_slice(&self.proof);
@@ -191,10 +195,12 @@ impl RegisterOracleParamsV1 {
         buf.extend_from_slice(self.name.as_bytes());
         buf.push(self.data_type.len() as u8);
         buf.extend_from_slice(self.data_type.as_bytes());
+        buf.extend_from_slice(&self.tx_binding.to_repr());
+        buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 66 { return Err(ContractError::IoError("RegisterOracleParamsV1: too short".into())); }
+        if data.len() < 130 { return Err(ContractError::IoError("RegisterOracleParamsV1: too short".into())); }
         let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
         let mut pos = 2 + proof_len;
         if data.len() < pos + 32 + 32 + 1 { return Err(ContractError::IoError("RegisterOracleParamsV1: truncated".into())); }
@@ -211,10 +217,16 @@ impl RegisterOracleParamsV1 {
             .map_err(|e| ContractError::IoError(format!("RegisterOracleParamsV1: invalid name: {}", e)))?;
         pos += name_len;
         let dtype_len = data[pos] as usize; pos += 1;
-        if data.len() != pos + dtype_len { return Err(ContractError::IoError("RegisterOracleParamsV1: data_type truncated".into())); }
+        if data.len() < pos + dtype_len + 64 { return Err(ContractError::IoError("RegisterOracleParamsV1: data_type / tx fields truncated".into())); }
         let data_type = String::from_utf8(data[pos..pos+dtype_len].to_vec())
             .map_err(|e| ContractError::IoError(format!("RegisterOracleParamsV1: invalid data_type: {}", e)))?;
-        Ok(RegisterOracleParamsV1 { proof, oracle_id, oracle_pub, name, data_type })
+        pos += dtype_len;
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("RegisterOracleParamsV1: invalid tx_binding".into()))?;
+        pos += 32;
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("RegisterOracleParamsV1: invalid tx_nonce".into()))?;
+        Ok(RegisterOracleParamsV1 { proof, oracle_id, oracle_pub, name, data_type, tx_binding, tx_nonce })
     }
 }
 
@@ -227,32 +239,42 @@ pub struct PushValueParamsV1 {
     pub oracle_id: OracleId,
     /// New value
     pub value: pallas::Base,
+    /// TX binding
+    pub tx_binding: pallas::Base,
+    /// TX nonce
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for PushValueParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PushValueParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PushValueParamsV1 {
-    pub const ENCODED_SIZE_HINT: usize = 66;
+    pub const ENCODED_SIZE_HINT: usize = 130;
     pub fn encode(&self) -> Vec<u8> {
-        let cap = 2 + self.proof.len() + 32 + 32;
+        let cap = 2 + self.proof.len() + 32 + 32 + 32 + 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&(self.proof.len() as u16).to_le_bytes());
         buf.extend_from_slice(&self.proof);
         buf.extend_from_slice(&self.oracle_id.to_bytes());
         buf.extend_from_slice(&self.value.to_repr());
+        buf.extend_from_slice(&self.tx_binding.to_repr());
+        buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 66 { return Err(ContractError::IoError("PushValueParamsV1: too short".into())); }
+        if data.len() < 130 { return Err(ContractError::IoError("PushValueParamsV1: too short".into())); }
         let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
         let pos = 2 + proof_len;
-        if data.len() != pos + 64 { return Err(ContractError::IoError("PushValueParamsV1: wrong length".into())); }
+        if data.len() != pos + 128 { return Err(ContractError::IoError("PushValueParamsV1: wrong length".into())); }
         let proof = data[2..pos].to_vec();
         let oracle_id = OracleId::from_bytes(data[pos..pos+32].try_into().unwrap())
             .ok_or_else(|| ContractError::IoError("PushValueParamsV1: invalid oracle_id".into()))?;
         let value = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("PushValueParamsV1: invalid value".into()))?;
-        Ok(PushValueParamsV1 { proof, oracle_id, value })
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+64..pos+96].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("PushValueParamsV1: invalid tx_binding".into()))?;
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+96..pos+128].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("PushValueParamsV1: invalid tx_nonce".into()))?;
+        Ok(PushValueParamsV1 { proof, oracle_id, value, tx_binding, tx_nonce })
     }
 }
 
@@ -269,13 +291,17 @@ pub struct AttestValueParamsV1 {
     pub predicate: u8,
     /// Threshold value for comparison predicates
     pub threshold: pallas::Base,
+    /// TX binding
+    pub tx_binding: pallas::Base,
+    /// TX nonce
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for AttestValueParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for AttestValueParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl AttestValueParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
-        let cap = 2 + self.proof.len() + 32 + 32 + 1 + 32;
+        let cap = 2 + self.proof.len() + 32 + 32 + 1 + 32 + 32 + 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&(self.proof.len() as u16).to_le_bytes());
         buf.extend_from_slice(&self.proof);
@@ -283,13 +309,15 @@ impl AttestValueParamsV1 {
         buf.extend_from_slice(&self.attestation_id.to_bytes());
         buf.push(self.predicate);
         buf.extend_from_slice(&self.threshold.to_repr());
+        buf.extend_from_slice(&self.tx_binding.to_repr());
+        buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 67 { return Err(ContractError::IoError("AttestValueParamsV1: too short".into())); }
+        if data.len() < 131 { return Err(ContractError::IoError("AttestValueParamsV1: too short".into())); }
         let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
         let pos = 2 + proof_len;
-        if data.len() != pos + 97 { return Err(ContractError::IoError("AttestValueParamsV1: wrong length".into())); }
+        if data.len() != pos + 161 { return Err(ContractError::IoError("AttestValueParamsV1: wrong length".into())); }
         let proof = data[2..pos].to_vec();
         let oracle_id = OracleId::from_bytes(data[pos..pos+32].try_into().unwrap())
             .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid oracle_id".into()))?;
@@ -298,7 +326,11 @@ impl AttestValueParamsV1 {
         let predicate = data[pos+64];
         let threshold = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+65..pos+97].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid threshold".into()))?;
-        Ok(AttestValueParamsV1 { proof, oracle_id, attestation_id, predicate, threshold })
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+97..pos+129].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid tx_binding".into()))?;
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+129..pos+161].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("AttestValueParamsV1: invalid tx_nonce".into()))?;
+        Ok(AttestValueParamsV1 { proof, oracle_id, attestation_id, predicate, threshold, tx_binding, tx_nonce })
     }
 }
 
@@ -317,13 +349,17 @@ pub struct PushValueCommitmentParamsV1 {
     pub pos: pallas::Base,
     /// Sparse Merkle path
     pub path: Vec<pallas::Base>,
+    /// TX binding
+    pub tx_binding: pallas::Base,
+    /// TX nonce
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for PushValueCommitmentParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for PushValueCommitmentParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl PushValueCommitmentParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
-        let cap = 2 + self.proof.len() + 32 + 32 + 32 + 32 + 1 + self.path.len() * 32;
+        let cap = 2 + self.proof.len() + 32 + 32 + 32 + 32 + 1 + self.path.len() * 32 + 32 + 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&(self.proof.len() as u16).to_le_bytes());
         buf.extend_from_slice(&self.proof);
@@ -333,10 +369,12 @@ impl PushValueCommitmentParamsV1 {
         buf.extend_from_slice(&self.pos.to_repr());
         buf.push(self.path.len() as u8);
         for p in &self.path { buf.extend_from_slice(&p.to_repr()); }
+        buf.extend_from_slice(&self.tx_binding.to_repr());
+        buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 130 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: too short".into())); }
+        if data.len() < 194 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: too short".into())); }
         let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
         let mut pos = 2 + proof_len;
         if data.len() < pos + 128 + 1 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: truncated".into())); }
@@ -351,13 +389,20 @@ impl PushValueCommitmentParamsV1 {
             .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid pos".into()))?;
         pos += 128;
         let path_len = data[pos] as usize; pos += 1;
-        if data.len() != pos + path_len * 32 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: path truncated".into())); }
+        let path_end = pos + path_len * 32;
+        if data.len() != path_end + 64 { return Err(ContractError::IoError("PushValueCommitmentParamsV1: path/end truncated".into())); }
         let mut path = Vec::with_capacity(path_len);
         for i in 0..path_len {
             path.push(Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+i*32..pos+(i+1)*32].try_into().unwrap()))
                 .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid path element".into()))?);
         }
-        Ok(PushValueCommitmentParamsV1 { proof, oracle_id, commitment, data_root, pos: pval, path })
+        pos = path_end;
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid tx_binding".into()))?;
+        pos += 32;
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("PushValueCommitmentParamsV1: invalid tx_nonce".into()))?;
+        Ok(PushValueCommitmentParamsV1 { proof, oracle_id, commitment, data_root, pos: pval, path, tx_binding, tx_nonce })
     }
 }
 
@@ -374,13 +419,17 @@ pub struct AggregateParamsV1 {
     pub min_result: pallas::Base,
     /// Maximum acceptable result
     pub max_result: pallas::Base,
+    /// TX binding
+    pub tx_binding: pallas::Base,
+    /// TX nonce
+    pub tx_nonce: pallas::Base,
 }
 
 impl dwow_serial::Encodable for AggregateParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for AggregateParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl AggregateParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
-        let cap = 2 + self.proof.len() + 32 + 32 + 32 + 32;
+        let cap = 2 + self.proof.len() + 32 + 32 + 32 + 32 + 32 + 32;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&(self.proof.len() as u16).to_le_bytes());
         buf.extend_from_slice(&self.proof);
@@ -388,13 +437,15 @@ impl AggregateParamsV1 {
         buf.extend_from_slice(&self.result.to_repr());
         buf.extend_from_slice(&self.min_result.to_repr());
         buf.extend_from_slice(&self.max_result.to_repr());
+        buf.extend_from_slice(&self.tx_binding.to_repr());
+        buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 130 { return Err(ContractError::IoError("AggregateParamsV1: too short".into())); }
+        if data.len() < 194 { return Err(ContractError::IoError("AggregateParamsV1: too short".into())); }
         let proof_len = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
         let pos = 2 + proof_len;
-        if data.len() != pos + 128 { return Err(ContractError::IoError("AggregateParamsV1: wrong length".into())); }
+        if data.len() != pos + 192 { return Err(ContractError::IoError("AggregateParamsV1: wrong length".into())); }
         let proof = data[2..pos].to_vec();
         let oracle_id = OracleId::from_bytes(data[pos..pos+32].try_into().unwrap())
             .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid oracle_id".into()))?;
@@ -404,7 +455,11 @@ impl AggregateParamsV1 {
             .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid min_result".into()))?;
         let max_result = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+96..pos+128].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid max_result".into()))?;
-        Ok(AggregateParamsV1 { proof, oracle_id, result, min_result, max_result })
+        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+128..pos+160].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid tx_binding".into()))?;
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+160..pos+192].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("AggregateParamsV1: invalid tx_nonce".into()))?;
+        Ok(AggregateParamsV1 { proof, oracle_id, result, min_result, max_result, tx_binding, tx_nonce })
     }
 }
 
