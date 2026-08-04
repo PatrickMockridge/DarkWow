@@ -134,13 +134,35 @@ impl Compiler {
         bincode.extend_from_slice(&witness_data);
 
         // Write .circuit section: [type=5][length:4][data]
+        // CRIT-1 Option B: emit ConstrainEqualBase after Assign RHS opcodes
+        // to cryptographically enforce equality between the LHS witness
+        // (previous definition) and the RHS computation result.  This makes
+        // the constraint explicit in the circuit rather than relying on
+        // name-resolution semantics alone.
         let mut circuit_data = vec![];
+        let mut extra_opcodes: usize = 0;
+        let mut extra_source_locs: Vec<(usize, usize)> = vec![];
         for i in &self.statements {
+            let is_assign = i.typ == StatementType::Assign;
+            let existing_idx = if is_assign {
+                let lhs_name = i.lhs.as_ref().unwrap().name.as_str();
+                // Look up the PREVIOUS definition (witness or prior assign)
+                // before pushing the new assignment LHS.  After the rposition
+                // fix lookup_heap returns the last match, which is the
+                // current (previous) definition of this name — exactly what
+                // we need to constrain against.
+                Compiler::lookup_heap(&tmp_heap, lhs_name)
+            } else {
+                None
+            };
+
             match i.typ {
                 StatementType::Assign => tmp_heap.push(&i.lhs.as_ref().unwrap().name),
                 StatementType::Call => {}
                 _ => unreachable!("Invalid statement type in circuit: {:?}", i.typ),
             }
+            // new_idx is the heap slot the RHS result will occupy at runtime
+            let new_idx = if is_assign { Some(tmp_heap.len() - 1) } else { None };
 
             circuit_data.push(i.opcode as u8);
             circuit_data.extend_from_slice(&serialize(&VarInt(i.rhs.len() as u64)));
@@ -176,6 +198,25 @@ impl Compiler {
                     _ => unreachable!(),
                 };
             }
+
+            // CRIT-1 Option B: emit ConstrainEqualBase(prev_def, new_result)
+            // to cryptographically enforce that the assignment result equals
+            // the previous definition (witness or prior assign).  This makes
+            // the equality constraint explicit in the circuit.
+            if let (Some(prev), Some(curr)) = (existing_idx, new_idx) {
+                // ConstrainEqualBase opcode = 0xe0, 2 args, both heap vars
+                circuit_data.push(0xe0_u8);
+                circuit_data.extend_from_slice(&serialize(&VarInt(2)));
+                circuit_data.push(HeapType::Var as u8);
+                circuit_data.extend_from_slice(&serialize(&VarInt(prev as u64)));
+                circuit_data.push(HeapType::Var as u8);
+                circuit_data.extend_from_slice(&serialize(&VarInt(curr as u64)));
+                extra_opcodes += 1;
+                let stmt = i;
+                let line = stmt.line as usize;
+                let col = stmt.lhs.as_ref().map(|v| v.column as usize).unwrap_or(0);
+                extra_source_locs.push((line, col));
+            }
         }
         bincode.push(SECTION_TYPE_CIRCUIT);
         bincode.extend_from_slice(&u32::to_le_bytes(circuit_data.len() as u32));
@@ -190,11 +231,20 @@ impl Compiler {
         let mut debug_data = vec![];
 
         // Write source locations for each opcode.
-        debug_data.extend_from_slice(&serialize(&VarInt(self.statements.len() as u64)));
+        // CRIT-1: account for extra ConstrainEqualBase opcodes emitted
+        // after Assign RHS computations.
+        let total_opcodes = self.statements.len() + extra_opcodes;
+        debug_data.extend_from_slice(&serialize(&VarInt(total_opcodes as u64)));
         for stmt in &self.statements {
             debug_data.extend_from_slice(&serialize(&VarInt(stmt.line as u64)));
             let column = stmt.lhs.as_ref().map(|v| v.column).unwrap_or(0);
             debug_data.extend_from_slice(&serialize(&VarInt(column as u64)));
+        }
+        // Emit source locations for the extra ConstrainEqualBase opcodes,
+        // reusing the parent Assign statement's location.
+        for (line, col) in &extra_source_locs {
+            debug_data.extend_from_slice(&serialize(&VarInt(*line as u64)));
+            debug_data.extend_from_slice(&serialize(&VarInt(*col as u64)));
         }
 
         // Write heap variable names.
@@ -231,7 +281,12 @@ impl Compiler {
     }
 
     fn lookup_heap(heap: &[&str], name: &str) -> Option<usize> {
-        heap.iter().position(|&n| n == name)
+        // CRIT-1 fix: use rposition (last match) so that assignments
+        // shadow witness declarations. Previously position() returned
+        // the first match (the witness), making poseidon_hash results
+        // dead code — constrain_instance bound the bare witness, not
+        // the hash. tx_commitment was unconstrained in every circuit.
+        heap.iter().rposition(|&n| n == name)
     }
 
     fn lookup_literal(literals: &[Literal], name: &str) -> Option<usize> {
