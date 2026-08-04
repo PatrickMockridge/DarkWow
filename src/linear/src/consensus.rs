@@ -369,11 +369,39 @@ impl PoWConsensus {
             return Ok(BlockTarget::MAX);
         }
 
-        // NOTE: This walks the entire chain from genesis — O(height) per call.
-        // M2 (deferred): the production fix is to cache the target per block in
-        // the store (Bitcoin's mapBlockIndex pattern) and read the last N blocks
-        // only. For testnet chains under 10,000 blocks, the current approach is
-        // acceptable. A full fix requires a schema migration (store target per block).
+        // M-1 fix: fast path — read cached target[H-1] from block_targets tree.
+        // Only need the last TIMESTAMP_WINDOW timestamps to compute adjustment.
+        let prev_height = height.saturating_sub_blocks(1);
+        let cache_key = prev_height.to_le_bytes();
+        if let Ok(Some(raw)) = store.block_targets.get(&cache_key) {
+            if raw.len() == 4 {
+                let prev_target = BlockTarget::new(u32::from_le_bytes(raw[..4].try_into().unwrap_or([0u8; 4])));
+                if prev_target.get() > 0 {
+                    let mut target = prev_target;
+                    let start_h = if height.get() > TIMESTAMP_WINDOW as u64 {
+                        height.get() - TIMESTAMP_WINDOW as u64
+                    } else {
+                        1
+                    };
+                    let mut timestamps: Vec<BlockTimestamp> = Vec::with_capacity(TIMESTAMP_WINDOW);
+                    for h in start_h..height.get() {
+                        if let Ok(block) = store.get_block(BlockHeight::new(h)) {
+                            timestamps.push(block.header.timestamp);
+                        }
+                    }
+                    if timestamps.len() >= 2 {
+                        target = Self::compute_adjustment(
+                            &timestamps, target,
+                            self.target_block_time, self.min_target, self.max_target,
+                        );
+                    }
+                    return Ok(target);
+                }
+            }
+        }
+
+        // Slow path: full chain walk from genesis (cache miss or cold start).
+        // Kept as fallback — cache is populated on first connect_block.
         let mut target = self.initial_target();
         let mut timestamps: Vec<BlockTimestamp> = Vec::with_capacity(TIMESTAMP_WINDOW);
 
@@ -390,11 +418,6 @@ impl PoWConsensus {
                     );
                 }
             } else {
-                // HAZOP H4 fix: a missing block in the canonical chain is storage
-                // corruption. Return a hard error so the caller cannot silently
-                // accept a wrong target. Previously returned BlockTarget::MAX as
-                // a sentinel, but no caller checked for it — MAX was treated as
-                // a valid zero-difficulty target.
                 tracing::error!(
                     target: "consensus",
                     "Chain walk failed at height {h} — block missing from store."

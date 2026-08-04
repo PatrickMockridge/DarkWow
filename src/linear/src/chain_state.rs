@@ -213,7 +213,10 @@ impl CChainState {
         let mut computed_work: u128 = 0;
         for h in 1..=height.get() {
             if let Ok(block) = store.get_block(BlockHeight::new(h)) {
-                // Work contributed = 2^32 / target (standard Bitcoin formula)
+                // Work contributed = 2^32 / target (standard Bitcoin formula).
+                // L-1: .max(1) unified with BlockTarget::chain_work() at
+                // sdk/src/blockchain.rs:344 — both use max(1) to prevent
+                // theoretical divergence when target==0 (rejected by validation).
                 let target = block.header.target.get().max(1);
                 computed_work = computed_work.saturating_add(u128::from(u32::MAX) / u128::from(target));
             }
@@ -236,6 +239,31 @@ impl CChainState {
         }
 
         consensus.accumulated_work.store(computed_work);
+
+        // M-1: populate/validate per-block target cache on startup.
+        // The cache is a write-once sled tree; missing entries are computed
+        // and inserted. Existing entries are validated against recomputation.
+        for h in 2..=height.get() {
+            let hh = BlockHeight::new(h);
+            let expected = consensus.get_next_work_required(&store, hh)?;
+            let key = hh.to_le_bytes();
+            let val = expected.get().to_le_bytes();
+            if let Ok(Some(existing)) = store.block_targets.get(&key) {
+                if existing.len() == 4 {
+                    let cached = BlockTarget::new(u32::from_le_bytes(existing[..4].try_into().unwrap_or([0u8; 4])));
+                    if cached != expected {
+                        tracing::warn!(
+                            target: "chain_state",
+                            "Target cache mismatch at height {h}: cached={}, expected={}. Correcting.",
+                            cached.get(), expected.get(),
+                        );
+                        let _ = store.block_targets.insert(&key, &val);
+                    }
+                }
+            } else {
+                let _ = store.block_targets.insert(&key, &val);
+            }
+        }
 
         // Create initial VM with zero key (wrapped in Mutex for thread safety)
         let flags = RandomXFlags::get_recommended_flags() & !RandomXFlags::JIT;
@@ -1095,25 +1123,34 @@ impl CChainState {
             // correct — same transactions, same execution, same tree root.
             let _computed_anchor_root = self.block_anchor_root();
 
+            // --- Pre-compute next block's target for cache (M-1 fix) ---
+            // Cache the expected target for height+1 so get_next_work_required
+            // can use the O(1) fast path on the next call.
+            let next_target = {
+                let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
+                consensus.get_next_work_required(&self.store, height.succ())?
+            };
+            let mut targets_batch = sled::Batch::default();
+            targets_batch.insert(&height.succ().to_le_bytes(), &next_target.get().to_le_bytes());
+
             // --- Atomic commit (sled cross-tree transaction) ---
             let contracts = contracts_batch.unwrap_or_default();
             let sc_batch = supply_chain_batch.unwrap_or_default();
             (&self.store.blocks, &self.store.uncles,
              &self.store.contracts, &self.store.consensus,
              &self.store.coins, &self.store.nullifiers,
-             self.supply_chain.tree())
+             self.supply_chain.tree(),
+             &self.store.block_targets)
                 .transaction(|(tx_blocks, tx_uncles, tx_contracts, tx_consensus,
-                               tx_coins, tx_nullifiers, tx_supply)| {
+                               tx_coins, tx_nullifiers, tx_supply, tx_targets)| {
                     tx_blocks.apply_batch(&blocks_batch)?;
                     tx_uncles.apply_batch(&uncles_batch)?;
                     tx_contracts.apply_batch(&contracts)?;
                     tx_consensus.apply_batch(&consensus_batch)?;
                     tx_coins.apply_batch(&coins_batch)?;
                     tx_nullifiers.apply_batch(&nullifiers_batch)?;
-                    // Supply chain entry committed atomically with everything else.
-                    // No post-commit mirror needed — if this transaction succeeds,
-                    // both the contracts tree and supply_chain tree have the new state.
                     tx_supply.apply_batch(&sc_batch)?;
+                    tx_targets.apply_batch(&targets_batch)?;
                     Ok(())
                 })
                 .map_err(|e: sled::transaction::TransactionError<sled::Error>| {
@@ -1316,6 +1353,11 @@ impl CChainState {
         let mut supply_remove = sled::Batch::default();
         supply_remove.remove(&height.to_le_bytes());
 
+        // M-1: remove cached target for the disconnected block
+        let mut targets_remove = sled::Batch::default();
+        let next_key = height.succ().to_le_bytes();
+        targets_remove.remove(&next_key);
+
         // Consensus rollback batch
         let mut consensus_batch = sled::Batch::default();
         {
@@ -1361,14 +1403,16 @@ impl CChainState {
         // block's WASM re-execution overwrites the same singleton keys
         // (TOTAL_SUPPLY, CUMULATIVE_VALUE_COMMIT, CUMULATIVE_BLIND).
         let result = (&self.store.blocks, &self.store.coins, &self.store.nullifiers,
-                      &self.store.consensus, self.supply_chain.tree())
+                      &self.store.consensus, self.supply_chain.tree(),
+                      &self.store.block_targets)
             .transaction(|(tx_blocks, tx_coins, tx_nullifiers,
-                           tx_consensus, tx_supply)| {
+                           tx_consensus, tx_supply, tx_targets)| {
                 tx_blocks.apply_batch(&blocks_remove)?;
                 tx_coins.apply_batch(&coins_remove)?;
                 tx_nullifiers.apply_batch(&nullifiers_remove)?;
                 tx_consensus.apply_batch(&consensus_batch)?;
                 tx_supply.apply_batch(&supply_remove)?;
+                tx_targets.apply_batch(&targets_remove)?;
                 Ok(())
             })
             .map_err(|e: sled::transaction::TransactionError<sled::Error>| {
