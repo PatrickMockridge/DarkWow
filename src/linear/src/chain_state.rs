@@ -95,6 +95,7 @@ use dwow_sdk::crypto::{merkle_anchor::AnchorEntry, pedersen_commitment_u64, Blin
 use dwow_sdk::pasta::pallas;
 use dwow_sdk::pasta::group::{ff::FromUniformBytes, Group, GroupEncoding};
 use dwow_sdk::pasta::group::ff::PrimeField;
+use dwow_serial::serialize as dwow_serialize;
 
 use crate::{
     Block, CoinCommitment, CumulativeSupplyChain, FinalityConfig, LinearError, LinearStore,
@@ -187,6 +188,24 @@ impl CChainState {
         }
 
         let height = store.get_height().unwrap_or(BlockHeight::new(0));
+
+        // H-3 migration guard: detect old JSON-encoded blocks.
+        // Blocks are now stored as deterministic dwow_serial binary.
+        // Old nodes stored blocks as JSON — data starts with byte '{'.
+        // Check the raw bytes of block at height 1 (genesis) before any
+        // deserialization attempt.
+        if height > BlockHeight::new(0) {
+            let genesis_key = BlockHeight::new(1).to_le_bytes();
+            if let Ok(Some(raw)) = store.blocks.get(&genesis_key) {
+                if raw.first() == Some(&b'{') {
+                    return Err(LinearError::StorageError(
+                        "Storage format migration required. Blocks are in the old JSON format. \
+                         The block storage format has changed to deterministic binary (dwow_serial). \
+                         Delete your data directory and resync from genesis.".into()
+                    ));
+                }
+            }
+        }
 
         // HAZOP H7 fix: recompute accumulated work from chain data on startup
         // and validate against the sled-cached value. If they disagree, the
@@ -441,17 +460,8 @@ impl CChainState {
         if !blocks.is_empty() {
             let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
             for b in &blocks {
-                // Dedup hash: serde_json with canonical form (sorted keys ensures
-                // determinism across serde versions and node instances).
-                let header_bytes = match serde_json::to_vec(&b.header) {
-                    Ok(bytes) => bytes,
-                    Err(e) => {
-                        tracing::error!(target: "dwow_chain::chain_state",
-                            "BlockHeader serialization failed: {} — skipping dedup for block at height {}",
-                            e, b.header.height);
-                        continue;
-                    }
-                };
+                // Dedup hash: deterministic dwow_serial binary encoding.
+                let header_bytes = dwow_serialize(&b.header);
                 let h = blake3::hash(&header_bytes);
                 seen.remove(&h);
             }
@@ -487,16 +497,7 @@ impl CChainState {
         let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
         let mut competing = self.competing_blocks.lock().unwrap_or_else(|e| e.into_inner());
         for b in &blocks {
-            let header_bytes = match serde_json::to_vec(&b.header) {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::error!(target: "dwow_chain::chain_state",
-                        "BlockHeader serialization failed in put_competing_blocks: {} — skipping block at height {}",
-                        e, b.header.height);
-                    continue;
-                }
-            };
-            seen.insert(blake3::hash(&header_bytes));
+            seen.insert(blake3::hash(&dwow_serialize(&b.header)));
         }
         competing.entry(height).or_default().extend(blocks);
     }
@@ -514,15 +515,7 @@ impl CChainState {
         competing.retain(|&height, blocks| {
             if height < cutoff {
                 for b in blocks {
-                    let header_bytes = match serde_json::to_vec(&b.header) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            tracing::error!(target: "dwow_chain::chain_state",
-                                "BlockHeader serialization failed in prune_competing: {} — leaking hash set entry", e);
-                            continue;
-                        }
-                    };
-                    seen.remove(&blake3::hash(&header_bytes));
+                    seen.remove(&blake3::hash(&dwow_serialize(&b.header)));
                 }
                 false
             } else {
@@ -995,18 +988,13 @@ impl CChainState {
         let commit_result = (|| -> Result<()> {
             // --- Build commit batch ---
             let mut blocks_batch = sled::Batch::default();
-            let block_value = serde_json::to_vec(block)
-                .map_err(|e| LinearError::SerializationError(e.to_string()))?;
+            let block_value = dwow_serialize(block);
             blocks_batch.insert(&height.to_le_bytes(), block_value);
 
             let mut uncles_batch = sled::Batch::default();
             for uncle in uncles {
-                let uncle_hash = blake3::hash(
-                    &serde_json::to_vec(&uncle.header)
-                        .map_err(|e| LinearError::SerializationError(e.to_string()))?
-                );
-                let uncle_value = serde_json::to_vec(uncle)
-                    .map_err(|e| LinearError::SerializationError(e.to_string()))?;
+                let uncle_hash = blake3::hash(&dwow_serialize(&uncle.header));
+                let uncle_value = dwow_serialize(uncle);
                 uncles_batch.insert(uncle_hash.as_bytes(), uncle_value);
             }
 

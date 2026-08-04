@@ -26,6 +26,7 @@
 use std::sync::Arc;
 
 use dwow_sdk::blockchain::BlockHeight;
+use dwow_serial::{deserialize as dwow_deserialize, serialize as dwow_serialize};
 use sled::{Db, Tree};
 
 use super::{Block, LinearError, Transaction, UncleBlock};
@@ -75,7 +76,7 @@ impl LinearStore {
     /// Insert a block at the given height
     pub fn insert_block(&self, height: BlockHeight, block: &Block) -> Result<(), LinearError> {
         let key = height.to_le_bytes();
-        let value = serde_json::to_vec(block).map_err(|e| LinearError::SerializationError(e.to_string()))?;
+        let value = dwow_serialize(block);
         self.blocks.insert(&key, value.as_slice()).map_err(|e| LinearError::StorageError(e.to_string()))?;
         Ok(())
     }
@@ -85,14 +86,14 @@ impl LinearStore {
         let key = height.to_le_bytes();
         let value = self.blocks.get(&key).map_err(|e| LinearError::StorageError(e.to_string()))?
             .ok_or(LinearError::BlockNotFound(height))?;
-        serde_json::from_slice(&value).map_err(|e| LinearError::SerializationError(e.to_string()))
+        dwow_deserialize(&value).map_err(|e| LinearError::SerializationError(e.to_string()))
     }
 
     /// Insert a transaction
     pub fn insert_transaction(&self, tx: &Transaction) -> Result<(), LinearError> {
         let hash = tx.hash();
         let key = hash.as_bytes();
-        let value = serde_json::to_vec(tx).map_err(|e| LinearError::SerializationError(e.to_string()))?;
+        let value = dwow_serialize(tx);
         self.transactions.insert(key, value.as_slice()).map_err(|e| LinearError::StorageError(e.to_string()))?;
         Ok(())
     }
@@ -101,7 +102,7 @@ impl LinearStore {
     pub fn get_transaction(&self, hash: &[u8]) -> Result<Transaction, LinearError> {
         let value = self.transactions.get(hash).map_err(|e| LinearError::StorageError(e.to_string()))?
             .ok_or_else(|| LinearError::TransactionNotFound(hex::encode(hash)))?;
-        serde_json::from_slice(&value).map_err(|e| LinearError::SerializationError(e.to_string()))
+        dwow_deserialize(&value).map_err(|e| LinearError::SerializationError(e.to_string()))
     }
 
     /// Get the current chain height.
@@ -163,15 +164,11 @@ impl LinearStore {
         self.contracts.contains_key(contract_id).map_err(|e| LinearError::StorageError(e.to_string()))
     }
 
-    /// Insert an uncle block (keyed by block hash)
-    /// Note: Uses blake3 for storage key since this is just for lookup, not PoW
+    /// Insert an uncle block (keyed by blake3 hash of deterministically-encoded header)
     pub fn insert_uncle(&self, uncle: &UncleBlock) -> Result<(), LinearError> {
-        let hash = blake3::hash(
-            &serde_json::to_vec(&uncle.header)
-                .map_err(|e| LinearError::SerializationError(e.to_string()))?
-        );
+        let hash = blake3::hash(&dwow_serialize(&uncle.header));
         let key = hash.as_bytes();
-        let value = serde_json::to_vec(uncle).map_err(|e| LinearError::SerializationError(e.to_string()))?;
+        let value = dwow_serialize(uncle);
         self.uncles.insert(key, value.as_slice()).map_err(|e| LinearError::StorageError(e.to_string()))?;
         Ok(())
     }
@@ -185,7 +182,7 @@ impl LinearStore {
     pub fn get_uncle(&self, hash: &[u8]) -> Result<Option<UncleBlock>, LinearError> {
         match self.uncles.get(hash).map_err(|e| LinearError::StorageError(e.to_string()))? {
             Some(v) => {
-                let uncle = serde_json::from_slice(&v).map_err(|e| LinearError::SerializationError(e.to_string()))?;
+                let uncle = dwow_deserialize(&v).map_err(|e| LinearError::SerializationError(e.to_string()))?;
                 Ok(Some(uncle))
             }
             None => Ok(None),

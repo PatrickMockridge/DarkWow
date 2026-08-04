@@ -47,6 +47,7 @@ mod transaction;
 pub mod validation;
 pub mod zk_verifier;
 
+mod serial_sync;
 #[cfg(feature = "async")]
 mod serial;
 

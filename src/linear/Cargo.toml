@@ -41,7 +41,7 @@ dwow-sdk = { path = "../sdk", features = ["async", "json"] }
 dwow_core = { path = "../..", features = ["wasm-runtime"] }
 dwow_native_token_contract = { path = "../../src/contract/native_token", features = ["client"] }
 smol = "2"
-dwow-serial = { path = "../serial", features = ["derive", "async"] }
+dwow-serial = { path = "../serial", features = ["derive", "async", "hash"] }
 async-trait = "0.1"
 
 [dev-dependencies]
