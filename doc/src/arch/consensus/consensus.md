@@ -246,42 +246,80 @@ cargo test -p dwowd test_linear
 
 ## Fork Choice Rule
 
-The linear blockchain uses **strict longest-chain by height** — the simplest
-possible fork choice. There is no cumulative difficulty comparison, no chain
-weight computation, and no reorg handling.
+The linear blockchain uses **heaviest-chain fork selection** — the chain with
+the most accumulated work wins. Cumulative work is tracked in
+`PoWConsensus::accumulated_work` (u128, persisted to sled) and computed per
+block as `u32::MAX / target` (the standard Bitcoin formula).
 
 ```
-Rule: The valid chain with the highest block height wins.
-      At equal height, the first block received wins permanently.
+Rule: The valid chain with the highest accumulated work wins.
+      At equal height and equal work, the first block received wins.
+      At equal height, a competing chain with one additional block
+      (more accumulated work) triggers a 1-deep reorg.
 ```
+
+### Reorg Depth
+
+Reorg depth is bounded to **1 block** by the height-gap check in
+`connect_block` (`block_height > current_height + 1` is rejected). An
+uncle chain can extend at most 1 block past the canonical tip. When a
+heavier uncle chain is detected:
+
+1. The canonical block at the fork height is **disconnected** (all state
+   reversed in a single cross-tree sled transaction)
+2. The competing block is **connected** via the standard `accept_block`
+   pipeline (WASM executed, cumulative supply chain updated)
+3. The extension block is **connected** similarly
+
+This follows Bitcoin's `DisconnectBlock`/`ConnectBlock` pattern. The
+1-deep bound prevents reorg oscillation and limits state reversal
+complexity. General-depth reorg support (matching the Python model's
+`reorganize_to`) is deferred to a future consensus upgrade.
 
 ### Implications
 
 - **Single parent pointer**: Each block references exactly one parent via
   `header.previous` (a `blake3::Hash`). No DAG, no multiple parents.
-- **No reorg handling**: Once a block is inserted at height N, no block can
-  replace it. The `insert_validated_block()` function rejects blocks at
-  already-occupied heights if the existing block carries a finality anchor
-  (`anchor_tx_id != [0u8; 32]`). In practice this means the first block
-  received at height N wins.
-- **First-seen wins**: At equal height, network latency determines which
-  block propagates first. There is no tie-breaking by hash or target.
-- **Design rationale**: The Uncle Merkle mechanism makes this safe. A miner
-  who loses the race at height N can still earn partial reward as an uncle
-  at height N+1. There is no wasted work.
+- **1-deep reorg**: A competing chain that grows longer than canonical and
+  carries more accumulated work replaces the canonical block at the fork
+  height. Depth is bounded to 1 by the height-gap check.
+- **First-seen wins at equal work**: At the same height, both competing and
+  canonical blocks target the same `get_next_work_required(H)` value, so
+  their `chain_work()` is identical. First-seen wins in this case.
+- **Finality guard**: Blocks carrying Caribina (Arweave) or Monero finality
+  anchors are never displaced by reorg. The finality check runs before
+  disconnect.
 
-### Why No Cumulative Difficulty
+### Relationship to Uncle Merkle
 
-Bitcoin and Monero use "chain with most accumulated work" as the fork
-criterion to allow chain tips to compete. This requires tracking cumulative
-difficulty per chain tip and comparing across forks. The linear blockchain
-doesn't need this because:
+Uncle Merkle provides **economic mitigation**: a miner who loses the fork race
+at height N can still earn partial reward as an uncle at height N+1. This
+eliminates the all-or-nothing incentive for fork hiding. However, it does not
+substitute for correct fork selection — a miner with less hashpower who
+propagates blocks faster can permanently control the canonical chain if fork
+selection ignores accumulated work. Cumulative-work fork selection closes this
+gap while preserving the uncle reward mechanism for the common case of
+simultaneous block production.
 
-1. Uncle Merkle eliminates the all-or-nothing incentive for fork competition
-2. Linear chain structure means only one valid tip at any height
-3. Anchored finality (Caribina) makes reorgs impossible for finalized blocks
+### Why 1-Deep Cumulative-Work Fork Choice
+
+The 1-deep bound is a conservative engineering choice:
+
+1. **Matches the Python model**: `contrib/model/chain_model.py` implements
+   cumulative-work fork selection (`reorganize_to`, line 532). The Rust
+   implementation now conforms to the specification.
+2. **Bounded by height-gap check**: The existing `HeightDiscontinuity` guard
+   limits uncle chains to at most 1 block ahead, making the 1-deep bound a
+   property of the current architecture.
+3. **Anchored finality prevents deep reorgs**: Caribina (Arweave) finality
+   makes reorgs past anchored blocks cryptographically infeasible. The 1-deep
+   window covers unanchored blocks awaiting finality confirmation.
+4. **Uncle Merkle handles the common case**: Simultaneous blocks at the same
+   height earn uncle rewards without reorg. Cumulative-work fork selection
+   only activates when one chain has objectively more work.
 
 Source: [`src/linear/src/consensus.rs`](../../../src/linear/src/consensus.rs),
+[`src/linear/src/chain_state.rs`](../../../src/linear/src/chain_state.rs),
 [`bin/dwowd/src/block_acceptor.rs`](../../../bin/dwowd/src/block_acceptor.rs).
 
 ## Target Adjustment Algorithm

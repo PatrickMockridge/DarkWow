@@ -46,7 +46,7 @@
 /// uncle chain extension — all collapsed into `Ok(())`. This enum restores
 /// the distinction per type-system.md §9.3 so callers (miner_task, sync,
 /// broadcast, stratum, mm_rpc) can branch on the actual outcome.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum BlockConnectOutcome {
     /// Block extended the canonical chain — height advanced. The new tip
     /// height is carried so callers can confirm it matches their expectation.
@@ -57,7 +57,30 @@ pub enum BlockConnectOutcome {
     /// Block extended a known uncle chain — stored as competing at the next
     /// height. Height did NOT advance on the canonical chain.
     UncleExtended,
+    /// A competing chain with more accumulated work is available for reorg.
+    /// The caller (accept_block) must disconnect the canonical block at
+    /// fork_height, then re-accept both blocks through the normal pipeline.
+    /// The competing_block is carried inline to prevent TOCTOU races with
+    /// take_competing_blocks().
+    ReorgAvailable {
+        fork_height: BlockHeight,
+        competing_block: Block,
+    },
 }
+
+impl PartialEq for BlockConnectOutcome {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::CanonicalExtension { new_height: a }, Self::CanonicalExtension { new_height: b }) => a == b,
+            (Self::CompetingStored, Self::CompetingStored) => true,
+            (Self::UncleExtended, Self::UncleExtended) => true,
+            (Self::ReorgAvailable { fork_height: a1, .. }, Self::ReorgAvailable { fork_height: b1, .. }) => a1 == b1,
+            _ => false,
+        }
+    }
+}
+impl Eq for BlockConnectOutcome {}
+
 // `connect_lock` is held before those inner locks to prevent deadlocks.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -757,6 +780,65 @@ impl CChainState {
                 }
                 drop(guard);
 
+                // Clone uncle parent before any drops — the reference is into competing.
+                let uncle_parent_block = uncle_parent.unwrap().clone();
+
+                // --- Heaviest-chain fork selection ---
+                // When an uncle chain extends past the canonical tip, compare
+                // cumulative work. If the uncle chain has more work and the
+                // canonical block at the fork height is not finalized, signal
+                // a reorg to the caller (accept_block).
+                //
+                // Work computation: both chains share the parent at H-1
+                // (enforced by the previous_hash check in the competing path).
+                // uncle_work = accumulated_work(H-1) + work(competing_H) + work(new_H+1)
+                // canonical_work = accumulated_work (which includes canonical_H).
+                let canonical_block = self.get_block(current_height)?;
+                let canonical_finalized = self.finality_config.should_enforce(
+                    canonical_block.header.finality_flags
+                ) && (canonical_block.header.anchor_tx_id != [0u8; 32]
+                    || canonical_block.header.anchor_monero_height != MoneroBlockHeight::new(0));
+
+                if !canonical_finalized {
+                    let canonical_work = {
+                        let consensus = self.consensus.lock()
+                            .unwrap_or_else(|e| e.into_inner());
+                        consensus.accumulated_work.get()
+                    };
+                    let uncle_work = canonical_work
+                        .saturating_sub(canonical_block.header.target.chain_work())
+                        .saturating_add(uncle_parent_block.header.target.chain_work())
+                        .saturating_add(block.header.target.chain_work());
+
+                    if uncle_work > canonical_work {
+                        // Heavier uncle chain — signal reorg.
+                        // Remove the competing parent from storage (it's
+                        // being consumed) and the new block from dedup.
+                        let block_hash = block.hash_with_vm(
+                            &*vm.lock().unwrap_or_else(|e| e.into_inner())
+                        );
+                        self.competing_seen.lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .remove(&block_hash);
+                        competing.entry(current_height).or_default().retain(|b| {
+                            let pvm = self.get_vm(b.header.randomx_key);
+                            let pguard = pvm.lock()
+                                .unwrap_or_else(|e| e.into_inner());
+                            b.hash_with_vm(&*pguard) != block.header.previous
+                        });
+                        drop(competing);
+
+                        info!(target: "chain_state",
+                            "Reorg available at h={}: uncle_work={} > canonical_work={}",
+                            current_height, uncle_work, canonical_work);
+
+                        return Ok(BlockConnectOutcome::ReorgAvailable {
+                            fork_height: current_height,
+                            competing_block: uncle_parent_block,
+                        });
+                    }
+                }
+
                 // H5 fix: cap competing blocks per height
                 const MAX_COMPETING_BLOCKS_UNCLE: usize = 20;
                 let block_hash = block.hash_with_vm(
@@ -1153,6 +1235,194 @@ impl CChainState {
         uncles: &[UncleBlock],
     ) -> Result<BlockConnectOutcome> {
         self.connect_block(block, uncles, None, None)
+    }
+
+    /// Disconnect the canonical block at `height`, reversing all state changes.
+    ///
+    /// This is the reverse of `connect_block` for a canonical extension.
+    /// All removals execute in a single cross-tree sled transaction.
+    /// Must be called with `connect_lock` held (caller guarantees via accept_block).
+    ///
+    /// # Reversed subsystems (in order)
+    ///
+    /// 1. Blocks sled tree — remove entry at `height`
+    /// 2. Coins + nullifiers — remove coinbase and fee-collect entries
+    /// 3. Consensus — roll back accumulated_work, timestamps, target
+    /// 4. Supply chain — remove cumulative supply entry at `height`
+    /// 5. In-memory sets — coin_set, nullifier_set
+    /// 6. Height — decrement to `height - 1`
+    ///
+    /// # Known limitation
+    ///
+    /// Uncle entries in the sled `uncles` tree are NOT removed during disconnect.
+    /// These phantom entries prevent displaced uncles from being re-included in
+    /// future blocks. This is a fairness issue (at most 6 uncle miners lose
+    /// rewards per reorg), not a security issue. General reorg support will add
+    /// per-block uncle tracking for complete reversal.
+    ///
+    /// Similarly, in-memory `uncle_coin_set` entries from the displaced block
+    /// are NOT removed — they represent Pedersen commitments that are
+    /// deterministically recomputable from chain data on restart.
+    pub fn disconnect_block(&self, height: BlockHeight) -> Result<()> {
+        // connect_lock is held by accept_block (the only caller).
+        // We use try_lock to verify it's held (defense-in-depth, not a safety check).
+        debug_assert!(
+            self.connect_lock.try_lock().is_err(),
+            "disconnect_block must be called with connect_lock held"
+        );
+
+        let block = self.get_block(height)?;
+        let current_height = self.get_height();
+        if height != current_height {
+            return Err(LinearError::StorageError(format!(
+                "disconnect_block: height {} != current tip {}",
+                height, current_height
+            )));
+        }
+
+        // --- Snapshot pre-disconnect state for rollback on failure ---
+        let pre_target = self.consensus.lock()
+            .unwrap_or_else(|e| e.into_inner()).target();
+        let pre_timestamps = self.consensus.lock()
+            .unwrap_or_else(|e| e.into_inner()).snapshot_timestamps();
+        let pre_accumulated_work = self.consensus.lock()
+            .unwrap_or_else(|e| e.into_inner()).accumulated_work.get();
+
+        // --- Build removal batches ---
+        let mut blocks_remove = sled::Batch::default();
+        blocks_remove.remove(&height.to_le_bytes());
+
+        // Coins and nullifiers from coinbase + fee-collect
+        let mut coins_remove = sled::Batch::default();
+        let mut nullifiers_remove = sled::Batch::default();
+        let mut in_memory_coins: Vec<CoinCommitment> = Vec::new();
+        let mut in_memory_nullifiers: Vec<Nullifier> = Vec::new();
+
+        for (tx_idx, tx) in block.transactions.iter().enumerate() {
+            let has_pow_reward = tx_idx == 0 && tx.contract_calls.first()
+                .map_or(false, |c| c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
+                    && c.data.first() == Some(&0x05));
+            if has_pow_reward {
+                let pow_data = &tx.contract_calls[0].data[1..];
+                if let Ok(params) = dwow_native_token_contract::model::PoWRewardParamsV1::decode(pow_data) {
+                    coins_remove.remove(&params.output.coin.inner().to_repr());
+                    nullifiers_remove.remove(&params.nullifier.to_bytes());
+                    in_memory_coins.push(CoinCommitment::from_base(params.output.coin.inner()));
+                    in_memory_nullifiers.push(params.nullifier);
+                }
+            }
+            for c in &tx.contract_calls {
+                if c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
+                    && c.data.first() == Some(&0x06)
+                {
+                    let fc_data = &c.data[1..];
+                    if let Ok(params) = dwow_native_token_contract::model::FeeCollectParamsV1::decode(fc_data) {
+                        coins_remove.remove(&params.output.coin.inner().to_repr());
+                        nullifiers_remove.remove(&params.nullifier.to_bytes());
+                        in_memory_coins.push(CoinCommitment::from_base(params.output.coin.inner()));
+                        in_memory_nullifiers.push(params.nullifier);
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Supply chain entry removal
+        let mut supply_remove = sled::Batch::default();
+        supply_remove.remove(&height.to_le_bytes());
+
+        // Consensus rollback batch
+        let mut consensus_batch = sled::Batch::default();
+        {
+            let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
+            // Roll back accumulated_work: subtract the displaced block's contribution
+            let block_work = block.header.target.chain_work();
+            let current_work = consensus.accumulated_work.get();
+            consensus.accumulated_work.store(current_work.saturating_sub(block_work));
+            let new_accumulated = consensus.accumulated_work.get();
+
+            // Remove this block's timestamp from the window
+            let mut timestamps = consensus.snapshot_timestamps();
+            timestamps.pop(); // undo record_block — the last timestamp is this block's
+            consensus.restore_timestamps(timestamps);
+
+            // Restore target to pre-block value by deriving from chain state.
+            // Walk timestamps from genesis to height-1 to compute the correct target.
+            let prev_target = if height > BlockHeight::new(1) {
+                let mut target = consensus.initial_target();
+                let ts = consensus.snapshot_timestamps();
+                for window in ts.windows(2) {
+                    target = PoWConsensus::compute_adjustment(
+                        &[window[0], window[1]],
+                        target,
+                        consensus.target_block_time(),
+                        consensus.min_target(),
+                        consensus.max_target(),
+                    );
+                }
+                target
+            } else {
+                consensus.initial_target()
+            };
+            consensus.force_target(prev_target);
+
+            consensus.save_to_batch(&mut consensus_batch);
+            consensus_batch.insert("accumulated_work", &new_accumulated.to_le_bytes());
+        }
+
+        // --- Atomic removal (cross-tree sled transaction) ---
+        // Following Bitcoin's DisconnectBlock pattern: all removals succeed
+        // or none do. The contracts tree is NOT touched — the competing
+        // block's WASM re-execution overwrites the same singleton keys
+        // (TOTAL_SUPPLY, CUMULATIVE_VALUE_COMMIT, CUMULATIVE_BLIND).
+        let result = (&self.store.blocks, &self.store.coins, &self.store.nullifiers,
+                      &self.store.consensus, self.supply_chain.tree())
+            .transaction(|(tx_blocks, tx_coins, tx_nullifiers,
+                           tx_consensus, tx_supply)| {
+                tx_blocks.apply_batch(&blocks_remove)?;
+                tx_coins.apply_batch(&coins_remove)?;
+                tx_nullifiers.apply_batch(&nullifiers_remove)?;
+                tx_consensus.apply_batch(&consensus_batch)?;
+                tx_supply.apply_batch(&supply_remove)?;
+                Ok(())
+            })
+            .map_err(|e: sled::transaction::TransactionError<sled::Error>| {
+                LinearError::StorageError(format!("disconnect_block commit: {}", e))
+            });
+
+        // Roll back in-memory consensus on ANY error
+        if result.is_err() {
+            let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
+            consensus.force_target(pre_target);
+            consensus.restore_timestamps(pre_timestamps);
+            consensus.accumulated_work.store(pre_accumulated_work);
+        }
+        result?;
+
+        // --- Post-commit in-memory cleanup ---
+        // Only after the sled transaction succeeds.
+        {
+            let mut coin_set = self.coin_set.lock().unwrap_or_else(|e| e.into_inner());
+            for coin in &in_memory_coins {
+                coin_set.remove(coin);
+            }
+        }
+        {
+            let mut nullifier_set = self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner());
+            for nf in &in_memory_nullifiers {
+                nullifier_set.remove(nf);
+            }
+        }
+
+        // Decrement height
+        let new_height = height.pred().unwrap_or(BlockHeight::new(0));
+        self.set_height(new_height);
+
+        info!(target: "chain_state",
+            "Disconnected block at height {}. New tip: {}",
+            height, new_height);
+
+        Ok(())
     }
 
     /// Memory diagnostics: number of cached RandomX VMs.

@@ -324,13 +324,75 @@ pub fn accept_block(
         .map_err(|e| dwow_core::Error::Custom(format!("connect_block failed: {}", e)))?;
     eprintln!("[accept_block] committed");
 
-    // 7. Update in-memory cache AFTER the atomic transaction succeeds.
-    // The sled write was atomic; now the cache must reflect the new state.
-    if let Some(entry) = sc_entry {
-        chain_state.supply_chain.update_cache(block.header.height, entry);
-    }
+    // Handle reorg: if connect_block detected a heavier competing chain,
+    // disconnect the displaced canonical block and re-accept both blocks.
+    let final_outcome = match outcome {
+        BlockConnectOutcome::ReorgAvailable { fork_height, competing_block } => {
+            eprintln!("[accept_block] Reorg: disconnecting canonical block at height {}", fork_height);
 
-    Ok(outcome)
+            // 1. Disconnect the displaced canonical block at fork_height.
+            //    This rolls back all state: blocks, coins, nullifiers,
+            //    supply chain, consensus timestamps/target/accumulated_work.
+            chain_state.disconnect_block(fork_height)
+                .map_err(|e| dwow_core::Error::Custom(format!(
+                    "disconnect_block({}) failed: {}", fork_height, e)))?;
+            eprintln!("[accept_block] Reorg: disconnected H={}, accepting competing block", fork_height);
+
+            // 2. Accept the competing block at H (now current_height + 1).
+            //    Full pipeline: structural, PoW, WASM execution, commit.
+            let flags = randomx::RandomXFlags::get_recommended_flags()
+                & !randomx::RandomXFlags::JIT;
+            let rx_cache = chain_state.get_cache(competing_block.header.randomx_key);
+            let comp_vm = std::sync::Arc::new(
+                randomx::RandomXVM::new(flags, Some(rx_cache), None)
+                    .map_err(|e| dwow_core::Error::Custom(format!(
+                        "Reorg: competing block RandomX VM: {}", e
+                    )))?
+            );
+            let comp_target = competing_block.header.target;
+            let first = accept_block(
+                chain_state,
+                &competing_block,
+                &[],    // competing blocks are stored without uncles
+                &comp_vm,
+                fork_height.pred().unwrap_or(BlockHeight::new(0)),
+                comp_target,
+                fee_estimator,
+            )?;
+            if !matches!(first, BlockConnectOutcome::CanonicalExtension { .. }) {
+                return Err(dwow_core::Error::Custom(format!(
+                    "Reorg: competing block at {} not accepted as canonical (got {:?})",
+                    fork_height, first
+                )));
+            }
+
+            // 3. Re-accept the current block at H+1.
+            //    Re-executes WASM against the competing chain's state.
+            eprintln!("[accept_block] Reorg: accepting extension at H+1={}", block.header.height);
+            let second = accept_block(
+                chain_state,
+                block,
+                uncles,
+                vm,
+                fork_height,
+                target,
+                fee_estimator,
+            )?;
+
+            eprintln!("[accept_block] Reorg complete: chain tip at height {}", block.header.height);
+            second
+        }
+        other => {
+            // 7. Update in-memory cache AFTER the atomic transaction succeeds.
+            //    (For reorg, the recursive accept_block calls handle their own cache.)
+            if let Some(entry) = sc_entry {
+                chain_state.supply_chain.update_cache(block.header.height, entry);
+            }
+            other
+        }
+    };
+
+    Ok(final_outcome)
 }
 
 /// Read cumulative supply state from the WASM execution overlay and build

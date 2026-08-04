@@ -65,6 +65,13 @@ impl ChainWork {
     pub fn add_block(&self, target: BlockTarget) {
         *self.0.lock().unwrap_or_else(|e| e.into_inner()) += target.chain_work();
     }
+    /// Subtract work for a block being disconnected during reorg.
+    /// Uses saturating_sub for defense-in-depth — callers must ensure
+    /// the work being subtracted was previously added.
+    pub fn sub_block(&self, target: BlockTarget) {
+        let mut work = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        *work = work.saturating_sub(target.chain_work());
+    }
     pub(crate) fn store(&self, val: u128) { *self.0.lock().unwrap_or_else(|e| e.into_inner()) = val; }
     pub(crate) fn load(&self, order: std::sync::atomic::Ordering) -> u128 { self.get() }
 }
@@ -179,6 +186,14 @@ impl PoWConsensus {
             timestamps.remove(0);
         }
         timestamps.push(timestamp);
+    }
+
+    /// Remove the most recent block timestamp (undo of record_block).
+    /// Used during disconnect_block to reverse consensus state.
+    /// Must be paired with a previous call to record_block.
+    pub fn rollback_timestamp(&self) {
+        let mut timestamps = self.timestamps.lock().unwrap_or_else(|e| e.into_inner());
+        timestamps.pop();
     }
 
     /// Recalculate target based on recent block intervals.
