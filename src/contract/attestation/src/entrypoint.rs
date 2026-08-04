@@ -1134,6 +1134,7 @@ fn commit_fee_schedule_v1(cid: ContractId, params: CommitFeeScheduleParamsV1) ->
 // ============================================================================
 
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
+    msg!("[attestation::process_update] func_byte=0x{:02x} data_len={}", update_data[0], update_data.len());
     match AttestationFunction::try_from(update_data[0])? {
         AttestationFunction::CreateAttestationV1 => {
             let update = CreateAttestationUpdateV1::decode(&update_data[1..])?;
