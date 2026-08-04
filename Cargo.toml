@@ -450,3 +450,13 @@ path = "bench/sled.rs"
 
 # Crossbeam SkipMap vs Mutex protected HashMap.
 [workspace.lints.clippy]
+# Consensus safety: no silent truncation at type boundaries
+cast_possible_truncation = "warn"
+cast_sign_loss = "warn"
+cast_lossless = "warn"
+cast_ptr_alignment = "warn"
+# Code quality
+missing_docs = "warn"
+unused_self = "warn"
+# Future: promote to deny once triaged
+# unsafe_code = "warn"

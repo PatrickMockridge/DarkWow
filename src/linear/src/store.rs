@@ -36,7 +36,6 @@ const TXS_TREE: &str = "transactions";
 const CONTRACTS_TREE: &str = "contracts";
 const UNCLES_TREE: &str = "uncles";
 const CONSENSUS_TREE: &str = "consensus";
-const CHAIN_WORK_TREE: &str = "chain_work";
 const COINS_TREE: &str = "coins";
 const NULLIFIERS_TREE: &str = "nullifiers";
 pub const SUPPLY_CHAIN_TREE: &str = "supply_chain";
@@ -50,8 +49,6 @@ pub struct LinearStore {
     pub contracts: Tree,
     pub uncles: Tree,
     pub consensus: Tree,
-    /// Accumulated chain work (u32::MAX / target per block)
-    pub chain_work: Tree,
     /// Coin commitments → block height (for maturity tracking)
     pub coins: Tree,
     /// Spent nullifiers (empty value = spent)
@@ -68,12 +65,11 @@ impl LinearStore {
         let contracts = db.open_tree(CONTRACTS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let uncles = db.open_tree(UNCLES_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let consensus = db.open_tree(CONSENSUS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
-        let chain_work = db.open_tree(CHAIN_WORK_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let coins = db.open_tree(COINS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let nullifiers = db.open_tree(NULLIFIERS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let supply_chain = db.open_tree(SUPPLY_CHAIN_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
 
-        Ok(Self { db, blocks, transactions, contracts, uncles, consensus, chain_work, coins, nullifiers, supply_chain })
+        Ok(Self { db, blocks, transactions, contracts, uncles, consensus, coins, nullifiers, supply_chain })
     }
 
     /// Insert a block at the given height

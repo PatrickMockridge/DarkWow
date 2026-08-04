@@ -235,7 +235,7 @@ pub async fn varint_decode<R: AsyncRead + Unpin + Send>(
 mod p2p_impls {
     use async_trait::async_trait;
     use dwow_core::{
-        impl_p2p_message, impl_boundary_codec,
+        impl_p2p_message,
         net::{Message, metering::MeteringConfiguration},
         util::time::NanoTimestamp,
     };

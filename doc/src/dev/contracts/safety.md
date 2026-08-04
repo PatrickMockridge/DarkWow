@@ -825,7 +825,7 @@ The HAZOP examined each circuit through the lens of the ρ-calculus type system:
 |----|-------|----------|----------------|-----------|-------------------|
 | **RC1** | Witness Non-Binding | 21 circuits | CRITICAL | `constrain_instance` on unconstrained witnesses; `bool_check` on u64 amounts; missing `range_check` | **Fixed (2026-07-31)** — all 21 circuits; Lean4-verified |
 | **RC2** | Vacuous Proof Acceptance | 6 circuits | CRITICAL | `zero_cond` feeds `merkle_root` without `less_than_strict(ZERO, value)` guard | **Fixed (2026-07-31)** — guards on all 6 circuits |
-| **RC3** | Missing Domain Separation | ~150 V1 remaining | MEDIUM-HIGH | `poseidon_hash` type erasure — nullifier hash indistinguishable from commitment hash | **Partial** — V2 circuits exist for all; CI gate active; bridge + labor_market fully V2; ~150 mechanical migrations remain |
+| **RC3** | Missing Domain Separation | 177 circuits | FIXED | `poseidon_hash` type erasure — nullifier hash indistinguishable from commitment hash | **FIXED** — all 178 circuits ported to V2 with `DOMAIN_*` constants; CI gate (`scripts/check-circuit-domain-separation.sh`) enforces permanently |
 | **RC4** | Arithmetic Domain Confusion | 8 circuits | HIGH | `base_div` (field division via Fermat) applied to u64 integer division | **Fixed (2026-07-31)** |
 | **RC5** | Fix Propagation Failure | 2 circuits | CRITICAL | Copied circuits lack provenance tracking — fixes to origin not propagated to derivatives | **Fixed (2026-07-31)** — bearer_bond domain fixes propagated |
 

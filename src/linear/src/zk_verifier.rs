@@ -34,7 +34,6 @@
 //! transparent WASM re-execution of PoWRewardV1 (genesis.md, HAZOP F3).
 
 
-use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use crate::Transaction as ChainTransaction;
 
 // ---------------------------------------------------------------------------

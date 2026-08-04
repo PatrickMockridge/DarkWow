@@ -279,12 +279,6 @@ impl Default for Transaction {
     }
 }
 
-/// `skip_serializing_if` helper for the borrowed `nullifiers` field of the hash
-/// preimage (a `&&Vec` because the field is a reference). See `Transaction::hash`.
-fn vec_ref_is_empty<T>(v: &&Vec<T>) -> bool {
-    v.is_empty()
-}
-
 impl Transaction {
     /// Calculate the hash of this transaction.
     ///

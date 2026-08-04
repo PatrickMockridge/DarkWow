@@ -34,7 +34,7 @@
 //! When blocks come too fast the target decreases (harder); when too slow it
 //! increases (easier).
 
-use std::sync::{atomic::{AtomicU32, AtomicU64, Ordering}, Mutex};
+use std::sync::{atomic::{AtomicU32, Ordering}, Mutex};
 
 use blake3::Hash as Blake3Hash;
 use dwow_sdk::blockchain::{BlockHeight, BlockTarget, BlockTimestamp};
@@ -73,7 +73,6 @@ impl ChainWork {
         *work = work.saturating_sub(target.chain_work());
     }
     pub(crate) fn store(&self, val: u128) { *self.0.lock().unwrap_or_else(|e| e.into_inner()) = val; }
-    pub(crate) fn load(&self, order: std::sync::atomic::Ordering) -> u128 { self.get() }
 }
 
 /// Proof-of-Work consensus engine with dynamic target adjustment.
