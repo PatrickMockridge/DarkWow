@@ -84,8 +84,8 @@ pub use protocol_seed::ProtocolSeed;
 /// using existing connected peers as signaling relays. It is restricted to
 /// QUIC because QUIC's single-socket design allows the dialer and listener
 /// to share the same port, which is essential for NAT traversal.
-pub mod protocol_holepunch;
-pub use protocol_holepunch::ProtocolHolepunch;
+// ProtocolHolepunch removed — upstream legacy, never registered or instantiated.
+// Restore from git history if holepunching is needed.
 
 /// Generic protocol to receive specified structure messages.
 ///

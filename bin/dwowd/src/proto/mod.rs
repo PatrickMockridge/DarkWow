@@ -166,11 +166,19 @@ impl DwowP2pHandler {
     pub async fn stop(&self) {
         info!(target: "dwowd::proto::mod::DwowP2pHandler::stop", "Terminating Dwowd P2P handler...");
 
-        // Stop the P2P instance
-        self.p2p.stop().await;
+        // Stop the linear blockchain protocol handlers
+        if let Some(ref sync) = self.linear_sync {
+            sync.stop().await;
+        }
+        if let Some(ref broadcast) = self.linear_broadcast {
+            broadcast.stop().await;
+        }
 
-        // Start the `ProtocolTx` messages handler
+        // Stop the ProtocolTx messages handler
         self.txs.stop().await;
+
+        // Stop the P2P instance (last — channels depend on P2P)
+        self.p2p.stop().await;
 
         info!(target: "dwowd::proto::mod::DwowP2pHandler::stop", "Dwowd P2P handler terminated successfully!");
     }

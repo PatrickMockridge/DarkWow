@@ -138,22 +138,24 @@ pub struct ExecutionOutcome {
 /// (legacy tx without witness). Callers fall back to raw `call.data`.
 fn extract_wasm_call_tree(witness: &[u8]) -> Option<Vec<u8>> {
     if witness.is_empty() {
-        eprintln!("[execution::tree] empty witness — using raw call.data (coinbase or legacy)");
+        tracing::debug!(target: "dwow_chain::execution", "empty witness — using raw call.data (coinbase or legacy)");
         return None;
     }
     match dwow_serial::deserialize::<dwow_core::tx::Transaction>(witness) {
         Ok(core_tx) => {
             let n_calls = core_tx.calls.len();
             let tree_bytes = dwow_serial::serialize(&core_tx.calls);
-            eprintln!(
-                "[execution::tree] extracted tree from witness: {} calls, {} bytes → WASM",
+            tracing::debug!(
+                target: "dwow_chain::execution",
+                "extracted tree from witness: {} calls, {} bytes → WASM",
                 n_calls, tree_bytes.len(),
             );
             // Diagnostic: verify each call has well-formed inner data
             for (i, leaf) in core_tx.calls.iter().enumerate() {
                 if leaf.data.data.is_empty() {
-                    eprintln!(
-                        "[execution::tree] WARNING: call[{}] has empty inner data (contract_id={})",
+                    tracing::warn!(
+                        target: "dwow_chain::execution",
+                        "call[{}] has empty inner data (contract_id={})",
                         i, leaf.data.contract_id,
                     );
                 }
@@ -161,8 +163,9 @@ fn extract_wasm_call_tree(witness: &[u8]) -> Option<Vec<u8>> {
             Some(tree_bytes)
         }
         Err(e) => {
-            eprintln!(
-                "[execution::tree] witness decode failed: {:?} — falling back to raw call.data",
+            tracing::debug!(
+                target: "dwow_chain::execution",
+                "witness decode failed: {:?} — falling back to raw call.data",
                 e,
             );
             None
@@ -280,8 +283,9 @@ pub fn execute_block(
                 // Fallback: raw call data (empty witness, e.g. coinbase)
                 (call.data.clone(), "raw (fallback)")
             };
-            eprintln!(
-                "[execution::tree] call[{}] contract={} data_source={} size={}",
+            tracing::debug!(
+                target: "dwow_chain::execution",
+                "call[{}] contract={} data_source={} size={}",
                 call_idx, contract_id, data_source, call_data.len(),
             );
             jobs.push(CallJob {
@@ -426,7 +430,8 @@ pub fn execute_block(
                     match dwow_serial::Decodable::decode(&mut c) {
                         Ok(v) => v,
                         Err(e) => {
-                            eprintln!("metadata ZK decode failed for contract {} (tx {}): {:?}",
+                            tracing::error!(target: "dwow_chain::execution",
+                                "metadata ZK decode failed for contract {} (tx {}): {:?}",
                                 job.contract_id, job.tx_hash, e);
                             success = false; fail_stage = "metadata-decode-zkp";
                             Vec::new()
@@ -443,7 +448,8 @@ pub fn execute_block(
             Err(e) => {
                 success = false;
                 fail_stage = "metadata";
-                eprintln!("metadata() failed for contract {} (tx {}) fn_code={:?}: {:?}",
+                tracing::error!(target: "dwow_chain::execution",
+                    "metadata() failed for contract {} (tx {}) fn_code={:?}: {:?}",
                     job.contract_id, job.tx_hash, job.call_data.first(), e);
             }
         }
@@ -457,7 +463,8 @@ pub fn execute_block(
             match runtime.exec(&job.call_data) {
                 Ok(u) => update = u,
                 Err(e) => {
-                    eprintln!("exec() failed for contract {} (tx {}): {:?}",
+                    tracing::error!(target: "dwow_chain::execution",
+                        "exec() failed for contract {} (tx {}): {:?}",
                         job.contract_id, job.tx_hash, e);
                     success = false; fail_stage = "exec";
                 }
@@ -478,7 +485,8 @@ pub fn execute_block(
 
         if success {
             if let Err(e) = runtime.apply(&update) {
-                eprintln!("apply() failed for contract {} (tx {}): {:?}",
+                tracing::error!(target: "dwow_chain::execution",
+                    "apply() failed for contract {} (tx {}): {:?}",
                     job.contract_id, job.tx_hash, e);
                 success = false; fail_stage = "apply";
             }

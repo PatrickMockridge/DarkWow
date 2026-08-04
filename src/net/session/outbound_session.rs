@@ -635,7 +635,6 @@ impl PeerDiscoveryBase for PeerDiscovery {
                     target: "net::outbound_session::peer_discovery",
                     "[P2P] [PEER DISCOVERY] GetAddrs failed {getaddr_failures} times, doing seed sync"
                 );
-                eprintln!("[P2P] PeerDiscovery: GetAddrs failed {} times, re-seeding", getaddr_failures);
 
                 if !seeds.is_empty() {
                     dnetev!(self, OutboundPeerDiscovery, {
@@ -646,7 +645,10 @@ impl PeerDiscoveryBase for PeerDiscovery {
                     #[cfg(feature = "seed-sync-session")]
                     self.p2p().seed().await;
                 } else {
-                    eprintln!("[P2P] PeerDiscovery: no seeds configured, cannot re-seed");
+                    warn!(
+                        target: "net::outbound_session::peer_discovery",
+                        "[P2P] No seeds configured, cannot re-seed"
+                    );
                 }
 
                 // Reset failure counter. We do this even if seeds are not configured,

@@ -722,11 +722,9 @@ impl Channel {
     /// Set the VersionMessage of the node this channel is connected
     /// to. Called on receiving a version message in `ProtocolVersion`.
     pub(crate) async fn set_version(&self, version: Arc<VersionMessage>) {
-        self.version.set(version).await.unwrap();
-    }
-    /// Should only be called after the version exchange has been completed.
-    pub fn get_version(&self) -> Arc<VersionMessage> {
-        self.version.get().unwrap().clone()
+        if self.version.set(version).await.is_err() {
+            tracing::warn!(target: "net::channel", "Duplicate version set — ignoring");
+        }
     }
 
     /// Returns the inner [`MessageSubsystem`] reference

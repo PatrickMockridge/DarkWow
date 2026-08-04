@@ -133,7 +133,6 @@ impl SeedSyncSession {
     pub(crate) async fn notify(&self) {
         let slots = &*self.slots.lock().await;
 
-        eprintln!("[P2P] SeedSync: activating {} seed slots", slots.len());
         info!(target: "net::seedsync_session",
             "Activating {} seed slots", slots.len());
 
@@ -265,7 +264,6 @@ impl Slot {
                         "SEED SLOT LIVENESS: {} inactive for {}s. \
                          Slot is waiting for next notify() cycle and may be stuck.",
                         slot.addr, elapsed.as_secs());
-                    eprintln!("[P2P] SEED SLOT STUCK: {} inactive for {}s", slot.addr, elapsed.as_secs());
                 }
             }
         }).detach();
@@ -305,7 +303,6 @@ impl Slot {
                 if matches!(&e, crate::Error::HostStateBlocked(_, _)) {
                     info!(target: "net::seedsync_session",
                         "[P2P] Seed slot {}: host already connected via outbound session — job complete", &self.addr);
-                    eprintln!("[P2P] Seed slot {}: host already connected — exiting (job done)", &self.addr);
                     self.completed.store(true, SeqCst);
                     self.touch_activity();
                     break;
@@ -313,7 +310,6 @@ impl Slot {
 
                 warn!(target: "net::seedsync_session",
                     "[P2P] Cannot connect to seed={}, err={e}", &self.addr);
-                eprintln!("[P2P] Seed slot: cannot register {}: {e}", &self.addr);
 
                 // Reset the CondVar for future use.
                 self.touch_activity();
@@ -330,7 +326,6 @@ impl Slot {
                         "[P2P] Connected seed [{}]",
                         ch.display_address()
                     );
-                    eprintln!("[P2P] Connected to seed {}", ch.display_address());
 
                     match self.session().register_channel(ch.clone(), ex.clone()).await {
                         Ok(()) => {
@@ -348,9 +343,10 @@ impl Slot {
                             if grey_count == 0 {
                                 warn!(target: "net::seedsync_session",
                                     "[P2P] Greylist empty after seeding — no peer addresses received");
-                                eprintln!("[P2P] WARNING: Greylist empty after seeding — seed returned no peer addresses");
                             } else {
-                                eprintln!("[P2P] Seed hostlist: {} greylist entries after seed sync", grey_count);
+                                info!(target: "net::seedsync_session",
+                                    "[P2P] Seed hostlist: {} greylist entries after seed sync",
+                                    grey_count);
                             }
 
                             // Reset the CondVar for future use.
@@ -363,7 +359,6 @@ impl Slot {
                                 "[P2P] Seed register_channel FAILED [{}]: {e}",
                                 ch.display_address()
                             );
-                            eprintln!("[P2P] Seed handshake FAILED for {}: {e}", ch.display_address());
                             self.handle_failure(ch.address());
 
                             continue
@@ -376,7 +371,6 @@ impl Slot {
                         target: "net::seedsync_session",
                         "[P2P] Unable to connect to seed: {e}",
                     );
-                    eprintln!("[P2P] Seed TCP/TLS connect FAILED for {}: {e}", &self.addr);
                     self.handle_failure(&self.addr);
 
                     continue

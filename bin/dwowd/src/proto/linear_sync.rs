@@ -101,6 +101,17 @@ impl LinearSyncHandler {
         Arc::new(Self { blocks_handler, block_handler, tip_handler, chain_state })
     }
 
+    /// Stop all linear sync background tasks.
+    pub async fn stop(&self) {
+        info!(
+            target: "dwowd::proto::linear_sync::stop",
+            "Stopping linear sync handler..."
+        );
+        self.blocks_handler.task.stop().await;
+        self.block_handler.task.stop().await;
+        self.tip_handler.task.stop().await;
+    }
+
     /// Start all linear sync background tasks
     pub async fn start(&self, executor: &ExecutorPtr) -> Result<()> {
         debug!(

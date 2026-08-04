@@ -85,7 +85,7 @@ pub fn accept_block(
     // misplaced, or null coinbase before any expensive validation.
     dwow_chain::validation::validate_block_structure(block)
         .map_err(|e| dwow_core::Error::Custom(format!("Block {} structure invalid: {}", block.header.height, e)))?;
-    eprintln!("[accept_block] structure validated");
+    tracing::debug!(target: "block_acceptor", "structure validated");
 
     // 0.2 Uncle validation — HAZOP F5: check_uncles() was dead code (zero
     // non-test callers). Wire it into the acceptance path after structural
@@ -142,7 +142,7 @@ pub fn accept_block(
 
     proof_of_token_balance::verify_proof_of_token_balance(block)
         .map_err(|e| dwow_core::Error::Custom(format!("Block {} proof of token balance failed: {}", block.header.height, e)))?;
-    eprintln!("[accept_block] token balance verified");
+    tracing::debug!(target: "block_acceptor", "token balance verified");
 
     // 2. Stage 1 PoW — verify hash meets target BEFORE expensive WASM execution.
     // Monero merge-mined blocks skip native RandomX (the PoW comes from the
@@ -238,7 +238,7 @@ pub fn accept_block(
 
     // 3. WASM execution — runs pow_reward_v1, persists cumulative supply chain
     // to the contracts sled tree via the overlay.
-    eprintln!("[accept_block] executing WASM ({} txs)...", block.transactions.len());
+    tracing::debug!(target: "block_acceptor", "executing WASM ({} txs)...", block.transactions.len());
     let t0 = std::time::Instant::now();
     let outcome = match execute_block(chain_state, block, uncles, vm, block.header.height, target) {
         Ok(o) => o,
@@ -255,7 +255,7 @@ pub fn accept_block(
             return Err(e);
         }
     };
-    eprintln!("[accept_block] WASM execution complete ({:.1}s)", t0.elapsed().as_secs_f64());
+    tracing::info!(target: "block_acceptor", "WASM execution complete ({:.1}s)", t0.elapsed().as_secs_f64());
 
     // Fee estimator sampling — every accepted block contributes its actual
     // gas usage to the rolling window (MOC close-out item 10.3). Previously
@@ -319,16 +319,16 @@ pub fn accept_block(
 
     // 6. Atomic commit — blocks, contracts, supply_chain, consensus, coins,
     // and nullifiers all committed in a single sled transaction.
-    eprintln!("[accept_block] committing to chain...");
+    tracing::debug!(target: "block_acceptor", "committing to chain...");
     let outcome = chain_state.connect_block(block, uncles, Some(contracts_batch), supply_chain_batch)
         .map_err(|e| dwow_core::Error::Custom(format!("connect_block failed: {}", e)))?;
-    eprintln!("[accept_block] committed");
+    tracing::debug!(target: "block_acceptor", "committed");
 
     // Handle reorg: if connect_block detected a heavier competing chain,
     // disconnect the displaced canonical block and re-accept both blocks.
     let final_outcome = match outcome {
         BlockConnectOutcome::ReorgAvailable { fork_height, competing_block } => {
-            eprintln!("[accept_block] Reorg: disconnecting canonical block at height {}", fork_height);
+            tracing::info!(target: "block_acceptor", "Reorg: disconnecting canonical block at height {}", fork_height);
 
             // 1. Disconnect the displaced canonical block at fork_height.
             //    This rolls back all state: blocks, coins, nullifiers,
@@ -336,7 +336,7 @@ pub fn accept_block(
             chain_state.disconnect_block(fork_height)
                 .map_err(|e| dwow_core::Error::Custom(format!(
                     "disconnect_block({}) failed: {}", fork_height, e)))?;
-            eprintln!("[accept_block] Reorg: disconnected H={}, accepting competing block", fork_height);
+            tracing::info!(target: "block_acceptor", "Reorg: disconnected H={}, accepting competing block", fork_height);
 
             // 2. Accept the competing block at H (now current_height + 1).
             //    Full pipeline: structural, PoW, WASM execution, commit.
@@ -368,7 +368,7 @@ pub fn accept_block(
 
             // 3. Re-accept the current block at H+1.
             //    Re-executes WASM against the competing chain's state.
-            eprintln!("[accept_block] Reorg: accepting extension at H+1={}", block.header.height);
+            tracing::info!(target: "block_acceptor", "Reorg: accepting extension at H+1={}", block.header.height);
             let second = accept_block(
                 chain_state,
                 block,
@@ -379,7 +379,7 @@ pub fn accept_block(
                 fee_estimator,
             )?;
 
-            eprintln!("[accept_block] Reorg complete: chain tip at height {}", block.header.height);
+            tracing::info!(target: "block_acceptor", "Reorg complete: chain tip at height {}", block.header.height);
             second
         }
         other => {

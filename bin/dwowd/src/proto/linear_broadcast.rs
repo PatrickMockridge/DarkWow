@@ -263,7 +263,6 @@ impl LinearBroadcastHandler {
     }
 
     /// Stop the handler
-    #[allow(dead_code)]
     pub async fn stop(&self) {
         info!(
             target: "dwowd::proto::linear_broadcast::stop",

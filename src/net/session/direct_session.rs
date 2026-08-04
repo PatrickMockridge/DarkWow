@@ -189,7 +189,7 @@ impl DirectSession {
         }
         let res = task.output.lock().await.as_ref().unwrap().clone();
         if let Ok(ref channel) = res {
-            self.inc_channel_usage(channel, Arc::strong_count(&task).try_into().unwrap()).await;
+            self.inc_channel_usage(channel, u32::try_from(Arc::strong_count(&task)).unwrap_or(u32::MAX)).await;
         }
         res
     }
@@ -331,7 +331,11 @@ impl DirectSession {
         });
 
         // Attempt channel creation
-        match self.connector.get().unwrap().connect(&addr).await {
+        let connector = match self.connector.get() {
+            Some(c) => c,
+            None => return Err(Error::ConnectorStopped("DirectSession connector not initialized".into())),
+        };
+        match connector.connect(&addr).await {
             Ok((_, channel)) => {
                 verbose!(
                     target: "net::direct_session",

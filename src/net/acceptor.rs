@@ -90,7 +90,7 @@ impl Acceptor {
 
     /// Start accepting inbound socket connections
     pub async fn start(self: Arc<Self>, endpoint: Url, ex: ExecutorPtr) -> Result<()> {
-        let settings_arc = self.session.upgrade().unwrap().p2p().settings();
+        let settings_arc = self.session.upgrade().ok_or(Error::ChannelStopped)?.p2p().settings();
         let settings = settings_arc.read().await;
 
         let datastore = settings.p2p_datastore.clone();
@@ -120,7 +120,7 @@ impl Acceptor {
         #[cfg(feature = "upnp-igd")]
         {
             let actual_endpoint = listener.endpoint().await;
-            let settings = self.session.upgrade().unwrap().p2p().settings();
+            let settings = self.session.upgrade().ok_or(Error::ChannelStopped)?.p2p().settings();
             let mappings = setup_port_mappings(&actual_endpoint, settings, ex.clone());
             self.port_mappings.lock().await.extend(mappings);
         }
@@ -169,12 +169,12 @@ impl Acceptor {
         // CondVar used to notify the loop to recheck if new connections can
         // be accepted by the listener.
         let cv = Arc::new(CondVar::new());
-        let hosts = self.session.upgrade().unwrap().p2p().hosts();
+        let hosts = self.session.upgrade().ok_or(Error::ChannelStopped)?.p2p().hosts();
 
         loop {
             // Refuse new connections if we're up to the connection limit
             let limit =
-                self.session.upgrade().unwrap().p2p().settings().read().await.inbound_connections;
+                self.session.upgrade().ok_or(Error::ChannelStopped)?.p2p().settings().read().await.inbound_connections;
 
             if self.clone().conn_count.load(SeqCst) >= limit {
                 // This will get notified every time an inbound channel is stopped.
@@ -206,7 +206,7 @@ impl Acceptor {
                     // Per-IP connection limit (MOC M1)
                     let ip_key = url.host_str().unwrap_or("unknown").to_string();
                     {
-                        let mut counts = self.ip_counts.lock().unwrap();
+                        let mut counts = self.ip_counts.lock().unwrap_or_else(|e| e.into_inner());
                         let count = counts.get(&ip_key).copied().unwrap_or(0);
                         if count >= MAX_CONNECTIONS_PER_IP {
                             warn!(target: "net::acceptor::run_accept_loop",
@@ -245,7 +245,7 @@ impl Acceptor {
                         let stop_sub = channel_.subscribe_stop().await?;
                         stop_sub.receive().await;
                         self_.conn_count.fetch_sub(1, SeqCst);
-                        self_.ip_counts.lock().unwrap().entry(ip).and_modify(|c| *c = c.saturating_sub(1));
+                        self_.ip_counts.lock().unwrap_or_else(|e| e.into_inner()).entry(ip).and_modify(|c| *c = c.saturating_sub(1));
                         cv_.notify();
                         Ok::<(), crate::Error>(())
                     })
