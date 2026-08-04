@@ -112,8 +112,9 @@ impl IssueCallBuilder {
     pub fn build(self) -> Result<IssueCallDebris> {
         debug!(target: "contract::promissory_note::client::issue", "Building PromissoryNote::IssueV1 contract call");
 
-        // Derive issue_public from backing secret
-        let issue_public = poseidon_hash([self.input.issue_secret]);
+        // Derive issue_public from backing secret.
+        // V2 circuit domain separator: DOMAIN_SIGNATURE_SECRET = 7.
+        let issue_public = poseidon_hash([pallas::Base::from(7), self.input.issue_secret]);
 
         // Generate blinds
         let value_blind = ScalarBlind::random(&mut OsRng);
@@ -170,7 +171,7 @@ impl IssueCallBuilder {
             Witness::Scalar(Value::known(value_blind.inner())),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(poseidon_hash([self.tx_commitment, self.tx_nonce]))), // V2: tx_binding = poseidon_hash(tx_commitment, tx_nonce)
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3), self.tx_commitment, self.tx_nonce]))), // V2: tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce), domain = 3
         ];
 
         let public_inputs = IssueRevealed {
@@ -180,7 +181,7 @@ impl IssueCallBuilder {
             value_commit,
             token_id: self.input.token_id,
             spend_hook: self.input.spend_hook,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_binding: poseidon_hash([pallas::Base::from(3), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
         };
 
@@ -195,7 +196,7 @@ impl IssueCallBuilder {
                 token_registry_root,
                 issue_public,
                 spend_hook: FuncId::from_base(self.input.spend_hook),
-                tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+                tx_binding: poseidon_hash([pallas::Base::from(3), self.tx_commitment, self.tx_nonce]),
                 tx_nonce: self.tx_nonce,
             },
             proofs: vec![proof],

@@ -34,29 +34,18 @@ use dwow_sdk::{
 };
 use rand::rngs::OsRng;
 
-/// ProposeClaimV1 circuit public inputs
+/// ProposeClaimV2 circuit public inputs (3 — matching ProposeClaimV2 circuit constrain_instance order)
+/// Circuit order: [tx_binding, tx_nonce, claim_commit]
 #[derive(Debug, Clone)]
 pub struct ProposeClaimV1PublicInputs {
-    pub dao_escrow_bulla: pallas::Base,
-    pub claim_id: pallas::Base,
-    pub capability_id: pallas::Base,
-    pub proposal_nullifier: pallas::Base,
-    pub claim_commit: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
+    pub claim_commit: pallas::Base,
 }
 
 impl ProposeClaimV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.dao_escrow_bulla,
-            self.claim_id,
-            self.capability_id,
-            self.proposal_nullifier,
-            self.claim_commit,
-            self.tx_binding,
-            self.tx_nonce,
-        ]
+        vec![self.tx_binding, self.tx_nonce, self.claim_commit]
     }
 }
 
@@ -110,29 +99,19 @@ impl ProposeClaimV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> ProposeClaimV1PublicInputs {
-        let proposal_nullifier = poseidon_hash([
-            self.capability_secret,
-            self.dao_escrow_bulla,
-            self.claim_id,
-        ]);
-
+        // claim_commit = poseidon_hash(DOMAIN_COIN_COMMIT, claim_id, claim_amount, claim_blind)
         let claim_commit = poseidon_hash([
-            self.dao_escrow_bulla,
+            pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
             self.claim_id,
             pallas::Base::from(self.value),
-            self.description_hash,
-            self.recipient_pub_x,
-            self.recipient_pub_y,
+            self.proposal_blind,
         ]);
 
+        // Circuit constrain_instance order: [tx_binding, tx_nonce, claim_commit]
         ProposeClaimV1PublicInputs {
-            dao_escrow_bulla: self.dao_escrow_bulla,
-            claim_id: self.claim_id,
-            capability_id: self.capability_id,
-            proposal_nullifier,
-            claim_commit,
             tx_binding: pallas::Base::zero(),
             tx_nonce: self.tx_nonce,
+            claim_commit,
         }
     }
 

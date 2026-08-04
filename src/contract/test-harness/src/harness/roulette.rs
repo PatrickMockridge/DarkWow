@@ -285,13 +285,13 @@ impl super::ContractHarness for RouletteHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["PlaceBetV2", "SettleBetV2", "HouseClose_V2", "SpinWheel_V2"]
+        vec!["PlaceBet_V2", "SettleBet_V2", "HouseClose_V2", "SpinWheel_V2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "PlaceBetV2" => Some(&self.place_bet_zkbin),
-            "SettleBetV2" => Some(&self.settle_bet_zkbin),
+            "PlaceBet_V2" => Some(&self.place_bet_zkbin),
+            "SettleBet_V2" => Some(&self.settle_bet_zkbin),
             "HouseClose_V2" => Some(&self.house_close_zkbin),
             "SpinWheel_V2" => Some(&self.spin_wheel_zkbin),
             _ => None,
@@ -300,8 +300,8 @@ impl super::ContractHarness for RouletteHarness {
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "PlaceBetV2" => Some(&self.place_bet_pk),
-            "SettleBetV2" => Some(&self.settle_bet_pk),
+            "PlaceBet_V2" => Some(&self.place_bet_pk),
+            "SettleBet_V2" => Some(&self.settle_bet_pk),
             "HouseClose_V2" => Some(&self.house_close_pk),
             "SpinWheel_V2" => Some(&self.spin_wheel_pk),
             _ => None,

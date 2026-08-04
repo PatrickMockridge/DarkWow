@@ -238,7 +238,7 @@ const BET_FIXED_SIZE: usize = 288;
 impl Bet {
     /// Derive nullifier for this bet
     pub fn derive_nullifier(&self) -> BetId {
-        poseidon_hash([self.id, self.secret_nonce_commit])
+        poseidon_hash([pallas::Base::from(1), self.id, self.secret_nonce_commit])
     }
 
     /// Manual encode for DB storage.
@@ -427,7 +427,7 @@ fn decode_option_outcome(
 
 /// Derive nullifier from bet_id and secret_nonce_commit
 pub fn derive_nullifier(bet_id: BetId, secret_nonce_commit: pallas::Base) -> BetId {
-    poseidon_hash([bet_id, secret_nonce_commit])
+    poseidon_hash([pallas::Base::from(1), bet_id, secret_nonce_commit])
 }
 
 // ============================================================================
@@ -1029,6 +1029,7 @@ pub fn derive_bet_id(
     token_id: pallas::Base,
 ) -> BetId {
     poseidon_hash([
+        pallas::Base::from(4),
         player_pub.x().expect("pk not identity"),
         player_pub.y().expect("pk not identity"),
         pallas::Base::from(bet_type as u64),

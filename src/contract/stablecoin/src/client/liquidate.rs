@@ -37,9 +37,9 @@ use rand::rngs::OsRng;
 /// Liquidate circuit public inputs (in order of constrain_instance)
 #[derive(Debug, Clone)]
 pub struct LiquidatePublicInputs {
-    /// Old commitment (position commitment before liquidation)
+    /// Old commitment (position commitment before liquidation) - not a constrain_instance output
     pub old_commitment: pallas::Base,
-    /// New commitment (after liquidation)
+    /// New commitment (after liquidation) - not a constrain_instance output
     pub new_commitment: pallas::Base,
     /// Position nullifier
     pub position_nullifier: pallas::Base,
@@ -49,10 +49,10 @@ pub struct LiquidatePublicInputs {
 
 impl LiquidatePublicInputs {
     /// Convert to vector for ZK proof creation
+    /// Order matches constrain_instance calls in liquidate.zk:
+    /// constrain_instance(nullifier_check), constrain_instance(tx_binding), constrain_instance(tx_nonce)
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
-            self.old_commitment,
-            self.new_commitment,
             self.position_nullifier,
             self.tx_binding,
             self.tx_nonce,
@@ -115,17 +115,17 @@ impl LiquidateCallData {
 
     /// Compute the owner's public key (Poseidon hash of secret)
     pub fn owner_public_key(&self) -> pallas::Base {
-        poseidon_hash([self.owner_secret])
+        poseidon_hash([pallas::Base::from(7u64), self.owner_secret])
     }
 
     /// Compute the Poseidon commitment for collateral
     pub fn collateral_commitment(&self, amount: u64) -> pallas::Base {
-        poseidon_hash([pallas::Base::from(amount), self.collateral_blind.inner()])
+        poseidon_hash([pallas::Base::from(4u64), pallas::Base::from(amount), self.collateral_blind.inner()])
     }
 
     /// Compute the Poseidon commitment for debt
     pub fn debt_commitment(&self, amount: u64) -> pallas::Base {
-        poseidon_hash([pallas::Base::from(amount), self.debt_blind.inner()])
+        poseidon_hash([pallas::Base::from(4u64), pallas::Base::from(amount), self.debt_blind.inner()])
     }
 
     /// Compute the old position commitment
@@ -133,7 +133,7 @@ impl LiquidateCallData {
         let collateral_commit = self.collateral_commitment(self.collateral_amount);
         let debt_commit = self.debt_commitment(self.debt_amount);
         let owner_pub = self.owner_public_key();
-        poseidon_hash([collateral_commit, debt_commit, owner_pub])
+        poseidon_hash([pallas::Base::from(4u64), collateral_commit, debt_commit, owner_pub])
     }
 
     /// Compute the new position commitment after liquidation
@@ -143,13 +143,13 @@ impl LiquidateCallData {
         let collateral_commit = self.collateral_commitment(new_collateral);
         let debt_commit = self.debt_commitment(self.debt_amount);
         let owner_pub = self.owner_public_key();
-        poseidon_hash([collateral_commit, debt_commit, owner_pub])
+        poseidon_hash([pallas::Base::from(4u64), collateral_commit, debt_commit, owner_pub])
     }
 
     /// Compute public inputs for this call
     pub fn compute_public_inputs(&self) -> LiquidatePublicInputs {
-        // Compute nullifier
-        let position_nullifier = poseidon_hash([self.owner_secret, self.old_commitment]);
+        // Compute nullifier with domain separation
+        let position_nullifier = poseidon_hash([pallas::Base::from(1u64), self.owner_secret, self.old_commitment]);
 
         LiquidatePublicInputs {
             old_commitment: self.old_commitment,

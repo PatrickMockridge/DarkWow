@@ -151,6 +151,12 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
 
+    // Circuit computes tx_binding = poseidon_hash(witness[3], witness[3], witness[4]) =
+    // poseidon_hash(tx_commitment, tx_commitment, tx_nonce). In all attestation clients,
+    // tx_commitment and tx_nonce are zero. Instance order must match constrain_instance order
+    // in the .zk circuit file.
+    let txb = poseidon_hash([Base::zero(), Base::zero(), Base::zero()]);
+
     match func {
         AttestationFunction::CreateAttestationV1 => {
             let params = match CreateAttestationParamsV1::decode(&self_.data[1..]) {
@@ -164,7 +170,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V2.to_string(),
                 {
                     let (ax, ay) = params.attestor_pub.xy().expect("pk not identity");
-                    vec![ax, ay]
+                    vec![ax, ay, txb, Base::zero()]
                 },
             ));
         }
@@ -180,7 +186,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V2.to_string(),
                 {
                     let (cx, cy) = params.claimant_pub.xy().expect("pk not identity");
-                    vec![params.attestation_id.inner(), cx, cy]
+                    vec![params.attestation_id.inner(), cx, cy, txb, Base::zero()]
                 },
             ));
         }
@@ -195,10 +201,13 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V2.to_string(),
                 vec![
+                    params.revocation_root,
                     params.claim_id.inner(),
                     params.revealed_result,
                     params.revocation_root,
                     params.attestation_data,
+                    txb,
+                    Base::zero(),
                 ],
             ));
         }
@@ -219,6 +228,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     cx,
                     cy,
                     params.nullifier,
+                    txb,
+                    Base::zero(),
                 ]}
             ));
         }
@@ -232,7 +243,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CHECK_NOT_REVOKED_NS_V2.to_string(),
-                vec![params.revocation_root, params.nonce],
+                vec![params.revocation_root, params.nonce, txb, Base::zero()],
             ));
         }
         AttestationFunction::DelegateAttestationV1 => {
@@ -249,6 +260,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     let (dx, dy) = params.delegator_pub.xy().expect("pk not identity");
                     let (ex, ey) = params.delegatee_pub.xy().expect("pk not identity");
                     vec![
+                    params.chain_root,
+                    params.revocation_root,
                     params.delegation_id,
                     params.parent_id,
                     dx, dy,
@@ -261,6 +274,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     pallas::Base::from(params.max_depth),
                     pallas::Base::from(params.delegator_stake),
                     pallas::Base::from(params.delegatee_stake),
+                    txb,
+                    Base::zero(),
                 ]}
             ));
         }
@@ -280,6 +295,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.chain_root,
                     pallas::Base::from(params.current_depth),
                     pallas::Base::from(params.max_depth),
+                    txb,
+                    Base::zero(),
                 ],
             ));
         }
@@ -301,6 +318,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     pallas::Base::from(params.delegator_stake),
                     pallas::Base::from(params.delegatee_stake),
                     pallas::Base::from(params.max_ratio),
+                    txb,
+                    Base::zero(),
                 ],
             ));
         }
@@ -316,7 +335,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V2.to_string(),
                 {
                     let (rx, ry) = params.relayer_pub.xy().expect("pk not identity");
-                    vec![rx, ry]
+                    vec![rx, ry, txb, Base::zero()]
                 },
             ));
         }
@@ -332,7 +351,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V2.to_string(),
                 {
                     let (ax, ay) = params.attestor_pub.xy().expect("pk not identity");
-                    vec![ax, ay]
+                    vec![ax, ay, txb, Base::zero()]
                 },
             ));
         }

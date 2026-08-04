@@ -51,11 +51,6 @@ impl CreateClaimMultiPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.nullifier,
-            self.claim_type,
-            self.issuer_pub_x,
-            self.issuer_pub_y,
-            self.schema_hash,
-            self.num_credentials,
             self.tx_binding,
             self.tx_nonce,
         ]
@@ -141,6 +136,7 @@ impl CreateClaimMultiCallData {
 
     pub fn compute_public_inputs(&self) -> CreateClaimMultiPublicInputs {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
+        let tx_binding = poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
         CreateClaimMultiPublicInputs {
             nullifier: self.compute_nullifier(),
             claim_type: self.claim_type,
@@ -148,13 +144,14 @@ impl CreateClaimMultiCallData {
             issuer_pub_y: iy,
             schema_hash: self.schema_hash,
             num_credentials: pallas::Base::from(self.num_credentials),
-            tx_binding: pallas::Base::zero(),
+            tx_binding,
             tx_nonce: self.tx_nonce,
         }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
+        let tx_binding = poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
         vec![
             // Public inputs as witnesses
             Witness::Base(Value::known(self.compute_nullifier())),
@@ -162,25 +159,24 @@ impl CreateClaimMultiCallData {
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
             Witness::Base(Value::known(self.schema_hash)),
-            Witness::Base(Value::known(pallas::Base::from(self.num_credentials))),
-            // Credential 1
+            // Credential 1 (circuit order: secret, commitment, threshold, attribute_value)
             Witness::Base(Value::known(self.secret_1)),
             Witness::Base(Value::known(self.commitment_1)),
-            Witness::Base(Value::known(self.attribute_1)),
             Witness::Base(Value::known(self.threshold_1)),
+            Witness::Base(Value::known(self.attribute_1)),
             // Credential 2
             Witness::Base(Value::known(self.secret_2)),
             Witness::Base(Value::known(self.commitment_2)),
-            Witness::Base(Value::known(self.attribute_2)),
             Witness::Base(Value::known(self.threshold_2)),
+            Witness::Base(Value::known(self.attribute_2)),
             // Credential 3
             Witness::Base(Value::known(self.secret_3)),
             Witness::Base(Value::known(self.commitment_3)),
-            Witness::Base(Value::known(self.attribute_3)),
             Witness::Base(Value::known(self.threshold_3)),
+            Witness::Base(Value::known(self.attribute_3)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(tx_binding)), // tx_binding
         ]
     }
 }

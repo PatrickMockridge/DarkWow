@@ -94,11 +94,11 @@ impl CancelSwapCallData {
     pub fn compute_public_inputs(&self) -> CancelSwapPublicInputs {
         // Compute nullifier
         // nullifier = poseidon_hash([secret, lock_commitment])
-        let nullifier = poseidon_hash([self.secret, self.lock_commitment]);
+        let nullifier = poseidon_hash([pallas::Base::from(1u64), self.secret, self.lock_commitment]);
 
         // Compute swap ID
         // swap_id = poseidon_hash([lock_commitment])
-        let computed_swap_id = poseidon_hash([self.lock_commitment]);
+        let computed_swap_id = poseidon_hash([pallas::Base::from(4u64), self.lock_commitment]);
 
         CancelSwapPublicInputs {
             nullifier,

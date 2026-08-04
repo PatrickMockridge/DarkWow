@@ -925,11 +925,11 @@ impl UpdateRiskUpdateV1 {
 /// Derive table ID from betting contract ID
 pub fn derive_table_id(betting_contract_id: pallas::Base, nonce: u64) -> pallas::Base {
     use dwow_sdk::crypto::poseidon_hash;
-    poseidon_hash([betting_contract_id, pallas::Base::from(nonce)])
+    poseidon_hash([pallas::Base::from(4), betting_contract_id, pallas::Base::from(nonce)])
 }
 
 /// Derive stake ID
 pub fn derive_stake_id(table_id: pallas::Base, staker_pub: &PublicKey, amount: u64, nonce: u64) -> pallas::Base {
     use dwow_sdk::crypto::poseidon_hash;
-    poseidon_hash([table_id, staker_pub.x().expect("pk not identity"), staker_pub.y().expect("pk not identity"), pallas::Base::from(amount), pallas::Base::from(nonce)])
+    poseidon_hash([pallas::Base::from(4), table_id, staker_pub.x().expect("pk not identity"), staker_pub.y().expect("pk not identity"), pallas::Base::from(amount), pallas::Base::from(nonce)])
 }

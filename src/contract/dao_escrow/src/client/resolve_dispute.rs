@@ -34,31 +34,18 @@ use dwow_sdk::{
 };
 use rand::rngs::OsRng;
 
-/// ResolveDisputeV1 circuit public inputs
+/// ResolveDisputeV2 circuit public inputs (3 — matching V2 circuit constrain_instance order)
+/// Circuit order: [tx_binding, tx_nonce, resolution_commit]
 #[derive(Debug, Clone)]
 pub struct ResolveDisputeV1PublicInputs {
-    pub capability_id: pallas::Base,
-    pub dao_escrow_bulla: pallas::Base,
-    pub dispute_id: pallas::Base,
-    pub attestation_root: pallas::Base,
-    pub resolution_commit: pallas::Base,
-    pub dispute_nullifier: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
+    pub resolution_commit: pallas::Base,
 }
 
 impl ResolveDisputeV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.capability_id,
-            self.dao_escrow_bulla,
-            self.dispute_id,
-            self.attestation_root,
-            self.resolution_commit,
-            self.dispute_nullifier,
-            self.tx_binding,
-            self.tx_nonce,
-        ]
+        vec![self.tx_binding, self.tx_nonce, self.resolution_commit]
     }
 }
 
@@ -118,30 +105,20 @@ impl ResolveDisputeV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> ResolveDisputeV1PublicInputs {
-        let dispute_nullifier = poseidon_hash([
-            self.capability_secret,
-            self.dispute_id,
-            self.dao_escrow_bulla,
-        ]);
-
+        // resolution_commit = poseidon_hash(DOMAIN_COIN_COMMIT, dispute_id,
+        //                                    resolution_type, resolution_blind)
         let resolution_commit = poseidon_hash([
+            pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
             self.dispute_id,
             pallas::Base::from(self.resolution_result as u64),
             pallas::Base::from(self.payout_amount),
-            self.recipient_pub_x,
-            self.recipient_pub_y,
-            self.attestation_root,
         ]);
 
+        // Circuit constrain_instance order: [tx_binding, tx_nonce, resolution_commit]
         ResolveDisputeV1PublicInputs {
-            capability_id: self.capability_id,
-            dao_escrow_bulla: self.dao_escrow_bulla,
-            dispute_id: self.dispute_id,
-            attestation_root: self.attestation_root,
-            resolution_commit,
-            dispute_nullifier,
             tx_binding: pallas::Base::zero(),
             tx_nonce: self.tx_nonce,
+            resolution_commit,
         }
     }
 

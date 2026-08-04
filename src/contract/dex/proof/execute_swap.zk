@@ -12,10 +12,14 @@ witness "ExecuteSwapV2" {
     Base alice_secret,
     Base alice_token,
     Base alice_amount,
+    Base alice_token_blind,
+    Base alice_amount_blind,
     Base alice_lock,
     Base bob_secret,
     Base bob_token,
     Base bob_amount,
+    Base bob_token_blind,
+    Base bob_amount_blind,
     Base bob_lock,
     Base fill_amount,
     Base alice_otc_func_id,
@@ -30,21 +34,25 @@ circuit "ExecuteSwapV2" {
     DOMAIN_TX_BINDING = witness_base(3);
     DOMAIN_COIN_COMMIT = witness_base(4);
 
-    # PHASE 1: Verify Alice's lock
+    # PHASE 1: Verify Alice's lock (must match create_swap lock formula)
     alice_lock_check = poseidon_hash(
         DOMAIN_COIN_COMMIT,
         alice_secret,
         alice_token,
         alice_amount,
+        alice_token_blind,
+        alice_amount_blind,
     );
     constrain_equal_base(alice_lock_check, alice_lock);
 
-    # PHASE 2: Verify Bob's lock
+    # PHASE 2: Verify Bob's lock (must match create_swap lock formula)
     bob_lock_check = poseidon_hash(
         DOMAIN_COIN_COMMIT,
         bob_secret,
         bob_token,
         bob_amount,
+        bob_token_blind,
+        bob_amount_blind,
     );
     constrain_equal_base(bob_lock_check, bob_lock);
 

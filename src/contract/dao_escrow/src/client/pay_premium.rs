@@ -34,27 +34,17 @@ use dwow_sdk::{
 };
 use rand::rngs::OsRng;
 
-/// PayPremiumV1 circuit public inputs (only 4 - matching what circuit exposes)
+/// PayPremiumV2 circuit public inputs (2 — matching PayPremiumV2 circuit constrain_instance order)
+/// Circuit order: [tx_binding, tx_nonce]
 #[derive(Debug, Clone)]
 pub struct PayPremiumV1PublicInputs {
-    pub dao_escrow_bulla: pallas::Base,
-    pub membership_note: pallas::Base,
-    pub value_commit_x: pallas::Base,
-    pub value_commit_y: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl PayPremiumV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.dao_escrow_bulla,
-            self.membership_note,
-            self.value_commit_x,
-            self.value_commit_y,
-            self.tx_binding,
-            self.tx_nonce,
-        ]
+        vec![self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -120,30 +110,8 @@ impl PayPremiumV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> PayPremiumV1PublicInputs {
-        // Compute membership_note = H(member_pub_x, member_pub_y, value, token_id, expiry, blind)
-        // This must match what the circuit computes
-        let membership_note = poseidon_hash([
-            self.member_pub_x,
-            self.member_pub_y,
-            pallas::Base::from(self.value),
-            self.token_id,
-            pallas::Base::from(self.expiry),
-            self.membership_blind,
-        ]);
-
-        // The value_commit is computed in the circuit using EC operations:
-        // vcv = ec_mul_short(value, VALUE_COMMIT_VALUE)
-        // vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM)
-        // value_commit = ec_add(vcv, vcr)
-        // We cannot compute this outside the circuit, so we use zero as placeholder.
-        let value_commit_x = pallas::Base::zero();
-        let value_commit_y = pallas::Base::zero();
-
+        // Circuit constrain_instance order: [tx_binding, tx_nonce]
         PayPremiumV1PublicInputs {
-            dao_escrow_bulla: self.dao_escrow_bulla,
-            membership_note,
-            value_commit_x,
-            value_commit_y,
             tx_binding: pallas::Base::zero(),
             tx_nonce: self.tx_nonce,
         }

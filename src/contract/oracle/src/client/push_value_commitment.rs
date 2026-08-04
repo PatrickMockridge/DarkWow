@@ -100,23 +100,25 @@ impl PushValueCommitmentV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> PushValueCommitmentV1PublicInputs {
+        // Circuit: DOMAIN_TX_BINDING = witness_base(3) = staker_pub_y
+        let (_ix, iy) = self.staker_public.xy().expect("pk not identity");
+        let tx_binding = dwow_sdk::crypto::poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
         PushValueCommitmentV1PublicInputs {
             oracle_id: self.oracle_id,
             commitment: self.commitment,
             data_root: self.data_root,
-            tx_binding: pallas::Base::zero(),
+            tx_binding,
             tx_nonce: self.tx_nonce,
         }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.staker_public.xy().expect("pk not identity");
+        let tx_binding = dwow_sdk::crypto::poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
         vec![
-            // Public inputs as witnesses
+            // Circuit order: oracle_id, staker_secret, staker_pub_x, staker_pub_y, pos, path,
+            //   value, nonce, commitment, data_root, tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.oracle_id)),
-            Witness::Base(Value::known(self.commitment)),
-            Witness::Base(Value::known(self.data_root)),
-            // Private inputs
             Witness::Base(Value::known(self.staker_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
@@ -124,9 +126,11 @@ impl PushValueCommitmentV1CallData {
             Witness::MerklePath(Value::known(self.path.clone().try_into().unwrap())),
             Witness::Base(Value::known(self.value)),
             Witness::Base(Value::known(self.nonce)),
+            Witness::Base(Value::known(self.commitment)),
+            Witness::Base(Value::known(self.data_root)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(tx_binding)), // tx_binding (computed by circuit)
         ]
     }
 }

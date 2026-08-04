@@ -89,7 +89,7 @@ impl CancelSwapCallData {
 
     /// Compute spent nullifier: H(swap_id, alice_secret)
     pub fn compute_nullifier(&self) -> pallas::Base {
-        poseidon_hash([self.swap_id, self.alice_secret])
+        poseidon_hash([pallas::Base::from(1), self.swap_id, self.alice_secret])
     }
 
     pub fn compute_public_inputs(&self) -> CancelSwapPublicInputs {

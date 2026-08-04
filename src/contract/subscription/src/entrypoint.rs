@@ -70,7 +70,8 @@ use crate::{
     SUBSCRIPTION_CONTRACT_NULLIFIERS_TREE, SUBSCRIPTION_CONTRACT_PLANS_TREE,
     SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE,
     SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V2, SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V2,
-    SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V2,
+    SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V2, SUBSCRIPTION_CONTRACT_ZKAS_CANCEL_NS_V2,
+    SUBSCRIPTION_CONTRACT_ZKAS_RENEW_NS_V2,
 };
 
 // ============================================================================
@@ -123,6 +124,8 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(include_bytes!("../proof/subscribe.zk.bin"))?;
     wasm::db::zkas_db_set(include_bytes!("../proof/update_usage.zk.bin"))?;
     wasm::db::zkas_db_set(include_bytes!("../proof/verify_access.zk.bin"))?;
+    wasm::db::zkas_db_set(include_bytes!("../proof/cancel.zk.bin"))?;
+    wasm::db::zkas_db_set(include_bytes!("../proof/renew.zk.bin"))?;
 
     Ok(())
 }
@@ -144,32 +147,51 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         SubscriptionFunction::SubscribeV1 => {
+            // SubscribeV2 circuit: [tx_binding, tx_nonce]
             zk_public_inputs.push((
                 SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V2.to_string(),
-                vec![],
+                vec![pallas::Base::zero(), pallas::Base::zero()],
             ));
         }
         SubscriptionFunction::VerifyAccessV1 => {
+            // VerifyAccessV2 circuit: [tx_binding, tx_nonce]
             zk_public_inputs.push((
                 SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V2.to_string(),
-                vec![],
+                vec![pallas::Base::zero(), pallas::Base::zero()],
             ));
         }
         SubscriptionFunction::UpdateUsageV1 => {
             let params= UpdateUsageParamsV1::decode(&self_.data[1..])?;
+            // derived_id = poseidon_hash(DOMAIN_COIN_COMMIT, subscription_id, pub_x, pub_y, block, nonce)
             let derived_id = poseidon_hash([
+                pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
                 params.subscription_id.inner(),
                 params.subscriber_pub_x,
                 params.subscriber_pub_y,
                 pallas::Base::from(params.current_block),
                 params.nonce,
             ]);
+            // Circuit constrain_instance order: [tx_binding, tx_nonce, derived_id]
             zk_public_inputs.push((
                 SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V2.to_string(),
-                vec![derived_id],
+                vec![pallas::Base::zero(), pallas::Base::zero(), derived_id],
             ));
         }
-        // CancelV1, RenewV1, DaoControlV1, InitializeV1 are not ZK circuits.
+        SubscriptionFunction::CancelV1 => {
+            // CancelV2 circuit: [subscription_id, spent_nullifier, tx_binding, tx_nonce]
+            zk_public_inputs.push((
+                SUBSCRIPTION_CONTRACT_ZKAS_CANCEL_NS_V2.to_string(),
+                vec![pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero()],
+            ));
+        }
+        SubscriptionFunction::RenewV1 => {
+            // RenewV2 circuit: [subscription_id, spent_nullifier, tx_binding, tx_nonce]
+            zk_public_inputs.push((
+                SUBSCRIPTION_CONTRACT_ZKAS_RENEW_NS_V2.to_string(),
+                vec![pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero()],
+            ));
+        }
+        SubscriptionFunction::DaoControlV1 | SubscriptionFunction::InitializeV1 => {}
         _ => {}
     }
 

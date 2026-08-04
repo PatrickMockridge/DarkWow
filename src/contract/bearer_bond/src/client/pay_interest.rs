@@ -187,7 +187,7 @@ fn create_pay_interest_proof(
     let coin = attrs.to_coin();
 
     let value_commit = pedersen_commitment_u64(input.interest_amount, value_blind.clone());
-    let token_commit = poseidon_hash([input.token_id, token_id_blind.inner()]);
+    let token_commit = poseidon_hash([pallas::Base::from(2), input.token_id, token_id_blind.inner()]);
 
     let public_inputs = PayInterestRevealed {
         coin,

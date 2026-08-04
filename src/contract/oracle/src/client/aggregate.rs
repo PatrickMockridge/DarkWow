@@ -104,38 +104,40 @@ impl AggregateV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> AggregateV1PublicInputs {
+        // Circuit: DOMAIN_TX_BINDING = witness_base(3) = value_3
+        let tx_binding = dwow_sdk::crypto::poseidon_hash([self.value_3, self.tx_commitment, self.tx_nonce]);
         AggregateV1PublicInputs {
             oracle_id: self.oracle_id,
             result: self.result,
             min_result: self.min_result,
             max_result: self.max_result,
-            tx_binding: pallas::Base::zero(),
+            tx_binding,
             tx_nonce: self.tx_nonce,
         }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        let tx_binding = dwow_sdk::crypto::poseidon_hash([self.value_3, self.tx_commitment, self.tx_nonce]);
         vec![
-            // Public inputs as witnesses
+            // Circuit order: oracle_id, value_0, value_1, value_2, value_3,
+            //   weight_0, weight_1, weight_2, weight_3, sum_weights, result,
+            //   min_result, max_result, tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.oracle_id)),
-            Witness::Base(Value::known(self.result)),
-            Witness::Base(Value::known(self.min_result)),
-            Witness::Base(Value::known(self.max_result)),
-            // Private inputs - values
             Witness::Base(Value::known(self.value_0)),
             Witness::Base(Value::known(self.value_1)),
             Witness::Base(Value::known(self.value_2)),
             Witness::Base(Value::known(self.value_3)),
-            // Private inputs - weights
             Witness::Base(Value::known(self.weight_0)),
             Witness::Base(Value::known(self.weight_1)),
             Witness::Base(Value::known(self.weight_2)),
             Witness::Base(Value::known(self.weight_3)),
-            // Sum of weights
             Witness::Base(Value::known(self.sum_weights)),
+            Witness::Base(Value::known(self.result)),
+            Witness::Base(Value::known(self.min_result)),
+            Witness::Base(Value::known(self.max_result)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(tx_binding)), // tx_binding (computed by circuit)
         ]
     }
 }

@@ -64,7 +64,7 @@ impl MultiSigHarness {
         let group_id = poseidon_hash([fx, fy, t, n]);
         let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
-        let tx_binding = poseidon_hash([tx_commitment, tx_nonce]);
+        let tx_binding = poseidon_hash([tx_commitment, tx_commitment, tx_nonce]);
 
         let witnesses = vec![
             Witness::Base(Value::known(group_id)), Witness::Base(Value::known(t)),
@@ -76,10 +76,9 @@ impl MultiSigHarness {
         let proof = Proof::create(&self.create_group_pk, &[ZkCircuit::new(witnesses, &self.create_group_zkbin)], &public_inputs, OsRng)
             .map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {:?}", e)))?;
 
-        let proof_bytes = dwow_serial::serialize(&proof);
         let params = dwow_multisig_contract::model::CreateGroupParamsV1 {
             pubkeys: members, threshold,
-            proof: proof_bytes, tx_binding, tx_nonce,
+            proof: proof.as_ref().to_vec(), tx_binding, tx_nonce,
         };
         let mut call_data = vec![0x01u8];
         call_data.extend_from_slice(&params.encode());
@@ -91,7 +90,7 @@ impl MultiSigHarness {
         let (sx, sy) = signer_pub.xy().expect("pk not identity");
         let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
-        let tx_binding = poseidon_hash([tx_commitment, tx_nonce]);
+        let tx_binding = poseidon_hash([tx_commitment, tx_commitment, tx_nonce]);
 
         let witnesses = vec![
             Witness::Base(Value::known(group_id)), Witness::Base(Value::known(message_hash)),
@@ -104,13 +103,12 @@ impl MultiSigHarness {
         let proof = Proof::create(&self.sign_pk, &[ZkCircuit::new(witnesses, &self.sign_zkbin)], &public_inputs, OsRng)
             .map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {:?}", e)))?;
 
-        let proof_bytes = dwow_serial::serialize(&proof);
         let signer_pub = PublicKey::from_secret(SecretKey::from_base(signer_secret));
         let params = dwow_multisig_contract::model::SignParamsV1 {
             group_id: dwow_multisig_contract::model::GroupId(group_id),
             message_hash,
             signer_pub,
-            proof: proof_bytes, tx_binding, tx_nonce,
+            proof: proof.as_ref().to_vec(), tx_binding, tx_nonce,
         };
         let mut call_data = vec![0x02u8];
         call_data.extend_from_slice(&params.encode());
@@ -123,7 +121,7 @@ impl MultiSigHarness {
         let approval_commit = poseidon_hash([group_id, message_hash]);
         let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
-        let tx_binding = poseidon_hash([tx_commitment, tx_nonce]);
+        let tx_binding = poseidon_hash([tx_commitment, tx_commitment, tx_nonce]);
 
         let witnesses = vec![
             Witness::Base(Value::known(group_id)), Witness::Base(Value::known(message_hash)),
@@ -136,10 +134,9 @@ impl MultiSigHarness {
         let proof = Proof::create(&self.finalize_pk, &[ZkCircuit::new(witnesses, &self.finalize_zkbin)], &public_inputs, OsRng)
             .map_err(|e| dwow_core::Error::Custom(format!("Proof::create: {:?}", e)))?;
 
-        let proof_bytes = dwow_serial::serialize(&proof);
         let params = dwow_multisig_contract::model::FinalizeParamsV1 {
             group_id: dwow_multisig_contract::model::GroupId(group_id),
-            message_hash, proof: proof_bytes, tx_binding, tx_nonce,
+            message_hash, proof: proof.as_ref().to_vec(), tx_binding, tx_nonce,
         };
         let mut call_data = vec![0x03u8];
         call_data.extend_from_slice(&params.encode());

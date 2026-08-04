@@ -145,8 +145,8 @@ fn run_pay_premium(args: &[String]) {
     // Output proof and public inputs
     println!("Proof: {}", hex::encode(proof.as_ref()));
     println!("Public inputs:");
-    println!("  dao_escrow_bulla: {:?}", public_inputs.dao_escrow_bulla);
-    println!("  membership_note: {:?}", public_inputs.membership_note);
+    println!("  tx_binding: {:?}", public_inputs.tx_binding);
+    println!("  tx_nonce: {:?}", public_inputs.tx_nonce);
 }
 
 fn parse_hex_to_base(s: &str) -> Result<pallas::Base, String> {

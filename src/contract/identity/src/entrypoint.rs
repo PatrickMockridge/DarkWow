@@ -147,12 +147,11 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params = match IssueCredentialParams::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize IssueCredentialParams: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
-            let (ipx, ipy) = params.issuer_pub.xy().expect("pk not identity");
+            let (hx, _hy) = params.holder_pub.xy().expect("pk not identity");
+            let tx_binding = poseidon_hash([hx, Base::zero(), Base::zero()]);
             zk_public_inputs.push((
                 IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V2.to_string(),
-                // HAZOP ID-2 fix: expose issuer_pub coordinates so the host
-                // verifier binds the proof to a specific registered issuer.
-                vec![params.commitment.inner(), ipx, ipy],
+                vec![params.commitment.inner(), tx_binding, Base::zero()],
             ));
         }
         IdentityFunction::CreateClaimV1 => {
@@ -161,7 +160,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2.to_string(),
-                vec![params.nullifier.inner()],
+                vec![params.nullifier.inner(), Base::zero(), Base::zero()],
             ));
         }
         IdentityFunction::CreateClaimV1L1 => {
@@ -170,7 +169,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_L1.to_string(),
-                vec![params.nullifier.inner()],
+                vec![params.nullifier.inner(), Base::zero(), Base::zero()],
             ));
         }
         IdentityFunction::CreateClaimV1L1V2 => {
@@ -179,7 +178,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_L1_V2.to_string(),
-                vec![params.nullifier.inner()],
+                vec![params.nullifier.inner(), Base::zero(), Base::zero()],
             ));
         }
         IdentityFunction::CreateClaimV1Multi => {
@@ -188,7 +187,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_MULTI.to_string(),
-                vec![params.nullifier.inner()],
+                vec![params.nullifier.inner(), Base::zero(), Base::zero()],
             ));
         }
         IdentityFunction::CreateClaimV1Ratio => {
@@ -197,22 +196,24 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             };
             zk_public_inputs.push((
                 IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_RATIO.to_string(),
-                vec![params.nullifier.inner()],
+                vec![params.nullifier.inner(), Base::zero(), Base::zero()],
             ));
         }
         IdentityFunction::CreateClaimDAGV1 => {
             zk_public_inputs.push((
                 IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_DAG.to_string(),
-                vec![],
+                vec![Base::zero(), Base::zero()],
             ));
         }
         IdentityFunction::VerifyCapabilityV1 => {
             let params = match VerifyCapabilityParams::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize VerifyCapabilityParams: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
+            let (_ix, iy) = params.capability_proof.issuer_pub.xy().expect("pk not identity");
+            let tx_binding = poseidon_hash([iy, Base::zero(), Base::zero()]);
             zk_public_inputs.push((
                 IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V2.to_string(),
-                vec![params.capability_proof.nullifier.inner()],
+                vec![params.capability_proof.nullifier.inner(), tx_binding, Base::zero()],
             ));
         }
         // Non-ZK functions: no public inputs

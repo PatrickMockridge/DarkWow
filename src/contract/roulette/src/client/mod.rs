@@ -182,6 +182,7 @@ impl PlaceBetV1Builder {
         let player_pub = PublicKey::from_secret(instance_secret);
 
         let signature = poseidon_hash([
+            pallas::Base::from(4),
             self.table_id,
             player_pub.x().expect("pk not identity"),
             player_pub.y().expect("pk not identity"),
@@ -203,7 +204,7 @@ impl PlaceBetV1Builder {
 
         // Create bet_id similar to Bet::new() but without the full context
         let bet_id =
-            poseidon_hash([self.table_id, player_pub.x().expect("pk not identity"), player_pub.y().expect("pk not identity"), pallas::Base::from(self.amount)]);
+            poseidon_hash([pallas::Base::from(4), self.table_id, player_pub.x().expect("pk not identity"), player_pub.y().expect("pk not identity"), pallas::Base::from(self.amount)]);
 
         // Create note for client tracking
         let note = RouletteBetNote {

@@ -180,7 +180,7 @@ pub fn compute_lock_commitment(
     token_blind: pallas::Base,
     amount_blind: pallas::Base,
 ) -> pallas::Base {
-    poseidon_hash([secret, token, amount, token_blind, amount_blind])
+    poseidon_hash([pallas::Base::from(4u64), secret, token, amount, token_blind, amount_blind])
 }
 
 /// Compute swap ID using poseidon_hash
@@ -190,7 +190,7 @@ pub fn compute_swap_id(
     request_token: pallas::Base,
     request_amount: pallas::Base,
 ) -> pallas::Base {
-    poseidon_hash([lock_commitment, request_token, request_amount])
+    poseidon_hash([pallas::Base::from(4u64), lock_commitment, request_token, request_amount])
 }
 
 // ============================================================================

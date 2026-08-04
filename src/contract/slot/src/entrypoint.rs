@@ -124,6 +124,7 @@ fn slot_commit_bet_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
     let (px, py) = params.player_pub.xy().expect("pk not identity");
     let spin_id = poseidon_hash([
+        Base::from(4),
         px,
         py,
         Base::from(params.bet_value),
@@ -141,7 +142,7 @@ fn slot_commit_bet_get_metadata_v1(
     let (vc_x, vc_y) = (*vc_coords.x(), *vc_coords.y());
     zk_public_inputs.push((
         SLOT_CONTRACT_ZKAS_COMMIT_NS_V2.to_string(),
-        vec![spin_id, vc_x, vc_y],
+        vec![spin_id, vc_x, vc_y, Base::zero(), Base::zero()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -153,10 +154,10 @@ fn slot_reveal_spin_get_metadata_v1(
     params: crate::model::RevealSpinParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
-    let secret_nonce_commit = poseidon_hash([params.secret_nonce]);
+    let secret_nonce_commit = poseidon_hash([Base::from(7), params.secret_nonce]);
     zk_public_inputs.push((
         SLOT_CONTRACT_ZKAS_REVEAL_NS_V2.to_string(),
-        vec![params.spin_id, secret_nonce_commit],
+        vec![params.spin_id, secret_nonce_commit, Base::zero(), Base::zero()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -169,7 +170,7 @@ fn slot_settle_bet_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
     zk_public_inputs.push((
         SLOT_CONTRACT_ZKAS_SETTLE_NS_V2.to_string(),
-        vec![params.spin_id, Base::from(params.payout)],
+        vec![params.spin_id, Base::zero(), Base::zero(), Base::from(params.payout)],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -359,7 +360,7 @@ fn commit_spin_process_instruction_v1(
     let current_block = wasm::util::get_verifying_block_height()?.get();
     let settle_block = current_block + params.confirmation_depth as u64 + 1;
 
-    let secret_nonce_commit = poseidon_hash([params.secret_nonce]);
+    let secret_nonce_commit = poseidon_hash([Base::from(7), params.secret_nonce]);
     let update = CommitSpinUpdateV1 {
         spin_id,
         player_pub: params.player_pub,
@@ -446,7 +447,7 @@ fn reveal_spin_process_instruction_v1(
     // Verify ZK proof: prover knows secret_nonce matching stored commitment
     // The host-side ZK verification ensures H(secret_nonce) == secret_nonce_commit
     // We verify the commitment matches the spin's stored value
-    let secret_nonce_commit = poseidon_hash([params.secret_nonce]);
+    let secret_nonce_commit = poseidon_hash([Base::from(7), params.secret_nonce]);
     if secret_nonce_commit != spin.secret_nonce_commit {
         return Err(SlotError::InvalidSignature.into())
     }

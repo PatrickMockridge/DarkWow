@@ -163,13 +163,16 @@ fn swap_create_get_metadata_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
-    // Public inputs for CreateSwap ZK proof (2):
+    // Public inputs for CreateSwap ZK proof (4):
     //   constrain_instance(C) — commitment
+    //   constrain_instance(tx_binding) — pass-through
+    //   constrain_instance(tx_nonce) — pass-through
     //   constrain_instance(bob_commitment) — H(bob_pub.x, bob_pub.y)
     let (alice_x, alice_y) = params.alice_pubkey.xy().expect("pk not identity");
     let (bob_x, bob_y) = params.bob_pubkey.xy().expect("pk not identity");
-    let bob_commitment = poseidon_hash([bob_x, bob_y]);
+    let bob_commitment = poseidon_hash([pallas::Base::from(4), bob_x, bob_y]);
     let commitment = poseidon_hash([
+        pallas::Base::from(4),
         alice_x, alice_y, bob_commitment,
         pallas::Base::from(params.send_value), params.send_token_id,
         pallas::Base::from(params.recv_value), params.recv_token_id,
@@ -178,7 +181,7 @@ fn swap_create_get_metadata_v1(
 
     zk_public_inputs.push((
         OTC_SWAP_CONTRACT_ZKAS_CREATE_NS_V2.to_string(),
-        vec![commitment, bob_commitment],
+        vec![commitment, pallas::Base::zero(), pallas::Base::zero(), bob_commitment],
     ));
 
     let mut metadata = vec![];
@@ -204,6 +207,8 @@ fn swap_fund_get_metadata_v1(
     // FundSwap circuit exposes:
     // - value_commit_x, value_commit_y
     // - swap_id
+    // - tx_binding (pass-through)
+    // - tx_nonce (pass-through)
     // - merkle_root
     zk_public_inputs.push((
         OTC_SWAP_CONTRACT_ZKAS_FUND_NS_V2.to_string(),
@@ -211,6 +216,8 @@ fn swap_fund_get_metadata_v1(
             *value_coords.x(),
             *value_coords.y(),
             params.swap_id,
+            pallas::Base::zero(),
+            pallas::Base::zero(),
             params.merkle_root.inner(),
         ],
     ));
@@ -230,17 +237,21 @@ fn swap_execute_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
     let (bob_x, bob_y) = params.bob_recipient.xy().expect("pk not identity");
-    let bob_commitment = poseidon_hash([bob_x, bob_y]);
+    let bob_commitment = poseidon_hash([pallas::Base::from(4), bob_x, bob_y]);
 
     // ExecuteSwap circuit exposes:
     //   constrain_instance(swap_id)
     //   constrain_instance(bob_commitment) — H(bob_pub)
+    //   constrain_instance(tx_binding) — pass-through
+    //   constrain_instance(tx_nonce) — pass-through
     //   constrain_instance(spent_nullifier)
     zk_public_inputs.push((
         OTC_SWAP_CONTRACT_ZKAS_EXECUTE_NS_V2.to_string(),
         vec![
             params.swap_id,
             bob_commitment,
+            pallas::Base::zero(),
+            pallas::Base::zero(),
             params.spent_nullifier,
         ],
     ));
@@ -267,6 +278,8 @@ fn swap_cancel_get_metadata_v1(
     //   constrain_instance(current_block)
     //   constrain_instance(alice_x)
     //   constrain_instance(alice_y)
+    //   constrain_instance(tx_binding) — pass-through
+    //   constrain_instance(tx_nonce) — pass-through
     //   constrain_instance(spent_nullifier)
     zk_public_inputs.push((
         OTC_SWAP_CONTRACT_ZKAS_CANCEL_NS_V2.to_string(),
@@ -276,6 +289,8 @@ fn swap_cancel_get_metadata_v1(
             pallas::Base::from(params.current_block),
             alice_x,
             alice_y,
+            pallas::Base::zero(),
+            pallas::Base::zero(),
             params.spent_nullifier,
         ],
     ));
@@ -494,7 +509,7 @@ fn swap_execute_process_instruction_v1(
     }
 
     // Verify the nullifier matches what we expect
-    let expected_nullifier = poseidon_hash([swap.id, params.bob_secret]);
+    let expected_nullifier = poseidon_hash([pallas::Base::from(1), swap.id, params.bob_secret]);
     if expected_nullifier != params.spent_nullifier {
         msg!("[ExecuteSwapV1] Error: Nullifier mismatch");
         return Err(OtcSwapError::InvalidNullifier.into())
@@ -541,7 +556,7 @@ fn swap_cancel_process_instruction_v1(
     // Can cancel from Created state without timeout
     if swap.state == SwapState::Created {
         // Verify Alice is the caller (nullifier from alice_secret)
-        let expected_nullifier = poseidon_hash([swap.id, params.alice_secret]);
+        let expected_nullifier = poseidon_hash([pallas::Base::from(1), swap.id, params.alice_secret]);
         if expected_nullifier != params.spent_nullifier {
             msg!("[CancelSwapV1] Error: Nullifier mismatch");
             return Err(OtcSwapError::InvalidNullifier.into())
@@ -559,7 +574,7 @@ fn swap_cancel_process_instruction_v1(
         }
 
         // Verify Alice is the caller
-        let expected_nullifier = poseidon_hash([swap.id, params.alice_secret]);
+        let expected_nullifier = poseidon_hash([pallas::Base::from(1), swap.id, params.alice_secret]);
         if expected_nullifier != params.spent_nullifier {
             msg!("[CancelSwapV1] Error: Nullifier mismatch");
             return Err(OtcSwapError::InvalidNullifier.into())

@@ -34,29 +34,18 @@ use dwow_sdk::{
 };
 use rand::rngs::OsRng;
 
-/// VoteClaimV1 circuit public inputs
+/// VoteClaimV2 circuit public inputs (3 — matching VoteClaimV2 circuit constrain_instance order)
+/// Circuit order: [tx_binding, tx_nonce, vote_nullifier]
 #[derive(Debug, Clone)]
 pub struct VoteClaimV1PublicInputs {
-    pub proposal_id: pallas::Base,
-    pub capability_id: pallas::Base,
-    pub vote_nullifier: pallas::Base,
-    pub vote_commit_x: pallas::Base,
-    pub vote_commit_y: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
+    pub vote_nullifier: pallas::Base,
 }
 
 impl VoteClaimV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.proposal_id,
-            self.capability_id,
-            self.vote_nullifier,
-            self.vote_commit_x,
-            self.vote_commit_y,
-            self.tx_binding,
-            self.tx_nonce,
-        ]
+        vec![self.tx_binding, self.tx_nonce, self.vote_nullifier]
     }
 }
 
@@ -112,23 +101,21 @@ impl VoteClaimV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> VoteClaimV1PublicInputs {
+        // vote_nullifier = poseidon_hash(DOMAIN_NULLIFIER, capability_secret,
+        //                                 proposal_id, voter_pub_x, voter_pub_y)
         let vote_nullifier = poseidon_hash([
+            pallas::Base::from(1u64), // DOMAIN_NULLIFIER
             self.capability_secret,
             self.proposal_id,
             self.voter_pub_x,
             self.voter_pub_y,
         ]);
 
-        // Vote commitment is computed in the circuit via EC operations.
-        // We use zero as placeholder since we can't compute EC ops here.
+        // Circuit constrain_instance order: [tx_binding, tx_nonce, vote_nullifier]
         VoteClaimV1PublicInputs {
-            proposal_id: self.proposal_id,
-            capability_id: self.capability_id,
-            vote_nullifier,
-            vote_commit_x: pallas::Base::zero(),
-            vote_commit_y: pallas::Base::zero(),
             tx_binding: pallas::Base::zero(),
             tx_nonce: self.tx_nonce,
+            vote_nullifier,
         }
     }
 

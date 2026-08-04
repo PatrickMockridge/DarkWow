@@ -53,13 +53,6 @@ impl IssueCredentialPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.commitment,
-            self.issuer_pub_x,
-            self.issuer_pub_y,
-            self.holder_pub_x,
-            self.holder_pub_y,
-            self.schema_hash,
-            self.issued_at,
-            self.expires_at,
             self.tx_binding,
             self.tx_nonce,
         ]
@@ -138,6 +131,7 @@ impl IssueCredentialCallData {
     pub fn compute_public_inputs(&self) -> IssueCredentialPublicInputs {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
         let (hx, hy) = self.holder_public.xy().expect("pk not identity");
+        let tx_binding = poseidon_hash([hx, self.tx_commitment, self.tx_nonce]);
         IssueCredentialPublicInputs {
             commitment: self.compute_commitment(),
             issuer_pub_x: ix,
@@ -147,7 +141,7 @@ impl IssueCredentialCallData {
             schema_hash: self.schema_hash,
             issued_at: pallas::Base::from(self.issued_at),
             expires_at: pallas::Base::from(self.expires_at),
-            tx_binding: pallas::Base::zero(),
+            tx_binding,
             tx_nonce: self.tx_nonce,
         }
     }
@@ -155,6 +149,7 @@ impl IssueCredentialCallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
         let (hx, hy) = self.holder_public.xy().expect("pk not identity");
+        let tx_binding = poseidon_hash([hx, self.tx_commitment, self.tx_nonce]);
         vec![
             // Public inputs as witnesses
             Witness::Base(Value::known(self.compute_commitment())),
@@ -173,7 +168,7 @@ impl IssueCredentialCallData {
             Witness::Base(Value::known(self.attribute_blind)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(tx_binding)), // tx_binding
         ]
     }
 }

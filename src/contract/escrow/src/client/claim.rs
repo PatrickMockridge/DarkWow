@@ -80,7 +80,7 @@ impl ClaimEscrowCallData {
 
     /// Compute nullifier from escrow_id and seller_secret
     pub fn compute_nullifier(&self) -> pallas::Base {
-        poseidon_hash([self.escrow_id, self.seller_secret])
+        poseidon_hash([pallas::Base::from(1u64), self.escrow_id, self.seller_secret])
     }
 
     pub fn compute_public_inputs(&self) -> ClaimEscrowPublicInputs {

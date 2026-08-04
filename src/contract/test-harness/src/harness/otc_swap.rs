@@ -79,7 +79,7 @@ impl OtcSwapHarness {
         Self { create_zkbin, create_pk, fund_zkbin, fund_pk, execute_zkbin, execute_pk, cancel_zkbin, cancel_pk }
     }
 
-    /// Create an OTC swap (function code 0x00)
+    /// Create an OTC swap (function code 0x01)
     #[allow(clippy::too_many_arguments)]
     pub fn create_swap(
         &self,
@@ -111,13 +111,13 @@ impl OtcSwapHarness {
             instance_seed: [0u8; 32],
         };
 
-        let mut call_data = vec![0x00];
+        let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
 
         Ok(CreateSwapResult { call_data, proof, swap_id: public_inputs.commitment })
     }
 
-    /// Fund an OTC swap (function code 0x01)
+    /// Fund an OTC swap (function code 0x02)
     pub fn fund_swap(
         &self,
         value: u64,
@@ -142,13 +142,13 @@ impl OtcSwapHarness {
             merkle_root,
         };
 
-        let mut call_data = vec![0x01];
+        let mut call_data = vec![0x02];
         call_data.extend_from_slice(&params.encode());
 
         Ok(FundSwapResult { call_data, proof })
     }
 
-    /// Execute an OTC swap (function code 0x02)
+    /// Execute an OTC swap (function code 0x03)
     pub fn execute_swap(
         &self,
         swap_id: pallas::Base,
@@ -171,13 +171,13 @@ impl OtcSwapHarness {
             bob_recipient,
         };
 
-        let mut call_data = vec![0x02];
+        let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
 
         Ok(ExecuteSwapResult { call_data, proof })
     }
 
-    /// Cancel an OTC swap (function code 0x03)
+    /// Cancel an OTC swap (function code 0x04)
     pub fn cancel_swap(
         &self,
         swap_id: pallas::Base,
@@ -202,7 +202,7 @@ impl OtcSwapHarness {
             recipient_pubkey,
         };
 
-        let mut call_data = vec![0x03];
+        let mut call_data = vec![0x04];
         call_data.extend_from_slice(&params.encode());
 
         Ok(CancelSwapResult { call_data, proof })
@@ -215,25 +215,25 @@ impl super::ContractHarness for OtcSwapHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["CreateSwap", "FundSwap", "ExecuteSwap", "CancelSwap"]
+        vec!["CreateSwapV2", "FundSwapV2", "ExecuteSwapV2", "CancelSwapV2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "CreateSwap" => Some(&self.create_zkbin),
-            "FundSwap" => Some(&self.fund_zkbin),
-            "ExecuteSwap" => Some(&self.execute_zkbin),
-            "CancelSwap" => Some(&self.cancel_zkbin),
+            "CreateSwapV2" => Some(&self.create_zkbin),
+            "FundSwapV2" => Some(&self.fund_zkbin),
+            "ExecuteSwapV2" => Some(&self.execute_zkbin),
+            "CancelSwapV2" => Some(&self.cancel_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "CreateSwap" => Some(&self.create_pk),
-            "FundSwap" => Some(&self.fund_pk),
-            "ExecuteSwap" => Some(&self.execute_pk),
-            "CancelSwap" => Some(&self.cancel_pk),
+            "CreateSwapV2" => Some(&self.create_pk),
+            "FundSwapV2" => Some(&self.fund_pk),
+            "ExecuteSwapV2" => Some(&self.execute_pk),
+            "CancelSwapV2" => Some(&self.cancel_pk),
             _ => None,
         }
     }

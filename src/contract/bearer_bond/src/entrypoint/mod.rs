@@ -233,6 +233,8 @@ fn transfer_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
                 input.user_data_enc,
                 input.spend_hook,
                 input.signature_public,
+                pallas::Base::zero(), // tx_binding
+                pallas::Base::zero(), // tx_nonce
             ],
         ));
     }
@@ -289,6 +291,8 @@ fn request_interest_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkL
             params.bond_input.user_data_enc,
             params.bond_input.spend_hook,
             params.bond_input.signature_public,
+            pallas::Base::zero(), // tx_binding
+            pallas::Base::zero(), // tx_nonce
         ],
     ));
 
@@ -325,6 +329,8 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
             params.bond_input.user_data_enc,
             params.bond_input.spend_hook,
             params.bond_input.signature_public,
+            pallas::Base::zero(), // tx_binding
+            pallas::Base::zero(), // tx_nonce
         ],
     ));
 
@@ -338,6 +344,8 @@ fn emergency_unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<Dark
             vc_y,
             params.bond_input.token_commit,
             coin_value,
+            pallas::Base::zero(), // tx_binding
+            pallas::Base::zero(), // tx_nonce
             params.bond_input.spend_hook,
         ],
     ));
@@ -375,6 +383,8 @@ fn unstake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contr
             params.bond_input.user_data_enc,
             params.bond_input.spend_hook,
             params.bond_input.signature_public,
+            pallas::Base::zero(), // tx_binding
+            pallas::Base::zero(), // tx_nonce
         ],
     ));
 
@@ -426,6 +436,8 @@ fn burn_stake_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
                 input.user_data_enc,
                 input.spend_hook,
                 input.signature_public,
+                pallas::Base::zero(), // tx_binding
+                pallas::Base::zero(), // tx_nonce
             ],
         ));
     }

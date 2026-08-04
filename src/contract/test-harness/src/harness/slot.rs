@@ -186,23 +186,23 @@ impl super::ContractHarness for SlotHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["CommitBetV2", "SettleBetV2", "RevealSpinV2"]
+        vec!["CommitBet_V2", "SettleBet_V2", "RevealSpin_V2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "CommitBetV2" => Some(&self.commit_bet_zkbin),
-            "SettleBetV2" => Some(&self.settle_bet_zkbin),
-            "RevealSpinV2" => Some(&self.reveal_spin_zkbin),
+            "CommitBet_V2" => Some(&self.commit_bet_zkbin),
+            "SettleBet_V2" => Some(&self.settle_bet_zkbin),
+            "RevealSpin_V2" => Some(&self.reveal_spin_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "CommitBetV2" => Some(&self.commit_bet_pk),
-            "SettleBetV2" => Some(&self.settle_bet_pk),
-            "RevealSpinV2" => Some(&self.reveal_spin_pk),
+            "CommitBet_V2" => Some(&self.commit_bet_pk),
+            "SettleBet_V2" => Some(&self.settle_bet_pk),
+            "RevealSpin_V2" => Some(&self.reveal_spin_pk),
             _ => None,
         }
     }

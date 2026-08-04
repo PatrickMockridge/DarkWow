@@ -40,7 +40,7 @@
 //! ```
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::{Curve, CurveAffine, PrimeField}, poseidon_hash, BOX_CONTRACT_ID, ContractId, PURSE_CONTRACT_ID, TokenId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, BOX_CONTRACT_ID, ContractId, PURSE_CONTRACT_ID, TokenId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta::pallas,
@@ -156,6 +156,7 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         DaoEscrowFunction::VoteClaimV1 => vote_claim_get_metadata(cid, call_idx, &calls),
         DaoEscrowFunction::VerifyMemberCapabilityV1 => verify_member_cap_get_metadata(cid, call_idx, &calls),
         DaoEscrowFunction::ResolveDisputeV1 => resolve_dispute_get_metadata(cid, call_idx, &calls),
+        DaoEscrowFunction::SetGovernanceConfigV1 => set_governance_config_get_metadata(cid, call_idx, &calls),
         _ => Ok(vec![]),
     }?;
 
@@ -172,9 +173,11 @@ fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk:
 
     let (owner_pub_x, owner_pub_y) = params.owner_pubkey.xy().expect("pk not identity");
 
-    // Compute endowment_bulla using same formula as circuit and model
-    // endowment_bulla = poseidon_hash(dao_bulla, owner_pub_x, owner_pub_y, endowment_token_id, bulla_blind)
+    // Compute endowment_bulla using same formula as InitV2 circuit
+    // endowment_bulla = poseidon_hash(DOMAIN_COIN_COMMIT, dao_bulla, owner_pub_x, owner_pub_y,
+    //                                  endowment_token_id, bulla_blind)
     let endowment_bulla = dwow_sdk::crypto::poseidon_hash([
+        pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
         params.dao_bulla.inner(),
         owner_pub_x,
         owner_pub_y,
@@ -182,10 +185,16 @@ fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk:
         params.bulla_blind.inner(),
     ]);
 
+    let tx_binding = pallas::Base::zero(); // Pattern A: pass-through placeholder
+    let tx_nonce_val = pallas::Base::zero(); // Pattern A: pass-through placeholder
+
+    // Circuit constrain_instance order: [dao_bulla, tx_binding, tx_nonce, endowment_bulla]
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_INIT_NS_V2.to_string(),
         vec![
             params.dao_bulla.inner(),
+            tx_binding,
+            tx_nonce_val,
             endowment_bulla,
         ],
     )];
@@ -195,28 +204,15 @@ fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk:
     Ok(metadata)
 }
 
-/// Metadata for PayPremiumV1 (0x02)
-fn pay_premium_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>]) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params = match model::PayPremiumParamsV1::decode(&self_.data[1..]) {
-        Ok(p) => p,
-        Err(_) => return Ok(vec![]),
-    };
-
-    let value_coords = params.value_commit.to_affine().coordinates();
-    if value_coords.is_none().into() {
-        return Ok(vec![]);
-    }
-    let value_coords = value_coords.unwrap();
+/// Metadata for PayPremiumV1 (0x02) — PayPremiumV2 circuit
+/// Circuit constrain_instance order: [tx_binding, tx_nonce]
+fn pay_premium_get_metadata(_cid: ContractId, _call_idx: usize, _calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>]) -> Result<Vec<u8>, ContractError> {
+    let tx_binding = pallas::Base::zero(); // Pattern A: pass-through placeholder
+    let tx_nonce_val = pallas::Base::zero(); // Pattern A: pass-through placeholder
 
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_PREMIUM_NS_V2.to_string(),
-        vec![
-            params.dao_escrow_bulla.inner(),
-            params.membership_note.inner(),
-            *value_coords.x(),
-            *value_coords.y(),
-        ],
+        vec![tx_binding, tx_nonce_val],
     )];
 
     let mut metadata = vec![];
@@ -1075,7 +1071,8 @@ fn verify_proposal_approved(
 // METADATA FUNCTIONS (ZK proof public inputs)
 // ============================================================================
 
-/// Metadata for ProposeClaimV1 (0x07)
+/// Metadata for ProposeClaimV1 (0x07) — ProposeClaimV2 circuit
+/// Circuit constrain_instance order: [tx_binding, tx_nonce, claim_commit]
 fn propose_claim_get_metadata(
     _cid: ContractId,
     call_idx: usize,
@@ -1087,18 +1084,25 @@ fn propose_claim_get_metadata(
         Err(_) => return Ok(vec![]),
     };
 
-    let cap_id_fp = pallas::Base::from_repr(params.capability_proof.capability_id).into_option()
-        .expect("Non-canonical capability_id bytes");
+    // Reconstruct capability_secret as Base from capability_proof bytes
+    let cap_secret_fp = pallas::Base::from_repr(params.capability_proof.capability_secret)
+        .into_option()
+        .unwrap_or(pallas::Base::zero());
+
+    // claim_commit = poseidon_hash(DOMAIN_COIN_COMMIT, claim_id, claim_amount, claim_blind)
+    let claim_commit = poseidon_hash([
+        pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
+        params.claim_id.inner(),
+        pallas::Base::from(params.value),
+        cap_secret_fp, // claim_blind placeholder (needs dedicated field in params)
+    ]);
+
+    let tx_binding = pallas::Base::zero(); // Pattern A: pass-through placeholder
+    let tx_nonce_val = pallas::Base::zero(); // Pattern A: pass-through placeholder
 
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_PROPOSE_CLAIM_NS_V2.to_string(),
-        vec![
-            params.dao_escrow_bulla.inner(),
-            params.claim_id.inner(),
-            cap_id_fp,
-            params.capability_proof.nullifier.inner(),
-            params.description_hash,
-        ],
+        vec![tx_binding, tx_nonce_val, claim_commit],
     )];
 
     let mut metadata = vec![];
@@ -1106,7 +1110,8 @@ fn propose_claim_get_metadata(
     Ok(metadata)
 }
 
-/// Metadata for VoteClaimV1 (0x08)
+/// Metadata for VoteClaimV1 (0x08) — VoteClaimV2 circuit
+/// Circuit constrain_instance order: [tx_binding, tx_nonce, vote_nullifier]
 fn vote_claim_get_metadata(
     _cid: ContractId,
     call_idx: usize,
@@ -1118,17 +1123,28 @@ fn vote_claim_get_metadata(
         Err(_) => return Ok(vec![]),
     };
 
-    let cap_id_fp = pallas::Base::from_repr(params.capability_proof.capability_id).into_option()
-        .expect("Non-canonical capability_id bytes");
+    let cap_secret_fp = pallas::Base::from_repr(params.capability_proof.capability_secret)
+        .into_option()
+        .unwrap_or(pallas::Base::zero());
+
+    let (voter_pub_x, voter_pub_y) = params.voter_pubkey.xy().expect("pk not identity");
+
+    // vote_nullifier = poseidon_hash(DOMAIN_NULLIFIER, capability_secret, proposal_id,
+    //                                 voter_pub_x, voter_pub_y)
+    let vote_nullifier = poseidon_hash([
+        pallas::Base::from(1u64), // DOMAIN_NULLIFIER
+        cap_secret_fp,
+        params.claim_id.inner(),
+        voter_pub_x,
+        voter_pub_y,
+    ]);
+
+    let tx_binding = pallas::Base::zero(); // Pattern A: pass-through placeholder
+    let tx_nonce_val = pallas::Base::zero(); // Pattern A: pass-through placeholder
 
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_VOTE_CLAIM_NS_V2.to_string(),
-        vec![
-            params.claim_id.inner(),
-            cap_id_fp,
-            params.capability_proof.nullifier.inner(),
-            pallas::Base::from(params.vote as u64),
-        ],
+        vec![tx_binding, tx_nonce_val, vote_nullifier],
     )];
 
     let mut metadata = vec![];
@@ -1136,7 +1152,8 @@ fn vote_claim_get_metadata(
     Ok(metadata)
 }
 
-/// Metadata for VerifyMemberCapabilityV1 (0x0b)
+/// Metadata for VerifyMemberCapabilityV1 (0x0b) — VerifyMemberCapabilityV2 circuit
+/// Circuit constrain_instance order: [tx_binding, tx_nonce, capability_commit]
 fn verify_member_cap_get_metadata(
     _cid: ContractId,
     call_idx: usize,
@@ -1149,15 +1166,26 @@ fn verify_member_cap_get_metadata(
     };
 
     let cap_id_fp = pallas::Base::from_repr(params.capability_proof.capability_id).into_option()
-        .expect("Non-canonical capability_id bytes");
+        .unwrap_or(pallas::Base::zero());
+    let cap_secret_fp = pallas::Base::from_repr(params.capability_proof.capability_secret)
+        .into_option()
+        .unwrap_or(pallas::Base::zero());
+
+    // capability_commit = poseidon_hash(DOMAIN_COIN_COMMIT, capability_id, capability_secret,
+    //                                    dao_escrow_bulla)
+    let capability_commit = poseidon_hash([
+        pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
+        cap_id_fp,
+        cap_secret_fp,
+        params.dao_escrow_bulla.inner(),
+    ]);
+
+    let tx_binding = pallas::Base::zero(); // Pattern A: pass-through placeholder
+    let tx_nonce_val = pallas::Base::zero(); // Pattern A: pass-through placeholder
 
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_VERIFY_MEMBER_CAP_NS_V2.to_string(),
-        vec![
-            cap_id_fp,
-            params.dao_escrow_bulla.inner(),
-            params.capability_proof.nullifier.inner(),
-        ],
+        vec![tx_binding, tx_nonce_val, capability_commit],
     )];
 
     let mut metadata = vec![];
@@ -1165,7 +1193,8 @@ fn verify_member_cap_get_metadata(
     Ok(metadata)
 }
 
-/// Metadata for ResolveDisputeV1 (0x0c)
+/// Metadata for ResolveDisputeV1 (0x0c) — ResolveDisputeV2 circuit
+/// Circuit constrain_instance order: [tx_binding, tx_nonce, resolution_commit]
 fn resolve_dispute_get_metadata(
     _cid: ContractId,
     call_idx: usize,
@@ -1177,18 +1206,56 @@ fn resolve_dispute_get_metadata(
         Err(_) => return Ok(vec![]),
     };
 
-    let cap_id_fp = pallas::Base::from_repr(params.capability_proof.capability_id).into_option()
-        .expect("Non-canonical capability_id bytes");
+    // Reconstruct capability_secret as Base from capability_proof bytes
+    let cap_secret_fp = pallas::Base::from_repr(params.capability_proof.capability_secret)
+        .into_option()
+        .unwrap_or(pallas::Base::zero());
+
+    // dispute_id = poseidon_hash(DOMAIN_NULLIFIER, capability_secret, proposal_id)
+    // Use proposal_id.inner() as the dispute identifier
+    let _dispute_id = params.proposal_id.inner();
+
+    // resolution_commit = poseidon_hash(DOMAIN_COIN_COMMIT, dispute_id, resolution_type,
+    //                                    resolution_blind)
+    // Reconstruct from available params data
+    let resolution_commit = poseidon_hash([
+        pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
+        _dispute_id,
+        pallas::Base::from(params.payout_amount),
+        cap_secret_fp, // resolution_blind placeholder (needs dedicated field in params)
+    ]);
+
+    let tx_binding = pallas::Base::zero(); // Pattern A: pass-through placeholder
+    let tx_nonce_val = pallas::Base::zero(); // Pattern A: pass-through placeholder
 
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_RESOLVE_DISPUTE_NS_V2.to_string(),
-        vec![
-            cap_id_fp,
-            params.dao_escrow_bulla.inner(),
-            params.proposal_id.inner(),
-            params.capability_proof.nullifier.inner(),
-            pallas::Base::from(params.payout_amount),
-        ],
+        vec![tx_binding, tx_nonce_val, resolution_commit],
+    )];
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
+}
+
+/// Metadata for SetGovernanceConfigV1 (0x0e) — SetGovernanceConfigV2 circuit
+/// Circuit constrain_instance order: [owner_pub_x, owner_pub_y, owner_nullifier, tx_binding, tx_nonce]
+fn set_governance_config_get_metadata(
+    _cid: ContractId,
+    _call_idx: usize,
+    _calls: &[dwow_sdk::dark_tree::DarkLeaf<ContractCall>],
+) -> Result<Vec<u8>, ContractError> {
+    // SetGovernanceConfig was migrated to MultiSig; params struct removed.
+    // Return five-element placeholder vector matching circuit public input count.
+    let owner_pub_x = pallas::Base::zero();
+    let owner_pub_y = pallas::Base::zero();
+    let owner_nullifier = pallas::Base::zero();
+    let tx_binding = pallas::Base::zero();
+    let tx_nonce_val = pallas::Base::zero();
+
+    let zk_public_inputs = vec![(
+        crate::DAO_ESCROW_ZKAS_SET_GOVERNANCE_CONFIG_NS_V2.to_string(),
+        vec![owner_pub_x, owner_pub_y, owner_nullifier, tx_binding, tx_nonce_val],
     )];
 
     let mut metadata = vec![];

@@ -281,13 +281,13 @@ impl AttestationHarness {
             revealed_result,
         };
 
-        let mut call_data = vec![0x02];
+        let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
 
         Ok(CreateClaimResult { call_data, claim_id, proof, public_inputs })
     }
 
-    /// Verify a claim (function code 0x03)
+    /// Verify a claim (function code 0x04)
     pub fn verify_claim(
         &self,
         claim_id: pallas::Base,
@@ -325,13 +325,13 @@ impl AttestationHarness {
             revocation_root,
         };
 
-        let mut call_data = vec![0x03];
+        let mut call_data = vec![0x04];
         call_data.extend_from_slice(&params.encode());
 
         Ok(VerifyClaimResult { call_data, proof, public_inputs })
     }
 
-    /// Consume a claim (function code 0x04)
+    /// Consume a claim (function code 0x05)
     pub fn consume_claim(
         &self,
         claim_id: pallas::Base,
@@ -354,13 +354,13 @@ impl AttestationHarness {
             nullifier: public_inputs.nullifier,
         };
 
-        let mut call_data = vec![0x04];
+        let mut call_data = vec![0x05];
         call_data.extend_from_slice(&params.encode());
 
         Ok(ConsumeClaimResult { call_data, proof, public_inputs })
     }
 
-    /// Delegate an attestation (function code 0x06)
+    /// Delegate an attestation (function code 0x08)
     #[allow(clippy::too_many_arguments)]
     pub fn delegate_attestation(
         &self,
@@ -425,7 +425,7 @@ impl AttestationHarness {
             delegatee_stake: u64::from_le_bytes(public_inputs.delegatee_stake.to_repr()[0..8].try_into().unwrap()),
         };
 
-        let mut call_data = vec![0x06];
+        let mut call_data = vec![0x08];
         call_data.extend_from_slice(&params.encode());
 
         Ok(DelegateAttestationResult { call_data, proof, public_inputs })

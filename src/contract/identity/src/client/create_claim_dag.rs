@@ -49,11 +49,6 @@ pub struct CreateClaimDagPublicInputs {
 impl CreateClaimDagPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
-            self.nullifier,
-            self.claim_type,
-            self.issuer_pub_x,
-            self.issuer_pub_y,
-            self.schema_hash,
             self.tx_binding,
             self.tx_nonce,
         ]
@@ -67,6 +62,11 @@ pub struct CreateClaimDagCallData {
     pub commitment: pallas::Base,
     pub attribute_value: pallas::Base,
     pub threshold: pallas::Base,
+    pub path_index: pallas::Base,
+    pub num_credentials: pallas::Base,
+    pub is_lte_1: pallas::Base,
+    pub is_lte_2: pallas::Base,
+    pub is_lte_3: pallas::Base,
     // Public inputs
     pub issuer_public: PublicKey,
     pub schema_hash: pallas::Base,
@@ -90,6 +90,11 @@ impl CreateClaimDagCallData {
             commitment,
             attribute_value,
             threshold,
+            path_index: pallas::Base::zero(),
+            num_credentials: pallas::Base::zero(),
+            is_lte_1: pallas::Base::zero(),
+            is_lte_2: pallas::Base::zero(),
+            is_lte_3: pallas::Base::zero(),
             issuer_public,
             schema_hash,
             claim_type,
@@ -105,19 +110,21 @@ impl CreateClaimDagCallData {
 
     pub fn compute_public_inputs(&self) -> CreateClaimDagPublicInputs {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
+        let tx_binding = poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
         CreateClaimDagPublicInputs {
             nullifier: self.compute_nullifier(),
             claim_type: self.claim_type,
             issuer_pub_x: ix,
             issuer_pub_y: iy,
             schema_hash: self.schema_hash,
-            tx_binding: pallas::Base::zero(),
+            tx_binding,
             tx_nonce: self.tx_nonce,
         }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
+        let tx_binding = poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
         vec![
             // Public inputs as witnesses
             Witness::Base(Value::known(self.compute_nullifier())),
@@ -127,12 +134,17 @@ impl CreateClaimDagCallData {
             Witness::Base(Value::known(self.schema_hash)),
             // Private inputs
             Witness::Base(Value::known(self.credential_secret)),
-            Witness::Base(Value::known(self.commitment)),
             Witness::Base(Value::known(self.attribute_value)),
             Witness::Base(Value::known(self.threshold)),
+            Witness::Base(Value::known(self.commitment)),
+            Witness::Base(Value::known(self.path_index)),
+            Witness::Base(Value::known(self.num_credentials)),
+            Witness::Base(Value::known(self.is_lte_1)),
+            Witness::Base(Value::known(self.is_lte_2)),
+            Witness::Base(Value::known(self.is_lte_3)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(tx_binding)), // tx_binding
         ]
     }
 }

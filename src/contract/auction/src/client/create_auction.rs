@@ -45,7 +45,7 @@ pub struct CreateAuctionV1PublicInputs {
 
 impl CreateAuctionV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.auction_id, self.seller_commitment, self.tx_binding, self.tx_nonce]
+        vec![self.auction_id, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -90,13 +90,14 @@ impl CreateAuctionV1CallData {
     /// Compute seller commitment from public key coordinates
     pub fn compute_seller_commitment(&self) -> pallas::Base {
         let (ix, iy) = self.seller_public.xy().expect("pk not identity");
-        poseidon_hash([ix, iy])
+        poseidon_hash([pallas::Base::from(7u64), ix, iy])
     }
 
     /// Compute auction ID from auction parameters
     pub fn compute_auction_id(&self) -> pallas::Base {
         let (ix, iy) = self.seller_public.xy().expect("pk not identity");
         poseidon_hash([
+            pallas::Base::from(4u64),
             ix,
             iy,
             self.item_commitment,

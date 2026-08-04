@@ -66,7 +66,7 @@ impl InitV1CallData {
         Self { betting_contract_id, house_edge_bp, risk_profile, nonce, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
     pub fn compute_public_inputs(&self) -> InitV1PublicInputs {
-        let table_id = poseidon_hash([self.betting_contract_id, pallas::Base::from(self.nonce)]);
+        let table_id = poseidon_hash([pallas::Base::from(4), self.betting_contract_id, pallas::Base::from(self.nonce)]);
         InitV1PublicInputs { table_id, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
     }
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -137,12 +137,12 @@ impl StakeV1CallData {
         value_blind: pallas::Scalar,
     ) -> Self {
         let (sx, sy) = staker_pub.xy().expect("pk not identity");
-        let stake_id = poseidon_hash([table_id, sx, sy, pallas::Base::from(amount), pallas::Base::from(nonce)]);
-        let staker_nullifier = poseidon_hash([stake_id, staker_secret]);
+        let stake_id = poseidon_hash([pallas::Base::from(4), table_id, sx, sy, pallas::Base::from(amount), pallas::Base::from(nonce)]);
+        let staker_nullifier = poseidon_hash([pallas::Base::from(1), stake_id, staker_secret]);
         Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, amount, token_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
     pub fn compute_public_inputs(&self) -> StakeV1PublicInputs {
-        let stake_id = poseidon_hash([self.table_id, self.staker_pub_x, self.staker_pub_y, pallas::Base::from(self.amount), pallas::Base::from(self.nonce)]);
+        let stake_id = poseidon_hash([pallas::Base::from(4), self.table_id, self.staker_pub_x, self.staker_pub_y, pallas::Base::from(self.amount), pallas::Base::from(self.nonce)]);
         StakeV1PublicInputs { stake_id, value_commit_x: pallas::Base::zero(), value_commit_y: pallas::Base::zero(), staker_nullifier: self.staker_nullifier, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
     }
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -222,12 +222,12 @@ impl UnstakeV1CallData {
         value_blind: pallas::Scalar,
     ) -> Self {
         let (sx, sy) = staker_pub.xy().expect("pk not identity");
-        let stake_id = poseidon_hash([table_id, sx, sy, pallas::Base::from(original_amount), pallas::Base::from(nonce)]);
-        let staker_nullifier = poseidon_hash([stake_id, staker_secret]);
+        let stake_id = poseidon_hash([pallas::Base::from(4), table_id, sx, sy, pallas::Base::from(original_amount), pallas::Base::from(nonce)]);
+        let staker_nullifier = poseidon_hash([pallas::Base::from(1), stake_id, staker_secret]);
         Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, original_amount, current_amount, accumulated_earnings, token_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
     pub fn compute_public_inputs(&self) -> UnstakeV1PublicInputs {
-        let stake_id = poseidon_hash([self.table_id, self.staker_pub_x, self.staker_pub_y, pallas::Base::from(self.original_amount), pallas::Base::from(self.nonce)]);
+        let stake_id = poseidon_hash([pallas::Base::from(4), self.table_id, self.staker_pub_x, self.staker_pub_y, pallas::Base::from(self.original_amount), pallas::Base::from(self.nonce)]);
         UnstakeV1PublicInputs { stake_id, value_commit_x: pallas::Base::zero(), value_commit_y: pallas::Base::zero(), staker_nullifier: self.staker_nullifier, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
     }
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -307,12 +307,12 @@ impl ClaimV1CallData {
         value_blind: pallas::Scalar,
     ) -> Self {
         let (sx, sy) = staker_pub.xy().expect("pk not identity");
-        let stake_id = poseidon_hash([table_id, sx, sy, pallas::Base::from(current_amount), pallas::Base::from(nonce)]);
-        let staker_nullifier = poseidon_hash([stake_id, staker_secret]);
+        let stake_id = poseidon_hash([pallas::Base::from(4), table_id, sx, sy, pallas::Base::from(current_amount), pallas::Base::from(nonce)]);
+        let staker_nullifier = poseidon_hash([pallas::Base::from(1), stake_id, staker_secret]);
         Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, current_amount, accumulated_earnings, token_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
     pub fn compute_public_inputs(&self) -> ClaimV1PublicInputs {
-        let stake_id = poseidon_hash([self.table_id, self.staker_pub_x, self.staker_pub_y, pallas::Base::from(self.current_amount), pallas::Base::from(self.nonce)]);
+        let stake_id = poseidon_hash([pallas::Base::from(4), self.table_id, self.staker_pub_x, self.staker_pub_y, pallas::Base::from(self.current_amount), pallas::Base::from(self.nonce)]);
         ClaimV1PublicInputs { stake_id, value_commit_x: pallas::Base::zero(), value_commit_y: pallas::Base::zero(), staker_nullifier: self.staker_nullifier, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
     }
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -377,7 +377,7 @@ impl UpdateRiskV1CallData {
         Self { betting_contract_id, total_stake, accumulated_losses, house_edge_bp, risk_profile, nonce, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
     pub fn compute_public_inputs(&self) -> UpdateRiskV1PublicInputs {
-        let table_id = poseidon_hash([self.betting_contract_id, pallas::Base::from(self.nonce)]);
+        let table_id = poseidon_hash([pallas::Base::from(4), self.betting_contract_id, pallas::Base::from(self.nonce)]);
         UpdateRiskV1PublicInputs { table_id, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
     }
     pub fn to_witnesses(&self) -> Vec<Witness> {

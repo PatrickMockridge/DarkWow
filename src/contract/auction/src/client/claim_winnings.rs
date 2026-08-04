@@ -47,14 +47,7 @@ pub struct ClaimWinningsV1PublicInputs {
 
 impl ClaimWinningsV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.auction_id,
-            self.winner_bid_id,
-            self.winner_pub_x,
-            self.winner_pub_y,
-            self.tx_binding,
-            self.tx_nonce,
-        ]
+        vec![self.tx_binding, self.tx_nonce]
     }
 }
 

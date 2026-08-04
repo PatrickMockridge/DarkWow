@@ -138,12 +138,13 @@ fn relayer_endowment_initialize_get_metadata_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let (rx, ry) = params.signature_public.xy().expect("pk not identity");
-    let config_hash = poseidon_hash([pallas::Base::from(params.default_backer_cut_bp as u64)]);
+    let config_hash = poseidon_hash([pallas::Base::from(4), pallas::Base::from(params.default_backer_cut_bp as u64)]);
     let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()?.get());
-    let endowment_id = poseidon_hash([rx, ry, config_hash, nonce]);
+    let endowment_id = poseidon_hash([pallas::Base::from(4), rx, ry, config_hash, nonce]);
+    // Circuit order: tx_binding(0), tx_nonce(1), derived_endowment_id(2)
     zk_public_inputs.push((
         RELAYER_ENDOWMENT_ZKAS_INIT_NS_V2.to_string(),
-        vec![endowment_id],
+        vec![pallas::Base::zero(), pallas::Base::zero(), endowment_id],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -158,10 +159,10 @@ fn relayer_endowment_deploy_capital_get_metadata_v1(
     let (rx, ry) = params.relayer_pub.xy().expect("pk not identity");
     let (bx, by) = params.signature_public.xy().expect("pk not identity");
     let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()?.get());
-    // Compute endowment_id the same way as initialize
-    let config_hash = poseidon_hash([pallas::Base::from(params.backer_cut_bp as u64)]);
-    let endowment_id = poseidon_hash([rx, ry, config_hash, nonce]);
+    let config_hash = poseidon_hash([pallas::Base::from(4), pallas::Base::from(params.backer_cut_bp as u64)]);
+    let endowment_id = poseidon_hash([pallas::Base::from(4), rx, ry, config_hash, nonce]);
     let deployment_id = poseidon_hash([
+        pallas::Base::from(4),
         endowment_id,
         bx,
         by,
@@ -174,9 +175,10 @@ fn relayer_endowment_deploy_capital_get_metadata_v1(
         return Ok(vec![]);
     } else {
     let vc_coords = coords.unwrap();
+    // Circuit order: deployment_id(0), vc_x(1), tx_binding(2), tx_nonce(3), vc_y(4)
     zk_public_inputs.push((
         RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V2.to_string(),
-        vec![deployment_id, *vc_coords.x(), *vc_coords.y()],
+        vec![deployment_id, *vc_coords.x(), pallas::Base::zero(), pallas::Base::zero(), *vc_coords.y()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -190,20 +192,18 @@ fn relayer_endowment_claim_fees_get_metadata_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()?.get());
-    let backer_x = Option::from(pallas::Base::from_repr(params.backer_pub_x))
-        .ok_or(RelayerEndowmentError::InvalidParams("Invalid backer_pub_x".to_string()))?;
-    let backer_y = Option::from(pallas::Base::from_repr(params.backer_pub_y))
-        .ok_or(RelayerEndowmentError::InvalidParams("Invalid backer_pub_y".to_string()))?;
     let claim_id = poseidon_hash([
+        pallas::Base::from(4),
         params.deployment_id,
-        backer_x,
-        backer_y,
+        pallas::Base::from_repr(params.backer_pub_x).unwrap(),
+        pallas::Base::from_repr(params.backer_pub_y).unwrap(),
         pallas::Base::from(params.fee_share),
         nonce,
     ]);
+    // Circuit order: tx_binding(0), tx_nonce(1), derived_claim_id(2)
     zk_public_inputs.push((
         RELAYER_ENDOWMENT_ZKAS_CLAIM_FEES_NS_V2.to_string(),
-        vec![claim_id],
+        vec![pallas::Base::zero(), pallas::Base::zero(), claim_id],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;

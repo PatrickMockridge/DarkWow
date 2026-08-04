@@ -33,7 +33,7 @@ use dwow_core::{
 use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
-        constants::DRK_POSEIDON_DOMAIN_TX_BINDING,
+        constants::{DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_TX_BINDING, DRK_POSEIDON_DOMAIN_USER_DATA_ENC},
         note::AeadEncryptedNote,
         pasta_prelude::{Curve, CurveAffine},
         pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId, TokenId, MerkleNode,
@@ -200,14 +200,14 @@ pub fn create_fee_proof(
     };
 
     // User data encryption
-    let input_user_data_enc = poseidon_hash([input.user_data, pallas::Base::zero()]);
+    let input_user_data_enc = poseidon_hash([DRK_POSEIDON_DOMAIN_USER_DATA_ENC, input.user_data, pallas::Base::zero()]);
 
     // Value commitments (Pedersen)
     let input_value_commit = pedersen_commitment_u64(input.value, input_value_blind.clone());
     let output_value_commit = pedersen_commitment_u64(output.value, output_value_blind.clone());
 
     // Token commitment (DRKW token = zero, ↓denominate)
-    let token_commit = poseidon_hash([input.token_id, token_blind.clone().inner()]);
+    let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.token_id, token_blind.clone().inner()]);
 
     // Create output coin
     let output_coin_attrs = CoinAttributes {
@@ -403,10 +403,10 @@ impl FeeCallBuilder {
 
         let nullifier = Nullifier::new(self.input.secret.clone(), input_coin.inner());
         let signature_public = PublicKey::from_secret(self.input.ephemeral_signature_secret.clone());
-        let input_user_data_enc = poseidon_hash([self.input.user_data, pallas::Base::zero()]);
+        let input_user_data_enc = poseidon_hash([DRK_POSEIDON_DOMAIN_USER_DATA_ENC, self.input.user_data, pallas::Base::zero()]);
         let input_value_commit = pedersen_commitment_u64(self.input.value, input_value_blind.clone());
         let output_value_commit = pedersen_commitment_u64(output_value, output_value_blind.clone());
-        let token_commit = poseidon_hash([self.input.token_id, token_blind.clone().inner()]);
+        let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, self.input.token_id, token_blind.clone().inner()]);
         let output_coin = CoinAttributes {
             version: 0,
             public_key: self.output.recipient,

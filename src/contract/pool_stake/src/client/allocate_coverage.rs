@@ -91,6 +91,7 @@ impl AllocateCoverageV1CallData {
 
     pub fn compute_public_inputs(&self) -> AllocateCoverageV1PublicInputs {
         let derived_allocation_id = poseidon_hash([
+            pallas::Base::from(4),
             self.pool_id,
             self.member_pub_x,
             self.member_pub_y,

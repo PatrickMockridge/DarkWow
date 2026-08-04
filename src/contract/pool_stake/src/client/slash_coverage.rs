@@ -87,6 +87,7 @@ impl SlashCoverageV1CallData {
 
     pub fn compute_public_inputs(&self) -> SlashCoverageV1PublicInputs {
         let derived_slash_id = poseidon_hash([
+            pallas::Base::from(4),
             self.allocation_id,
             pallas::Base::from(self.slashed_amount),
             self.slashed_to_pub_x,

@@ -354,7 +354,7 @@ impl super::ContractHarness for TenderHarness {
             "SubmitBidV2",
             "RevealBidV2",
             "SelectWinnerV2",
-            "SubmitBidWithCapability",
+            "SubmitBidWithCapabilityV2",
         ]
     }
 
@@ -364,7 +364,7 @@ impl super::ContractHarness for TenderHarness {
             "SubmitBidV2" => Some(&self.submit_bid_zkbin),
             "RevealBidV2" => Some(&self.reveal_bid_zkbin),
             "SelectWinnerV2" => Some(&self.select_winner_zkbin),
-            "SubmitBidWithCapability" => Some(&self.submit_bid_with_capability_zkbin),
+            "SubmitBidWithCapabilityV2" => Some(&self.submit_bid_with_capability_zkbin),
             _ => None,
         }
     }
@@ -375,7 +375,7 @@ impl super::ContractHarness for TenderHarness {
             "SubmitBidV2" => Some(&self.submit_bid_pk),
             "RevealBidV2" => Some(&self.reveal_bid_pk),
             "SelectWinnerV2" => Some(&self.select_winner_pk),
-            "SubmitBidWithCapability" => Some(&self.submit_bid_with_capability_pk),
+            "SubmitBidWithCapabilityV2" => Some(&self.submit_bid_with_capability_pk),
             _ => None,
         }
     }

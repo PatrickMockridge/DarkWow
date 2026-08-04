@@ -293,7 +293,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 BRIDGE_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2.to_string(),
-                vec![params.gov_pub_x, params.gov_pub_y, params.config_nullifier],
+                vec![params.gov_pub_x, params.gov_pub_y, params.config_nullifier, pallas::Base::zero(), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -305,7 +305,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 BRIDGE_CONTRACT_ZKAS_CANCEL_WITHDRAW_NS_V2.to_string(),
-                vec![params.nullifier.inner()],
+                vec![params.nullifier.inner(), pallas::Base::zero(), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -318,7 +318,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 BRIDGE_CONTRACT_ZKAS_EXECUTE_GW_NS_V2.to_string(),
-                vec![params.nullifier.inner()],
+                vec![params.nullifier.inner(), pallas::Base::zero(), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -338,7 +338,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 BRIDGE_CONTRACT_ZKAS_CLAIM_HTLC_NS_V2.to_string(),
-                vec![swap_id, params.derived_hash],
+                vec![swap_id, params.derived_hash, pallas::Base::zero(), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -355,7 +355,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 BRIDGE_CONTRACT_ZKAS_REFUND_HTLC_NS_V2.to_string(),
-                vec![swap_id, pallas::Base::from(params.current_block)],
+                vec![swap_id, pallas::Base::from(params.current_block), pallas::Base::zero(), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -370,7 +370,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 BRIDGE_CONTRACT_ZKAS_ACCEPT_WITHDRAWAL_NS_V2.to_string(),
-                vec![params.nullifier.inner(), rx, ry, pallas::Base::from(params.max_fee_bp)],
+                vec![params.nullifier.inner(), rx, ry, pallas::Base::from(params.max_fee_bp), pallas::Base::zero(), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -396,7 +396,7 @@ fn deposit_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((
         BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V2.to_string(),
-        vec![params.commitment.inner()],
+        vec![params.commitment.inner(), pallas::Base::zero(), pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];
@@ -427,7 +427,7 @@ fn withdraw_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
         Some(b) => b,
         None => return Ok(vec![]),
     };
-    let derived_recipient = poseidon_hash([recipient_base]);
+    let derived_recipient = poseidon_hash([pallas::Base::from(7u64), recipient_base]);
 
     // Token-aware minimum withdrawal amount (anti-dust)
     // Default 100_000_000 (1 DAI equivalent in smallest unit)
@@ -435,7 +435,7 @@ fn withdraw_get_metadata(data: &[u8]) -> Result<Vec<u8>, ContractError> {
 
     zk_public_inputs.push((
         BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V2.to_string(),
-        vec![nullifier, params.deposit_leaf, params.expected_root, derived_recipient, token_minimum],
+        vec![nullifier, params.deposit_leaf, params.expected_root, derived_recipient, token_minimum, pallas::Base::zero(), pallas::Base::zero()],
     ));
 
     let mut metadata = vec![];

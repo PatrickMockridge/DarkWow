@@ -83,10 +83,10 @@ impl CreateEscrowCallData {
         }
     }
 
-    /// Compute seller commitment: H(seller_pub.x, seller_pub.y)
+    /// Compute seller commitment: H(DOMAIN_COIN_COMMIT, seller_pub.x, seller_pub.y)
     pub fn compute_seller_commitment(&self) -> pallas::Base {
         let (sx, sy) = self.seller_pubkey.xy().expect("pk not identity");
-        poseidon_hash([sx, sy])
+        poseidon_hash([pallas::Base::from(7u64), sx, sy])
     }
 
     /// Compute escrow commitment
@@ -94,6 +94,7 @@ impl CreateEscrowCallData {
         let (bx, by) = self.buyer_pubkey.xy().expect("pk not identity");
         let seller_commit = self.compute_seller_commitment();
         poseidon_hash([
+            pallas::Base::from(4u64),
             bx,
             by,
             seller_commit,

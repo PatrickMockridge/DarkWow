@@ -46,7 +46,7 @@ pub struct PlaceBidV1PublicInputs {
 
 impl PlaceBidV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.auction_id, self.bid_id, self.amount, self.tx_binding, self.tx_nonce]
+        vec![self.bid_id, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -95,6 +95,7 @@ impl PlaceBidV1CallData {
     pub fn compute_bid_id(&self) -> pallas::Base {
         let (ix, iy) = self.bidder_public.xy().expect("pk not identity");
         poseidon_hash([
+            pallas::Base::from(4u64),
             self.auction_id,
             ix,
             iy,

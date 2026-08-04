@@ -76,12 +76,12 @@ impl ExecuteSwapCallData {
     /// Compute Bob commitment: H(bob_pub.x, bob_pub.y)
     pub fn compute_bob_commitment(&self) -> pallas::Base {
         let (bx, by) = self.bob_pubkey.xy().expect("pk not identity");
-        poseidon_hash([bx, by])
+        poseidon_hash([pallas::Base::from(4), bx, by])
     }
 
     /// Compute spent nullifier: H(swap_id, bob_secret)
     pub fn compute_nullifier(&self) -> pallas::Base {
-        poseidon_hash([self.swap_id, self.bob_secret])
+        poseidon_hash([pallas::Base::from(1), self.swap_id, self.bob_secret])
     }
 
     pub fn compute_public_inputs(&self) -> ExecuteSwapPublicInputs {

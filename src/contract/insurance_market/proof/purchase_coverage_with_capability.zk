@@ -1,15 +1,15 @@
 # Insurance Market PurchaseCoverageWithCapability Circuit
 # Proves buyer identity + capability check + nullifier for replay protection.
 k = 11; field = "pallas";
-constant "PurchaseCoverageV2" { EcFixedPointBase NULLIFIER_K, }
-witness "PurchaseCoverageV2" {
+constant "PurchaseCoverageWithCapabilityV2" { EcFixedPointBase NULLIFIER_K, }
+witness "PurchaseCoverageWithCapabilityV2" {
     Base buyer_secret, Base buyer_pub_x, Base buyer_pub_y,
     Base required_capability_id, Base capability_predicate_result,
     Base buyer_nullifier, Base tx_commitment,
     Base tx_nonce,
     Base tx_binding,
 }
-circuit "PurchaseCoverageV2" {
+circuit "PurchaseCoverageWithCapabilityV2" {
     DOMAIN_TX_BINDING = witness_base(3);
     DOMAIN_COIN_COMMIT = witness_base(4);
 

@@ -58,11 +58,13 @@ pub struct OpenPositionPublicInputs {
 
 impl OpenPositionPublicInputs {
     /// Convert to vector for ZK proof creation
-    /// Order must match constrain_instance calls in open_position_v1.zk
+    /// Order matches constrain_instance calls in open_position.zk:
+    /// constrain_instance(position_check), constrain_instance(nullifier_check),
+    /// constrain_instance(tx_binding), constrain_instance(tx_nonce)
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
-            self.position_nullifier,  // nullifier_check constrained as instance
-            self.position_commitment,  // position_check constrained as instance
+            self.position_commitment,  // position_check constrained first
+            self.position_nullifier,   // nullifier_check constrained second
             self.tx_binding,
             self.tx_nonce,
         ]
@@ -112,20 +114,20 @@ impl OpenPositionCallData {
     }
 
     /// Compute the Poseidon commitment for collateral
-    /// Uses poseidon_hash(amount, blind) instead of Pedersen
+    /// Uses poseidon_hash(DOMAIN_COIN_COMMIT, amount, blind) - must match circuit
     pub fn collateral_commitment(&self) -> pallas::Base {
-        poseidon_hash([pallas::Base::from(self.collateral_amount), self.collateral_blind.inner()])
+        poseidon_hash([pallas::Base::from(4u64), pallas::Base::from(self.collateral_amount), self.collateral_blind.inner()])
     }
 
     /// Compute the Poseidon commitment for debt
-    /// Uses poseidon_hash(amount, blind) instead of Pedersen
+    /// Uses poseidon_hash(DOMAIN_COIN_COMMIT, amount, blind) - must match circuit
     pub fn debt_commitment(&self) -> pallas::Base {
-        poseidon_hash([pallas::Base::from(self.debt_amount), self.debt_blind.inner()])
+        poseidon_hash([pallas::Base::from(4u64), pallas::Base::from(self.debt_amount), self.debt_blind.inner()])
     }
 
     /// Compute the owner's public key (Poseidon hash of secret)
     pub fn owner_public_key(&self) -> pallas::Base {
-        poseidon_hash([self.owner_secret])
+        poseidon_hash([pallas::Base::from(7u64), self.owner_secret])
     }
 
     /// Compute the position commitment
@@ -133,13 +135,13 @@ impl OpenPositionCallData {
         let collateral_commit = self.collateral_commitment();
         let debt_commit = self.debt_commitment();
         let owner_pub = self.owner_public_key();
-        poseidon_hash([collateral_commit, debt_commit, owner_pub, self.collateral_type])
+        poseidon_hash([pallas::Base::from(4u64), collateral_commit, debt_commit, owner_pub, self.collateral_type])
     }
 
     /// Compute the position nullifier
     pub fn position_nullifier(&self) -> pallas::Base {
         let pos_commit = self.position_commitment();
-        poseidon_hash([self.owner_secret, pos_commit])
+        poseidon_hash([pallas::Base::from(1u64), self.owner_secret, pos_commit])
     }
 
     /// Compute public inputs for this call

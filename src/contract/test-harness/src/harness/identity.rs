@@ -175,7 +175,7 @@ impl IdentityHarness {
     pub fn initialize(&self) -> Result<InitializeResult> {
         // Build InitializeParams
         let params = InitializeParams { version: 1 };
-        let mut call_data = vec![];
+        let mut call_data = vec![0x00]; // InitializeV1
         call_data.extend_from_slice(&params.encode());
 
         Ok(InitializeResult { call_data })
@@ -231,7 +231,7 @@ impl IdentityHarness {
             fee: 0,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x01]; // IssueCredentialV1
         call_data.extend_from_slice(&params.encode());
 
         Ok(IssueCredentialResult { call_data, public_inputs, proof })
@@ -274,7 +274,7 @@ impl IdentityHarness {
             fee: 0,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x03]; // CreateClaimV1
         call_data.extend_from_slice(&params.encode());
 
         Ok(CreateClaimResult { call_data, public_inputs, proof })
@@ -321,7 +321,7 @@ impl IdentityHarness {
             fee: 0,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x05]; // CreateClaimV1L1
         call_data.extend_from_slice(&params.encode());
 
         Ok(CreateClaimL1Result { call_data, public_inputs, proof })
@@ -366,7 +366,7 @@ impl IdentityHarness {
             fee: 0,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x06]; // CreateClaimV1L1V2
         call_data.extend_from_slice(&params.encode());
 
         Ok(CreateClaimL1V2Result { call_data, public_inputs, proof })
@@ -414,7 +414,7 @@ impl IdentityHarness {
             fee: 0,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x07]; // CreateClaimV1Multi
         call_data.extend_from_slice(&params.encode());
 
         Ok(CreateClaimMultiResult { call_data, public_inputs, proof })
@@ -460,7 +460,7 @@ impl IdentityHarness {
             fee: 0,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x08]; // CreateClaimV1Ratio
         call_data.extend_from_slice(&params.encode());
 
         Ok(CreateClaimRatioResult { call_data, public_inputs, proof })
@@ -502,7 +502,7 @@ impl IdentityHarness {
             fee: 0,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x0d]; // CreateClaimDAGV1
         call_data.extend_from_slice(&params.encode());
 
         Ok(CreateClaimDagHarnessResult { call_data, public_inputs, proof })
@@ -555,7 +555,7 @@ impl IdentityHarness {
             fee: 0,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x0b]; // VerifyCapabilityV1
         call_data.extend_from_slice(&params.encode());
 
         Ok(VerifyCapabilityResult { call_data, public_inputs, proof })
@@ -578,7 +578,7 @@ impl IdentityHarness {
             max_holders,
             fee: 0,
         };
-        let mut call_data = vec![];
+        let mut call_data = vec![0x09]; // RegisterCapabilityV1
         call_data.extend_from_slice(&params.encode());
         Ok(RegisterCapabilityHarnessResult { call_data })
     }
@@ -598,7 +598,7 @@ impl IdentityHarness {
             issuer_sig: vec![],
             fee: 0,
         };
-        let mut call_data = vec![];
+        let mut call_data = vec![0x0a]; // IssueCapabilityV1
         call_data.extend_from_slice(&params.encode());
         Ok(IssueCapabilityHarnessResult { call_data })
     }
@@ -619,9 +619,26 @@ impl IdentityHarness {
             reason,
             fee: 0,
         };
-        let mut call_data = vec![];
+        let mut call_data = vec![0x0c]; // RevokeCapabilityV1
         call_data.extend_from_slice(&params.encode());
         Ok(RevokeCapabilityHarnessResult { call_data })
+    }
+
+    /// Register an issuer (function code 0x0e)
+    pub fn register_issuer(
+        &self,
+        issuer_pub: PublicKey,
+        name: Vec<u8>,
+        authorized_schemas: Vec<[u8; 32]>,
+    ) -> Result<RegisterIssuerHarnessResult> {
+        let params = dwow_identity_contract::model::RegisterIssuerParams {
+            issuer_pub,
+            name,
+            authorized_schemas,
+        };
+        let mut call_data = vec![0x0e]; // RegisterIssuerV1
+        call_data.extend_from_slice(&params.encode());
+        Ok(RegisterIssuerHarnessResult { call_data })
     }
 }
 
@@ -745,5 +762,10 @@ pub struct IssueCapabilityHarnessResult {
 
 /// Result of revoke_capability
 pub struct RevokeCapabilityHarnessResult {
+    pub call_data: Vec<u8>,
+}
+
+/// Result of register_issuer
+pub struct RegisterIssuerHarnessResult {
     pub call_data: Vec<u8>,
 }

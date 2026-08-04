@@ -154,6 +154,7 @@ impl Auction {
     ) -> AuctionId {
         let (sx, sy) = seller_pubkey.xy().expect("pk not identity");
         poseidon_hash([
+            pallas::Base::from(4u64),
             sx,
             sy,
             item_commitment,
@@ -167,7 +168,7 @@ impl Auction {
     /// Compute the settlement nullifier for this auction
     #[allow(dead_code)]
     pub fn compute_settlement_nullifier(&self, seller_secret: pallas::Base) -> pallas::Base {
-        poseidon_hash([self.id, seller_secret])
+        poseidon_hash([pallas::Base::from(1u64), self.id, seller_secret])
     }
 }
 
@@ -203,6 +204,7 @@ impl Bid {
     ) -> BidId {
         let (bx, by) = bidder_pubkey.xy().expect("pk not identity");
         poseidon_hash([
+            pallas::Base::from(4u64),
             auction_id,
             bx,
             by,
@@ -214,7 +216,7 @@ impl Bid {
     /// Compute the refund nullifier for this bid
     #[allow(dead_code)]
     pub fn compute_refund_nullifier(&self, bidder_secret: pallas::Base) -> pallas::Base {
-        poseidon_hash([self.id, bidder_secret])
+        poseidon_hash([pallas::Base::from(1u64), self.id, bidder_secret])
     }
 }
 

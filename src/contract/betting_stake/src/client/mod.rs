@@ -147,10 +147,12 @@ impl StakeV1Builder {
         };
 
         let stake_id = poseidon_hash([
+            pallas::Base::from(4),
             self.table_id,
             self.staker_pub.x().expect("pk not identity"),
             self.staker_pub.y().expect("pk not identity"),
             pallas::Base::from(self.amount),
+            pallas::Base::from(self.nonce),
         ]);
 
         let note = StakeNote {

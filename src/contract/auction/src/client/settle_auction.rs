@@ -47,14 +47,7 @@ pub struct SettleAuctionV1PublicInputs {
 
 impl SettleAuctionV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.auction_id,
-            self.seller_pub_x,
-            self.seller_pub_y,
-            self.settlement_nullifier,
-            self.tx_binding,
-            self.tx_nonce,
-        ]
+        vec![self.settlement_nullifier, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -82,7 +75,7 @@ impl SettleAuctionV1CallData {
 
     /// Compute settlement nullifier from auction_id and seller_secret
     pub fn compute_settlement_nullifier(&self) -> pallas::Base {
-        poseidon_hash([self.auction_id, self.seller_secret])
+        poseidon_hash([pallas::Base::from(1u64), self.auction_id, self.seller_secret])
     }
 
     pub fn compute_public_inputs(&self) -> SettleAuctionV1PublicInputs {

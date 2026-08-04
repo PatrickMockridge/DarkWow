@@ -305,25 +305,25 @@ impl super::ContractHarness for BaccaratHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["CommitBetV2", "DrawCardsV2", "HouseCloseV2", "SettleBetV2"]
+        vec!["CommitBet_V2", "DrawCards_V2", "HouseClose_V2", "SettleBet_V2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "CommitBetV2" => Some(&self.commit_bet_zkbin),
-            "DrawCardsV2" => Some(&self.draw_cards_zkbin),
-            "HouseCloseV2" => Some(&self.house_close_zkbin),
-            "SettleBetV2" => Some(&self.settle_bet_zkbin),
+            "CommitBet_V2" => Some(&self.commit_bet_zkbin),
+            "DrawCards_V2" => Some(&self.draw_cards_zkbin),
+            "HouseClose_V2" => Some(&self.house_close_zkbin),
+            "SettleBet_V2" => Some(&self.settle_bet_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "CommitBetV2" => Some(&self.commit_bet_pk),
-            "DrawCardsV2" => Some(&self.draw_cards_pk),
-            "HouseCloseV2" => Some(&self.house_close_pk),
-            "SettleBetV2" => Some(&self.settle_bet_pk),
+            "CommitBet_V2" => Some(&self.commit_bet_pk),
+            "DrawCards_V2" => Some(&self.draw_cards_pk),
+            "HouseClose_V2" => Some(&self.house_close_pk),
+            "SettleBet_V2" => Some(&self.settle_bet_pk),
             _ => None,
         }
     }

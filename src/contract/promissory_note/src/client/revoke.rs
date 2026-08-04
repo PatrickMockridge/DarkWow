@@ -189,8 +189,9 @@ pub fn create_revoke_proof(
     token_id_blind: BaseBlind,
     user_data_blind: BaseBlind,
 ) -> Result<(Proof, RevokeRevealed)> {
-    // Derive public key from secret using Poseidon (Schnorr-style)
-    let public_key = poseidon_hash([input.secret]);
+    // Derive public key from secret using Poseidon (Schnorr-style).
+    // V2 circuit domain separator: DOMAIN_SIGNATURE_SECRET = 7.
+    let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
 
     let commitment = CapAttrs {
         public_key,
@@ -223,18 +224,18 @@ pub fn create_revoke_proof(
     // Value commitment - Pedersen (additively homomorphic)
     let value_commit = pedersen_commitment_u64(input.value, value_blind.clone());
 
-    // Token ID commitment
-    let token_commit = poseidon_hash([input.token_id, token_id_blind.inner()]);
+    // Token ID commitment.
+    // V2 circuit domain separator: DOMAIN_TOK_COMMIT = 2.
+    let token_commit = poseidon_hash([pallas::Base::from(2), input.token_id, token_id_blind.inner()]);
 
-    // User data encryption
-    let user_data_enc = poseidon_hash([input.user_data, user_data_blind.inner()]);
+    // User data encryption.
+    // V2 circuit domain separator: DOMAIN_USER_DATA_ENC = 6.
+    let user_data_enc = poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]);
 
     // Derive per-revoke unique signature_secret from coin_secret + nullifier.
-    // poseidon_hash(coin_secret, nullifier) binds the signer to the coin owner
-    // (fixes H2) while keeping signature_public unlinkable across revokes
-    // (different nullifier → different signature_secret → different signature_public).
-    let signature_secret = poseidon_hash([input.secret, nullifier.inner()]);
-    let signature_public = poseidon_hash([signature_secret]);
+    // V2 circuit domain separator: DOMAIN_SIGNATURE_SECRET = 7.
+    let signature_secret = poseidon_hash([pallas::Base::from(7), input.secret, nullifier.inner()]);
+    let signature_public = poseidon_hash([pallas::Base::from(7), signature_secret]);
 
     let public_inputs = RevokeRevealed {
         nullifier,
@@ -244,7 +245,7 @@ pub fn create_revoke_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
-        tx_binding: poseidon_hash([input.tx_commitment, input.tx_nonce]),
+        tx_binding: poseidon_hash([pallas::Base::from(3), input.tx_commitment, input.tx_nonce]),
         tx_nonce: input.tx_nonce,
     };
 
@@ -273,7 +274,7 @@ pub fn create_revoke_proof(
         Witness::Base(Value::known(signature_secret)),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
-        Witness::Base(Value::known(poseidon_hash([input.tx_commitment, input.tx_nonce]))), // V2: tx_binding = poseidon_hash(tx_commitment, tx_nonce)
+        Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3), input.tx_commitment, input.tx_nonce]))), // V2: tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce), domain = 3
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

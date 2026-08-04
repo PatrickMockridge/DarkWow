@@ -129,8 +129,10 @@ impl RegisterTypeCallBuilder {
         // Generate blinds
         let value_blind = ScalarBlind::random(&mut OsRng);
 
-        // Derive token ID from auth_parent, user_data, and blind
+        // Derive token ID from auth_parent, user_data, and blind.
+        // V2 circuit domain separator: DOMAIN_TOK_COMMIT = 2.
         let token_id = poseidon_hash([
+            pallas::Base::from(2),
             self.input.token_auth_parent,
             self.input.token_user_data,
             self.input.token_blind,
@@ -159,8 +161,8 @@ impl RegisterTypeCallBuilder {
             commitment,
             value_commit,
             spend_hook: self.input.spend_hook,
-            // V2 circuit: tx_binding = poseidon_hash(tx_commitment, tx_nonce). Must match.
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            // V2 circuit: tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce). Domain = 3.
+            tx_binding: poseidon_hash([pallas::Base::from(3), self.tx_commitment, self.tx_nonce]),
             tx_nonce: self.tx_nonce,
         };
 
@@ -177,7 +179,7 @@ impl RegisterTypeCallBuilder {
             Witness::Scalar(Value::known(value_blind.inner())),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(poseidon_hash([self.tx_commitment, self.tx_nonce]))), // V2: tx_binding = poseidon_hash(tx_commitment, tx_nonce)
+            Witness::Base(Value::known(poseidon_hash([pallas::Base::from(3), self.tx_commitment, self.tx_nonce]))), // V2: tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce), domain = 3
         ];
 
         let circuit = ZkCircuit::new(prover_witnesses, &self.register_type_zkbin);
@@ -191,8 +193,8 @@ impl RegisterTypeCallBuilder {
                 token_auth_parent: self.input.token_auth_parent,
                 token_commit,
                 spend_hook: FuncId::from_base(self.input.spend_hook),
-                // V2 circuit: tx_binding = poseidon_hash(tx_commitment, tx_nonce). Must match.
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+                // V2 circuit: tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce). Domain = 3.
+            tx_binding: poseidon_hash([pallas::Base::from(3), self.tx_commitment, self.tx_nonce]),
                 tx_nonce: self.tx_nonce,
             },
             proofs: vec![proof],

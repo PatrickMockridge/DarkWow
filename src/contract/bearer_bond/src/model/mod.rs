@@ -98,6 +98,7 @@ impl CoinAttributes {
     /// Compute the coin commitment (Poseidon hash of all attributes).
     pub fn to_coin(&self) -> pallas::Base {
         dwow_sdk::crypto::poseidon_hash([
+            pallas::Base::from(4),
             self.public_key,
             pallas::Base::from(self.value),
             self.token_id,
@@ -119,7 +120,7 @@ pub struct Nullifier(pallas::Base);
 
 impl Nullifier {
     pub fn new(secret: pallas::Base, coin: pallas::Base) -> Self {
-        Nullifier(dwow_sdk::crypto::poseidon_hash([secret, coin]))
+        Nullifier(dwow_sdk::crypto::poseidon_hash([pallas::Base::from(1), secret, coin]))
     }
 
     pub fn inner(&self) -> pallas::Base {

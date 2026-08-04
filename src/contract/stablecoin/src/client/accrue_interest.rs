@@ -57,15 +57,11 @@ pub struct AccrueInterestPublicInputs {
 
 impl AccrueInterestPublicInputs {
     /// Convert to vector for ZK proof creation
+    /// Order matches constrain_instance calls in accrue_interest.zk:
+    /// old_total_debt, tx_binding, tx_nonce
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.old_total_debt,
-            self.new_total_debt,
-            self.interest_amount,
-            self.rate_per_second,
-            self.time_elapsed,
-            self.accumulator_pub_x,
-            self.accumulator_pub_y,
             self.tx_binding,
             self.tx_nonce,
         ]

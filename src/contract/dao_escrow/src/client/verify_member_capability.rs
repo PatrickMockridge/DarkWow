@@ -34,25 +34,18 @@ use dwow_sdk::{
 };
 use rand::rngs::OsRng;
 
-/// VerifyMemberCapabilityV1 circuit public inputs
+/// VerifyMemberCapabilityV2 circuit public inputs (3 — matching V2 circuit constrain_instance order)
+/// Circuit order: [tx_binding, tx_nonce, capability_commit]
 #[derive(Debug, Clone)]
 pub struct VerifyMemberCapabilityV1PublicInputs {
-    pub capability_id: pallas::Base,
-    pub dao_escrow_bulla: pallas::Base,
-    pub holder_commit: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
+    pub capability_commit: pallas::Base,
 }
 
 impl VerifyMemberCapabilityV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.capability_id,
-            self.dao_escrow_bulla,
-            self.holder_commit,
-            self.tx_binding,
-            self.tx_nonce,
-        ]
+        vec![self.tx_binding, self.tx_nonce, self.capability_commit]
     }
 }
 
@@ -96,18 +89,20 @@ impl VerifyMemberCapabilityV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> VerifyMemberCapabilityV1PublicInputs {
-        let holder_commit = poseidon_hash([
-            self.holder_pub_x,
-            self.holder_pub_y,
+        // capability_commit = poseidon_hash(DOMAIN_COIN_COMMIT, capability_id,
+        //                                    capability_secret, dao_escrow_bulla)
+        let capability_commit = poseidon_hash([
+            pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
+            self.capability_id,
             self.capability_secret,
+            self.dao_escrow_bulla,
         ]);
 
+        // Circuit constrain_instance order: [tx_binding, tx_nonce, capability_commit]
         VerifyMemberCapabilityV1PublicInputs {
-            capability_id: self.capability_id,
-            dao_escrow_bulla: self.dao_escrow_bulla,
-            holder_commit,
             tx_binding: pallas::Base::zero(),
             tx_nonce: self.tx_nonce,
+            capability_commit,
         }
     }
 

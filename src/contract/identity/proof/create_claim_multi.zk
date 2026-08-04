@@ -41,6 +41,8 @@ circuit "CreateClaimV2Multi" {
 
     combined = poseidon_hash(DOMAIN_NULLIFIER, computed_nullifier_1, computed_nullifier_2);
     combined = poseidon_hash(DOMAIN_NULLIFIER, combined, computed_nullifier_3);
+    constrain_instance(combined);
+    constrain_equal_base(combined, nullifier);
 
     range_check(64, attribute_value_1);
     range_check(64, threshold_1);

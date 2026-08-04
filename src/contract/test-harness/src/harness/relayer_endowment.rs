@@ -119,7 +119,7 @@ impl RelayerEndowmentHarness {
             instance_seed: [0u8; 32],
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x00];
         call_data.extend_from_slice(&params.encode());
 
         Ok(InitializeResult { call_data, proof, public_inputs })
@@ -163,7 +163,7 @@ impl RelayerEndowmentHarness {
             instance_seed: [0u8; 32],
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x01];
         call_data.extend_from_slice(&params.encode());
 
         Ok(DeployCapitalResult { call_data, proof, public_inputs })
@@ -192,7 +192,7 @@ impl RelayerEndowmentHarness {
             fee_share,
         };
 
-        let mut call_data = vec![];
+        let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
 
         Ok(ClaimFeesResult { call_data, proof, public_inputs })
@@ -205,23 +205,23 @@ impl super::ContractHarness for RelayerEndowmentHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["Initialize", "DeployCapital", "ClaimFees"]
+        vec!["InitializeV2", "DeployCapitalV2", "ClaimFeesV2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "Initialize" => Some(&self.initialize_zkbin),
-            "DeployCapital" => Some(&self.deploy_capital_zkbin),
-            "ClaimFees" => Some(&self.claim_fees_zkbin),
+            "InitializeV2" => Some(&self.initialize_zkbin),
+            "DeployCapitalV2" => Some(&self.deploy_capital_zkbin),
+            "ClaimFeesV2" => Some(&self.claim_fees_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "Initialize" => Some(&self.initialize_pk),
-            "DeployCapital" => Some(&self.deploy_capital_pk),
-            "ClaimFees" => Some(&self.claim_fees_pk),
+            "InitializeV2" => Some(&self.initialize_pk),
+            "DeployCapitalV2" => Some(&self.deploy_capital_pk),
+            "ClaimFeesV2" => Some(&self.claim_fees_pk),
             _ => None,
         }
     }

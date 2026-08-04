@@ -72,22 +72,25 @@ impl PushValueV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> PushValueV1PublicInputs {
-        PushValueV1PublicInputs { oracle_id: self.oracle_id, value: self.value, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
+        // Circuit: DOMAIN_TX_BINDING = witness_base(3) = oracle_pub_y
+        let (ix, iy) = self.oracle_public.xy().expect("pk not identity");
+        let tx_binding = dwow_sdk::crypto::poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
+        PushValueV1PublicInputs { oracle_id: self.oracle_id, value: self.value, tx_binding, tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.oracle_public.xy().expect("pk not identity");
+        let tx_binding = dwow_sdk::crypto::poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
         vec![
-            // Public inputs as witnesses
+            // Circuit order: oracle_id, oracle_secret, oracle_pub_x, oracle_pub_y, value, tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.oracle_id)),
-            Witness::Base(Value::known(self.value)),
-            // Private inputs
             Witness::Base(Value::known(self.oracle_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
+            Witness::Base(Value::known(self.value)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(tx_binding)), // tx_binding (computed by circuit)
         ]
     }
 }

@@ -202,7 +202,7 @@ pub fn baccarat_commit_bet_process_instruction_v1(
     let settle_block = created_at + params.confirmation_depth as u64;
 
     // Derive nullifier using standalone function (uses hash of secret_nonce for privacy)
-    let secret_nonce_commit = poseidon_hash([params.secret_nonce]);
+    let secret_nonce_commit = poseidon_hash([pallas::Base::from(7), params.secret_nonce]);
     let nullifier = derive_nullifier(bet_id, secret_nonce_commit);
 
     // Check nullifier hasn't been used

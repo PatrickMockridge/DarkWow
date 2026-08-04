@@ -87,6 +87,7 @@ impl SettleBetV1CallData {
 
     pub fn compute_public_inputs(&self) -> SettleBetV1PublicInputs {
         let spin_id = poseidon_hash([
+            pallas::Base::from(4),
             self.player_pub_x,
             self.player_pub_y,
             self.bet_value,

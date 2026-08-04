@@ -125,10 +125,10 @@ fn create_pool_get_metadata_v1(
     params: CreatePoolParamsV1,
 ) -> Result<Vec<u8>, dwow_sdk::error::ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    // Only constrain_instance value: derived_pool_id
+    // Circuit order: tx_binding(0), tx_nonce(1), derived_pool_id(2)
     zk_public_inputs.push((
         POOL_STAKE_ZKAS_CREATE_POOL_NS_V2.to_string(),
-        vec![params.derived_pool_id],
+        vec![pallas::Base::zero(), pallas::Base::zero(), params.derived_pool_id],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -139,10 +139,10 @@ fn join_pool_get_metadata_v1(
     params: JoinPoolParamsV1,
 ) -> Result<Vec<u8>, dwow_sdk::error::ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    // Only constrain_instance values: derived_member_id, value_commit_x, value_commit_y
+    // Circuit order: derived_member_id(0), vc_x(1), tx_binding(2), tx_nonce(3), vc_y(4)
     zk_public_inputs.push((
         POOL_STAKE_ZKAS_JOIN_POOL_NS_V2.to_string(),
-        vec![params.derived_member_id, params.value_commit_x, params.value_commit_y],
+        vec![params.derived_member_id, params.value_commit_x, pallas::Base::zero(), pallas::Base::zero(), params.value_commit_y],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -153,10 +153,10 @@ fn allocate_coverage_get_metadata_v1(
     params: AllocateCoverageParamsV1,
 ) -> Result<Vec<u8>, dwow_sdk::error::ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    // Only constrain_instance value: derived_allocation_id
+    // Circuit order: tx_binding(0), tx_nonce(1), derived_allocation_id(2)
     zk_public_inputs.push((
         POOL_STAKE_ZKAS_ALLOCATE_COVERAGE_NS_V2.to_string(),
-        vec![params.derived_allocation_id],
+        vec![pallas::Base::zero(), pallas::Base::zero(), params.derived_allocation_id],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;
@@ -167,10 +167,10 @@ fn slash_coverage_get_metadata_v1(
     params: SlashCoverageParamsV1,
 ) -> Result<Vec<u8>, dwow_sdk::error::ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    // Only constrain_instance value: derived_slash_id
+    // Circuit order: tx_binding(0), tx_nonce(1), derived_slash_id(2)
     zk_public_inputs.push((
         POOL_STAKE_ZKAS_SLASH_COVERAGE_NS_V2.to_string(),
-        vec![params.derived_slash_id],
+        vec![pallas::Base::zero(), pallas::Base::zero(), params.derived_slash_id],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;

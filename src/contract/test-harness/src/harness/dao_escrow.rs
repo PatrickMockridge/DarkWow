@@ -52,6 +52,7 @@ use dwow_dao_escrow_contract::model::{
     VoteClaimParamsV1, WithdrawParamsV1, MembershipNote, ProposalId, EndowmentWithdrawParamsV1,
     TreasurySpendParamsV1, OracleAttestationRef, VoteType,
 };
+use dwow_dao_escrow_contract::model::Membership;
 
 /// DaoEscrow Harness for isolated testing
 pub struct DaoEscrowHarness {
@@ -220,6 +221,20 @@ impl DaoEscrowHarness {
         // Derive member public key from secret
         let member_pub =
             PublicKey::from_secret(SecretKey::from_bytes(member_secret.to_repr()).unwrap());
+        let (mx, my) = member_pub.xy().expect("pk not identity");
+
+        // Compute membership_note locally using same formula as circuit:
+        // membership_note = poseidon_hash(DOMAIN_COIN_COMMIT, member_pub_x, member_pub_y,
+        //                                  value, token_id, expiry, membership_blind)
+        let membership_note = dwow_sdk::crypto::poseidon_hash([
+            pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
+            mx,
+            my,
+            pallas::Base::from(value),
+            pallas::Base::from(token_id),
+            pallas::Base::from(expiry),
+            membership_blind,
+        ]);
 
         // Build PayPremiumParamsV1 for call_data
         // Note: value_commit uses zero placeholders because EC operations cannot be replicated outside circuit
@@ -227,7 +242,7 @@ impl DaoEscrowHarness {
 
         let params = PayPremiumParamsV1 {
             dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
-            membership_note: MembershipNote(public_inputs.membership_note),
+            membership_note: MembershipNote(membership_note),
             value_commit,
             value,
             token_id: dwow_sdk::crypto::TokenId::from_base(token_id),
@@ -590,24 +605,24 @@ impl super::ContractHarness for DaoEscrowHarness {
 
     fn circuits(&self) -> Vec<&'static str> {
         vec![
-            "Init",
-            "PayPremium",
-            "ProposeClaim",
-            "VoteClaim",
-            "VerifyMemberCapability",
-            "ResolveDispute",
+            "InitV2",
+            "PayPremiumV2",
+            "ProposeClaimV2",
+            "VoteClaimV2",
+            "VerifyMemberCapabilityV2",
+            "ResolveDisputeV2",
             "SetGovernanceConfigV2",
         ]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "Init" => Some(&self.init_zkbin),
-            "PayPremium" => Some(&self.pay_premium_zkbin),
-            "ProposeClaim" => Some(&self.propose_claim_zkbin),
-            "VoteClaim" => Some(&self.vote_claim_zkbin),
-            "VerifyMemberCapability" => Some(&self.verify_member_capability_zkbin),
-            "ResolveDispute" => Some(&self.resolve_dispute_zkbin),
+            "InitV2" => Some(&self.init_zkbin),
+            "PayPremiumV2" => Some(&self.pay_premium_zkbin),
+            "ProposeClaimV2" => Some(&self.propose_claim_zkbin),
+            "VoteClaimV2" => Some(&self.vote_claim_zkbin),
+            "VerifyMemberCapabilityV2" => Some(&self.verify_member_capability_zkbin),
+            "ResolveDisputeV2" => Some(&self.resolve_dispute_zkbin),
             "SetGovernanceConfigV2" => Some(&self.set_governance_config_zkbin),
             _ => None,
         }
@@ -615,12 +630,12 @@ impl super::ContractHarness for DaoEscrowHarness {
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "Init" => Some(&self.init_pk),
-            "PayPremium" => Some(&self.pay_premium_pk),
-            "ProposeClaim" => Some(&self.propose_claim_pk),
-            "VoteClaim" => Some(&self.vote_claim_pk),
-            "VerifyMemberCapability" => Some(&self.verify_member_capability_pk),
-            "ResolveDispute" => Some(&self.resolve_dispute_pk),
+            "InitV2" => Some(&self.init_pk),
+            "PayPremiumV2" => Some(&self.pay_premium_pk),
+            "ProposeClaimV2" => Some(&self.propose_claim_pk),
+            "VoteClaimV2" => Some(&self.vote_claim_pk),
+            "VerifyMemberCapabilityV2" => Some(&self.verify_member_capability_pk),
+            "ResolveDisputeV2" => Some(&self.resolve_dispute_pk),
             "SetGovernanceConfigV2" => Some(&self.set_governance_config_pk),
             _ => None,
         }

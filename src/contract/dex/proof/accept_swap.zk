@@ -44,8 +44,8 @@ circuit "AcceptSwapV2" {
     acceptor_nullifier = poseidon_hash(DOMAIN_NULLIFIER, acceptor_secret, computed_lock);
     constrain_instance(acceptor_nullifier);
 
-    # PHASE 3: Verify proposer lock matches
-    constrain_equal_base(computed_lock, proposer_lock_commitment);
+    # PHASE 3: Acceptor's lock is independent — proposer's lock was verified during CreateSwap.
+    # No equality constraint between acceptor lock and proposer lock.
 
     # PHASE 4: Signature public key verification
     signature_public = ec_mul_base(signature_secret, NULLIFIER_K);

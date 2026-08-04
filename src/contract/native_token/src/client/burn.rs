@@ -33,7 +33,7 @@ use dwow_core::{
 use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
-        constants::{DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_TX_BINDING, DRK_POSEIDON_DOMAIN_USER_DATA_ENC},
+        constants::{DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET, DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_TX_BINDING, DRK_POSEIDON_DOMAIN_USER_DATA_ENC},
         pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId,
         MerkleNode, PublicKey, ScalarBlind, SecretKey, TokenId,
     },
@@ -108,7 +108,7 @@ pub fn create_burn_proof(
     // Derive per-burn unique signature_secret from coin_secret + nullifier.
     // This binds the signer to the coin owner (fixes H2) while keeping
     // signature_public unlinkable across burns (nullifier is unique per coin).
-    let signature_secret = SecretKey::from_base(poseidon_hash([*secret.inner(), nullifier.inner()]));
+    let signature_secret = SecretKey::from_base(poseidon_hash([DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET, *secret.inner(), nullifier.inner()]));
     let signature_public = PublicKey::from_secret(signature_secret.clone());
 
     // Calculate merkle root from coin and merkle path

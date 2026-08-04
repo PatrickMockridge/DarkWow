@@ -40,7 +40,7 @@
 //!
 //! ## How Withdrawals Work
 //!
-//! 1. User computes nullifier = H(secret)
+//! 1. User computes nullifier = H(DOMAIN_NULLIFIER, secret, recipient_hash)
 //! 2. User burns tokens on DarkWow
 //! 3. User constructs ZK proof demonstrating:
 //!    - User knows secret for a deposited commitment
@@ -291,14 +291,14 @@ fn derive_bridge_address(recipient_pub_x: [u8; 32], recipient_pub_y: [u8; 32], n
     use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{crypto::{pasta_prelude::PrimeField}, pasta::pallas};
 
-    // Derive bridge_secret = poseidon_hash(recipient_pub_x, recipient_pub_y, nonce)
+    // Derive bridge_secret = poseidon_hash(DOMAIN_SIGNATURE_SECRET, recipient_pub_x, recipient_pub_y, nonce)
     // Using poseidon ensures ZK-friendly derivation
     let recipient_x = pallas::Base::from_repr(recipient_pub_x.into()).unwrap();
     let recipient_y = pallas::Base::from_repr(recipient_pub_y.into()).unwrap();
-    let bridge_secret = poseidon_hash([recipient_x, recipient_y, pallas::Base::from(nonce)]);
+    let bridge_secret = poseidon_hash([pallas::Base::from(7u64), recipient_x, recipient_y, pallas::Base::from(nonce)]);
 
     // Return poseidon hash of the secret as the bridge address
-    let address_hash = poseidon_hash([bridge_secret]);
+    let address_hash = poseidon_hash([pallas::Base::from(7u64), bridge_secret]);
     address_hash.to_repr()
 }
 
@@ -307,11 +307,11 @@ fn compute_commitment(secret: [u8; 32], amount: u64, bridge_address: [u8; 32]) -
     use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{crypto::{pasta_prelude::PrimeField}, pasta::pallas};
 
-    // commitment = poseidon_hash(secret, amount, bridge_address)
+    // commitment = poseidon_hash(DOMAIN_COIN_COMMIT, secret, amount, bridge_address)
     // Using poseidon ensures ZK-friendly derivation
     let secret_base = pallas::Base::from_repr(secret.into()).unwrap();
     let addr_base = pallas::Base::from_repr(bridge_address.into()).unwrap();
-    let commitment = poseidon_hash([secret_base, pallas::Base::from(amount), addr_base]);
+    let commitment = poseidon_hash([pallas::Base::from(4u64), secret_base, pallas::Base::from(amount), addr_base]);
     commitment.to_repr()
 }
 
@@ -431,14 +431,15 @@ impl WithdrawBuilder {
     }
 }
 
-/// Compute nullifier from secret
-pub fn compute_nullifier(secret: [u8; 32]) -> [u8; 32] {
+/// Compute nullifier from secret and recipient_hash (domain-separated)
+pub fn compute_nullifier(secret: [u8; 32], recipient_hash: [u8; 32]) -> [u8; 32] {
     use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{crypto::{pasta_prelude::PrimeField}, pasta::pallas};
 
-    // nullifier = poseidon_hash(secret)
+    // nullifier = poseidon_hash(DOMAIN_NULLIFIER, secret, recipient_hash)
     let secret_base = pallas::Base::from_repr(secret.into()).unwrap();
-    let nullifier = poseidon_hash([secret_base]);
+    let recipient_base = pallas::Base::from_repr(recipient_hash.into()).unwrap();
+    let nullifier = poseidon_hash([pallas::Base::from(1u64), secret_base, recipient_base]);
     nullifier.to_repr()
 }
 
@@ -469,9 +470,9 @@ pub fn derive_bridge_address_external(
     use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{crypto::{pasta_prelude::PrimeField}, pasta::pallas};
 
-    // Use poseidon for ZK-friendly hashing
+    // Use poseidon for ZK-friendly hashing, domain-separated
     let pub_x = pallas::Base::from_repr(user_pub_x.into()).unwrap();
     let pub_y = pallas::Base::from_repr(user_pub_y.into()).unwrap();
-    let cap_hash = poseidon_hash([pub_x, pub_y, pallas::Base::from(nonce)]);
+    let cap_hash = poseidon_hash([pallas::Base::from(7u64), pub_x, pub_y, pallas::Base::from(nonce)]);
     cap_hash.to_repr()
 }

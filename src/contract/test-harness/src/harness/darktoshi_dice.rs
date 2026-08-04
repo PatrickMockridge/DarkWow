@@ -120,25 +120,25 @@ impl super::ContractHarness for DarkToshiDiceHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["CommitBetV2", "HouseCloseV2", "RevealRollV2", "SettleBetV2"]
+        vec!["CommitBet_V2", "HouseClose_V2", "RevealRoll_V2", "SettleBet_V2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "CommitBetV2" => Some(&self.commit_bet_zkbin),
-            "HouseCloseV2" => Some(&self.house_close_zkbin),
-            "RevealRollV2" => Some(&self.reveal_roll_zkbin),
-            "SettleBetV2" => Some(&self.settle_bet_zkbin),
+            "CommitBet_V2" => Some(&self.commit_bet_zkbin),
+            "HouseClose_V2" => Some(&self.house_close_zkbin),
+            "RevealRoll_V2" => Some(&self.reveal_roll_zkbin),
+            "SettleBet_V2" => Some(&self.settle_bet_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "CommitBetV2" => Some(&self.commit_bet_pk),
-            "HouseCloseV2" => Some(&self.house_close_pk),
-            "RevealRollV2" => Some(&self.reveal_roll_pk),
-            "SettleBetV2" => Some(&self.settle_bet_pk),
+            "CommitBet_V2" => Some(&self.commit_bet_pk),
+            "HouseClose_V2" => Some(&self.house_close_pk),
+            "RevealRoll_V2" => Some(&self.reveal_roll_pk),
+            "SettleBet_V2" => Some(&self.settle_bet_pk),
             _ => None,
         }
     }
@@ -252,7 +252,7 @@ impl DarkToshiDiceHarness {
         Ok(SettleBetResult { call_data, public_inputs, proof })
     }
 
-    /// Close a bet (house close, function code 0x02)
+    /// Close a bet (house close, function code 0x04)
     pub fn house_close(
         &self,
         bet_id: pallas::Base,
@@ -281,7 +281,7 @@ impl DarkToshiDiceHarness {
             close_nullifier: public_inputs.close_nullifier,
         };
 
-        let mut call_data = vec![0x02];
+        let mut call_data = vec![0x04];
         call_data.extend_from_slice(&params.encode());
 
         Ok(HouseCloseResult { call_data, public_inputs, proof })

@@ -82,11 +82,16 @@ impl HouseCloseCallData {
     }
 
     pub fn compute_public_inputs(&self) -> HouseClosePublicInputs {
+        let close_nullifier = dwow_sdk::crypto::poseidon_hash([
+            pallas::Base::from(1),
+            self.bet_id,
+            self.house_secret,
+        ]);
         HouseClosePublicInputs {
             bet_id: self.bet_id,
             house_pub_x: self.house_pub_x,
             house_pub_y: self.house_pub_y,
-            close_nullifier: pallas::Base::zero(), // Computed by circuit
+            close_nullifier,
             tx_binding: pallas::Base::zero(),
             tx_nonce: self.tx_nonce,
         }
@@ -100,20 +105,33 @@ pub fn create_house_close_proof(
 ) -> Result<(Proof, HouseClosePublicInputs)> {
     debug!(target: "contract::baccarat::client::house_close", "Creating HouseCloseV1 ZK proof");
 
+    let close_nullifier = dwow_sdk::crypto::poseidon_hash([
+        pallas::Base::from(1),
+        data.bet_id,
+        data.house_secret,
+    ]);
+
     let public_inputs = HouseClosePublicInputs {
         bet_id: data.bet_id,
         house_pub_x: data.house_pub_x,
         house_pub_y: data.house_pub_y,
-        close_nullifier: pallas::Base::zero(), // Computed by circuit, exposed as instance
+        close_nullifier,
         tx_binding: pallas::Base::zero(),
         tx_nonce: data.tx_nonce,
     };
+
+    let close_nullifier = dwow_sdk::crypto::poseidon_hash([
+        pallas::Base::from(1),
+        data.bet_id,
+        data.house_secret,
+    ]);
 
     let prover_witnesses = vec![
         Witness::Base(Value::known(data.bet_id)),
         Witness::Base(Value::known(data.house_secret)),
         Witness::Base(Value::known(data.house_pub_x)),
         Witness::Base(Value::known(data.house_pub_y)),
+        Witness::Base(Value::known(close_nullifier)),
         Witness::Base(Value::known(data.tx_commitment)),
         Witness::Base(Value::known(data.tx_nonce)),
         Witness::Base(Value::known(pallas::Base::zero())), // tx_binding

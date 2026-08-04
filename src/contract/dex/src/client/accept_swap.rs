@@ -123,6 +123,7 @@ impl AcceptSwapCallData {
         // Compute acceptor's lock commitment
         // lock = poseidon_hash([secret, offer_token, offer_amount, token_blind, amount_blind])
         let acceptor_lock_commitment = poseidon_hash([
+            pallas::Base::from(4u64),
             self.acceptor_secret,
             self.offer_token,
             self.offer_amount,
@@ -132,7 +133,7 @@ impl AcceptSwapCallData {
 
         // Compute acceptor's nullifier
         // nullifier = poseidon_hash([secret, lock])
-        let acceptor_nullifier = poseidon_hash([self.acceptor_secret, acceptor_lock_commitment]);
+        let acceptor_nullifier = poseidon_hash([pallas::Base::from(1u64), self.acceptor_secret, acceptor_lock_commitment]);
 
         // Get signature public key coordinates
         let (sig_x, sig_y) = self.signature_public.xy().expect("pk not identity");

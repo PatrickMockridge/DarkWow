@@ -89,6 +89,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let player_x = params.player_pub.x().expect("pk not identity");
             let player_y = params.player_pub.y().expect("pk not identity");
             let bet_id = poseidon_hash([
+                pallas::Base::from(4),
                 player_x,
                 player_y,
                 pallas::Base::from(params.bet_type as u64),
@@ -106,7 +107,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BACCARAT_CONTRACT_ZKAS_COMMIT_NS_V2.to_string(),
-                vec![bet_id, *vc_coords.x(), *vc_coords.y()],
+                vec![bet_id, *vc_coords.x(), *vc_coords.y(), pallas::Base::zero(), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -116,10 +117,10 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         BaccaratFunction::DrawCardsV1 => {
             let params= crate::model::DrawCardsParamsV1::decode(&self_.data[1..])?;
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            let secret_nonce_commit = poseidon_hash([params.secret_nonce]);
+            let secret_nonce_commit = poseidon_hash([pallas::Base::from(7), params.secret_nonce]);
             zk_public_inputs.push((
                 crate::BACCARAT_CONTRACT_ZKAS_DRAW_NS_V2.to_string(),
-                vec![params.bet_id, secret_nonce_commit],
+                vec![params.bet_id, secret_nonce_commit, pallas::Base::zero(), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -130,7 +131,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BACCARAT_CONTRACT_ZKAS_HOUSE_CLOSE_NS_V2.to_string(),
-                vec![params.bet_id, params.house_pub_x, params.house_pub_y, params.close_nullifier],
+                vec![params.bet_id, params.house_pub_x, params.house_pub_y, params.close_nullifier, pallas::Base::zero(), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -141,7 +142,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BACCARAT_CONTRACT_ZKAS_SETTLE_NS_V2.to_string(),
-                vec![params.bet_id],
+                vec![params.bet_id, pallas::Base::zero(), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;

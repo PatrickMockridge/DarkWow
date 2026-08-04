@@ -77,6 +77,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::crypto::{
+    constants::{DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_TX_BINDING, DRK_POSEIDON_DOMAIN_USER_DATA_ENC},
     note::AeadEncryptedNote,
     pedersen_commitment_u64, poseidon_hash,
     BaseBlind, Blind, FuncId, MerkleNode, PublicKey, ScalarBlind, SecretKey,
@@ -166,8 +167,8 @@ impl TransferCallBuilder {
             // Pre-compute the Pedersen commitments that the proof function
             // requires via the TransferCallInput (model::Input) parameter.
             let value_commit = pedersen_commitment_u64(witness.value, value_blind.clone());
-            let token_commit = poseidon_hash([witness.token_id, token_blind.clone().inner()]);
-            let user_data_enc = poseidon_hash([witness.user_data, user_data_blind.clone().inner()]);
+            let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, witness.token_id, token_blind.clone().inner()]);
+            let user_data_enc = poseidon_hash([DRK_POSEIDON_DOMAIN_USER_DATA_ENC, witness.user_data, user_data_blind.clone().inner()]);
             let call_input = crate::model::Input {
                 value_commit,
                 token_commit,
@@ -271,7 +272,7 @@ impl TransferCallBuilder {
             });
         }
 
-        let tx_binding = poseidon_hash([self.tx_commitment, self.tx_nonce]);
+        let tx_binding = poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, self.tx_commitment, self.tx_nonce]);
 
         Ok(TransferCallDebris {
             params: TransferParamsV1 {

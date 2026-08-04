@@ -145,6 +145,7 @@ impl CommitSpinV1Builder {
 
         // Derive spin_id
         let spin_id = poseidon_hash([
+            pallas::Base::from(4),
             player_pub.x().expect("pk not identity"),
             player_pub.y().expect("pk not identity"),
             pallas::Base::from(self.bet_value),

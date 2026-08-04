@@ -125,13 +125,13 @@ impl ExecuteSwapFeeCallData {
     /// Compute public inputs for this call
     pub fn compute_public_inputs(&self) -> ExecuteSwapFeePublicInputs {
         // Compute Alice's nullifier
-        let alice_nullifier = poseidon_hash([self.alice_secret, self.alice_lock]);
+        let alice_nullifier = poseidon_hash([pallas::Base::from(1u64), self.alice_secret, self.alice_lock]);
 
         // Compute Bob's nullifier
-        let bob_nullifier = poseidon_hash([self.bob_secret, self.bob_lock]);
+        let bob_nullifier = poseidon_hash([pallas::Base::from(1u64), self.bob_secret, self.bob_lock]);
 
         // Compute swap ID
-        let swap_id = poseidon_hash([self.alice_lock, self.bob_token, self.bob_amount]);
+        let swap_id = poseidon_hash([pallas::Base::from(4u64), self.alice_lock, self.bob_token, self.bob_amount]);
 
         ExecuteSwapFeePublicInputs {
             alice_lock: self.alice_lock,

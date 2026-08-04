@@ -456,8 +456,8 @@ impl Bet {
         instance_seed: [u8; 32],
     ) -> Option<Self> {
         let bet_id =
-            poseidon_hash([table_id, player_pub.x().expect("pk not identity"), player_pub.y().expect("pk not identity"), pallas::Base::from(amount)]);
-        let nullifier = poseidon_hash([bet_id, pallas::Base::from(current_block)]);
+            poseidon_hash([pallas::Base::from(4), table_id, player_pub.x().expect("pk not identity"), player_pub.y().expect("pk not identity"), pallas::Base::from(amount)]);
+        let nullifier = poseidon_hash([pallas::Base::from(4), bet_id, pallas::Base::from(current_block)]);
 
         Some(Self {
             bet_id,

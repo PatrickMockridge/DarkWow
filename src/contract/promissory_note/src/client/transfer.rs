@@ -208,16 +208,25 @@ impl TransferCallBuilder {
         let mut inputs = vec![];
         let mut outputs = vec![];
 
+        // Pre-generate value_blinds so burn and output proofs share the same
+        // blind per input-output pair. Pedersen value conservation requires
+        // equal value AND equal blind for matching input/output commitments.
+        let pair_blinds: Vec<ScalarBlind> = (0..self.inputs.len().max(self.outputs.len()))
+            .map(|_| ScalarBlind::random(&mut OsRng))
+            .collect();
+
         // Build burn proofs for inputs
-        for input in self.inputs.clone() {
-            let value_blind = ScalarBlind::random(&mut OsRng);
-            let token_id_blind = BaseBlind::random(&mut OsRng);
+        for (i, input) in self.inputs.clone().iter().enumerate() {
+            let value_blind = pair_blinds[i].clone();
+            // Deterministic token_id_blind: same blind for all proofs of this token_id,
+            // so token_commit matches between burn and output for value conservation.
+            let token_id_blind = Blind(poseidon_hash([input.token_id]));
             let user_data_blind = BaseBlind::random(&mut OsRng);
 
             let (burn_proof, revealed) = create_transfer_burn_proof(
                 &self.revoke_zkbin,
                 &self.revoke_pk,
-                &input,
+                input,
                 value_blind,
                 token_id_blind,
                 user_data_blind,
@@ -237,14 +246,16 @@ impl TransferCallBuilder {
         }
 
         // Build blind output proofs for outputs
-        for output in self.outputs.clone() {
-            let value_blind = ScalarBlind::random(&mut OsRng);
-            let token_id_blind = BaseBlind::random(&mut OsRng);
+        for (i, output) in self.outputs.clone().iter().enumerate() {
+            // Match the corresponding input's value_blind for Pedersen conservation.
+            let value_blind = pair_blinds[i].clone();
+            // Deterministic token_id_blind: matches burn proof for value conservation.
+            let token_id_blind = Blind(poseidon_hash([output.token_id]));
 
             let (transfer_proof, revealed) = create_transfer_transfer_proof(
                 &self.transfer_zkbin,
                 &self.transfer_pk,
-                &output,
+                output,
                 value_blind.clone(),
                 token_id_blind.clone(),
                 pallas::Base::zero(),
@@ -305,8 +316,9 @@ fn create_transfer_burn_proof(
     token_id_blind: BaseBlind,
     user_data_blind: BaseBlind,
 ) -> Result<(Proof, TransferRevokeRevealed)> {
-    // Derive public key from secret using Poseidon (Schnorr-style)
-    let public_key = poseidon_hash([input.secret]);
+    // Derive public key from secret using Poseidon (Schnorr-style).
+    // V2 circuit domain separator: DOMAIN_SIGNATURE_SECRET = 7.
+    let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
 
     let commitment = CapAttrs {
         public_key,
@@ -340,13 +352,16 @@ fn create_transfer_burn_proof(
     let value_commit = pedersen_commitment_u64(input.value, value_blind.clone());
 
     // Token commitment
-    let token_commit = poseidon_hash([input.token_id, token_id_blind.inner()]);
+    // V2 circuit domain separator: DOMAIN_TOK_COMMIT = 2.
+    let token_commit = poseidon_hash([pallas::Base::from(2), input.token_id, token_id_blind.inner()]);
 
-    // User data encryption
-    let user_data_enc = poseidon_hash([input.user_data, user_data_blind.inner()]);
+    // User data encryption.
+    // V2 circuit domain separator: DOMAIN_USER_DATA_ENC = 6.
+    let user_data_enc = poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]);
 
-    // Signature public key
-    let signature_public = poseidon_hash([input.ephemeral_signature_secret]);
+    // Signature public key.
+    // V2 circuit domain separator: DOMAIN_SIGNATURE_SECRET = 7.
+    let signature_public = poseidon_hash([pallas::Base::from(7), input.ephemeral_signature_secret]);
 
     let public_inputs = TransferRevokeRevealed {
         nullifier,
@@ -415,7 +430,8 @@ fn create_transfer_transfer_proof(
     let value_commit = pedersen_commitment_u64(output.value, value_blind.clone());
 
     // Token commitment - now ZK-constrained in BlindOutputV1
-    let token_commit = poseidon_hash([output.token_id, token_id_blind.inner()]);
+    // V2 circuit domain separator: DOMAIN_TOK_COMMIT = 2.
+    let token_commit = poseidon_hash([pallas::Base::from(2), output.token_id, token_id_blind.inner()]);
 
     let public_inputs =
         TransferBlindOutputRevealed { commitment, value_commit, token_commit, spend_hook: output.spend_hook, tx_binding: pallas::Base::zero(), tx_nonce };

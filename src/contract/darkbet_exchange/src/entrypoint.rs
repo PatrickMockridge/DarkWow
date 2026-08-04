@@ -149,7 +149,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::DARKBET_EXCHANGE_ZKAS_CREATE_MARKET_NS_V2.to_string(),
-                vec![market_id],
+                vec![market_id, pallas::Base::zero(), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -174,7 +174,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::DARKBET_EXCHANGE_ZKAS_ADD_LIQUIDITY_NS_V2.to_string(),
-                vec![lp_share_id, *vc_coords.x(), *vc_coords.y()],
+                vec![lp_share_id, *vc_coords.x(), *vc_coords.y(), pallas::Base::zero(), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -201,7 +201,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::DARKBET_EXCHANGE_ZKAS_BUY_POSITION_NS_V2.to_string(),
-                vec![position_id, *vc_coords.x(), *vc_coords.y()],
+                vec![position_id, *vc_coords.x(), *vc_coords.y(), pallas::Base::zero(), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -222,7 +222,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::DARKBET_EXCHANGE_ZKAS_CLAIM_WINNINGS_NS_V2.to_string(),
-                vec![claim_id],
+                vec![claim_id, pallas::Base::zero(), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;

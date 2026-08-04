@@ -47,14 +47,7 @@ pub struct RefundBidV1PublicInputs {
 
 impl RefundBidV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.bid_id,
-            self.bidder_pub_x,
-            self.bidder_pub_y,
-            self.refund_nullifier,
-            self.tx_binding,
-            self.tx_nonce,
-        ]
+        vec![self.refund_nullifier, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -76,7 +69,7 @@ impl RefundBidV1CallData {
 
     /// Compute refund nullifier from bid_id and bidder_secret
     pub fn compute_refund_nullifier(&self) -> pallas::Base {
-        poseidon_hash([self.bid_id, self.bidder_secret])
+        poseidon_hash([pallas::Base::from(1u64), self.bid_id, self.bidder_secret])
     }
 
     pub fn compute_public_inputs(&self) -> RefundBidV1PublicInputs {

@@ -298,7 +298,8 @@ fn create_redeem_burn_proof(
     tx_commitment: pallas::Base,
     tx_nonce: pallas::Base,
 ) -> Result<(Proof, RedeemRevokeRevealed)> {
-    let public_key = poseidon_hash([input.secret]);
+    // V2 circuit domain separator: DOMAIN_SIGNATURE_SECRET = 7.
+    let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
 
     let commitment = CapAttrs {
         public_key,
@@ -327,9 +328,12 @@ fn create_redeem_burn_proof(
     };
 
     let value_commit = pedersen_commitment_u64(input.value, value_blind.clone());
-    let token_commit = poseidon_hash([input.token_id, token_id_blind.inner()]);
-    let user_data_enc = poseidon_hash([input.user_data, user_data_blind.inner()]);
-    let signature_public = poseidon_hash([input.ephemeral_signature_secret]);
+    // V2 circuit domain separator: DOMAIN_TOK_COMMIT = 2.
+    let token_commit = poseidon_hash([pallas::Base::from(2), input.token_id, token_id_blind.inner()]);
+    // V2 circuit domain separator: DOMAIN_USER_DATA_ENC = 6.
+    let user_data_enc = poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]);
+    // V2 circuit domain separator: DOMAIN_SIGNATURE_SECRET = 7.
+    let signature_public = poseidon_hash([pallas::Base::from(7), input.ephemeral_signature_secret]);
 
     let public_inputs = RedeemRevokeRevealed {
         nullifier,
@@ -396,7 +400,8 @@ fn create_redeem_receipt_proof(
     let commitment = attrs.to_commitment();
 
     let value_commit = pedersen_commitment_u64(0, value_blind.clone());
-    let token_commit = poseidon_hash([output.token_id, token_id_blind.inner()]);
+    // V2 circuit domain separator: DOMAIN_TOK_COMMIT = 2.
+    let token_commit = poseidon_hash([pallas::Base::from(2), output.token_id, token_id_blind.inner()]);
 
     let public_inputs = RedeemReceiptRevealed {
         commitment,

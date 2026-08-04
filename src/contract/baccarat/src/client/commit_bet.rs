@@ -93,6 +93,7 @@ impl CommitBetV1CallData {
 
     pub fn compute_public_inputs(&self) -> CommitBetV1PublicInputs {
         let bet_id = poseidon_hash([
+            pallas::Base::from(4),
             self.player_pub_x,
             self.player_pub_y,
             self.bet_type,

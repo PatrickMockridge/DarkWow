@@ -85,12 +85,13 @@ impl PlaceBetV1CallData {
 
     pub fn compute_public_inputs(&self) -> PlaceBetV1PublicInputs {
         let bet_id = poseidon_hash([
+            pallas::Base::from(4),
             self.table_id,
             self.player_pub_x,
             self.player_pub_y,
             pallas::Base::from(self.amount),
         ]);
-        let nullifier = poseidon_hash([bet_id, self.nonce]);
+        let nullifier = poseidon_hash([pallas::Base::from(4), bet_id, self.nonce]);
         PlaceBetV1PublicInputs { bet_id, nullifier, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
     }
 

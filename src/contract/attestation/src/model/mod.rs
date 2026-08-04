@@ -337,7 +337,7 @@ pub struct CreateAttestationParamsV1 {
 
 impl dwow_serial::Encodable for CreateAttestationParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateAttestationParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl CreateAttestationParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(68+self.proof.len()+self.claim_data.len()*32+self.metadata.len()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.attestation_id.to_bytes()); b.extend_from_slice(&self.attestor_pub.to_bytes()); b.extend_from_slice(&self.claim_type.encode()); b.push(self.claim_data.len() as u8); for d in &self.claim_data { b.extend_from_slice(&d.to_repr()); } b.push(self.metadata.len() as u8); b.extend_from_slice(&self.metadata); b.push(self.expires_at.is_some() as u8); if let Some(e) = self.expires_at { b.extend_from_slice(&e.to_le_bytes()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 68 { return Err(ContractError::IoError("CreateAttestationParamsV1: too short".into())); } let proof_len = data[0] as usize; let mut pos = 1+proof_len; if data.len() < pos+64+1 { return Err(ContractError::IoError("CreateAttestationParamsV1: truncated".into())); } let proof = data[1..pos].to_vec(); let attestation_id = AttestationId::from_bytes(data[pos..pos+32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("CreateAttestationParamsV1: invalid attestation_id".into()))?; pos += 32; let attestor_pub = PublicKey::from_bytes(data[pos..pos+32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateAttestationParamsV1: invalid attestor_pub: {}", e)))?; pos += 32; let claim_type = Predicate::decode(&data[pos..pos+1])?; pos += 1; let cd_count = data[pos] as usize; pos += 1; if data.len() < pos+cd_count*32+1 { return Err(ContractError::IoError("CreateAttestationParamsV1: claim_data truncated".into())); } let mut claim_data = Vec::with_capacity(cd_count); for i in 0..cd_count { claim_data.push(Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+i*32..pos+(i+1)*32].try_into().unwrap())).ok_or_else(|| ContractError::IoError(format!("CreateAttestationParamsV1: invalid claim_data[{}]", i)))?); } pos += cd_count*32; let md_len = data[pos] as usize; pos += 1; if data.len() < pos+md_len+1 { return Err(ContractError::IoError("CreateAttestationParamsV1: metadata truncated".into())); } let metadata = data[pos..pos+md_len].to_vec(); pos += md_len; let has_expiry = data[pos] != 0; let expires_at = if has_expiry { if data.len() != pos+9 { return Err(ContractError::IoError(format!("CreateAttestationParamsV1: expected {} bytes, got {}", pos+9, data.len()))); } Some(u64::from_le_bytes(data[pos+1..pos+9].try_into().unwrap())) } else { None }; Ok(CreateAttestationParamsV1 { proof, attestation_id, attestor_pub, claim_type, claim_data, metadata, expires_at }) } }
+impl CreateAttestationParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(71+self.proof.len()+self.claim_data.len()*32+self.metadata.len()); b.extend_from_slice(&(self.proof.len() as u32).to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.attestation_id.to_bytes()); b.extend_from_slice(&self.attestor_pub.to_bytes()); b.extend_from_slice(&self.claim_type.encode()); b.push(self.claim_data.len() as u8); for d in &self.claim_data { b.extend_from_slice(&d.to_repr()); } b.push(self.metadata.len() as u8); b.extend_from_slice(&self.metadata); b.push(self.expires_at.is_some() as u8); if let Some(e) = self.expires_at { b.extend_from_slice(&e.to_le_bytes()); } b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 71 { return Err(ContractError::IoError("CreateAttestationParamsV1: too short".into())); } let proof_len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize; let mut pos = 4+proof_len; if data.len() < pos+64+1 { return Err(ContractError::IoError("CreateAttestationParamsV1: truncated".into())); } let proof = data[4..pos].to_vec(); let attestation_id = AttestationId::from_bytes(data[pos..pos+32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("CreateAttestationParamsV1: invalid attestation_id".into()))?; pos += 32; let attestor_pub = PublicKey::from_bytes(data[pos..pos+32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateAttestationParamsV1: invalid attestor_pub: {}", e)))?; pos += 32; let claim_type = Predicate::decode(&data[pos..pos+1])?; pos += 1; let cd_count = data[pos] as usize; pos += 1; if data.len() < pos+cd_count*32+1 { return Err(ContractError::IoError("CreateAttestationParamsV1: claim_data truncated".into())); } let mut claim_data = Vec::with_capacity(cd_count); for i in 0..cd_count { claim_data.push(Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+i*32..pos+(i+1)*32].try_into().unwrap())).ok_or_else(|| ContractError::IoError(format!("CreateAttestationParamsV1: invalid claim_data[{}]", i)))?); } pos += cd_count*32; let md_len = data[pos] as usize; pos += 1; if data.len() < pos+md_len+1 { return Err(ContractError::IoError("CreateAttestationParamsV1: metadata truncated".into())); } let metadata = data[pos..pos+md_len].to_vec(); pos += md_len; let has_expiry = data[pos] != 0; let expires_at = if has_expiry { if data.len() != pos+9 { return Err(ContractError::IoError(format!("CreateAttestationParamsV1: expected {} bytes, got {}", pos+9, data.len()))); } Some(u64::from_le_bytes(data[pos+1..pos+9].try_into().unwrap())) } else { None }; Ok(CreateAttestationParamsV1 { proof, attestation_id, attestor_pub, claim_type, claim_data, metadata, expires_at }) } }
 
 /// State update for CreateAttestationV1
 #[derive(Debug, Clone)]
@@ -428,7 +428,7 @@ pub struct CreateClaimParamsV1 {
 
 impl dwow_serial::Encodable for CreateClaimParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateClaimParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl CreateClaimParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(99+self.proof.len()+self.evidence_commitment.len()+self.revealed_result.len()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.claim_id.to_bytes()); b.extend_from_slice(&self.attestation_id.to_bytes()); b.extend_from_slice(&self.claimant_pub.to_bytes()); b.extend_from_slice(&self.predicate.encode()); b.push(self.evidence_commitment.len() as u8); b.extend_from_slice(&self.evidence_commitment); b.push(self.revealed_result.len() as u8); b.extend_from_slice(&self.revealed_result); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 99 { return Err(ContractError::IoError("CreateClaimParamsV1: too short".into())); } let proof_len = data[0] as usize; let mut pos = 1+proof_len; if data.len() < pos+96+2 { return Err(ContractError::IoError("CreateClaimParamsV1: truncated".into())); } let proof = data[1..pos].to_vec(); let claim_id = ClaimId::from_bytes(data[pos..pos+32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("CreateClaimParamsV1: invalid claim_id".into()))?; pos += 32; let attestation_id = AttestationId::from_bytes(data[pos..pos+32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("CreateClaimParamsV1: invalid attestation_id".into()))?; pos += 32; let claimant_pub = PublicKey::from_bytes(data[pos..pos+32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateClaimParamsV1: invalid claimant_pub: {}", e)))?; pos += 32; let predicate = Predicate::decode(&data[pos..pos+1])?; pos += 1; let ec_len = data[pos] as usize; pos += 1; if data.len() < pos+ec_len+1 { return Err(ContractError::IoError("CreateClaimParamsV1: evidence truncated".into())); } let evidence_commitment = data[pos..pos+ec_len].to_vec(); pos += ec_len; let rr_len = data[pos] as usize; pos += 1; if data.len() != pos+rr_len { return Err(ContractError::IoError(format!("CreateClaimParamsV1: expected {} bytes, got {}", pos+rr_len, data.len()))); } let revealed_result = data[pos..].to_vec(); Ok(CreateClaimParamsV1 { proof, claim_id, attestation_id, claimant_pub, predicate, evidence_commitment, revealed_result }) } }
+impl CreateClaimParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(102+self.proof.len()+self.evidence_commitment.len()+self.revealed_result.len()); b.extend_from_slice(&(self.proof.len() as u32).to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.claim_id.to_bytes()); b.extend_from_slice(&self.attestation_id.to_bytes()); b.extend_from_slice(&self.claimant_pub.to_bytes()); b.extend_from_slice(&self.predicate.encode()); b.push(self.evidence_commitment.len() as u8); b.extend_from_slice(&self.evidence_commitment); b.push(self.revealed_result.len() as u8); b.extend_from_slice(&self.revealed_result); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 102 { return Err(ContractError::IoError("CreateClaimParamsV1: too short".into())); } let proof_len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize; let mut pos = 4+proof_len; if data.len() < pos+96+2 { return Err(ContractError::IoError("CreateClaimParamsV1: truncated".into())); } let proof = data[4..pos].to_vec(); let claim_id = ClaimId::from_bytes(data[pos..pos+32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("CreateClaimParamsV1: invalid claim_id".into()))?; pos += 32; let attestation_id = AttestationId::from_bytes(data[pos..pos+32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("CreateClaimParamsV1: invalid attestation_id".into()))?; pos += 32; let claimant_pub = PublicKey::from_bytes(data[pos..pos+32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateClaimParamsV1: invalid claimant_pub: {}", e)))?; pos += 32; let predicate = Predicate::decode(&data[pos..pos+1])?; pos += 1; let ec_len = data[pos] as usize; pos += 1; if data.len() < pos+ec_len+1 { return Err(ContractError::IoError("CreateClaimParamsV1: evidence truncated".into())); } let evidence_commitment = data[pos..pos+ec_len].to_vec(); pos += ec_len; let rr_len = data[pos] as usize; pos += 1; if data.len() != pos+rr_len { return Err(ContractError::IoError(format!("CreateClaimParamsV1: expected {} bytes, got {}", pos+rr_len, data.len()))); } let revealed_result = data[pos..].to_vec(); Ok(CreateClaimParamsV1 { proof, claim_id, attestation_id, claimant_pub, predicate, evidence_commitment, revealed_result }) } }
 
 /// State update for CreateClaimV1
 #[derive(Debug, Clone)]
@@ -611,8 +611,8 @@ impl dwow_serial::Encodable for DelegateAttestationParamsV1 { fn encode<W: std::
 impl dwow_serial::Decodable for DelegateAttestationParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl DelegateAttestationParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(267 + self.proof.len());
-        b.push(self.proof.len() as u8);
+        let mut b = Vec::with_capacity(270 + self.proof.len());
+        b.extend_from_slice(&(self.proof.len() as u32).to_le_bytes());
         b.extend_from_slice(&self.proof);
         b.extend_from_slice(&self.delegation_id.to_repr());
         b.extend_from_slice(&self.parent_id.to_repr());
@@ -630,13 +630,13 @@ impl DelegateAttestationParamsV1 {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 1 {
+        if data.len() < 4 {
             return Err(ContractError::IoError(
                 "DelegateAttestationParamsV1: data too short for proof length".into(),
             ));
         }
-        let proof_len = data[0] as usize;
-        let fixed_start = 1 + proof_len;
+        let proof_len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
+        let fixed_start = 4 + proof_len;
         if data.len() < fixed_start + 266 {
             return Err(ContractError::IoError(format!(
                 "DelegateAttestationParamsV1: expected at least {} bytes, got {}",
@@ -644,7 +644,7 @@ impl DelegateAttestationParamsV1 {
                 data.len()
             )));
         }
-        let proof = data[1..1 + proof_len].to_vec();
+        let proof = data[4..4 + proof_len].to_vec();
         let d = &data[fixed_start..];
         let delegation_id =
             Option::<pallas::Base>::from(pallas::Base::from_repr(d[0..32].try_into().unwrap()))
@@ -745,7 +745,7 @@ pub struct CheckNotRevokedParamsV1 {
 
 impl dwow_serial::Encodable for CheckNotRevokedParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CheckNotRevokedParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl CheckNotRevokedParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(65+self.proof.len()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.revocation_root.to_repr()); b.extend_from_slice(&self.nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 65 { return Err(ContractError::IoError("CheckNotRevokedParamsV1: too short".into())); } let proof_len = data[0] as usize; let pos = 1+proof_len; if data.len() != pos+64 { return Err(ContractError::IoError(format!("CheckNotRevokedParamsV1: expected {} bytes, got {}", pos+64, data.len()))); } let proof = data[1..pos].to_vec(); let revocation_root = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CheckNotRevokedParamsV1: invalid revocation_root".into()))?; let nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CheckNotRevokedParamsV1: invalid nonce".into()))?; Ok(CheckNotRevokedParamsV1 { proof, revocation_root, nonce }) } }
+impl CheckNotRevokedParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(68+self.proof.len()); b.extend_from_slice(&(self.proof.len() as u32).to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.revocation_root.to_repr()); b.extend_from_slice(&self.nonce.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 68 { return Err(ContractError::IoError("CheckNotRevokedParamsV1: too short".into())); } let proof_len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize; let pos = 4+proof_len; if data.len() != pos+64 { return Err(ContractError::IoError(format!("CheckNotRevokedParamsV1: expected {} bytes, got {}", pos+64, data.len()))); } let proof = data[4..pos].to_vec(); let revocation_root = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos..pos+32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CheckNotRevokedParamsV1: invalid revocation_root".into()))?; let nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CheckNotRevokedParamsV1: invalid nonce".into()))?; Ok(CheckNotRevokedParamsV1 { proof, revocation_root, nonce }) } }
 
 /// State update for CheckNotRevokedV1
 #[derive(Debug, Clone)]
@@ -775,7 +775,7 @@ pub struct VerifyChainParamsV1 {
 
 impl dwow_serial::Encodable for VerifyChainParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for VerifyChainParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl VerifyChainParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(129+self.proof.len()); b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.delegation_id.to_repr()); b.extend_from_slice(&self.parent_id.to_repr()); b.extend_from_slice(&self.chain_root.to_repr()); b.extend_from_slice(&self.current_depth.to_repr()); b.extend_from_slice(&self.max_depth.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 129 { return Err(ContractError::IoError("VerifyChainParamsV1: too short".into())); } let proof_len = data[0] as usize; let pos = 1+proof_len; if data.len() != pos+160 { return Err(ContractError::IoError(format!("VerifyChainParamsV1: expected {} bytes, got {}", pos+160, data.len()))); } let proof = data[1..pos].to_vec(); fn rb(d: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(d.try_into().unwrap())).ok_or_else(|| ContractError::IoError("VerifyChainParamsV1: invalid field".into())) } Ok(VerifyChainParamsV1 { proof, delegation_id: rb(&data[pos..pos+32])?, parent_id: rb(&data[pos+32..pos+64])?, chain_root: rb(&data[pos+64..pos+96])?, current_depth: rb(&data[pos+96..pos+128])?, max_depth: rb(&data[pos+128..pos+160])? }) } }
+impl VerifyChainParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(132+self.proof.len()); b.extend_from_slice(&(self.proof.len() as u32).to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.delegation_id.to_repr()); b.extend_from_slice(&self.parent_id.to_repr()); b.extend_from_slice(&self.chain_root.to_repr()); b.extend_from_slice(&self.current_depth.to_repr()); b.extend_from_slice(&self.max_depth.to_repr()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 132 { return Err(ContractError::IoError("VerifyChainParamsV1: too short".into())); } let proof_len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize; let pos = 4+proof_len; if data.len() != pos+160 { return Err(ContractError::IoError(format!("VerifyChainParamsV1: expected {} bytes, got {}", pos+160, data.len()))); } let proof = data[4..pos].to_vec(); fn rb(d: &[u8]) -> Result<pallas::Base, ContractError> { Option::<pallas::Base>::from(pallas::Base::from_repr(d.try_into().unwrap())).ok_or_else(|| ContractError::IoError("VerifyChainParamsV1: invalid field".into())) } Ok(VerifyChainParamsV1 { proof, delegation_id: rb(&data[pos..pos+32])?, parent_id: rb(&data[pos+32..pos+64])?, chain_root: rb(&data[pos+64..pos+96])?, current_depth: rb(&data[pos+96..pos+128])?, max_depth: rb(&data[pos+128..pos+160])? }) } }
 
 /// State update for VerifyChainV1
 #[derive(Debug, Clone)]
@@ -809,8 +809,8 @@ impl dwow_serial::Encodable for UpdateDelegationParamsV1 { fn encode<W: std::io:
 impl dwow_serial::Decodable for UpdateDelegationParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl UpdateDelegationParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(74 + self.proof.len());
-        b.push(self.proof.len() as u8);
+        let mut b = Vec::with_capacity(77 + self.proof.len());
+        b.extend_from_slice(&(self.proof.len() as u32).to_le_bytes());
         b.extend_from_slice(&self.proof);
         b.extend_from_slice(&self.original_attestation_id.to_repr());
         b.push(self.delegation_type);
@@ -823,13 +823,13 @@ impl UpdateDelegationParamsV1 {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 1 {
+        if data.len() < 4 {
             return Err(ContractError::IoError(
                 "UpdateDelegationParamsV1: data too short for proof length".into(),
             ));
         }
-        let proof_len = data[0] as usize;
-        let fixed_start = 1 + proof_len;
+        let proof_len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
+        let fixed_start = 4 + proof_len;
         if data.len() < fixed_start + 73 {
             return Err(ContractError::IoError(format!(
                 "UpdateDelegationParamsV1: expected at least {} bytes, got {}",
@@ -837,7 +837,7 @@ impl UpdateDelegationParamsV1 {
                 data.len()
             )));
         }
-        let proof = data[1..1 + proof_len].to_vec();
+        let proof = data[4..4 + proof_len].to_vec();
         let d = &data[fixed_start..];
         let original_attestation_id =
             Option::<pallas::Base>::from(pallas::Base::from_repr(d[0..32].try_into().unwrap()))

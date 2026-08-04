@@ -34,13 +34,13 @@ use dwow_sdk::{
 };
 use rand::rngs::OsRng;
 
-/// AddLiquidityV1 circuit public inputs (6 - matching what circuit exposes)
+/// AddLiquidityV2 circuit public inputs (domain-separated, matching circuit constrain_instance order)
 #[derive(Debug, Clone)]
 pub struct AddLiquidityV1PublicInputs {
     pub derived_lp_share_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
-    pub provider_nullifier: pallas::Base,
+    pub computed_nullifier: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -49,9 +49,7 @@ impl AddLiquidityV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.derived_lp_share_id,
-            self.value_commit_x,
-            self.value_commit_y,
-            self.provider_nullifier,
+            self.computed_nullifier,
             self.tx_binding,
             self.tx_nonce,
         ]
@@ -98,20 +96,21 @@ impl AddLiquidityV1CallData {
 
     pub fn compute_public_inputs(&self) -> AddLiquidityV1PublicInputs {
         let derived_lp_share_id = poseidon_hash([
+            pallas::Base::from(4u64),
             self.market_id,
             self.provider_pub_x,
             self.provider_pub_y,
             pallas::Base::from(self.amount),
             pallas::Base::from(self.block_height),
         ]);
-        let provider_nullifier = poseidon_hash([derived_lp_share_id, self.provider_secret]);
+        let computed_nullifier = poseidon_hash([pallas::Base::from(1u64), derived_lp_share_id, self.provider_secret]);
         // value_commit cannot be computed outside circuit (EC operations)
         // Use zero as placeholder - circuit will use actual EC values
         AddLiquidityV1PublicInputs {
             derived_lp_share_id,
             value_commit_x: pallas::Base::zero(),
             value_commit_y: pallas::Base::zero(),
-            provider_nullifier,
+            computed_nullifier,
             tx_binding: pallas::Base::zero(),
             tx_nonce: self.tx_nonce,
         }

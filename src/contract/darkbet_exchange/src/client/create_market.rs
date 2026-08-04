@@ -34,17 +34,18 @@ use dwow_sdk::{
 };
 use rand::rngs::OsRng;
 
-/// CreateMarketV1 circuit public inputs (only 1 - matching what circuit exposes)
+/// CreateMarketV2 circuit public inputs (domain-separated, matching circuit constrain_instance order)
 #[derive(Debug, Clone)]
 pub struct CreateMarketV1PublicInputs {
     pub derived_market_id: pallas::Base,
+    pub computed_nullifier: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl CreateMarketV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.derived_market_id, self.tx_binding, self.tx_nonce]
+        vec![self.derived_market_id, self.computed_nullifier, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -74,14 +75,15 @@ impl CreateMarketV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> CreateMarketV1PublicInputs {
-        // NOTE: nonce is NOT included in the hash - the circuit doesn't use it
         let derived_market_id = poseidon_hash([
+            pallas::Base::from(4u64),
             self.creator_pub_x,
             self.creator_pub_y,
             pallas::Base::from(self.close_block),
             pallas::Base::from(self.block_height),
         ]);
-        CreateMarketV1PublicInputs { derived_market_id, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
+        let computed_nullifier = poseidon_hash([pallas::Base::from(1u64), derived_market_id, self.creator_secret]);
+        CreateMarketV1PublicInputs { derived_market_id, computed_nullifier, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {

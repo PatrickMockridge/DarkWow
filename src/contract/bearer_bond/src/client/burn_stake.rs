@@ -184,7 +184,7 @@ fn create_burn_stake_proof(
     token_id_blind: BaseBlind,
     user_data_blind: BaseBlind,
 ) -> Result<(Proof, BurnStakeRevealed)> {
-    let public_key = poseidon_hash([input.secret]);
+    let public_key = poseidon_hash([pallas::Base::from(7), input.secret]);
 
     let coin = CoinAttributes {
         public_key,
@@ -214,9 +214,9 @@ fn create_burn_stake_proof(
     };
 
     let value_commit = pedersen_commitment_u64(input.principal, value_blind.clone());
-    let token_commit = poseidon_hash([input.token_id, token_id_blind.inner()]);
-    let user_data_enc = poseidon_hash([input.user_data, user_data_blind.inner()]);
-    let signature_public = poseidon_hash([input.ephemeral_signature_secret]);
+    let token_commit = poseidon_hash([pallas::Base::from(2), input.token_id, token_id_blind.inner()]);
+    let user_data_enc = poseidon_hash([pallas::Base::from(6), input.user_data, user_data_blind.inner()]);
+    let signature_public = poseidon_hash([pallas::Base::from(7), input.ephemeral_signature_secret]);
 
     let public_inputs = BurnStakeRevealed {
         nullifier,

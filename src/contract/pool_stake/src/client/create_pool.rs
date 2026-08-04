@@ -76,6 +76,7 @@ impl CreatePoolV1CallData {
 
     pub fn compute_public_inputs(&self) -> CreatePoolV1PublicInputs {
         let derived_pool_id = poseidon_hash([
+            pallas::Base::from(4),
             self.creator_pub_x,
             self.creator_pub_y,
             self.pool_config_hash,

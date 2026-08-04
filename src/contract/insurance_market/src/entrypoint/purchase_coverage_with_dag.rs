@@ -45,7 +45,7 @@ use crate::model::{
 use crate::{
     INSURANCE_CONTRACT_COVERAGES_TREE, INSURANCE_CONTRACT_MARKETS_TREE,
     INSURANCE_CONTRACT_UNDERWRITERS_TREE, INSURANCE_MARKET_NULLIFIERS_TREE,
-    INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_DAG_NS_V1,
+    INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_DAG_NS_V2,
 };
 
 /// Process instruction for PurchaseCoverageWithDAGV1
@@ -242,7 +242,7 @@ pub fn purchase_coverage_with_dag_get_metadata_v1(
     let (buyer_x, buyer_y) = params.buyer.xy().expect("pk not identity");
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((
-        INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_DAG_NS_V1.to_string(),
+        INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_DAG_NS_V2.to_string(),
         vec![buyer_x, buyer_y, params.buyer_nullifier],
     ));
     let mut metadata = vec![];

@@ -395,27 +395,27 @@ impl super::ContractHarness for BettingStakeHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["Init", "Stake", "Unstake", "Claim", "UpdateRisk"]
+        vec!["InitV2", "StakeV2", "UnstakeV2", "ClaimV2", "UpdateRiskV2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "Init" => Some(&self.init_zkbin),
-            "Stake" => Some(&self.stake_zkbin),
-            "Unstake" => Some(&self.unstake_zkbin),
-            "Claim" => Some(&self.claim_zkbin),
-            "UpdateRisk" => Some(&self.update_risk_zkbin),
+            "InitV2" => Some(&self.init_zkbin),
+            "StakeV2" => Some(&self.stake_zkbin),
+            "UnstakeV2" => Some(&self.unstake_zkbin),
+            "ClaimV2" => Some(&self.claim_zkbin),
+            "UpdateRiskV2" => Some(&self.update_risk_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "Init" => Some(&self.init_pk),
-            "Stake" => Some(&self.stake_pk),
-            "Unstake" => Some(&self.unstake_pk),
-            "Claim" => Some(&self.claim_pk),
-            "UpdateRisk" => Some(&self.update_risk_pk),
+            "InitV2" => Some(&self.init_pk),
+            "StakeV2" => Some(&self.stake_pk),
+            "UnstakeV2" => Some(&self.unstake_pk),
+            "ClaimV2" => Some(&self.claim_pk),
+            "UpdateRiskV2" => Some(&self.update_risk_pk),
             _ => None,
         }
     }

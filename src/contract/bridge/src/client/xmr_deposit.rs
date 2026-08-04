@@ -147,16 +147,16 @@ impl XmrDepositCallData {
     /// Derive bridge address from recipient identity and nonce
     pub fn derive_bridge_address(&self) -> pallas::Base {
         let (pub_x, pub_y) = self.recipient_public.xy().expect("pk not identity");
-        let bridge_secret = poseidon_hash([pub_x, pub_y, pallas::Base::from(self.bridge_nonce)]);
+        let bridge_secret = poseidon_hash([pallas::Base::from(7u64), pub_x, pub_y, pallas::Base::from(self.bridge_nonce)]);
         let bridge_pub = PublicKey::from_secret(SecretKey::from_base(bridge_secret));
         let (bridge_pub_x, bridge_pub_y) = bridge_pub.xy().expect("pk not identity");
-        poseidon_hash([bridge_pub_x, bridge_pub_y])
+        poseidon_hash([pallas::Base::from(4u64), bridge_pub_x, bridge_pub_y])
     }
 
-    /// Compute commitment: H(secret, amount, bridge_address)
+    /// Compute commitment: H(DOMAIN_COIN_COMMIT, secret, amount, bridge_address)
     pub fn compute_commitment(&self) -> pallas::Base {
         let bridge_address = self.derive_bridge_address();
-        poseidon_hash([self.secret, pallas::Base::from(self.amount), bridge_address])
+        poseidon_hash([pallas::Base::from(4u64), self.secret, pallas::Base::from(self.amount), bridge_address])
     }
 
     pub fn compute_public_inputs(&self) -> XmrDepositPublicInputs {

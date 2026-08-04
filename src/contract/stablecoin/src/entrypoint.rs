@@ -235,9 +235,11 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 Ok(p) => p, Err(e) => { msg!("[stablecoin::get_metadata] Error: Failed to deserialize InitializeParams: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
             };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // Order matches constrain_instance in init.zk:
+            // tx_binding, tx_nonce, deployer_auth
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_INIT_NS_V2.to_string(),
-                vec![params.deployer_auth],
+                vec![pallas::Base::zero(), pallas::Base::zero(), params.deployer_auth],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -366,19 +368,37 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 }
             };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // Order matches constrain_instance in update_config.zk:
+            // gov_pub_x, gov_pub_y, config_nullifier, tx_binding, tx_nonce
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2.to_string(),
-                vec![params.gov_pub_x, params.gov_pub_y, params.config_nullifier],
+                vec![params.gov_pub_x, params.gov_pub_y, params.config_nullifier, pallas::Base::zero(), pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::GovernanceReportV1 => {
+            let params = match GovernanceReportParams::decode(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[stablecoin::get_metadata] Error: Failed to deserialize GovernanceReportParams: {:?}", e);
+                    let _ = wasm::util::set_return_data(&vec![]); return Ok(());
+                }
+            };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // Order matches constrain_instance in governance_report.zk:
+            // total_collateral, total_debt, interest_accrued, report_timestamp, tx_binding, tx_nonce
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V2.to_string(),
-                vec![],
+                vec![
+                    pallas::Base::from(params.total_collateral),
+                    pallas::Base::from(params.total_debt),
+                    pallas::Base::from(params.interest_accrued),
+                    pallas::Base::from(params.report_timestamp),
+                    pallas::Base::zero(),
+                    pallas::Base::zero(),
+                ],
             ));
 
             let mut metadata = vec![];
@@ -386,10 +406,23 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             wasm::util::set_return_data(&metadata)
         }
         StablecoinFunction::AccrueInterestV1 => {
+            let params = match AccrueInterestParams::decode(&self_.data[1..]) {
+                Ok(p) => p,
+                Err(e) => {
+                    msg!("[stablecoin::get_metadata] Error: Failed to deserialize AccrueInterestParams: {:?}", e);
+                    let _ = wasm::util::set_return_data(&vec![]); return Ok(());
+                }
+            };
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            // Order matches constrain_instance in accrue_interest.zk:
+            // old_total_debt, tx_binding, tx_nonce
             zk_public_inputs.push((
                 STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V2.to_string(),
-                vec![],
+                vec![
+                    pallas::Base::from(params.old_total_debt),
+                    pallas::Base::zero(),
+                    pallas::Base::zero(),
+                ],
             ));
 
             let mut metadata = vec![];

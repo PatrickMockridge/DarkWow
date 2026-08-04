@@ -34,22 +34,23 @@ use dwow_sdk::{
 };
 use rand::rngs::OsRng;
 
-/// InitV1 circuit public inputs (only 2 - matching what circuit exposes)
+/// InitV2 circuit public inputs (4 — matching InitV2 circuit constrain_instance order)
+/// Circuit order: [dao_bulla, tx_binding, tx_nonce, endowment_bulla]
 #[derive(Debug, Clone)]
 pub struct InitV1PublicInputs {
     pub dao_bulla: pallas::Base,
-    pub endowment_bulla: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
+    pub endowment_bulla: pallas::Base,
 }
 
 impl InitV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.dao_bulla,
-            self.endowment_bulla,
             self.tx_binding,
             self.tx_nonce,
+            self.endowment_bulla,
         ]
     }
 }
@@ -95,8 +96,10 @@ impl InitV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> InitV1PublicInputs {
-        // Compute endowment_bulla = H(dao_bulla, owner_pub_x, owner_pub_y, endowment_token_id, bulla_blind)
+        // endowment_bulla = poseidon_hash(DOMAIN_COIN_COMMIT, dao_bulla, owner_pub_x, owner_pub_y,
+        //                                  endowment_token_id, bulla_blind)
         let endowment_bulla = poseidon_hash([
+            pallas::Base::from(4u64), // DOMAIN_COIN_COMMIT
             self.dao_bulla,
             self.owner_pub_x,
             self.owner_pub_y,
@@ -105,9 +108,9 @@ impl InitV1CallData {
         ]);
         InitV1PublicInputs {
             dao_bulla: self.dao_bulla,
-            endowment_bulla,
             tx_binding: pallas::Base::zero(),
             tx_nonce: self.tx_nonce,
+            endowment_bulla,
         }
     }
 

@@ -230,12 +230,12 @@ impl InitV1CallData {
 
     /// Compute the deployer authorization hash
     pub fn deployer_auth(&self) -> pallas::Base {
-        poseidon_hash([self.deployer_secret, self.contract_salt])
+        poseidon_hash([pallas::Base::from(7u64), self.deployer_secret, self.contract_salt])
     }
 
     /// Compute the transaction binding hash
     pub fn tx_binding(&self) -> pallas::Base {
-        poseidon_hash([self.tx_commitment, self.tx_nonce])
+        poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce])
     }
 
     /// Compute public inputs for this call

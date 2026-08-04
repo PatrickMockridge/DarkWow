@@ -90,9 +90,9 @@ impl CancelEscrowCallData {
         }
     }
 
-    /// Compute cancel nullifier: H(escrow_id, buyer_secret)
+    /// Compute cancel nullifier: H(DOMAIN_NULLIFIER, escrow_id, buyer_secret)
     pub fn compute_nullifier(&self) -> pallas::Base {
-        poseidon_hash([self.escrow_id, self.buyer_secret])
+        poseidon_hash([pallas::Base::from(1u64), self.escrow_id, self.buyer_secret])
     }
 
     pub fn compute_public_inputs(&self) -> CancelEscrowPublicInputs {

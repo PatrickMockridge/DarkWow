@@ -127,6 +127,7 @@ impl OtcSwap {
         let (ax, ay) = alice_pubkey.xy().expect("pk not identity");
         let (bx, by) = bob_pubkey.xy().expect("pk not identity");
         poseidon_hash([
+            pallas::Base::from(4),
             ax,
             ay,
             bx,
@@ -143,7 +144,7 @@ impl OtcSwap {
     /// Compute the nullifier that prevents double-execute or double-cancel
     #[allow(dead_code)]
     pub fn compute_nullifier(&self, secret: pallas::Base) -> pallas::Base {
-        poseidon_hash([self.id, secret])
+        poseidon_hash([pallas::Base::from(1), self.id, secret])
     }
 }
 

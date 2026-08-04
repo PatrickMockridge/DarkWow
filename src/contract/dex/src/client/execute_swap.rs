@@ -62,9 +62,9 @@ impl ExecuteSwapPublicInputs {
         vec![
             self.alice_nullifier,
             self.bob_nullifier,
-            self.swap_id,
             self.alice_otc_func_id,
             self.bob_otc_func_id,
+            self.swap_id,
             self.tx_binding,
             self.tx_nonce,
         ]
@@ -90,6 +90,14 @@ pub struct ExecuteSwapCallData {
     pub bob_amount: pallas::Base,
     /// Bob's lock commitment (public input)
     pub bob_lock: pallas::Base,
+    /// Alice's token blinding factor
+    pub alice_token_blind: pallas::Base,
+    /// Alice's amount blinding factor
+    pub alice_amount_blind: pallas::Base,
+    /// Bob's token blinding factor
+    pub bob_token_blind: pallas::Base,
+    /// Bob's amount blinding factor
+    pub bob_amount_blind: pallas::Base,
     /// Partial fill amount
     pub fill_amount: pallas::Base,
     /// FuncRef for Alice's OtcSwapV1 child call
@@ -124,6 +132,10 @@ impl ExecuteSwapCallData {
             bob_token,
             bob_amount: pallas::Base::from(bob_amount),
             bob_lock,
+            alice_token_blind: pallas::Base::zero(),
+            alice_amount_blind: pallas::Base::zero(),
+            bob_token_blind: pallas::Base::zero(),
+            bob_amount_blind: pallas::Base::zero(),
             fill_amount: pallas::Base::from(fill_amount),
             alice_otc_func_id,
             bob_otc_func_id,
@@ -136,15 +148,15 @@ impl ExecuteSwapCallData {
     pub fn compute_public_inputs(&self) -> ExecuteSwapPublicInputs {
         // Compute Alice's nullifier
         // alice_nullifier = poseidon_hash([alice_secret, alice_lock])
-        let alice_nullifier = poseidon_hash([self.alice_secret, self.alice_lock]);
+        let alice_nullifier = poseidon_hash([pallas::Base::from(1u64), self.alice_secret, self.alice_lock]);
 
         // Compute Bob's nullifier
         // bob_nullifier = poseidon_hash([bob_secret, bob_lock])
-        let bob_nullifier = poseidon_hash([self.bob_secret, self.bob_lock]);
+        let bob_nullifier = poseidon_hash([pallas::Base::from(1u64), self.bob_secret, self.bob_lock]);
 
         // Compute swap ID
         // swap_id = poseidon_hash([alice_lock, bob_token, bob_amount])
-        let swap_id = poseidon_hash([self.alice_lock, self.bob_token, self.bob_amount]);
+        let swap_id = poseidon_hash([pallas::Base::from(4u64), self.alice_lock, self.bob_token, self.bob_amount]);
 
         ExecuteSwapPublicInputs {
             alice_lock: self.alice_lock,
@@ -168,6 +180,10 @@ impl ExecuteSwapCallData {
             Witness::Base(Value::known(self.alice_token)),
             // Base alice_amount
             Witness::Base(Value::known(self.alice_amount)),
+            // Base alice_token_blind
+            Witness::Base(Value::known(self.alice_token_blind)),
+            // Base alice_amount_blind
+            Witness::Base(Value::known(self.alice_amount_blind)),
             // Base alice_lock (public input)
             Witness::Base(Value::known(self.alice_lock)),
             // Base bob_secret
@@ -176,6 +192,10 @@ impl ExecuteSwapCallData {
             Witness::Base(Value::known(self.bob_token)),
             // Base bob_amount
             Witness::Base(Value::known(self.bob_amount)),
+            // Base bob_token_blind
+            Witness::Base(Value::known(self.bob_token_blind)),
+            // Base bob_amount_blind
+            Witness::Base(Value::known(self.bob_amount_blind)),
             // Base bob_lock (public input)
             Witness::Base(Value::known(self.bob_lock)),
             // Base fill_amount

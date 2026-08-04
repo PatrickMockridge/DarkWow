@@ -33,6 +33,7 @@ use dwow_core::{
 use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
+        constants::{DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET, DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_TX_BINDING},
         pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId,
         MerkleNode, PublicKey, ScalarBlind, SecretKey, TokenId,
     },
@@ -147,7 +148,7 @@ pub fn create_transfer_mint_proof(
     tx_nonce: pallas::Base,
 ) -> Result<(Proof, TransferMintRevealed)> {
     let value_commit = pedersen_commitment_u64(output.value, value_blind.clone());
-    let token_commit = poseidon_hash([output.token_id.inner(), token_blind.clone().inner()]);
+    let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, output.token_id.inner(), token_blind.clone().inner()]);
     let (pub_x, pub_y) = output.public_key.xy().expect("pk not identity");
 
     let coin_attrs = CoinAttributes {
@@ -172,10 +173,10 @@ pub fn create_transfer_mint_proof(
     let cumcom_coords = new_cumulative_commit.to_affine().coordinates()
         .expect("Cumulative commitment cannot be the identity element");
 
-    // Compute nullifier: nf = poseidon_hash(coin_secret.inner(), coin)
-    let nf = poseidon_hash([*coin_secret.inner(), coin.inner()]);
+    // Compute nullifier: nf = poseidon_hash(DOMAIN_NULLIFIER, coin_secret, coin)
+    let nf = Nullifier::new(coin_secret.clone(), coin.inner()).inner();
 
-    let tx_binding = poseidon_hash([tx_commitment, tx_nonce]);
+    let tx_binding = poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, tx_commitment, tx_nonce]);
 
     let public_inputs = TransferMintRevealed {
         coin, value_commit, token_commit, nullifier: nf,
@@ -253,7 +254,7 @@ pub fn create_transfer_burn_proof(
     // Derive per-burn unique signature_secret from coin_secret + nullifier.
     // This binds the signer to the coin owner (fixes H2) while keeping
     // signature_public unlinkable across burns (nullifier is unique per coin).
-    let signature_secret = SecretKey::from_base(poseidon_hash([*secret.inner(), nullifier.inner()]));
+    let signature_secret = SecretKey::from_base(poseidon_hash([DRK_POSEIDON_DOMAIN_SIGNATURE_SECRET, *secret.inner(), nullifier.inner()]));
     let signature_public = PublicKey::from_secret(signature_secret.clone());
 
     // Calculate merkle root from coin and merkle path
@@ -279,7 +280,7 @@ pub fn create_transfer_burn_proof(
         spend_hook: input.spend_hook.inner(),
         user_data_enc: input.user_data_enc,
         signature_public,
-        tx_binding: poseidon_hash([tx_commitment, tx_nonce]),
+        tx_binding: poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, tx_commitment, tx_nonce]),
         tx_nonce,
     };
 

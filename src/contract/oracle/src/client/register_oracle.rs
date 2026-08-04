@@ -66,19 +66,24 @@ impl RegisterOracleV1CallData {
 
     pub fn compute_public_inputs(&self) -> RegisterOracleV1PublicInputs {
         let (ix, iy) = self.oracle_public.xy().expect("pk not identity");
-        RegisterOracleV1PublicInputs { oracle_pub_x: ix, oracle_pub_y: iy, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
+        // Circuit: DOMAIN_TX_BINDING = witness_base(1) = oracle_pub_x
+        let tx_binding = dwow_sdk::crypto::poseidon_hash([ix, self.tx_commitment, self.tx_nonce]);
+        RegisterOracleV1PublicInputs { oracle_pub_x: ix, oracle_pub_y: iy, tx_binding, tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.oracle_public.xy().expect("pk not identity");
+        // Circuit: DOMAIN_TX_BINDING = witness_base(1) = oracle_pub_x
+        let tx_binding = dwow_sdk::crypto::poseidon_hash([ix, self.tx_commitment, self.tx_nonce]);
         vec![
-            // Witnesses (must match circuit order: oracle_secret, oracle_pub_x, oracle_pub_y)
+            // Circuit order: oracle_secret(0), oracle_pub_x(1), oracle_pub_y(2),
+            //   tx_commitment(3), tx_nonce(4), tx_binding(5)
             Witness::Base(Value::known(self.oracle_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(tx_binding)),
         ]
     }
 }

@@ -97,32 +97,36 @@ impl AttestValueV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> AttestValueV1PublicInputs {
+        // Circuit: DOMAIN_TX_BINDING = witness_base(3) = oracle_pub_x
+        let (ix, _iy) = self.oracle_public.xy().expect("pk not identity");
+        let tx_binding = dwow_sdk::crypto::poseidon_hash([ix, self.tx_commitment, self.tx_nonce]);
         AttestValueV1PublicInputs {
             oracle_id: self.oracle_id,
             attestation_id: self.attestation_id,
             predicate: self.predicate,
             threshold: self.threshold,
-            tx_binding: pallas::Base::zero(),
+            tx_binding,
             tx_nonce: self.tx_nonce,
         }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.oracle_public.xy().expect("pk not identity");
+        let tx_binding = dwow_sdk::crypto::poseidon_hash([ix, self.tx_commitment, self.tx_nonce]);
         vec![
-            // Public inputs as witnesses
+            // Circuit order: oracle_id, attestation_id, oracle_secret, oracle_pub_x, oracle_pub_y,
+            //   predicate, threshold, value, tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.oracle_id)),
             Witness::Base(Value::known(self.attestation_id)),
-            Witness::Base(Value::known(self.predicate)),
-            Witness::Base(Value::known(self.threshold)),
-            // Private inputs
             Witness::Base(Value::known(self.oracle_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
+            Witness::Base(Value::known(self.predicate)),
+            Witness::Base(Value::known(self.threshold)),
             Witness::Base(Value::known(self.value)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(tx_binding)), // tx_binding (computed by circuit)
         ]
     }
 }

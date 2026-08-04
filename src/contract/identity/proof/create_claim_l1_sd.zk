@@ -19,7 +19,6 @@ witness "CreateClaimV2L1V2" {
     Base threshold,
     Base commitment,
     Base predicate_result,
-    Base delta,
     Base tx_commitment,
     Base tx_nonce,
     Base tx_binding,

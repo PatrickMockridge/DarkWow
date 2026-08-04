@@ -39,6 +39,7 @@ use dwow_core::{
 use dwow_sdk::{
     blockchain::BlockHeight,
     crypto::{
+        constants::{DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_TX_BINDING},
         note::AeadEncryptedNote, pasta_prelude::*, pedersen_commitment_u64, poseidon_hash,
         BaseBlind, Blind, FuncId, PublicKey, ScalarBlind, SecretKey, TokenId,
     },
@@ -121,18 +122,18 @@ fn create_fee_collect_proof(
     tx_nonce: pallas::Base,
 ) -> Result<(Proof, FeeCollectRevealed)> {
     let value_commit = pedersen_commitment_u64(output.value, value_blind.clone());
-    let token_commit = poseidon_hash([output.token_id.inner(), token_blind.clone().inner()]);
+    let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, output.token_id.inner(), token_blind.clone().inner()]);
     let (pub_x, pub_y) = output.public_key.xy().expect("pk not identity");
 
     let coin = output.to_coin();
 
-    // Nullifier: nf = poseidon_hash(coin_secret, C) — spec §3.4
-    let nf = poseidon_hash([*coin_secret.inner(), coin.inner()]);
+    // Nullifier: nf = poseidon_hash(DOMAIN_NULLIFIER, coin_secret, C) — spec §3.4
+    let nf = Nullifier::new(coin_secret.clone(), coin.inner()).inner();
 
     // tx_binding = poseidon_hash(tx_commitment, tx_nonce) — spec §3.5 (D11).
     // MUST be the hash, not the raw tx_commitment: with (0, 0) inputs the
     // hash is nonzero, and declaring raw zero breaks proof verification.
-    let tx_binding = poseidon_hash([tx_commitment, tx_nonce]);
+    let tx_binding = poseidon_hash([DRK_POSEIDON_DOMAIN_TX_BINDING, tx_commitment, tx_nonce]);
 
     let public_inputs = FeeCollectRevealed {
         coin,

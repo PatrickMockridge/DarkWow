@@ -103,7 +103,7 @@ impl SubmitBidWithCapabilityV1CallData {
     /// Compute bid ID from bid parameters
     pub fn compute_bid_id(&self) -> pallas::Base {
         let (ix, iy) = self.bidder_public.xy().expect("pk not identity");
-        poseidon_hash([self.tender_id, ix, iy, self.amount, self.bid_nonce])
+        poseidon_hash([pallas::Base::from(4), self.tender_id, ix, iy, self.amount, self.bid_nonce])
     }
 
     pub fn compute_public_inputs(&self) -> SubmitBidWithCapabilityV1PublicInputs {

@@ -61,9 +61,10 @@ pub struct Nullifier(pallas::Base);
 impl Nullifier {
     pub const ENCODED_SIZE: usize = 32;
 
-    /// Create a new nullifier from secret and coin
+    /// Create a new nullifier from secret and coin.
+    /// V2 circuit domain separator: DOMAIN_NULLIFIER = 1.
     pub fn new(secret: pallas::Base, coin: pallas::Base) -> Self {
-        Nullifier(poseidon_hash([secret, coin]))
+        Nullifier(poseidon_hash([pallas::Base::from(1), secret, coin]))
     }
 
     /// Create a new nullifier from secret and token_id (for auth mint)

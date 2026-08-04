@@ -1,5 +1,5 @@
 # The k parameter defining the number of rows used in our circuit (2^k)
-k = 11;
+k = 13;
 field = "pallas";
 
 # register_oracle_V2 — domain-separated circuit.
@@ -36,7 +36,7 @@ witness "RegisterOracleV2" {
 }
 
 circuit "RegisterOracleV2" {
-    DOMAIN_TX_BINDING = witness_base(3);
+    DOMAIN_TX_BINDING = witness_base(1);
 
     # ==========================================================================
     # PHASE 1: Derive oracle public key from secret

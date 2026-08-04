@@ -57,15 +57,14 @@ pub struct GovernanceReportPublicInputs {
 
 impl GovernanceReportPublicInputs {
     /// Convert to vector for ZK proof creation
+    /// Order matches constrain_instance calls in governance_report.zk:
+    /// total_collateral, total_debt, interest_accrued, report_timestamp, tx_binding, tx_nonce
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.total_collateral,
             self.total_debt,
-            self.collateral_ratio_bps,
             self.interest_accrued,
             self.report_timestamp,
-            self.reporter_pub_x,
-            self.reporter_pub_y,
             self.tx_binding,
             self.tx_nonce,
         ]

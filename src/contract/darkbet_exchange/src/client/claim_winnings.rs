@@ -86,8 +86,8 @@ impl ClaimWinningsV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> ClaimWinningsV1PublicInputs {
-        // NOTE: nonce is NOT included in the hash - the circuit doesn't use it
         let derived_claim_id = poseidon_hash([
+            pallas::Base::from(4u64),
             self.market_id,
             self.position_id,
             self.owner_pub_x,

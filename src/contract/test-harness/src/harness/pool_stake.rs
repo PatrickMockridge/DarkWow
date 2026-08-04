@@ -272,25 +272,25 @@ impl super::ContractHarness for PoolStakeHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["CreatePool", "JoinPool", "AllocateCoverage", "SlashCoverage"]
+        vec!["CreatePoolV2", "JoinPoolV2", "AllocateCoverageV2", "SlashCoverageV2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "CreatePool" => Some(&self.create_pool_zkbin),
-            "JoinPool" => Some(&self.join_pool_zkbin),
-            "AllocateCoverage" => Some(&self.allocate_coverage_zkbin),
-            "SlashCoverage" => Some(&self.slash_coverage_zkbin),
+            "CreatePoolV2" => Some(&self.create_pool_zkbin),
+            "JoinPoolV2" => Some(&self.join_pool_zkbin),
+            "AllocateCoverageV2" => Some(&self.allocate_coverage_zkbin),
+            "SlashCoverageV2" => Some(&self.slash_coverage_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "CreatePool" => Some(&self.create_pool_pk),
-            "JoinPool" => Some(&self.join_pool_pk),
-            "AllocateCoverage" => Some(&self.allocate_coverage_pk),
-            "SlashCoverage" => Some(&self.slash_coverage_pk),
+            "CreatePoolV2" => Some(&self.create_pool_pk),
+            "JoinPoolV2" => Some(&self.join_pool_pk),
+            "AllocateCoverageV2" => Some(&self.allocate_coverage_pk),
+            "SlashCoverageV2" => Some(&self.slash_coverage_pk),
             _ => None,
         }
     }

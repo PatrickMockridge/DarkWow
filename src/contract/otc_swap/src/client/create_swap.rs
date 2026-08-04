@@ -92,7 +92,7 @@ impl CreateSwapCallData {
     /// Compute Bob commitment: H(bob_pub.x, bob_pub.y)
     pub fn compute_bob_commitment(&self) -> pallas::Base {
         let (bx, by) = self.bob_pubkey.xy().expect("pk not identity");
-        poseidon_hash([bx, by])
+        poseidon_hash([pallas::Base::from(4), bx, by])
     }
 
     /// Compute swap commitment
@@ -100,6 +100,7 @@ impl CreateSwapCallData {
         let (ax, ay) = self.alice_pubkey.xy().expect("pk not identity");
         let bob_commit = self.compute_bob_commitment();
         poseidon_hash([
+            pallas::Base::from(4),
             ax,
             ay,
             bob_commit,

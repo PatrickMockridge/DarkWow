@@ -43,7 +43,7 @@
 //! - Uses AeadEncryptedNote for encrypted notes
 //! - Uses nullifiers for double-spend prevention
 
-use dwow_sdk::crypto::poseidon_hash;
+use dwow_sdk::crypto::{constants::DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, poseidon_hash};
 use dwow_sdk::{
     blockchain::{expected_reward, BlockHeight},
     crypto::{
@@ -586,7 +586,7 @@ fn fee_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     let coin_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
 
     // Token must be DRKW (native consensus asset, ↓denominate)
-    let token_commit = poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]);
+    let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, pallas::Base::zero(), pallas::Base::zero()]);
     if fee_val.input.token_commit != token_commit {
         msg!("[fee_v1] Error: Input token commitment is not the native token");
         return Err(NativeTokenError::TokenMismatch.into())
@@ -744,7 +744,7 @@ fn spend_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     msg!("[native_token::spend_v1] Processing spend");
 
     // Validate DRKW token (↓denominate — only native asset permitted)
-    let token_commit = poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]);
+    let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, pallas::Base::zero(), pallas::Base::zero()]);
     if sp.input.token_commit != token_commit {
         msg!("[spend_v1] Error: Input token commitment is not the native token");
         return Err(NativeTokenError::TokenMismatch.into())
@@ -894,7 +894,7 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     }
 
     // Verify token commitment matches clear input
-    if poseidon_hash([pr.input.token_id, pr.input.token_blind.inner()]) != pr.output.token_commit {
+    if poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, pr.input.token_id, pr.input.token_blind.inner()]) != pr.output.token_commit {
         msg!("[pow_reward_v1] Error: Token commitment mismatch");
         return Err(NativeTokenError::TokenMismatch.into())
     }
@@ -1172,7 +1172,7 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     }
 
     // Check 5 (spec §3.7): token must be DRKW (native consensus asset)
-    let token_commit = poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]);
+    let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, pallas::Base::zero(), pallas::Base::zero()]);
     if fc.output.token_commit != token_commit {
         msg!("[fee_collect_v1] Non-native token in fee collection");
         return Err(NativeTokenError::TokenMismatch.into())

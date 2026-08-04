@@ -693,6 +693,7 @@ pub fn derive_spin_id(
     token_id: pallas::Base,
 ) -> SpinId {
     poseidon_hash([
+        pallas::Base::from(4),
         player_pub.x().expect("pk not identity"),
         player_pub.y().expect("pk not identity"),
         pallas::Base::from(bet_value),

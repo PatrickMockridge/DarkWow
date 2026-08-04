@@ -96,7 +96,7 @@ pub(crate) fn dex_cancel_swap_get_metadata_v1(
 
     zk_public_inputs.push((
         DEX_CONTRACT_ZKAS_CANCEL_SWAP_NS_V2.to_string(),
-        vec![nullifier, swap_id],
+        vec![nullifier, swap_id, pallas::Base::zero(), pallas::Base::zero()],
     ));
 
     // Serialize metadata for ZK verification

@@ -100,19 +100,19 @@ impl WithdrawCallData {
         Self { secret, amount, recipient_hash, bridge_address, merkle_root, merkle_proof, leaf_index, token_minimum, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
 
-    /// Compute nullifier: poseidon_hash(secret)
+    /// Compute nullifier: poseidon_hash(DOMAIN_NULLIFIER, secret, recipient_hash)
     pub fn compute_nullifier(&self) -> pallas::Base {
-        poseidon_hash([self.secret])
+        poseidon_hash([pallas::Base::from(1u64), self.secret, self.recipient_hash])
     }
 
-    /// Compute commitment: H(secret, amount, bridge_address)
+    /// Compute commitment: H(DOMAIN_COIN_COMMIT, secret, amount, bridge_address)
     pub fn compute_commitment(&self) -> pallas::Base {
-        poseidon_hash([self.secret, pallas::Base::from(self.amount), self.bridge_address])
+        poseidon_hash([pallas::Base::from(4u64), self.secret, pallas::Base::from(self.amount), self.bridge_address])
     }
 
-    /// Compute deposit leaf: H(secret, amount)
+    /// Compute deposit leaf: H(DOMAIN_COIN_COMMIT, secret, amount)
     pub fn compute_deposit_leaf(&self) -> pallas::Base {
-        poseidon_hash([self.secret, pallas::Base::from(self.amount)])
+        poseidon_hash([pallas::Base::from(4u64), self.secret, pallas::Base::from(self.amount)])
     }
 
     /// Compute public inputs for this call
@@ -120,7 +120,7 @@ impl WithdrawCallData {
         WithdrawPublicInputs {
             nullifier: self.compute_nullifier(),
             deposit_leaf: self.compute_deposit_leaf(),
-            derived_recipient: poseidon_hash([self.recipient_hash]),
+            derived_recipient: poseidon_hash([pallas::Base::from(7u64), self.recipient_hash]),
             token_minimum: pallas::Base::from(self.token_minimum),
             recipient_hash: self.recipient_hash,
             amount: pallas::Base::from(self.amount),

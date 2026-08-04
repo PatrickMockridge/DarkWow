@@ -146,11 +146,13 @@ impl PromissoryNoteHarness {
         user_data: pallas::Base,
         coin_blind: pallas::Base,
     ) -> Result<RegisterTypeResult> {
-        // Derive token_auth_parent = poseidon_hash(issue_secret) — backing capability commitment
-        let token_auth_parent = poseidon_hash([issue_secret]);
+        // Derive token_auth_parent = poseidon_hash(DOMAIN_SIGNATURE_SECRET, issue_secret).
+        // V2 circuit domain separator: DOMAIN_SIGNATURE_SECRET = 7.
+        let token_auth_parent = poseidon_hash([pallas::Base::from(7), issue_secret]);
 
-        // Derive token_id = poseidon_hash(auth_parent, user_data, blind)
-        let token_id = poseidon_hash([token_auth_parent, token_user_data, token_blind]);
+        // Derive token_id = poseidon_hash(DOMAIN_TOK_COMMIT, auth_parent, user_data, blind).
+        // V2 circuit domain separator: DOMAIN_TOK_COMMIT = 2.
+        let token_id = poseidon_hash([pallas::Base::from(2), token_auth_parent, token_user_data, token_blind]);
 
         // Build token mint proof using the contract's builder
         let token_input = RegisterTypeCallInput {

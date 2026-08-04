@@ -97,6 +97,12 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let purchase_coverage_with_capability_v2_bincode =
         include_bytes!("../proof/purchase_coverage_with_capability.zk.bin");
     wasm::db::zkas_db_set(&purchase_coverage_with_capability_v2_bincode[..])?;
+    let purchase_coverage_v2_bincode =
+        include_bytes!("../proof/purchase_coverage.zk.bin");
+    wasm::db::zkas_db_set(&purchase_coverage_v2_bincode[..])?;
+    let purchase_coverage_with_dag_v2_bincode =
+        include_bytes!("../proof/purchase_coverage_with_dag.zk.bin");
+    wasm::db::zkas_db_set(&purchase_coverage_with_dag_v2_bincode[..])?;
 
     Ok(())
 }

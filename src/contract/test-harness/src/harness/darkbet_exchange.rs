@@ -48,45 +48,45 @@ use dwow_darkbet_exchange_contract::model::{
 
 /// DarkbetExchange Harness for isolated testing
 pub struct DarkbetExchangeHarness {
-    /// CreateMarket_V1 ZkBinary
+    /// CreateMarketV2 ZkBinary
     create_market_zkbin: ZkBinary,
-    /// CreateMarket_V1 ProvingKey
+    /// CreateMarketV2 ProvingKey
     create_market_pk: ProvingKey,
-    /// BuyPosition_V1 ZkBinary
+    /// BuyPositionV2 ZkBinary
     buy_position_zkbin: ZkBinary,
-    /// BuyPosition_V1 ProvingKey
+    /// BuyPositionV2 ProvingKey
     buy_position_pk: ProvingKey,
-    /// ClaimWinnings_V1 ZkBinary
+    /// ClaimWinningsV2 ZkBinary
     claim_winnings_zkbin: ZkBinary,
-    /// ClaimWinnings_V1 ProvingKey
+    /// ClaimWinningsV2 ProvingKey
     claim_winnings_pk: ProvingKey,
-    /// AddLiquidity_V1 ZkBinary
+    /// AddLiquidityV2 ZkBinary
     add_liquidity_zkbin: ZkBinary,
-    /// AddLiquidity_V1 ProvingKey
+    /// AddLiquidityV2 ProvingKey
     add_liquidity_pk: ProvingKey,
-    /// CancelOrder_V1 ZkBinary
+    /// CancelOrderV2 ZkBinary
     cancel_order_zkbin: ZkBinary,
-    /// CancelOrder_V1 ProvingKey
+    /// CancelOrderV2 ProvingKey
     cancel_order_pk: ProvingKey,
-    /// MatchOrders_V1 ZkBinary
+    /// MatchOrdersV2 ZkBinary
     match_orders_zkbin: ZkBinary,
-    /// MatchOrders_V1 ProvingKey
+    /// MatchOrdersV2 ProvingKey
     match_orders_pk: ProvingKey,
-    /// PlaceBack_V1 ZkBinary
+    /// PlaceBackV2 ZkBinary
     place_back_zkbin: ZkBinary,
-    /// PlaceBack_V1 ProvingKey
+    /// PlaceBackV2 ProvingKey
     place_back_pk: ProvingKey,
-    /// PlaceLay_V1 ZkBinary
+    /// PlaceLayV2 ZkBinary
     place_lay_zkbin: ZkBinary,
-    /// PlaceLay_V1 ProvingKey
+    /// PlaceLayV2 ProvingKey
     place_lay_pk: ProvingKey,
-    /// RemoveLiquidity_V1 ZkBinary
+    /// RemoveLiquidityV2 ZkBinary
     remove_liquidity_zkbin: ZkBinary,
-    /// RemoveLiquidity_V1 ProvingKey
+    /// RemoveLiquidityV2 ProvingKey
     remove_liquidity_pk: ProvingKey,
-    /// ResolveMarket_V1 ZkBinary
+    /// ResolveMarketV2 ZkBinary
     resolve_market_zkbin: ZkBinary,
-    /// ResolveMarket_V1 ProvingKey
+    /// ResolveMarketV2 ProvingKey
     resolve_market_pk: ProvingKey,
 }
 
@@ -477,47 +477,47 @@ impl super::ContractHarness for DarkbetExchangeHarness {
 
     fn circuits(&self) -> Vec<&'static str> {
         vec![
-            "CreateMarket",
-            "BuyPosition",
-            "ClaimWinnings",
-            "AddLiquidity",
-            "CancelOrder",
-            "MatchOrders",
-            "PlaceBack",
-            "PlaceLay",
-            "RemoveLiquidity",
-            "ResolveMarket",
+            "CreateMarketV2",
+            "BuyPositionV2",
+            "ClaimWinningsV2",
+            "AddLiquidityV2",
+            "CancelOrderV2",
+            "MatchOrdersV2",
+            "PlaceBackV2",
+            "PlaceLayV2",
+            "RemoveLiquidityV2",
+            "ResolveMarketV2",
         ]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "CreateMarket" => Some(&self.create_market_zkbin),
-            "BuyPosition" => Some(&self.buy_position_zkbin),
-            "ClaimWinnings" => Some(&self.claim_winnings_zkbin),
-            "AddLiquidity" => Some(&self.add_liquidity_zkbin),
-            "CancelOrder" => Some(&self.cancel_order_zkbin),
-            "MatchOrders" => Some(&self.match_orders_zkbin),
-            "PlaceBack" => Some(&self.place_back_zkbin),
-            "PlaceLay" => Some(&self.place_lay_zkbin),
-            "RemoveLiquidity" => Some(&self.remove_liquidity_zkbin),
-            "ResolveMarket" => Some(&self.resolve_market_zkbin),
+            "CreateMarketV2" => Some(&self.create_market_zkbin),
+            "BuyPositionV2" => Some(&self.buy_position_zkbin),
+            "ClaimWinningsV2" => Some(&self.claim_winnings_zkbin),
+            "AddLiquidityV2" => Some(&self.add_liquidity_zkbin),
+            "CancelOrderV2" => Some(&self.cancel_order_zkbin),
+            "MatchOrdersV2" => Some(&self.match_orders_zkbin),
+            "PlaceBackV2" => Some(&self.place_back_zkbin),
+            "PlaceLayV2" => Some(&self.place_lay_zkbin),
+            "RemoveLiquidityV2" => Some(&self.remove_liquidity_zkbin),
+            "ResolveMarketV2" => Some(&self.resolve_market_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "CreateMarket" => Some(&self.create_market_pk),
-            "BuyPosition" => Some(&self.buy_position_pk),
-            "ClaimWinnings" => Some(&self.claim_winnings_pk),
-            "AddLiquidity" => Some(&self.add_liquidity_pk),
-            "CancelOrder" => Some(&self.cancel_order_pk),
-            "MatchOrders" => Some(&self.match_orders_pk),
-            "PlaceBack" => Some(&self.place_back_pk),
-            "PlaceLay" => Some(&self.place_lay_pk),
-            "RemoveLiquidity" => Some(&self.remove_liquidity_pk),
-            "ResolveMarket" => Some(&self.resolve_market_pk),
+            "CreateMarketV2" => Some(&self.create_market_pk),
+            "BuyPositionV2" => Some(&self.buy_position_pk),
+            "ClaimWinningsV2" => Some(&self.claim_winnings_pk),
+            "AddLiquidityV2" => Some(&self.add_liquidity_pk),
+            "CancelOrderV2" => Some(&self.cancel_order_pk),
+            "MatchOrdersV2" => Some(&self.match_orders_pk),
+            "PlaceBackV2" => Some(&self.place_back_pk),
+            "PlaceLayV2" => Some(&self.place_lay_pk),
+            "RemoveLiquidityV2" => Some(&self.remove_liquidity_pk),
+            "ResolveMarketV2" => Some(&self.resolve_market_pk),
             _ => None,
         }
     }

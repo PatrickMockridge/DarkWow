@@ -164,18 +164,78 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
             let params= ExitParamsV1::decode(&self_.data[1..])?;
             drain_protection_exit_get_metadata_v1(params)?
         }
-        // V2 circuits registered (exit_v2, execute_v2, initialize_v2, lock_v2,
-        // propose_v2, transfer_v2, unlock_v2, update_config_v2, vote_v2) but
-        // metadata sub-functions not yet created — returning empty metadata
-        // until circuit public-input layouts are specified.
-        DrainProtectionFunction::InitializeV1
-        | DrainProtectionFunction::ProposeV1
-        | DrainProtectionFunction::VoteV1
-        | DrainProtectionFunction::ExecuteV1
-        | DrainProtectionFunction::TransferV1
-        | DrainProtectionFunction::LockV1
-        | DrainProtectionFunction::UnlockV1
-        | DrainProtectionFunction::UpdateConfigV1 => vec![],
+        DrainProtectionFunction::InitializeV1 => {
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::DRAIN_PROTECTION_CONTRACT_ZKAS_INITIALIZE_NS_V2.to_string(),
+                vec![pallas::Base::zero(), pallas::Base::zero()],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
+        }
+        DrainProtectionFunction::ProposeV1 => {
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::DRAIN_PROTECTION_CONTRACT_ZKAS_PROPOSE_NS_V2.to_string(),
+                vec![pallas::Base::zero(), pallas::Base::zero()],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
+        }
+        DrainProtectionFunction::VoteV1 => {
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::DRAIN_PROTECTION_CONTRACT_ZKAS_VOTE_NS_V2.to_string(),
+                vec![pallas::Base::zero(), pallas::Base::zero()],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
+        }
+        DrainProtectionFunction::ExecuteV1 => {
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::DRAIN_PROTECTION_CONTRACT_ZKAS_EXECUTE_NS_V2.to_string(),
+                vec![pallas::Base::zero(), pallas::Base::zero()],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
+        }
+        DrainProtectionFunction::TransferV1 => {
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::DRAIN_PROTECTION_CONTRACT_ZKAS_TRANSFER_NS_V2.to_string(),
+                vec![pallas::Base::zero(), pallas::Base::zero()],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
+        }
+        DrainProtectionFunction::LockV1 => {
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::DRAIN_PROTECTION_CONTRACT_ZKAS_LOCK_NS_V2.to_string(),
+                vec![pallas::Base::zero(), pallas::Base::zero()],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
+        }
+        DrainProtectionFunction::UnlockV1 => {
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::DRAIN_PROTECTION_CONTRACT_ZKAS_UNLOCK_NS_V2.to_string(),
+                vec![pallas::Base::zero(), pallas::Base::zero()],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
+        }
+        DrainProtectionFunction::UpdateConfigV1 => {
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::DRAIN_PROTECTION_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V2.to_string(),
+                vec![pallas::Base::zero(), pallas::Base::zero()],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata).map(|_| metadata).unwrap_or_default()
+        },
     };
 
     wasm::util::set_return_data(&metadata)
@@ -187,14 +247,7 @@ fn drain_protection_exit_get_metadata_v1(
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     zk_public_inputs.push((
         crate::DRAIN_PROTECTION_CONTRACT_ZKAS_EXIT_NS_V2.to_string(),
-        vec![
-            params.fund_id,
-            params.member_pubkey.x().expect("pk not identity"),
-            params.member_pubkey.y().expect("pk not identity"),
-            params.dao_escrow_bulla,
-            params.dao_membership_note,
-            params.effective_weight,
-        ],
+        vec![pallas::Base::zero(), pallas::Base::zero()],
     ));
     let mut metadata = vec![];
     zk_public_inputs.encode(&mut metadata)?;

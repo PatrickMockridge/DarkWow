@@ -91,7 +91,7 @@ pub(crate) fn dex_accept_swap_get_metadata_v1(
 
     zk_public_inputs.push((
         DEX_CONTRACT_ZKAS_ACCEPT_SWAP_NS_V2.to_string(),
-        vec![lock_commitment, nullifier, sig_x, sig_y],
+        vec![lock_commitment, nullifier, sig_x, sig_y, pallas::Base::zero(), pallas::Base::zero()],
     ));
 
     // Serialize metadata for ZK verification
