@@ -960,6 +960,35 @@ impl CChainState {
             entries
         };
 
+        // --- Coinbase maturity enforcement (Phase 3c) ---
+        // CRITICAL: MUST precede the sled commit closure (C-6 fix).
+        // Previously ran after the commit — an immature spend was persisted
+        // irreversibly to sled before the error was returned. Now checked
+        // BEFORE any state hits disk.
+        const COINBASE_MATURITY: u64 = 100;
+        for tx in &block.transactions {
+            // Skip coinbase transactions (they create coins, don't spend).
+            // Detected via PoWRewardV1 contract call (function 0x05).
+            if tx.contract_calls.first().map_or(false, |c| c.data.first() == Some(&0x05)) {
+                continue;
+            }
+            for nullifier in &tx.nullifiers {
+                // Check if this nullifier was created by a coinbase output.
+                // The nullifier's creation height is stored in nullifier_set.
+                if let Some(&created_at) = self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).get(nullifier) {
+                    // V.9 fix: use nullifier's own height for maturity, not coin_set lookup.
+                    if height.saturating_sub(created_at) < COINBASE_MATURITY {
+                        return Err(LinearError::BlockIsInvalid(
+                            format!(
+                                "Immature coinbase spend at height {}: nullifier created at {}, needs {} blocks maturity",
+                                height, created_at, COINBASE_MATURITY
+                            )
+                        ));
+                    }
+                }
+            }
+        }
+
         // Wrap batch-build + commit in a closure. Any error rolls back
         // in-memory consensus — covers serde failures (which the old
         // TransactionError-only rollback missed) and sled failures.
@@ -1173,37 +1202,6 @@ impl CChainState {
             }
         }
 
-        // --- Coinbase maturity enforcement (Phase 3c) ---
-        // Reject transactions that spend immature coinbase coins.
-        // Checked at the consensus layer (not WASM) — maturity is a
-        // consensus rule, not a contract rule. Bitcoin enforces it in
-        // CheckInputs(); DarkWow enforces it here.
-        for tx in &block.transactions {
-            // Skip coinbase transactions (they create coins, don't spend).
-            // Detected via PoWRewardV1 contract call (function 0x05).
-            if tx.contract_calls.first().map_or(false, |c| c.data.first() == Some(&0x05)) {
-                continue;
-            }
-            for nullifier in &tx.nullifiers {
-                // Check if this nullifier was created by a coinbase output.
-                // The nullifier's creation height is stored in nullifier_set.
-                if let Some(&created_at) = self.nullifier_set.lock().unwrap_or_else(|e| e.into_inner()).get(nullifier) {
-                    // V.9 fix: use nullifier's own height for maturity, not coin_set lookup.
-                    // Previously used nullifier.to_bytes() as coin_set key — but nullifier
-                    // bytes ≠ coin commitment bytes, so the lookup always returned None,
-                    // rejecting ALL non-coinbase transactions that spent coinbase outputs.
-                    if height.saturating_sub(created_at) < COINBASE_MATURITY {
-                        return Err(LinearError::BlockIsInvalid(
-                            format!(
-                                "Immature coinbase spend at height {}: nullifier created at {}, needs {} blocks maturity",
-                                height, created_at, COINBASE_MATURITY
-                            )
-                        ));
-                    }
-                }
-            }
-        }
-
         // Clean up orphaned competing blocks (H11)
         self.prune_competing(height);
 
@@ -1214,7 +1212,6 @@ impl CChainState {
         // nullifier_set is now a HashMap<[u8;32], u64> with height tracking.
         // Entries older than COINBASE_MATURITY are pruned — sled is the
         // authoritative source for pre-existing nullifiers on restart.
-        const COINBASE_MATURITY: u64 = 100;
         if height > BlockHeight::new(COINBASE_MATURITY) {
             let prune_h = height.saturating_sub_blocks(COINBASE_MATURITY);
             self.coin_set.lock().unwrap_or_else(|e| e.into_inner()).retain(|_, h| *h >= prune_h);

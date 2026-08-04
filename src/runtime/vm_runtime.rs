@@ -259,22 +259,113 @@ pub struct Runtime {
 }
 
 impl Runtime {
-    /// HAZOP H10: byte-level feature scanning disabled.
-    /// The Rust wasm32 target generates float, bulk-memory, and SIMD opcodes
-    /// from the standard library (serde, alloc) even when contracts don't
-    /// use these features. The scanner produced cascading false positives.
-    /// Wasmer's own compiler validates module compatibility — if Wasmer
-    /// accepts the module, execution is deterministic for that backend.
-    /// Re-enabled only if a specific non-determinism bug is found.
-    fn reject_nondeterministic_features(_wasm_bytes: &[u8]) -> Result<()> {
+    /// Pre-public-testnet audit H-7 fix: reject SIMD (0xFD) and threads/atomics
+    /// (0xFE) opcodes in the WASM code section. Scalar floats (0x8A..=0xBF) are
+    /// IEEE-754 deterministic within a single wasmer backend and are NOT rejected.
+    ///
+    /// Only the code section (id=10) is scanned — this avoids false positives
+    /// from Rust stdlib-generated opcodes in metadata sections (the root cause
+    /// of the prior scanner being disabled). The archived byte-level scanner
+    /// remains below for reference.
+    ///
+    /// WASM binary format reference:
+    ///   magic (4 bytes) + version (4 bytes) + sections...
+    ///   section = id (1 byte, varuint7) + size (LEB128 u32) + content
+    fn reject_nondeterministic_features(wasm_bytes: &[u8]) -> Result<()> {
+        if wasm_bytes.len() < 8 {
+            return Err(Error::NonDeterministicWasm(
+                "WASM binary too short for header".to_string()
+            ));
+        }
+
+        // Phase 1: find the code section (id=10) by iterating sections.
+        let mut pos: usize = 8; // skip magic (4) + version (4)
+
+        while pos < wasm_bytes.len() {
+            if pos >= wasm_bytes.len() {
+                break;
+            }
+            let section_id = wasm_bytes[pos];
+            pos += 1;
+
+            // Decode LEB128 u32 for section size.
+            let (size, bytes_read) = match Self::decode_leb128_u32(&wasm_bytes[pos..]) {
+                Some(v) => v,
+                None => {
+                    return Err(Error::NonDeterministicWasm(
+                        "WASM binary: truncated LEB128 in section header".to_string()
+                    ));
+                }
+            };
+            pos += bytes_read;
+
+            let section_end = pos.saturating_add(size as usize);
+            if section_end > wasm_bytes.len() {
+                return Err(Error::NonDeterministicWasm(
+                    "WASM binary: section extends past end of file".to_string()
+                ));
+            }
+
+            // Section 10 = Code section — the only section we scan.
+            if section_id == 10 && size > 0 {
+                let code_bytes = &wasm_bytes[pos..section_end];
+                Self::scan_code_section(code_bytes)?;
+            }
+
+            pos = section_end;
+        }
+
         Ok(())
     }
 
-    // Archived code-section-only scanner (kept for reference).
-    // If re-enabling: parse WASM sections, only scan code section (id=10).
-    // 0x8A..=0x9F | 0x7A..=0x7D | 0xB0..=0xBF = float
-    // 0xFD = SIMD, 0xFE = threads/atomics
-    #[allow(dead_code)]
+    /// Scan the WASM code section for non-deterministic opcodes.
+    /// Rejects: 0xFD (SIMD prefix), 0xFE (atomics/threads prefix).
+    /// Scalar float opcodes (0x8A..=0xBF) are IEEE-754 deterministic
+    /// within a single wasmer backend and are NOT rejected.
+    fn scan_code_section(code_bytes: &[u8]) -> Result<()> {
+        let mut i: usize = 0;
+        while i < code_bytes.len() {
+            let opcode = code_bytes[i];
+            match opcode {
+                0xFD..=0xFE => {
+                    let name = if opcode == 0xFD { "SIMD (0xFD)" } else { "threads/atomics (0xFE)" };
+                    return Err(Error::NonDeterministicWasm(format!(
+                        "Non-deterministic WASM opcode {} at code offset {} — rejected per consensus determinism requirement (contract-wasm-type-system.md A.8.4)",
+                        name, i
+                    )));
+                }
+                _ => {
+                    // Advance past the opcode. Multi-byte opcodes (like SIMD
+                    // instructions after 0xFD prefix) are caught by the prefix
+                    // check above — further bytes are instruction operands.
+                    i += 1;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Decode a LEB128 unsigned 32-bit integer. Returns (value, bytes_consumed).
+    fn decode_leb128_u32(data: &[u8]) -> Option<(u32, usize)> {
+        let mut result: u32 = 0;
+        let mut shift: u32 = 0;
+        for (i, &byte) in data.iter().enumerate() {
+            if i >= 5 {
+                // LEB128 u32 fits in at most 5 bytes.
+                return None;
+            }
+            result = result.checked_add(((byte & 0x7F) as u32).checked_shl(shift)?)?;
+            if byte & 0x80 == 0 {
+                return Some((result, i + 1));
+            }
+            shift += 7;
+        }
+        None
+    }
+
+    // Archived byte-level scanner (kept for reference — scans raw bytes
+    // without section awareness, producing false positives from stdlib
+    // metadata sections).
     #[allow(dead_code)]
     fn _reject_nondeterministic_features_archived(_wasm_bytes: &[u8]) -> Result<()> {
         Ok(())

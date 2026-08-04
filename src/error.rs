@@ -434,6 +434,10 @@ pub enum Error {
     WasmerExportError(String),
 
     #[cfg(feature = "wasm-runtime")]
+    #[error("Non-deterministic WASM feature rejected: {0}")]
+    NonDeterministicWasm(String),
+
+    #[cfg(feature = "wasm-runtime")]
     #[error("Wasmer runtime error: {0}")]
     WasmerRuntimeError(String),
 
