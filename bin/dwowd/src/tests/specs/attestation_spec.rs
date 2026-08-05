@@ -37,6 +37,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "CreateAttestationV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "attestations",
                 state_key_fn: Box::new(move || attestation_id.to_repr().to_vec()),
                 generate: Box::new({
@@ -54,6 +55,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "CreateClaimV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "claims",
                 state_key_fn: Box::new(move || claim_id.to_repr().to_vec()),
                 generate: Box::new({
@@ -72,6 +74,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "VerifyClaimV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "claims",
                 state_key_fn: Box::new(move || vec![]),
                 generate: Box::new(move || {
@@ -88,6 +91,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "ConsumeClaimV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "nullifiers",
                 state_key_fn: Box::new(move || vec![]),
                 generate: Box::new({
@@ -107,6 +111,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "DelegateAttestationV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "delegations",
                 state_key_fn: Box::new(move || vec![]),
                 generate: Box::new({
@@ -132,6 +137,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "CheckNotRevokedV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "nullifiers",
                 state_key_fn: Box::new(move || vec![]),
                 generate: Box::new(move || {
@@ -146,6 +152,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "UpdateDelegationV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "delegations",
                 state_key_fn: Box::new(move || vec![]),
                 generate: Box::new(move || {
@@ -163,6 +170,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "AttestSlashV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "attestations",
                 state_key_fn: Box::new(move || vec![]),
                 generate: Box::new({
@@ -178,6 +186,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "CommitFeeScheduleV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "attestations",
                 state_key_fn: Box::new(move || vec![]),
                 generate: Box::new({

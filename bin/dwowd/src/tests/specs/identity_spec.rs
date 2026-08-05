@@ -56,6 +56,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "RegisterIssuerV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "issuers",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
@@ -71,6 +72,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "IssueCredentialV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "credentials",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
@@ -84,6 +86,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "CreateClaimV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "nullifiers",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
@@ -99,6 +102,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "RegisterCapabilityV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "capabilities",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
@@ -117,6 +121,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "VerifyCapabilityV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "capabilities",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
@@ -133,6 +138,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "IssueCapabilityV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "capabilities",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
@@ -148,6 +154,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "RevokeCapabilityV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "capabilities",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({

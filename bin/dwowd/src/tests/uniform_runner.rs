@@ -65,6 +65,9 @@ pub struct EndpointSpec<'a> {
     pub generate: Box<dyn Fn() -> Result<EndpointResult> + 'a>,
     /// For FeeV1/BurnV1: uses prefetched coinbase params instead of `generate`.
     pub generate_with_coinbase: Option<Box<dyn Fn(&modules::coinbase_coordination::PrefetchedCoinbase) -> Result<EndpointResult> + 'a>>,
+    /// Cross-block state verification (HAZOP finding — compound correctness).
+    /// Called after accept_block succeeds. Receives the pipeline for state queries.
+    pub verify_state: Option<Box<dyn Fn(&HeavyweightPipeline) -> Result<()> + 'a>>,
     /// State tree to verify after submission.
     pub state_tree: &'static str,
     /// Key to query in the state tree after the call succeeds.
@@ -205,6 +208,10 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
             let new_height = modules::endpoint_exercise::exercise_endpoint(
                 &chain_a, cid, spec.harness, endpoint, height_before,
             ).await?;
+            // Cross-block state verification (HAZOP finding — compound correctness)
+            if let Some(ref verify) = endpoint.verify_state {
+                verify(&chain_a)?;
+            }
             height_before = new_height;
         }
     }

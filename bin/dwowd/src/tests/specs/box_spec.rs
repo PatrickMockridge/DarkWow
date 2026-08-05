@@ -34,6 +34,7 @@ pub fn box_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "box_roots",
                 state_key_fn: Box::new(|| {
                     pallas::Base::from(1u64).to_repr().to_vec()
@@ -48,6 +49,7 @@ pub fn box_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "nullifiers",
                 state_key_fn: Box::new(|| {
                     let dnl = pallas::Base::from(1u64);

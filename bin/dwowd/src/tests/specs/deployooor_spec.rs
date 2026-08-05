@@ -28,6 +28,7 @@ pub fn deployooor_test_spec() -> ContractTestSpec<'static> {
                 name: "DeployV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "info",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(|| {
@@ -46,6 +47,7 @@ pub fn deployooor_test_spec() -> ContractTestSpec<'static> {
                 name: "LockV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "lock",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(|| {

@@ -322,7 +322,6 @@ impl HeavyweightPipeline {
     // ── State inspection API (RG-8, spec §7.2 PR-3) ─────────────────
 
     /// Query a value from the contracts sled tree.
-    /// For contract-specific trees, key into the contracts tree by ContractId.
     pub fn query_contracts_tree(
         &self,
         key: &[u8],
@@ -331,6 +330,26 @@ impl HeavyweightPipeline {
         tree.get(key)
             .map_err(|e| dwow_core::Error::Custom(format!(
                 "query_contracts_tree: sled get: {}", e
+            )))
+            .map(|opt| opt.map(|iv| iv.to_vec()))
+    }
+
+    /// Query contract state from a named sled tree.
+    /// Opens the sled tree by name and reads the key. Used for cross-block
+    /// state verification (HAZOP finding — compound correctness).
+    /// Spec: §6 ST-2 (State Transition Verification).
+    pub fn query_sled_tree(
+        &self,
+        tree_name: &str,
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>> {
+        let tree = self.db.open_tree(tree_name)
+            .map_err(|e| dwow_core::Error::Custom(format!(
+                "query_sled_tree: open tree '{}': {}", tree_name, e
+            )))?;
+        tree.get(key)
+            .map_err(|e| dwow_core::Error::Custom(format!(
+                "query_sled_tree: sled get: {}", e
             )))
             .map(|opt| opt.map(|iv| iv.to_vec()))
     }

@@ -44,6 +44,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "token_registry",
                 state_key_fn: Box::new(move || token_id_key.clone()),
                 generate: Box::new(move || {

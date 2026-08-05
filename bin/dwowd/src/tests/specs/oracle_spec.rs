@@ -36,6 +36,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "oracles",
                 state_key_fn: { let k = oracle_key.clone(); Box::new(move || k.clone()) },
                 generate: Box::new(move || {
@@ -50,6 +51,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "oracles",
                 state_key_fn: { let k = oracle_key.clone(); Box::new(move || k.clone()) },
                 generate: Box::new(move || {
@@ -63,6 +65,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "attestations",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
@@ -78,6 +81,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "oracles",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
@@ -94,6 +98,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
+                verify_state: None,
                 state_tree: "attestations",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
