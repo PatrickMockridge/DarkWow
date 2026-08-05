@@ -118,7 +118,8 @@ impl MultiSigHarness {
     pub fn finalize(&self, group_id: pallas::Base, message_hash: pallas::Base) -> Result<FinalizeResult> {
         let threshold = pallas::Base::from(1u64);
         let signature_count = pallas::Base::from(1u64);
-        let approval_commit = poseidon_hash([group_id, message_hash]);
+        // Circuit: DOMAIN_COIN_COMMIT = witness_base(4) = 4
+        let approval_commit = poseidon_hash([pallas::Base::from(4u64), group_id, message_hash]);
         let tx_commitment = pallas::Base::from(200u64);
         let tx_nonce = pallas::Base::from(300u64);
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), tx_commitment, tx_nonce]);

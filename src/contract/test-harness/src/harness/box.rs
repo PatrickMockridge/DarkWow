@@ -72,6 +72,10 @@ impl ContractHarness for BoxHarness {
     fn circuits(&self) -> Vec<&'static str> { self.circuits() }
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> { match ns { "PutV2"=>Some(&self.put_zkbin),"TakeV2"=>Some(&self.take_zkbin),_=>None } }
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> { match ns { "PutV2"=>Some(&self.put_pk),"TakeV2"=>Some(&self.take_pk),_=>None } }
+    /// BoxFunction: InitializeV1 (0x00, non-ZK), PutV1 (0x01, ZK), TakeV1 (0x02, ZK)
+    fn non_zk_functions(&self) -> &'static [u8] { &[0x00] }
+    fn state_trees(&self) -> &'static [&'static str] { &["nullifiers", "box_roots", "info"] }
+    fn function_count(&self) -> usize { 3 }
 }
 
 pub struct BoxPutResult { pub call_data: Vec<u8>, pub proof: Proof }

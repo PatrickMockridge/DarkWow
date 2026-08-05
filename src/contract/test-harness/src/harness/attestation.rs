@@ -26,10 +26,13 @@
 //! Provides isolated testing for Attestation contract.
 
 use dwow_core::{
-    zk::{Proof, ProvingKey, ZkCircuit},
+    zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
 };
-use dwow_sdk::{crypto::{pasta_prelude::PrimeField, PublicKey}, pasta::pallas};
+use dwow_sdk::{
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, PublicKey},
+    pasta::pallas,
+};
 use dwow_serial::Encodable;
 
 use dwow_attestation_contract::client::{
@@ -507,9 +510,18 @@ impl AttestationHarness {
         withdrawal_id: pallas::Base,
         block_height: u64,
     ) -> Result<AttestSlashResult, Box<dyn std::error::Error>> {
-        let witnesses = dwow_core::zk::empty_witnesses(&self.attest_slash_zkbin)?;
+        let txb = dwow_sdk::crypto::poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]);
+        let (ax, ay) = relayer_pub.xy().expect("pk not identity");
+        let witnesses = vec![
+            Witness::Base(Value::known(pallas::Base::from(1u64))),
+            Witness::Base(Value::known(ax)),
+            Witness::Base(Value::known(ay)),
+            Witness::Base(Value::known(pallas::Base::zero())),
+            Witness::Base(Value::known(pallas::Base::zero())),
+            Witness::Base(Value::known(txb)),
+        ];
         let circuit = ZkCircuit::new(witnesses, &self.attest_slash_zkbin);
-        let proof = Proof::create(&self.attest_slash_pk, &[circuit], &[], rand::rngs::OsRng)
+        let proof = Proof::create(&self.attest_slash_pk, &[circuit], &[txb, pallas::Base::zero()], rand::rngs::OsRng)
             .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
 
         let params = AttestSlashParamsV1 {
@@ -535,9 +547,18 @@ impl AttestationHarness {
         min_amount: u64,
         metadata: Vec<u8>,
     ) -> Result<CommitFeeScheduleResult, Box<dyn std::error::Error>> {
-        let witnesses = dwow_core::zk::empty_witnesses(&self.commit_fee_schedule_zkbin)?;
+        let txb = dwow_sdk::crypto::poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]);
+        let (ax, ay) = attestor_pub.xy().expect("pk not identity");
+        let witnesses = vec![
+            Witness::Base(Value::known(pallas::Base::from(1u64))),
+            Witness::Base(Value::known(ax)),
+            Witness::Base(Value::known(ay)),
+            Witness::Base(Value::known(pallas::Base::zero())),
+            Witness::Base(Value::known(pallas::Base::zero())),
+            Witness::Base(Value::known(txb)),
+        ];
         let circuit = ZkCircuit::new(witnesses, &self.commit_fee_schedule_zkbin);
-        let proof = Proof::create(&self.commit_fee_schedule_pk, &[circuit], &[], rand::rngs::OsRng)
+        let proof = Proof::create(&self.commit_fee_schedule_pk, &[circuit], &[txb, pallas::Base::zero()], rand::rngs::OsRng)
             .map_err(|_| dwow_core::Error::Custom("Proof::create failed".to_string()))?;
 
         let params = CommitFeeScheduleParamsV1 {

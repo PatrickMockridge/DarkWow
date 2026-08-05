@@ -4598,75 +4598,7 @@ fn test_heavyweight_purse() -> std::result::Result<(), Box<dyn std::error::Error
 
 #[test]
 fn test_heavyweight_multisig() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    use dwow_contract_test_harness::harness::MultiSigHarness;
-    use dwow_sdk::crypto::{MULTISIG_CONTRACT_ID, PublicKey, SecretKey};
-    use dwow_sdk::pasta::pallas;
-    use crate::tests::blockchain::HeavyweightPipeline;
-
-    println!("=== MultiSig Heavyweight: All Endpoints ===");
-
-    smol::block_on(async {
-        let chain = HeavyweightPipeline::new().await?;
-        chain.init_genesis().await?;
-        let harness = MultiSigHarness::spawn();
-        let cid = *MULTISIG_CONTRACT_ID;  // deployed at genesis — do NOT re-deploy
-        println!("MultiSig contract at genesis: {}", cid);
-
-        let message_hash = pallas::Base::from(2u64);
-        let signer_secret = pallas::Base::from(3u64);
-        let signer_pub = PublicKey::from_secret(SecretKey::from_base(signer_secret));
-        let members = vec![signer_pub];
-
-        // --- CreateGroupV1 (0x01) ---
-        println!("  Test: create_group");
-        let create = harness.create_group(1, members)?;
-        assert!(!create.call_data.is_empty());
-        let group_id = create.group_id; // capture actual derived group_id
-        println!("    call_data={}B group_id={:?}", create.call_data.len(), group_id);
-
-        println!("  Exec: CreateGroupV1 through accept_block");
-        let h_before = chain.height();
-        chain.block()?
-            .with_call(cid, &harness, &create.call_data, vec![create.proof])?
-            .with_fee_collect()?
-            .submit().await?;
-        assert!(chain.height() > h_before,
-            "accept_block must advance height after CreateGroupV1");
-        println!("    accept_block height OK");
-
-        // --- SignV1 (0x02) ---
-        println!("  Test: sign");
-        let sign = harness.sign(group_id, message_hash, signer_secret)?;
-        assert!(!sign.call_data.is_empty());
-        println!("    call_data={}B", sign.call_data.len());
-
-        println!("  Exec: SignV1 through accept_block");
-        let h_before = chain.height();
-        chain.block()?
-            .with_call(cid, &harness, &sign.call_data, vec![sign.proof])?
-            .with_fee_collect()?
-            .submit().await?;
-        assert!(chain.height() > h_before,
-            "accept_block must advance height after SignV1");
-        println!("    accept_block height OK");
-
-        // --- FinalizeV1 (0x03) ---
-        println!("  Test: finalize");
-        let finalize = harness.finalize(group_id, message_hash)?;
-        assert!(!finalize.call_data.is_empty());
-        println!("    call_data={}B", finalize.call_data.len());
-
-        println!("  Exec: FinalizeV1 through accept_block");
-        let h_before = chain.height();
-        chain.block()?
-            .with_call(cid, &harness, &finalize.call_data, vec![finalize.proof])?
-            .with_fee_collect()?
-            .submit().await?;
-        assert!(chain.height() > h_before,
-            "accept_block must advance height after FinalizeV1");
-        println!("    accept_block height OK");
-
-        println!("=== All MultiSig endpoints OK (full accept_block) ===");
-        Ok(())
-    })
+    use crate::tests::specs::multisig_spec::multisig_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&multisig_test_spec()))?)
 }

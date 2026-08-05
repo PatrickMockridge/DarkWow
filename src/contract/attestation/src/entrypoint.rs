@@ -152,10 +152,9 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
 
     // Circuit computes tx_binding = poseidon_hash(witness[3], witness[3], witness[4]) =
-    // poseidon_hash(tx_commitment, tx_commitment, tx_nonce). In all attestation clients,
-    // tx_commitment and tx_nonce are zero. Instance order must match constrain_instance order
-    // in the .zk circuit file.
-    let txb = poseidon_hash([Base::zero(), Base::zero(), Base::zero()]);
+    // Circuit: DOMAIN_TX_BINDING = witness_base(3) = 3.
+    // All clients compute tx_binding = poseidon_hash(3, 0, 0).
+    let txb = poseidon_hash([Base::from(3), Base::zero(), Base::zero()]);
 
     match func {
         AttestationFunction::CreateAttestationV1 => {
@@ -253,9 +252,9 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 {
                     let (ex, ey) = params.delegatee_pub.xy().expect("pk not identity");
                     // Circuit: delegatee_leaf = poseidon_hash(DOMAIN_COIN_COMMIT, delegatee_pub_x, delegatee_pub_y)
-                    // where DOMAIN_COIN_COMMIT = witness_base(4) = tx_nonce = 0
+                    // where DOMAIN_COIN_COMMIT = witness_base(4) = 4
                     // Circuit constrain_instance order: delegatee_leaf, tx_binding, tx_nonce
-                    let delegatee_leaf = poseidon_hash([Base::zero(), ex, ey]);
+                    let delegatee_leaf = poseidon_hash([Base::from(4), ex, ey]);
                     vec![delegatee_leaf, txb, Base::zero()]
                 },
             ));

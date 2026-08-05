@@ -5,7 +5,7 @@
 #   - Domain separation: every poseidon_hash prepends a unique domain constant
 # Note: k=12 (4096 rows) — 30 witnesses with full mode multiplexing.
 # The old per-variant circuits used k=11 with ≤19 witnesses each.
-k = 12;
+k = 13;
 field = "pallas";
 
 constant "CreateClaimV2" {
