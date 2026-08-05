@@ -31,7 +31,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{pasta_prelude::*, poseidon_hash, PublicKey, SecretKey},
+    crypto::{pasta_prelude::*, poseidon_hash, PublicKey, SecretKey, schnorr::SchnorrSecret},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -44,7 +44,7 @@ use dwow_identity_contract::client::{
 use dwow_identity_contract::model::{
     CapabilityId, CapabilitySecret, CreateClaimParams, InitializeParams, IssueCredentialParams,
     RegisterCapabilityParams, IssueCapabilityParams, VerifyCapabilityParams,
-    RevokeCapabilityParams,
+    RevokeCapabilityParams, RevokeCredentialParams,
 };
 
 /// Identity Harness for isolated testing (3 circuits)
@@ -296,6 +296,29 @@ impl IdentityHarness {
         call_data.extend_from_slice(&params.encode());
         Ok(RegisterIssuerHarnessResult { call_data })
     }
+
+    /// Revoke a credential (function code 0x02, non-ZK).
+    /// Requires a valid Schnorr signature from the credential issuer over the nullifier.
+    pub fn revoke_credential(
+        &self,
+        issuer_secret: pallas::Base,
+        nullifier: dwow_sdk::crypto::IntentNullifier,
+        reason: Vec<u8>,
+    ) -> Result<RevokeCredentialHarnessResult> {
+        let sk = SecretKey::from_bytes(issuer_secret.to_repr()).map_err(|e| {
+            dwow_core::Error::Custom(format!("invalid issuer secret: {e}"))
+        })?;
+        let sig = sk.sign(&nullifier.to_bytes());
+        let params = RevokeCredentialParams {
+            nullifier,
+            issuer_sig: sig.encode(),
+            reason,
+            fee: 0,
+        };
+        let mut call_data = vec![0x02]; // RevokeCredentialV1
+        call_data.extend_from_slice(&params.encode());
+        Ok(RevokeCredentialHarnessResult { call_data })
+    }
 }
 
 impl super::ContractHarness for IdentityHarness {
@@ -333,3 +356,4 @@ pub struct RegisterCapabilityHarnessResult { pub call_data: Vec<u8>, pub capabil
 pub struct IssueCapabilityHarnessResult { pub call_data: Vec<u8> }
 pub struct RevokeCapabilityHarnessResult { pub call_data: Vec<u8> }
 pub struct RegisterIssuerHarnessResult { pub call_data: Vec<u8> }
+pub struct RevokeCredentialHarnessResult { pub call_data: Vec<u8> }

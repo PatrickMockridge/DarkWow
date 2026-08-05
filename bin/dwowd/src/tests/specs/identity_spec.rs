@@ -4,6 +4,7 @@ use dwow_contract_test_harness::harness::{ContractHarness, IdentityHarness};
 use dwow_sdk::crypto::{IDENTITY_CONTRACT_ID, IntentNullifier, PublicKey, SecretKey};
 use dwow_sdk::pasta::pallas;
 use dwow_identity_contract::model::{CapabilityId, CapabilitySecret, CredentialRequirement};
+use dwow_sdk::crypto::IntentNullifier;
 
 use crate::tests::uniform_runner::{
     ContractTestSpec, EndpointSpec, EndpointResult, EndpointExpectation,
@@ -80,6 +81,19 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                         pallas::Base::from(100u64), pallas::Base::from(200u64),
                         pallas::Base::from(300u64), schema_hash, 0, 100000)?;
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                }),
+            },
+            EndpointSpec {
+                name: "RevokeCredentialV1", is_zk: false,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: None,
+                state_tree: "credentials",
+                state_key_fn: Box::new(|| vec![]),
+                generate: Box::new(move || {
+                    let nf = IntentNullifier::from_bytes([0u8; 32]).unwrap();
+                    let r = h.revoke_credential(issuer_secret, nf, b"test".to_vec())?;
+                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
                 }),
             },
             EndpointSpec {
