@@ -4,6 +4,7 @@ use dwow_contract_test_harness::harness::{ContractHarness, PromissoryNoteHarness
 use dwow_sdk::crypto::{PROMISSORY_NOTE_CONTRACT_ID, pasta_prelude::PrimeField, poseidon_hash};
 use dwow_sdk::pasta::pallas;
 
+use crate::tests::blockchain::HeavyweightPipeline;
 use crate::tests::uniform_runner::{
     ContractTestSpec, EndpointSpec, EndpointResult, EndpointExpectation,
 };
@@ -27,6 +28,13 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
         pallas::Base::from(2), auth_parent, blind, coin_blind,
     ]);
     let token_id_key = token_id.to_repr().to_vec();
+    // Clones for verify_state closures (consumed by move closures)
+    let tkk = token_id_key.clone();
+    let tkk2 = tkk.clone();
+    let tkk3 = tkk.clone();
+    let tkk4 = tkk.clone();
+    let tkk5 = tkk.clone();
+    let tkk6 = tkk.clone();
 
     ContractTestSpec {
         name: "promissory_note",
@@ -44,7 +52,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = tkk.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "token_registry", &k)?; assert!(r.is_some(), "RegisterTypeV1: token must be stored"); Ok(()) } })),
                 state_tree: "token_registry",
                 state_key_fn: Box::new(move || token_id_key.clone()),
                 generate: Box::new(move || {
@@ -58,7 +66,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 name: "IssueV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = tkk2.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "coins", &k)?; assert!(r.is_some(), "IssueV1: minted coin must exist"); Ok(()) } })),
                 state_tree: "coins",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
@@ -72,7 +80,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 name: "TransferV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = tkk3.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some(), "TransferV1: nullifier must exist"); Ok(()) } })),
                 state_tree: "nullifiers",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
@@ -85,7 +93,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 name: "OtcSwapV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = tkk3.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some(), "OtcSwapV1: nullifier must exist"); Ok(()) } })),
                 state_tree: "nullifiers",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
@@ -98,7 +106,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 name: "RevokeV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = tkk3.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some(), "RevokeV1: nullifier must exist"); Ok(()) } })),
                 state_tree: "nullifiers",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
@@ -112,7 +120,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 name: "RedeemV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = tkk3.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some(), "RedeemV1: nullifier must exist"); Ok(()) } })),
                 state_tree: "nullifiers",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {

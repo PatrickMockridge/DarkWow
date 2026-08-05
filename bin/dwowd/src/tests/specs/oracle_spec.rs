@@ -5,6 +5,7 @@ use dwow_sdk::crypto::{ORACLE_CONTRACT_ID, PublicKey, SecretKey, MerkleNode, pas
 use dwow_sdk::pasta::pallas;
 
 use crate::tests::modules;
+use crate::tests::blockchain::HeavyweightPipeline;
 use crate::tests::uniform_runner::{
     ContractTestSpec, EndpointSpec, EndpointResult, EndpointExpectation,
 };
@@ -36,7 +37,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; assert!(r.is_some(), "RegisterOracleV1: oracle must be stored"); Ok(()) } })),
                 state_tree: "oracles",
                 state_key_fn: { let k = oracle_key.clone(); Box::new(move || k.clone()) },
                 generate: Box::new(move || {
@@ -51,7 +52,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; assert!(r.is_some(), "PushValueV1: value must be updated"); Ok(()) } })),
                 state_tree: "oracles",
                 state_key_fn: { let k = oracle_key.clone(); Box::new(move || k.clone()) },
                 generate: Box::new(move || {
@@ -65,7 +66,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; assert!(r.is_some(), "AttestValueV1: attestation must be stored"); Ok(()) } })),
                 state_tree: "attestations",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
@@ -81,7 +82,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; assert!(r.is_some(), "PushValueCommitmentV1: commitment must be stored"); Ok(()) } })),
                 state_tree: "oracles",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
@@ -98,7 +99,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; assert!(r.is_some(), "AggregateV1: result must be stored"); Ok(()) } })),
                 state_tree: "attestations",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
@@ -114,7 +115,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 name: "SetOracleActiveV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; assert!(r.is_some(), "SetOracleActiveV1: active flag must be set"); Ok(()) } })),
                 state_tree: "oracles",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
@@ -130,7 +131,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 name: "AggregateV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; assert!(r.is_some(), "AggregateV1: result must be stored"); Ok(()) } })),
                 state_tree: "attestations",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
