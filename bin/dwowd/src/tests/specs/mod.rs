@@ -4,6 +4,8 @@
 pub mod attestation_spec;
 pub mod auction_spec;
 pub mod baccarat_spec;
+pub mod lottery_spec;
+pub mod tender_spec;
 pub mod betting_stake_spec;
 pub mod box_spec;
 pub mod darktoshi_dice_spec;

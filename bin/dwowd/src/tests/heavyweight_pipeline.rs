@@ -1318,6 +1318,11 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
 }
 #[test]
 fn test_heavyweight_tender() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use crate::tests::specs::tender_spec::tender_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&tender_test_spec()))?)
+}
+#[allow(dead_code)] fn _old_tender_test() { let _old = r#"
     use dwow_contract_test_harness::harness::TenderHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
@@ -1409,7 +1414,7 @@ fn test_heavyweight_tender() -> std::result::Result<(), Box<dyn std::error::Erro
         println!("=== All Tender endpoints OK ===");
         Ok(())
     })
-}
+"#; } // close _old_tender_test
 
 // ============================================================================
 // subscription
@@ -2381,6 +2386,11 @@ fn _old_darktoshi_dice_test_removed() { let _old = r#"
 
 #[test]
 fn test_heavyweight_lottery() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use crate::tests::specs::lottery_spec::lottery_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&lottery_test_spec()))?)
+}
+#[allow(dead_code)] fn _old_lottery_test() { let _old = r#"
     use dwow_contract_test_harness::harness::LotteryHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
@@ -2470,7 +2480,7 @@ fn test_heavyweight_lottery() -> std::result::Result<(), Box<dyn std::error::Err
         println!("=== All Lottery endpoints OK ===");
         Ok(())
     })
-}
+"#; } // close _old_lottery_test
 
 // ============================================================================
 // roulette
