@@ -3831,7 +3831,10 @@ fn test_heavyweight_otc_swap() -> std::result::Result<(), Box<dyn std::error::Er
 }
 // MIGRATED: old test body removed. See specs/otc_swap_spec.rs
 #[allow(dead_code)]
-fn _old_otc_swap_test_removed() {
+fn _old_otc_swap_test_removed() {} // body deleted — see specs/otc_swap_spec.rs
+fn __unused_after_otc_swap() { /* old otc_swap test body deleted — see specs/otc_swap_spec.rs */
+    #[allow(unused_variables)]
+    let _old = r#"
     use dwow_contract_test_harness::harness::OtcSwapHarness;
     use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
@@ -3930,7 +3933,8 @@ fn _old_otc_swap_test_removed() {
         println!("=== OtcSwap Heavyweight: PASSED ===");
         Ok(())
     })
-} // close _old_otc_swap_test_removed
+"#; // end raw string
+} // close __unused_after_otc_swap
 
 #[test]
 fn test_heavyweight_box() -> std::result::Result<(), Box<dyn std::error::Error>> {

@@ -41,7 +41,8 @@ pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
                     let r = h.create_swap(alice_sk,
                         PublicKey::from_secret(SecretKey::from_base(alice_sk)),
                         PublicKey::from_secret(SecretKey::from_base(bob_sk)),
-                        1000, pallas::Base::from(3u64), 500, 100)
+                        1000, pallas::Base::from(3u64), 500,
+                        pallas::Base::from(4u64), 100)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
                 }),
@@ -56,8 +57,7 @@ pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
                 generate: Box::new(move || {
                     let r = h.fund_swap(1000, pallas::Scalar::from(100u64),
                         pallas::Base::from(1u64), 0,
-                        pallas::Base::from(3u64), 500,
-                        pallas::Base::from(4u64), pallas::Base::from(5u64))
+                        vec![dwow_sdk::crypto::MerkleNode::new(pallas::Base::from(0u64)); 32])
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
                 }),
