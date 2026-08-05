@@ -819,73 +819,9 @@ fn test_heavyweight_relayer_endowment() -> std::result::Result<(), Box<dyn std::
 
 #[test]
 fn test_heavyweight_slot() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    use dwow_contract_test_harness::harness::SlotHarness;
-    use dwow_sdk::crypto::{PublicKey, SecretKey};
-    use dwow_sdk::crypto::pasta_prelude::Group;
-    use dwow_sdk::pasta::pallas;
-    use crate::tests::blockchain::HeavyweightPipeline;
-
-    println!("=== Slot Heavyweight: All Endpoints ===");
-
-    smol::block_on(async {
-        let chain = HeavyweightPipeline::new().await?;
-        chain.init_genesis().await?;
-        let harness = SlotHarness::spawn();
-        println!("Harness spawned with circuits: {:?}", harness.circuits());
-        let wasm = include_bytes!("../../../../src/contract/slot/dwow_slot_contract.wasm");
-        let cid = chain.deploy(&harness, "slot", wasm).await?;
-        println!("Contract deployed");
-        let player_secret = pallas::Base::from(10u64);
-        let player_pub = PublicKey::from_secret(SecretKey::from_base(player_secret));
-
-        // --- initialize ---
-        println!("  Test: initialize");
-        let init = harness.initialize()?;
-        println!("    call_data={}B", init.call_data.len());
-
-        // --- commit_spin ---
-        println!("  Test: commit_spin");
-        let commit = harness.commit_spin(player_pub, 100, 5, pallas::Base::from(1u64), pallas::Base::from(2u64), 200, 3, pallas::Base::from(3u64), pallas::Point::identity())?;
-        assert!(!commit.call_data.is_empty());
-        println!("    call_data={}B", commit.call_data.len());
-
-        // --- reveal_spin ---
-        println!("  Test: reveal_spin");
-        let reveal = harness.reveal_spin(pallas::Base::from(100u64), pallas::Base::from(1u64))?;
-        assert!(!reveal.call_data.is_empty());
-        println!("    call_data={}B", reveal.call_data.len());
-
-        // --- reveal_spin through accept_block ---
-        println!("  Exec: RevealSpinV1 through accept_block");
-        let h_before = chain.height();
-        chain.block()?
-            .with_call(cid, &harness, &reveal.call_data, vec![reveal.proof])?
-            .with_fee_collect()?
-            .submit().await?;
-        assert!(chain.height() > h_before);
-        println!("    accept_block height OK");
-
-        // --- settle_bet ---
-        println!("  Test: settle_bet");
-        let settle = harness.settle_bet(
-            player_pub, 100, 5, pallas::Base::from(1u64),
-            pallas::Base::from(2u64), pallas::Base::from(3u64),
-        )?;
-        println!("    call_data={}B", settle.call_data.len());
-
-        // --- settle_bet through accept_block ---
-        println!("  Exec: SettleBetV1 through accept_block");
-        let h_before = chain.height();
-        chain.block()?
-            .with_call(cid, &harness, &settle.call_data, vec![settle.proof])?
-            .with_fee_collect()?
-            .submit().await?;
-        assert!(chain.height() > h_before);
-        println!("    accept_block height OK");
-
-        println!("=== All Slot endpoints OK ===");
-        Ok(())
-    })
+    use crate::tests::specs::slot_spec::slot_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&slot_test_spec()))?)
 }
 
 // ============================================================================
@@ -899,47 +835,9 @@ fn test_heavyweight_deployooor() -> std::result::Result<(), Box<dyn std::error::
     Ok(smol::block_on(run_heavyweight_test(&deployooor_test_spec()))?)
 }
 fn test_heavyweight_drain_protection() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    use dwow_contract_test_harness::harness::DrainProtectionHarness;
-    use crate::tests::blockchain::HeavyweightPipeline;
-
-    println!("=== DrainProtection Heavyweight: All Endpoints ===");
-
-    smol::block_on(async {
-        let chain = HeavyweightPipeline::new().await?;
-        chain.init_genesis().await?;
-        let harness = DrainProtectionHarness::spawn();
-        println!("Harness spawned with circuits: {:?}", harness.circuits());
-        let wasm = include_bytes!("../../../../src/contract/drain_protection/dwow_drain_protection_contract.wasm");
-        let contract_id = chain.deploy(&harness, "drain_protection", wasm).await?;
-        println!("Contract deployed");
-
-        // Generate all proofs once
-        let r0 = harness.initialize()?;
-        let r1 = harness.propose()?;
-        let r2 = harness.vote()?;
-        let r3 = harness.execute()?;
-        let r4 = harness.exit()?;
-        let r5 = harness.transfer()?;
-        let r6 = harness.lock()?;
-        let r7 = harness.unlock()?;
-        let r8 = harness.update_config()?;
-
-        // All 9 ZK endpoints in ONE block
-        chain.block()?
-            .with_call(contract_id, &harness, &r0.call_data, vec![r0.proof])?
-            .with_call(contract_id, &harness, &r1.call_data, vec![r1.proof])?
-            .with_call(contract_id, &harness, &r2.call_data, vec![r2.proof])?
-            .with_call(contract_id, &harness, &r3.call_data, vec![r3.proof])?
-            .with_call(contract_id, &harness, &r4.call_data, vec![r4.proof])?
-            .with_call(contract_id, &harness, &r5.call_data, vec![r5.proof])?
-            .with_call(contract_id, &harness, &r6.call_data, vec![r6.proof])?
-            .with_call(contract_id, &harness, &r7.call_data, vec![r7.proof])?
-            .with_call(contract_id, &harness, &r8.call_data, vec![r8.proof])?
-            .submit().await?;
-
-        println!("=== All DrainProtection endpoints OK ===");
-        Ok(())
-    })
+    use crate::tests::specs::drain_protection_spec::drain_protection_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&drain_protection_test_spec()))?)
 }
 
 // ============================================================================
@@ -948,50 +846,9 @@ fn test_heavyweight_drain_protection() -> std::result::Result<(), Box<dyn std::e
 
 #[test]
 fn test_heavyweight_game_room() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    use dwow_contract_test_harness::harness::GameRoomHarness;
-    use crate::tests::blockchain::HeavyweightPipeline;
-
-    println!("=== GameRoom Heavyweight: All Endpoints ===");
-
-    smol::block_on(async {
-        let chain = HeavyweightPipeline::new().await?;
-        chain.init_genesis().await?;
-        let harness = GameRoomHarness::spawn();
-        println!("Harness spawned with circuits: {:?}", harness.circuits());
-        let wasm = include_bytes!("../../../../src/contract/game_room/dwow_game_room_contract.wasm");
-        let cid = chain.deploy(&harness, "game_room", wasm).await?;
-        println!("Contract deployed");
-
-        // All 11 ZK endpoints in ONE block
-        let r0 = harness.create_room()?;
-        let r1 = harness.deposit()?;
-        let r2 = harness.withdraw()?;
-        let r3 = harness.place_bet()?;
-        let r4 = harness.raise()?;
-        let r5 = harness.call()?;
-        let r6 = harness.fold()?;
-        let r7 = harness.close_pot()?;
-        let r8 = harness.settle_pot()?;
-        let r9 = harness.contribute_entropy()?;
-        let ra = harness.claim()?;
-
-        chain.block()?
-            .with_call(cid, &harness, &r0.call_data, vec![r0.proof])?
-            .with_call(cid, &harness, &r1.call_data, vec![r1.proof])?
-            .with_call(cid, &harness, &r2.call_data, vec![r2.proof])?
-            .with_call(cid, &harness, &r3.call_data, vec![r3.proof])?
-            .with_call(cid, &harness, &r4.call_data, vec![r4.proof])?
-            .with_call(cid, &harness, &r5.call_data, vec![r5.proof])?
-            .with_call(cid, &harness, &r6.call_data, vec![r6.proof])?
-            .with_call(cid, &harness, &r7.call_data, vec![r7.proof])?
-            .with_call(cid, &harness, &r8.call_data, vec![r8.proof])?
-            .with_call(cid, &harness, &r9.call_data, vec![r9.proof])?
-            .with_call(cid, &harness, &ra.call_data, vec![ra.proof])?
-            .submit().await?;
-
-        println!("=== All GameRoom endpoints OK ===");
-        Ok(())
-    })
+    use crate::tests::specs::game_room_spec::game_room_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&game_room_test_spec()))?)
 }
 
 // ============================================================================
