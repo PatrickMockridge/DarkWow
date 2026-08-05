@@ -64,7 +64,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "CreateClaimV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
                 state_tree: "claims",
                 state_key_fn: Box::new(move || claim_id.to_repr().to_vec()),
                 generate: Box::new({
@@ -83,7 +83,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "VerifyClaimV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
                 state_tree: "claims",
                 state_key_fn: Box::new(move || vec![]),
                 generate: Box::new(move || {
@@ -130,7 +130,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "DelegateAttestationV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
                 state_tree: "delegations",
                 state_key_fn: Box::new(move || vec![]),
                 generate: Box::new({
@@ -156,7 +156,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "CheckNotRevokedV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
                 state_tree: "nullifiers",
                 state_key_fn: Box::new(move || vec![]),
                 generate: Box::new(move || {
@@ -171,7 +171,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "UpdateDelegationV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
                 state_tree: "delegations",
                 state_key_fn: Box::new(move || vec![]),
                 generate: Box::new(move || {
@@ -189,7 +189,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "AttestSlashV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
                 state_tree: "attestations",
                 state_key_fn: Box::new(move || vec![]),
                 generate: Box::new({
@@ -205,7 +205,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "CommitFeeScheduleV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
                 state_tree: "attestations",
                 state_key_fn: Box::new(move || vec![]),
                 generate: Box::new({
@@ -221,7 +221,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "RevokeAttestationV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
                 state_tree: "attestations",
                 state_key_fn: Box::new(move || attestation_id.to_repr().to_vec()),
                 generate: Box::new({
@@ -237,7 +237,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "ExpireAttestationV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
                 state_tree: "attestations",
                 state_key_fn: Box::new(move || attestation_id.to_repr().to_vec()),
                 generate: Box::new(move || {
@@ -250,7 +250,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "ValidateClaimV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
                 state_tree: "claims",
                 state_key_fn: Box::new(move || claim_id.to_repr().to_vec()),
                 generate: Box::new(move || {
@@ -263,7 +263,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "VerifyChainV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
                 state_tree: "delegations",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {

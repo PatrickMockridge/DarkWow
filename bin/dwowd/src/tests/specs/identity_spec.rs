@@ -1,10 +1,11 @@
 //! ContractTestSpec for identity contract. Spec: heavyweight-spec.md §5.4.
 
 use dwow_contract_test_harness::harness::{ContractHarness, IdentityHarness};
-use dwow_sdk::crypto::{IDENTITY_CONTRACT_ID, IntentNullifier, PublicKey, SecretKey};
+use dwow_sdk::crypto::{IDENTITY_CONTRACT_ID, IntentNullifier, PublicKey, SecretKey, pasta_prelude::PrimeField};
 use dwow_sdk::pasta::pallas;
 use dwow_identity_contract::model::{CapabilityId, CapabilitySecret, CredentialRequirement};
 
+use crate::tests::blockchain::HeavyweightPipeline;
 use crate::tests::uniform_runner::{
     ContractTestSpec, EndpointSpec, EndpointResult, EndpointExpectation,
 };
@@ -37,6 +38,10 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
         }, None)
         .expect("pre-compute register_capability");
     let cap_id = reg_result.capability_id.inner();
+    // Pre-computed keys for verify_state closures
+    let cred_key = commitment.to_repr().to_vec();
+    let cap_key = cap_id.to_repr().to_vec();
+    let ck = cred_key.clone();
 
     ContractTestSpec {
         name: "identity",
@@ -56,7 +61,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "RegisterIssuerV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "issuers", &k)?; assert!(r.is_some(), "RegisterIssuerV1: issuer must be stored"); Ok(()) } })),
                 state_tree: "issuers",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
@@ -72,7 +77,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "IssueCredentialV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "credentials", &k)?; assert!(r.is_some(), "IssueCredentialV1: credential must be stored"); Ok(()) } })),
                 state_tree: "credentials",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
@@ -86,7 +91,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "RevokeCredentialV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "credentials", &k)?; assert!(r.is_some(), "RevokeCredentialV1: credential must be updated"); Ok(()) } })),
                 state_tree: "credentials",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
@@ -99,7 +104,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "CreateClaimV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some(), "CreateClaimV1: claim nullifier must exist"); Ok(()) } })),
                 state_tree: "nullifiers",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
@@ -115,7 +120,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "RegisterCapabilityV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = cap_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "capabilities", &k)?; assert!(r.is_some()); Ok(()) } })),
                 state_tree: "capabilities",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
@@ -134,7 +139,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "VerifyCapabilityV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = cap_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "capabilities", &k)?; assert!(r.is_some()); Ok(()) } })),
                 state_tree: "capabilities",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
@@ -151,7 +156,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "IssueCapabilityV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = cap_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "capabilities", &k)?; assert!(r.is_some()); Ok(()) } })),
                 state_tree: "capabilities",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
@@ -167,7 +172,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "RevokeCapabilityV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({ let k = cap_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "capabilities", &k)?; assert!(r.is_some()); Ok(()) } })),
                 state_tree: "capabilities",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({

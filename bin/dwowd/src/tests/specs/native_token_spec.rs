@@ -4,6 +4,7 @@ use dwow_contract_test_harness::harness::{ContractHarness, NativeTokenHarness};
 use dwow_sdk::crypto::{NATIVE_TOKEN_CONTRACT_ID, Keypair, PublicKey, SecretKey};
 use dwow_sdk::pasta::pallas;
 
+use crate::tests::blockchain::HeavyweightPipeline;
 use crate::tests::modules;
 use crate::tests::uniform_runner::{
     ContractTestSpec, EndpointSpec, EndpointResult, EndpointExpectation,
@@ -45,7 +46,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                         Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
                     }
                 })),
-                verify_state: None,
+                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; assert!(r.is_some()); Ok(()) } })),
                 generate: Box::new(|| unreachable!("FeeV1 uses generate_with_coinbase")),
                 state_tree: "nullifiers",
                 state_key_fn: Box::new(|| vec![]),
@@ -75,7 +76,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                         Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
                     }
                 })),
-                verify_state: None,
+                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; assert!(r.is_some()); Ok(()) } })),
                 generate: Box::new(|| unreachable!("BurnV1 uses generate_with_coinbase")),
                 state_tree: "nullifiers",
                 state_key_fn: Box::new(|| vec![]),
