@@ -8,5 +8,6 @@ pub mod identity_spec;
 pub mod native_token_spec;
 pub mod multisig_spec;
 pub mod oracle_spec;
+pub mod otc_swap_spec;
 pub mod promissory_note_spec;
 pub mod purse_spec;

@@ -3825,6 +3825,13 @@ fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error:
 
 #[test]
 fn test_heavyweight_otc_swap() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use crate::tests::specs::otc_swap_spec::otc_swap_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&otc_swap_test_spec()))?)
+}
+// MIGRATED: old test body removed. See specs/otc_swap_spec.rs
+#[allow(dead_code)]
+fn _old_otc_swap_test_removed() {
     use dwow_contract_test_harness::harness::OtcSwapHarness;
     use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
@@ -3923,7 +3930,7 @@ fn test_heavyweight_otc_swap() -> std::result::Result<(), Box<dyn std::error::Er
         println!("=== OtcSwap Heavyweight: PASSED ===");
         Ok(())
     })
-}
+} // close _old_otc_swap_test_removed
 
 #[test]
 fn test_heavyweight_box() -> std::result::Result<(), Box<dyn std::error::Error>> {
