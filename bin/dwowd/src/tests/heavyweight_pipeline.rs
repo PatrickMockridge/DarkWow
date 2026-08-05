@@ -351,6 +351,11 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
 
 #[test]
 fn test_heavyweight_auction() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use crate::tests::specs::auction_spec::auction_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&auction_test_spec()))?)
+}
+#[allow(dead_code)] fn _old_auction_test() { let _old = r#"
     use dwow_contract_test_harness::harness::AuctionHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
@@ -480,7 +485,7 @@ fn test_heavyweight_auction() -> std::result::Result<(), Box<dyn std::error::Err
         println!("=== All Auction endpoints OK ===");
         Ok(())
     })
-}
+"#; } // close _old_auction_test
 
 // ============================================================================
 // escrow
