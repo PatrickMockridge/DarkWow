@@ -814,62 +814,11 @@ fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn st
 //
 // Uses NativeTokenHarness (3 circuits, fast spawn) as the representative contract.
 
-use dwow_contract_test_harness::harness::NativeTokenHarness;
-use dwow_sdk::crypto::{Keypair, PublicKey, SecretKey};
-use crate::tests::blockchain::HeavyweightPipeline as BlockPipeline;
 use super::harness::{
     build_contract_tx, build_test_block,
     build_test_block_with_uncles, build_test_uncle,
 };
-
-/// Create a BlockPipeline with NativeTokenHarness, deploy WASM,
-/// and return the chain, harness, ContractId, and a keypair for generating call_data.
-async fn setup_native_token_pipeline(
-) -> std::result::Result<
-    (BlockPipeline, NativeTokenHarness, ContractId, Keypair),
-    Box<dyn std::error::Error>,
-> {
-    let chain = BlockPipeline::new().await?;
-    chain.init_genesis().await?;
-    let harness = NativeTokenHarness::spawn();
-    let cid = *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;  // deployed at genesis
-
-    let secret = SecretKey::from_bytes([2u8; 32])?;
-    let public = PublicKey::from_secret(secret.clone());
-    let keypair = Keypair { secret, public };
-
-    Ok((chain, harness, cid, keypair))
-}
-
-/// Generate call_data via NativeTokenHarness.
-/// Uses harness.fee() — produces ZK call_data with FeeV1 circuit (0x00).
-/// The fee call may not pass WASM execution (it references a non-existent coin
-/// on the test contract), but uncle tests use this to exercise the execution
-/// pipeline where failures are non-fatal. Canonical tests should use
-/// `submit()` to prove the accept_block path.
-/// Returns (call_data, proofs) for use with chain.block() methods.
-fn native_token_call(
-    harness: &NativeTokenHarness,
-    keypair: Keypair,
-) -> std::result::Result<(Vec<u8>, Vec<dwow_core::zk::Proof>), Box<dyn std::error::Error>> {
-    let recipient = PublicKey::from_secret(SecretKey::from_bytes([9u8; 32])?);
-    let result = harness.fee(
-        1000,
-        dwow_sdk::pasta::pallas::Base::from(1u64),
-        dwow_sdk::pasta::pallas::Base::from(0u64),
-        dwow_sdk::pasta::pallas::Base::from(0u64),
-        dwow_sdk::pasta::pallas::Base::from(0u64),
-        0,
-        vec![dwow_sdk::crypto::MerkleNode::new(dwow_sdk::pasta::pallas::Base::from(0u64)); 32],
-        keypair.secret.clone(),
-        keypair.secret,
-        recipient,
-        dwow_sdk::pasta::pallas::Base::from(0u64),
-        dwow_sdk::pasta::pallas::Base::from(0u64),
-        10,
-    )?;
-    Ok((result.call_data, result.proofs))
-}
+use crate::tests::modules::uncle_helpers::{setup_native_token_pipeline, native_token_call};
 
 // ---------------------------------------------------------------------------
 // test_heavyweight_canonical_exec
