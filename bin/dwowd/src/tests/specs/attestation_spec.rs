@@ -5,6 +5,7 @@ use dwow_attestation_contract::model::Predicate;
 use dwow_sdk::crypto::{ATTESTATION_CONTRACT_ID, PublicKey, SecretKey, MerkleNode, pasta_prelude::PrimeField, poseidon_hash};
 use dwow_sdk::pasta::pallas;
 
+use crate::tests::blockchain::HeavyweightPipeline;
 use crate::tests::modules;
 use crate::tests::uniform_runner::{
     ContractTestSpec, EndpointSpec, EndpointResult, EndpointExpectation,
@@ -37,7 +38,15 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "CreateAttestationV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({
+                    let aid = attestation_id.to_repr().to_vec();
+                    let c = *ATTESTATION_CONTRACT_ID;
+                    move |chain: &HeavyweightPipeline| {
+                        let r = chain.query_contract_state(c, "attestations", &aid)?;
+                        assert!(r.is_some(), "CreateAttestation: attestation must be stored");
+                        Ok(())
+                    }
+                })),
                 state_tree: "attestations",
                 state_key_fn: Box::new(move || attestation_id.to_repr().to_vec()),
                 generate: Box::new({
@@ -91,7 +100,17 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "ConsumeClaimV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({
+                    let nf_key = poseidon_hash([
+                        pallas::Base::from(1u64), claim_id, claimant_secret,
+                    ]).to_repr().to_vec();
+                    let c = *ATTESTATION_CONTRACT_ID;
+                    move |chain: &HeavyweightPipeline| {
+                        let r = chain.query_contract_state(c, "nullifiers", &nf_key)?;
+                        assert!(r.is_some(), "ConsumeClaim: nullifier must exist after consumption");
+                        Ok(())
+                    }
+                })),
                 state_tree: "nullifiers",
                 state_key_fn: Box::new(move || vec![]),
                 generate: Box::new({
