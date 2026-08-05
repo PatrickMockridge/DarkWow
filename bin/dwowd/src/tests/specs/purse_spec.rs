@@ -31,6 +31,7 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
                 name: "DepositV1",
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
+                    generate_with_coinbase: None,
                 state_tree: "purse_roots",
                 state_key_fn: Box::new(|| {
                     pallas::Base::from(1u64).to_repr().to_vec()
@@ -44,6 +45,7 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
                 name: "WithdrawV1",
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
+                    generate_with_coinbase: None,
                 state_tree: "nullifiers",
                 state_key_fn: Box::new(|| {
                     pallas::Base::from(1u64).to_repr().to_vec()
@@ -57,6 +59,7 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
                 name: "BalanceV1",
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
+                    generate_with_coinbase: None,
                 state_tree: "purse_roots",
                 state_key_fn: Box::new(|| {
                     pallas::Base::from(1u64).to_repr().to_vec()

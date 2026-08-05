@@ -34,6 +34,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 name: "RegisterOracleV1",
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
+                    generate_with_coinbase: None,
                 state_tree: "oracles",
                 state_key_fn: { let k = oracle_key.clone(); Box::new(move || k.clone()) },
                 generate: Box::new(move || {
@@ -47,6 +48,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 name: "PushValueV1",
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
+                    generate_with_coinbase: None,
                 state_tree: "oracles",
                 state_key_fn: { let k = oracle_key.clone(); Box::new(move || k.clone()) },
                 generate: Box::new(move || {
@@ -59,6 +61,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 name: "AttestValueV1",
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
+                    generate_with_coinbase: None,
                 state_tree: "attestations",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
@@ -73,6 +76,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 name: "PushValueCommitmentV1",
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
+                    generate_with_coinbase: None,
                 state_tree: "oracles",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
@@ -88,6 +92,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 name: "AggregateV1",
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
+                    generate_with_coinbase: None,
                 state_tree: "attestations",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {

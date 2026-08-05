@@ -63,6 +63,8 @@ pub struct EndpointSpec<'a> {
     pub is_zk: bool,
     /// Produces call_data + proofs for this endpoint.
     pub generate: Box<dyn Fn() -> Result<EndpointResult> + 'a>,
+    /// For FeeV1/BurnV1: uses prefetched coinbase params instead of `generate`.
+    pub generate_with_coinbase: Option<Box<dyn Fn(&modules::coinbase_coordination::PrefetchedCoinbase) -> Result<EndpointResult> + 'a>>,
     /// State tree to verify after submission.
     pub state_tree: &'static str,
     /// Key to query in the state tree after the call succeeds.
@@ -169,7 +171,12 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
     };
 
     for endpoint in &spec.endpoints {
-        let result = (endpoint.generate)()?;
+        // Use generate_with_coinbase if this endpoint needs coinbase params (FeeV1/BurnV1)
+        let result = if let Some(ref gen) = endpoint.generate_with_coinbase {
+            gen(coinbase.as_ref().expect("needs_coinbase_coordination must be true when generate_with_coinbase is set"))?
+        } else {
+            (endpoint.generate)()?
+        };
         assert!(!result.call_data.is_empty(),
             "{}: {} call_data must not be empty", spec.name, endpoint.name);
 
@@ -182,6 +189,17 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
             assert!(submit_result.is_err(),
                 "{}: {} — expected rejection but accept_block succeeded",
                 spec.name, endpoint.name);
+        } else if endpoint.generate_with_coinbase.is_some() {
+            // Coinbase-dependent endpoints use submit_with_coinbase
+            let cb = coinbase.as_ref().expect("needs_coinbase_coordination must be true");
+            let new_height = modules::coinbase_coordination::submit_with_coinbase(
+                &chain_a, cid, spec.harness,
+                &result.call_data, result.proofs, endpoint.is_zk,
+                cb.coinbase_tx.clone(),
+            ).await?;
+            assert!(new_height > height_before,
+                "{}: {} — height must advance after accept_block", spec.name, endpoint.name);
+            height_before = new_height;
         } else {
             // Normal acceptance path
             let new_height = modules::endpoint_exercise::exercise_endpoint(
@@ -190,7 +208,6 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
             height_before = new_height;
         }
     }
-    // coinbase is consumed by FeeV1/BurnV1 endpoints — drop reference
     drop(coinbase);
 
     // ── Nullifier replay rejection (spec §3.6) ─────────────────────

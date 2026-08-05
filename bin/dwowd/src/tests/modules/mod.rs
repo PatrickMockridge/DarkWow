@@ -4,6 +4,7 @@
 pub mod chain_setup;
 pub mod coinbase_coordination;
 pub mod deploy_router;
+pub mod error_bridge;
 pub mod determinism;
 pub mod endpoint_exercise;
 pub mod integrity_checks;
