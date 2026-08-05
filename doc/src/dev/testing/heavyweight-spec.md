@@ -311,6 +311,59 @@ code to new during a refactor. `#[deprecated]` SHALL NOT be used on code at the 
 its creation. API evolution SHALL be additive (new methods added, old methods removed only
 after all callers migrated) or atomic (signature change + all call site updates in one commit).
 
+### 4.11 False Positives — Zero-Knowledge Proofs That Prove Nothing
+
+```rust
+// PROHIBITED — proof verifies but constrains nothing about contract logic:
+let witnesses = empty_witnesses(zkbin)?;
+let circuit = ZkCircuit::new(witnesses, zkbin);
+let proof = Proof::create(pk, &[circuit], &[], OsRng)?;
+```
+
+**Why prohibited:** An `empty_witnesses` proof is a valid halo2 proof — the proof system accepts it.
+But the proof constrains nothing about the contract's function parameters. The circuit's `constrain_instance`
+calls bind instance values from the witness, and empty witnesses set all values to zero. The resulting
+proof attests to a trivial statement ("zero equals zero") rather than the contract's intended predicate
+("the holder knows the credential secret" or "the input coin exists in the Merkle tree").
+
+A test that submits an empty-witness proof through `accept_block` will pass if the contract verifies
+the proof but does not validate that the proof's public inputs match the function's expected parameters.
+This is a **false positive**: the test passes, the block is accepted, but the contract's ZK security
+— its entire authorization model — was never exercised.
+
+**The severity:** This is not a gap in coverage. It is a **false signal of coverage**. A passing test
+with empty_witnesses gives the operator confidence that the endpoint is verified, when in fact the ZK
+circuit — the contract's primary security mechanism — was never tested with real data. This is worse
+than an untested endpoint because it actively conceals the gap.
+
+**Required:** Every ZK proof submitted to `accept_block` SHALL be generated from real witnesses
+derived from the function's actual parameters. `empty_witnesses()` SHALL NOT be used in any harness
+method's proof generation path. Harnesses using empty_witnesses SHALL be classified as STUB and their
+spec endpoints SHALL be marked `#[ignore = "tracking: URL — empty_witnesses proofs"]`.
+
+**Detection:** The anti-pattern scanner (`contrib/ci/scan_heavyweight_antipatterns.sh`) SHALL detect
+`empty_witnesses` in harness method bodies (outside `spawn()`) and `Proof::create` with empty public
+inputs (`&[]`). CI SHALL fail if either pattern is found.
+
+### 4.12 Silenced Failures — Tests That Always Pass
+
+A test SHALL be considered **fraudulent** if it can pass without exercising every declared endpoint
+through `accept_block`. The following patterns SHALL cause the anti-pattern scanner to return a
+failure:
+
+- **match-Err-skip**: `match harness.method() { Ok(d) => { ... }, Err(e) => println!("skipped") }`
+- **ZK-proof-only**: `let _ = harness.method()?; println!("proof OK");` — proof generated, never submitted
+- **comment-deferred**: `// accept_block routing deferred until harness adds call_data encoding`
+- **explicit-skip**: `println!("Test: X (skipped — pre-existing circuit bug)");`
+- **early-return**: `Err(e) => { println!("skipped"); return Ok(()); }`
+
+Any test containing these patterns SHALL NOT be counted as "passing" in coverage metrics. The test
+SHALL be fixed (endpoint exercised through accept_block) or marked `#[ignore = "tracking: URL"]`
+with a concrete remediation plan.
+
+**The rule:** A test that cannot exercise an endpoint through accept_block SHALL fail. No exceptions.
+"Pre-existing bug" is not a justification for silence — it is a reason to fix the bug.
+
 ---
 
 ## 5. Category-Specific Requirements
