@@ -1,14 +1,14 @@
-//! ContractTestSpec for multisig contract.
-//!
-//! Category: O-Cap Authorization (genesis).
-//! Functions: 4 (InitializeV1=0x00 non-ZK, CreateGroupV1=0x01 ZK,
-//!                    SignV1=0x02 ZK, FinalizeV1=0x03 ZK).
-//! Spec: heavyweight-spec.md §5.6.
+//! ContractTestSpec for multisig. Spec: heavyweight-spec.md §5.6.
+//! HAZOP remediation: 3-of-5 group, threshold enforcement, replay protection.
 
 use dwow_contract_test_harness::harness::{ContractHarness, MultiSigHarness};
-use dwow_sdk::crypto::{MULTISIG_CONTRACT_ID, PublicKey, SecretKey, pasta_prelude::PrimeField, poseidon_hash};
+use dwow_sdk::crypto::{
+    MULTISIG_CONTRACT_ID, PublicKey, SecretKey,
+    pasta_prelude::PrimeField, poseidon_hash,
+};
 use dwow_sdk::pasta::pallas;
 
+use crate::tests::blockchain::HeavyweightPipeline;
 use crate::tests::uniform_runner::{
     ContractTestSpec, EndpointSpec, EndpointResult, EndpointExpectation,
 };
@@ -16,21 +16,44 @@ use crate::tests::uniform_runner::{
 pub fn multisig_test_spec() -> ContractTestSpec<'static> {
     let harness = Box::leak(Box::new(MultiSigHarness::spawn()));
     let state_trees = harness.state_trees();
-    // Shared reference for closures — &T: Copy so each closure gets its own
     let h: &MultiSigHarness = harness;
+    let cid = *MULTISIG_CONTRACT_ID;
 
-    // Deterministic values matching harness seeds (signer_secret=3u64)
-    let signer_secret = pallas::Base::from(3u64);
-    let signer_pub = PublicKey::from_secret(SecretKey::from_base(signer_secret));
-    let (fx, fy) = signer_pub.xy().expect("pk not identity");
-    let group_id = poseidon_hash([fx, fy, pallas::Base::from(1u64), pallas::Base::from(1u64)]);
+    // 5 signers with deterministic secrets
+    let secrets = [
+        pallas::Base::from(3u64),
+        pallas::Base::from(4u64),
+        pallas::Base::from(5u64),
+        pallas::Base::from(6u64),
+        pallas::Base::from(7u64),
+    ];
+    let pubkeys: Vec<PublicKey> = secrets.iter()
+        .map(|&s| PublicKey::from_secret(SecretKey::from_base(s)))
+        .collect();
+    let threshold: u8 = 3;
+    let members = pubkeys.clone();
+    let message_hash = pallas::Base::from(42u64);
+
+    // Pre-compute group_id
+    let (fx, fy) = pubkeys[0].xy().expect("pk not identity");
+    let t = pallas::Base::from(threshold as u64);
+    let n = pallas::Base::from(pubkeys.len() as u64);
+    let group_id = poseidon_hash([fx, fy, t, n]);
     let gid_bytes = group_id.to_repr().to_vec();
-    let message_hash = pallas::Base::from(2u64);
+
+    // Pre-compute nullifier for member 1 (used in verify_state — cloned per closure)
+    let nf1 = {
+        let (px, py) = pubkeys[0].xy().expect("pk");
+        poseidon_hash([group_id, message_hash, px, py])
+    };
+    let nf1_bytes = nf1.to_repr().to_vec();
+    let nf1b2 = nf1_bytes.clone();
+    let gb2 = gid_bytes.clone();
 
     ContractTestSpec {
         name: "multisig",
         is_genesis: true,
-        contract_id: *MULTISIG_CONTRACT_ID,
+        contract_id: cid,
         harness: h,
         wasm_bytes: None,
         has_initialize: false,
@@ -39,39 +62,104 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
         state_trees,
         endpoints: vec![
             EndpointSpec {
-                name: "CreateGroupV1",
-                is_zk: true,
+                name: "CreateGroupV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({
+                    let gb = gid_bytes.clone();
+                    let c = cid;
+                    move |chain| {
+                        let result = chain.query_contract_state(c, "groups", &gb)?;
+                        assert!(result.is_some(),
+                            "CreateGroupV1: group must be stored in groups tree");
+                        Ok(())
+                    }
+                })),
                 state_tree: "groups",
-                state_key_fn: { let b = gid_bytes.clone(); Box::new(move || b.clone()) },
+                state_key_fn: Box::new(move || gid_bytes.clone()),
+                generate: Box::new({
+                    let m = members.clone();
+                    move || {
+                        let r = h.create_group(threshold, m.clone())?;
+                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                    }
+                }),
+            },
+            EndpointSpec {
+                name: "SignV1_member1", is_zk: true,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: Some(Box::new({
+                    let nb = nf1_bytes.clone();
+                    let c = cid;
+                    move |chain| {
+                        let result = chain.query_contract_state(c, "signatures", &nb)?;
+                        assert!(result.is_some(),
+                            "SignV1: signature nullifier must exist in signatures tree");
+                        Ok(())
+                    }
+                })),
+                state_tree: "signatures",
+                state_key_fn: Box::new(move || nf1b2.clone()),
                 generate: Box::new(move || {
-                    let r = h.create_group(1, vec![signer_pub])?;
+                    let r = h.sign(group_id, message_hash, secrets[0])?;
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
-                name: "SignV1",
-                is_zk: true,
+                name: "SignV1_member2", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: None,
                 state_tree: "signatures",
-                state_key_fn: { let b = gid_bytes.clone(); Box::new(move || b.clone()) },
+                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
-                    let r = h.sign(group_id, message_hash, signer_secret)?;
+                    let r = h.sign(group_id, message_hash, secrets[1])?;
+                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                }),
+            },
+            // MUST REJECT: only 2/3 signatures
+            EndpointSpec {
+                name: "FinalizeV1_insufficient", is_zk: true,
+                expectation: EndpointExpectation::Rejection,
+                generate_with_coinbase: None,
+                verify_state: None,
+                state_tree: "nullifiers",
+                state_key_fn: Box::new(|| vec![]),
+                generate: Box::new(move || {
+                    let r = h.finalize(group_id, message_hash)?;
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
             EndpointSpec {
-                name: "FinalizeV1",
-                is_zk: true,
+                name: "SignV1_member3", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: None,
+                state_tree: "signatures",
+                state_key_fn: Box::new(|| vec![]),
+                generate: Box::new(move || {
+                    let r = h.sign(group_id, message_hash, secrets[2])?;
+                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                }),
+            },
+            // MUST SUCCEED with 3/3, verify signatures DELETED (HAZOP H-5)
+            EndpointSpec {
+                name: "FinalizeV1_sufficient", is_zk: true,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: Some(Box::new({
+                    let nb = nf1_bytes.clone();
+                    let c = cid;
+                    move |chain| {
+                        let result = chain.query_contract_state(c, "signatures", &nb)?;
+                        assert!(result.is_none(),
+                            "FinalizeV1: consumed signatures must be DELETED (HAZOP H-5)");
+                        Ok(())
+                    }
+                })),
                 state_tree: "nullifiers",
-                state_key_fn: { let b = gid_bytes; Box::new(move || b.clone()) },
+                state_key_fn: Box::new(move || gb2.clone()),
                 generate: Box::new(move || {
                     let r = h.finalize(group_id, message_hash)?;
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
