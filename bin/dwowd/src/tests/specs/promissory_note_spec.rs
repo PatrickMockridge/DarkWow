@@ -54,6 +54,46 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                     Ok(EndpointResult { call_data: r.call_data, proofs: r.token_proofs })
                 }),
             },
+            EndpointSpec {
+                name: "IssueV1", is_zk: true,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: None,
+                state_tree: "coins",
+                state_key_fn: Box::new(|| vec![]),
+                generate: Box::new(move || {
+                    let r = h.issue(auth_parent, token_id, recipient,
+                        500, spend_hook, user_data, coin_blind)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                }),
+            },
+            EndpointSpec {
+                name: "TransferV1", is_zk: true,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: None,
+                state_tree: "nullifiers",
+                state_key_fn: Box::new(|| vec![]),
+                generate: Box::new(move || {
+                    let r = h.transfer(vec![], vec![])
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                }),
+            },
+            EndpointSpec {
+                name: "OtcSwapV1", is_zk: true,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: None,
+                state_tree: "nullifiers",
+                state_key_fn: Box::new(|| vec![]),
+                generate: Box::new(move || {
+                    let r = h.otc_swap(vec![], vec![])
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                }),
+            },
         ],
     }
 }
