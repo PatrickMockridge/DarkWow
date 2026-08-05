@@ -13,3 +13,4 @@ pub mod oracle_spec;
 pub mod otc_swap_spec;
 pub mod promissory_note_spec;
 pub mod purse_spec;
+pub mod roulette_spec;

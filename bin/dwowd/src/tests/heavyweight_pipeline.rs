@@ -2458,6 +2458,11 @@ fn test_heavyweight_lottery() -> std::result::Result<(), Box<dyn std::error::Err
 
 #[test]
 fn test_heavyweight_roulette() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use crate::tests::specs::roulette_spec::roulette_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&roulette_test_spec()))?)
+}
+#[allow(dead_code)] fn _old_roulette_test() { let _old = r#"
     use dwow_contract_test_harness::harness::RouletteHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
@@ -2553,7 +2558,7 @@ fn test_heavyweight_roulette() -> std::result::Result<(), Box<dyn std::error::Er
         println!("=== All Roulette endpoints OK ===");
         Ok(())
     })
-}
+"#; } // close _old_roulette_test
 
 // ============================================================================
 // DAO-Escrow Heavyweight Test
