@@ -232,7 +232,7 @@ pub struct Claim {
 
 impl Claim {
     pub fn encode(&self) -> Vec<u8> {
-        let cap = 143 + self.evidence_commitment.len() + self.revealed_result.len() + self.proof.len();
+        let cap = 143 + 3 + self.evidence_commitment.len() + self.revealed_result.len() + self.proof.len();
         let mut b = Vec::with_capacity(cap);
         b.push(self.version);
         b.extend_from_slice(&self.id.to_bytes());
@@ -240,11 +240,11 @@ impl Claim {
         b.extend_from_slice(&self.claimant_pub.to_bytes());
         b.extend_from_slice(&self.claimant_secret.to_repr());
         b.push(self.predicate as u8);
-        b.push(self.evidence_commitment.len() as u8);
+        b.extend_from_slice(&(self.evidence_commitment.len() as u32).to_le_bytes());
         b.extend_from_slice(&self.evidence_commitment);
-        b.push(self.revealed_result.len() as u8);
+        b.extend_from_slice(&(self.revealed_result.len() as u32).to_le_bytes());
         b.extend_from_slice(&self.revealed_result);
-        b.push(self.proof.len() as u8);
+        b.extend_from_slice(&(self.proof.len() as u32).to_le_bytes());
         b.extend_from_slice(&self.proof);
         b.push(self.state as u8);
         b.extend_from_slice(&self.created_at.to_le_bytes());
@@ -260,18 +260,21 @@ impl Claim {
         let claimant_pub = PublicKey::from_bytes(data[65..97].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Claim: invalid claimant_pub: {}", e)))?;
         let claimant_secret = Option::<pallas::Base>::from(pallas::Base::from_repr(data[97..129].try_into().unwrap())).ok_or_else(|| ContractError::IoError("Claim: invalid claimant_secret".into()))?;
         let predicate = Predicate::try_from(data[129])?;
-        let ec_len = data[130] as usize;
-        let ec_end = 131 + ec_len;
-        if data.len() < ec_end + 1 { return Err(ContractError::IoError("Claim: data too short for evidence_commitment".into())); }
-        let evidence_commitment = data[131..ec_end].to_vec();
-        let rr_len = data[ec_end] as usize;
-        let rr_end = ec_end + 1 + rr_len;
-        if data.len() < rr_end + 1 { return Err(ContractError::IoError("Claim: data too short for revealed_result".into())); }
-        let revealed_result = data[ec_end + 1..rr_end].to_vec();
-        let pr_len = data[rr_end] as usize;
-        let pr_end = rr_end + 1 + pr_len;
+        if data.len() < 131 + 4 { return Err(ContractError::IoError("Claim: data too short for evidence_commitment length prefix".into())); }
+        let ec_len = u32::from_le_bytes(data[130..134].try_into().unwrap()) as usize;
+        let ec_end = 134 + ec_len;
+        if data.len() < ec_end + 4 { return Err(ContractError::IoError("Claim: data too short for evidence_commitment".into())); }
+        let evidence_commitment = data[134..ec_end].to_vec();
+        if data.len() < ec_end + 4 { return Err(ContractError::IoError("Claim: data too short for revealed_result length prefix".into())); }
+        let rr_len = u32::from_le_bytes(data[ec_end..ec_end + 4].try_into().unwrap()) as usize;
+        let rr_end = ec_end + 4 + rr_len;
+        if data.len() < rr_end + 4 { return Err(ContractError::IoError("Claim: data too short for revealed_result".into())); }
+        let revealed_result = data[ec_end + 4..rr_end].to_vec();
+        if data.len() < rr_end + 4 { return Err(ContractError::IoError("Claim: data too short for proof length prefix".into())); }
+        let pr_len = u32::from_le_bytes(data[rr_end..rr_end + 4].try_into().unwrap()) as usize;
+        let pr_end = rr_end + 4 + pr_len;
         if data.len() < pr_end + 10 { return Err(ContractError::IoError("Claim: data too short for proof+state".into())); }
-        let proof = data[rr_end + 1..pr_end].to_vec();
+        let proof = data[rr_end + 4..pr_end].to_vec();
         let state = ClaimState::try_from(data[pr_end])?;
         let created_at = u64::from_le_bytes(data[pr_end + 1..pr_end + 9].try_into().unwrap());
         let has_consumed = data[pr_end + 9] != 0;
@@ -428,7 +431,7 @@ pub struct CreateClaimParamsV1 {
 
 impl dwow_serial::Encodable for CreateClaimParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateClaimParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl CreateClaimParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(102+self.proof.len()+self.evidence_commitment.len()+self.revealed_result.len()); b.extend_from_slice(&(self.proof.len() as u32).to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.claim_id.to_bytes()); b.extend_from_slice(&self.attestation_id.to_bytes()); b.extend_from_slice(&self.claimant_pub.to_bytes()); b.extend_from_slice(&self.predicate.encode()); b.push(self.evidence_commitment.len() as u8); b.extend_from_slice(&self.evidence_commitment); b.push(self.revealed_result.len() as u8); b.extend_from_slice(&self.revealed_result); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 102 { return Err(ContractError::IoError("CreateClaimParamsV1: too short".into())); } let proof_len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize; let mut pos = 4+proof_len; if data.len() < pos+96+2 { return Err(ContractError::IoError("CreateClaimParamsV1: truncated".into())); } let proof = data[4..pos].to_vec(); let claim_id = ClaimId::from_bytes(data[pos..pos+32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("CreateClaimParamsV1: invalid claim_id".into()))?; pos += 32; let attestation_id = AttestationId::from_bytes(data[pos..pos+32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("CreateClaimParamsV1: invalid attestation_id".into()))?; pos += 32; let claimant_pub = PublicKey::from_bytes(data[pos..pos+32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateClaimParamsV1: invalid claimant_pub: {}", e)))?; pos += 32; let predicate = Predicate::decode(&data[pos..pos+1])?; pos += 1; let ec_len = data[pos] as usize; pos += 1; if data.len() < pos+ec_len+1 { return Err(ContractError::IoError("CreateClaimParamsV1: evidence truncated".into())); } let evidence_commitment = data[pos..pos+ec_len].to_vec(); pos += ec_len; let rr_len = data[pos] as usize; pos += 1; if data.len() != pos+rr_len { return Err(ContractError::IoError(format!("CreateClaimParamsV1: expected {} bytes, got {}", pos+rr_len, data.len()))); } let revealed_result = data[pos..].to_vec(); Ok(CreateClaimParamsV1 { proof, claim_id, attestation_id, claimant_pub, predicate, evidence_commitment, revealed_result }) } }
+impl CreateClaimParamsV1 { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(108+self.proof.len()+self.evidence_commitment.len()+self.revealed_result.len()); b.extend_from_slice(&(self.proof.len() as u32).to_le_bytes()); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.claim_id.to_bytes()); b.extend_from_slice(&self.attestation_id.to_bytes()); b.extend_from_slice(&self.claimant_pub.to_bytes()); b.extend_from_slice(&self.predicate.encode()); b.extend_from_slice(&(self.evidence_commitment.len() as u32).to_le_bytes()); b.extend_from_slice(&self.evidence_commitment); b.extend_from_slice(&(self.revealed_result.len() as u32).to_le_bytes()); b.extend_from_slice(&self.revealed_result); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 102 { return Err(ContractError::IoError("CreateClaimParamsV1: too short".into())); } let proof_len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize; let mut pos = 4+proof_len; if data.len() < pos+96+4 { return Err(ContractError::IoError("CreateClaimParamsV1: truncated".into())); } let proof = data[4..pos].to_vec(); let claim_id = ClaimId::from_bytes(data[pos..pos+32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("CreateClaimParamsV1: invalid claim_id".into()))?; pos += 32; let attestation_id = AttestationId::from_bytes(data[pos..pos+32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("CreateClaimParamsV1: invalid attestation_id".into()))?; pos += 32; let claimant_pub = PublicKey::from_bytes(data[pos..pos+32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("CreateClaimParamsV1: invalid claimant_pub: {}", e)))?; pos += 32; let predicate = Predicate::decode(&data[pos..pos+1])?; pos += 1; if data.len() < pos+4 { return Err(ContractError::IoError("CreateClaimParamsV1: evidence length truncated".into())); } let ec_len = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()) as usize; pos += 4; if data.len() < pos+ec_len+4 { return Err(ContractError::IoError("CreateClaimParamsV1: evidence truncated".into())); } let evidence_commitment = data[pos..pos+ec_len].to_vec(); pos += ec_len; if data.len() < pos+4 { return Err(ContractError::IoError("CreateClaimParamsV1: revealed_result length truncated".into())); } let rr_len = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()) as usize; pos += 4; if data.len() != pos+rr_len { return Err(ContractError::IoError(format!("CreateClaimParamsV1: expected {} bytes, got {}", pos+rr_len, data.len()))); } let revealed_result = data[pos..].to_vec(); Ok(CreateClaimParamsV1 { proof, claim_id, attestation_id, claimant_pub, predicate, evidence_commitment, revealed_result }) } }
 
 /// State update for CreateClaimV1
 #[derive(Debug, Clone)]

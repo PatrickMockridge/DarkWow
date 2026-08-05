@@ -92,7 +92,7 @@ mod tests {
         let secret = pallas::Base::from(123);
         let coin = pallas::Base::from(456);
         let nullifier = Nullifier::new(secret, coin);
-        assert_eq!(nullifier.inner(), poseidon_hash([secret, coin]));
+        assert_eq!(nullifier.inner(), poseidon_hash([pallas::Base::from(1), secret, coin]));
     }
 
     #[test]

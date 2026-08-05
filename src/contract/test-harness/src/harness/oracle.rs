@@ -29,7 +29,7 @@ use dwow_core::{
     zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
-use dwow_sdk::{crypto::{MerkleNode, PublicKey}, pasta::pallas};
+use dwow_sdk::{crypto::{MerkleNode, PublicKey}, pasta::pallas, crypto::pasta_prelude::PrimeField};
 use dwow_serial::Encodable;
 
 use dwow_oracle_contract::client::{
@@ -228,7 +228,7 @@ impl OracleHarness {
             proof: proof.as_ref().to_vec(),
             oracle_id: OracleId(public_inputs.oracle_id),
             attestation_id: AttestationId(public_inputs.attestation_id),
-            predicate: 0, // Matches
+            predicate: predicate.to_repr()[0], // u8 from field element
             threshold: public_inputs.threshold,
             tx_binding: public_inputs.tx_binding,
             tx_nonce: public_inputs.tx_nonce,
@@ -323,16 +323,16 @@ impl super::ContractHarness for OracleHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["RegisterOracleV2", "PushValueCommitment", "Aggregate", "AttestValue", "PushValue"]
+        vec!["RegisterOracleV2", "PushValueCommitmentV2", "AggregateV2", "AttestValueV2", "PushValueV2"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
             "RegisterOracleV2" => Some(&self.register_oracle_zkbin),
-            "PushValueCommitment" => Some(&self.push_value_commitment_zkbin),
-            "Aggregate" => Some(&self.aggregate_zkbin),
-            "AttestValue" => Some(&self.attest_value_zkbin),
-            "PushValue" => Some(&self.push_value_zkbin),
+            "PushValueCommitmentV2" => Some(&self.push_value_commitment_zkbin),
+            "AggregateV2" => Some(&self.aggregate_zkbin),
+            "AttestValueV2" => Some(&self.attest_value_zkbin),
+            "PushValueV2" => Some(&self.push_value_zkbin),
             _ => None,
         }
     }
@@ -340,10 +340,10 @@ impl super::ContractHarness for OracleHarness {
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
             "RegisterOracleV2" => Some(&self.register_oracle_pk),
-            "PushValueCommitment" => Some(&self.push_value_commitment_pk),
-            "Aggregate" => Some(&self.aggregate_pk),
-            "AttestValue" => Some(&self.attest_value_pk),
-            "PushValue" => Some(&self.push_value_pk),
+            "PushValueCommitmentV2" => Some(&self.push_value_commitment_pk),
+            "AggregateV2" => Some(&self.aggregate_pk),
+            "AttestValueV2" => Some(&self.attest_value_pk),
+            "PushValueV2" => Some(&self.push_value_pk),
             _ => None,
         }
     }

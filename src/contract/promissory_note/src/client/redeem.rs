@@ -276,7 +276,7 @@ impl RedeemCallBuilder {
 
         Ok(RedeemCallDebris {
             params: RedeemParamsV1 { input, output,
-                tx_binding: pallas::Base::zero(), tx_nonce: pallas::Base::zero() },
+                tx_binding: poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), tx_nonce: pallas::Base::zero() },
             proofs,
         })
     }
@@ -343,7 +343,7 @@ fn create_redeem_burn_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
-        tx_binding: pallas::Base::zero(),
+        tx_binding: poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), tx_nonce]),
         tx_nonce,
     };
 
@@ -409,7 +409,7 @@ fn create_redeem_receipt_proof(
         token_commit,
         coin_value,
         spend_hook: output.spend_hook,
-        tx_binding: pallas::Base::zero(),
+        tx_binding: poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), tx_nonce]),
         tx_nonce,
     };
 

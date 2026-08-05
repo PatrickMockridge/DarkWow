@@ -1,12 +1,10 @@
-# Identity contract manifest — capability declarations for type construction.
-# The wallet reads this manifest to construct capability types per wallet.md §2.2.
+# DarkWow Identity Contract Manifest
+# 9 functions, 3 ZK circuits (consolidated)
 
 [contract]
-name = "identity"
-category = "Identity"
-description = "Identity and credential management — issue credentials, create claims, register capabilities, verify."
-version = "2.0.0"
-dependencies = ["promissory_note", "native_token_v1"]
+name = "Identity"
+version = "1.0.0"
+description = "O-Cap authorization primitive. Issues credentials, creates ZK claims, verifies capabilities."
 
 [[functions]]
 name = "initialize"
@@ -27,191 +25,38 @@ name = "create_claim"
 code = 3
 requires_proof = true
 proof_circuit = "CreateClaim_V2"
-
-[[functions]]
-name = "verify_claim"
-code = 4
-
-[[functions]]
-name = "create_claim_l1"
-code = 5
-requires_proof = true
-proof_circuit = "CreateClaim_V2_L1"
-
-[[functions]]
-name = "create_claim_l1_v2"
-code = 6
-requires_proof = true
-proof_circuit = "CreateClaim_V2_L1_V2"
-
-[[functions]]
-name = "create_claim_multi"
-code = 7
-requires_proof = true
-proof_circuit = "CreateClaim_V2_Multi"
-
-[[functions]]
-name = "create_claim_ratio"
-code = 8
-requires_proof = true
-proof_circuit = "CreateClaim_V2_Ratio"
+description = "Unified claim creation with claim_mode 0-4 (basic/threshold/ratio/multi/dag)"
 
 [[functions]]
 name = "register_capability"
-code = 9
+code = 4
 
 [[functions]]
 name = "issue_capability"
-code = 10
+code = 5
 
 [[functions]]
 name = "verify_capability"
-code = 11
+code = 6
 requires_proof = true
 proof_circuit = "VerifyCapability_V2"
 
 [[functions]]
 name = "revoke_capability"
-code = 12
-
-[[functions]]
-name = "create_claim_dag"
-code = 13
-requires_proof = true
-proof_circuit = "CreateClaim_V2_DAG"
+code = 7
 
 [[functions]]
 name = "register_issuer"
-code = 14
-
-[[functions]]
-name = "update_reputation"
-code = 15
-
-[[capabilities]]
-discriminant = 0
-name = "credential"
-description = "A credential issued by a trusted issuer. Proves the holder possesses an attribute satisfying a threshold. Non-consumable, non-transferable."
-primitives = ["SecretKey", "Commitment", "Nullifier", "ContractId", "FuncId", "MerkleNode"]
-note_schema = []
-
-[[capabilities]]
-discriminant = 1
-name = "capability"
-description = "A registered capability derived from credentials (e.g., can_merge_pr). Consumable on verify."
-primitives = ["SecretKey", "Commitment", "Nullifier", "ContractId", "FuncId"]
-note_schema = []
-
-[[capabilities]]
-discriminant = 2
-name = "dag_claim"
-description = "A composite claim proving one path through a competency DAG (OR across paths, AND within each path). Non-consumable."
-primitives = ["SecretKey", "Commitment", "Nullifier", "ContractId", "FuncId"]
-note_schema = []
-
-[[actions]]
-function = "issue_credential"
-requires = { type = "none" }
-produces = [{ name = "credential", description = "Issued credential from a trusted issuer" }]
-consumes = []
-required_barbs = ["Commit", "Dispatch", "Gate"]
-
-[[actions]]
-function = "register_capability"
-requires = { type = "none" }
-produces = [{ name = "capability", description = "Registered capability derived from credentials" }]
-consumes = []
-required_barbs = ["Commit", "Dispatch", "Gate"]
-
-[[actions]]
-function = "issue_capability"
-requires = { type = "all", capabilities = ["credential"] }
-produces = [{ name = "capability", description = "Capability issued from a credential" }]
-consumes = []
-required_barbs = ["Commit", "Dispatch", "Gate"]
-
-[[actions]]
-function = "verify_capability"
-requires = { type = "any", capabilities = ["capability"] }
-produces = []
-consumes = ["capability"]
-required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate"]
-
-[[actions]]
-function = "revoke_capability"
-requires = { type = "any", capabilities = ["capability"] }
-produces = []
-consumes = ["capability"]
-required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate"]
-
-[[actions]]
-function = "create_claim_dag"
-requires = { type = "all", capabilities = ["credential"] }
-produces = [{ name = "dag_claim", description = "Composite DAG claim across credential paths" }]
-consumes = []
-required_barbs = ["Commit", "Dispatch", "Gate"]
-
-[[trees]]
-name = "credentials"
-description = "Credential records"
-
-[[trees]]
-name = "nullifiers"
-description = "Nullifier SMT for double-spend prevention"
-
-[[trees]]
-name = "issuers"
-description = "Trusted issuer records"
-
-[[trees]]
-name = "config"
-description = "Contract configuration"
-
-[[trees]]
-name = "capabilities"
-description = "Registered capability records"
-
-[[trees]]
-name = "capability_issuances"
-description = "Capability issuance tracking"
-
-[[trees]]
-name = "reputations"
-description = "Issuer reputation scores"
-
-[[trees]]
-name = "identity_info"
-description = "Contract metadata"
-
-# V2 circuits (HAZOP RC3: domain separation)
-[[circuits]]
-name = "IssueCredential_V2"
-namespace = "identity"
+code = 8
 
 [[circuits]]
 name = "CreateClaim_V2"
-namespace = "identity"
+description = "Unified claim creation with 5 modes via cond_select (k=12, 30 witnesses)"
 
 [[circuits]]
-name = "CreateClaim_V2_L1"
-namespace = "identity"
-
-[[circuits]]
-name = "CreateClaim_V2_L1_V2"
-namespace = "identity"
-
-[[circuits]]
-name = "CreateClaim_V2_DAG"
-namespace = "identity"
-
-[[circuits]]
-name = "CreateClaim_V2_Multi"
-namespace = "identity"
-
-[[circuits]]
-name = "CreateClaim_V2_Ratio"
-namespace = "identity"
+name = "IssueCredential_V2"
+description = "Credential issuance proof (k=11, 16 witnesses)"
 
 [[circuits]]
 name = "VerifyCapability_V2"
-namespace = "identity"
+description = "Capability verification proof (k=11, 14 witnesses)"

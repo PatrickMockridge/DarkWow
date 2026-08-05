@@ -388,7 +388,7 @@ All 22 PN-interacting contracts, with their current validation status.
 |---|---|-----------|----------------------|------------------------|
 | 1 | **bridge** | 0x04 | Yes (gated on config) | Yes |
 | 2 | **darkbet_exchange** | 0x04 | Yes | No |
-| 3 | **labor_market** | 0x04, 0x07, 0x0b | Yes | No |
+| 3 | **labor_market** | 0x04, 0x07, 0x06 | Yes | No |
 | 4 | **lottery** | 0x04 | Yes | No |
 | 5 | **baccarat** | 0x04 | Yes | No |
 | 6 | **darktoshi_dice** | 0x04 | Yes | No |
@@ -399,7 +399,7 @@ All 22 PN-interacting contracts, with their current validation status.
 | 11 | **game_room** | 0x04 | Yes | No |
 | 12 | **escrow** | 0x04 | Yes | No |
 | 13 | **auction** | 0x04 | Yes | No |
-| 14 | **dao_escrow** | 0x04, 0x0b | Yes | No |
+| 14 | **dao_escrow** | 0x04, 0x06 | Yes | No |
 | 15 | **drain_protection** | 0x04 | Yes | No |
 | 16 | **insurance_market** | 0x04 | Yes | No |
 | 17 | **otc_swap** | 0x04 | Yes | No |

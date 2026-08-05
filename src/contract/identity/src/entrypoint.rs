@@ -47,14 +47,9 @@ use crate::{
     IDENTITY_CONTRACT_CREDENTIALS_TREE, IDENTITY_CONTRACT_NULLIFIERS_TREE,
     IDENTITY_CONTRACT_ISSUERS_TREE, IDENTITY_CONTRACT_CONFIG_TREE,
     IDENTITY_CONTRACT_CAPABILITIES_TREE,
-    IDENTITY_CONTRACT_REPUTATIONS_TREE, IDENTITY_CONTRACT_INFO_TREE,
+    IDENTITY_CONTRACT_INFO_TREE,
     IDENTITY_CONTRACT_BOX_CONTRACT_ID,
     IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2,
-    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_DAG,
-    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_L1,
-    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_L1_V2,
-    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_MULTI,
-    IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_RATIO,
     IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V2,
     IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V2,
 };
@@ -97,39 +92,10 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     if wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CAPABILITIES_TREE).is_err() {
         wasm::db::db_init(cid, IDENTITY_CONTRACT_CAPABILITIES_TREE)?;
     }
-    // Capability issuances tree removed — possession tracking delegated to Box
-    if wasm::db::db_lookup(cid, IDENTITY_CONTRACT_REPUTATIONS_TREE).is_err() {
-        wasm::db::db_init(cid, IDENTITY_CONTRACT_REPUTATIONS_TREE)?;
-    }
-
-    let create_claim_v1_dag_bincode = include_bytes!("../proof/create_claim_dag.zk.bin");
-    wasm::db::zkas_db_set(&create_claim_v1_dag_bincode[..])?;
-    let create_claim_v1_l1_v2_bincode = include_bytes!("../proof/create_claim_l1_sd.zk.bin");
-    wasm::db::zkas_db_set(&create_claim_v1_l1_v2_bincode[..])?;
-    let create_claim_v1_l1_bincode = include_bytes!("../proof/create_claim_threshold.zk.bin");
-    wasm::db::zkas_db_set(&create_claim_v1_l1_bincode[..])?;
-    let create_claim_v1_multi_bincode = include_bytes!("../proof/create_claim_multi.zk.bin");
-    wasm::db::zkas_db_set(&create_claim_v1_multi_bincode[..])?;
-    let create_claim_v1_ratio_bincode = include_bytes!("../proof/create_claim_ratio.zk.bin");
-    wasm::db::zkas_db_set(&create_claim_v1_ratio_bincode[..])?;
-
-    // Register V2 circuits (domain separation, HAZOP RC3)
-    let create_claim_v2_bincode = include_bytes!("../proof/create_claim.zk.bin");
-    wasm::db::zkas_db_set(&create_claim_v2_bincode[..])?;
-    let create_claim_v2_dag_bincode = include_bytes!("../proof/create_claim_dag.zk.bin");
-    wasm::db::zkas_db_set(&create_claim_v2_dag_bincode[..])?;
-    let create_claim_v2_l1_bincode = include_bytes!("../proof/create_claim_l1_sd.zk.bin");
-    wasm::db::zkas_db_set(&create_claim_v2_l1_bincode[..])?;
-    let create_claim_v2_l1_v2_bincode = include_bytes!("../proof/create_claim_l1_sd.zk.bin");
-    wasm::db::zkas_db_set(&create_claim_v2_l1_v2_bincode[..])?;
-    let create_claim_v2_multi_bincode = include_bytes!("../proof/create_claim_multi.zk.bin");
-    wasm::db::zkas_db_set(&create_claim_v2_multi_bincode[..])?;
-    let create_claim_v2_ratio_bincode = include_bytes!("../proof/create_claim_ratio.zk.bin");
-    wasm::db::zkas_db_set(&create_claim_v2_ratio_bincode[..])?;
-    let issue_credential_v2_bincode = include_bytes!("../proof/issue_credential.zk.bin");
-    wasm::db::zkas_db_set(&issue_credential_v2_bincode[..])?;
-    let verify_capability_v2_bincode = include_bytes!("../proof/verify_capability.zk.bin");
-    wasm::db::zkas_db_set(&verify_capability_v2_bincode[..])?;
+    // Register ZK circuits (3 consolidated circuits, no duplicates)
+    wasm::db::zkas_db_set(include_bytes!("../proof/create_claim.zk.bin"))?;
+    wasm::db::zkas_db_set(include_bytes!("../proof/issue_credential.zk.bin"))?;
+    wasm::db::zkas_db_set(include_bytes!("../proof/verify_capability.zk.bin"))?;
 
     Ok(())
 }
@@ -167,48 +133,6 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 vec![params.nullifier.inner(), tx_binding, Base::zero()],
             ));
         }
-        IdentityFunction::CreateClaimV1L1 => {
-            let params = match CreateClaimParamsL1::decode(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize CreateClaimParamsL1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
-            };
-            zk_public_inputs.push((
-                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_L1.to_string(),
-                vec![params.nullifier.inner(), tx_binding, Base::zero()],
-            ));
-        }
-        IdentityFunction::CreateClaimV1L1V2 => {
-            let params = match CreateClaimParamsL1::decode(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize CreateClaimParamsL1: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
-            };
-            zk_public_inputs.push((
-                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_L1_V2.to_string(),
-                vec![params.nullifier.inner(), tx_binding, Base::zero()],
-            ));
-        }
-        IdentityFunction::CreateClaimV1Multi => {
-            let params = match CreateClaimParams::decode(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize CreateClaimParams: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
-            };
-            zk_public_inputs.push((
-                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_MULTI.to_string(),
-                vec![params.nullifier.inner(), tx_binding, Base::zero()],
-            ));
-        }
-        IdentityFunction::CreateClaimV1Ratio => {
-            let params = match CreateClaimParams::decode(&self_.data[1..]) {
-                Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize CreateClaimParams: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
-            };
-            zk_public_inputs.push((
-                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_RATIO.to_string(),
-                vec![params.nullifier.inner(), tx_binding, Base::zero()],
-            ));
-        }
-        IdentityFunction::CreateClaimDAGV1 => {
-            zk_public_inputs.push((
-                IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_DAG.to_string(),
-                vec![tx_binding, Base::zero()],
-            ));
-        }
         IdentityFunction::VerifyCapabilityV1 => {
             let params = match VerifyCapabilityParams::decode(&self_.data[1..]) {
                 Ok(p) => p, Err(e) => { msg!("[identity::get_metadata] Error: Failed to deserialize VerifyCapabilityParams: {:?}", e); let _ = wasm::util::set_return_data(&vec![]); return Ok(()); }
@@ -243,18 +167,11 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         IdentityFunction::IssueCredentialV1 => process_issue_credential_instruction(cid, call_idx, calls)?,
         IdentityFunction::RevokeCredentialV1 => process_revoke_credential_instruction(cid, call_idx, calls)?,
         IdentityFunction::CreateClaimV1 => process_create_claim_instruction(cid, call_idx, calls)?,
-        IdentityFunction::CreateClaimV1L1 => process_create_claim_l1_instruction(cid, call_idx, calls)?,
-        IdentityFunction::VerifyClaimV1 => process_verify_claim_instruction(cid, call_idx, calls)?,
-        IdentityFunction::CreateClaimV1L1V2 => process_create_claim_l1_v2_instruction(cid, call_idx, calls)?,
-        IdentityFunction::CreateClaimV1Multi => process_create_claim_multi_instruction(cid, call_idx, calls)?,
-        IdentityFunction::CreateClaimV1Ratio => process_create_claim_ratio_instruction(cid, call_idx, calls)?,
         IdentityFunction::RegisterCapabilityV1 => process_register_capability_instruction(cid, call_idx, calls)?,
         IdentityFunction::IssueCapabilityV1 => process_issue_capability_instruction(cid, call_idx, calls)?,
         IdentityFunction::VerifyCapabilityV1 => process_verify_capability_instruction(cid, call_idx, calls)?,
         IdentityFunction::RevokeCapabilityV1 => process_revoke_capability_instruction(cid, call_idx, calls)?,
-        IdentityFunction::CreateClaimDAGV1 => process_create_claim_dag_instruction(cid, call_idx, calls)?,
         IdentityFunction::RegisterIssuerV1 => process_register_issuer_instruction(cid, call_idx, calls)?,
-        IdentityFunction::UpdateReputationV1 => process_update_reputation_instruction(cid, call_idx, calls)?,
     };
     let _ = wasm::util::set_return_data(&[&[func_byte], &update_bytes[..]].concat());
     Ok(())
@@ -280,26 +197,6 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update = CreateClaimUpdateV1::decode(&update_data[1..])?;
             apply_create_claim_update(cid, update)
         }
-        IdentityFunction::CreateClaimV1L1 => {
-            let update = CreateClaimUpdateV1::decode(&update_data[1..])?;
-            apply_create_claim_update(cid, update)
-        }
-        IdentityFunction::VerifyClaimV1 => {
-            let update = VerifyClaimUpdateV1::decode(&update_data[1..])?;
-            apply_verify_claim_update(cid, update)
-        }
-        IdentityFunction::CreateClaimV1L1V2 => {
-            let update = CreateClaimUpdateV1::decode(&update_data[1..])?;
-            apply_create_claim_update(cid, update)
-        }
-        IdentityFunction::CreateClaimV1Multi => {
-            let update = CreateClaimUpdateV1::decode(&update_data[1..])?;
-            apply_create_claim_update(cid, update)
-        }
-        IdentityFunction::CreateClaimV1Ratio => {
-            let update = CreateClaimUpdateV1::decode(&update_data[1..])?;
-            apply_create_claim_update(cid, update)
-        }
         IdentityFunction::RegisterCapabilityV1 => {
             let update = RegisterCapabilityUpdateV1::decode(&update_data[1..])?;
             apply_register_capability_update(cid, update)
@@ -316,17 +213,9 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update = RevokeCapabilityUpdateV1::decode(&update_data[1..])?;
             apply_revoke_capability_update(cid, update)
         }
-        IdentityFunction::CreateClaimDAGV1 => {
-            let update = CreateClaimDAGUpdateV1::decode(&update_data[1..])?;
-            apply_create_claim_dag_update(cid, update)
-        }
         IdentityFunction::RegisterIssuerV1 => {
             let update = RegisterIssuerUpdateV1::decode(&update_data[1..])?;
             apply_register_issuer_update(cid, update)
-        }
-        IdentityFunction::UpdateReputationV1 => {
-            let update = UpdateReputationUpdateV1::decode(&update_data[1..])?;
-            apply_update_reputation_update(cid, update)
         }
     }
 }
@@ -540,6 +429,7 @@ fn process_create_claim_instruction(
     let update = CreateClaimUpdateV1 {
         nullifier: params.nullifier,
         claim_type: params.claim_type,
+        claim_mode: params.claim_mode,
         created_at: wasm::util::get_verifying_block_height()?.get(),
     };
 
@@ -551,201 +441,6 @@ fn apply_create_claim_update(_cid: ContractId, _update: CreateClaimUpdateV1) -> 
     // Claims are typically verified off-chain, so no on-chain state update needed
     msg!("[identity::create_claim::update] Claim recorded");
     Ok(())
-}
-
-// ============================================================================
-// CREATE CLAIM L1 (Selective Disclosure)
-// ============================================================================
-
-fn process_create_claim_l1_instruction(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= CreateClaimParamsL1::decode(&self_.data[1..])?;
-
-    msg!("[identity::create_claim_l1] Creating Level 1 claim");
-
-    // Load and verify credential
-    let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
-    let nullifier_bytes = params.nullifier.to_bytes();
-    let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
-        .ok_or(IdentityError::CredentialNotFound)?;
-
-    let credential: Credential = Credential::decode(&cred_data)?;
-
-    if credential.revoked {
-        msg!("[identity::create_claim_l1] ERROR: Credential is revoked");
-        return Err(IdentityError::CredentialRevoked.into());
-    }
-
-    let update = CreateClaimUpdateV1 {
-        nullifier: params.nullifier,
-        claim_type: params.claim_type,
-        created_at: wasm::util::get_verifying_block_height()?.get(),
-    };
-
-    msg!(
-        "[identity::create_claim_l1] Claim created with predicate_result={}",
-        params.predicate_result
-    );
-    Ok(update.encode())
-}
-
-// ============================================================================
-// VERIFY CLAIM
-// ============================================================================
-
-fn process_verify_claim_instruction(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= VerifyClaimParams::decode(&self_.data[1..])?;
-
-    msg!("[identity::verify_claim] Verifying claim");
-
-    // Load and verify credential
-    let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
-    let nullifier_bytes = params.claim.nullifier.to_bytes();
-    let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
-        .ok_or(IdentityError::CredentialNotFound)?;
-
-    let credential: Credential = Credential::decode(&cred_data)?;
-
-    if credential.revoked {
-        msg!("[identity::verify_claim] ERROR: Credential is revoked");
-        return Err(IdentityError::CredentialRevoked.into());
-    }
-
-    let update = VerifyClaimUpdateV1 {
-        nullifier: params.claim.nullifier,
-        verified: true,
-    };
-
-    msg!("[identity::verify_claim] Claim verified");
-    Ok(update.encode())
-}
-
-fn apply_verify_claim_update(_cid: ContractId, _update: VerifyClaimUpdateV1) -> ContractResult {
-    msg!("[identity::verify_claim::update] Verification recorded");
-    Ok(())
-}
-
-// ============================================================================
-// CREATE CLAIM L1 V2
-// ============================================================================
-
-fn process_create_claim_l1_v2_instruction(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= CreateClaimParamsL1::decode(&self_.data[1..])?;
-
-    msg!("[identity::create_claim_l1_v2] Creating Level 1 v2 claim");
-
-    // Load and verify credential
-    let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
-    let nullifier_bytes = params.nullifier.to_bytes();
-    let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
-        .ok_or(IdentityError::CredentialNotFound)?;
-
-    let credential: Credential = Credential::decode(&cred_data)?;
-
-    if credential.revoked {
-        msg!("[identity::create_claim_l1_v2] ERROR: Credential is revoked");
-        return Err(IdentityError::CredentialRevoked.into());
-    }
-
-    let update = CreateClaimUpdateV1 {
-        nullifier: params.nullifier,
-        claim_type: params.claim_type,
-        created_at: wasm::util::get_verifying_block_height()?.get(),
-    };
-
-    msg!(
-        "[identity::create_claim_l1_v2] Claim created with predicate_result={}",
-        params.predicate_result
-    );
-    Ok(update.encode())
-}
-
-// ============================================================================
-// CREATE CLAIM MULTI
-// ============================================================================
-
-fn process_create_claim_multi_instruction(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= CreateClaimParams::decode(&self_.data[1..])?;
-
-    msg!("[identity::create_claim_multi] Creating multi-credential claim");
-
-    // Load and verify credential
-    let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
-    let nullifier_bytes = params.nullifier.to_bytes();
-    let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
-        .ok_or(IdentityError::CredentialNotFound)?;
-
-    let credential: Credential = Credential::decode(&cred_data)?;
-
-    if credential.revoked {
-        msg!("[identity::create_claim_multi] ERROR: Credential is revoked");
-        return Err(IdentityError::CredentialRevoked.into());
-    }
-
-    let update = CreateClaimUpdateV1 {
-        nullifier: params.nullifier,
-        claim_type: params.claim_type,
-        created_at: wasm::util::get_verifying_block_height()?.get(),
-    };
-
-    msg!("[identity::create_claim_multi] Multi-credential claim created");
-    Ok(update.encode())
-}
-
-// ============================================================================
-// CREATE CLAIM RATIO
-// ============================================================================
-
-fn process_create_claim_ratio_instruction(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= CreateClaimParams::decode(&self_.data[1..])?;
-
-    msg!("[identity::create_claim_ratio] Creating ratio-based claim");
-
-    // Load and verify credential
-    let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
-    let nullifier_bytes = params.nullifier.to_bytes();
-    let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
-        .ok_or(IdentityError::CredentialNotFound)?;
-
-    let credential: Credential = Credential::decode(&cred_data)?;
-
-    if credential.revoked {
-        msg!("[identity::create_claim_ratio] ERROR: Credential is revoked");
-        return Err(IdentityError::CredentialRevoked.into());
-    }
-
-    let update = CreateClaimUpdateV1 {
-        nullifier: params.nullifier,
-        claim_type: params.claim_type,
-        created_at: wasm::util::get_verifying_block_height()?.get(),
-    };
-
-    msg!("[identity::create_claim_ratio] Ratio claim created");
-    Ok(update.encode())
 }
 
 // ============================================================================
@@ -961,56 +656,6 @@ fn apply_revoke_capability_update(cid: ContractId, update: RevokeCapabilityUpdat
 }
 
 // ============================================================================
-// CREATE CLAIM DAG
-// ============================================================================
-
-fn process_create_claim_dag_instruction(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= CreateClaimDAGParams::decode(&self_.data[1..])?;
-
-    msg!("[identity::create_claim_dag] Creating DAG claim for DAG {:?}", &params.dag_id);
-
-    // Verify all credentials in the path are valid
-    let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
-
-    if params.credentials.len() > crate::IDENTITY_CONTRACT_MAX_DAG_CREDENTIALS {
-        msg!("[identity::create_claim_dag] Error: Too many DAG credentials ({} > max {})",
-            params.credentials.len(), crate::IDENTITY_CONTRACT_MAX_DAG_CREDENTIALS);
-        return Err(ContractError::IoError("Too many DAG credentials".to_string()));
-    }
-    for dag_cred in &params.credentials {
-        let nullifier_bytes = dag_cred.nullifier.to_bytes();
-        let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?
-            .ok_or(IdentityError::CredentialNotFound)?;
-
-        let credential: Credential = Credential::decode(&cred_data)?;
-
-        if credential.revoked {
-            msg!("[identity::create_claim_dag] ERROR: Credential is revoked");
-            return Err(IdentityError::CredentialRevoked.into());
-        }
-    }
-
-    let update = CreateClaimDAGUpdateV1 {
-        dag_id: params.dag_id,
-        path_index: params.path_index,
-        predicate_result: params.predicate_result,
-    };
-
-    msg!("[identity::create_claim_dag] DAG claim created");
-    Ok(update.encode())
-}
-
-fn apply_create_claim_dag_update(_cid: ContractId, _update: CreateClaimDAGUpdateV1) -> ContractResult {
-    msg!("[identity::create_claim_dag::update] DAG claim recorded");
-    Ok(())
-}
-
-// ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 
@@ -1097,70 +742,5 @@ fn apply_register_issuer_update(cid: ContractId, update: RegisterIssuerUpdateV1)
     wasm::db::db_set(issuers_db, &compute_issuer_key(&update.issuer_id), &issuer.encode())?;
 
     msg!("[identity::register_issuer::update] Issuer stored");
-    Ok(())
-}
-
-// ============================================================================
-// UPDATE REPUTATION (Phase 2d hardening)
-// ============================================================================
-
-/// Compute reputation ID from issuer and relayer pubkeys.
-/// Uses full 32-byte pubkeys (4 u64 chunks each) to prevent entropy loss.
-fn compute_reputation_id(issuer_pub: &PublicKey, relayer_pub: &PublicKey) -> ReputationId {
-    let (ix, iy) = issuer_pub.xy().expect("pk not identity");
-    let (rx, ry) = relayer_pub.xy().expect("pk not identity");
-    ReputationId(poseidon_hash([ix, iy, rx, ry]))
-}
-
-fn process_update_reputation_instruction(
-    cid: ContractId,
-    call_idx: usize,
-    calls: Vec<DarkLeaf<ContractCall>>,
-) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let params= UpdateReputationParams::decode(&self_.data[1..])?;
-
-    msg!("[identity::update_reputation] Updating relayer reputation");
-
-    // Verify issuer is registered
-    let issuers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_ISSUERS_TREE)?;
-    let issuer_key = compute_issuer_key(&params.issuer_pub);
-    wasm::db::db_get(issuers_db, &issuer_key)?
-        .ok_or(IdentityError::IssuerNotTrusted)?;
-
-    let reputation_id = compute_reputation_id(&params.issuer_pub, &params.relayer_pub);
-    let current_height = wasm::util::get_verifying_block_height()?.get();
-
-    let update = UpdateReputationUpdateV1 {
-        reputation_id,
-        relayer_pub: params.relayer_pub,
-        issuer_pub: params.issuer_pub,
-        slash_count: params.slash_count,
-        success_count: params.success_count,
-        total_volume: params.total_volume,
-        settlement_frequency: params.settlement_frequency,
-        last_updated: current_height,
-    };
-
-    msg!("[identity::update_reputation] Reputation update prepared");
-    Ok(update.encode())
-}
-
-fn apply_update_reputation_update(cid: ContractId, update: UpdateReputationUpdateV1) -> ContractResult {
-    let reputations_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_REPUTATIONS_TREE)?;
-
-    let record = ReputationRecord {
-        relayer_pub: update.relayer_pub,
-        issuer_pub: update.issuer_pub,
-        slash_count: update.slash_count,
-        success_count: update.success_count,
-        total_volume: update.total_volume,
-        settlement_frequency: update.settlement_frequency,
-        last_updated: update.last_updated,
-    };
-
-    wasm::db::db_set(reputations_db, &update.reputation_id.to_bytes(), &record.encode())?;
-
-    msg!("[identity::update_reputation::update] Reputation stored");
     Ok(())
 }

@@ -32,7 +32,7 @@
 //! the test harness infrastructure (see test-harness/src/vks.rs).
 
 use dwow_identity_contract::{
-    model::{Attribute, AttributeType, Claim, CreateClaimParams, CreateClaimParamsL1, Credential, CredentialSchema, InitializeParams, IssueCredentialParams, Issuer},
+    model::{Attribute, AttributeType, CreateClaimParams, Credential, CredentialSchema, InitializeParams, IssueCredentialParams, Issuer},
     IdentityFunction,
 };
 use dwow_serial::{deserialize, serialize};
@@ -160,8 +160,15 @@ fn test_create_claim_params_encoding() {
     let params = CreateClaimParams {
         nullifier: make_nullifier([1u8; 32]),
         claim_type: b"age_over_18".to_vec(),
-        predicate: b">= 18".to_vec(),
-        revealed_attributes: vec![b"age".to_vec()],
+        claim_mode: 0,
+        predicate_result: 0,
+        threshold: 0,
+        my_value: 0,
+        total_supply: 0,
+        threshold_ratio: 0,
+        dag_id: [0u8; 32],
+        path_index: 0,
+        credentials: vec![],
         proof: vec![2u8; 128],
         fee: 50,
     };
@@ -170,27 +177,7 @@ fn test_create_claim_params_encoding() {
     let decoded: CreateClaimParams = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.claim_type, params.claim_type);
-    assert_eq!(decoded.predicate, params.predicate);
-    assert_eq!(decoded.fee, params.fee);
-}
-
-#[test]
-fn test_create_claim_params_l1_encoding() {
-    let params = CreateClaimParamsL1 {
-        nullifier: make_nullifier([1u8; 32]),
-        claim_type: b"age_over_18".to_vec(),
-        predicate: b">= 18".to_vec(),
-        revealed_attributes: vec![b"age".to_vec()],
-        proof: vec![2u8; 128],
-        predicate_result: 1, // Level 1: predicate satisfied
-        fee: 50,
-    };
-
-    let encoded = serialize(&params);
-    let decoded: CreateClaimParamsL1 = deserialize(&encoded).unwrap();
-
-    assert_eq!(decoded.claim_type, params.claim_type);
-    assert_eq!(decoded.predicate_result, 1); // Level 1 reveals predicate result
+    assert_eq!(decoded.claim_mode, 0);
     assert_eq!(decoded.fee, params.fee);
 }
 
@@ -231,27 +218,6 @@ fn test_issuer_encoding() {
     assert_eq!(decoded.name, issuer.name);
     assert_eq!(decoded.trusted, true);
     assert_eq!(decoded.authorized_schemas.len(), 2);
-}
-
-#[test]
-fn test_claim_encoding() {
-    let claim = Claim {
-        nullifier: make_nullifier([1u8; 32]),
-        issuer_pub: PublicKey::from_secret(SecretKey::from_base(pallas::Base::from(2))),
-        claim_type: [3u8; 32],
-        predicate_result: vec![1], // "true"
-        revealed_attributes: vec![b"age".to_vec()],
-        proof: vec![4u8; 128],
-        created_at: 1000,
-        expires_at: 2000,
-    };
-
-    let encoded = claim.encode();
-    let decoded = Claim::decode(&encoded).unwrap();
-
-    assert_eq!(decoded.nullifier, claim.nullifier);
-    assert_eq!(decoded.predicate_result, vec![1]);
-    assert_eq!(decoded.created_at, 1000);
 }
 
 #[test]

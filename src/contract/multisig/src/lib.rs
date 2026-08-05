@@ -11,14 +11,9 @@ define_contract_function!(MultiSigFunction {
     FinalizeV1 = 0x03,
 });
 
-pub const MULTISIG_CONTRACT_DB_VERSION: &str = "multisig_version_1";
 pub const MULTISIG_CONTRACT_GROUPS_TREE: &str = "groups";
 pub const MULTISIG_CONTRACT_SIGNATURES_TREE: &str = "signatures";
 pub const MULTISIG_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
-pub const MULTISIG_CONTRACT_INFO_TREE: &str = "info";
-pub const MULTISIG_CONTRACT_ZKAS_CREATE_GROUP_NS_V1: &str = "CreateGroupV1";
-pub const MULTISIG_CONTRACT_ZKAS_SIGN_NS_V1: &str = "SignV1";
-pub const MULTISIG_CONTRACT_ZKAS_FINALIZE_NS_V1: &str = "FinalizeV1";
 
 // V2 circuit namespaces (domain separation, HAZOP RC3)
 pub const MULTISIG_CONTRACT_ZKAS_CREATE_GROUP_NS_V2: &str = "CreateGroupV2";

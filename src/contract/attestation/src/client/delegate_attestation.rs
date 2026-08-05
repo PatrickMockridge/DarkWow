@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Attestation delegate_attestation_v1 ZK proof generation
+//! Attestation delegate_attestation_v1 ZK proof generation (V2 circuit)
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -29,84 +29,29 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::PublicKey,
+    crypto::{poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
 
-/// DelegateAttestationV1 circuit public inputs
+/// DelegateAttestationV1 circuit public inputs (V2: delegatee_leaf, tx_binding, tx_nonce)
 #[derive(Debug, Clone)]
 pub struct DelegateAttestationV1PublicInputs {
-    pub delegation_id: pallas::Base,
-    pub parent_id: pallas::Base,
-    pub delegator_pub_x: pallas::Base,
-    pub delegator_pub_y: pallas::Base,
-    pub delegatee_pub_x: pallas::Base,
-    pub delegatee_pub_y: pallas::Base,
-    pub delegation_type: pallas::Base,
-    pub max_ratio: pallas::Base,
-    pub revocation_root: pallas::Base,
-    pub chain_root: pallas::Base,
-    pub current_depth: pallas::Base,
-    pub max_depth: pallas::Base,
-    pub delegator_stake: pallas::Base,
-    pub delegatee_stake: pallas::Base,
+    pub delegatee_leaf: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl DelegateAttestationV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        // Public input order must match constrain_instance execution order:
-        // Phase 3: set_membership internally calls constrain_instance(chain_root)   [0]
-        // Phase 5: set_membership internally calls constrain_instance(revocation_root) [1]
-        // Phase 6: explicit constrain_instance calls:
-        vec![
-            // Implicit from set_membership ops
-            self.chain_root,
-            self.revocation_root,
-            // Explicit
-            self.delegation_id,
-            self.parent_id,
-            self.delegator_pub_x,
-            self.delegator_pub_y,
-            self.delegatee_pub_x,
-            self.delegatee_pub_y,
-            self.delegation_type,
-            self.max_ratio,
-            self.revocation_root,
-            self.chain_root,
-            self.current_depth,
-            self.max_depth,
-            self.delegator_stake,
-            self.delegatee_stake,
-            self.tx_binding,
-            self.tx_nonce,
-        ]
+        vec![self.delegatee_leaf, self.tx_binding, self.tx_nonce]
     }
 }
 
 /// Input data for delegate_attestation proof generation
 #[derive(Debug, Clone)]
 pub struct DelegateAttestationV1CallData {
-    pub delegation_id: pallas::Base,
-    pub parent_id: pallas::Base,
     pub delegator_secret: pallas::Base,
-    pub delegation_type: pallas::Base,
-    pub max_ratio: pallas::Base,
-    pub revocation_root: pallas::Base,
-    pub chain_root: pallas::Base,
-    pub current_depth: pallas::Base,
-    pub max_depth: pallas::Base,
-    pub delegator_stake: pallas::Base,
-    pub delegatee_stake: pallas::Base,
-    pub nonce: pallas::Base,
-    pub pos: pallas::Base,
-    pub path: [pallas::Base; 255],
-    pub chain_pos: pallas::Base,
-    pub chain_path: [pallas::Base; 255],
-    // Public inputs
-    pub delegator_public: PublicKey,
     pub delegatee_public: PublicKey,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
@@ -115,43 +60,27 @@ pub struct DelegateAttestationV1CallData {
 impl DelegateAttestationV1CallData {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        delegation_id: pallas::Base,
-        parent_id: pallas::Base,
+        _delegation_id: pallas::Base,
+        _parent_id: pallas::Base,
         delegator_secret: pallas::Base,
-        delegation_type: pallas::Base,
-        max_ratio: pallas::Base,
-        revocation_root: pallas::Base,
-        chain_root: pallas::Base,
-        current_depth: pallas::Base,
-        max_depth: pallas::Base,
-        delegator_stake: pallas::Base,
-        delegatee_stake: pallas::Base,
-        nonce: pallas::Base,
-        pos: pallas::Base,
-        path: [pallas::Base; 255],
-        chain_pos: pallas::Base,
-        chain_path: [pallas::Base; 255],
-        delegator_public: PublicKey,
+        _delegation_type: pallas::Base,
+        _max_ratio: pallas::Base,
+        _revocation_root: pallas::Base,
+        _chain_root: pallas::Base,
+        _current_depth: pallas::Base,
+        _max_depth: pallas::Base,
+        _delegator_stake: pallas::Base,
+        _delegatee_stake: pallas::Base,
+        _nonce: pallas::Base,
+        _pos: pallas::Base,
+        _path: [pallas::Base; 255],
+        _chain_pos: pallas::Base,
+        _chain_path: [pallas::Base; 255],
+        _delegator_public: PublicKey,
         delegatee_public: PublicKey,
     ) -> Self {
         Self {
-            delegation_id,
-            parent_id,
             delegator_secret,
-            delegation_type,
-            max_ratio,
-            revocation_root,
-            chain_root,
-            current_depth,
-            max_depth,
-            delegator_stake,
-            delegatee_stake,
-            nonce,
-            pos,
-            path,
-            chain_pos,
-            chain_path,
-            delegator_public,
             delegatee_public,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
@@ -159,61 +88,25 @@ impl DelegateAttestationV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> DelegateAttestationV1PublicInputs {
-        let (dx, dy) = self.delegator_public.xy().expect("pk not identity");
         let (ex, ey) = self.delegatee_public.xy().expect("pk not identity");
-        DelegateAttestationV1PublicInputs {
-            delegation_id: self.delegation_id,
-            parent_id: self.parent_id,
-            delegator_pub_x: dx,
-            delegator_pub_y: dy,
-            delegatee_pub_x: ex,
-            delegatee_pub_y: ey,
-            delegation_type: self.delegation_type,
-            max_ratio: self.max_ratio,
-            revocation_root: self.revocation_root,
-            chain_root: self.chain_root,
-            current_depth: self.current_depth,
-            max_depth: self.max_depth,
-            delegator_stake: self.delegator_stake,
-            delegatee_stake: self.delegatee_stake,
-            tx_binding: pallas::Base::zero(),
-            tx_nonce: self.tx_nonce,
-        }
+        // DOMAIN_COIN_COMMIT = witness_base(4) = 4
+        let delegatee_leaf = poseidon_hash([pallas::Base::from(4u64), ex, ey]);
+        // DOMAIN_TX_BINDING = witness_base(3) = 3
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
+        DelegateAttestationV1PublicInputs { delegatee_leaf, tx_binding, tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (dx, dy) = self.delegator_public.xy().expect("pk not identity");
+        // Circuit witness order: delegatee_pub_x, delegatee_pub_y, delegator_secret, tx_commitment, tx_nonce, tx_binding
         let (ex, ey) = self.delegatee_public.xy().expect("pk not identity");
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
-            // Public inputs (indices 0-13)
-            Witness::Base(Value::known(self.delegation_id)),
-            Witness::Base(Value::known(self.parent_id)),
-            Witness::Base(Value::known(dx)),
-            Witness::Base(Value::known(dy)),
             Witness::Base(Value::known(ex)),
             Witness::Base(Value::known(ey)),
-            Witness::Base(Value::known(self.delegation_type)),
-            Witness::Base(Value::known(self.max_ratio)),
-            Witness::Base(Value::known(self.revocation_root)),
-            Witness::Base(Value::known(self.chain_root)),
-            Witness::Base(Value::known(self.current_depth)),
-            Witness::Base(Value::known(self.max_depth)),
-            Witness::Base(Value::known(self.delegator_stake)),
-            Witness::Base(Value::known(self.delegatee_stake)),
-            // Private witnesses (indices 14-19)
-            Witness::Base(Value::known(self.nonce)),
-            Witness::Base(Value::known(self.pos)),
-            Witness::SparseMerklePath(Value::known(self.path)),
-            Witness::Base(Value::known(self.chain_pos)),
-            Witness::SparseMerklePath(Value::known(self.chain_path)),
             Witness::Base(Value::known(self.delegator_secret)),
-            // Delegation type constants (indices 20-22)
-            Witness::Base(Value::known(pallas::Base::from(0u64))),
-            Witness::Base(Value::known(pallas::Base::from(1u64))),
-            Witness::Base(Value::known(pallas::Base::from(2u64))),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(tx_binding)),
         ]
     }
 }

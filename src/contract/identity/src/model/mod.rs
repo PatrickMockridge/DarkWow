@@ -74,19 +74,6 @@ impl CapabilitySecret {
     pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("CapabilitySecret: expected 32 bytes, got {}", data.len()))); } Ok(CapabilitySecret(Option::<pallas::Base>::from(pallas::Base::from_repr(data[0..32].try_into().unwrap())).ok_or_else(|| ContractError::IoError("CapabilitySecret: invalid".into()))?)) }
 }
-
-/// Reputation ID: hash of issuer pubkey + relayer pubkey
-#[derive(Debug, Clone, Copy, Eq, PartialEq,)]
-pub struct ReputationId(pub pallas::Base);
-impl ReputationId {
-    pub const ENCODED_SIZE: usize = 32;
-    pub fn inner(&self) -> pallas::Base { self.0 }
-    pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
-    pub fn from_bytes(b: [u8; 32]) -> Option<Self> { pallas::Base::from_repr(b).into_option().map(Self) }
-    pub fn encode(&self) -> Vec<u8> { self.to_bytes().to_vec() }
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 32 { return Err(ContractError::IoError(format!("ReputationId: expected 32 bytes, got {}", data.len()))); } Self::from_bytes(data[0..32].try_into().unwrap()).ok_or_else(|| ContractError::IoError("ReputationId: invalid".into())) }
-}
-
 /// Namespace for identity intents (used with generic intent primitives)
 pub const IDENTITY_NAMESPACE: u64 = 0x0001;
 
@@ -186,23 +173,15 @@ impl IssueCredentialParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::
 #[derive(Debug, Clone,)] pub struct RevokeCredentialParams { pub issuer_sig: Vec<u8>, pub nullifier: IntentNullifier, pub reason: Vec<u8>, pub fee: u64 }
 impl RevokeCredentialParams { pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(34+self.issuer_sig.len()+self.reason.len()); b.push(self.issuer_sig.len() as u8); b.extend_from_slice(&self.issuer_sig); b.extend_from_slice(&self.nullifier.to_bytes()); b.push(self.reason.len() as u8); b.extend_from_slice(&self.reason); b.extend_from_slice(&self.fee.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 34 { return Err(ContractError::IoError("RevokeCredentialParams: too short".into())); } let sig_len = data[0] as usize; let pos = 1+sig_len; if data.len() < pos+32+1+8 { return Err(ContractError::IoError("RevokeCredentialParams: truncated".into())); } let issuer_sig = data[1..pos].to_vec(); let nullifier = IntentNullifier::from_bytes(data[pos..pos+32].try_into().unwrap()).map_err(|_| ContractError::IoError("RevokeCredentialParams: invalid nullifier".into()))?; let reason_len = data[pos+32] as usize; let r = pos+33; if data.len() != r+reason_len+8 { return Err(ContractError::IoError(format!("RevokeCredentialParams: expected {} bytes, got {}", r+reason_len+8, data.len()))); } let reason = data[r..r+reason_len].to_vec(); let fee = u64::from_le_bytes(data[r+reason_len..r+reason_len+8].try_into().unwrap()); Ok(RevokeCredentialParams { issuer_sig, nullifier, reason, fee }) } }
 
-#[derive(Debug, Clone,)] pub struct CreateClaimParams { pub nullifier: IntentNullifier, pub claim_type: Vec<u8>, pub predicate: Vec<u8>, pub revealed_attributes: Vec<Vec<u8>>, pub proof: Vec<u8>, pub fee: u64 }
+// Unified CreateClaimParams — consolidates basic (mode 0), threshold/L1 (mode 1),
+// ratio (mode 2), multi-AND (mode 3), and DAG path (mode 4) variants.
+// Wire format: nullifier(32) | ct_len:u8 | claim_type | mode:u8 | pred_result:u8 |
+//   threshold:8LE | my_value:8LE | total_supply:8LE | threshold_ratio:8LE |
+//   dag_id:32 | path_index:4LE | credentials_len:u8 | credentials* | proof_len:u8 | proof | fee:8LE
+#[derive(Debug, Clone,)] pub struct CreateClaimParams { pub nullifier: IntentNullifier, pub claim_type: Vec<u8>, pub claim_mode: u8, pub predicate_result: u8, pub threshold: u64, pub my_value: u64, pub total_supply: u64, pub threshold_ratio: u64, pub dag_id: [u8; 32], pub path_index: u32, pub credentials: Vec<DAGCredential>, pub proof: Vec<u8>, pub fee: u64 }
 impl dwow_serial::Encodable for CreateClaimParams { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
 impl dwow_serial::Decodable for CreateClaimParams { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-
-impl CreateClaimParams { pub fn encode(&self) -> Vec<u8> { let ra_bytes: Vec<Vec<u8>> = self.revealed_attributes.iter().map(|a| { let mut b = Vec::with_capacity(1+a.len()); b.push(a.len() as u8); b.extend_from_slice(a); b }).collect(); let mut b = Vec::with_capacity(35+self.claim_type.len()+self.predicate.len()+ra_bytes.iter().map(|r| r.len()).sum::<usize>()+self.proof.len()); b.extend_from_slice(&self.nullifier.to_bytes()); b.push(self.claim_type.len() as u8); b.extend_from_slice(&self.claim_type); b.push(self.predicate.len() as u8); b.extend_from_slice(&self.predicate); b.push(self.revealed_attributes.len() as u8); for r in &ra_bytes { b.extend_from_slice(r); } b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.fee.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 35 { return Err(ContractError::IoError("CreateClaimParams: too short".into())); } let nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("CreateClaimParams: invalid nullifier".into()))?; let ct_len = data[32] as usize; let mut pos = 33+ct_len; if data.len() < pos+1 { return Err(ContractError::IoError("CreateClaimParams: truncated".into())); } let claim_type = data[33..pos].to_vec(); let pred_len = data[pos] as usize; pos += 1; if data.len() < pos+pred_len { return Err(ContractError::IoError("CreateClaimParams: predicate truncated".into())); } let predicate = data[pos..pos+pred_len].to_vec(); pos += pred_len; if data.len() < pos+1 { return Err(ContractError::IoError("CreateClaimParams: ra count missing".into())); } let ra_count = data[pos] as usize; pos += 1; let mut revealed_attributes = Vec::with_capacity(ra_count); for _ in 0..ra_count { if data.len() < pos+1 { return Err(ContractError::IoError("CreateClaimParams: ra truncated".into())); } let ra_len = data[pos] as usize; pos += 1; if data.len() < pos+ra_len { return Err(ContractError::IoError("CreateClaimParams: ra data truncated".into())); } revealed_attributes.push(data[pos..pos+ra_len].to_vec()); pos += ra_len; } if data.len() < pos+1 { return Err(ContractError::IoError("CreateClaimParams: proof count missing".into())); } let proof_len = data[pos] as usize; pos += 1; if data.len() != pos+proof_len+8 { return Err(ContractError::IoError(format!("CreateClaimParams: expected {} bytes, got {}", pos+proof_len+8, data.len()))); } let proof = data[pos..pos+proof_len].to_vec(); let fee = u64::from_le_bytes(data[pos+proof_len..pos+proof_len+8].try_into().unwrap()); Ok(CreateClaimParams { nullifier, claim_type, predicate, revealed_attributes, proof, fee }) } }
-
-#[derive(Debug, Clone,)] pub struct CreateClaimParamsL1 { pub nullifier: IntentNullifier, pub claim_type: Vec<u8>, pub predicate: Vec<u8>, pub revealed_attributes: Vec<Vec<u8>>, pub proof: Vec<u8>, pub predicate_result: u8, pub fee: u64 }
-impl dwow_serial::Encodable for CreateClaimParamsL1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
-impl dwow_serial::Decodable for CreateClaimParamsL1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-
-impl CreateClaimParamsL1 { pub fn encode(&self) -> Vec<u8> { let ra_bytes: Vec<Vec<u8>> = self.revealed_attributes.iter().map(|a| { let mut b = Vec::with_capacity(1+a.len()); b.push(a.len() as u8); b.extend_from_slice(a); b }).collect(); let mut b = Vec::with_capacity(36+self.claim_type.len()+self.predicate.len()+ra_bytes.iter().map(|r| r.len()).sum::<usize>()+self.proof.len()); b.extend_from_slice(&self.nullifier.to_bytes()); b.push(self.claim_type.len() as u8); b.extend_from_slice(&self.claim_type); b.push(self.predicate.len() as u8); b.extend_from_slice(&self.predicate); b.push(self.revealed_attributes.len() as u8); for r in &ra_bytes { b.extend_from_slice(r); } b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.push(self.predicate_result); b.extend_from_slice(&self.fee.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 36 { return Err(ContractError::IoError("CreateClaimParamsL1: too short".into())); } let nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("CreateClaimParamsL1: invalid nullifier".into()))?; let ct_len = data[32] as usize; let mut pos = 33+ct_len; let claim_type = data[33..pos].to_vec(); let pred_len = data[pos] as usize; pos += 1; if data.len() < pos+pred_len { return Err(ContractError::IoError("CreateClaimParamsL1: predicate truncated".into())); } let predicate = data[pos..pos+pred_len].to_vec(); pos += pred_len; let ra_count = data[pos] as usize; pos += 1; let mut revealed_attributes = Vec::with_capacity(ra_count); for _ in 0..ra_count { let ra_len = data[pos] as usize; pos += 1; revealed_attributes.push(data[pos..pos+ra_len].to_vec()); pos += ra_len; } let proof_len = data[pos] as usize; pos += 1; if data.len() != pos+proof_len+9 { return Err(ContractError::IoError(format!("CreateClaimParamsL1: expected {} bytes, got {}", pos+proof_len+9, data.len()))); } let proof = data[pos..pos+proof_len].to_vec(); let predicate_result = data[pos+proof_len]; let fee = u64::from_le_bytes(data[pos+proof_len+1..pos+proof_len+9].try_into().unwrap()); Ok(CreateClaimParamsL1 { nullifier, claim_type, predicate, revealed_attributes, proof, predicate_result, fee }) } }
-
-#[derive(Debug, Clone,)] pub struct VerifyClaimParams { pub claim: Claim, pub verifier_pub: PublicKey, pub fee: u64 }
-impl VerifyClaimParams { pub fn encode(&self) -> Vec<u8> { let claim_bytes = self.claim.encode(); let mut b = Vec::with_capacity(claim_bytes.len()+40); b.extend_from_slice(&claim_bytes); b.extend_from_slice(&self.verifier_pub.to_bytes()); b.extend_from_slice(&self.fee.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 40 { return Err(ContractError::IoError("VerifyClaimParams: too short".into())); } let claim = Claim::decode(data)?; let claim_len = claim.encode().len(); if data.len() != claim_len+40 { return Err(ContractError::IoError(format!("VerifyClaimParams: expected {} bytes, got {}", claim_len+40, data.len()))); } let verifier_pub = PublicKey::from_bytes(data[claim_len..claim_len+32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("VerifyClaimParams: invalid verifier_pub: {}", e)))?; let fee = u64::from_le_bytes(data[claim_len+32..claim_len+40].try_into().unwrap()); Ok(VerifyClaimParams { claim, verifier_pub, fee }) } }
-
-#[derive(Debug, Clone,)] pub struct Claim { pub nullifier: IntentNullifier, pub issuer_pub: PublicKey, pub claim_type: [u8; 32], pub predicate_result: Vec<u8>, pub revealed_attributes: Vec<Vec<u8>>, pub proof: Vec<u8>, pub created_at: u64, pub expires_at: u64 }
-impl Claim { pub fn encode(&self) -> Vec<u8> { let ra_bytes: Vec<Vec<u8>> = self.revealed_attributes.iter().map(|a| { let mut b = Vec::with_capacity(1+a.len()); b.push(a.len() as u8); b.extend_from_slice(a); b }).collect(); let mut b = Vec::with_capacity(99+self.predicate_result.len()+ra_bytes.iter().map(|r| r.len()).sum::<usize>()+self.proof.len()); b.extend_from_slice(&self.nullifier.to_bytes()); b.extend_from_slice(&self.issuer_pub.to_bytes()); b.extend_from_slice(&self.claim_type); b.push(self.predicate_result.len() as u8); b.extend_from_slice(&self.predicate_result); b.push(self.revealed_attributes.len() as u8); for r in &ra_bytes { b.extend_from_slice(r); } b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.created_at.to_le_bytes()); b.extend_from_slice(&self.expires_at.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 99 { return Err(ContractError::IoError("Claim: too short".into())); } let nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("Claim: invalid nullifier".into()))?; let issuer_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("Claim: invalid issuer_pub: {}", e)))?; let claim_type: [u8;32] = data[64..96].try_into().unwrap(); let pr_len = data[96] as usize; let mut pos = 97+pr_len; if data.len() < pos+1 { return Err(ContractError::IoError("Claim: predicate_result truncated".into())); } let predicate_result = data[97..pos].to_vec(); let ra_count = data[pos] as usize; pos += 1; let mut revealed_attributes = Vec::with_capacity(ra_count); for _ in 0..ra_count { let ra_len = data[pos] as usize; pos += 1; if data.len() < pos+ra_len { return Err(ContractError::IoError("Claim: ra data truncated".into())); } revealed_attributes.push(data[pos..pos+ra_len].to_vec()); pos += ra_len; } let proof_len = data[pos] as usize; pos += 1; if data.len() != pos+proof_len+16 { return Err(ContractError::IoError(format!("Claim: expected {} bytes, got {}", pos+proof_len+16, data.len()))); } let proof = data[pos..pos+proof_len].to_vec(); let created_at = u64::from_le_bytes(data[pos+proof_len..pos+proof_len+8].try_into().unwrap()); let expires_at = u64::from_le_bytes(data[pos+proof_len+8..pos+proof_len+16].try_into().unwrap()); Ok(Claim { nullifier, issuer_pub, claim_type, predicate_result, revealed_attributes, proof, created_at, expires_at }) } }
+impl CreateClaimParams { pub fn encode(&self) -> Vec<u8> { let cred_bytes: Vec<Vec<u8>> = self.credentials.iter().map(|c| c.encode()).collect(); let cap = 33+self.claim_type.len()+2+32+4+32+1+cred_bytes.iter().map(|c| c.len()).sum::<usize>()+1+self.proof.len()+8; let mut b = Vec::with_capacity(cap); b.extend_from_slice(&self.nullifier.to_bytes()); b.push(self.claim_type.len() as u8); b.extend_from_slice(&self.claim_type); b.push(self.claim_mode); b.push(self.predicate_result); b.extend_from_slice(&self.threshold.to_le_bytes()); b.extend_from_slice(&self.my_value.to_le_bytes()); b.extend_from_slice(&self.total_supply.to_le_bytes()); b.extend_from_slice(&self.threshold_ratio.to_le_bytes()); b.extend_from_slice(&self.dag_id); b.extend_from_slice(&self.path_index.to_le_bytes()); b.push(self.credentials.len() as u8); for c in &cred_bytes { b.extend_from_slice(c); } b.push(self.proof.len() as u8); b.extend_from_slice(&self.proof); b.extend_from_slice(&self.fee.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() < 88 { return Err(ContractError::IoError("CreateClaimParams: too short".into())); } let nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap()).map_err(|_| ContractError::IoError("CreateClaimParams: invalid nullifier".into()))?; let ct_len = data[32] as usize; let mut pos = 33+ct_len; let claim_type = data[33..pos].to_vec(); if data.len() < pos+68 { return Err(ContractError::IoError("CreateClaimParams: truncated at header".into())); } let claim_mode = data[pos]; let predicate_result = data[pos+1]; let threshold = u64::from_le_bytes(data[pos+2..pos+10].try_into().unwrap()); let my_value = u64::from_le_bytes(data[pos+10..pos+18].try_into().unwrap()); let total_supply = u64::from_le_bytes(data[pos+18..pos+26].try_into().unwrap()); let threshold_ratio = u64::from_le_bytes(data[pos+26..pos+34].try_into().unwrap()); pos += 34; let dag_id: [u8;32] = data[pos..pos+32].try_into().unwrap(); pos += 32; let path_index = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()); pos += 4; if data.len() < pos+1 { return Err(ContractError::IoError("CreateClaimParams: cred count missing".into())); } let cred_count = data[pos] as usize; pos += 1; let mut credentials = Vec::with_capacity(cred_count); for _ in 0..cred_count { if data.len() < pos+65 { return Err(ContractError::IoError("CreateClaimParams: credential truncated".into())); } credentials.push(DAGCredential::decode(&data[pos..pos+65])?); pos += 65; } if data.len() < pos+1 { return Err(ContractError::IoError("CreateClaimParams: proof len missing".into())); } let proof_len = data[pos] as usize; pos += 1; if data.len() != pos+proof_len+8 { return Err(ContractError::IoError(format!("CreateClaimParams: expected {} bytes, got {}", pos+proof_len+8, data.len()))); } let proof = data[pos..pos+proof_len].to_vec(); let fee = u64::from_le_bytes(data[pos+proof_len..pos+proof_len+8].try_into().unwrap()); Ok(CreateClaimParams { nullifier, claim_type, claim_mode, predicate_result, threshold, my_value, total_supply, threshold_ratio, dag_id, path_index, credentials, proof, fee }) } }
 
 /// Stored credential record
 #[derive(Debug, Clone)]
@@ -521,21 +500,55 @@ impl RegisterCapabilityParams {
             )));
         }
         let name = data[1..1 + name_len].to_vec();
-        let credential_requirement = CredentialRequirement::decode(&data[1 + name_len..])?;
-        let cred_len = credential_requirement.encode().len();
-        let pos = 1 + name_len + cred_len;
+        let req_start = 1 + name_len;
+        if data.len() < req_start + 73 {
+            return Err(ContractError::IoError(format!(
+                "RegisterCapabilityParams: data too short for credential requirement (need 73 at offset {}, have {})",
+                req_start, data.len() - req_start
+            )));
+        }
+        let schema_hash: [u8; 32] = data[req_start..req_start + 32].try_into().unwrap();
+        let req_issuer_pub = PublicKey::from_bytes(data[req_start + 32..req_start + 64].try_into().unwrap())
+            .map_err(|e| ContractError::IoError(format!("RegisterCapabilityParams: invalid issuer_pub: {}", e)))?;
+        let min_threshold = u64::from_le_bytes(data[req_start + 64..req_start + 72].try_into().unwrap());
+        let attr_len = data[req_start + 72] as usize;
+        let attr_start = req_start + 73;
+        if data.len() < attr_start + attr_len {
+            return Err(ContractError::IoError("RegisterCapabilityParams: data too short for attribute_name".into()));
+        }
+        let attribute_name = data[attr_start..attr_start + attr_len].to_vec();
+        let credential_requirement = CredentialRequirement {
+            schema_hash,
+            issuer_pub: req_issuer_pub,
+            min_threshold,
+            attribute_name,
+        };
+        let pos = attr_start + attr_len;
         if data.len() < pos + 9 {
             return Err(ContractError::IoError(format!(
                 "RegisterCapabilityParams: expected at least {} bytes, got {}", pos + 9, data.len()
             )));
         }
         let has_max = data[pos] != 0;
-        let max_holders = if has_max {
-            Some(u64::from_le_bytes(data[pos + 1..pos + 9].try_into().unwrap()))
+        let max_holders;
+        let fee;
+        if has_max {
+            if data.len() < pos + 17 {
+                return Err(ContractError::IoError(format!(
+                    "RegisterCapabilityParams: expected at least {} bytes with max_holders, got {}", pos + 17, data.len()
+                )));
+            }
+            max_holders = Some(u64::from_le_bytes(data[pos + 1..pos + 9].try_into().unwrap()));
+            fee = u64::from_le_bytes(data[pos + 9..pos + 17].try_into().unwrap());
         } else {
-            None
-        };
-        let fee = u64::from_le_bytes(data[pos + 9..pos + 17].try_into().unwrap());
+            if data.len() < pos + 9 {
+                return Err(ContractError::IoError(format!(
+                    "RegisterCapabilityParams: expected at least {} bytes, got {}", pos + 9, data.len()
+                )));
+            }
+            max_holders = None;
+            fee = u64::from_le_bytes(data[pos + 1..pos + 9].try_into().unwrap());
+        }
         Ok(RegisterCapabilityParams { name, credential_requirement, max_holders, fee })
     }
 }
@@ -871,6 +884,7 @@ impl RevokeCredentialUpdateV1 {
 pub struct CreateClaimUpdateV1 {
     pub nullifier: IntentNullifier,
     pub claim_type: Vec<u8>,
+    pub claim_mode: u8,
     pub created_at: u64,
 }
 
@@ -878,31 +892,33 @@ impl dwow_serial::Encodable for CreateClaimUpdateV1 { fn encode<W: std::io::Writ
 impl dwow_serial::Decodable for CreateClaimUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 impl CreateClaimUpdateV1 {
     pub fn encode(&self) -> Vec<u8> {
-        let cap = 41 + self.claim_type.len();
+        let cap = 42 + self.claim_type.len();
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.nullifier.to_bytes());
         buf.push(self.claim_type.len() as u8);
         buf.extend_from_slice(&self.claim_type);
+        buf.push(self.claim_mode);
         buf.extend_from_slice(&self.created_at.to_le_bytes());
         buf
     }
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 41 {
+        if data.len() < 42 {
             return Err(ContractError::IoError(format!(
-                "CreateClaimUpdateV1: expected at least 41 bytes, got {}", data.len()
+                "CreateClaimUpdateV1: expected at least 42 bytes, got {}", data.len()
             )));
         }
         let nullifier = IntentNullifier::from_bytes(data[0..32].try_into().unwrap())
             .map_err(|e| ContractError::IoError(format!("CreateClaimUpdateV1: invalid nullifier: {}", e)))?;
         let ct_len = data[32] as usize;
-        if data.len() != 41 + ct_len {
+        if data.len() != 42 + ct_len {
             return Err(ContractError::IoError(format!(
-                "CreateClaimUpdateV1: expected {} bytes, got {}", 41 + ct_len, data.len()
+                "CreateClaimUpdateV1: expected {} bytes, got {}", 42 + ct_len, data.len()
             )));
         }
         let claim_type = data[33..33 + ct_len].to_vec();
-        let created_at = u64::from_le_bytes(data[33 + ct_len..41 + ct_len].try_into().unwrap());
-        Ok(CreateClaimUpdateV1 { nullifier, claim_type, created_at })
+        let claim_mode = data[33 + ct_len];
+        let created_at = u64::from_le_bytes(data[34 + ct_len..42 + ct_len].try_into().unwrap());
+        Ok(CreateClaimUpdateV1 { nullifier, claim_type, claim_mode, created_at })
     }
 }
 
@@ -1210,122 +1226,5 @@ impl RegisterIssuerUpdateV1 {
         let reg_start = schemas_pos + 1 + schemas_len * 32;
         let registered_at = u64::from_le_bytes(data[reg_start..reg_start + 8].try_into().unwrap());
         Ok(RegisterIssuerUpdateV1 { issuer_id, name, authorized_schemas, registered_at })
-    }
-}
-
-// ============================================================================
-// REPUTATION (Phase 2d hardening)
-// ============================================================================
-
-/// Update relayer reputation parameters
-#[derive(Debug, Clone,)]
-pub struct UpdateReputationParams {
-    /// Issuer's public key (must be a registered issuer)
-    pub issuer_pub: PublicKey,
-    /// Relayer's public key
-    pub relayer_pub: PublicKey,
-    /// Total slash count
-    pub slash_count: u64,
-    /// Total successful withdrawals
-    pub success_count: u64,
-    /// Total volume processed
-    pub total_volume: u64,
-    /// Settlement frequency (blocks between settlements, 0 = unknown)
-    pub settlement_frequency: u64,
-}
-
-impl UpdateReputationParams { pub const ENCODED_SIZE: usize = 96; pub fn encode(&self) -> Vec<u8> { let mut b = Vec::with_capacity(96); b.extend_from_slice(&self.issuer_pub.to_bytes()); b.extend_from_slice(&self.relayer_pub.to_bytes()); b.extend_from_slice(&self.slash_count.to_le_bytes()); b.extend_from_slice(&self.success_count.to_le_bytes()); b.extend_from_slice(&self.total_volume.to_le_bytes()); b.extend_from_slice(&self.settlement_frequency.to_le_bytes()); b } pub fn decode(data: &[u8]) -> Result<Self, ContractError> { if data.len() != 96 { return Err(ContractError::IoError(format!("UpdateReputationParams: expected 96 bytes, got {}", data.len()))); } Ok(UpdateReputationParams { issuer_pub: PublicKey::from_bytes(data[0..32].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("UpdateReputationParams: invalid issuer_pub: {}", e)))?, relayer_pub: PublicKey::from_bytes(data[32..64].try_into().unwrap()).map_err(|e| ContractError::IoError(format!("UpdateReputationParams: invalid relayer_pub: {}", e)))?, slash_count: u64::from_le_bytes(data[64..72].try_into().unwrap()), success_count: u64::from_le_bytes(data[72..80].try_into().unwrap()), total_volume: u64::from_le_bytes(data[80..88].try_into().unwrap()), settlement_frequency: u64::from_le_bytes(data[88..96].try_into().unwrap()) }) } }
-
-/// Reputation record stored on-chain
-#[derive(Debug, Clone)]
-pub struct ReputationRecord {
-    pub relayer_pub: PublicKey,
-    pub issuer_pub: PublicKey,
-    pub slash_count: u64,
-    pub success_count: u64,
-    pub total_volume: u64,
-    pub settlement_frequency: u64,
-    pub last_updated: u64,
-}
-
-impl ReputationRecord {
-    pub const ENCODED_SIZE: usize = 104;
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.relayer_pub.to_bytes());
-        buf.extend_from_slice(&self.issuer_pub.to_bytes());
-        buf.extend_from_slice(&self.slash_count.to_le_bytes());
-        buf.extend_from_slice(&self.success_count.to_le_bytes());
-        buf.extend_from_slice(&self.total_volume.to_le_bytes());
-        buf.extend_from_slice(&self.settlement_frequency.to_le_bytes());
-        buf.extend_from_slice(&self.last_updated.to_le_bytes());
-        buf
-    }
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!(
-                "ReputationRecord: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
-            )));
-        }
-        let relayer_pub = PublicKey::from_bytes(data[0..32].try_into().unwrap())
-            .map_err(|e| ContractError::IoError(format!("ReputationRecord: invalid relayer_pub: {}", e)))?;
-        let issuer_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap())
-            .map_err(|e| ContractError::IoError(format!("ReputationRecord: invalid issuer_pub: {}", e)))?;
-        let slash_count = u64::from_le_bytes(data[64..72].try_into().unwrap());
-        let success_count = u64::from_le_bytes(data[72..80].try_into().unwrap());
-        let total_volume = u64::from_le_bytes(data[80..88].try_into().unwrap());
-        let settlement_frequency = u64::from_le_bytes(data[88..96].try_into().unwrap());
-        let last_updated = u64::from_le_bytes(data[96..104].try_into().unwrap());
-        Ok(ReputationRecord { relayer_pub, issuer_pub, slash_count, success_count, total_volume, settlement_frequency, last_updated })
-    }
-}
-
-/// Update reputation update
-#[derive(Debug, Clone)]
-pub struct UpdateReputationUpdateV1 {
-    pub reputation_id: ReputationId,
-    pub relayer_pub: PublicKey,
-    pub issuer_pub: PublicKey,
-    pub slash_count: u64,
-    pub success_count: u64,
-    pub total_volume: u64,
-    pub settlement_frequency: u64,
-    pub last_updated: u64,
-}
-
-impl dwow_serial::Encodable for UpdateReputationUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
-impl dwow_serial::Decodable for UpdateReputationUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-impl UpdateReputationUpdateV1 {
-    pub const ENCODED_SIZE: usize = 136;
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(Self::ENCODED_SIZE);
-        buf.extend_from_slice(&self.reputation_id.to_bytes());
-        buf.extend_from_slice(&self.relayer_pub.to_bytes());
-        buf.extend_from_slice(&self.issuer_pub.to_bytes());
-        buf.extend_from_slice(&self.slash_count.to_le_bytes());
-        buf.extend_from_slice(&self.success_count.to_le_bytes());
-        buf.extend_from_slice(&self.total_volume.to_le_bytes());
-        buf.extend_from_slice(&self.settlement_frequency.to_le_bytes());
-        buf.extend_from_slice(&self.last_updated.to_le_bytes());
-        buf
-    }
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() != Self::ENCODED_SIZE {
-            return Err(ContractError::IoError(format!(
-                "UpdateReputationUpdateV1: expected {} bytes, got {}", Self::ENCODED_SIZE, data.len()
-            )));
-        }
-        let reputation_id = ReputationId::from_bytes(data[0..32].try_into().unwrap())
-            .ok_or_else(|| ContractError::IoError("UpdateReputationUpdateV1: invalid reputation_id".into()))?;
-        let relayer_pub = PublicKey::from_bytes(data[32..64].try_into().unwrap())
-            .map_err(|e| ContractError::IoError(format!("UpdateReputationUpdateV1: invalid relayer_pub: {}", e)))?;
-        let issuer_pub = PublicKey::from_bytes(data[64..96].try_into().unwrap())
-            .map_err(|e| ContractError::IoError(format!("UpdateReputationUpdateV1: invalid issuer_pub: {}", e)))?;
-        let slash_count = u64::from_le_bytes(data[96..104].try_into().unwrap());
-        let success_count = u64::from_le_bytes(data[104..112].try_into().unwrap());
-        let total_volume = u64::from_le_bytes(data[112..120].try_into().unwrap());
-        let settlement_frequency = u64::from_le_bytes(data[120..128].try_into().unwrap());
-        let last_updated = u64::from_le_bytes(data[128..136].try_into().unwrap());
-        Ok(UpdateReputationUpdateV1 { reputation_id, relayer_pub, issuer_pub, slash_count, success_count, total_volume, settlement_frequency, last_updated })
     }
 }

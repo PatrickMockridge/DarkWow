@@ -29,7 +29,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::PublicKey,
+    crypto::{poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -66,15 +66,15 @@ impl RegisterOracleV1CallData {
 
     pub fn compute_public_inputs(&self) -> RegisterOracleV1PublicInputs {
         let (ix, iy) = self.oracle_public.xy().expect("pk not identity");
-        // Circuit: DOMAIN_TX_BINDING = witness_base(1) = oracle_pub_x
-        let tx_binding = dwow_sdk::crypto::poseidon_hash([ix, self.tx_commitment, self.tx_nonce]);
+        // Circuit: DOMAIN_TX_BINDING = witness_base(1) = 1
+        let tx_binding = poseidon_hash([pallas::Base::from(1u64), self.tx_commitment, self.tx_nonce]);
         RegisterOracleV1PublicInputs { oracle_pub_x: ix, oracle_pub_y: iy, tx_binding, tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.oracle_public.xy().expect("pk not identity");
-        // Circuit: DOMAIN_TX_BINDING = witness_base(1) = oracle_pub_x
-        let tx_binding = dwow_sdk::crypto::poseidon_hash([ix, self.tx_commitment, self.tx_nonce]);
+        // Circuit: DOMAIN_TX_BINDING = witness_base(1) = 1
+        let tx_binding = poseidon_hash([pallas::Base::from(1u64), self.tx_commitment, self.tx_nonce]);
         vec![
             // Circuit order: oracle_secret(0), oracle_pub_x(1), oracle_pub_y(2),
             //   tx_commitment(3), tx_nonce(4), tx_binding(5)

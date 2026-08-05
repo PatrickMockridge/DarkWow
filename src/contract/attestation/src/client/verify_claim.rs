@@ -21,111 +21,79 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Attestation verify_claim_v1 ZK proof generation
+//! Attestation verify_claim_v1 ZK proof generation (V2 circuit)
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use dwow_sdk::pasta::pallas;
+use dwow_sdk::{
+    crypto::poseidon_hash,
+    pasta::pallas,
+};
 use rand::rngs::OsRng;
 
-/// VerifyClaimV1 circuit public inputs
+/// VerifyClaimV1 circuit public inputs (V2: only tx_binding, tx_nonce)
 #[derive(Debug, Clone)]
 pub struct VerifyClaimV1PublicInputs {
-    pub claim_id: pallas::Base,
-    pub revealed_result: pallas::Base,
-    pub revocation_root: pallas::Base,
-    pub attestation_data: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl VerifyClaimV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        // Must match constrain_instance execution order:
-        // 1. revocation_root (from SetMembership opcode)
-        // 2. claim_id (explicit)
-        // 3. revealed_result (explicit)
-        // 4. revocation_root (explicit, duplicate)
-        // 5. attestation_data (explicit)
-        vec![
-            self.revocation_root,
-            self.claim_id,
-            self.revealed_result,
-            self.revocation_root,
-            self.attestation_data,
-            self.tx_binding,
-            self.tx_nonce,
-        ]
+        vec![self.tx_binding, self.tx_nonce]
     }
 }
 
 /// Input data for verify_claim proof generation
 #[derive(Debug, Clone)]
 pub struct VerifyClaimV1CallData {
-    pub claim_id: pallas::Base,
-    pub revealed_result: pallas::Base,
     pub evidence: pallas::Base,
     pub attestation_data: pallas::Base,
     pub nonce: pallas::Base,
-    pub pos: pallas::Base,
-    pub path: [pallas::Base; 255],
-    pub revocation_root: pallas::Base,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl VerifyClaimV1CallData {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        claim_id: pallas::Base,
-        revealed_result: pallas::Base,
+        _claim_id: pallas::Base,
+        _revealed_result: pallas::Base,
         evidence: pallas::Base,
         attestation_data: pallas::Base,
         nonce: pallas::Base,
-        pos: pallas::Base,
-        path: [pallas::Base; 255],
-        revocation_root: pallas::Base,
+        _pos: pallas::Base,
+        _path: [pallas::Base; 255],
+        _revocation_root: pallas::Base,
     ) -> Self {
         Self {
-            claim_id,
-            revealed_result,
             evidence,
             attestation_data,
             nonce,
-            pos,
-            path,
-            revocation_root,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
     }
 
     pub fn compute_public_inputs(&self) -> VerifyClaimV1PublicInputs {
-        VerifyClaimV1PublicInputs {
-            claim_id: self.claim_id,
-            revealed_result: self.revealed_result,
-            revocation_root: self.revocation_root,
-            attestation_data: self.attestation_data,
-            tx_binding: pallas::Base::zero(),
-            tx_nonce: self.tx_nonce,
-        }
+        // Circuit: DOMAIN_TX_BINDING = witness_base(3) = 3
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
+        VerifyClaimV1PublicInputs { tx_binding, tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        // Circuit witness order: evidence, attestation_data, nonce, tx_commitment, tx_nonce, tx_binding
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
-            Witness::Base(Value::known(self.claim_id)),
-            Witness::Base(Value::known(self.revealed_result)),
             Witness::Base(Value::known(self.evidence)),
             Witness::Base(Value::known(self.attestation_data)),
             Witness::Base(Value::known(self.nonce)),
-            Witness::Base(Value::known(self.pos)),
-            Witness::SparseMerklePath(Value::known(self.path)),
-            Witness::Base(Value::known(self.revocation_root)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(tx_binding)),
         ]
     }
 }

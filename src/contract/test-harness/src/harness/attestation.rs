@@ -320,7 +320,7 @@ impl AttestationHarness {
             claim_id: ClaimId(claim_id),
             attestation_id: AttestationId(attestation_id),
             evidence_commitment: evidence,
-            revealed_result: public_inputs.revealed_result,
+            revealed_result,
             attestation_data,
             revocation_root,
         };
@@ -411,18 +411,18 @@ impl AttestationHarness {
 
         let params = DelegateAttestationParamsV1 {
             proof: proof.as_ref().to_vec(),
-            delegation_id: public_inputs.delegation_id,
+            delegation_id,
             parent_id,
             delegator_pub: delegator_public,
             delegatee_pub: delegatee_public,
             delegation_type: delegation_type.to_repr()[0],
-            max_ratio: u64::from_le_bytes(public_inputs.max_ratio.to_repr()[0..8].try_into().unwrap()),
-            revocation_root: public_inputs.revocation_root,
+            max_ratio: u64::from_le_bytes(max_ratio.to_repr()[0..8].try_into().unwrap()),
+            revocation_root,
             chain_root,
-            chain_depth: u64::from_le_bytes(public_inputs.current_depth.to_repr()[0..8].try_into().unwrap()),
-            max_depth: u64::from_le_bytes(public_inputs.max_depth.to_repr()[0..8].try_into().unwrap()),
-            delegator_stake: u64::from_le_bytes(public_inputs.delegator_stake.to_repr()[0..8].try_into().unwrap()),
-            delegatee_stake: u64::from_le_bytes(public_inputs.delegatee_stake.to_repr()[0..8].try_into().unwrap()),
+            chain_depth: u64::from_le_bytes(current_depth.to_repr()[0..8].try_into().unwrap()),
+            max_depth: u64::from_le_bytes(max_depth.to_repr()[0..8].try_into().unwrap()),
+            delegator_stake: u64::from_le_bytes(delegator_stake.to_repr()[0..8].try_into().unwrap()),
+            delegatee_stake: u64::from_le_bytes(delegatee_stake.to_repr()[0..8].try_into().unwrap()),
         };
 
         let mut call_data = vec![0x08];
@@ -446,8 +446,8 @@ impl AttestationHarness {
 
         let params = CheckNotRevokedParamsV1 {
             proof: proof.as_ref().to_vec(),
-            revocation_root: public_inputs.revocation_root,
-            nonce: public_inputs.nonce,
+            revocation_root,
+            nonce,
         };
 
         let mut call_data = vec![0x07];
@@ -484,7 +484,7 @@ impl AttestationHarness {
 
         let params = UpdateDelegationParamsV1 {
             proof: proof.as_ref().to_vec(),
-            original_attestation_id: public_inputs.original_attestation_id,
+            original_attestation_id,
             delegation_type: delegation_type_u8,
             current_depth: depth,
             max_depth: max_depth_u64,

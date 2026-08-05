@@ -36,7 +36,7 @@ impl MultiSigGroup {
     /// Encode to canonical bytes (ρ-calculus: quote).
     /// Layout: version(1) + group_id(32) + pubkey_count(u8) + N*pubkey(32) + threshold(1) + total_keys(1)
     pub fn encode(&self) -> Vec<u8> {
-        let cap = 35 + self.pubkeys.len() * 32;
+        let cap = 36 + self.pubkeys.len() * 32;
         let mut buf = Vec::with_capacity(cap);
         buf.push(self.version);
         buf.extend_from_slice(&self.group_id.to_bytes());
@@ -60,7 +60,7 @@ impl MultiSigGroup {
         let group_id = GroupId::from_bytes(data[1..33].try_into().unwrap())
             .ok_or_else(|| ContractError::IoError("MultiSigGroup: invalid group_id".into()))?;
         let pk_count = data[33] as usize;
-        let expected = 35 + pk_count * 32;
+        let expected = 36 + pk_count * 32;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
                 "MultiSigGroup: expected {} bytes for {} pubkeys, got {}",

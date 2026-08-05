@@ -29,7 +29,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::PublicKey,
+    crypto::{poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -82,18 +82,21 @@ impl ConsumeClaimV1CallData {
 
     pub fn compute_public_inputs(&self) -> ConsumeClaimV1PublicInputs {
         let (ix, iy) = self.claimant_public.xy().expect("pk not identity");
+        // Circuit: DOMAIN_TX_BINDING = witness_base(3) = 3
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         ConsumeClaimV1PublicInputs {
             claim_id: self.claim_id,
             claimant_pub_x: ix,
             claimant_pub_y: iy,
             nullifier: self.nullifier,
-            tx_binding: pallas::Base::zero(),
+            tx_binding,
             tx_nonce: self.tx_nonce,
         }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.claimant_public.xy().expect("pk not identity");
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
             // Must match circuit witness order:
             // claim_id, nullifier, claimant_secret, claimant_pub_x, claimant_pub_y
@@ -104,7 +107,7 @@ impl ConsumeClaimV1CallData {
             Witness::Base(Value::known(iy)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(tx_binding)), // tx_binding
         ]
     }
 }

@@ -1605,8 +1605,8 @@ fn accept_job_with_capability_v1(cid: ContractId, call_idx: usize, calls: Vec<Da
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
-    if child_call.data[0] != 0x0b {
-        msg!("[accept_job_with_capability_v1] Error: Expected Identity::VerifyCapabilityV1 (0x0b), got 0x{:02x}",
+    if child_call.data[0] != 0x06 {
+        msg!("[accept_job_with_capability_v1] Error: Expected Identity::VerifyCapabilityV1 (0x06), got 0x{:02x}",
              child_call.data[0]);
         return Err(LaborMarketError::InvalidChildCall.into())
     }

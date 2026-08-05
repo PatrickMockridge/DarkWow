@@ -73,15 +73,14 @@ impl CreateAttestationV1CallData {
 
     pub fn compute_public_inputs(&self) -> CreateAttestationV1PublicInputs {
         let (ix, iy) = self.attestor_public.xy().expect("pk not identity");
-        // Circuit computes tx_binding = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)
-        // where DOMAIN_TX_BINDING = witness_base(3) = tx_commitment
-        let tx_binding = poseidon_hash([self.tx_commitment, self.tx_commitment, self.tx_nonce]);
+        // Circuit: DOMAIN_TX_BINDING = witness_base(3) = 3
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         CreateAttestationV1PublicInputs { attestor_pub_x: ix, attestor_pub_y: iy, tx_binding, tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.attestor_public.xy().expect("pk not identity");
-        let tx_binding = poseidon_hash([self.tx_commitment, self.tx_commitment, self.tx_nonce]);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
             // Must match circuit witness order:
             // attestor_secret, attestor_pub_x, attestor_pub_y

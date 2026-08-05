@@ -6,9 +6,7 @@ field = "pallas";
 # V2 changes from V1 (HAZOP RC3):
 #   - Domain separation: every poseidon_hash prepends a unique domain constant
 
-constant "CreateGroupV2" {
-    EcFixedPointBase NULLIFIER_K,
-}
+constant "CreateGroupV2" {}
 
 witness "CreateGroupV2" {
     Base group_id,

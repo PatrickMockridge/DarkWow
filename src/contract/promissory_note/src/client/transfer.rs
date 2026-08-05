@@ -300,7 +300,7 @@ impl TransferCallBuilder {
 
         Ok(TransferCallDebris {
             params: TransferParamsV1 { inputs, outputs,
-                tx_binding: pallas::Base::zero(), tx_nonce: pallas::Base::zero() },
+                tx_binding: poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), pallas::Base::zero()]), tx_nonce: pallas::Base::zero() },
             proofs,
         })
     }
@@ -371,7 +371,7 @@ fn create_transfer_burn_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
-        tx_binding: pallas::Base::zero(),
+        tx_binding: poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), input.tx_nonce]),
         tx_nonce: input.tx_nonce,
     };
 
@@ -434,7 +434,7 @@ fn create_transfer_transfer_proof(
     let token_commit = poseidon_hash([pallas::Base::from(2), output.token_id, token_id_blind.inner()]);
 
     let public_inputs =
-        TransferBlindOutputRevealed { commitment, value_commit, token_commit, spend_hook: output.spend_hook, tx_binding: pallas::Base::zero(), tx_nonce };
+        TransferBlindOutputRevealed { commitment, value_commit, token_commit, spend_hook: output.spend_hook, tx_binding: poseidon_hash([pallas::Base::from(3u64), pallas::Base::zero(), tx_nonce]), tx_nonce };
 
     // Witness order must match BlindOutput_V1 circuit:
     // coin_public, coin_value, coin_token_id, coin_spend_hook, coin_user_data,

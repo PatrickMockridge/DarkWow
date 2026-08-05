@@ -27,11 +27,6 @@ pub enum MultiSigError {
     #[error("Invalid function")]
     InvalidFunction,
 
-    #[error("Not authorized")]
-    NotAuthorized,
-
-    #[error("Signature already finalized for this message")]
-    AlreadyFinalized,
 }
 
 impl From<MultiSigError> for ContractError {
@@ -45,8 +40,6 @@ impl From<MultiSigError> for ContractError {
             MultiSigError::DuplicateNullifier => Self::Custom(6),
             MultiSigError::InsufficientSignatures => Self::Custom(7),
             MultiSigError::InvalidFunction => Self::Custom(8),
-            MultiSigError::NotAuthorized => Self::Custom(9),
-            MultiSigError::AlreadyFinalized => Self::Custom(10),
         }
     }
 }

@@ -27,9 +27,4 @@ pub mod zkbins;
 
 pub mod issue_credential;
 pub mod create_claim;
-pub mod create_claim_threshold;
-pub mod create_claim_l1_sd;
-pub mod create_claim_multi;
-pub mod create_claim_ratio;
-pub mod create_claim_dag;
 pub mod verify_capability;

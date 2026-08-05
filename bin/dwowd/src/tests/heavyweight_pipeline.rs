@@ -3334,38 +3334,21 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
             "accept_block must advance height after CreateClaimV1");
         println!("    accept_block height OK");
 
-        // --- CreateClaimL1 ---
-        println!("  Test: CreateClaimL1");
-        let l1_result = harness.create_claim_l1(credential_secret, pallas::Base::from(100u64), pallas::Base::from(50u64), commitment, pallas::Base::from(25u64), issuer_pub, schema_hash, claim_type, true)?;
-        assert!(!l1_result.call_data.is_empty());
-        println!("    call_data={}B proof created", l1_result.call_data.len());
+        // --- CreateClaim (unified, mode 0 basic) ---
+        println!("  Test: CreateClaim (unified)");
+        let claim2_result = harness.create_claim(credential_secret, pallas::Base::from(100u64), pallas::Base::from(50u64), commitment, issuer_pub, schema_hash, claim_type)?;
+        assert!(!claim2_result.call_data.is_empty());
+        println!("    call_data={}B proof created", claim2_result.call_data.len());
 
-        // --- CreateClaimL1 through accept_block ---
-        println!("  Exec: CreateClaimL1 through accept_block");
+        // --- CreateClaim through accept_block ---
+        println!("  Exec: CreateClaim through accept_block");
         let h_before = chain.height();
         chain.block()?
-            .with_call(cid, &harness, &l1_result.call_data, vec![l1_result.proof])?
+            .with_call(cid, &harness, &claim2_result.call_data, vec![claim2_result.proof])?
             .with_fee_collect()?
             .submit().await?;
         assert!(chain.height() > h_before,
-            "accept_block must advance height after CreateClaimL1");
-        println!("    accept_block height OK");
-
-        // --- CreateClaimL1V2 ---
-        println!("  Test: CreateClaimL1V2");
-        let l1v2_result = harness.create_claim_l1_v2(credential_secret, pallas::Base::from(100u64), pallas::Base::from(50u64), commitment, issuer_pub, schema_hash, claim_type, true)?;
-        assert!(!l1v2_result.call_data.is_empty());
-        println!("    call_data={}B proof created", l1v2_result.call_data.len());
-
-        // --- CreateClaimL1V2 through accept_block ---
-        println!("  Exec: CreateClaimL1V2 through accept_block");
-        let h_before = chain.height();
-        chain.block()?
-            .with_call(cid, &harness, &l1v2_result.call_data, vec![l1v2_result.proof])?
-            .with_fee_collect()?
-            .submit().await?;
-        assert!(chain.height() > h_before,
-            "accept_block must advance height after CreateClaimL1V2");
+            "accept_block must advance height after CreateClaim");
         println!("    accept_block height OK");
 
         // --- CreateClaimMulti ---

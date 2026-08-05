@@ -163,7 +163,7 @@ and privacy. With Identity, DarkWow has governance, labour markets, insurance,
 qualified tendering, subscription access, and reputation — all without
 surrendering privacy.
 
-Here is every contract that uses `VerifyCapabilityV1 (0x0b)` as a child call,
+Here is every contract that uses `VerifyCapabilityV1 (0x06)` as a child call,
 and what it proves:
 
 | Contract | Capability | What It Enables |
@@ -190,25 +190,21 @@ cannot vote in the DAO. Each capability is a key that opens exactly one door.
 
 ## The Claim Gradient — How Much You Reveal
 
-Not every interaction needs zero disclosure. Sometimes you want to prove "I
-earn more than $50,000" without revealing the exact figure. Sometimes you need
-to prove "I hold credentials A AND B AND C" for a multi-factor requirement.
-Identity supports a **privacy gradient** — you reveal only what the use case
-demands, at the level you choose:
+Not every interaction needs zero disclosure. Identity supports a **privacy gradient**
+through a consolidated `CreateClaimV1 (0x03)` entrypoint with five claim modes:
 
-| Level | Name | What Verifier Sees | Use Case |
-|-------|------|-------------------|----------|
-| 0 | `CreateClaimV1` | Nothing — proof valid/invalid only | Simple membership: "I am in the DAO" |
-| 1 | `CreateClaimV1L1` | Predicate result (1/0) + selected attribute | "I earn ≥ $50K" — amount not revealed |
-| 1v2 | `CreateClaimV1L1V2` | Same, with `LessThanOrEqual` gate | "My risk score ≤ 30" — score not revealed |
-| Multi | `CreateClaimV1Multi` | AND of multiple credentials | "I hold a law degree AND a bar license" |
-| Ratio | `CreateClaimV1Ratio` | Ratio of satisfied/total credentials | "I have 3 of 5 required qualifications" |
-| DAG | `CreateClaimV1DAG` | Multi-path credential graph | "I qualify via education OR work experience OR certification" |
+| Mode | Name | What Verifier Sees | Use Case |
+|------|------|-------------------|----------|
+| 0 | `basic` | Nothing — proof valid/invalid only | Simple membership: "I am in the DAO" |
+| 1 | `threshold` | Predicate result (1/0) | "I earn ≥ $50K" — amount not revealed |
+| 2 | `ratio` | Ratio predicate result | "My value meets the threshold ratio" |
+| 3 | `multi` | AND of up to 3 credentials | "I hold a law degree AND a bar license" |
+| 4 | `dag` | Multi-path credential DAG | "I qualify via education OR work experience OR certification" |
 
-The DAG variant is particularly powerful: it enables **multi-path
+All five modes use the same unified `CreateClaimV2` ZK circuit. The `claim_mode`
+field in `CreateClaimParams` selects the mode. The DAG variant enables **multi-path
 qualification** where a competency can be satisfied through different credential
-routes — a university degree OR an industry certification OR equivalent work
-experience. The verifier learns only that at least one path is satisfied,
+routes — the verifier learns only that at least one path is satisfied,
 without learning which one.
 
 ---
@@ -218,14 +214,9 @@ without learning which one.
 ```
 src/contract/identity/
 ├── proof/
-│   ├── issue_credential_v1.zk
-│   ├── create_claim_v1.zk
-│   ├── create_claim_v1_l1.zk
-│   ├── create_claim_v1_l1_v2.zk
-│   ├── create_claim_v1_multi.zk
-│   ├── create_claim_v1_ratio.zk
-│   ├── create_claim_v1_dag.zk
-│   └── verify_capability_v1.zk
+│   ├── create_claim.zk          (unified, 5 claim modes)
+│   ├── issue_credential.zk
+│   └── verify_capability.zk
 ├── src/
 │   ├── client/mod.rs
 │   ├── entrypoint.rs
@@ -239,48 +230,27 @@ src/contract/identity/
 
 ## Contract Functions
 
-16 function variants (0x00-0x0f), all implemented.
-
-### Credential Functions (0x00-0x08)
+9 function variants (0x00-0x08).
 
 | Opcode | Function | Description |
 |--------|----------|-------------|
 | 0x00 | `InitializeV1` | Initialize identity registry |
 | 0x01 | `IssueCredentialV1` | Issuer issues credential to holder |
 | 0x02 | `RevokeCredentialV1` | Issuer revokes a credential |
-| 0x03 | `CreateClaimV1` | Holder creates claim (Level 0 zk_only) |
-| 0x04 | `VerifyClaimV1` | Verifier checks claim on-chain |
-| 0x05 | `CreateClaimV1L1` | Holder creates claim (Level 1 selective) |
-| 0x06 | `CreateClaimV1L1V2` | Level 1 with LessThanOrEqual |
-| 0x07 | `CreateClaimV1Multi` | Multi-credential AND claim |
-| 0x08 | `CreateClaimV1Ratio` | Ratio-based predicate claim |
-
-### O-Cap Capability Functions (0x09-0x0f)
-
-| Opcode | Function | Description |
-|--------|----------|-------------|
-| 0x09 | `RegisterCapabilityV1` | Register a new capability type |
-| 0x0a | `IssueCapabilityV1` | Issue a capability to a holder |
-| 0x0b | `VerifyCapabilityV1` | Verify a capability proof (cross-contract) |
-| 0x0c | `RevokeCapabilityV1` | Revoke a capability |
-| 0x0d | `CreateClaimDAGV1` | DAG-based claim (multi-path credentials) |
-| 0x0e | `RegisterIssuerV1` | Register a trusted credential issuer |
-| 0x0f | `UpdateReputationV1` | Update a relayer's reputation score |
+| 0x03 | `CreateClaimV1` | Unified claim creation (modes 0-4: basic/threshold/ratio/multi/dag) |
+| 0x04 | `RegisterCapabilityV1` | Register a new capability type |
+| 0x05 | `IssueCapabilityV1` | Issue a capability to a holder |
+| 0x06 | `VerifyCapabilityV1` | Verify a capability proof (cross-contract) |
+| 0x07 | `RevokeCapabilityV1` | Revoke a capability |
+| 0x08 | `RegisterIssuerV1` | Register a trusted credential issuer |
 
 ## ZK Circuits
 
-All 8 circuits compiled to `.zk.bin`:
-
 | Circuit | Namespace | Purpose |
 |---------|-----------|---------|
-| `issue_credential_v1.zk` | `IssueCredential_V1` | Prove credential valid |
-| `create_claim_v1.zk` | `CreateClaim_V1` | Level 0 zk_only claim |
-| `create_claim_v1_l1.zk` | `CreateClaim_V1_L1` | Level 1 bounded equation |
-| `create_claim_v1_l1_v2.zk` | `CreateClaim_V1L1V2` | Level 1 LessThanOrEqual |
-| `create_claim_v1_multi.zk` | `CreateClaim_V1Multi` | Multi-credential AND |
-| `create_claim_v1_ratio.zk` | `CreateClaim_V1Ratio` | Ratio-based predicate |
-| `create_claim_v1_dag.zk` | `CreateClaim_V1DAG` | Multi-path DAG claim |
-| `verify_capability_v1.zk` | `VerifyCapability_V1` | Capability verification |
+| `create_claim.zk` | `CreateClaimV2` | Unified claim creation (5 modes via `cond_select`) |
+| `issue_credential.zk` | `IssueCredentialV2` | Prove credential issuance |
+| `verify_capability.zk` | `VerifyCapabilityV2` | Capability proof verification |
 
 ## Database Trees
 
@@ -291,8 +261,6 @@ All 8 circuits compiled to `.zk.bin`:
 | `issuers` | Trusted issuers |
 | `config` | Configuration |
 | `capabilities` | Capability definitions |
-| `capability_issuances` | Holder → capability mapping |
-| `reputations` | Relayer reputation records |
 
 ## See Also
 - [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract

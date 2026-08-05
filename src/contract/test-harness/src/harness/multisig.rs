@@ -129,6 +129,7 @@ impl MultiSigHarness {
             Witness::Base(Value::known(approval_commit)), Witness::Base(Value::known(tx_commitment)),
             Witness::Base(Value::known(tx_nonce)),
         ];
+        // constrain_instance order: tx_binding, tx_nonce, group_id, message_hash
         let public_inputs = vec![tx_binding, tx_nonce, group_id, message_hash];
 
         let proof = Proof::create(&self.finalize_pk, &[ZkCircuit::new(witnesses, &self.finalize_zkbin)], &public_inputs, OsRng)

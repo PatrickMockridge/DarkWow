@@ -21,110 +21,82 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Attestation verify_chain_v1 ZK proof generation
+//! Attestation verify_chain_v1 ZK proof generation (V2 circuit)
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
-use dwow_sdk::{crypto::MerkleNode, pasta::pallas};
+use dwow_sdk::{
+    crypto::{poseidon_hash, PublicKey},
+    pasta::pallas,
+};
 use rand::rngs::OsRng;
 
-/// VerifyChainV1 circuit public inputs
+/// VerifyChainV1 circuit public inputs (V2: only tx_binding, tx_nonce)
 #[derive(Debug, Clone)]
 pub struct VerifyChainV1PublicInputs {
-    pub delegation_id: pallas::Base,
-    pub parent_id: pallas::Base,
-    pub chain_root: pallas::Base,
-    pub current_depth: pallas::Base,
-    pub max_depth: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl VerifyChainV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.delegation_id,
-            self.parent_id,
-            self.chain_root,
-            self.current_depth,
-            self.max_depth,
-            self.tx_binding,
-            self.tx_nonce,
-        ]
+        vec![self.tx_binding, self.tx_nonce]
     }
 }
 
-/// Input data for verify_chain proof generation
-#[derive(Debug, Clone)]
 pub struct VerifyChainV1CallData {
-    pub delegation_id: pallas::Base,
-    pub parent_id: pallas::Base,
     pub chain_root: pallas::Base,
-    pub current_depth: pallas::Base,
-    pub max_depth: pallas::Base,
-    pub pos: u64,
-    pub path: Vec<MerkleNode>,
+    pub verifier_secret: pallas::Base,
+    pub verifier_public: PublicKey,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl VerifyChainV1CallData {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        delegation_id: pallas::Base,
-        parent_id: pallas::Base,
+        _delegation_id: pallas::Base,
+        _parent_id: pallas::Base,
         chain_root: pallas::Base,
-        current_depth: pallas::Base,
-        max_depth: pallas::Base,
-        pos: u64,
-        path: Vec<MerkleNode>,
+        _current_depth: pallas::Base,
+        _max_depth: pallas::Base,
+        _pos: pallas::Base,
+        _path: [pallas::Base; 255],
     ) -> Self {
         Self {
-            delegation_id,
-            parent_id,
             chain_root,
-            current_depth,
-            max_depth,
-            pos,
-            path,
+            verifier_secret: pallas::Base::zero(),
+            verifier_public: PublicKey::from_secret(
+                dwow_sdk::crypto::SecretKey::from_base(pallas::Base::from(1u64)),
+            ),
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
     }
 
     pub fn compute_public_inputs(&self) -> VerifyChainV1PublicInputs {
-        VerifyChainV1PublicInputs {
-            delegation_id: self.delegation_id,
-            parent_id: self.parent_id,
-            chain_root: self.chain_root,
-            current_depth: self.current_depth,
-            max_depth: self.max_depth,
-            tx_binding: pallas::Base::zero(),
-            tx_nonce: self.tx_nonce,
-        }
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
+        VerifyChainV1PublicInputs { tx_binding, tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
+        let (vx, vy) = self.verifier_public.xy().expect("pk not identity");
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
-            // Public inputs as witnesses
-            Witness::Base(Value::known(self.delegation_id)),
-            Witness::Base(Value::known(self.parent_id)),
             Witness::Base(Value::known(self.chain_root)),
-            Witness::Base(Value::known(self.current_depth)),
-            Witness::Base(Value::known(self.max_depth)),
-            // Private inputs
-            Witness::Uint64(Value::known(self.pos)),
-            Witness::MerklePath(Value::known(self.path.clone().try_into().unwrap())),
+            Witness::Base(Value::known(self.verifier_secret)),
+            Witness::Base(Value::known(vx)),
+            Witness::Base(Value::known(vy)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
+            Witness::Base(Value::known(tx_binding)),
         ]
     }
 }
 
-/// Create a VerifyChain ZK proof
 pub fn verify_chain_v1_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
@@ -132,9 +104,7 @@ pub fn verify_chain_v1_proof(
 ) -> Result<(Proof, VerifyChainV1PublicInputs)> {
     let public_inputs = input.compute_public_inputs();
     let witnesses = input.to_witnesses();
-
     let circuit = ZkCircuit::new(witnesses, zkbin);
     let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
-
     Ok((proof, public_inputs))
 }

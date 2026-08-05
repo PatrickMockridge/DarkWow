@@ -29,7 +29,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{PublicKey},
+    crypto::{poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use rand::rngs::OsRng;
@@ -72,15 +72,15 @@ impl PushValueV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> PushValueV1PublicInputs {
-        // Circuit: DOMAIN_TX_BINDING = witness_base(3) = oracle_pub_y
-        let (ix, iy) = self.oracle_public.xy().expect("pk not identity");
-        let tx_binding = dwow_sdk::crypto::poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
+        // Circuit: DOMAIN_TX_BINDING = witness_base(3) = 3
+        let (_ix, _) = self.oracle_public.xy().expect("pk not identity");
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         PushValueV1PublicInputs { oracle_id: self.oracle_id, value: self.value, tx_binding, tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.oracle_public.xy().expect("pk not identity");
-        let tx_binding = dwow_sdk::crypto::poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
             // Circuit order: oracle_id, oracle_secret, oracle_pub_x, oracle_pub_y, value, tx_commitment, tx_nonce, tx_binding
             Witness::Base(Value::known(self.oracle_id)),

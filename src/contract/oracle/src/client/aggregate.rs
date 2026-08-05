@@ -28,7 +28,10 @@ use dwow_core::{
     zkas::ZkBinary,
     Result,
 };
-use dwow_sdk::pasta::pallas;
+use dwow_sdk::{
+    crypto::poseidon_hash,
+    pasta::pallas,
+};
 use rand::rngs::OsRng;
 
 /// AggregateV1 circuit public inputs
@@ -104,8 +107,8 @@ impl AggregateV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> AggregateV1PublicInputs {
-        // Circuit: DOMAIN_TX_BINDING = witness_base(3) = value_3
-        let tx_binding = dwow_sdk::crypto::poseidon_hash([self.value_3, self.tx_commitment, self.tx_nonce]);
+        // Circuit: DOMAIN_TX_BINDING = witness_base(3) = 3
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         AggregateV1PublicInputs {
             oracle_id: self.oracle_id,
             result: self.result,
@@ -117,7 +120,7 @@ impl AggregateV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let tx_binding = dwow_sdk::crypto::poseidon_hash([self.value_3, self.tx_commitment, self.tx_nonce]);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         vec![
             // Circuit order: oracle_id, value_0, value_1, value_2, value_3,
             //   weight_0, weight_1, weight_2, weight_3, sum_weights, result,

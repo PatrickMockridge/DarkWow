@@ -68,4 +68,4 @@ produces = [{ name = "approval", description = "Threshold approval capability fo
 consumes = ["partial_signature"]
 required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate"]
 
-# Multisig has no ZK circuits.
+# MultiSig ZK circuits: CreateGroupV2, SignV2, FinalizeV2 (3 circuits, k=11)

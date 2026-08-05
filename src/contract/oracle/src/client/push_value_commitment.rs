@@ -94,15 +94,15 @@ impl PushValueCommitmentV1CallData {
         }
     }
 
-    /// Compute commitment from value and nonce (matching circuit: poseidon_hash(pos, value, nonce))
+    /// Compute commitment from value and nonce (matching circuit: poseidon_hash(DOMAIN_COIN_COMMIT, value, nonce))
+    /// where DOMAIN_COIN_COMMIT = witness_base(4) = 4
     pub fn compute_commitment(&self) -> pallas::Base {
-        poseidon_hash([pallas::Base::from(self.pos), self.value, self.nonce])
+        poseidon_hash([pallas::Base::from(4u64), self.value, self.nonce])
     }
 
     pub fn compute_public_inputs(&self) -> PushValueCommitmentV1PublicInputs {
-        // Circuit: DOMAIN_TX_BINDING = witness_base(3) = staker_pub_y
-        let (_ix, iy) = self.staker_public.xy().expect("pk not identity");
-        let tx_binding = dwow_sdk::crypto::poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
+        // Circuit: DOMAIN_TX_BINDING = witness_base(3) = 3
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         PushValueCommitmentV1PublicInputs {
             oracle_id: self.oracle_id,
             commitment: self.commitment,
@@ -114,7 +114,7 @@ impl PushValueCommitmentV1CallData {
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.staker_public.xy().expect("pk not identity");
-        let tx_binding = dwow_sdk::crypto::poseidon_hash([iy, self.tx_commitment, self.tx_nonce]);
+        let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
 
         // Build SparseMerklePath: convert MerkleNode to Base, pad to SMT_FP_DEPTH
         let mut path_bases = [pallas::Base::zero(); SMT_FP_DEPTH];

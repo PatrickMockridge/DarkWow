@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Identity create_claim_v1 ZK proof generation
+//! Identity create_claim_v1 ZK proof generation (unified V2 circuit, 30 witnesses)
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -34,36 +34,45 @@ use dwow_sdk::{
 };
 use rand::rngs::OsRng;
 
-/// CreateClaimV1 circuit public inputs
+/// CreateClaimV1 circuit public inputs (V2: nullifier, tx_binding, tx_nonce)
 #[derive(Debug, Clone)]
 pub struct CreateClaimPublicInputs {
     pub nullifier: pallas::Base,
-    pub claim_type: pallas::Base,
-    pub issuer_pub_x: pallas::Base,
-    pub issuer_pub_y: pallas::Base,
-    pub schema_hash: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl CreateClaimPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![
-            self.nullifier,
-            self.tx_binding,
-            self.tx_nonce,
-        ]
+        vec![self.nullifier, self.tx_binding, self.tx_nonce]
     }
 }
 
-/// Input data for create_claim proof generation
+/// Input data for create_claim proof generation (unified, 30-witness circuit)
 #[derive(Debug, Clone)]
 pub struct CreateClaimCallData {
+    pub claim_mode: u64,
     pub credential_secret: pallas::Base,
     pub attribute_value: pallas::Base,
     pub threshold: pallas::Base,
     pub commitment: pallas::Base,
-    // Public inputs
+    pub predicate_result: pallas::Base,
+    pub my_value: pallas::Base,
+    pub total_supply: pallas::Base,
+    pub threshold_ratio: pallas::Base,
+    pub secret_2: pallas::Base,
+    pub commitment_2: pallas::Base,
+    pub attribute_value_2: pallas::Base,
+    pub threshold_2: pallas::Base,
+    pub secret_3: pallas::Base,
+    pub commitment_3: pallas::Base,
+    pub attribute_value_3: pallas::Base,
+    pub threshold_3: pallas::Base,
+    pub path_index: pallas::Base,
+    pub num_credentials: pallas::Base,
+    pub is_lte_1: pallas::Base,
+    pub is_lte_2: pallas::Base,
+    pub is_lte_3: pallas::Base,
     pub issuer_public: PublicKey,
     pub schema_hash: pallas::Base,
     pub claim_type: pallas::Base,
@@ -72,7 +81,8 @@ pub struct CreateClaimCallData {
 }
 
 impl CreateClaimCallData {
-    pub fn new(
+    /// Create a basic claim (mode 0)
+    pub fn new_basic(
         credential_secret: pallas::Base,
         attribute_value: pallas::Base,
         threshold: pallas::Base,
@@ -82,32 +92,40 @@ impl CreateClaimCallData {
         claim_type: pallas::Base,
     ) -> Self {
         Self {
-            credential_secret,
-            attribute_value,
-            threshold,
-            commitment,
-            issuer_public,
-            schema_hash,
-            claim_type,
+            claim_mode: 0,
+            credential_secret, attribute_value, threshold, commitment,
+            predicate_result: pallas::Base::zero(),
+            my_value: pallas::Base::zero(),
+            total_supply: pallas::Base::zero(),
+            threshold_ratio: pallas::Base::zero(),
+            secret_2: pallas::Base::zero(),
+            commitment_2: pallas::Base::zero(),
+            attribute_value_2: pallas::Base::zero(),
+            threshold_2: pallas::Base::zero(),
+            secret_3: pallas::Base::zero(),
+            commitment_3: pallas::Base::zero(),
+            attribute_value_3: pallas::Base::zero(),
+            threshold_3: pallas::Base::zero(),
+            path_index: pallas::Base::zero(),
+            num_credentials: pallas::Base::zero(),
+            is_lte_1: pallas::Base::zero(),
+            is_lte_2: pallas::Base::zero(),
+            is_lte_3: pallas::Base::zero(),
+            issuer_public, schema_hash, claim_type,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
     }
 
-    /// Compute nullifier from credential_secret and commitment (domain-separated, V2)
+    /// Compute nullifier (domain-separated, V2)
     pub fn compute_nullifier(&self) -> pallas::Base {
         poseidon_hash([pallas::Base::from(1u64), self.credential_secret, self.commitment])
     }
 
     pub fn compute_public_inputs(&self) -> CreateClaimPublicInputs {
-        let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
         CreateClaimPublicInputs {
             nullifier: self.compute_nullifier(),
-            claim_type: self.claim_type,
-            issuer_pub_x: ix,
-            issuer_pub_y: iy,
-            schema_hash: self.schema_hash,
             tx_binding,
             tx_nonce: self.tx_nonce,
         }
@@ -116,21 +134,38 @@ impl CreateClaimCallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
         let tx_binding = poseidon_hash([pallas::Base::from(3u64), self.tx_commitment, self.tx_nonce]);
+        // Must match circuit witness order exactly (30 elements):
         vec![
-            // Public inputs as witnesses
-            Witness::Base(Value::known(self.compute_nullifier())),
-            Witness::Base(Value::known(self.claim_type)),
-            Witness::Base(Value::known(ix)),
-            Witness::Base(Value::known(iy)),
-            Witness::Base(Value::known(self.schema_hash)),
-            // Private inputs
-            Witness::Base(Value::known(self.credential_secret)),
-            Witness::Base(Value::known(self.attribute_value)),
-            Witness::Base(Value::known(self.threshold)),
-            Witness::Base(Value::known(self.commitment)),
-            Witness::Base(Value::known(self.tx_commitment)),
-            Witness::Base(Value::known(self.tx_nonce)),
-            Witness::Base(Value::known(tx_binding)), // tx_binding
+            Witness::Base(Value::known(pallas::Base::from(self.claim_mode))), // 0: mode
+            Witness::Base(Value::known(self.compute_nullifier())),              // 1: nullifier
+            Witness::Base(Value::known(self.claim_type)),                       // 2: claim_type
+            Witness::Base(Value::known(ix)),                                    // 3: issuer_pub_x
+            Witness::Base(Value::known(iy)),                                    // 4: issuer_pub_y
+            Witness::Base(Value::known(self.schema_hash)),                      // 5: schema_hash
+            Witness::Base(Value::known(self.credential_secret)),                // 6: credential_secret
+            Witness::Base(Value::known(self.commitment)),                       // 7: commitment
+            Witness::Base(Value::known(self.attribute_value)),                  // 8: attribute_value
+            Witness::Base(Value::known(self.threshold)),                        // 9: threshold
+            Witness::Base(Value::known(self.predicate_result)),                 // 10: predicate_result
+            Witness::Base(Value::known(self.my_value)),                         // 11: my_value
+            Witness::Base(Value::known(self.total_supply)),                     // 12: total_supply
+            Witness::Base(Value::known(self.threshold_ratio)),                  // 13: threshold_ratio
+            Witness::Base(Value::known(self.secret_2)),                         // 14: secret_2
+            Witness::Base(Value::known(self.commitment_2)),                     // 15: commitment_2
+            Witness::Base(Value::known(self.attribute_value_2)),                // 16: attribute_value_2
+            Witness::Base(Value::known(self.threshold_2)),                      // 17: threshold_2
+            Witness::Base(Value::known(self.secret_3)),                         // 18: secret_3
+            Witness::Base(Value::known(self.commitment_3)),                     // 19: commitment_3
+            Witness::Base(Value::known(self.attribute_value_3)),                // 20: attribute_value_3
+            Witness::Base(Value::known(self.threshold_3)),                      // 21: threshold_3
+            Witness::Base(Value::known(self.path_index)),                       // 22: path_index
+            Witness::Base(Value::known(self.num_credentials)),                  // 23: num_credentials
+            Witness::Base(Value::known(self.is_lte_1)),                         // 24: is_lte_1
+            Witness::Base(Value::known(self.is_lte_2)),                         // 25: is_lte_2
+            Witness::Base(Value::known(self.is_lte_3)),                         // 26: is_lte_3
+            Witness::Base(Value::known(self.tx_commitment)),                    // 27: tx_commitment
+            Witness::Base(Value::known(self.tx_nonce)),                         // 28: tx_nonce
+            Witness::Base(Value::known(tx_binding)),                            // 29: tx_binding
         ]
     }
 }

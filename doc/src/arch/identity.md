@@ -648,7 +648,7 @@ combined_predicates = base_mul(is_lte_1, is_lte_2);
 combined_predicates = base_mul(combined_predicates, is_lte_3);
 ```
 
-### Competency DAG Claims (0x0d)
+### Competency DAG Claims (CreateClaimV1 mode 4)
 
 The `create_claim_v1_dag.zk` circuit supports multiple credential paths with OR logic between paths:
 
@@ -682,7 +682,7 @@ path_satisfied = base_mul(path_satisfied, is_lte_3);
 constrain_equal_base(path_satisfied, ONE);
 ```
 
-**Function:** `CreateClaimDAGV1` (0x0d)
+**Function:** `CreateClaimV1` (0x03) — mode 4 (dag)
 
 **Data structures:**
 ```rust

@@ -268,7 +268,7 @@ fn verify_onchain(
     required: &[u8; 32],
     payer_pubkey: &PublicKey,
 ) -> ContractResult<bool> {
-    // Call identity contract's VerifyCapabilityV1 (0x0b)
+    // Call identity contract's VerifyCapabilityV1 (0x06)
     let params = VerifyCapabilityParams {
         capability_proof: proof.clone(),
         verifier_pub: payer_pubkey.into(),
@@ -368,7 +368,7 @@ When a worker claims a task with `verification_mode: OnChain`:
 ```
 1. Worker submits CapabilityProof to tau_pallas
 2. tau_pallas constructs Identity contract call:
-   - Function: VerifyCapabilityV1 (0x0b)
+   - Function: VerifyCapabilityV1 (0x06)
    - Params: capability_proof, verifier_pub, fee
 3. tau_pallas signs transaction with PM's Pallas secret key
 4. tau_pallas broadcasts via DarkfidClient.broadcast_tx()

@@ -1625,8 +1625,8 @@ fn verify_member_capability_v1(
         return Err(DaoEscrowError::InvalidChildrenIndexes.into())
     }
     let child_call = &calls[child_idx].data;
-    if child_call.data[0] != 0x0b {
-        msg!("[verify_member_capability_v1] Error: Expected Identity::VerifyCapabilityV1 (0x0b), got 0x{:02x}",
+    if child_call.data[0] != 0x06 {
+        msg!("[verify_member_capability_v1] Error: Expected Identity::VerifyCapabilityV1 (0x06), got 0x{:02x}",
              child_call.data[0]);
         return Err(DaoEscrowError::InvalidChildCall.into());
     }

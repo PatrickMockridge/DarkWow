@@ -184,7 +184,7 @@ credentials.
 
 **Location:** `src/contract/identity/`
 **Functions:** RegisterIssuerV1, IssueCredentialV1, RevokeCredentialV1,
-UpdateReputationV1, VerifyCredentialV1
+VerifyCapabilityV1, CreateClaimV1, RegisterCapabilityV1, IssueCapabilityV1, RevokeCapabilityV1
 
 ### Insurance Market Contract
 

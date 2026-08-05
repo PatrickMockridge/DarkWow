@@ -107,18 +107,19 @@
 //! | "Not revoked" | When credential expires |
 //! | Issuer is trusted | Full credential contents |
 //!
-//! ## Contract Functions
+//! ## Contract Functions (consolidated)
 //!
 //! | Function | ID | Description |
 //! |----------|-----|-------------|
 //! | InitializeV1 | 0x00 | Initialize identity registry |
 //! | IssueCredentialV1 | 0x01 | Issuer issues a credential |
 //! | RevokeCredentialV1 | 0x02 | Issuer revokes a credential |
-//! | CreateClaimV1 | 0x03 | Generate claim from credential (Level 0 zk_only) |
-//! | CreateClaimV1L1 | 0x05 | Generate claim with public predicate result |
-//! | VerifyClaimV1 | 0x04 | Verify a claim (on-chain) |
-//! | RegisterIssuerV1 | 0x0e | Register a trusted credential issuer |
-//! | UpdateReputationV1 | 0x0f | Update a relayer's reputation score |
+//! | CreateClaimV1 | 0x03 | Unified claim creation (modes 0-4: basic/threshold/ratio/multi/DAG) |
+//! | RegisterCapabilityV1 | 0x04 | Register a capability type |
+//! | IssueCapabilityV1 | 0x05 | Issue a capability to a holder |
+//! | VerifyCapabilityV1 | 0x06 | Verify a capability proof (consumer-facing) |
+//! | RevokeCapabilityV1 | 0x07 | Revoke a capability |
+//! | RegisterIssuerV1 | 0x08 | Register a trusted credential issuer |
 //!
 //! ## Future Expansion
 //!
@@ -128,7 +129,7 @@
 
 use dwow_sdk::error::ContractError;
 
-/// Identity Functions
+/// Identity Functions (consolidated: 9 functions, 3 ZK circuits)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum IdentityFunction {
@@ -136,18 +137,11 @@ pub enum IdentityFunction {
     IssueCredentialV1 = 0x01,
     RevokeCredentialV1 = 0x02,
     CreateClaimV1 = 0x03,
-    CreateClaimV1L1 = 0x05,
-    VerifyClaimV1 = 0x04,
-    CreateClaimV1L1V2 = 0x06,
-    CreateClaimV1Multi = 0x07,
-    CreateClaimV1Ratio = 0x08,
-    RegisterCapabilityV1 = 0x09,
-    IssueCapabilityV1 = 0x0a,
-    VerifyCapabilityV1 = 0x0b,
-    RevokeCapabilityV1 = 0x0c,
-    CreateClaimDAGV1 = 0x0d,
-    RegisterIssuerV1 = 0x0e,
-    UpdateReputationV1 = 0x0f,
+    RegisterCapabilityV1 = 0x04,
+    IssueCapabilityV1 = 0x05,
+    VerifyCapabilityV1 = 0x06,
+    RevokeCapabilityV1 = 0x07,
+    RegisterIssuerV1 = 0x08,
 }
 
 impl TryFrom<u8> for IdentityFunction {
@@ -158,18 +152,11 @@ impl TryFrom<u8> for IdentityFunction {
             0x01 => Ok(Self::IssueCredentialV1),
             0x02 => Ok(Self::RevokeCredentialV1),
             0x03 => Ok(Self::CreateClaimV1),
-            0x04 => Ok(Self::VerifyClaimV1),
-            0x05 => Ok(Self::CreateClaimV1L1),
-            0x06 => Ok(Self::CreateClaimV1L1V2),
-            0x07 => Ok(Self::CreateClaimV1Multi),
-            0x08 => Ok(Self::CreateClaimV1Ratio),
-            0x09 => Ok(Self::RegisterCapabilityV1),
-            0x0a => Ok(Self::IssueCapabilityV1),
-            0x0b => Ok(Self::VerifyCapabilityV1),
-            0x0c => Ok(Self::RevokeCapabilityV1),
-            0x0d => Ok(Self::CreateClaimDAGV1),
-            0x0e => Ok(Self::RegisterIssuerV1),
-            0x0f => Ok(Self::UpdateReputationV1),
+            0x04 => Ok(Self::RegisterCapabilityV1),
+            0x05 => Ok(Self::IssueCapabilityV1),
+            0x06 => Ok(Self::VerifyCapabilityV1),
+            0x07 => Ok(Self::RevokeCapabilityV1),
+            0x08 => Ok(Self::RegisterIssuerV1),
             _ => Err(ContractError::InvalidFunction),
         }
     }
@@ -206,8 +193,6 @@ pub const IDENTITY_CONTRACT_CONFIG_TREE: &str = "config";
 /// Tree for registered capabilities
 pub const IDENTITY_CONTRACT_CAPABILITIES_TREE: &str = "capabilities";
 // IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE removed — possession tracking delegated to Box
-/// Tree for relayer reputation records
-pub const IDENTITY_CONTRACT_REPUTATIONS_TREE: &str = "reputations";
 
 // ============================================================================
 // KEYS
@@ -237,21 +222,10 @@ pub const IDENTITY_CONTRACT_INFO_TREE: &str = "identity_info";
 /// Maximum DAG credentials per create_claim_dag call
 pub const IDENTITY_CONTRACT_MAX_DAG_CREDENTIALS: usize = 100;
 
-// V2 circuit namespaces (HAZOP RC3: domain separation)
-// V1 circuits deleted — only V2 circuits exist on disk. See doc/src/arch/circuit-versioning.md.
+// V2 circuit namespaces (HAZOP RC3: domain separation, consolidated to 3 circuits)
 /// Issue credential circuit namespace V2 (domain-separated)
 pub const IDENTITY_CONTRACT_ZKAS_ISSUE_NS_V2: &str = "IssueCredentialV2";
-/// Create claim circuit namespace V2 (domain-separated)
+/// Create claim circuit namespace V2 (unified — domain-separated)
 pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2: &str = "CreateClaimV2";
-/// Create claim L1 circuit namespace V2 (domain-separated)
-pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_L1: &str = "CreateClaimV2L1";
-/// Create claim L1 V2 circuit namespace V2 (domain-separated)
-pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_L1_V2: &str = "CreateClaimV2L1V2";
-/// Create claim DAG circuit namespace V2 (domain-separated)
-pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_DAG: &str = "CreateClaimV2DAG";
-/// Create claim multi circuit namespace V2 (domain-separated)
-pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_MULTI: &str = "CreateClaimV2Multi";
-/// Create claim ratio circuit namespace V2 (domain-separated)
-pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V2_RATIO: &str = "CreateClaimV2Ratio";
 /// Capability verification circuit namespace V2 (domain-separated)
 pub const IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V2: &str = "VerifyCapabilityV2";

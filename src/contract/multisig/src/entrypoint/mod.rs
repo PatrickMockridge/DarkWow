@@ -15,7 +15,7 @@ use crate::{
         GroupId, MultiSigGroup, PartialSignature, SignParamsV1, SignUpdateV1,
     },
     MultiSigFunction,
-    MULTISIG_CONTRACT_GROUPS_TREE, MULTISIG_CONTRACT_INFO_TREE,
+    MULTISIG_CONTRACT_GROUPS_TREE,
     MULTISIG_CONTRACT_NULLIFIERS_TREE, MULTISIG_CONTRACT_SIGNATURES_TREE,
     MULTISIG_CONTRACT_ZKAS_CREATE_GROUP_NS_V2, MULTISIG_CONTRACT_ZKAS_FINALIZE_NS_V2,
     MULTISIG_CONTRACT_ZKAS_SIGN_NS_V2,
@@ -44,9 +44,6 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     }
     if wasm::db::db_lookup(cid, MULTISIG_CONTRACT_NULLIFIERS_TREE).is_err() {
         wasm::db::db_init(cid, MULTISIG_CONTRACT_NULLIFIERS_TREE)?;
-    }
-    if wasm::db::db_lookup(cid, MULTISIG_CONTRACT_INFO_TREE).is_err() {
-        wasm::db::db_init(cid, MULTISIG_CONTRACT_INFO_TREE)?;
     }
     Ok(())
 }

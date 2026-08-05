@@ -1126,9 +1126,12 @@ impl CChainState {
             // --- Pre-compute next block's target for cache (M-1 fix) ---
             // Cache the expected target for height+1 so get_next_work_required
             // can use the O(1) fast path on the next call.
+            // Use in-memory consensus target: the chain walk in
+            // get_next_work_required cannot see blocks still in the sled batch
+            // (this runs inside the commit closure, before the sled transaction).
             let next_target = {
                 let consensus = self.consensus.lock().unwrap_or_else(|e| e.into_inner());
-                consensus.get_next_work_required(&self.store, height.succ())?
+                consensus.target()
             };
             let mut targets_batch = sled::Batch::default();
             targets_batch.insert(&height.succ().to_le_bytes(), &next_target.get().to_le_bytes());
