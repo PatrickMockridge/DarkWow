@@ -82,9 +82,7 @@
 - [Upstream Security Hardening Findings](arch/upstream-security-findings.md)
 - [Quantum Threat Assessment](arch/quantum-threat.md)
 - [Contract Trust Model](arch/contract-trust-model.md)
-- [Independent Red Team Audit](arch/audit/red-team-findings.md)
-- [Red Team HAZOP Root Cause Analysis](arch/audit/red-team-hazop-analysis.md)
-- [Comprehensive Security Audit](arch/audit/comprehensive-security-audit.md)
+- [ZK Engineering Posture](arch/zk-engineering-posture.md)
 
 # Contracts
 
