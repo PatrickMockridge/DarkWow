@@ -1,246 +1,273 @@
 # Level 2: Heavyweight Tests
 
-Local tests with real ZK proof generation and on-chain execution. Tests contract
-**functions, state transitions, and uncle-merkle block execution.** Requires
-`--release` mode and increased stack size due to halo2 proving key intensity.
+Local tests with real ZK proof generation and on-chain execution through `accept_block`.
+Tests contract functions, state transitions, and uncle-merkle block execution. Requires
+`--release` mode and increased stack size (`RUST_MIN_STACK=67108864`).
 
-**Deployment is NOT tested here.** Contracts are deployed via the direct
-`deploy_contract()` path for setup convenience. Deployment correctness is
-tested separately by Level 1 (Lightweight) through the Deployooor contract.
+**Normative reference:** [Heavyweight Testing Specification](heavyweight-spec.md) (RFC 2119).
+This document is a user-facing guide. Where they conflict, `heavyweight-spec.md` governs.
 
-## Demarcation from Level 1 (Lightweight)
+## Demarcation from Level 1
 
 | Concern | Level 1 — Lightweight | Level 2 — Heavyweight |
 |---------|----------------------|----------------------|
 | Deployment path | **Deployooor** (real production flow) | Direct `deploy_contract()` (setup convenience) |
-| ZK proofs | None | Required for all calls |
-| Contract functions | Not tested | Every endpoint exercised |
-| State transitions | Not tested | Verified via `apply_block_with_uncles()` |
+| ZK proofs | None | Required for all ZK-gated calls |
+| Contract functions | Not tested | Every endpoint exercised through `accept_block` |
+| State transitions | Not tested | Verified post-submission |
 | Uncle-merkle blocks | Not tested | Multi-uncle, depth, mixed exec, invalid proof rejection |
 | Block gas limits | Not tested | Cumulative gas tracking across calls |
-| Cross-contract calls | Not tested | Multi-contract integration (recruitment pipeline) |
+| Cross-contract calls | Not tested | Multi-contract integration |
 
-**Both are required.**
+## Coverage Status
 
-## What's Covered
+### Test Structure
 
-| Component | Location | What It Verifies |
-|-----------|----------|-----------------|
-| HeavyweightPipeline | `bin/dwowd/src/tests/heavyweight_pipeline.rs` | All 32 contracts with exhaustive function coverage, uncle-merkle execution, cross-contract pipelines |
-| Heavyweight runner | `bin/dwowd/src/tests/heavyweight.sh` | Single-command runner: `./heavyweight.sh --all` (43 tests), `--dex`, `--block-execution`, per-contract flags |
-| ContractHarness trait | `src/contract/test-harness/src/harness.rs` | Per-contract ZK circuit access + `verify_zk_coverage()` pre-deploy gate |
-| Contract harness modules (32) | `src/contract/test-harness/src/harness/` | Proof generation for each contract — all functions have harness methods |
-| ZK audit test | `src/contract/test-harness/tests/zk_audit.rs` | Verifies all 32 harnesses: `verify_zk_coverage()` on every circuit, non-empty `circuits()`, matching `name()` |
-| Encode round-trip test | `src/contract/test-harness/tests/encode_roundtrip.rs` | Deterministic encode/decode for migrated contracts (purse, box, multisig, bearer_bond) |
-| ZK circuit tests (22 contracts) | `src/contract/<name>/tests/zk_circuit_test.sh` | Compiles every `.zk` source file to `.zk.bin`, verifies non-zero output |
+43 tests total across two patterns:
+- **32 spec-based tests** using `run_heavyweight_test()` (74.4%): each contract has a
+  `ContractTestSpec` in `bin/dwowd/src/tests/specs/` and a 4-line wrapper in
+  `heavyweight_pipeline.rs`
+- **11 old-pattern tests** (25.6%): 8 block-execution tests (canonical_exec,
+  coinbase_rejects_wrong_reward, uncle_exec, mixed_exec, multi_uncle, uncle_depth,
+  empty_uncle, invalid_uncle_proof) plus 3 integration tests (metadata,
+  recruitment_pipeline, relayer_lifecycle)
 
-## ContractHarness Trait
+### Genesis Contracts (9 contracts, 54 function variants)
 
-Every contract that supports heavyweight testing implements the
-`ContractHarness` trait:
+| Contract | Functions | In Spec | accept_block | verify_state | Rating |
+|----------|-----------|---------|--------------|--------------|--------|
+| box | 3 | 2 | 2 | 2/2 | InitializeV1 harness gap |
+| purse | 4 | 3 | 3 | 2/3 | InitializeV1 harness gap |
+| multisig | 4 | 3 | 3 | 3/3 | InitializeV1 harness gap |
+| oracle | 6 | 6 | 6 | 6/6 | Full |
+| promissory_note | 6 | 6 | 6 | 6/6 | Full |
+| identity | 9 | 11 | 11 | 11/11 | Full (includes mode-specific CreateClaim) |
+| attestation | 13 | 13 | 13 | 13/13 | Full |
+| deployooor | 2 | 2 | 2 | 1/2 | Full |
+| native_token | 7 | 5 | 5 | 5/5 | Pow/FeeCollect exercised structurally |
+
+**Gaps:** box, purse, and multisig lack `InitializeV1` — harnesses don't expose
+`initialize()` methods. native_token exercises `PoWRewardV1` and `FeeCollectV1`
+structurally through coinbase but lacks explicit endpoint verification.
+
+### WASM Contracts (23 contracts, all migrated)
+
+All 23 WASM contracts have `ContractTestSpec` files registered in
+`bin/dwowd/src/tests/specs/mod.rs`. Endpoint population status:
+
+| Tier | Count | Contracts | Endpoints |
+|------|-------|-----------|-----------|
+| FULL | 12 | auction, baccarat, bearer_bond, betting_stake, darktoshi_dice, dex, lottery, otc_swap, pool_stake, roulette, stablecoin, tender | All active |
+| HARVESTABLE | 4 | dao_escrow (12/13), labor_market (9/9), subscription (5/5), escrow (3/3) | Most active, documented gaps |
+| UNDERPOWERED | 4 | bridge (7/7), darkbet_exchange (4/10), insurance_market (2/16), relayer_endowment (3/8) | Active endpoints populated, documented harness gaps |
+| STUB | 3 | drain_protection (0/9), game_room (0/12), slot (0/4) | All `empty_witnesses` — needs client proof modules |
+
+**Total active endpoints:** 169 across 32 specs. **verify_state closures:** 49
+(genesis contracts + multisig). **has_initialize:** 2 (dao_escrow, identity).
+
+### Guardrail Compliance
+
+| Guardrail | Status | Verification |
+|-----------|--------|-------------|
+| RG-5 (No strict_zk toggling) | PASS | `const STRICT_ZK = true`, no field |
+| RG-6 (FeeCollectV1 unconditional) | PASS | Enforced by uniform runner |
+| RG-7 (Genesis deploy rejection) | PASS | `deploy()` rejects 9 known names |
+| RG-10 (No swallowed failures) | PASS | Zero `println!("skipped")` |
+| RG-16 (No compatibility shims) | PASS | Zero compat_/_bridge/_shim methods |
+| RG-21 (No heuristic ZK gating) | PASS | `is_zk` from `EndpointSpec`, never heuristic |
+| RG-24 (No false positives) | PASS | STUB contracts have 0 endpoints |
+| RG-26 (No `#[allow(dead_code)]`) | PASS | Zero in test infrastructure |
+| RG-27 (No preserved old bodies) | PASS | Zero `_old_*` functions |
+| CI scanner | ACTIVE | `contrib/ci/scan_heavyweight_antipatterns.sh` — 11 patterns |
+
+## Uniform Test Runner
+
+Every spec-based test calls `run_heavyweight_test()`, defined in
+`bin/dwowd/src/tests/uniform_runner.rs`. It executes this sequence:
+
+1. **Pre-test integrity checks:** genesis block hash, initial supply, contract existence
+2. **Deploy/Resolve ContractId:** WASM contracts deployed via `deploy_router`;
+   genesis contracts use static `ContractId`
+3. **Initialize** (if `has_initialize`): calls the `initialize` closure
+4. **Endpoint loop:** one endpoint per block. Each block: `with_call` →
+   `with_fee_collect` → `submit` → height assertion → `verify_state`
+5. **Nullifier replay rejection:** replays the first ZK endpoint, expects rejection
+6. **Post-test integrity:** block hash chain continuity, supply reconciliation
+7. **Determinism:** Pipeline B replays the same scenario, compares block hashes
+
+### ContractTestSpec
 
 ```rust
-pub trait ContractHarness {
-    fn name(&self) -> &str;                        // e.g. "dex", "promissory_note"
-    fn circuits(&self) -> Vec<&'static str>;       // circuit namespaces
-    fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary>;  // ZK binary
-    fn get_pk(&self, ns: &str) -> Option<&ProvingKey>;   // proving key
-
-    /// Verify every circuit in circuits() has a valid ZkBinary and ProvingKey.
-    /// Called as a pre-deploy gate by HeavyweightPipeline.
-    fn verify_zk_coverage(&self) -> Result<()> { /* default impl */ }
+pub struct ContractTestSpec<'a> {
+    pub name: &'static str,
+    pub is_genesis: bool,
+    pub contract_id: ContractId,
+    pub harness: &'a dyn ContractHarness,
+    pub wasm_bytes: Option<&'static [u8]>,
+    pub has_initialize: bool,
+    pub initialize: Option<Box<dyn Fn() -> Result<EndpointResult> + 'a>>,
+    pub endpoints: Vec<EndpointSpec<'a>>,
+    pub needs_coinbase_coordination: bool,  // native_token only
 }
 ```
 
-Each harness module (e.g., `harness/promissory_note.rs`) loads its ZK circuit binaries
-via `include_bytes!`, builds `ProvingKey` objects at construction time, and
-implements the trait.
-
-**Location:** `src/contract/test-harness/src/harness/`
-
-### ZK Coverage Verification
-
-`verify_zk_coverage()` checks that every circuit namespace listed in
-`circuits()` has both a valid `ZkBinary` and `ProvingKey`. It reports
-ALL missing circuits at once (not just the first failure), giving
-developers a complete picture of what needs to be fixed.
-
-The `HeavyweightPipeline` calls this automatically in `deploy()` and
-`deploy_with_ix()` — if a harness loads a `.zk.bin` but forgets to list
-it in `circuits()`, or lists a circuit without loading its binary, the
-deploy step fails with a descriptive error.
-
-### strict_zk Mode
-
-`HeavyweightPipeline` has a `strict_zk: bool` field (default: `true`).
-When enabled, `with_call()` rejects empty proofs for ZK contracts with a
-hard error. ZK contracts SHALL have proofs.
+### EndpointSpec
 
 ```rust
-let pipeline = HeavyweightPipeline::new().await?;
-// strict_zk defaults to true — empty proofs on ZK contracts are a hard error
+pub struct EndpointSpec<'a> {
+    pub name: &'static str,                                             // function enum variant name
+    pub is_zk: bool,                                                    // authoritative ZK gating
+    pub generate: Box<dyn Fn() -> Result<EndpointResult> + 'a>,        // produces call_data + proofs
+    pub generate_with_coinbase: Option<Box<dyn Fn(&PrefetchedCoinbase) -> Result<EndpointResult> + 'a>>,
+    pub verify_state: Option<Box<dyn Fn(&HeavyweightPipeline) -> Result<()> + 'a>>,
+}
 ```
 
-### CI ZK Audit Test
+ZK gating uses `EndpointSpec::is_zk` — authoritative contract metadata, never a heuristic.
+The uniform runner's `submit_block()` enforces the ZK gate BEFORE calling `with_call()`.
 
-A fast CI-friendly audit lives at `src/contract/test-harness/tests/zk_audit.rs`.
-It decodes all 99 harness-loaded `.zk.bin` files in under a second (no proving
-key building) and cross-checks each harness's `circuits()` list against its
-loaded zkbins.
+### Spec File Pattern
 
-**Two tests:**
+Each contract has a spec file at `bin/dwowd/src/tests/specs/<contract>_spec.rs` exporting
+a single function:
 
-| Test | Speed | What It Verifies |
-|------|-------|-----------------|
-| `test_all_zk_binaries_decode` | <1s | Every harness-loaded `.zk.bin` decodes successfully (catches corruption, unsupported formats) |
-| `test_harness_circuits_match_zkbins` | Slow (nightly) | Each harness's `circuits()` list exactly matches the zkbins loaded in `spawn()` |
-
-The fast test runs on every CI push. The slow cross-check is `#[ignore]`d and
-runs nightly since it builds proving keys for all 32 harnesses.
-
-**Deployooor exclusion:** Only `deployooor` is allowed to have empty
-`circuits()` — it's a pure-WASM contract with no ZK circuits. All other
-contracts must return at least one circuit namespace. The audit enforces
-this via an `allow_empty` flag in the check macro.
-
-```bash
-# Fast CI audit (<1 second)
-cargo test -p dwow_contract_test_harness --test zk_audit test_all_zk_binaries_decode
-
-# Full cross-check (nightly, builds all proving keys)
-cargo test -p dwow_contract_test_harness --test zk_audit test_harness_circuits_match_zkbins -- --ignored
+```rust
+pub fn <contract>_test_spec() -> ContractTestSpec<'static> { ... }
 ```
 
-## HeavyweightPipeline (v2)
+Specs using simple endpoints import `mk_ep` from `specs/helpers.rs`. Specs needing
+`verify_state` closures or `generate_with_coinbase` construct `EndpointSpec` directly.
 
-`HeavyweightPipeline` is a shared test environment. It owns chain state,
-cached ZK coinbase keys, and a deterministic test mining key. It is NOT
-generic — any contract harness can use it. Created once per test, shared
-by all harnesses.
+The heavyweight_pipeline.rs wrapper is exactly 4 lines:
 
-Every block built through `HeavyweightBlock` includes the full production
-block lifecycle:
+```rust
+#[test]
+fn test_heavyweight_<contract>() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use crate::tests::specs::<contract>_spec::<contract>_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&<contract>_test_spec()))?)
+}
+```
 
-1. **PoWRewardV1** (coinbase) — opens the merkle tree, distributes reward
-2. **Contract calls** — user transactions, any number, any contracts, any order
-3. **FeeCollectV1** — closes the merkle tree, collects and distributes fees
+## Module Architecture
 
-This matches production block structure. Every block in every test exercises
-the full block lifecycle — coinbase open, contract execution, fee close.
+The uniform runner is decomposed into 12 shared modules under `bin/dwowd/src/tests/modules/`:
+
+| Module | Lines | Responsibility | Spec Ref |
+|--------|-------|---------------|----------|
+| `chain_setup` | 15 | Initialize test HeavyweightPipeline | — |
+| `block_submission` | 37 | `submit_single_call_block` with ZK gating | §7.2 PR-6 |
+| `endpoint_exercise` | 62 | Exercise endpoint + verify state | §6 |
+| `coinbase_coordination` | 66 | Prefetch coinbase params (native_token only) | §5.1 |
+| `integrity_checks` | 67 | Pre/post-test integrity verification | §5.2/5.3 |
+| `nullifier_replay` | 33 | Nullifier replay rejection | §3.6 |
+| `deploy_router` | 30 | Deploy WASM or resolve genesis ContractId | RG-7 |
+| `determinism` | 49 | Pipeline B replay for hash comparison | §3.7 |
+| `uncle_helpers` | 105 | Uncle block construction + shared block-exec helpers | §8 |
+| `witness_helpers` | 70 | Witness construction utilities | — |
+| `error_bridge` | 13 | Error type bridging (`Box<dyn Error>` → `dwow_core::Error`) | — |
+| mod.rs | 14 | Module declarations | — |
+
+## HeavyweightPipeline
+
+`HeavyweightPipeline` owns chain state, cached ZK coinbase keys, and a deterministic
+test mining key. Created once per test. Every block built through it includes:
+PoWRewardV1 (coinbase) → contract calls → FeeCollectV1.
+
+### ZK Gating
+
+ZK proof enforcement uses `const STRICT_ZK: bool = true` — immutable and structural.
+The uniform runner's `submit_block()` function checks `EndpointSpec::is_zk` (authoritative
+metadata) and rejects empty proofs BEFORE calling `with_call()`. `with_call()` accepts
+proofs without validation — it is a data accumulation method, not a security gate (§7.2 PR-6).
+
+### State Inspection API
+
+```rust
+pipeline.query_contract_state(contract_id, tree_name, key) -> Result<Option<Vec<u8>>>
+pipeline.cumulative_supply() -> Result<u64>
+pipeline.block_hash_chain_continuous() -> Result<bool>
+pipeline.block_hash_at(height) -> Result<blake3::Hash>
+```
 
 ### Usage
 
 ```rust
-use dwow_contract_test_harness::harness::{DexHarness, ContractHarness};
-
-// One pipeline for the whole test
 let pipeline = HeavyweightPipeline::new().await?;
 pipeline.init_genesis().await?;
-
 let harness = DexHarness::spawn();
 let wasm = include_bytes!("../../../../src/contract/dex/dwow_dex_contract.wasm");
 let contract_id = pipeline.deploy(&harness, "dex", wasm).await?;
 
-// Generate proofs once, then batch into blocks
 let result = harness.create_swap(/* params */)?;
-
-// Every block: coinbase + contract calls + FeeCollect
 let block = pipeline.block()?;
 block.with_call(contract_id, &harness, &result.call_data, vec![result.proof])?;
 block.with_fee_collect()?;
 block.submit().await?;
 ```
 
-### Multi-Contract Blocks
-
-Any number of contracts, any order, in a single block:
-
-```rust
-let block = pipeline.block()?;
-block.with_call(dex_id, &dex_harness, &swap.call_data, vec![swap.proof])?;
-block.with_call(pn_id, &pn_harness, &token.call_data, token.token_proofs)?;
-block.with_fee_collect()?;
-block.submit().await?;
-```
-
-Calls within a block execute sequentially against a shared overlay — call N
-observes writes of calls 1..N-1. State-dependent calls can share a block.
-
-### Uncle Block Support
-
-```rust
-let block = pipeline.block()?;
-block.with_uncle(uncle_block)?;
-block.with_fee_collect()?;
-block.submit().await?;
-```
-
-### Running Heavyweight Tests
-
-Use the `heavyweight.sh` script from `bin/dwowd/src/tests/`:
+## Running Heavyweight Tests
 
 ```bash
-# Run a single contract test
+# Single contract
 ./heavyweight.sh --dex
 
-# Run multiple contracts
-./heavyweight.sh --dex --auction --stablecoin
-
-# Run all block execution tests (8 tests)
+# Block execution suite
 ./heavyweight.sh --block-execution
 
-# Run cross-contract integration
-./heavyweight.sh --recruitment
-
-# Show test output
-./heavyweight.sh --dex --nocapture
-
-# Run all 43 heavyweight tests
+# All 43 tests
 ./heavyweight.sh --all
-
-# List all flags
-./heavyweight.sh --help
 ```
 
-For CI or bare-metal usage, the raw cargo command is:
+Raw cargo command:
 ```bash
 RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd -- test_heavyweight_
 ```
 
-### Why Stack Overflow Occurs
+## ContractHarness Trait
 
-halo2 proof generation uses deep recursion for polynomial arithmetic. When
-building multiple proving keys simultaneously, stack usage exceeds the default
-~8MB limit. Release mode optimizes this away; alternatively, increase
-`RUST_MIN_STACK`. The recommended value of `67108864` (64MB) has been tested
-through hundreds of consecutive runs with zero SIGSEGV.
+```rust
+pub trait ContractHarness {
+    fn name(&self) -> &str;
+    fn circuits(&self) -> Vec<&'static str>;
+    fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary>;
+    fn get_pk(&self, ns: &str) -> Option<&ProvingKey>;
+    fn verify_zk_coverage(&self) -> Result<()> { /* default impl */ }
+    fn non_zk_functions(&self) -> &'static [u8] { &[] }
+    fn state_trees(&self) -> &'static [&'static str] { &[] }
+    fn function_count(&self) -> usize { self.circuits().len() }
+}
+```
 
-### Test Coverage
+32 harness files in `src/contract/test-harness/src/harness/`. One harness (box.rs)
+overrides `non_zk_functions`, `state_trees`, and `function_count`. The remaining 31
+use trait defaults — a documented gap tracked for future standardization.
 
-43 tests total: 32 contract-specific tests + 1 cross-contract integration
-test (recruitment_pipeline) + 8 block-execution infrastructure tests
-(canonical, coinbase-rejects-wrong-reward, uncle, mixed, multi-uncle, depth,
-empty-uncle, invalid-uncle-proof) + 1 metadata test + 1 relayer lifecycle test.
+## Creating a New Contract Test
 
-Every block in every test includes PoWRewardV1 + FeeCollectV1, exercising
-the full merkle tree open/close lifecycle.
+1. Add harness module at `src/contract/test-harness/src/harness/<contract>.rs`
+2. Implement `ContractHarness` trait
+3. Register in `src/contract/test-harness/src/lib.rs`
+4. Create spec file at `bin/dwowd/src/tests/specs/<contract>_spec.rs`
+5. Register in `bin/dwowd/src/tests/specs/mod.rs`
+6. Add 4-line wrapper to `bin/dwowd/src/tests/heavyweight_pipeline.rs`
 
-## Lightweight vs Heavyweight
+## File Locations
 
-| Aspect | Level 1 (Lightweight) | Level 2 (Heavyweight) |
-|--------|----------------------|----------------------|
-| Purpose | **Deployooor-based deployment** (real production path) | **Contract functions + ZK proofs + uncle-merkle** |
-| Deployment | DeployV1 → Deployooor → hook → __initialize | Direct `deploy_contract()` (setup convenience) |
-| ContractId | Derived from deploy keypair | Deterministic hash of contract name |
-| ZK Proofs | None | Required for all calls |
-| Runtime | Seconds | 30-120 seconds per test |
-| Mode | Debug or release | Release (or debug with 64MB stack) |
+| Component | Path |
+|-----------|------|
+| HeavyweightPipeline + tests | `bin/dwowd/src/tests/` |
+| Uniform runner | `bin/dwowd/src/tests/uniform_runner.rs` |
+| Spec files (32) | `bin/dwowd/src/tests/specs/` |
+| Shared modules (12) | `bin/dwowd/src/tests/modules/` |
+| ContractHarness trait | `src/contract/test-harness/src/harness.rs` |
+| Harness modules (32) | `src/contract/test-harness/src/harness/` |
+| CI anti-pattern scanner | `contrib/ci/scan_heavyweight_antipatterns.sh` |
+| CI coverage checker | `contrib/ci/check_heavyweight_coverage.sh` |
+| CI compilation checker | `contrib/ci/check_compiles.sh` |
+| Spec (normative) | `doc/src/dev/testing/heavyweight-spec.md` |
 
 ## Contract Harness List
-
-The test harness crate supports 32 contracts. Each has a harness module under
-`src/contract/test-harness/src/harness/`. Circuit counts are verified by the
-CI audit test (`zk_audit.rs`) which decodes all harness-loaded `.zk.bin` files.
 
 | Contract | Circuits | Client Module |
 |----------|----------|---------------|
@@ -277,79 +304,68 @@ CI audit test (`zk_audit.rs`) which decodes all harness-loaded `.zk.bin` files.
 | subscription | 3 | `src/contract/subscription/src/client/` |
 | tender | 4 | `src/contract/tender/src/client/` |
 
-Each client module provides:
-- `*PublicInputs` struct with `to_vec()` for circuit public inputs
-- `*CallData` struct with private/public input data
-- `compute_public_inputs()` method
-- `to_witnesses()` method returning `Vec<Witness>` for `ZkCircuit`
-- `*_proof()` function that creates `Proof`
+## Guardrail Registry
 
-## Native vs WASM Contracts
+Guardrails are mechanical verification rules. Each has a binary check — no agent
+self-assessment.
 
-### Native Contracts
+| RG | Rule | Verification |
+|----|------|-------------|
+| RG-5 | No `strict_zk` toggling | `const STRICT_ZK = true`, no field on HeavyweightPipeline |
+| RG-6 | FeeCollectV1 unconditional | `with_fee_collect()` always appends |
+| RG-7 | Genesis deploy rejection | `deploy()` rejects known genesis ContractIds |
+| RG-8 | State inspection API | `query_contract_state()`, `cumulative_supply()` |
+| RG-9 | Zkbin freshness check | `check_zkbin_freshness.sh` before test runs |
+| RG-10 | No swallowed failures | Zero `println!("skipped")`, zero match-Err-skip |
+| RG-16 | No compatibility shims | `grep compat_\|_compat\|legacy_\|_bridge\|_shim` → 0 |
+| RG-17 | No breaking API without migration | `cargo check` passes after every commit |
+| RG-18 | Compilation checkpoint | `check_compiles.sh` in compliance report |
+| RG-19 | Clean working tree | `git status --porcelain` empty at phase end |
+| RG-21 | No heuristic ZK gating | `is_zk` from `EndpointSpec`, never `proofs.is_empty()` |
+| RG-22 | Rip out drifted code | 3+ prohibited patterns → replace, don't patch |
+| RG-24 | No false positives | Zero `empty_witnesses` in active specs |
+| RG-25 | No stopping mid-migration | Complete phase before status reports |
+| RG-26 | No `#[allow(dead_code)]` | Zero in test infrastructure |
+| RG-27 | Old bodies deleted | Zero `_old_*` functions, git IS provenance |
+| RG-28 | No empty shell functions | `body deleted` comments → delete declaration too |
 
-Native contracts are compiled into dwowd with static ContractIds defined in the
-SDK. VKs are injected at harness initialization. No deployment step needed.
+Additional guardrails (RG-0 through RG-4, RG-11 through RG-15, RG-20, RG-23) are
+referenced in code comments and phase compliance reports but lack formal definitions
+in the current documentation. See `heavyweight-spec.md` §10 for the compliance
+checklist covering many of these.
 
-```rust
-// In dwow_sdk::crypto
-pub static ref DEPLOYOOOR_CONTRACT_ID: ContractId = ContractId::from(...);
-pub static ref NATIVE_TOKEN_CONTRACT_ID: ContractId = ContractId::from(...);
-```
+## Migration History
 
-**Current native contracts:** NativeToken (consensus-first, block rewards +
-fees) and Deployooor (WASM deployment). MoneyV2 is deprecated.
+### Phase 0 — Baseline (2026-08-05)
 
-### WASM Contracts
+Anti-pattern scan revealed 24 violations: 13 match-Err-skip, 4 ZK-proof-only, 1
+comment-deferred, 4 explicit-skip, 2 strict_zk-toggling. Coverage: 35/54 genesis
+functions (65%), 19 gaps. Multiple tests skipped `accept_block` entirely.
 
-WASM contracts are deployed via Deployooor. Their ContractId is derived from
-the deploy public key at deployment time.
+### Phase 1 — Uniform Runner Infrastructure (2026-08-05)
 
-```rust
-let contract_id = ContractId::derive_public(deploy_public_key);
-```
+- `strict_zk` field removed from `HeavyweightPipeline` (replaced by `const STRICT_ZK`)
+- `FeeCollectV1` made unconditional (RG-6)
+- State inspection API added: `query_contract_state()`, `cumulative_supply()`,
+  `block_hash_chain_continuous()`, `block_hash_at()`
+- `with_call()` signature simplified to 4 parameters; ZK gating moved to
+  `submit_single_call_block()` in `block_submission.rs` (PR-6)
+- Genesis deploy rejection added: `deploy()` rejects 9 known genesis names (RG-7)
+- Uniform runner created: `ContractTestSpec`, `EndpointSpec`, `run_heavyweight_test()`
+- Design document: `uniform-runner-design.md` (now merged into this document)
 
-**For test harnesses:**
-- VKs are injected **after** deployment (not at initialization)
-- ContractId is only known after deployment
-- Must deploy before use
+### Phase 2 — Harness Standardization (Partial, 2026-08-05)
 
-## Creating a New Contract Harness
+- Circuit name normalization: `FunctionNameV2` convention (box, purse, promissory_note)
+- `state_trees()`, `non_zk_functions()`, `function_count()` added to `ContractHarness`
+- BoxHarness: first to override all three trait defaults
+- 31 harnesses still use trait defaults — tracked as future standardization work
 
-**Step 1: Add dependency** in `src/contract/test-harness/Cargo.toml`:
-```toml
-dwow_<contract>_contract = { path = "../<contract>", features = ["client", "no-entrypoint"] }
-```
+### Phase 3 — WASM Migration (2026-08-05)
 
-**Step 2: Add ZK proof bins** in `src/contract/test-harness/src/vks.rs`:
-```rust
-&include_bytes!("../../<contract>/proof/circuit_v1.zk.bin")[..],
-```
-
-**Step 3: Add namespace injection** in `vks.rs::inject()`:
-```rust
-"<CONTRACT>_CONTRACT_ZKAS_NS" => {
-    let key = serialize(&namespace.as_str());
-    let value = serialize(&(bincode.clone(), vk.clone()));
-    overlay.insert(&contract_db_name, &key, &value)?;
-}
-```
-
-**Step 4: Create harness module** at
-`src/contract/test-harness/src/harness/<contract>.rs` implementing
-`ContractHarness`.
-
-**Step 5: Add module** to `src/contract/test-harness/src/lib.rs`.
-
-## File Locations
-
-| Component | Path |
-|-----------|------|
-| HeavyweightPipeline | `bin/dwowd/src/tests/heavyweight_pipeline.rs` |
-| ContractHarness trait | `src/contract/test-harness/src/harness.rs` |
-| Contract harness modules (32) | `src/contract/test-harness/src/harness/` |
-| VK injection | `src/contract/test-harness/src/vks.rs` |
-| CI ZK audit test | `src/contract/test-harness/tests/zk_audit.rs` |
-| Wallet pre-flight ZK check | `bin/dww/src/lib.rs` |
-| Contract client modules | `src/contract/<name>/src/client/` |
-| Contract proof sources | `src/contract/<name>/proof/*.zk` |
+All 23 WASM contracts migrated to spec-based uniform runner. Old test bodies deleted
+entirely (RG-27). ~1200 lines of `#[allow(dead_code)]` dead code eliminated. CI
+scanner updated with Patterns 10-11 (dead_code and `_old_*` detection). 6 contracts
+had endpoint closures populated (insurance_market, darkbet_exchange, labor_market,
+dao_escrow, subscription, bridge). 3 STUB contracts correctly have 0 active endpoints
+per RG-24.
