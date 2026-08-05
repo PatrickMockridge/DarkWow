@@ -2,6 +2,7 @@
 //! Each file exports a single function returning ContractTestSpec<'static>.
 
 pub mod attestation_spec;
+pub mod baccarat_spec;
 pub mod box_spec;
 pub mod darktoshi_dice_spec;
 pub mod deployooor_spec;

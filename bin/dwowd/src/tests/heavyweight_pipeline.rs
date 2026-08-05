@@ -1909,6 +1909,11 @@ fn test_heavyweight_insurance_market() -> std::result::Result<(), Box<dyn std::e
 
 #[test]
 fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use crate::tests::specs::baccarat_spec::baccarat_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&baccarat_test_spec()))?)
+}
+#[allow(dead_code)] fn _old_baccarat_test() { let _old = r#"
     use dwow_contract_test_harness::harness::BaccaratHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
@@ -1997,7 +2002,7 @@ fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Er
         println!("=== All Baccarat endpoints OK ===");
         Ok(())
     })
-}
+"#; } // close _old_baccarat_test
 
 // ============================================================================
 // betting_stake
