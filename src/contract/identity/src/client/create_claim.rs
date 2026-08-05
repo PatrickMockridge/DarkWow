@@ -117,9 +117,124 @@ impl CreateClaimCallData {
         }
     }
 
-    /// Compute nullifier (domain-separated, V2)
+    /// Mode 2: Ratio claim — proves `my_value / total_supply >= threshold_ratio`.
+    /// predicate_result must be pre-computed: (my_value * 10000) >= (threshold_ratio * total_supply).
+    pub fn new_ratio(
+        credential_secret: pallas::Base,
+        attribute_value: pallas::Base,
+        threshold: pallas::Base,
+        commitment: pallas::Base,
+        my_value: pallas::Base,
+        total_supply: pallas::Base,
+        threshold_ratio: pallas::Base,
+        predicate_result: pallas::Base,
+        issuer_public: PublicKey,
+        schema_hash: pallas::Base,
+        claim_type: pallas::Base,
+    ) -> Self {
+        Self {
+            claim_mode: 2,
+            credential_secret, attribute_value, threshold, commitment,
+            my_value, total_supply, threshold_ratio,
+            predicate_result,
+            issuer_public, schema_hash, claim_type,
+            secret_2: pallas::Base::zero(), commitment_2: pallas::Base::zero(),
+            attribute_value_2: pallas::Base::zero(), threshold_2: pallas::Base::zero(),
+            secret_3: pallas::Base::zero(), commitment_3: pallas::Base::zero(),
+            attribute_value_3: pallas::Base::zero(), threshold_3: pallas::Base::zero(),
+            path_index: pallas::Base::zero(), num_credentials: pallas::Base::zero(),
+            is_lte_1: pallas::Base::zero(), is_lte_2: pallas::Base::zero(), is_lte_3: pallas::Base::zero(),
+            tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
+        }
+    }
+
+    /// Mode 3: Multi-AND claim — ALL 3 credentials must satisfy their thresholds.
+    /// predicate_result should be 1 if all three pass, 0 otherwise.
+    /// The circuit enforces predicate_result == 1 for mode 3 (nullifier chain proves knowledge).
+    pub fn new_multi_and(
+        credential_secret: pallas::Base, attribute_value: pallas::Base,
+        threshold: pallas::Base, commitment: pallas::Base,
+        secret_2: pallas::Base, commitment_2: pallas::Base,
+        attribute_value_2: pallas::Base, threshold_2: pallas::Base,
+        secret_3: pallas::Base, commitment_3: pallas::Base,
+        attribute_value_3: pallas::Base, threshold_3: pallas::Base,
+        predicate_result: pallas::Base,
+        issuer_public: PublicKey, schema_hash: pallas::Base, claim_type: pallas::Base,
+    ) -> Self {
+        Self {
+            claim_mode: 3,
+            credential_secret, attribute_value, threshold, commitment,
+            secret_2, commitment_2, attribute_value_2, threshold_2,
+            secret_3, commitment_3, attribute_value_3, threshold_3,
+            predicate_result,
+            issuer_public, schema_hash, claim_type,
+            my_value: pallas::Base::zero(), total_supply: pallas::Base::zero(),
+            threshold_ratio: pallas::Base::zero(),
+            path_index: pallas::Base::zero(), num_credentials: pallas::Base::zero(),
+            is_lte_1: pallas::Base::zero(), is_lte_2: pallas::Base::zero(), is_lte_3: pallas::Base::zero(),
+            tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
+        }
+    }
+
+    /// Mode 4: DAG path claim — proves a valid credential path through a CompetencyDAG.
+    /// path_index: index into CompetencyDAG.paths[].
+    /// num_credentials: count of credentials in this path (1-3, circuit-limited).
+    /// is_lte_1/2/3: pre-computed predicate results for each credential.
+    /// predicate_result should be 1 (circuit forces this for DAG mode).
+    pub fn new_dag_path(
+        credential_secret: pallas::Base, attribute_value: pallas::Base,
+        threshold: pallas::Base, commitment: pallas::Base,
+        path_index: pallas::Base, num_credentials: pallas::Base,
+        is_lte_1: pallas::Base, is_lte_2: pallas::Base, is_lte_3: pallas::Base,
+        issuer_public: PublicKey, schema_hash: pallas::Base, claim_type: pallas::Base,
+    ) -> Self {
+        Self {
+            claim_mode: 4,
+            credential_secret, attribute_value, threshold, commitment,
+            path_index, num_credentials,
+            is_lte_1, is_lte_2, is_lte_3,
+            predicate_result: pallas::Base::one(),
+            issuer_public, schema_hash, claim_type,
+            my_value: pallas::Base::zero(), total_supply: pallas::Base::zero(),
+            threshold_ratio: pallas::Base::zero(),
+            secret_2: pallas::Base::zero(), commitment_2: pallas::Base::zero(),
+            attribute_value_2: pallas::Base::zero(), threshold_2: pallas::Base::zero(),
+            secret_3: pallas::Base::zero(), commitment_3: pallas::Base::zero(),
+            attribute_value_3: pallas::Base::zero(), threshold_3: pallas::Base::zero(),
+            tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
+        }
+    }
+
+    /// Compute the DAG path hash matching the circuit's computation.
+    /// Circuit: ph1=poseidon(4, path_index, num_credentials),
+    ///   ph2=poseidon(4, ph1, is_lte_1), ph3=poseidon(4, ph2, is_lte_2),
+    ///   path_hash=poseidon(4, ph3, is_lte_3).
+    pub fn compute_path_hash(&self) -> pallas::Base {
+        let dom = pallas::Base::from(4u64); // DOMAIN_COIN_COMMIT
+        let ph1 = poseidon_hash([dom, self.path_index, self.num_credentials]);
+        let ph2 = poseidon_hash([dom, ph1, self.is_lte_1]);
+        let ph3 = poseidon_hash([dom, ph2, self.is_lte_2]);
+        poseidon_hash([dom, ph3, self.is_lte_3])
+    }
+
+    /// Compute nullifier (domain-separated, mode-aware).
+    /// Mode 0/1/2: n1 = poseidon_hash(1, credential_secret, commitment)
+    /// Mode 3 (multi-AND): combined hash of all 3 credential nullifiers
+    /// Mode 4 (DAG): dag_nullifier = poseidon_hash(1, n1, path_hash)
     pub fn compute_nullifier(&self) -> pallas::Base {
-        poseidon_hash([pallas::Base::from(1u64), self.credential_secret, self.commitment])
+        let dom = pallas::Base::from(1u64); // DOMAIN_NULLIFIER
+        let n1 = poseidon_hash([dom, self.credential_secret, self.commitment]);
+        if self.claim_mode == 4 {
+            let path_hash = self.compute_path_hash();
+            return poseidon_hash([dom, n1, path_hash]);
+        }
+        if self.claim_mode == 3 {
+            let n2 = poseidon_hash([dom, self.secret_2, self.commitment_2]);
+            let n3 = poseidon_hash([dom, self.secret_3, self.commitment_3]);
+            let c12 = poseidon_hash([dom, n1, n2]);
+            return poseidon_hash([dom, c12, n3]);
+        }
+        n1
     }
 
     pub fn compute_public_inputs(&self) -> CreateClaimPublicInputs {
