@@ -65,12 +65,16 @@ User knows secret → Compute nullifier = H(secret) → Withdraw (self-signed)
 
 ## ZK Circuits
 
-- `deposit_v1.zk`: Prove Ethereum deposit is valid without revealing recipient
-- `withdraw_v1.zk`: Prove withdrawal authorization without revealing secret
-- `xmr_deposit_v1.zk`: Prove Monero deposit via DLEq proof (stubbed DLEq verification)
-- `zec_deposit_v1.zk`: Prove Zcash Sapling deposit via nullifier + merkle proof
-- `azt_deposit_v1.zk`: Prove Aztec rollup deposit via note + merkle proof
-- `ltc_deposit_v1.zk`: Prove Litecoin deposit via merkle proof (MWEB optional)
+8 V2 circuits at `src/contract/bridge/proof/`:
+
+- `deposit.zk`: Prove deposit from any external chain
+- `withdraw.zk`: Prove withdrawal authorization
+- `update_config.zk`: Bridge parameter update
+- `accept_withdrawal.zk`: Relayer accepts withdrawal
+- `cancel_withdraw.zk`: Cancel pending withdrawal
+- `claim_htlc.zk`: Claim HTLC output
+- `execute_guaranteed_withdraw.zk`: Guaranteed withdrawal execution
+- `refund_htlc.zk`: Refund expired HTLC
 
 ## External Chain Support
 

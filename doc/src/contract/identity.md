@@ -103,7 +103,7 @@ Now imagine:
 - The voter card is a **ZK credential** issued off-chain by the electoral
   authority. The card says "holder is registered in District 7" — but never
   reveals the holder's name, address, or ID number.
-- Walking into the polling station is calling **`VerifyCapabilityV1 (0x0b)`**
+- Walking into the polling station is calling **`VerifyCapabilityV1 (0x06)`**
   on the Identity contract. The ZK proof cryptographically demonstrates "I hold
   a valid District 7 credential" without revealing which credential, which
   district, or anything else.

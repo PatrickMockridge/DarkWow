@@ -127,11 +127,13 @@ Proofs SHALL be verified by the production verifier (`verify_core_tx_with_tables
 Structural checks on proof size or presence are partition-A concerns (the compiler
 proves the proof type is inhabited) and SHALL be removed.
 
-### 2.3 strict_zk: false as default
+### 2.3 strict_zk: Structural enforcement
 
-`HeavyweightPipeline::strict_zk` SHALL default to `true`. ZK contracts SHALL have
-proofs. Empty proofs against ZK circuits SHALL be a hard error. The current default
-of `false` was transitional scaffolding that was never removed.
+`const STRICT_ZK: bool = true` is immutable and structural. ZK proof enforcement
+uses `EndpointSpec::is_zk` (authoritative contract metadata, never a heuristic).
+Empty proofs against ZK-gated functions SHALL be rejected by `submit_block()`.
+No `strict_zk` field exists on `HeavyweightPipeline` — the field was removed
+during Phase 1. There is no toggle to bypass enforcement.
 
 ### 2.4 Synthetic manifests for production-path tests
 

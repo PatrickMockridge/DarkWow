@@ -4,7 +4,7 @@ This page is the **single source of truth** for every contract in DarkWow.
 Every other document that references the contract catalog links here rather
 than repeating the list.
 
-DarkWow has **31 deployable contracts** (+1 designed, not yet implemented): 9 deployed at genesis (counters 2–10)
+DarkWow has **32 deployable contracts** (+1 library crate, not standalone): 9 deployed at genesis (counters 2–10)
 and 23 deployed post-genesis via Deployooor. There is also a `test-harness`
 crate that is a test utility, not a deployable contract.
 

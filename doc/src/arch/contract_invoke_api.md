@@ -1,6 +1,6 @@
 # Generalized Contract Invocation API
 
-> **Implementation Status:** Partially implemented (commit `7a7424579`). The `contract.invoke` RPC endpoint is functional for dry-run mode. Full ZK proof generation and transaction broadcasting is in progress.
+> **Implementation Status:** Dry-run mode is [IMPLEMENTED] — `contract.invoke` with `"dry_run": true` returns transaction preview data. Full ZK proof generation and transaction broadcasting (non-dry-run) is not yet implemented. See the [SHIPPING table in intro.md](../intro.md) for what is complete.
 
 ## Overview
 

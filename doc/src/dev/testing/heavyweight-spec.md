@@ -116,7 +116,7 @@ May compose from genesis contracts via spend_hook or child calls.
 | **ContractHarness** | A struct implementing the `ContractHarness` trait, providing `spawn()`, `circuits()`, `get_zkbin()`, `get_pk()`, `verify_zk_coverage()`, and endpoint methods. Each method SHALL map to exactly one variant in the contract's function enum. |
 | **HeavyweightPipeline** | Shared chain state. Owns a temp sled DB, `CChainState`, cached ZK coinbase keys, deterministic test mining key. Created once per test. |
 | **HeavyweightBlock** | Fluent per-block builder. Accumulates contract calls and uncles, seals, and submits through `accept_block`. |
-| **strict_zk** | A boolean gate on `HeavyweightPipeline` that, when `true` (default, SHALL be immutable), causes `with_call()` to reject any call on a ZK-gated function that provides empty proofs. |
+| **strict_zk** | `const STRICT_ZK: bool = true` — immutable and structural. ZK gating is enforced by the uniform runner's `submit_block()` function using `EndpointSpec::is_zk` (authoritative contract metadata, never a heuristic). `with_call()` is a data accumulation method — it accepts proofs without validating whether they are required. No `strict_zk` field exists on `HeavyweightPipeline`. |
 | **FeeCollectV1** | Function code `0x06` on native_token. The final transaction in every production block, closing the coin merkle tree. |
 | **function enum** | The `#[repr(u8)]` enum declared in the contract's `lib.rs` mapping opcode to variant name. This IS the authoritative list of endpoints. |
 | **manifest** | The TOML file at `src/contract/<name>/manifest.toml` declaring functions, circuits, trees, and capabilities. |
@@ -245,15 +245,12 @@ println!("  Test: CreateClaimDAG (skipped — pre-existing circuit bug)");
 
 ### 4.5 strict_zk Toggling
 
-```rust
-// PROHIBITED:
-chain.strict_zk = false;
-chain.block()?.with_call(cid, &harness, &call_data, vec![])?;
-chain.strict_zk = true;
-```
-
-**Required:** `strict_zk` SHALL be immutable (`true` always). Non-ZK functions SHALL use
-a per-function ZK gate.
+**Background:** `const STRICT_ZK: bool = true` is immutable and structural. No `strict_zk` field
+exists on `HeavyweightPipeline` — the field was removed during Phase 1 per PR-1. ZK proof
+enforcement is structural: the uniform runner's `submit_block()` checks `EndpointSpec::is_zk`
+(authoritative contract metadata, never a heuristic) and rejects empty proofs BEFORE calling
+`with_call()`. There is no toggle to bypass this enforcement. Non-ZK functions SHALL be
+declared with `EndpointSpec::is_zk = false`.
 
 ### 4.6 Single-Block Batching Without Per-Call Error Isolation
 

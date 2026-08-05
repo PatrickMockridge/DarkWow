@@ -214,16 +214,16 @@ if claim.verified {
 ### Signature Verification Limitations
 
 The Oracle contract provides a framework for oracle operators to push values and create
-attestations. However, **signature verification is not yet cryptographically enforced** in consuming contracts:
+attestations. However, **signature verification is BYPASSED in-circuit** in consuming contracts:
 
 - [DarkBet Exchange](darkbet_exchange.md): AMM-based binary outcome markets accept oracle resolution for event settlement
 - [Insurance Market](insurance_market.md): Claims accept oracle resolution but do not verify the oracle's signature
 
-**Current limitation**: The `oracle_signature` field is stored but not verified using the oracle's public key in-circuit. Signature verification is currently off-chain (public key stored, verified client-side before submission). A `SchnorrVerify` opcode would enable proper on-chain signature verification inside ZK circuits.
+**Security limitation**: The `oracle_signature` field is stored but the public key is never used to cryptographically validate the signature within the ZK circuit. This means signature forgery is possible at the proof level — any value can be pushed regardless of whether the submitter holds the oracle's private key. Oracle operators must be trusted entities until this gap is closed.
 
-**Status**: `SchnorrVerify` opcode is not yet implemented in the zkVM. Off-chain verification is sufficient for current operation since oracle operators are bootstrapped trusted entities. In-circuit verification becomes necessary when oracle operators are permissionless.
+**Required**: A `SchnorrVerify` opcode is needed for proper on-chain signature verification inside ZK circuits. Until implemented, oracle data integrity relies on trust assumptions, not cryptographic enforcement. This is tracked in the [Security Analysis](../arch/security-analysis.md).
 
-**TODO**: Implement `SchnorrVerify` opcode in zkVM to enable:
+**Future**: When `SchnorrVerify` is implemented, circuits will be able to:
 ```zk
 # In ZK circuit:
 is_valid = schnorr_verify(oracle_pubkey, message, signature);
