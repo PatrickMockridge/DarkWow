@@ -1,0 +1,61 @@
+# Genesis Completeness Report (RG-23)
+# Generated: 2026-08-05
+# Spec: heavyweight-spec.md §5 (Category-Specific Requirements)
+# Target: 54/54 functions covered — all harness-method functions through accept_block
+
+================================================================================
+COVERAGE MATRIX
+================================================================================
+Contract         | Total | Harness | In Spec | accept_block | verify_state | Rating
+-----------------|-------|---------|---------|--------------|--------------|-------
+box              |     3 |       2 |       2 |            2 |           0/2 | 67%*
+purse            |     4 |       3 |       3 |            3 |           0/3 | 75%*
+multisig         |     4 |       3 |       3 |            3 |           3/3 | 100%*
+oracle           |     6 |       5 |       5 |            5 |           0/5 | 83%*
+promissory_note  |     6 |       4 |       4 |            4 |           0/4 | 67%*
+identity         |     9 |       7 |       7 |            7 |           0/7 | 78%**
+attestation      |    13 |       9 |       9 |            9 |           2/9 | 69%*
+deployooor       |     2 |       2 |       2 |            2 |           0/2 | 100%
+native_token     |     7 |       3 |       2 |            2 |           0/2 | 29%***
+-----------------|-------|---------|---------|--------------|--------------|-------
+TOTAL            |    54 |      38 |      37 |           37 |          5/37 | 69%
+
+* InitializeV1 excluded — deployment-only function, contract rejects at process_instruction
+** CreateClaimV1: mode 0 only. Modes 2-4 not in harness (identity client gap)
+*** PoWRewardV1 + FeeCollectV1 exercised structurally by every block. BurnV1 now has call_data.
+
+================================================================================
+REMAINING GAPS
+================================================================================
+
+A. Harness gaps (no method exists — needs harness work before spec can test):
+- identity: RevokeCredentialV1, CreateClaim modes 2/3/4
+- attestation: RevokeAttestationV1, ExpireAttestationV1, ValidateClaimV1, VerifyChainV1
+- promissory_note: RedeemV1, RevokeV1
+- oracle: SetOracleActiveV1
+- native_token: TransferV1, SpendV1, MintV1 (MintV1 is disabled — walled off)
+
+B. Spec gaps (harness exists, spec doesn't use it):
+- NONE — all harness methods are now in specs
+
+C. verify_state gaps (endpoint tested but no state verification):
+- 32 of 37 spec endpoints lack verify_state (86%)
+- Priority contracts for verify_state: identity (7), oracle (5), box (2), purse (3)
+
+================================================================================
+COMPLIANCE CHECKLIST
+================================================================================
+
+Anti-pattern scanner: $(./contrib/ci/scan_heavyweight_antipatterns.sh 2>&1 | tail -1)
+Coverage checker: $(./contrib/ci/check_heavyweight_coverage.sh 2>&1 | tail -1)
+Compilation: $(cargo check -p dwowd --lib --tests 2>&1 | grep "Finished\|error" | head -1)
+
+================================================================================
+GUARDRAIL VERIFICATION (RG-23)
+================================================================================
+
+37/37 harness-method functions are exercised through accept_block.
+17/54 functions are harness gaps (no method exists — tracked above).
+verify_state coverage: 5/37 (14%) — target is 100% for state-modifying endpoints.
+Phase is NOT complete per RG-23 — verify_state must reach 100% for state-modifying
+endpoints before phase can be closed. This report documents current status.
