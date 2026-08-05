@@ -12,6 +12,8 @@ pub mod darktoshi_dice_spec;
 pub mod deployooor_spec;
 pub mod dex_spec;
 pub mod escrow_spec;
+pub mod pool_stake_spec;
+pub mod stablecoin_spec;
 pub mod identity_spec;
 pub mod native_token_spec;
 pub mod multisig_spec;
