@@ -226,6 +226,10 @@ fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Erro
 // ============================================================================
 
 #[test]
+// Integration test: validates ContractMetadata serialization end-to-end with
+// EscrowHarness ZK proof generation through accept_block. Deploys escrow contract,
+// exercises create_escrow, and verifies metadata roundtrip encoding.
+#[test]
 fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::EscrowHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey};
@@ -559,6 +563,10 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&identity_test_spec()))?)
 }
+#[test]
+// Integration test: cross-contract orchestration across 4 contracts (Identity,
+// LaborMarket, DaoEscrow, Attestation). Harness-exercise test — generates call_data
+// and verifies it's non-empty but does NOT submit through accept_block.
 #[test]
 fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::{
@@ -1175,6 +1183,11 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
 /// Deploys both bridge and relayer_endowment contracts into the same
 /// GenesisHarness, then exercises them across multiple blocks with ZK proofs.
 /// Routes through `accept_block` (production path) with real coinbases.
+#[test]
+// Integration test: cross-contract bridge + relayer_endowment lifecycle.
+// Deploys both contracts, exercises deposit→withdraw→double-spend rejection
+// then relayer_endowment initialize→deploy_capital. Uses accept_block directly.
+// RG-10 compliant: zero match-Err-skip (fixed 2026-08-05).
 #[test]
 fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::{BridgeHarness, RelayerEndowmentHarness};
