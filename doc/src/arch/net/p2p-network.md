@@ -1,5 +1,9 @@
 # P2P Network
 
+> [RESEARCH] This document contains research notes and design exploration alongside
+> implemented features. For the current P2P implementation status, see the
+> [SHIPPING table in intro.md](../intro.md) and [Network Types](../network-types.md).
+
 We instantiate a `p2p` network and call `start()`. This will begin
 running a single p2p network until `stop()` is called.
 

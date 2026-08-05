@@ -1,5 +1,7 @@
 # Concepts
 
+> [!WARNING] DEPRECATED — No corresponding `src/contract/vesting/` exists. This spec is retained for reference only.
+
 The vesting process is divided in a few steps that are outlined below:
 
 * **Vest:** a vesting configuration is submitted to the blockchain.

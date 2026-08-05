@@ -295,7 +295,7 @@ fn verify_onchain(
 ### Phase 2: On-Chain Verification (✅ UNBLOCKED via Tau_Pallas)
 - [x] Implement `verify_capability_onchain` with Identity contract interface
 - [x] **DONE**: Add wallet integration via Pallas-native dwow_sdk crypto
-- [x] **DONE**: Connect to dwowd RPC for `tx.broadcast` via DarkfidClient
+- [x] **DONE**: Connect to dwowd RPC for `tx.broadcast` via `DarkfidClient` ([UPSTREAM NAMING] — this struct name at `bin/tau/tau_pallas/src/rpc_client.rs` is an upstream artifact; may be renamed to `DwowdClient` in a future refactor)
 - [x] **DONE**: Build and sign transactions with Pallas keys
 
 **Solution**: Created **Tau_Pallas** (`bin/tau/tau_pallas/`) - a Pallas-native variant of tau that:

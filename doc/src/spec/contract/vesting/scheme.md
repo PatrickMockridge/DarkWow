@@ -1,5 +1,7 @@
 # Scheme
 
+> [!WARNING] DEPRECATED — No corresponding `src/contract/vesting/` exists. This spec contains 13 bare TODOs and is retained for reference only.
+
 <!-- toc -->
 
 Let $\t{Params}_\t{VC}, \t{Bulla}_\t{VC}$ be defined as in

@@ -1,5 +1,7 @@
 # Model
 
+> [!WARNING] DEPRECATED — No corresponding `src/contract/vesting/` exists. This spec is retained for reference only.
+
 Let $\t{Bulla}$ be defined as in the section [Bulla Commitments][1].
 
 Let $ℙₚ, 𝔽ₚ, \mathcal{X}, \mathcal{Y}, \t{𝔹⁶⁴2𝔽ₚ}$ be defined as in the
