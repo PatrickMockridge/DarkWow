@@ -1,6 +1,7 @@
 use dwow_contract_test_harness::harness::{ContractHarness, LotteryHarness};
 use dwow_sdk::crypto::{PublicKey, SecretKey}; use dwow_sdk::pasta::pallas;
 use crate::tests::uniform_runner::*;
+use super::helpers::mk_ep;
 pub fn lottery_test_spec() -> ContractTestSpec<'static> {
     let harness = Box::leak(Box::new(LotteryHarness::spawn()));
     let h: &LotteryHarness = harness;
@@ -40,7 +41,4 @@ pub fn lottery_test_spec() -> ContractTestSpec<'static> {
             })),
         ],
     }
-}
-fn mk_ep(n:&'static str,z:bool,g:Box<dyn Fn()->dwow_core::Result<EndpointResult>+'static>)->EndpointSpec<'static>{
-    EndpointSpec{name:n,is_zk:z,expectation:EndpointExpectation::Success,generate_with_coinbase:None,verify_state:None,state_tree:"nullifiers",state_key_fn:Box::new(|| vec![]),generate:g}
 }
