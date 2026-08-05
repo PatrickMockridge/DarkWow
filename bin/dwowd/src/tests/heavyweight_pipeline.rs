@@ -1275,14 +1275,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             0, vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
             ExternalChain::Monero, 0,
         );
-        let deposit = match deposit {
-            Ok(d) => d,
-            Err(e) => {
-                println!("  deposit proof skipped (requires Sinsemilla Merkle data): {}", e);
-                println!("=== Relayer lifecycle OK (keygen verified) ===");
-                return Ok(());
-            }
-        };
+        let deposit = deposit.map_err(|e| format!("deposit proof failed: {}", e))?;
         assert!(!deposit.call_data.is_empty(), "deposit call_data must not be empty");
         println!("  Deposit call_data={}B", deposit.call_data.len());
 
@@ -1303,19 +1296,12 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
 
         // --- Block 2: Bridge withdraw ---
         println!("\n--- Block 2: Bridge withdraw ---");
-        let withdraw = match bridge_harness.withdraw(
+        let withdraw = bridge_harness.withdraw(
             secret, 5000,
             pallas::Base::from(400u64), pallas::Base::from(500u64),
             pallas::Base::from(600u64), [pallas::Base::from(0u64); 4],
             0, 10, 1,
-        ) {
-            Ok(w) => w,
-            Err(e) => {
-                println!("  withdraw proof skipped (Sinsemilla Merkle data): {}", e);
-                println!("=== Relayer lifecycle OK (keygen verified) ===");
-                return Ok(());
-            }
-        };
+        ).map_err(|e| format!("withdraw proof failed: {}", e))?;
         assert!(!withdraw.call_data.is_empty(), "withdraw call_data must not be empty");
         println!("  Withdraw call_data={}B", withdraw.call_data.len());
 
@@ -1336,19 +1322,12 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
 
         // --- Block 3: Double-spend attempt (same secret = same nullifier) ---
         println!("\n--- Block 3: Double-spend attempt ---");
-        let double_withdraw = match bridge_harness.withdraw(
+        let double_withdraw = bridge_harness.withdraw(
             secret, 3000,
             pallas::Base::from(999u64), pallas::Base::from(888u64),
             pallas::Base::from(777u64), [pallas::Base::from(0u64); 4],
             0, 10, 1,
-        ) {
-            Ok(w) => w,
-            Err(e) => {
-                println!("  double-withdraw proof skipped (Sinsemilla): {}", e);
-                println!("=== Relayer lifecycle OK (keygen verified) ===");
-                return Ok(());
-            }
-        };
+        ).map_err(|e| format!("double-withdraw proof failed: {}", e))?;
 
         let height3 = chain.height().succ();
         {
