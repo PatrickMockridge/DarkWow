@@ -217,6 +217,48 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                     }
                 }),
             },
+            EndpointSpec {
+                name: "RevokeAttestationV1", is_zk: false,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: None,
+                state_tree: "attestations",
+                state_key_fn: Box::new(move || attestation_id.to_repr().to_vec()),
+                generate: Box::new({
+                    let pk = attestor_pub;
+                    move || {
+                        let r = h.revoke_attestation(pk, attestation_id)
+                            .map_err(modules::error_bridge::bridge)?;
+                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
+                    }
+                }),
+            },
+            EndpointSpec {
+                name: "ExpireAttestationV1", is_zk: false,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: None,
+                state_tree: "attestations",
+                state_key_fn: Box::new(move || attestation_id.to_repr().to_vec()),
+                generate: Box::new(move || {
+                    let r = h.expire_attestation(attestation_id)
+                        .map_err(modules::error_bridge::bridge)?;
+                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
+                }),
+            },
+            EndpointSpec {
+                name: "ValidateClaimV1", is_zk: false,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: None,
+                state_tree: "claims",
+                state_key_fn: Box::new(move || claim_id.to_repr().to_vec()),
+                generate: Box::new(move || {
+                    let r = h.validate_claim(claim_id, attestation_id, vec![])
+                        .map_err(modules::error_bridge::bridge)?;
+                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
+                }),
+            },
         ],
     }
 }

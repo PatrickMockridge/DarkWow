@@ -575,6 +575,51 @@ impl AttestationHarness {
 
         Ok(CommitFeeScheduleResult { call_data, proof })
     }
+
+    /// Revoke an attestation (function code 0x01, non-ZK).
+    pub fn revoke_attestation(
+        &self,
+        attestor_pub: PublicKey,
+        attestation_id: pallas::Base,
+    ) -> Result<RevokeAttestationResult, Box<dyn std::error::Error>> {
+        let params = dwow_attestation_contract::model::RevokeAttestationParamsV1 {
+            attestor_pub,
+            attestation_id: dwow_attestation_contract::model::AttestationId(attestation_id),
+        };
+        let mut call_data = vec![0x01];
+        call_data.extend_from_slice(&params.encode());
+        Ok(RevokeAttestationResult { call_data })
+    }
+
+    /// Expire an attestation (function code 0x02, non-ZK).
+    pub fn expire_attestation(
+        &self,
+        attestation_id: pallas::Base,
+    ) -> Result<ExpireAttestationResult, Box<dyn std::error::Error>> {
+        let params = dwow_attestation_contract::model::ExpireAttestationParamsV1 {
+            attestation_id: dwow_attestation_contract::model::AttestationId(attestation_id),
+        };
+        let mut call_data = vec![0x02];
+        call_data.extend_from_slice(&params.encode());
+        Ok(ExpireAttestationResult { call_data })
+    }
+
+    /// Validate a claim (function code 0x06, non-ZK).
+    pub fn validate_claim(
+        &self,
+        claim_id: pallas::Base,
+        attestation_id: pallas::Base,
+        evidence: Vec<pallas::Base>,
+    ) -> Result<ValidateClaimResult, Box<dyn std::error::Error>> {
+        let params = dwow_attestation_contract::model::ValidateClaimParamsV1 {
+            claim_id: dwow_attestation_contract::model::ClaimId(claim_id),
+            attestation_id: dwow_attestation_contract::model::AttestationId(attestation_id),
+            evidence,
+        };
+        let mut call_data = vec![0x06];
+        call_data.extend_from_slice(&params.encode());
+        Ok(ValidateClaimResult { call_data })
+    }
 }
 
 impl super::ContractHarness for AttestationHarness {
@@ -683,4 +728,16 @@ pub struct AttestSlashResult {
 pub struct CommitFeeScheduleResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
+}
+
+pub struct RevokeAttestationResult {
+    pub call_data: Vec<u8>,
+}
+
+pub struct ExpireAttestationResult {
+    pub call_data: Vec<u8>,
+}
+
+pub struct ValidateClaimResult {
+    pub call_data: Vec<u8>,
 }
