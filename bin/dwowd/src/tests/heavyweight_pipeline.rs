@@ -340,95 +340,9 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
 
 #[test]
 fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    use dwow_contract_test_harness::harness::NativeTokenHarness;
-    use dwow_sdk::crypto::{Keypair, MerkleNode, PublicKey, SecretKey};
-    use dwow_sdk::pasta::pallas;
-    use dwow_native_token_contract::client::burn::BurnCallInput;
-    
-
-    println!("=== NativeToken Heavyweight: All Endpoints ===");
-
-    smol::block_on(async {
-        use crate::tests::blockchain::HeavyweightPipeline;
-
-        let chain = HeavyweightPipeline::new().await?;
-        chain.init_genesis().await?;
-        let harness = NativeTokenHarness::spawn();
-        println!("Harness spawned with circuits: {:?}", harness.circuits());
-        let _cid = *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;  // deployed at genesis
-        let secret = SecretKey::from_bytes([2u8; 32]).unwrap();
-        let public = PublicKey::from_secret(secret.clone());
-        let keypair = Keypair { secret, public };
-
-        // --- mint_pow_reward (harness validation only — coinbase already
-        // exercises PoWRewardV1 through accept_block in every block) ---
-        println!("  Test: mint_pow_reward (harness)");
-        let sk = keypair.secret.clone();
-        let ephem_secret = SecretKey::from_bytes([9u8; 32]).unwrap();
-        let block_height = dwow_sdk::blockchain::BlockHeight::new(2);
-        let reward = harness.mint_pow_reward(
-            sk.clone(), ephem_secret.clone(), block_height, 1000, None,
-        )?;
-        assert!(!reward.call_data.is_empty());
-        println!("    call_data={}B coin_blind={:?}", reward.call_data.len(), reward.coin_blind);
-
-        // --- burn ---
-        println!("  Test: burn");
-        let burn_input = BurnCallInput {
-            value: 1000,
-            token_id: pallas::Base::from(1u64),
-            spend_hook: pallas::Base::from(0u64),
-            user_data: pallas::Base::from(0u64),
-            coin_blind: reward.coin_blind,
-            leaf_position: 0u64,
-            merkle_path: vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
-            secret: sk.clone(),
-            ephemeral_signature_secret: ephem_secret,
-            tx_commitment: pallas::Base::zero(),
-            tx_nonce: pallas::Base::zero(),
-        };
-        let burn = harness.burn(vec![burn_input])?;
-        assert!(!burn.proofs.is_empty() || !burn.inputs.is_empty());
-        println!("    inputs={} proofs={}", burn.inputs.len(), burn.proofs.len());
-
-        // BurnV1 produces inputs+proofs but not call_data — the harness
-        // BurnResult type doesn't have a .call_data field. The proofs are
-        // verified via the harness method's ZK proof generation above.
-        // exec() requires call_data bytes; full accept_block routing for
-        // burn is deferred until the harness adds call_data encoding.
-
-        // --- fee ---
-        println!("  Test: fee");
-        let recipient = PublicKey::from_secret(SecretKey::from_bytes([5u8; 32]).unwrap());
-        let fee = harness.fee(
-            1000,
-            pallas::Base::zero(), // DRKW — fees are only paid in native token
-            pallas::Base::from(0u64),
-            pallas::Base::from(0u64),
-            reward.coin_blind,
-            0,
-            vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
-            sk.clone(),
-            sk,
-            recipient,
-            pallas::Base::from(0u64),
-            pallas::Base::from(0u64),
-            10,
-        )?;
-        assert!(!fee.call_data.is_empty());
-        println!("    call_data={}B (harness validation only)", fee.call_data.len());
-        // FeeV1 accept_block submission requires a real coinbase coin as input
-        // (miner-key coordination). Harness validates proof generation + call_data.
-        // Full FeeV1 accept_block path tested in wallet integration tests.
-
-        // mint_pow_reward (PoWRewardV1) is exercised via the coinbase in
-        // every exec() call — exec() builds a real PoWRewardV1 coinbase
-        // with ZK proof + AEAD encryption through the production path.
-        // No separate exec_coinbase_only() needed.
-
-        println!("=== All NativeToken endpoints OK ===");
-        Ok(())
-    })
+    use crate::tests::specs::native_token_spec::native_token_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&native_token_test_spec()))?)
 }
 
 // ============================================================================
