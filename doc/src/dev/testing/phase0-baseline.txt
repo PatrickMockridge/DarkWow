@@ -1,0 +1,27 @@
+# Phase 0 Baseline — Heavyweight Test Anti-Patterns and Coverage
+# Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+# Spec: doc/src/dev/testing/heavyweight-spec.md
+
+================================================================================
+ANTI-PATTERN SCAN RESULTS
+================================================================================
+$(./contrib/ci/scan_heavyweight_antipatterns.sh 2>&1)
+
+================================================================================
+ENDPOINT COVERAGE REPORT
+================================================================================
+$(./contrib/ci/check_heavyweight_coverage.sh 2>&1)
+
+================================================================================
+SUMMARY
+================================================================================
+Anti-patterns: 24 violations (13 match-Err-skip, 4 ZK-proof-only, 1 comment-deferred,
+  4 explicit-skip, 2 strict_zk-toggling)
+Coverage: 35/54 functions (65%), 19 gaps across 9 genesis contracts
+Accept_block honesty: FALSE — multiple tests skip accept_block for significant endpoints
+
+Target (per heavyweight-spec.md §3.1, §3.2):
+  - 54/54 functions exercised through accept_block
+  - 0 anti-pattern violations
+  - FeeCollectV1 in every block
+  - Nullifier replay tested for all ZK-gated functions
