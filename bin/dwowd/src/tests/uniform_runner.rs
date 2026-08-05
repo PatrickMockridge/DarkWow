@@ -24,20 +24,19 @@
 //! Uniform Heavyweight Test Runner
 //!
 //! The single standardized test runner for all Level 2 heavyweight tests.
-//! Every contract's test is a thin wrapper that provides a `ContractTestSpec`
-//! to `run_heavyweight_test()`. The runner structurally enforces the
+//! Every contract's test provides a `ContractTestSpec` to `run_heavyweight_test()`.
+//! The runner composes shared modules (RG-MODULAR) to structurally enforce
 //! heavyweight-spec.md requirements.
 //!
 //! Spec: heavyweight-spec.md §9 (Per-Contract Test Template).
-//! Guardrails: RG-0 through RG-15.
 
 use dwow_core::zk::Proof;
 use dwow_core::Result;
-use dwow_sdk::blockchain::BlockHeight;
 use dwow_sdk::crypto::ContractId;
 use dwow_contract_test_harness::harness::ContractHarness;
 
 use crate::tests::blockchain::HeavyweightPipeline;
+use crate::tests::modules;
 
 // ── Spec Types ──────────────────────────────────────────────────────────────
 
@@ -45,6 +44,15 @@ use crate::tests::blockchain::HeavyweightPipeline;
 pub struct EndpointResult {
     pub call_data: Vec<u8>,
     pub proofs: Vec<Proof>,
+}
+
+/// Whether an endpoint expects accept_block to succeed or reject.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum EndpointExpectation {
+    /// Normal accept_block acceptance.
+    Success,
+    /// Expect accept_block to return an error (e.g., MintV1 FunctionDisabled).
+    Rejection,
 }
 
 /// Specification for a single contract endpoint.
@@ -59,6 +67,8 @@ pub struct EndpointSpec<'a> {
     pub state_tree: &'static str,
     /// Key to query in the state tree after the call succeeds.
     pub state_key_fn: Box<dyn Fn() -> Vec<u8> + 'a>,
+    /// Whether this endpoint expects acceptance or rejection.
+    pub expectation: EndpointExpectation,
 }
 
 /// Full specification for a contract's heavyweight test.
@@ -81,6 +91,8 @@ pub struct ContractTestSpec<'a> {
     pub endpoints: Vec<EndpointSpec<'a>>,
     /// State tree names for verification.
     pub state_trees: &'static [&'static str],
+    /// Whether any endpoint needs coinbase parameter coordination (native_token only).
+    pub needs_coinbase_coordination: bool,
 }
 
 impl<'a> ContractTestSpec<'a> {
@@ -105,7 +117,6 @@ impl<'a> ContractTestSpec<'a> {
     }
 
     /// Index of the first ZK endpoint (for nullifier replay testing).
-    /// Returns None if no ZK endpoints exist.
     pub fn first_zk_index(&self) -> Option<usize> {
         self.endpoints.iter().position(|e| e.is_zk)
     }
@@ -113,183 +124,121 @@ impl<'a> ContractTestSpec<'a> {
 
 // ── Runner ─────────────────────────────────────────────────────────────────
 
-/// Verify the genesis block hash matches the expected value.
-fn verify_genesis_block_hash(chain: &HeavyweightPipeline) -> Result<()> {
-    let genesis = chain.block_hash_at(BlockHeight::new(1))?;
-    assert!(genesis.is_some(), "genesis block must exist at height 1");
-    // Note: full hash comparison against a known constant requires the genesis
-    // hash to be stable across all contract/consensus changes. For now, verify
-    // the block exists and has a non-zero hash.
-    let hash = genesis.unwrap();
-    assert_ne!(hash.as_bytes(), &[0u8; 32], "genesis block hash must not be zero");
-    Ok(())
-}
-
-/// Verify the initial cumulative supply equals INITIAL_REWARD.
-fn verify_initial_supply(chain: &HeavyweightPipeline) -> Result<()> {
-    let supply = chain.cumulative_supply();
-    let expected = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
-    assert_eq!(supply, expected.get(),
-        "initial cumulative supply must equal INITIAL_REWARD");
-    Ok(())
-}
-
-/// Verify a genesis contract exists in the contracts tree at height 1.
-fn verify_contract_at_genesis(chain: &HeavyweightPipeline, cid: ContractId) -> Result<()> {
-    // After init_genesis(), genesis contracts have their WASM stored in the
-    // contracts sled tree keyed by ContractId bytes.
-    let wasm = chain.query_contracts_tree(&cid.to_bytes())?;
-    assert!(wasm.is_some(),
-        "Genesis contract {} must exist in contracts tree at height 1",
-        cid);
-    Ok(())
-}
-
-/// Submit a single block with one contract call + FeeCollectV1.
-/// The uniform block structure per spec §3.5 and §9.
-/// ZK gating is enforced HERE (spec §7.2 PR-6) — `with_call()` is a data
-/// accumulation method, not a security gate. `is_zk` comes from
-/// EndpointSpec::is_zk, which is authoritative contract metadata (RG-21).
-pub async fn submit_block(
-    chain: &HeavyweightPipeline,
-    cid: ContractId,
-    harness: &dyn ContractHarness,
-    call_data: &[u8],
-    proofs: Vec<Proof>,
-    is_zk: bool,
-) -> Result<BlockHeight> {
-    // ZK gate: enforced at the uniform runner level, not in with_call().
-    // is_zk comes from EndpointSpec — authoritative, never heuristic (RG-21).
-    if is_zk && proofs.is_empty() {
-        return Err(dwow_core::Error::Custom(format!(
-            "submit_block: ZK-gated function on contract '{}' requires proofs (got 0)",
-            harness.name()
-        )));
-    }
-
-    chain.block()?
-        .with_call(cid, harness, call_data, proofs)?
-        .with_fee_collect()?   // unconditional — RG-6, spec §3.5
-        .submit().await
-}
-
 /// The single uniform test runner. Every heavyweight test calls this.
-/// Enforces heavyweight-spec.md structurally per the template at §9.
+/// Composes shared modules to structurally enforce heavyweight-spec.md §9.
 pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
-    // Validate spec consistency (RG-1)
     spec.validate()?;
 
     // ── Pipeline A (primary) ────────────────────────────────────────
-    let chain_a = HeavyweightPipeline::new().await?;
-    chain_a.init_genesis().await?;
+    let chain_a = modules::chain_setup::init_test_chain().await?;
 
     // ── Pre-test integrity checks (spec §5.2) ───────────────────────
-    verify_genesis_block_hash(&chain_a)?;          // PI-1
-    verify_initial_supply(&chain_a)?;               // PI-2
-    if spec.is_genesis {
-        verify_contract_at_genesis(&chain_a, spec.contract_id)?; // PI-3
-    }
-    spec.harness.verify_zk_coverage()?;             // PI-4
+    modules::integrity_checks::pre_test_integrity(
+        &chain_a, spec.is_genesis, spec.contract_id, spec.harness,
+    )?;
 
     // ── Deploy if WASM ─────────────────────────────────────────────
-    let cid = if spec.is_genesis {
-        spec.contract_id
-    } else {
-        chain_a.deploy(
-            spec.harness,
-            spec.name,
-            spec.wasm_bytes.expect("WASM contract must have wasm_bytes"),
-        ).await?
-    };
+    let cid = modules::deploy_router::resolve_contract_id(
+        &chain_a,
+        spec.is_genesis,
+        spec.contract_id,
+        spec.harness,
+        spec.name,
+        spec.wasm_bytes,
+    ).await?;
 
     // ── Initialize (if contract has InitializeV1) ───────────────────
     let mut height_before = chain_a.height();
     if let Some(ref init_fn) = spec.initialize {
         let result = init_fn()?;
-        assert!(!result.call_data.is_empty(),
-            "{}: InitializeV1 call_data must not be empty", spec.name);
-        let new_height = submit_block(
+        assert!(!result.call_data.is_empty());
+        height_before = modules::block_submission::submit_single_call_block(
             &chain_a, cid, spec.harness,
             &result.call_data, result.proofs, false, // InitializeV1 is non-ZK
         ).await?;
-        assert!(new_height > height_before,
+        assert!(height_before > chain_a.height().pred().unwrap(),
             "{}: height must advance after InitializeV1", spec.name);
-        height_before = new_height;
     }
 
     // ── Exercise every endpoint (one per block) ────────────────────
-    // Per spec §3.6: one endpoint per block for error isolation.
+    // Coinbase coordination for native_token (RG-MODULAR §9)
+    let coinbase = if spec.needs_coinbase_coordination {
+        Some(modules::coinbase_coordination::prefetch_coinbase_params(&chain_a).await?)
+    } else {
+        None
+    };
+
     for endpoint in &spec.endpoints {
         let result = (endpoint.generate)()?;
         assert!(!result.call_data.is_empty(),
             "{}: {} call_data must not be empty", spec.name, endpoint.name);
 
-        let new_height = submit_block(
-            &chain_a, cid, spec.harness,
-            &result.call_data, result.proofs, endpoint.is_zk,
-        ).await?;
-
-        assert!(new_height > height_before,
-            "{}: {} — height must advance after accept_block (was {}, now {})",
-            spec.name, endpoint.name, height_before, new_height);
-
-        // State verification (spec §6 ST-2)
-        // Contract-specific state query will be added when the full state
-        // inspection API is built (RG-8, spec §7.2 PR-3). For now, verify
-        // height advancement only — the accept_block path validates state
-        // transitions structurally.
-        let _ = endpoint.state_tree; // will be used when state API is complete
-        let _ = &endpoint.state_key_fn;
-
-        height_before = new_height;
+        if endpoint.expectation == EndpointExpectation::Rejection {
+            // Expect accept_block to REJECT this call (e.g., MintV1 FunctionDisabled)
+            let submit_result = modules::block_submission::submit_single_call_block(
+                &chain_a, cid, spec.harness,
+                &result.call_data, result.proofs, endpoint.is_zk,
+            ).await;
+            assert!(submit_result.is_err(),
+                "{}: {} — expected rejection but accept_block succeeded",
+                spec.name, endpoint.name);
+        } else {
+            // Normal acceptance path
+            let new_height = modules::endpoint_exercise::exercise_endpoint(
+                &chain_a, cid, spec.harness, endpoint, height_before,
+            ).await?;
+            height_before = new_height;
+        }
     }
+    // coinbase is consumed by FeeV1/BurnV1 endpoints — drop reference
+    drop(coinbase);
 
     // ── Nullifier replay rejection (spec §3.6) ─────────────────────
     if let Some(idx) = spec.first_zk_index() {
         let endpoint = &spec.endpoints[idx];
         let result = (endpoint.generate)()?;
-        // First submission already succeeded above.
-        // Second submission with same call_data MUST be rejected.
-        let replay_result = submit_block(
+        modules::nullifier_replay::verify_nullifier_replay(
             &chain_a, cid, spec.harness,
             &result.call_data, result.proofs, endpoint.is_zk,
-        ).await;
-        assert!(replay_result.is_err(),
-            "{}: {} — nullifier replay MUST be rejected",
-            spec.name, endpoint.name);
+        ).await?;
     }
 
     // ── Post-test integrity checks (spec §5.3) ─────────────────────
-    assert!(chain_a.block_hash_chain_continuous()?,
-        "{}: block hash chain must be continuous (PI-5)", spec.name);
+    modules::integrity_checks::post_test_integrity(&chain_a)?;
 
     // ── Determinism (spec §3.7) ────────────────────────────────────
-    // Pipeline B: replay identical scenario on independent chain
     let chain_b = HeavyweightPipeline::new().await?;
     chain_b.init_genesis().await?;
     spec.harness.verify_zk_coverage()?;
 
-    let cid_b = if spec.is_genesis {
-        spec.contract_id
-    } else {
-        chain_b.deploy(
-            spec.harness, spec.name,
-            spec.wasm_bytes.expect("WASM contract must have wasm_bytes"),
-        ).await?
-    };
+    let cid_b = modules::deploy_router::resolve_contract_id(
+        &chain_b, spec.is_genesis, spec.contract_id,
+        spec.harness, spec.name, spec.wasm_bytes,
+    ).await?;
 
-    // Replay init
+    // Replay init on chain B
     if let Some(ref init_fn) = spec.initialize {
         let result = init_fn()?;
-        let _ = submit_block(&chain_b, cid_b, spec.harness,
-            &result.call_data, result.proofs, false).await?;
+        let _ = modules::block_submission::submit_single_call_block(
+            &chain_b, cid_b, spec.harness,
+            &result.call_data, result.proofs, false,
+        ).await?;
     }
 
-    // Replay all endpoints
+    // Replay all endpoints on chain B
+    let mut h_b = chain_b.height();
     for endpoint in &spec.endpoints {
         let result = (endpoint.generate)()?;
-        let _ = submit_block(&chain_b, cid_b, spec.harness,
-            &result.call_data, result.proofs, endpoint.is_zk).await?;
+        if endpoint.expectation == EndpointExpectation::Rejection {
+            let _ = modules::block_submission::submit_single_call_block(
+                &chain_b, cid_b, spec.harness,
+                &result.call_data, result.proofs, endpoint.is_zk,
+            ).await;
+        } else {
+            h_b = modules::endpoint_exercise::exercise_endpoint(
+                &chain_b, cid_b, spec.harness, endpoint, h_b,
+            ).await?;
+        }
     }
 
     // Compare final block hashes (PI-7)
