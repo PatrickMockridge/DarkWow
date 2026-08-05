@@ -193,7 +193,7 @@ this file into the wallet container at `/run/secrets/mining_secret:ro`
 ```
 Host                                      Docker
 ────                                      ─────
-wallet keygen → secret_hex                FORWARD_DESTINATION=<addr>
+wallet keygen → secret_hex                `FORWARD_DESTINATION=<addr>`
   │                                         │
   ├── /tmp/dwow_mining_secret ──mount──▶ /run/secrets/mining_secret
   │                                         │

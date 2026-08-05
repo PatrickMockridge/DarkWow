@@ -81,7 +81,7 @@ RAYON_NUM_THREADS=10 cargo test -p dwow_purse_contract -- --nocapture
    encoding as (x,y) pair (64 bytes) was intentional vs. compressed PublicKey (32 bytes).
    If 32-byte was intended, the encode/decode needs adjustment.
 
-2. **relayer_endowment EndowmentDeployment**: Variable-length with Option<u64>. The
+2. **relayer_endowment EndowmentDeployment**: Variable-length with `Option<u64>`. The
    computed byte offsets after the ENCODED_SIZE correction (199→135) need runtime
    verification with actual test data.
 
@@ -103,7 +103,7 @@ RAYON_NUM_THREADS=10 cargo test -p dwow_purse_contract -- --nocapture
    correctly delegate.
 
 7. **box PutUpdateV1/TakeUpdateV1**: Converted from Encodable trait pattern to
-   standalone `encode()` → Vec<u8>. The bridge now uses `[func_byte, update.encode()].concat()`.
+   standalone `encode()` → `Vec<u8>`. The bridge now uses `[func_byte, update.encode()].concat()`.
    Verify process_update correctly decodes the new format.
 
 8. **subscription Plan**: Uses manual `dwow_serial::Encodable::encode()` trait method

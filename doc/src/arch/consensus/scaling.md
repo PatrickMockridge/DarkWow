@@ -359,7 +359,7 @@ merge deterministically.
 - **Independent per-call overlays** (`execution.rs:163`): each contract call
   executes against a clone of the base sled overlay (`Arc<Mutex<SledTreeOverlay>>`),
   so calls do not share mutable state during execution.
-- **JoinSet<T>** (`src/concurrency/join_set.rs`): concurrent task collection
+- **`JoinSet<T>`** (`src/concurrency/join_set.rs`): concurrent task collection
   for spawning parallel work and joining results — the Rust mapping of
   ρ-calculus `P | Q | merge!`.
 - **ExecutionSchedule** (`src/linear/src/schedule.rs`): key-set-based

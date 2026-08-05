@@ -11,7 +11,7 @@ $C$, and we use the burn proof to spend a previously minted _coin_.
 ## Mint proof
 
 ```zkas
-{{#include ../../../../proof/mint.zk}}
+{{#include ../../../../proofs/core/mint.zk}}
 ```
 
 As you can see, the `Mint` proof basically consists of three
@@ -154,7 +154,7 @@ proof.verify(&verifying_key, &public_inputs)?;
 ## Burn
 
 ```zkas
-{{#include ../../../../proof/burn.zk}}
+{{#include ../../../../proofs/core/burn.zk}}
 ```
 
 The `Burn` proof consists of operations similar to the `Mint` proof,

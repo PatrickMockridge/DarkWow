@@ -13,6 +13,9 @@ theme = "theme"
 additional-css = ["theme/tabs.css", "theme/highlight.css", "src/fonts.css"]
 additional-js = ["theme/mermaid.min.js", "theme/mermaid-init.js", "theme/zkas-highlight.js", "theme/tabs.js"]
 
+[output.html.search]
+limit-results = 20
+
 [output.html.playground]
 runnable = false
 
