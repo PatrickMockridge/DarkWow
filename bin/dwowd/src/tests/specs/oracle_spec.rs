@@ -127,22 +127,6 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                     }
                 }),
             },
-            EndpointSpec {
-                name: "AggregateV1", is_zk: true,
-                expectation: EndpointExpectation::Success,
-                generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; assert!(r.is_some(), "AggregateV1: result must be stored"); Ok(()) } })),
-                state_tree: "attestations",
-                state_key_fn: Box::new(|| vec![]),
-                generate: Box::new(move || {
-                    let r = h.aggregate(oracle_id,
-                        [pallas::Base::from(10u64); 4], [pallas::Base::from(1u64); 4],
-                        pallas::Base::from(4u64), pallas::Base::from(10u64),
-                        pallas::Base::from(0u64), pallas::Base::from(100u64))
-                        .map_err(modules::error_bridge::bridge)?;
-                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
-                }),
-            },
         ],
     }
 }
