@@ -442,6 +442,7 @@ fn test_heavyweight_deployooor() -> std::result::Result<(), Box<dyn std::error::
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&deployooor_test_spec()))?)
 }
+#[test]
 fn test_heavyweight_drain_protection() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use crate::tests::specs::drain_protection_spec::drain_protection_test_spec;
     use crate::tests::uniform_runner::run_heavyweight_test;
@@ -558,6 +559,7 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
     use crate::tests::uniform_runner::run_heavyweight_test;
     Ok(smol::block_on(run_heavyweight_test(&identity_test_spec()))?)
 }
+#[test]
 fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::{
         AttestationHarness, DaoEscrowHarness, IdentityHarness, LaborMarketHarness,
