@@ -315,6 +315,21 @@ impl OracleHarness {
 
         Ok(AggregateResult { call_data, proof, public_inputs })
     }
+
+    /// Set oracle active flag (function code 0x05, non-ZK).
+    pub fn set_oracle_active(
+        &self,
+        oracle_pub: PublicKey,
+        is_active: bool,
+    ) -> Result<SetOracleActiveResult, Box<dyn std::error::Error>> {
+        let params = dwow_oracle_contract::model::SetOracleActiveParamsV1 {
+            oracle_pub,
+            is_active,
+        };
+        let mut call_data = vec![0x05];
+        call_data.extend_from_slice(&params.encode());
+        Ok(SetOracleActiveResult { call_data })
+    }
 }
 
 impl super::ContractHarness for OracleHarness {
@@ -383,4 +398,8 @@ pub struct AggregateResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: AggregateV1PublicInputs,
+}
+
+pub struct SetOracleActiveResult {
+    pub call_data: Vec<u8>,
 }

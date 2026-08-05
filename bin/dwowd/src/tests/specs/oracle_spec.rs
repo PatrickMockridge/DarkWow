@@ -110,6 +110,38 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
                 }),
             },
+            EndpointSpec {
+                name: "SetOracleActiveV1", is_zk: false,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: None,
+                state_tree: "oracles",
+                state_key_fn: Box::new(|| vec![]),
+                generate: Box::new({
+                    let opk = oracle_pub;
+                    move || {
+                        let r = h.set_oracle_active(opk, true)
+                            .map_err(modules::error_bridge::bridge)?;
+                        Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
+                    }
+                }),
+            },
+            EndpointSpec {
+                name: "AggregateV1", is_zk: true,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: None,
+                state_tree: "attestations",
+                state_key_fn: Box::new(|| vec![]),
+                generate: Box::new(move || {
+                    let r = h.aggregate(oracle_id,
+                        [pallas::Base::from(10u64); 4], [pallas::Base::from(1u64); 4],
+                        pallas::Base::from(4u64), pallas::Base::from(10u64),
+                        pallas::Base::from(0u64), pallas::Base::from(100u64))
+                        .map_err(modules::error_bridge::bridge)?;
+                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                }),
+            },
         ],
     }
 }
