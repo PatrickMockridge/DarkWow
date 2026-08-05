@@ -1,0 +1,80 @@
+# WASM Contract Completeness Report (RG-23)
+# Generated: 2026-08-05
+# Target: All 23 WASM contracts through accept_block with real ZK proofs (§4.11)
+
+================================================================================
+COVERAGE MATRIX
+================================================================================
+Contract          | Total | Harness | Real Proofs | Empty Witnesses | Tier
+------------------|-------|---------|-------------|-----------------|------
+otc_swap          |     5 |       4 |           4 |               0 | READY
+darktoshi_dice    |     5 |       4 |           4 |               0 | READY
+baccarat          |     5 |       4 |           4 |               0 | READY
+roulette          |     5 |       4 |           4 |               0 | READY
+slot              |     5 |       4 |           0 |               4 | STUB
+dex               |     9 |       8 |           6 |               2 | HARVESTABLE
+auction           |     6 |       6 |           6 |               0 | READY
+escrow            |     6 |       4 |           4 |               0 | HARVESTABLE
+bearer_bond       |     9 |       8 |           8 |               0 | READY
+tender            |     9 |       5 |           5 |               0 | HARVESTABLE
+stablecoin        |    12 |      10 |           6 |               4 | HARVESTABLE
+bridge            |    15 |       7 |           7 |               0 | UNDERPOWERED
+labor_market      |    15 |       9 |           9 |               0 | HARVESTABLE
+subscription      |     7 |       5 |           3 |               2 | HARVESTABLE
+pool_stake        |     9 |       5 |           4 |               0 | UNDERPOWERED
+drain_protection  |     9 |       9 |           0 |               9 | STUB
+game_room         |    12 |      12 |           0 |              12 | STUB
+insurance_market  |    16 |       4 |           2 |               2 | UNDERPOWERED
+betting_stake     |     5 |       5 |           5 |               0 | READY
+darkbet_exchange  |    11 |      10 |           4 |               6 | UNDERPOWERED
+lottery           |     7 |       6 |           2 |               4 | HARVESTABLE
+dao_escrow        |    17 |      13 |           7 |               0 | HARVESTABLE
+relayer_endowment |     8 |       3 |           3 |               0 | UNDERPOWERED
+------------------|-------|---------|-------------|-----------------|------
+TOTAL             |   204 |     148 |         105 |              43 |
+
+================================================================================
+TIER DEFINITIONS
+================================================================================
+READY:       All functions have harness methods with real client proof functions.
+HARVESTABLE: Most functions have real proofs, 1-3 gaps (gaps get #[ignore] markers).
+UNDERPOWERED: Major harness gaps (30-75% missing) OR mix of real + empty_witnesses.
+STUB:        All methods use empty_witnesses — violates §4.11. Must fix before migration.
+
+================================================================================
+CRITICAL GAPS (False Positive Risk per §4.11-4.12)
+================================================================================
+STUB harnesses (empty_witnesses): drain_protection (9), game_room (12), slot (4)
+  — 25 endpoints producing valid proofs that constrain NOTHING about contract logic.
+  — These SHALL NOT be migrated until client proof modules exist.
+  — If migrated as-is: #[ignore = "tracking: URL — empty_witnesses"]
+
+UNDERPOWERED harnesses (mixed real+empty): darkbet_exchange (6 empty), lottery (4),
+  stablecoin (4), dex (2), insurance_market (2), subscription (2)
+  — 20 endpoints with empty_witnesses in otherwise functional harnesses.
+  — Real-proof endpoints can be migrated. Empty-proof endpoints get #[ignore].
+
+Bridge match-Err-skip: 6 deposit variants (deposit, azt_deposit, ltc_deposit,
+  xmr_deposit, zec_deposit, withdraw) — old test silently skips on failure.
+  — Spec §4.12: these SHALL be fixed (endpoint exercised through accept_block).
+
+================================================================================
+MIGRATION ORDER (per MoC 12-phase plan)
+================================================================================
+Phase 3 (Wave 1 — READY): otc_swap, dex, auction, escrow, tender, bearer_bond,
+  darktoshi_dice, baccarat, roulette, relayer_endowment, betting_stake
+Phase 4 (BRIDGE): bridge + pool_stake + relayer_endowment
+Phase 5 (Wave 2 — HARVESTABLE): stablecoin, labor_market, subscription, lottery,
+  betting_stake, dao_escrow, pool_stake
+Phase 6 (Wave 3 — UNDERPOWERED): darkbet_exchange, insurance_market
+Phase 7 (Wave 4 — STUB): slot, drain_protection, game_room
+
+================================================================================
+COMPLIANCE CHECKLIST
+================================================================================
+- [ ] 0 contracts with empty_witnesses in harness methods (§4.11)
+- [ ] 0 silenced failures (match-Err-skip, ZK-proof-only, comment-deferred) (§4.12)
+- [ ] All READY contracts migrated to uniform runner
+- [ ] Bridge contract migrated with HarnessMaturity comment
+- [ ] All gaps documented with tracking URLs
+- [ ] CI anti-pattern scanner enforces §4.11-4.12
