@@ -111,26 +111,26 @@ done < <(grep -n 'Err.*=>.*return Ok(())' "$HEAVYWEIGHT_FILE" 2>/dev/null || tru
 # ── Pattern 9: empty_witnesses in harness METHODS (§4.9) ────────────────────
 # empty_witnesses in spawn() for PK building is correct.
 # empty_witnesses in a harness method (after spawn) is a stub.
-grep -rn 'empty_witnesses' "$HARNESS_DIR" 2>/dev/null | while IFS=: read -r file lineno rest; do
+while IFS=: read -r file lineno rest; do
     [[ -z "$file" ]] && continue
     # Skip spawn() constructors — ProvingKey building requires empty_witnesses
     if [[ "$rest" =~ spawn|ProvingKey::build|ZkCircuit::new.*empty_witnesses ]]; then
         continue
     fi
     violation "empty-witnesses" "$file" "$lineno" "empty_witnesses() in harness method — proves nothing about contract logic"
-done
+done < <(grep -rn 'empty_witnesses' "$HARNESS_DIR" 2>/dev/null || true)
 
 # ── Also check: stubs that create proofs with empty public inputs ───────────
 # Exclude spawn() constructors — empty_witnesses for PK building is correct there
 # Exclude verify_zk_coverage — it validates key building with empty witnesses
-grep -rn 'Proof::create.*&\[\]' "$HARNESS_DIR" 2>/dev/null | while IFS=: read -r file lineno rest; do
+while IFS=: read -r file lineno rest; do
     [[ -z "$file" ]] && continue
     # Skip spawn() — ProvingKey construction uses empty_witnesses legitimately
     if [[ "$rest" =~ spawn|verify_zk_coverage|empty_witnesses.*unwrap ]]; then
         continue
     fi
     violation "empty-proof-stub" "$file" "$lineno" "Proof::create with empty public inputs (&[])"
-done
+done < <(grep -rn 'Proof::create.*&\[\]' "$HARNESS_DIR" 2>/dev/null || true)
 
 # ── Pattern 10: #[allow(dead_code)] suppression (RG-26) ──────────────────────
 # Prohibits silencing the compiler's dead_code diagnostic.
