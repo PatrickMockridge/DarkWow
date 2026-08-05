@@ -24,6 +24,7 @@
 pub mod blockchain;
 pub mod genesis;
 pub mod harness;
+pub mod modules;
 pub mod pipeline;
 pub mod heavyweight_pipeline;
 pub mod uniform_runner;
