@@ -1,6 +1,7 @@
 //! ContractTestSpec definitions — one file per contract.
 //! Each file exports a single function returning ContractTestSpec<'static>.
 
+pub mod attestation_spec;
 pub mod box_spec;
 pub mod identity_spec;
 pub mod multisig_spec;
