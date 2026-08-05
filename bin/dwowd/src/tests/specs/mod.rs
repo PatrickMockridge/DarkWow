@@ -3,6 +3,7 @@
 
 pub mod attestation_spec;
 pub mod baccarat_spec;
+pub mod betting_stake_spec;
 pub mod box_spec;
 pub mod darktoshi_dice_spec;
 pub mod deployooor_spec;

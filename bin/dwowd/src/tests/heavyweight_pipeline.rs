@@ -2010,6 +2010,11 @@ fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Er
 
 #[test]
 fn test_heavyweight_betting_stake() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use crate::tests::specs::betting_stake_spec::betting_stake_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&betting_stake_test_spec()))?)
+}
+#[allow(dead_code)] fn _old_betting_stake_test() { let _old = r#"
     use dwow_contract_test_harness::harness::{BettingStakeHarness, ClaimStakeInfo, UnstakeStakeInfo};
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
@@ -2115,7 +2120,7 @@ fn test_heavyweight_betting_stake() -> std::result::Result<(), Box<dyn std::erro
         println!("=== All BettingStake endpoints OK ===");
         Ok(())
     })
-}
+"#; } // close _old_betting_stake_test
 
 // ============================================================================
 // darkbet_exchange
