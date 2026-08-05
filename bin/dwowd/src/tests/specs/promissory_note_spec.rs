@@ -11,7 +11,6 @@ use crate::tests::uniform_runner::{
 
 pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
     let harness = Box::leak(Box::new(PromissoryNoteHarness::spawn()));
-    let state_trees = harness.state_trees();
     let h: &PromissoryNoteHarness = harness;
 
     // Deterministic inputs matching old test values
@@ -45,7 +44,6 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false,
         initialize: None,
         needs_coinbase_coordination: false,
-        state_trees,
         endpoints: vec![
             EndpointSpec {
                 name: "RegisterTypeV1",
@@ -53,8 +51,6 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = tkk.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "token_registry", &k)?; assert!(r.is_some(), "RegisterTypeV1: token must be stored"); Ok(()) } })),
-                state_tree: "token_registry",
-                state_key_fn: Box::new(move || token_id_key.clone()),
                 generate: Box::new(move || {
                     let r = h.register_type(auth_parent, user_data, blind, recipient,
                         1000, spend_hook, user_data, coin_blind)
@@ -67,8 +63,6 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = tkk2.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "coins", &k)?; assert!(r.is_some(), "IssueV1: minted coin must exist"); Ok(()) } })),
-                state_tree: "coins",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.issue(auth_parent, token_id, recipient,
                         500, spend_hook, user_data, coin_blind)
@@ -81,8 +75,6 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = tkk3.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some(), "TransferV1: nullifier must exist"); Ok(()) } })),
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.transfer(vec![], vec![])
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
@@ -94,8 +86,6 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = tkk3.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some(), "OtcSwapV1: nullifier must exist"); Ok(()) } })),
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.otc_swap(vec![], vec![])
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
@@ -107,8 +97,6 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = tkk3.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some(), "RevokeV1: nullifier must exist"); Ok(()) } })),
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.revoke(500, token_id, spend_hook, user_data,
                         coin_blind, auth_parent)
@@ -121,8 +109,6 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = tkk3.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some(), "RedeemV1: nullifier must exist"); Ok(()) } })),
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.redeem(500, token_id, spend_hook, user_data,
                         coin_blind, auth_parent, recipient)

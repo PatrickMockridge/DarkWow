@@ -22,12 +22,10 @@ pub fn relayer_endowment_test_spec() -> ContractTestSpec<'static> {
         harness: h, wasm_bytes: Some(wasm),
         has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
-        state_trees: harness.state_trees(),
         endpoints: vec![
             EndpointSpec {
                 name: "InitializeV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,
-                state_tree: "nullifiers", state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.initialize(pk, 1000u32, 0u64)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
@@ -37,7 +35,6 @@ pub fn relayer_endowment_test_spec() -> ContractTestSpec<'static> {
             EndpointSpec {
                 name: "DeployCapitalV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,
-                state_tree: "nullifiers", state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.deploy_capital(pallas::Base::from(1u64), pk, 1000,
                         pallas::Base::from(1u64), 0u64,
@@ -49,7 +46,6 @@ pub fn relayer_endowment_test_spec() -> ContractTestSpec<'static> {
             EndpointSpec {
                 name: "ClaimFeesV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,
-                state_tree: "nullifiers", state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.claim_fees(pallas::Base::from(1u64), pk, 100, 0u64)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;

@@ -18,7 +18,7 @@ pub fn insurance_market_test_spec() -> ContractTestSpec<'static> {
         contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
         harness: h, wasm_bytes: Some(wasm),
         has_initialize: false, initialize: None,
-        needs_coinbase_coordination: false, state_trees: harness.state_trees(),
+        needs_coinbase_coordination: false,
         endpoints: vec![
             mk_ep("UnderwriteV1", true, Box::new(move || {
                 use dwow_insurance_market_contract::model::UnderwriteParamsV1;

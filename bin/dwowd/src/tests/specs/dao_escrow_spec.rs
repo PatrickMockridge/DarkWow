@@ -43,7 +43,7 @@ pub fn dao_escrow_test_spec() -> ContractTestSpec<'static> {
             let r = h.initialize(nullifier_k, dao_bulla, owner_secret, endowment_token_id, bulla_blind).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
             Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
         })),
-        needs_coinbase_coordination: false, state_trees: harness.state_trees(),
+        needs_coinbase_coordination: false,
         endpoints: vec![
             mk_ep("ProposeClaimV1", true, Box::new(move || {
                 let r = h.propose_claim(nullifier_k, dao_bulla, claim_id, capability_id, capability_secret, proposer_secret, 10_000, pallas::Base::from(50u64), owner_pub, proposer_pub, ClaimType::Endowment, pallas::Base::from(10u64), CapabilityProof{capability_id:cp_id,capability_secret:cp_secret,nullifier:IntentNullifier::from_bytes([0u8;32]).unwrap(),issuer_pub:[0u8;32],predicate_result:[0u8;32],proof:vec![]}).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;

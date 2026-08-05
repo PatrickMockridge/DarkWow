@@ -11,7 +11,6 @@ use crate::tests::uniform_runner::{
 
 pub fn darktoshi_dice_test_spec() -> ContractTestSpec<'static> {
     let harness = Box::leak(Box::new(DarkToshiDiceHarness::spawn()));
-    let state_trees = harness.state_trees();
     let h: &DarkToshiDiceHarness = harness;
     let wasm = include_bytes!("../../../../../src/contract/darktoshi_dice/dwow_darktoshi_dice_contract.wasm");
 
@@ -27,15 +26,12 @@ pub fn darktoshi_dice_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false,
         initialize: None,
         needs_coinbase_coordination: false,
-        state_trees,
         endpoints: vec![
             EndpointSpec {
                 name: "CommitBetV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: None,
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.commit_bet(player_pub, 1000, 50,
                         pallas::Base::from(99u64), pallas::Base::from(3u64),
@@ -49,8 +45,6 @@ pub fn darktoshi_dice_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: None,
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.reveal_roll(pallas::Base::from(1u64), pallas::Base::from(99u64))?;
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
@@ -61,8 +55,6 @@ pub fn darktoshi_dice_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: None,
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.settle_bet(pallas::Base::from(1u64), pallas::Base::from(99u64),
                         pallas::Base::from(1u64), pallas::Base::from(2u64),
@@ -77,8 +69,6 @@ pub fn darktoshi_dice_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: None,
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.house_close(pallas::Base::from(1u64), pallas::Base::from(10u64),
                         pallas::Base::from(3u64), pallas::Base::from(4u64),

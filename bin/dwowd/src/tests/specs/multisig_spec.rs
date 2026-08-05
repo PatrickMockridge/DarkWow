@@ -15,7 +15,6 @@ use crate::tests::uniform_runner::{
 
 pub fn multisig_test_spec() -> ContractTestSpec<'static> {
     let harness = Box::leak(Box::new(MultiSigHarness::spawn()));
-    let state_trees = harness.state_trees();
     let h: &MultiSigHarness = harness;
     let cid = *MULTISIG_CONTRACT_ID;
 
@@ -59,7 +58,6 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false,
         initialize: None,
         needs_coinbase_coordination: false,
-        state_trees,
         endpoints: vec![
             EndpointSpec {
                 name: "CreateGroupV1", is_zk: true,
@@ -75,8 +73,6 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                         Ok(())
                     }
                 })),
-                state_tree: "groups",
-                state_key_fn: Box::new(move || gid_bytes.clone()),
                 generate: Box::new({
                     let m = members.clone();
                     move || {
@@ -99,8 +95,6 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                         Ok(())
                     }
                 })),
-                state_tree: "signatures",
-                state_key_fn: Box::new(move || nf1b2.clone()),
                 generate: Box::new(move || {
                     let r = h.sign(group_id, message_hash, secrets[0])?;
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
@@ -111,8 +105,6 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: None,
-                state_tree: "signatures",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.sign(group_id, message_hash, secrets[1])?;
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
@@ -124,8 +116,6 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Rejection,
                 generate_with_coinbase: None,
                 verify_state: None,
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.finalize(group_id, message_hash)?;
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
@@ -136,8 +126,6 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: None,
-                state_tree: "signatures",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.sign(group_id, message_hash, secrets[2])?;
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
@@ -158,8 +146,6 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                         Ok(())
                     }
                 })),
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(move || gb2.clone()),
                 generate: Box::new(move || {
                     let r = h.finalize(group_id, message_hash)?;
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })

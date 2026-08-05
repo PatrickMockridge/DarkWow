@@ -23,12 +23,10 @@ pub fn roulette_test_spec() -> ContractTestSpec<'static> {
         harness: h, wasm_bytes: Some(wasm),
         has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
-        state_trees: harness.state_trees(),
         endpoints: vec![
             EndpointSpec {
                 name: "PlaceBetV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,
-                state_tree: "nullifiers", state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.place_bet(table_id, player_pub, 1, vec![0u8], 1000,
                         pallas::Base::from(99u64))
@@ -39,7 +37,6 @@ pub fn roulette_test_spec() -> ContractTestSpec<'static> {
             EndpointSpec {
                 name: "SpinWheelV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,
-                state_tree: "nullifiers", state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.spin_wheel(table_id, house_pub, pallas::Base::from(42u64))
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
@@ -49,7 +46,6 @@ pub fn roulette_test_spec() -> ContractTestSpec<'static> {
             EndpointSpec {
                 name: "SettleBetsV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,
-                state_tree: "nullifiers", state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.settle_bets(table_id, vec![pallas::Base::from(1u64)])
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
@@ -59,7 +55,6 @@ pub fn roulette_test_spec() -> ContractTestSpec<'static> {
             EndpointSpec {
                 name: "HouseCloseV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,
-                state_tree: "nullifiers", state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.house_close(table_id, house_pub)
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;

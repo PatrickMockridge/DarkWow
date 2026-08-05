@@ -12,7 +12,6 @@ use crate::tests::uniform_runner::{
 
 pub fn identity_test_spec() -> ContractTestSpec<'static> {
     let harness = Box::leak(Box::new(IdentityHarness::spawn()));
-    let state_trees = harness.state_trees();
     let h: &IdentityHarness = harness;
 
     // Deterministic inputs (all pallas::Base — Copy)
@@ -55,15 +54,12 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
             Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
         })),
         needs_coinbase_coordination: false,
-        state_trees,
         endpoints: vec![
             EndpointSpec {
                 name: "RegisterIssuerV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "issuers", &k)?; assert!(r.is_some(), "RegisterIssuerV1: issuer must be stored"); Ok(()) } })),
-                state_tree: "issuers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     let name = b"test_issuer".to_vec();
@@ -78,8 +74,6 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "credentials", &k)?; assert!(r.is_some(), "IssueCredentialV1: credential must be stored"); Ok(()) } })),
-                state_tree: "credentials",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.issue_credential(issuer_secret, credential_secret,
                         pallas::Base::from(100u64), pallas::Base::from(200u64),
@@ -92,8 +86,6 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "credentials", &k)?; assert!(r.is_some(), "RevokeCredentialV1: credential must be updated"); Ok(()) } })),
-                state_tree: "credentials",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let nf = IntentNullifier::from_bytes([0u8; 32]).unwrap();
                     let r = h.revoke_credential(issuer_secret, nf, b"test".to_vec())?;
@@ -105,8 +97,6 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some(), "CreateClaimV1: claim nullifier must exist"); Ok(()) } })),
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
@@ -121,8 +111,6 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some()); Ok(()) } })),
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
@@ -140,8 +128,6 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some()); Ok(()) } })),
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
@@ -159,8 +145,6 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some()); Ok(()) } })),
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
@@ -178,8 +162,6 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = cap_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "capabilities", &k)?; assert!(r.is_some()); Ok(()) } })),
-                state_tree: "capabilities",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
@@ -197,8 +179,6 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = cap_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "capabilities", &k)?; assert!(r.is_some()); Ok(()) } })),
-                state_tree: "capabilities",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
@@ -214,8 +194,6 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = cap_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "capabilities", &k)?; assert!(r.is_some()); Ok(()) } })),
-                state_tree: "capabilities",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
@@ -230,8 +208,6 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let k = cap_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "capabilities", &k)?; assert!(r.is_some()); Ok(()) } })),
-                state_tree: "capabilities",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {

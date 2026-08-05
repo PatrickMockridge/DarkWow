@@ -20,11 +20,10 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
         contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
         harness: h, wasm_bytes: Some(wasm),
         has_initialize: false, initialize: None,
-        needs_coinbase_coordination: false, state_trees: harness.state_trees(),
+        needs_coinbase_coordination: false,
         endpoints: vec![
             EndpointSpec { name: "CreateEscrowV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,
-                state_tree: "nullifiers", state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.create_escrow(buyer_sk_val, buyer_pk, seller_pk,
                         5000, pallas::Base::from(1u64), 1000, seed)
@@ -34,7 +33,6 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
             },
             EndpointSpec { name: "ClaimV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,
-                state_tree: "nullifiers", state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.claim_escrow(pallas::Base::from(1u64), seller_sk_val,
                         seller_pk, pallas::Base::from(1u64), seller_pk)
@@ -44,7 +42,6 @@ pub fn escrow_test_spec() -> ContractTestSpec<'static> {
             },
             EndpointSpec { name: "RefundV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,
-                state_tree: "nullifiers", state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let (bx, by) = buyer_pk.xy().expect("pk");
                     let r = h.refund_escrow(pallas::Base::from(1u64), 1000, 1001,

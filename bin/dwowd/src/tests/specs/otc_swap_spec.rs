@@ -12,7 +12,6 @@ use crate::tests::uniform_runner::{
 
 pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
     let harness = Box::leak(Box::new(OtcSwapHarness::spawn()));
-    let state_trees = harness.state_trees();
     let h: &OtcSwapHarness = harness;
     let wasm = include_bytes!("../../../../../src/contract/otc_swap/dwow_otc_swap_contract.wasm");
 
@@ -28,15 +27,12 @@ pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false,
         initialize: None,
         needs_coinbase_coordination: false,
-        state_trees,
         endpoints: vec![
             EndpointSpec {
                 name: "CreateSwapV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: None,
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.create_swap(alice_sk,
                         PublicKey::from_secret(SecretKey::from_base(alice_sk)),
@@ -52,8 +48,6 @@ pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: None,
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.fund_swap(1000, pallas::Scalar::from(100u64),
                         pallas::Base::from(1u64), 0,
@@ -67,8 +61,6 @@ pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: None,
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.execute_swap(pallas::Base::from(1u64), bob_sk,
                         PublicKey::from_secret(SecretKey::from_base(bob_sk)),
@@ -83,8 +75,6 @@ pub fn otc_swap_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: None,
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.cancel_swap(pallas::Base::from(1u64), alice_sk,
                         PublicKey::from_secret(SecretKey::from_base(alice_sk)),

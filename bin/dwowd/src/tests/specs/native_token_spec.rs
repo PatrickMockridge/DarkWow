@@ -12,7 +12,6 @@ use crate::tests::uniform_runner::{
 
 pub fn native_token_test_spec() -> ContractTestSpec<'static> {
     let harness = Box::leak(Box::new(NativeTokenHarness::spawn()));
-    let state_trees = harness.state_trees();
     let h: &NativeTokenHarness = harness;
     let secret = SecretKey::from_bytes([2u8; 32]).unwrap();
 
@@ -25,7 +24,6 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false,
         initialize: None,
         needs_coinbase_coordination: true,
-        state_trees,
         endpoints: vec![
             EndpointSpec {
                 name: "FeeV1", is_zk: true,
@@ -48,8 +46,6 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                 })),
                 verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; assert!(r.is_some()); Ok(()) } })),
                 generate: Box::new(|| unreachable!("FeeV1 uses generate_with_coinbase")),
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
             },
             EndpointSpec {
                 name: "BurnV1", is_zk: true,
@@ -78,16 +74,12 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                 })),
                 verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; assert!(r.is_some()); Ok(()) } })),
                 generate: Box::new(|| unreachable!("BurnV1 uses generate_with_coinbase")),
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
             },
             EndpointSpec {
                 name: "TransferV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; assert!(r.is_some()); Ok(()) } })),
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
                     let sk = secret.clone();
                     move || {
@@ -104,8 +96,6 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; assert!(r.is_some()); Ok(()) } })),
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new({
                     let sk = secret.clone();
                     move || {
@@ -123,8 +113,6 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Rejection,
                 generate_with_coinbase: None,
                 verify_state: None,
-                state_tree: "",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(|| {
                     Ok(EndpointResult { call_data: vec![0x01], proofs: vec![] })
                 }),

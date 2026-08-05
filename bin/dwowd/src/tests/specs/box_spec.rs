@@ -29,7 +29,6 @@ pub fn box_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false,   // BoxHarness doesn't expose initialize() yet
         initialize: None,
         needs_coinbase_coordination: false,
-        state_trees: harness.state_trees(),
         endpoints: vec![
             EndpointSpec {
                 name: "PutV1",
@@ -45,10 +44,6 @@ pub fn box_test_spec() -> ContractTestSpec<'static> {
                         Ok(())
                     }
                 })),
-                state_tree: "box_roots",
-                state_key_fn: Box::new(|| {
-                    pallas::Base::from(1u64).to_repr().to_vec()
-                }),
                 generate: Box::new(|| {
                     let r = harness.put()?;
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
@@ -72,14 +67,6 @@ pub fn box_test_spec() -> ContractTestSpec<'static> {
                         Ok(())
                     }
                 })),
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| {
-                    let dnl = pallas::Base::from(1u64);
-                    let os = pallas::Base::from(42u64);
-                    let bid = pallas::Base::from(1u64);
-                    let sn = pallas::Base::from(1u64);
-                    poseidon_hash([dnl, os, bid, sn]).to_repr().to_vec()
-                }),
                 generate: Box::new(|| {
                     let r = harness.take()?;
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })

@@ -27,7 +27,6 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false,  // PurseHarness doesn't expose initialize() yet
         initialize: None,
         needs_coinbase_coordination: false,
-        state_trees: harness.state_trees(),
         endpoints: vec![
             EndpointSpec {
                 name: "DepositV1",
@@ -43,10 +42,6 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
                         Ok(())
                     }
                 })),
-                state_tree: "purse_roots",
-                state_key_fn: Box::new(|| {
-                    pallas::Base::from(1u64).to_repr().to_vec()
-                }),
                 generate: Box::new(|| {
                     let r = harness.deposit(100)?;
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
@@ -66,10 +61,6 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
                         Ok(())
                     }
                 })),
-                state_tree: "nullifiers",
-                state_key_fn: Box::new(|| {
-                    pallas::Base::from(1u64).to_repr().to_vec()
-                }),
                 generate: Box::new(|| {
                     let r = harness.withdraw(50)?;
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
@@ -81,10 +72,6 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: None,
-                state_tree: "purse_roots",
-                state_key_fn: Box::new(|| {
-                    pallas::Base::from(1u64).to_repr().to_vec()
-                }),
                 generate: Box::new(|| {
                     let r = harness.balance()?;
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })

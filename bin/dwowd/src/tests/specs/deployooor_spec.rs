@@ -12,7 +12,6 @@ use crate::tests::uniform_runner::{
 
 pub fn deployooor_test_spec() -> ContractTestSpec<'static> {
     let harness = Box::leak(Box::new(DeployooorHarness::spawn()));
-    let state_trees = harness.state_trees();
     let h: &DeployooorHarness = harness;
 
     ContractTestSpec {
@@ -24,7 +23,6 @@ pub fn deployooor_test_spec() -> ContractTestSpec<'static> {
         has_initialize: false,
         initialize: None,
         needs_coinbase_coordination: false,
-        state_trees,
         endpoints: vec![
             EndpointSpec {
                 name: "DeployV1", is_zk: false,
@@ -38,8 +36,6 @@ pub fn deployooor_test_spec() -> ContractTestSpec<'static> {
                         Ok(())
                     }
                 })),
-                state_tree: "info",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(|| {
                     let secret = SecretKey::from_bytes([9u8; 32]).unwrap();
                     let public = PublicKey::from_secret(secret.clone());
@@ -57,8 +53,6 @@ pub fn deployooor_test_spec() -> ContractTestSpec<'static> {
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
                 verify_state: None,
-                state_tree: "lock",
-                state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(|| {
                     let secret = SecretKey::from_bytes([9u8; 32]).unwrap();
                     let public = PublicKey::from_secret(secret.clone());

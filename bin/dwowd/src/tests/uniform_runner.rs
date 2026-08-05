@@ -68,10 +68,6 @@ pub struct EndpointSpec<'a> {
     /// Cross-block state verification (HAZOP finding — compound correctness).
     /// Called after accept_block succeeds. Receives the pipeline for state queries.
     pub verify_state: Option<Box<dyn Fn(&HeavyweightPipeline) -> Result<()> + 'a>>,
-    /// State tree to verify after submission.
-    pub state_tree: &'static str,
-    /// Key to query in the state tree after the call succeeds.
-    pub state_key_fn: Box<dyn Fn() -> Vec<u8> + 'a>,
     /// Whether this endpoint expects acceptance or rejection.
     pub expectation: EndpointExpectation,
 }
@@ -94,8 +90,6 @@ pub struct ContractTestSpec<'a> {
     pub initialize: Option<Box<dyn Fn() -> Result<EndpointResult> + 'a>>,
     /// All endpoints in function enum order.
     pub endpoints: Vec<EndpointSpec<'a>>,
-    /// State tree names for verification.
-    pub state_trees: &'static [&'static str],
     /// Whether any endpoint needs coinbase parameter coordination (native_token only).
     pub needs_coinbase_coordination: bool,
 }
@@ -116,10 +110,6 @@ impl<'a> ContractTestSpec<'a> {
         Ok(())
     }
 
-    /// Whether any endpoint is ZK-gated.
-    pub fn has_zk_functions(&self) -> bool {
-        self.endpoints.iter().any(|e| e.is_zk)
-    }
 
     /// Index of the first ZK endpoint (for nullifier replay testing).
     pub fn first_zk_index(&self) -> Option<usize> {

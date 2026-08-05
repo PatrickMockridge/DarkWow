@@ -23,12 +23,10 @@ pub fn betting_stake_test_spec() -> ContractTestSpec<'static> {
         harness: h, wasm_bytes: Some(wasm),
         has_initialize: false, initialize: None,
         needs_coinbase_coordination: false,
-        state_trees: harness.state_trees(),
         endpoints: vec![
             EndpointSpec {
                 name: "InitializeV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,
-                state_tree: "nullifiers", state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.initialize(table_id, 200, 1)?;
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
@@ -37,7 +35,6 @@ pub fn betting_stake_test_spec() -> ContractTestSpec<'static> {
             EndpointSpec {
                 name: "StakeV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,
-                state_tree: "nullifiers", state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let s = SecretKey::from_bytes([1u8; 32]).unwrap();
                     let r = h.stake(table_id, pk, s, 1000,
@@ -48,7 +45,6 @@ pub fn betting_stake_test_spec() -> ContractTestSpec<'static> {
             EndpointSpec {
                 name: "UnstakeV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,
-                state_tree: "nullifiers", state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let s = SecretKey::from_bytes([1u8; 32]).unwrap();
                     let info = UnstakeStakeInfo { table_id, staker_pub: pk,
@@ -63,7 +59,6 @@ pub fn betting_stake_test_spec() -> ContractTestSpec<'static> {
             EndpointSpec {
                 name: "ClaimEarningsV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,
-                state_tree: "nullifiers", state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let s = SecretKey::from_bytes([1u8; 32]).unwrap();
                     let info = ClaimStakeInfo { table_id, staker_pub: pk,
@@ -76,7 +71,6 @@ pub fn betting_stake_test_spec() -> ContractTestSpec<'static> {
             EndpointSpec {
                 name: "UpdateRiskV1", is_zk: true, expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None, verify_state: None,
-                state_tree: "nullifiers", state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(move || {
                     let r = h.update_risk(table_id, pallas::Base::from(1u64),
                         5000, 100, 200, 1)?;

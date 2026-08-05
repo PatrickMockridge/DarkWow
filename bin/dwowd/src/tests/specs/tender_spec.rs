@@ -13,7 +13,7 @@ pub fn tender_test_spec() -> ContractTestSpec<'static> {
     ContractTestSpec { name: "tender", is_genesis: false,
         contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
         harness: h, wasm_bytes: Some(wasm), has_initialize: false, initialize: None,
-        needs_coinbase_coordination: false, state_trees: harness.state_trees(),
+        needs_coinbase_coordination: false,
         endpoints: vec![
             mk_ep("CreateTenderV1", true, Box::new(move || {
                 let r = h.create_tender(r_pk, r_sk, "Test Tender".to_string(), pallas::Base::from(1u64), pallas::Base::from(2u64), 100, 10000, 500, 1000, 2000)

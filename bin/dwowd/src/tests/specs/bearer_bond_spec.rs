@@ -15,7 +15,7 @@ pub fn bearer_bond_test_spec() -> ContractTestSpec<'static> {
         contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).expect("temp"),
         harness: h, wasm_bytes: Some(wasm),
         has_initialize: false, initialize: None,
-        needs_coinbase_coordination: false, state_trees: harness.state_trees(),
+        needs_coinbase_coordination: false,
         endpoints: vec![
             mk_ep("IssueStakeV1", true, Box::new(move || {
                 use dwow_bearer_bond_contract::client::issue_stake::IssueStakeCallInput;

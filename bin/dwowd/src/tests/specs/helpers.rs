@@ -14,8 +14,6 @@ pub fn mk_ep(
         expectation: EndpointExpectation::Success,
         generate_with_coinbase: None,
         verify_state: None,
-        state_tree: "nullifiers",
-        state_key_fn: Box::new(|| vec![]),
         generate,
     }
 }
