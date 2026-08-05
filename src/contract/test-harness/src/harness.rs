@@ -213,4 +213,23 @@ pub trait ContractHarness {
 
         Err(dwow_core::Error::Custom(msg))
     }
+
+    /// Returns function codes that do NOT require ZK proofs.
+    /// Used by the uniform runner for per-function ZK gating (RG-5).
+    /// Default: empty — all functions assumed ZK-gated (conservative).
+    fn non_zk_functions(&self) -> &'static [u8] {
+        &[]
+    }
+
+    /// Returns state tree names for this contract.
+    /// Used by the uniform runner for post-call state verification (RG-8).
+    fn state_trees(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// Returns the number of function enum variants for this contract.
+    /// Used for endpoint coverage verification (spec §3.1).
+    fn function_count(&self) -> usize {
+        self.circuits().len()
+    }
 }

@@ -19,7 +19,7 @@ impl BoxHarness {
         let take_pk = ProvingKey::build(take_zkbin.k, &ZkCircuit::new(dwow_core::zk::empty_witnesses(&take_zkbin).expect("empty_witnesses take"), &take_zkbin)).expect("ProvingKey::build take");
         Self { put_zkbin, put_pk, take_zkbin, take_pk }
     }
-    pub fn circuits(&self) -> Vec<&'static str> { vec!["Put", "Take"] }
+    pub fn circuits(&self) -> Vec<&'static str> { vec!["PutV2", "TakeV2"] }
 
     fn build_root(leaf: pallas::Base) -> (u32, Vec<MerkleNode>, MerkleNode) {
         let mut tree = MerkleTree::new(1);
@@ -70,8 +70,8 @@ impl BoxHarness {
 impl ContractHarness for BoxHarness {
     fn name(&self) -> &str { "box" }
     fn circuits(&self) -> Vec<&'static str> { self.circuits() }
-    fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> { match ns { "Put"=>Some(&self.put_zkbin),"Take"=>Some(&self.take_zkbin),_=>None } }
-    fn get_pk(&self, ns: &str) -> Option<&ProvingKey> { match ns { "Put"=>Some(&self.put_pk),"Take"=>Some(&self.take_pk),_=>None } }
+    fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> { match ns { "PutV2"=>Some(&self.put_zkbin),"TakeV2"=>Some(&self.take_zkbin),_=>None } }
+    fn get_pk(&self, ns: &str) -> Option<&ProvingKey> { match ns { "PutV2"=>Some(&self.put_pk),"TakeV2"=>Some(&self.take_pk),_=>None } }
 }
 
 pub struct BoxPutResult { pub call_data: Vec<u8>, pub proof: Proof }

@@ -303,32 +303,32 @@ impl super::ContractHarness for PromissoryNoteHarness {
 
     fn circuits(&self) -> Vec<&'static str> {
         vec![
-            "RegisterType_V2",
-            "Issue_V2",
-            "Revoke_V2",
-            "Transfer_V2",
-            "Redeem_V2",
+            "RegisterTypeV2",
+            "IssueV2",
+            "RevokeV2",
+            "TransferV2",
+            "RedeemV2",
         ]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "RegisterType_V2" => Some(&self.register_type_zkbin),
-            "Issue_V2" => Some(&self.issue_zkbin),
-            "Revoke_V2" => Some(&self.revoke_zkbin),
-            "Transfer_V2" => Some(&self.transfer_zkbin),
-            "Redeem_V2" => Some(&self.redeem_zkbin),
+            "RegisterTypeV2" => Some(&self.register_type_zkbin),
+            "IssueV2" => Some(&self.issue_zkbin),
+            "RevokeV2" => Some(&self.revoke_zkbin),
+            "TransferV2" => Some(&self.transfer_zkbin),
+            "RedeemV2" => Some(&self.redeem_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "RegisterType_V2" => Some(&self.register_type_pk),
-            "Issue_V2" => Some(&self.issue_pk),
-            "Revoke_V2" => Some(&self.revoke_pk),
-            "Transfer_V2" => Some(&self.transfer_pk),
-            "Redeem_V2" => Some(&self.redeem_pk),
+            "RegisterTypeV2" => Some(&self.register_type_pk),
+            "IssueV2" => Some(&self.issue_pk),
+            "RevokeV2" => Some(&self.revoke_pk),
+            "TransferV2" => Some(&self.transfer_pk),
+            "RedeemV2" => Some(&self.redeem_pk),
             _ => None,
         }
     }

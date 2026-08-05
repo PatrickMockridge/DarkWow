@@ -24,7 +24,7 @@ impl PurseHarness {
         let bp = ProvingKey::build(bz.k, &ZkCircuit::new(dwow_core::zk::empty_witnesses(&bz).expect("empty balance"), &bz)).expect("pk balance");
         Self { balance_zkbin: bz, balance_pk: bp, deposit_zkbin: dz, deposit_pk: dp, withdraw_zkbin: wz, withdraw_pk: wp }
     }
-    pub fn circuits(&self) -> Vec<&'static str> { vec!["Balance", "Deposit", "Withdraw"] }
+    pub fn circuits(&self) -> Vec<&'static str> { vec!["BalanceV2", "DepositV2", "WithdrawV2"] }
 
     fn build_root(leaf: pallas::Base) -> (u32, Vec<MerkleNode>, MerkleNode) {
         let mut tree = MerkleTree::new(1);
@@ -113,8 +113,8 @@ impl PurseHarness {
 impl ContractHarness for PurseHarness {
     fn name(&self) -> &str { "purse" }
     fn circuits(&self) -> Vec<&'static str> { self.circuits() }
-    fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> { match ns { "Balance"=>Some(&self.balance_zkbin),"Deposit"=>Some(&self.deposit_zkbin),"Withdraw"=>Some(&self.withdraw_zkbin),_=>None } }
-    fn get_pk(&self, ns: &str) -> Option<&ProvingKey> { match ns { "Balance"=>Some(&self.balance_pk),"Deposit"=>Some(&self.deposit_pk),"Withdraw"=>Some(&self.withdraw_pk),_=>None } }
+    fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> { match ns { "BalanceV2"=>Some(&self.balance_zkbin),"DepositV2"=>Some(&self.deposit_zkbin),"WithdrawV2"=>Some(&self.withdraw_zkbin),_=>None } }
+    fn get_pk(&self, ns: &str) -> Option<&ProvingKey> { match ns { "BalanceV2"=>Some(&self.balance_pk),"DepositV2"=>Some(&self.deposit_pk),"WithdrawV2"=>Some(&self.withdraw_pk),_=>None } }
 }
 
 pub struct PurseDepositResult { pub call_data: Vec<u8>, pub proof: Proof }
