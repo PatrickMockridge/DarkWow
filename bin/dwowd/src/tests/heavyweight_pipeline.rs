@@ -1812,68 +1812,10 @@ fn test_heavyweight_slot() -> std::result::Result<(), Box<dyn std::error::Error>
 
 #[test]
 fn test_heavyweight_deployooor() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    use dwow_contract_test_harness::harness::DeployooorHarness;
-    use dwow_sdk::crypto::{Keypair, PublicKey, SecretKey};
-    use crate::tests::blockchain::HeavyweightPipeline;
-
-    println!("=== Deployooor Heavyweight: All Endpoints ===");
-
-    smol::block_on(async {
-        let chain = HeavyweightPipeline::new().await?;
-        chain.init_genesis().await?;
-        let harness = DeployooorHarness::spawn();
-        println!("Harness spawned (no ZK circuits — pure WASM)");
-        let cid = *dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;  // deployed at genesis
-        let secret = SecretKey::from_bytes([9u8; 32]).unwrap();
-        let public = PublicKey::from_secret(secret.clone());
-        let keypair = Keypair { secret, public };
-
-        // Use a real valid WASM binary — deployooor entrypoint validates
-        // WASM structure and requires specific exports.
-        let wasm = include_bytes!("../../../../src/contract/drain_protection/dwow_drain_protection_contract.wasm");
-
-        // --- build_deploy_call ---
-        println!("  Test: build_deploy_call");
-        let deploy = harness.build_deploy_call(keypair.clone(), wasm.to_vec(), vec![0x00])?;
-        assert!(!deploy.params.wasm_bincode.is_empty());
-        println!("    wasm_bincode={}B", deploy.params.wasm_bincode.len());
-        use dwow_serial::Encodable;
-        let mut deploy_cd = vec![0x00];
-        deploy.params.encode(&mut deploy_cd)?;
-        println!("  Exec: DeployV1 through accept_block (0 ZK circuits)");
-        let hb = chain.height();
-        chain.block()?
-            .with_call(cid, &harness, &deploy_cd, vec![])?
-            .with_fee_collect()?
-            .submit().await?;
-        assert!(chain.height() > hb);
-        println!("    accept_block height OK");
-
-        // --- build_lock_call ---
-        println!("  Test: build_lock_call");
-        let lock = harness.build_lock_call(keypair)?;
-        println!("    public_key OK");
-        let mut lock_cd = vec![0x01];
-        lock_cd.extend_from_slice(&lock.params.encode());
-        println!("  Exec: LockV1 through accept_block (0 ZK circuits)");
-        let hb = chain.height();
-        chain.block()?
-            .with_call(cid, &harness, &lock_cd, vec![])?
-            .with_fee_collect()?
-            .submit().await?;
-        assert!(chain.height() > hb);
-        println!("    accept_block height OK");
-
-        println!("=== All Deployooor endpoints OK ===");
-        Ok(())
-    })
+    use crate::tests::specs::deployooor_spec::deployooor_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&deployooor_test_spec()))?)
 }
-
-// ============================================================================
-// drain_protection
-// ============================================================================
-
-#[test]
 fn test_heavyweight_drain_protection() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::DrainProtectionHarness;
     use crate::tests::blockchain::HeavyweightPipeline;

@@ -3,6 +3,7 @@
 
 pub mod attestation_spec;
 pub mod box_spec;
+pub mod deployooor_spec;
 pub mod identity_spec;
 pub mod multisig_spec;
 pub mod oracle_spec;
