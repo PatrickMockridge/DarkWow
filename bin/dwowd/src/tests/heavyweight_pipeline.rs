@@ -2258,6 +2258,13 @@ fn test_heavyweight_darkbet_exchange() -> std::result::Result<(), Box<dyn std::e
 
 #[test]
 fn test_heavyweight_darktoshi_dice() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use crate::tests::specs::darktoshi_dice_spec::darktoshi_dice_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&darktoshi_dice_test_spec()))?)
+}
+
+#[allow(dead_code)]
+fn _old_darktoshi_dice_test_removed() { let _old = r#"
     use dwow_contract_test_harness::harness::DarkToshiDiceHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
@@ -2341,7 +2348,7 @@ fn test_heavyweight_darktoshi_dice() -> std::result::Result<(), Box<dyn std::err
         println!("=== All DarkToshiDice endpoints OK ===");
         Ok(())
     })
-}
+"#; } // close _old_darktoshi_dice_test_removed
 
 // ============================================================================
 // lottery
