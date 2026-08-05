@@ -4,7 +4,6 @@ use dwow_contract_test_harness::harness::{ContractHarness, IdentityHarness};
 use dwow_sdk::crypto::{IDENTITY_CONTRACT_ID, IntentNullifier, PublicKey, SecretKey};
 use dwow_sdk::pasta::pallas;
 use dwow_identity_contract::model::{CapabilityId, CapabilitySecret, CredentialRequirement};
-use dwow_sdk::crypto::IntentNullifier;
 
 use crate::tests::uniform_runner::{
     ContractTestSpec, EndpointSpec, EndpointResult, EndpointExpectation,

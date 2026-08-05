@@ -80,6 +80,18 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                 state_tree: "nullifiers",
                 state_key_fn: Box::new(|| vec![]),
             },
+            // MintV1 (0x01) — walled off, returns FunctionDisabled
+            EndpointSpec {
+                name: "MintV1", is_zk: false,
+                expectation: EndpointExpectation::Rejection,
+                generate_with_coinbase: None,
+                verify_state: None,
+                state_tree: "",
+                state_key_fn: Box::new(|| vec![]),
+                generate: Box::new(|| {
+                    Ok(EndpointResult { call_data: vec![0x01], proofs: vec![] })
+                }),
+            },
         ],
     }
 }
