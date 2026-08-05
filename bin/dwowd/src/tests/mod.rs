@@ -26,6 +26,7 @@ pub mod genesis;
 pub mod harness;
 pub mod pipeline;
 pub mod heavyweight_pipeline;
+pub mod uniform_runner;
 pub mod wallet_integration;
 pub mod fee_collect_pipeline;
 pub mod merge_mining;

@@ -52,9 +52,24 @@ use dwow_chain::{CChainState, FinalityConfig, PoWConfig};
 use dwow_core::zk::Proof;
 use dwow_core::Result;
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
-use dwow_sdk::crypto::{ContractId, NATIVE_TOKEN_CONTRACT_ID};
+use dwow_sdk::crypto::{
+    ContractId, NATIVE_TOKEN_CONTRACT_ID, DEPLOYOOOR_CONTRACT_ID,
+    IDENTITY_CONTRACT_ID, ATTESTATION_CONTRACT_ID, MULTISIG_CONTRACT_ID,
+    ORACLE_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID, PURSE_CONTRACT_ID,
+    BOX_CONTRACT_ID,
+};
 use dwow_sdk::pasta::pallas;
 use dwow_contract_test_harness::harness::ContractHarness;
+
+/// Strict ZK enforcement — immutable per spec §7.2 PR-1, §4.5.
+const STRICT_ZK: bool = true;
+
+/// Genesis contract names that SHALL NOT be re-deployed via chain.deploy().
+/// Spec §5.1-5.8, RG-7.
+const GENESIS_CONTRACT_NAMES: &[&str] = &[
+    "native_token", "deployooor", "identity", "attestation", "multisig",
+    "oracle", "promissory_note", "purse", "box",
+];
 
 /// Result of building a coinbase for the block being assembled.
 pub struct CoinbaseResult {
@@ -81,9 +96,6 @@ pub struct HeavyweightPipeline {
     pub linear_zk: Arc<crate::registry::model::LinearPowRewardZk>,
     /// Path to temp keys.toml for deterministic test mining keys
     keys_path: std::path::PathBuf,
-    /// Strict ZK enforcement — when true, with_call() requires non-empty
-    /// proofs for ZK contracts. Default: true.
-    pub strict_zk: bool,
 }
 
 impl HeavyweightPipeline {
@@ -136,7 +148,7 @@ impl HeavyweightPipeline {
         std::fs::write(&keys_path, Self::TEST_KEY_TOML)
             .map_err(|e| dwow_core::Error::Custom(format!("write test keys: {}", e)))?;
 
-        Ok(Self { db, chain_state, linear_zk, keys_path, strict_zk: true })
+        Ok(Self { db, chain_state, linear_zk, keys_path })
     }
 
     /// Initialize the genesis block (height 1).
@@ -166,6 +178,13 @@ impl HeavyweightPipeline {
         name: &str,
         wasm: &[u8],
     ) -> Result<ContractId> {
+        // RG-7: Genesis contracts SHALL NOT be re-deployed
+        if GENESIS_CONTRACT_NAMES.contains(&name) {
+            return Err(dwow_core::Error::Custom(format!(
+                "Cannot deploy genesis contract '{}' — use its static ContractId",
+                name
+            )));
+        }
         harness.verify_zk_coverage()?;
         let contract_id = derive_contract_id_from_name(name);
         let contracts_tree = self.chain_state.store.contracts_tree().clone();
@@ -218,6 +237,13 @@ impl HeavyweightPipeline {
         wasm: &[u8],
         ix: &[u8],
     ) -> Result<ContractId> {
+        // RG-7: Genesis contracts SHALL NOT be re-deployed
+        if GENESIS_CONTRACT_NAMES.contains(&name) {
+            return Err(dwow_core::Error::Custom(format!(
+                "Cannot deploy genesis contract '{}' — use its static ContractId",
+                name
+            )));
+        }
         harness.verify_zk_coverage()?;
         let contract_id = derive_contract_id_from_name(name);
         // same as deploy() but passes `ix` to runtime.deploy(ix)
@@ -277,6 +303,7 @@ impl HeavyweightPipeline {
             reward,
             contract_txs: Vec::new(),
             uncles: Vec::new(),
+            block_hash: None,
         })
     }
 
@@ -297,6 +324,65 @@ impl HeavyweightPipeline {
             .unwrap_or_else(|e| e.into_inner())
             .get_next_work_required(&self.chain_state.store, next_height)
             .unwrap_or(BlockTarget::MAX)
+    }
+
+    // ── State inspection API (RG-8, spec §7.2 PR-3) ─────────────────
+
+    /// Query a value from a contract's state tree.
+    pub fn query_contract_tree(
+        &self,
+        contract_id: ContractId,
+        tree_name: &str,
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>> {
+        let tree = self.chain_state.store
+            .contract_tree(contract_id, tree_name)
+            .map_err(|e| dwow_core::Error::Custom(format!(
+                "query_contract_tree: contract tree lookup '{}': {}", tree_name, e
+            )))?;
+        tree.get(key)
+            .map_err(|e| dwow_core::Error::Custom(format!(
+                "query_contract_tree: sled get: {}", e
+            )))
+            .map(|opt| opt.map(|iv| iv.to_vec()))
+    }
+
+    /// Current cumulative supply from the chain state.
+    pub fn cumulative_supply(&self) -> u64 {
+        self.chain_state.store.cumulative_supply()
+    }
+
+    /// Verify the block hash chain is continuous from height 2 to current.
+    pub fn block_hash_chain_continuous(&self) -> Result<bool> {
+        let current = self.height();
+        if current <= BlockHeight::new(1) {
+            return Ok(true); // only genesis exists
+        }
+        for h in 2..=current.get() {
+            let height = BlockHeight::new(h);
+            let block = self.chain_state.store.get_block_by_height(height)
+                .map_err(|e| dwow_core::Error::Custom(format!(
+                    "block_hash_chain: get block at height {}: {}", h, e
+                )))?;
+            let prev_block = self.chain_state.store.get_block_by_height(
+                BlockHeight::new(h - 1)
+            ).map_err(|e| dwow_core::Error::Custom(format!(
+                "block_hash_chain: get prev block at height {}: {}", h - 1, e
+            )))?;
+            if block.header.previous != prev_block.header.hash() {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Get the block hash at a given height.
+    pub fn block_hash_at(&self, height: BlockHeight) -> Result<Option<blake3::Hash>> {
+        let block = self.chain_state.store.get_block_by_height(height)
+            .map_err(|e| dwow_core::Error::Custom(format!(
+                "block_hash_at height {}: {}", height, e
+            )))?;
+        Ok(Some(block.header.hash()))
     }
 
     // ── Internal helpers ─────────────────────────────────────────────
@@ -353,37 +439,31 @@ pub struct HeavyweightBlock<'c> {
     reward: BlockReward,
     contract_txs: Vec<dwow_chain::Transaction>,
     uncles: Vec<dwow_chain::UncleBlock>,
+    /// Block hash stored after successful submission (RG-8, spec §7.2 PR-5)
+    block_hash: Option<blake3::Hash>,
 }
 
 impl<'c> HeavyweightBlock<'c> {
     /// Add one contract call to this block.
     ///
     /// Takes the contract_id and the raw outputs of a harness method.
-    /// Internally: strict_zk check, build_witness,
-    /// construct tx, accumulate.
+    /// `is_zk_function` declares whether THIS specific function requires ZK proofs.
+    /// Per-function gating replaces the old global `strict_zk` toggle (RG-5, spec §4.5).
+    /// Internally: ZK gate, build_witness, construct tx, accumulate.
     pub fn with_call(
         &mut self,
         contract_id: ContractId,
         harness: &dyn ContractHarness,
         call_data: &[u8],
         proofs: Vec<Proof>,
+        is_zk_function: bool,
     ) -> Result<&mut Self> {
-        let circuits = harness.circuits();
-        // strict_zk guards: ZK contracts MUST have proofs, MUST NOT use Schnorr.
-        // Schnorr signatures are prohibited per contract-standards.md §3.
-        // The Transaction struct has no signatures field — this is a structural
-        // guard. The tripwire_no_schnorr_signature_pubkeys test catches metadata leaks.
-        if !circuits.is_empty() && proofs.is_empty() {
-            if self.chain.strict_zk {
-                return Err(dwow_core::Error::Custom(format!(
-                    "with_call() on ZK contract '{}' ({} circuits: [{}]) with empty proofs",
-                    harness.name(), circuits.len(), circuits.join(", ")
-                )));
-            }
-            eprintln!(
-                "[blockchain] WARNING: call on ZK contract '{}' with empty proofs",
+        // Per-function ZK gating — no global toggle. spec §7.2 PR-4, RG-5.
+        if is_zk_function && proofs.is_empty() {
+            return Err(dwow_core::Error::Custom(format!(
+                "with_call() on ZK-gated function of contract '{}' with empty proofs",
                 harness.name()
-            );
+            )));
         }
 
         // Raw call data: [fn_code] + params. The execution layer
@@ -412,14 +492,9 @@ impl<'c> HeavyweightBlock<'c> {
 
     /// Append a FeeCollectV1 transaction to close the merkle tree.
     ///
-    /// Scans accumulated contract_txs for FeeV1 calls (NATIVE_TOKEN_CONTRACT_ID,
-    /// selector 0x00). If any are found, builds a FeeCollectV1 transaction using
-    /// the pipeline's cached ZK proving key and appends it to contract_txs.
-    /// Returns `&mut Self` for chaining. If no FeeV1 calls exist, does nothing.
-    ///
+    /// Unconditional per spec §3.5 and RG-6 — always appends FeeCollectV1.
+    /// When no FeeV1 calls exist in the block, builds a zero-fee FeeCollectV1.
     /// Every production block includes FeeCollectV1 as the final transaction.
-    /// Heavyweight v2 tests mirror this: every block in every test calls
-    /// `with_fee_collect()` to exercise the full merkle tree open/close lifecycle.
     pub fn with_fee_collect(&mut self) -> Result<&mut Self> {
         let fee_txs: Vec<dwow_chain::Transaction> = self.contract_txs.iter()
             .filter(|tx| tx.contract_calls.iter().any(|c|
@@ -428,10 +503,6 @@ impl<'c> HeavyweightBlock<'c> {
             ))
             .cloned()
             .collect();
-
-        if fee_txs.is_empty() {
-            return Ok(self);
-        }
 
         let mgr = crate::accounts::AccountManager::open(
             &self.chain.keys_path,
@@ -446,10 +517,49 @@ impl<'c> HeavyweightBlock<'c> {
             &recipient, &fee_txs, self.height, &self.chain.linear_zk,
         ).map_err(|e| dwow_core::Error::Custom(format!("build_fee_collect_tx: {}", e)))?;
 
-        if let Some(tx) = fee_collect_tx {
-            self.contract_txs.push(tx);
+        // Always append FeeCollectV1 — even when zero fees collected (RG-6).
+        // When no FeeV1 calls exist, build_fee_collect_tx returns None;
+        // we append a zero-fee FeeCollectV1 transaction to keep the block structure
+        // production-equivalent (coinbase open → contract calls → FeeCollect close).
+        match fee_collect_tx {
+            Some(tx) => self.contract_txs.push(tx),
+            None => {
+                // Build a zero-fee FeeCollectV1 to close the merkle tree
+                use dwow_native_token_contract::client::fee_collect::FeeCollectCallBuilder;
+                use dwow_sdk::pasta::pallas;
+                let sk_h: dwow_sdk::crypto::SecretKey = recipient.secret().clone().into();
+                let debris = FeeCollectCallBuilder {
+                    secret: sk_h,
+                    block_height: self.height,
+                    total_fees: 0,
+                    fee_collect_zkbin: (*self.chain.linear_zk.fee_collect_zkbin).clone(),
+                    fee_collect_pk: (*self.chain.linear_zk.fee_collect_provingkey).clone(),
+                    tx_nonce: pallas::Base::from(self.height.get()),
+                    tx_commitment: pallas::Base::from(self.height.get() + 2),
+                }
+                .build()
+                .map_err(|e| dwow_core::Error::Custom(format!(
+                    "build zero-fee FeeCollectV1 at height {}: {}", self.height, e
+                )))?;
+                let fee_collect_call = debris.call_data;
+                let fee_collect_tx = dwow_chain::Transaction {
+                    version: dwow_sdk::blockchain::BlockVersion::CURRENT,
+                    inputs: vec![],
+                    outputs: vec![],
+                    contract_calls: vec![fee_collect_call],
+                    lock_time: 0,
+                    nullifiers: vec![],
+                    witness: vec![],
+                };
+                self.contract_txs.push(fee_collect_tx);
+            }
         }
         Ok(self)
+    }
+
+    /// Get the block hash after successful submission (RG-8, spec §7.2 PR-5).
+    pub fn block_hash(&self) -> Option<blake3::Hash> {
+        self.block_hash
     }
 
     /// Build just the coinbase for this block (without submitting).
@@ -529,15 +639,18 @@ impl<'c> HeavyweightBlock<'c> {
             "accept_block at height {}: {}", self.height, e
         )))?;
 
+        let block_hash = block.header.hash();
         match outcome {
             dwow_chain::BlockConnectOutcome::CanonicalExtension { new_height } => {
                 eprintln!("[blockchain] block accepted at height {} ({:.1}s, {} txs)",
                     new_height, t0.elapsed().as_secs_f64(), tx_count + 1);
+                self.block_hash = Some(block_hash);
                 Ok(new_height)
             }
             _ => {
                 eprintln!("[blockchain] block processed ({:.1}s, non-canonical)",
                     t0.elapsed().as_secs_f64());
+                self.block_hash = Some(block_hash);
                 Ok(self.height)
             }
         }
