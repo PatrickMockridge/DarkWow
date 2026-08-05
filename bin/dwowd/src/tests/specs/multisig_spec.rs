@@ -42,7 +42,7 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                 name: "CreateGroupV1",
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
-                    generate_with_coinbase: None,
+                generate_with_coinbase: None,
                 state_tree: "groups",
                 state_key_fn: { let b = gid_bytes.clone(); Box::new(move || b.clone()) },
                 generate: Box::new(move || {
@@ -54,7 +54,7 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                 name: "SignV1",
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
-                    generate_with_coinbase: None,
+                generate_with_coinbase: None,
                 state_tree: "signatures",
                 state_key_fn: { let b = gid_bytes.clone(); Box::new(move || b.clone()) },
                 generate: Box::new(move || {
@@ -66,7 +66,7 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                 name: "FinalizeV1",
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
-                    generate_with_coinbase: None,
+                generate_with_coinbase: None,
                 state_tree: "nullifiers",
                 state_key_fn: { let b = gid_bytes; Box::new(move || b.clone()) },
                 generate: Box::new(move || {
