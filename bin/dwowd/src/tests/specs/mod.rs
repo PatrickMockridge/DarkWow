@@ -3,4 +3,6 @@
 
 pub mod box_spec;
 pub mod multisig_spec;
+pub mod oracle_spec;
+pub mod promissory_note_spec;
 pub mod purse_spec;

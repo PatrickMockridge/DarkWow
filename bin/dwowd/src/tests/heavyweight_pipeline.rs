@@ -172,119 +172,9 @@ pub(crate) fn mine_test_nonce(block: &dwow_chain::Block, vm: &randomx::RandomXVM
 
 #[test]
 fn test_heavyweight_promissory_note() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    use dwow_contract_test_harness::harness::PromissoryNoteHarness;
-    use dwow_sdk::pasta::pallas;
-    use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
-    use dwow_promissory_note_contract::client::transfer::{TransferCallInput, TransferCallOutput};
-    use crate::tests::blockchain::HeavyweightPipeline;
-
-    println!("=== PromissoryNote Heavyweight: All Endpoints ===");
-
-    smol::block_on(async {
-        let chain = HeavyweightPipeline::new().await?;
-        chain.init_genesis().await?;
-        let harness = PromissoryNoteHarness::spawn();
-        println!("Harness spawned with circuits: {:?}", harness.circuits());
-        let cid = *dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID;  // deployed at genesis
-
-        let auth_parent = pallas::Base::from(1u64);
-        let user_data = pallas::Base::from(2u64);
-        let blind = pallas::Base::from(3u64);
-        let recipient = pallas::Base::from(4u64);
-        let spend_hook = pallas::Base::from(5u64);
-        let coin_blind = pallas::Base::from(6u64);
-
-        // --- create_token ---
-        println!("  Test: create_token");
-        let token = harness.register_type(auth_parent, user_data, blind, recipient, 1000, spend_hook, user_data, coin_blind)?;
-        assert!(!token.call_data.is_empty());
-        println!("    call_data={}B token_id={:?}", token.call_data.len(), token.token_id);
-
-        // --- create_token through accept_block (production path) ---
-        // Routes RegisterTypeV1 through the full production accept_block path
-        // with DarkLeaf-wrapped call_data + witness + ZK proof verification.
-        // This is the smoke test for the DarkLeaf+accept_block infrastructure
-        // (production-test-standard.md §1).
-        println!("  Exec: RegisterTypeV1 through accept_block");
-        let height_before = chain.height();
-        chain.block()?
-            .with_call(cid, &harness, &token.call_data, token.token_proofs.clone())?
-            .with_fee_collect()?
-            .submit().await?;
-        let height_after = chain.height();
-        assert!(height_after > height_before,
-            "accept_block must advance height after RegisterTypeV1");
-        println!("    accept_block height {} -> {} OK", height_before, height_after);
-
-        // --- mint ---
-        // IssueV2 circuit (RC1-B) constrains coin_public == mint_public.
-        // Minted coins must be received by the mint authority, then transferred.
-        println!("  Test: mint");
-        let mint = harness.issue(auth_parent, token.token_id, token.issue_public, 500, spend_hook, user_data, coin_blind)?;
-        assert!(!mint.call_data.is_empty());
-        println!("    call_data={}B", mint.call_data.len());
-
-        // --- mint through accept_block ---
-        println!("  Exec: IssueV1 through accept_block");
-        let h_before = chain.height();
-        chain.block()?
-            .with_call(cid, &harness, &mint.call_data, mint.proofs.clone())?
-            .with_fee_collect()?
-            .submit().await?;
-        assert!(chain.height() > h_before,
-            "accept_block must advance height after IssueV1");
-        println!("    accept_block height OK");
-
-        // --- transfer (client-side proof generation) ---
-        // Verify the client can produce valid transfer call_data + proofs.
-        // Note: Transfer APPLY panics in SMT nullifier insert (Wasmer copy_from_slice
-        // len mismatch at SmtWasmDbStorage::get). This is a pre-existing runtime bug
-        // in the SMT storage layer, not related to V2 domain separation. The EXEC
-        // phase (proof verify + value conservation) succeeds.
-        println!("  Test: transfer (client-side)");
-        use dwow_sdk::crypto::MerkleTree;
-        let mut coin_tree = MerkleTree::new(1);
-        coin_tree.append(MerkleNode::from_base(pallas::Base::zero()));
-        coin_tree.append(MerkleNode::from_base(token.commitment.inner()));
-        coin_tree.append(MerkleNode::from_base(mint.commitment.inner()));
-        let leaf_mark = coin_tree.mark().unwrap();
-        let merkle_path = coin_tree.witness(leaf_mark, 0).unwrap();
-        let inputs = vec![TransferCallInput {
-            value: 500,
-            token_id: token.token_id,
-            spend_hook,
-            user_data,
-            secret: auth_parent,
-            coin_blind,
-            leaf_position: 2,
-            merkle_path,
-            ephemeral_signature_secret: pallas::Base::from(8u64),
-            tx_commitment: pallas::Base::zero(),
-            tx_nonce: pallas::Base::zero(),
-        }];
-        let test_recipient_pub = PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng));
-        let outputs = vec![TransferCallOutput {
-            recipient: pallas::Base::from(9u64),
-            recipient_pub: test_recipient_pub,
-            value: 500,
-            token_id: token.token_id,
-            spend_hook,
-            user_data,
-            coin_blind,
-        }];
-        let transfer = harness.transfer(inputs.clone(), outputs.clone())?;
-        assert!(!transfer.call_data.is_empty());
-        println!("    call_data={}B proofs={}", transfer.call_data.len(), transfer.proofs.len());
-
-        // --- otc_swap (client-side proof generation) ---
-        println!("  Test: otc_swap (client-side)");
-        let swap = harness.otc_swap(inputs, outputs)?;
-        assert!(!swap.call_data.is_empty());
-        println!("    call_data={}B proofs={}", swap.call_data.len(), swap.proofs.len());
-
-        println!("=== All PromissoryNote endpoints OK ===");
-        Ok(())
-    })
+    use crate::tests::specs::promissory_note_spec::promissory_note_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&promissory_note_test_spec()))?)
 }
 
 // ============================================================================
@@ -1834,54 +1724,9 @@ fn test_heavyweight_subscription() -> std::result::Result<(), Box<dyn std::error
 
 #[test]
 fn test_heavyweight_oracle() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    use dwow_contract_test_harness::harness::OracleHarness;
-    use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
-    use dwow_sdk::pasta::pallas;
-    use crate::tests::blockchain::HeavyweightPipeline;
-
-    println!("=== Oracle Heavyweight: All Endpoints ===");
-
-    smol::block_on(async {
-        let chain = HeavyweightPipeline::new().await?;
-        chain.init_genesis().await?;
-        let harness = OracleHarness::spawn();
-        println!("Harness spawned with circuits: {:?}", harness.circuits());
-        let cid = *dwow_sdk::crypto::ORACLE_CONTRACT_ID;  // deployed at genesis
-
-        let oracle_secret = pallas::Base::from(10u64);
-        let oracle_pub = PublicKey::from_secret(SecretKey::from_base(oracle_secret));
-        let empty_path: Vec<MerkleNode> = vec![MerkleNode::new(pallas::Base::from(0u64)); 32];
-
-        // register_oracle: end-to-end ZK proof + contract execution (function code 0x00)
-        let reg = harness.register_oracle(oracle_secret, oracle_pub, pallas::Base::from(1u64), "price_feed".to_string(), "u64".to_string())?;
-        chain.block()?
-            .with_call(cid, &harness, &reg.call_data, vec![reg.proof])?
-            .submit().await?;
-        println!("=== register_oracle OK ===");
-
-        // push_value: ZK proof only (function code 0x01)
-        // Proof generation works; contract execution blocked by Oracle::decode
-        // failure in process_update (pre-existing contract apply bug — see audit).
-        let _pv = harness.push_value(pallas::Base::from(1u64), oracle_secret, oracle_pub, pallas::Base::from(42u64))?;
-        println!("=== push_value proof OK ===");
-
-        // attest_value: ZK proof only (function code 0x02)
-        let _av = harness.attest_value(pallas::Base::from(1u64), pallas::Base::from(100u64), oracle_secret, pallas::Base::from(0u64), pallas::Base::from(42u64), pallas::Base::from(42u64), oracle_pub)?;
-        println!("=== attest_value proof OK ===");
-
-        // push_value_commitment: ZK proof only (function code 0x03)
-        let _pvc = harness.push_value_commitment(pallas::Base::from(1u64), oracle_secret, 0, empty_path, pallas::Base::from(42u64), pallas::Base::from(99u64), oracle_pub, pallas::Base::from(100u64), pallas::Base::from(200u64))?;
-        println!("=== push_value_commitment proof OK ===");
-
-        // aggregate: ZK proof only (function code 0x04)
-        let _agg = harness.aggregate(pallas::Base::from(1u64), [pallas::Base::from(10u64); 4], [pallas::Base::from(1u64); 4], pallas::Base::from(4u64), pallas::Base::from(10u64), pallas::Base::from(0u64), pallas::Base::from(100u64))?;
-        println!("=== aggregate proof OK ===");
-
-        println!("=== All 5 Oracle ZK proofs verified OK ===");
-
-        println!("=== All Oracle endpoints OK ===");
-        Ok(())
-    })
+    use crate::tests::specs::oracle_spec::oracle_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&oracle_test_spec()))?)
 }
 
 // ============================================================================
