@@ -14,7 +14,7 @@ code = 0
 name = "issue_credential"
 code = 1
 requires_proof = true
-proof_circuit = "IssueCredential_V2"
+proof_circuit = "IssueCredentialV2"
 
 [[functions]]
 name = "revoke_credential"
@@ -24,7 +24,7 @@ code = 2
 name = "create_claim"
 code = 3
 requires_proof = true
-proof_circuit = "CreateClaim_V2"
+proof_circuit = "CreateClaimV2"
 description = "Unified claim creation with claim_mode 0-4 (basic/threshold/ratio/multi/dag)"
 
 [[functions]]
@@ -39,7 +39,7 @@ code = 5
 name = "verify_capability"
 code = 6
 requires_proof = true
-proof_circuit = "VerifyCapability_V2"
+proof_circuit = "VerifyCapabilityV2"
 
 [[functions]]
 name = "revoke_capability"
@@ -50,13 +50,31 @@ name = "register_issuer"
 code = 8
 
 [[circuits]]
-name = "CreateClaim_V2"
+name = "CreateClaimV2"
 description = "Unified claim creation with 5 modes via cond_select (k=12, 30 witnesses)"
 
 [[circuits]]
-name = "IssueCredential_V2"
+name = "IssueCredentialV2"
 description = "Credential issuance proof (k=11, 16 witnesses)"
 
 [[circuits]]
-name = "VerifyCapability_V2"
+name = "VerifyCapabilityV2"
 description = "Capability verification proof (k=11, 14 witnesses)"
+
+[[trees]]
+name = "credentials"
+
+[[trees]]
+name = "nullifiers"
+
+[[trees]]
+name = "issuers"
+
+[[trees]]
+name = "config"
+
+[[trees]]
+name = "capabilities"
+
+[[trees]]
+name = "identity_info"

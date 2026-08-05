@@ -19,7 +19,7 @@ name = "fee"
 code = 0
 description = "Pay transaction fees via FeeV1. Deterministic fee payment — burns fee coins and creates change output."
 requires_proof = true
-proof_circuit = "Fee_V2"
+proof_circuit = "FeeV2"
 
 [[functions]]
 name = "mint"
@@ -31,28 +31,35 @@ name = "burn"
 code = 2
 description = "Burn native coins via BurnV1 — publishes nullifiers. Used internally by fee payment."
 requires_proof = true
-proof_circuit = "Burn_V2"
+proof_circuit = "BurnV2"
 
 [[functions]]
 name = "transfer"
 code = 3
 description = "Transfer native coins via TransferV1. Atomic burn + blind output with value conservation."
 requires_proof = true
-proof_circuit = "Transfer_V2"
+# Uses BurnV2 + MintV2 circuits (no dedicated Transfer circuit)
 
 [[functions]]
 name = "spend"
 code = 4
 description = "Spend native coins via SpendV1. Burn + blind output with value conservation."
 requires_proof = true
-proof_circuit = "Spend_V2"
+# Uses BurnV2 + MintV2 circuits (no dedicated Spend circuit)
 
 [[functions]]
 name = "pow_reward"
 code = 5
 description = "Block reward via PoWRewardV1. Consensus-governed emission — verifies cumulative supply chain, expected reward at block height, and Pedersen commitment."
 requires_proof = true
-proof_circuit = "Mint_V2"
+proof_circuit = "MintV2"
+
+[[functions]]
+name = "fee_collect"
+code = 6
+description = "Collect accumulated fees via FeeCollectV1. Closes the fee epoch and distributes rewards."
+requires_proof = true
+proof_circuit = "FeeCollectV2"
 
 # Native token is the ONE bespoke citizen (wallet.md §6.4, §9) — this manifest
 # documents the interface but is NOT used for capability discovery or construction.
@@ -116,17 +123,17 @@ name = "fees"
 description = "Fee collection accumulator"
 
 [[circuits]]
-name = "Fee_V2"
+name = "FeeV2"
 namespace = "native_token"
 
 [[circuits]]
-name = "Mint_V2"
+name = "MintV2"
 namespace = "native_token"
 
 [[circuits]]
-name = "Burn_V2"
+name = "BurnV2"
 namespace = "native_token"
 
 [[circuits]]
-name = "FeeCollect_V2"
+name = "FeeCollectV2"
 namespace = "native_token"

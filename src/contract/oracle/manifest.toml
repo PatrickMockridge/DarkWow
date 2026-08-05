@@ -11,31 +11,31 @@ version = "2.0.0"
 name = "register_oracle"
 code = 0
 requires_proof = true
-proof_circuit = "RegisterOracle_V2"
+proof_circuit = "RegisterOracleV2"
 
 [[functions]]
 name = "push_value"
 code = 1
 requires_proof = true
-proof_circuit = "PushValue_V2"
+proof_circuit = "PushValueV2"
 
 [[functions]]
 name = "attest_value"
 code = 2
 requires_proof = true
-proof_circuit = "AttestValue_V2"
+proof_circuit = "AttestValueV2"
 
 [[functions]]
 name = "push_value_commitment"
 code = 3
 requires_proof = true
-proof_circuit = "PushValueCommitment_V2"
+proof_circuit = "PushValueCommitmentV2"
 
 [[functions]]
 name = "aggregate"
 code = 4
 requires_proof = true
-proof_circuit = "Aggregate_V2"
+proof_circuit = "AggregateV2"
 
 [[functions]]
 name = "set_oracle_active"
@@ -116,37 +116,29 @@ name = "oracles"
 description = "Oracle registrations"
 
 [[trees]]
-name = "values"
-description = "Oracle value records"
-
-[[trees]]
-name = "nullifiers"
-description = "Nullifier SMT for double-spend prevention"
-
-[[trees]]
 name = "attestations"
 description = "Attestation records"
 
 [[trees]]
-name = "aggregates"
-description = "Aggregate records"
+name = "info"
+description = "Contract metadata and state"
 
 [[circuits]]
-name = "RegisterOracle_V2"
+name = "RegisterOracleV2"
 namespace = "oracle"
 
 [[circuits]]
-name = "PushValue_V2"
+name = "PushValueV2"
 namespace = "oracle"
 
 [[circuits]]
-name = "AttestValue_V2"
+name = "AttestValueV2"
 namespace = "oracle"
 
 [[circuits]]
-name = "PushValueCommitment_V2"
+name = "PushValueCommitmentV2"
 namespace = "oracle"
 
 [[circuits]]
-name = "Aggregate_V2"
+name = "AggregateV2"
 namespace = "oracle"

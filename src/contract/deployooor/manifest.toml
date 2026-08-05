@@ -52,6 +52,3 @@ description = "Contract metadata — DB version, WASM content hashes"
 name = "lock"
 description = "Contract lock status — contract_id → locked(bool)"
 
-[[trees]]
-name = "singleton"
-description = "Singleton registry — singleton_name → contract_id mapping"

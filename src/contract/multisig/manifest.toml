@@ -9,22 +9,27 @@ genesis_inclusion_reason = "O-Cap primitive — threshold signature authorizatio
 version = "1.0.0"
 
 [[functions]]
+name = "initialize"
+code = 0
+description = "Initialize MultiSig contract state. Registers ZK circuits and creates storage trees."
+
+[[functions]]
 name = "create_group"
 code = 1
 description = "Create an N-of-M threshold signature group. Takes list of public keys and required threshold."
-requires_proof = false
+requires_proof = true
 
 [[functions]]
 name = "sign"
 code = 2
 description = "Sign a message as a group member. Proves membership via public key in group."
-requires_proof = false
+requires_proof = true
 
 [[functions]]
 name = "finalize"
 code = 3
 description = "Finalize when threshold partial signatures exist for a message. Consumes partial signatures, produces approval capability for composition."
-requires_proof = false
+requires_proof = true
 
 [[capabilities]]
 discriminant = 0
@@ -68,4 +73,23 @@ produces = [{ name = "approval", description = "Threshold approval capability fo
 consumes = ["partial_signature"]
 required_barbs = ["Spend", "Nullify", "Commit", "Dispatch", "Gate"]
 
-# MultiSig ZK circuits: CreateGroupV2, SignV2, FinalizeV2 (3 circuits, k=11)
+[[circuits]]
+name = "CreateGroupV2"
+namespace = "multisig"
+
+[[circuits]]
+name = "SignV2"
+namespace = "multisig"
+
+[[circuits]]
+name = "FinalizeV2"
+namespace = "multisig"
+
+[[trees]]
+name = "groups"
+
+[[trees]]
+name = "signatures"
+
+[[trees]]
+name = "nullifiers"
