@@ -9,6 +9,8 @@ use dwow_contract_test_harness::harness::{ContractHarness, PurseHarness};
 use dwow_sdk::crypto::{PURSE_CONTRACT_ID, pasta_prelude::PrimeField};
 use dwow_sdk::pasta::pallas;
 
+use crate::tests::blockchain::HeavyweightPipeline;
+
 use crate::tests::uniform_runner::{
     ContractTestSpec, EndpointSpec, EndpointResult, EndpointExpectation,
 };
@@ -32,7 +34,15 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({
+                    let k = pallas::Base::from(1u64).to_repr().to_vec();
+                    let c = *PURSE_CONTRACT_ID;
+                    move |chain: &HeavyweightPipeline| {
+                        let r = chain.query_contract_state(c, "purse_roots", &k)?;
+                        assert!(r.is_some(), "DepositV1: purse_roots must contain updated root");
+                        Ok(())
+                    }
+                })),
                 state_tree: "purse_roots",
                 state_key_fn: Box::new(|| {
                     pallas::Base::from(1u64).to_repr().to_vec()
@@ -47,7 +57,15 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({
+                    let k = pallas::Base::from(1u64).to_repr().to_vec();
+                    let c = *PURSE_CONTRACT_ID;
+                    move |chain: &HeavyweightPipeline| {
+                        let r = chain.query_contract_state(c, "nullifiers", &k)?;
+                        assert!(r.is_some(), "WithdrawV1: nullifier must exist after withdrawal");
+                        Ok(())
+                    }
+                })),
                 state_tree: "nullifiers",
                 state_key_fn: Box::new(|| {
                     pallas::Base::from(1u64).to_repr().to_vec()

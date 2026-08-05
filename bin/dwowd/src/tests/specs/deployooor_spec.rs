@@ -4,6 +4,8 @@ use dwow_contract_test_harness::harness::{ContractHarness, DeployooorHarness};
 use dwow_sdk::crypto::{DEPLOYOOOR_CONTRACT_ID, Keypair, SecretKey, PublicKey};
 use dwow_serial::Encodable;
 
+use crate::tests::blockchain::HeavyweightPipeline;
+
 use crate::tests::uniform_runner::{
     ContractTestSpec, EndpointSpec, EndpointResult, EndpointExpectation,
 };
@@ -28,7 +30,14 @@ pub fn deployooor_test_spec() -> ContractTestSpec<'static> {
                 name: "DeployV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({
+                    let c = *DEPLOYOOOR_CONTRACT_ID;
+                    move |chain: &HeavyweightPipeline| {
+                        let r = chain.query_contracts_tree(&c.to_bytes())?;
+                        assert!(r.is_some(), "DeployV1: deployed WASM must exist in contracts tree");
+                        Ok(())
+                    }
+                })),
                 state_tree: "info",
                 state_key_fn: Box::new(|| vec![]),
                 generate: Box::new(|| {

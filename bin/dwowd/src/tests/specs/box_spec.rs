@@ -8,6 +8,8 @@ use dwow_contract_test_harness::harness::{BoxHarness, ContractHarness};
 use dwow_sdk::crypto::{BOX_CONTRACT_ID, pasta_prelude::PrimeField, poseidon_hash};
 use dwow_sdk::pasta::pallas;
 
+use crate::tests::blockchain::HeavyweightPipeline;
+
 use crate::tests::uniform_runner::{
     ContractTestSpec, EndpointSpec, EndpointResult, EndpointExpectation,
 };
@@ -34,7 +36,15 @@ pub fn box_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({
+                    let k = pallas::Base::from(1u64).to_repr().to_vec();
+                    let c = *BOX_CONTRACT_ID;
+                    move |chain: &HeavyweightPipeline| {
+                        let r = chain.query_contract_state(c, "box_roots", &k)?;
+                        assert!(r.is_some(), "PutV1: box_roots must contain updated root");
+                        Ok(())
+                    }
+                })),
                 state_tree: "box_roots",
                 state_key_fn: Box::new(|| {
                     pallas::Base::from(1u64).to_repr().to_vec()
@@ -49,7 +59,19 @@ pub fn box_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: None,
+                verify_state: Some(Box::new({
+                    let dnl = pallas::Base::from(1u64);
+                    let os = pallas::Base::from(42u64);
+                    let bid = pallas::Base::from(1u64);
+                    let sn = pallas::Base::from(1u64);
+                    let nf = poseidon_hash([dnl, os, bid, sn]).to_repr().to_vec();
+                    let c = *BOX_CONTRACT_ID;
+                    move |chain: &HeavyweightPipeline| {
+                        let r = chain.query_contract_state(c, "nullifiers", &nf)?;
+                        assert!(r.is_some(), "TakeV1: nullifier must exist after consumption");
+                        Ok(())
+                    }
+                })),
                 state_tree: "nullifiers",
                 state_key_fn: Box::new(|| {
                     let dnl = pallas::Base::from(1u64);
