@@ -37,7 +37,7 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 
 use dwow_identity_contract::client::{
-    create_claim::{CreateClaimCallData, create_claim_proof, CreateClaimPublicInputs},
+    create_claim::{CreateClaimCallData, CreateClaimPublicInputs, create_claim_proof},
     issue_credential::{IssueCredentialCallData, create_issue_credential_proof, IssueCredentialPublicInputs},
     verify_capability::{VerifyCapabilityCallData, create_verify_capability_proof, VerifyCapabilityPublicInputs},
 };
@@ -179,6 +179,93 @@ impl IdentityHarness {
         };
 
         let mut call_data = vec![0x03]; // CreateClaimV1
+        call_data.extend_from_slice(&params.encode());
+        Ok(CreateClaimResult { call_data, public_inputs, proof })
+    }
+
+    /// Create a ratio claim (mode 2)
+    pub fn create_claim_ratio(
+        &self,
+        credential_secret: pallas::Base, attribute_value: pallas::Base,
+        threshold: pallas::Base, commitment: pallas::Base,
+        my_value: pallas::Base, total_supply: pallas::Base,
+        threshold_ratio: pallas::Base, predicate_result: pallas::Base,
+        issuer_public: PublicKey, schema_hash: pallas::Base, claim_type: pallas::Base,
+    ) -> Result<CreateClaimResult> {
+        let input = CreateClaimCallData::new_ratio(
+            credential_secret, attribute_value, threshold, commitment,
+            my_value, total_supply, threshold_ratio, predicate_result,
+            issuer_public, schema_hash, claim_type,
+        );
+        let (proof, public_inputs) = create_claim_proof(&self.create_claim_zkbin, &self.create_claim_pk, &input)?;
+        let params = CreateClaimParams {
+            nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes(public_inputs.nullifier.to_repr()).unwrap(),
+            claim_type: claim_type.to_repr().to_vec(), claim_mode: 2,
+            predicate_result: 0, threshold: 0, my_value: 0, total_supply: 0, threshold_ratio: 0,
+            dag_id: [0u8; 32], path_index: 0, credentials: vec![],
+            proof: vec![], fee: 0,
+        };
+        let mut call_data = vec![0x03];
+        call_data.extend_from_slice(&params.encode());
+        Ok(CreateClaimResult { call_data, public_inputs, proof })
+    }
+
+    /// Create a multi-AND claim (mode 3)
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_claim_multi_and(
+        &self,
+        credential_secret: pallas::Base, attribute_value: pallas::Base,
+        threshold: pallas::Base, commitment: pallas::Base,
+        secret_2: pallas::Base, commitment_2: pallas::Base,
+        attribute_value_2: pallas::Base, threshold_2: pallas::Base,
+        secret_3: pallas::Base, commitment_3: pallas::Base,
+        attribute_value_3: pallas::Base, threshold_3: pallas::Base,
+        predicate_result: pallas::Base,
+        issuer_public: PublicKey, schema_hash: pallas::Base, claim_type: pallas::Base,
+    ) -> Result<CreateClaimResult> {
+        let input = CreateClaimCallData::new_multi_and(
+            credential_secret, attribute_value, threshold, commitment,
+            secret_2, commitment_2, attribute_value_2, threshold_2,
+            secret_3, commitment_3, attribute_value_3, threshold_3,
+            predicate_result,
+            issuer_public, schema_hash, claim_type,
+        );
+        let (proof, public_inputs) = create_claim_proof(&self.create_claim_zkbin, &self.create_claim_pk, &input)?;
+        let params = CreateClaimParams {
+            nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes(public_inputs.nullifier.to_repr()).unwrap(),
+            claim_type: claim_type.to_repr().to_vec(), claim_mode: 3,
+            predicate_result: 0, threshold: 0, my_value: 0, total_supply: 0, threshold_ratio: 0,
+            dag_id: [0u8; 32], path_index: 0, credentials: vec![],
+            proof: vec![], fee: 0,
+        };
+        let mut call_data = vec![0x03];
+        call_data.extend_from_slice(&params.encode());
+        Ok(CreateClaimResult { call_data, public_inputs, proof })
+    }
+
+    /// Create a DAG path claim (mode 4)
+    pub fn create_claim_dag_path(
+        &self,
+        credential_secret: pallas::Base, attribute_value: pallas::Base,
+        threshold: pallas::Base, commitment: pallas::Base,
+        path_index: pallas::Base, num_credentials: pallas::Base,
+        is_lte_1: pallas::Base, is_lte_2: pallas::Base, is_lte_3: pallas::Base,
+        issuer_public: PublicKey, schema_hash: pallas::Base, claim_type: pallas::Base,
+    ) -> Result<CreateClaimResult> {
+        let input = CreateClaimCallData::new_dag_path(
+            credential_secret, attribute_value, threshold, commitment,
+            path_index, num_credentials, is_lte_1, is_lte_2, is_lte_3,
+            issuer_public, schema_hash, claim_type,
+        );
+        let (proof, public_inputs) = create_claim_proof(&self.create_claim_zkbin, &self.create_claim_pk, &input)?;
+        let params = CreateClaimParams {
+            nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes(public_inputs.nullifier.to_repr()).unwrap(),
+            claim_type: claim_type.to_repr().to_vec(), claim_mode: 4,
+            predicate_result: 0, threshold: 0, my_value: 0, total_supply: 0, threshold_ratio: 0,
+            dag_id: [0u8; 32], path_index: 0, credentials: vec![],
+            proof: vec![], fee: 0,
+        };
+        let mut call_data = vec![0x03];
         call_data.extend_from_slice(&params.encode());
         Ok(CreateClaimResult { call_data, public_inputs, proof })
     }
