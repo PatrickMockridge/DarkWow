@@ -2,6 +2,7 @@
 //! Each file exports a single function returning ContractTestSpec<'static>.
 
 pub mod box_spec;
+pub mod identity_spec;
 pub mod multisig_spec;
 pub mod oracle_spec;
 pub mod promissory_note_spec;
