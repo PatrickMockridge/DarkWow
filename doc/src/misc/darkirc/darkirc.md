@@ -107,7 +107,7 @@ rest of the DarkWow community.
 First, try to start `darkirc` from your command-line so it can spawn its
 configuration file in place. The preconfigured defaults will autojoin
 you to several default channels one of which is `#dev` where we have 
-weekly developer meetings (TBA for time and venue — check `#dev` for announcements),
+weekly developer meetings (times: see [intro.md](../../intro.md/#community)),
 and where the community is most active and talks 
 about DarkWow development.
 

@@ -87,7 +87,7 @@
 # Contracts
 
 - [Contract Catalog](contracts.md) ← Canonical catalog (all 32)
-- [Contract Standards](contract-standards.md) ← Minimum standards + best practices
+- [Contract Standards](dev/contracts/contract-standards.md) ← Minimum standards + best practices
 - [Security Audit](contract/audit.md)
 
 ## Genesis
@@ -169,10 +169,10 @@
     - [Build Resource Tuning](dev/testing/build-resource-tuning.md)
     - [Build Resource HAZOP](dev/testing/build-resource-hazop.md)
   - [Wallet Testing](dev/testing/wallet-testing.md)
-  - [Genesis Harness](arch/genesis_harness.md)
-  - [Contract Testing Pipeline](arch/pipeline.md)
-  - [Test Harness Guide](arch/test_harness_guide.md)
-  - [Localnet Contract Testing](arch/localnet_contract_testing.md)
+  - [Genesis Harness](dev/testing/level-1-lightweight.md)
+  - [Contract Testing Pipeline](dev/testing/overview.md)
+  - [Test Harness Guide](dev/testing/level-2-heavyweight.md)
+  - [Localnet Contract Testing](dev/testing/level-3-localnet.md)
   - [Local Devnet Setup](localnet-dev.md)
 
 ## Contract Implementation

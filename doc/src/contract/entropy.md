@@ -4,6 +4,8 @@ Verifiable randomness from DarkWow block hashes. Ported from the
 [Mudra Arweave entropy beacon](https://codeberg.org/PatrickM123/mudra),
 adapted from Arweave to DarkWow's own chain context.
 
+For randomness theory and VRF-based approaches, see [Provable Randomness](provable_randomness.md).
+
 No single party controls the seed. The anchor height is committed before
 the entropy blocks exist — the seed is unpredictable at commitment time.
 
