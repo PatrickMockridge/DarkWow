@@ -46,7 +46,6 @@ use dwow_escrow_contract::model::{
 };
 
 /// Escrow Harness for isolated testing
-#[allow(dead_code)]
 pub struct EscrowHarness {
     /// CreateEscrow_V1 ZkBinary
     create_escrow_zkbin: ZkBinary,

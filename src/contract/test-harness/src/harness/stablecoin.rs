@@ -49,12 +49,6 @@ fn to_intent_commitment(base: pallas::Base) -> IntentCommitment {
     IntentCommitment::from_bytes(base.to_repr()).unwrap()
 }
 
-/// Helper to convert pallas::Base to [u8; 32]
-#[allow(dead_code)]
-fn base_to_bytes(base: pallas::Base) -> [u8; 32] {
-    base.to_repr()
-}
-
 /// Stablecoin Harness for isolated testing
 pub struct StablecoinHarness {
     /// Init_V1 ZkBinary

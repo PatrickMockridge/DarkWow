@@ -41,7 +41,6 @@ fn to_intent_commitment(base: pallas::Base) -> IntentCommitment {
 }
 
 /// Helper to convert pallas::Base to IntentNullifier
-#[allow(dead_code)]
 fn to_intent_nullifier(base: pallas::Base) -> IntentNullifier {
     IntentNullifier::from_bytes(base.to_repr()).unwrap()
 }
