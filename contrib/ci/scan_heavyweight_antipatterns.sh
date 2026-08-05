@@ -132,6 +132,33 @@ grep -rn 'Proof::create.*&\[\]' "$HARNESS_DIR" 2>/dev/null | while IFS=: read -r
     violation "empty-proof-stub" "$file" "$lineno" "Proof::create with empty public inputs (&[])"
 done
 
+# ── Pattern 10: #[allow(dead_code)] suppression (RG-26) ──────────────────────
+# Prohibits silencing the compiler's dead_code diagnostic.
+# Equivalent severity to println!("skipped") per spec §4.7.
+for dir in "$HEAVYWEIGHT_FILE" "$HARNESS_DIR"; do
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        target_file=""
+        if [[ "$dir" == "$HEAVYWEIGHT_FILE" ]]; then
+            target_file="$HEAVYWEIGHT_FILE"
+        else
+            target_file="$dir/$(echo "$line" | cut -d: -f1)"
+        fi
+        lineno=$(echo "$line" | cut -d: -f2)
+        violation "allow-dead-code" "$target_file" "$lineno" \
+            "#[allow(dead_code)] suppresses compiler diagnostic — equivalent to println!(\"skipped\") per spec §4.7"
+    done < <(grep -rn '#\[allow(dead_code)\]' "$dir" 2>/dev/null || true)
+done
+
+# ── Pattern 11: _old_* preserved test bodies (RG-27) ─────────────────────────
+# Git history IS provenance. Old test bodies must be deleted, not preserved.
+while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    lineno=$(echo "$line" | cut -d: -f1)
+    violation "preserved-old-test" "$HEAVYWEIGHT_FILE" "$lineno" \
+        "_old_*_test function preserved as dead code — delete it; git history IS provenance"
+done < <(grep -n '_old_.*_test\|__unused_after_' "$HEAVYWEIGHT_FILE" 2>/dev/null || true)
+
 # ── Summary ────────────────────────────────────────────────────────────────
 if [ "$VIOLATIONS" -eq 0 ]; then
     if $JSON_MODE; then
