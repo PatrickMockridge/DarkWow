@@ -4591,61 +4591,9 @@ fn test_heavyweight_box() -> std::result::Result<(), Box<dyn std::error::Error>>
 
 #[test]
 fn test_heavyweight_purse() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    use dwow_contract_test_harness::harness::PurseHarness;
-    use dwow_sdk::crypto::PURSE_CONTRACT_ID;
-    use crate::tests::blockchain::HeavyweightPipeline;
-
-    println!("=== Purse Heavyweight: All Endpoints ===");
-
-    smol::block_on(async {
-        let chain = HeavyweightPipeline::new().await?;
-        chain.init_genesis().await?;
-        let harness = PurseHarness::spawn();
-        let cid = *PURSE_CONTRACT_ID;  // deployed at genesis — do NOT re-deploy
-        println!("Purse contract at genesis: {}", cid);
-
-        // --- DepositV1 (0x01) ---
-        println!("  Test: deposit");
-        let deposit = harness.deposit(100)?;
-        assert!(!deposit.call_data.is_empty());
-        println!("    call_data={}B", deposit.call_data.len());
-
-        println!("  Exec: DepositV1 through accept_block");
-        let h_before = chain.height();
-        chain.block()?
-            .with_call(cid, &harness, &deposit.call_data, vec![deposit.proof])?
-            .with_fee_collect()?
-            .submit().await?;
-        assert!(chain.height() > h_before,
-            "accept_block must advance height after DepositV1");
-        println!("    accept_block height OK");
-
-        // --- WithdrawV1 (0x02) ---
-        println!("  Test: withdraw");
-        let withdraw = harness.withdraw(50)?;
-        assert!(!withdraw.call_data.is_empty());
-        println!("    call_data={}B", withdraw.call_data.len());
-
-        println!("  Exec: WithdrawV1 through accept_block");
-        let h_before = chain.height();
-        chain.block()?
-            .with_call(cid, &harness, &withdraw.call_data, vec![withdraw.proof])?
-            .with_fee_collect()?
-            .submit().await?;
-        assert!(chain.height() > h_before,
-            "accept_block must advance height after WithdrawV1");
-        println!("    accept_block height OK");
-
-        // --- BalanceV1 (0x03) — harness validation only ---
-        // accept_block deferred: same IoError pattern as WithdrawV1
-        println!("  Test: balance (harness)");
-        let balance = harness.balance()?;
-        assert!(!balance.call_data.is_empty());
-        println!("    call_data={}B", balance.call_data.len());
-
-        println!("=== All Purse endpoints OK (DepositV1 accept_block + harness validation) ===");
-        Ok(())
-    })
+    use crate::tests::specs::purse_spec::purse_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&purse_test_spec()))?)
 }
 
 #[test]
