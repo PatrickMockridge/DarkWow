@@ -59,10 +59,10 @@ circuit "CreateClaimV2" {
     is_ratio     = is_equal_base(mode, witness_base(2));
     is_multi     = is_equal_base(mode, witness_base(3));
     is_dag       = is_equal_base(mode, witness_base(4));
-    mode_sum = base_add(is_basic, is_threshold);
-    mode_sum = base_add(mode_sum, is_ratio);
-    mode_sum = base_add(mode_sum, is_multi);
-    mode_sum = base_add(mode_sum, is_dag);
+    sum_bt = base_add(is_basic, is_threshold);
+    sum_btr = base_add(sum_bt, is_ratio);
+    sum_btrm = base_add(sum_btr, is_multi);
+    mode_sum = base_add(sum_btrm, is_dag);
     constrain_equal_base(mode_sum, ONE);
 
     # --- credential nullifiers ---
@@ -73,15 +73,15 @@ circuit "CreateClaimV2" {
     combined = poseidon_hash(DOMAIN_NULLIFIER, combined_12, n3);
 
     # --- DAG path hash ---
-    path_hash = poseidon_hash(DOMAIN_COIN_COMMIT, path_index, num_credentials);
-    path_hash = poseidon_hash(DOMAIN_COIN_COMMIT, path_hash, is_lte_1);
-    path_hash = poseidon_hash(DOMAIN_COIN_COMMIT, path_hash, is_lte_2);
-    path_hash = poseidon_hash(DOMAIN_COIN_COMMIT, path_hash, is_lte_3);
+    ph1 = poseidon_hash(DOMAIN_COIN_COMMIT, path_index, num_credentials);
+    ph2 = poseidon_hash(DOMAIN_COIN_COMMIT, ph1, is_lte_1);
+    ph3 = poseidon_hash(DOMAIN_COIN_COMMIT, ph2, is_lte_2);
+    path_hash = poseidon_hash(DOMAIN_COIN_COMMIT, ph3, is_lte_3);
     dag_nullifier = poseidon_hash(DOMAIN_NULLIFIER, n1, path_hash);
 
     # --- bound nullifier = instance slot 1 ---
-    bound_nullifier = cond_select(is_dag, dag_nullifier, n1);
-    bound_nullifier = cond_select(is_multi, combined, bound_nullifier);
+    bn1 = cond_select(is_dag, dag_nullifier, n1);
+    bound_nullifier = cond_select(is_multi, combined, bn1);
     constrain_instance(bound_nullifier);
     constrain_equal_base(bound_nullifier, nullifier);
 
@@ -111,8 +111,8 @@ circuit "CreateClaimV2" {
     is_lte_ratio = less_than_or_equal(threshold_scaled, my_value_scaled);
 
     # --- predicate_result binding per mode ---
-    expected_pred = cond_select(is_threshold, is_lte, ONE);
-    expected_pred = cond_select(is_ratio, is_lte_ratio, expected_pred);
+    ep1 = cond_select(is_threshold, is_lte, ONE);
+    expected_pred = cond_select(is_ratio, is_lte_ratio, ep1);
     constrain_equal_base(expected_pred, predicate_result);
 
     # --- tx binding: instance slots 2,3 ---

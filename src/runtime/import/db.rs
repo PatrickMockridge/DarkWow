@@ -900,6 +900,7 @@ pub(crate) fn db_contains_key(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, pt
 pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u32) -> i64 {
     let (env, mut store) = ctx.data_and_store_mut();
     let cid = env.contract_id;
+    eprintln!("[ZKAS_DB_SET] ENTER cid={cid}");
 
     if let Err(e) = acl_allow(env, &[ContractSection::Deploy]) {
         error!(
@@ -1029,9 +1030,11 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
 
     // Construct the circuit and build the VerifyingKey.
     let circuit = ZkCircuit::new(witnesses, &zkbin);
+    eprintln!("[ZKAS_DB_SET] Building VK for {} k={}", zkbin.namespace, zkbin.k);
     let vk = match VerifyingKey::build(zkbin.k, &circuit) {
         Ok(vk) => vk,
         Err(e) => {
+            eprintln!("[ZKAS_DB_SET] VK BUILD FAILED for {}: {e}", zkbin.namespace);
             error!(
                 target: "runtime::db::zkas_db_set",
                 "[WASM] [{cid}] zkas_db_set(): VerifyingKey::build failed for circuit '{}': {e}",

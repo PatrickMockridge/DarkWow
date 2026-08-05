@@ -1904,3 +1904,55 @@ is not propagated to the mod declaration.
 - [Composability](../../contract/composability.md) — Cross-contract child call patterns
 - [PromissoryNote](../../contract/promissory_note.md) — Privacy-preserving bearer instrument contract for DeFi tokens
 - [Python Contract Simulations](../testing/python-simulations.md) — Smoke test layer for catching state machine bugs before reaching the testnet
+
+---
+
+## Lesson 24: No Variable Reassignment in zkas Circuits
+
+**Status:** CONFIRMED (2026-08-05, identity unified claim circuit deploy failure)
+
+### The Bug
+
+A unified ZK circuit was written with variable reassignment chains:
+
+```zkas
+mode_sum = base_add(is_basic, is_threshold);
+mode_sum = base_add(mode_sum, is_ratio);    // REASSIGNMENT
+mode_sum = base_add(mode_sum, is_multi);    // REASSIGNMENT
+mode_sum = base_add(mode_sum, is_dag);      // REASSIGNMENT
+```
+
+The zkas compiler accepted this input and produced a `.zk.bin` file **without error**. However, `zkas validate` reported:
+
+```
+CORRUPTED: Opcode base_add references heap idx 48 but only 48 entries available
+```
+
+The compiler's heap index resolution (`rposition` for variable lookup) produces out-of-bounds references when the same variable name is reassigned multiple times. Each reassignment creates a new heap slot, but opcode arguments referencing the previous assignment can end up pointing past the current available heap.
+
+### Why the Compiler Doesn't Reject It
+
+The zkas compiler performs name resolution during circuit compilation using `lookup_heap` which uses `rposition` (last match). When a variable like `mode_sum` is reassigned, the compiler correctly pushes a new heap entry. However, the decoder's validation pass checks `heap_idx < constants + witnesses + prev_assignments` — and `prev_assignments` is computed per-statement. A reference to a variable whose assignment hasn't yet been counted in `prev_assignments` for the current statement causes the validation failure.
+
+### The Fix
+
+Use **unique variable names** for every intermediate result:
+
+```zkas
+sum_bt   = base_add(is_basic, is_threshold);     // unique name
+sum_btr  = base_add(sum_bt, is_ratio);            // unique name
+sum_btrm = base_add(sum_btr, is_multi);           // unique name
+mode_sum = base_add(sum_btrm, is_dag);            // unique name
+```
+
+The same pattern applies to `poseidon_hash`, `cond_select`, and any other opcode that feeds its output back as input to a subsequent opcode.
+
+### Detection
+
+Every `.zk.bin` file MUST pass `zkas validate <file>` before being deployed or embedded in a contract WASM. The `make all` build step does NOT perform this validation automatically — it only checks that the `.zk` source compiles. A post-compile validation step is required:
+
+```bash
+zkas compile input.zk -o output.zk.bin && zkas validate output.zk.bin
+```
+
+**Why this matters:** A circuit that compiles without error can still produce a corrupt binary. Without validation, the binary is embedded in the WASM via `include_bytes!()` and deployed to genesis. The first indication of failure is a cryptic `Db set failed` error at block acceptance time, deep in the `zkas_db_set` host function — far from the circuit source.
