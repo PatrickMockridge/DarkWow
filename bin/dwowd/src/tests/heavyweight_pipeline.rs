@@ -4584,53 +4584,9 @@ fn test_heavyweight_otc_swap() -> std::result::Result<(), Box<dyn std::error::Er
 
 #[test]
 fn test_heavyweight_box() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    use dwow_contract_test_harness::harness::BoxHarness;
-    use crate::tests::blockchain::HeavyweightPipeline;
-
-    println!("=== Box Heavyweight: All Endpoints ===");
-
-    smol::block_on(async {
-        let chain = HeavyweightPipeline::new().await?;
-        chain.init_genesis().await?;
-        let harness = BoxHarness::spawn();
-        println!("Harness spawned with circuits: {:?}", harness.circuits());
-        let cid = *dwow_sdk::crypto::BOX_CONTRACT_ID;  // deployed at genesis
-
-        // --- PutV1 (0x01) ---
-        println!("  Test: put");
-        let put = harness.put()?;
-        assert!(!put.call_data.is_empty());
-        println!("    call_data={}B", put.call_data.len());
-
-        println!("  Exec: PutV1 through accept_block");
-        let h_before = chain.height();
-        chain.block()?
-            .with_call(cid, &harness, &put.call_data, vec![put.proof])?
-            .with_fee_collect()?
-            .submit().await?;
-        assert!(chain.height() > h_before,
-            "accept_block must advance height after PutV1");
-        println!("    accept_block height OK");
-
-        // --- TakeV1 (0x02) ---
-        println!("  Test: take");
-        let take = harness.take()?;
-        assert!(!take.call_data.is_empty());
-        println!("    call_data={}B", take.call_data.len());
-
-        println!("  Exec: TakeV1 through accept_block");
-        let h_before = chain.height();
-        chain.block()?
-            .with_call(cid, &harness, &take.call_data, vec![take.proof])?
-            .with_fee_collect()?
-            .submit().await?;
-        assert!(chain.height() > h_before,
-            "accept_block must advance height after TakeV1");
-        println!("    accept_block height OK");
-
-        println!("=== All Box endpoints OK ===");
-        Ok(())
-    })
+    use crate::tests::specs::box_spec::box_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&box_test_spec()))?)
 }
 
 #[test]
