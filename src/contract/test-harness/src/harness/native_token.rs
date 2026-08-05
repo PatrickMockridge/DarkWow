@@ -272,6 +272,62 @@ impl NativeTokenHarness {
         call_data.extend_from_slice(&debris.params.encode());
         Ok(TransferResult { call_data, proofs: debris.proofs })
     }
+
+    /// Build a spend call (function code 0x04, ZK).
+    /// Single input burn + single output mint, same pattern as TransferV1.
+    pub fn spend(
+        &self,
+        value: u64,
+        token_id: pallas::Base,
+        secret: SecretKey,
+        coin_blind: pallas::Base,
+        recipient_pub: PublicKey,
+    ) -> Result<SpendResult, Box<dyn std::error::Error>> {
+        use dwow_native_token_contract::client::transfer::TransferCallBuilder;
+        use dwow_native_token_contract::model::{CoinAttributes, InputWitness, SpendParamsV1};
+        use dwow_sdk::crypto::{Blind, TokenId, FuncId, MerkleNode};
+        use rand::rngs::OsRng;
+
+        let cb = dwow_sdk::crypto::Blind(coin_blind);
+        let cb2 = cb.clone();
+        let user_data = pallas::Base::zero();
+        let merkle_path = vec![MerkleNode::new(pallas::Base::from(0u64)); 32];
+
+        let input = InputWitness {
+            value, token_id, user_data,
+            coin_blind: cb,
+            leaf_position: 0u64, merkle_path,
+        };
+        let output = CoinAttributes {
+            version: 0, public_key: recipient_pub, value,
+            token_id: TokenId::from_base(token_id),
+            spend_hook: FuncId::none(),
+            user_data: pallas::Base::zero(),
+            blind: cb2,
+        };
+
+        let builder = TransferCallBuilder {
+            inputs: vec![(input, secret.clone(), pallas::Base::zero())],
+            outputs: vec![output],
+            burn_zkbin: self.burn_zkbin.clone(), burn_pk: self.burn_pk.clone(),
+            mint_zkbin: self.mint_zkbin.clone(), mint_pk: self.mint_pk.clone(),
+            tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero(),
+        };
+        let debris = builder.build(&mut OsRng)?;
+
+        // Wrap TransferCallDebris as SpendParamsV1 for function code 0x04
+        let params = SpendParamsV1 {
+            input: debris.params.inputs.into_iter().next()
+                .unwrap_or_else(|| panic!("expected 1 input")),
+            output: debris.params.outputs.into_iter().next()
+                .unwrap_or_else(|| panic!("expected 1 output")),
+            tx_binding: debris.params.tx_binding,
+            tx_nonce: debris.params.tx_nonce,
+        };
+        let mut call_data = vec![0x04u8]; // SpendV1
+        call_data.extend_from_slice(&params.encode());
+        Ok(SpendResult { call_data, proofs: debris.proofs })
+    }
 }
 
 impl super::ContractHarness for NativeTokenHarness {
@@ -328,6 +384,11 @@ pub struct FeeResult {
 }
 
 pub struct TransferResult {
+    pub call_data: Vec<u8>,
+    pub proofs: Vec<dwow_core::zk::Proof>,
+}
+
+pub struct SpendResult {
     pub call_data: Vec<u8>,
     pub proofs: Vec<dwow_core::zk::Proof>,
 }

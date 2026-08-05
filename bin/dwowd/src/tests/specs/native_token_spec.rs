@@ -99,6 +99,24 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                     }
                 }),
             },
+            EndpointSpec {
+                name: "SpendV1", is_zk: true,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; assert!(r.is_some()); Ok(()) } })),
+                state_tree: "nullifiers",
+                state_key_fn: Box::new(|| vec![]),
+                generate: Box::new({
+                    let sk = secret.clone();
+                    move || {
+                        let recipient_pub = PublicKey::from_secret(SecretKey::from_bytes([5u8; 32]).unwrap());
+                        let r = h.spend(500, pallas::Base::from(1u64), sk.clone(),
+                            pallas::Base::from(6u64), recipient_pub)
+                            .map_err(modules::error_bridge::bridge)?;
+                        Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                    }
+                }),
+            },
             // MintV1 (0x01) — walled off, returns FunctionDisabled
             EndpointSpec {
                 name: "MintV1", is_zk: false,
