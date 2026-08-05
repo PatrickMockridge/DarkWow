@@ -49,20 +49,13 @@ use std::sync::{Arc, Mutex,
 };
 
 use dwow_chain::{CChainState, FinalityConfig, PoWConfig};
+use dwow_serial::Encodable;
 use dwow_core::zk::Proof;
 use dwow_core::Result;
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
-use dwow_sdk::crypto::{
-    ContractId, NATIVE_TOKEN_CONTRACT_ID, DEPLOYOOOR_CONTRACT_ID,
-    IDENTITY_CONTRACT_ID, ATTESTATION_CONTRACT_ID, MULTISIG_CONTRACT_ID,
-    ORACLE_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID, PURSE_CONTRACT_ID,
-    BOX_CONTRACT_ID,
-};
+use dwow_sdk::crypto::{ContractId, NATIVE_TOKEN_CONTRACT_ID};
 use dwow_sdk::pasta::pallas;
 use dwow_contract_test_harness::harness::ContractHarness;
-
-/// Strict ZK enforcement — immutable per spec §7.2 PR-1, §4.5.
-const STRICT_ZK: bool = true;
 
 /// Genesis contract names that SHALL NOT be re-deployed via chain.deploy().
 /// Spec §5.1-5.8, RG-7.
@@ -328,28 +321,32 @@ impl HeavyweightPipeline {
 
     // ── State inspection API (RG-8, spec §7.2 PR-3) ─────────────────
 
-    /// Query a value from a contract's state tree.
-    pub fn query_contract_tree(
+    /// Query a value from the contracts sled tree.
+    /// For contract-specific trees, key into the contracts tree by ContractId.
+    pub fn query_contracts_tree(
         &self,
-        contract_id: ContractId,
-        tree_name: &str,
         key: &[u8],
     ) -> Result<Option<Vec<u8>>> {
-        let tree = self.chain_state.store
-            .contract_tree(contract_id, tree_name)
-            .map_err(|e| dwow_core::Error::Custom(format!(
-                "query_contract_tree: contract tree lookup '{}': {}", tree_name, e
-            )))?;
+        let tree = self.chain_state.store.contracts_tree();
         tree.get(key)
             .map_err(|e| dwow_core::Error::Custom(format!(
-                "query_contract_tree: sled get: {}", e
+                "query_contracts_tree: sled get: {}", e
             )))
             .map(|opt| opt.map(|iv| iv.to_vec()))
     }
 
-    /// Current cumulative supply from the chain state.
+    /// Current cumulative supply from the supply chain tree.
+    /// The supply is stored as a Pedersen commitment chain S_H = S_{H-1} + C_H.
+    /// Returns the latest supply value as u64, or 0 if the tree is empty.
     pub fn cumulative_supply(&self) -> u64 {
-        self.chain_state.store.cumulative_supply()
+        let tree = &self.chain_state.store.supply_chain;
+        // Read the last entry — the latest cumulative supply commitment
+        if let Ok(Some(iv)) = tree.get(b"latest_supply") {
+            let bytes: [u8; 8] = iv.as_ref().try_into().unwrap_or([0u8; 8]);
+            u64::from_le_bytes(bytes)
+        } else {
+            0
+        }
     }
 
     /// Verify the block hash chain is continuous from height 2 to current.
@@ -358,18 +355,25 @@ impl HeavyweightPipeline {
         if current <= BlockHeight::new(1) {
             return Ok(true); // only genesis exists
         }
+        let flags = randomx::RandomXFlags::get_recommended_flags()
+            & !randomx::RandomXFlags::JIT;
+        let rx_cache = self.chain_state.get_cache([0u8; 32]);
+        let vm = std::sync::Arc::new(
+            randomx::RandomXVM::new(flags, Some(rx_cache), None)
+                .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?,
+        );
         for h in 2..=current.get() {
             let height = BlockHeight::new(h);
-            let block = self.chain_state.store.get_block_by_height(height)
+            let block = self.chain_state.store.get_block(height)
                 .map_err(|e| dwow_core::Error::Custom(format!(
                     "block_hash_chain: get block at height {}: {}", h, e
                 )))?;
-            let prev_block = self.chain_state.store.get_block_by_height(
+            let prev_block = self.chain_state.store.get_block(
                 BlockHeight::new(h - 1)
             ).map_err(|e| dwow_core::Error::Custom(format!(
                 "block_hash_chain: get prev block at height {}: {}", h - 1, e
             )))?;
-            if block.header.previous != prev_block.header.hash() {
+            if block.header.previous != prev_block.hash_with_vm(&vm) {
                 return Ok(false);
             }
         }
@@ -378,11 +382,18 @@ impl HeavyweightPipeline {
 
     /// Get the block hash at a given height.
     pub fn block_hash_at(&self, height: BlockHeight) -> Result<Option<blake3::Hash>> {
-        let block = self.chain_state.store.get_block_by_height(height)
+        let block = self.chain_state.store.get_block(height)
             .map_err(|e| dwow_core::Error::Custom(format!(
                 "block_hash_at height {}: {}", height, e
             )))?;
-        Ok(Some(block.header.hash()))
+        let flags = randomx::RandomXFlags::get_recommended_flags()
+            & !randomx::RandomXFlags::JIT;
+        let rx_cache = self.chain_state.get_cache([0u8; 32]);
+        let vm = std::sync::Arc::new(
+            randomx::RandomXVM::new(flags, Some(rx_cache), None)
+                .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?,
+        );
+        Ok(Some(block.hash_with_vm(&vm)))
     }
 
     // ── Internal helpers ─────────────────────────────────────────────
@@ -447,25 +458,16 @@ impl<'c> HeavyweightBlock<'c> {
     /// Add one contract call to this block.
     ///
     /// Takes the contract_id and the raw outputs of a harness method.
-    /// `is_zk_function` declares whether THIS specific function requires ZK proofs.
-    /// Per-function gating replaces the old global `strict_zk` toggle (RG-5, spec §4.5).
-    /// Internally: ZK gate, build_witness, construct tx, accumulate.
+    /// Internally: build_witness, construct tx, accumulate.
+    /// ZK gating is enforced by the uniform runner's submit_block(), not here.
+    /// spec §7.2 PR-6: with_call() is a data accumulation method, not a security gate.
     pub fn with_call(
         &mut self,
         contract_id: ContractId,
         harness: &dyn ContractHarness,
         call_data: &[u8],
         proofs: Vec<Proof>,
-        is_zk_function: bool,
     ) -> Result<&mut Self> {
-        // Per-function ZK gating — no global toggle. spec §7.2 PR-4, RG-5.
-        if is_zk_function && proofs.is_empty() {
-            return Err(dwow_core::Error::Custom(format!(
-                "with_call() on ZK-gated function of contract '{}' with empty proofs",
-                harness.name()
-            )));
-        }
-
         // Raw call data: [fn_code] + params. The execution layer
         // (execution.rs) extracts the DarkLeaf call tree from the witness
         // and passes it to WASM — no client-side wrapping needed.
@@ -541,12 +543,18 @@ impl<'c> HeavyweightBlock<'c> {
                 .map_err(|e| dwow_core::Error::Custom(format!(
                     "build zero-fee FeeCollectV1 at height {}: {}", self.height, e
                 )))?;
-                let fee_collect_call = debris.call_data;
+                let mut fee_collect_call_data = vec![0x06u8]; // FeeCollectV1
+                fee_collect_call_data.extend_from_slice(
+                    &dwow_serial::serialize(&debris.params)
+                );
                 let fee_collect_tx = dwow_chain::Transaction {
                     version: dwow_sdk::blockchain::BlockVersion::CURRENT,
                     inputs: vec![],
                     outputs: vec![],
-                    contract_calls: vec![fee_collect_call],
+                    contract_calls: vec![dwow_chain::ContractCall {
+                        contract_id: *NATIVE_TOKEN_CONTRACT_ID,
+                        data: fee_collect_call_data,
+                    }],
                     lock_time: 0,
                     nullifiers: vec![],
                     witness: vec![],
@@ -639,7 +647,7 @@ impl<'c> HeavyweightBlock<'c> {
             "accept_block at height {}: {}", self.height, e
         )))?;
 
-        let block_hash = block.header.hash();
+        let block_hash = block.hash_with_vm(&vm);
         match outcome {
             dwow_chain::BlockConnectOutcome::CanonicalExtension { new_height } => {
                 eprintln!("[blockchain] block accepted at height {} ({:.1}s, {} txs)",

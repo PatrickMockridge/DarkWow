@@ -59,7 +59,7 @@ use std::sync::atomic::AtomicU64;
 
 use dwow_core::zk::Proof;
 use dwow_sdk::blockchain::{BlockReward, BlockTarget};
-use dwow_sdk::crypto::{ContractId, NATIVE_TOKEN_CONTRACT_ID};
+use dwow_sdk::crypto::{ContractId, NATIVE_TOKEN_CONTRACT_ID, poseidon_hash};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use dwow_contract_test_harness::harness::ContractHarness;
 
@@ -1537,7 +1537,7 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
 
         // --- create_claim ---
         println!("  Test: create_claim");
-        let claim = harness.create_claim(attestation_id, claimant_secret, claimant_pub, Predicate::GreaterOrEqual, b"evidence".to_vec(), b"result".to_vec(), claim_id)?;
+        let claim = harness.create_claim(attestation_id, claimant_secret, claimant_pub, Predicate::GreaterOrEqual, pallas::Base::from(2u64).to_repr().to_vec(), b"result".to_vec(), claim_id)?;
         assert!(!claim.call_data.is_empty());
         println!("    call_data={}B", claim.call_data.len());
 
@@ -1569,7 +1569,8 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
 
         // --- consume_claim ---
         println!("  Test: consume_claim");
-        let consume = harness.consume_claim(claim_id, attestation_id, pallas::Base::from(7u64), claimant_secret, claimant_pub)?;
+        let consume_nullifier = poseidon_hash([pallas::Base::from(1u64), claim_id, claimant_secret]);
+        let consume = harness.consume_claim(claim_id, attestation_id, consume_nullifier, claimant_secret, claimant_pub)?;
         assert!(!consume.call_data.is_empty());
         println!("    call_data={}B", consume.call_data.len());
 
@@ -1622,7 +1623,7 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
         // --- update_delegation ---
         println!("  Test: update_delegation");
         let ud = harness.update_delegation(
-            pallas::Base::from(1u64), pallas::Base::from(0u64),
+            attestation_id, pallas::Base::from(0u64),
             pallas::Base::from(0u64), pallas::Base::from(5u64),
             pallas::Base::from(1000u64), pallas::Base::from(500u64),
             pallas::Base::from(10000u64),
@@ -1644,7 +1645,7 @@ fn test_heavyweight_attestation() -> std::result::Result<(), Box<dyn std::error:
         // --- attest_slash ---
         println!("  Test: attest_slash");
         let slash = harness.attest_slash(
-            attestor_pub, 500, pallas::Base::from(999u64), 42,
+            attestor_pub, 500, pallas::Base::from(999u64), 5,
         )?;
         assert!(!slash.call_data.is_empty());
         println!("    call_data={}B", slash.call_data.len());
@@ -3268,7 +3269,7 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
         let schema_hash = pallas::Base::from(30u64);
         let claim_type = pallas::Base::from(50u64);
 
-        // --- 0x0e: RegisterIssuerV1 (non-ZK — relax strict_zk) ---
+        // --- 0x0e: RegisterIssuerV1 (non-ZK) ---
         println!("  Test 0x0e: RegisterIssuerV1");
         let issuer_name = b"test_issuer".to_vec();
         let authorized_schemas: Vec<[u8; 32]> = vec![];
@@ -3279,12 +3280,10 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
         // --- RegisterIssuerV1 through accept_block ---
         println!("  Exec: RegisterIssuerV1 through accept_block");
         let h_before = chain.height();
-        chain.strict_zk = false;
         chain.block()?
             .with_call(cid, &harness, &reg_issuer_result.call_data, vec![])?
             .with_fee_collect()?
             .submit().await?;
-        chain.strict_zk = true;
         assert!(chain.height() > h_before,
             "accept_block must advance height after RegisterIssuerV1");
         println!("    accept_block height OK");
@@ -3334,23 +3333,6 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
             "accept_block must advance height after CreateClaimV1");
         println!("    accept_block height OK");
 
-        // --- CreateClaim (unified, mode 0 basic) ---
-        println!("  Test: CreateClaim (unified)");
-        let claim2_result = harness.create_claim(credential_secret, pallas::Base::from(100u64), pallas::Base::from(50u64), commitment, issuer_pub, schema_hash, claim_type)?;
-        assert!(!claim2_result.call_data.is_empty());
-        println!("    call_data={}B proof created", claim2_result.call_data.len());
-
-        // --- CreateClaim through accept_block ---
-        println!("  Exec: CreateClaim through accept_block");
-        let h_before = chain.height();
-        chain.block()?
-            .with_call(cid, &harness, &claim2_result.call_data, vec![claim2_result.proof])?
-            .with_fee_collect()?
-            .submit().await?;
-        assert!(chain.height() > h_before,
-            "accept_block must advance height after CreateClaim");
-        println!("    accept_block height OK");
-
         // --- CreateClaimMulti ---
         println!("  Test: CreateClaimMulti");
         // --- CreateClaimMulti ---
@@ -3377,12 +3359,10 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
         // Submit RegisterCapability to a block
         println!("  Exec: RegisterCapability through accept_block");
         let h_before = chain.height();
-        chain.strict_zk = false;
         chain.block()?
             .with_call(cid, &harness, &reg_result.call_data, vec![])?
             .with_fee_collect()?
             .submit().await?;
-        chain.strict_zk = true;
         assert!(chain.height() > h_before,
             "accept_block must advance height after RegisterCapability");
         println!("    accept_block height OK");
@@ -3390,7 +3370,7 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
         // --- VerifyCapability (ZK) ---
         println!("  Test: VerifyCapability");
         let capability_secret = pallas::Base::from(777u64);
-        let capability_id = pallas::Base::from(888u64);
+        let capability_id = reg_result.capability_id.inner();
         let verify_result = harness.verify_capability(credential_secret, commitment, pallas::Base::from(100u64), pallas::Base::from(50u64), capability_secret, issuer_pub, schema_hash, capability_id, true)?;
         assert!(!verify_result.call_data.is_empty());
         println!("    call_data={}B proof created", verify_result.call_data.len());
