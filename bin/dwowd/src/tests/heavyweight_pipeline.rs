@@ -488,6 +488,11 @@ fn test_heavyweight_auction() -> std::result::Result<(), Box<dyn std::error::Err
 
 #[test]
 fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use crate::tests::specs::escrow_spec::escrow_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&escrow_test_spec()))?)
+}
+#[allow(dead_code)] fn _old_escrow_test() { let _old = r#"
     use dwow_contract_test_harness::harness::EscrowHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
@@ -597,7 +602,7 @@ fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Erro
         println!("=== All Escrow endpoints OK ===");
         Ok(())
     })
-}
+"#; } // close _old_escrow_test
 
 // ============================================================================
 // escrow + contract metadata
