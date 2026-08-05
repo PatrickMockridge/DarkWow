@@ -84,6 +84,8 @@ pub struct AttestationHarness {
     check_not_revoked_pk: ProvingKey,
     commit_fee_schedule_zkbin: ZkBinary,
     commit_fee_schedule_pk: ProvingKey,
+    verify_chain_zkbin: ZkBinary,
+    verify_chain_pk: ProvingKey,
     update_delegation_zkbin: ZkBinary,
     update_delegation_pk: ProvingKey,
 }
@@ -109,6 +111,8 @@ impl AttestationHarness {
             include_bytes!("../../../attestation/proof/commit_fee_schedule.zk.bin");
         let update_delegation_bin =
             include_bytes!("../../../attestation/proof/update_delegation.zk.bin");
+        let verify_chain_bin =
+            include_bytes!("../../../attestation/proof/verify_chain.zk.bin");
 
         let create_attestation_zkbin = ZkBinary::decode(create_att_bin, false).unwrap();
         let create_claim_zkbin = ZkBinary::decode(create_claim_bin, false).unwrap();
@@ -119,6 +123,7 @@ impl AttestationHarness {
         let check_not_revoked_zkbin = ZkBinary::decode(check_not_revoked_bin, false).unwrap();
         let commit_fee_schedule_zkbin = ZkBinary::decode(commit_fee_schedule_bin, false).unwrap();
         let update_delegation_zkbin = ZkBinary::decode(update_delegation_bin, false).unwrap();
+        let verify_chain_zkbin = ZkBinary::decode(verify_chain_bin, false).unwrap();
 
         let create_att_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&create_attestation_zkbin).unwrap(),
@@ -155,6 +160,10 @@ impl AttestationHarness {
         let update_delegation_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&update_delegation_zkbin).unwrap(),
             &update_delegation_zkbin,
+        );
+        let verify_chain_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&verify_chain_zkbin).unwrap(),
+            &verify_chain_zkbin,
         );
 
         // Build verify_claim first to isolate which circuit fails
@@ -199,6 +208,9 @@ impl AttestationHarness {
         let update_delegation_pk =
             ProvingKey::build(update_delegation_zkbin.k, &update_delegation_circuit).expect("ProvingKey::build failed");
         eprintln!("DEBUG: update_delegation PK built successfully!");
+        let verify_chain_pk =
+            ProvingKey::build(verify_chain_zkbin.k, &verify_chain_circuit)
+                .expect("ProvingKey::build failed for verify_chain");
 
         Self {
             create_attestation_zkbin,
@@ -219,6 +231,8 @@ impl AttestationHarness {
             commit_fee_schedule_pk,
             update_delegation_zkbin,
             update_delegation_pk,
+            verify_chain_zkbin,
+            verify_chain_pk,
         }
     }
 
@@ -604,6 +618,32 @@ impl AttestationHarness {
         Ok(ExpireAttestationResult { call_data })
     }
 
+    /// Verify a delegation chain (function code 0x09, ZK).
+    pub fn verify_chain(
+        &self,
+    ) -> Result<VerifyChainResult, Box<dyn std::error::Error>> {
+        use dwow_attestation_contract::client::verify_chain::{VerifyChainV1CallData, verify_chain_v1_proof};
+        let input = VerifyChainV1CallData::new(
+            pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
+            pallas::Base::zero(), pallas::Base::zero(),
+            pallas::Base::zero(), [pallas::Base::from(0u64); 255],
+        );
+        let (proof, _public_inputs) = verify_chain_v1_proof(
+            &self.verify_chain_zkbin, &self.verify_chain_pk, &input,
+        )?;
+        let params = dwow_attestation_contract::model::VerifyChainParamsV1 {
+            proof: proof.as_ref().to_vec(),
+            delegation_id: pallas::Base::zero(),
+            parent_id: pallas::Base::zero(),
+            chain_root: pallas::Base::zero(),
+            current_depth: pallas::Base::zero(),
+            max_depth: pallas::Base::zero(),
+        };
+        let mut call_data = vec![0x09];
+        call_data.extend_from_slice(&params.encode());
+        Ok(VerifyChainResult { call_data, proof })
+    }
+
     /// Validate a claim (function code 0x06, non-ZK).
     pub fn validate_claim(
         &self,
@@ -638,6 +678,7 @@ impl super::ContractHarness for AttestationHarness {
             "CheckNotRevokedV2",
             "CommitFeeScheduleV2",
             "UpdateDelegationV2",
+            "VerifyChainV2",
         ]
     }
 
@@ -652,6 +693,7 @@ impl super::ContractHarness for AttestationHarness {
             "CheckNotRevokedV2" => Some(&self.check_not_revoked_zkbin),
             "CommitFeeScheduleV2" => Some(&self.commit_fee_schedule_zkbin),
             "UpdateDelegationV2" => Some(&self.update_delegation_zkbin),
+            "VerifyChainV2" => Some(&self.verify_chain_zkbin),
             _ => None,
         }
     }
@@ -667,6 +709,7 @@ impl super::ContractHarness for AttestationHarness {
             "CheckNotRevokedV2" => Some(&self.check_not_revoked_pk),
             "CommitFeeScheduleV2" => Some(&self.commit_fee_schedule_pk),
             "UpdateDelegationV2" => Some(&self.update_delegation_pk),
+            "VerifyChainV2" => Some(&self.verify_chain_pk),
             _ => None,
         }
     }
@@ -740,4 +783,9 @@ pub struct ExpireAttestationResult {
 
 pub struct ValidateClaimResult {
     pub call_data: Vec<u8>,
+}
+
+pub struct VerifyChainResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
 }

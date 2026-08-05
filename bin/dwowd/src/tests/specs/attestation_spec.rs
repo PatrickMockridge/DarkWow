@@ -259,6 +259,19 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                     Ok(EndpointResult { call_data: r.call_data, proofs: vec![] })
                 }),
             },
+            EndpointSpec {
+                name: "VerifyChainV1", is_zk: true,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: None,
+                state_tree: "delegations",
+                state_key_fn: Box::new(|| vec![]),
+                generate: Box::new(move || {
+                    let r = h.verify_chain()
+                        .map_err(modules::error_bridge::bridge)?;
+                    Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+                }),
+            },
         ],
     }
 }
