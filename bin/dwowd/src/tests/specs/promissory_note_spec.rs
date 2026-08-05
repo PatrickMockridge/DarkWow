@@ -94,6 +94,34 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                     Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
                 }),
             },
+            EndpointSpec {
+                name: "RevokeV1", is_zk: true,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: None,
+                state_tree: "nullifiers",
+                state_key_fn: Box::new(|| vec![]),
+                generate: Box::new(move || {
+                    let r = h.revoke(500, token_id, spend_hook, user_data,
+                        coin_blind, auth_parent)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                }),
+            },
+            EndpointSpec {
+                name: "RedeemV1", is_zk: true,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: None,
+                state_tree: "nullifiers",
+                state_key_fn: Box::new(|| vec![]),
+                generate: Box::new(move || {
+                    let r = h.redeem(500, token_id, spend_hook, user_data,
+                        coin_blind, auth_parent, recipient)
+                        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                    Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                }),
+            },
         ],
     }
 }

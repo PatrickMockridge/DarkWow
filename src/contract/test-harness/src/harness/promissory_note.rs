@@ -31,7 +31,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{poseidon_hash, MerkleNode, MerkleTree},
+    crypto::{poseidon_hash, MerkleNode, MerkleTree, PublicKey, SecretKey},
     pasta::pallas,
 };
 
@@ -271,6 +271,84 @@ impl PromissoryNoteHarness {
 
     /// Perform an OTC swap between two parties
     /// Inputs are revoked, outputs are transferred - cross-token atomic swap
+    /// Redeem coins (function code 0x01, ZK).
+    /// Closes the bearer-instrument lifecycle: burns the coin, issues zero-value receipt.
+    pub fn redeem(
+        &self,
+        value: u64,
+        token_id: pallas::Base,
+        spend_hook: pallas::Base,
+        user_data: pallas::Base,
+        coin_blind: pallas::Base,
+        secret: pallas::Base,
+        recipient: pallas::Base,
+    ) -> Result<RedeemResult> {
+        use dwow_promissory_note_contract::client::redeem::{RedeemCallBuilder, RedeemCallInput, RedeemCallOutput};
+        let ephem_secret = pallas::Base::from(9u64);
+        let merkle_path: Vec<MerkleNode> = vec![MerkleNode::new(pallas::Base::from(0u64)); 32];
+        let recipient_pub = PublicKey::from_secret(SecretKey::from_base(recipient));
+        let input = RedeemCallInput {
+            value, token_id, spend_hook, user_data, coin_blind,
+            leaf_position: 0, merkle_path,
+            secret,
+            ephemeral_signature_secret: ephem_secret,
+        };
+        let output = RedeemCallOutput {
+            recipient,
+            recipient_pub,
+            token_id, spend_hook, user_data, coin_blind,
+        };
+        let debris = RedeemCallBuilder {
+            input, output,
+            burn_zkbin: self.revoke_zkbin.clone(),
+            burn_pk: self.revoke_pk.clone(),
+            redeem_zkbin: self.redeem_zkbin.clone(),
+            redeem_pk: self.redeem_pk.clone(),
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        }
+        .build()
+        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let mut call_data = vec![0x01u8]; // RedeemV1
+        call_data.extend_from_slice(&debris.params.encode());
+        Ok(RedeemResult { call_data, proofs: debris.proofs })
+    }
+
+    /// Revoke (burn) coins (function code 0x03, ZK).
+    /// Constructs a RevokeCallBuilder with simplified deterministic inputs.
+    pub fn revoke(
+        &self,
+        value: u64,
+        token_id: pallas::Base,
+        spend_hook: pallas::Base,
+        user_data: pallas::Base,
+        coin_blind: pallas::Base,
+        secret: pallas::Base,
+    ) -> Result<RevokeResult> {
+        use dwow_promissory_note_contract::client::revoke::{RevokeCallBuilder, RevokeCallInput};
+        let ephem_secret = pallas::Base::from(9u64);
+        let merkle_path: Vec<MerkleNode> = vec![MerkleNode::new(pallas::Base::from(0u64)); 32];
+        let input = RevokeCallInput {
+            value, token_id, spend_hook, user_data, coin_blind,
+            leaf_position: 0,
+            merkle_path,
+            secret,
+            ephemeral_signature_secret: ephem_secret,
+            tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
+        };
+        let debris = RevokeCallBuilder {
+            inputs: vec![input],
+            revoke_zkbin: self.revoke_zkbin.clone(),
+            revoke_pk: self.revoke_pk.clone(),
+        }
+        .build()
+        .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+        let mut call_data = vec![0x03u8]; // RevokeV1
+        call_data.extend_from_slice(&debris.params.encode());
+        Ok(RevokeResult { call_data, proofs: debris.proofs })
+    }
+
     pub fn otc_swap(
         &self,
         inputs: Vec<TransferCallInput>,
@@ -361,6 +439,16 @@ pub struct TransferResult {
 
 /// Result of OTC swap
 pub struct OtcSwapResult {
+    pub call_data: Vec<u8>,
+    pub proofs: Vec<dwow_core::zk::Proof>,
+}
+
+pub struct RedeemResult {
+    pub call_data: Vec<u8>,
+    pub proofs: Vec<dwow_core::zk::Proof>,
+}
+
+pub struct RevokeResult {
     pub call_data: Vec<u8>,
     pub proofs: Vec<dwow_core::zk::Proof>,
 }
