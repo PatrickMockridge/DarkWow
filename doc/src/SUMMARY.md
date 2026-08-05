@@ -169,10 +169,6 @@
     - [Build Resource Tuning](dev/testing/build-resource-tuning.md)
     - [Build Resource HAZOP](dev/testing/build-resource-hazop.md)
   - [Wallet Testing](dev/testing/wallet-testing.md)
-  - [Genesis Harness](dev/testing/level-1-lightweight.md)
-  - [Contract Testing Pipeline](dev/testing/overview.md)
-  - [Test Harness Guide](dev/testing/level-2-heavyweight.md)
-  - [Localnet Contract Testing](dev/testing/level-3-localnet.md)
   - [Local Devnet Setup](localnet-dev.md)
 
 ## Contract Implementation

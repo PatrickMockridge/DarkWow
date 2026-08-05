@@ -354,7 +354,7 @@ contract AttackerContract {
 ```
 
 The main recommended way to mitigate these attacks is using the
-'checks-effects-interactions' pattern[[1]](https://docs.soliditylang.org/en/v0.4.21/security-considerations.html#use-the-checks-effects-interactions-pattern)
+'checks-effects-interactions' pattern[[1]](https://docs.soliditylang.org/en/latest/security-considerations.html#use-the-checks-effects-interactions-pattern)
 [[2]](https://fravoll.github.io/solidity-patterns/checks_effects_interactions.html).
 whereby the code is delineated into 3 strict parts.
 

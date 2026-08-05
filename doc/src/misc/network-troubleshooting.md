@@ -307,7 +307,7 @@ cannot connect, you can report these errors on the community telegram (t.me/dark
 - Use [pastebin](https://pastebin.com/) (or [termbin](https://termbin.com/)
 or another paste service) for multi-line errors, or just copy-paste for a single line error.
 
-### Seed Error Codes (since v0.5.0)
+### Seed Error Codes
 
 When a seed node rejects your connection, it now sends a structured error code
 before disconnecting. Look for `SeedErrorMessage` or `[SEED]` in your debug
