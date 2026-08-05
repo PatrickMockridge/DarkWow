@@ -50,6 +50,36 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                 state_tree: "nullifiers",
                 state_key_fn: Box::new(|| vec![]),
             },
+            EndpointSpec {
+                name: "BurnV1", is_zk: true,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: Some(Box::new({
+                    let sk = secret.clone();
+                    let ephem = SecretKey::from_bytes([9u8; 32]).unwrap();
+                    move |coinbase| {
+                        let input = dwow_native_token_contract::client::burn::BurnCallInput {
+                            value: coinbase.coin_value / 2,
+                            token_id: pallas::Base::from(1u64),
+                            spend_hook: pallas::Base::from(0u64),
+                            user_data: pallas::Base::from(0u64),
+                            coin_blind: coinbase.coin_blind,
+                            leaf_position: 0u64,
+                            merkle_path: vec![dwow_sdk::crypto::MerkleNode::new(pallas::Base::from(0u64)); 32],
+                            secret: sk.clone(),
+                            ephemeral_signature_secret: ephem.clone(),
+                            tx_commitment: pallas::Base::zero(),
+                            tx_nonce: pallas::Base::zero(),
+                        };
+                        let r = h.burn(vec![input])
+                            .map_err(modules::error_bridge::bridge)?;
+                        Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
+                    }
+                })),
+                verify_state: None,
+                generate: Box::new(|| unreachable!("BurnV1 uses generate_with_coinbase")),
+                state_tree: "nullifiers",
+                state_key_fn: Box::new(|| vec![]),
+            },
         ],
     }
 }
