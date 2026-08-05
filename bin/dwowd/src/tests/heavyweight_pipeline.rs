@@ -1569,6 +1569,11 @@ fn test_heavyweight_pool_stake() -> std::result::Result<(), Box<dyn std::error::
 
 #[test]
 fn test_heavyweight_relayer_endowment() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use crate::tests::specs::relayer_endowment_spec::relayer_endowment_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&relayer_endowment_test_spec()))?)
+}
+#[allow(dead_code)] fn _old_relayer_endowment_test() { let _old = r#"
     use dwow_contract_test_harness::harness::RelayerEndowmentHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
@@ -1643,7 +1648,7 @@ fn test_heavyweight_relayer_endowment() -> std::result::Result<(), Box<dyn std::
         println!("=== All RelayerEndowment endpoints OK ===");
         Ok(())
     })
-}
+"#; } // close _old_relayer_endowment_test
 
 // ============================================================================
 // slot
