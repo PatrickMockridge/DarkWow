@@ -183,6 +183,11 @@ fn test_heavyweight_promissory_note() -> std::result::Result<(), Box<dyn std::er
 
 #[test]
 fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use crate::tests::specs::dex_spec::dex_test_spec;
+    use crate::tests::uniform_runner::run_heavyweight_test;
+    Ok(smol::block_on(run_heavyweight_test(&dex_test_spec()))?)
+}
+#[allow(dead_code)] fn _old_dex_test() { let _old = r#"
     use dwow_contract_test_harness::harness::DexHarness;
     use dwow_sdk::crypto::SecretKey;
     use dwow_sdk::pasta::pallas;
@@ -332,7 +337,7 @@ fn test_heavyweight_dex() -> std::result::Result<(), Box<dyn std::error::Error>>
         println!("=== All DEX endpoints OK ===");
         Ok(())
     })
-}
+"#; } // close _old_dex_test
 
 // ============================================================================
 // native_token
