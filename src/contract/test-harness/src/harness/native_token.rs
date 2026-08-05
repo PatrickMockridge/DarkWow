@@ -156,7 +156,11 @@ impl NativeTokenHarness {
 
         let debris = BurnCallBuilder { inputs, burn_zkbin, burn_pk }.build()?;
 
+        let mut call_data = vec![0x02u8]; // BurnV1
+        call_data.extend_from_slice(&debris.params.encode());
+
         Ok(BurnResult {
+            call_data,
             inputs: debris.params.inputs,
             proofs: debris.proofs,
         })
@@ -257,6 +261,7 @@ pub struct PoWRewardResult {
 
 /// Result of burn
 pub struct BurnResult {
+    pub call_data: Vec<u8>,
     pub inputs: Vec<dwow_native_token_contract::model::Input>,
     pub proofs: Vec<dwow_core::zk::Proof>,
 }
