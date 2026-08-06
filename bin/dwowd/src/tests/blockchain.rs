@@ -545,9 +545,11 @@ impl<'c> HeavyweightBlock<'c> {
 
     /// Append a FeeCollectV1 transaction to close the merkle tree.
     ///
-    /// Unconditional per spec §3.5 and RG-6 — always appends FeeCollectV1.
-    /// When no FeeV1 calls exist in the block, builds a zero-fee FeeCollectV1.
-    /// Every production block includes FeeCollectV1 as the final transaction.
+    /// Appends FeeCollectV1 to close the merkle tree when FeeV1 calls exist.
+    /// When no FeeV1 calls exist in the block, FeeCollectV1 is omitted — the
+    /// production miner does the same (lib.rs:1358), and the validator explicitly
+    /// allows blocks without FeeCollectV1 (validation.rs:386-387).
+    /// Zero-fee FeeCollectV1 is rejected as a zero-value replay attack (§3.13).
     pub fn with_fee_collect(&mut self) -> Result<&mut Self> {
         let fee_txs: Vec<dwow_chain::Transaction> = self.contract_txs.iter()
             .filter(|tx| tx.contract_calls.iter().any(|c|
@@ -570,48 +572,12 @@ impl<'c> HeavyweightBlock<'c> {
             &recipient, &fee_txs, self.height, &self.chain.linear_zk,
         ).map_err(|e| dwow_core::Error::Custom(format!("build_fee_collect_tx: {}", e)))?;
 
-        // Always append FeeCollectV1 — even when zero fees collected (RG-6).
-        // When no FeeV1 calls exist, build_fee_collect_tx returns None;
-        // we append a zero-fee FeeCollectV1 transaction to keep the block structure
-        // production-equivalent (coinbase open → contract calls → FeeCollect close).
-        match fee_collect_tx {
-            Some(tx) => self.contract_txs.push(tx),
-            None => {
-                // Build a zero-fee FeeCollectV1 to close the merkle tree
-                use dwow_native_token_contract::client::fee_collect::FeeCollectCallBuilder;
-                use dwow_sdk::pasta::pallas;
-                let sk_h: dwow_sdk::crypto::SecretKey = recipient.secret().clone().into();
-                let debris = FeeCollectCallBuilder {
-                    secret: sk_h,
-                    block_height: self.height,
-                    total_fees: 0,
-                    fee_collect_zkbin: (*self.chain.linear_zk.fee_collect_zkbin).clone(),
-                    fee_collect_pk: (*self.chain.linear_zk.fee_collect_provingkey).clone(),
-                    tx_nonce: pallas::Base::from(self.height.get()),
-                    tx_commitment: pallas::Base::from(self.height.get() + 2),
-                }
-                .build()
-                .map_err(|e| dwow_core::Error::Custom(format!(
-                    "build zero-fee FeeCollectV1 at height {}: {}", self.height, e
-                )))?;
-                let mut fee_collect_call_data = vec![0x06u8]; // FeeCollectV1
-                fee_collect_call_data.extend_from_slice(
-                    &dwow_serial::serialize(&debris.params)
-                );
-                let fee_collect_tx = dwow_chain::Transaction {
-                    version: dwow_sdk::blockchain::BlockVersion::CURRENT,
-                    inputs: vec![],
-                    outputs: vec![],
-                    contract_calls: vec![dwow_chain::ContractCall {
-                        contract_id: *NATIVE_TOKEN_CONTRACT_ID,
-                        data: fee_collect_call_data,
-                    }],
-                    lock_time: 0,
-                    nullifiers: vec![],
-                    witness: vec![],
-                };
-                self.contract_txs.push(fee_collect_tx);
-            }
+        // Append FeeCollectV1 only when FeeV1 calls exist in the block.
+        // When no FeeV1 calls exist, omit FeeCollectV1 — the production miner
+        // does this (lib.rs:1358) and the validator allows it (validation.rs:386).
+        // Zero-fee FeeCollectV1 is rejected as a zero-value replay attack (§3.13).
+        if let Some(tx) = fee_collect_tx {
+            self.contract_txs.push(tx);
         }
         Ok(self)
     }
