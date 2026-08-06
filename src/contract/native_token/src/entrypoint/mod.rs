@@ -72,7 +72,6 @@ use crate::{
     NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE, NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
     NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT, NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,
     NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2, NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2,
-    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V3,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V2,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_NS_V1,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2, EMPTY_COINS_TREE_ROOT,
@@ -103,13 +102,11 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let mint_v2_bincode = include_bytes!("../../proof/mint.zk.bin");
     let burn_v2_bincode = include_bytes!("../../proof/burn.zk.bin");
     let fee_v2_bincode = include_bytes!("../../proof/fee.zk.bin");
-    let fee_v3_bincode = include_bytes!("../../proof/fee_v3.zk.bin");
     let fee_collect_v2_bincode = include_bytes!("../../proof/fee_collect.zk.bin");
     let fee_threshold_v1_bincode = include_bytes!("../../proof/fee_threshold_v1.zk.bin");
     wasm::db::zkas_db_set(&mint_v2_bincode[..])?;
     wasm::db::zkas_db_set(&burn_v2_bincode[..])?;
     wasm::db::zkas_db_set(&fee_v2_bincode[..])?;
-    wasm::db::zkas_db_set(&fee_v3_bincode[..])?;
     wasm::db::zkas_db_set(&fee_collect_v2_bincode[..])?;
     wasm::db::zkas_db_set(&fee_threshold_v1_bincode[..])?;
 
@@ -241,7 +238,7 @@ fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
 
     // NOTE: P4 (verify_threshold_proof) and P5 (PedersenVerify commitment check)
     // are verified by the host during ZK proof verification, NOT here.
-    // The Fee_V3 circuit proves value conservation and fee_value_commit correctness.
+    // The Fee_V2 circuit proves value conservation and fee_value_commit correctness.
     // The FeeThreshold_V1 circuit proves fee >= threshold.
     //
     // NOTE: The fee amount is NOT available to the contract entrypoint.
@@ -256,7 +253,7 @@ fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
         nullifier: fee_val.input.nullifier,
         coin: fee_val.output.coin,
         height: verifying_block_height,
-        fee: FeeAmount::ZERO, // Patched by daemon after Fee_V3 proof witness extraction
+        fee: FeeAmount::ZERO, // Patched by daemon after Fee_V2 proof witness extraction
     };
 
     msg!("[native_token::fee_v2] Fee valid (privacy-preserving)");
@@ -292,9 +289,9 @@ fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contr
     let output_value_coords = output_value_coords.unwrap();
     let (sig_x, sig_y) = fee_params.input.signature_public.xy().expect("pk not identity");
 
-    // Fee_V3 circuit: 15 public inputs (Fee_V2's 14 minus fee + fee_vc.x + fee_vc.y)
+    // Fee_V2 circuit: 15 public inputs (14 original + fee_vc.x + fee_vc.y, fee removed as public input)
     zk_public_inputs.push((
-        NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V3.to_string(),
+        NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2.to_string(),
         vec![
             fee_params.input.nullifier.inner(),     // 1
             *input_value_coords.x(),                // 2

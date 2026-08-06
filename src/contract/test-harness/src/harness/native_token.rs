@@ -55,14 +55,10 @@ pub struct NativeTokenHarness {
     burn_zkbin: ZkBinary,
     /// Burn_V1 ProvingKey
     burn_pk: ProvingKey,
-    /// Fee_V1 ZkBinary
+    /// Fee_V2 ZkBinary — used by both FeeV1 (deprecated) and FeeV2
     fee_zkbin: ZkBinary,
-    /// Fee_V1 ProvingKey
+    /// Fee_V2 ProvingKey
     fee_pk: ProvingKey,
-    /// Fee_V3 ZkBinary (FeeV2 — hidden fee)
-    fee_v3_zkbin: ZkBinary,
-    /// Fee_V3 ProvingKey
-    fee_v3_pk: ProvingKey,
     /// FeeThreshold_V1 ZkBinary (FeeV2 — threshold proof)
     threshold_zkbin: ZkBinary,
     /// FeeThreshold_V1 ProvingKey
@@ -76,13 +72,11 @@ impl NativeTokenHarness {
         let mint_bin = include_bytes!("../../../native_token/proof/mint.zk.bin");
         let burn_bin = include_bytes!("../../../native_token/proof/burn.zk.bin");
         let fee_bin = include_bytes!("../../../native_token/proof/fee.zk.bin");
-        let fee_v3_bin = include_bytes!("../../../native_token/proof/fee_v3.zk.bin");
         let threshold_bin = include_bytes!("../../../native_token/proof/fee_threshold_v1.zk.bin");
 
         let mint_zkbin = ZkBinary::decode(mint_bin, false).unwrap();
         let burn_zkbin = ZkBinary::decode(burn_bin, false).unwrap();
         let fee_zkbin = ZkBinary::decode(fee_bin, false).unwrap();
-        let fee_v3_zkbin = ZkBinary::decode(fee_v3_bin, false).unwrap();
         let threshold_zkbin = ZkBinary::decode(threshold_bin, false).unwrap();
 
         // Build proving keys
@@ -92,22 +86,18 @@ impl NativeTokenHarness {
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&burn_zkbin).unwrap(), &burn_zkbin);
         let fee_circuit =
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&fee_zkbin).unwrap(), &fee_zkbin);
-        let fee_v3_circuit =
-            ZkCircuit::new(dwow_core::zk::empty_witnesses(&fee_v3_zkbin).unwrap(), &fee_v3_zkbin);
         let threshold_circuit =
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&threshold_zkbin).unwrap(), &threshold_zkbin);
 
         let mint_pk = ProvingKey::build(mint_zkbin.k, &mint_circuit).expect("ProvingKey::build failed");
         let burn_pk = ProvingKey::build(burn_zkbin.k, &burn_circuit).expect("ProvingKey::build failed");
         let fee_pk = ProvingKey::build(fee_zkbin.k, &fee_circuit).expect("ProvingKey::build failed");
-        let fee_v3_pk = ProvingKey::build(fee_v3_zkbin.k, &fee_v3_circuit).expect("ProvingKey::build failed");
         let threshold_pk = ProvingKey::build(threshold_zkbin.k, &threshold_circuit).expect("ProvingKey::build failed");
 
         Self {
             mint_zkbin, mint_pk,
             burn_zkbin, burn_pk,
             fee_zkbin, fee_pk,
-            fee_v3_zkbin, fee_v3_pk,
             threshold_zkbin, threshold_pk,
         }
     }
@@ -278,8 +268,8 @@ impl NativeTokenHarness {
             },
             fee_amount,
             threshold,
-            fee_v3_zkbin: self.fee_v3_zkbin.clone(),
-            fee_v3_pk: self.fee_v3_pk.clone(),
+            fee_zkbin: self.fee_zkbin.clone(),
+            fee_pk: self.fee_pk.clone(),
             threshold_zkbin: self.threshold_zkbin.clone(),
             threshold_pk: self.threshold_pk.clone(),
         };

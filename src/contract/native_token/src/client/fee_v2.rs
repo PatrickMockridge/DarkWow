@@ -50,7 +50,6 @@ use crate::client::NativeToken;
 use crate::model::fee_v2::FeeParamsV2;
 use crate::client::zkbins::{
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN,
-    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V3_BIN,
 };
 use crate::model::{CoinAttributes, Input, Output};
 
@@ -94,10 +93,10 @@ pub struct FeeV2CallBuilder {
     pub output: FeeV2CallOutput,
     pub fee_amount: u64,
     pub threshold: u64,
-    /// Fee_V3 zkas circuit ZkBinary
-    pub fee_v3_zkbin: ZkBinary,
-    /// Proving key for the Fee_V3 ZK circuit
-    pub fee_v3_pk: ProvingKey,
+    /// Fee_V2 zkas circuit ZkBinary
+    pub fee_zkbin: ZkBinary,
+    /// Proving key for the Fee_V2 ZK circuit
+    pub fee_pk: ProvingKey,
     /// FeeThreshold_V1 zkas circuit ZkBinary
     pub threshold_zkbin: ZkBinary,
     /// Proving key for the FeeThreshold_V1 ZK circuit
@@ -105,10 +104,10 @@ pub struct FeeV2CallBuilder {
 }
 
 impl FeeV2CallBuilder {
-    /// Build a FeeV2 call with dual ZK proofs (Fee_V3 + FeeThreshold_V1).
+    /// Build a FeeV2 call with dual ZK proofs (Fee_V2 + FeeThreshold_V1).
     ///
     /// The fee amount is private — it appears ONLY as a Pedersen commitment
-    /// in the call data. The Fee_V3 circuit constrains input = output + fee
+    /// in the call data. The Fee_V2 circuit constrains input = output + fee
     /// internally without exposing fee. The FeeThreshold_V1 circuit proves
     /// fee >= threshold.
     pub fn build(self) -> Result<FeeV2Result, ContractError> {
@@ -148,10 +147,10 @@ impl FeeV2CallBuilder {
             pallas::Base::from(self.threshold),
         ]);
 
-        // Build Fee_V3 proof using pre-built proving key
-        let (fee_v3_proof, _revealed) = create_fee_v3_proof(
-            &self.fee_v3_zkbin,
-            &self.fee_v3_pk,
+        // Build Fee_V2 proof using pre-built proving key
+        let (fee_proof, _revealed) = create_fee_proof(
+            &self.fee_zkbin,
+            &self.fee_pk,
             &self.input,
             input_value_blind.clone(),
             &self.output,
@@ -161,7 +160,7 @@ impl FeeV2CallBuilder {
             fee_value_blind.clone(),
             self.input.tx_commitment,
         )?;
-        proofs.push(fee_v3_proof);
+        proofs.push(fee_proof);
 
         // Build FeeThreshold_V1 proof using pre-built proving key
         let threshold_proof = create_fee_threshold_proof(
@@ -324,8 +323,8 @@ fn build_fee_v2_params(
     ))
 }
 
-/// Create a Fee_V3 ZK proof (value conservation with hidden fee).
-fn create_fee_v3_proof(
+/// Create a Fee_V2 ZK proof (value conservation with hidden fee).
+fn create_fee_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
     input: &FeeV2CallInput,
@@ -394,7 +393,7 @@ fn create_fee_v3_proof(
     let sig_pk = PublicKey::from_secret(input.ephemeral_signature_secret.clone());
     let (sig_x, sig_y) = sig_pk.xy().expect("pk not identity");
 
-    // Public inputs for Fee_V3 (15 elements, matching fee_v3_get_metadata order)
+    // Public inputs for Fee_V2 (15 elements, matching fee_get_metadata order)
     let input_vc_coords = input_value_commit.to_affine().coordinates().unwrap();
     let output_vc_coords = output_value_commit.to_affine().coordinates().unwrap();
     let fee_vc_coords = fee_value_commit.to_affine().coordinates().unwrap();
@@ -459,7 +458,7 @@ fn create_fee_v3_proof(
         Box::new(rand::rngs::OsRng)
     };
     let proof = Proof::create(&pk, &[circuit], &public_inputs, rng)
-        .map_err(|e| ContractError::IoError(format!("FeeV2 Fee_V3 proof: {:?}", e)))?;
+        .map_err(|e| ContractError::IoError(format!("FeeV2 Fee_V2 proof: {:?}", e)))?;
 
     Ok((proof, public_inputs))
 }

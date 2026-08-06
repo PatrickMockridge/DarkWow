@@ -360,7 +360,7 @@ rejected blocks.
 
 ## 5. FeeV2 — Privacy-Preserving Fee Payment (NEW)
 
-**Function code**: `0x08`. **ZK circuits**: `Fee_V3` (value conservation, 14 public
+**Function code**: `0x08`. **ZK circuits**: `Fee_V2` (value conservation, 14 public
 inputs) + `FeeThreshold_V1` (threshold proof, 2 public inputs).
 
 FeeV2 is the privacy-preserving successor to FeeV1. It SHALL NOT expose the
@@ -406,7 +406,7 @@ threshold_proof, fee_value_blind, tx_binding, tx_nonce }`.
 Identical to FeeV1 (§3.3): nullifier marked spent, output coin registered,
 coin tree appended, fee accumulated into `fees_db[height]`.
 
-The fee amount `fee` is a private witness to the Fee_V3 circuit. It is
+The fee amount `fee` is a private witness to the Fee_V2 circuit. It is
 constrained by value conservation (`input = output + fee`) within the ZK
 proof. The contract never learns `fee` — it only knows `fee_value_commit`
 and verifies the threshold proof.
@@ -449,7 +449,7 @@ verified against `threshold = general`.
 **Q9: What is the fee commitment?**
 `fee_value_commit = PedersenCommit(fee_amount, fee_blind)`. The blind SHALL
 be derived deterministically from the wallet's secret. The commitment is a
-public input to Fee_V3 and is stored in FeeParamsV2.
+public input to Fee_V2 and is stored in FeeParamsV2.
 
 ## 6. FeeAmount — Nominal Domain Type
 
@@ -464,7 +464,7 @@ Constructor: FeeAmount::new(v) SHALL succeed for all v >= 0.
 ```
 
 A bare `u64` fee SHALL NOT cross module boundaries. `FeeParamsV1.fee: u64`
-SHALL be migrated to `FeeAmount`. The Fee_V3 circuit witness uses `FeeAmount`
+SHALL be migrated to `FeeAmount`. The Fee_V2 circuit witness uses `FeeAmount`
 internally; the public commitment hides the inner value.
 
 ## 7. Two-Tier Mempool

@@ -34,6 +34,7 @@ witness "Fee_V2" {
     Base tx_commitment,
     Base tx_nonce,
     Base tx_binding,
+    Scalar fee_value_blind,
 }
 
 circuit "Fee_V2" {
@@ -112,7 +113,15 @@ circuit "Fee_V2" {
 
     computed_sum = base_add(output_value, fee);
     constrain_equal_base(computed_sum, input_value);
-    constrain_instance(fee);
+
+    # Fee value commitment — Pedersen commitment to the fee.
+    # Fee is a private witness (no longer exposed via constrain_instance).
+    # The contract verifies this commitment matches FeeParamsV2.fee_value_commit.
+    fee_vcv = ec_mul_short(fee, VALUE_COMMIT_VALUE);
+    fee_vcr = ec_mul(fee_value_blind, VALUE_COMMIT_RANDOM);
+    fee_value_commit = ec_add(fee_vcv, fee_vcr);
+    constrain_instance(ec_get_x(fee_value_commit));
+    constrain_instance(ec_get_y(fee_value_commit));
 
     range_check(64, input_value);
     range_check(64, output_value);
