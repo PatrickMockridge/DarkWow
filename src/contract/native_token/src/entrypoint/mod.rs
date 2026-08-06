@@ -190,6 +190,17 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     Ok(())
 }
 
+#[cfg(feature = "fee-v2")]
+fn fee_v2(_cid: ContractId, _params: &[u8]) -> ContractResult {
+    msg!("[native_token::fee_v2] FeeV2 not yet implemented");
+    Err(ContractError::IoError("FeeV2 not yet implemented — circuit compilation pending".into()))
+}
+
+#[cfg(feature = "fee-v2")]
+fn fee_v2_get_metadata(_cid: ContractId, _params: &[u8]) -> Result<Vec<u8>, ContractError> {
+    Ok(vec![])
+}
+
 // ============================================================================
 // METADATA (ZK PROOF SETUP)
 // ============================================================================
@@ -224,6 +235,8 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         NativeTokenFunction::SpendV1 => spend_get_metadata(cid, params),
         NativeTokenFunction::PoWRewardV1 => pow_reward_get_metadata(cid, params),
         NativeTokenFunction::FeeCollectV1 => fee_collect_get_metadata(cid, params),
+        #[cfg(feature = "fee-v2")]
+        NativeTokenFunction::FeeV2 => fee_v2_get_metadata(cid, params),
     }?;
 
     wasm::util::set_return_data(&metadata)
@@ -567,6 +580,8 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         NativeTokenFunction::SpendV1 => spend_v1(cid, params),
         NativeTokenFunction::PoWRewardV1 => pow_reward_v1(cid, params),
         NativeTokenFunction::FeeCollectV1 => fee_collect_v1(cid, params),
+        #[cfg(feature = "fee-v2")]
+        NativeTokenFunction::FeeV2 => fee_v2(cid, params),
     }
 }
 
@@ -596,12 +611,12 @@ fn fee_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::TokenMismatch.into())
     }
 
-    // Minimum fee enforcement — prevents 0-fee transactions.
-    // DEFAULT_FEE = 42_000_000 is the minimum; higher fees allowed for priority.
-    if fee < crate::MIN_FEE_PER_CALL {
-        msg!("[fee_v1] Error: Fee {} below minimum {}", fee, crate::MIN_FEE_PER_CALL);
-        return Err(NativeTokenError::InsufficientBalance.into())
-    }
+    // DISABLED: minimum fee enforcement moved to mempool policy layer.
+    // Consensus accepts any fee level — the mempool handles minimums.
+    // if fee < crate::MIN_FEE_PER_CALL {
+    //     msg!("[fee_v1] Error: Fee {} below minimum {}", fee, crate::MIN_FEE_PER_CALL);
+    //     return Err(NativeTokenError::InsufficientBalance.into())
+    // }
 
     // Verify Merkle root exists
     if !wasm::db::db_contains_key(coin_roots_db, &fee_val.input.merkle_root.to_bytes())? {
@@ -1081,6 +1096,13 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         NativeTokenFunction::FeeCollectV1 => {
             let update = decode_fee_collect_update_v1(&update_data[1..])?;
             apply_fee_collect(cid, update)
+        }
+        #[cfg(feature = "fee-v2")]
+        NativeTokenFunction::FeeV2 => {
+            // FeeV2 apply is identical to FeeV1 — same postconditions
+            // (fee-spec.md §5.4). Uses FeeV1 update type pending FeeV2 circuits.
+            let update = decode_fee_update_v1(&update_data[1..])?;
+            apply_fee(cid, update)
         }
     }
 }
