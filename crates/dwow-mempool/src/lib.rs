@@ -30,7 +30,7 @@
 //! HAZOP Gap 1 remediation (2026-07-01).
 
 use std::cmp::Ordering;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -66,6 +66,9 @@ pub struct MempoolConfig {
     pub max_tx_size: usize,
     pub min_fee: u64,
     pub persist: bool,
+    /// Premium threshold for FeeV2 transactions (None = no premium queue).
+    /// When set, FeeV2 txs proving fee >= premium_threshold get FIFO priority.
+    pub premium_threshold: Option<u64>,
 }
 
 impl Default for MempoolConfig {
@@ -75,6 +78,7 @@ impl Default for MempoolConfig {
             max_age_secs: 3600,
             max_tx_size: 1024 * 1024,
             min_fee: 42_000_000,
+            premium_threshold: None,
             persist: true,
         }
     }
@@ -151,8 +155,12 @@ impl PartialOrd for FeeIndexEntry {
 pub struct Mempool {
     /// Transactions indexed by blake3 hash for O(1) lookup
     txs: Mutex<HashMap<blake3::Hash, MempoolEntry>>,
-    /// Fee-ordered index for priority block selection
+    /// Fee-ordered index for priority block selection (FeeV1, legacy)
     fee_index: Mutex<BTreeSet<FeeIndexEntry>>,
+    /// Premium FIFO queue — FeeV2 txs proving fee >= premium_threshold (fee-spec.md §7)
+    premium_queue: Mutex<VecDeque<blake3::Hash>>,
+    /// General FIFO queue — FeeV2 txs proving fee >= general_threshold (fee-spec.md §7)
+    general_queue: Mutex<VecDeque<blake3::Hash>>,
     /// Spent nullifiers in the mempool (double-spend prevention).
     /// BTreeSet<Nullifier> per Phase 1 — typed, zero-allocation, ordered.
     nullifiers: Mutex<BTreeSet<Nullifier>>,
@@ -177,6 +185,8 @@ impl Mempool {
         Self {
             txs: Mutex::new(HashMap::new()),
             fee_index: Mutex::new(BTreeSet::new()),
+            premium_queue: Mutex::new(VecDeque::new()),
+            general_queue: Mutex::new(VecDeque::new()),
             nullifiers: Mutex::new(BTreeSet::new()),
             db,
             config,
@@ -227,6 +237,8 @@ impl Mempool {
         Ok(Self {
             txs: Mutex::new(txs),
             fee_index: Mutex::new(fee_index),
+            premium_queue: Mutex::new(VecDeque::new()),
+            general_queue: Mutex::new(VecDeque::new()),
             nullifiers: Mutex::new(nullifiers),
             db: Some(clean_tree),
             config,
@@ -347,6 +359,18 @@ impl Mempool {
         fee_idx.insert(FeeIndexEntry { fee_rate, tx_hash });
         txs.insert(tx_hash, MempoolEntry { tx, added_at: now, fee, estimated_gas: gas });
 
+        // Route to premium/general FIFO queues if threshold proofs are available
+        // (fee-spec.md §7.2). FeeV1 txs go through legacy fee_index only.
+        if let Some(premium) = self.config.premium_threshold {
+            if self.fee_extractor.verify_threshold_proof(
+                &txs.get(&tx_hash).unwrap().tx, premium,
+            ) {
+                self.premium_queue.lock().await.push_back(tx_hash);
+            } else {
+                self.general_queue.lock().await.push_back(tx_hash);
+            }
+        }
+
         // Persist
         if let Some(ref db) = self.db {
             if let Some(entry) = txs.get(&tx_hash) {
@@ -373,9 +397,41 @@ impl Mempool {
     pub async fn select_for_block(&self, config: &MinerConfig) -> Vec<Transaction> {
         let txs = self.txs.lock().await;
         let fee_idx = self.fee_index.lock().await;
+        let mut premium = self.premium_queue.lock().await;
+        let mut general = self.general_queue.lock().await;
 
         let mut selected = Vec::new();
         let mut cumulative_gas: u64 = 0;
+
+        // Drain premium FIFO queue first (fee-spec.md §7.3)
+        while let Some(hash) = premium.pop_front() {
+            if let Some(entry) = txs.get(&hash) {
+                let gas = entry.estimated_gas.max(1);
+                if cumulative_gas + gas > config.max_gas || selected.len() >= config.max_txs {
+                    premium.push_front(hash); // put it back
+                    break;
+                }
+                cumulative_gas += gas;
+                selected.push(entry.tx.clone());
+            }
+        }
+
+        // Drain general FIFO queue second
+        if cumulative_gas < config.max_gas && selected.len() < config.max_txs {
+            while let Some(hash) = general.pop_front() {
+                if let Some(entry) = txs.get(&hash) {
+                    let gas = entry.estimated_gas.max(1);
+                    if cumulative_gas + gas > config.max_gas || selected.len() >= config.max_txs {
+                        general.push_front(hash);
+                        break;
+                    }
+                    cumulative_gas += gas;
+                    selected.push(entry.tx.clone());
+                }
+            }
+        }
+
+        // Legacy fee_index for remaining capacity (FeeV1 txs)
 
         // Compute fee cutoff for High mode
         let fee_cutoff: Option<u64> = match config.mode {
