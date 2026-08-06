@@ -145,14 +145,17 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
     // ── Initialize (if contract has InitializeV1) ───────────────────
     let mut height_before = chain_a.height();
     if let Some(ref init_fn) = spec.initialize {
-        let result = init_fn()?;
-        assert!(!result.call_data.is_empty());
+        let result = init_fn().map_err(|e| dwow_core::Error::Custom(
+            format!("TEST-FAIL [{}::initialize]: InitializeV1 harness failed — {}", spec.name, e)
+        ))?;
+        assert!(!result.call_data.is_empty(),
+            "TEST-FAIL [{}::initialize]: call_data must not be empty", spec.name);
         height_before = modules::block_submission::submit_single_call_block(
             &chain_a, cid, spec.harness,
             &result.call_data, result.proofs, false, // InitializeV1 is non-ZK
         ).await?;
         assert!(height_before > chain_a.height().pred().unwrap(),
-            "{}: height must advance after InitializeV1", spec.name);
+            "TEST-FAIL [{}::initialize]: height must advance after InitializeV1", spec.name);
     }
 
     // ── Exercise every endpoint (one per block) ────────────────────
@@ -168,10 +171,12 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
         let result = if let Some(ref gen) = endpoint.generate_with_coinbase {
             gen(coinbase.as_ref().expect("needs_coinbase_coordination must be true when generate_with_coinbase is set"))?
         } else {
-            (endpoint.generate)()?
+            (endpoint.generate)().map_err(|e| dwow_core::Error::Custom(
+                format!("TEST-FAIL [{}::{}]: harness generate failed — {}", spec.name, endpoint.name, e)
+            ))?
         };
         assert!(!result.call_data.is_empty(),
-            "{}: {} call_data must not be empty", spec.name, endpoint.name);
+            "TEST-FAIL [{}::{}]: call_data must not be empty", spec.name, endpoint.name);
 
         if endpoint.expectation == EndpointExpectation::Rejection {
             // Expect accept_block to REJECT this call (e.g., MintV1 FunctionDisabled)
@@ -180,7 +185,7 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
                 &result.call_data, result.proofs, endpoint.is_zk,
             ).await;
             assert!(submit_result.is_err(),
-                "{}: {} — expected rejection but accept_block succeeded",
+                "TEST-FAIL [{}::{}]: expected rejection but accept_block succeeded",
                 spec.name, endpoint.name);
         } else if endpoint.generate_with_coinbase.is_some() {
             // Coinbase-dependent endpoints use submit_with_coinbase
@@ -191,7 +196,7 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
                 cb.coinbase_tx.clone(),
             ).await?;
             assert!(new_height > height_before,
-                "{}: {} — height must advance after accept_block", spec.name, endpoint.name);
+                "TEST-FAIL [{}::{}]: height must advance after accept_block", spec.name, endpoint.name);
             height_before = new_height;
         } else {
             // Normal acceptance path

@@ -23,7 +23,7 @@ pub async fn exercise_endpoint(
 ) -> Result<BlockHeight> {
     let result = (endpoint.generate)()?;
     assert!(!result.call_data.is_empty(),
-        "{}: call_data must not be empty", endpoint.name);
+        "TEST-FAIL [{}]: call_data must not be empty", endpoint.name);
 
     let new_height = super::block_submission::submit_single_call_block(
         chain, cid, harness,

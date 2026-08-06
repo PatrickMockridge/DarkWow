@@ -45,7 +45,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                     }
                 })),
                 verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
-                generate: Box::new(|| unreachable!("FeeV1 uses generate_with_coinbase")),
+                generate: Box::new(|| Err(dwow_core::Error::Custom("TEST-FAIL [native_token]: FeeV1 must use generate_with_coinbase path".into()))),
             },
             EndpointSpec {
                 name: "BurnV1", is_zk: true,
@@ -73,7 +73,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                     }
                 })),
                 verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
-                generate: Box::new(|| unreachable!("BurnV1 uses generate_with_coinbase")),
+                generate: Box::new(|| Err(dwow_core::Error::Custom("TEST-FAIL [native_token]: BurnV1 must use generate_with_coinbase path".into()))),
             },
             EndpointSpec {
                 name: "TransferV1", is_zk: true,

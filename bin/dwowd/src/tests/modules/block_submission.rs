@@ -25,7 +25,7 @@ pub async fn submit_single_call_block(
 ) -> Result<BlockHeight> {
     if is_zk && proofs.is_empty() {
         return Err(dwow_core::Error::Custom(format!(
-            "ZK-gated function on contract '{}' requires proofs (got 0)",
+            "TEST-FAIL [block_submission]: ZK-gated function requires proofs (got 0)",
             harness.name()
         )));
     }
