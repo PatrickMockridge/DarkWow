@@ -89,6 +89,9 @@ pub struct HeavyweightPipeline {
     pub linear_zk: Arc<crate::registry::model::LinearPowRewardZk>,
     /// Path to temp keys.toml for deterministic test mining keys
     keys_path: std::path::PathBuf,
+    /// Optional test log file writer. Set by the test runner to capture
+    /// all block-assembly and integrity-check output to a file.
+    pub log_file: Option<Mutex<std::fs::File>>,
 }
 
 impl HeavyweightPipeline {
@@ -141,7 +144,7 @@ impl HeavyweightPipeline {
         std::fs::write(&keys_path, Self::TEST_KEY_TOML)
             .map_err(|e| dwow_core::Error::Custom(format!("write test keys: {}", e)))?;
 
-        Ok(Self { db, chain_state, linear_zk, keys_path })
+        Ok(Self { db, chain_state, linear_zk, keys_path, log_file: None })
     }
 
     /// Initialize the genesis block (height 1).
@@ -187,7 +190,7 @@ impl HeavyweightPipeline {
             )));
         }
         if let Err(e) = harness.verify_zk_coverage() {
-            eprintln!("WARN [integrity_checks]: PI-4 ZK coverage check failed for '{}' — {}", name, e);
+            self.log(&format!("WARN [integrity_checks]: PI-4 ZK coverage check failed for '{}' — {}", name, e));
         }
         let contract_id = derive_contract_id_from_name(name);
         let contracts_tree = self.chain_state.store.contracts_tree().clone();
@@ -248,7 +251,7 @@ impl HeavyweightPipeline {
             )));
         }
         if let Err(e) = harness.verify_zk_coverage() {
-            eprintln!("WARN [integrity_checks]: PI-4 ZK coverage check failed for '{}' — {}", name, e);
+            self.log(&format!("WARN [integrity_checks]: PI-4 ZK coverage check failed for '{}' — {}", name, e));
         }
         let contract_id = derive_contract_id_from_name(name);
         // same as deploy() but passes `ix` to runtime.deploy(ix)
@@ -400,19 +403,25 @@ impl HeavyweightPipeline {
         }
     }
 
+    /// Write a message to stderr and to the test log file (if configured).
+    /// Flushes after every write so partial output survives a panic.
+    pub fn log(&self, msg: &str) {
+        eprintln!("{}", msg);
+        if let Some(ref mtx) = self.log_file {
+            use std::io::Write;
+            if let Ok(mut f) = mtx.lock() {
+                let _ = writeln!(f, "{}", msg);
+                let _ = f.flush();
+            }
+        }
+    }
+
     /// Verify the block hash chain is continuous from height 2 to current.
     pub fn block_hash_chain_continuous(&self) -> Result<bool> {
         let current = self.height();
         if current <= BlockHeight::new(1) {
             return Ok(true); // only genesis exists
         }
-        let flags = randomx::RandomXFlags::get_recommended_flags()
-            & !randomx::RandomXFlags::JIT;
-        let rx_cache = self.chain_state.get_cache([0u8; 32]);
-        let vm = std::sync::Arc::new(
-            randomx::RandomXVM::new(flags, Some(rx_cache), None)
-                .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?,
-        );
         for h in 2..=current.get() {
             let height = BlockHeight::new(h);
             let block = self.chain_state.store.get_block(height)
@@ -424,7 +433,7 @@ impl HeavyweightPipeline {
             ).map_err(|e| dwow_core::Error::Custom(format!(
                 "block_hash_chain: get prev block at height {}: {}", h - 1, e
             )))?;
-            if block.header.previous != prev_block.hash_with_vm(&vm) {
+            if block.header.previous != self.chain_state.hash_block_with_cached_vm(&prev_block) {
                 return Ok(false);
             }
         }
@@ -437,14 +446,7 @@ impl HeavyweightPipeline {
             .map_err(|e| dwow_core::Error::Custom(format!(
                 "block_hash_at height {}: {}", height, e
             )))?;
-        let flags = randomx::RandomXFlags::get_recommended_flags()
-            & !randomx::RandomXFlags::JIT;
-        let rx_cache = self.chain_state.get_cache([0u8; 32]);
-        let vm = std::sync::Arc::new(
-            randomx::RandomXVM::new(flags, Some(rx_cache), None)
-                .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?,
-        );
-        Ok(Some(block.hash_with_vm(&vm)))
+        Ok(Some(self.chain_state.hash_block_with_cached_vm(&block)))
     }
 
     // ── Internal helpers ─────────────────────────────────────────────
@@ -602,10 +604,10 @@ impl<'c> HeavyweightBlock<'c> {
     /// Builds the coinbase, assembles all transactions, constructs the
     /// block, builds RandomX VM, and calls `accept_block`.
     pub async fn submit(&mut self) -> Result<BlockHeight> {
-        eprintln!("[blockchain] building coinbase for height {}...", self.height);
+        self.chain.log(&format!("[blockchain] building coinbase for height {}...", self.height));
         let t0 = std::time::Instant::now();
         let cb = self.chain.build_coinbase_inner(self.height, self.reward).await?;
-        eprintln!("[blockchain] coinbase built ({:.1}s)", t0.elapsed().as_secs_f64());
+        self.chain.log(&format!("[blockchain] coinbase built ({:.1}s)", t0.elapsed().as_secs_f64()));
         self.submit_inner(cb.tx).await
     }
 
@@ -625,8 +627,8 @@ impl<'c> HeavyweightBlock<'c> {
         all_txs.push(coinbase_tx);
         all_txs.extend(std::mem::take(&mut self.contract_txs));
 
-        eprintln!("[blockchain] assembling block height {} ({} txs, {} uncles)...",
-            self.height, tx_count + 1, uncle_count);
+        self.chain.log(&format!("[blockchain] assembling block height {} ({} txs, {} uncles)...",
+            self.height, tx_count + 1, uncle_count));
 
         let target = self.chain.expected_target(self.height);
         let uncles = std::mem::take(&mut self.uncles);
@@ -639,18 +641,18 @@ impl<'c> HeavyweightBlock<'c> {
         };
         block.header.target = target;
 
-        eprintln!("[blockchain] building RandomX VM...");
+        self.chain.log("[blockchain] building RandomX VM...");
         let t0 = std::time::Instant::now();
         let vm = build_accept_vm(&block)?;
-        eprintln!("[blockchain] RandomX VM ready ({:.1}s)", t0.elapsed().as_secs_f64());
+        self.chain.log(&format!("[blockchain] RandomX VM ready ({:.1}s)", t0.elapsed().as_secs_f64()));
 
         if target < BlockTarget::MAX {
-            block.header.nonce = mine_test_nonce(&block, &vm, target);
+            block.header.nonce = mine_test_nonce(&block, &vm, target)?;
         }
 
         let current_height = self.height.pred()
             .expect("block height must have predecessor");
-        eprintln!("[blockchain] submitting to accept_block...");
+        self.chain.log("[blockchain] submitting to accept_block...");
         let t0 = std::time::Instant::now();
         let outcome = crate::block_acceptor::accept_block(
             &self.chain.chain_state,
@@ -667,14 +669,14 @@ impl<'c> HeavyweightBlock<'c> {
         let block_hash = block.hash_with_vm(&vm);
         match outcome {
             dwow_chain::BlockConnectOutcome::CanonicalExtension { new_height } => {
-                eprintln!("[blockchain] block accepted at height {} ({:.1}s, {} txs)",
-                    new_height, t0.elapsed().as_secs_f64(), tx_count + 1);
+                self.chain.log(&format!("[blockchain] block accepted at height {} ({:.1}s, {} txs)",
+                    new_height, t0.elapsed().as_secs_f64(), tx_count + 1));
                 self.block_hash = Some(block_hash);
                 Ok(new_height)
             }
             _ => {
-                eprintln!("[blockchain] block processed ({:.1}s, non-canonical)",
-                    t0.elapsed().as_secs_f64());
+                self.chain.log(&format!("[blockchain] block processed ({:.1}s, non-canonical)",
+                    t0.elapsed().as_secs_f64()));
                 self.block_hash = Some(block_hash);
                 Ok(self.height)
             }

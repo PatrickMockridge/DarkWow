@@ -26,12 +26,12 @@ pub fn verify_initial_supply(chain: &HeavyweightPipeline) -> Result<()> {
     let supply = chain.cumulative_supply();
     let expected = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
     if supply != expected.get() {
-        eprintln!(
+        chain.log(&format!(
             "WARN [integrity_checks]: PI-2 cumulative supply {} != expected INITIAL_REWARD {}. \
              Supply tree may not be populated after genesis init. \
              Block proof (mass balance) is the validity condition.",
             supply, expected.get()
-        );
+        ));
     }
     Ok(())
 }
@@ -59,7 +59,7 @@ pub fn pre_test_integrity(
     // PI-4: ZK coverage pre-check — WARN only. Harness misconfiguration does not
     // affect block validity. The test can still exercise covered circuits.
     if let Err(e) = harness.verify_zk_coverage() {
-        eprintln!("WARN [integrity_checks]: PI-4 ZK coverage check failed — {}", e);
+        chain.log(&format!("WARN [integrity_checks]: PI-4 ZK coverage check failed — {}", e));
     }
     Ok(())
 }

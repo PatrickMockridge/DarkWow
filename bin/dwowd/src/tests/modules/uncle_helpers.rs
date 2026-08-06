@@ -28,17 +28,17 @@ pub fn build_accept_vm(
 }
 
 /// Find a nonce that makes the block hash ≤ target.
-pub fn mine_test_nonce(block: &dwow_chain::Block, vm: &randomx::RandomXVM, target: BlockTarget) -> u32 {
+pub fn mine_test_nonce(block: &dwow_chain::Block, vm: &randomx::RandomXVM, target: BlockTarget) -> dwow_core::Result<u32> {
     for nonce in 0u32..1_000_000 {
         let mut b = block.clone();
         b.header.nonce = nonce;
         let hash = b.hash_with_vm(vm);
         let hash_u32 = u32::from_le_bytes(hash.as_bytes()[0..4].try_into().unwrap());
         if hash_u32 <= target.get() {
-            return nonce;
+            return Ok(nonce);
         }
     }
-    panic!("Could not find valid nonce for target {} after 1M iterations", target);
+    Err(dwow_core::Error::Custom(format!("Could not find valid nonce for target {} after 1M iterations", target)))
 }
 
 /// Build a single uncle block with one contract call.

@@ -28,6 +28,7 @@ pub mod modules;
 pub mod pipeline;
 pub mod heavyweight_pipeline;
 pub mod specs;
+pub mod test_output;
 pub mod uniform_runner;
 pub mod wallet_integration;
 pub mod fee_collect_pipeline;

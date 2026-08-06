@@ -55,6 +55,7 @@
 //! RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd test_heavyweight
 //! ```
 
+use std::sync::Mutex;
 use std::sync::atomic::AtomicU64;
 
 use dwow_core::zk::Proof;
@@ -152,17 +153,17 @@ pub(crate) fn build_accept_vm(
 /// Find a nonce that makes the block hash ≤ target. Used for test blocks
 /// at heights > 2 where the expected target is lower than u32::MAX.
 /// Returns the valid nonce.
-pub(crate) fn mine_test_nonce(block: &dwow_chain::Block, vm: &randomx::RandomXVM, target: BlockTarget) -> u32 {
+pub(crate) fn mine_test_nonce(block: &dwow_chain::Block, vm: &randomx::RandomXVM, target: BlockTarget) -> dwow_core::Result<u32> {
     for nonce in 0u32..1_000_000 {
         let mut b = block.clone();
         b.header.nonce = nonce;
         let hash = b.hash_with_vm(vm);
         let hash_u32 = u32::from_le_bytes(hash.as_bytes()[0..4].try_into().unwrap());
         if hash_u32 <= target.get() {
-            return nonce;
+            return Ok(nonce);
         }
     }
-    panic!("Could not find valid nonce for target {} after 1M iterations", target);
+    Err(dwow_core::Error::Custom(format!("Could not find valid nonce for target {} after 1M iterations", target)))
 }
 
 
@@ -229,7 +230,6 @@ fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Erro
 // Integration test: validates ContractMetadata serialization end-to-end with
 // EscrowHarness ZK proof generation through accept_block. Deploys escrow contract,
 // exercises create_escrow, and verifies metadata roundtrip encoding.
-#[test]
 fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::EscrowHarness;
     use dwow_sdk::crypto::{PublicKey, SecretKey};
@@ -241,8 +241,9 @@ fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Er
     smol::block_on(async {
         use crate::tests::blockchain::HeavyweightPipeline;
 
-        let chain = HeavyweightPipeline::new().await?;
+        let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("metadata")));
         let harness = EscrowHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
 
@@ -564,10 +565,10 @@ fn test_heavyweight_identity() -> std::result::Result<(), Box<dyn std::error::Er
     Ok(smol::block_on(run_heavyweight_test(&identity_test_spec()))?)
 }
 #[test]
+#[ignore = "HAZOP H-TF-003: not a heavyweight test — does not exercise accept_block"]
 // Integration test: cross-contract orchestration across 4 contracts (Identity,
 // LaborMarket, DaoEscrow, Attestation). Harness-exercise test — generates call_data
 // and verifies it's non-empty but does NOT submit through accept_block.
-#[test]
 fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::{
         AttestationHarness, DaoEscrowHarness, IdentityHarness, LaborMarketHarness,
@@ -584,8 +585,9 @@ fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn st
         // ------------------------------------------------------------------
         println!("\n--- Step 1: Deploy contracts ---");
 
-        let chain = HeavyweightPipeline::new().await?;
+        let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("recruitment_pipeline")));
 
         // Deploy Identity
         let id_harness = IdentityHarness::spawn();
@@ -836,7 +838,8 @@ fn test_heavyweight_canonical_exec() -> std::result::Result<(), Box<dyn std::err
     println!("=== Canonical Block Execution ===");
 
     smol::block_on(async {
-        let (chain, _harness, _cid, _keypair) = setup_native_token_pipeline().await?;
+        let (mut chain, _harness, _cid, _keypair) = setup_native_token_pipeline().await?;
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("canonical_exec")));
         let before = chain.height();
 
         // Submit a coinbase-only block — proves the full accept_block path
@@ -865,7 +868,8 @@ fn test_heavyweight_coinbase_rejects_wrong_reward() -> std::result::Result<(), B
     println!("=== Coinbase Wrong Reward Rejection (F1 fix) ===");
 
     smol::block_on(async {
-        let (chain, _harness, _cid, _keypair) = setup_native_token_pipeline().await?;
+        let (mut chain, _harness, _cid, _keypair) = setup_native_token_pipeline().await?;
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("coinbase_rejects_wrong_reward")));
         let height = chain.height();
         let next_height = height.succ();
         let correct_reward = dwow_sdk::blockchain::expected_reward(next_height);
@@ -912,7 +916,8 @@ fn test_heavyweight_uncle_exec() -> std::result::Result<(), Box<dyn std::error::
     println!("=== Uncle Block Execution ===");
 
     smol::block_on(async {
-        let (chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        let (mut chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("uncle_exec")));
         let (call_data, _proofs) = native_token_call(&harness, keypair)?;
         let before = chain.height();
 
@@ -946,7 +951,8 @@ fn test_heavyweight_mixed_exec() -> std::result::Result<(), Box<dyn std::error::
     println!("=== Mixed Execution: Canonical + Uncle ===");
 
     smol::block_on(async {
-        let (chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        let (mut chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("mixed_exec")));
         let (call_data, _proofs) = native_token_call(&harness, keypair)?;
         let before = chain.height();
 
@@ -983,7 +989,8 @@ fn test_heavyweight_multi_uncle() -> std::result::Result<(), Box<dyn std::error:
     println!("=== Multi-Uncle Execution (3 uncles) ===");
 
     smol::block_on(async {
-        let (chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        let (mut chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("multi_uncle")));
 
         let next = chain.height().succ();
         let reward = dwow_sdk::blockchain::expected_reward(next);
@@ -1027,7 +1034,8 @@ fn test_heavyweight_uncle_depth() -> std::result::Result<(), Box<dyn std::error:
     println!("=== Uncle Depth Verification ===");
 
     smol::block_on(async {
-        let (chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        let (mut chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("uncle_depth")));
 
         for depth in [1u8, 2, 3] {
             let (call_data, _proofs) = native_token_call(&harness, keypair.clone())?;
@@ -1066,7 +1074,8 @@ fn test_heavyweight_empty_uncle() -> std::result::Result<(), Box<dyn std::error:
     println!("=== Empty Uncle (no contract calls) ===");
 
     smol::block_on(async {
-        let (chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        let (mut chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("empty_uncle")));
         let height = chain.height();
         let next = height.succ();
         let reward = dwow_sdk::blockchain::expected_reward(next);
@@ -1109,11 +1118,13 @@ fn test_heavyweight_empty_uncle() -> std::result::Result<(), Box<dyn std::error:
 // test_heavyweight_invalid_uncle_proof
 // ---------------------------------------------------------------------------
 #[test]
+#[ignore = "HAZOP H-TF-002: uncle merkle proof validation not yet enforced in consensus"]
 fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("=== Invalid Uncle Proof ===");
 
     smol::block_on(async {
-        let (chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        let (mut chain, harness, cid, keypair) = setup_native_token_pipeline().await?;
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("invalid_uncle_proof")));
         let height = chain.height();
         let next = height.succ();
         let reward = dwow_sdk::blockchain::expected_reward(next);
@@ -1164,8 +1175,9 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
             height, target, None,
         );
 
-        // Currently the uncle merkle proof is not validated during accept_block.
-        // When validation is added, change this to assert!(result.is_err()).
+        // HAZOP H-TF-002: uncle merkle proof validation is not yet enforced.
+        // This test is #[ignore] until the consensus check is implemented.
+        // When validation is added, un-ignore and change to assert!(result.is_err()).
         assert!(result.is_ok(), "Uncle application should succeed (merkle proof validation not yet enforced)");
         println!("  Uncle applied (merkle proof validation deferred to future consensus work)");
 
@@ -1188,7 +1200,6 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
 // Deploys both contracts, exercises deposit→withdraw→double-spend rejection
 // then relayer_endowment initialize→deploy_capital. Uses accept_block directly.
 // RG-10 compliant: zero match-Err-skip (fixed 2026-08-05).
-#[test]
 fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::{BridgeHarness, RelayerEndowmentHarness};
     use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
@@ -1202,8 +1213,9 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
 
     smol::block_on(async {
         // --- Setup: shared chain ---
-        let chain = HeavyweightPipeline::new().await?;
+        let mut chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("relayer_lifecycle")));
 
         let bridge_harness = BridgeHarness::spawn();
         let relayer_harness = RelayerEndowmentHarness::spawn();

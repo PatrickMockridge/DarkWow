@@ -30,6 +30,8 @@
 //!
 //! Spec: heavyweight-spec.md §9 (Per-Contract Test Template).
 
+use std::sync::Mutex;
+
 use dwow_core::zk::Proof;
 use dwow_core::Result;
 use dwow_sdk::crypto::ContractId;
@@ -113,7 +115,9 @@ impl<'a> ContractTestSpec<'a> {
 
     /// Index of the first ZK endpoint (for nullifier replay testing).
     pub fn first_zk_index(&self) -> Option<usize> {
-        self.endpoints.iter().position(|e| e.is_zk)
+        // Skip endpoints that need coinbase params — they can't be generated
+        // standalone for nullifier replay (HAZOP H-UR-013).
+        self.endpoints.iter().position(|e| e.is_zk && e.generate_with_coinbase.is_none())
     }
 }
 
@@ -125,7 +129,8 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
     spec.validate()?;
 
     // ── Pipeline A (primary) ────────────────────────────────────────
-    let chain_a = modules::chain_setup::init_test_chain().await?;
+    let mut chain_a = modules::chain_setup::init_test_chain().await?;
+    chain_a.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file(spec.name)));
 
     // ── Pre-test integrity checks (spec §5.2) ───────────────────────
     modules::integrity_checks::pre_test_integrity(
