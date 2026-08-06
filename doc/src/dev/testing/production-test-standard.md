@@ -10,6 +10,69 @@ This standard derives from a HAZOP review of 55 test functions across 7 test fil
 are false positives — they appear to test contract functions but never exercise them
 through the production execution path.
 
+## Test Outcome Taxonomy
+
+Every heavyweight test produces one of four outcomes. This taxonomy is normative —
+every assertion, integrity check, and diagnostic in the test suite SHALL use the
+prefix convention defined below.
+
+### INFRA-FAIL — Block-Proof Violation in Shared Infrastructure
+
+A failure in a shared infrastructure module. The chain's consensus mechanism
+rejected the block, produced non-deterministic results, or a shared integrity
+check failed. These failures are NOT specific to the contract under test — they
+affect all tests equally.
+
+The single authoritative gate is `accept_block()` in `block_acceptor.rs`. An
+INFRA-FAIL means: `accept_block` returned an error, determinism produced
+different hashes from identical inputs, a nullifier replay was not rejected,
+the genesis block is missing or corrupted, or the block hash chain is
+discontinuous.
+
+**Error prefix:** `INFRA-FAIL [module]:` — MUST name the module that failed.
+
+### TEST-FAIL — Contract-Specific Failure
+
+A failure specific to the contract under test. The contract's harness or spec
+produced bad data — the generate closure returned an error, call_data was empty,
+or the chain height did not advance after submitting this specific endpoint.
+
+**Error prefix:** `TEST-FAIL [contract]:` — MUST name the contract (and endpoint
+if applicable).
+
+### WARN — Non-Blocking Diagnostic
+
+The block was accepted by `accept_block` (mass balance passed, ZK proofs
+verified, nullifiers checked). A derived metric or contract-internal state
+query did not match expectations. WARNs are non-blocking: they report to
+`eprintln!` and the test continues.
+
+**Error prefix:** `WARN [module]:` — MUST name the originating module.
+
+### PASS — All Block-Proof Checks Passed
+
+Every endpoint's block was accepted by `accept_block`, all INFRA-FAIL and
+TEST-FAIL checks passed, the determinism check matched, and any WARNs were
+logged but did not block the test.
+
+### Integrity Check Classification
+
+| Check | ID | Module | Classification |
+|-------|----|--------|----------------|
+| Genesis block hash exists and non-zero | PI-1 | integrity_checks | INFRA-FAIL |
+| Initial cumulative supply equals INITIAL_REWARD | PI-2 | integrity_checks | WARN |
+| Contract exists in contracts tree at genesis | PI-3 | integrity_checks | INFRA-FAIL |
+| Harness ZK coverage pre-check | PI-4 | integrity_checks | WARN |
+| Block hash chain continuity | PI-5 | integrity_checks | INFRA-FAIL |
+| Cumulative supply reconciliation | PI-6 | integrity_checks | WARN |
+| Determinism — Pipeline B hash must match Pipeline A | PI-7 | determinism | INFRA-FAIL |
+| accept_block rejection (mass balance, proofs, state) | — | block_submission | INFRA-FAIL |
+| Nullifier replay must be rejected | — | nullifier_replay | INFRA-FAIL |
+| Harness generate() closure returns error | — | uniform_runner | TEST-FAIL |
+| call_data is empty after generate | — | uniform_runner | TEST-FAIL |
+| Height must advance after accept_block | — | endpoint_exercise | TEST-FAIL |
+| verify_state closure finds unexpected state | — | uniform_runner | WARN |
+
 ## 1. The Production Path
 
 Every test that claims to exercise a contract function SHALL follow this path. A test

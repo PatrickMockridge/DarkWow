@@ -242,8 +242,11 @@ gas limit tracking.
 
 **ZK coverage enforcement:** The `HeavyweightPipeline` performs a
 pre-deploy ZK coverage check via `verify_zk_coverage()` on every harness.
-The `strict_zk` mode (opt-in) rejects empty proofs for ZK contracts instead
-of just warning. A CI audit test at `src/contract/test-harness/tests/zk_audit.rs`
+ZK proof enforcement is structural and immutable (`const STRICT_ZK: bool = true`).
+Empty proofs for ZK-gated functions are rejected by the uniform runner's
+`submit_block()` using `EndpointSpec::is_zk` (authoritative contract metadata,
+never a heuristic). There is no opt-in toggle — all heavyweight tests enforce
+STRICT_ZK. A CI audit test at `src/contract/test-harness/tests/zk_audit.rs`
 decodes all 99 harness-loaded `.zk.bin` files in under a second (no proving
 key building) and cross-checks harness `circuits()` lists against zkbin
 files on disk.

@@ -123,7 +123,21 @@ May compose from genesis contracts via spend_hook or child calls.
 
 ### 2.2 "Passing" — The Formal Definition
 
-A heavyweight test SHALL be considered **passing** if and only if ALL of:
+A heavyweight test SHALL be considered **passing** if and only if ALL of the
+following positive requirements are met AND no INFRA-FAIL or TEST-FAIL outcome
+occurs (see [production-test-standard.md](production-test-standard.md) "Test
+Outcome Taxonomy" for the classification of every integrity check):
+
+1. **INFRA-FAIL/TEST-FAIL gate:** No block-proof violation (accept_block
+   rejection, determinism mismatch, nullifier replay failure, genesis
+   corruption, hash chain breakage) and no contract-specific failure
+   (harness generate error, empty call_data, height not advancing).
+
+2. **WARN tolerance:** WARN outcomes (cumulative supply mismatch, verify_state
+   discrepancy, ZK coverage gaps) are logged as diagnostics but do not prevent
+   the test from passing. The block was accepted — the chain is valid.
+
+The positive requirements below define what the test SHALL exercise:
 
 1. **Full-path execution:** Every function in the contract's function enum SHALL be exercised
    through `accept_block`: generate proofs → `with_call()` → `with_fee_collect()` → `submit()`.
