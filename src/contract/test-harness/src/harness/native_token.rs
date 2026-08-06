@@ -226,57 +226,6 @@ impl NativeTokenHarness {
         Ok(FeeResult { call_data, params: debris.params, proofs: debris.proofs })
     }
 
-    /// Build a FeeV2 call (function code 0x08, ZK + threshold proof).
-    /// Spec: fee-spec.md §5.
-    pub fn fee_v2(
-        &self,
-        input_value: u64,
-        token_id: pallas::Base,
-        spend_hook: pallas::Base,
-        user_data: pallas::Base,
-        coin_blind: pallas::Base,
-        leaf_position: u64,
-        merkle_path: Vec<MerkleNode>,
-        secret: SecretKey,
-        ephemeral_signature_secret: SecretKey,
-        recipient: PublicKey,
-        output_spend_hook: pallas::Base,
-        output_user_data: pallas::Base,
-        fee_amount: u64,
-        threshold: u64,
-    ) -> std::result::Result<(Vec<u8>, Vec<dwow_core::zk::Proof>), Box<dyn std::error::Error>> {
-        let builder = dwow_native_token_contract::client::fee_v2::FeeV2CallBuilder {
-            input: dwow_native_token_contract::client::fee_v2::FeeV2CallInput {
-                value: input_value,
-                token_id,
-                spend_hook,
-                user_data,
-                coin_blind,
-                leaf_position,
-                merkle_path,
-                secret,
-                ephemeral_signature_secret,
-                tx_nonce: pallas::Base::zero(),
-                tx_commitment: pallas::Base::zero(),
-            },
-            output: dwow_native_token_contract::client::fee_v2::FeeV2CallOutput {
-                recipient,
-                value: input_value - fee_amount,
-                spend_hook: output_spend_hook,
-                user_data: output_user_data,
-                coin_blind,
-            },
-            fee_amount,
-            threshold,
-            fee_zkbin: self.fee_zkbin.clone(),
-            fee_pk: self.fee_pk.clone(),
-            threshold_zkbin: self.threshold_zkbin.clone(),
-            threshold_pk: self.threshold_pk.clone(),
-        };
-        let fee_v2_result = builder.build()?;
-        Ok((fee_v2_result.call_data, fee_v2_result.proofs))
-    }
-
     /// Build a transfer call (function code 0x03, ZK).
     /// Wraps the existing TransferCallBuilder with deterministic test inputs.
     pub fn transfer(

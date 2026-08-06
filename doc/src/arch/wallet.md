@@ -662,6 +662,57 @@ evaluating the witnessed circuit through the existing trace machinery
 same evaluation the verifier's metadata call performs node-side. No
 per-contract Rust computes public inputs on the generic path.
 
+#### 6.4.2 FeeV2 Transaction Construction
+
+FeeV2 (function code `0x08`) is the privacy-preserving fee payment path.
+It replaces FeeV1 (removed). The construction SHALL adhere to
+[fee-spec.md §8](consensus/fee-spec.md).
+
+**Barb set.** A FeeV2 transaction exhibits `↓pay-fee` (spends a coin via
+nullifier, splits value into change + fee) and `↓threshold-prove` (proves
+hidden fee meets a public threshold). Both barbs SHALL be covered by the
+wallet's capability selection (§6.2).
+
+**Call data format.** FeeV2 call data SHALL be `[0x08][FeeParamsV2 encoded]`.
+The call data SHALL NOT contain clear-text fee bytes. The fee amount is
+hidden behind a Pedersen commitment (`fee_value_commit: pallas::Point`) and
+a FeeThreshold_V1 ZK proof (`threshold_proof: Vec<u8>`).
+
+**Dual-proof construction.** The wallet SHALL produce two ZK proofs for
+every FeeV2 transaction:
+
+1. Fee_V2 proof — value conservation: `input_value = output_value + fee`,
+   with fee as a private witness and `fee_value_commit` as a public input.
+   Uses the `Fee_V2` namespace circuit (`fee.zk`).
+2. FeeThreshold_V1 proof — proves `fee >= threshold` without revealing fee.
+   Public inputs: `threshold`, `tx_binding`. The `tx_binding` SHALL be
+   computed as `poseidon(DOMAIN_TX_BINDING, tx_commitment, threshold)` to
+   prevent cross-tier replay.
+
+**Threshold selection.** The wallet SHALL select the proof threshold based
+on the user's chosen fee:
+- If `fee >= PREMIUM_THRESHOLD`: use `PREMIUM_THRESHOLD` in the proof
+- Otherwise: use `GENERAL_THRESHOLD` in the proof
+The actual fee may exceed the threshold — the proof only guarantees the
+lower bound.
+
+**Blinding.** All blinds (value blind, coin blind, fee blind) SHALL be
+derived deterministically from `Seed` (§6.1). The fee blind SHALL be
+independent — the commitment `pedersen_commit(fee, fee_blind)` is computed
+with its own blind, not zero. The wallet SHALL ensure Pedersen homomorphic
+balance: `input_blind = output_blind + fee_blind`.
+
+**Integration point.** The wallet's `build_fee_and_finalize_tx()` in
+`bin/dww/src/fee_builder.rs` SHALL use `FeeV2CallBuilder` (the
+NativeToken client builder at `src/contract/native_token/src/client/fee_v2.rs`).
+The builder SHALL receive the selected DRKW capability, its Merkle proof
+(from `capability_proofs`), and resolved secret (from `AccountManager`, §4).
+The builder SHALL NOT construct Merkle proofs manually — proofs SHALL be
+retrieved from the wallet's SQLite store.
+
+**Nullifier publication.** The fee input's nullifier SHALL be published in
+`Transaction.nullifiers` for mempool double-spend detection.
+
 ### 6.5 Provisional State: The In-Between
 
 Broadcasting a transaction creates state that is real to the wallet but not yet on the
