@@ -219,6 +219,30 @@ impl NativeTokenHarness {
         Ok(FeeResult { call_data, params: debris.params, proofs: debris.proofs })
     }
 
+    /// Build a FeeV2 call (function code 0x08, ZK + threshold proof).
+    /// Stub: full implementation requires Fee_V3 + FeeThreshold_V1 circuits.
+    /// Spec: fee-spec.md §5.
+    #[cfg(feature = "fee-v2")]
+    pub fn fee_v2(
+        &self,
+        _input_value: u64,
+        _token_id: pallas::Base,
+        _spend_hook: pallas::Base,
+        _user_data: pallas::Base,
+        _coin_blind: pallas::Base,
+        _leaf_position: u64,
+        _merkle_path: Vec<MerkleNode>,
+        _secret: SecretKey,
+        _ephemeral_signature_secret: SecretKey,
+        _recipient: PublicKey,
+        _output_spend_hook: pallas::Base,
+        _output_user_data: pallas::Base,
+        _fee_amount: u64,
+        _threshold: u64,
+    ) -> std::result::Result<(Vec<u8>, Vec<dwow_core::zk::Proof>), Box<dyn std::error::Error>> {
+        Err("FeeV2 not yet implemented — circuit compilation pending".into())
+    }
+
     /// Build a transfer call (function code 0x03, ZK).
     /// Wraps the existing TransferCallBuilder with deterministic test inputs.
     pub fn transfer(
