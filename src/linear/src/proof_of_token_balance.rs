@@ -43,7 +43,7 @@
 // Keep them in scope for the test module.
 use crate::{Block, ContractCall};
 use dwow_native_token_contract::{
-    model::{BurnParamsV1, FeeParamsV1, SpendParamsV1, TransferParamsV1},
+    model::{BurnParamsV1, SpendParamsV1, TransferParamsV1},
     NativeTokenFunction,
 };
 use dwow_sdk::{
@@ -114,15 +114,8 @@ pub fn verify_proof_of_token_balance(block: &Block) -> Result<(), BalanceError> 
             };
 
             match func {
-                NativeTokenFunction::FeeV1 => {
-                    process_fee_call(
-                        &call.data,
-                        &mut total_inputs,
-                        &mut total_outputs,
-                        &mut fee_aggregate,
-                        darkw_token_commit,
-                    )?;
-                }
+                NativeTokenFunction::MintV1 | NativeTokenFunction::PoWRewardV1
+                | NativeTokenFunction::FeeCollectV1 => {} // skip — coinbase, redistribution
                 NativeTokenFunction::BurnV1 => {
                     process_burn_call(
                         &call.data,
@@ -147,11 +140,6 @@ pub fn verify_proof_of_token_balance(block: &Block) -> Result<(), BalanceError> 
                         darkw_token_commit,
                     )?;
                 }
-                // MintV1 and PoWRewardV1 are not included in the mass balance.
-                // MintV1 outputs go through the coinbase (PoWRewardV1), which is
-                // verified separately against the emission schedule.
-                NativeTokenFunction::MintV1 | NativeTokenFunction::PoWRewardV1 // coinbase + disabled
-                | NativeTokenFunction::FeeCollectV1 => {} // fee redistribution, not mint/burn
                 NativeTokenFunction::FeeV2 => {
                     // FeeV2: privacy-preserving fee. Uses FeeParamsV2 with
                     // Pedersen commitments for hidden fee amounts.
@@ -188,39 +176,6 @@ pub fn verify_proof_of_token_balance(block: &Block) -> Result<(), BalanceError> 
 fn matches_native_token(call: &ContractCall) -> bool {
     // Phase 2.1: ContractId comparison is now typed — no bytes needed
     call.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
-}
-
-/// Process a FeeV1 call: extract input/output value_commits and fee.
-fn process_fee_call(
-    data: &[u8],
-    total_inputs: &mut pallas::Point,
-    total_outputs: &mut pallas::Point,
-    fee_aggregate: &mut pallas::Point,
-    darkw_token_commit: pallas::Base,
-) -> Result<(), BalanceError> {
-    // FeeV1 call data: [selector:1][fee:8][FeeParamsV1...] — canonical format
-    if data.len() < 10 {
-        return Err(BalanceError::Deserialize("FeeV1 data too short".into()));
-    }
-    let fee: u64 =
-        deserialize(&data[1..9]).map_err(|e| BalanceError::Deserialize(e.to_string()))?;
-    let params = FeeParamsV1::decode(&data[9..]).map_err(|e| BalanceError::Deserialize(format!("{:?}", e)))?;
-
-    // Only track DRKW (native token). Guard prevents spam-token fee injection
-    // into the DRKW mass balance equation.
-    if params.input.token_commit != darkw_token_commit {
-        return Ok(());
-    }
-
-    *total_inputs = *total_inputs + params.input.value_commit;
-    *total_outputs = *total_outputs + params.output.value_commit;
-
-    // Fee commitment: pedersen_commit(fee, blind=0)
-    // Only DRKW fees reach here — non-DRKW early-returns above.
-    let zero_blind: ScalarBlind = 0u64.into();
-    *fee_aggregate = *fee_aggregate + pedersen_commitment_u64(fee, zero_blind);
-
-    Ok(())
 }
 
 /// Process a FeeV2 call: extract input/output value_commits and fee commitment.

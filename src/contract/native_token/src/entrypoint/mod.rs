@@ -351,7 +351,6 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     let params = &ix[1..];
 
     let metadata = match func {
-        NativeTokenFunction::FeeV1 => fee_get_metadata(cid, params),
         NativeTokenFunction::MintV1 => {
             msg!("[native_token::get_metadata] MintV1 is disabled (unauthorized mint path)");
             return Err(ContractError::InvalidFunction)
@@ -367,7 +366,8 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::util::set_return_data(&metadata)
 }
 
-/// Metadata for FeeV1
+/// Metadata for FeeV1 — REMOVED. FeeV1 is no longer supported.
+#[allow(dead_code)]
 fn fee_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
     // FeeV1 call data after the selector: [fee u64 LE (8)][FeeParamsV1] —
     // the SAME layout `fee_v1` (process) and the block balance checker
@@ -610,14 +610,6 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contra
 // These replace serialize(&(NativeTokenFunction::XxxV1 as u8, update)) on the exec side
 // and deserialize(&update_data[1..]) on the apply side.
 
-fn encode_fee_update_v1(update: &FeeUpdateV1) -> Vec<u8> {
-    let inner = update.encode();
-    let mut buf = Vec::with_capacity(1 + inner.len());
-    buf.push(NativeTokenFunction::FeeV1 as u8);
-    buf.extend_from_slice(&inner);
-    buf
-}
-
 fn encode_fee_v2_update_v1(update: &FeeUpdateV1) -> Vec<u8> {
     let inner = update.encode();
     let mut buf = Vec::with_capacity(1 + inner.len());
@@ -703,7 +695,6 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let params = &ix[1..];
 
     match func {
-        NativeTokenFunction::FeeV1 => fee_v1(cid, params),
         NativeTokenFunction::MintV1 => {
             msg!("[native_token::process_instruction] MintV1 is disabled (unauthorized mint path — use PoWRewardV1 for block rewards)");
             Err(ContractError::InvalidFunction)
@@ -782,7 +773,7 @@ fn fee_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     };
 
     msg!("[native_token::fee_v1] Fee valid");
-    wasm::util::set_return_data(&encode_fee_update_v1(&update))
+    wasm::util::set_return_data(&encode_fee_v2_update_v1(&update))
 }
 
 // ============================================================================
@@ -1201,10 +1192,6 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     let func = NativeTokenFunction::try_from(update_data[0])?;
 
     match func {
-        NativeTokenFunction::FeeV1 => {
-            let update = decode_fee_update_v1(&update_data[1..])?;
-            apply_fee(cid, update)
-        }
         NativeTokenFunction::MintV1 => {
             msg!("[native_token::process_update] MintV1 is disabled (unauthorized mint path)");
             Err(ContractError::InvalidFunction)

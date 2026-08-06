@@ -57,8 +57,6 @@ use dwow_sdk::error::ContractError;
 #[repr(u8)]
 #[derive(Debug)]
 pub enum NativeTokenFunction {
-    #[deprecated(since = "0.5.0", note = "Use FeeV2 (0x08) for privacy-preserving fees")]
-    FeeV1 = 0x00,
     MintV1 = 0x01,
     BurnV1 = 0x02,
     TransferV1 = 0x03,
@@ -73,7 +71,7 @@ impl TryFrom<u8> for NativeTokenFunction {
 
     fn try_from(b: u8) -> core::result::Result<Self, Self::Error> {
         match b {
-            0x00 => Ok(Self::FeeV1),
+            0x00 => Err(ContractError::InvalidFunction), // FeeV1 removed
             0x01 => Ok(Self::MintV1),
             0x02 => Ok(Self::BurnV1),
             0x03 => Ok(Self::TransferV1),
