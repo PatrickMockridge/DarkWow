@@ -73,6 +73,67 @@ logged but did not block the test.
 | Height must advance after accept_block | — | endpoint_exercise | TEST-FAIL |
 | verify_state closure finds unexpected state | — | uniform_runner | WARN |
 
+## Infrastructure Requirements
+
+The test infrastructure SHALL be uniform — it is not cherry-picked per test.
+Every block constructed by the test infrastructure SHALL follow the same path
+regardless of which contract is under test.
+
+### Block Structure
+
+Every block submitted through `submit_single_call_block()` contains:
+
+1. **Coinbase** (PoWRewardV1): opens the merkle tree, distributes block reward.
+   Constructed by `build_coinbase_for_height()`.
+
+2. **Contract call(s)**: the endpoint(s) under test.
+
+3. **FeeCollectV1**: closes the merkle tree, collects accumulated fees.
+   Appended conditionally by `with_fee_collect()`:
+   - When FeeV1 calls exist in the block → FeeCollectV1 is appended as the
+     final transaction (matches production miner at lib.rs:1358)
+   - When no FeeV1 calls exist → FeeCollectV1 is omitted (zero-fee block)
+
+Both cases are valid per consensus (validation.rs:376-387). Zero-fee blocks
+are accepted by the validator — they match the production miner's behavior
+for coinbase-only blocks. The fee pipeline is tested explicitly by
+native_token (FeeV1 endpoint with coinbase coordination) and by the
+`fee_collect_pipeline.rs` integration test.
+
+### Fee Mechanism
+
+FeeV1 calls are added by the wallet during transaction construction, not by
+the block constructor. Each user transaction includes a FeeV1 call (native_token
+selector `0x00`) alongside its contract operation call. FeeV1 requires real
+coin data (Input, Output, FeeParamsV1 with Pedersen commitments, Merkle paths,
+and ZK proofs) — structural FeeV1 stubs cannot pass block proof validation.
+
+The test infrastructure does NOT inject synthetic FeeV1 calls. Instead:
+
+- **native_token_spec** exercises the FeeV1→FeeCollectV1 path end-to-end with
+  real proofs and coinbase coordination (§5.1 of heavyweight-spec.md)
+- **fee_collect_pipeline.rs** tests fee collection integration across multiple
+  blocks with FeeV1-producing transactions
+- **All other contract tests** produce structurally valid blocks that may be
+  zero-fee (no FeeV1 calls → no FeeCollectV1). This is valid per consensus
+  and matches the production miner's coinbase-only block path
+
+### FeeCollectV1 Validation
+
+The block structure validator (validation.rs:362-388) enforces four rules:
+
+| FeeCollectV1 | FeeV1 fees | Result |
+|-------------|-----------|--------|
+| Present | Zero | REJECTED — zero-value replay attack (§3.13) |
+| Absent | > 0 | REJECTED — fees stranded permanently |
+| Present | > 0 | ACCEPTED — must be final transaction |
+| Absent | Zero | ACCEPTED — valid zero-fee block |
+
+The test infrastructure SHALL NOT construct FeeCollectV1 with zero fees.
+The `with_fee_collect()` helper SHALL omit FeeCollectV1 when no FeeV1 calls
+exist in the block, matching the production miner's `if let Some(fee_tx)`
+pattern.
+
 ## 1. The Production Path
 
 Every test that claims to exercise a contract function SHALL follow this path. A test

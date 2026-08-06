@@ -15,6 +15,11 @@ use crate::tests::blockchain::HeavyweightPipeline;
 /// Submit a single contract call in its own block with FeeCollectV1.
 /// Enforces ZK gating: if `is_zk` is true, `proofs` must be non-empty.
 /// `is_zk` comes from EndpointSpec::is_zk — authoritative metadata, never heuristic (RG-21).
+///
+/// FeeCollectV1 is appended conditionally via `with_fee_collect()`:
+/// - When FeeV1 calls exist in the block (native_token tests) → FeeCollectV1 appended
+/// - When no FeeV1 calls exist → FeeCollectV1 omitted (zero-fee block, matches miner)
+/// Both cases are valid per consensus (validation.rs:376-387).
 pub async fn submit_single_call_block(
     chain: &HeavyweightPipeline,
     cid: ContractId,
@@ -32,6 +37,6 @@ pub async fn submit_single_call_block(
 
     chain.block()?
         .with_call(cid, harness, call_data, proofs)?
-        .with_fee_collect()?   // unconditional — RG-6, spec §3.5
+        .with_fee_collect()?
         .submit().await
 }
