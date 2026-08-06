@@ -420,18 +420,20 @@ fn test_wallet_integration() {
         assert_eq!(wtx.calls.len(), 2, "transfer + fee call");
         assert_eq!(wtx.proofs.len(), 2, "one proof bundle per call");
         assert_eq!(wtx.calls[0].data.data[0], 0x03, "calls[0] = TransferV1");
-        assert_eq!(wtx.calls[1].data.data[0], 0x00, "calls[1] = FeeV1");
+        assert_eq!(wtx.calls[1].data.data[0], 0x08, "calls[1] = FeeV2");
         let tp: dwow_native_token_contract::model::TransferParamsV1 =
             dwow_serial::deserialize(&wtx.calls[0].data.data[1..])
                 .expect("TransferParamsV1 deserializes from call data");
-        let fee_prefix: u64 = dwow_serial::deserialize(&wtx.calls[1].data.data[1..9])
-            .expect("fee u64 prefix");
-        assert_eq!(fee_prefix, dwow_wallet::fee_builder::DEFAULT_FEE,
-            "FeeV1 layout: [0x00][fee u64 LE][FeeParamsV1]");
-        let fp: dwow_native_token_contract::model::FeeParamsV1 =
-            dwow_serial::deserialize(&wtx.calls[1].data.data[9..])
-                .expect("FeeParamsV1 deserializes after the fee prefix");
-        assert_eq!(fp.fee.get(), fee_prefix, "in-params fee equals the prefix fee");
+        // FeeV2 layout: [0x08][FeeParamsV2 encoded] — NO clear-text fee bytes (spec §5.2)
+        let fp: dwow_native_token_contract::model::fee::FeeParamsV2 =
+            dwow_serial::deserialize(&wtx.calls[1].data.data[1..])
+                .expect("FeeParamsV2 deserializes from call data");
+        assert!(
+            fp.fee_value_commit != pallas::Point::identity(),
+            "FeeV2 fee_value_commit must be non-identity (Pedersen commitment to hidden fee)"
+        );
+        assert!(fp.threshold > 0, "FeeV2 threshold must be non-zero");
+        assert!(!fp.threshold_proof.is_empty(), "FeeV2 threshold_proof must be non-empty");
         assert_eq!(tp.inputs.len(), 1, "one transfer input");
         assert_eq!(tp.outputs.len(), 2, "recipient + change outputs");
         assert_ne!(wtx.tx_commitment, [0u8; 32],

@@ -37,9 +37,8 @@ use dwow_sdk::{
 pub mod nullifier;
 pub use self::nullifier::Nullifier;
 
-#[path = "fee_v2.rs"]
-pub mod fee_v2;
-pub use fee_v2::FeeParamsV2;
+pub mod fee;
+pub use fee::FeeParamsV2;
 
 // ============================================================================
 // TOKEN/SYMBOLIC CONSTANTS
@@ -391,75 +390,11 @@ impl ClearInput {
 // FUNCTION PARAMETERS (matching promissory_note naming)
 // ============================================================================
 
-/// Parameters for FeeV1 - pay network fees (CONSENSUS CRITICAL)
-#[deprecated(since = "0.5.0", note = "Use FeeParamsV2 for privacy-preserving fees")]
+// FeeParamsV1 removed — FeeV2 only.
+
+/// State update for fee payment (FeeV2)
 #[derive(Debug, Clone)]
-pub struct FeeParamsV1 {
-    pub input: Input,
-    pub output: Output,
-    /// Blinding for fee value commitment
-    pub fee_value_blind: pallas::Scalar,
-    /// Blinding for fee token commitment — typed BaseBlind per spec §8.1.
-    pub fee_token_blind: BaseBlind,
-    /// Fee amount in native tokens (u64)
-    pub fee: FeeAmount,
-    /// Transaction binding: poseidon_hash(tx_commitment, tx_nonce)
-    pub tx_binding: pallas::Base,
-    /// Transaction nonce: unique per transaction
-    pub tx_nonce: pallas::Base,
-}
-
-impl dwow_serial::Encodable for FeeParamsV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
-impl dwow_serial::Decodable for FeeParamsV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
-
-impl FeeParamsV1 {
-    pub fn encode(&self) -> Vec<u8> {
-        let input_bytes = self.input.encode();
-        let output_bytes = self.output.encode();
-        let cap = input_bytes.len() + output_bytes.len() + 136;
-        let mut buf = Vec::with_capacity(cap);
-        buf.extend_from_slice(&input_bytes);
-        buf.extend_from_slice(&output_bytes);
-        buf.extend_from_slice(&self.fee_value_blind.to_repr());
-        buf.extend_from_slice(&self.fee_token_blind.inner().to_repr());
-        buf.extend_from_slice(&self.fee.to_le_bytes());
-        buf.extend_from_slice(&self.tx_binding.to_repr());
-        buf.extend_from_slice(&self.tx_nonce.to_repr());
-        buf
-    }
-
-    pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        let input = Input::decode(&data[..Input::ENCODED_SIZE])?;
-        let input_len = Input::ENCODED_SIZE;
-        if data.len() < input_len + 130 {
-            return Err(ContractError::IoError(format!(
-                "FeeParamsV1: expected at least {} bytes, got {}", input_len + 130, data.len()
-            )));
-        }
-        let output_len = 130 + u16::from_le_bytes(data[input_len+128..input_len+130].try_into().unwrap()) as usize;
-        let output = Output::decode(&data[input_len..input_len + output_len])?;
-        let pos = input_len + output_len;
-        if data.len() < pos + 136 {
-            return Err(ContractError::IoError(format!(
-                "FeeParamsV1: expected at least {} bytes, got {}", pos + 136, data.len()
-            )));
-        }
-        let fee_value_blind = Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(data[pos..pos+32].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("FeeParamsV1: invalid fee_value_blind".into()))?;
-        let fee_token_blind = Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("FeeParamsV1: invalid fee_token_blind".into()))?);
-        let fee = FeeAmount::new(u64::from_le_bytes(data[pos+64..pos+72].try_into().unwrap()));
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+72..pos+104].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("FeeParamsV1: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+104..pos+136].try_into().unwrap()))
-            .ok_or_else(|| ContractError::IoError("FeeParamsV1: invalid tx_nonce".into()))?;
-        Ok(FeeParamsV1 { input, output, fee_value_blind, fee_token_blind, fee, tx_binding, tx_nonce })
-    }
-}
-
-/// State update for FeeV1
-#[derive(Debug, Clone)]
-pub struct FeeUpdateV1 {
+pub struct FeeUpdate {
     pub nullifier: Nullifier,
     pub coin: Coin,
     pub height: BlockHeight,
@@ -816,10 +751,10 @@ pub struct FeeCollectUpdateV1 {
 // These replace the former #[derive(SerialEncodable, SerialDecodable)] pattern.
 // Each type has fixed byte layout with per-field validating constructors.
 
-impl dwow_serial::Encodable for FeeUpdateV1 { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
-impl dwow_serial::Decodable for FeeUpdateV1 { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
+impl dwow_serial::Encodable for FeeUpdate { fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> { let b = self.encode(); w.write_all(&b)?; Ok(b.len()) } }
+impl dwow_serial::Decodable for FeeUpdate { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
-impl FeeUpdateV1 {
+impl FeeUpdate {
     /// Fixed canonical byte size: nullifier(32) + coin(32) + height(8) + fee(8)
     pub const ENCODED_SIZE: usize = 80;
 
@@ -837,21 +772,21 @@ impl FeeUpdateV1 {
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
         if data.len() != Self::ENCODED_SIZE {
             return Err(ContractError::IoError(format!(
-                "FeeUpdateV1: expected {} bytes, got {}",
+                "FeeUpdate: expected {} bytes, got {}",
                 Self::ENCODED_SIZE, data.len()
             )));
         }
         let nullifier = Nullifier::from_bytes(data[0..32].try_into().unwrap())
             .map_err(|e| ContractError::IoError(format!(
-                "FeeUpdateV1: invalid nullifier: {}", e
+                "FeeUpdate: invalid nullifier: {}", e
             )))?;
         let coin_bytes: [u8; 32] = data[32..64].try_into().unwrap();
         let coin = Coin(Option::<pallas::Base>::from(pallas::Base::from_repr(coin_bytes))
-            .ok_or_else(|| ContractError::IoError("FeeUpdateV1: invalid coin".into()))?);
+            .ok_or_else(|| ContractError::IoError("FeeUpdate: invalid coin".into()))?);
         let height =
             BlockHeight::from_le_bytes(data[64..72].try_into().unwrap());
         let fee = FeeAmount::new(u64::from_le_bytes(data[72..80].try_into().unwrap()));
-        Ok(FeeUpdateV1 { nullifier, coin, height, fee })
+        Ok(FeeUpdate { nullifier, coin, height, fee })
     }
 }
 

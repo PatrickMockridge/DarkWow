@@ -61,7 +61,7 @@ use crate::{
     error::NativeTokenError,
     model::{
         BurnParamsV1, BurnUpdateV1, DRKW_TOKEN_ID, FeeCollectParamsV1, FeeCollectUpdateV1,
-        FeeParamsV1, FeeParamsV2, FeeUpdateV1, PoWRewardParamsV1, PoWRewardUpdateV1,
+        FeeParamsV2, FeeUpdate, PoWRewardParamsV1, PoWRewardUpdateV1,
         SpendParamsV1, SpendUpdateV1, TransferParamsV1, TransferUpdateV1,
     },
     NativeTokenFunction, NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE,
@@ -243,13 +243,13 @@ fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
     //
     // NOTE: The fee amount is NOT available to the contract entrypoint.
     // FeeParamsV2 carries only fee_value_commit (Pedersen), not the plain fee.
-    // The daemon patches the FeeUpdateV1.fee after ZK proof witness extraction.
+    // The daemon patches the FeeUpdate.fee after ZK proof witness extraction.
     // For now, fee=0 — the daemon corrects this before apply_fee().
     let verifying_block_height = wasm::util::get_verifying_block_height()?;
 
     // Create state update — fee is patched by daemon after ZK proof verification.
     // Postconditions are identical to FeeV1 (fee-spec.md §5.4).
-    let update = FeeUpdateV1 {
+    let update = FeeUpdate {
         nullifier: fee_val.input.nullifier,
         coin: fee_val.output.coin,
         height: verifying_block_height,
@@ -257,7 +257,7 @@ fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
     };
 
     msg!("[native_token::fee_v2] Fee valid (privacy-preserving)");
-    wasm::util::set_return_data(&encode_fee_v2_update_v1(&update))
+    wasm::util::set_return_data(&encode_fee_update(&update))
 }
 
 fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
@@ -366,66 +366,8 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::util::set_return_data(&metadata)
 }
 
-/// Metadata for FeeV1 — REMOVED. FeeV1 is no longer supported.
-#[allow(dead_code)]
-fn fee_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
-    // FeeV1 call data after the selector: [fee u64 LE (8)][FeeParamsV1] —
-    // the SAME layout `fee_v1` (process) and the block balance checker
-    // (proof_of_token_balance::process_fee_call) parse.
-    if params.len() < 9 {
-        msg!("[native_token::fee_get_metadata] Error: Params too short ({} bytes, need >= 9)", params.len());
-        return Ok(vec![]);
-    }
-    let fee_params = match FeeParamsV1::decode(&params[8..]) { Ok(p) => p, Err(e) => { msg!("[native_token::fee_get_metadata] Error: Failed to decode FeeParamsV1: {:?}", e); return Ok(vec![]); } };
+// fee_get_metadata (FeeV1) removed.
 
-    // Public inputs for the ZK proofs we have to verify
-    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    // Schnorr signatures are prohibited in contract metadata (contract-standards.md §3).
-    // Authorization is via ZK proof + nullifier. The signature_public coordinates are
-    // included in zk_public_inputs — the circuit itself binds to them.
-    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
-
-    // Grab the Pedersen commitments and the signature pubkey from the params
-    let input_value_coords = fee_params.input.value_commit.to_affine().coordinates();
-    if input_value_coords.is_none().into() {
-        msg!("[native_token::fee_get_metadata] Error: Input value commitment is identity (cannot extract coordinates)");
-        return Ok(vec![]);
-    }
-    let input_value_coords = input_value_coords.unwrap();
-    let output_value_coords = fee_params.output.value_commit.to_affine().coordinates();
-    if output_value_coords.is_none().into() {
-        msg!("[native_token::fee_get_metadata] Error: Output value commitment is identity (cannot extract coordinates)");
-        return Ok(vec![]);
-    }
-    let output_value_coords = output_value_coords.unwrap();
-    let (sig_x, sig_y) = fee_params.input.signature_public.xy().expect("pk not identity");
-
-    zk_public_inputs.push((
-        NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2.to_string(),
-        vec![
-            fee_params.input.nullifier.inner(),     // 1
-            *input_value_coords.x(),                // 2
-            *input_value_coords.y(),                // 3
-            fee_params.input.token_commit,          // 4
-            fee_params.input.merkle_root.inner(),   // 5
-            fee_params.input.user_data_enc,         // 6
-            sig_x,                                  // 7
-            sig_y,                                  // 8
-            fee_params.output.coin.inner(),         // 9
-            *output_value_coords.x(),               // 10
-            *output_value_coords.y(),               // 11
-            pallas::Base::from(fee_params.fee.get()),   // 12: fee
-            fee_params.tx_binding,                  // 13: tx_binding
-            fee_params.tx_nonce,                    // 14: tx_nonce
-        ],
-    ));
-
-    // Serialize everything gathered and return it
-    let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata)?;
-    signature_pubkeys.encode(&mut metadata)?;
-    Ok(metadata)
-}
 
 /// Metadata for BurnV1
 fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
@@ -610,7 +552,7 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contra
 // These replace serialize(&(NativeTokenFunction::XxxV1 as u8, update)) on the exec side
 // and deserialize(&update_data[1..]) on the apply side.
 
-fn encode_fee_v2_update_v1(update: &FeeUpdateV1) -> Vec<u8> {
+fn encode_fee_update(update: &FeeUpdate) -> Vec<u8> {
     let inner = update.encode();
     let mut buf = Vec::with_capacity(1 + inner.len());
     buf.push(NativeTokenFunction::FeeV2 as u8);
@@ -618,8 +560,8 @@ fn encode_fee_v2_update_v1(update: &FeeUpdateV1) -> Vec<u8> {
     buf
 }
 
-fn decode_fee_update_v1(data: &[u8]) -> Result<FeeUpdateV1, ContractError> {
-    FeeUpdateV1::decode(data)
+fn decode_fee_update(data: &[u8]) -> Result<FeeUpdate, ContractError> {
+    FeeUpdate::decode(data)
 }
 
 fn encode_burn_update_v1(update: &BurnUpdateV1) -> Vec<u8> {
@@ -708,73 +650,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     }
 }
 
-// ============================================================================
-// FEE - Pay network fees (CONSENSUS CRITICAL)
-// ============================================================================
-
-fn fee_v1(cid: ContractId, params: &[u8]) -> ContractResult {
-    // Extract fee from raw tx data (bytes 0-8, before FeeParamsV1)
-    let fee: FeeAmount = FeeAmount::new(deserialize::<u64>(&params[0..8])?);
-    let fee_val = FeeParamsV1::decode(&params[8..])?;
-    msg!("[native_token::fee_v1] Processing fee: {}", fee);
-
-    // Access the necessary databases
-    let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
-    let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
-    let coin_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
-
-    // Token must be DRKW (native consensus asset, ↓denominate)
-    let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, pallas::Base::zero(), pallas::Base::zero()]);
-    if fee_val.input.token_commit != token_commit {
-        msg!("[fee_v1] Error: Input token commitment is not the native token");
-        return Err(NativeTokenError::TokenMismatch.into())
-    }
-    if fee_val.output.token_commit != token_commit {
-        msg!("[fee_v1] Error: Output token commitment is not native token");
-        return Err(NativeTokenError::TokenMismatch.into())
-    }
-
-    // DISABLED: minimum fee enforcement moved to mempool policy layer.
-    // Consensus accepts any fee level — the mempool handles minimums.
-    // if fee < crate::MIN_FEE_PER_CALL {
-    //     msg!("[fee_v1] Error: Fee {} below minimum {}", fee, crate::MIN_FEE_PER_CALL);
-    //     return Err(NativeTokenError::InsufficientBalance.into())
-    // }
-
-    // Verify Merkle root exists
-    if !wasm::db::db_contains_key(coin_roots_db, &fee_val.input.merkle_root.to_bytes())? {
-        msg!("[fee_v1] Error: Input Merkle root not found in previous state");
-        return Err(NativeTokenError::TransferMerkleRootNotFound.into())
-    }
-
-    // Verify nullifier is NOT already spent (SMT lookup)
-    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-    let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-    if smt.get_leaf(&fee_val.input.nullifier.inner()) != pallas::Base::zero() {
-        msg!("[fee_v1] Error: Duplicate nullifier found");
-        return Err(NativeTokenError::DuplicateNullifier.into())
-    }
-
-    // Verify new coin does not already exist
-    if wasm::db::db_contains_key(coins_db, &fee_val.output.coin.to_bytes())? {
-        msg!("[fee_v1] Error: Duplicate coin found");
-        return Err(NativeTokenError::DuplicateCoin.into())
-    }
-
-    // Get verifying block height
-    let verifying_block_height = wasm::util::get_verifying_block_height()?;
-
-    // Create state update
-    let update = FeeUpdateV1 {
-        nullifier: fee_val.input.nullifier,
-        coin: fee_val.output.coin,
-        height: verifying_block_height,
-        fee,
-    };
-
-    msg!("[native_token::fee_v1] Fee valid");
-    wasm::util::set_return_data(&encode_fee_v2_update_v1(&update))
-}
+// fee_v1 (FeeV1) removed — FeeV2 (0x08) is the sole fee entrypoint.
 
 // ============================================================================
 // TRANSFER - Private token transfer (PRIVACY)
@@ -1219,7 +1095,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         NativeTokenFunction::FeeV2 => {
             // FeeV2 apply is identical to FeeV1 — same postconditions
             // (fee-spec.md §5.4).
-            let update = decode_fee_update_v1(&update_data[1..])?;
+            let update = decode_fee_update(&update_data[1..])?;
             apply_fee(cid, update)
         }
     }
@@ -1366,7 +1242,7 @@ fn apply_fee_collect(cid: ContractId, update: FeeCollectUpdateV1) -> ContractRes
     Ok(())
 }
 
-fn apply_fee(cid: ContractId, update: FeeUpdateV1) -> ContractResult {
+fn apply_fee(cid: ContractId, update: FeeUpdate) -> ContractResult {
     msg!("[native_token::apply_fee] Marking nullifier, adding coin, accumulating fee: {}", update.fee);
 
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;

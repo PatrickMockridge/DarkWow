@@ -2,11 +2,6 @@
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
  *
- * DarkWow is a tool for people and nations to establish sovereignty
- * according to human rights law. See the UN Declaration on the Rights
- * of Indigenous Peoples and associated documents:
- * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
- *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
  * published by the Free Software Foundation, either version 3 of the
@@ -21,158 +16,241 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! NativeToken FeeV1 Client API
+//! NativeToken FeeV2 Client API
 //!
-//! This module provides the ability to build Fee calls for network fee payment.
+//! This module provides the ability to build privacy-preserving FeeV2 calls.
+//! FeeV2 hides the fee amount behind a Pedersen commitment and includes a
+//! FeeThreshold_V1 proof that the fee meets a threshold without revealing it.
+//!
+//! Spec: fee-spec.md §5.
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
-    Result,
+    Result as CoreResult,
+};
+use dwow_sdk::crypto::{
+    constants::{
+        DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_TX_BINDING,
+        DRK_POSEIDON_DOMAIN_USER_DATA_ENC,
+    },
+    note::AeadEncryptedNote,
+    pasta_prelude::{Curve, CurveAffine},
+    pedersen_commitment_u64, poseidon_hash,
+    BaseBlind, Blind, FuncId, MerkleNode, Nullifier, PublicKey, ScalarBlind, SecretKey, TokenId,
 };
 use dwow_sdk::{
     bridgetree::Hashable,
-    crypto::{
-        constants::{DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_TX_BINDING, DRK_POSEIDON_DOMAIN_USER_DATA_ENC},
-        note::AeadEncryptedNote,
-        pasta_prelude::{Curve, CurveAffine},
-        pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId, TokenId, MerkleNode,
-        PublicKey, ScalarBlind, SecretKey,
-    },
     error::ContractError,
     pasta::pallas,
 };
-use rand::rngs::OsRng;
-use rand::SeedableRng;
+use rand::{RngCore, SeedableRng};
 
-use crate::model::{Coin, CoinAttributes, FeeParamsV1, Input, Nullifier};
 use crate::client::NativeToken;
+use crate::model::fee::FeeParamsV2;
+use crate::client::zkbins::{
+    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN,
+};
+use crate::model::{CoinAttributes, Input, Output};
 
-/// Fixed gas used by the fee call.
-/// This is the minimum gas any fee-paying transaction will use.
-pub const FEE_CALL_GAS: u64 = 42_000_000;
-
-/// Revealed public inputs of the `Fee_V1` ZK proof
-pub struct FeeRevealed {
-    /// Input's Nullifier
-    pub nullifier: Nullifier,
-    /// Input's value commitment
-    pub input_value_commit: pallas::Point,
-    /// Token commitment (DRKW token = zero, ↓denominate)
-    pub token_commit: pallas::Base,
-    /// Merkle root for input coin
-    pub merkle_root: MerkleNode,
-    /// Encrypted user data for input coin
-    pub input_user_data_enc: pallas::Base,
-    /// Public key used to sign transaction
-    pub signature_public: PublicKey,
-    /// Output coin
-    pub output_coin: Coin,
-    /// Output value commitment
-    pub output_value_commit: pallas::Point,
-    /// Fee value (constrained in circuit: output_value + fee == input_value)
-    pub fee: pallas::Base,
-    /// Transaction commitment: hash of all call data in this transaction.
-    /// Binds this proof to the specific transaction it belongs to.
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
-}
-
-impl FeeRevealed {
-    /// Transform the struct into a `Vec<pallas::Base>` ready for
-    /// proof verification.
-    pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let input_vc_coords = self.input_value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
-        let output_vc_coords = self.output_value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
-        let sigpub_coords = self.signature_public.inner().to_affine().coordinates().expect("Value commitment cannot be the identity element");
-
-        // NOTE: It's important to keep these in the same order
-        // as the `constrain_instance` calls in the zkas code.
-        vec![
-            self.nullifier.inner(),
-            *input_vc_coords.x(),
-            *input_vc_coords.y(),
-            self.token_commit,
-            self.merkle_root.inner(),
-            self.input_user_data_enc,
-            *sigpub_coords.x(),
-            *sigpub_coords.y(),
-            self.output_coin.inner(),
-            *output_vc_coords.x(),
-            *output_vc_coords.y(),
-            self.fee,
-            self.tx_binding,
-            self.tx_nonce,
-        ]
-    }
-}
-
-/// Input for building a fee call
-pub struct FeeCallInput {
-    /// Value of the coin being spent
+/// Input parameters for building a FeeV2 call.
+pub struct FeeV2CallInput {
     pub value: u64,
-    /// Token ID (should be DRKW_TOKEN_ID = zero)
     pub token_id: pallas::Base,
-    /// Spend hook
     pub spend_hook: pallas::Base,
-    /// User data
     pub user_data: pallas::Base,
-    /// Coin blind
     pub coin_blind: pallas::Base,
-    /// Merkle tree leaf position
     pub leaf_position: u64,
-    /// Merkle path (siblings)
     pub merkle_path: Vec<MerkleNode>,
-    /// Caller's secret key
+    /// Merkle root from the wallet's production tree (tree.root(0)).
+    /// SHALL NOT be recomputed manually in the proof builder.
+    /// The ZK circuit verifies root == merkle_root(pos, path, coin).
+    pub merkle_root: MerkleNode,
     pub secret: SecretKey,
-    /// Ephemeral signature secret — MUST be fresh per transaction.
-    /// Never reuse the wallet secret here; doing so links all
-    /// fee payments to the same on-chain signature_public.
     pub ephemeral_signature_secret: SecretKey,
-    /// Transaction commitment: hash of all call data in this transaction
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
-/// Output for fee call - the "change" coin after paying fee
-pub struct FeeCallOutput {
-    /// Recipient public key
+/// Output specification for a FeeV2 call.
+pub struct FeeV2CallOutput {
     pub recipient: PublicKey,
-    /// Value of output coin (input_value - fee)
     pub value: u64,
-    /// Spend hook for output
     pub spend_hook: pallas::Base,
-    /// User data for output
     pub user_data: pallas::Base,
-    /// Coin blind
     pub coin_blind: pallas::Base,
 }
 
-/// Create the `Fee_V1` ZK proof given parameters
-#[allow(clippy::too_many_arguments)]
-pub fn create_fee_proof(
-    zkbin: &ZkBinary,
-    pk: &ProvingKey,
-    input: &FeeCallInput,
-    input_value_blind: ScalarBlind,
-    output: &FeeCallOutput,
-    output_value_blind: ScalarBlind,
-    output_spend_hook: pallas::Base,
-    output_user_data: pallas::Base,
-    output_coin_blind: pallas::Base,
-    token_blind: BaseBlind,
-    fee: u64,
-    tx_commitment: pallas::Base,
-) -> Result<(Proof, FeeRevealed)> {
-    // Derive public key from secret using EC (Schnorr-style)
-    let public_key = PublicKey::from_secret(input.secret.clone());
-    let signature_public = PublicKey::from_secret(input.ephemeral_signature_secret.clone());
-    let sig_coords = signature_public.inner().to_affine().coordinates().expect("Value commitment cannot be the identity element");
+/// Result of building a FeeV2 call.
+pub struct FeeV2Result {
+    pub call_data: Vec<u8>,
+    pub params: FeeParamsV2,
+    pub proofs: Vec<Proof>,
+}
 
-    // Create input coin attributes
+/// Builder for FeeV2 calls — privacy-preserving fee with threshold proof.
+///
+/// Produces call data: `[0x08][FeeParamsV2 encoded]` with NO clear-text fee bytes.
+/// The fee amount is hidden behind a Pedersen commitment.
+pub struct FeeV2CallBuilder {
+    pub input: FeeV2CallInput,
+    pub output: FeeV2CallOutput,
+    pub fee_amount: u64,
+    pub threshold: u64,
+    /// Fee_V2 zkas circuit ZkBinary
+    pub fee_zkbin: ZkBinary,
+    /// Proving key for the Fee_V2 ZK circuit
+    pub fee_pk: ProvingKey,
+    /// FeeThreshold_V1 zkas circuit ZkBinary
+    pub threshold_zkbin: ZkBinary,
+    /// Proving key for the FeeThreshold_V1 ZK circuit
+    pub threshold_pk: ProvingKey,
+}
+
+impl FeeV2CallBuilder {
+    /// Build a FeeV2 call with dual ZK proofs (Fee_V2 + FeeThreshold_V1).
+    ///
+    /// The fee amount is private — it appears ONLY as a Pedersen commitment
+    /// in the call data. The Fee_V2 circuit constrains input = output + fee
+    /// internally without exposing fee. The FeeThreshold_V1 circuit proves
+    /// fee >= threshold.
+    pub fn build(self) -> Result<FeeV2Result, ContractError> {
+        if self.input.value <= self.fee_amount {
+            return Err(ContractError::Custom(1)); // ↓bad-fee-amount
+        }
+
+        let mut proofs: Vec<Proof> = vec![];
+
+        // Generate blinds
+        let (input_value_blind, output_coin_blind) =
+            if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            (ScalarBlind::random(&mut rng), BaseBlind::random(&mut rng))
+        } else {
+            (ScalarBlind::random(&mut rand::rngs::OsRng),
+             BaseBlind::random(&mut rand::rngs::OsRng))
+        };
+        let output_value_blind = input_value_blind.clone();
+        let token_blind = BaseBlind::ZERO;
+
+        // Generate fee_value_blind
+        let fee_value_blind = if crate::deterministic_zk_enabled() {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+            ScalarBlind::random(&mut rng)
+        } else {
+            ScalarBlind::random(&mut rand::rngs::OsRng)
+        };
+
+        // Compute output value
+        let output_value = self.input.value - self.fee_amount;
+
+        // Fee_V2 circuit tx_binding: bound to tx_nonce (matches fee.zk).
+        // Used for the Fee_V2 proof public inputs and stored in FeeParamsV2.
+        let fee_v2_tx_binding = poseidon_hash([
+            DRK_POSEIDON_DOMAIN_TX_BINDING,
+            self.input.tx_commitment,
+            self.input.tx_nonce,
+        ]);
+
+        // FeeThreshold_V1 tx_binding: bound to threshold (matches fee_threshold_v1.zk).
+        // Used for the FeeThreshold_V1 proof only.
+        let threshold_tx_binding = poseidon_hash([
+            DRK_POSEIDON_DOMAIN_TX_BINDING,
+            self.input.tx_commitment,
+            pallas::Base::from(self.threshold),
+        ]);
+
+        // Build Fee_V2 proof using pre-built proving key
+        let (fee_proof, _revealed) = create_fee_proof(
+            &self.fee_zkbin,
+            &self.fee_pk,
+            &self.input,
+            input_value_blind.clone(),
+            &self.output,
+            output_value_blind.clone(),
+            token_blind.clone(),
+            self.fee_amount,
+            fee_value_blind.clone(),
+            self.input.tx_commitment,
+        )?;
+        proofs.push(fee_proof);
+
+        // Build FeeThreshold_V1 proof using pre-built proving key
+        let threshold_proof = create_fee_threshold_proof(
+            &self.threshold_zkbin,
+            &self.threshold_pk,
+            self.fee_amount,
+            self.threshold,
+            self.input.tx_commitment,
+            threshold_tx_binding,
+        )?;
+        proofs.push(threshold_proof.clone());
+
+        // Serialize threshold proof for embedding in params
+        let mut proof_bytes = vec![];
+        dwow_serial::Encodable::encode(&threshold_proof, &mut proof_bytes)
+            .map_err(|e| ContractError::IoError(format!("threshold proof encode: {:?}", e)))?;
+
+        // Build Input/Output params
+        let (params_input, params_output) = build_fee_v2_params(
+            &self.input,
+            &self.output,
+            input_value_blind,
+            output_value_blind,
+            output_coin_blind,
+            token_blind.clone(),
+            output_value,
+        )?;
+
+        // Compute fee_value_commit and extract coordinates
+        let fee_value_commit = pedersen_commitment_u64(self.fee_amount, fee_value_blind.clone());
+        let coords = fee_value_commit.to_affine().coordinates();
+        if coords.is_none().into() {
+            return Err(ContractError::IoError("FeeV2: fee_value_commit is identity".into()));
+        }
+        let c = coords.unwrap();
+        let fee_value_commit_x = *c.x();
+        let fee_value_commit_y = *c.y();
+
+        // Build FeeParamsV2
+        let params = FeeParamsV2 {
+            input: params_input,
+            output: params_output,
+            fee_value_commit,
+            fee_value_commit_x,
+            fee_value_commit_y,
+            threshold_proof: proof_bytes,
+            threshold: self.threshold,
+            fee_value_blind: fee_value_blind.inner(),
+            fee_token_blind: token_blind,
+            tx_binding: fee_v2_tx_binding,
+            tx_nonce: self.input.tx_nonce,
+        };
+
+        // Serialize call data: [0x08][FeeParamsV2 encoded]
+        let encoded_params = params.encode();
+        let mut call_data = Vec::with_capacity(1 + encoded_params.len());
+        call_data.push(0x08u8);
+        call_data.extend_from_slice(&encoded_params);
+
+        Ok(FeeV2Result { call_data, params, proofs })
+    }
+}
+
+/// Build Input and Output parameters for a FeeV2 call.
+fn build_fee_v2_params(
+    input: &FeeV2CallInput,
+    output: &FeeV2CallOutput,
+    input_value_blind: ScalarBlind,
+    output_value_blind: ScalarBlind,
+    output_coin_blind: BaseBlind,
+    token_blind: BaseBlind,
+    output_value: u64,
+) -> Result<(Input, Output), ContractError> {
+    // Build input coin
     let input_coin_attrs = CoinAttributes {
-            version: 0,
-        public_key,
+        version: 0,
+        public_key: PublicKey::from_secret(input.secret.clone()),
         value: input.value,
         token_id: TokenId::from_base(input.token_id),
         spend_hook: FuncId::from_base(input.spend_hook),
@@ -181,75 +259,157 @@ pub fn create_fee_proof(
     };
     let input_coin = input_coin_attrs.to_coin();
 
-    // Calculate nullifier
+    // Merkle root from the wallet's production tree — not recomputed here.
+
     let nullifier = Nullifier::new(input.secret.clone(), input_coin.inner());
-
-    // Calculate merkle root
-    let merkle_root = {
-        let position: u64 = input.leaf_position.into();
-        let mut current = MerkleNode::from_base(input_coin.inner());
-        for (level, sibling) in input.merkle_path.iter().enumerate() {
-            let level = level as u8;
-            current = if position & (1 << level) == 0 {
-                MerkleNode::combine(level.into(), &current, sibling)
-            } else {
-                MerkleNode::combine(level.into(), sibling, &current)
-            };
-        }
-        current
-    };
-
-    // User data encryption
-    let input_user_data_enc = poseidon_hash([DRK_POSEIDON_DOMAIN_USER_DATA_ENC, input.user_data, pallas::Base::zero()]);
-
-    // Value commitments (Pedersen)
+    let signature_public = PublicKey::from_secret(input.ephemeral_signature_secret.clone());
+    let input_user_data_enc = poseidon_hash([
+        DRK_POSEIDON_DOMAIN_USER_DATA_ENC, input.user_data, pallas::Base::zero(),
+    ]);
     let input_value_commit = pedersen_commitment_u64(input.value, input_value_blind.clone());
-    let output_value_commit = pedersen_commitment_u64(output.value, output_value_blind.clone());
-
-    // Token commitment (DRKW token = zero, ↓denominate)
-    let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.token_id, token_blind.clone().inner()]);
-
-    // Create output coin
-    let output_coin_attrs = CoinAttributes {
-            version: 0,
-        public_key: output.recipient,
-        value: output.value,
-        token_id: TokenId::from_base(input.token_id), // Same token
-        spend_hook: FuncId::from_base(output_spend_hook),
-        user_data: output_user_data,
-        blind: Blind(output_coin_blind),
-    };
-    let output_coin = output_coin_attrs.to_coin();
-
-    // Compute tx_binding: binds this proof to a specific transaction.
-    // Must match the tx_binding computed in FeeCallBuilder::build() and
-    // the tx_binding constrained in the ZK circuit.
-    let tx_binding = poseidon_hash([
-        DRK_POSEIDON_DOMAIN_TX_BINDING,
-        tx_commitment,
-        input.tx_nonce,
+    let output_value_commit = pedersen_commitment_u64(output_value, output_value_blind.clone());
+    let token_commit_val = poseidon_hash([
+        DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.token_id, token_blind.inner(),
     ]);
 
-    let public_inputs = FeeRevealed {
-        nullifier,
-        input_value_commit,
-        token_commit,
-        merkle_root,
-        input_user_data_enc,
-        signature_public,
-        output_coin,
-        output_value_commit,
-        fee: pallas::Base::from(fee),
-        tx_binding,
-        tx_nonce: input.tx_nonce,
-    };
+    // Build output coin
+    let output_coin = CoinAttributes {
+        version: 0,
+        public_key: output.recipient,
+        value: output_value,
+        token_id: TokenId::from_base(input.token_id),
+        spend_hook: FuncId::from_base(output.spend_hook),
+        user_data: output.user_data,
+        blind: output_coin_blind.clone(),
+    }.to_coin();
 
+    // Encrypt output note
+    let fee_note = NativeToken {
+        value: output_value,
+        token_id: input.token_id,
+        spend_hook: output.spend_hook,
+        user_data: output.user_data,
+        coin_blind: output_coin_blind.inner(),
+        value_blind: output_value_blind.inner(),
+        token_blind: token_blind.inner(),
+        memo: vec![],
+    };
+    let encrypted_note = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+        AeadEncryptedNote::encrypt(&fee_note, &output.recipient, &mut rng)
+    } else {
+        AeadEncryptedNote::encrypt(&fee_note, &output.recipient, &mut rand::rngs::OsRng)
+    }.map_err(|e| ContractError::IoError(format!("FeeV2 note encrypt: {:?}", e)))?;
+
+    let output_nullifier = Nullifier::new(input.secret.clone(), output_coin.inner());
+
+    Ok((
+        Input {
+            value_commit: input_value_commit,
+            token_commit: token_commit_val,
+            nullifier,
+            merkle_root: input.merkle_root,
+            user_data_enc: input_user_data_enc,
+            spend_hook: FuncId::from_base(input.spend_hook),
+            signature_public,
+        },
+        Output {
+            value_commit: output_value_commit,
+            token_commit: token_commit_val,
+            coin: output_coin,
+            nullifier: output_nullifier,
+            note: encrypted_note,
+        },
+    ))
+}
+
+/// Create a Fee_V2 ZK proof (value conservation with hidden fee).
+fn create_fee_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    input: &FeeV2CallInput,
+    input_value_blind: ScalarBlind,
+    output: &FeeV2CallOutput,
+    output_value_blind: ScalarBlind,
+    token_blind: BaseBlind,
+    fee_amount: u64,
+    fee_value_blind: ScalarBlind,
+    tx_commitment: pallas::Base,
+) -> Result<(Proof, Vec<pallas::Base>), ContractError> {
+    let output_value = input.value - fee_amount;
+
+    // Build input coin
+    let input_coin_attrs = CoinAttributes {
+        version: 0,
+        public_key: PublicKey::from_secret(input.secret.clone()),
+        value: input.value,
+        token_id: TokenId::from_base(input.token_id),
+        spend_hook: FuncId::from_base(input.spend_hook),
+        user_data: input.user_data,
+        blind: Blind(input.coin_blind),
+    };
+    let input_coin = input_coin_attrs.to_coin();
+    let nullifier = Nullifier::new(input.secret.clone(), input_coin.inner());
+
+    // Build output coin
+    let output_coin = CoinAttributes {
+        version: 0,
+        public_key: output.recipient,
+        value: output_value,
+        token_id: TokenId::from_base(input.token_id),
+        spend_hook: FuncId::from_base(output.spend_hook),
+        user_data: output.user_data,
+        blind: Blind(output.coin_blind),
+    }.to_coin();
+
+    // Merkle root from the wallet's production tree — not recomputed here.
+    // The ZK circuit verifies root == merkle_root(pos, path, coin) internally.
+
+    // Compute commitments
+    let input_value_commit = pedersen_commitment_u64(input.value, input_value_blind.clone());
+    let output_value_commit = pedersen_commitment_u64(output_value, output_value_blind.clone());
+    let fee_value_commit = pedersen_commitment_u64(fee_amount, fee_value_blind.clone());
+    let token_commit = poseidon_hash([
+        DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.token_id, token_blind.inner(),
+    ]);
+    let user_data_enc = poseidon_hash([
+        DRK_POSEIDON_DOMAIN_USER_DATA_ENC, input.user_data, pallas::Base::zero(),
+    ]);
+    let tx_binding = poseidon_hash([
+        DRK_POSEIDON_DOMAIN_TX_BINDING, tx_commitment, input.tx_nonce,
+    ]);
+    let sig_pk = PublicKey::from_secret(input.ephemeral_signature_secret.clone());
+    let (sig_x, sig_y) = sig_pk.xy().expect("pk not identity");
+
+    // Public inputs for Fee_V2 (15 elements, matching fee_get_metadata order)
+    let input_vc_coords = input_value_commit.to_affine().coordinates().unwrap();
+    let output_vc_coords = output_value_commit.to_affine().coordinates().unwrap();
+    let fee_vc_coords = fee_value_commit.to_affine().coordinates().unwrap();
+    let public_inputs = vec![
+        nullifier.inner(),                // 1
+        *input_vc_coords.x(),             // 2
+        *input_vc_coords.y(),             // 3
+        token_commit,                     // 4
+        input.merkle_root.inner(),        // 5 — from wallet's production tree
+        user_data_enc,                    // 6
+        sig_x,                            // 7
+        sig_y,                            // 8
+        output_coin.inner(),              // 9
+        *output_vc_coords.x(),            // 10
+        *output_vc_coords.y(),            // 11
+        *fee_vc_coords.x(),               // 12: fee_value_commit x
+        *fee_vc_coords.y(),               // 13: fee_value_commit y
+        tx_binding,                       // 14
+        input.tx_nonce,                   // 15
+    ];
+
+    // Build witnesses (matching circuit witness order in fee.zk "Fee_V2")
     let prover_witnesses = vec![
         Witness::Base(Value::known(*input.secret.inner())),
         Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
         Witness::MerklePath(Value::known({
             let mut path = input.merkle_path.clone();
-            // Depth-0 tree (single coinbase leaf): empty path is correct.
+            // Depth-0 tree (single leaf): empty path is correct.
             // The circuit needs at least one node — a zero node at level 0
             // is the correct sibling for a leaf with no history.
             if path.is_empty() {
@@ -259,224 +419,75 @@ pub fn create_fee_proof(
             path.try_into().unwrap()
         })),
         Witness::Base(Value::known(*input.ephemeral_signature_secret.inner())),
-        Witness::Base(Value::known(*sig_coords.x())),
-        Witness::Base(Value::known(*sig_coords.y())),
+        Witness::Base(Value::known(sig_x)),
+        Witness::Base(Value::known(sig_y)),
         Witness::Base(Value::known(pallas::Base::from(input.value))),
-        Witness::Scalar(Value::known(input_value_blind.clone().inner())),
+        Witness::Scalar(Value::known(input_value_blind.inner())),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
         Witness::Base(Value::known(input.coin_blind)),
-        Witness::Base(Value::known(pallas::Base::zero())),
-        Witness::Base(Value::known(pallas::Base::from(output.value))),
-        Witness::Base(Value::known(output_spend_hook)),
-        Witness::Base(Value::known(output_user_data)),
-        Witness::Scalar(Value::known(output_value_blind.clone().inner())),
-        Witness::Base(Value::known(output_coin_blind)),
+        Witness::Base(Value::known(pallas::Base::zero())), // input_user_data_blind
+        Witness::Base(Value::known(pallas::Base::from(output_value))),
+        Witness::Base(Value::known(output.spend_hook)),
+        Witness::Base(Value::known(output.user_data)),
+        Witness::Scalar(Value::known(output_value_blind.inner())),
+        Witness::Base(Value::known(output.coin_blind)),
         Witness::Base(Value::known(input.token_id)),
-        Witness::Base(Value::known(token_blind.clone().inner())),
-        // Fee value (constrained in circuit: output_value + fee == input_value)
-        Witness::Base(Value::known(pallas::Base::from(fee))),
-        Witness::Base(Value::known(input.tx_commitment)),
+        Witness::Base(Value::known(token_blind.inner())),
+        Witness::Base(Value::known(pallas::Base::from(fee_amount))),
+        Witness::Base(Value::known(tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
+        // tx_binding — MUST be the computed value, not zero.
+        // Circuit constrains: tx_binding = poseidon(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)
         Witness::Base(Value::known(tx_binding)),
-        // fee_value_blind: FeeV1 uses zero blind (fee is not hidden).
-        // The modified fee.zk circuit added fee_value_commit constraints.
-        Witness::Scalar(Value::known(pallas::Scalar::zero())),
+        Witness::Scalar(Value::known(fee_value_blind.inner())),
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
     let proof = if crate::deterministic_zk_enabled() {
-        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        Proof::create(&pk, &[circuit], &public_inputs, &mut rng)
+            .map_err(|e| ContractError::IoError(format!("FeeV2 Fee_V2 proof: {:?}", e)))?
     } else {
-        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+        Proof::create(&pk, &[circuit], &public_inputs, &mut rand::rngs::OsRng)
+            .map_err(|e| ContractError::IoError(format!("FeeV2 Fee_V2 proof: {:?}", e)))?
     };
 
     Ok((proof, public_inputs))
 }
 
-/// Struct holding necessary information to build a `NativeToken::FeeV1` contract call.
-pub struct FeeCallBuilder {
-    /// The input coin being spent
-    pub input: FeeCallInput,
-    /// The output (change) coin
-    pub output: FeeCallOutput,
-    /// `Fee_V1` zkas circuit ZkBinary
-    pub fee_zkbin: ZkBinary,
-    /// Proving key for the `Fee_V1` zk circuit
-    pub fee_pk: ProvingKey,
-    /// Fee value being paid
-    pub fee: u64,
-}
+/// Create a FeeThreshold_V1 ZK proof (fee >= threshold without revealing fee).
+fn create_fee_threshold_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    fee_amount: u64,
+    threshold: u64,
+    tx_commitment: pallas::Base,
+    tx_binding: pallas::Base,
+) -> Result<Proof, ContractError> {
 
-/// Debris produced by building a Fee call
-pub struct FeeCallDebris {
-    /// The contract call parameters
-    pub params: FeeParamsV1,
-    /// The ZK proof
-    pub proofs: Vec<Proof>,
-    /// The ephemeral secret keys created for signing
-    pub signature_secrets: Vec<SecretKey>,
-}
+    // FeeThreshold_V1 witnesses (4): fee, threshold, tx_commitment, tx_binding
+    let witnesses: Vec<Witness> = vec![
+        Witness::Base(Value::known(pallas::Base::from(fee_amount))),
+        Witness::Base(Value::known(pallas::Base::from(threshold))),
+        Witness::Base(Value::known(tx_commitment)),
+        Witness::Base(Value::known(tx_binding)),
+    ];
 
-impl FeeCallBuilder {
-    /// Build the Fee call debris
-    pub fn build(self) -> Result<FeeCallDebris> {
-        if self.input.value <= self.fee {
-            return Err(ContractError::Custom(1).into())
-        }
+    // Public inputs (2): threshold, tx_binding
+    let public_inputs = vec![
+        pallas::Base::from(threshold),
+        tx_binding,
+    ];
 
-        let mut proofs = vec![];
-        let signature_secrets = vec![self.input.ephemeral_signature_secret.clone()];
+    let circuit = ZkCircuit::new(witnesses, zkbin);
+    let rng: Box<dyn RngCore + Send> = if crate::deterministic_zk_enabled() {
+        Box::new(rand::rngs::StdRng::seed_from_u64(43))
+    } else {
+        Box::new(rand::rngs::OsRng)
+    };
+    let proof = Proof::create(&pk, &[circuit], &public_inputs, rng)
+        .map_err(|e| ContractError::IoError(format!("FeeV2 threshold proof: {:?}", e)))?;
 
-        // Generate blinds. token_blind MUST be zero: the fee entrypoint
-        // pins the native token_commit to poseidon([0, 0]) (entrypoint/mod.rs
-        // fee_v1, "Token must be DRKW") with TokenId::DRKW = zero — a random
-        // blind fails consensus with TokenMismatch.
-        // Gated: deterministic when enable_deterministic_zk() is set
-        // (MOC item 10 bug-3 — matching transfer_v1/proof.rs gating pattern).
-        // Pedersen homomorphic balance requires input_blind == output_blind
-        // (MoC audit: proof_of_token_balance uses blind=0 for fee, so
-        //  pedersen(in_val, in_blind) == pedersen(out_val, out_blind) + pedersen(fee, 0)
-        //  requires in_blind == out_blind)
-        let (input_value_blind, output_coin_blind) =
-            if crate::deterministic_zk_enabled() {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-            (ScalarBlind::random(&mut rng), BaseBlind::random(&mut rng))
-        } else {
-            (ScalarBlind::random(&mut OsRng), BaseBlind::random(&mut OsRng))
-        };
-        let output_value_blind = input_value_blind.clone();
-        let token_blind = BaseBlind::ZERO;
-
-        // Create output value (input - fee)
-        let output_value = self.input.value - self.fee;
-
-        // Create the output with adjusted value
-        let adjusted_output = FeeCallOutput {
-            recipient: self.output.recipient,
-            value: output_value,
-            spend_hook: self.output.spend_hook,
-            user_data: self.output.user_data,
-            coin_blind: output_coin_blind.clone().inner(),
-        };
-
-        // Create fee proof
-        let (proof, _revealed) = create_fee_proof(
-            &self.fee_zkbin,
-            &self.fee_pk,
-            &self.input,
-            input_value_blind.clone(),
-            &adjusted_output,
-            output_value_blind.clone(),
-            self.output.spend_hook,
-            self.output.user_data,
-            output_coin_blind.clone().inner(),
-            token_blind.clone(),
-            self.fee,
-            self.input.tx_commitment,
-        )?;
-
-        proofs.push(proof);
-
-        // Build the input for params
-        let input_coin_attrs = CoinAttributes {
-            version: 0,
-            public_key: PublicKey::from_secret(self.input.secret.clone()),
-            value: self.input.value,
-            token_id: TokenId::from_base(self.input.token_id),
-            spend_hook: FuncId::from_base(self.input.spend_hook),
-            user_data: self.input.user_data,
-            blind: Blind(self.input.coin_blind),
-        };
-        let input_coin = input_coin_attrs.to_coin();
-        let merkle_root = {
-            let position: u64 = self.input.leaf_position.into();
-            let mut current = MerkleNode::from_base(input_coin.inner());
-            for (level, sibling) in self.input.merkle_path.iter().enumerate() {
-                let level = level as u8;
-                current = if position & (1 << level) == 0 {
-                    MerkleNode::combine(level.into(), &current, sibling)
-                } else {
-                    MerkleNode::combine(level.into(), sibling, &current)
-                };
-            }
-            current
-        };
-
-        let nullifier = Nullifier::new(self.input.secret.clone(), input_coin.inner());
-        let signature_public = PublicKey::from_secret(self.input.ephemeral_signature_secret.clone());
-        let input_user_data_enc = poseidon_hash([DRK_POSEIDON_DOMAIN_USER_DATA_ENC, self.input.user_data, pallas::Base::zero()]);
-        let input_value_commit = pedersen_commitment_u64(self.input.value, input_value_blind.clone());
-        let output_value_commit = pedersen_commitment_u64(output_value, output_value_blind.clone());
-        let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, self.input.token_id, token_blind.clone().inner()]);
-        let output_coin = CoinAttributes {
-            version: 0,
-            public_key: self.output.recipient,
-            value: output_value,
-            token_id: TokenId::from_base(self.input.token_id),
-            spend_hook: FuncId::from_base(self.output.spend_hook),
-            user_data: self.output.user_data,
-            blind: output_coin_blind.clone(),
-        }
-        .to_coin();
-
-        let params_input = Input {
-            value_commit: input_value_commit,
-            token_commit,
-            nullifier,
-            merkle_root,
-            user_data_enc: input_user_data_enc,
-            spend_hook: FuncId::from_base(self.input.spend_hook),
-            signature_public,
-        };
-
-        // Create placeholder note for fee (fee doesn't need note encryption)
-        let fee_note = NativeToken {
-            value: output_value,
-            token_id: self.input.token_id,
-            spend_hook: self.output.spend_hook,
-            user_data: self.output.user_data,
-            coin_blind: output_coin_blind.clone().inner(),
-            value_blind: output_value_blind.clone().inner(),
-            token_blind: token_blind.clone().inner(),
-            memo: vec![],
-        };
-        let encrypted_note = if crate::deterministic_zk_enabled() {
-            let mut rng = rand::rngs::StdRng::seed_from_u64(0);
-            AeadEncryptedNote::encrypt(&fee_note, &self.output.recipient, &mut rng)
-        } else {
-            AeadEncryptedNote::encrypt(&fee_note, &self.output.recipient, &mut OsRng)
-        }
-            .map_err(|e| ContractError::IoError(format!(
-                "fee change note encryption: {:?}", e)))?;
-
-        let output_nullifier = Nullifier::new(self.input.secret.clone(), output_coin.inner());
-
-        let params_output = crate::model::Output {
-            value_commit: output_value_commit,
-            token_commit,
-            coin: output_coin,
-            nullifier: output_nullifier,
-            note: encrypted_note,
-        };
-
-        Ok(FeeCallDebris {
-            params: FeeParamsV1 {
-                input: params_input,
-                output: params_output,
-                fee_value_blind: input_value_blind.clone().inner(),
-                fee_token_blind: token_blind,
-                fee: dwow_sdk::blockchain::FeeAmount::new(self.fee),
-                tx_binding: poseidon_hash([
-                    DRK_POSEIDON_DOMAIN_TX_BINDING,
-                    self.input.tx_commitment,
-                    self.input.tx_nonce,
-                ]),
-                tx_nonce: self.input.tx_nonce,
-            },
-            proofs,
-            signature_secrets,
-        })
-    }
+    Ok(proof)
 }

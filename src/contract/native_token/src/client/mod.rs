@@ -33,7 +33,7 @@ pub mod zkbins;
 /// `NativeToken::BurnV1` API
 pub mod burn;
 
-/// `NativeToken::FeeV1` API
+/// `NativeToken::FeeV2` API
 pub mod fee;
 
 /// `NativeToken::FeeCollectV1` API
@@ -44,9 +44,6 @@ pub mod pow_reward;
 
 /// TransferV1 builder — internal use by pow_reward (not a client-dispatched function)
 pub mod transfer;
-
-#[path = "fee_v2.rs"]
-pub mod fee_v2;
 
 use dwow_sdk::contract_client::{ContractClient, WalletStateProvider};
 

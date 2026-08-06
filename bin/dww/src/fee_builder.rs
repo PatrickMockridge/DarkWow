@@ -45,7 +45,7 @@ use crate::contract_imports::native_token::{
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN,
 };
-use dwow_native_token_contract::client::fee_v2::FeeV2CallBuilder as _;
+use dwow_native_token_contract::client::fee::FeeV2CallBuilder as _;
 use crate::walletdb::WalletPtr;
 use crate::NATIVE_TOKEN_CONTRACT_ID;
 
@@ -160,6 +160,18 @@ pub fn build_fee_and_finalize_tx(
         })
         .collect::<Result<Vec<_>>>()?;
 
+    // Decode merkle root from the wallet's production tree (already stored in DB).
+    // SHALL NOT be recomputed manually in the proof builder.
+    let dark_merkle_root = {
+        let root_bytes: [u8; 32] = bs58::decode(&dark_merkle_proof.root)
+            .into_vec()
+            .map_err(|e| Error::Custom(e.to_string()))?
+            .try_into()
+            .map_err(|_| Error::Custom("Invalid Merkle root length".to_string()))?;
+        MerkleNode::from_bytes(root_bytes)
+            .ok_or_else(|| Error::Custom("Invalid Merkle root".to_string()))?
+    };
+
     // CapBlind is now BaseBlind — typed, no from_repr round-trip needed
     let fee_cap_blind = fee_cap.cap_blind.inner();
 
@@ -206,6 +218,7 @@ pub fn build_fee_and_finalize_tx(
         coin_blind: fee_cap_blind,
         leaf_position: fee_cap.leaf_position,
         merkle_path: dark_merkle_path,
+        merkle_root: dark_merkle_root,
         secret: dark_secret.clone(),
         ephemeral_signature_secret: SecretKey::random(&mut rng),
         tx_commitment,

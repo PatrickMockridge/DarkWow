@@ -40,9 +40,9 @@ use dwow_native_token_contract::{
     client::{
         pow_reward::PoWRewardCallBuilder,
         burn::BurnCallBuilder,
-        fee::{FeeCallBuilder, FeeCallInput, FeeCallOutput},
+        fee::{FeeV2CallBuilder, FeeV2CallInput, FeeV2CallOutput},
     },
-    model::{FeeParamsV1, Output},
+    model::{FeeParamsV2, Output},
 };
 
 /// NativeToken Harness for isolated testing
@@ -173,8 +173,11 @@ impl NativeTokenHarness {
         })
     }
 
-    /// Build a fee call (pay network fees)
-    pub fn fee(
+    /// Build a FeeV2 call (privacy-preserving fee payment).
+    /// Produces [0x08][FeeParamsV2] call data with dual ZK proofs
+    /// (Fee_V2 + FeeThreshold_V1). The fee amount is hidden behind a
+    /// Pedersen commitment.
+    pub fn fee_v2(
         &self,
         input_value: u64,
         token_id: pallas::Base,
@@ -183,15 +186,17 @@ impl NativeTokenHarness {
         coin_blind: pallas::Base,
         leaf_position: u64,
         merkle_path: Vec<MerkleNode>,
+        merkle_root: MerkleNode,
         secret: SecretKey,
         ephemeral_signature_secret: SecretKey,
         recipient: PublicKey,
         output_spend_hook: pallas::Base,
         output_user_data: pallas::Base,
         fee_amount: u64,
-    ) -> Result<FeeResult, Box<dyn std::error::Error>> {
-        let builder = FeeCallBuilder {
-            input: FeeCallInput {
+        threshold: u64,
+    ) -> Result<FeeV2Result, Box<dyn std::error::Error>> {
+        let builder = FeeV2CallBuilder {
+            input: FeeV2CallInput {
                 value: input_value,
                 token_id,
                 spend_hook,
@@ -199,31 +204,35 @@ impl NativeTokenHarness {
                 coin_blind,
                 leaf_position,
                 merkle_path,
+                merkle_root,
                 secret,
                 ephemeral_signature_secret,
                 tx_nonce: pallas::Base::zero(),
                 tx_commitment: pallas::Base::zero(),
             },
-            output: FeeCallOutput {
+            output: FeeV2CallOutput {
                 recipient,
                 value: input_value - fee_amount,
                 spend_hook: output_spend_hook,
                 user_data: output_user_data,
                 coin_blind,
             },
+            fee_amount,
+            threshold,
             fee_zkbin: self.fee_zkbin.clone(),
             fee_pk: self.fee_pk.clone(),
-            fee: fee_amount,
+            threshold_zkbin: self.threshold_zkbin.clone(),
+            threshold_pk: self.threshold_pk.clone(),
         };
 
-        let debris = builder.build()?;
+        let result = builder.build()
+            .map_err(|e| format!("FeeV2 build failed: {:?}", e))?;
 
-        // Canonical format: [selector: 0x00][fee u64 LE: 8 bytes][FeeParamsV1]
-        let mut call_data = vec![0x00];
-        call_data.extend_from_slice(&fee_amount.to_le_bytes());
-        call_data.extend_from_slice(&debris.params.encode());
+        // FeeV2 call data: [0x08][FeeParamsV2 encoded] — NO clear-text fee bytes
+        let mut call_data = vec![0x08u8];
+        call_data.extend_from_slice(&result.params.encode());
 
-        Ok(FeeResult { call_data, params: debris.params, proofs: debris.proofs })
+        Ok(FeeV2Result { call_data, params: result.params, proofs: result.proofs })
     }
 
     /// Build a transfer call (function code 0x03, ZK).
@@ -383,10 +392,10 @@ pub struct BurnResult {
     pub proofs: Vec<dwow_core::zk::Proof>,
 }
 
-/// Result of fee
-pub struct FeeResult {
+/// Result of fee (FeeV2)
+pub struct FeeV2Result {
     pub call_data: Vec<u8>,
-    pub params: FeeParamsV1,
+    pub params: FeeParamsV2,
     pub proofs: Vec<dwow_core::zk::Proof>,
 }
 

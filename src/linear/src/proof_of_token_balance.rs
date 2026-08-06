@@ -187,7 +187,7 @@ fn process_fee_v2_call(
     fee_aggregate: &mut pallas::Point,
     darkw_token_commit: pallas::Base,
 ) -> Result<(), BalanceError> {
-    use dwow_native_token_contract::model::fee_v2::FeeParamsV2;
+    use dwow_native_token_contract::model::fee::FeeParamsV2;
     // FeeV2 call data: [selector:1][FeeParamsV2...]
     let params = FeeParamsV2::decode(&data[1..])
         .map_err(|e| BalanceError::Deserialize(format!("FeeV2 decode: {:?}", e)))?;
