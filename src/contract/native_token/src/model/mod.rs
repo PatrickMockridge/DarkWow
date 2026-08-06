@@ -37,6 +37,10 @@ use dwow_sdk::{
 pub mod nullifier;
 pub use self::nullifier::Nullifier;
 
+#[cfg(feature = "fee-v2")]
+#[path = "fee_v2.rs"]
+pub mod fee_v2;
+
 // ============================================================================
 // TOKEN/SYMBOLIC CONSTANTS
 // ============================================================================

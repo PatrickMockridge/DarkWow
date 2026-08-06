@@ -1,0 +1,15 @@
+// FeeThreshold_V1 — Privacy-preserving fee threshold proof
+//
+// Proves: fee >= threshold without revealing fee.
+// Public inputs: threshold (Base), tx_binding (Base)
+// Constraint: range_check(64, fee - threshold)
+//
+// If fee < threshold, the subtraction underflows in pallas::Base
+// (producing a value near p - (threshold - fee)), which fails the
+// 64-bit range check.
+//
+// Circuit: k=11, field=pallas (matches Fee_V2, FeeCollect_V1)
+// Spec: fee-spec.md §5.5
+//
+// Status: STUB — full ZK circuit implementation pending.
+// This file defines the circuit interface for the type system.
