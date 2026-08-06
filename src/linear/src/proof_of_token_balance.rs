@@ -152,6 +152,20 @@ pub fn verify_proof_of_token_balance(block: &Block) -> Result<(), BalanceError> 
                 // verified separately against the emission schedule.
                 NativeTokenFunction::MintV1 | NativeTokenFunction::PoWRewardV1 // coinbase + disabled
                 | NativeTokenFunction::FeeCollectV1 => {} // fee redistribution, not mint/burn
+                NativeTokenFunction::FeeV2 => {
+                    // FeeV2: privacy-preserving fee. Uses FeeParamsV2 with
+                    // Pedersen commitments for hidden fee amounts.
+                    // For mass balance, we include the input/output commitments
+                    // from the params. Fee is accumulated via fee_aggregate
+                    // using Pedersen homomorphic addition.
+                    process_fee_v2_call(
+                        &call.data,
+                        &mut total_inputs,
+                        &mut total_outputs,
+                        &mut fee_aggregate,
+                        darkw_token_commit,
+                    )?;
+                }
             }
         }
     }
@@ -205,6 +219,32 @@ fn process_fee_call(
     // Only DRKW fees reach here — non-DRKW early-returns above.
     let zero_blind: ScalarBlind = 0u64.into();
     *fee_aggregate = *fee_aggregate + pedersen_commitment_u64(fee, zero_blind);
+
+    Ok(())
+}
+
+/// Process a FeeV2 call: extract input/output value_commits and fee commitment.
+/// FeeV2 call data: [0x08][FeeParamsV2 encoded] — NO clear-text fee bytes.
+fn process_fee_v2_call(
+    data: &[u8],
+    total_inputs: &mut pallas::Point,
+    total_outputs: &mut pallas::Point,
+    fee_aggregate: &mut pallas::Point,
+    darkw_token_commit: pallas::Base,
+) -> Result<(), BalanceError> {
+    use dwow_native_token_contract::model::fee_v2::FeeParamsV2;
+    // FeeV2 call data: [selector:1][FeeParamsV2...]
+    let params = FeeParamsV2::decode(&data[1..])
+        .map_err(|e| BalanceError::Deserialize(format!("FeeV2 decode: {:?}", e)))?;
+
+    if params.input.token_commit != darkw_token_commit {
+        return Ok(());
+    }
+
+    *total_inputs = *total_inputs + params.input.value_commit;
+    *total_outputs = *total_outputs + params.output.value_commit;
+    // FeeV2: fee commitment is a Pedersen point directly from FeeParamsV2
+    *fee_aggregate = *fee_aggregate + params.fee_value_commit;
 
     Ok(())
 }

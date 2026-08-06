@@ -7,7 +7,7 @@
 //!
 //! Spec: fee-spec.md §5.
 
-use dwow_sdk::crypto::pasta_prelude::PrimeField;
+use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine, PrimeField};
 use dwow_sdk::crypto::{BaseBlind, Blind};
 use dwow_sdk::error::ContractError;
 use dwow_sdk::pasta::{group::GroupEncoding, pallas};
@@ -25,7 +25,13 @@ pub struct FeeParamsV2 {
     pub input: Input,
     pub output: Output,
     pub fee_value_commit: pallas::Point,
+    /// Fee_value_commit x-coordinate (convenience — extracted from fee_value_commit).
+    pub fee_value_commit_x: pallas::Base,
+    /// Fee_value_commit y-coordinate (convenience — extracted from fee_value_commit).
+    pub fee_value_commit_y: pallas::Base,
     pub threshold_proof: Vec<u8>,
+    /// Threshold used in the FeeThreshold_V1 proof (needed for metadata).
+    pub threshold: u64,
     pub fee_value_blind: pallas::Scalar,
     /// Fee token blind — typed BaseBlind per spec §8.1.
     pub fee_token_blind: BaseBlind,
@@ -54,16 +60,18 @@ impl FeeParamsV2 {
         let input_bytes = self.input.encode();
         let output_bytes = self.output.encode();
         let proof_len = self.threshold_proof.len() as u32;
-        let cap = input_bytes.len() + output_bytes.len() + 64 + 4 + proof_len as usize + 128;
+        let cap = input_bytes.len() + output_bytes.len() + 72 + 4 + proof_len as usize + 128;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&input_bytes);
         buf.extend_from_slice(&output_bytes);
         // fee_value_commit: pallas::Point (32 bytes compressed)
         buf.extend_from_slice(&self.fee_value_commit.to_bytes());
+        // threshold: u64 LE (8 bytes) — needed by mempool/metadata for FeeThreshold_V1
+        buf.extend_from_slice(&self.threshold.to_le_bytes());
         // threshold_proof: length-prefixed bytes
         buf.extend_from_slice(&proof_len.to_le_bytes());
         buf.extend_from_slice(&self.threshold_proof);
-        // blinds + bindings
+        // blinds + bindings (128 bytes: scalar 32 + blind 32 + binding 32 + nonce 32)
         buf.extend_from_slice(&self.fee_value_blind.to_repr());
         buf.extend_from_slice(&self.fee_token_blind.inner().to_repr());
         buf.extend_from_slice(&self.tx_binding.to_repr());
@@ -93,7 +101,23 @@ impl FeeParamsV2 {
         let fee_value_commit = Option::<pallas::Point>::from(
             pallas::Point::from_bytes(&data[pos..pos + 32].try_into().unwrap())
         ).ok_or_else(|| ContractError::IoError("FeeParamsV2: invalid fee_value_commit".into()))?;
+
+        // Extract affine coordinates for metadata convenience
+        let coords = fee_value_commit.to_affine().coordinates();
+        let (fee_value_commit_x, fee_value_commit_y) = if coords.is_none().into() {
+            return Err(ContractError::IoError("FeeParamsV2: fee_value_commit is identity".into()));
+        } else {
+            let c = coords.unwrap();
+            (*c.x(), *c.y())
+        };
         pos += 32;
+
+        // threshold: u64 LE (8 bytes)
+        if data.len() < pos + 8 {
+            return Err(ContractError::IoError("FeeParamsV2: too short for threshold".into()));
+        }
+        let threshold = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        pos += 8;
 
         // threshold_proof: length-prefixed bytes
         if data.len() < pos + 4 {
@@ -129,7 +153,9 @@ impl FeeParamsV2 {
         )).ok_or_else(|| ContractError::IoError("FeeParamsV2: invalid tx_nonce".into()))?;
 
         Ok(FeeParamsV2 {
-            input, output, fee_value_commit, threshold_proof,
+            input, output, fee_value_commit,
+            fee_value_commit_x, fee_value_commit_y,
+            threshold, threshold_proof,
             fee_value_blind, fee_token_blind, tx_binding, tx_nonce,
         })
     }

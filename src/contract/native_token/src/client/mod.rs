@@ -45,7 +45,6 @@ pub mod pow_reward;
 /// TransferV1 builder — internal use by pow_reward (not a client-dispatched function)
 pub mod transfer;
 
-#[cfg(feature = "fee-v2")]
 #[path = "fee_v2.rs"]
 pub mod fee_v2;
 

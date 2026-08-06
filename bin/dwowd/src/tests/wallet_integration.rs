@@ -431,7 +431,7 @@ fn test_wallet_integration() {
         let fp: dwow_native_token_contract::model::FeeParamsV1 =
             dwow_serial::deserialize(&wtx.calls[1].data.data[9..])
                 .expect("FeeParamsV1 deserializes after the fee prefix");
-        assert_eq!(fp.fee, fee_prefix, "in-params fee equals the prefix fee");
+        assert_eq!(fp.fee.get(), fee_prefix, "in-params fee equals the prefix fee");
         assert_eq!(tp.inputs.len(), 1, "one transfer input");
         assert_eq!(tp.outputs.len(), 2, "recipient + change outputs");
         assert_ne!(wtx.tx_commitment, [0u8; 32],

@@ -1,15 +1,55 @@
-// FeeThreshold_V1 — Privacy-preserving fee threshold proof
-//
-// Proves: fee >= threshold without revealing fee.
-// Public inputs: threshold (Base), tx_binding (Base)
-// Constraint: range_check(64, fee - threshold)
-//
-// If fee < threshold, the subtraction underflows in pallas::Base
-// (producing a value near p - (threshold - fee)), which fails the
-// 64-bit range check.
-//
-// Circuit: k=11, field=pallas (matches Fee_V2, FeeCollect_V1)
-// Spec: fee-spec.md §5.5
-//
-// Status: STUB — full ZK circuit implementation pending.
-// This file defines the circuit interface for the type system.
+# FeeThreshold_V1 circuit — proves fee >= threshold without revealing fee.
+# Privacy-preserving fee market: the mempool gates admission on this proof
+# without learning the actual fee amount. Spec: fee-spec.md §5.5.
+#
+# Constraint: range_check(64, fee - threshold)
+# If fee < threshold, subtraction underflows in pallas::Base, producing
+# a value near p - (threshold - fee) which fails the 64-bit range check.
+#
+# tx_binding is INTERNALLY constrained to poseidon(DOMAIN_TX_BINDING, tx_commitment, threshold).
+# This prevents a proof for one threshold from being replayed against a
+# different threshold. HAZOP finding H2: previously tx_binding was a
+# free witness — the prover could supply any value.
+
+k = 11;
+field = "pallas";
+
+constant "FeeThreshold_V1" {
+    Base ZERO,
+}
+
+witness "FeeThreshold_V1" {
+    Base fee,
+    Base threshold,
+    Base tx_commitment,
+    Base tx_binding,
+}
+
+circuit "FeeThreshold_V1" {
+    # Domain constant for transaction binding.
+    # Value MUST match DRK_POSEIDON_DOMAIN_TX_BINDING (= 3) in
+    # src/sdk/src/crypto/constants.rs and the Fee_V2/V3 circuits.
+    DOMAIN_TX_BINDING = witness_base(3);
+
+    # Prove fee >= threshold via range check on difference.
+    # If fee < threshold, the subtraction underflows in pallas::Base,
+    # producing a value near p - (threshold - fee) which fails the
+    # 64-bit range check.
+    diff = base_sub(fee, threshold);
+    range_check(64, diff);
+
+    # Internally derive tx_binding — prevents prover from supplying
+    # arbitrary value. Computed as:
+    #   poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, threshold)
+    # Binding to threshold prevents replay of a premium-tier proof
+    # against the general threshold (or vice versa).
+    tx_binding_computed = poseidon_hash(DOMAIN_TX_BINDING, tx_commitment, threshold);
+    constrain_equal_base(tx_binding_computed, tx_binding);
+
+    # Public inputs: threshold and tx_binding.
+    # Both are constrained internally — the prover cannot choose them
+    # freely. threshold is bound into tx_binding; tx_binding is computed
+    # from tx_commitment and threshold via poseidon.
+    constrain_instance(threshold);
+    constrain_instance(tx_binding);
+}

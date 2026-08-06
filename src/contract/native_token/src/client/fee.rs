@@ -464,7 +464,7 @@ impl FeeCallBuilder {
                 output: params_output,
                 fee_value_blind: input_value_blind.clone().inner(),
                 fee_token_blind: token_blind,
-                fee: self.fee,
+                fee: dwow_sdk::blockchain::FeeAmount::new(self.fee),
                 tx_binding: poseidon_hash([
                     DRK_POSEIDON_DOMAIN_TX_BINDING,
                     self.input.tx_commitment,

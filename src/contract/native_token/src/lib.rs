@@ -57,6 +57,7 @@ use dwow_sdk::error::ContractError;
 #[repr(u8)]
 #[derive(Debug)]
 pub enum NativeTokenFunction {
+    #[deprecated(since = "0.5.0", note = "Use FeeV2 (0x08) for privacy-preserving fees")]
     FeeV1 = 0x00,
     MintV1 = 0x01,
     BurnV1 = 0x02,
@@ -64,7 +65,6 @@ pub enum NativeTokenFunction {
     SpendV1 = 0x04,
     PoWRewardV1 = 0x05,
     FeeCollectV1 = 0x06,
-    #[cfg(feature = "fee-v2")]
     FeeV2 = 0x08,
 }
 
@@ -80,7 +80,6 @@ impl TryFrom<u8> for NativeTokenFunction {
             0x04 => Ok(Self::SpendV1),
             0x05 => Ok(Self::PoWRewardV1),
             0x06 => Ok(Self::FeeCollectV1),
-            #[cfg(feature = "fee-v2")]
             0x08 => Ok(Self::FeeV2),
             _ => Err(ContractError::InvalidFunction),
         }
@@ -175,8 +174,8 @@ pub const EMPTY_COINS_TREE_ROOT: [u8; 32] = [
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2: &str = "Mint_V2";
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2: &str = "Burn_V2";
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2: &str = "Fee_V2";
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V3: &str = "Fee_V3";
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V2: &str = "FeeCollect_V2";
-#[cfg(feature = "fee-v2")]
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_NS_V1: &str = "FeeThreshold_V1";
 
 // ============================================================================
@@ -190,6 +189,8 @@ pub use crate::client::zkbins::{
     NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V2_BIN,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V2_BIN,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN,
+    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V3_BIN,
+    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN,
 };
 

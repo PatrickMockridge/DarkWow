@@ -44,12 +44,14 @@ pub trait FeeExtractor: Send + Sync {
     fn estimate_gas(&self, tx: &Transaction) -> u64;
 
     /// Extract a Pedersen fee commitment from V2 transactions (hidden fee).
-    /// Returns None for V1 transactions. Default: None (V1 only).
-    fn extract_fee_commitment(&self, _tx: &Transaction) -> Option<FeeCommitment> { None }
+    /// REQUIRED — no default. Implementors MUST extract the fee commitment
+    /// for FeeV2 transactions.
+    fn extract_fee_commitment(&self, tx: &Transaction) -> Option<FeeCommitment>;
 
     /// Verify the FeeThreshold_V1 proof against a threshold.
-    /// Returns false for V1 transactions. Default: false (V1 only).
-    fn verify_threshold_proof(&self, _tx: &Transaction, _threshold: u64) -> bool { false }
+    /// REQUIRED — no default. Implementors MUST verify the proof.
+    /// Returns true iff the proof is valid for the given threshold.
+    fn verify_threshold_proof(&self, tx: &Transaction, threshold: u64) -> bool;
 }
 
 /// Pedersen commitment to a fee amount — used when fees are ZK-private.
@@ -66,9 +68,12 @@ pub struct MempoolConfig {
     pub max_tx_size: usize,
     pub min_fee: u64,
     pub persist: bool,
-    /// Premium threshold for FeeV2 transactions (None = no premium queue).
-    /// When set, FeeV2 txs proving fee >= premium_threshold get FIFO priority.
-    pub premium_threshold: Option<u64>,
+    /// Premium tier threshold — FeeV2 txs proving fee >= premium_threshold get FIFO priority.
+    /// Mandatory. Per fee-spec.md §7.2.
+    pub premium_threshold: u64,
+    /// General tier threshold — minimum fee for mempool admission.
+    /// Transactions with fee below general_threshold are REJECTED. Per fee-spec.md §7.2.
+    pub general_threshold: u64,
 }
 
 impl Default for MempoolConfig {
@@ -77,8 +82,9 @@ impl Default for MempoolConfig {
             max_size: 10_000,
             max_age_secs: 3600,
             max_tx_size: 1024 * 1024,
-            min_fee: 42_000_000,
-            premium_threshold: None,
+            min_fee: 0,  // Zero by default — threshold proofs gate admission
+            premium_threshold: 42_000_000,
+            general_threshold: 1_000_000,
             persist: true,
         }
     }
@@ -354,20 +360,39 @@ impl Mempool {
             }
         }
 
+        // Two-tier admission gate per fee-spec.md §7.2.
+        // Check BEFORE insertion to avoid borrow-after-move.
+        let is_fee_v2 = tx.contract_calls.first().map_or(false, |c| {
+            c.data.first() == Some(&0x08)
+                && c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
+        });
+
         // Insert
         for n in &tx_nullifiers { nulls.insert(*n); }
         fee_idx.insert(FeeIndexEntry { fee_rate, tx_hash });
         txs.insert(tx_hash, MempoolEntry { tx, added_at: now, fee, estimated_gas: gas });
 
-        // Route to premium/general FIFO queues if threshold proofs are available
-        // (fee-spec.md §7.2). FeeV1 txs go through legacy fee_index only.
-        if let Some(premium) = self.config.premium_threshold {
+        if is_fee_v2 {
+            // Remove from legacy fee_index — FeeV2 uses queue-based ordering
+            fee_idx.remove(&FeeIndexEntry { fee_rate, tx_hash });
+            let premium = self.config.premium_threshold;
+            let general = self.config.general_threshold;
             if self.fee_extractor.verify_threshold_proof(
                 &txs.get(&tx_hash).unwrap().tx, premium,
             ) {
                 self.premium_queue.lock().await.push_back(tx_hash);
-            } else {
+            } else if self.fee_extractor.verify_threshold_proof(
+                &txs.get(&tx_hash).unwrap().tx, general,
+            ) {
                 self.general_queue.lock().await.push_back(tx_hash);
+            } else {
+                // Fee below general threshold — REJECT (fee-spec.md §7.2).
+                // Roll back insertion.
+                txs.remove(&tx_hash);
+                for n in &tx_nullifiers { nulls.remove(n); }
+                return Err(dwow_core::Error::Custom(format!(
+                    "FeeV2: fee below general threshold ({})", general
+                )));
             }
         }
 
@@ -642,6 +667,12 @@ mod tests {
         }
         fn estimate_gas(&self, tx: &Transaction) -> u64 {
             tx.contract_calls.len() as u64 * 400_000_000
+        }
+        fn extract_fee_commitment(&self, _tx: &Transaction) -> Option<FeeCommitment> {
+            None
+        }
+        fn verify_threshold_proof(&self, _tx: &Transaction, _threshold: u64) -> bool {
+            false
         }
     }
 

@@ -416,6 +416,22 @@ impl HeavyweightPipeline {
         }
     }
 
+    /// Return the per-block derived mining keypair for coinbase at `height`.
+    /// Uses the same `MiningRecipient::from_account()` derivation as
+    /// build_coinbase_inner() — needed when FeeV1 spends a coinbase coin
+    /// so the ZK proof produces a coin commitment matching the coinbase key.
+    pub fn mining_keypair(&self, height: BlockHeight) -> dwow_sdk::crypto::Keypair {
+        use dwow_sdk::crypto::{Keypair, PublicKey, SecretKey};
+        use dwow_sdk::crypto::keypair::Network;
+        let mgr = crate::accounts::AccountManager::open(
+            &self.keys_path, Network::Testnet, "node0",
+        ).expect("open test keys for mining keypair");
+        let recipient = crate::accounts::MiningRecipient::from_account(&mgr, height)
+            .expect("MiningRecipient");
+        let secret: SecretKey = recipient.secret().clone().into();
+        Keypair { secret, public: recipient.public() }
+    }
+
     /// Verify the block hash chain is continuous from height 2 to current.
     pub fn block_hash_chain_continuous(&self) -> Result<bool> {
         let current = self.height();

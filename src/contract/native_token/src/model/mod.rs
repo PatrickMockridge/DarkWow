@@ -27,7 +27,7 @@
 //! Uses Pedersen commitments for hidden values and nullifiers for double-spend prevention.
 
 use dwow_sdk::{
-    blockchain::BlockHeight,
+    blockchain::{BlockHeight, FeeAmount},
     crypto::{constants::DRK_POSEIDON_DOMAIN_CAP_COMMIT, note::AeadEncryptedNote, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, PublicKey, TokenId},
     error::ContractError,
     pasta::{group::GroupEncoding, pallas},
@@ -37,9 +37,9 @@ use dwow_sdk::{
 pub mod nullifier;
 pub use self::nullifier::Nullifier;
 
-#[cfg(feature = "fee-v2")]
 #[path = "fee_v2.rs"]
 pub mod fee_v2;
+pub use fee_v2::FeeParamsV2;
 
 // ============================================================================
 // TOKEN/SYMBOLIC CONSTANTS
@@ -392,6 +392,7 @@ impl ClearInput {
 // ============================================================================
 
 /// Parameters for FeeV1 - pay network fees (CONSENSUS CRITICAL)
+#[deprecated(since = "0.5.0", note = "Use FeeParamsV2 for privacy-preserving fees")]
 #[derive(Debug, Clone)]
 pub struct FeeParamsV1 {
     pub input: Input,
@@ -401,7 +402,7 @@ pub struct FeeParamsV1 {
     /// Blinding for fee token commitment — typed BaseBlind per spec §8.1.
     pub fee_token_blind: BaseBlind,
     /// Fee amount in native tokens (u64)
-    pub fee: u64,
+    pub fee: FeeAmount,
     /// Transaction binding: poseidon_hash(tx_commitment, tx_nonce)
     pub tx_binding: pallas::Base,
     /// Transaction nonce: unique per transaction
@@ -447,7 +448,7 @@ impl FeeParamsV1 {
             .ok_or_else(|| ContractError::IoError("FeeParamsV1: invalid fee_value_blind".into()))?;
         let fee_token_blind = Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+32..pos+64].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("FeeParamsV1: invalid fee_token_blind".into()))?);
-        let fee = u64::from_le_bytes(data[pos+64..pos+72].try_into().unwrap());
+        let fee = FeeAmount::new(u64::from_le_bytes(data[pos+64..pos+72].try_into().unwrap()));
         let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+72..pos+104].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("FeeParamsV1: invalid tx_binding".into()))?;
         let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+104..pos+136].try_into().unwrap()))
@@ -462,7 +463,7 @@ pub struct FeeUpdateV1 {
     pub nullifier: Nullifier,
     pub coin: Coin,
     pub height: BlockHeight,
-    pub fee: u64,
+    pub fee: FeeAmount,
 }
 
 /// Parameters for PoWRewardV1 - distribute block rewards (CONSENSUS CRITICAL)
@@ -849,7 +850,7 @@ impl FeeUpdateV1 {
             .ok_or_else(|| ContractError::IoError("FeeUpdateV1: invalid coin".into()))?);
         let height =
             BlockHeight::from_le_bytes(data[64..72].try_into().unwrap());
-        let fee = u64::from_le_bytes(data[72..80].try_into().unwrap());
+        let fee = FeeAmount::new(u64::from_le_bytes(data[72..80].try_into().unwrap()));
         Ok(FeeUpdateV1 { nullifier, coin, height, fee })
     }
 }

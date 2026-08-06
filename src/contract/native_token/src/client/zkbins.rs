@@ -47,3 +47,13 @@ pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN: &[u8] =
 /// FeeCollect_V2 zkas circuit binary
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V2_BIN: &[u8] =
     include_bytes!("../../proof/fee_collect.zk.bin");
+/// Fee_V3 zkas circuit binary — pays transaction fees with HIDDEN fee amount.
+/// Unlike Fee_V2 (fee.zk), Fee_V3 does NOT expose the fee as a public input.
+/// Used by FeeV2 (0x08) for privacy-preserving fees. Spec: fee-spec.md §5.
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V3_BIN: &[u8] =
+    include_bytes!("../../proof/fee_v3.zk.bin");
+/// FeeThreshold_V1 zkas circuit binary — proves fee >= threshold without revealing fee.
+/// tx_binding is internally constrained to poseidon(DOMAIN_TX_BINDING, tx_commitment, threshold).
+/// Spec: fee-spec.md §5.5.
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN: &[u8] =
+    include_bytes!("../../proof/fee_threshold_v1.zk.bin");

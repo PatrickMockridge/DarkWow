@@ -220,9 +220,7 @@ impl NativeTokenHarness {
     }
 
     /// Build a FeeV2 call (function code 0x08, ZK + threshold proof).
-    /// Stub: full implementation requires Fee_V3 + FeeThreshold_V1 circuits.
     /// Spec: fee-spec.md §5.
-    #[cfg(feature = "fee-v2")]
     pub fn fee_v2(
         &self,
         _input_value: u64,

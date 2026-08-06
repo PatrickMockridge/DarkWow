@@ -45,7 +45,7 @@
 
 use dwow_sdk::crypto::{constants::DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, poseidon_hash};
 use dwow_sdk::{
-    blockchain::{expected_reward, BlockHeight},
+    blockchain::{expected_reward, BlockHeight, FeeAmount},
     crypto::{
         pasta_prelude::{Curve, CurveAffine, Field, Group, PrimeField}, pedersen_commitment_u64,
         smt::{wasmdb::SmtWasmFp, PoseidonFp, EMPTY_NODES_FP}, ContractId, MerkleNode, MerkleTree,
@@ -61,7 +61,7 @@ use crate::{
     error::NativeTokenError,
     model::{
         BurnParamsV1, BurnUpdateV1, DRKW_TOKEN_ID, FeeCollectParamsV1, FeeCollectUpdateV1,
-        FeeParamsV1, FeeUpdateV1, PoWRewardParamsV1, PoWRewardUpdateV1,
+        FeeParamsV1, FeeParamsV2, FeeUpdateV1, PoWRewardParamsV1, PoWRewardUpdateV1,
         SpendParamsV1, SpendUpdateV1, TransferParamsV1, TransferUpdateV1,
     },
     NativeTokenFunction, NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE,
@@ -72,7 +72,9 @@ use crate::{
     NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE, NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
     NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT, NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,
     NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V2, NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V2,
+    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V3,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_NS_V2,
+    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_NS_V1,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V2, EMPTY_COINS_TREE_ROOT,
 };
 
@@ -101,11 +103,15 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let mint_v2_bincode = include_bytes!("../../proof/mint.zk.bin");
     let burn_v2_bincode = include_bytes!("../../proof/burn.zk.bin");
     let fee_v2_bincode = include_bytes!("../../proof/fee.zk.bin");
+    let fee_v3_bincode = include_bytes!("../../proof/fee_v3.zk.bin");
     let fee_collect_v2_bincode = include_bytes!("../../proof/fee_collect.zk.bin");
+    let fee_threshold_v1_bincode = include_bytes!("../../proof/fee_threshold_v1.zk.bin");
     wasm::db::zkas_db_set(&mint_v2_bincode[..])?;
     wasm::db::zkas_db_set(&burn_v2_bincode[..])?;
     wasm::db::zkas_db_set(&fee_v2_bincode[..])?;
+    wasm::db::zkas_db_set(&fee_v3_bincode[..])?;
     wasm::db::zkas_db_set(&fee_collect_v2_bincode[..])?;
+    wasm::db::zkas_db_set(&fee_threshold_v1_bincode[..])?;
 
     let tx_hash = wasm::util::get_tx_hash()?;
     let call_idx = wasm::util::get_call_index()?;
@@ -190,15 +196,138 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     Ok(())
 }
 
-#[cfg(feature = "fee-v2")]
-fn fee_v2(_cid: ContractId, _params: &[u8]) -> ContractResult {
-    msg!("[native_token::fee_v2] FeeV2 not yet implemented");
-    Err(ContractError::IoError("FeeV2 not yet implemented — circuit compilation pending".into()))
+fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
+    // FeeV2 call data: [0x08][FeeParamsV2 encoded] — NO clear-text fee bytes.
+    // Per fee-spec.md §5.2: FeeParamsV2 replaces fee: u64 with fee_value_commit.
+    let fee_val = FeeParamsV2::decode(params)?;
+    msg!("[native_token::fee_v2] Processing fee (privacy-preserving)");
+
+    // Access the necessary databases
+    let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
+    let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
+    let coin_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
+
+    // P2: Token must be DRKW (native consensus asset, ↓denominate)
+    let token_commit = poseidon_hash([DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, pallas::Base::zero(), pallas::Base::zero()]);
+    if fee_val.input.token_commit != token_commit {
+        msg!("[fee_v2] Error: Input token commitment is not the native token");
+        return Err(NativeTokenError::TokenMismatch.into())
+    }
+    // P3: Output token must be DRKW
+    if fee_val.output.token_commit != token_commit {
+        msg!("[fee_v2] Error: Output token commitment is not native token");
+        return Err(NativeTokenError::TokenMismatch.into())
+    }
+
+    // P6: Verify Merkle root exists in coin_roots_db
+    if !wasm::db::db_contains_key(coin_roots_db, &fee_val.input.merkle_root.to_bytes())? {
+        msg!("[fee_v2] Error: Input Merkle root not found in previous state");
+        return Err(NativeTokenError::TransferMerkleRootNotFound.into())
+    }
+
+    // P7: Verify nullifier is NOT already spent (SMT lookup)
+    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
+    let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
+    if smt.get_leaf(&fee_val.input.nullifier.inner()) != pallas::Base::zero() {
+        msg!("[fee_v2] Error: Duplicate nullifier found");
+        return Err(NativeTokenError::DuplicateNullifier.into())
+    }
+
+    // P8: Verify output coin does not already exist
+    if wasm::db::db_contains_key(coins_db, &fee_val.output.coin.to_bytes())? {
+        msg!("[fee_v2] Error: Duplicate coin found");
+        return Err(NativeTokenError::DuplicateCoin.into())
+    }
+
+    // NOTE: P4 (verify_threshold_proof) and P5 (PedersenVerify commitment check)
+    // are verified by the host during ZK proof verification, NOT here.
+    // The Fee_V3 circuit proves value conservation and fee_value_commit correctness.
+    // The FeeThreshold_V1 circuit proves fee >= threshold.
+    //
+    // NOTE: The fee amount is NOT available to the contract entrypoint.
+    // FeeParamsV2 carries only fee_value_commit (Pedersen), not the plain fee.
+    // The daemon patches the FeeUpdateV1.fee after ZK proof witness extraction.
+    // For now, fee=0 — the daemon corrects this before apply_fee().
+    let verifying_block_height = wasm::util::get_verifying_block_height()?;
+
+    // Create state update — fee is patched by daemon after ZK proof verification.
+    // Postconditions are identical to FeeV1 (fee-spec.md §5.4).
+    let update = FeeUpdateV1 {
+        nullifier: fee_val.input.nullifier,
+        coin: fee_val.output.coin,
+        height: verifying_block_height,
+        fee: FeeAmount::ZERO, // Patched by daemon after Fee_V3 proof witness extraction
+    };
+
+    msg!("[native_token::fee_v2] Fee valid (privacy-preserving)");
+    wasm::util::set_return_data(&encode_fee_v2_update_v1(&update))
 }
 
-#[cfg(feature = "fee-v2")]
-fn fee_v2_get_metadata(_cid: ContractId, _params: &[u8]) -> Result<Vec<u8>, ContractError> {
-    Ok(vec![])
+fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, ContractError> {
+    let fee_params = match FeeParamsV2::decode(params) {
+        Ok(p) => p,
+        Err(e) => {
+            msg!("[native_token::fee_v2_get_metadata] Error: Failed to decode FeeParamsV2: {:?}", e);
+            return Ok(vec![]);
+        }
+    };
+
+    // Public inputs for the ZK proofs we have to verify
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    // Schnorr signatures prohibited in contract metadata (contract-standards.md §3).
+    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
+
+    // Extract Pedersen commitment coordinates from params
+    let input_value_coords = fee_params.input.value_commit.to_affine().coordinates();
+    if input_value_coords.is_none().into() {
+        msg!("[native_token::fee_v2_get_metadata] Error: Input value commit is identity");
+        return Ok(vec![]);
+    }
+    let input_value_coords = input_value_coords.unwrap();
+    let output_value_coords = fee_params.output.value_commit.to_affine().coordinates();
+    if output_value_coords.is_none().into() {
+        msg!("[native_token::fee_v2_get_metadata] Error: Output value commit is identity");
+        return Ok(vec![]);
+    }
+    let output_value_coords = output_value_coords.unwrap();
+    let (sig_x, sig_y) = fee_params.input.signature_public.xy().expect("pk not identity");
+
+    // Fee_V3 circuit: 15 public inputs (Fee_V2's 14 minus fee + fee_vc.x + fee_vc.y)
+    zk_public_inputs.push((
+        NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V3.to_string(),
+        vec![
+            fee_params.input.nullifier.inner(),     // 1
+            *input_value_coords.x(),                // 2
+            *input_value_coords.y(),                // 3
+            fee_params.input.token_commit,          // 4
+            fee_params.input.merkle_root.inner(),   // 5
+            fee_params.input.user_data_enc,         // 6
+            sig_x,                                  // 7
+            sig_y,                                  // 8
+            fee_params.output.coin.inner(),         // 9
+            *output_value_coords.x(),               // 10
+            *output_value_coords.y(),               // 11
+            fee_params.fee_value_commit_x,          // 12: fee_value_commit x
+            fee_params.fee_value_commit_y,          // 13: fee_value_commit y
+            fee_params.tx_binding,                  // 14: tx_binding
+            fee_params.tx_nonce,                    // 15: tx_nonce
+        ],
+    ));
+
+    // FeeThreshold_V1 circuit: 2 public inputs (threshold, tx_binding)
+    zk_public_inputs.push((
+        NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_NS_V1.to_string(),
+        vec![
+            pallas::Base::from(fee_params.threshold),   // 1: threshold (u64 → Base)
+            fee_params.tx_binding,                        // 2: tx_binding
+        ],
+    ));
+
+    // Serialize everything gathered and return it
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    signature_pubkeys.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 // ============================================================================
@@ -235,7 +364,6 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         NativeTokenFunction::SpendV1 => spend_get_metadata(cid, params),
         NativeTokenFunction::PoWRewardV1 => pow_reward_get_metadata(cid, params),
         NativeTokenFunction::FeeCollectV1 => fee_collect_get_metadata(cid, params),
-        #[cfg(feature = "fee-v2")]
         NativeTokenFunction::FeeV2 => fee_v2_get_metadata(cid, params),
     }?;
 
@@ -289,7 +417,7 @@ fn fee_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contract
             fee_params.output.coin.inner(),         // 9
             *output_value_coords.x(),               // 10
             *output_value_coords.y(),               // 11
-            pallas::Base::from(fee_params.fee),     // 12: fee
+            pallas::Base::from(fee_params.fee.get()),   // 12: fee
             fee_params.tx_binding,                  // 13: tx_binding
             fee_params.tx_nonce,                    // 14: tx_nonce
         ],
@@ -493,6 +621,14 @@ fn encode_fee_update_v1(update: &FeeUpdateV1) -> Vec<u8> {
     buf
 }
 
+fn encode_fee_v2_update_v1(update: &FeeUpdateV1) -> Vec<u8> {
+    let inner = update.encode();
+    let mut buf = Vec::with_capacity(1 + inner.len());
+    buf.push(NativeTokenFunction::FeeV2 as u8);
+    buf.extend_from_slice(&inner);
+    buf
+}
+
 fn decode_fee_update_v1(data: &[u8]) -> Result<FeeUpdateV1, ContractError> {
     FeeUpdateV1::decode(data)
 }
@@ -580,7 +716,6 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         NativeTokenFunction::SpendV1 => spend_v1(cid, params),
         NativeTokenFunction::PoWRewardV1 => pow_reward_v1(cid, params),
         NativeTokenFunction::FeeCollectV1 => fee_collect_v1(cid, params),
-        #[cfg(feature = "fee-v2")]
         NativeTokenFunction::FeeV2 => fee_v2(cid, params),
     }
 }
@@ -591,7 +726,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
 fn fee_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     // Extract fee from raw tx data (bytes 0-8, before FeeParamsV1)
-    let fee: u64 = deserialize(&params[0..8])?;
+    let fee: FeeAmount = FeeAmount::new(deserialize::<u64>(&params[0..8])?);
     let fee_val = FeeParamsV1::decode(&params[8..])?;
     msg!("[native_token::fee_v1] Processing fee: {}", fee);
 
@@ -1097,10 +1232,9 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update = decode_fee_collect_update_v1(&update_data[1..])?;
             apply_fee_collect(cid, update)
         }
-        #[cfg(feature = "fee-v2")]
         NativeTokenFunction::FeeV2 => {
             // FeeV2 apply is identical to FeeV1 — same postconditions
-            // (fee-spec.md §5.4). Uses FeeV1 update type pending FeeV2 circuits.
+            // (fee-spec.md §5.4).
             let update = decode_fee_update_v1(&update_data[1..])?;
             apply_fee(cid, update)
         }
@@ -1280,7 +1414,7 @@ fn apply_fee(cid: ContractId, update: FeeUpdateV1) -> ContractResult {
         })?;
         u64::from_le_bytes(bytes)
     };
-    paid_fee = paid_fee.saturating_add(update.fee);
+    paid_fee = paid_fee.saturating_add(update.fee.get());
     wasm::db::db_set(fees_db, &update.height.to_le_bytes(), &paid_fee.to_le_bytes())?;
 
     Ok(())

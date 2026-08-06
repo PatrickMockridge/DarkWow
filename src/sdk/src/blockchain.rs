@@ -495,6 +495,14 @@ impl FeeAmount {
             None => None,
         }
     }
+
+    /// Checked subtraction — preserves the type wrapper, returns None on underflow.
+    pub const fn checked_sub(self, rhs: FeeAmount) -> Option<FeeAmount> {
+        match self.0.checked_sub(rhs.0) {
+            Some(v) => Some(FeeAmount(v)),
+            None => None,
+        }
+    }
 }
 
 impl core::fmt::Display for FeeAmount {

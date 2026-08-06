@@ -420,6 +420,7 @@ pub fn execute_block(
 
         let mut success = true;
         let mut fail_stage = "";
+        let mut fail_reason = String::new();
         // L2: capture the `metadata()` return — the contract's declared ZK
         // public inputs + signature pubkeys — instead of discarding it.
         // Accumulate per-tx for post-loop verification with the witness.
@@ -433,6 +434,7 @@ pub fn execute_block(
                             tracing::error!(target: "dwow_chain::execution",
                                 "metadata ZK decode failed for contract {} (tx {}): {:?}",
                                 job.contract_id, job.tx_hash, e);
+                            fail_reason = format!("{:?}", e);
                             success = false; fail_stage = "metadata-decode-zkp";
                             Vec::new()
                         }
@@ -448,6 +450,7 @@ pub fn execute_block(
             Err(e) => {
                 success = false;
                 fail_stage = "metadata";
+                fail_reason = format!("{:?}", e);
                 tracing::error!(target: "dwow_chain::execution",
                     "metadata() failed for contract {} (tx {}) fn_code={:?}: {:?}",
                     job.contract_id, job.tx_hash, job.call_data.first(), e);
@@ -466,6 +469,7 @@ pub fn execute_block(
                     tracing::error!(target: "dwow_chain::execution",
                         "exec() failed for contract {} (tx {}): {:?}",
                         job.contract_id, job.tx_hash, e);
+                    fail_reason = format!("{:?}", e);
                     success = false; fail_stage = "exec";
                 }
             }
@@ -479,7 +483,7 @@ pub fn execute_block(
                     &store, backend.clone(), &target_cid_bytes, &payload,
                     current_height, difficulty, tx_hash_bytes,
                 );
-                if !success { fail_stage = "spend_hook"; }
+                if !success { fail_stage = "spend_hook"; fail_reason = "spend hook execution failed".into(); }
             }
         }
 
@@ -488,6 +492,7 @@ pub fn execute_block(
                 tracing::error!(target: "dwow_chain::execution",
                     "apply() failed for contract {} (tx {}): {:?}",
                     job.contract_id, job.tx_hash, e);
+                fail_reason = format!("{:?}", e);
                 success = false; fail_stage = "apply";
             }
         }
@@ -499,8 +504,9 @@ pub fn execute_block(
                 // A valid miner never includes failing txs — mempool admission
                 // verifies witnesses, and the miner re-executes at assembly.
                 return Err(Error::Custom(format!(
-                    "canonical call failed at {} for tx {} (contract {})",
+                    "canonical call failed at {} for tx {} (contract {}): {}",
                     fail_stage, hex::encode(tx_hash.as_bytes()), job.contract_id,
+                    fail_reason,
                 )));
             }
             uncle_results.push(CallResult { success: false, gas: 0, diff: None });
