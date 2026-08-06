@@ -59,6 +59,14 @@ pub struct NativeTokenHarness {
     fee_zkbin: ZkBinary,
     /// Fee_V1 ProvingKey
     fee_pk: ProvingKey,
+    /// Fee_V3 ZkBinary (FeeV2 — hidden fee)
+    fee_v3_zkbin: ZkBinary,
+    /// Fee_V3 ProvingKey
+    fee_v3_pk: ProvingKey,
+    /// FeeThreshold_V1 ZkBinary (FeeV2 — threshold proof)
+    threshold_zkbin: ZkBinary,
+    /// FeeThreshold_V1 ProvingKey
+    threshold_pk: ProvingKey,
 }
 
 impl NativeTokenHarness {
@@ -68,10 +76,14 @@ impl NativeTokenHarness {
         let mint_bin = include_bytes!("../../../native_token/proof/mint.zk.bin");
         let burn_bin = include_bytes!("../../../native_token/proof/burn.zk.bin");
         let fee_bin = include_bytes!("../../../native_token/proof/fee.zk.bin");
+        let fee_v3_bin = include_bytes!("../../../native_token/proof/fee_v3.zk.bin");
+        let threshold_bin = include_bytes!("../../../native_token/proof/fee_threshold_v1.zk.bin");
 
         let mint_zkbin = ZkBinary::decode(mint_bin, false).unwrap();
         let burn_zkbin = ZkBinary::decode(burn_bin, false).unwrap();
         let fee_zkbin = ZkBinary::decode(fee_bin, false).unwrap();
+        let fee_v3_zkbin = ZkBinary::decode(fee_v3_bin, false).unwrap();
+        let threshold_zkbin = ZkBinary::decode(threshold_bin, false).unwrap();
 
         // Build proving keys
         let mint_circuit =
@@ -80,18 +92,23 @@ impl NativeTokenHarness {
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&burn_zkbin).unwrap(), &burn_zkbin);
         let fee_circuit =
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&fee_zkbin).unwrap(), &fee_zkbin);
+        let fee_v3_circuit =
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&fee_v3_zkbin).unwrap(), &fee_v3_zkbin);
+        let threshold_circuit =
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&threshold_zkbin).unwrap(), &threshold_zkbin);
 
         let mint_pk = ProvingKey::build(mint_zkbin.k, &mint_circuit).expect("ProvingKey::build failed");
         let burn_pk = ProvingKey::build(burn_zkbin.k, &burn_circuit).expect("ProvingKey::build failed");
         let fee_pk = ProvingKey::build(fee_zkbin.k, &fee_circuit).expect("ProvingKey::build failed");
+        let fee_v3_pk = ProvingKey::build(fee_v3_zkbin.k, &fee_v3_circuit).expect("ProvingKey::build failed");
+        let threshold_pk = ProvingKey::build(threshold_zkbin.k, &threshold_circuit).expect("ProvingKey::build failed");
 
         Self {
-            mint_zkbin,
-            mint_pk,
-            burn_zkbin,
-            burn_pk,
-            fee_zkbin,
-            fee_pk,
+            mint_zkbin, mint_pk,
+            burn_zkbin, burn_pk,
+            fee_zkbin, fee_pk,
+            fee_v3_zkbin, fee_v3_pk,
+            threshold_zkbin, threshold_pk,
         }
     }
 
@@ -223,22 +240,51 @@ impl NativeTokenHarness {
     /// Spec: fee-spec.md §5.
     pub fn fee_v2(
         &self,
-        _input_value: u64,
-        _token_id: pallas::Base,
-        _spend_hook: pallas::Base,
-        _user_data: pallas::Base,
-        _coin_blind: pallas::Base,
-        _leaf_position: u64,
-        _merkle_path: Vec<MerkleNode>,
-        _secret: SecretKey,
-        _ephemeral_signature_secret: SecretKey,
-        _recipient: PublicKey,
-        _output_spend_hook: pallas::Base,
-        _output_user_data: pallas::Base,
-        _fee_amount: u64,
-        _threshold: u64,
+        input_value: u64,
+        token_id: pallas::Base,
+        spend_hook: pallas::Base,
+        user_data: pallas::Base,
+        coin_blind: pallas::Base,
+        leaf_position: u64,
+        merkle_path: Vec<MerkleNode>,
+        secret: SecretKey,
+        ephemeral_signature_secret: SecretKey,
+        recipient: PublicKey,
+        output_spend_hook: pallas::Base,
+        output_user_data: pallas::Base,
+        fee_amount: u64,
+        threshold: u64,
     ) -> std::result::Result<(Vec<u8>, Vec<dwow_core::zk::Proof>), Box<dyn std::error::Error>> {
-        Err("FeeV2 not yet implemented — circuit compilation pending".into())
+        let builder = dwow_native_token_contract::client::fee_v2::FeeV2CallBuilder {
+            input: dwow_native_token_contract::client::fee_v2::FeeV2CallInput {
+                value: input_value,
+                token_id,
+                spend_hook,
+                user_data,
+                coin_blind,
+                leaf_position,
+                merkle_path,
+                secret,
+                ephemeral_signature_secret,
+                tx_nonce: pallas::Base::zero(),
+                tx_commitment: pallas::Base::zero(),
+            },
+            output: dwow_native_token_contract::client::fee_v2::FeeV2CallOutput {
+                recipient,
+                value: input_value - fee_amount,
+                spend_hook: output_spend_hook,
+                user_data: output_user_data,
+                coin_blind,
+            },
+            fee_amount,
+            threshold,
+            fee_v3_zkbin: self.fee_v3_zkbin.clone(),
+            fee_v3_pk: self.fee_v3_pk.clone(),
+            threshold_zkbin: self.threshold_zkbin.clone(),
+            threshold_pk: self.threshold_pk.clone(),
+        };
+        let fee_v2_result = builder.build()?;
+        Ok((fee_v2_result.call_data, fee_v2_result.proofs))
     }
 
     /// Build a transfer call (function code 0x03, ZK).
