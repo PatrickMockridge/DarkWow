@@ -111,6 +111,34 @@ impl FeeExtractor for NativeTokenFeeExtractor {
         const GAS_PER_CALL: u64 = 400_000_000;
         tx.contract_calls.len() as u64 * GAS_PER_CALL
     }
+
+    /// Extract fee commitment from FeeV2 transactions (selector 0x08).
+    /// FeeV2 hides the fee amount — returns the Pedersen commitment instead.
+    /// Stub: full implementation requires FeeParamsV2 deserialization.
+    fn extract_fee_commitment(&self, tx: &dwow_chain::Transaction) -> Option<dwow_mempool::FeeCommitment> {
+        for call in &tx.contract_calls {
+            if call.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
+                && call.data.first() == Some(&0x08u8)
+            {
+                // Stub: FeeParamsV2 deserialization would extract the
+                // fee_value_commit field. Returns None until circuits
+                // are compiled and FeeParamsV2 encoding is finalized.
+                tracing::debug!(target: "dwowd::fee",
+                    "FeeV2 call detected — fee commitment extraction pending");
+            }
+        }
+        None
+    }
+
+    /// Verify FeeThreshold_V1 proof for FeeV2 transaction.
+    /// Stub: full implementation requires FeeThreshold_V1 circuit.
+    fn verify_threshold_proof(&self, _tx: &dwow_chain::Transaction, _threshold: u64) -> bool {
+        // Stub: returns false until FeeThreshold_V1 circuit is compiled.
+        // When implemented: decode threshold proof from FeeParamsV2,
+        // load FeeThreshold_V1 verifying key, verify proof against
+        // threshold + tx_binding public inputs.
+        false
+    }
 }
 
 /// ZK verification for linear blockchain

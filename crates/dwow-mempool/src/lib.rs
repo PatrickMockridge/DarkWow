@@ -42,7 +42,20 @@ use smol::lock::Mutex;
 pub trait FeeExtractor: Send + Sync {
     fn extract_fee(&self, tx: &Transaction) -> u64;
     fn estimate_gas(&self, tx: &Transaction) -> u64;
+
+    /// Extract a Pedersen fee commitment from V2 transactions (hidden fee).
+    /// Returns None for V1 transactions. Default: None (V1 only).
+    fn extract_fee_commitment(&self, _tx: &Transaction) -> Option<FeeCommitment> { None }
+
+    /// Verify the FeeThreshold_V1 proof against a threshold.
+    /// Returns false for V1 transactions. Default: false (V1 only).
+    fn verify_threshold_proof(&self, _tx: &Transaction, _threshold: u64) -> bool { false }
 }
+
+/// Pedersen commitment to a fee amount — used when fees are ZK-private.
+/// Wraps a pallas::Point. V1 transactions expose clear-text fees instead.
+#[derive(Clone, Debug)]
+pub struct FeeCommitment(pub dwow_sdk::pasta::pallas::Point);
 
 // ── Configuration ────────────────────────────────────────────────────────
 
