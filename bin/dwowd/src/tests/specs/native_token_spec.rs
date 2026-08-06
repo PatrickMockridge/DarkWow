@@ -26,26 +26,41 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
         needs_coinbase_coordination: true,
         endpoints: vec![
             EndpointSpec {
-                name: "FeeV1", is_zk: true,
+                name: "FeeV2", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: Some(Box::new({
                     let sk = secret.clone();
                     let ephem = SecretKey::from_bytes([9u8; 32]).unwrap();
                     move |coinbase| {
-                        let r = h.fee(
+                        // Build merkle tree from production module to derive path + root.
+                        // FeeV2 receives merkle_root from the tree — never recomputed manually.
+                        use dwow_sdk::crypto::{MerkleNode, MerkleTree};
+                        let mut tree = MerkleTree::new(1);
+                        tree.append(MerkleNode::from_base(pallas::Base::zero()));  // zero guard (pos 0)
+                        tree.append(MerkleNode::from_base(coinbase.coin_commitment.inner()));
+                        let coin_pos = tree.mark().expect("tree.mark");
+                        let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
+                        let root = tree.root(0).expect("tree.root");
+
+                        let r = h.fee_v2(
                             coinbase.coin_value, pallas::Base::zero(),
                             pallas::Base::from(0u64), pallas::Base::from(0u64),
-                            coinbase.coin_blind, 0,
-                            vec![dwow_sdk::crypto::MerkleNode::new(pallas::Base::from(0u64)); 32],
-                            sk.clone(), sk.clone(),
+                            coinbase.coin_blind,
+                            u64::from(coin_pos),
+                            path,
+                            root,
+                            sk.clone(),
+                            ephem.clone(),
                             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32]).unwrap()),
-                            pallas::Base::from(0u64), pallas::Base::from(0u64), 10,
+                            pallas::Base::from(0u64), pallas::Base::from(0u64),
+                            42_000_000,  // fee_amount
+                            42_000_000,  // threshold (premium)
                         ).map_err(modules::error_bridge::bridge)?;
                         Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
                     }
                 })),
                 verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
-                generate: Box::new(|| Err(dwow_core::Error::Custom("TEST-FAIL [native_token]: FeeV1 must use generate_with_coinbase path".into()))),
+                generate: Box::new(|| Err(dwow_core::Error::Custom("TEST-FAIL [native_token]: FeeV2 must use generate_with_coinbase path".into()))),
             },
             EndpointSpec {
                 name: "BurnV1", is_zk: true,
