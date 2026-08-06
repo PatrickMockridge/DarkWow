@@ -382,14 +382,18 @@ with a concrete remediation plan.
 ### 5.1 Consensus-Critical — native_token
 
 **Role:** The single bespoke citizen. Block rewards, fee payment, value transfer.
-No manifest. 7 functions: FeeV1 (0x00), MintV1 (0x01, disabled), BurnV1 (0x02),
+No manifest. 7 functions: FeeV2 (0x08), MintV1 (0x01, disabled), BurnV1 (0x02),
 TransferV1 (0x03), SpendV1 (0x04), PoWRewardV1 (0x05), FeeCollectV1 (0x06).
+FeeV1 (0x00) is REMOVED — returns InvalidFunction.
 3 ZK circuits: MintV2, BurnV2, FeeV2.
 
 **Test SHALL:**
 - Use `NATIVE_TOKEN_CONTRACT_ID` — never `chain.deploy()`
 - Verify MintV1 returns `FunctionDisabled` (walled off behind PoWRewardV1)
-- Route BurnV1, FeeV1, TransferV1, SpendV1 each through accept_block with real proofs
+- Route BurnV1, FeeV2, TransferV1, SpendV1 each through accept_block with real proofs
+- FeeV2: privacy-preserving with dual ZK proofs (Fee_V2 + FeeThreshold_V1).
+  Merkle root from production tree (tree.root(0)), never recomputed manually.
+  Call data: `[0x08][FeeParamsV2]` — NO clear-text fee bytes.
 - Verify cumulative supply after every value-moving operation
 - Verify block hash chain continuity across all blocks
 - Verify FeeCollectV1 plate state after fee collection
