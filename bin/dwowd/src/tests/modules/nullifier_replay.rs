@@ -27,7 +27,7 @@ pub async fn verify_nullifier_replay(
     ).await;
 
     assert!(replay_result.is_err(),
-        "nullifier replay MUST be rejected — second submission with identical call_data succeeded when it should have failed");
+        "INFRA-FAIL [nullifier_replay]: nullifier replay MUST be rejected — second submission with identical call_data succeeded");
 
     Ok(())
 }

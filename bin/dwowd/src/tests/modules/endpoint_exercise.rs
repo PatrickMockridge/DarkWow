@@ -31,7 +31,7 @@ pub async fn exercise_endpoint(
     ).await?;
 
     assert!(new_height > height_before,
-        "{}: height must advance after accept_block (was {}, now {})",
+        "TEST-FAIL [{}]: height must advance after accept_block (was {}, now {})",
         endpoint.name, height_before, new_height);
 
     // State verification: contract-specific state query deferred until
