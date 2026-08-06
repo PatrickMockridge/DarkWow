@@ -279,6 +279,9 @@ pub fn create_fee_proof(
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
         Witness::Base(Value::known(tx_binding)),
+        // fee_value_blind: FeeV1 uses zero blind (fee is not hidden).
+        // The modified fee.zk circuit added fee_value_commit constraints.
+        Witness::Scalar(Value::known(pallas::Scalar::zero())),
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

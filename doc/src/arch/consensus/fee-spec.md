@@ -360,7 +360,7 @@ rejected blocks.
 
 ## 5. FeeV2 — Privacy-Preserving Fee Payment (NEW)
 
-**Function code**: `0x08`. **ZK circuits**: `Fee_V2` (value conservation, 14 public
+**Function code**: `0x08`. **ZK circuits**: `Fee_V2` (value conservation, 15 public
 inputs) + `FeeThreshold_V1` (threshold proof, 2 public inputs).
 
 FeeV2 is the privacy-preserving successor to FeeV1. It SHALL NOT expose the

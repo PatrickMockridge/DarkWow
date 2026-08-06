@@ -28,7 +28,7 @@ witness "FeeThreshold_V1" {
 circuit "FeeThreshold_V1" {
     # Domain constant for transaction binding.
     # Value MUST match DRK_POSEIDON_DOMAIN_TX_BINDING (= 3) in
-    # src/sdk/src/crypto/constants.rs and the Fee_V2/V3 circuits.
+    # src/sdk/src/crypto/constants.rs and the Fee_V2 circuit.
     DOMAIN_TX_BINDING = witness_base(3);
 
     # Prove fee >= threshold via range check on difference.
