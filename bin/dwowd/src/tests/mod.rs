@@ -32,5 +32,6 @@ pub mod test_output;
 pub mod uniform_runner;
 pub mod wallet_integration;
 pub mod fee_collect_pipeline;
+pub mod mempool_tests;
 pub mod merge_mining;
 pub mod tripwire;
