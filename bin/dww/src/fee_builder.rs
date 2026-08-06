@@ -40,9 +40,12 @@ use dwow_serial::Encodable;
 use rand::{rngs::StdRng, SeedableRng};
 
 use crate::contract_imports::native_token::{
-    DRKW_TOKEN_ID, FeeCallBuilder, FeeCallInput, FeeCallOutput,
+    DRKW_TOKEN_ID,
+    FeeV2CallBuilder, FeeV2CallInput, FeeV2CallOutput,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN,
+    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN,
 };
+use dwow_native_token_contract::client::fee_v2::FeeV2CallBuilder as _;
 use crate::walletdb::WalletPtr;
 use crate::NATIVE_TOKEN_CONTRACT_ID;
 
@@ -173,7 +176,29 @@ pub fn build_fee_and_finalize_tx(
     let tx_commitment: pallas::Base = BaseBlind::random(&mut rng).inner();
     let tx_nonce: pallas::Base = BaseBlind::random(&mut rng).inner();
 
-    let fee_input = FeeCallInput {
+    // Fee output - change goes back to our public key
+    let dark_public_key = PublicKey::from_secret(dark_secret.clone());
+    let change_blind = BaseBlind::random(&mut rng);
+
+    // Load FeeThreshold_V1 circuit for threshold proof
+    let threshold_zkbin = ZkBinary::decode(
+        NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN, false,
+    ).map_err(|e| Error::Custom(format!("Failed to decode threshold ZK binary: {:?}", e)))?;
+    let threshold_empty_wits = empty_witnesses(&threshold_zkbin)?;
+    let threshold_circuit = ZkCircuit::new(threshold_empty_wits, &threshold_zkbin);
+    let threshold_pk = ProvingKey::build(threshold_zkbin.k, &threshold_circuit)
+        .map_err(|e| Error::Custom(format!("ProvingKey::build threshold: {:?}", e)))?;
+
+    // Threshold selection per wallet.md §6.4.2 / fee-spec.md §8.2
+    let premium_threshold: u64 = 42_000_000;
+    let general_threshold: u64 = 1_000_000;
+    let threshold = if DEFAULT_FEE >= premium_threshold {
+        premium_threshold
+    } else {
+        general_threshold
+    };
+
+    let fee_input = FeeV2CallInput {
         value: fee_cap.value,
         token_id: DRKW_TOKEN_ID.inner(),
         spend_hook: pallas::Base::zero(),
@@ -187,10 +212,7 @@ pub fn build_fee_and_finalize_tx(
         tx_nonce,
     };
 
-    // Fee output - change goes back to our public key
-    let dark_public_key = PublicKey::from_secret(dark_secret);
-    let change_blind = BaseBlind::random(&mut rng);
-    let fee_output = FeeCallOutput {
+    let fee_output = FeeV2CallOutput {
         recipient: dark_public_key,
         value: fee_cap.value.saturating_sub(DEFAULT_FEE),
         spend_hook: pallas::Base::zero(),
@@ -198,28 +220,25 @@ pub fn build_fee_and_finalize_tx(
         coin_blind: change_blind.inner(),
     };
 
-    // Build fee call
-    let fee_builder = FeeCallBuilder {
+    // Build FeeV2 call — privacy-preserving, dual-proof (Fee_V2 + FeeThreshold_V1)
+    let fee_builder = FeeV2CallBuilder {
         input: fee_input,
         output: fee_output,
-        fee_zkbin,
+        fee_amount: DEFAULT_FEE,
+        threshold,
+        fee_zkbin: fee_zkbin.clone(),
         fee_pk,
-        fee: DEFAULT_FEE,
+        threshold_zkbin,
+        threshold_pk,
     };
 
-    let fee_debris = fee_builder.build()
-        .map_err(|e| Error::Custom(format!("Failed to build fee: {:?}", e)))?;
+    let fee_v2_result = fee_builder.build()
+        .map_err(|e| Error::Custom(format!("Failed to build FeeV2: {:?}", e)))?;
 
-    // Create fee call data — authoritative FeeV1 layout:
-    // [0x00 selector][fee u64 LE][FeeParamsV1]. This is what the wasm
-    // process fn, the wasm metadata fn, the block balance checker
-    // (proof_of_token_balance::process_fee_call), and the mempool fee
-    // extractor all parse. The model writes the same prefix
-    // (wallet_model.py build_fee_and_finalize_tx).
-    let mut fee_call_data = vec![0x00u8]; // FeeV1 function code
-    DEFAULT_FEE.encode(&mut fee_call_data)
-        .map_err(|e| Error::Custom(format!("Failed to encode fee value: {:?}", e)))?;
-    fee_call_data.extend_from_slice(&fee_debris.params.encode());
+    // Create FeeV2 call data: [0x08 selector][FeeParamsV2 encoded]
+    // NO clear-text fee bytes — spec: fee-spec.md §5.2
+    let mut fee_call_data = vec![0x08u8];
+    fee_call_data.extend_from_slice(&fee_v2_result.params.encode());
 
     let fee_call = ContractCall {
         contract_id: *NATIVE_TOKEN_CONTRACT_ID,
@@ -230,14 +249,14 @@ pub fn build_fee_and_finalize_tx(
     // fee_proofs param is for callers that merge proofs externally; default
     // to the proofs the builder just produced.
     let fee_leaf_proofs = if let Some(ext) = fee_proofs {
-        if ext.is_empty() { fee_debris.proofs } else { ext }
+        if ext.is_empty() { fee_v2_result.proofs } else { ext }
     } else {
-        fee_debris.proofs
+        fee_v2_result.proofs
     };
     let fee_leaf = ContractCallLeaf { call: fee_call, proofs: fee_leaf_proofs };
 
     // Collect nullifiers for mempool double-spend detection.
-    let nf = fee_debris.params.input.nullifier;
+    let nf = fee_v2_result.params.input.nullifier;
 
     // Build final transaction
     let mut tx_builder = TransactionBuilder::new(call_leaf, vec![])

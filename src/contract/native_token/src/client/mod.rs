@@ -63,7 +63,7 @@ impl ContractClient for NativeTokenClient {
 
     fn function_selector(&self, function: &str) -> Option<u8> {
         match function {
-            "FeeV1" => Some(0x00),
+            "FeeV2" => Some(0x08),
             "BurnV1" => Some(0x02),
             "PoWRewardV1" => Some(0x05),
             _ => None,
@@ -71,12 +71,12 @@ impl ContractClient for NativeTokenClient {
     }
 
     fn supported_functions(&self) -> Vec<&'static str> {
-        vec!["FeeV1", "PoWRewardV1", "BurnV1"]
+        vec!["FeeV2", "PoWRewardV1", "BurnV1"]
     }
 
     fn build(&self, function: &str, _params: &str, _wallet_state: &dyn WalletStateProvider) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String> {
         match function {
-            "FeeV1" | "PoWRewardV1" | "BurnV1" => Ok((vec![], vec![])),
+            "FeeV2" | "PoWRewardV1" | "BurnV1" => Ok((vec![], vec![])),
             // Native transfers NEVER go through ContractClient dispatch —
             // wallet.md §6.4: the wallet's bespoke path (build_native_transfer
             // → TransferCallBuilder) constructs them with real burn/mint
