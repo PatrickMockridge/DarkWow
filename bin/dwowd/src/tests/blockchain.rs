@@ -158,7 +158,15 @@ impl HeavyweightPipeline {
             .map_err(|e| dwow_core::Error::Custom(format!("MiningRecipient: {}", e)))?;
         drop(mgr);
         let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
-        crate::init_genesis(&self.chain_state, recipient, magic_bytes).await.map(|_| ())
+        crate::init_genesis(&self.chain_state, recipient, magic_bytes).await?;
+        // Initialize the supply tracking tree with the genesis coinbase reward.
+        // cumulative_supply() reads from supply_chain at key b"latest_supply".
+        let initial_supply = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
+        self.chain_state.store.supply_chain.insert(
+            b"latest_supply".to_vec(),
+            initial_supply.get().to_le_bytes().to_vec(),
+        )?;
+        Ok(())
     }
 
     /// Deploy a contract WASM into the chain state.
