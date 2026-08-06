@@ -1,6 +1,7 @@
 # Fee Payment and Collection — Formal Specification
 
-*Specification for FeeV1, FeeCollectV1, and the coin Merkle tree.
+*Specification for FeeV2, FeeCollectV1, and the coin Merkle tree.
+FeeV1 (function code `0x00`, clear-text fee) is REMOVED.
 Theorems, invariants, and formal predicates. Tests SHALL be derived from
 this document — not from reverse-engineering production code.*
 
@@ -10,7 +11,7 @@ this document — not from reverse-engineering production code.*
 
 The coin Merkle tree is an incremental Merkle tree of commitments to
 native-token coins. It is shared by all native_token functions:
-PoWRewardV1 appends coins to it; FeeV1, TransferV1, SpendV1, and BurnV1
+PoWRewardV1 appends coins to it; FeeV2, TransferV1, SpendV1, and BurnV1
 prove inclusion of a coin at a prior root; FeeCollectV1 appends a final
 coin and closes the tree for the block.
 
@@ -166,7 +167,7 @@ Block N has the following canonical transaction order:
 
 ```
 transactions[0]     = coinbase           (PoWRewardV1, fn_code 0x05)
-transactions[1..k]  = user transactions  (FeeV1, TransferV1, SpendV1, BurnV1, deploys)
+transactions[1..k]  = user transactions  (FeeV2, TransferV1, SpendV1, BurnV1, deploys)
 transactions[k+1]   = FeeCollectV1       (fn_code 0x06) — iff total_fees > 0
 ```
 
@@ -179,13 +180,13 @@ Within `execute_block`, each canonical transaction runs
 `metadata()` → `exec()` → `apply()` sequentially in a shared overlay.
 
 **Invariant 1 (Overlay Visibility)**: Call `i` observes the state writes of
-calls `0..i-1` within the same block. Specifically, FeeV1's `exec()` (call
+calls `0..i-1` within the same block. Specifically, FeeV2's `exec()` (call
 i) sees the coinbase's `apply_pow_reward()` writes (call 0), including the
 merkle root inserted into `coin_roots_db`.
 
 This is the mechanism that enables same-block fee payment: the coinbase
-coin's merkle root IS visible to FeeV1 in the same block. This is NOT the
-production path (where FeeV1 spends coins from prior blocks), but is a
+coin's merkle root IS visible to FeeV2 in the same block. This is NOT the
+production path (where FeeV2 spends coins from prior blocks), but is a
 valid test path when `tx.nullifiers` is empty (bypassing COINBASE_MATURITY).
 
 ### 2.3 Coin Tree Growth Per Block
@@ -199,7 +200,7 @@ Starting tree: N leaves (from blocks 1..H-1)
    append(coinbase_coin_H) → position N, root = R_H_0
    coin_roots_db[R_H_0] = ...
 
-2. Each user FeeV1 apply_fee:
+2. Each user FeeV2 apply_fee:
    append(output_coin_i) → position N+i, root = R_H_i
    coin_roots_db[R_H_i] = ...
 
@@ -231,20 +232,25 @@ from `tx.nullifiers` of prior blocks.
 skips when the vector is empty. Therefore tests can spend coins at any
 height without triggering COINBASE_MATURITY.
 
-The contract-level SMT nullifier check (FeeV1 check #7) still applies:
+The contract-level SMT nullifier check (FeeV2 check #7) still applies:
 the nullifier must not exist in the contract's `nullifiers_db` SMT.
 
-## 3. FeeV1 — Fee Payment Entrypoint
+## 3. FeeV1 — Fee Payment Entrypoint (REMOVED)
 
-**Function code**: `0x00`. **ZK circuit**: `Fee_V2` (14 public inputs).
+**Function code**: `0x00`. **Status**: REMOVED. `0x00` returns `InvalidFunction`
+at the contract dispatch layer. All fee payment SHALL use FeeV2 (§5).
 
-### 3.1 Purpose
+FeeV1 is documented here for historical reference only. It exposed the fee
+amount in clear text (`[0x00][fee: u64 LE 8 bytes][FeeParamsV1 encoded]`).
+FeeV2 (§5) replaces it with a privacy-preserving Pedersen commitment.
 
-FeeV1 spends an existing coin C, splits it into:
+### 3.1 Purpose (Historical)
+
+FeeV1 spent an existing coin C, splitting it into:
 - O: output coin returned to user (value = C.value - fee)
 - F: fee accumulated into `fees_db[height]`
 
-### 3.2 Formal Preconditions
+### 3.2 Formal Preconditions (Historical)
 
 Let `params = FeeParamsV1 { input: Input, output: Output, fee: u64, ... }`
 and `fee = u64::from_le_bytes(call_data[1..9])`.
@@ -260,7 +266,7 @@ and `fee = u64::from_le_bytes(call_data[1..9])`.
 | P7 | `!db_contains_key(coins_db, output.coin)` | InsufficientBalance | Custom(0) |
 | P8 | `db_lookup` for coins_db, nullifiers_db, coin_roots_db succeeds | Custom(0) | — |
 
-### 3.3 Formal Postconditions
+### 3.3 Formal Postconditions (Historical)
 
 After successful exec+apply:
 
@@ -271,7 +277,7 @@ After successful exec+apply:
 | Q3 | `coin_tree` appended with `output.coin`, new root inserted into `coin_roots_db` |
 | Q4 | `fees_db[height] = fees_db[height] + fee` (saturating_add) |
 
-### 3.4 ZK Circuit
+### 3.4 ZK Circuit (Historical)
 
 The Fee_V2 circuit constrains:
 
@@ -285,11 +291,10 @@ The Fee_V2 circuit constrains:
 | signature_public | Derived from `ephemeral_signature_secret` |
 | tx_binding | `poseidon(DOMAIN_TX_BINDING, tx_commitment, tx_nonce)` |
 
-### 3.5 Test Derivation
+### 3.5 Test Derivation (Historical)
 
-To construct a valid FeeV1 test call, the developer SHALL answer these
-questions. If any answer is "I don't know," the spec is incomplete and
-must be extended before writing test code.
+To construct a valid FeeV1 test call (for historical reference), the developer
+SHALL answer these questions:
 
 **Q1: Which coin is being spent?**
 Must be a coin that was appended to the coin tree by a prior operation
@@ -327,15 +332,21 @@ Any valid public key. The FeeV1 creates a new coin owned by this key.
 
 ### 4.1 Purpose
 
-FeeCollectV1 claims the accumulated fee pot `fees_db[height]` and mints
-a new coin to the miner. Closes the coin Merkle tree for the block.
+FeeCollectV1 claims the accumulated fee pot and mints a new coin to the
+miner. Closes the coin Merkle tree for the block.
+
+For FeeV2 transactions, fees are hidden behind Pedersen commitments.
+The contract accumulates `fee_value_commit` from each FeeV2 call into
+`fee_commit_accumulator: pallas::Point`. FeeCollectV1 verifies the
+miner's claimed total matches the commitment sum via Pedersen's
+homomorphic property (§5.6).
 
 ### 4.2 Formal Preconditions
 
 | # | Predicate | Failure | Error Code |
 |---|-----------|---------|------------|
-| C1 | `fc.total_fees > 0` | InsufficientBalance | Custom(0) |
-| C2 | `fc.total_fees == fees_db[height]` | FeeTotalMismatch | Custom(22) |
+| C1 | `fc.total_fees > 0` | `↓zero-claim` | Custom(0) |
+| C2 | **FeeV2 path**: `PedersenCommit(fc.total_fees, fc.total_blind) == fee_commit_accumulator` — commitment sum matches accumulated commitments. **FeeV1 path (legacy)**: `fc.total_fees == fees_db[height]` | `↓bad-claim` | Custom(22) |
 | C3 | `!db_contains_key(coins_db, fc.output.coin)` | InsufficientBalance | Custom(0) |
 | C4 | `SMT.get_leaf(nullifiers_db, fc.output.nullifier) = ZERO` | InsufficientBalance | Custom(0) |
 | C5 | `fc.output.token_commit = poseidon(DOMAIN_TOKEN_COMMIT, 0, 0)` | InsufficientBalance | Custom(0) |
@@ -347,6 +358,7 @@ a new coin to the miner. Closes the coin Merkle tree for the block.
 | R1 | `coins_db[fc.output.coin] = []` |
 | R2 | `coin_tree` appended with `fc.output.coin`, new root in `coin_roots_db` (closes tree) |
 | R3 | `fees_db[height] = 0` (prevents double-claim) |
+| R4 | `fee_commit_accumulator = Identity` (resets for next block) |
 
 ### 4.4 Conditional Presence Rule
 
@@ -403,13 +415,21 @@ threshold_proof, fee_value_blind, tx_binding, tx_nonce }`.
 
 ### 5.4 Postconditions
 
-Identical to FeeV1 (§3.3): nullifier marked spent, output coin registered,
-coin tree appended, fee accumulated into `fees_db[height]`.
+After successful exec+apply:
+
+| # | Effect |
+|---|--------|
+| Q1 | `nullifiers_db[input.nullifier] = [1]` (input coin marked spent) |
+| Q2 | `coins_db[output.coin] = []` (output coin registered) |
+| Q3 | `coin_tree` appended with `output.coin`, new root inserted into `coin_roots_db` |
+| Q4 | `fee_commit_accumulator = fee_commit_accumulator + fee_value_commit` (Pedersen accumulation) |
 
 The fee amount `fee` is a private witness to the Fee_V2 circuit. It is
 constrained by value conservation (`input = output + fee`) within the ZK
-proof. The contract never learns `fee` — it only knows `fee_value_commit`
-and verifies the threshold proof.
+proof. The contract never learns `fee` — it only knows `fee_value_commit`,
+verifies the threshold proof, and adds the commitment to the accumulator.
+The daemon patches `FeeUpdateV1.fee` from the ZK witness for the miner's
+knowledge and for legacy `fees_db[height]` tracking.
 
 ### 5.5 FeeThreshold_V1 Circuit
 
@@ -437,19 +457,159 @@ from being replayed against a different threshold.
 **Circuit parameters**: `k = 11`, field = `pallas` (matching Fee_V2 and
 FeeCollect_V1 circuits).
 
-### 5.6 Test Derivation
+### 5.6 Fee Commitment Accumulation
 
-In addition to FeeV1's seven questions (§3.5), the developer SHALL answer:
+FeeV2 hides individual fee amounts behind Pedersen commitments. To enable
+fee collection without revealing individual fees, the contract accumulates
+commitments additively using Pedersen's homomorphic property.
+
+#### 5.6.1 Pedersen Homomorphic Property
+
+```
+PedersenCommit(v1, b1) + PedersenCommit(v2, b2)
+  = (v1·G_v + b1·G_r) + (v2·G_v + b2·G_r)
+  = (v1+v2)·G_v + (b1+b2)·G_r
+  = PedersenCommit(v1+v2, b1+b2)
+```
+
+Addition on `pallas::Point` is the standard elliptic curve group operation.
+This homomorphic property is the foundation of the fee accumulation scheme:
+commitments can be summed without revealing individual values.
+
+#### 5.6.2 Contract State: The Accumulator
+
+The contract SHALL maintain `fee_commit_accumulator: pallas::Point` as
+block-scoped state, initialized to the identity element (point at infinity)
+at the start of each block.
+
+```
+Initial:         accumulator = Identity
+After call i:    accumulator = accumulator + fee_value_commit_i
+After all calls: accumulator = Σ PedersenCommit(f_i, b_i)
+                             = PedersenCommit(Σf_i, Σb_i)
+```
+
+This is additive-only state: each FeeV2's `apply_fee` ADDS its
+`fee_value_commit` to the accumulator. No subtraction, no overwrite.
+The accumulator is reset to Identity by FeeCollectV1 (§4.3, R4).
+
+#### 5.6.3 Privacy Model — Who Sees What
+
+```
+┌─────────────────────┬──────────────────────────────────────┐
+│ Party               │ What They See                        │
+├─────────────────────┼──────────────────────────────────────┤
+│ Mempool / validators│ fee_value_commit + threshold_proof   │
+│                     │ ONLY. Cannot learn individual fee_i. │
+├─────────────────────┼──────────────────────────────────────┤
+│ Block-producing     │ Extracts fee witness from each Fee_V2│
+│ miner               │ ZK proof during block construction   │
+│                     │ (FeeUpdateV1.fee patching). Sees     │
+│                     │ each fee_i.                          │
+├─────────────────────┼──────────────────────────────────────┤
+│ Replaying validators│ Re-extract witnesses from proofs in  │
+│                     │ the block. Verify PedersenCommit(    │
+│                     │ total, blind) == accumulator WITHOUT │
+│                     │ knowing individual fees.             │
+└─────────────────────┴──────────────────────────────────────┘
+```
+
+**Key property**: Validators verify the total without seeing the terms.
+The Pedersen homomorphic property proves correctness of the sum while
+preserving privacy of the summands.
+
+#### 5.6.4 FeeCollectV1 Verification
+
+After executing all FeeV2 calls in the block, the miner (who extracted
+individual `fee_i` from ZK witnesses) submits:
+
+```
+total_fees = Σ fee_i       (from ZK witness extraction)
+total_blind = Σ blind_i    (from FeeParamsV2.fee_value_blind)
+```
+
+FeeCollectV1 precondition C2 (§4.2) verifies:
+
+```
+PedersenCommit(total_fees, total_blind) == fee_commit_accumulator
+```
+
+If the commitment matches: the miner mints a coin worth `total_fees` to
+themselves, and the accumulator resets to Identity.
+
+If the commitment does NOT match: `↓bad-claim` barb, reject.
+
+#### 5.6.5 Soundness Theorem
+
+**Theorem 2 (Fee Summation Soundness)**. A miner claiming `total_fees' ≠ Σf_i`
+cannot satisfy `PedersenCommit(total_fees', b') == fee_commit_accumulator` for
+any `b'` unless they break the Pedersen commitment binding property.
+
+*Proof sketch.* The accumulator equals `PedersenCommit(Σf_i, Σb_i)`. For a
+false claim `(total_fees', b')` to verify, we need:
+```
+PedersenCommit(total_fees', b') == PedersenCommit(Σf_i, Σb_i)
+```
+If `total_fees' ≠ Σf_i`, this pair `(total_fees', b')` and `(Σf_i, Σb_i)`
+constitute an opening of the same commitment to two different values,
+violating the binding property. The Pedersen commitment scheme is
+computationally binding under the discrete log assumption in `pallas::Point`.
+
+**Corollary.** A miner can only claim a total_fees value that equals the
+actual sum of individual fees. Over-claiming requires breaking discrete log.
+
+#### 5.6.6 Block Lifecycle with Commitment Accumulation
+
+```
+Block N execution:
+
+  tx[0] = PoWRewardV1
+    → coinbase coin at position P
+    → fee_commit_accumulator = Identity
+
+  tx[1] = FeeV2(f_1, b_1)
+    → accumulator += PedersenCommit(f_1, b_1)
+    → fees_db[N] += f_1  (daemon-patched from ZK witness)
+
+  tx[2] = FeeV2(f_2, b_2)
+    → accumulator += PedersenCommit(f_2, b_2)
+    → fees_db[N] += f_2
+
+  ...
+
+  tx[k] = FeeCollectV1(total_fees=Σf_i, total_blind=Σb_i)
+    → verify: PedersenCommit(total_fees, total_blind) == accumulator
+    → mint coin(total_fees) → miner
+    → accumulator = Identity
+    → fees_db[N] = 0
+
+After block: tree has N + coins_created_this_block leaves.
+```
+
+### 5.7 Test Derivation
+
+In addition to the seven questions from FeeV1 (§3.5, historical), the
+developer SHALL answer:
 
 **Q8: What threshold is being proved against?**
-Premium threshold or general threshold (§7). The threshold MUST match the
-tx_binding computation. A proof built for `threshold = premium` cannot be
-verified against `threshold = general`.
+Premium threshold or general threshold (see [mempool.md §5](../mempool.md)).
+The threshold MUST match the tx_binding computation. A proof built for
+`threshold = premium` cannot be verified against `threshold = general`.
 
 **Q9: What is the fee commitment?**
 `fee_value_commit = PedersenCommit(fee_amount, fee_blind)`. The blind SHALL
 be derived deterministically from the wallet's secret. The commitment is a
 public input to Fee_V2 and is stored in FeeParamsV2.
+
+**Q10: What is the fee commitment accumulator root?**
+After all FeeV2 calls in the block, the contract's `fee_commit_accumulator`
+SHALL equal `PedersenCommit(Σfee_i, Σblind_i)`. The miner proves this by
+providing `(total_fees, total_blind)` to FeeCollectV1. See §5.6.4.
+
+**Q11: How does FeeCollectV1 verify the total?**
+The contract checks `PedersenCommit(total_fees, total_blind) ==
+fee_commit_accumulator`. The Pedersen binding property guarantees
+the miner cannot over-claim. See §5.6.5.
 
 ## 6. FeeAmount — Nominal Domain Type
 
@@ -469,75 +629,61 @@ internally; the public commitment hides the inner value.
 
 ## 7. Two-Tier Mempool
 
-### 7.1 Architecture
+The two-tier mempool admission system, threshold announcement protocol, and
+fee structure are defined in [mempool.md §5-8](../mempool.md). This section
+(§7) provides the consensus-level interface; mempool.md owns the policy-level
+specification.
 
-The mempool SHALL admit transactions based on threshold proofs, not clear-text
-fee rates. Two tiers provide differentiation without revealing individual fees:
+### 7.1 Consensus Interface
 
-| Tier | Proof Required | Ordering | Purpose |
-|------|---------------|----------|---------|
-| Premium | `fee >= premium_threshold` | FCFS (arrival order) | Urgent transactions |
-| General | `fee >= general_threshold` | FCFS after premium exhausted | Normal transactions |
-
-### 7.2 Admission Gate
-
-Every transaction entering the mempool SHALL carry a valid FeeThreshold_V1
-proof. The mempool verifies the proof against the current tier thresholds:
+The contract SHALL expose two constants for threshold verification:
 
 ```
-tx_arrives(tx):
-  if verify_threshold_proof(tx, PREMIUM_THRESHOLD):
-    admit_to_premium_queue(tx)
-  else if verify_threshold_proof(tx, GENERAL_THRESHOLD):
-    admit_to_general_queue(tx)
-  else:
-    REJECT  // fee below general threshold
+PREMIUM_THRESHOLD: u64   — minimum fee for premium mempool tier
+GENERAL_THRESHOLD: u64   — minimum fee for general mempool tier
 ```
 
-### 7.3 Block Selection
+These are consensus constants, defined at compile time. Changing them
+requires a hard fork.
 
-`select_for_block(max_gas, max_txs)`:
-1. Drain premium queue in FIFO order until `max_gas` or `max_txs` reached
-2. Drain general queue in FIFO order until limits reached
-3. Return selected transactions (non-destructive — call `mark_mined` after
-   block acceptance)
+### 7.2 FeeExtractor Trait
 
-### 7.4 Miner Consensus on Thresholds
-
-**Initial deployment**: `PREMIUM_THRESHOLD` and `GENERAL_THRESHOLD` are
-fixed consensus constants, defined at compile time. Changing them requires
-a hard fork. This follows Bitcoin's approach: `minRelayTxFee` is a fixed
-policy parameter.
-
-**Future**: Fee-estimator-driven adjustment based on observed block fullness.
-The existing `FeeEstimator` infrastructure can be extended. Not required
-for initial deployment.
-
-### 7.5 FeeExtractor Integration
-
-The `FeeExtractor` trait SHALL be extended with two new methods carrying
-default implementations for backward compatibility:
+The `FeeExtractor` trait (defined in `crates/dwow-mempool/src/lib.rs`) SHALL
+provide these methods for fee extraction and threshold verification:
 
 ```
 trait FeeExtractor {
-    fn extract_fee(&self, tx: &Transaction) -> u64;              // unchanged
-    fn extract_fee_commitment(&self, tx: &Transaction) -> Option<FeeCommitment> { None }
-    fn verify_threshold_proof(&self, tx: &Transaction, threshold: u64) -> bool { false }
+    fn extract_fee_commitment(&self, tx: &Transaction) -> Option<FeeCommitment>;
+    fn verify_threshold_proof(&self, tx: &Transaction, threshold: u64) -> bool;
 }
 ```
 
-`FeeCommitment` wraps `pallas::Point` — the Pedersen commitment to the fee
-amount. For V1 transactions, both new methods return `None`/`false`. For V2,
+Both methods are MANDATORY. `FeeCommitment` wraps `pallas::Point` — the
+Pedersen commitment to the fee amount. For FeeV2 (0x08),
 `extract_fee_commitment` reads the commitment from `FeeParamsV2`, and
-`verify_threshold_proof` verifies the `FeeThreshold_V1` proof.
+`verify_threshold_proof` verifies the embedded `FeeThreshold_V1` proof.
+
+### 7.3 Further Specification
+
+See [mempool.md §5](../mempool.md) for the two-tier admission algorithm,
+[mempool.md §6](../mempool.md) for threshold announcement via P2P gossip,
+[mempool.md §7](../mempool.md) for the fee structure (WASM size × ZK
+complexity × state transitions × miner multiplier), and
+[mempool.md §8](../mempool.md) for `FeeExtractor` integration details.
 
 ## 8. Wallet Integration
+
+FeeV2 transaction construction, the privacy model (who sees fee amounts),
+threshold discovery, and fee estimation are specified in
+[wallet.md §6.4.2](../wallet.md).
 
 ### 8.1 Transaction Construction
 
 The wallet SHALL produce a FeeThreshold_V1 proof with every FeeV2 transaction.
-The proof generation is deterministic: the RNG seed is
-`poseidon(fee_secret, threshold, tx_nonce, domain=15)`.
+Proof generation is deterministic per [wallet.md §6.1](../wallet.md).
+The wallet SHALL produce dual ZK proofs: Fee_V2 (value conservation) +
+FeeThreshold_V1 (threshold proof). Call data format: `[0x08][FeeParamsV2]`
+with NO clear-text fee bytes.
 
 **Threshold selection**:
 - If user's chosen fee >= PREMIUM_THRESHOLD: use PREMIUM_THRESHOLD in proof
@@ -547,10 +693,15 @@ The proof generation is deterministic: the RNG seed is
 
 ### 8.2 Threshold Discovery
 
-The wallet fetches current threshold values via:
-- A new RPC method `get_thresholds` returning `(premium, general)`
-- Or reading the latest block header (if thresholds are stored there)
-- Or using locally-configured consensus constants
+Threshold discovery is specified in [wallet.md §6.4.2](../wallet.md) and
+[mempool.md §6](../mempool.md). The wallet SHALL query connected mining
+nodes for current threshold values before constructing FeeV2 transactions.
+
+### 8.3 Privacy Model
+
+The privacy model is specified in §5.6.3 (this document) and
+[wallet.md §6.4.2](../wallet.md). Fee amounts are visible ONLY to the
+block-producing miner. All other parties see commitments and threshold proofs.
 
 ## 9. Barbs
 
@@ -559,15 +710,15 @@ its processes may exhibit. Fee operations exhibit these barbs:
 
 | Barb | Observable Action | Exhibited By |
 |------|-------------------|--------------|
-| `↓pay-fee` | Exercises FeeV1/V2 — spends a coin via nullifier, splits value into change + fee. Fee accumulated into `fees_db[height]` | FeeV1, FeeV2 |
-| `↓collect-fees` | Exercises FeeCollectV1 — claims `fees_db[height]`, mints fee coin to miner, zeroes pot | FeeCollectV1 |
+| `↓pay-fee` | Exercises FeeV2 — spends a coin via nullifier, splits value into change + fee. Fee commitment accumulated into `fee_commit_accumulator` | FeeV2 |
+| `↓collect-fees` | Exercises FeeCollectV1 — verifies PedersenCommit(total, blind) == accumulator, mints fee coin to miner, resets accumulator and fees_db | FeeCollectV1 |
 | `↓threshold-prove` | Proves hidden fee meets public threshold — gates mempool tier admission | FeeThreshold_V1 |
-| `↓bad-fee-amount` | input.value <= fee — rejected at `FeeCallBuilder.build()` | FeeV1, FeeV2 |
+| `↓bad-fee-amount` | input.value <= fee — rejected at `FeeV2CallBuilder.build()` | FeeV2 |
 | `↓bad-threshold-proof` | FeeThreshold_V1 verification fails — transaction rejected from mempool | FeeThreshold_V1 |
-| `↓bad-merkle-root` | Merkle root not found in coin_roots_db — rejected at `fee_v1/v2` exec | FeeV1, FeeV2 |
-| `↓double-spend` | Nullifier already in SMT — rejected at `fee_v1/v2` exec | FeeV1, FeeV2 |
+| `↓bad-merkle-root` | Merkle root not found in coin_roots_db — rejected at `fee_v2` exec | FeeV2 |
+| `↓double-spend` | Nullifier already in SMT — rejected at `fee_v2` exec | FeeV2 |
 | `↓zero-claim` | FeeCollectV1 `total_fees == 0` — rejected as replay attack | FeeCollectV1 |
-| `↓bad-claim` | FeeCollectV1 `total_fees != fees_db[height]` — claimed amount mismatch | FeeCollectV1 |
+| `↓bad-claim` | FeeCollectV1 `PedersenCommit(total, blind) != fee_commit_accumulator` — claimed amount mismatch against commitment sum | FeeCollectV1 |
 
 ## 10. Constants
 
@@ -579,11 +730,12 @@ its processes may exhibit. Fee operations exhibit these barbs:
 | `INITIAL_REWARD` | `1_383_764_049` | Genesis block reward (1.383 DRKW) |
 | `MERKLE_DEPTH` | `32` | Orchard tree depth (2^32 capacity) |
 | `UNCOMMITTED_ORCHARD` | `pallas::Base::from(2)` | Empty leaf value |
-| FeeV1 | `0x00` | Function selector (clear-text fee) |
+| FeeV1 | `0x00` | REMOVED — returns InvalidFunction |
 | FeeV2 | `0x08` | Function selector (privacy-preserving) |
 | FeeCollectV1 | `0x06` | Function selector |
 | PoWRewardV1 | `0x05` | Function selector |
-| FeeThreshold_V1 | k=11, pallas | Threshold proof circuit |
+| Fee_V2 | k=11, pallas, 24 witnesses, 15 public inputs | Fee value conservation circuit |
+| FeeThreshold_V1 | k=11, pallas, 4 witnesses, 2 public inputs | Threshold proof circuit |
 | `DRKW_TOKEN_ID` | `0` | Native token identifier |
 
 ## 11. Error Taxonomy
@@ -594,15 +746,15 @@ Tests SHALL assert the specific barb, not a generic wrapper.
 | Error | Barb | ContractError | Root Cause |
 |-------|------|--------------|------------|
 | Fee below threshold | ↓bad-threshold-proof | Custom(0) | FeeThreshold_V1 verification fails |
-| Input value <= fee | ↓bad-fee-amount | Custom(0) | FeeAmount validates at construction |
+| Input value <= fee | ↓bad-fee-amount | Custom(0) | FeeV2CallBuilder pre-check |
 | Merkle root not found | ↓bad-merkle-root | Custom(13) | Root not in coin_roots_db |
 | Nullifier already spent | ↓double-spend | Custom(19) | Nullifier in SMT |
 | Duplicate coin | Custom(14) | Coin already exists | Custom(14) |
 | Token mismatch | ↓bad-token | Custom(0) | Wrong token_id or token_commit |
-| Fee total mismatch | ↓bad-claim | Custom(22) | Claimed fees ≠ accumulated |
+| Commitment sum mismatch | ↓bad-claim | Custom(22) | PedersenCommit(total, blind) ≠ fee_commit_accumulator |
 | Zero-fee claim | ↓zero-claim | Custom(0) | FeeCollectV1 total_fees == 0 |
 | Invalid signature | ↓bad-proof | Custom(1) | Bad signature public key |
 | Invalid Merkle proof | ↓bad-proof | Custom(4) | Bad ZK proof merkle path |
 | Value mismatch | ↓bad-proof | Custom(21) | Value commitment doesn't match |
-| Parse error | ↓bad-params | Custom(2) | FeeParamsV1/V2 decode failure |
+| Parse error | ↓bad-params | Custom(2) | FeeParamsV2 decode failure |
 | Value overflow | ↓bad-fee-amount | Custom(5) | u64 overflow in value computation |

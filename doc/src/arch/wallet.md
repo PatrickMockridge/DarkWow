@@ -713,6 +713,32 @@ retrieved from the wallet's SQLite store.
 **Nullifier publication.** The fee input's nullifier SHALL be published in
 `Transaction.nullifiers` for mempool double-spend detection.
 
+**Privacy model.** The wallet constructs a FeeV2 transaction that reveals the
+fee amount ONLY to the block-producing miner. All other parties see only the
+Pedersen commitment `fee_value_commit` and the `FeeThreshold_V1` proof:
+
+| Party | What They See |
+|-------|--------------|
+| Mempool / other validators | `fee_value_commit: pallas::Point` + `threshold_proof: Vec<u8>` ONLY. Cannot learn individual `fee_i`. |
+| Block-producing miner | Extracts `fee` witness from the Fee_V2 ZK proof during block construction (the daemon patches `FeeUpdateV1.fee` from the extracted witness). Sees each `fee_i`. |
+| Replaying validators | Verify `PedersenCommit(total_fees, total_blind) == fee_commit_accumulator` WITHOUT knowing individual fees. The Pedersen homomorphic property proves correctness of the sum. |
+
+Full specification: [fee-spec.md §5.6.3](consensus/fee-spec.md).
+
+**Threshold discovery.** Before constructing a FeeV2 transaction, the wallet
+SHALL discover the current threshold values. The discovery mechanism is a
+P2P query to connected mining nodes (see [mempool.md §6](mempool.md) for the
+announcement protocol). Response format: `(premium_threshold: u64,
+general_threshold: u64, block_height: u64, miner_signature: [u8; 64])`.
+The wallet selects the tier based on the user's chosen fee and builds the
+corresponding `FeeThreshold_V1` proof bound to the selected threshold.
+
+**Fee estimation.** The wallet MAY query the mempool for a fee estimate for
+a specific transaction (deploy size in kB, ZK circuit complexity, state
+transition count). The estimate is advisory — the miner ultimately determines
+the actual threshold based on current mempool demand. See
+[mempool.md §7](mempool.md) for the fee structure formula.
+
 ### 6.5 Provisional State: The In-Between
 
 Broadcasting a transaction creates state that is real to the wallet but not yet on the

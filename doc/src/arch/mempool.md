@@ -41,9 +41,10 @@ Admission checks (all REQUIRED, matching `Mempool::add()` at
   SHALL be rejected at admission.
 - **`↓bad-nullifier` / in-pool nullifier dedup.** No two pending transactions
   SHALL share a nullifier (`lib.rs:288-295`).
-- **fee.** The transaction SHALL pay at least the minimum fee, denominated in DRKW and
-  itself a verified NativeToken call — the fee is not exempt from proof verification.
-  Coinbase transactions (PoWRewardV1, function `0x05`) are exempt from the fee minimum.
+- **fee.** The transaction SHALL carry a valid `FeeThreshold_V1` proof (§5.2).
+  The fee is denominated in DRKW and embedded as a Pedersen commitment in
+  FeeV2 call data (`0x08`). Coinbase transactions (PoWRewardV1, function
+  `0x05`) are exempt from the fee requirement.
 - **Dedup.** The transaction's hash SHALL NOT already be in the pool.
 - **Eviction.** If the pool is at capacity, the lowest fee-rate entry SHALL be evicted
   before inserting a higher fee-rate transaction. Stale entries (older than
@@ -130,10 +131,190 @@ verify the **same** transaction:
 This two-point discipline (verify on admission and on accept) is what makes the
 Authenticated-Pool invariant (§1) hold network-wide rather than node-locally.
 
-## 5. References
+## 5. Two-Tier Threshold Admission
+
+FeeV2 transactions carry a hidden fee behind a Pedersen commitment. The mempool
+cannot sort by fee-per-byte directly — it uses FeeThreshold_V1 ZK proofs to gate
+admission without learning individual fee amounts. Specification:
+[fee-spec.md §5.5](consensus/fee-spec.md).
+
+### 5.1 Architecture
+
+| Tier | Proof Required | Ordering | Purpose |
+|------|---------------|----------|---------|
+| Premium | `fee >= premium_threshold` | FIFO (arrival order) | Urgent transactions |
+| General | `fee >= general_threshold` | FIFO after premium exhausted | Normal transactions |
+| Rejected | — | — | Fee below general threshold |
+
+### 5.2 Admission Algorithm
+
+```
+admit(tx):
+  // Extract fee commitment and threshold proof from call data
+  fee_commit = extract_fee_commitment(tx)
+  if fee_commit is None → REJECT (not a FeeV2 transaction)
+
+  // Verify against premium tier
+  if verify_threshold_proof(tx, premium_threshold):
+    admit_to_premium_queue(tx)
+    return ADMITTED
+
+  // Verify against general tier
+  if verify_threshold_proof(tx, general_threshold):
+    admit_to_general_queue(tx)
+    return ADMITTED
+
+  // Fee below all thresholds
+  REJECT ↓bad-threshold-proof
+```
+
+### 5.3 Block Selection
+
+`select_for_block(max_gas, max_txs)`:
+1. Drain premium queue in FIFO order until `max_gas` or `max_txs` reached.
+2. Drain general queue in FIFO order until limits reached.
+3. Return selected transactions. Selection is non-destructive — call
+   `mark_mined` after block acceptance to remove confirmed transactions.
+
+### 5.4 Threshold Constants
+
+**Initial deployment**: `PREMIUM_THRESHOLD` and `GENERAL_THRESHOLD` are fixed
+consensus constants, defined at compile time. Changing them requires a hard
+fork. See [fee-spec.md §7.1](consensus/fee-spec.md).
+
+**Future**: Dynamic adjustment based on observed block fullness and mempool
+congestion. Miners MAY signal updated thresholds via the announcement
+protocol (§6).
+
+## 6. Threshold Announcement
+
+Miners SHALL announce current threshold values to the network so wallets can
+construct valid FeeThreshold_V1 proofs.
+
+### 6.1 Announcement Format
+
+```
+ThresholdAnnouncement {
+    premium_threshold: u64,      // minimum fee for premium tier
+    general_threshold: u64,      // minimum fee for general tier
+    block_height: u64,           // height at which these thresholds apply
+    miner_multiplier: f64,       // current fee multiplier (§7.2)
+    miner_signature: [u8; 64],   // Ed25519 signature over all fields above
+}
+```
+
+### 6.2 Propagation
+
+Threshold announcements SHALL be gossiped via the existing P2P protocol.
+Miners broadcast updated announcements when they change thresholds.
+Nodes cache the latest announcement per miner and expose them via a
+query interface for wallets.
+
+### 6.3 Wallet Integration
+
+Before constructing a FeeV2 transaction, the wallet SHALL query connected
+mining nodes for current thresholds. The wallet selects the appropriate tier
+based on the user's chosen fee. See [wallet.md §6.4.2](wallet.md).
+
+## 7. Fee Structure
+
+Transactions consume resources that miners price. A wallet estimating the fee
+for a transaction SHALL compute:
+
+```
+estimated_fee = (WASM_size_kb × wasm_factor
+              + Σ(ZK_opcode_weight_i) × zk_factor
+              + state_transition_count × state_factor)
+              × miner_multiplier
+```
+
+### 7.1 Resource Factors
+
+| Factor | Unit | Description |
+|--------|------|-------------|
+| `wasm_factor` | DRKW / kB | Cost per kB of deployed WASM bytecode |
+| `zk_factor` | DRKW / ZK-opcode | Cost per ZK opcode executed, weighted by circuit complexity |
+| `state_factor` | DRKW / write | Cost per sled tree write (key insert, update, delete) |
+
+These factors are consensus constants, fixed at compile time. Initial values
+are TBD.
+
+### 7.2 Miner Multiplier
+
+`miner_multiplier ≥ 1.0` is the dynamic component set by miners based on
+current mempool demand:
+- **Multiplier = 1.0**: Mempool mostly empty. Baseline fees.
+- **Multiplier > 1.0**: Mempool congested. Premium for inclusion.
+- **Maximum**: Bounded by consensus (e.g., 100.0) to prevent gouging.
+
+Miners publish their current multiplier in threshold announcements (§6).
+Wallets SHOULD query multiple miners and use the median multiplier.
+
+### 7.3 Threshold Relationship
+
+The estimated fee determines which tier to target:
+```
+if estimated_fee >= premium_threshold:
+    build FeeThreshold_V1 proof against premium_threshold
+elif estimated_fee >= general_threshold:
+    build FeeThreshold_V1 proof against general_threshold
+else:
+    fee too low — transaction will not be admitted
+```
+
+The actual fee paid MAY exceed the threshold — the proof only guarantees
+the lower bound. The wallet MAY offer a higher fee for faster inclusion.
+
+## 8. FeeExtractor Trait
+
+The mempool delegates fee extraction and threshold verification to a
+per-contract extractor. The `FeeExtractor` trait is defined in
+`crates/dwow-mempool/src/lib.rs`.
+
+### 8.1 Interface
+
+```
+trait FeeExtractor {
+    /// Extract the Pedersen commitment to the fee from a transaction.
+    /// Returns None if the transaction does not carry a fee commitment
+    /// (e.g., non-fee calls, coinbase transactions).
+    fn extract_fee_commitment(&self, tx: &Transaction) -> Option<FeeCommitment>;
+
+    /// Verify the FeeThreshold_V1 proof embedded in the transaction
+    /// against the given threshold. Returns true iff the proof is
+    /// cryptographically valid AND proves fee >= threshold.
+    fn verify_threshold_proof(&self, tx: &Transaction, threshold: u64) -> bool;
+}
+```
+
+Both methods are MANDATORY. `FeeCommitment` wraps `pallas::Point`.
+
+### 8.2 Integration Points
+
+- **Admission** (§5.2): `verify_threshold_proof` gates tier assignment.
+- **Block selection** (§5.3): Txs without valid proofs are excluded from
+  `select_for_block`.
+- **Daemon** (`bin/dwowd/src/lib.rs`): `NativeTokenFeeExtractor` implements
+  both methods, parsing `FeeParamsV2` from call data.
+
+### 8.3 Proof Verification
+
+The `FeeThreshold_V1` circuit has 2 public inputs: `threshold` and `tx_binding`.
+Verification SHALL:
+1. Deserialize the proof bytes from `FeeParamsV2.threshold_proof`.
+2. Verify the proof against public inputs `(threshold, tx_binding)`.
+3. Check that `tx_binding == poseidon(DOMAIN_TX_BINDING, tx_commitment, threshold)`
+   — the threshold in the binding MUST match the tier being verified. This
+   prevents a proof built for the premium tier from being replayed against
+   the general tier.
+
+## 9. References
 
 - **[Wallet Architecture](wallet.md)** — The write path (§6) and provisional state (§6.5).
+  FeeV2 privacy model and threshold discovery at §6.4.2.
 - **[Type System Specification](type-system.md)** — Error barbs (§4), authority (§5), the
   `Transaction` type and metadata ABI (§8.2).
+- **[Fee Payment Specification](consensus/fee-spec.md)** — FeeV2 circuits (§5),
+  commitment accumulation (§5.6), FeeCollectV1 verification (§4.2).
 - **[O-Cap: Emergent Types](ocap.md)** — The Exercise / Verify lifecycle (§6).
 - **[Genesis Contracts](genesis.md)** — NativeToken (fee payment) and the coinbase.

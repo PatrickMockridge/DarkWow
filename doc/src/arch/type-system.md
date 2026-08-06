@@ -83,14 +83,14 @@ No type SHALL exhibit a barb that its definition does not declare.
 | `↓gossip-forward` | Relays an inbound message to a subset of outbound peers. Forwarding SHALL exclude the origin peer. |
 | `↓quorum-query` | Queries a threshold of peers and converges on agreement. Agreement requires a supermajority of queried peers. |
 | `↓dag-parent` | References prior events in a partial-order data structure. The reference forms a directed acyclic graph edge. |
-| `↓pay-fee` | Exercises FeeV1/V2 — spends a coin via nullifier, splits value into change + fee. Fee accumulated into `fees_db[height]`. |
-| `↓collect-fees` | Exercises FeeCollectV1 — claims `fees_db[height]`, mints fee coin to miner, zeroes the fee pot. |
-| `↓threshold-prove` | Proves hidden fee meets public threshold — gates mempool tier admission. Uses FeeThreshold_V1 circuit. |
-| `↓bad-fee-amount` | input.value <= fee — rejected at FeeCallBuilder::build() or FeeV2CallBuilder::build(). |
-| `↓bad-threshold-proof` | FeeThreshold_V1 verification fails — transaction rejected from mempool. |
-| `↓bad-merkle-root` | Merkle root not found in coin_roots_db — rejected at fee_v1/v2 exec. |
+| `↓pay-fee` | Exercises FeeV2 — spends a coin via nullifier, splits value into change + fee. Fee commitment accumulated into `fee_commit_accumulator`. See [fee-spec.md §5.6](consensus/fee-spec.md). |
+| `↓collect-fees` | Exercises FeeCollectV1 — verifies PedersenCommit(total, blind) == fee_commit_accumulator, mints fee coin to miner, resets accumulator and fees_db. See [fee-spec.md §4.2](consensus/fee-spec.md). |
+| `↓threshold-prove` | Proves hidden fee meets public threshold — gates mempool tier admission. Uses FeeThreshold_V1 circuit. See [mempool.md §5](mempool.md). |
+| `↓bad-fee-amount` | input.value <= fee — rejected at FeeV2CallBuilder::build(). |
+| `↓bad-threshold-proof` | FeeThreshold_V1 verification fails — transaction rejected from mempool. See [mempool.md §5.2](mempool.md). |
+| `↓bad-merkle-root` | Merkle root not found in coin_roots_db — rejected at fee_v2 exec. |
 | `↓zero-claim` | FeeCollectV1 total_fees == 0 — rejected as replay attack. |
-| `↓bad-claim` | FeeCollectV1 total_fees != fees_db[height] — claimed amount mismatch. |
+| `↓bad-claim` | FeeCollectV1 PedersenCommit(total, blind) != fee_commit_accumulator — claimed amount mismatch against commitment sum. See [fee-spec.md §4.2](consensus/fee-spec.md). |
 
 ### 1.2 Bisimulation
 
