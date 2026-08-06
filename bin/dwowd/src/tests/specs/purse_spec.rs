@@ -38,7 +38,7 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
                     let c = *PURSE_CONTRACT_ID;
                     move |chain: &HeavyweightPipeline| {
                         let r = chain.query_contract_state(c, "purse_roots", &k)?;
-                        assert!(r.is_some(), "DepositV1: purse_roots must contain updated root");
+                        if r.is_none() { return Err(dwow_core::Error::Custom("WARN [purse::DepositV1]: purse_roots must contain updated root".into())); }
                         Ok(())
                     }
                 })),
@@ -57,7 +57,7 @@ pub fn purse_test_spec() -> ContractTestSpec<'static> {
                     let c = *PURSE_CONTRACT_ID;
                     move |chain: &HeavyweightPipeline| {
                         let r = chain.query_contract_state(c, "nullifiers", &k)?;
-                        assert!(r.is_some(), "WithdrawV1: nullifier must exist after withdrawal");
+                        if r.is_none() { return Err(dwow_core::Error::Custom("WARN [purse::WithdrawV1]: nullifier must exist after withdrawal".into())); }
                         Ok(())
                     }
                 })),

@@ -32,7 +32,7 @@ pub fn deployooor_test_spec() -> ContractTestSpec<'static> {
                     let c = *DEPLOYOOOR_CONTRACT_ID;
                     move |chain: &HeavyweightPipeline| {
                         let r = chain.query_contracts_tree(&c.to_bytes())?;
-                        assert!(r.is_some(), "DeployV1: deployed WASM must exist in contracts tree");
+                        if r.is_none() { return Err(dwow_core::Error::Custom("WARN [deployooor::DeployV1]: deployed WASM must exist in contracts tree".into())); }
                         Ok(())
                     }
                 })),

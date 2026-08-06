@@ -68,8 +68,7 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                     let c = cid;
                     move |chain| {
                         let result = chain.query_contract_state(c, "groups", &gb)?;
-                        assert!(result.is_some(),
-                            "CreateGroupV1: group must be stored in groups tree");
+                        if result.is_none() { return Err(dwow_core::Error::Custom("WARN [multisig::CreateGroupV1]: group must be stored in groups tree".into())); }
                         Ok(())
                     }
                 })),
@@ -90,8 +89,7 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                     let c = cid;
                     move |chain| {
                         let result = chain.query_contract_state(c, "signatures", &nb)?;
-                        assert!(result.is_some(),
-                            "SignV1: signature nullifier must exist in signatures tree");
+                        if result.is_none() { return Err(dwow_core::Error::Custom("WARN [multisig::SignV1]: signature nullifier must exist in signatures tree".into())); }
                         Ok(())
                     }
                 })),
@@ -141,8 +139,7 @@ pub fn multisig_test_spec() -> ContractTestSpec<'static> {
                     let c = cid;
                     move |chain| {
                         let result = chain.query_contract_state(c, "signatures", &nb)?;
-                        assert!(result.is_none(),
-                            "FinalizeV1: consumed signatures must be DELETED (HAZOP H-5)");
+                        if result.is_some() { return Err(dwow_core::Error::Custom("WARN [multisig::FinalizeV1]: consumed signatures must be DELETED (HAZOP H-5)".into())); }
                         Ok(())
                     }
                 })),

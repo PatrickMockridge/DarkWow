@@ -44,7 +44,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                         Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
                     }
                 })),
-                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new(|| unreachable!("FeeV1 uses generate_with_coinbase")),
             },
             EndpointSpec {
@@ -72,14 +72,14 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                         Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
                     }
                 })),
-                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new(|| unreachable!("BurnV1 uses generate_with_coinbase")),
             },
             EndpointSpec {
                 name: "TransferV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new({
                     let sk = secret.clone();
                     move || {
@@ -95,7 +95,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                 name: "SpendV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new({
                     let sk = secret.clone();
                     move || {

@@ -50,7 +50,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = tkk.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "token_registry", &k)?; assert!(r.is_some(), "RegisterTypeV1: token must be stored"); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = tkk.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "token_registry", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("token must be stored".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.register_type(auth_parent, user_data, blind, recipient,
                         1000, spend_hook, user_data, coin_blind)
@@ -62,7 +62,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 name: "IssueV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = tkk2.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "coins", &k)?; assert!(r.is_some(), "IssueV1: minted coin must exist"); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = tkk2.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "coins", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("minted coin must exist".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.issue(auth_parent, token_id, recipient,
                         500, spend_hook, user_data, coin_blind)
@@ -74,7 +74,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 name: "TransferV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = tkk3.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some(), "TransferV1: nullifier must exist"); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = tkk3.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("nullifier must exist".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.transfer(vec![], vec![])
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
@@ -85,7 +85,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 name: "OtcSwapV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = tkk3.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some(), "OtcSwapV1: nullifier must exist"); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = tkk3.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("nullifier must exist".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.otc_swap(vec![], vec![])
                         .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
@@ -96,7 +96,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 name: "RevokeV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = tkk3.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some(), "RevokeV1: nullifier must exist"); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = tkk3.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("nullifier must exist".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.revoke(500, token_id, spend_hook, user_data,
                         coin_blind, auth_parent)
@@ -108,7 +108,7 @@ pub fn promissory_note_test_spec() -> ContractTestSpec<'static> {
                 name: "RedeemV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = tkk3.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some(), "RedeemV1: nullifier must exist"); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = tkk3.clone(); let c = *PROMISSORY_NOTE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("nullifier must exist".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.redeem(500, token_id, spend_hook, user_data,
                         coin_blind, auth_parent, recipient)

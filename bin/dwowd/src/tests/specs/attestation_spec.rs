@@ -41,7 +41,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                     let c = *ATTESTATION_CONTRACT_ID;
                     move |chain: &HeavyweightPipeline| {
                         let r = chain.query_contract_state(c, "attestations", &aid)?;
-                        assert!(r.is_some(), "CreateAttestation: attestation must be stored");
+                        if r.is_none() { return Err(dwow_core::Error::Custom("attestation must be stored".into())); }
                         Ok(())
                     }
                 })),
@@ -60,7 +60,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "CreateClaimV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new({
                     let pk = claimant_pub;
                     move || {
@@ -77,7 +77,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "VerifyClaimV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.verify_claim(claim_id, attestation_id,
                         pallas::Base::from(1u64), pallas::Base::from(2u64),
@@ -99,7 +99,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                     let c = *ATTESTATION_CONTRACT_ID;
                     move |chain: &HeavyweightPipeline| {
                         let r = chain.query_contract_state(c, "nullifiers", &nf_key)?;
-                        assert!(r.is_some(), "ConsumeClaim: nullifier must exist after consumption");
+                        if r.is_none() { return Err(dwow_core::Error::Custom("nullifier must exist after consumption".into())); }
                         Ok(())
                     }
                 })),
@@ -120,7 +120,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "DelegateAttestationV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new({
                     let apk = attestor_pub;
                     let cpk = claimant_pub;
@@ -144,7 +144,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "CheckNotRevokedV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let ep: Vec<MerkleNode> = vec![MerkleNode::new(pallas::Base::from(0u64)); 32];
                     let r = h.check_not_revoked(
@@ -157,7 +157,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "UpdateDelegationV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.update_delegation(
                         attestation_id, pallas::Base::from(0u64),
@@ -173,7 +173,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "AttestSlashV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new({
                     let pk = attestor_pub;
                     move || {
@@ -187,7 +187,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "CommitFeeScheduleV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new({
                     let pk = attestor_pub;
                     move || {
@@ -201,7 +201,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "RevokeAttestationV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new({
                     let pk = attestor_pub;
                     move || {
@@ -215,7 +215,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "ExpireAttestationV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.expire_attestation(attestation_id)
                         .map_err(modules::error_bridge::bridge)?;
@@ -226,7 +226,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "ValidateClaimV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.validate_claim(claim_id, attestation_id, vec![])
                         .map_err(modules::error_bridge::bridge)?;
@@ -237,7 +237,7 @@ pub fn attestation_test_spec() -> ContractTestSpec<'static> {
                 name: "VerifyChainV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = attestation_id.to_repr().to_vec(); let c = *ATTESTATION_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "attestations", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.verify_chain()
                         .map_err(modules::error_bridge::bridge)?;

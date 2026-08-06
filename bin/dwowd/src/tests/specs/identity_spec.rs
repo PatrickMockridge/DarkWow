@@ -59,7 +59,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "RegisterIssuerV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "issuers", &k)?; assert!(r.is_some(), "RegisterIssuerV1: issuer must be stored"); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "issuers", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("issuer must be stored".into())); } Ok(()) } })),
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     let name = b"test_issuer".to_vec();
@@ -73,7 +73,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "IssueCredentialV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "credentials", &k)?; assert!(r.is_some(), "IssueCredentialV1: credential must be stored"); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "credentials", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("credential must be stored".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.issue_credential(issuer_secret, credential_secret,
                         pallas::Base::from(100u64), pallas::Base::from(200u64),
@@ -85,7 +85,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "RevokeCredentialV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "credentials", &k)?; assert!(r.is_some(), "RevokeCredentialV1: credential must be updated"); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "credentials", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("credential must be updated".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let nf = IntentNullifier::from_bytes([0u8; 32]).unwrap();
                     let r = h.revoke_credential(issuer_secret, nf, b"test".to_vec())?;
@@ -96,7 +96,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "CreateClaimV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some(), "CreateClaimV1: claim nullifier must exist"); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("claim nullifier must exist".into())); } Ok(()) } })),
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
@@ -110,7 +110,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "CreateClaimV1_mode2", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
@@ -127,7 +127,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "CreateClaimV1_mode3", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
@@ -144,7 +144,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "CreateClaimV1_mode4", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = cred_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
@@ -161,7 +161,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "RegisterCapabilityV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = cap_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "capabilities", &k)?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = cap_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "capabilities", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
@@ -178,7 +178,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "VerifyCapabilityV1", is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = cap_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "capabilities", &k)?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = cap_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "capabilities", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
@@ -193,7 +193,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "IssueCapabilityV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = cap_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "capabilities", &k)?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = cap_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "capabilities", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {
@@ -207,7 +207,7 @@ pub fn identity_test_spec() -> ContractTestSpec<'static> {
                 name: "RevokeCapabilityV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = cap_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "capabilities", &k)?; assert!(r.is_some()); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = cap_key.clone(); let c = *IDENTITY_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "capabilities", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
                 generate: Box::new({
                     let pk = PublicKey::from_secret(SecretKey::from_base(issuer_secret));
                     move || {

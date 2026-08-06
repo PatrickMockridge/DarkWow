@@ -40,7 +40,7 @@ pub fn box_test_spec() -> ContractTestSpec<'static> {
                     let c = *BOX_CONTRACT_ID;
                     move |chain: &HeavyweightPipeline| {
                         let r = chain.query_contract_state(c, "box_roots", &k)?;
-                        assert!(r.is_some(), "PutV1: box_roots must contain updated root");
+                        if r.is_none() { return Err(dwow_core::Error::Custom("WARN [box::PutV1]: box_roots must contain updated root".into())); }
                         Ok(())
                     }
                 })),
@@ -63,7 +63,7 @@ pub fn box_test_spec() -> ContractTestSpec<'static> {
                     let c = *BOX_CONTRACT_ID;
                     move |chain: &HeavyweightPipeline| {
                         let r = chain.query_contract_state(c, "nullifiers", &nf)?;
-                        assert!(r.is_some(), "TakeV1: nullifier must exist after consumption");
+                        if r.is_none() { return Err(dwow_core::Error::Custom("WARN [box::TakeV1]: nullifier must exist after consumption".into())); }
                         Ok(())
                     }
                 })),

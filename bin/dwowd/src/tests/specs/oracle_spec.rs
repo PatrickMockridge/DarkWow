@@ -35,7 +35,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; assert!(r.is_some(), "RegisterOracleV1: oracle must be stored"); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("oracle must be stored".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.register_oracle(oracle_secret, oracle_pub,
                         oracle_id, "price_feed".to_string(), "u64".to_string())
@@ -48,7 +48,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; assert!(r.is_some(), "PushValueV1: value must be updated"); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("value must be updated".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.push_value(oracle_id, oracle_secret, oracle_pub, pallas::Base::from(42u64))
                         .map_err(modules::error_bridge::bridge)?;
@@ -60,7 +60,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; assert!(r.is_some(), "AttestValueV1: attestation must be stored"); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("attestation must be stored".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.attest_value(oracle_id, pallas::Base::from(100u64),
                         oracle_secret, pallas::Base::from(0u64), pallas::Base::from(42u64),
@@ -74,7 +74,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; assert!(r.is_some(), "PushValueCommitmentV1: commitment must be stored"); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("commitment must be stored".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let ep = vec![MerkleNode::new(pallas::Base::from(0u64)); 32];
                     let r = h.push_value_commitment(oracle_id, oracle_secret, 0, ep,
@@ -89,7 +89,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 is_zk: true,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; assert!(r.is_some(), "AggregateV1: result must be stored"); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("result must be stored".into())); } Ok(()) } })),
                 generate: Box::new(move || {
                     let r = h.aggregate(oracle_id,
                         [pallas::Base::from(10u64); 4], [pallas::Base::from(1u64); 4],
@@ -103,7 +103,7 @@ pub fn oracle_test_spec() -> ContractTestSpec<'static> {
                 name: "SetOracleActiveV1", is_zk: false,
                 expectation: EndpointExpectation::Success,
                 generate_with_coinbase: None,
-                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; assert!(r.is_some(), "SetOracleActiveV1: active flag must be set"); Ok(()) } })),
+                verify_state: Some(Box::new({ let k = oracle_key.clone(); let c = *ORACLE_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "oracles", &k)?; if r.is_none() { return Err(dwow_core::Error::Custom("active flag must be set".into())); } Ok(()) } })),
                 generate: Box::new({
                     let opk = oracle_pub;
                     move || {
