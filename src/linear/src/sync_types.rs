@@ -367,15 +367,15 @@ mod tests {
         // Tip with known values
         let tip = Tip {
             height: BlockHeight::new(42),
-            hash: "abcdef0123456789".to_string(),
-            genesis_hash: Some("0000000000000000".to_string()),
+            hash: BlockHash::from_hash(blake3::Hash::from_bytes([0xAAu8; 32])),
+            genesis_hash: Some(BlockHash::from_hash(blake3::Hash::from_bytes([0xBBu8; 32]))),
         };
         let json = serde_json::to_string(&tip).expect("Tip serialize");
         // Round-trip: deserialize must produce identical struct
         let tip2: Tip = serde_json::from_str(&json).expect("Tip deserialize");
         assert_eq!(tip2.height, BlockHeight::new(42));
-        assert_eq!(tip2.hash, "abcdef0123456789");
-        assert_eq!(tip2.genesis_hash, Some("0000000000000000".to_string()));
+        assert_eq!(tip2.hash, BlockHash::from_hash(blake3::Hash::from_bytes([0xAAu8; 32])));
+        assert_eq!(tip2.genesis_hash, Some(BlockHash::from_hash(blake3::Hash::from_bytes([0xBBu8; 32]))));
 
         // GetBlocks with BlockHeight
         let gb = GetBlocks { start_height: BlockHeight::new(1), count: 20 };

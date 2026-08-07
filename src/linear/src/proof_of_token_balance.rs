@@ -47,6 +47,7 @@ use dwow_native_token_contract::{
     NativeTokenFunction,
 };
 use dwow_sdk::{
+    blockchain::BlockVersion,
     crypto::{
         pasta_prelude::Group,
         pedersen_commitment_u64, poseidon_hash, ScalarBlind,

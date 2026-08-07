@@ -483,7 +483,7 @@ mod tests {
         ).unwrap_err();
         match err {
             LinearError::InvalidTarget { declared, expected, height } => {
-                assert_eq!(declared, u32::MAX);
+                assert_eq!(declared, BlockTarget::MAX);
                 assert_eq!(expected, 0x0FFF_FFFF);
                 assert_eq!(height, BlockHeight::new(1)); // block header height
             }
@@ -787,7 +787,7 @@ mod tests {
         existing.insert(key);
         let err = check_uncles(
             &[uncle], &proofs, &root,
-            BlockHeight::new(10), &vm, u32::MAX, &existing,
+            BlockHeight::new(10), &vm, BlockTarget::MAX, &existing,
         ).unwrap_err();
         match err {
             LinearError::DuplicateUncle(_) => {}
@@ -841,7 +841,7 @@ mod tests {
         let current = BlockHeight::new(2 + 6 + 1); // depth = 7 > MAX_UNCLE_DEPTH
         let err = check_uncles(
             &[uncle], &proofs, &root,
-            current, &vm, u32::MAX, &std::collections::HashSet::new(),
+            current, &vm, BlockTarget::MAX, &std::collections::HashSet::new(),
         ).unwrap_err();
         match err {
             LinearError::UncleTooOld { uncle_height, current: cur, max_depth } => {

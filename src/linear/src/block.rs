@@ -1033,7 +1033,7 @@ mod tests {
 
         // Deserialize the old format — must succeed with defaults
         let deserialized: BlockHeader = serde_json::from_str(&old_json).unwrap();
-        assert_eq!(deserialized.version, 1);
+        assert_eq!(deserialized.version, BlockVersion::new(1));
         assert_eq!(deserialized.nonce, 42);
         assert_eq!(deserialized.height, BlockHeight::new(1));
         assert_eq!(deserialized.coin_merkle_root, [0u8; 32]);
