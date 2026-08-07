@@ -1671,4 +1671,76 @@ mod tests {
         dwow_wallet_free(wallet);
         let _ = std::fs::remove_file(&path);
     }
+
+    /// BW-10: Verify null-pointer rejection at FFI boundary.
+    /// Per type-system.md §10.5: every C FFI entry point SHALL reject NULL
+    /// handles with a documented sentinel, not a segfault.
+    #[test]
+    fn test_ffi_null_pointers_rejected() {
+        // dwow_wallet_open_account(NULL, ...) → NULL
+        let section = CString::new("node0").unwrap();
+        let network = CString::new("testnet").unwrap();
+        assert!(dwow_wallet_open_account(
+            std::ptr::null(), section.as_ptr(), network.as_ptr(),
+        ).is_null());
+
+        // dwow_wallet_open(NULL, ...) → NULL
+        assert!(dwow_wallet_open(
+            std::ptr::null(), section.as_ptr(), network.as_ptr(),
+        ).is_null());
+
+        // dwow_wallet_free(NULL) → no-op (must not segfault)
+        dwow_wallet_free(std::ptr::null_mut());
+
+        // dwow_wallet_chain_height(NULL) → 0 (sentinel)
+        assert_eq!(dwow_wallet_chain_height(std::ptr::null()), 0);
+
+        // dwow_wallet_balance(NULL) → 0
+        assert_eq!(dwow_wallet_balance(std::ptr::null()), 0);
+
+        // dwow_wallet_cap_count(NULL) → 0
+        assert_eq!(dwow_wallet_cap_count(std::ptr::null()), 0);
+
+        // dwow_wallet_get_cap(NULL, 0) → NULL
+        assert!(dwow_wallet_get_cap(std::ptr::null(), 0).is_null());
+    }
+
+    /// BW-11: Verify buffer-length cap enforcement at FFI boundary.
+    /// Per type-system.md §10.5: undersized output buffers SHALL be rejected
+    /// with a zero return, not a buffer overflow.
+    #[test]
+    fn test_ffi_buffer_caps_enforced() {
+        let keys_toml = "[node0]\nwallet_secret = \
+            \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+        let path = std::env::temp_dir()
+            .join(format!("dwow_ffi_bufcap_{}.toml", std::process::id()));
+        std::fs::write(&path, keys_toml).expect("write test keys");
+
+        let keys_cstr = CString::new(path.to_str().unwrap()).unwrap();
+        let section = CString::new("node0").unwrap();
+        let network = CString::new("testnet").unwrap();
+
+        let account = dwow_wallet_open_account(
+            keys_cstr.as_ptr(), section.as_ptr(), network.as_ptr(),
+        );
+        assert!(!account.is_null());
+
+        let cid = dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes();
+
+        // out_len=0 must return 0 (no bytes written, no overflow)
+        let mut buf = [0i8; 1];
+        let ret = dwow_wallet_derive_address(
+            account, cid.as_ptr(), 1, buf.as_mut_ptr(), 0,
+        );
+        assert_eq!(ret, 0, "out_len=0 must return 0");
+
+        // out_len=1 must return 0 (buffer too small for any address)
+        let ret = dwow_wallet_derive_address(
+            account, cid.as_ptr(), 1, buf.as_mut_ptr(), 1,
+        );
+        assert_eq!(ret, 0, "out_len=1 must return 0");
+
+        dwow_wallet_free_account(account);
+        let _ = std::fs::remove_file(&path);
+    }
 }
