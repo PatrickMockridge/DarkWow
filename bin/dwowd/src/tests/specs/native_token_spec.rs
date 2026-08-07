@@ -61,11 +61,26 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                 })),
                 verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| {
                     let acc_key: &[u8] = b"fee_commit_acc";
-                    let r = chain.query_contract_state(c, "info", acc_key)?;
-                    if r.is_none() {
-                        return Err(dwow_core::Error::Custom(
+                    let data = chain.query_contract_state(c, "info", acc_key)?
+                        .ok_or_else(|| dwow_core::Error::Custom(
                             "TEST-FAIL [native_token::FeeV2]: fee_commit_accumulator not found after fee block".into()
-                        ));
+                        ))?;
+                    // Verify accumulator was reset to Identity by FeeCollectV1.
+                    // If FeeV2 accumulation is broken, the accumulator would already
+                    // be Identity before FeeCollectV1, making this a weaker check.
+                    // The standalone test_heavyweight_fee_v2 does a three-point check.
+                    let acc_point: dwow_sdk::pasta::pallas::Point =
+                        Option::from(dwow_sdk::pasta::pallas::Point::from_bytes(
+                            &data[..32].try_into().map_err(|_|
+                                dwow_core::Error::Custom("accumulator wrong size".into())
+                            )?
+                        )).ok_or_else(|| dwow_core::Error::Custom(
+                            "TEST-FAIL [native_token::FeeV2]: invalid accumulator point".into()
+                        ))?;
+                    if acc_point != dwow_sdk::pasta::pallas::Point::identity() {
+                        return Err(dwow_core::Error::Custom(format!(
+                            "TEST-FAIL [native_token::FeeV2]: accumulator not reset (expected Identity)"
+                        )));
                     }
                     Ok(())
                 } })),
@@ -73,7 +88,7 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
             },
             EndpointSpec {
                 name: "FeeCollectV1", is_zk: true,
-                expectation: EndpointExpectation::Success,
+                expectation: EndpointExpectation::Rejection, // exercised structurally by with_fee_collect()
                 generate_with_coinbase: None,
                 verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| {
                     let acc_key: &[u8] = b"fee_commit_acc";

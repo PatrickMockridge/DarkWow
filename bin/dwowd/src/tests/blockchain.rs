@@ -560,11 +560,10 @@ impl<'c> HeavyweightBlock<'c> {
 
     /// Append a FeeCollectV1 transaction to close the merkle tree.
     ///
-    /// Appends FeeCollectV1 to close the merkle tree when FeeV1 calls exist.
-    /// When no FeeV1 calls exist in the block, FeeCollectV1 is omitted — the
-    /// production miner does the same (lib.rs:1358), and the validator explicitly
-    /// allows blocks without FeeCollectV1 (validation.rs:386-387).
-    /// Zero-fee FeeCollectV1 is rejected as a zero-value replay attack (§3.13).
+    /// Appends FeeCollectV1 when FeeV2 (0x08) calls exist in the block.
+    /// When no FeeV2 calls exist, FeeCollectV1 is omitted — matching the
+    /// production miner's conditional append. Zero-fee FeeCollectV1 is
+    /// rejected as a zero-value replay attack (fee-spec.md §4.4).
     pub fn with_fee_collect(&mut self) -> Result<&mut Self> {
         let fee_txs: Vec<dwow_chain::Transaction> = self.contract_txs.iter()
             .filter(|tx| tx.contract_calls.iter().any(|c|

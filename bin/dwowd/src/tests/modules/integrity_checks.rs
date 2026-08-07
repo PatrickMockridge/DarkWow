@@ -20,18 +20,15 @@ pub fn verify_genesis_block_hash(chain: &HeavyweightPipeline) -> Result<()> {
 }
 
 /// PI-2: Verify initial cumulative supply equals INITIAL_REWARD.
-/// Non-fatal: mass balance is the block validity proof; cumulative supply
-/// is a derived bookkeeping metric. Mismatch logs a warning, not a failure.
+/// Red Team LF-3: was warning-only, now hard-fails.
 pub fn verify_initial_supply(chain: &HeavyweightPipeline) -> Result<()> {
     let supply = chain.cumulative_supply();
     let expected = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
     if supply != expected.get() {
-        chain.log(&format!(
-            "WARN [integrity_checks]: PI-2 cumulative supply {} != expected INITIAL_REWARD {}. \
-             Supply tree may not be populated after genesis init. \
-             Block proof (mass balance) is the validity condition.",
+        return Err(dwow_core::Error::Custom(format!(
+            "INFRA-FAIL [integrity_checks]: PI-2 cumulative supply {} != expected INITIAL_REWARD {}",
             supply, expected.get()
-        ));
+        )));
     }
     Ok(())
 }
@@ -56,11 +53,11 @@ pub fn pre_test_integrity(
     if is_genesis {
         verify_contract_at_genesis(chain, cid)?; // PI-3
     }
-    // PI-4: ZK coverage pre-check — WARN only. Harness misconfiguration does not
-    // affect block validity. The test can still exercise covered circuits.
-    if let Err(e) = harness.verify_zk_coverage() {
-        chain.log(&format!("WARN [integrity_checks]: PI-4 ZK coverage check failed — {}", e));
-    }
+    // PI-4: ZK coverage pre-check. Red Team LF-4: was warning-only, now hard-fails.
+    // A harness with broken ZK coverage must fail the test.
+    harness.verify_zk_coverage().map_err(|e| dwow_core::Error::Custom(format!(
+        "INFRA-FAIL [integrity_checks]: PI-4 ZK coverage check failed — {}", e
+    )))?;
     Ok(())
 }
 

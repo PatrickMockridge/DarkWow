@@ -1466,6 +1466,15 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             "TEST-FAIL [native_token::FeeV2]: {}", e
         )))?;
 
+        // W-2: Three-point accumulator lifecycle check.
+        // Point 1: accumulator must be Identity BEFORE FeeV2 block (from genesis/previous reset).
+        let acc_pre = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
+            .map(|d| Option::from(pallas::Point::from_bytes(&d[..32].try_into().unwrap())))
+            .flatten()
+            .unwrap_or(pallas::Point::identity());
+        assert_eq!(acc_pre, pallas::Point::identity(),
+            "TEST-FAIL [fee_v2]: accumulator must be Identity before FeeV2 block");
+
         let before = chain.height();
         let new_height = chain.block()?
             .with_call(cid, &native_harness, &fee_result.call_data, fee_result.proofs)?
@@ -1476,6 +1485,9 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             "TEST-FAIL [fee_v2]: height must advance (was {}, now {})", before, new_height);
 
         // ---- State verification (production-test-standard.md §1 step 9) ----
+
+        // Point 2+3: accumulator must have been non-Identity at FeeV2 time (point 2, tested
+        // indirectly by FeeCollectV1 passing) and must be Identity now (point 3, after reset).
 
         // GAP-1: spent nullifier must exist
         let spent_nf = fee_result.params.input.nullifier.to_bytes();
@@ -1580,13 +1592,19 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         assert_eq!(acc4_pt, pallas::Point::identity(),
             "TEST-FAIL [fee_v2]: accumulator not reset after multi-fee collect");
 
-        // ---- R5b: nullifier replay rejected ----
+        // ---- R5b: nullifier replay rejected (FeeV2 nullifier specifically) ----
+        // Use a fresh coinbase so only the FeeV2 nullifier is replayed (W-3 isolation fix).
+        let cb_replay = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
         let replay = chain.block()?
             .with_call(cid, &native_harness, &fee_result.call_data, fee_result.proofs.clone())?
             .with_fee_collect()?
-            .submit_with_coinbase(cb3.coinbase_tx).await;
+            .submit_with_coinbase(cb_replay.coinbase_tx).await;
         assert!(replay.is_err(),
-            "TEST-FAIL [fee_v2]: nullifier replay must be rejected");
+            "TEST-FAIL [fee_v2]: FeeV2 nullifier replay must be rejected");
+        let replay_err = format!("{}", replay.unwrap_err());
+        assert!(replay_err.contains("nullifier") || replay_err.contains("Nullifier")
+                || replay_err.contains("Duplicate"),
+            "TEST-FAIL [fee_v2]: replay rejection must mention nullifier, got: {}", replay_err);
 
         Ok(())
     })

@@ -123,7 +123,9 @@ impl<'a> ContractTestSpec<'a> {
 
 // ── Runner ─────────────────────────────────────────────────────────────────
 
-/// The single uniform test runner. Every heavyweight test calls this.
+/// The uniform test runner for spec-based heavyweight tests. Spec-based
+/// tests (32 contracts) call this. Standalone tests (block execution,
+/// relayer lifecycle, fee_v2, metadata) use direct HeavyweightPipeline.
 /// Composes shared modules to structurally enforce heavyweight-spec.md §9.
 pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
     spec.validate()?;
