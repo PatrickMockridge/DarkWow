@@ -1475,3 +1475,142 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         Ok(())
     })
 }
+
+#[test]
+fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use dwow_contract_test_harness::harness::{DeployooorHarness, NativeTokenHarness};
+    use dwow_sdk::blockchain::BlockHeight;
+    use dwow_sdk::crypto::{Keypair, MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID, PublicKey, SecretKey};
+    use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
+    use crate::tests::modules::coinbase_coordination;
+
+    smol::block_on(async {
+        let mut chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("fee_v2_deploy")));
+
+        let native_harness = NativeTokenHarness::spawn();
+        let deployooor_harness = DeployooorHarness::spawn();
+
+        // Coinbase-only block — creates spendable coin
+        let cb2 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+        chain.block()?.submit_with_coinbase(cb2.coinbase_tx).await?;
+
+        // FeeV2 + DeployV1 + FeeCollectV1
+        let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+
+        let mut tree = MerkleTree::new(1);
+        tree.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        let coin_pos = tree.mark().expect("tree.mark");
+        let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
+        let root = tree.root(0).expect("tree.root");
+
+        let mining_kp = chain.mining_keypair(BlockHeight::new(2));
+        let fee_result = native_harness.fee_v2(
+            cb2.coin_value,
+            pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
+            cb2.coin_blind,
+            u64::from(coin_pos),
+            path,
+            root,
+            mining_kp.secret.clone(),
+            mining_kp.secret,
+            PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
+            pallas::Base::zero(), pallas::Base::zero(),
+            42_000_000,
+            42_000_000,
+        ).map_err(|e| dwow_core::Error::Custom(format!(
+            "TEST-FAIL [fee_v2_deploy::FeeV2]: {}", e
+        )))?;
+
+        // DeployV1 — deploy a contract alongside fee payment
+        let dk = SecretKey::from_bytes([9u8; 32])?;
+        let deploy = deployooor_harness.build_deploy_call(
+            Keypair { secret: dk.clone(), public: PublicKey::from_secret(dk) },
+            include_bytes!("../../../../src/contract/drain_protection/dwow_drain_protection_contract.wasm").to_vec(),
+            vec![0x00],
+        ).map_err(|e| dwow_core::Error::Custom(format!(
+            "TEST-FAIL [fee_v2_deploy::DeployV1]: {:?}", e
+        )))?;
+
+        let before = chain.height();
+        let new_height = chain.block()?
+            .with_call(*NATIVE_TOKEN_CONTRACT_ID, &native_harness, &fee_result.call_data, fee_result.proofs)?
+            .with_call(deploy.contract_id, &deployooor_harness, &deploy.call_data, vec![deploy.proof])?
+            .with_fee_collect()?
+            .submit_with_coinbase(cb3.coinbase_tx).await?;
+
+        assert!(new_height > before,
+            "TEST-FAIL [fee_v2_deploy]: height must advance (was {}, now {})", before, new_height);
+        Ok(())
+    })
+}
+
+#[test]
+fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use dwow_contract_test_harness::harness::{BoxHarness, NativeTokenHarness};
+    use dwow_sdk::blockchain::BlockHeight;
+    use dwow_sdk::crypto::{BOX_CONTRACT_ID, MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID, PublicKey, SecretKey};
+    use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
+    use crate::tests::modules::coinbase_coordination;
+
+    smol::block_on(async {
+        let mut chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("fee_v2_box")));
+
+        let native_harness = NativeTokenHarness::spawn();
+        let box_harness = BoxHarness::spawn();
+
+        // Coinbase-only block
+        let cb2 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+        chain.block()?.submit_with_coinbase(cb2.coinbase_tx).await?;
+
+        // FeeV2 + Box::Put + FeeCollectV1
+        let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+
+        let mut tree = MerkleTree::new(1);
+        tree.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        let coin_pos = tree.mark().expect("tree.mark");
+        let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
+        let root = tree.root(0).expect("tree.root");
+
+        let mining_kp = chain.mining_keypair(BlockHeight::new(2));
+        let fee_result = native_harness.fee_v2(
+            cb2.coin_value,
+            pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
+            cb2.coin_blind,
+            u64::from(coin_pos),
+            path,
+            root,
+            mining_kp.secret.clone(),
+            mining_kp.secret,
+            PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
+            pallas::Base::zero(), pallas::Base::zero(),
+            42_000_000,
+            42_000_000,
+        ).map_err(|e| dwow_core::Error::Custom(format!(
+            "TEST-FAIL [fee_v2_box::FeeV2]: {}", e
+        )))?;
+
+        let put_result = box_harness.put()
+            .map_err(|e| dwow_core::Error::Custom(format!(
+                "TEST-FAIL [fee_v2_box::PutV1]: {:?}", e
+            )))?;
+
+        let before = chain.height();
+        let new_height = chain.block()?
+            .with_call(*NATIVE_TOKEN_CONTRACT_ID, &native_harness, &fee_result.call_data, fee_result.proofs)?
+            .with_call(*BOX_CONTRACT_ID, &box_harness, &put_result.call_data, vec![put_result.proof])?
+            .with_fee_collect()?
+            .submit_with_coinbase(cb3.coinbase_tx).await?;
+
+        assert!(new_height > before,
+            "TEST-FAIL [fee_v2_box]: height must advance (was {}, now {})", before, new_height);
+        Ok(())
+    })
+}

@@ -83,29 +83,22 @@ pub use dwow_accounts as accounts;
 // mempool → dwow_mempool crate
 use dwow_mempool::{create_mempool, FeeExtractor, MempoolPtr, MinerConfig};
 
-/// NativeToken fee extraction — knows FeeV1 contract ID (selector 0x00) and
-/// PoWRewardV1 (selector 0x05). FeeV1 call data layout: [0x00][fee: u64 LE].
-/// Truncated FeeV1 calls (< 9 bytes) are logged and treated as zero-fee;
-/// the mempool's min_fee check will reject them downstream.
+/// NativeToken fee extraction — FeeV2 (selector 0x08) uses Pedersen commitments.
+/// FeeV1 (selector 0x00) is REMOVED. For FeeV2, the exact fee is NOT in call data —
+/// verify_threshold_proof() gates mempool admission instead of min-fee check.
+/// extract_fee() returns fee_call_count * DEFAULT_FEE as an estimate.
 struct NativeTokenFeeExtractor;
 impl FeeExtractor for NativeTokenFeeExtractor {
     fn extract_fee(&self, tx: &dwow_chain::Transaction) -> u64 {
-        let mut total_fee: u64 = 0;
+        const DEFAULT_FEE: u64 = 42_000_000;
+        let mut count: u64 = 0;
         for call in &tx.contract_calls {
-            if call.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID && call.data.first() == Some(&0x00u8) {
-                if call.data.len() >= 9 {
-                    // data[1..9] is exactly 8 bytes — guarded by the len >= 9 check
-                    let fee_bytes: [u8; 8] = call.data[1..9].try_into()
-                        .expect("FeeV1: slice[1..9] is 8 bytes (guarded by len >= 9)");
-                    total_fee += u64::from_le_bytes(fee_bytes);
-                } else {
-                    tracing::warn!(target: "dwowd::fee",
-                        "FeeV1 call with truncated data ({} bytes < 9) — fee treated as zero",
-                        call.data.len());
-                }
+            if call.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
+                && call.data.first() == Some(&0x08u8) {
+                count += 1;
             }
         }
-        total_fee
+        count * DEFAULT_FEE
     }
     fn estimate_gas(&self, tx: &dwow_chain::Transaction) -> u64 {
         const GAS_PER_CALL: u64 = 400_000_000;
