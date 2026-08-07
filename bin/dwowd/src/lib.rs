@@ -1232,7 +1232,7 @@ async fn prepare_block(
         .filter(|c| c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
             && c.data.first() == Some(&0x08))
         .count() as u64;
-    let prod_tf = prod_fc * 42_000_000;
+    let prod_tf = FeeAmount::new(prod_fc * 42_000_000);
     let fee_collect_tx = crate::registry::model::build_fee_collect_tx(
         &recipient,
         &mempool_txs,

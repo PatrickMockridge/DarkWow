@@ -332,7 +332,7 @@ pub fn build_fee_collect_tx(
     transactions: &[dwow_chain::Transaction],
     height: BlockHeight,
     linear_zk: &LinearPowRewardZk,
-    total_fees: u64,
+    total_fees: FeeAmount,
 ) -> Result<Option<dwow_chain::Transaction>> {
     use dwow_native_token_contract::client::fee_collect::FeeCollectCallBuilder;
     use dwow_sdk::pasta::pallas;
@@ -580,7 +580,7 @@ pub async fn generate_linear_block_template(
                 .filter(|c| c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
                     && c.data.first() == Some(&0x08))
                 .count() as u64;
-            let tf = fc * 42_000_000;
+            let tf = FeeAmount::new(fc * 42_000_000);
             if let Some(fee_tx) = build_fee_collect_tx(
                 &recipient_config.recipient,
                 &txs,

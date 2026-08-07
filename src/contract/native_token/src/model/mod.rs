@@ -691,7 +691,7 @@ pub struct BurnUpdateV1 {
 #[derive(Debug, Clone)]
 pub struct FeeCollectParamsV1 {
     /// Total fees accumulated in fees_db[height] for this block
-    pub total_fees: u64,
+    pub total_fees: FeeAmount,
     /// Sum of fee_value_blind from each FeeV2 call — verifies
     /// PedersenCommit(total_fees, total_blind) == fee_commit_accumulator.
     /// Spec: fee-spec.md §5.6.4.
@@ -738,7 +738,7 @@ impl FeeCollectParamsV1 {
             .ok_or_else(|| ContractError::IoError("FeeCollectParamsV1: invalid tx_binding".into()))?;
         let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+64..pos+96].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("FeeCollectParamsV1: invalid tx_nonce".into()))?;
-        Ok(FeeCollectParamsV1 { total_fees, total_blind, output, nullifier, tx_binding, tx_nonce })
+        Ok(FeeCollectParamsV1 { total_fees: FeeAmount::new(total_fees), total_blind, output, nullifier, tx_binding, tx_nonce })
     }
 }
 
@@ -756,7 +756,7 @@ pub struct FeeCollectUpdateV1 {
     /// Block height (must match verifying block height)
     pub height: BlockHeight,
     /// Total fees collected (must match fees_db[height])
-    pub total_fees: u64,
+    pub total_fees: FeeAmount,
 }
 
 // ============================================================================
@@ -1046,6 +1046,6 @@ impl FeeCollectUpdateV1 {
         let height =
             BlockHeight::from_le_bytes(data[32..40].try_into().unwrap());
         let total_fees = u64::from_le_bytes(data[40..48].try_into().unwrap());
-        Ok(FeeCollectUpdateV1 { coin, height, total_fees })
+        Ok(FeeCollectUpdateV1 { coin, height, total_fees: FeeAmount::new(total_fees) })
     }
 }

@@ -325,7 +325,7 @@ fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contr
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_NS_V1.to_string(),
         vec![
-            pallas::Base::from(fee_params.threshold),   // 1: threshold (u64 → Base)
+            pallas::Base::from(fee_params.threshold.get()),   // 1: threshold
             fee_params.tx_binding,                        // 2: tx_binding
         ],
     ));
@@ -1160,7 +1160,7 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     // after the pot is zeroed, a second FeeCollect claiming total_fees = 0
     // would otherwise pass check 2 and mint a 0-value coin, reopening the
     // closed merkle tree (audit finding D12).
-    if fc.total_fees == 0 {
+    if fc.total_fees.get() == 0 {
         msg!("[fee_collect_v1] Zero-value fee claim rejected");
         return Err(NativeTokenError::ZeroFeeClaim.into())
     }
@@ -1185,7 +1185,7 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
     if accumulator != pallas::Point::identity() {
         // Verify the miner's claimed (total_fees, total_blind) matches the accumulator
-        let claimed_commit = pedersen_commitment_u64(fc.total_fees, dwow_sdk::crypto::Blind(fc.total_blind));
+        let claimed_commit = pedersen_commitment_u64(fc.total_fees.get(), dwow_sdk::crypto::Blind(fc.total_blind));
         if claimed_commit != accumulator {
             msg!("[fee_collect_v1] Pedersen mismatch: claimed commit does not match accumulator at height {}",
                  height);
@@ -1201,7 +1201,7 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
             })?;
             u64::from_le_bytes(bytes)
         };
-        if fc.total_fees != accumulated {
+        if fc.total_fees.get() != accumulated {
             msg!("[fee_collect_v1] Fee total mismatch: claimed {} != accumulated {} at height {}",
                  fc.total_fees, accumulated, height);
             return Err(NativeTokenError::FeeTotalMismatch.into())

@@ -191,7 +191,7 @@ pub struct FeeCollectCallBuilder {
     /// Block height this fee collection targets
     pub block_height: BlockHeight,
     /// Total fees accumulated in fees_db[height] for this block
-    pub total_fees: u64,
+    pub total_fees: FeeAmount,
     /// Sum of fee_value_blind from each FeeV2 call — for Pedersen verification.
     /// Spec: fee-spec.md §5.6.4.
     pub total_blind: pallas::Scalar,

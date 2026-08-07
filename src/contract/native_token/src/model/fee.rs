@@ -8,6 +8,7 @@
 //! Spec: fee-spec.md §5.
 
 use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine, PrimeField};
+use dwow_sdk::blockchain::FeeAmount;
 use dwow_sdk::crypto::{BaseBlind, Blind, pedersen_commitment_u64};
 use dwow_sdk::error::ContractError;
 use crate::error::NativeTokenError;
@@ -32,7 +33,7 @@ pub struct FeeParamsV2 {
     pub fee_value_commit_y: pallas::Base,
     pub threshold_proof: Vec<u8>,
     /// Threshold used in the FeeThreshold_V1 proof (needed for metadata).
-    pub threshold: u64,
+    pub threshold: FeeAmount,
     pub fee_value_blind: pallas::Scalar,
     /// Fee token blind — typed BaseBlind per spec §8.1.
     pub fee_token_blind: BaseBlind,
@@ -67,7 +68,7 @@ impl FeeParamsV2 {
         buf.extend_from_slice(&output_bytes);
         // fee_value_commit: pallas::Point (32 bytes compressed)
         buf.extend_from_slice(&self.fee_value_commit.to_bytes());
-        // threshold: u64 LE (8 bytes) — needed by mempool/metadata for FeeThreshold_V1
+        // threshold: FeeAmount (8 bytes LE) — needed by mempool/metadata for FeeThreshold_V1
         buf.extend_from_slice(&self.threshold.to_le_bytes());
         // threshold_proof: length-prefixed bytes
         buf.extend_from_slice(&proof_len.to_le_bytes());
@@ -115,7 +116,7 @@ impl FeeParamsV2 {
         if data.len() < pos + 8 {
             return Err(parse_err("FeeParamsV2: too short for threshold"));
         }
-        let threshold = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
+        let threshold = FeeAmount::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
         pos += 8;
 
         // threshold_proof: length-prefixed bytes

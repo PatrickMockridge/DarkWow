@@ -95,8 +95,8 @@ pub struct FeeV2Result {
 pub struct FeeV2CallBuilder {
     pub input: FeeV2CallInput,
     pub output: FeeV2CallOutput,
-    pub fee_amount: u64,
-    pub threshold: u64,
+    pub fee_amount: FeeAmount,
+    pub threshold: FeeAmount,
     /// Fee_V2 zkas circuit ZkBinary
     pub fee_zkbin: ZkBinary,
     /// Proving key for the Fee_V2 ZK circuit
@@ -115,7 +115,7 @@ impl FeeV2CallBuilder {
     /// internally without exposing fee. The FeeThreshold_V1 circuit proves
     /// fee >= threshold.
     pub fn build(self) -> Result<FeeV2Result, ContractError> {
-        if self.input.value <= self.fee_amount {
+        if self.input.value <= self.fee_amount.get() {
             return Err(ContractError::Custom(1)); // ↓bad-fee-amount
         }
 
@@ -142,7 +142,7 @@ impl FeeV2CallBuilder {
         };
 
         // Compute output value
-        let output_value = self.input.value - self.fee_amount;
+        let output_value = self.input.value - self.fee_amount.get();
 
         // Fee_V2 circuit tx_binding: bound to tx_nonce (matches fee.zk).
         // Used for the Fee_V2 proof public inputs and stored in FeeParamsV2.
@@ -157,7 +157,7 @@ impl FeeV2CallBuilder {
         let threshold_tx_binding = poseidon_hash([
             DRK_POSEIDON_DOMAIN_TX_BINDING,
             self.input.tx_commitment,
-            pallas::Base::from(self.threshold),
+            pallas::Base::from(self.threshold.get()),
         ]);
 
         // Build Fee_V2 proof using pre-built proving key
@@ -203,7 +203,7 @@ impl FeeV2CallBuilder {
         )?;
 
         // Compute fee_value_commit and extract coordinates
-        let fee_value_commit = pedersen_commitment_u64(self.fee_amount, fee_value_blind.clone());
+        let fee_value_commit = pedersen_commitment_u64(self.fee_amount.get(), fee_value_blind.clone());
         let coords = fee_value_commit.to_affine().coordinates();
         if coords.is_none().into() {
             return Err(ContractError::IoError("FeeV2: fee_value_commit is identity".into()));
@@ -332,11 +332,11 @@ fn create_fee_proof(
     output: &FeeV2CallOutput,
     output_value_blind: ScalarBlind,
     token_blind: BaseBlind,
-    fee_amount: u64,
+    fee_amount: FeeAmount,
     fee_value_blind: ScalarBlind,
     tx_commitment: pallas::Base,
 ) -> Result<(Proof, Vec<pallas::Base>), ContractError> {
-    let output_value = input.value - fee_amount;
+    let output_value = input.value - fee_amount.get();
 
     // Build input coin
     let input_coin_attrs = CoinAttributes {
@@ -368,7 +368,7 @@ fn create_fee_proof(
     // Compute commitments
     let input_value_commit = pedersen_commitment_u64(input.value, input_value_blind.clone());
     let output_value_commit = pedersen_commitment_u64(output_value, output_value_blind.clone());
-    let fee_value_commit = pedersen_commitment_u64(fee_amount, fee_value_blind.clone());
+    let fee_value_commit = pedersen_commitment_u64(fee_amount.get(), fee_value_blind.clone());
     let token_commit = poseidon_hash([
         DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.token_id, token_blind.inner(),
     ]);
@@ -434,7 +434,7 @@ fn create_fee_proof(
         Witness::Base(Value::known(output.coin_blind)),
         Witness::Base(Value::known(input.token_id)),
         Witness::Base(Value::known(token_blind.inner())),
-        Witness::Base(Value::known(pallas::Base::from(fee_amount))),
+        Witness::Base(Value::known(pallas::Base::from(fee_amount.get()))),
         Witness::Base(Value::known(tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
         // tx_binding — MUST be the computed value, not zero.
@@ -460,23 +460,23 @@ fn create_fee_proof(
 fn create_fee_threshold_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
-    fee_amount: u64,
-    threshold: u64,
+    fee_amount: FeeAmount,
+    threshold: FeeAmount,
     tx_commitment: pallas::Base,
     tx_binding: pallas::Base,
 ) -> Result<Proof, ContractError> {
 
     // FeeThreshold_V1 witnesses (4): fee, threshold, tx_commitment, tx_binding
     let witnesses: Vec<Witness> = vec![
-        Witness::Base(Value::known(pallas::Base::from(fee_amount))),
-        Witness::Base(Value::known(pallas::Base::from(threshold))),
+        Witness::Base(Value::known(pallas::Base::from(fee_amount.get()))),
+        Witness::Base(Value::known(pallas::Base::from(threshold.get()))),
         Witness::Base(Value::known(tx_commitment)),
         Witness::Base(Value::known(tx_binding)),
     ];
 
     // Public inputs (2): threshold, tx_binding
     let public_inputs = vec![
-        pallas::Base::from(threshold),
+        pallas::Base::from(threshold.get()),
         tx_binding,
     ];
 

@@ -583,7 +583,7 @@ impl<'c> HeavyweightBlock<'c> {
         drop(mgr);
 
         let fee_call_count = fee_txs.len() as u64;
-        let total_fees = fee_call_count * 42_000_000; // DEFAULT_FEE per FeeV2 call
+        let total_fees = FeeAmount::new(fee_call_count * 42_000_000); // DEFAULT_FEE per FeeV2 call
         let fee_collect_tx = crate::registry::model::build_fee_collect_tx(
             &recipient, &fee_txs, self.height, &self.chain.linear_zk, total_fees,
         ).map_err(|e| dwow_core::Error::Custom(format!("build_fee_collect_tx: {}", e)))?;
