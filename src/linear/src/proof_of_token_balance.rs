@@ -398,17 +398,17 @@ mod tests {
         let darkw_token = poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]);
 
         // Input: value 100
-        let input_blind = dwow_sdk::crypto::ScalarBlind::from(1u64);
+        let input_blind = dwow_sdk::crypto::ScalarBlind::from_u64(1u64);
         let input_commit = pedersen_commitment_u64(100, input_blind);
 
         // Output: value 1_000_000 (10,000x inflation!)
-        let output_blind = dwow_sdk::crypto::ScalarBlind::from(2u64);
+        let output_blind = dwow_sdk::crypto::ScalarBlind::from_u64(2u64);
         let output_commit = pedersen_commitment_u64(1_000_000, output_blind);
 
         // Use Coin::from_attributes (public API) to construct the output coin
         let output_coin = Coin::from_attributes(
             &pubkey, 1_000_000, dwow_sdk::crypto::TokenId::DRKW,
-            FuncId::none(), pallas::Base::zero(), BaseBlind::from(99u64),
+            FuncId::none(), pallas::Base::zero(), BaseBlind::from_u64(99u64),
         );
         // Use Nullifier::new (public API)
         let input_nullifier = Nullifier::new(secret, output_coin.inner());
@@ -488,13 +488,13 @@ mod tests {
         let darkw_token = poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]);
 
         let input_commit = pedersen_commitment_u64(in_value,
-            dwow_sdk::crypto::ScalarBlind::from(in_blind));
+            dwow_sdk::crypto::ScalarBlind::from_u64(in_blind));
         let output_commit = pedersen_commitment_u64(out_value,
-            dwow_sdk::crypto::ScalarBlind::from(out_blind));
+            dwow_sdk::crypto::ScalarBlind::from_u64(out_blind));
 
         let coin = Coin::from_attributes(
             &pubkey, out_value, dwow_sdk::crypto::TokenId::DRKW,
-            FuncId::none(), pallas::Base::zero(), BaseBlind::from(99u64),
+            FuncId::none(), pallas::Base::zero(), BaseBlind::from_u64(99u64),
         );
         let nullifier = Nullifier::new(secret, coin.inner());
         let merkle_root = MerkleNode::from_base(pallas::Base::from(9999u64));

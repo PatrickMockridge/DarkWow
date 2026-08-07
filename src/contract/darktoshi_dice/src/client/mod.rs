@@ -148,7 +148,7 @@ impl CommitBetV1Builder {
         let _nullifier = derive_nullifier(bet_id, self.secret_nonce);
 
         // Create proper value commitment using Pedersen commitment
-        let value_commit = pedersen_commitment_u64(self.bet_value, ScalarBlind::from(self.bet_value));
+        let value_commit = pedersen_commitment_u64(self.bet_value, ScalarBlind::from_u64(self.bet_value));
 
         // Create signature as poseidon hash of bet parameters
         let signature = poseidon_hash([

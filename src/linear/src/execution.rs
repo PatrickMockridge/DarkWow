@@ -533,10 +533,19 @@ pub fn execute_block(
                 per_call_keys.push(call_keys);
             }
         } else {
-            let diff = SledTreeOverlayStateDiff::new(
+            let diff = match SledTreeOverlayStateDiff::new(
                 &contracts_tree,
                 &backend.overlay.lock().unwrap_or_else(|e| e.into_inner()).state,
-            ).ok();
+            ) {
+                Ok(d) => Some(d),
+                Err(e) => {
+                    tracing::warn!(target: "execution",
+                        "uncle diff construction failed for {}: {e}",
+                        job.contract_id);
+                    uncle_results.push(CallResult { success: false, gas, diff: None });
+                    continue;
+                }
+            };
             uncle_results.push(CallResult { success: true, gas, diff });
         }
 

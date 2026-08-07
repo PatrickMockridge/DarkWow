@@ -145,7 +145,7 @@ impl CommitBetV1Builder {
         );
 
         // Create proper value commitment using Pedersen commitment
-        let value_commit = pedersen_commitment_u64(self.bet_value, ScalarBlind::from(self.bet_value));
+        let value_commit = pedersen_commitment_u64(self.bet_value, ScalarBlind::from_u64(self.bet_value));
 
         let params = CommitBetParamsV1 {
             player_pub,

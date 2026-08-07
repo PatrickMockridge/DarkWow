@@ -123,8 +123,11 @@ impl<F: Field + EncDecode> std::ops::AddAssign for Blind<F> {
 pub type BaseBlind = Blind<pallas::Base>;
 pub type ScalarBlind = Blind<pallas::Scalar>;
 
-impl From<u64> for BaseBlind {
-    fn from(x: u64) -> Self {
+impl BaseBlind {
+    /// Named constructor — per type-system.md §8.5, `From<u64>` SHALL NOT
+    /// be implemented for nominal cryptographic types. This constructor makes
+    /// the domain transition explicit at every call site.
+    pub fn from_u64(x: u64) -> Self {
         Self(pallas::Base::from(x))
     }
 }
@@ -155,8 +158,11 @@ impl core::fmt::Display for BaseBlind {
     }
 }
 
-impl From<u64> for ScalarBlind {
-    fn from(x: u64) -> Self {
+impl ScalarBlind {
+    /// Named constructor — per type-system.md §8.5, `From<u64>` SHALL NOT
+    /// be implemented for nominal cryptographic types. This constructor makes
+    /// the domain transition explicit at every call site.
+    pub fn from_u64(x: u64) -> Self {
         Self(pallas::Scalar::from(x))
     }
 }

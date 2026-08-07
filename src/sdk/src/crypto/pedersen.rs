@@ -53,9 +53,9 @@ mod tests {
     #[test]
     fn pedersen_commitment() {
         let a_value: u64 = 10;
-        let a_blind = ScalarBlind::from(11);
+        let a_blind = ScalarBlind::from_u64(11);
         let b_value: u64 = 20;
-        let b_blind = ScalarBlind::from(21);
+        let b_blind = ScalarBlind::from_u64(21);
 
         assert_eq!(
             pedersen_commitment_u64(a_value, a_blind.clone()) + pedersen_commitment_u64(b_value, b_blind.clone()),

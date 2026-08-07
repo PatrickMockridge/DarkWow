@@ -176,17 +176,26 @@ impl CChainState {
     ) -> Result<Arc<Self>> {
         let store = Arc::new(LinearStore::new(db.clone())?);
         let consensus = PoWConsensus::new(target_block_time, initial_target, min_target, max_target);
-        let _ = consensus.load(store.consensus_tree());
+        if let Err(e) = consensus.load(store.consensus_tree()) {
+            tracing::warn!(target: "chain_state", "Failed to load consensus state from sled (fresh store?): {e}");
+        }
         // Restore accumulated chain work from sled (survives restarts).
         // Phase 1d: widened to u128 per M1 fix.
         let mut sled_work: Option<u128> = None;
-        if let Some(work_bytes) = store.consensus.get("accumulated_work").ok().flatten() {
-            if work_bytes.len() == 16 {
-                let work_bytes_arr: [u8; 16] = work_bytes[..16].try_into().map_err(|_| {
-                    LinearError::StorageError("Corrupt accumulated_work: wrong length".into())
-                })?;
-                let work = u128::from_le_bytes(work_bytes_arr);
-                sled_work = Some(work);
+        match store.consensus.get("accumulated_work") {
+            Ok(Some(work_bytes)) => {
+                if work_bytes.len() == 16 {
+                    let work_bytes_arr: [u8; 16] = work_bytes[..16].try_into().map_err(|_| {
+                        LinearError::StorageError("Corrupt accumulated_work: wrong length".into())
+                    })?;
+                    let work = u128::from_le_bytes(work_bytes_arr);
+                    sled_work = Some(work);
+                }
+            }
+            Ok(None) => { /* no accumulated work in sled — compute from scratch */ }
+            Err(e) => {
+                tracing::warn!(target: "chain_state",
+                    "sled error reading accumulated_work (will recompute): {e}");
             }
         }
 
@@ -237,7 +246,9 @@ impl CChainState {
                     sled_val, computed_work,
                 );
                 let work_bytes = computed_work.to_le_bytes().to_vec();
-                let _ = store.consensus.insert("accumulated_work", work_bytes);
+                if let Err(e) = store.consensus.insert("accumulated_work", work_bytes) {
+                    tracing::warn!(target: "chain_state", "Failed to persist accumulated_work: {e}");
+                }
             }
         } else if computed_work > 0 {
             // No sled value but chain has blocks — persist the computed value
@@ -267,11 +278,15 @@ impl CChainState {
                             "Target cache mismatch at height {h}: cached={}, expected={}. Correcting.",
                             cached.get(), expected.get(),
                         );
-                        let _ = store.block_targets.insert(&key, &val);
+                        if let Err(e) = store.block_targets.insert(&key, &val) {
+                    tracing::warn!(target: "chain_state", "Failed to insert block target cache at height {h}: {e}");
+                }
                     }
                 }
             } else {
-                let _ = store.block_targets.insert(&key, &val);
+                if let Err(e) = store.block_targets.insert(&key, &val) {
+                    tracing::warn!(target: "chain_state", "Failed to insert block target cache at height {h}: {e}");
+                }
             }
         }
 

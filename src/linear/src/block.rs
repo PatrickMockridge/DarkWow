@@ -39,8 +39,11 @@ pub enum PowSource {
     Monero(MoneroPowData),
 }
 
-impl Default for PowSource {
-    fn default() -> Self {
+impl PowSource {
+    /// Explicit default — per type-system.md §5.1, consensus authority SHALL NOT
+    /// be gated by a bare `Default` impl. Callers must explicitly select the PoW
+    /// source; this function exists only for serde backward-compatibility.
+    pub const fn native() -> Self {
         PowSource::Native
     }
 }
@@ -98,7 +101,7 @@ pub struct BlockHeader {
     /// Proof of Work source — native RandomX or Monero merge-mined.
     /// `MoneroPowData` contains cryptographic proof that the Monero
     /// block was mined with our merge mining tag embedded.
-    #[serde(default, skip)]
+    #[serde(default = "PowSource::native", skip)]
     pub pow_source: PowSource,
 }
 
