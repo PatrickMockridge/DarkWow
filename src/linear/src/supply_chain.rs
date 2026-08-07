@@ -235,7 +235,7 @@ impl CumulativeSupplyChain {
     /// Get the latest cumulative supply state.
     /// Returns genesis (identity) state if no blocks have been committed.
     pub fn get_latest(&self) -> CumulativeSupplyEntry {
-        let guard = self.latest.lock().unwrap();
+        let guard = self.latest.lock().unwrap_or_else(|e| e.into_inner());
         guard
             .as_ref()
             .map(|(_, e)| e.clone())
@@ -246,7 +246,7 @@ impl CumulativeSupplyChain {
     pub fn get_latest_height(&self) -> BlockHeight {
         self.latest
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .as_ref()
             .map(|(h, _)| *h)
             .unwrap_or(BlockHeight::new(0))
@@ -349,7 +349,8 @@ impl CumulativeSupplyChain {
         self.tree
             .insert(&key, value)
             .map_err(|e| LinearError::StorageError(e.to_string()))?;
-        let mut guard = self.latest.lock().unwrap();
+        let mut guard = self.latest.lock()
+            .map_err(|e| LinearError::LockPoisoned(format!("{:?}", e)))?;
         *guard = Some((height, entry.clone()));
         info!(
             target: "linear::supply_chain",
@@ -362,7 +363,7 @@ impl CumulativeSupplyChain {
     /// Update the in-memory cache after an atomic cross-tree transaction
     /// has been committed. Must be called AFTER the sled transaction succeeds.
     pub fn update_cache(&self, height: BlockHeight, entry: CumulativeSupplyEntry) {
-        let mut guard = self.latest.lock().unwrap();
+        let mut guard = self.latest.lock().unwrap_or_else(|e| e.into_inner());
         if let Some((existing_h, _)) = *guard {
             if height <= existing_h {
                 return; // Don't move backward
@@ -393,7 +394,9 @@ impl CumulativeSupplyChain {
         let mut prev = if from_height <= BlockHeight::GENESIS {
             CumulativeSupplyEntry::genesis()
         } else {
-            self.get(from_height.pred().expect("height >= 1"))?
+            self.get(from_height.pred().ok_or_else(|| {
+                LinearError::BlockIsInvalid(format!("height underflow on pred() at {}", from_height))
+            })?)?
         };
 
         for h in from_height.get()..=to_height.get() {

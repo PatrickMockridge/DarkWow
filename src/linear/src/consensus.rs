@@ -127,6 +127,9 @@ impl PoWConsensus {
         max_target: BlockTarget,
     ) -> Self {
         Self {
+            // spec dispensation: type-system.md §2.3 — BlockTarget stored in
+            // AtomicU32 for lock-free concurrent read. get() extracts the u32 for
+            // AtomicU32 storage. PoW comparisons use hash_is_valid().
             target: AtomicU32::new(initial_target.get()),
             target_block_time,
             min_target,

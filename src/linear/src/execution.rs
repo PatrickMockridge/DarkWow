@@ -1057,7 +1057,7 @@ impl RuntimeBackend for TxBackend {
     }
 
     fn last_block_timestamp(&self) -> dwow_core::Result<Vec<u8>> {
-        if self.height.get() == 0 {
+        if self.height.is_zero() {
             return Ok(0u64.to_le_bytes().to_vec())
         }
         let block = self.store.get_block(self.height).map_err(|e| Error::Custom(e.to_string()))?;

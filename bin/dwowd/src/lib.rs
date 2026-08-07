@@ -904,7 +904,10 @@ impl Dwowd {
 
         // Start the `dnet` task
         info!(target: "dwowd::Dwowd::start", "Starting dnet subs task");
-        let dnet_sub_ = self.node.rpc_state.subscribers.get("dnet").unwrap().clone();
+        let dnet_sub_ = self.node.rpc_state.subscribers
+            .get("dnet")
+            .ok_or_else(|| Error::Custom("dnet subscriber not initialized".into()))?
+            .clone();
         let p2p_ = self.node.p2p_handler.p2p.clone();
         self.dnet_task.clone().start(
             async move {
@@ -1424,9 +1427,18 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         };
 
         // Unified block preparation — collects uncles, builds coinbase, selects txs
+        // M3: guard against uninitialized linear_zk — follow existing error-recovery pattern
+        let linear_zk_ref = match linear_zk.as_ref() {
+            Some(zk) => zk.as_ref(),
+            None => {
+                error!(target: "dwowd::miner_task", "linear_zk not initialized — retrying");
+                smol::Timer::after(std::time::Duration::from_secs(2)).await;
+                continue;
+            }
+        };
         let prep = match prepare_block(
             &chain_state, &node.mining_state, node.mempool.as_ref(),
-            recipient, height, base_reward, linear_zk.as_ref().unwrap().as_ref(),
+            recipient, height, base_reward, linear_zk_ref,
         ).await {
             Ok(p) => p,
             Err(e) => {

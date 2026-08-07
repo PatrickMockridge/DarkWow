@@ -2942,10 +2942,10 @@ pub static U: [[[u8; 32]; super::H]; super::NUM_WINDOWS] = [
 
 pub fn generator() -> pallas::Affine {
     pallas::Affine::from_xy(
-        pallas::Base::from_repr(GENERATOR.0).unwrap(),
-        pallas::Base::from_repr(GENERATOR.1).unwrap(),
+        pallas::Base::from_repr(GENERATOR.0).expect("protocol constant: valid Pallas field element"),
+        pallas::Base::from_repr(GENERATOR.1).expect("protocol constant: valid Pallas field element"),
     )
-    .unwrap()
+    .expect("protocol constant: valid Pallas field element")
 }
 
 #[cfg(test)]
@@ -2964,10 +2964,10 @@ mod tests {
     fn generator() {
         let domain = CommitDomain::new(COMMIT_IVK_PERSONALIZATION);
         let point = domain.R();
-        let coords = point.to_affine().coordinates().unwrap();
+        let coords = point.to_affine().coordinates().expect("protocol constant: valid Pallas field element");
 
-        assert_eq!(*coords.x(), pallas::Base::from_repr(GENERATOR.0).unwrap());
-        assert_eq!(*coords.y(), pallas::Base::from_repr(GENERATOR.1).unwrap());
+        assert_eq!(*coords.x(), pallas::Base::from_repr(GENERATOR.0).expect("protocol constant: valid Pallas field element"));
+        assert_eq!(*coords.y(), pallas::Base::from_repr(GENERATOR.1).expect("protocol constant: valid Pallas field element"));
     }
 
     #[test]

@@ -103,20 +103,20 @@ impl HashDomains<pallas::Affine> for OrchardHashDomains {
     fn Q(&self) -> pallas::Affine {
         match self {
             OrchardHashDomains::CommitIvk => pallas::Affine::from_xy(
-                pallas::Base::from_repr(Q_COMMIT_IVK_M_GENERATOR.0).unwrap(),
-                pallas::Base::from_repr(Q_COMMIT_IVK_M_GENERATOR.1).unwrap(),
+                pallas::Base::from_repr(Q_COMMIT_IVK_M_GENERATOR.0).expect("protocol constant: valid Pallas field element"),
+                pallas::Base::from_repr(Q_COMMIT_IVK_M_GENERATOR.1).expect("protocol constant: valid Pallas field element"),
             )
-            .unwrap(),
+            .expect("protocol constant: valid Pallas field element"),
             OrchardHashDomains::NoteCommit => pallas::Affine::from_xy(
-                pallas::Base::from_repr(Q_NOTE_COMMITMENT_M_GENERATOR.0).unwrap(),
-                pallas::Base::from_repr(Q_NOTE_COMMITMENT_M_GENERATOR.1).unwrap(),
+                pallas::Base::from_repr(Q_NOTE_COMMITMENT_M_GENERATOR.0).expect("protocol constant: valid Pallas field element"),
+                pallas::Base::from_repr(Q_NOTE_COMMITMENT_M_GENERATOR.1).expect("protocol constant: valid Pallas field element"),
             )
-            .unwrap(),
+            .expect("protocol constant: valid Pallas field element"),
             OrchardHashDomains::MerkleCrh => pallas::Affine::from_xy(
-                pallas::Base::from_repr(Q_MERKLE_CRH.0).unwrap(),
-                pallas::Base::from_repr(Q_MERKLE_CRH.1).unwrap(),
+                pallas::Base::from_repr(Q_MERKLE_CRH.0).expect("protocol constant: valid Pallas field element"),
+                pallas::Base::from_repr(Q_MERKLE_CRH.1).expect("protocol constant: valid Pallas field element"),
             )
-            .unwrap(),
+            .expect("protocol constant: valid Pallas field element"),
         }
     }
 }
@@ -199,36 +199,36 @@ mod tests {
     fn q_note_commitment_m() {
         let domain = CommitDomain::new(NOTE_COMMITMENT_PERSONALIZATION);
         let point = domain.Q();
-        let coords = point.to_affine().coordinates().unwrap();
+        let coords = point.to_affine().coordinates().expect("protocol constant: valid Pallas field element");
 
-        assert_eq!(*coords.x(), pallas::Base::from_repr(Q_NOTE_COMMITMENT_M_GENERATOR.0).unwrap());
-        assert_eq!(*coords.y(), pallas::Base::from_repr(Q_NOTE_COMMITMENT_M_GENERATOR.1).unwrap());
+        assert_eq!(*coords.x(), pallas::Base::from_repr(Q_NOTE_COMMITMENT_M_GENERATOR.0).expect("protocol constant: valid Pallas field element"));
+        assert_eq!(*coords.y(), pallas::Base::from_repr(Q_NOTE_COMMITMENT_M_GENERATOR.1).expect("protocol constant: valid Pallas field element"));
     }
 
     #[test]
     fn q_commit_ivk_m() {
         let domain = CommitDomain::new(COMMIT_IVK_PERSONALIZATION);
         let point = domain.Q();
-        let coords = point.to_affine().coordinates().unwrap();
+        let coords = point.to_affine().coordinates().expect("protocol constant: valid Pallas field element");
 
-        assert_eq!(*coords.x(), pallas::Base::from_repr(Q_COMMIT_IVK_M_GENERATOR.0).unwrap());
-        assert_eq!(*coords.y(), pallas::Base::from_repr(Q_COMMIT_IVK_M_GENERATOR.1).unwrap());
+        assert_eq!(*coords.x(), pallas::Base::from_repr(Q_COMMIT_IVK_M_GENERATOR.0).expect("protocol constant: valid Pallas field element"));
+        assert_eq!(*coords.y(), pallas::Base::from_repr(Q_COMMIT_IVK_M_GENERATOR.1).expect("protocol constant: valid Pallas field element"));
     }
 
     #[test]
     fn q_merkle_crh() {
         let domain = HashDomain::new(MERKLE_CRH_PERSONALIZATION);
         let point = domain.Q();
-        let coords = point.to_affine().coordinates().unwrap();
+        let coords = point.to_affine().coordinates().expect("protocol constant: valid Pallas field element");
 
-        assert_eq!(*coords.x(), pallas::Base::from_repr(Q_MERKLE_CRH.0).unwrap());
-        assert_eq!(*coords.y(), pallas::Base::from_repr(Q_MERKLE_CRH.1).unwrap());
+        assert_eq!(*coords.x(), pallas::Base::from_repr(Q_MERKLE_CRH.0).expect("protocol constant: valid Pallas field element"));
+        assert_eq!(*coords.y(), pallas::Base::from_repr(Q_MERKLE_CRH.1).expect("protocol constant: valid Pallas field element"));
     }
 
     #[test]
     fn inv_two_pow_k() {
         let two_pow_k = pallas::Base::from(1u64 << K);
-        let inv_two_pow_k = pallas::Base::from_repr(INV_TWO_POW_K).unwrap();
+        let inv_two_pow_k = pallas::Base::from_repr(INV_TWO_POW_K).expect("protocol constant: valid Pallas field element");
 
         assert_eq!(two_pow_k * inv_two_pow_k, pallas::Base::one());
     }

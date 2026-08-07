@@ -412,9 +412,24 @@ fn create_fee_proof(
     let (sig_x, sig_y) = sig_pk.xy().expect("pk not identity");
 
     // Public inputs for Fee_V2 (15 elements, matching fee_get_metadata order)
-    let input_vc_coords = input_value_commit.to_affine().coordinates().unwrap();
-    let output_vc_coords = output_value_commit.to_affine().coordinates().unwrap();
-    let fee_vc_coords = fee_value_commit.to_affine().coordinates().unwrap();
+    // M6: guard against identity point — follow existing pattern at lines 237-241
+    let input_vc = input_value_commit.to_affine().coordinates();
+    if input_vc.is_none().into() {
+        return Err(ContractError::IoError("FeeV2: input_value_commit is identity".into()));
+    }
+    let input_vc_coords = input_vc.unwrap();
+
+    let output_vc = output_value_commit.to_affine().coordinates();
+    if output_vc.is_none().into() {
+        return Err(ContractError::IoError("FeeV2: output_value_commit is identity".into()));
+    }
+    let output_vc_coords = output_vc.unwrap();
+
+    let fee_vc = fee_value_commit.to_affine().coordinates();
+    if fee_vc.is_none().into() {
+        return Err(ContractError::IoError("FeeV2: fee_value_commit is identity".into()));
+    }
+    let fee_vc_coords = fee_vc.unwrap();
     let public_inputs = vec![
         nullifier.inner(),                // 1
         *input_vc_coords.x(),             // 2

@@ -108,14 +108,14 @@ impl PeerTip {
         // 2. Hash: §8.2.1 re-lift is now performed by serde deserialization
         //    (BlockHash::Deserialize calls from_hex_str). At height 0, the zero
         //    sentinel is valid. No additional validation needed.
-        let hash = if tip.height.get() == 0 && tip.hash.is_zero() {
+        let hash = if tip.height.is_zero() && tip.hash.is_zero() {
             dwow_chain::sync_types::BlockHash::zero()
         } else {
             tip.hash.clone()
         };
 
         // 3. Genesis hash must be present if the peer has blocks.
-        if tip.height.get() > 0 && tip.genesis_hash.is_none() {
+        if !tip.height.is_zero() && tip.genesis_hash.is_none() {
             return Err(crate::Error::Custom(
                 format!("PeerTip::from_tip: missing genesis hash at height {}", tip.height)
             ));
@@ -375,7 +375,7 @@ impl LinearSyncClient {
             // Exit condition 4: no peers, no genesis — wait indefinitely.
             // After 30s, signal to the consensus task that we're waiting
             // for genesis so it can update sync_state for the miner.
-            if wait_iters >= 30 && local_height.get() == 0 {
+            if wait_iters >= 30 && local_height.is_zero() {
                 info!(
                     target: "dwowd::proto::linear_sync_client",
                     "No peers and no genesis after 30s — returning WaitForGenesis",

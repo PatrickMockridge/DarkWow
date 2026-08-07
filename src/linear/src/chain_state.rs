@@ -214,6 +214,10 @@ impl CChainState {
         // and validate against the sled-cached value. If they disagree, the
         // chain-recomputed value is authoritative and the sled cache is corrected.
         let mut computed_work: u128 = 0;
+        // spec dispensation: type-system.md §2.3 — BlockHeight is a transparent
+        // newtype over u64. Range iteration requires extracting the u64 domain value
+        // for Rust range syntax. A richer iterator API would add complexity without
+        // safety gain since BlockHeight derives from u64.
         for h in 1..=height.get() {
             if let Ok(block) = store.get_block(BlockHeight::new(h)) {
                 // Work contributed = 2^32 / target (standard Bitcoin formula).
@@ -345,6 +349,9 @@ impl CChainState {
             supply_chain,
             consensus: Mutex::new(consensus),
             finality_config,
+            // spec dispensation: type-system.md §2.3 — AtomicU64 requires the
+            // raw u64 value. get() at the persistence boundary performs no
+            // arithmetic; it extracts the canonical domain value for storage.
             height: AtomicU64::new(height.get()),
             vm_cache: Mutex::new(vm_cache),
             cache_pool: Mutex::new(HashMap::new()),
@@ -615,7 +622,7 @@ impl CChainState {
                 let h = block.hash_with_vm(&*guard)?;
                 u32::from_le_bytes(h.as_bytes()[0..4].try_into().unwrap())
             };
-            if hash_u32 > block.header.target.get() {
+            if !block.header.target.hash_is_valid(hash_u32) {
                 return Err(LinearError::InvalidPoW(
                     block.hash_with_vm(&*guard)?.to_string()
                 ));
@@ -754,7 +761,7 @@ impl CChainState {
                     let h = block.hash_with_vm(&*guard)?;
                     u32::from_le_bytes(h.as_bytes()[0..4].try_into().unwrap())
                 };
-                if hash_u32 > block.header.target.get() {
+                if !block.header.target.hash_is_valid(hash_u32) {
                     return Err(LinearError::InvalidPoW(
                         block.hash_with_vm(&*guard)?.to_string()
                     ));

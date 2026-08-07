@@ -387,7 +387,7 @@ pub async fn consensus_linear_init_task(
 
         // If no peers have any blocks and we have no genesis (height=0),
         // we can't sync — keep waiting for a genesis authority to connect.
-        if max_peer_height.get() == 0 && local_height.get() == 0 {
+        if max_peer_height.is_zero() && local_height.is_zero() {
             warn!(target: "dwowd::task::consensus_linear_init_task",
                 "No genesis available from peers — waiting for genesis authority...");
             smol::Timer::after(std::time::Duration::from_secs(2)).await;
@@ -584,7 +584,7 @@ pub async fn consensus_linear_init_task(
         //    Without this check, sync_state=CaughtUp is set and mining
         //    starts on a stale tip unaware it's 60+ blocks behind.
         let current_height = blockchain.get_height();
-        if current_height.get() == 0 && max_peer_height.get() > 0 {
+        if current_height.is_zero() && !max_peer_height.is_zero() {
             warn!(target: "dwowd::task::consensus_linear_init_task",
                 "Sync attempt failed — still at height 0 with peers at height {}. Retrying...",
                 max_peer_height);
@@ -595,7 +595,7 @@ pub async fn consensus_linear_init_task(
             smol::Timer::after(std::time::Duration::from_secs(2)).await;
             continue;
         }
-        if max_peer_height.get() > 0 && current_height < max_peer_height {
+        if !max_peer_height.is_zero() && current_height < max_peer_height {
             warn!(target: "dwowd::task::consensus_linear_init_task",
                 "Sync incomplete — local height {} but peer has {}. Retrying...",
                 current_height, max_peer_height);
@@ -617,7 +617,7 @@ pub async fn consensus_linear_init_task(
         // The miner_task separately guards height-0 mining (get_latest_block
         // fails), but this log distinguishes the two cases for operators.
         node.mining_state.sync_state.store(SyncState::CaughtUp as u8, Ordering::SeqCst);
-        if current_height.get() == 0 && max_peer_height.get() == 0 {
+        if current_height.is_zero() && max_peer_height.is_zero() {
             info!(target: "dwowd::task::consensus_linear_init_task",
                 "sync_state: → CaughtUp [FALLBACK: no genesis exists anywhere — mining disabled until genesis arrives]");
         } else {

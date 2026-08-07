@@ -360,7 +360,7 @@ pub fn verify_uncle_proof(
 
     // Step 2: Verify pow_hash meets difficulty target
     let hash_u32 = u32::from_le_bytes(computed_pow_hash[0..4].try_into().unwrap());
-    if hash_u32 > target.get() {
+    if !target.hash_is_valid(hash_u32) {
         return false;
     }
 

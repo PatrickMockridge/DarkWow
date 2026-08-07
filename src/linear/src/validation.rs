@@ -82,7 +82,7 @@ pub fn check_block_header(
         }
     } else {
         let hash_u32 = u32::from_le_bytes(block_hash.as_bytes()[0..4].try_into().unwrap());
-        if hash_u32 > block.header.target.get() {
+        if !block.header.target.hash_is_valid(hash_u32) {
             return Err(LinearError::InvalidPoW(block_hash.to_string()));
         }
     }
@@ -201,7 +201,7 @@ pub fn check_uncles(
 
         // PoW for this uncle
         let hash_u32 = u32::from_le_bytes(uncle_hash.as_bytes()[0..4].try_into().unwrap());
-        if hash_u32 > target.get() {
+        if !target.hash_is_valid(hash_u32) {
             return Err(LinearError::UnclePoWInvalid(uncle_hash.to_string()));
         }
 

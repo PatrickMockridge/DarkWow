@@ -734,6 +734,9 @@ pub extern "C" fn dwow_wallet_chain_height(handle: *const WalletHandle) -> u64 {
     if handle.is_null() { return 0; }
     let wallet = unsafe { &(*handle) };
     match wallet.dww.chain_height() {
+        // spec dispensation: type-system.md §6.4 (FFI boundaries) —
+        // C ABI requires primitive types. BlockHeight::get() is the canonical
+        // extraction point for the u64 domain value across the FFI boundary.
         Ok(h) => h.get(),
         Err(e) => {
             tracing::error!("FFI chain_height failed: {}", e);
