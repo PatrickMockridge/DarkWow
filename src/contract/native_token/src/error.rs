@@ -97,6 +97,12 @@ pub enum NativeTokenError {
 
     #[error("Fee total mismatch — does not match fees_db accumulator")]
     FeeTotalMismatch,
+
+    #[error("Zero-fee claim rejected")]
+    ZeroFeeClaim,
+
+    #[error("Parse error — invalid fee parameters")]
+    ParseError,
 }
 
 impl From<NativeTokenError> for ContractError {

@@ -1162,7 +1162,7 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     // closed merkle tree (audit finding D12).
     if fc.total_fees == 0 {
         msg!("[fee_collect_v1] Zero-value fee claim rejected");
-        return Err(NativeTokenError::FeeTotalMismatch.into())
+        return Err(NativeTokenError::ZeroFeeClaim.into())
     }
 
     // Check 2 (spec §4.2 C2): Pedersen commitment sum verification.
@@ -1289,8 +1289,6 @@ fn apply_fee(cid: ContractId, update: FeeUpdate) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
     let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
     let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
-    let fees_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_FEES_TREE)?;
-
     // Mark nullifier as spent
     wasm::db::db_set(nullifiers_db, &update.nullifier.to_bytes(), &[])?;
 
@@ -1322,18 +1320,6 @@ fn apply_fee(cid: ContractId, update: FeeUpdate) -> ContractResult {
         acc = acc + update.fee_value_commit;
         wasm::db::db_set(info_db, NATIVE_TOKEN_CONTRACT_FEE_COMMIT_ACCUMULATOR, &acc.to_bytes())?;
     }
-
-    // Legacy: update u64 fee accumulator per block height (FeeV1 compat)
-    let mut paid_fee: u64 = {
-        let data = wasm::db::db_get(fees_db, &update.height.to_le_bytes())?
-            .ok_or(ContractError::DbGetEmpty)?;
-        let bytes: [u8; 8] = data.try_into().map_err(|_| {
-            ContractError::IoError("Corrupt state: fees_db value wrong size".to_string())
-        })?;
-        u64::from_le_bytes(bytes)
-    };
-    paid_fee = paid_fee.saturating_add(update.fee.get());
-    wasm::db::db_set(fees_db, &update.height.to_le_bytes(), &paid_fee.to_le_bytes())?;
 
     Ok(())
 }

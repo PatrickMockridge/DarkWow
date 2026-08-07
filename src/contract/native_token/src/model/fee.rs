@@ -8,8 +8,9 @@
 //! Spec: fee-spec.md §5.
 
 use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine, PrimeField};
-use dwow_sdk::crypto::{BaseBlind, Blind};
+use dwow_sdk::crypto::{BaseBlind, Blind, pedersen_commitment_u64};
 use dwow_sdk::error::ContractError;
+use crate::error::NativeTokenError;
 use dwow_sdk::pasta::{group::GroupEncoding, pallas};
 
 use super::{Input, Output};
@@ -80,13 +81,11 @@ impl FeeParamsV2 {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
+        fn parse_err(_msg: &str) -> ContractError { NativeTokenError::ParseError.into() }
         let input = Input::decode(&data[..Input::ENCODED_SIZE])?;
         let input_len = Input::ENCODED_SIZE;
         if data.len() < input_len + 130 {
-            return Err(ContractError::IoError(format!(
-                "FeeParamsV2: expected at least {} bytes, got {}",
-                input_len + 130, data.len()
-            )));
+            return Err(parse_err("FeeParamsV2: too short for output"));
         }
         let output_len = 130 + u16::from_le_bytes(
             data[input_len + 128..input_len + 130].try_into().unwrap()
@@ -96,16 +95,16 @@ impl FeeParamsV2 {
 
         // fee_value_commit: pallas::Point (32 bytes compressed)
         if data.len() < pos + 32 {
-            return Err(ContractError::IoError("FeeParamsV2: too short for fee_value_commit".into()));
+            return Err(parse_err("FeeParamsV2: too short for fee_value_commit"));
         }
         let fee_value_commit = Option::<pallas::Point>::from(
             pallas::Point::from_bytes(&data[pos..pos + 32].try_into().unwrap())
-        ).ok_or_else(|| ContractError::IoError("FeeParamsV2: invalid fee_value_commit".into()))?;
+        ).ok_or_else(|| parse_err("FeeParamsV2: invalid fee_value_commit"))?;
 
         // Extract affine coordinates for metadata convenience
         let coords = fee_value_commit.to_affine().coordinates();
         let (fee_value_commit_x, fee_value_commit_y) = if coords.is_none().into() {
-            return Err(ContractError::IoError("FeeParamsV2: fee_value_commit is identity".into()));
+            return Err(parse_err("FeeParamsV2: fee_value_commit is identity"));
         } else {
             let c = coords.unwrap();
             (*c.x(), *c.y())
@@ -114,43 +113,50 @@ impl FeeParamsV2 {
 
         // threshold: u64 LE (8 bytes)
         if data.len() < pos + 8 {
-            return Err(ContractError::IoError("FeeParamsV2: too short for threshold".into()));
+            return Err(parse_err("FeeParamsV2: too short for threshold"));
         }
         let threshold = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
         pos += 8;
 
         // threshold_proof: length-prefixed bytes
         if data.len() < pos + 4 {
-            return Err(ContractError::IoError("FeeParamsV2: too short for proof length".into()));
+            return Err(parse_err("FeeParamsV2: too short for proof length".into()));
         }
         let proof_len = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
         pos += 4;
         if data.len() < pos + proof_len {
-            return Err(ContractError::IoError("FeeParamsV2: too short for threshold_proof".into()));
+            return Err(parse_err("FeeParamsV2: too short for threshold_proof".into()));
         }
         let threshold_proof = data[pos..pos + proof_len].to_vec();
         pos += proof_len;
 
         // blinds + bindings (128 bytes: scalar 32 + blind 32 + binding 32 + nonce 32)
         if data.len() < pos + 128 {
-            return Err(ContractError::IoError(format!(
-                "FeeParamsV2: expected at least {} bytes, got {}",
-                pos + 128, data.len()
-            )));
+            return Err(parse_err("FeeParamsV2: too short for blinds"));
         }
         let fee_value_blind = Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(
             data[pos..pos + 32].try_into().unwrap()
-        )).ok_or_else(|| ContractError::IoError("FeeParamsV2: invalid fee_value_blind".into()))?;
+        )).ok_or_else(|| parse_err("FeeParamsV2: invalid fee_value_blind".into()))?;
+
+        // Reject fee=0 with non-zero blind. Identity check above catches Pedersen(0,0),
+        // but Pedersen(0, b!=0) would pass as a valid non-Identity point.
+        if fee_value_blind != pallas::Scalar::zero() {
+            let zero_commit = pedersen_commitment_u64(0, Blind(fee_value_blind));
+            if zero_commit == fee_value_commit {
+                return Err(parse_err("FeeParamsV2: zero-fee with non-zero blind rejected".into()));
+            }
+        }
+
         let fee_token_blind = Blind(Option::<pallas::Base>::from(pallas::Base::from_repr(
             data[pos + 32..pos + 64].try_into().unwrap()
-        )).ok_or_else(|| ContractError::IoError("FeeParamsV2: invalid fee_token_blind".into()))?);
+        )).ok_or_else(|| parse_err("FeeParamsV2: invalid fee_token_blind".into()))?);
         let fee_token_blind: BaseBlind = fee_token_blind;
         let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(
             data[pos + 64..pos + 96].try_into().unwrap()
-        )).ok_or_else(|| ContractError::IoError("FeeParamsV2: invalid tx_binding".into()))?;
+        )).ok_or_else(|| parse_err("FeeParamsV2: invalid tx_binding".into()))?;
         let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(
             data[pos + 96..pos + 128].try_into().unwrap()
-        )).ok_or_else(|| ContractError::IoError("FeeParamsV2: invalid tx_nonce".into()))?;
+        )).ok_or_else(|| parse_err("FeeParamsV2: invalid tx_nonce".into()))?;
 
         Ok(FeeParamsV2 {
             input, output, fee_value_commit,

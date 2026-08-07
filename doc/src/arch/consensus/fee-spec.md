@@ -172,7 +172,8 @@ transactions[k+1]   = FeeCollectV1       (fn_code 0x06) — iff total_fees > 0
 ```
 
 Phase 0 structural validation enforces: exactly one coinbase at index 0,
-FeeCollectV1 (if present) at the final index.
+FeeCollectV1 (if present) at the final index. The coinbase transaction
+SHALL contain exactly one contract call (compound coinbase prevention).
 
 ### 2.2 Sequential Execution Model
 
