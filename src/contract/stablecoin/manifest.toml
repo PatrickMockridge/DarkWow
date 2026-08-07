@@ -69,7 +69,7 @@ proof_circuit = "AccrueInterestV2"
 name = "redeem_stable"
 code = 10
 requires_proof = true
-proof_circuit = "RedeemStable_V1"
+proof_circuit = "RedeemStableV1"
 
 [[functions]]
 name = "spend_hook_callback"
@@ -134,5 +134,5 @@ name = "AccrueInterestV2"
 namespace = "stablecoin"
 
 [[circuits]]
-name = "RedeemStable_V1"
+name = "RedeemStableV1"
 namespace = "stablecoin"
