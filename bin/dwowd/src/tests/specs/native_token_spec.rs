@@ -2,7 +2,7 @@
 
 use dwow_contract_test_harness::harness::{ContractHarness, NativeTokenHarness};
 use dwow_sdk::crypto::{NATIVE_TOKEN_CONTRACT_ID, Keypair, PublicKey, SecretKey};
-use dwow_sdk::pasta::pallas;
+use dwow_sdk::pasta::{group::{Group, GroupEncoding}, pallas};
 
 use crate::tests::blockchain::HeavyweightPipeline;
 use crate::tests::modules;

@@ -132,3 +132,7 @@ namespace = "stablecoin"
 [[circuits]]
 name = "AccrueInterest_V2"
 namespace = "stablecoin"
+
+[[circuits]]
+name = "RedeemStable_V1"
+namespace = "stablecoin"

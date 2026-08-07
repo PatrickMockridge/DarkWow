@@ -52,9 +52,10 @@ use dwow_chain::{CChainState, FinalityConfig, PoWConfig};
 use dwow_serial::Encodable;
 use dwow_core::zk::Proof;
 use dwow_core::Result;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, FeeAmount};
 use dwow_sdk::crypto::{ContractId, NATIVE_TOKEN_CONTRACT_ID};
 use dwow_sdk::pasta::pallas;
+use dwow_sdk::pasta::group::{Group, GroupEncoding};
 use dwow_contract_test_harness::harness::ContractHarness;
 
 /// Genesis contract names that SHALL NOT be re-deployed via chain.deploy().
@@ -233,7 +234,8 @@ impl HeavyweightPipeline {
 
         let flags = randomx::RandomXFlags::get_recommended_flags()
             & !randomx::RandomXFlags::JIT;
-        let rx_cache = self.chain_state.get_cache([0u8; 32]);
+        let rx_cache = self.chain_state.get_cache([0u8; 32])
+            .map_err(|e| dwow_core::Error::Custom(format!("RandomX cache: {}", e)))?;
         let vm = Arc::new(
             randomx::RandomXVM::new(flags, Some(rx_cache), None)
                 .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?,
@@ -294,7 +296,8 @@ impl HeavyweightPipeline {
         );
         let flags = randomx::RandomXFlags::get_recommended_flags()
             & !randomx::RandomXFlags::JIT;
-        let rx_cache = self.chain_state.get_cache([0u8; 32]);
+        let rx_cache = self.chain_state.get_cache([0u8; 32])
+            .map_err(|e| dwow_core::Error::Custom(format!("RandomX cache: {}", e)))?;
         let vm = Arc::new(
             randomx::RandomXVM::new(flags, Some(rx_cache), None)
                 .map_err(|e| dwow_core::Error::Custom(format!("RandomX VM: {}", e)))?,

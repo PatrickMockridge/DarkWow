@@ -6,7 +6,10 @@
 //! 2. Two-tier admission with REJECT path for below-general
 //! 3. FeeV1 transactions through legacy fee_index
 
+use std::sync::Mutex;
+
 use dwow_mempool::{FeeCommitment, FeeExtractor, Mempool, MempoolConfig, MinerConfig};
+use dwow_sdk::pasta::group::{Group, GroupEncoding};
 
 struct TestFeeExtractor;
 impl FeeExtractor for TestFeeExtractor {

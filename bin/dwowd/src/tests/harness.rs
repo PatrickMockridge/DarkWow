@@ -61,7 +61,7 @@ pub fn build_test_header(
         match chain_state.get_latest_block() {
             Ok(block) => {
                 let prev_key = block.header.randomx_key;
-                let prev_vm = chain_state.get_vm(prev_key);
+                let prev_vm = chain_state.get_vm(prev_key).expect("VM creation failed in test");
                 { let guard = prev_vm.lock().unwrap(); block.hash_with_vm(&guard).expect("hash failed") }
             }
             Err(_) => blake3::Hash::from_bytes([0u8; 32]),
@@ -164,15 +164,15 @@ pub fn build_test_block_with_uncles(
     let timestamp = test_block_timestamp(height);
     let merkle_root = compute_merkle_root(&txs);
     let randomx_key = Miner::derive_key_from_height(height);
-    let vm = chain_state.get_vm(randomx_key);
-    let (uncle_merkle_root, _) = build_uncle_merkle(uncles, &vm.lock().unwrap());
+    let vm = chain_state.get_vm(randomx_key).expect("VM creation failed in test");
+    let (uncle_merkle_root, _) = build_uncle_merkle(uncles, &vm.lock().unwrap()).expect("uncle merkle root failed");
     let previous_hash = if height <= BlockHeight::GENESIS {
         blake3::Hash::from_bytes([0u8; 32])
     } else {
         match chain_state.get_latest_block() {
             Ok(block) => {
                 let prev_key = block.header.randomx_key;
-                let prev_vm = chain_state.get_vm(prev_key);
+                let prev_vm = chain_state.get_vm(prev_key).expect("VM creation failed in test");
                 { let guard = prev_vm.lock().unwrap(); block.hash_with_vm(&guard).expect("hash failed") }
             }
             Err(_) => blake3::Hash::from_bytes([0u8; 32]),

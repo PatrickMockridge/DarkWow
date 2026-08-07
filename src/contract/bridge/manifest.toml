@@ -113,3 +113,23 @@ namespace = "bridge"
 name = "UpdateConfig_V2"
 namespace = "bridge"
 
+[[circuits]]
+name = "AcceptWithdrawal_V2"
+namespace = "bridge"
+
+[[circuits]]
+name = "CancelWithdraw_V2"
+namespace = "bridge"
+
+[[circuits]]
+name = "ClaimHtlc_V2"
+namespace = "bridge"
+
+[[circuits]]
+name = "ExecuteGuaranteedWithdraw_V2"
+namespace = "bridge"
+
+[[circuits]]
+name = "RefundHtlc_V2"
+namespace = "bridge"
+

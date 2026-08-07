@@ -18,11 +18,11 @@ pub fn stablecoin_test_spec() -> ContractTestSpec<'static> {
                 Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("MintStableV1", true, Box::new(move || {
-                let r = h.mint_stable(sk, 10000, 5000, 1000, BaseBlind::from(100u64), BaseBlind::from(200u64), pallas::Base::from(1u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let r = h.mint_stable(sk, 10000, 5000, 1000, BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64), pallas::Base::from(1u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("LiquidateV1", true, Box::new(move || {
-                let r = h.liquidate(sk, 10000, 5000, 200, 1000, 500, BaseBlind::from(100u64), BaseBlind::from(200u64), pallas::Base::from(1u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                let r = h.liquidate(sk, 10000, 5000, 200, 1000, 500, BaseBlind::from_u64(100u64), BaseBlind::from_u64(200u64), pallas::Base::from(1u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
             })),
             mk_ep("GovernanceReportV1", true, Box::new(move || {

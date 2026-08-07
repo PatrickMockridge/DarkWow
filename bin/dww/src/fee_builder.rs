@@ -32,6 +32,7 @@ use dwow_core::{
 };
 use crate::wallet_error::{Error, Result};
 use dwow_sdk::{
+    blockchain::FeeAmount,
     crypto::{BaseBlind, PublicKey, SecretKey, MerkleNode},
     pasta::pallas,
     tx::ContractCall,
@@ -237,8 +238,8 @@ pub fn build_fee_and_finalize_tx(
     let fee_builder = FeeV2CallBuilder {
         input: fee_input,
         output: fee_output,
-        fee_amount: DEFAULT_FEE,
-        threshold,
+        fee_amount: FeeAmount::new(DEFAULT_FEE),
+        threshold: FeeAmount::new(threshold),
         fee_zkbin: fee_zkbin.clone(),
         fee_pk,
         threshold_zkbin,

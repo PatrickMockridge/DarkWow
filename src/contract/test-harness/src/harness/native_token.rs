@@ -30,6 +30,7 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
+    blockchain::FeeAmount,
     crypto::{MerkleNode, PublicKey, SecretKey, poseidon_hash},
     crypto::pasta_prelude::Group,
     pasta::pallas,
@@ -217,8 +218,8 @@ impl NativeTokenHarness {
                 user_data: output_user_data,
                 coin_blind,
             },
-            fee_amount,
-            threshold,
+            fee_amount: FeeAmount::new(fee_amount),
+            threshold: FeeAmount::new(threshold),
             fee_zkbin: self.fee_zkbin.clone(),
             fee_pk: self.fee_pk.clone(),
             threshold_zkbin: self.threshold_zkbin.clone(),

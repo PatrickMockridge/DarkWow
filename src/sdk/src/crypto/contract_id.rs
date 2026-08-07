@@ -254,19 +254,27 @@ mod tests {
             "ContractId::ZERO must be valid (unlike Nullifier)");
     }
 
-    /// BW-3: ContractId::from_bytes rejection at the type boundary.
+    /// BW-3: ContractId rejects wrong-length bytes at the deserialization boundary.
     /// Per type-system.md §10.5: the re-lift from untrusted bytes SHALL
     /// validate through the named constructor. Wrong-length inputs SHALL
     /// be rejected — the type system SHALL NOT allow a [u8; 31] or
     /// [u8; 33] to become a ContractId.
+    ///
+    /// Note: `ContractId::from_bytes()` takes `[u8; 32]` — Rust's type system
+    /// enforces correct length at compile time. This test verifies the RUNTIME
+    /// deserialization path (`dwow_serial::deserialize`) rejects wrong-length
+    /// byte sequences on the wire.
     #[test]
     fn test_contract_id_rejects_wrong_length() {
         // 31 bytes — too short
-        assert!(ContractId::from_bytes([0u8; 31]).is_err(),
-            "31-byte ContractId must be rejected");
+        assert!(dwow_serial::deserialize::<ContractId>(&[0u8; 31]).is_err(),
+            "31-byte ContractId must be rejected at deserialization");
         // 33 bytes — too long
-        assert!(ContractId::from_bytes([0u8; 33]).is_err(),
-            "33-byte ContractId must be rejected");
+        assert!(dwow_serial::deserialize::<ContractId>(&[0u8; 33]).is_err(),
+            "33-byte ContractId must be rejected at deserialization");
+        // 32 valid bytes with invalid field element — must also reject
+        assert!(ContractId::from_bytes([0xFFu8; 32]).is_err(),
+            "Invalid field element must be rejected by from_bytes");
     }
 
 }

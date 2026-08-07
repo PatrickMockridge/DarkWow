@@ -1338,34 +1338,30 @@ name = "b"
         // declared schema should fail closed — no silent truncation.
         let too_many_params = r#"
 [contract]
-name = "bloated"
+name = "bigops"
 category = "Other"
-namespace = "bloated"
-build_info = "n/a"
-
-[contract.native_contract]
-crate_name = "bloated"
-contractid = "0x0101010101010101010101010101010101010101010101010101010101010101"
+description = "BW-5 field count caps test"
 
 [[functions]]
 name = "BigOp"
-selector = 0x01
-is_public = true
-requires_proof = false
+code = 1
 
-[[functions.parameters]]
-name = "p"
-kind = "u64"
+[[parameters]]
+function = "BigOp"
+fields = [
+    { name = "p", type = "u64" },
+]
 "#;
-        // We need enough parameter entries to test that the parser handles
-        // manifests with a large-but-reasonable parameter count correctly.
-        // The TOML parser itself enforces no hard cap — the verification
-        // is that named parameters don't silently overflow or alias.
-        let manifest: TypedManifest = toml::from_str(too_many_params).unwrap();
-        let fns = manifest.functions.unwrap();
+        let manifest = ContractManifest::from_toml(too_many_params)
+            .expect("valid manifest must parse");
+        let fns = &manifest.functions;
         assert_eq!(fns.len(), 1);
         assert_eq!(fns[0].name, "BigOp");
-        assert_eq!(fns[0].parameters.as_ref().unwrap().len(), 1);
+        let params: Vec<_> = manifest.parameters.iter()
+            .filter(|p| p.function == "BigOp")
+            .collect();
+        assert_eq!(params.len(), 1,
+            "parameter count must not be silently truncated");
     }
 
     /// BW-6: Circuit witness binding depth enforcement.
@@ -1382,70 +1378,41 @@ kind = "u64"
 [contract]
 name = "deep"
 category = "Other"
-namespace = "deep"
-build_info = "n/a"
-
-[contract.native_contract]
-crate_name = "deep"
-contractid = "0x0202020202020202020202020202020202020202020202020202020202020202"
+description = "BW-6 witness binding depth test"
 
 [[functions]]
 name = "DeepOp"
-selector = 0x01
-is_public = true
+code = 1
 requires_proof = true
+proof_circuit = "DeepOp_V1"
 
 [[circuits]]
-namespace = "DeepOp"
-prove = true
-verify = true
-
-# W_CEILING = 13; 14 witness slots should be rejected
-[[circuits.witness_map]]
-source = "secret"
-
-[[circuits.witness_map]]
-source = "note:value"
-
-[[circuits.witness_map]]
-source = "note:token_id"
-
-[[circuits.witness_map]]
-source = "note:spend_hook"
-
-[[circuits.witness_map]]
-source = "note:user_data"
-
-[[circuits.witness_map]]
-source = "note:blind"
-
-[[circuits.witness_map]]
-source = "note:value_blind"
-
-[[circuits.witness_map]]
-source = "note:token_blind"
-
-[[circuits.witness_map]]
-source = "note:coin_blind"
-
-[[circuits.witness_map]]
-source = "param:amount"
-
-[[circuits.witness_map]]
-source = "param:receiver"
-
-[[circuits.witness_map]]
-source = "blind"
-
-[[circuits.witness_map]]
-source = "tx_commitment"
-
-[[circuits.witness_map]]
-source = "tx_nonce"
+name = "DeepOp_V1"
+namespace = "deep"
+# W_CEILING = 13; 14 witness slots should be accepted at parse time,
+# with runtime enforcement at proof construction
+witness_map = [
+    "secret",
+    "note:value",
+    "note:token_id",
+    "note:spend_hook",
+    "note:user_data",
+    "note:blind",
+    "note:value_blind",
+    "note:token_blind",
+    "note:coin_blind",
+    "param:amount",
+    "param:receiver",
+    "blind",
+    "tx_commitment",
+    "tx_nonce",
+]
 "#;
-        let manifest: TypedManifest = toml::from_str(deep_circuit).unwrap();
-        let circuits = manifest.circuits.unwrap();
-        let witness_map = circuits[0].witness_map.as_ref().unwrap();
+        let manifest = ContractManifest::from_toml(deep_circuit)
+            .expect("valid manifest with 14 witness slots must parse");
+        let circuits = &manifest.circuits;
+        assert_eq!(circuits.len(), 1);
+        let witness_map = &circuits[0].witness_map;
         // Verify the manifest accepts 14 witness slots at parse time.
         // Runtime validation at proof construction SHALL additionally
         // enforce W_CEILING before building the witness vector.

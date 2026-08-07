@@ -862,6 +862,7 @@ mod newtype_tests {
     // =====================================================================
 
     #[test]
+    #[cfg(feature = "json")]
     fn test_supply_amount_serde_is_transparent_number() {
         let v = serde_json::to_value(SupplyAmount::new(42)).unwrap();
         assert!(v.is_number(), "SupplyAmount must be bare number, got {:?}", v);
@@ -869,6 +870,7 @@ mod newtype_tests {
     }
 
     #[test]
+    #[cfg(feature = "json")]
     fn test_fee_amount_serde_is_transparent_number() {
         let v = serde_json::to_value(FeeAmount::new(42)).unwrap();
         assert!(v.is_number(), "FeeAmount must be bare number, got {:?}", v);
@@ -876,6 +878,7 @@ mod newtype_tests {
     }
 
     #[test]
+    #[cfg(feature = "json")]
     fn test_block_timestamp_serde_is_transparent_number() {
         let v = serde_json::to_value(BlockTimestamp::new(42)).unwrap();
         assert!(v.is_number(), "BlockTimestamp must be bare number, got {:?}", v);
@@ -883,6 +886,7 @@ mod newtype_tests {
     }
 
     #[test]
+    #[cfg(feature = "json")]
     fn test_monero_block_height_serde_is_transparent_number() {
         let v = serde_json::to_value(MoneroBlockHeight::new(42)).unwrap();
         assert!(v.is_number(), "MoneroBlockHeight must be bare number, got {:?}", v);

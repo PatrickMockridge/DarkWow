@@ -18,6 +18,8 @@ proof_circuit = "CommitBet_V2"
 [[functions]]
 name = "reveal_spin"
 code = 2
+requires_proof = true
+proof_circuit = "RevealSpin_V2"
 
 [[functions]]
 name = "settle_spin"
@@ -56,6 +58,10 @@ name = "house"
 
 [[circuits]]
 name = "CommitBet_V2"
+namespace = "slot"
+
+[[circuits]]
+name = "RevealSpin_V2"
 namespace = "slot"
 
 [[circuits]]

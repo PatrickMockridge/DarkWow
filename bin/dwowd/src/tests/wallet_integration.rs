@@ -48,7 +48,7 @@
 use std::sync::Arc;
 
 use dwow_chain::{ContractCall, Transaction};
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, MoneroBlockHeight, SupplyAmount};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, FeeAmount, MoneroBlockHeight, SupplyAmount};
 use dwow_sdk::crypto::{
     keypair::Network,
     pasta_prelude::Group,
@@ -432,7 +432,7 @@ fn test_wallet_integration() {
             fp.fee_value_commit != pallas::Point::identity(),
             "FeeV2 fee_value_commit must be non-identity (Pedersen commitment to hidden fee)"
         );
-        assert!(fp.threshold > 0, "FeeV2 threshold must be non-zero");
+        assert!(fp.threshold > FeeAmount::new(0), "FeeV2 threshold must be non-zero");
         assert!(!fp.threshold_proof.is_empty(), "FeeV2 threshold_proof must be non-empty");
         assert_eq!(tp.inputs.len(), 1, "one transfer input");
         assert_eq!(tp.outputs.len(), 2, "recipient + change outputs");

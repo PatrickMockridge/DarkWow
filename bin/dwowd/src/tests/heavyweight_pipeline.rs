@@ -62,6 +62,7 @@ use dwow_core::zk::Proof;
 use dwow_sdk::blockchain::{BlockReward, BlockTarget};
 use dwow_sdk::crypto::{ContractId, NATIVE_TOKEN_CONTRACT_ID, poseidon_hash};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
+use dwow_sdk::pasta::group::{Group, GroupEncoding};
 use dwow_contract_test_harness::harness::ContractHarness;
 
 
@@ -1454,10 +1455,10 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.coin_blind,
             u64::from(coin_pos),
-            path,
+            path.clone(),
             root,
             mining_kp.secret.clone(),
-            mining_kp.secret,
+            mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             42_000_000,
@@ -1477,9 +1478,9 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
 
         let before = chain.height();
         let new_height = chain.block()?
-            .with_call(cid, &native_harness, &fee_result.call_data, fee_result.proofs)?
+            .with_call(cid, &native_harness, &fee_result.call_data, fee_result.proofs.clone())?
             .with_fee_collect()?
-            .submit_with_coinbase(cb3.coinbase_tx).await?;
+            .submit_with_coinbase(cb3.coinbase_tx.clone()).await?;
 
         assert!(new_height > before,
             "TEST-FAIL [fee_v2]: height must advance (was {}, now {})", before, new_height);
@@ -1523,7 +1524,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             10, // input_value = 10
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.coin_blind, u64::from(coin_pos), path.clone(), root,
-            mining_kp.secret.clone(), mining_kp.secret,
+            mining_kp.secret.clone(), mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([8u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             42_000_000, // fee > input
@@ -1560,7 +1561,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         let fee4a = native_harness.fee_v2(
             cb3.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb3.coin_blind, u64::from(pos4) + 1, path4.clone(), root4,
-            mining_kp.secret.clone(), mining_kp.secret,
+            mining_kp.secret.clone(), mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([9u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             42_000_000, 42_000_000,
@@ -1568,7 +1569,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
 
         let fee4b = native_harness.fee_v2(
             change_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
-            fee_result.params.output.coin_blind, u64::from(pos4), path4, root4,
+            cb2.coin_blind, u64::from(pos4), path4, root4,
             mining_kp.secret.clone(), mining_kp.secret,
             PublicKey::from_secret(SecretKey::from_bytes([10u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
@@ -1620,7 +1621,7 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
 fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::{DeployooorHarness, NativeTokenHarness};
     use dwow_sdk::blockchain::BlockHeight;
-    use dwow_sdk::crypto::{Keypair, MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID, PublicKey, SecretKey};
+    use dwow_sdk::crypto::{ContractId, DEPLOYOOOR_CONTRACT_ID, Keypair, MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
     use crate::tests::blockchain::HeavyweightPipeline;
     use crate::tests::modules::coinbase_coordination;
@@ -1653,10 +1654,10 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.coin_blind,
             u64::from(coin_pos),
-            path,
+            path.clone(),
             root,
             mining_kp.secret.clone(),
-            mining_kp.secret,
+            mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             42_000_000,
@@ -1675,10 +1676,15 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
             "TEST-FAIL [fee_v2_deploy::DeployV1]: {:?}", e
         )))?;
 
+        // Build DeployV1 call data: [0x00 selector][serialized DeployParamsV1]
+        let mut deploy_call_data = vec![0x00u8];
+        deploy_call_data.extend_from_slice(&dwow_serial::serialize(&deploy.params));
+        let deployed_contract_id = ContractId::derive_public(deploy.params.public_key);
+
         let before = chain.height();
         let new_height = chain.block()?
             .with_call(*NATIVE_TOKEN_CONTRACT_ID, &native_harness, &fee_result.call_data, fee_result.proofs)?
-            .with_call(deploy.contract_id, &deployooor_harness, &deploy.call_data, vec![deploy.proof])?
+            .with_call(*DEPLOYOOOR_CONTRACT_ID, &deployooor_harness, &deploy_call_data, vec![])?
             .with_fee_collect()?
             .submit_with_coinbase(cb3.coinbase_tx).await?;
 
@@ -1701,9 +1707,9 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
             "TEST-FAIL [fee_v2_deploy]: fee pot not zeroed");
 
         // R9: Verify deploy succeeded — deployed WASM must exist in contracts tree
-        assert!(chain.query_contracts_tree(&deploy.contract_id.to_bytes())?.is_some(),
+        assert!(chain.query_contracts_tree(&deployed_contract_id.to_bytes())?.is_some(),
             "TEST-FAIL [fee_v2_deploy]: deployed contract {} not found in contracts tree",
-            deploy.contract_id);
+            deployed_contract_id);
 
         Ok(())
     })
@@ -1747,10 +1753,10 @@ fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::
             pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
             cb2.coin_blind,
             u64::from(coin_pos),
-            path,
+            path.clone(),
             root,
             mining_kp.secret.clone(),
-            mining_kp.secret,
+            mining_kp.secret.clone(),
             PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
             pallas::Base::zero(), pallas::Base::zero(),
             42_000_000,

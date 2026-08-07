@@ -62,3 +62,11 @@ namespace = "darktoshi_dice"
 [[circuits]]
 name = "SettleBet_V2"
 namespace = "darktoshi_dice"
+
+[[circuits]]
+name = "RevealRoll_V2"
+namespace = "darktoshi_dice"
+
+[[circuits]]
+name = "HouseClose_V2"
+namespace = "darktoshi_dice"

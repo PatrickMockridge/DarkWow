@@ -72,5 +72,9 @@ name = "exits"
 name = "votes"
 
 [[circuits]]
+name = "Initialize_V2"
+namespace = "drain_protection"
+
+[[circuits]]
 name = "Exit_V2"
 namespace = "drain_protection"

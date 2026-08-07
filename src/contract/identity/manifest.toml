@@ -3,6 +3,7 @@
 
 [contract]
 name = "Identity"
+category = "Identity"
 version = "1.0.0"
 description = "O-Cap authorization primitive. Issues credentials, creates ZK claims, verifies capabilities."
 
@@ -51,14 +52,17 @@ code = 8
 
 [[circuits]]
 name = "CreateClaimV2"
+namespace = "identity"
 description = "Unified claim creation with 5 modes via cond_select (k=12, 30 witnesses)"
 
 [[circuits]]
 name = "IssueCredentialV2"
+namespace = "identity"
 description = "Credential issuance proof (k=11, 16 witnesses)"
 
 [[circuits]]
 name = "VerifyCapabilityV2"
+namespace = "identity"
 description = "Capability verification proof (k=11, 14 witnesses)"
 
 [[trees]]

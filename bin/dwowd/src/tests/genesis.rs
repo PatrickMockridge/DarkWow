@@ -38,6 +38,7 @@ use dwow_chain::{CChainState, FinalityConfig, PoWConfig};
 use dwow_core::Result;
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, MoneroBlockHeight, SupplyAmount};
 use dwow_sdk::pasta::pallas;
+use dwow_sdk::pasta::group::GroupEncoding;
 use dwow_sdk::pasta::group::Group;
 use dwow_sdk::crypto::{
     ATTESTATION_CONTRACT_ID, BOX_CONTRACT_ID, ContractId, DEPLOYOOOR_CONTRACT_ID,

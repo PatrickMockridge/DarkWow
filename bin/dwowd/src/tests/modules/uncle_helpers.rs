@@ -79,14 +79,14 @@ pub async fn setup_native_token_pipeline(
 }
 
 /// Generate call_data via NativeTokenHarness.
-/// Uses harness.fee() — produces ZK call_data with FeeV1 circuit.
+/// Uses harness.fee_v2() — produces ZK call_data with FeeV2 circuit.
 /// Returns (call_data, proofs) for use with chain.block() methods.
 pub fn native_token_call(
     harness: &NativeTokenHarness,
     keypair: Keypair,
 ) -> std::result::Result<(Vec<u8>, Vec<Proof>), Box<dyn std::error::Error>> {
     let recipient = PublicKey::from_secret(SecretKey::from_bytes([9u8; 32])?);
-    let result = harness.fee(
+    let result = harness.fee_v2(
         1000,
         pallas::Base::from(1u64),
         pallas::Base::from(0u64),
@@ -94,11 +94,13 @@ pub fn native_token_call(
         pallas::Base::from(0u64),
         0,
         vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
+        MerkleNode::new(pallas::Base::from(0u64)),
         keypair.secret.clone(),
         keypair.secret,
         recipient,
         pallas::Base::from(0u64),
         pallas::Base::from(0u64),
+        10,
         10,
     )?;
     Ok((result.call_data, result.proofs))

@@ -65,3 +65,11 @@ namespace = "roulette"
 [[circuits]]
 name = "SettleBet_V2"
 namespace = "roulette"
+
+[[circuits]]
+name = "SpinWheel_V2"
+namespace = "roulette"
+
+[[circuits]]
+name = "HouseClose_V2"
+namespace = "roulette"

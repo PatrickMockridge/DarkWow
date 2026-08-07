@@ -132,7 +132,7 @@ name = "AcceptJobWithCapability_V2"
 namespace = "labor_market"
 
 [[circuits]]
-name = "MilestonePayment_V2"
+name = "CreateJobWithCapability_V2"
 namespace = "labor_market"
 
 [[circuits]]
