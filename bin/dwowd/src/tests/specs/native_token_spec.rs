@@ -59,8 +59,44 @@ pub fn native_token_test_spec() -> ContractTestSpec<'static> {
                         Ok(EndpointResult { call_data: r.call_data, proofs: r.proofs })
                     }
                 })),
-                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| { let r = chain.query_contract_state(c, "nullifiers", &[])?; if r.is_none() { return Err(dwow_core::Error::Custom("state not found".into())); } Ok(()) } })),
+                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| {
+                    let acc_key: &[u8] = b"fee_commit_acc";
+                    let r = chain.query_contract_state(c, "info", acc_key)?;
+                    if r.is_none() {
+                        return Err(dwow_core::Error::Custom(
+                            "TEST-FAIL [native_token::FeeV2]: fee_commit_accumulator not found after fee block".into()
+                        ));
+                    }
+                    Ok(())
+                } })),
                 generate: Box::new(|| Err(dwow_core::Error::Custom("TEST-FAIL [native_token]: FeeV2 must use generate_with_coinbase path".into()))),
+            },
+            EndpointSpec {
+                name: "FeeCollectV1", is_zk: true,
+                expectation: EndpointExpectation::Success,
+                generate_with_coinbase: None,
+                verify_state: Some(Box::new({ let c = *NATIVE_TOKEN_CONTRACT_ID; move |chain: &HeavyweightPipeline| {
+                    let acc_key: &[u8] = b"fee_commit_acc";
+                    match chain.query_contract_state(c, "info", acc_key)? {
+                        Some(data) => {
+                            // After FeeCollectV1, accumulator must be Identity (reset).
+                            // 32 zero bytes = pallas::Point::identity() compressed.
+                            if data.len() == 32 && data.iter().all(|b| *b == 0) {
+                                Ok(())
+                            } else {
+                                Err(dwow_core::Error::Custom(
+                                    "WARN [FeeCollectV1]: accumulator not reset to Identity".into()
+                                ))
+                            }
+                        }
+                        None => Err(dwow_core::Error::Custom(
+                            "WARN [FeeCollectV1]: fee_commit_accumulator not found".into()
+                        )),
+                    }
+                } })),
+                generate: Box::new(|| Err(dwow_core::Error::Custom(
+                    "TEST-FAIL [native_token]: FeeCollectV1 exercised structurally by with_fee_collect()".into()
+                ))),
             },
             EndpointSpec {
                 name: "BurnV1", is_zk: true,

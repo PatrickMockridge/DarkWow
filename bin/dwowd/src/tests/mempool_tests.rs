@@ -195,3 +195,118 @@ fn test_feev2_premium_before_general() {
         assert_eq!(first_fee, 200_000_000, "premium tx must be first (got fee={})", first_fee);
     })
 }
+
+// ============================================================================
+// Level 1.5: Mempool → accept_block integration.
+// Tests the full path: FeeV2 tx admitted to mempool via threshold proof,
+// selected for block inclusion, accepted through accept_block, state verified.
+// Spec: mempool.md §5, fee-spec.md §5.6.
+// ============================================================================
+
+#[test]
+fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use dwow_contract_test_harness::harness::NativeTokenHarness;
+    use dwow_sdk::blockchain::BlockHeight;
+    use dwow_sdk::crypto::{MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID, PublicKey, SecretKey};
+    use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
+    use crate::tests::modules::coinbase_coordination;
+
+    dwow_native_token_contract::enable_deterministic_zk();
+
+    smol::block_on(async {
+        // ---- Build a real FeeV2 transaction via harness ----
+        let mut chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("mempool_feev2_15")));
+
+        let native_harness = NativeTokenHarness::spawn();
+        let cid = *NATIVE_TOKEN_CONTRACT_ID;
+
+        let cb2 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+        chain.block()?.submit_with_coinbase(cb2.coinbase_tx).await?;
+
+        let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+
+        let mut tree = MerkleTree::new(1);
+        tree.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        let coin_pos = tree.mark().expect("tree.mark");
+        let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
+        let root = tree.root(0).expect("tree.root");
+
+        let mining_kp = chain.mining_keypair(BlockHeight::new(2));
+        let fee_amount: u64 = 150_000_000; // above premium threshold
+        let fee_result = native_harness.fee_v2(
+            cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
+            cb2.coin_blind, u64::from(coin_pos), path, root,
+            mining_kp.secret.clone(), mining_kp.secret,
+            PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
+            pallas::Base::zero(), pallas::Base::zero(),
+            fee_amount,
+            42_000_000,  // premium threshold
+        ).map_err(|e| dwow_core::Error::Custom(format!(
+            "TEST-FAIL [mempool_1.5::FeeV2]: {}", e
+        )))?;
+
+        // ---- Admit to mempool via threshold proof ----
+        let chain_tx = dwow_chain::Transaction {
+            version: dwow_sdk::blockchain::BlockVersion::CURRENT,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![dwow_chain::ContractCall {
+                contract_id: cid,
+                data: fee_result.call_data.clone(),
+            }],
+            lock_time: 0,
+            nullifiers: vec![],
+            witness: vec![],
+        };
+
+        let config = MempoolConfig {
+            premium_threshold: 42_000_000,
+            general_threshold: 1_000_000,
+            ..Default::default()
+        };
+        let mempool = Mempool::new(config, None, Box::new(TestFeeExtractor), None);
+
+        // Admission: the tx carries a FeeThreshold_V1 proof for premium threshold
+        let tx_hash = mempool.add(chain_tx.clone()).await
+            .expect("TEST-FAIL [mempool_1.5]: FeeV2 tx must be admitted to mempool");
+
+        // Selection: tx must be selected for block inclusion
+        let selected = mempool.select_for_block(&MinerConfig {
+            max_gas: u64::MAX, max_txs: 100, ..Default::default()
+        }).await;
+        assert!(!selected.is_empty(),
+            "TEST-FAIL [mempool_1.5]: FeeV2 tx must be selected for block");
+
+        // ---- Submit through accept_block ----
+        let before = chain.height();
+        let new_height = chain.block()?
+            .with_call(cid, &native_harness, &fee_result.call_data, fee_result.proofs)?
+            .with_fee_collect()?
+            .submit_with_coinbase(cb3.coinbase_tx).await?;
+        assert!(new_height > before,
+            "TEST-FAIL [mempool_1.5]: height must advance (was {}, now {})", before, new_height);
+
+        // ---- State verification ----
+        // Accumulator reset to Identity after FeeCollectV1
+        let acc_data = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
+            .expect("TEST-FAIL [mempool_1.5]: accumulator not found");
+        let acc_point: dwow_sdk::pasta::pallas::Point =
+            Option::from(dwow_sdk::pasta::pallas::Point::from_bytes(
+                &acc_data[..32].try_into().unwrap()
+            )).expect("invalid accumulator point");
+        assert_eq!(acc_point, dwow_sdk::pasta::pallas::Point::identity(),
+            "TEST-FAIL [mempool_1.5]: accumulator not reset after FeeCollectV1");
+
+        // ---- Rejection: tx below general_threshold must be rejected ----
+        let below_tx = make_fee_v2_tx(500_000); // below general_threshold (1_000_000)
+        let result = mempool.add(below_tx).await;
+        assert!(result.is_err(),
+            "TEST-FAIL [mempool_1.5]: below-threshold tx must be rejected, got {:?}", result);
+
+        Ok(())
+    })
+}

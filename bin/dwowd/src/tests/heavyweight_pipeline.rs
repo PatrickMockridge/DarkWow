@@ -1412,6 +1412,8 @@ fn test_heavyweight_multisig() -> std::result::Result<(), Box<dyn std::error::Er
     Ok(smol::block_on(run_heavyweight_test(&multisig_test_spec()))?)
 }
 
+// Smoke test: verifies FeeV2 + FeeCollectV1 accepted by accept_block.
+// Full state verification is in test_heavyweight_fee_v2_preproduction.
 #[test]
 fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::NativeTokenHarness;
@@ -1476,6 +1478,8 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
     })
 }
 
+// Smoke test: FeeV2 + DeployV1 + FeeCollectV1 through accept_block.
+// Full state verification is in test_heavyweight_fee_v2_preproduction.
 #[test]
 fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::{DeployooorHarness, NativeTokenHarness};
@@ -1548,6 +1552,8 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
     })
 }
 
+// Smoke test: FeeV2 + Box::Put + FeeCollectV1 through accept_block.
+// Full state verification is in test_heavyweight_fee_v2_preproduction.
 #[test]
 fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::{BoxHarness, NativeTokenHarness};
@@ -1611,6 +1617,219 @@ fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::
 
         assert!(new_height > before,
             "TEST-FAIL [fee_v2_box]: height must advance (was {}, now {})", before, new_height);
+        Ok(())
+    })
+}
+
+// ============================================================================
+// FeeV2 pre-production test — full block production lifecycle with state verification.
+// Follows production-test-standard.md §1 (9-step path) and covers GAP-1 through GAP-9.
+// ============================================================================
+
+#[test]
+fn test_heavyweight_fee_v2_preproduction() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use dwow_contract_test_harness::harness::NativeTokenHarness;
+    use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, expected_reward};
+    use dwow_sdk::crypto::{Keypair, MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID, PublicKey, SecretKey};
+    use dwow_sdk::crypto::pasta_prelude::Group;
+    use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
+    use crate::tests::modules::coinbase_coordination;
+
+    dwow_native_token_contract::enable_deterministic_zk();
+
+    smol::block_on(async {
+        let mut chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
+        chain.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("fee_v2_preproduction")));
+        let cid = *NATIVE_TOKEN_CONTRACT_ID;
+        let native_harness = NativeTokenHarness::spawn();
+
+        // ---- Block 2: Coinbase-only, creates spendable coin at position 1 ----
+        let cb2 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+        chain.block()?.submit_with_coinbase(cb2.coinbase_tx).await?;
+
+        // Verify coinbase state
+        let null_key = cb2.nullifier.to_bytes();
+        assert!(chain.query_contract_state(cid, "nullifiers", &null_key)?.is_some(),
+            "TEST-FAIL [fee_v2_preproduction]: coinbase nullifier not found");
+
+        // ---- Block 3: FeeV2 + FeeCollectV1 ----
+        let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+        let height_3 = chain.height().succ();
+
+        // Build merkle tree for coin at position 1
+        let mut tree = MerkleTree::new(1);
+        tree.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        let coin_pos = tree.mark().expect("tree.mark");
+        let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
+        let root = tree.root(0).expect("tree.root");
+
+        let mining_kp = chain.mining_keypair(BlockHeight::new(2));
+        let fee_amount: u64 = 42_000_000;
+        let fee_result = native_harness.fee_v2(
+            cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
+            cb2.coin_blind, u64::from(coin_pos), path, root,
+            mining_kp.secret.clone(), mining_kp.secret,
+            PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
+            pallas::Base::zero(), pallas::Base::zero(),
+            fee_amount, fee_amount,
+        ).map_err(|e| dwow_core::Error::Custom(format!(
+            "TEST-FAIL [fee_v2_preproduction::FeeV2]: {}", e
+        )))?;
+
+        let before_3 = chain.height();
+        let new_height_3 = chain.block()?
+            .with_call(cid, &native_harness, &fee_result.call_data, fee_result.proofs.clone())?
+            .with_fee_collect()?
+            .submit_with_coinbase(cb3.coinbase_tx).await?;
+        assert!(new_height_3 > before_3,
+            "TEST-FAIL [fee_v2_preproduction]: height must advance after fee block (was {}, now {})",
+            before_3, new_height_3);
+
+        // GAP-1: State verification — nullifier spent
+        let fee_params = &fee_result.params;
+        let spent_nf = fee_params.input.nullifier.to_bytes();
+        assert!(chain.query_contract_state(cid, "nullifiers", &spent_nf)?.is_some(),
+            "TEST-FAIL [fee_v2_preproduction]: spent nullifier not found after FeeV2");
+
+        // GAP-2: Pedersen accumulator lifecycle — must be Identity after FeeCollectV1 reset
+        let acc_data = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
+            .expect("TEST-FAIL [fee_v2_preproduction]: fee_commit_accumulator not found");
+        let acc_point: pallas::Point = Option::from(pallas::Point::from_bytes(
+            &acc_data[..32].try_into().unwrap()
+        )).expect("TEST-FAIL [fee_v2_preproduction]: invalid accumulator point");
+        assert_eq!(acc_point, pallas::Point::identity(),
+            "TEST-FAIL [fee_v2_preproduction]: accumulator not reset to Identity after FeeCollectV1");
+
+        // GAP-1: fees_db zeroed after collect
+        let fees_data = chain.query_contract_state(cid, "fees", &height_3.to_le_bytes())?
+            .expect("TEST-FAIL [fee_v2_preproduction]: fees_db entry not found");
+        let fee_pot = u64::from_le_bytes(fees_data[..8].try_into().unwrap());
+        assert_eq!(fee_pot, 0,
+            "TEST-FAIL [fee_v2_preproduction]: fee pot not zeroed after collection (was {})", fee_pot);
+
+        // GAP-8: Supply unchanged by fee collection (fees redistribute, not mint)
+        let supply_after = chain.cumulative_supply();
+        let expected_supply = expected_reward(BlockHeight::new(1)).get()
+            + expected_reward(BlockHeight::new(2)).get()
+            + expected_reward(BlockHeight::new(3)).get();
+        assert_eq!(supply_after, expected_supply,
+            "TEST-FAIL [fee_v2_preproduction]: supply mismatch (expected {}, got {})",
+            expected_supply, supply_after);
+
+        // ---- GAP-4: Block 4 with TWO FeeV2 calls + FeeCollectV1 ----
+        let cb4 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+        let height_4 = chain.height().succ();
+
+        // Second coin to spend (from block 3 coinbase)
+        let mut tree4 = MerkleTree::new(1);
+        tree4.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree4.append(MerkleNode::from_base(cb3.coin_commitment.inner()));
+        let pos4 = tree4.mark().expect("tree.mark");
+        let path4: Vec<MerkleNode> = tree4.witness(pos4, 0).expect("tree.witness");
+        let root4 = tree4.root(0).expect("tree.root");
+
+        let kp4 = chain.mining_keypair(BlockHeight::new(3));
+        let fee4a = native_harness.fee_v2(
+            cb3.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
+            cb3.coin_blind, u64::from(pos4), path4, root4,
+            kp4.secret.clone(), kp4.secret,
+            PublicKey::from_secret(SecretKey::from_bytes([6u8; 32])?),
+            pallas::Base::zero(), pallas::Base::zero(),
+            fee_amount, fee_amount,
+        ).map_err(|e| dwow_core::Error::Custom(format!(
+            "TEST-FAIL [fee_v2_preproduction::multi_FeeV2_a]: {}", e
+        )))?;
+
+        // Second FeeV2 spends the change from the first FeeV2 in block 3
+        // Use the output coin from fee_result (the change coin returned to mining_kp)
+        let change_coin = &fee_params.output.coin;
+        let mut tree4b = MerkleTree::new(1);
+        tree4b.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree4b.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        tree4b.append(MerkleNode::from_base(change_coin.inner()));
+        let pos4b = tree4b.mark().expect("tree.mark");
+        let path4b: Vec<MerkleNode> = tree4b.witness(pos4b, 0).expect("tree.witness");
+        let root4b = tree4b.root(0).expect("tree.root");
+
+        let change_value = cb2.coin_value - fee_amount;
+        let fee4b = native_harness.fee_v2(
+            change_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
+            fee_params.output.coin_blind, u64::from(pos4b), path4b, root4b,
+            mining_kp.secret.clone(), mining_kp.secret,
+            PublicKey::from_secret(SecretKey::from_bytes([7u8; 32])?),
+            pallas::Base::zero(), pallas::Base::zero(),
+            fee_amount, fee_amount,
+        ).map_err(|e| dwow_core::Error::Custom(format!(
+            "TEST-FAIL [fee_v2_preproduction::multi_FeeV2_b]: {}", e
+        )))?;
+
+        let before_4 = chain.height();
+        let new_height_4 = chain.block()?
+            .with_call(cid, &native_harness, &fee4a.call_data, fee4a.proofs)?
+            .with_call(cid, &native_harness, &fee4b.call_data, fee4b.proofs)?
+            .with_fee_collect()?
+            .submit_with_coinbase(cb4.coinbase_tx).await?;
+        assert!(new_height_4 > before_4,
+            "TEST-FAIL [fee_v2_preproduction]: height must advance after multi-FeeV2 block");
+
+        // GAP-2+GAP-4: Accumulator must be Identity after FeeCollectV1 (even with 2 FeeV2 calls)
+        let acc4 = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
+            .expect("TEST-FAIL [fee_v2_preproduction]: accumulator not found after multi-fee block");
+        let acc4_point: pallas::Point = Option::from(pallas::Point::from_bytes(
+            &acc4[..32].try_into().unwrap()
+        )).expect("invalid accumulator point");
+        assert_eq!(acc4_point, pallas::Point::identity(),
+            "TEST-FAIL [fee_v2_preproduction]: accumulator not Identity after multi-FeeV2 collect");
+
+        // Fees pot zeroed
+        let fees4 = chain.query_contract_state(cid, "fees", &height_4.to_le_bytes())?
+            .expect("fees_db not found");
+        assert_eq!(u64::from_le_bytes(fees4[..8].try_into().unwrap()), 0,
+            "TEST-FAIL [fee_v2_preproduction]: fee pot not zeroed after multi-fee block");
+
+        // ---- GAP-5: Determinism — re-execute from genesis ----
+        let mut chain_b = HeavyweightPipeline::new().await?;
+        chain_b.init_genesis().await?;
+        chain_b.log_file = Some(Mutex::new(crate::tests::test_output::create_log_file("fee_v2_preproduction_b")));
+
+        // Replay block 2 identically
+        let cb2_b = coinbase_coordination::prefetch_coinbase_params(&chain_b).await?;
+        chain_b.block()?.submit_with_coinbase(cb2_b.coinbase_tx).await?;
+
+        let hash_a_2 = chain.block_hash_at(BlockHeight::new(2))?.expect("hash at 2");
+        let hash_b_2 = chain_b.block_hash_at(BlockHeight::new(2))?.expect("hash_b at 2");
+        assert_eq!(hash_a_2, hash_b_2,
+            "TEST-FAIL [fee_v2_preproduction]: determinism — block 2 hash mismatch");
+
+        // Replay block 3 identically
+        let cb3_b = coinbase_coordination::prefetch_coinbase_params(&chain_b).await?;
+        let fee_result_b = native_harness.fee_v2(
+            cb2_b.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
+            cb2_b.coin_blind, u64::from(coin_pos), path, root,
+            mining_kp.secret.clone(), mining_kp.secret,
+            PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
+            pallas::Base::zero(), pallas::Base::zero(),
+            fee_amount, fee_amount,
+        ).map_err(|e| dwow_core::Error::Custom(format!(
+            "TEST-FAIL [determinism::FeeV2]: {}", e
+        )))?;
+        chain_b.block()?
+            .with_call(cid, &native_harness, &fee_result_b.call_data, fee_result_b.proofs)?
+            .with_fee_collect()?
+            .submit_with_coinbase(cb3_b.coinbase_tx).await?;
+
+        let hash_a_3 = chain.block_hash_at(BlockHeight::new(3))?.expect("hash at 3");
+        let hash_b_3 = chain_b.block_hash_at(BlockHeight::new(3))?.expect("hash_b at 3");
+        assert_eq!(hash_a_3, hash_b_3,
+            "TEST-FAIL [fee_v2_preproduction]: determinism — block 3 hash mismatch");
+
+        // Supply identical
+        assert_eq!(chain.cumulative_supply(), chain_b.cumulative_supply(),
+            "TEST-FAIL [fee_v2_preproduction]: determinism — supply mismatch");
+
         Ok(())
     })
 }
