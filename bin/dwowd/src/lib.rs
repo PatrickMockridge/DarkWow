@@ -1332,6 +1332,41 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         };
 
         let height = latest_block.header.height.succ();
+
+        // ── Fee window boundary detection ─────────────────────────────────
+        // At height ≡ 0 (mod 20), adjust thresholds based on mempool congestion
+        // and encode the signal in the block header (fee-spec.md §12.10).
+        #[cfg(feature = "fee-window")]
+        let fee_window_flags: u16 = {
+            use dwow_sdk::blockchain::FeeWindowId;
+            if FeeWindowId::is_window_boundary(height) {
+                let premium_pending = node.mempool.as_ref()
+                    .map(|mp| mp.premium_queue_len())
+                    .unwrap_or(0) as u64;
+                let standard_pending = node.mempool.as_ref()
+                    .map(|mp| mp.standard_queue_len())
+                    .unwrap_or(0) as u64;
+                if let Some(ref fw) = chain_state.fee_window {
+                    let (new_premium, new_general) =
+                        fw.adjust(premium_pending, standard_pending);
+                    let flags = fw.encode_flags();
+                    if let Some(ref mp) = node.mempool {
+                        mp.update_thresholds(new_premium, new_general);
+                    }
+                    info!(target: "dwowd::miner_task",
+                        "Fee window boundary at height {}: premium={}, general={}, flags=0x{:02x}",
+                        height, new_premium, new_general, flags.get());
+                    flags.get() as u16
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        };
+        #[cfg(not(feature = "fee-window"))]
+        let fee_window_flags: u16 = 0;
+
         // Memory diagnostics — log every 5 blocks to catch leaks early.
         // Reads /proc/self/status for VmRSS (no allocator dependency).
         // Rust's ownership model eliminates use-after-free but doesn't
@@ -1485,7 +1520,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
             height, target, all_txs.len());
         let miner_consensus = dwow_chain::PoWConsensus::new(120, target, BlockTarget::new(1), BlockTarget::MAX);
         let miner = Miner::new(std::sync::Arc::new(miner_consensus));
-        let mined_block = match miner.mine(&vm, previous, height, all_txs, target, &uncles) {
+        let mut mined_block = match miner.mine(&vm, previous, height, all_txs, target, &uncles) {
             Ok(b) => {
                 info!(target: "dwowd::miner_task",
                     "Block {} mined with nonce {}", height, b.header.nonce);
@@ -1512,6 +1547,14 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                 continue;
             }
         };
+
+        // Set fee window flags on the mined block header (fee-spec.md §12.10).
+        // Flags are set AFTER mining (excluded from mining blob) and BEFORE
+        // accept_block so the block carries the signal on-chain.
+        #[cfg(feature = "fee-window")]
+        {
+            mined_block.header.fee_window_flags = fee_window_flags;
+        }
 
         // Check again after mining — peer may have sent a block while we hashed
         if chain_state.get_height() >= height {

@@ -608,6 +608,20 @@ impl Mempool {
         self.general_threshold.load(AtomicOrdering::Acquire)
     }
 
+    /// Approximate count of transactions in the premium queue.
+    /// Uses try_lock for sync access from non-async contexts; returns 0 on contention.
+    pub fn premium_queue_len(&self) -> usize {
+        self.premium_queue.try_lock().map(|q| q.len()).unwrap_or(0)
+    }
+
+    /// Approximate count of transactions in the general queue + fee_index.
+    /// Uses try_lock for sync access; returns 0 on contention.
+    pub fn standard_queue_len(&self) -> usize {
+        let general = self.general_queue.try_lock().map(|q| q.len()).unwrap_or(0);
+        let fee = self.fee_index.try_lock().map(|f| f.len()).unwrap_or(0);
+        general + fee
+    }
+
     /// Remove a specific transaction by hash.
     pub async fn remove(&self, tx_hash: &[u8; 32]) {
         let hash = blake3::Hash::from_bytes(*tx_hash);
