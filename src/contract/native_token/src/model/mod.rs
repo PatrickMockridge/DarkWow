@@ -399,6 +399,10 @@ pub struct FeeUpdate {
     pub coin: Coin,
     pub height: BlockHeight,
     pub fee: FeeAmount,
+    /// Pedersen commitment to the fee — added to fee_commit_accumulator
+    /// by apply_fee for FeeCollectV1 Pedersen verification.
+    /// Spec: fee-spec.md §5.6.2.
+    pub fee_value_commit: pallas::Point,
 }
 
 /// Parameters for PoWRewardV1 - distribute block rewards (CONSENSUS CRITICAL)
@@ -681,6 +685,10 @@ pub struct BurnUpdateV1 {
 pub struct FeeCollectParamsV1 {
     /// Total fees accumulated in fees_db[height] for this block
     pub total_fees: u64,
+    /// Sum of fee_value_blind from each FeeV2 call — verifies
+    /// PedersenCommit(total_fees, total_blind) == fee_commit_accumulator.
+    /// Spec: fee-spec.md §5.6.4.
+    pub total_blind: pallas::Scalar,
     /// The fee coin output — pays the miner using the same pk_H as coinbase
     pub output: Output,
     /// Nullifier: nf = poseidon_hash(sk_H, fee_coin)
@@ -697,9 +705,10 @@ impl dwow_serial::Decodable for FeeCollectParamsV1 { fn decode<D: std::io::Read>
 impl FeeCollectParamsV1 {
     pub fn encode(&self) -> Vec<u8> {
         let output_bytes = self.output.encode();
-        let cap = 8 + output_bytes.len() + 96;
+        let cap = 8 + 32 + output_bytes.len() + 96;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&self.total_fees.to_le_bytes());
+        buf.extend_from_slice(&self.total_blind.to_repr());
         buf.extend_from_slice(&output_bytes);
         buf.extend_from_slice(&self.nullifier.to_bytes());
         buf.extend_from_slice(&self.tx_binding.to_repr());
@@ -708,11 +717,13 @@ impl FeeCollectParamsV1 {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, ContractError> {
-        if data.len() < 105 { return Err(ContractError::IoError("FeeCollectParamsV1: too short".into())); }
+        if data.len() < 137 { return Err(ContractError::IoError("FeeCollectParamsV1: too short".into())); }
         let total_fees = u64::from_le_bytes(data[0..8].try_into().unwrap());
-        let out_len = 130 + u16::from_le_bytes(data[8+128..8+130].try_into().unwrap()) as usize;
-        let output = Output::decode(&data[8..8 + out_len])?;
-        let pos = 8 + out_len;
+        let total_blind = Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(data[8..40].try_into().unwrap()))
+            .ok_or_else(|| ContractError::IoError("FeeCollectParamsV1: invalid total_blind".into()))?;
+        let out_len = 130 + u16::from_le_bytes(data[40+128..40+130].try_into().unwrap()) as usize;
+        let output = Output::decode(&data[40..40 + out_len])?;
+        let pos = 40 + out_len;
         if data.len() < pos + 96 { return Err(ContractError::IoError(format!("FeeCollectParamsV1: expected at least {} bytes, got {}", pos + 96, data.len()))); }
         let nullifier = Nullifier::from_bytes(data[pos..pos+32].try_into().unwrap())
             .map_err(|e| ContractError::IoError(format!("FeeCollectParamsV1: invalid nullifier: {}", e)))?;
@@ -720,7 +731,7 @@ impl FeeCollectParamsV1 {
             .ok_or_else(|| ContractError::IoError("FeeCollectParamsV1: invalid tx_binding".into()))?;
         let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(data[pos+64..pos+96].try_into().unwrap()))
             .ok_or_else(|| ContractError::IoError("FeeCollectParamsV1: invalid tx_nonce".into()))?;
-        Ok(FeeCollectParamsV1 { total_fees, output, nullifier, tx_binding, tx_nonce })
+        Ok(FeeCollectParamsV1 { total_fees, total_blind, output, nullifier, tx_binding, tx_nonce })
     }
 }
 
@@ -755,8 +766,8 @@ impl dwow_serial::Encodable for FeeUpdate { fn encode<W: std::io::Write>(&self, 
 impl dwow_serial::Decodable for FeeUpdate { fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> { let mut b = vec![]; d.read_to_end(&mut b)?; Self::decode(&b).map_err(|e| std::io::Error::other(format!("{e}"))) } }
 
 impl FeeUpdate {
-    /// Fixed canonical byte size: nullifier(32) + coin(32) + height(8) + fee(8)
-    pub const ENCODED_SIZE: usize = 80;
+    /// Fixed canonical byte size: nullifier(32) + coin(32) + height(8) + fee(8) + fee_value_commit(32)
+    pub const ENCODED_SIZE: usize = 112;
 
     /// Encode to canonical bytes (ρ-calculus: quote).
     pub fn encode(&self) -> Vec<u8> {
@@ -765,6 +776,7 @@ impl FeeUpdate {
         buf.extend_from_slice(&self.coin.to_bytes());
         buf.extend_from_slice(&self.height.to_le_bytes());
         buf.extend_from_slice(&self.fee.to_le_bytes());
+        buf.extend_from_slice(&self.fee_value_commit.to_bytes());
         buf
     }
 
@@ -786,7 +798,10 @@ impl FeeUpdate {
         let height =
             BlockHeight::from_le_bytes(data[64..72].try_into().unwrap());
         let fee = FeeAmount::new(u64::from_le_bytes(data[72..80].try_into().unwrap()));
-        Ok(FeeUpdate { nullifier, coin, height, fee })
+        let fee_value_commit = Option::<pallas::Point>::from(
+            pallas::Point::from_bytes(&data[80..112].try_into().unwrap())
+        ).ok_or_else(|| ContractError::IoError("FeeUpdate: invalid fee_value_commit".into()))?;
+        Ok(FeeUpdate { nullifier, coin, height, fee, fee_value_commit })
     }
 }
 

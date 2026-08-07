@@ -121,6 +121,12 @@ pub const NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE: &str = "nullifier_roots";
 /// Stores accumulated fees per block height
 pub const NATIVE_TOKEN_CONTRACT_FEES_TREE: &str = "fees";
 
+/// Fee commitment accumulator — Pedersen homomorphic sum of FeeV2 fee_value_commit
+/// for the current block. Initialized to Identity at block start, accumulated by
+/// apply_fee, verified by fee_collect_v1, reset by apply_fee_collect.
+/// Spec: fee-spec.md §5.6.2.
+pub const NATIVE_TOKEN_CONTRACT_FEE_COMMIT_ACCUMULATOR: &[u8] = b"fee_commit_acc";
+
 /// Minimum fee per contract call (HAZOP FEE2).
 // DISABLED: minimum fee enforcement moved to mempool policy layer.
 // Consensus accepts any fee level — the mempool (FeeExtractor) handles

@@ -341,35 +341,34 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
             .any(|c| is_native(c) && c.data.first() == Some(&0x06)))
         .map(|(i, _)| i);
 
-    // Sum FeeV1 fees across the block (checked — overflow is a structural error).
-    let mut total_fees: u64 = 0;
+    // Count fee calls across the block. FeeV2 (0x08) replaces FeeV1 (0x00, removed).
+    // FeeV2 fees are hidden behind Pedersen commitments — exact amounts are not
+    // available in call data. The structural validator checks fee presence, not sum.
+    let mut fee_call_count: u64 = 0;
     for tx in &block.transactions {
         for c in &tx.contract_calls {
-            if !is_native(c) || c.data.first() != Some(&0x00) {
+            if !is_native(c) {
                 continue;
             }
-            if c.data.len() < 9 {
-                return Err(LinearError::BlockStructure(
-                    format!("FeeV1 call data too short ({} bytes)", c.data.len())
-                ));
+            match c.data.first() {
+                Some(&0x08) => fee_call_count += 1,                // FeeV2
+                Some(&0x00) => fee_call_count += 1,                // FeeV1 (legacy, removed)
+                _ => {}
             }
-            let fee_bytes: [u8; 8] = c.data[1..9].try_into().expect("length checked above");
-            total_fees = total_fees.checked_add(u64::from_le_bytes(fee_bytes))
-                .ok_or_else(|| LinearError::BlockStructure("FeeV1 fee sum overflow".into()))?;
         }
     }
 
-    match (fee_collect_tx_position, total_fees, fee_collect_call_count) {
-        // Present with zero fees — zero-value claim / 0-fee replay (§3.13)
+    match (fee_collect_tx_position, fee_call_count, fee_collect_call_count) {
+        // Present with zero fee calls — zero-value claim / 0-fee replay (§3.13)
         (Some(_), 0, _) => {
             return Err(LinearError::BlockStructure(
-                "FeeCollectV1 present but block has zero FeeV1 fees".into()
+                "FeeCollectV1 present but block has zero fee calls".into()
             ));
         }
-        // Absent with non-zero fees — fees stranded permanently (§3.13)
+        // Absent with fee calls — fees stranded permanently (§3.13)
         (None, f, _) if f > 0 => {
             return Err(LinearError::BlockStructure(
-                format!("block pays {} fee units but has no FeeCollectV1 call", f)
+                format!("block has {} fee call(s) but no FeeCollectV1 call", f)
             ));
         }
         // Present with fees — must be the final transaction (§3.1)

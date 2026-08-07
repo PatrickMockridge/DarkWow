@@ -572,7 +572,7 @@ impl<'c> HeavyweightBlock<'c> {
         let fee_txs: Vec<dwow_chain::Transaction> = self.contract_txs.iter()
             .filter(|tx| tx.contract_calls.iter().any(|c|
                 c.contract_id == *NATIVE_TOKEN_CONTRACT_ID
-                && c.data.first() == Some(&0x00)
+                && c.data.first() == Some(&0x08)  // FeeV2
             ))
             .cloned()
             .collect();

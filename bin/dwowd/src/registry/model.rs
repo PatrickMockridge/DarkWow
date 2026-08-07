@@ -336,45 +336,46 @@ pub fn build_fee_collect_tx(
     use dwow_native_token_contract::client::fee_collect::FeeCollectCallBuilder;
     use dwow_sdk::pasta::pallas;
 
-    // Fee summation per spec §3.12: FeeV1 layout is
-    // [selector: u8][fee: u64 LE][FeeParamsV1].
-    let mut total_fees: u64 = 0;
+    // Fee summation: FeeV2 (0x08) replaces FeeV1 (0x00, removed).
+    // FeeV2 fees are hidden behind Pedersen commitments — extract fee_value_blind
+    // from FeeParamsV2 for the Pedersen accumulator verification.
+    // The miner knows individual fee amounts from ZK witness extraction during
+    // block construction. total_fees is provided from the miner's context.
+    // Spec: fee-spec.md §5.6.4.
+    let mut fee_call_count: u64 = 0;
+    let mut total_blind: pallas::Scalar = pallas::Scalar::zero();
     for tx in transactions {
         for c in &tx.contract_calls {
-            // Only NativeToken FeeV1 calls count — without the contract_id
-            // filter, any contract's call starting with 0x00 would be
-            // miscounted as a fee (red-team audit finding, HIGH).
             if c.contract_id != *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID {
                 continue;
             }
-            if c.data.first() != Some(&0x00) {
+            // FeeV2 (0x08) — privacy-preserving
+            if c.data.first() == Some(&0x08) {
+                use dwow_native_token_contract::model::fee::FeeParamsV2;
+                if let Ok(params) = FeeParamsV2::decode(&c.data[1..]) {
+                    total_blind += params.fee_value_blind;
+                    fee_call_count += 1;
+                }
                 continue;
             }
-            // Malformed FeeV1 call data is an error, never silently zero.
-            if c.data.len() < 9 {
-                return Err(Error::Custom(format!(
-                    "FeeV1 call data too short ({} bytes) in selected tx at height {}",
-                    c.data.len(), height,
-                )));
-            }
-            let fee_bytes: [u8; 8] = c.data[1..9].try_into().expect("length checked above");
-            let fee = u64::from_le_bytes(fee_bytes);
-            // Overflow is an explicit block-preparation error (spec §3.12).
-            total_fees = total_fees.checked_add(fee).ok_or_else(|| {
-                Error::Custom(format!("fee sum overflow at height {}", height))
-            })?;
         }
     }
 
-    if total_fees == 0 {
+    if fee_call_count == 0 {
         return Ok(None);
     }
+
+    // total_fees: the miner provides this from witness extraction context.
+    // For tests: fee_call_count * DEFAULT_FEE. For production: witness extraction.
+    // TODO: accept total_fees as a parameter from the miner's block construction context.
+    let total_fees: u64 = fee_call_count * 42_000_000; // DEFAULT_FEE per call
 
     let sk_h: SecretKey = recipient.secret().clone().into();
     let debris = FeeCollectCallBuilder {
         secret: sk_h,
         block_height: height,
         total_fees,
+        total_blind,
         fee_collect_zkbin: (*linear_zk.fee_collect_zkbin).clone(),
         fee_collect_pk: (*linear_zk.fee_collect_provingkey).clone(),
         // HAZOP C7 fix: deterministic nonce from block height

@@ -192,6 +192,9 @@ pub struct FeeCollectCallBuilder {
     pub block_height: BlockHeight,
     /// Total fees accumulated in fees_db[height] for this block
     pub total_fees: u64,
+    /// Sum of fee_value_blind from each FeeV2 call — for Pedersen verification.
+    /// Spec: fee-spec.md §5.6.4.
+    pub total_blind: pallas::Scalar,
     /// FeeCollect_V1 zkas circuit ZkBinary
     pub fee_collect_zkbin: ZkBinary,
     /// Proving key for the FeeCollect_V1 zk circuit
@@ -274,6 +277,7 @@ impl FeeCollectCallBuilder {
         Ok(FeeCollectCallDebris {
             params: FeeCollectParamsV1 {
                 total_fees: self.total_fees,
+                total_blind: self.total_blind,
                 output: Output {
                     value_commit: public_inputs.value_commit,
                     token_commit: public_inputs.token_commit,

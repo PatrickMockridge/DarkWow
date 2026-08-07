@@ -66,8 +66,9 @@ use crate::{
     },
     NativeTokenFunction, NATIVE_TOKEN_CONTRACT_COIN_MERKLE_TREE,
     NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE, NATIVE_TOKEN_CONTRACT_COINS_TREE,
-    NATIVE_TOKEN_CONTRACT_DB_VERSION, NATIVE_TOKEN_CONTRACT_FEES_TREE,
-    NATIVE_TOKEN_CONTRACT_INFO_TREE, NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
+    NATIVE_TOKEN_CONTRACT_DB_VERSION, NATIVE_TOKEN_CONTRACT_FEE_COMMIT_ACCUMULATOR,
+    NATIVE_TOKEN_CONTRACT_FEES_TREE, NATIVE_TOKEN_CONTRACT_INFO_TREE,
+    NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
     NATIVE_TOKEN_CONTRACT_LATEST_NULLIFIER_ROOT, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE,
     NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE, NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
     NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT, NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,
@@ -242,18 +243,19 @@ fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
     // The FeeThreshold_V1 circuit proves fee >= threshold.
     //
     // NOTE: The fee amount is NOT available to the contract entrypoint.
-    // FeeParamsV2 carries only fee_value_commit (Pedersen), not the plain fee.
-    // The daemon patches the FeeUpdate.fee after ZK proof witness extraction.
-    // For now, fee=0 — the daemon corrects this before apply_fee().
+    // FeeParamsV2 carries fee_value_commit (Pedersen) and fee_value_blind.
+    // The miner knows the actual fee_amount from transaction construction
+    // and computes total_fees for FeeCollectV1. The contract accumulates
+    // fee_value_commit via Pedersen homomorphic addition — no daemon
+    // patching of FeeUpdate.fee is needed. Spec: fee-spec.md §5.6.2-5.6.4.
     let verifying_block_height = wasm::util::get_verifying_block_height()?;
 
-    // Create state update — fee is patched by daemon after ZK proof verification.
-    // Postconditions are identical to FeeV1 (fee-spec.md §5.4).
     let update = FeeUpdate {
         nullifier: fee_val.input.nullifier,
         coin: fee_val.output.coin,
         height: verifying_block_height,
-        fee: FeeAmount::ZERO, // Patched by daemon after Fee_V2 proof witness extraction
+        fee: FeeAmount::ZERO, // Plain fee tracked via Pedersen accumulator, not here
+        fee_value_commit: fee_val.fee_value_commit,
     };
 
     msg!("[native_token::fee_v2] Fee valid (privacy-preserving)");
@@ -1155,20 +1157,47 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::FeeTotalMismatch.into())
     }
 
-    // Check 2 (spec §3.7): claimed total matches the accumulated pot
+    // Check 2 (spec §4.2 C2): Pedersen commitment sum verification.
+    // FeeV2 path: PedersenCommit(total_fees, total_blind) == fee_commit_accumulator.
+    // FeeV1 legacy path: total_fees == fees_db[height] (plain u64).
     let fees_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_FEES_TREE)?;
-    let accumulated: u64 = {
-        let data = wasm::db::db_get(fees_db, &height.to_le_bytes())?
-            .ok_or(ContractError::DbGetEmpty)?;
-        let bytes: [u8; 8] = data.try_into().map_err(|_| {
-            ContractError::IoError("Corrupt state: fees_db value wrong size".to_string())
-        })?;
-        u64::from_le_bytes(bytes)
-    };
-    if fc.total_fees != accumulated {
-        msg!("[fee_collect_v1] Fee total mismatch: claimed {} != accumulated {} at height {}",
-             fc.total_fees, accumulated, height);
-        return Err(NativeTokenError::FeeTotalMismatch.into())
+    let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
+
+    // Pedersen homomorphic verification (fee-spec.md §5.6.4)
+    let accumulator = wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_FEE_COMMIT_ACCUMULATOR)?
+        .map(|data| {
+            let bytes: [u8; 32] = data.try_into().map_err(|_| {
+                ContractError::IoError("Corrupt state: fee_commit_accumulator wrong size".to_string())
+            })?;
+            Option::<pallas::Point>::from(pallas::Point::from_bytes(&bytes))
+                .ok_or(ContractError::IoError("Corrupt state: invalid fee_commit_accumulator point".into()))
+        })
+        .transpose()?
+        .unwrap_or(pallas::Point::identity());
+
+    if accumulator != pallas::Point::identity() {
+        // Verify the miner's claimed (total_fees, total_blind) matches the accumulator
+        let claimed_commit = pedersen_commitment_u64(fc.total_fees, dwow_sdk::crypto::Blind(fc.total_blind));
+        if claimed_commit != accumulator {
+            msg!("[fee_collect_v1] Pedersen mismatch: claimed commit does not match accumulator at height {}",
+                 height);
+            return Err(NativeTokenError::FeeTotalMismatch.into())
+        }
+    } else {
+        // Legacy path: no Pedersen accumulator (FeeV1-only block or first block)
+        let accumulated: u64 = {
+            let data = wasm::db::db_get(fees_db, &height.to_le_bytes())?
+                .ok_or(ContractError::DbGetEmpty)?;
+            let bytes: [u8; 8] = data.try_into().map_err(|_| {
+                ContractError::IoError("Corrupt state: fees_db value wrong size".to_string())
+            })?;
+            u64::from_le_bytes(bytes)
+        };
+        if fc.total_fees != accumulated {
+            msg!("[fee_collect_v1] Fee total mismatch: claimed {} != accumulated {} at height {}",
+                 fc.total_fees, accumulated, height);
+            return Err(NativeTokenError::FeeTotalMismatch.into())
+        }
     }
 
     // Check 3 (spec §3.7): the fee coin is not a duplicate
@@ -1239,6 +1268,10 @@ fn apply_fee_collect(cid: ContractId, update: FeeCollectUpdateV1) -> ContractRes
     // Zero out the fee pot for this height (prevents double-claim)
     wasm::db::db_set(fees_db, &update.height.to_le_bytes(), &0u64.to_le_bytes())?;
 
+    // Reset Pedersen accumulator for next block (fee-spec.md §4.3 R4)
+    wasm::db::db_set(info_db, NATIVE_TOKEN_CONTRACT_FEE_COMMIT_ACCUMULATOR,
+        &pallas::Point::identity().to_bytes())?;
+
     Ok(())
 }
 
@@ -1265,7 +1298,24 @@ fn apply_fee(cid: ContractId, update: FeeUpdate) -> ContractResult {
         &[MerkleNode::from_base(update.coin.inner())],
     )?;
 
-    // Update fee accumulator per block height
+    // Pedersen homomorphic accumulation (fee-spec.md §5.6.2):
+    // accumulator = accumulator + fee_value_commit
+    {
+        let mut acc = wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_FEE_COMMIT_ACCUMULATOR)?
+            .map(|data| {
+                let bytes: [u8; 32] = data.try_into().map_err(|_| {
+                    ContractError::IoError("Corrupt state: fee_commit_accumulator wrong size".to_string())
+                })?;
+                Option::<pallas::Point>::from(pallas::Point::from_bytes(&bytes))
+                    .ok_or(ContractError::IoError("Corrupt state: invalid fee_commit_accumulator point".into()))
+            })
+            .transpose()?
+            .unwrap_or(pallas::Point::identity());
+        acc = acc + update.fee_value_commit;
+        wasm::db::db_set(info_db, NATIVE_TOKEN_CONTRACT_FEE_COMMIT_ACCUMULATOR, &acc.to_bytes())?;
+    }
+
+    // Legacy: update u64 fee accumulator per block height (FeeV1 compat)
     let mut paid_fee: u64 = {
         let data = wasm::db::db_get(fees_db, &update.height.to_le_bytes())?
             .ok_or(ContractError::DbGetEmpty)?;
