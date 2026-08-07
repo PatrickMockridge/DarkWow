@@ -34,6 +34,41 @@ pub fn darkbet_exchange_test_spec() -> ContractTestSpec<'static> {
                 let r = h.add_liquidity(pallas::Base::from(1u64), px, py, 500, 10, pallas::Scalar::from(1u64)).map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
                 Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
             })),
+            // empty_witnesses endpoints — client proof modules pending
+            mk_ep("PlaceBackV1", true, Box::new(move || {
+                let r = h.place_back(pallas::Base::from(1u64), pallas::Base::from(2u64),
+                    pallas::Base::from(200u64), pallas::Base::from(1000u64))
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+            })),
+            mk_ep("PlaceLayV1", true, Box::new(move || {
+                let r = h.place_lay(pallas::Base::from(1u64), pallas::Base::from(2u64),
+                    pallas::Base::from(200u64), pallas::Base::from(1000u64))
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+            })),
+            mk_ep("MatchOrdersV1", true, Box::new(move || {
+                let r = h.match_orders(pallas::Base::from(1u64), pallas::Base::from(2u64),
+                    pallas::Base::from(3u64))
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+            })),
+            mk_ep("ResolveMarketV1", true, Box::new(move || {
+                let r = h.resolve_market(pallas::Base::from(1u64), 1, vec![])
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+            })),
+            mk_ep("CancelOrderV1", true, Box::new(move || {
+                let r = h.cancel_order(pallas::Base::from(1u64), pallas::Base::from(2u64))
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+            })),
+            mk_ep("RemoveLiquidityV1", true, Box::new(move || {
+                let r = h.remove_liquidity(pallas::Base::from(1u64), pallas::Base::from(2u64),
+                    pallas::Base::from(500u64))
+                    .map_err(|e| dwow_core::Error::Custom(format!("{e}")))?;
+                Ok(EndpointResult { call_data: r.call_data, proofs: vec![r.proof] })
+            })),
         ],
     }
 }
