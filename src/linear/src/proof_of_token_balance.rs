@@ -198,7 +198,12 @@ fn process_fee_v2_call(
 
     *total_inputs = *total_inputs + params.input.value_commit;
     *total_outputs = *total_outputs + params.output.value_commit;
-    // FeeV2: fee commitment is a Pedersen point directly from FeeParamsV2
+    // FeeV2: fee commitment is a Pedersen point directly from FeeParamsV2.
+    // CRITICAL: The Fee_V2 ZK circuit (fee.zk) constrains input_value = output_value + fee
+    // but does NOT constrain input_blind = output_blind + fee_blind. The block-level
+    // mass balance equation (total_outputs + fee_aggregate == total_inputs) is the
+    // SOLE defense against blind inconsistency. If the Pedersen sum doesn't balance,
+    // the block is rejected at verify_proof_of_token_balance(). Red Hat finding M2.
     *fee_aggregate = *fee_aggregate + params.fee_value_commit;
 
     Ok(())

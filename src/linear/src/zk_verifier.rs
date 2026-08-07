@@ -290,7 +290,7 @@ pub fn verify_single_tx(chain_tx: &ChainTransaction) -> Result<(), VerifyError> 
     for (i, (call, proofs)) in core_tx.calls.iter().zip(core_tx.proofs.iter()).enumerate() {
         let is_native_proof_call = call.data.contract_id
             == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
-            && matches!(call.data.data.first(), Some(0x00 | 0x02 | 0x03 | 0x04 | 0x06));
+            && matches!(call.data.data.first(), Some(0x00 | 0x02 | 0x03 | 0x04 | 0x06 | 0x08)); // 0x08 = FeeV2
         if is_native_proof_call && proofs.is_empty() {
             return Err(VerifyError::InvalidProof(format!(
                 "call[{}] requires a proof but has none (mempool admission)",

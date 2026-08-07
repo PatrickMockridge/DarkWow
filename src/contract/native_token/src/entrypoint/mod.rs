@@ -243,10 +243,12 @@ fn fee_v2(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::DuplicateCoin.into())
     }
 
-    // NOTE: P4 (verify_threshold_proof) and P5 (PedersenVerify commitment check)
-    // are verified by the host during ZK proof verification, NOT here.
-    // The Fee_V2 circuit proves value conservation and fee_value_commit correctness.
-    // The FeeThreshold_V1 circuit proves fee >= threshold.
+    // Per spec §5.3: P4 (verify_threshold_proof) and P5 (PedersenVerify)
+    // are verified by the host during ZK proof verification via fee_v2_get_metadata(),
+    // NOT in this WASM entrypoint. The host verifies both Fee_V2 and FeeThreshold_V1
+    // proofs using the public inputs returned by metadata. This is security-equivalent
+    // to WASM-level checks — both paths verify the same ZK proofs against the same
+    // public inputs. Spec vs code divergence S1: code defers to host layer.
     //
     // NOTE: The fee amount is NOT available to the contract entrypoint.
     // FeeParamsV2 carries fee_value_commit (Pedersen) and fee_value_blind.
@@ -1420,6 +1422,12 @@ fn apply_pow_reward(cid: ContractId, update: PoWRewardUpdateV1) -> ContractResul
     // Generate the accumulator for the next height
     msg!("[PoWRewardV1] Creating next height fees accumulator");
     wasm::db::db_set(fees_db, &update.height.succ().to_le_bytes(), &0u64.to_le_bytes())?;
+
+    // Reset Pedersen fee commitment accumulator for this block (fee-spec.md §5.6.6).
+    // Defense-in-depth: FeeCollectV1 also resets it, but explicit reset at block start
+    // ensures the accumulator is Identity even if FeeCollectV1 is somehow absent.
+    wasm::db::db_set(info_db, NATIVE_TOKEN_CONTRACT_FEE_COMMIT_ACCUMULATOR,
+        &pallas::Point::identity().to_bytes())?;
 
     // Update nullifiers snapshot
     msg!("[PoWRewardV1] Updating nullifiers snapshot");

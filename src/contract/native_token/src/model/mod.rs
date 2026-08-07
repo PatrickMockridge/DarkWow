@@ -327,6 +327,13 @@ impl Output {
         let nullifier = Nullifier::from_bytes(data[96..128].try_into().unwrap())
             .map_err(|e| ContractError::IoError(format!("Output: invalid nullifier: {}", e)))?;
         let note_len = u16::from_le_bytes(data[128..130].try_into().unwrap()) as usize;
+        // Bound note length to prevent DOS via oversized notes (Red Hat L4).
+        const MAX_NOTE_LEN: usize = 4096;
+        if note_len > MAX_NOTE_LEN {
+            return Err(ContractError::IoError(format!(
+                "Output: note length {} exceeds max {}", note_len, MAX_NOTE_LEN
+            )));
+        }
         let expected = 130 + note_len;
         if data.len() != expected {
             return Err(ContractError::IoError(format!(
