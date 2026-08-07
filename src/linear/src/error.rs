@@ -137,16 +137,14 @@ pub enum ConsensusPhase {
     /// Phase 3 — Nullifier + ZK proof verification.
     /// Recovery: reject block, ban peer (↓bad-nullifier).
     Phase3Nullifier,
-    /// Phase 4 — WASM execution.
+    /// Phase 4 — WASM execution (includes per-transaction validation,
+    /// formerly separate Phase 5 in the spec; merged because transaction
+    /// validation occurs during WASM execution, not as a separate pass).
     /// Recovery: reject block.
     Phase4Execution,
-    /// Phase 5 — Transaction validation.
-    /// Recovery: reject block.
-    Phase5Transactions,
-    /// Phase 6 — Nullifier SMT update.
-    /// Recovery: reject block.
-    Phase6NullifierSMT,
-    /// Phase 7 — Atomic commit (sled write).
+    /// Phase 7 — Atomic commit (sled write, includes nullifier SMT update,
+    /// formerly separate Phase 6 in the spec; merged because SMT updates
+    /// are part of the atomic cross-tree commit, not a separate pass).
     /// Recovery: fatal — restart node (↓db-fail).
     Phase7Commit,
 }
