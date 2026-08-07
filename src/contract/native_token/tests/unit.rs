@@ -30,7 +30,7 @@ mod tests {
     use dwow_native_token_contract::{
         model::{
             BurnParamsV1, BurnUpdateV1, ClearInput, Coin, CoinAttributes, DRKW_TOKEN_ID,
-            FeeCollectParamsV1, FeeCollectUpdateV1, FeeParamsV1, FeeUpdateV1, Input, Nullifier,
+            FeeCollectParamsV1, FeeCollectUpdateV1, FeeParamsV2, FeeUpdate, Input, Nullifier,
             Output, PoWRewardParamsV1, PoWRewardUpdateV1, SpendParamsV1, SpendUpdateV1,
             TransferParamsV1, TransferUpdateV1,
             MAX_COIN_VALUE,
@@ -46,7 +46,7 @@ mod tests {
 
     #[test]
     fn test_native_token_function_enum_valid() {
-        assert!(NativeTokenFunction::try_from(0x00).is_ok()); // FeeV1
+        assert!(NativeTokenFunction::try_from(0x00).is_err()); // FeeV1 removed
         assert!(NativeTokenFunction::try_from(0x01).is_ok()); // MintV1
         assert!(NativeTokenFunction::try_from(0x02).is_ok()); // BurnV1
         assert!(NativeTokenFunction::try_from(0x03).is_ok()); // TransferV1
@@ -64,7 +64,7 @@ mod tests {
 
     #[test]
     fn test_native_token_function_names() {
-        assert_eq!(NativeTokenFunction::FeeV1 as u8, 0x00);
+        // FeeV1 (0x00) removed — returns InvalidFunction
         assert_eq!(NativeTokenFunction::MintV1 as u8, 0x01);
         assert_eq!(NativeTokenFunction::BurnV1 as u8, 0x02);
         assert_eq!(NativeTokenFunction::TransferV1 as u8, 0x03);
@@ -347,31 +347,11 @@ mod tests {
     }
 
     // ================================================================
-    // FeeParamsV1 tests
+    // FeeUpdate tests (FeeV2)
     // ================================================================
 
     #[test]
-    fn test_fee_params_v1_structure() {
-        let params = FeeParamsV1 {
-            input: create_test_input(),
-            output: create_test_output(),
-            fee_value_blind: pallas::Scalar::zero(),
-            fee_token_blind: BaseBlind::ZERO,
-            fee: 0,
-            tx_binding: pallas::Base::zero(),
-            tx_nonce: pallas::Base::zero(),
-        };
-
-        assert!(params.input.value_commit == pallas::Point::identity());
-        assert!(params.output.coin.inner() != pallas::Base::zero());
-    }
-
-    // ================================================================
-    // FeeUpdateV1 tests
-    // ================================================================
-
-    #[test]
-    fn test_fee_update_v1_structure() {
+    fn test_fee_update_structure() {
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
         let coin = Coin::from_attributes(
             &keypair.public,
@@ -382,16 +362,17 @@ mod tests {
             Blind(pallas::Base::zero()),
         );
 
-        let update = FeeUpdateV1 {
+        let update = FeeUpdate {
             nullifier:
                 dwow_native_token_contract::model::Nullifier::from_bytes([1u8; 32]).unwrap(),
             coin,
             height: BlockHeight::new(100),
-            fee: 5,
+            fee: dwow_sdk::blockchain::FeeAmount::new(5),
+            fee_value_commit: pallas::Point::identity(),
         };
 
         assert_eq!(update.height, BlockHeight::new(100));
-        assert_eq!(update.fee, 5);
+        assert_eq!(update.fee.get(), 5);
     }
 
     // ================================================================
@@ -433,6 +414,7 @@ mod tests {
         // output coin for the miner, nullifier capability claim, tx binding.
         let params = FeeCollectParamsV1 {
             total_fees: 42_000_000,
+            total_blind: pallas::Scalar::zero(),
             output: create_test_output(),
             nullifier: Nullifier::from_bytes([3u8; 32]).unwrap(),
             tx_binding: pallas::Base::zero(),

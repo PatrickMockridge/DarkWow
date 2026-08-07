@@ -51,7 +51,7 @@ fn count_constrain_instance(path: &str) -> usize {
 fn mint_v2_constrain_instance_count_matches_trait() {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/proof/mint_v2.zk"
+        "/proof/mint.zk"
     );
     let count = count_constrain_instance(path);
     assert_eq!(
@@ -66,7 +66,7 @@ fn mint_v2_constrain_instance_count_matches_trait() {
 fn burn_v2_constrain_instance_count_matches_trait() {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/proof/burn_v2.zk"
+        "/proof/burn.zk"
     );
     let count = count_constrain_instance(path);
     assert_eq!(
@@ -81,12 +81,15 @@ fn burn_v2_constrain_instance_count_matches_trait() {
 fn fee_v2_constrain_instance_count_matches_trait() {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/proof/fee_v2.zk"
+        "/proof/fee.zk"
     );
     let count = count_constrain_instance(path);
+    // Fee_V2 has 15 public inputs: nullifier, input_vc.x, input_vc.y,
+    // token_commit, merkle_root, user_data_enc, sig_x, sig_y, output_coin,
+    // output_vc.x, output_vc.y, fee_vc.x, fee_vc.y, tx_binding, tx_nonce.
     assert_eq!(
-        count, 14,
-        "fee_v2.zk has {} constrain_instance calls, expected 14. \
+        count, 15,
+        "fee.zk has {} constrain_instance calls, expected 15. \
          Update CircuitPublicInputs::COUNT for the fee reveal type.",
         count
     );
