@@ -600,6 +600,44 @@ impl<'de> serde::Deserialize<'de> for MoneroBlockHeight {
     }
 }
 
+/// Nominal fee-window index type (fee-spec.md §12.3).
+///
+/// Identifies which 20-block fee window a given height belongs to.
+/// Windows start at 0 (height 1–20) and increment every `FEE_WINDOW_SIZE`
+/// blocks. Distinguished from `BlockHeight` because fee thresholds are
+/// window-scoped, not height-scoped — confusing a window index for a
+/// height would misalign fee adjustments.
+#[repr(transparent)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable,
+)]
+pub struct FeeWindowId(u64);
+
+impl FeeWindowId {
+    /// Fee window size in blocks (fee-spec.md §12.6).
+    pub const WINDOW_SIZE: u64 = 20;
+
+    pub const fn new(w: u64) -> Self { Self(w) }
+    pub const fn get(self) -> u64 { self.0 }
+
+    /// Compute the window index for a given block height.
+    /// Window 0 = heights 1..=20, Window 1 = heights 21..=40, etc.
+    pub const fn from_height(height: BlockHeight) -> Self {
+        Self((height.get().saturating_sub(1)) / Self::WINDOW_SIZE)
+    }
+
+    /// True if the given height is the final block of its fee window.
+    pub const fn is_window_boundary(height: BlockHeight) -> bool {
+        height.get() > 0 && height.get() % Self::WINDOW_SIZE == 0
+    }
+}
+
+impl core::fmt::Display for FeeWindowId {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// Constants for the block reward schedule.
 pub mod reward {
     use super::BlockReward;
