@@ -1222,8 +1222,12 @@ async fn prepare_block(
     // 5. Build FeeCollectV1 — the "collection plate" as final transaction
     //    (consensus-coinbase.md §3.12). Fallible but no destructive mutation
     //    yet — competing blocks still safe in chain_state.
-    // Count FeeV2 calls for total_fees. In production, the miner extracts
-    // individual fee amounts from ZK witnesses. For now, DEFAULT_FEE per call.
+    // Count FeeV2 calls for total_fees.
+    // TODO(A2): Extract actual fee amounts from ZK witnesses during block
+    // construction. Currently hardcodes DEFAULT_FEE per call — blocks with
+    // non-42M fees will fail FeeCollectV1 Pedersen verification.
+    // The Fee_V2 proof witness contains the fee value; the miner must extract
+    // it when building the block. Spec: fee-spec.md §5.6.4.
     let prod_fc: u64 = mempool_txs.iter().flat_map(|t| &t.contract_calls)
         .filter(|c| c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
             && c.data.first() == Some(&0x08))
