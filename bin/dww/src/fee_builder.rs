@@ -91,6 +91,10 @@ pub fn build_fee_and_finalize_tx(
     fee_proofs: Option<Vec<Proof>>,
     exclude_cap_id: Option<&str>,
     seed: [u8; 32],
+    // Fee window flags from latest block header (fee-spec.md §12.6).
+    // 0 = legacy static fees. Feature-gated — ignored without feature.
+    #[allow(unused_variables)]
+    fee_window_flags: u16,
 ) -> Result<Transaction> {
     // wallet.md §6.1: Seed-derived randomness — no OsRng.
     let mut rng = StdRng::from_seed(seed);
@@ -202,9 +206,31 @@ pub fn build_fee_and_finalize_tx(
     let threshold_pk = ProvingKey::build(threshold_zkbin.k, &threshold_circuit)
         .map_err(|e| Error::Custom(format!("ProvingKey::build threshold: {:?}", e)))?;
 
-    // Threshold selection per wallet.md §6.4.2 / fee-spec.md §8.2
+    // Threshold selection per wallet.md §6.4.2 / fee-spec.md §8.2.
+    // When fee window is active, thresholds are decoded from the latest
+    // block header's fee_window_flags. Otherwise, legacy static constants.
+    #[cfg(feature = "fee-window")]
+    let (premium_threshold, general_threshold) = {
+        if fee_window_flags & 0x01 != 0 {
+            // Fee window active — decode congestion_multiplier from bits [4:8]
+            let cm = (fee_window_flags >> 4) & 0x0F;
+            let base_premium = 420_000_000u64; // CF=1.0, rate=10
+            let base_general = 42_000_000u64;  // CF=1.0, rate=1
+            let premium = match cm {
+                0x01 => ((base_premium as u128) * 110 / 100) as u64, // +10%
+                0x02 => ((base_premium as u128) * 90 / 100) as u64,  // -10%
+                _ => base_premium, // hold or legacy
+            };
+            (premium, base_general)
+        } else {
+            (42_000_000u64, 1_000_000u64) // legacy static
+        }
+    };
+    #[cfg(not(feature = "fee-window"))]
     let premium_threshold: u64 = 42_000_000;
+    #[cfg(not(feature = "fee-window"))]
     let general_threshold: u64 = 1_000_000;
+
     let threshold = if DEFAULT_FEE >= premium_threshold {
         premium_threshold
     } else {
