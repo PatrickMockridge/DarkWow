@@ -13,9 +13,8 @@ impl FeeExtractor for TestFeeExtractor {
     fn extract_fee(&self, tx: &dwow_chain::Transaction) -> u64 {
         if let Some(call) = tx.contract_calls.first() {
             if call.data.len() >= 9 {
-                // FeeV1: [0x00][fee:8][...]
                 // FeeV2: [0x08][fee:8][...] (test data uses same prefix layout)
-                if call.data[0] == 0x00 || call.data[0] == 0x08 {
+                if call.data[0] == 0x08 {
                     return u64::from_le_bytes(call.data[1..9].try_into().unwrap_or([0; 8]));
                 }
             }
@@ -93,7 +92,7 @@ fn test_mempool_add_single_tx() {
         let config = MempoolConfig::default();
         let mempool = Mempool::new(config, None, Box::new(TestFeeExtractor), None);
 
-        let tx = make_fee_tx(50_000_000);
+        let tx = make_fee_v2_tx(50_000_000);
         let hash = mempool.add(tx).await.expect("add tx");
         assert!(!hash.as_bytes().iter().all(|b| *b == 0), "tx hash must be non-zero");
 
@@ -112,7 +111,7 @@ fn test_mempool_accepts_zero_fee() {
         let config = MempoolConfig { min_fee: 0, ..Default::default() };
         let mempool = Mempool::new(config, None, Box::new(TestFeeExtractor), None);
 
-        let tx = make_fee_tx(0);
+        let tx = make_fee_v2_tx(0);
         let result = mempool.add(tx).await;
         assert!(result.is_ok(), "zero-fee tx must be accepted when min_fee=0, got {:?}", result.err());
     })
