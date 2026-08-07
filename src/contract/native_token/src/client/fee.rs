@@ -121,7 +121,10 @@ impl FeeV2CallBuilder {
 
         let mut proofs: Vec<Proof> = vec![];
 
-        // Generate blinds
+        // Generate blinds. Pedersen mass balance requires:
+        //   output_blind + fee_blind == input_blind
+        // Generate input_blind and fee_blind first, then derive output_blind.
+        let token_blind = BaseBlind::ZERO;
         let (input_value_blind, output_coin_blind) =
             if crate::deterministic_zk_enabled() {
             let mut rng = rand::rngs::StdRng::seed_from_u64(0);
@@ -130,16 +133,19 @@ impl FeeV2CallBuilder {
             (ScalarBlind::random(&mut rand::rngs::OsRng),
              BaseBlind::random(&mut rand::rngs::OsRng))
         };
-        let output_value_blind = input_value_blind.clone();
-        let token_blind = BaseBlind::ZERO;
 
-        // Generate fee_value_blind
+        // Generate fee_value_blind — must be before output_value_blind derivation
         let fee_value_blind = if crate::deterministic_zk_enabled() {
             let mut rng = rand::rngs::StdRng::seed_from_u64(0);
             ScalarBlind::random(&mut rng)
         } else {
             ScalarBlind::random(&mut rand::rngs::OsRng)
         };
+
+        // output_blind = input_blind - fee_blind  (ρ-calculus blind consistency, F2 fix)
+        let output_value_blind: ScalarBlind = Blind(
+            input_value_blind.inner() - fee_value_blind.inner()
+        );
 
         // Compute output value
         let output_value = self.input.value - self.fee_amount.get();
