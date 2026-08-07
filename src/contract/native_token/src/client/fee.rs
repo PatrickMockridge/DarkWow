@@ -146,6 +146,12 @@ impl FeeV2CallBuilder {
         let output_value_blind: ScalarBlind = Blind(
             input_value_blind.inner() - fee_value_blind.inner()
         );
+        // Invariant: Pedersen mass balance requires output_blind + fee_blind == input_blind
+        debug_assert_eq!(
+            output_value_blind.inner() + fee_value_blind.inner(),
+            input_value_blind.inner(),
+            "F2: Pedersen blind consistency violated"
+        );
 
         // Compute output value
         let output_value = self.input.value - self.fee_amount.get();
