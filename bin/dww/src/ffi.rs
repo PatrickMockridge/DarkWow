@@ -1743,4 +1743,36 @@ mod tests {
         dwow_wallet_free_account(account);
         let _ = std::fs::remove_file(&path);
     }
+
+    /// BW-12: catch_unwind isolation at FFI boundary.
+    /// Per type-system.md §10.5: a panic inside an FFI-guarded function SHALL
+    /// be caught at the boundary and returned as an error code, not abort
+    /// the process.
+    #[test]
+    fn test_ffi_catch_unwind_isolation() {
+        // dwow_wallet_last_error(NULL) — NULL handle triggers internal
+        // catch_unwind that must return a sentinel, not abort.
+        let mut buf = [0i8; 256];
+        let ret = dwow_wallet_last_error(
+            std::ptr::null(), buf.as_mut_ptr(), 256,
+        );
+        // NULL handle should return -1 (error sentinel), not panic/abort
+        assert!(ret < 0, "NULL handle to last_error must return error sentinel, got {ret}");
+
+        // dwow_wallet_scan_block_json(NULL, ...) — NULL handle with valid
+        // JSON must be caught, not abort.
+        let json = CString::new("{}").unwrap();
+        let ret = dwow_wallet_scan_block_json(
+            std::ptr::null(), json.as_ptr(),
+        );
+        assert!(ret < 0, "NULL handle to scan_block_json must return error sentinel, got {ret}");
+
+        // dwow_wallet_derive_address(NULL, ...) — NULL handle
+        let cid = dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes();
+        let mut addr = [0i8; 64];
+        let ret = dwow_wallet_derive_address(
+            std::ptr::null(), cid.as_ptr(), 1, addr.as_mut_ptr(), 64,
+        );
+        assert!(ret <= 0, "NULL handle to derive_address must return error sentinel, got {ret}");
+    }
 }

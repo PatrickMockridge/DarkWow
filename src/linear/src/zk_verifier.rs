@@ -442,4 +442,47 @@ mod tests {
             "empty proofs with non-empty metadata must be rejected, got {:?}", result,
         );
     }
+
+    /// BW-2: Proofless native token call rejection at mempool admission.
+    /// Per type-system.md §10.5: the mempool admission boundary SHALL reject
+    /// native token calls (FeeV2, TransferV1, SpendV1, BurnV1, FeeCollectV1,
+    /// PoWRewardV1) that declare proofs required but carry none. This gate
+    /// prevents transactions with missing ZK proofs from entering the mempool.
+    #[test]
+    fn test_native_token_proofless_call_rejected_at_admission() {
+        // FeeV2 (0x08) with empty proofs — must be rejected
+        let chain_tx = ChainTransaction {
+            version: BlockVersion::CURRENT,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![ContractCall {
+                contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+                data: vec![0x08u8], // FeeV2 selector
+            }],
+            lock_time: 0,
+            nullifiers: vec![],
+            witness: vec![], // no proof — should trigger rejection
+        };
+        // verify_single_tx decodes witness, reconciles, and checks proof presence.
+        // Empty witness means decode_and_reconcile gets an empty Transaction,
+        // which triggers the proof-vec-length guard (0 proofs vs 1 call).
+        let result = verify_single_tx(&chain_tx);
+        assert!(result.is_err(), "native token FeeV2 without proofs must be rejected");
+
+        // TransferV1 (0x03) with empty proofs — same guard
+        let chain_tx2 = ChainTransaction {
+            version: BlockVersion::CURRENT,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![ContractCall {
+                contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
+                data: vec![0x03u8], // TransferV1 selector
+            }],
+            lock_time: 0,
+            nullifiers: vec![],
+            witness: vec![],
+        };
+        let result2 = verify_single_tx(&chain_tx2);
+        assert!(result2.is_err(), "native token TransferV1 without proofs must be rejected");
+    }
 }
