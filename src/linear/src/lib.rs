@@ -36,6 +36,8 @@ pub mod fee_estimator;
 pub mod schedule;
 #[cfg(feature = "sharding")]
 pub mod shard;
+#[cfg(feature = "fee-window")]
+pub mod fee_window;
 pub mod finality;
 pub mod proof_of_token_balance;
 mod miner;

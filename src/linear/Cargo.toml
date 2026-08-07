@@ -9,6 +9,9 @@ license = "AGPL-3.0-only"
 default = []
 async = ["dwow-serial/async"]
 sharding = []
+# Fee window signalling — adaptive congestion-driven threshold adjustment.
+# Spec: fee-spec.md §12. Gated for modular deployment.
+fee-window = []
 # sync-p2p enables P2P message registration for shared sync protocol types.
 # Required by any node (wallet, mining, observer) that sends/receives
 # sync messages via dwow_core::net channels.
