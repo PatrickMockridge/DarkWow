@@ -599,7 +599,7 @@ mod tests {
     #[test]
     fn test_build_uncle_merkle_empty() {
         let vm = create_test_vm();
-        let (root, proofs) = build_uncle_merkle(&[], &vm);
+        let (root, proofs) = build_uncle_merkle(&[], &vm).expect("test");
         assert_eq!(root, [0u8; 32]);
         assert!(proofs.is_empty());
     }
@@ -627,9 +627,9 @@ mod tests {
             pow_source: PowSource::Native,
 
         };
-        let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_confirmed: 0 };
+        let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_confirmed: BlockReward::new(0) };
 
-        let (root, proofs) = build_uncle_merkle(&[uncle], &vm);
+        let (root, proofs) = build_uncle_merkle(&[uncle], &vm).expect("test");
         assert_ne!(root, [0u8; 32]);
         assert_eq!(proofs.len(), 1);
         assert_eq!(proofs[0].depth, 1);
@@ -663,10 +663,10 @@ mod tests {
             pow_source: PowSource::Native,
 
             };
-            uncles.push(UncleBlock { header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_confirmed: 0 });
+            uncles.push(UncleBlock { header, transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_confirmed: BlockReward::new(0) });
         }
 
-        let (root, proofs) = build_uncle_merkle(&uncles, &vm);
+        let (root, proofs) = build_uncle_merkle(&uncles, &vm).expect("test");
         assert_ne!(root, [0u8; 32]);
         assert_eq!(proofs.len(), 3);
         for (i, proof) in proofs.iter().enumerate() {
@@ -710,10 +710,10 @@ mod tests {
                 depth: 1,
                 pin_offered: false,
                 pin_accepted: false,
-                pin_confirmed: 0,
+                pin_confirmed: BlockReward::new(0),
             });
         }
-        let (root, proofs) = build_uncle_merkle(&uncles, &vm);
+        let (root, proofs) = build_uncle_merkle(&uncles, &vm).expect("test");
         assert_ne!(root, [0u8; 32]);
         assert_eq!(proofs.len(), 3);
         for proof in &proofs {
@@ -760,7 +760,7 @@ mod tests {
         };
         // Pin mechanism: pin_offered=true, pin_accepted=true means uncle accepts the pin
         // pin_confirmed at depth 1 = 50% = 50M
-        let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1, pin_offered: true, pin_accepted: true, pin_confirmed: 50_000_000 };
+        let uncle = UncleBlock { header: uncle_header, transactions: vec![], depth: 1, pin_offered: true, pin_accepted: true, pin_confirmed: BlockReward::new(50_000_000) };
 
         let (canonical, uncle_rewards) = compute_reward(BlockReward::new(100_000_000), &[uncle]);
         // base 100M - pin 50M = 50M canonical (no over-minting)
@@ -792,9 +792,9 @@ mod tests {
             pow_source: PowSource::Native,
 
         };
-        let uncle = UncleBlock { header: header.clone(), transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_confirmed: 0 };
+        let uncle = UncleBlock { header: header.clone(), transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_confirmed: BlockReward::new(0) };
 
-        let (_root, proofs) = build_uncle_merkle(&[uncle], &vm);
+        let (_root, proofs) = build_uncle_merkle(&[uncle], &vm).expect("test");
         // Note: verify_uncle_proof may fail difficulty check since nonce 42 is arbitrary
         // Instead, verify the pow_hash was correctly computed using to_mining_blob()
         // (same as how Block::hash_with_vm and UncleBlock::hash_with_vm compute it)
