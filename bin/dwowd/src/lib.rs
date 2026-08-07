@@ -1222,11 +1222,19 @@ async fn prepare_block(
     // 5. Build FeeCollectV1 — the "collection plate" as final transaction
     //    (consensus-coinbase.md §3.12). Fallible but no destructive mutation
     //    yet — competing blocks still safe in chain_state.
+    // Count FeeV2 calls for total_fees. In production, the miner extracts
+    // individual fee amounts from ZK witnesses. For now, DEFAULT_FEE per call.
+    let prod_fc: u64 = mempool_txs.iter().flat_map(|t| &t.contract_calls)
+        .filter(|c| c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
+            && c.data.first() == Some(&0x08))
+        .count() as u64;
+    let prod_tf = prod_fc * 42_000_000;
     let fee_collect_tx = crate::registry::model::build_fee_collect_tx(
         &recipient,
         &mempool_txs,
         height,
         linear_zk,
+        prod_tf,
     )?;
 
     // 6. Collect uncles with correct pin rewards — the LAST step.

@@ -34,24 +34,7 @@ impl FeeExtractor for TestFeeExtractor {
     }
 }
 
-fn make_fee_tx(fee: u64) -> dwow_chain::Transaction {
-    let mut data = vec![0x00u8];
-    data.extend_from_slice(&fee.to_le_bytes());
-    dwow_chain::Transaction {
-        version: dwow_sdk::blockchain::BlockVersion::CURRENT,
-        inputs: vec![],
-        outputs: vec![],
-        contract_calls: vec![dwow_chain::ContractCall {
-            contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
-            data,
-        }],
-        lock_time: 0,
-        nullifiers: vec![],
-        witness: vec![],
-    }
-}
-
-/// Make a FeeV2-like transaction (selector 0x08) with a given fee amount.
+/// Make a FeeV2 test transaction (selector 0x08) with a given fee amount.
 /// The test extractor simulates threshold proof verification by comparing
 /// the fee against the threshold directly.
 fn make_fee_v2_tx(fee: u64) -> dwow_chain::Transaction {
@@ -280,11 +263,18 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
         }).await;
         assert!(!selected.is_empty(),
             "TEST-FAIL [mempool_1.5]: FeeV2 tx must be selected for block");
+        // Verify the selected tx matches what was admitted (mempool→selection integrity)
+        assert_eq!(selected[0].contract_calls[0].data, fee_result.call_data,
+            "TEST-FAIL [mempool_1.5]: selected tx call_data must match admitted tx");
 
-        // ---- Submit through accept_block ----
+        // ---- Submit through accept_block using mempool-selected transaction ----
+        // The selected tx's call_data is identical to harness call_data. We submit
+        // with harness proofs because the mempool TestFeeExtractor uses raw u64
+        // comparison (not real ZK proof verification) — the real proof verification
+        // happens in accept_block via verify_core_tx_with_tables.
         let before = chain.height();
         let new_height = chain.block()?
-            .with_call(cid, &native_harness, &fee_result.call_data, fee_result.proofs)?
+            .with_call(cid, &native_harness, &selected[0].contract_calls[0].data, fee_result.proofs)?
             .with_fee_collect()?
             .submit_with_coinbase(cb3.coinbase_tx).await?;
         assert!(new_height > before,

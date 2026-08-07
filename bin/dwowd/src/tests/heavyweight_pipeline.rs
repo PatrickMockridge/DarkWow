@@ -1538,6 +1538,11 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
             .submit_with_coinbase(cb3.coinbase_tx.clone()).await;
         assert!(bad_block.is_err(),
             "TEST-FAIL [fee_v2]: malformed FeeParamsV2 must be rejected");
+        let bad_err = format!("{}", bad_block.unwrap_err());
+        assert!(bad_err.contains("ParseError") || bad_err.contains("IoError")
+                || bad_err.contains("decode") || bad_err.contains("Custom(2)"),
+            "TEST-FAIL [fee_v2]: rejection must be FeeParamsV2 decode failure, got: {}",
+            bad_err);
 
         // ---- R4: multi-FeeV2-call block with Pedersen homomorphic sum ----
         // Spend the change coin from the first FeeV2 (fee_result.params.output.coin)
@@ -1695,6 +1700,11 @@ fn test_heavyweight_fee_v2_deploy() -> std::result::Result<(), Box<dyn std::erro
         assert_eq!(u64::from_le_bytes(fees_data[..8].try_into().unwrap()), 0,
             "TEST-FAIL [fee_v2_deploy]: fee pot not zeroed");
 
+        // R9: Verify deploy succeeded — deployed WASM must exist in contracts tree
+        assert!(chain.query_contracts_tree(&deploy.contract_id.to_bytes())?.is_some(),
+            "TEST-FAIL [fee_v2_deploy]: deployed contract {} not found in contracts tree",
+            deploy.contract_id);
+
         Ok(())
     })
 }
@@ -1778,6 +1788,11 @@ fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::
             .expect("TEST-FAIL [fee_v2_box]: fees_db entry not found");
         assert_eq!(u64::from_le_bytes(fees_data[..8].try_into().unwrap()), 0,
             "TEST-FAIL [fee_v2_box]: fee pot not zeroed");
+
+        // R9: Verify Box::Put stored state — box contract should be queryable
+        let box_state = chain.query_contract_state(*BOX_CONTRACT_ID, "info", b"box_merkle_tree")?;
+        assert!(box_state.is_some(),
+            "TEST-FAIL [fee_v2_box]: box contract state not found after Put");
 
         Ok(())
     })

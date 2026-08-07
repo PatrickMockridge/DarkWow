@@ -351,8 +351,7 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
                 continue;
             }
             match c.data.first() {
-                Some(&0x08) => fee_call_count += 1,                // FeeV2
-                Some(&0x00) => fee_call_count += 1,                // FeeV1 (legacy, removed)
+                Some(&0x08) => fee_call_count += 1,  // FeeV2
                 _ => {}
             }
         }

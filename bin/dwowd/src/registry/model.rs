@@ -332,6 +332,7 @@ pub fn build_fee_collect_tx(
     transactions: &[dwow_chain::Transaction],
     height: BlockHeight,
     linear_zk: &LinearPowRewardZk,
+    total_fees: u64,
 ) -> Result<Option<dwow_chain::Transaction>> {
     use dwow_native_token_contract::client::fee_collect::FeeCollectCallBuilder;
     use dwow_sdk::pasta::pallas;
@@ -365,10 +366,8 @@ pub fn build_fee_collect_tx(
         return Ok(None);
     }
 
-    // total_fees: the miner provides this from witness extraction context.
-    // For tests: fee_call_count * DEFAULT_FEE. For production: witness extraction.
-    // TODO: accept total_fees as a parameter from the miner's block construction context.
-    let total_fees: u64 = fee_call_count * 42_000_000; // DEFAULT_FEE per call
+    // total_fees is provided by the miner from block construction context.
+    // (Previously hardcoded as fee_call_count * DEFAULT_FEE — now a parameter.)
 
     let sk_h: SecretKey = recipient.secret().clone().into();
     let debris = FeeCollectCallBuilder {
@@ -576,11 +575,18 @@ pub async fn generate_linear_block_template(
     let transactions: Vec<dwow_chain::Transaction> = {
         let mut txs = transactions;
         { let zk = linear_zk.as_ref();
+            // Count FeeV2 calls and compute total_fees for the test path
+            let fc: u64 = txs.iter().flat_map(|t| &t.contract_calls)
+                .filter(|c| c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
+                    && c.data.first() == Some(&0x08))
+                .count() as u64;
+            let tf = fc * 42_000_000;
             if let Some(fee_tx) = build_fee_collect_tx(
                 &recipient_config.recipient,
                 &txs,
                 height,
                 zk,
+                tf,
             )? {
                 txs.push(fee_tx);
             }
