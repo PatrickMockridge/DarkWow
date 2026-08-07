@@ -1506,6 +1506,88 @@ fn test_heavyweight_fee_v2() -> std::result::Result<(), Box<dyn std::error::Erro
         assert_eq!(supply, expected,
             "TEST-FAIL [fee_v2]: supply mismatch (expected {}, got {})", expected, supply);
 
+        // ---- R3a: fee > input rejected at builder level ----
+        assert!(native_harness.fee_v2(
+            10, // input_value = 10
+            pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
+            cb2.coin_blind, u64::from(coin_pos), path.clone(), root,
+            mining_kp.secret.clone(), mining_kp.secret,
+            PublicKey::from_secret(SecretKey::from_bytes([8u8; 32])?),
+            pallas::Base::zero(), pallas::Base::zero(),
+            42_000_000, // fee > input
+            42_000_000,
+        ).is_err(), "TEST-FAIL [fee_v2]: fee > input must be rejected at builder");
+
+        // ---- R3c: malformed FeeParamsV2 rejected at accept_block ----
+        let garbage_data = vec![0x08u8, 0xFF, 0xFF, 0xFF];
+        let bad_block = chain.block()?
+            .with_call(cid, &native_harness, &garbage_data, vec![])?
+            .with_fee_collect()?
+            .submit_with_coinbase(cb3.coinbase_tx.clone()).await;
+        assert!(bad_block.is_err(),
+            "TEST-FAIL [fee_v2]: malformed FeeParamsV2 must be rejected");
+
+        // ---- R4: multi-FeeV2-call block with Pedersen homomorphic sum ----
+        // Spend the change coin from the first FeeV2 (fee_result.params.output.coin)
+        let change_coin = &fee_result.params.output.coin;
+        let mut tree4 = MerkleTree::new(1);
+        tree4.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree4.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        tree4.append(MerkleNode::from_base(change_coin.inner()));
+        let pos4 = tree4.mark().expect("tree.mark");
+        let path4: Vec<MerkleNode> = tree4.witness(pos4, 0).expect("tree.witness");
+        let root4 = tree4.root(0).expect("tree.root");
+        let change_value = cb2.coin_value - 42_000_000;
+
+        let cb4 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+        let fee4a = native_harness.fee_v2(
+            cb3.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
+            cb3.coin_blind, u64::from(pos4) + 1, path4.clone(), root4,
+            mining_kp.secret.clone(), mining_kp.secret,
+            PublicKey::from_secret(SecretKey::from_bytes([9u8; 32])?),
+            pallas::Base::zero(), pallas::Base::zero(),
+            42_000_000, 42_000_000,
+        ).map_err(|e| dwow_core::Error::Custom(format!("TEST-FAIL [multi-fee]: {}", e)))?;
+
+        let fee4b = native_harness.fee_v2(
+            change_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
+            fee_result.params.output.coin_blind, u64::from(pos4), path4, root4,
+            mining_kp.secret.clone(), mining_kp.secret,
+            PublicKey::from_secret(SecretKey::from_bytes([10u8; 32])?),
+            pallas::Base::zero(), pallas::Base::zero(),
+            10_000_000, 10_000_000,
+        ).map_err(|e| dwow_core::Error::Custom(format!("TEST-FAIL [multi-fee2]: {}", e)))?;
+
+        let before4 = chain.height();
+        let new_height4 = chain.block()?
+            .with_call(cid, &native_harness, &fee4a.call_data, fee4a.proofs)?
+            .with_call(cid, &native_harness, &fee4b.call_data, fee4b.proofs)?
+            .with_fee_collect()?
+            .submit_with_coinbase(cb4.coinbase_tx).await?;
+        assert!(new_height4 > before4,
+            "TEST-FAIL [fee_v2]: multi-fee block must advance height");
+
+        // Both nullifiers spent
+        assert!(chain.query_contract_state(cid, "nullifiers", &fee4a.params.input.nullifier.to_bytes())?.is_some());
+        assert!(chain.query_contract_state(cid, "nullifiers", &fee4b.params.input.nullifier.to_bytes())?.is_some());
+
+        // Accumulator reset after multi-fee FeeCollectV1
+        let acc4 = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
+            .expect("TEST-FAIL [fee_v2]: accumulator not found after multi-fee");
+        let acc4_pt: pallas::Point = Option::from(pallas::Point::from_bytes(
+            &acc4[..32].try_into().unwrap()
+        )).expect("invalid point");
+        assert_eq!(acc4_pt, pallas::Point::identity(),
+            "TEST-FAIL [fee_v2]: accumulator not reset after multi-fee collect");
+
+        // ---- R5b: nullifier replay rejected ----
+        let replay = chain.block()?
+            .with_call(cid, &native_harness, &fee_result.call_data, fee_result.proofs.clone())?
+            .with_fee_collect()?
+            .submit_with_coinbase(cb3.coinbase_tx).await;
+        assert!(replay.is_err(),
+            "TEST-FAIL [fee_v2]: nullifier replay must be rejected");
+
         Ok(())
     })
 }

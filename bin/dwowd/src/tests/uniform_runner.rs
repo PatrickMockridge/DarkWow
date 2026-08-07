@@ -208,12 +208,14 @@ pub async fn run_heavyweight_test(spec: &ContractTestSpec<'_>) -> Result<()> {
             let new_height = modules::endpoint_exercise::exercise_endpoint(
                 &chain_a, cid, spec.harness, endpoint, height_before,
             ).await?;
-            // Cross-block state verification (HAZOP finding — compound correctness)
+            // Cross-block state verification (HAZOP finding — compound correctness).
+            // Red Team FP-1/FP-2: verify_state errors were previously downgraded to
+            // warnings, making state checks non-enforcing. Now hard-fail.
             if let Some(ref verify) = endpoint.verify_state {
-                if let Err(e) = verify(&chain_a) {
-                    eprintln!("WARN [{}::{}]: verify_state failed — {}. Block accepted; chain valid.",
-                        spec.name, endpoint.name, e);
-                }
+                verify(&chain_a).map_err(|e| dwow_core::Error::Custom(format!(
+                    "TEST-FAIL [{}::{}]: verify_state failed — {}",
+                    spec.name, endpoint.name, e
+                )))?;
             }
             height_before = new_height;
         }

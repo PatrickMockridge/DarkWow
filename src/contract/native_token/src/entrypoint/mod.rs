@@ -190,6 +190,12 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     wasm::db::db_set(info_db, NATIVE_TOKEN_CONTRACT_DB_VERSION, env!("CARGO_PKG_VERSION").as_bytes())?;
 
+    // Seed the Pedersen fee commitment accumulator to Identity.
+    // While apply_fee and fee_collect_v1 both use unwrap_or(Identity) fallback,
+    // explicit initialization makes the state auditable.
+    wasm::db::db_set(info_db, NATIVE_TOKEN_CONTRACT_FEE_COMMIT_ACCUMULATOR,
+        &pallas::Point::identity().to_bytes())?;
+
     msg!("[native_token::init_contract] Database trees initialized");
     Ok(())
 }

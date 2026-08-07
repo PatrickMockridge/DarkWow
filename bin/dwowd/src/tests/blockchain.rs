@@ -389,18 +389,15 @@ impl HeavyweightPipeline {
             .map(|opt| opt.map(|iv| iv.to_vec()))
     }
 
-    /// Current cumulative supply from the supply chain tree.
-    /// The supply is stored as a Pedersen commitment chain S_H = S_{H-1} + C_H.
-    /// Returns the latest supply value as u64, or 0 if the tree is empty.
+    /// Current cumulative supply computed from all block rewards.
+    /// Sums expected_reward(h) for h in 1..=current_height.
     pub fn cumulative_supply(&self) -> u64 {
-        let tree = &self.chain_state.store.supply_chain;
-        // Read the last entry — the latest cumulative supply commitment
-        if let Ok(Some(iv)) = tree.get(b"latest_supply") {
-            let bytes: [u8; 8] = iv.as_ref().try_into().unwrap_or([0u8; 8]);
-            u64::from_le_bytes(bytes)
-        } else {
-            0
-        }
+        let h = self.height();
+        (1..=h.get()).map(|h| {
+            dwow_sdk::blockchain::expected_reward(
+                dwow_sdk::blockchain::BlockHeight::new(h)
+            ).get()
+        }).sum()
     }
 
     /// Write a message to stderr and to the test log file (if configured).
