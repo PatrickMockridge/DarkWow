@@ -13,25 +13,25 @@ code = 0
 name = "commit_bet"
 code = 1
 requires_proof = true
-proof_circuit = "CommitBet_V2"
+proof_circuit = "CommitBetV2"
 
 [[functions]]
 name = "reveal_roll"
 code = 2
 requires_proof = true
-proof_circuit = "RevealRoll_V2"
+proof_circuit = "RevealRollV2"
 
 [[functions]]
 name = "settle_bet"
 code = 3
 requires_proof = true
-proof_circuit = "SettleBet_V2"
+proof_circuit = "SettleBetV2"
 
 [[functions]]
 name = "house_close"
 code = 4
 requires_proof = true
-proof_circuit = "HouseClose_V2"
+proof_circuit = "HouseCloseV2"
 
 [[capabilities]]
 discriminant = 0
@@ -56,17 +56,17 @@ name = "info"
 name = "house"
 
 [[circuits]]
-name = "CommitBet_V2"
+name = "CommitBetV2"
 namespace = "darktoshi_dice"
 
 [[circuits]]
-name = "SettleBet_V2"
+name = "SettleBetV2"
 namespace = "darktoshi_dice"
 
 [[circuits]]
-name = "RevealRoll_V2"
+name = "RevealRollV2"
 namespace = "darktoshi_dice"
 
 [[circuits]]
-name = "HouseClose_V2"
+name = "HouseCloseV2"
 namespace = "darktoshi_dice"

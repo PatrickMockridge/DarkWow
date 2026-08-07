@@ -27,25 +27,25 @@ proof_circuit = "WithdrawV2"
 name = "place_bet"
 code = 3
 requires_proof = true
-proof_circuit = "PlaceBet_V2"
+proof_circuit = "PlaceBetV2"
 
 [[functions]]
 name = "raise"
 code = 4
 requires_proof = true
-proof_circuit = "Raise_V2"
+proof_circuit = "RaiseV2"
 
 [[functions]]
 name = "call"
 code = 5
 requires_proof = true
-proof_circuit = "Call_V2"
+proof_circuit = "CallV2"
 
 [[functions]]
 name = "fold"
 code = 6
 requires_proof = true
-proof_circuit = "Fold_V2"
+proof_circuit = "FoldV2"
 
 [[functions]]
 name = "close_pot"
@@ -57,19 +57,19 @@ proof_circuit = "ClosePotV2"
 name = "settle_pot"
 code = 8
 requires_proof = true
-proof_circuit = "SettlePot_V2"
+proof_circuit = "SettlePotV2"
 
 [[functions]]
 name = "contribute_entropy"
 code = 9
 requires_proof = true
-proof_circuit = "ContributeEntropy_V2"
+proof_circuit = "ContributeEntropyV2"
 
 [[functions]]
 name = "claim"
 code = 10
 requires_proof = true
-proof_circuit = "Claim_V2"
+proof_circuit = "ClaimV2"
 
 [[capabilities]]
 discriminant = 0
@@ -104,45 +104,45 @@ name = "game_room_entropy"
 
 # V2 circuits (HAZOP RC3: domain separation)
 [[circuits]]
-name = "CreateRoom_V2"
+name = "CreateRoomV2"
 namespace = "game_room"
 
 [[circuits]]
-name = "Deposit_V2"
+name = "DepositV2"
 namespace = "game_room"
 
 [[circuits]]
-name = "PlaceBet_V2"
+name = "PlaceBetV2"
 namespace = "game_room"
 
 [[circuits]]
-name = "SettlePot_V2"
+name = "SettlePotV2"
 namespace = "game_room"
 
 [[circuits]]
-name = "Claim_V2"
+name = "ClaimV2"
 namespace = "game_room"
 
 [[circuits]]
-name = "Call_V2"
+name = "CallV2"
 namespace = "game_room"
 
 [[circuits]]
-name = "ClosePot_V2"
+name = "ClosePotV2"
 namespace = "game_room"
 
 [[circuits]]
-name = "ContributeEntropy_V2"
+name = "ContributeEntropyV2"
 namespace = "game_room"
 
 [[circuits]]
-name = "Fold_V2"
+name = "FoldV2"
 namespace = "game_room"
 
 [[circuits]]
-name = "Raise_V2"
+name = "RaiseV2"
 namespace = "game_room"
 
 [[circuits]]
-name = "Withdraw_V2"
+name = "WithdrawV2"
 namespace = "game_room"

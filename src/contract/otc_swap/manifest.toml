@@ -13,25 +13,25 @@ code = 0
 name = "create_swap"
 code = 1
 requires_proof = true
-proof_circuit = "CreateSwap_V2"
+proof_circuit = "CreateSwapV2"
 
 [[functions]]
 name = "fund_swap"
 code = 2
 requires_proof = true
-proof_circuit = "FundSwap_V2"
+proof_circuit = "FundSwapV2"
 
 [[functions]]
 name = "execute_swap"
 code = 3
 requires_proof = true
-proof_circuit = "ExecuteSwap_V2"
+proof_circuit = "ExecuteSwapV2"
 
 [[functions]]
 name = "cancel_swap"
 code = 4
 requires_proof = true
-proof_circuit = "CancelSwap_V2"
+proof_circuit = "CancelSwapV2"
 
 [[capabilities]]
 discriminant = 0
@@ -53,17 +53,17 @@ name = "swaps"
 name = "nullifiers"
 
 [[circuits]]
-name = "CreateSwap_V2"
+name = "CreateSwapV2"
 namespace = "otc_swap"
 
 [[circuits]]
-name = "FundSwap_V2"
+name = "FundSwapV2"
 namespace = "otc_swap"
 
 [[circuits]]
-name = "ExecuteSwap_V2"
+name = "ExecuteSwapV2"
 namespace = "otc_swap"
 
 [[circuits]]
-name = "CancelSwap_V2"
+name = "CancelSwapV2"
 namespace = "otc_swap"

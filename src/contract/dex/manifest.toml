@@ -15,28 +15,28 @@ name = "create_swap"
 code = 1
 description = "Create a new atomic swap proposal. Proposer locks token funding via child PN::TransferV1 calls."
 requires_proof = true
-proof_circuit = "CreateSwap_V2"
+proof_circuit = "CreateSwapV2"
 
 [[functions]]
 name = "accept_swap"
 code = 2
 description = "Accept an existing swap proposal. Acceptor locks matching token funding via child PN::TransferV1 calls."
 requires_proof = true
-proof_circuit = "AcceptSwap_V2"
+proof_circuit = "AcceptSwapV2"
 
 [[functions]]
 name = "execute_swap"
 code = 3
 description = "Execute a funded swap. Both parties' funds are exchanged atomically."
 requires_proof = true
-proof_circuit = "ExecuteSwap_V2"
+proof_circuit = "ExecuteSwapV2"
 
 [[functions]]
 name = "cancel_swap"
 code = 4
 description = "Cancel a pending swap proposal. Only the proposer can cancel, and only before acceptance."
 requires_proof = true
-proof_circuit = "CancelSwap_V2"
+proof_circuit = "CancelSwapV2"
 
 [[functions]]
 name = "update_config"
@@ -57,14 +57,14 @@ name = "execute_swap_fee"
 code = 7
 description = "Execute swap with fee deduction."
 requires_proof = true
-proof_circuit = "ExecuteSwapFee_V2"
+proof_circuit = "ExecuteSwapFeeV2"
 
 [[functions]]
 name = "execute_swap_slippage"
 code = 8
 description = "Execute swap with slippage protection."
 requires_proof = true
-proof_circuit = "ExecuteSwapSlippage_V2"
+proof_circuit = "ExecuteSwapSlippageV2"
 
 [[capabilities]]
 discriminant = 0
@@ -109,33 +109,33 @@ description = "Contract metadata"
 
 # V2 circuits (HAZOP RC3: domain separation)
 [[circuits]]
-name = "CreateSwap_V2"
+name = "CreateSwapV2"
 namespace = "dex"
 
 [[circuits]]
-name = "AcceptSwap_V2"
+name = "AcceptSwapV2"
 namespace = "dex"
 
 [[circuits]]
-name = "ExecuteSwap_V2"
+name = "ExecuteSwapV2"
 namespace = "dex"
 
 [[circuits]]
-name = "CancelSwap_V2"
+name = "CancelSwapV2"
 namespace = "dex"
 
 [[circuits]]
-name = "ExecuteSwapFee_V2"
+name = "ExecuteSwapFeeV2"
 namespace = "dex"
 
 [[circuits]]
-name = "ExecuteSwapSlippage_V2"
+name = "ExecuteSwapSlippageV2"
 namespace = "dex"
 
 [[circuits]]
-name = "UpdateConfig_V2"
+name = "UpdateConfigV2"
 namespace = "dex"
 
 [[circuits]]
-name = "SetTransparencyLevel_V2"
+name = "SetTransparencyLevelV2"
 namespace = "dex"

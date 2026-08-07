@@ -11,43 +11,43 @@ dependencies = ["promissory_note", "native_token_v1"]
 name = "initialize"
 code = 0
 requires_proof = true
-proof_circuit = "Init_V2"
+proof_circuit = "InitV2"
 
 [[functions]]
 name = "open_position"
 code = 1
 requires_proof = true
-proof_circuit = "Open_V2"
+proof_circuit = "OpenPositionV2"
 
 [[functions]]
 name = "add_collateral"
 code = 2
 requires_proof = true
-proof_circuit = "AddCollateral_V2"
+proof_circuit = "AddCollateralV2"
 
 [[functions]]
 name = "remove_collateral"
 code = 3
 requires_proof = true
-proof_circuit = "RemoveCollateral_V2"
+proof_circuit = "RemoveCollateralV2"
 
 [[functions]]
 name = "mint_stable"
 code = 4
 requires_proof = true
-proof_circuit = "MintStable_V2"
+proof_circuit = "MintStableV2"
 
 [[functions]]
 name = "repay_stable"
 code = 5
 requires_proof = true
-proof_circuit = "RepayStable_V2"
+proof_circuit = "RepayStableV2"
 
 [[functions]]
 name = "liquidate"
 code = 6
 requires_proof = true
-proof_circuit = "Liquidate_V2"
+proof_circuit = "LiquidateV2"
 
 [[functions]]
 name = "update_config"
@@ -57,13 +57,13 @@ code = 7
 name = "governance_report"
 code = 8
 requires_proof = true
-proof_circuit = "GovernanceReport_V2"
+proof_circuit = "GovernanceReportV2"
 
 [[functions]]
 name = "accrue_interest"
 code = 9
 requires_proof = true
-proof_circuit = "AccrueInterest_V2"
+proof_circuit = "AccrueInterestV2"
 
 [[functions]]
 name = "redeem_stable"
@@ -98,39 +98,39 @@ name = "governance_reports"
 
 # V2 circuits (HAZOP RC3: domain separation)
 [[circuits]]
-name = "Init_V2"
+name = "InitV2"
 namespace = "stablecoin"
 
 [[circuits]]
-name = "Open_V2"
+name = "OpenPositionV2"
 namespace = "stablecoin"
 
 [[circuits]]
-name = "AddCollateral_V2"
+name = "AddCollateralV2"
 namespace = "stablecoin"
 
 [[circuits]]
-name = "RemoveCollateral_V2"
+name = "RemoveCollateralV2"
 namespace = "stablecoin"
 
 [[circuits]]
-name = "MintStable_V2"
+name = "MintStableV2"
 namespace = "stablecoin"
 
 [[circuits]]
-name = "RepayStable_V2"
+name = "RepayStableV2"
 namespace = "stablecoin"
 
 [[circuits]]
-name = "Liquidate_V2"
+name = "LiquidateV2"
 namespace = "stablecoin"
 
 [[circuits]]
-name = "GovernanceReport_V2"
+name = "GovernanceReportV2"
 namespace = "stablecoin"
 
 [[circuits]]
-name = "AccrueInterest_V2"
+name = "AccrueInterestV2"
 namespace = "stablecoin"
 
 [[circuits]]

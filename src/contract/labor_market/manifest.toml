@@ -11,43 +11,43 @@ dependencies = ["promissory_note", "native_token_v1"]
 name = "create_job"
 code = 0
 requires_proof = true
-proof_circuit = "CreateJob_V2"
+proof_circuit = "CreateJobV2"
 
 [[functions]]
 name = "accept_job"
 code = 1
 requires_proof = true
-proof_circuit = "AcceptJob_V2"
+proof_circuit = "AcceptJobV2"
 
 [[functions]]
 name = "submit_deliverable"
 code = 2
 requires_proof = true
-proof_circuit = "SubmitDeliverable_V2"
+proof_circuit = "SubmitDeliverableV2"
 
 [[functions]]
 name = "submit_git_deliverable"
 code = 3
 requires_proof = true
-proof_circuit = "SubmitGitDeliverable_V2"
+proof_circuit = "SubmitGitDeliverableV2"
 
 [[functions]]
 name = "confirm_delivery"
 code = 4
 requires_proof = true
-proof_circuit = "ConfirmDelivery_V2"
+proof_circuit = "ConfirmDeliveryV2"
 
 [[functions]]
 name = "dispute"
 code = 5
 requires_proof = true
-proof_circuit = "Dispute_V2"
+proof_circuit = "DisputeV2"
 
 [[functions]]
 name = "refund"
 code = 6
 requires_proof = true
-proof_circuit = "Refund_V2"
+proof_circuit = "RefundV2"
 
 [[functions]]
 name = "cancel"
@@ -73,19 +73,19 @@ code = 11
 name = "create_job_with_capability"
 code = 12
 requires_proof = true
-proof_circuit = "CreateJobWithCapability_V2"
+proof_circuit = "CreateJobWithCapabilityV2"
 
 [[functions]]
 name = "accept_job_with_capability"
 code = 13
 requires_proof = true
-proof_circuit = "AcceptJobWithCapability_V2"
+proof_circuit = "AcceptJobWithCapabilityV2"
 
 [[functions]]
 name = "create_job_with_milestones_and_capability"
 code = 14
 requires_proof = true
-proof_circuit = "CreateJobWithMilestonesAndCapability_V2"
+proof_circuit = "CreateJobWithMilestonesAndCapabilityV2"
 
 [[trees]]
 name = "jobs"
@@ -100,41 +100,41 @@ name = "spent_flags"
 name = "info"
 
 [[circuits]]
-name = "CreateJob_V2"
+name = "CreateJobV2"
 namespace = "labor_market"
 
 [[circuits]]
-name = "AcceptJob_V2"
+name = "AcceptJobV2"
 namespace = "labor_market"
 
 [[circuits]]
-name = "SubmitDeliverable_V2"
+name = "SubmitDeliverableV2"
 namespace = "labor_market"
 
 [[circuits]]
-name = "SubmitGitDeliverable_V2"
+name = "SubmitGitDeliverableV2"
 namespace = "labor_market"
 
 [[circuits]]
-name = "ConfirmDelivery_V2"
+name = "ConfirmDeliveryV2"
 namespace = "labor_market"
 
 [[circuits]]
-name = "Dispute_V2"
+name = "DisputeV2"
 namespace = "labor_market"
 
 [[circuits]]
-name = "Refund_V2"
+name = "RefundV2"
 namespace = "labor_market"
 
 [[circuits]]
-name = "AcceptJobWithCapability_V2"
+name = "AcceptJobWithCapabilityV2"
 namespace = "labor_market"
 
 [[circuits]]
-name = "CreateJobWithCapability_V2"
+name = "CreateJobWithCapabilityV2"
 namespace = "labor_market"
 
 [[circuits]]
-name = "CreateJobWithMilestonesAndCapability_V2"
+name = "CreateJobWithMilestonesAndCapabilityV2"
 namespace = "labor_market"

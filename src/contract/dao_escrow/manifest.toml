@@ -9,7 +9,7 @@ dependencies = ["promissory_note", "native_token_v1"]
 name = "initialize"
 code = 0
 requires_proof = true
-proof_circuit = "Init_V2"
+proof_circuit = "InitV2"
 
 [[functions]]
 name = "update"
@@ -19,7 +19,7 @@ code = 1
 name = "pay_premium"
 code = 2
 requires_proof = true
-proof_circuit = "PayPremium_V2"
+proof_circuit = "PayPremiumV2"
 
 [[functions]]
 name = "withdraw"
@@ -41,13 +41,13 @@ code = 6
 name = "propose_claim"
 code = 7
 requires_proof = true
-proof_circuit = "ProposeClaim_V2"
+proof_circuit = "ProposeClaimV2"
 
 [[functions]]
 name = "vote_claim"
 code = 8
 requires_proof = true
-proof_circuit = "VoteClaim_V2"
+proof_circuit = "VoteClaimV2"
 
 [[functions]]
 name = "execute_claim"
@@ -61,13 +61,13 @@ code = 10
 name = "verify_member_capability"
 code = 11
 requires_proof = true
-proof_circuit = "VerifyMemberCapability_V2"
+proof_circuit = "VerifyMemberCapabilityV2"
 
 [[functions]]
 name = "resolve_dispute"
 code = 12
 requires_proof = true
-proof_circuit = "ResolveDispute_V2"
+proof_circuit = "ResolveDisputeV2"
 
 [[functions]]
 name = "cancel_claim"
@@ -134,27 +134,27 @@ name = "governance"
 
 # V2 circuits (HAZOP RC3: domain separation)
 [[circuits]]
-name = "Init_V2"
+name = "InitV2"
 namespace = "dao_escrow"
 
 [[circuits]]
-name = "PayPremium_V2"
+name = "PayPremiumV2"
 namespace = "dao_escrow"
 
 [[circuits]]
-name = "ProposeClaim_V2"
+name = "ProposeClaimV2"
 namespace = "dao_escrow"
 
 [[circuits]]
-name = "VoteClaim_V2"
+name = "VoteClaimV2"
 namespace = "dao_escrow"
 
 [[circuits]]
-name = "VerifyMemberCapability_V2"
+name = "VerifyMemberCapabilityV2"
 namespace = "dao_escrow"
 
 [[circuits]]
-name = "ResolveDispute_V2"
+name = "ResolveDisputeV2"
 namespace = "dao_escrow"
 
 [[circuits]]

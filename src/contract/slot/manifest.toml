@@ -13,19 +13,19 @@ code = 0
 name = "commit_spin"
 code = 1
 requires_proof = true
-proof_circuit = "CommitBet_V2"
+proof_circuit = "CommitBetV2"
 
 [[functions]]
 name = "reveal_spin"
 code = 2
 requires_proof = true
-proof_circuit = "RevealSpin_V2"
+proof_circuit = "RevealSpinV2"
 
 [[functions]]
 name = "settle_spin"
 code = 3
 requires_proof = true
-proof_circuit = "SettleBet_V2"
+proof_circuit = "SettleBetV2"
 
 [[functions]]
 name = "cancel_spin"
@@ -57,13 +57,13 @@ name = "info"
 name = "house"
 
 [[circuits]]
-name = "CommitBet_V2"
+name = "CommitBetV2"
 namespace = "slot"
 
 [[circuits]]
-name = "RevealSpin_V2"
+name = "RevealSpinV2"
 namespace = "slot"
 
 [[circuits]]
-name = "SettleBet_V2"
+name = "SettleBetV2"
 namespace = "slot"
