@@ -483,7 +483,7 @@ mod tests {
         ).unwrap_err();
         match err {
             LinearError::InvalidTarget { declared, expected, height } => {
-                assert_eq!(declared, BlockTarget::MAX);
+                assert_eq!(declared, BlockTarget::MAX.get());
                 assert_eq!(expected, 0x0FFF_FFFF);
                 assert_eq!(height, BlockHeight::new(1)); // block header height
             }

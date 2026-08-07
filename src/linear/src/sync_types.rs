@@ -387,7 +387,7 @@ mod tests {
         // Tip without genesis_hash (backward compat)
         let tip_no_genesis = Tip {
             height: BlockHeight::new(42),
-            hash: "abcdef".to_string(),
+            hash: BlockHash::from_hash(blake3::Hash::from_bytes([0xCCu8; 32])),
             genesis_hash: None,
         };
         let json = serde_json::to_string(&tip_no_genesis).expect("Tip serialize");

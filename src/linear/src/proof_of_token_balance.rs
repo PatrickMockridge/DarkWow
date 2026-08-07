@@ -394,7 +394,7 @@ mod tests {
         use rand::rngs::OsRng;
 
         let secret = SecretKey::random(&mut OsRng);
-        let pubkey = PublicKey::from_secret(secret);
+        let pubkey = PublicKey::from_secret(secret.clone());
 
         let darkw_token = poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]);
 
@@ -412,7 +412,7 @@ mod tests {
             FuncId::none(), pallas::Base::zero(), BaseBlind::from_u64(99u64),
         );
         // Use Nullifier::new (public API)
-        let input_nullifier = Nullifier::new(secret, output_coin.inner());
+        let input_nullifier = Nullifier::new(secret.clone(), output_coin.inner());
         let output_nullifier = Nullifier::new(secret, output_coin.inner());
         // MerkleNode via From<pallas::Base>
         let merkle_root = MerkleNode::from_base(pallas::Base::from(9999u64));
@@ -485,7 +485,7 @@ mod tests {
         use rand::rngs::OsRng;
 
         let secret = SecretKey::random(&mut OsRng);
-        let pubkey = PublicKey::from_secret(secret);
+        let pubkey = PublicKey::from_secret(secret.clone());
         let darkw_token = poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]);
 
         let input_commit = pedersen_commitment_u64(in_value,
@@ -497,7 +497,7 @@ mod tests {
             &pubkey, out_value, dwow_sdk::crypto::TokenId::DRKW,
             FuncId::none(), pallas::Base::zero(), BaseBlind::from_u64(99u64),
         );
-        let nullifier = Nullifier::new(secret, coin.inner());
+        let nullifier = Nullifier::new(secret.clone(), coin.inner());
         let merkle_root = MerkleNode::from_base(pallas::Base::from(9999u64));
 
         let params = TransferParamsV1 {
