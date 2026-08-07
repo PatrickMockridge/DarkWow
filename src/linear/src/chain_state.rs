@@ -253,7 +253,9 @@ impl CChainState {
         } else if computed_work > 0 {
             // No sled value but chain has blocks — persist the computed value
             let work_bytes = computed_work.to_le_bytes().to_vec();
-            let _ = store.consensus.insert("accumulated_work", work_bytes);
+            if let Err(e) = store.consensus.insert("accumulated_work", work_bytes) {
+                tracing::warn!(target: "chain_state", "Failed to persist accumulated_work: {e}");
+            }
         }
 
         consensus.accumulated_work.store(computed_work);
@@ -761,6 +763,11 @@ impl CChainState {
                 .get(&current_height)
                 .and_then(|blocks| {
                     blocks.iter().find(|b| {
+                        // spec dispensation: type-system.md §2.3.2 — closure returns
+                        // bool for .find() predicate; Result propagation via ? is
+                        // infeasible. VM creation is guarded by get_vm() which already
+                        // validates the key; hash failure post-VM-creation is a fatal
+                        // hardware error.
                         let pvm = self.get_vm(b.header.randomx_key)
                             .expect("Failed to create RandomX VM for competing block");
                         let pguard = pvm.lock().unwrap_or_else(|e| e.into_inner());
@@ -774,6 +781,7 @@ impl CChainState {
                 let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
                 let hash_u32 = {
                     let h = block.hash_with_vm(&*guard)?;
+                    // spec dispensation: type-system.md §2.3 — blake3::Hash always 32 bytes.
                     u32::from_le_bytes(h.as_bytes()[0..4].try_into().unwrap())
                 };
                 if !block.header.target.hash_is_valid(hash_u32) {
@@ -872,6 +880,9 @@ impl CChainState {
                             .unwrap_or_else(|e| e.into_inner())
                             .remove(&block_hash);
                         competing.entry(current_height).or_default().retain(|b| {
+                            // spec dispensation: type-system.md §2.3.2 — closure returns
+                            // bool for .retain() predicate; Result propagation via ? is
+                            // infeasible. Same rationale as the .find() closure above.
                             let pvm = self.get_vm(b.header.randomx_key)
                                 .expect("Failed to create RandomX VM for competing block");
                             let pguard = pvm.lock()
@@ -1006,6 +1017,8 @@ impl CChainState {
                 let c_uncle = pedersen_commitment_u64(uncle.pin_confirmed.get(), Blind(r_i));
                 debug_assert!(!bool::from(c_uncle.is_identity()),
                     "Uncle Pedersen commitment must not be identity");
+                // spec dispensation: type-system.md §2.3 — pallas compressed
+                // points are always exactly 32 bytes per the Pasta curve spec.
                 let c_bytes: [u8; 32] = c_uncle.to_bytes().as_ref().try_into()
                     .expect("pallas::Point compressed repr must be 32 bytes");
                 entries.push((c_bytes, height));

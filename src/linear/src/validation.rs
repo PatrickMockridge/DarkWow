@@ -81,6 +81,9 @@ pub fn check_block_header(
             ));
         }
     } else {
+        // spec dispensation: type-system.md §2.3 — blake3::Hash is always
+        // 32 bytes; [0..4].try_into() is provably infallible for a fixed 4-byte
+        // slice of a 32-byte array.
         let hash_u32 = u32::from_le_bytes(block_hash.as_bytes()[0..4].try_into().unwrap());
         if !block.header.target.hash_is_valid(hash_u32) {
             return Err(LinearError::InvalidPoW(block_hash.to_string()));
@@ -200,6 +203,7 @@ pub fn check_uncles(
         let uncle_hash = uncle.hash_with_vm(&vm)?;
 
         // PoW for this uncle
+        // spec dispensation: type-system.md §2.3 — blake3::Hash always 32 bytes.
         let hash_u32 = u32::from_le_bytes(uncle_hash.as_bytes()[0..4].try_into().unwrap());
         if !target.hash_is_valid(hash_u32) {
             return Err(LinearError::UnclePoWInvalid(uncle_hash.to_string()));
@@ -285,6 +289,7 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
         ));
     }
 
+    // spec dispensation: type-system.md §2.3 — guarded by prior len() != 1 check.
     let pow_call = block.transactions[0].contract_calls.first().unwrap();
     if pow_call.data.len() < 2 {
         return Err(LinearError::BlockStructure(
