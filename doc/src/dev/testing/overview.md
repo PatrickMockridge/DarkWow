@@ -91,9 +91,12 @@ bytes, which phantom types cannot prevent. Every declared SHALL at a boundary
 SHALL have at least one runtime witness test. The P2P ban tests are
 type-system tests in partition B.
 
-Current boundary obligation coverage (MoC review 2026-07-17): 17/36 cells
-witnessed (47%). The five highest-priority gaps are documented in
-type-system.md §10.5.
+Current boundary obligation coverage (MoC review 2026-08-07, updated
+after type-system remediation): 24/36 cells witnessed (67%). Eleven
+boundary witness tests (BW-1 through BW-13, with BW-8/9 dispensed)
+added coverage across the C FFI, Wallet Manifest, Contract Entrypoints,
+Mempool Admission, and Persistence boundaries. The five highest-priority
+gaps are documented in type-system.md §10.5.
 
 **C. Dynamic residue.** Genuinely emergent runtime properties: scheduling and
 weak bisimilarity (JoinSet merge barrier), network topology and PEX
@@ -479,6 +482,14 @@ execution, wallet scan, merge-mining, or strict-mode rejection paths.
 | Fee collect determinism (Level 2) | `bin/dwowd/src/tests/fee_collect_pipeline.rs` |
 | Consensus coordination tests | `bin/dwowd/tests/consensus_coordination.rs` |
 | Tripwire guardrails | `bin/dwowd/src/tests/tripwire.rs` |
+| Boundary witness: Mempool admission (BW-2) | `src/linear/src/zk_verifier.rs` (`test_native_token_proofless_call_rejected_at_admission`) |
+| Boundary witness: ContractId rejection (BW-3) | `src/sdk/src/crypto/contract_id.rs` (`test_contract_id_rejects_wrong_length`) |
+| Boundary witness: Entrypoint data gating (BW-4) | `src/contract/native_token/tests/unit.rs` (`test_entrypoint_data_length_gating`) |
+| Boundary witness: Manifest caps (BW-5/6) | `src/sdk/src/manifest.rs` (`test_field_count_caps_enforced`, `test_witness_binding_depth_rejected`) |
+| Boundary witness: WalletDB persistence (BW-7) | `bin/dww/src/scan.rs` (`test_walletdb_persistence_roundtrip`) |
+| Boundary witness: C FFI safety (BW-10/11/12) | `bin/dww/src/ffi.rs` (`test_ffi_null_pointers_rejected`, `test_ffi_buffer_caps_enforced`, `test_ffi_catch_unwind_isolation`) |
+| Boundary witness: Nullifier replay (BW-1) | `src/linear/src/chain_state.rs` (`test_nullifier_replay_detected`, `#[ignore]` — pending API) |
+| Boundary witness: Supply persistence (BW-13) | `src/linear/src/chain_state.rs` (`test_supply_chain_persistence_roundtrip`) |
 | Relayer heavyweight test runner | `bin/dwowd/src/tests/heavyweight.sh --relayer` |
 | Docker base image (shared by all images) | `contrib/docker/darkwow-testnet/Dockerfile.base` |
 | Docker localnet (modular pipeline) | `contrib/docker/darkwow-testnet/` (18 `lib/*.sh` modules + `test_pipeline.sh` orchestrator + `pipeline_spec.py` spec) |
