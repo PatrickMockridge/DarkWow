@@ -320,6 +320,7 @@ mod tests {
     use super::*;
     use crate::ContractCall;
     use dwow_sdk::pasta::pallas;
+    use dwow_sdk::blockchain::BlockVersion;
 
     #[test]
     fn test_reconciliation_rejects_divergent_calls() {

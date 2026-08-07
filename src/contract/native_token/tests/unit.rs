@@ -622,4 +622,29 @@ mod tests {
 
         assert_eq!(update.nullifiers.len(), 1);
     }
+
+    /// BW-4: Entrypoint data-length gating witness.
+    /// Per contract-wasm-type-system.md §A.3.1: entrypoint parameters SHALL
+    /// validate length before deserialization. Oversized or undersized
+    /// call data SHALL be rejected with a typed error, not silently truncated.
+    #[test]
+    fn test_entrypoint_data_length_gating() {
+        use dwow_native_token_contract::model::Coin;
+        // Coin::ENCODED_SIZE is 32 bytes. Verify:
+        // - Exact length: succeeds
+        // - Too short: rejected
+        // - Too long: rejected
+        let valid = Coin::decode(&[0u8; 32]);
+        assert!(valid.is_ok(), "exact-length Coin decode must succeed");
+
+        let short = Coin::decode(&[0u8; 31]);
+        assert!(short.is_err(), "undersized Coin decode must be rejected");
+
+        let long = Coin::decode(&[0u8; 33]);
+        assert!(long.is_err(), "oversized Coin decode must be rejected");
+
+        // Empty data must also be rejected
+        let empty = Coin::decode(&[]);
+        assert!(empty.is_err(), "empty Coin decode must be rejected");
+    }
 }

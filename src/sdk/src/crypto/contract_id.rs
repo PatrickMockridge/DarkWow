@@ -254,4 +254,19 @@ mod tests {
             "ContractId::ZERO must be valid (unlike Nullifier)");
     }
 
+    /// BW-3: ContractId::from_bytes rejection at the type boundary.
+    /// Per type-system.md §10.5: the re-lift from untrusted bytes SHALL
+    /// validate through the named constructor. Wrong-length inputs SHALL
+    /// be rejected — the type system SHALL NOT allow a [u8; 31] or
+    /// [u8; 33] to become a ContractId.
+    #[test]
+    fn test_contract_id_rejects_wrong_length() {
+        // 31 bytes — too short
+        assert!(ContractId::from_bytes([0u8; 31]).is_err(),
+            "31-byte ContractId must be rejected");
+        // 33 bytes — too long
+        assert!(ContractId::from_bytes([0u8; 33]).is_err(),
+            "33-byte ContractId must be rejected");
+    }
+
 }

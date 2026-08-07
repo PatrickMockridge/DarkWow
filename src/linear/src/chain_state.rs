@@ -1558,8 +1558,10 @@ impl CChainState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{BlockHeader, PowSource, Miner, compute_merkle_root, CumulativeSupplyEntry};
     use dwow_sdk::crypto::pasta_prelude::Group;
     use dwow_sdk::pasta::pallas;
+    use dwow_sdk::blockchain::{BlockReward, BlockTarget, BlockTimestamp, MoneroBlockHeight, SupplyAmount, BlockVersion};
 
     /// T2: Competing blocks at the same height — the second block MUST be
     /// stored in competing_blocks, not dropped. The first block extends the
@@ -1684,7 +1686,7 @@ mod tests {
         let cs = CChainState::new(db, 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
             FinalityConfig::default()).unwrap();
         let entry = cs.supply_chain.get_latest();
-        assert_eq!(entry.total_supply, 0);
+        assert_eq!(entry.total_supply, SupplyAmount::new(0));
         assert_eq!(entry.value_commit, pallas::Point::identity());
     }
 
@@ -1784,9 +1786,39 @@ mod tests {
         let nf = Nullifier::from_bytes([1u8; 32]).unwrap();
         cs.track_nullifier(nf, BlockHeight::new(42));
 
-        assert!(cs.has_nullifier(&nf).unwrap(), "nullifier must be found after track_nullifier");
+        assert!(cs.has_nullifier(&nf), "nullifier must be found after track_nullifier");
         assert_eq!(cs.nullifier_height(&nf).unwrap(), Some(BlockHeight::new(42)),
             "nullifier height must match insertion height");
+    }
+
+    /// BW-1: Nullifier replay detection witness.
+    /// Per type-system.md §10.5: the block-acceptance boundary SHALL reject
+    /// nullifier duplicates. A Nullifier is a nominal type (not bare [u8;32])
+    /// and its replay detection is the type-level enforcement of the
+    /// ↓nullify barb. This test verifies that track_nullifier → has_nullifier
+    /// correctly identifies spent nullifiers at the persistence boundary.
+    #[test]
+    fn test_nullifier_replay_detected() {
+        use crate::Nullifier;
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let db = Arc::new(db);
+        let cs = CChainState::new(db, 120, BlockTarget::MAX, BlockTarget::new(1), BlockTarget::MAX,
+            FinalityConfig::default()).unwrap();
+
+        let nf = Nullifier::from_bytes([0xAAu8; 32]).unwrap();
+
+        // Fresh state: nullifier not yet seen
+        assert!(!cs.has_nullifier(&nf));
+
+        // Track at height 10 — represents a spent capability
+        cs.track_nullifier(nf, BlockHeight::new(10));
+        assert!(cs.has_nullifier(&nf),
+            "nullifier must be found after tracking — replay detection gate");
+
+        // A different nullifier must NOT collide
+        let nf2 = Nullifier::from_bytes([0xBBu8; 32]).unwrap();
+        assert!(!cs.has_nullifier(&nf2),
+            "different nullifiers must not collide in the SMT");
     }
 
     /// L3: Uncle merkle root determinism — the same set of uncles MUST
@@ -1816,8 +1848,8 @@ mod tests {
                 None, None,
             ).expect("vm"),
         );
-        let (root1, _) = build_uncle_merkle(&uncles, &vm);
-        let (root2, _) = build_uncle_merkle(&uncles, &vm);
+        let (root1, _) = build_uncle_merkle(&uncles, &vm).expect("uncle merkle");
+        let (root2, _) = build_uncle_merkle(&uncles, &vm).expect("uncle merkle");
         assert_eq!(root1, root2, "uncle merkle root must be deterministic");
     }
 
@@ -1840,6 +1872,7 @@ mod tests {
         let entry = CumulativeSupplyEntry {
             total_supply: supply,
             value_commit,
+            blind: pallas::Scalar::zero(),
         };
 
         cs.supply_chain.commit(height, &entry).unwrap();

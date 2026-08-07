@@ -822,7 +822,7 @@ mod tests {
             BlockTarget::new(0x0000_FFFF),
             &[],
             &vm,
-        );
+        ).expect("test block creation failed");
 
         assert_eq!(block.header.previous, previous);
         assert_eq!(block.header.height, BlockHeight::new(1));
@@ -847,7 +847,7 @@ mod tests {
             BlockTarget::new(0x0000_FFFF),
             &[],
             &vm,
-        );
+        ).expect("test block creation failed");
         let reward1 = dwow_sdk::blockchain::expected_reward(BlockHeight::new(1));
         assert_eq!(block1.header.total_reward, reward1);
         assert_eq!(reward1, dwow_sdk::blockchain::reward::INITIAL_REWARD,
@@ -861,7 +861,7 @@ mod tests {
             BlockTarget::new(0x0000_FFFF),
             &[],
             &vm,
-        );
+        ).expect("test block creation failed");
         let reward2 = dwow_sdk::blockchain::expected_reward(BlockHeight::new(2));
         assert_eq!(block2.header.total_reward, reward2);
         assert!(reward2 > BlockReward::new(1_000_000_000), "height 2 reward should be > 1B base units");
@@ -874,7 +874,7 @@ mod tests {
             BlockTarget::new(0x0000_FFFF),
             &[],
             &vm,
-        );
+        ).expect("test block creation failed");
         let reward3 = dwow_sdk::blockchain::expected_reward(BlockHeight::new(3));
         assert_eq!(block3.header.total_reward, reward3);
         assert!(reward3 <= reward2, "reward must decay monotonically");
@@ -892,7 +892,8 @@ mod tests {
         let vm = create_test_vm();
         let previous = blake3::hash(b"genesis");
 
-        let block = create_block(previous, BlockHeight::new(42), vec![], BlockTarget::new(0x0000_FFFF), &vm);
+        let block = create_block(previous, BlockHeight::new(42), vec![], BlockTarget::new(0x0000_FFFF), &vm)
+            .expect("test block creation failed");
         let expected = dwow_sdk::blockchain::expected_reward(BlockHeight::new(42));
         assert_eq!(block.header.total_reward, expected);
         assert_eq!(block.header.height, BlockHeight::new(42));
