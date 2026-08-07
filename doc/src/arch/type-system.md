@@ -201,6 +201,40 @@ unify.
   (`BlockHeight::new` / `from_le_bytes`), per §2.2. No code path SHALL
   construct a height by directly accessing a `pub` field.
 
+### 2.3.1b Nominal Type Methods (Documented 2026-08-07)
+
+Each nominal consensus type follows the §8.5 pattern (`new(u64)`, `.get()`,
+`to_le_bytes`/`from_le_bytes`, manual serde). Domain-specific methods beyond
+the boilerplate are documented here. These methods SHALL be used in preference
+to raw `.get()` extraction wherever the semantics match.
+
+**BlockHeight** (`u64`): `succ() -> BlockHeight`, `pred() -> Option<BlockHeight>`,
+`checked_sub(u64) -> Option<BlockHeight>`, `saturating_sub(u64) -> BlockHeight`,
+`saturating_sub_blocks(u64) -> BlockHeight`, `is_zero() -> bool`,
+`is_genesis() -> bool`, `to_field_element() -> pallas::Base`,
+`from_sqlite_i64(i64) -> Option<BlockHeight>`, `to_sqlite_i64() -> Option<i64>`,
+`to_sqlite_i64_saturating() -> i64`, `GENESIS: BlockHeight = new(1)`.
+
+**BlockTarget** (`u32`): `reached(hash_u32: u32) -> bool`,
+`hash_is_valid(hash_u32: u32) -> bool`, `adjust(scale, adjustment, min, max) -> BlockTarget`,
+`chain_work() -> u128`, `difficulty() -> u64`, `MAX: BlockTarget = new(u32::MAX)`.
+
+**BlockReward** (`u64`): `split_for_uncle(depth) -> BlockReward`,
+`ZERO: BlockReward = new(0)`. Cross-domain conversion:
+`impl From<BlockReward> for SupplyAmount` — reward becomes part of cumulative supply.
+
+**SupplyAmount** (`u64`): `saturating_add(SupplyAmount) -> SupplyAmount`,
+`ZERO: SupplyAmount = new(0)`.
+
+**FeeAmount** (`u64`): `checked_add(FeeAmount) -> Option<FeeAmount>`,
+`checked_sub(FeeAmount) -> Option<FeeAmount>`, `ZERO: FeeAmount = new(0)`.
+
+**MoneroBlockHeight** (`u64`): Distinguished from `BlockHeight` — the two chains
+advance independently. `serde_default()` for backward-compatible deserialization.
+
+**BlockVersion** (`u8`): `CURRENT: BlockVersion = new(1)`. Included in hash
+preimages to bind block identity to the protocol version.
+
 ### 2.3.2 No `unwrap()` on P2P Critical Path
 
 `unwrap()` SHALL NOT appear on the P2P critical path. `Weak::upgrade().unwrap()`
@@ -422,11 +456,11 @@ Variants:
 - `VersionMismatch = 401` — protocol version incompatible
 - `Forbidden = 403` — peer not authorized
 - `UnknownMessage = 404` — unrecognized message type
-- `NoMatchingTransports = 405` — no compatible transport
+- `NoMatchingTransports = 406` — no compatible transport
 - `RateLimited = 429` — sender exceeded rate budget
 - `Internal = 500` — server error, retry may succeed
-- `HostlistEmpty = 501` — no peers to share
-- `UpstreamTimeout = 502` — upstream seed unreachable
+- `HostlistEmpty = 503` — no peers to share
+- `UpstreamTimeout = 504` — upstream seed unreachable
 
 The classification functions `seed_error_is_client_error()` and
 `seed_error_is_server_error()` SHALL operate on the enum, not on raw `u32`.
@@ -645,10 +679,12 @@ if their barbs differ.
 | `FuncId` | `pallas::Base` | `↓gate` | Public | `from(contract_id, func_code)` |
 | `MerkleNode` | `pallas::Base` | `↓prove-inclusion` | Public | Tree insertion |
 | `BlockHeight` | `u64` | `↓chain-position` | Public | `new(u64)`; `0` = pre-genesis sentinel, `1` = genesis. `from_le_bytes([u8; 8])` at persistence boundaries only. |
+| `BlockVersion` | `u8` | `↓gate-version` | Public | `new(u8)`; `CURRENT = BlockVersion(1)`. Controls soft-fork signaling at the wire protocol level. Included in hash preimages to bind block identity to the protocol version. |
 
-`BlockHeight` is the one non-`pallas::Base` primitive in this table: a
-nominal consensus scalar (§2.3). Its nominality guards the numeric domain
-(height ≠ amount ≠ supply), not a cryptographic secret.
+`BlockHeight` and `BlockVersion` are the non-`pallas::Base` primitives in
+this table: nominal consensus scalars (§2.3). Their nominality guards the
+numeric domain (height ≠ amount ≠ supply; version ≠ function selector),
+not cryptographic secrets.
 
 ### 8.2 Structural Types
 
