@@ -842,3 +842,385 @@ Tests SHALL assert the specific barb, not a generic wrapper.
 | Value mismatch | ↓bad-proof | Custom(21) | Value commitment doesn't match |
 | Parse error | ↓bad-params | Custom(2) | FeeParamsV2 decode failure |
 | Value overflow | ↓bad-fee-amount | Custom(5) | u64 overflow in value computation |
+
+## 12. Fee Window Signalling — Adaptive Congestion Control
+
+*Specification for dynamic fee threshold adjustment across 20-block windows.
+Formalized in rho-calculus with congestion-factor-driven pricing. Modular,
+feature-gated implementation under `#[cfg(feature = "fee-window")]`.
+Specification first, Python model second, Rust implementation third.*
+
+### 12.1 Rho-Calculus Process Model
+
+The fee window is a timed process emitting threshold signals at window
+boundaries. Each signal propagates to the mempool (admission gate),
+the wallet (proof construction), and the miner (block assembly).
+
+```
+FeeWindow(w, CF_premium, CF_standard, N) =
+    nu premium, general. (
+        WindowTick!(premium, general) |
+        !(WindowTick?(p, g). (
+            Mempool!(p, g) |
+            Wallet!(p, g) |
+            Miner!(window_end(p, g)) |
+            FeeWindow(w+1, CF_premium', CF_standard', N)
+        ))
+    )
+
+where:
+    w              = current window index, starting at 0
+    N              = window size in blocks (N = 20)
+    CF_premium     = congestion factor for premium-tier circuits (rate ≥ 5)
+    CF_standard    = congestion factor for standard circuits (rate 1–3)
+    CF_premium'    = recomputed from mempool queue depth at window boundary
+    CF_standard'   = recomputed from mempool queue depth at window boundary
+    WindowTick     = signal emitted when height ≡ 0 (mod N), height > 0
+    Mempool!(p,g)  = mempool receives (premium_threshold, general_threshold)
+    Wallet!(p,g)   = wallet discovers (premium_threshold, general_threshold)
+    Miner!(...)    = miner encodes threshold signal in block header
+```
+
+The process restarts with recomputed congestion factors at each window boundary.
+Between boundaries, thresholds are stable — the mempool enforces the current
+window's values, the wallet constructs proofs against them, and all participants
+observe a consistent fee regime.
+
+### 12.2 Barb Semantics
+
+Four new barbs partition the fee window's trajectory space:
+
+| Barb | Action | Precondition | Postcondition |
+|------|--------|-------------|---------------|
+| `↓fee-window-open` | Window boundary at `height ≡ 0 (mod N)` | `height > 0` | `CF_premium`, `CF_standard` recomputed |
+| `↓fee-window-advertise` | Miner sets `fee_window_flags` in BlockHeader | Block is final in window w | Next window's thresholds encoded in header |
+| `↓fee-window-enforce` | Mempool applies thresholds to new arrivals | Window w is active | Tx admitted/rejected per tier, FCFS within tier |
+| `↓fee-window-discover` | Wallet reads `fee_window_flags` from latest header | Threshold bytes present | Wallet constructs FeeThreshold_V1 proof against active threshold |
+
+These barbs are additive to the existing fee barbs (§9). The `↓fee-window-open`
+barb fires exactly once per window boundary and is the trigger for all
+subsequent window-transition actions.
+
+### 12.3 Nominal Types
+
+Three new nominal types follow type-system.md §8.5:
+
+```
+FeeWindowId(u64)         — window index, computed as floor((height - 1) / N)
+WindowSignalling(u8)     — bitfield encoding fee window state in block header
+CircuitRate(u16)         — base rate per circuit, stored in manifest [[circuits]].rate
+CongestionFactor(u32)    — fixed-point representation of CF (1.0 = 1_000_000)
+```
+
+All follow the `#[repr(transparent)]` pattern. `FeeWindowId` implements `succ()`,
+`pred()`, `from_height(height, N)`. `CongestionFactor` implements fixed-point
+arithmetic with `SCALE = 1_000_000`, providing `apply(base_rate)` to compute
+the congestion-adjusted fee.
+
+### 12.4 Fee Computation
+
+#### 12.4.1 Formula
+
+```
+fee = circuit_base_rate × wasm_kB_size × congestion_factor
+
+where:
+    circuit_base_rate ∈ N    — per-circuit computational intensity rating
+    wasm_kB_size ∈ N         — ceil(wasm_bytes / 1024), 1 for non-deploy txs
+    congestion_factor ∈ ℝ⁺   — log-scale function of mempool queue depth
+```
+
+This is a product of three independent dimensions: computational cost
+(circuit rate), storage cost (WASM size), and market demand (congestion factor).
+Each dimension is independently observable and verifiable by all network
+participants.
+
+#### 12.4.2 Circuit Rate Table
+
+Each ZK circuit carries a consensus-critical base rate. The rate is declared
+in the circuit's manifest entry as an optional `rate` field, defaulting to 1.
+
+| Rate | Category | Example Circuits | Rationale |
+|------|----------|-----------------|-----------|
+| 1 | Standard | TransferV1, SpendV1, BurnV1, FeeV2, FeeCollectV1, CreateSwapV1, CancelSwapV1 | Standard o-cap lifecycle operations, constant-time verification |
+| 2 | Multi-party | VerifyCapabilityV2, CreateGroupV2, SignV2 | Multi-party ZK verification with additional rounds |
+| 3 | Oracle/Bridge | PushValueV2, AttestValueV2, DepositV2 | External data bridging, cross-chain commitment verification |
+| 5 | Heavy proof | ExecuteSwapV1, liquidate, merkle paths depth > 16 | Complex conditional swaps, deep Merkle verification |
+| 10 | Premium compute | BaseDiv, poseidon-recursive, aggregate proofs | Compute-intensive ZK primitives, recursion |
+
+Manifest declaration:
+```toml
+[[circuits]]
+name = "BaseDivV2"
+namespace = "math"
+rate = 10
+```
+
+The rate table is consensus-critical — all miners SHALL enforce the same
+rates. Changing a circuit's rate requires a network upgrade coordinated
+through the fee window signalling mechanism.
+
+#### 12.4.3 WASM Deployment Size
+
+For `DeployV1` transactions, the WASM binary size incurs a proportional
+storage cost:
+
+```
+wasm_kB_size = max(1, ceil(wasm_bincode.len() / 1024))
+```
+
+For all other transactions, `wasm_kB_size = 1`. This ensures large
+contract deployments pay proportionally for on-chain storage while
+standard transactions pay only for computation.
+
+#### 12.4.4 Congestion Factor
+
+The congestion factor maps mempool queue depth to a dimensionless multiplier
+using logarithmic scaling. Separate factors are computed for premium and
+standard tiers:
+
+```
+CF_premium  = SCALE + α_premium  × floor(SCALE × log₂(P_premium  + 1))
+CF_standard = SCALE + α_standard × floor(SCALE × log₂(P_standard + 1))
+
+where:
+    SCALE        = 1_000_000          (fixed-point scale for integer arithmetic)
+    P_premium    = pending count in mempool premium queue
+    P_standard   = pending count in mempool general queue + fee_index
+    α_premium    = premium congestion sensitivity coefficient
+    α_standard   = standard congestion sensitivity coefficient
+    α_premium > α_standard > 0       (premium always more sensitive)
+    CF_premium > CF_standard         (structural invariant, always)
+```
+
+**Why logarithmic:** Doubling the queue depth adds at most `α × SCALE` to the
+congestion factor. This prevents both premature saturation (linear) and
+insufficient responsiveness (constant). The log₂ function maps queue depths
+from 1 to 10,000 into congestion factors from 1.0 to ~1.0 + 13α.
+
+**Coefficient defaults:**
+
+```
+α_premium  = 0.05   (CF doubles every ~1,000,000 premium transactions)
+α_standard = 0.01   (CF doubles every ~2,000,000 standard transactions)
+```
+
+These defaults produce reasonable congestion pricing at mainnet scale while
+remaining testable in devnet with smaller mempool sizes.
+
+**Congestion factor consensus:** At each window boundary, every mining node
+computes CF from its local mempool state. Nodes gossip their proposed CF
+via the threshold announcement protocol (mempool.md §6). The MEDIAN CF
+across all actively mining nodes becomes the window's consensus congestion
+factor. This prevents single-miner manipulation — a miner with an empty
+mempool cannot force CF to 1, nor can a miner with an artificially inflated
+mempool force an extreme CF.
+
+### 12.5 Threshold Computation from Congestion Factors
+
+The congestion factors are applied to derive the concrete premium and
+general thresholds for each window:
+
+```
+premium_threshold(w)  = CF_premium(w)  × BASE_PREMIUM_RATE  × BASE_UNIT / SCALE
+general_threshold(w)  = CF_standard(w) × BASE_STANDARD_RATE × BASE_UNIT / SCALE
+
+where:
+    BASE_PREMIUM_RATE    = 10     (rate of a premium circuit per §12.4.2)
+    BASE_STANDARD_RATE   = 1      (rate of a standard circuit per §12.4.2)
+    BASE_UNIT            = 42_000_000  (base fee unit in native token base units)
+```
+
+At zero congestion (CF = SCALE = 1_000_000), thresholds revert to:
+
+```
+premium_threshold  = 10 × 42_000_000 = 420_000_000  (4.2 DRKW)
+general_threshold  = 1  × 42_000_000 = 42_000_000   (0.42 DRKW)
+```
+
+These match the current static constants while providing the dynamic range
+to scale with network demand.
+
+### 12.6 BlockHeader Signalling
+
+The final block of each fee window sets `fee_window_flags` in its header:
+
+```
+BlockHeader.fee_window_flags: u8   (new field, #[cfg(feature = "fee-window")])
+                                    (serde default = 0 for backward compatibility)
+
+Bit layout:
+    bits[0]    = FEE_WINDOW_ACTIVE    (0 = legacy static fees, 1 = window active)
+    bits[1:4]  = reserved             (must be 0)
+    bits[4:8]  = congestion_multiplier (4-bit compact encoding of CF adjustment)
+```
+
+The 4-bit `congestion_multiplier` encodes the direction and magnitude of
+the CF change from the current window to the next:
+
+```
+0b0000 = hold      (CF unchanged, within [low_water, high_water])
+0b0001 = +10%      (CF increased by 10%)
+0b0010 = -10%      (CF decreased by 10%)
+0b0011..0b1111 = reserved for future granularity
+```
+
+A wallet reading the flags can compute the next window's premium threshold
+without replaying the full adjustment logic:
+
+```
+next_premium = decode_multiplier(flags) × current_premium
+```
+
+### 12.7 Formal Invariants
+
+**I1 — Window Determinism.** For any two nodes with identical chain state
+at height H, `get_current_thresholds(H)` SHALL return identical values.
+The adjustment is a pure function: `(CF_premium, CF_standard) = f(mempool_state_at_boundary)`.
+
+**I2 — Backward Compatibility.** Blocks without `fee_window_flags`
+(pre-activation, `fee_window_flags == 0`) SHALL be treated as having
+the static thresholds `PREMIUM_THRESHOLD = 42_000_000`, `GENERAL_THRESHOLD = 1_000_000`.
+`#[serde(default)]` ensures old blocks deserialize correctly.
+
+**I3 — FCFS Preservation.** Transactions admitted under window N's
+thresholds SHALL NOT be evicted when window N+1's thresholds activate.
+Admission is durable. Within each tier, transactions SHALL be ordered
+first-come-first-served (FIFO). Premium queue drains before general
+queue. No transaction can jump the queue by paying a higher fee after
+admission. No ex post facto eviction.
+
+**I4 — Congestion Factor Ordering.** `CF_premium > CF_standard` at all
+times. Premium-tier circuits (rate ≥ 5) always pay a strictly higher
+congestion multiplier than standard circuits (rate 1–3). This prevents
+premium transactions from being cheaper under any congestion regime.
+
+**I5 — Circuit Rate Monotonicity.** A circuit with a higher base rate
+SHALL never pay a lower total fee than a circuit with a lower base rate,
+for identical WASM size and congestion regime.
+
+**I6 — CF Convergence.** As mempool queue depth → 0, CF → 1 for both
+tiers. As queue depth grows, CF grows logarithmically — doubling the
+queue adds at most α to the factor. This prevents both premature
+saturation (linear growth) and insufficient responsiveness (constant).
+
+**I7 — Smooth Adjustment.** No single-window CF change SHALL exceed
+±10% of the current value. This prevents fee shock and allows the
+market to adapt gradually.
+
+**I8 — Median Consensus.** The window's congestion factor SHALL be
+the median of all actively mining nodes' proposed CF values. This
+prevents single-miner manipulation. Nodes with empty mempools do
+not drag the median to zero; nodes with inflated mempools are
+capped by the median.
+
+### 12.8 Mempool Integration
+
+The mempool applies fee window thresholds to incoming transactions at
+admission time and preserves admitted transactions across window
+boundaries.
+
+#### 12.8.1 Admission Gate (per-transaction)
+
+```
+admit(tx, window):
+    fee = extract_fee(tx)
+    circuit_rate = extract_circuit_rate(tx)
+    wasm_kB = extract_wasm_kB(tx)
+
+    if circuit_rate ≥ 5:                              // premium tier
+        threshold = premium_threshold(window) × wasm_kB
+        if fee ≥ threshold AND verify_threshold_proof(tx, threshold):
+            admit to premium_queue (FIFO)
+            return PREMIUM
+    else:                                             // standard tier
+        threshold = general_threshold(window) × wasm_kB
+        if fee ≥ threshold AND verify_threshold_proof(tx, threshold):
+            admit to general_queue (FIFO)
+            return STANDARD
+
+    reject — fee below applicable threshold
+```
+
+#### 12.8.2 Window Transition (at boundary block)
+
+```
+on_window_boundary(new_window):
+    // Preserve existing queues — no eviction (I3)
+    // New thresholds apply to NEW arrivals only
+    // Premium queue drains FCFS, then general queue FCFS
+    active_window = new_window
+    gossip(new_window.thresholds)  // announce to peers
+```
+
+#### 12.8.3 Block Selection
+
+```
+select_for_block(limit):
+    txs = []
+    // 1. Drain premium_queue (FCFS) until gas/tx limit
+    while premium_queue.not_empty() AND within_limit(txs):
+        txs.append(premium_queue.pop_front())
+    // 2. Drain general_queue (FCFS) until limit
+    while general_queue.not_empty() AND within_limit(txs):
+        txs.append(general_queue.pop_front())
+    // 3. Fill remaining from fee_index (fee-descending)
+    for tx in fee_index.descending():
+        if within_limit(txs):
+            txs.append(tx)
+    return txs
+```
+
+### 12.9 Wallet Integration
+
+The wallet discovers current thresholds by reading the latest block header
+before constructing FeeThreshold_V1 proofs.
+
+```
+construct_fee(amount, circuit, wasm_bytes, latest_block):
+    flags = latest_block.header.fee_window_flags
+    if flags & FEE_WINDOW_ACTIVE:
+        (premium, general) = decode_thresholds(flags)
+    else:
+        (premium, general) = (DEFAULT_PREMIUM, DEFAULT_GENERAL)  // legacy
+
+    rate = circuit.rate or 1
+    wasm_kB = max(1, ceil(wasm_bytes.len() / 1024))
+
+    threshold = premium if rate ≥ 5 else general
+    adjusted_threshold = threshold × wasm_kB
+
+    fee = rate × wasm_kB × current_congestion_factor  // actual fee paid
+
+    proof = create_fee_threshold_proof(fee, adjusted_threshold, ...)
+    return (fee, proof)
+```
+
+If the window boundary passes before the transaction is mined, the wallet
+SHALL re-query the latest header and may re-construct the proof with the
+new threshold. The wallet SHALL NOT submit a transaction with a threshold
+proof bound to a stale window.
+
+### 12.10 Miner Integration
+
+The miner signals fee window state at each window boundary block and
+enforces the congestion factor consensus protocol.
+
+```
+prepare_block(height, mempool, chain_state):
+    header = build_header(height, ...)
+
+    if is_window_boundary(height):
+        local_cf = compute_congestion_factor(local_mempool)
+        peer_cfs = collect_peer_congestion_factors()      // via P2P gossip
+        consensus_cf = median([local_cf] + peer_cfs)       // I8
+        header.fee_window_flags = encode_flags(consensus_cf)
+        mempool.update_thresholds(apply(consensus_cf))
+        gossip_threshold_announcement(consensus_cf)        // mempool.md §6
+
+    return assemble_block(header, mempool.select_for_block())
+```
+
+The miner includes its local congestion factor in the threshold announcement
+gossip so other nodes can compute the median. The miner trusts the median
+consensus — it does not unilaterally set thresholds.
