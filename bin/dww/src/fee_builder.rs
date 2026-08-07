@@ -33,7 +33,7 @@ use dwow_core::{
 use crate::wallet_error::{Error, Result};
 use dwow_sdk::{
     blockchain::FeeAmount,
-    crypto::{BaseBlind, PublicKey, SecretKey, MerkleNode},
+    crypto::{BaseBlind, PublicKey, SecretKey, MerkleNode, constants::DRK_POSEIDON_DOMAIN_TX_BINDING, poseidon_hash},
     pasta::pallas,
     tx::ContractCall,
 };
@@ -234,7 +234,31 @@ pub fn build_fee_and_finalize_tx(
         coin_blind: change_blind.inner(),
     };
 
-    // Build FeeV2 call — privacy-preserving, dual-proof (Fee_V2 + FeeThreshold_V1)
+    // Build FeeThreshold_V1 proof (wallet→mempool gate: fee >= threshold).
+    // Fee lifecycle step 1 — constructed here in the wallet crate, not in
+    // the contract crate. See fee_threshold_proof.rs for the full lifecycle.
+    let threshold_tx_binding = poseidon_hash([
+        DRK_POSEIDON_DOMAIN_TX_BINDING,
+        fee_input.tx_commitment,
+        crate::fee_threshold_proof::fee_to_base(FeeAmount::new(threshold)),
+    ]);
+    let threshold_proof = crate::fee_threshold_proof::create_fee_threshold_proof(
+        &threshold_zkbin,
+        &threshold_pk,
+        FeeAmount::new(DEFAULT_FEE),
+        FeeAmount::new(threshold),
+        fee_input.tx_commitment,
+        threshold_tx_binding,
+    ).map_err(|e| Error::Custom(format!("FeeThreshold_V1 proof: {}", e)))?;
+
+    // Serialize threshold proof for embedding in FeeParamsV2
+    let mut threshold_proof_bytes = vec![];
+    dwow_serial::Encodable::encode(&threshold_proof, &mut threshold_proof_bytes)
+        .map_err(|e| Error::Custom(format!("threshold proof encode: {:?}", e)))?;
+
+    // Build FeeV2 call — privacy-preserving fee payment.
+    // Fee_V2 proof (Pedersen mass balance) is constructed by build().
+    // FeeThreshold_V1 proof is provided externally (built above).
     let fee_builder = FeeV2CallBuilder {
         input: fee_input,
         output: fee_output,
@@ -242,8 +266,7 @@ pub fn build_fee_and_finalize_tx(
         threshold: FeeAmount::new(threshold),
         fee_zkbin: fee_zkbin.clone(),
         fee_pk,
-        threshold_zkbin,
-        threshold_pk,
+        threshold_proof_bytes,
     };
 
     let fee_v2_result = fee_builder.build()

@@ -8,14 +8,20 @@ dependencies = ["promissory_note", "native_token_v1"]
 [[functions]]
 name = "create_room"
 code = 0
+requires_proof = true
+proof_circuit = "CreateRoomV2"
 
 [[functions]]
 name = "deposit"
 code = 1
+requires_proof = true
+proof_circuit = "DepositV2"
 
 [[functions]]
 name = "withdraw"
 code = 2
+requires_proof = true
+proof_circuit = "WithdrawV2"
 
 [[functions]]
 name = "place_bet"
@@ -44,6 +50,8 @@ proof_circuit = "Fold_V2"
 [[functions]]
 name = "close_pot"
 code = 7
+requires_proof = true
+proof_circuit = "ClosePotV2"
 
 [[functions]]
 name = "settle_pot"

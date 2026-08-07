@@ -67,7 +67,9 @@ pub(crate) fn pedersen_commitment_fee(amount: FeeAmount, blind: ScalarBlind) -> 
 }
 
 /// Convert a FeeAmount to a base field element for ZK witness/public input.
-pub(crate) fn fee_to_base(amount: FeeAmount) -> pallas::Base {
+/// Used by the Fee_V2 mass balance proof (defensive, verified via WASM)
+/// and by the FeeThreshold_V1 proof (wallet→mempool gate).
+pub fn fee_to_base(amount: FeeAmount) -> pallas::Base {
     pallas::Base::from(amount.get())
 }
 
@@ -106,10 +108,16 @@ pub struct FeeV2Result {
     pub proofs: Vec<Proof>,
 }
 
-/// Builder for FeeV2 calls — privacy-preserving fee with threshold proof.
+/// Builder for FeeV2 calls — privacy-preserving fee payment.
 ///
 /// Produces call data: `[0x08][FeeParamsV2 encoded]` with NO clear-text fee bytes.
 /// The fee amount is hidden behind a Pedersen commitment.
+///
+/// The Fee_V2 proof (Pedersen mass balance) is constructed by [`build()`].
+/// The FeeThreshold_V1 proof (fee >= threshold) MUST be constructed externally
+/// by the wallet's [`fee_threshold_proof`] module and provided as
+/// [`threshold_proof_bytes`]. This separation ensures the mempool admission
+/// gate lives in the wallet crate, not the contract crate.
 pub struct FeeV2CallBuilder {
     pub input: FeeV2CallInput,
     pub output: FeeV2CallOutput,
@@ -119,19 +127,21 @@ pub struct FeeV2CallBuilder {
     pub fee_zkbin: ZkBinary,
     /// Proving key for the Fee_V2 ZK circuit
     pub fee_pk: ProvingKey,
-    /// FeeThreshold_V1 zkas circuit ZkBinary
-    pub threshold_zkbin: ZkBinary,
-    /// Proving key for the FeeThreshold_V1 ZK circuit
-    pub threshold_pk: ProvingKey,
+    /// Serialized FeeThreshold_V1 proof — constructed externally by the wallet
+    /// crate's fee_threshold_proof module.
+    pub threshold_proof_bytes: Vec<u8>,
 }
 
 impl FeeV2CallBuilder {
-    /// Build a FeeV2 call with dual ZK proofs (Fee_V2 + FeeThreshold_V1).
+    /// Build a FeeV2 call with Fee_V2 proof (Pedersen mass balance).
     ///
     /// The fee amount is private — it appears ONLY as a Pedersen commitment
     /// in the call data. The Fee_V2 circuit constrains input = output + fee
-    /// internally without exposing fee. The FeeThreshold_V1 circuit proves
-    /// fee >= threshold.
+    /// internally without exposing fee.
+    ///
+    /// The FeeThreshold_V1 proof MUST be constructed externally (by the wallet
+    /// crate's `fee_threshold_proof` module) and provided as
+    /// [`Self::threshold_proof_bytes`] before calling this method.
     pub fn build(self) -> Result<FeeV2Result, ContractError> {
         if self.input.value <= self.fee_amount.get() {
             return Err(ContractError::Custom(1)); // ↓bad-fee-amount
@@ -182,14 +192,6 @@ impl FeeV2CallBuilder {
             self.input.tx_nonce,
         ]);
 
-        // FeeThreshold_V1 tx_binding: bound to threshold (matches fee_threshold_v1.zk).
-        // Used for the FeeThreshold_V1 proof only.
-        let threshold_tx_binding = poseidon_hash([
-            DRK_POSEIDON_DOMAIN_TX_BINDING,
-            self.input.tx_commitment,
-            fee_to_base(self.threshold),
-        ]);
-
         // Build Fee_V2 proof using pre-built proving key
         let (fee_proof, _revealed) = create_fee_proof(
             &self.fee_zkbin,
@@ -204,22 +206,6 @@ impl FeeV2CallBuilder {
             self.input.tx_commitment,
         )?;
         proofs.push(fee_proof);
-
-        // Build FeeThreshold_V1 proof using pre-built proving key
-        let threshold_proof = create_fee_threshold_proof(
-            &self.threshold_zkbin,
-            &self.threshold_pk,
-            self.fee_amount,
-            self.threshold,
-            self.input.tx_commitment,
-            threshold_tx_binding,
-        )?;
-        proofs.push(threshold_proof.clone());
-
-        // Serialize threshold proof for embedding in params
-        let mut proof_bytes = vec![];
-        dwow_serial::Encodable::encode(&threshold_proof, &mut proof_bytes)
-            .map_err(|e| ContractError::IoError(format!("threshold proof encode: {:?}", e)))?;
 
         // Build Input/Output params
         let (params_input, params_output) = build_fee_v2_params(
@@ -249,7 +235,7 @@ impl FeeV2CallBuilder {
             fee_value_commit,
             fee_value_commit_x,
             fee_value_commit_y,
-            threshold_proof: proof_bytes,
+            threshold_proof: self.threshold_proof_bytes,
             threshold: self.threshold,
             fee_value_blind: fee_value_blind.inner(),
             fee_token_blind: token_blind,
@@ -507,38 +493,3 @@ fn create_fee_proof(
     Ok((proof, public_inputs))
 }
 
-/// Create a FeeThreshold_V1 ZK proof (fee >= threshold without revealing fee).
-fn create_fee_threshold_proof(
-    zkbin: &ZkBinary,
-    pk: &ProvingKey,
-    fee_amount: FeeAmount,
-    threshold: FeeAmount,
-    tx_commitment: pallas::Base,
-    tx_binding: pallas::Base,
-) -> Result<Proof, ContractError> {
-
-    // FeeThreshold_V1 witnesses (4): fee, threshold, tx_commitment, tx_binding
-    let witnesses: Vec<Witness> = vec![
-        Witness::Base(Value::known(fee_to_base(fee_amount))),
-        Witness::Base(Value::known(fee_to_base(threshold))),
-        Witness::Base(Value::known(tx_commitment)),
-        Witness::Base(Value::known(tx_binding)),
-    ];
-
-    // Public inputs (2): threshold, tx_binding
-    let public_inputs = vec![
-        fee_to_base(threshold),
-        tx_binding,
-    ];
-
-    let circuit = ZkCircuit::new(witnesses, zkbin);
-    let rng: Box<dyn RngCore + Send> = if crate::deterministic_zk_enabled() {
-        Box::new(rand::rngs::StdRng::seed_from_u64(43))
-    } else {
-        Box::new(rand::rngs::OsRng)
-    };
-    let proof = Proof::create(&pk, &[circuit], &public_inputs, rng)
-        .map_err(|e| ContractError::IoError(format!("FeeV2 threshold proof: {:?}", e)))?;
-
-    Ok(proof)
-}

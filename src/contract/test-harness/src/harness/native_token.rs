@@ -25,13 +25,15 @@
 //!
 //! Provides isolated testing for NativeToken contract (consensus token).
 
+use rand::SeedableRng;
+
 use dwow_core::{
-    zk::{ProvingKey, ZkCircuit},
+    zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
 };
 use dwow_sdk::{
     blockchain::FeeAmount,
-    crypto::{MerkleNode, PublicKey, SecretKey, poseidon_hash},
+    crypto::{MerkleNode, PublicKey, SecretKey, constants::DRK_POSEIDON_DOMAIN_TX_BINDING, poseidon_hash},
     crypto::pasta_prelude::Group,
     pasta::pallas,
 };
@@ -41,7 +43,7 @@ use dwow_native_token_contract::{
     client::{
         pow_reward::PoWRewardCallBuilder,
         burn::BurnCallBuilder,
-        fee::{FeeV2CallBuilder, FeeV2CallInput, FeeV2CallOutput},
+        fee::{FeeV2CallBuilder, FeeV2CallInput, FeeV2CallOutput, fee_to_base},
     },
     model::{FeeParamsV2, Output},
 };
@@ -222,8 +224,31 @@ impl NativeTokenHarness {
             threshold: FeeAmount::new(threshold),
             fee_zkbin: self.fee_zkbin.clone(),
             fee_pk: self.fee_pk.clone(),
-            threshold_zkbin: self.threshold_zkbin.clone(),
-            threshold_pk: self.threshold_pk.clone(),
+            // FeeThreshold_V1 proof constructed inline (harness can't import
+            // from wallet crate). Same logic as bin/dww/src/fee_threshold_proof.rs.
+            threshold_proof_bytes: {
+                let tx_nonce = pallas::Base::zero();
+                let tx_commitment = pallas::Base::zero();
+                let tx_binding = poseidon_hash([
+                    DRK_POSEIDON_DOMAIN_TX_BINDING,
+                    tx_commitment,
+                    fee_to_base(FeeAmount::new(threshold)),
+                ]);
+                let witnesses: Vec<Witness> = vec![
+                    Witness::Base(Value::known(fee_to_base(FeeAmount::new(fee_amount)))),
+                    Witness::Base(Value::known(fee_to_base(FeeAmount::new(threshold)))),
+                    Witness::Base(Value::known(tx_commitment)),
+                    Witness::Base(Value::known(tx_binding)),
+                ];
+                let public_inputs = vec![fee_to_base(FeeAmount::new(threshold)), tx_binding];
+                let circuit = ZkCircuit::new(witnesses, &self.threshold_zkbin);
+                let proof = Proof::create(&self.threshold_pk, &[circuit], &public_inputs, Box::new(rand::rngs::StdRng::seed_from_u64(43)))
+                    .expect("FeeThreshold_V1 proof synthesis failed");
+                let mut proof_bytes = vec![];
+                dwow_serial::Encodable::encode(&proof, &mut proof_bytes)
+                    .expect("threshold proof encode failed");
+                proof_bytes
+            },
         };
 
         let result = builder.build()

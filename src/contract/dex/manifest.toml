@@ -42,11 +42,15 @@ proof_circuit = "CancelSwap_V2"
 name = "update_config"
 code = 5
 description = "Update DEX configuration (timeout, fee). Requires Schnorr signature verified against stored governance pubkey."
+requires_proof = true
+proof_circuit = "UpdateConfigV2"
 
 [[functions]]
 name = "set_transparency_level"
 code = 6
 description = "Set swap transparency level. Requires governance signature."
+requires_proof = true
+proof_circuit = "SetTransparencyLevelV2"
 
 [[functions]]
 name = "execute_swap_fee"

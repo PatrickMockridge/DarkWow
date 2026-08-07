@@ -5,6 +5,51 @@ FeeV1 (function code `0x00`, clear-text fee) is REMOVED.
 Theorems, invariants, and formal predicates. Tests SHALL be derived from
 this document — not from reverse-engineering production code.*
 
+## Architecture Overview
+
+The fee system has three ZK proofs spanning two categories:
+
+**Defensive (contract crate — verified during `accept_block` via WASM):**
+- **Fee_V2** — Pedersen mass balance: `input = output + fee`. Proves no secret
+  inflation. ZCash Orchard exploit defense-in-depth. Code lives in
+  `src/contract/native_token/src/client/fee.rs`.
+
+**Active consensus payment pathways:**
+- **FeeThreshold_V1** — Proves `fee >= threshold` for mempool admission tier
+  selection. Wallet→mempool gate. Code lives in `bin/dww/src/fee_threshold_proof.rs`.
+- **FeeCollectV1** — Transfers accumulated fee pot to miner, resets accumulator.
+  Contract logic. Code lives in `src/contract/native_token/`.
+
+```
+Wallet                    Mempool                  Miner                    Chain
+  │                         │                       │                        │
+  ├─ FeeThreshold_V1 ──────►│                       │                        │
+  │  (fee >= threshold)     ├─ premium/general/     │                        │
+  │                         │  reject               │                        │
+  │                         │                       │                        │
+  │                         │     transactions ────►│                        │
+  │                         │     + fees            ├─ Build block ──────────►│
+  │                         │                       │  + PoWReward            │
+  │                         │                       │  + FeeCollectV1         │
+  │                         │                       │                        │
+  │                         │                       │                        ├─ Fee_V2
+  │                         │                       │                        │  (no inflation)
+  │                         │                       │                        ├─ FeeCollectV1
+  │                         │                       │                        │  (claim + reset)
+```
+
+1. **Wallet** constructs FeeThreshold_V1 proof (fee >= threshold) for mempool admission.
+2. **Mempool** verifies the proof and assigns a tier (premium/general) or rejects.
+3. **Miner** collects pending transactions + fees from the mempool, builds a block
+   with PoWReward + FeeCollectV1.
+4. **Chain** verifies Fee_V2 mass balance (no inflation) and FeeCollectV1
+   (accumulator reset) during `accept_block`.
+
+The Fee_V2 proof stays in the contract crate because it's defensive — verified
+via WASM during block acceptance. FeeThreshold_V1 lives in the wallet crate
+because it's the wallet→mempool admission gate — an active payment pathway that
+belongs in transaction construction code, not contract logic.
+
 ## 1. Coin Merkle Tree
 
 ### 1.1 Type Definition
