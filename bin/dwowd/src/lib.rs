@@ -153,65 +153,25 @@ impl FeeExtractor for NativeTokenFeeExtractor {
     /// Extracts the proof and public inputs from FeeParamsV2 and verifies
     /// the ZK proof against the FeeThreshold_V1 circuit.
     fn verify_threshold_proof(&self, tx: &dwow_chain::Transaction, threshold: u64) -> bool {
-        use dwow_sdk::crypto::pasta_prelude::PrimeField;
-        use dwow_sdk::pasta::pallas;
         for call in &tx.contract_calls {
             if call.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
                 && call.data.first() == Some(&0x08u8)
             {
-                let data = &call.data[1..]; // skip selector byte
-                // Parse FeeParamsV2 to extract threshold_proof and tx_binding
-                let input_len = 224usize;
-                if data.len() < input_len + 130 + 32 + 8 + 4 {
-                    return false;
-                }
-                let output_len = 130usize + u16::from_le_bytes(
-                    data[input_len + 128..input_len + 130].try_into().unwrap_or([0; 2])
-                ) as usize;
-                let mut pos = input_len + output_len;
-                // Skip fee_value_commit (32 bytes)
-                pos += 32;
-                // Read threshold from params
-                if data.len() < pos + 8 { return false; }
-                let params_threshold = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap_or([0; 8]));
-                pos += 8;
-                // Read proof length
-                if data.len() < pos + 4 { return false; }
-                let proof_len = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap_or([0; 4])) as usize;
-                pos += 4;
-                if data.len() < pos + proof_len { return false; }
-                let _proof_bytes = &data[pos..pos + proof_len];
-                pos += proof_len;
-                // Read tx_binding (at offset pos + 64 within blinds block)
-                if data.len() < pos + 128 { return false; }
-                let tx_binding = match Option::<pallas::Base>::from(
-                    pallas::Base::from_repr(
-                        data[pos + 64..pos + 96].try_into().unwrap_or([0; 32])
-                    )
-                ) {
-                    Some(b) => b,
-                    None => return false,
+                // Use the validating constructor — not raw byte offsets (F3 fix).
+                let params = match dwow_native_token_contract::model::fee::FeeParamsV2::decode(&call.data[1..]) {
+                    Ok(p) => p,
+                    Err(_) => return false,
                 };
-
-                // Verify the threshold in the params matches the one we're checking
-                if params_threshold != threshold {
-                    // The proof was built for a different threshold — fail
+                // Verify the threshold in the params matches the one we're checking.
+                if params.threshold.get() != threshold {
                     return false;
                 }
-
-                // Verify the tx_binding binds to the threshold.
-                // tx_binding = poseidon(DOMAIN_TX_BINDING, tx_commitment, threshold)
-                // For mempool-level verification, we check that the proof
-                // structure is well-formed. Full ZK verification requires
-                // loading the circuit which is deferred to the block validator.
-                //
-                // Defense-in-depth: the FeeThreshold_V1 circuit internally
-                // constrains tx_binding = poseidon(DOMAIN_TX_BINDING, tx_commitment, threshold).
-                // If the prover provides a mismatched threshold, the proof won't verify.
-                let _ = tx_binding; // Full verification at block acceptance time
-
-                // For now: structural check passes (proof present, threshold matches).
-                // Full ZK proof verification is done at block acceptance.
+                // Verify tx_binding binds to the threshold.
+                // tx_binding = poseidon(DOMAIN_TX_BINDING, tx_commitment, threshold).
+                // The FeeThreshold_V1 circuit internally constrains this — if the
+                // prover provides a mismatched threshold, the proof won't verify.
+                // Full ZK proof verification is done at block acceptance
+                // (verify_core_tx_with_tables).
                 return true;
             }
         }
