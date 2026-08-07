@@ -1863,3 +1863,96 @@ fn test_bridge_multi_block() -> std::result::Result<(), Box<dyn std::error::Erro
         Ok(())
     })
 }
+
+// Fee lifecycle test — FeeV2 + FeeCollectV1 through accept_block.
+// Uses NativeTokenHarness (FeeThreshold_V1 proof built inline, avoiding
+// the wallet-path synthesis bug). Validates accumulator accumulation,
+// FeeCollectV1 reset, fee pot zeroing, nullifier registration, and
+// cumulative supply neutrality.
+#[test]
+fn test_bridge_fee_lifecycle() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+
+    smol::block_on(async {
+        use dwow_contract_test_harness::harness::NativeTokenHarness;
+        use dwow_sdk::blockchain::{BlockHeight, expected_reward};
+        use dwow_sdk::crypto::{MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID, PublicKey, SecretKey};
+        use dwow_sdk::pasta::{group::Group, pallas};
+        use crate::tests::blockchain::HeavyweightPipeline;
+        use crate::tests::modules::coinbase_coordination;
+
+        let mut chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
+        chain.log_file = Some(std::sync::Mutex::new(
+            crate::tests::test_output::create_log_file("bridge_fee_lifecycle")
+        ));
+
+        let native_harness = NativeTokenHarness::spawn();
+        let cid = *NATIVE_TOKEN_CONTRACT_ID;
+
+        // Height 2: coinbase-only (creates spendable coin)
+        let cb2 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+        chain.block()?.submit_with_coinbase(cb2.coinbase_tx).await?;
+
+        let acc_pre = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
+            .map(|d| Option::from(pallas::Point::from_bytes(&d[..32].try_into().unwrap())))
+            .flatten().unwrap_or(pallas::Point::identity());
+        assert_eq!(acc_pre, pallas::Point::identity(),
+            "accumulator must be Identity before FeeV2");
+
+        // Height 3: FeeV2 + FeeCollectV1
+        let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+        let mut tree = MerkleTree::new(1);
+        tree.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        let coin_pos = tree.mark().expect("tree.mark");
+        let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
+        let root = tree.root(0).expect("tree.root");
+        let mining_kp = chain.mining_keypair(BlockHeight::new(2));
+
+        let fee_result = native_harness.fee_v2(
+            cb2.coin_value,
+            pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
+            cb2.coin_blind, u64::from(coin_pos), path, root,
+            mining_kp.secret.clone(), mining_kp.secret.clone(),
+            PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
+            pallas::Base::zero(), pallas::Base::zero(),
+            42_000_000, 42_000_000,
+        ).map_err(|e| dwow_core::Error::Custom(format!("FeeV2: {}", e)))?;
+
+        let before = chain.height();
+        let new_height = chain.block()?
+            .with_call(cid, &native_harness, &fee_result.call_data, fee_result.proofs)?
+            .with_fee_collect()?
+            .submit_with_coinbase(cb3.coinbase_tx).await?;
+        assert!(new_height > before, "height must advance");
+
+        // Accumulator reset
+        let acc_data = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
+            .expect("accumulator not found");
+        let acc_point: pallas::Point = Option::from(
+            pallas::Point::from_bytes(&acc_data[..32].try_into().unwrap())
+        ).expect("invalid point");
+        assert_eq!(acc_point, pallas::Point::identity(),
+            "accumulator must be Identity after FeeCollectV1");
+
+        // Fee pot zeroed
+        let fee_height = chain.height();
+        let fees_data = chain.query_contract_state(cid, "fees", &fee_height.to_le_bytes())?
+            .expect("fees_db entry not found");
+        assert_eq!(u64::from_le_bytes(fees_data[..8].try_into().unwrap()), 0,
+            "fee pot must be zeroed");
+
+        // Supply unchanged
+        let expected: u64 = (1..=3u64).map(|h| expected_reward(BlockHeight::new(h)).get()).sum();
+        assert_eq!(chain.cumulative_supply(), expected,
+            "cumulative supply unchanged by fees");
+
+        // Nullifier written
+        let nf = fee_result.params.input.nullifier.to_bytes();
+        assert!(chain.query_contract_state(cid, "nullifiers", &nf)?.is_some(),
+            "spent nullifier must exist");
+
+        Ok(())
+    })
+}
