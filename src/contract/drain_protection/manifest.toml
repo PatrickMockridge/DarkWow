@@ -9,41 +9,55 @@ dependencies = ["promissory_note", "native_token_v1"]
 name = "initialize"
 code = 0
 requires_proof = true
-proof_circuit = "Initialize_V2"
+proof_circuit = "InitializeV2"
 
 [[functions]]
 name = "propose"
 code = 1
+requires_proof = true
+proof_circuit = "ProposeV2"
 
 [[functions]]
 name = "vote"
 code = 2
+requires_proof = true
+proof_circuit = "VoteV2"
 
 [[functions]]
 name = "execute"
 code = 3
+requires_proof = true
+proof_circuit = "ExecuteV2"
 
 [[functions]]
 name = "exit"
 code = 4
 requires_proof = true
-proof_circuit = "Exit_V2"
+proof_circuit = "ExitProofV2"
 
 [[functions]]
 name = "transfer"
 code = 5
+requires_proof = true
+proof_circuit = "TransferV2"
 
 [[functions]]
 name = "lock"
 code = 6
+requires_proof = true
+proof_circuit = "LockV2"
 
 [[functions]]
 name = "unlock"
 code = 7
+requires_proof = true
+proof_circuit = "UnlockV2"
 
 [[functions]]
 name = "update_config"
 code = 8
+requires_proof = true
+proof_circuit = "UpdateConfigV2"
 
 [[capabilities]]
 discriminant = 0
@@ -72,9 +86,37 @@ name = "exits"
 name = "votes"
 
 [[circuits]]
-name = "Initialize_V2"
+name = "InitializeV2"
 namespace = "drain_protection"
 
 [[circuits]]
-name = "Exit_V2"
+name = "ProposeV2"
+namespace = "drain_protection"
+
+[[circuits]]
+name = "VoteV2"
+namespace = "drain_protection"
+
+[[circuits]]
+name = "ExecuteV2"
+namespace = "drain_protection"
+
+[[circuits]]
+name = "ExitProofV2"
+namespace = "drain_protection"
+
+[[circuits]]
+name = "TransferV2"
+namespace = "drain_protection"
+
+[[circuits]]
+name = "LockV2"
+namespace = "drain_protection"
+
+[[circuits]]
+name = "UnlockV2"
+namespace = "drain_protection"
+
+[[circuits]]
+name = "UpdateConfigV2"
 namespace = "drain_protection"

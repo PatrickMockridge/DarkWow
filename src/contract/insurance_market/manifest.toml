@@ -26,6 +26,8 @@ code = 3
 [[functions]]
 name = "purchase_coverage"
 code = 4
+requires_proof = true
+proof_circuit = "PurchaseCoverageV2"
 
 [[functions]]
 name = "file_claim"
@@ -58,6 +60,8 @@ proof_circuit = "PurchaseCoverageWithCapability_V2"
 [[functions]]
 name = "purchase_coverage_with_dag"
 code = 11
+requires_proof = true
+proof_circuit = "PurchaseCoverageWithDAGV2"
 
 [[functions]]
 name = "resolve_claim_with_capability"
@@ -97,9 +101,17 @@ name = "endowment"
 name = "info"
 
 [[circuits]]
-name = "UnderwriteWithCapability_V2"
+name = "UnderwriteV2"
 namespace = "insurance_market"
 
 [[circuits]]
-name = "PurchaseCoverageWithCapability_V2"
+name = "PurchaseCoverageWithCapabilityV2"
+namespace = "insurance_market"
+
+[[circuits]]
+name = "PurchaseCoverageV2"
+namespace = "insurance_market"
+
+[[circuits]]
+name = "PurchaseCoverageWithDAGV2"
 namespace = "insurance_market"
