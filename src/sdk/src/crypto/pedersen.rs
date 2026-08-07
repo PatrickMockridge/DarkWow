@@ -40,7 +40,7 @@ pub fn pedersen_commitment_u64(value: u64, blind: ScalarBlind) -> pallas::Point 
     let V = hasher(&VALUE_COMMITMENT_V_BYTES);
     let R = hasher(&VALUE_COMMITMENT_R_BYTES);
 
-    // DISPENSATION: base field < scalar field — conversion guaranteed valid.
+    // spec dispensation: type-system.md §2.3 — base field < scalar field, conversion guaranteed valid.
     let scalar_val = fp_mod_fv(pallas::Base::from(value))
         .expect("u64 to Base to Scalar: mathematically guaranteed valid");
     V * scalar_val + R * blind.inner()

@@ -331,7 +331,7 @@ fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contr
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_NS_V1.to_string(),
         vec![
-            // §6.2 DISPENSATION: fee_to_base — FeeAmount→Base for ZK public input.
+            // spec dispensation: fee-spec.md §6.2 — FeeAmount→Base for ZK public input.
             // Inlined to avoid feature-gated client dependency.
             pallas::Base::from(fee_params.threshold.get()),   // 1: threshold
             fee_params.tx_binding,                        // 2: tx_binding
@@ -1193,7 +1193,7 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
     if accumulator != pallas::Point::identity() {
         // Verify the miner's claimed (total_fees, total_blind) matches the accumulator
-        // §6.2 DISPENSATION: pedersen_commitment_fee — FeeAmount→Pedersen commit.
+        // spec dispensation: fee-spec.md §6.2 — FeeAmount→Pedersen commit, internal consensus arithmetic.
         // Inlined to avoid feature-gated client dependency.
         let claimed_commit = pedersen_commitment_u64(fc.total_fees.get(), dwow_sdk::crypto::Blind(fc.total_blind));
         if claimed_commit != accumulator {

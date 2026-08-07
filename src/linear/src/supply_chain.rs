@@ -156,7 +156,8 @@ impl CumulativeSupplyEntry {
             deserialize(&data[scalar_offset..supply_offset])
                 .map_err(|e| LinearError::SerializationError(e.to_string()))?;
         let total_supply = SupplyAmount::from_le_bytes(
-            data[supply_offset..supply_offset + 8].try_into().unwrap(),
+            data[supply_offset..supply_offset + 8].try_into()
+                .map_err(|_| LinearError::StorageError("Corrupt supply entry: wrong length".into()))?,
         );
         Ok(Self { value_commit, blind, total_supply })
     }
@@ -212,7 +213,8 @@ impl CumulativeSupplyChain {
         for result in tree.iter() {
             let (key, _) = result.map_err(|e| LinearError::StorageError(e.to_string()))?;
             if key.len() == 8 {
-                let h = BlockHeight::from_le_bytes(key.as_ref().try_into().unwrap());
+                let h = BlockHeight::from_le_bytes(key.as_ref().try_into()
+                    .map_err(|_| LinearError::StorageError("Corrupt supply key: wrong length".into()))?);
                 max_height = Some(max_height.map_or(h, |m| m.max(h)));
             }
         }

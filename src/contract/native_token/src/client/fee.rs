@@ -409,7 +409,11 @@ fn create_fee_proof(
         DRK_POSEIDON_DOMAIN_TX_BINDING, tx_commitment, input.tx_nonce,
     ]);
     let sig_pk = PublicKey::from_secret(input.ephemeral_signature_secret.clone());
-    let (sig_x, sig_y) = sig_pk.xy().expect("pk not identity");
+    let sig_coords = sig_pk.xy();
+    if sig_coords.is_none().into() {
+        return Err(ContractError::IoError("FeeV2: ephemeral signature pk is identity".into()));
+    }
+    let (sig_x, sig_y) = sig_coords.unwrap();
 
     // Public inputs for Fee_V2 (15 elements, matching fee_get_metadata order)
     // M6: guard against identity point — follow existing pattern at lines 237-241
@@ -451,7 +455,8 @@ fn create_fee_proof(
     // Build witnesses (matching circuit witness order in fee.zk "Fee_V2")
     let prover_witnesses = vec![
         Witness::Base(Value::known(*input.secret.inner())),
-        Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
+        Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into()
+            .map_err(|_| ContractError::IoError("FeeV2: leaf_position exceeds u32".into()))?)),
         Witness::MerklePath(Value::known({
             let mut path = input.merkle_path.clone();
             // Depth-0 tree (single leaf): empty path is correct.
@@ -461,7 +466,8 @@ fn create_fee_proof(
                 path.push(MerkleNode::from_bytes([0u8; 32])
                     .unwrap_or_else(|| MerkleNode::new(pallas::Base::zero())));
             }
-            path.try_into().unwrap()
+            path.try_into()
+                .map_err(|_| ContractError::IoError("FeeV2: merkle path conversion failed".into()))?
         })),
         Witness::Base(Value::known(*input.ephemeral_signature_secret.inner())),
         Witness::Base(Value::known(sig_x)),

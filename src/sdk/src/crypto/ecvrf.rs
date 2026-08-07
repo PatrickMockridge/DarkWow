@@ -64,7 +64,7 @@ impl VrfProof {
         message.extend_from_slice(alpha_string);
         let H = pallas::Point::hash_to_curve(VRF_DOMAIN)(&message);
 
-        // DISPENSATION: base field < scalar field — conversion guaranteed valid.
+        // spec dispensation: type-system.md §2.3 — base field < scalar field, conversion guaranteed valid.
         let scalar = fp_mod_fv(*x.inner())
             .expect("SecretKey to Scalar: mathematically guaranteed valid");
         let gamma = H * scalar;

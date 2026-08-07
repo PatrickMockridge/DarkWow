@@ -409,7 +409,7 @@ impl DwowNode {
         let result = JsonValue::from(std::collections::HashMap::from([
             ("height".to_string(), JsonValue::String(format!("{}", height))),
             ("total_supply".to_string(), {
-                // §6.3 DISPENSATION: f64 precision loss above 2^53.
+                // spec dispensation: type-system.md §6.3 — f64 precision loss above 2^53.
                 // SupplyAmount is u64; format as string beyond safe integer range.
                 const MAX_SAFE_F64: u64 = 2u64.pow(53); // 9,007,199,254,740,992
                 let raw = total_supply.get();

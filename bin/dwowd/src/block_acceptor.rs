@@ -162,7 +162,7 @@ pub fn accept_block(
             let block_hash = block.hash_with_vm(vm.as_ref())
                 .map_err(|e| dwow_core::Error::Custom(format!("hash: {e}")))?;
             let hash_u32 = u32::from_le_bytes(block_hash.as_bytes()[0..4].try_into().unwrap());
-            if hash_u32 > target.get() {
+            if !target.hash_is_valid(hash_u32) {
                 return Err(dwow_core::Error::Custom(format!(
                     "Block {} PoW invalid: hash={:#010x} target={:#010x}",
                     block.header.height, hash_u32, target

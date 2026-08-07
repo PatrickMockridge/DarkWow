@@ -56,7 +56,7 @@ pub fn validate_child_value_commit(
         .map_err(|_| crate::ContractError::InvalidFunction)?;
 
     // Convert the base-field blind seed to a scalar for Pedersen.
-    // DISPENSATION: base field < scalar field — conversion guaranteed valid.
+    // spec dispensation: type-system.md §2.3 — base field < scalar field, conversion guaranteed valid.
     let value_blind = Blind(fp_mod_fv(blind_seed)
         .expect("base field to scalar: mathematically guaranteed valid"));
     let expected_commit = pedersen_commitment_u64(expected_value, value_blind);

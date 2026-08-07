@@ -530,7 +530,7 @@ pub fn create_block(
     transactions: Vec<Transaction>,
     target: BlockTarget,
     vm: &randomx::RandomXVM,
-) -> Block {
+) -> Result<Block> {
     create_block_with_uncles(previous, height, transactions, target, &[], vm)
 }
 
@@ -544,18 +544,17 @@ pub fn create_block_with_uncles(
     target: BlockTarget,
     uncles: &[UncleBlock],
     vm: &randomx::RandomXVM,
-) -> Block {
+) -> Result<Block> {
     // Calculate merkle root for transactions — single canonical algorithm
     // (shared with verify_merkle_root and the genesis ceremony).
     let merkle_root = compute_merkle_root(&transactions);
 
     // Build uncle merkle and compute rewards (uses blake3 for merkle structure)
-    let (uncle_merkle_root, _) = build_uncle_merkle(uncles, vm)
-        .expect("Failed to build uncle merkle tree");
+    let (uncle_merkle_root, _) = build_uncle_merkle(uncles, vm)?;
     let base_reward = dwow_sdk::blockchain::expected_reward(height);
     let (total_reward, _) = compute_reward(base_reward, uncles);
 
-    Block {
+    Ok(Block {
         header: BlockHeader {
             version: BlockVersion::CURRENT,
             previous,
@@ -580,7 +579,7 @@ pub fn create_block_with_uncles(
 
         },
         transactions,
-    }
+    })
 }
 
 #[cfg(test)]

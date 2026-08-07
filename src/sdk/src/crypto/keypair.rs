@@ -315,7 +315,7 @@ impl PublicKey {
 
     /// Derive a new `PublicKey` object given a `SecretKey`
     pub fn from_secret(s: SecretKey) -> Self {
-        // DISPENSATION: base field < scalar field — conversion guaranteed valid.
+        // spec dispensation: type-system.md §2.3 — base field < scalar field, conversion guaranteed valid.
         let scalar = fp_mod_fv(*s.inner())
             .expect("SecretKey to Scalar: mathematically guaranteed valid");
         let p = NullifierK.generator() * scalar;

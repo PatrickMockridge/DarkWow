@@ -95,7 +95,7 @@ impl SchnorrSecret for SecretKey {
         let transcript = &[&commit_bytes, &pubkey_bytes, message];
 
         let challenge = hash_to_scalar(DRK_SCHNORR_CHALLENGE_DOMAIN, transcript);
-        // DISPENSATION: base field < scalar field — conversion guaranteed valid.
+        // spec dispensation: type-system.md §2.3 — base field < scalar field, conversion guaranteed valid.
         let scalar = fp_mod_fv(*self.inner())
             .expect("SecretKey to Scalar: mathematically guaranteed valid");
         let response = mask + challenge * scalar;

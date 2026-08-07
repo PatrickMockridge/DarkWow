@@ -255,7 +255,7 @@ impl PoWRewardCallBuilder {
 
     /// Build the PoWReward call with the standard block reward plus fees.
     pub fn build(&self) -> Result<PoWRewardCallDebris> {
-        // DISPENSATION §6.2: internal consensus arithmetic — reward + fees = coinbase value.
+        // spec dispensation: fee-spec.md §6.2 — internal consensus arithmetic, reward + fees = coinbase value.
         let reward = expected_reward(self.block_height).get() + self.fees;
         self._build(reward)
     }

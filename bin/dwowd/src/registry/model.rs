@@ -219,7 +219,11 @@ pub async fn build_linear_coinbase(
 
     let coin_commitment = dwow_chain::CoinCommitment::from_base(output.coin.inner());
 
-    let valcom_coords = output.value_commit.to_affine().coordinates().unwrap();
+    let vc = output.value_commit.to_affine().coordinates();
+    if vc.is_none().into() {
+        return Err(dwow_core::Error::Custom("coinbase value_commit is identity".into()));
+    }
+    let valcom_coords = vc.unwrap();
     let mut value_commit_x = [0u8; 32];
     let mut value_commit_y = [0u8; 32];
     value_commit_x.copy_from_slice(&valcom_coords.x().to_repr());

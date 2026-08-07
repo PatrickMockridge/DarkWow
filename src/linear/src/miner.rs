@@ -66,9 +66,9 @@ impl Miner {
             let nonce = atomic_nonce.fetch_add(1, Ordering::SeqCst);
 
             let mut block = if uncles.is_empty() {
-                create_block(previous, height, txs.clone(), target, vm)
+                create_block(previous, height, txs.clone(), target, vm)?
             } else {
-                crate::create_block_with_uncles(previous, height, txs.clone(), target, uncles, vm)
+                crate::create_block_with_uncles(previous, height, txs.clone(), target, uncles, vm)?
             };
             block.header.nonce = nonce;
             block.header.randomx_key = Self::derive_key_from_height(height);
