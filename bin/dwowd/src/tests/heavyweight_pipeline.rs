@@ -1803,3 +1803,63 @@ fn test_heavyweight_fee_v2_box() -> std::result::Result<(), Box<dyn std::error::
         Ok(())
     })
 }
+
+// Multi-block chain growth test — verifies correct chain state across
+// heights 1→4 using pure coinbase-only blocks. No FeeV2, no contract calls.
+#[test]
+fn test_bridge_multi_block() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    dwow_native_token_contract::enable_deterministic_zk();
+
+    smol::block_on(async {
+        use dwow_sdk::blockchain::{BlockHeight, expected_reward};
+        use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
+        use crate::tests::blockchain::HeavyweightPipeline;
+        use crate::tests::modules::coinbase_coordination;
+        use dwow_sdk::pasta::{group::Group, pallas};
+
+        let mut chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
+        chain.log_file = Some(std::sync::Mutex::new(
+            crate::tests::test_output::create_log_file("bridge_multi_block")
+        ));
+
+        let cid = *NATIVE_TOKEN_CONTRACT_ID;
+        let mut expected_supply = 0u64;
+
+        for h in 1..=4u64 {
+            if h > 1 {
+                let cb = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+                chain.block()?.submit_with_coinbase(cb.coinbase_tx).await?;
+            }
+            assert_eq!(chain.height(), BlockHeight::new(h),
+                "height must be {}", h);
+
+            expected_supply += expected_reward(BlockHeight::new(h)).get();
+            assert_eq!(chain.cumulative_supply(), expected_supply,
+                "height {} cumulative supply mismatch", h);
+
+            if h > 1 {
+                let block = chain.chain_state.store.get_block(BlockHeight::new(h))
+                    .expect(&format!("block at height {}", h));
+                assert_eq!(block.transactions.len(), 1,
+                    "coinbase-only block must have 1 tx, got {} at height {}",
+                    block.transactions.len(), h);
+            }
+        }
+
+        // Hash chain continuity
+        assert!(chain.block_hash_chain_continuous()?,
+            "block hash chain must be continuous");
+
+        // Accumulator stays Identity across zero-fee chain
+        let acc_data = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
+            .expect("accumulator must exist");
+        let acc_point: pallas::Point = Option::from(
+            pallas::Point::from_bytes(&acc_data[..32].try_into().unwrap())
+        ).expect("invalid point");
+        assert_eq!(acc_point, pallas::Point::identity(),
+            "accumulator must stay Identity");
+
+        Ok(())
+    })
+}
