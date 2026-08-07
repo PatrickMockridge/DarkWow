@@ -31,6 +31,7 @@
 
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -174,6 +175,12 @@ pub struct Mempool {
     db: Option<sled::Tree>,
     /// Configuration
     config: MempoolConfig,
+    /// Premium tier threshold — runtime-updatable via update_thresholds().
+    /// Atomic for lock-free read in add(). Initialized from config.premium_threshold.
+    premium_threshold: AtomicU64,
+    /// General tier threshold — runtime-updatable via update_thresholds().
+    /// Atomic for lock-free read in add(). Initialized from config.general_threshold.
+    general_threshold: AtomicU64,
     /// Fee extraction strategy (contract-specific, injected by caller)
     fee_extractor: Box<dyn FeeExtractor>,
     /// Optional chain state for on-chain nullifier consultation.
@@ -195,6 +202,8 @@ impl Mempool {
             general_queue: Mutex::new(VecDeque::new()),
             nullifiers: Mutex::new(BTreeSet::new()),
             db,
+            premium_threshold: AtomicU64::new(config.premium_threshold),
+            general_threshold: AtomicU64::new(config.general_threshold),
             config,
             fee_extractor,
             chain_state,
@@ -247,6 +256,8 @@ impl Mempool {
             general_queue: Mutex::new(VecDeque::new()),
             nullifiers: Mutex::new(nullifiers),
             db: Some(clean_tree),
+            premium_threshold: AtomicU64::new(config.premium_threshold),
+            general_threshold: AtomicU64::new(config.general_threshold),
             config,
             fee_extractor,
             chain_state,
@@ -375,8 +386,8 @@ impl Mempool {
         if is_fee_v2 {
             // Remove from legacy fee_index — FeeV2 uses queue-based ordering
             fee_idx.remove(&FeeIndexEntry { fee_rate, tx_hash });
-            let premium = self.config.premium_threshold;
-            let general = self.config.general_threshold;
+            let premium = self.premium_threshold.load(AtomicOrdering::Acquire);
+            let general = self.general_threshold.load(AtomicOrdering::Acquire);
             if self.fee_extractor.verify_threshold_proof(
                 &txs.get(&tx_hash).unwrap().tx, premium,
             ) {
@@ -577,6 +588,24 @@ impl Mempool {
     /// are pending in the mempool are not spendable until confirmed or dropped.
     pub async fn has_nullifier(&self, nullifier: &dwow_chain::Nullifier) -> bool {
         self.nullifiers.lock().await.contains(nullifier)
+    }
+
+    /// Update premium and general fee thresholds at runtime.
+    /// Called by the miner at fee window boundaries. Uses AtomicU64 for
+    /// lock-free writes — no &mut self needed, compatible with prepare_block().
+    pub fn update_thresholds(&self, premium: u64, general: u64) {
+        self.premium_threshold.store(premium, AtomicOrdering::Release);
+        self.general_threshold.store(general, AtomicOrdering::Release);
+    }
+
+    /// Current premium threshold (memory-fenced read).
+    pub fn premium_threshold(&self) -> u64 {
+        self.premium_threshold.load(AtomicOrdering::Acquire)
+    }
+
+    /// Current general threshold (memory-fenced read).
+    pub fn general_threshold(&self) -> u64 {
+        self.general_threshold.load(AtomicOrdering::Acquire)
     }
 
     /// Remove a specific transaction by hash.
