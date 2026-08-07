@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, MoneroBlockHeight};
 
-use super::Transaction;
+use super::{Transaction, LinearError, Result};
 use crate::monero::MoneroPowData;
 
 /// Source of Proof of Work — either native RandomX or Monero merge mining.
@@ -142,13 +142,14 @@ impl UncleBlock {
     /// **Warning:** The caller must ensure the VM is keyed with this block's
     /// own `header.randomx_key`. Passing a VM with a different key produces
     /// a garbage hash.
-    pub fn hash_with_vm(&self, vm: &randomx::RandomXVM) -> blake3::Hash {
+    pub fn hash_with_vm(&self, vm: &randomx::RandomXVM) -> Result<blake3::Hash> {
         let header_bytes = self.header.to_mining_blob();
         // Use first 32 bytes of RandomX output as the hash
-        let rx_hash = vm.calculate_hash(&header_bytes).expect("RandomX hash failed");
+        let rx_hash = vm.calculate_hash(&header_bytes)
+            .map_err(|e| LinearError::RandomXError(format!("RandomX hash failed: {e}")))?;
         let mut hash_bytes = [0u8; 32];
         hash_bytes.copy_from_slice(&rx_hash[..32]);
-        blake3::Hash::from_bytes(hash_bytes)
+        Ok(blake3::Hash::from_bytes(hash_bytes))
     }
 
     /// Accept the pin offer from canonical chain (use it or lose it)
@@ -156,6 +157,13 @@ impl UncleBlock {
     pub fn accept_pin(&mut self) {
         if self.pin_offered {
             self.pin_accepted = true;
+        }
+    }
+
+    /// Release the pin (only called when uncle is being dropped)
+    pub fn release_pin(&mut self) {
+        if self.pin_accepted {
+            self.pin_accepted = false;
         }
     }
 
@@ -265,12 +273,13 @@ impl Block {
     /// own `header.randomx_key`. Passing a VM with a different key produces
     /// a garbage hash that will fail validation. Use
     /// [`get_vm(block.header.randomx_key)`] to create the correct VM.
-    pub fn hash_with_vm(&self, vm: &randomx::RandomXVM) -> blake3::Hash {
+    pub fn hash_with_vm(&self, vm: &randomx::RandomXVM) -> Result<blake3::Hash> {
         let blob = self.header.to_mining_blob();
-        let rx_hash = vm.calculate_hash(&blob).expect("RandomX hash failed");
+        let rx_hash = vm.calculate_hash(&blob)
+            .map_err(|e| LinearError::RandomXError(format!("RandomX hash failed: {e}")))?;
         let mut hash_bytes = [0u8; 32];
         hash_bytes.copy_from_slice(&rx_hash[..32]);
-        blake3::Hash::from_bytes(hash_bytes)
+        Ok(blake3::Hash::from_bytes(hash_bytes))
     }
 
     /// Verify the block's previous hash matches the expected parent
@@ -385,9 +394,9 @@ pub fn verify_uncle_proof(
 /// Build uncle merkle tree from uncle blocks
 /// The pow_hash for each uncle is computed using RandomX with the uncle's randomx_key.
 /// The merkle tree itself uses blake3 for structure (not PoW).
-pub fn build_uncle_merkle(uncles: &[UncleBlock], _vm: &randomx::RandomXVM) -> ([u8; 32], Vec<UncleProof>) {
+pub fn build_uncle_merkle(uncles: &[UncleBlock], _vm: &randomx::RandomXVM) -> Result<([u8; 32], Vec<UncleProof>)> {
     if uncles.is_empty() {
-        return ([0u8; 32], vec![]);
+        return Ok(([0u8; 32], vec![]));
     }
 
     // Compute pow_hash for each uncle using their randomx_key.
@@ -397,20 +406,20 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock], _vm: &randomx::RandomXVM) -> ([
     // and verify_uncle_proof() for consistent validation.
     let pow_hashes: Vec<[u8; 32]> = uncles
         .iter()
-        .map(|u| {
+        .map(|u| -> Result<[u8; 32]> {
             // Create a VM for this uncle's specific key
             let flags = randomx::RandomXFlags::get_recommended_flags();
             let cache = randomx::RandomXCache::new(flags, &u.header.randomx_key)
-                .expect("Failed to create RandomX cache for uncle");
+                .map_err(|e| LinearError::RandomXError(format!("uncle cache: {e}")))?;
             let uncle_vm = randomx::RandomXVM::new(flags, Some(cache), None)
-                .expect("Failed to create RandomX VM for uncle");
+                .map_err(|e| LinearError::RandomXError(format!("uncle VM: {e}")))?;
             let hash_bytes = uncle_vm.calculate_hash(&u.header.to_mining_blob())
-                .expect("RandomX hash failed");
+                .map_err(|e| LinearError::RandomXError(format!("uncle hash: {e}")))?;
             let mut pow_hash = [0u8; 32];
             pow_hash.copy_from_slice(&hash_bytes[..32]);
-            pow_hash
+            Ok(pow_hash)
         })
-        .collect();
+        .collect::<Result<Vec<_>>>()?;
 
     // Build leaves from uncle hashes using blake3. Leaf hash MUST match
     // verify_uncle_proof() — both use to_mining_blob() for canonical, fixed-
@@ -467,7 +476,7 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock], _vm: &randomx::RandomXVM) -> ([
         })
         .collect();
 
-    (merkle_root, proofs)
+    Ok((merkle_root, proofs))
 }
 
 /// Compute reward distribution for canonical miner and uncles
@@ -541,7 +550,8 @@ pub fn create_block_with_uncles(
     let merkle_root = compute_merkle_root(&transactions);
 
     // Build uncle merkle and compute rewards (uses blake3 for merkle structure)
-    let (uncle_merkle_root, _) = build_uncle_merkle(uncles, vm);
+    let (uncle_merkle_root, _) = build_uncle_merkle(uncles, vm)
+        .expect("Failed to build uncle merkle tree");
     let base_reward = dwow_sdk::blockchain::expected_reward(height);
     let (total_reward, _) = compute_reward(base_reward, uncles);
 
@@ -843,7 +853,7 @@ mod tests {
 
         // Height 2: first decay step from INITIAL_REWARD.
         let block2 = create_block_with_uncles(
-            block1.hash_with_vm(&vm),
+            block1.hash_with_vm(&vm).expect("hash failed"),
             BlockHeight::new(2),
             vec![],
             BlockTarget::new(0x0000_FFFF),
@@ -856,7 +866,7 @@ mod tests {
 
         // Height 3: slightly less than height 2 (exponential decay)
         let block3 = create_block_with_uncles(
-            block2.hash_with_vm(&vm),
+            block2.hash_with_vm(&vm).expect("hash failed"),
             BlockHeight::new(3),
             vec![],
             BlockTarget::new(0x0000_FFFF),

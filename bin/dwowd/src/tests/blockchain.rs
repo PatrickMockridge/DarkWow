@@ -169,6 +169,37 @@ impl HeavyweightPipeline {
             b"latest_supply".to_vec(),
             initial_supply.get().to_le_bytes().to_vec(),
         )?;
+
+        // Verify genesis properly initialized the fee commitment accumulator.
+        // Early-fail prevents confusing "accumulator not found" errors in
+        // downstream FeeV2 tests that would mask the root cause.
+        // Per genesis.md Structural Identity §Fee lifecycle.
+        let cid = *NATIVE_TOKEN_CONTRACT_ID;
+        let acc_data = self.query_contract_state(cid, "info", b"fee_commit_acc")?
+            .ok_or_else(|| dwow_core::Error::Custom(
+                "GENESIS FAIL: fee_commit_accumulator key not found — \
+                 init_contract may not have run".into()
+            ))?;
+        if acc_data.len() != 32 {
+            return Err(dwow_core::Error::Custom(format!(
+                "GENESIS FAIL: fee_commit_accumulator wrong size: {} bytes (expected 32)",
+                acc_data.len()
+            )));
+        }
+        let acc_point: pallas::Point = Option::from(
+            pallas::Point::from_bytes(&acc_data[..32].try_into().map_err(|_|
+                dwow_core::Error::Custom("fee_commit_accumulator: invalid point encoding".into())
+            )?)
+        ).ok_or_else(|| dwow_core::Error::Custom(
+            "GENESIS FAIL: invalid fee_commit_accumulator point encoding".into()
+        ))?;
+        if acc_point != pallas::Point::identity() {
+            return Err(dwow_core::Error::Custom(format!(
+                "GENESIS FAIL: fee_commit_accumulator is not Identity (got: {:?}) — \
+                 genesis initialization may be corrupt", acc_point
+            )));
+        }
+
         Ok(())
     }
 
@@ -446,7 +477,7 @@ impl HeavyweightPipeline {
             ).map_err(|e| dwow_core::Error::Custom(format!(
                 "block_hash_chain: get prev block at height {}: {}", h - 1, e
             )))?;
-            if block.header.previous != self.chain_state.hash_block_with_cached_vm(&prev_block) {
+            if block.header.previous != self.chain_state.hash_block_with_cached_vm(&prev_block).expect("hash failed") {
                 return Ok(false);
             }
         }
@@ -459,7 +490,7 @@ impl HeavyweightPipeline {
             .map_err(|e| dwow_core::Error::Custom(format!(
                 "block_hash_at height {}: {}", height, e
             )))?;
-        Ok(Some(self.chain_state.hash_block_with_cached_vm(&block)))
+        Ok(Some(self.chain_state.hash_block_with_cached_vm(&block).expect("hash failed")))
     }
 
     // ── Internal helpers ─────────────────────────────────────────────
@@ -680,7 +711,7 @@ impl<'c> HeavyweightBlock<'c> {
             "accept_block at height {}: {}", self.height, e
         )))?;
 
-        let block_hash = block.hash_with_vm(&vm);
+        let block_hash = block.hash_with_vm(&vm).expect("hash failed");
         match outcome {
             dwow_chain::BlockConnectOutcome::CanonicalExtension { new_height } => {
                 self.chain.log(&format!("[blockchain] block accepted at height {} ({:.1}s, {} txs)",

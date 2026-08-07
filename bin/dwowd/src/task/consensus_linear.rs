@@ -285,7 +285,7 @@ pub async fn consensus_linear_init_task(
                 let our_genesis_hash: Option<dwow_chain::sync_types::BlockHash> = if local_height >= BlockHeight::GENESIS {
                     match blockchain.get_block(BlockHeight::GENESIS) {
                         Ok(genesis) => Some(dwow_chain::sync_types::BlockHash::from_hash(
-                            blockchain.hash_block_with_cached_vm(&genesis)
+                            blockchain.hash_block_with_cached_vm(&genesis).expect("hash failed")
                         )),
                         Err(_) => None,
                     }
@@ -490,7 +490,10 @@ pub async fn consensus_linear_init_task(
                             // pooled RandomXCache (2 MB scratchpad, 256 MB cached).
                             let rx_flags = randomx::RandomXFlags::get_recommended_flags()
                                 & !randomx::RandomXFlags::JIT;
-                            let rx_cache = blockchain.get_cache(block.header.randomx_key);
+                            let rx_cache = blockchain.get_cache(block.header.randomx_key)
+                                .map_err(|e| dwow_core::Error::Custom(format!(
+                                    "RandomX cache: {}", e
+                                )))?;
                             let vm = Arc::new(
                                 randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
                                     .expect("Failed to create RandomX VM for sync"),

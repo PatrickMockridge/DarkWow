@@ -446,7 +446,7 @@ impl DwowNode {
             match chain_state.get_latest_block() {
                 Ok(block) => {
                     let _prev_key = block.header.randomx_key;
-                    chain_state.hash_block_with_cached_vm(&block)
+                    chain_state.hash_block_with_cached_vm(&block).expect("hash failed")
                 }
                 Err(_) => blake3::Hash::from_bytes([0u8; 32]),
             }
@@ -540,7 +540,7 @@ impl DwowNode {
         // Verify PoW before inserting
         {
             let submit_blob = block.header.to_mining_blob();
-            let daemon_hash = chain_state.hash_block_with_cached_vm(&block);
+            let daemon_hash = chain_state.hash_block_with_cached_vm(&block).expect("hash failed");
             info!(
                 target: "dwowd::rpc::rpc_stratum::stratum_submit",
                 "[RPC-STRATUM] Submit — nonce={}, blob={}, daemon_hash={}, xmrig_hash={}",
@@ -549,7 +549,8 @@ impl DwowNode {
                 hex::encode(daemon_hash.as_bytes()),
                 xmrig_result.as_ref().map(|s| s.as_str()).unwrap_or("none"),
             );
-            let vm = chain_state.get_vm(randomx_key);
+            let vm = chain_state.get_vm(randomx_key)
+                .expect("Failed to get RandomX VM for stratum");
             let verify_result = {
                 let guard = vm.lock().unwrap();
                 chain_state.consensus.lock().unwrap().verify_proof(&block, &*guard)
@@ -579,7 +580,7 @@ impl DwowNode {
         {
             let fc = &chain_state.finality_config;
             if fc.should_anchor() {
-                let block_hash = chain_state.hash_block_with_cached_vm(&block);
+                let block_hash = chain_state.hash_block_with_cached_vm(&block).expect("hash failed");
                 let mut block_hash_bytes = [0u8; 32];
                 block_hash_bytes.copy_from_slice(block_hash.as_bytes());
                 match anchor_block(&block_hash_bytes, block.header.timestamp.get(), block.header.height) {
@@ -611,7 +612,8 @@ impl DwowNode {
         // Accept block — single unified path (block_acceptor::accept_block).
         // Use pooled RandomXCache — 256 MB allocation reused.
         let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
-        let exec_rx_cache = chain_state.get_cache(randomx_key);
+        let exec_rx_cache = chain_state.get_cache(randomx_key)
+            .expect("Failed to get RandomX cache for stratum execution");
         let exec_vm = std::sync::Arc::new(
             randomx::RandomXVM::new(flags, Some(exec_rx_cache), None)
                 .expect("Failed to create RandomX VM for stratum execution"),

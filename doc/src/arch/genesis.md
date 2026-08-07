@@ -88,8 +88,10 @@ this one rather than repeating the list.
 
 ## Genesis Block
 
-The genesis block at height 1 SHALL be structurally identical to every subsequent
-block. It SHALL carry a PoWRewardV1 coinbase with a full ZK proof, coin commitment,
+The genesis block at height 1 SHALL obey the same structural rules as every
+subsequent block. Structural identity is defined by the block validator
+(`validate_block_structure`), not by byte counts or transaction counts.
+It SHALL carry a PoWRewardV1 coinbase with a full ZK proof, coin commitment,
 nullifier, value commitment, token commitment, and encrypted note. The nullifier
 `nf = poseidon_hash(sk_H, C)` is the block's validity proof — the same
 nullifier-based signing model specified in [Consensus & Coinbase](consensus-coinbase.md).
@@ -112,6 +114,31 @@ The genesis block SHALL be committed through the standard block acceptance path
 (`accept_block`), which executes WASM (`pow_reward_v1`), reads cumulative supply
 from the execution overlay, and commits block + contracts + supply_chain atomically.
 The genesis block SHALL NOT bypass WASM execution.
+
+### Structural Identity — Precise Definition
+
+"The genesis block SHALL be structurally identical to every subsequent block"
+means identical in these five dimensions:
+
+| Dimension | Rule | Enforced By | Spec Ref |
+|-----------|------|-------------|----------|
+| **Header format** | All `BlockHeader` fields present, same encoding, same version byte | `BlockHeader::decode()` | consensus.md |
+| **Transaction ordering** | Exactly one coinbase at `transactions[0]`; FeeCollectV1 (0x06) at final position iff `total_fees > 0`; otherwise absent | `validate_block_structure()` | fee-spec.md §2.1, §4.4 |
+| **Execution path** | Committed through `accept_block` with WASM execution; SHALL NOT bypass WASM | `accept_block()` | genesis.md §Genesis Block |
+| **Fee lifecycle** | `fee_commit_accumulator` initialized to Identity at block start; accumulated via FeeV2 (0x08) Pedersen point addition; verified and reset by FeeCollectV1; Identity after reset | `apply_pow_reward`, `apply_fee`, `apply_fee_collect` | fee-spec.md §5.6 |
+| **Coinbase structure** | PoWRewardV1 (0x05) with full ZK proof, coin commitment, nullifier, value commitment, token commitment, encrypted note | `pow_reward_v1` (WASM) | consensus-coinbase.md |
+
+The 9 contract deployment transactions at `transactions[1..=9]` are a one-time
+bootstrap event. They pass `validate_block_structure()` via `is_genesis_deployment_tx()`
+checks that reject deployment transactions in non-genesis blocks. They do not
+violate structural identity because structural identity concerns the RULES every
+block follows, not the specific content of any block.
+
+The genesis block is the first block accepted under these rules. It is the
+"template" only in the sense that `validate_block_structure()` accepts it, and
+`validate_block_structure()` accepts every subsequent block under the same
+criteria. There is no separate "genesis construction path" that regular blocks
+must emulate — there is one validator, and all blocks pass it.
 
 ### Genesis Miner Identity
 

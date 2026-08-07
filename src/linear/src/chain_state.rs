@@ -182,7 +182,10 @@ impl CChainState {
         let mut sled_work: Option<u128> = None;
         if let Some(work_bytes) = store.consensus.get("accumulated_work").ok().flatten() {
             if work_bytes.len() == 16 {
-                let work = u128::from_le_bytes(work_bytes[..16].try_into().unwrap_or([0u8; 16]));
+                let work_bytes_arr: [u8; 16] = work_bytes[..16].try_into().map_err(|_| {
+                    LinearError::StorageError("Corrupt accumulated_work: wrong length".into())
+                })?;
+                let work = u128::from_le_bytes(work_bytes_arr);
                 sled_work = Some(work);
             }
         }
@@ -250,7 +253,10 @@ impl CChainState {
             let val = expected.get().to_le_bytes();
             if let Ok(Some(existing)) = store.block_targets.get(&key) {
                 if existing.len() == 4 {
-                    let cached = BlockTarget::new(u32::from_le_bytes(existing[..4].try_into().unwrap_or([0u8; 4])));
+                    let target_bytes: [u8; 4] = existing[..4].try_into().map_err(|_| {
+                        LinearError::StorageError(format!("Corrupt block_targets entry at height {h}: wrong length"))
+                    })?;
+                    let cached = BlockTarget::new(u32::from_le_bytes(target_bytes));
                     if cached != expected {
                         tracing::warn!(
                             target: "chain_state",
@@ -382,8 +388,8 @@ impl CChainState {
     /// Hash a block using the cached VM for its key.
     /// Encapsulates lock+hash+unlock — no MutexGuard escapes this function.
     /// Safe for async contexts because no !Send type is held across yield points.
-    pub fn hash_block_with_cached_vm(&self, block: &Block) -> blake3::Hash {
-        let vm = self.get_vm(block.header.randomx_key);
+    pub fn hash_block_with_cached_vm(&self, block: &Block) -> Result<blake3::Hash> {
+        let vm = self.get_vm(block.header.randomx_key)?;
         let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
         block.hash_with_vm(&*guard)
     }
@@ -402,17 +408,17 @@ impl CChainState {
     /// external VM creation is O(1). Same eviction policy as vm_cache.
     const MAX_CACHED_CACHES: usize = 6;
 
-    pub fn get_vm(&self, key: [u8; 32]) -> Arc<std::sync::Mutex<RandomXVM>> {
+    pub fn get_vm(&self, key: [u8; 32]) -> Result<Arc<std::sync::Mutex<RandomXVM>>> {
         let mut cache = self.vm_cache.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(vm) = cache.get(&key) {
-            return vm.clone();
+            return Ok(vm.clone());
         }
         let flags = RandomXFlags::get_recommended_flags() & !RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(flags, &key)
-            .expect("Failed to create RandomX cache");
+            .map_err(|e| LinearError::RandomXError(format!("Failed to create RandomX cache: {e}")))?;
         let vm = Arc::new(std::sync::Mutex::new(
             RandomXVM::new(flags, Some(rx_cache), None)
-                .expect("Failed to create RandomX VM"),
+                .map_err(|e| LinearError::RandomXError(format!("Failed to create RandomX VM: {e}")))?,
         ));
         cache.insert(key, vm.clone());
         // Evict oldest entry when cache exceeds capacity.
@@ -422,7 +428,7 @@ impl CChainState {
                 cache.remove(&oldest);
             }
         }
-        vm
+        Ok(vm)
     }
 
     /// Get or create a RandomXCache for the given key.
@@ -436,14 +442,14 @@ impl CChainState {
     /// The fresh VM still allocates 2 MB of scratchpad memory — negligible
     /// compared to the 256 MB cache. This pool ensures the 256 MB allocation
     /// happens ONCE per key, not once per operation.
-    pub fn get_cache(&self, key: [u8; 32]) -> RandomXCache {
+    pub fn get_cache(&self, key: [u8; 32]) -> Result<RandomXCache> {
         let mut pool = self.cache_pool.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(cache) = pool.get(&key) {
-            return cache.clone();
+            return Ok(cache.clone());
         }
         let flags = RandomXFlags::get_recommended_flags() & !RandomXFlags::JIT;
         let cache = randomx::RandomXCache::new(flags, &key)
-            .expect("Failed to create RandomX cache");
+            .map_err(|e| LinearError::RandomXError(format!("Failed to create RandomX cache: {e}")))?;
         pool.insert(key, cache.clone());
         // Evict oldest entry when pool exceeds capacity
         if pool.len() > Self::MAX_CACHED_CACHES {
@@ -451,7 +457,7 @@ impl CChainState {
                 pool.remove(&oldest);
             }
         }
-        cache
+        Ok(cache)
     }
 
     // --- Coin / nullifier sets ---
@@ -574,7 +580,7 @@ impl CChainState {
         // Serialize all block application — prevents concurrent connect_block
         // calls from racing on height, VM cache, sled writes, and RandomX FFI.
         let _lock = self.connect_lock.lock().unwrap_or_else(|e| e.into_inner());
-        let vm = self.get_vm(block.header.randomx_key);
+        let vm = self.get_vm(block.header.randomx_key)?;
         let current_height = self.get_height();
         let block_height = block.header.height;
 
@@ -606,12 +612,12 @@ impl CChainState {
             // with other tasks (miner_task, GetTip, RPC) accessing the same key.
             let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
             let hash_u32 = {
-                let h = block.hash_with_vm(&*guard);
+                let h = block.hash_with_vm(&*guard)?;
                 u32::from_le_bytes(h.as_bytes()[0..4].try_into().unwrap())
             };
             if hash_u32 > block.header.target.get() {
                 return Err(LinearError::InvalidPoW(
-                    block.hash_with_vm(&*guard).to_string()
+                    block.hash_with_vm(&*guard)?.to_string()
                 ));
             }
             // HAZOP H-14 fix: validate Monero merge-mined competing blocks.
@@ -647,9 +653,9 @@ impl CChainState {
             // competing store.
             if current_height > BlockHeight::new(0) {
                 let parent = self.get_block(current_height)?;
-                let parent_vm = self.get_vm(parent.header.randomx_key);
+                let parent_vm = self.get_vm(parent.header.randomx_key)?;
                 let parent_guard = parent_vm.lock().unwrap_or_else(|e| e.into_inner());
-                let parent_hash = parent.hash_with_vm(&*parent_guard);
+                let parent_hash = parent.hash_with_vm(&*parent_guard)?;
                 drop(parent_guard);
                 if block.header.previous != parent_hash {
                     drop(guard);
@@ -683,7 +689,7 @@ impl CChainState {
             // H5 fix: cap competing blocks per height at MAX_COMPETING_BLOCKS
             const MAX_COMPETING_BLOCKS: usize = 20;
             // H7: Dedup by hash — reject duplicate competing blocks
-            let block_hash = block.hash_with_vm(&*guard);
+            let block_hash = block.hash_with_vm(&*guard)?;
             drop(guard); // Release VM lock before acquiring other locks
             {
                 let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
@@ -712,9 +718,9 @@ impl CChainState {
         // canonical chain, triggering reorganization.
         let tip_hash = if current_height > BlockHeight::new(0) {
             let prev = self.get_block(current_height)?;
-            let prev_vm = self.get_vm(prev.header.randomx_key);
+            let prev_vm = self.get_vm(prev.header.randomx_key)?;
             let prev_guard = prev_vm.lock().unwrap_or_else(|e| e.into_inner());
-            Some(prev.hash_with_vm(&*prev_guard))
+            Some(prev.hash_with_vm(&*prev_guard)?)
         } else {
             None
         };
@@ -733,9 +739,11 @@ impl CChainState {
                 .get(&current_height)
                 .and_then(|blocks| {
                     blocks.iter().find(|b| {
-                        let pvm = self.get_vm(b.header.randomx_key);
+                        let pvm = self.get_vm(b.header.randomx_key)
+                            .expect("Failed to create RandomX VM for competing block");
                         let pguard = pvm.lock().unwrap_or_else(|e| e.into_inner());
-                        b.hash_with_vm(&*pguard) == block.header.previous
+                        b.hash_with_vm(&*pguard)
+                            .expect("RandomX hash failed for competing block") == block.header.previous
                     })
                 });
             if uncle_parent.is_some() {
@@ -743,12 +751,12 @@ impl CChainState {
                 // Stage 1 PoW validated first (same as competing path).
                 let guard = vm.lock().unwrap_or_else(|e| e.into_inner());
                 let hash_u32 = {
-                    let h = block.hash_with_vm(&*guard);
+                    let h = block.hash_with_vm(&*guard)?;
                     u32::from_le_bytes(h.as_bytes()[0..4].try_into().unwrap())
                 };
                 if hash_u32 > block.header.target.get() {
                     return Err(LinearError::InvalidPoW(
-                        block.hash_with_vm(&*guard).to_string()
+                        block.hash_with_vm(&*guard)?.to_string()
                     ));
                 }
                 // HAZOP M-3 fix: validate Monero merge-mined uncle chain extensions.
@@ -837,15 +845,17 @@ impl CChainState {
                         // being consumed) and the new block from dedup.
                         let block_hash = block.hash_with_vm(
                             &*vm.lock().unwrap_or_else(|e| e.into_inner())
-                        );
+                        )?;
                         self.competing_seen.lock()
                             .unwrap_or_else(|e| e.into_inner())
                             .remove(&block_hash);
                         competing.entry(current_height).or_default().retain(|b| {
-                            let pvm = self.get_vm(b.header.randomx_key);
+                            let pvm = self.get_vm(b.header.randomx_key)
+                                .expect("Failed to create RandomX VM for competing block");
                             let pguard = pvm.lock()
                                 .unwrap_or_else(|e| e.into_inner());
-                            b.hash_with_vm(&*pguard) != block.header.previous
+                            b.hash_with_vm(&*pguard)
+                                .expect("RandomX hash failed for competing block") != block.header.previous
                         });
                         drop(competing);
 
@@ -864,7 +874,7 @@ impl CChainState {
                 const MAX_COMPETING_BLOCKS_UNCLE: usize = 20;
                 let block_hash = block.hash_with_vm(
                     &*vm.lock().unwrap_or_else(|e| e.into_inner())
-                );
+                )?;
                 let mut seen = self.competing_seen.lock().unwrap_or_else(|e| e.into_inner());
                 if !seen.contains(&block_hash) {
                     seen.insert(block_hash);

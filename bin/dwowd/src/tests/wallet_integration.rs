@@ -166,7 +166,7 @@ fn test_wallet_integration() {
             witness: vec![],
         };
         let merkle_root = tx.hash();
-        let gen_hash = har.chain_state.hash_block_with_cached_vm(&gen_block);
+        let gen_hash = har.chain_state.hash_block_with_cached_vm(&gen_block).expect("hash failed");
 
         let header = dwow_chain::BlockHeader {
             version: BlockVersion::CURRENT,
@@ -1292,7 +1292,7 @@ fn test_wallet_coinbase_scan_only() {
 
         let prev = har.chain_state.get_latest_block()
             .expect("get_latest_block");
-        let prev_hash = har.chain_state.hash_block_with_cached_vm(&prev);
+        let prev_hash = har.chain_state.hash_block_with_cached_vm(&prev).expect("hash failed");
 
         let header_2 = BlockHeader {
             version: BlockVersion::CURRENT,
@@ -2071,7 +2071,7 @@ fn test_canonical_call_failure_rejects_block() {
         let txs = vec![coinbase_tx, bad_tx];
         let prev = har.chain_state.get_latest_block()
             .expect("get_latest_block");
-        let prev_hash = har.chain_state.hash_block_with_cached_vm(&prev);
+        let prev_hash = har.chain_state.hash_block_with_cached_vm(&prev).expect("hash failed");
 
         let header_2 = BlockHeader {
             version: BlockVersion::CURRENT,

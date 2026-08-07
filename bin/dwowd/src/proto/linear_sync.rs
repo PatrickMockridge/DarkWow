@@ -295,7 +295,7 @@ async fn handle_get_tip(
             match chain_state.store.get_block(height) {
                 Ok(tip_block) => {
                     dwow_chain::sync_types::BlockHash::from_hash(
-                        chain_state.hash_block_with_cached_vm(&tip_block)
+                        chain_state.hash_block_with_cached_vm(&tip_block).expect("hash failed")
                     )
                 }
                 Err(_) => dwow_chain::sync_types::BlockHash::zero(),
@@ -310,7 +310,7 @@ async fn handle_get_tip(
             match chain_state.store.get_block(BlockHeight::GENESIS) {
                 Ok(genesis_block) => {
                     Some(dwow_chain::sync_types::BlockHash::from_hash(
-                        chain_state.hash_block_with_cached_vm(&genesis_block)
+                        chain_state.hash_block_with_cached_vm(&genesis_block).expect("hash failed")
                     ))
                 }
                 Err(_) => None,

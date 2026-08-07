@@ -150,11 +150,17 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let _nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
 
     // Set up fees database and seed the height-2 accumulator.
-    // Genesis (height 1) bypasses WASM execution, so apply_pow_reward never
-    // runs at H=1 and cannot create fees_db[2]. Without this seed, the first
-    // FeeV1 or FeeCollectV1 at height 2 aborts with DbGetEmpty
-    // (consensus-coinbase.md §3.13, Genesis). From height 2 onward,
-    // apply_pow_reward seeds fees_db[H+1] for each block.
+    // Genesis runs through the standard accept_block path (genesis.md §Genesis Block).
+    // Two independent code paths seed fees_db[2] = 0:
+    //   1. apply_pow_reward (coinbase tx, tx[0]): resets fee_commit_accumulator
+    //      to Identity AND writes fees_db[2] = 0 at block start.
+    //   2. init_contract (NativeToken deployment tx, tx[3]): writes the same
+    //      values as defense-in-depth — if a future refactor removes the coinbase
+    //      path, init_contract still provides a valid starting state.
+    // Both write identical values (zero and Identity). This is intentional
+    // redundancy — the cost is one extra sled write at genesis, and the benefit
+    // is that genesis is robust against changes to either path independently.
+    // From height 2 onward, apply_pow_reward seeds fees_db[H+1] for each block.
     let fees_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_FEES_TREE)?;
     let height_2_key = BlockHeight::GENESIS.succ().to_le_bytes();
     if !wasm::db::db_contains_key(fees_db, &height_2_key)? {
@@ -325,6 +331,8 @@ fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contr
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_NS_V1.to_string(),
         vec![
+            // §6.2 DISPENSATION: fee_to_base — FeeAmount→Base for ZK public input.
+            // Inlined to avoid feature-gated client dependency.
             pallas::Base::from(fee_params.threshold.get()),   // 1: threshold
             fee_params.tx_binding,                        // 2: tx_binding
         ],
@@ -1185,6 +1193,8 @@ fn fee_collect_v1(cid: ContractId, params: &[u8]) -> ContractResult {
 
     if accumulator != pallas::Point::identity() {
         // Verify the miner's claimed (total_fees, total_blind) matches the accumulator
+        // §6.2 DISPENSATION: pedersen_commitment_fee — FeeAmount→Pedersen commit.
+        // Inlined to avoid feature-gated client dependency.
         let claimed_commit = pedersen_commitment_u64(fc.total_fees.get(), dwow_sdk::crypto::Blind(fc.total_blind));
         if claimed_commit != accumulator {
             msg!("[fee_collect_v1] Pedersen mismatch: claimed commit does not match accumulator at height {}",

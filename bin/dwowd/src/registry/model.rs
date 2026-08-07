@@ -35,7 +35,7 @@ use dwow_chain::Nullifier;
 use dwow_native_token_contract::{
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_COLLECT_V2_BIN, NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V2_BIN,
 };
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockVersion, SupplyAmount};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockVersion, FeeAmount, SupplyAmount};
 use dwow_sdk::crypto::{
     keypair::{SecretKey},
     pasta_prelude::PrimeField,
@@ -600,7 +600,7 @@ pub async fn generate_linear_block_template(
         let latest_block = chain_state.get_latest_block()
             .map_err(|e| Error::Custom(format!("Failed to get latest block: {}", e)))?;
         let _prev_key = latest_block.header.randomx_key;
-        *chain_state.hash_block_with_cached_vm(&latest_block).as_bytes()
+        *chain_state.hash_block_with_cached_vm(&latest_block).expect("hash failed").as_bytes()
     };
 
     let target = {
@@ -637,7 +637,8 @@ pub async fn generate_linear_block_template(
             randomx::RandomXVM::new(flags, Some(cache), None)
                 .map_err(|e| Error::Custom(format!("Uncle VM: {}", e)))?
         };
-        let (root, proofs) = dwow_chain::build_uncle_merkle(&uncles, &uncle_vm);
+        let (root, proofs) = dwow_chain::build_uncle_merkle(&uncles, &uncle_vm)
+            .map_err(|e| dwow_core::Error::Custom(format!("uncle merkle: {e}")))?;
         (root, proofs)
     };
 

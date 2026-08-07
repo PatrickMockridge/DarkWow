@@ -288,7 +288,7 @@ fn test_merge_mined_block_acceptance() {
             .chain_state
             .get_latest_block()
             .expect("get_latest_block");
-        let prev_hash = har.chain_state.hash_block_with_cached_vm(&prev);
+        let prev_hash = har.chain_state.hash_block_with_cached_vm(&prev).expect("hash failed");
 
         let header =
             build_merge_mined_header(prev_hash, height, reward, merkle_root, pow_data);
@@ -417,7 +417,7 @@ fn test_merge_mined_block_deterministic() {
         let txs = vec![coinbase_tx];
         let merkle = compute_merkle_root(&txs);
         let prev = har1.chain_state.get_latest_block().expect("prev");
-        let prev_hash = har1.chain_state.hash_block_with_cached_vm(&prev);
+        let prev_hash = har1.chain_state.hash_block_with_cached_vm(&prev).expect("hash failed");
         let header = build_merge_mined_header(
             prev_hash,
             BlockHeight::new(2),
@@ -469,7 +469,7 @@ fn test_merge_mined_block_deterministic() {
         let txs2 = vec![coinbase_tx2];
         let merkle2 = compute_merkle_root(&txs2);
         let prev2 = har2.chain_state.get_latest_block().expect("prev2");
-        let prev_hash2 = har2.chain_state.hash_block_with_cached_vm(&prev2);
+        let prev_hash2 = har2.chain_state.hash_block_with_cached_vm(&prev2).expect("hash failed");
         let header2 = build_merge_mined_header(
             prev_hash2,
             BlockHeight::new(2),
@@ -480,8 +480,8 @@ fn test_merge_mined_block_deterministic() {
         let block2 = Block { header: header2, transactions: txs2 };
 
         // ── Assertions: identical hashes ─────────────────────────
-        let hash1 = har1.chain_state.hash_block_with_cached_vm(&block1);
-        let hash2 = har2.chain_state.hash_block_with_cached_vm(&block2);
+        let hash1 = har1.chain_state.hash_block_with_cached_vm(&block1).expect("hash failed");
+        let hash2 = har2.chain_state.hash_block_with_cached_vm(&block2).expect("hash failed");
         assert_eq!(hash1, hash2,
             "identical inputs must produce identical merge-mined block hashes");
     });

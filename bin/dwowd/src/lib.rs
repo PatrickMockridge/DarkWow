@@ -640,7 +640,16 @@ async fn init_genesis(
     )
     .map_err(|e| Error::Custom(format!("Genesis block acceptance failed: {}", e)))?;
 
-    let genesis_hash = chain_state.hash_block_with_cached_vm(&genesis_block);
+    // Fee accumulator verification after genesis: the production init_genesis
+    // cannot directly query contract state (sled tree handles are private).
+    // Verification is performed by:
+    //   - GenesisHarness::init_genesis() in tests/genesis.rs (Step 3)
+    //   - HeavyweightPipeline::init_genesis() in tests/blockchain.rs (Step 3)
+    //   - test_genesis_determinism AC-FEE-1/2 assertions
+    //   - test_block_creation AC-FEE-4 stranded-fee canary
+    // Per genesis.md Structural Identity §Fee lifecycle.
+
+    let genesis_hash = chain_state.hash_block_with_cached_vm(&genesis_block).expect("hash failed");
 
     // Verify genesis hash matches compile-time constant.
     // Placeholder (all zeros) → warn and continue; the operator copies the
@@ -804,7 +813,7 @@ impl Dwowd {
                 let stored_genesis = chain_state.get_block(BlockHeight::GENESIS)
                     .map_err(|e| Error::Custom(format!(
                         "height >= 1 but genesis block unreadable: {e}")))?;
-                let stored_hash = chain_state.hash_block_with_cached_vm(&stored_genesis);
+                let stored_hash = chain_state.hash_block_with_cached_vm(&stored_genesis).expect("hash failed");
                 let expected_hex = include_str!("../genesis_hash.txt").trim();
                 let is_placeholder = expected_hex.chars().all(|c| c == '0');
                 if !is_placeholder && stored_hash.to_string() != expected_hex {
@@ -1137,6 +1146,7 @@ async fn prepare_block(
 ) -> Result<PreparedBlock> {
     use crate::registry::model::build_linear_coinbase;
     use dwow_chain::UncleBlock;
+    use dwow_sdk::blockchain::FeeAmount;
 
     // 1. Build ZK coinbase FIRST — fallible operation (ZK proof generation).
     //    No destructive state mutation yet.
@@ -1339,7 +1349,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                 height, resident_kb, vm_cache_size, coin_set_size,
             );
         }
-        let previous = chain_state.hash_block_with_cached_vm(&latest_block);
+        let previous = chain_state.hash_block_with_cached_vm(&latest_block).expect("hash failed");
         let randomx_key = Miner::derive_key_from_height(height);
         // H1+H2 fix: miner creates its OWN VM, not from the shared cache.
         // Using chain_state.get_vm() would return an Arc<Mutex<RandomXVM>> that the
@@ -1349,7 +1359,14 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         // Creating a fresh VM from a pooled RandomXCache reuses the 256 MB
         // allocation — only the 2 MB scratchpad is allocated fresh.
         let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
-        let rx_cache = chain_state.get_cache(randomx_key);
+        let rx_cache = match chain_state.get_cache(randomx_key) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!(target: "dwowd::miner",
+                    "Failed to create RandomX cache: {} — retrying next cycle", e);
+                continue;
+            }
+        };
         let vm = match randomx::RandomXVM::new(flags, Some(rx_cache), None) {
             Ok(vm) => Arc::new(vm),
             Err(e) => {
@@ -1517,7 +1534,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         drop(vm);
         match apply_result {
             Ok(outcome) => {
-                let applied_hash = chain_state.hash_block_with_cached_vm(&mined_block);
+                let applied_hash = chain_state.hash_block_with_cached_vm(&mined_block).expect("hash failed");
                 match outcome {
                     dwow_chain::BlockConnectOutcome::CanonicalExtension { new_height: _ } => {
                         info!(target: "dwowd::miner_task",

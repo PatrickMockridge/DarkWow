@@ -1108,7 +1108,7 @@ impl RuntimeBackend for TxBackend {
 
     fn get_block_hash_by_height(&self, height: BlockHeight) -> dwow_core::Result<Option<Vec<u8>>> {
         match self.store.get_block(height) {
-            Ok(block) => Ok(Some(block.hash_with_vm(&self.vm).as_bytes().to_vec())),
+            Ok(block) => Ok(Some(block.hash_with_vm(&self.vm).map_err(|e| dwow_core::Error::Custom(format!("hash: {e}")))?.as_bytes().to_vec())),
             Err(e) => {
                 if e.to_string().contains("BlockNotFound") {
                     Ok(None)

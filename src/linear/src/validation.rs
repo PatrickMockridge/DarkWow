@@ -69,7 +69,7 @@ pub fn check_block_header(
         )));
     }
 
-    let block_hash = block.hash_with_vm(&vm);
+    let block_hash = block.hash_with_vm(&vm)?;
 
     // Stage 1: PoW — hash must meet the block header's own target.
     // Monero merge-mined blocks skip native RandomX but MUST carry a valid
@@ -189,7 +189,7 @@ pub fn check_uncles(
     }
 
     // Verify the uncle merkle root matches
-    let (computed_root, _) = build_uncle_merkle(uncles, vm);
+    let (computed_root, _) = build_uncle_merkle(uncles, vm)?;
     if computed_root != *expected_uncle_root {
         return Err(LinearError::UncleMerkleRootMismatch(
             hex::encode(expected_uncle_root),
@@ -197,7 +197,7 @@ pub fn check_uncles(
     }
 
     for (i, uncle) in uncles.iter().enumerate() {
-        let uncle_hash = uncle.hash_with_vm(&vm);
+        let uncle_hash = uncle.hash_with_vm(&vm)?;
 
         // PoW for this uncle
         let hash_u32 = u32::from_le_bytes(uncle_hash.as_bytes()[0..4].try_into().unwrap());

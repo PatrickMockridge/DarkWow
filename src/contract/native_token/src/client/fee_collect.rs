@@ -37,7 +37,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    blockchain::BlockHeight,
+    blockchain::{BlockHeight, FeeAmount},
     crypto::{
         constants::{DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, DRK_POSEIDON_DOMAIN_TX_BINDING},
         note::AeadEncryptedNote, pasta_prelude::*, pedersen_commitment_u64, poseidon_hash,
@@ -215,9 +215,12 @@ impl FeeCollectCallBuilder {
         // Deterministic blinds — spec §3.6, domains 10-12.
         let sk_base = *self.secret.inner();
         let h_base = pallas::Base::from(self.block_height.get());
-        let value_blind: ScalarBlind = Blind(pallas::Scalar::from_repr(
-            poseidon_hash([sk_base, h_base, pallas::Base::from(DOMAIN_VALUE_BLIND)]).to_repr(),
-        ).unwrap()); // Pallas base field < scalar field — always safe
+        let value_blind: ScalarBlind = Blind(
+            Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(
+                poseidon_hash([sk_base, h_base, pallas::Base::from(DOMAIN_VALUE_BLIND)]).to_repr(),
+            ))
+            .ok_or_else(|| dwow_core::Error::Custom("Invalid scalar value_blind".into()))?,
+        );
         let token_blind: BaseBlind = Blind(poseidon_hash([
             sk_base, h_base, pallas::Base::from(DOMAIN_TOKEN_BLIND),
         ]));
@@ -229,7 +232,7 @@ impl FeeCollectCallBuilder {
         let output = CoinAttributes {
             version: 0,
             public_key,
-            value: self.total_fees,
+            value: self.total_fees.get(),
             token_id: TokenId::from_base(token_id),
             spend_hook: FuncId::none(),
             user_data: pallas::Base::ZERO,
@@ -251,7 +254,7 @@ impl FeeCollectCallBuilder {
 
         // Construct the output note for wallet discovery
         let output_attrs = NativeToken {
-            value: self.total_fees,
+            value: self.total_fees.get(),
             token_id,
             spend_hook: pallas::Base::ZERO,
             user_data: pallas::Base::ZERO,

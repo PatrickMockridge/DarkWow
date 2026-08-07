@@ -396,7 +396,10 @@ async fn handle_receive_block(
         // operations, only the 2 MB scratchpad is allocated fresh.
         let randomx_key = msg.block.header.randomx_key;
         let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
-        let rx_cache = blockchain.get_cache(randomx_key);
+        let rx_cache = blockchain.get_cache(randomx_key)
+            .map_err(|e| dwow_core::Error::Custom(format!(
+                "RandomX cache: {}", e
+            )))?;
         let vm = std::sync::Arc::new(
             randomx::RandomXVM::new(flags, Some(rx_cache), None)
                 .expect("Failed to create RandomX VM for P2P block execution"),

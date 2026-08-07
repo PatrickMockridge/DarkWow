@@ -388,7 +388,7 @@ impl DwowNode {
             let prev_bytes = if h == 1 {
                 [0u8; 32]
             } else if let Ok(prev_block) = chain.get_block(BlockHeight::new(h - 1)) {
-                *chain.hash_block_with_cached_vm(&prev_block).as_bytes()
+                *chain.hash_block_with_cached_vm(&prev_block).expect("hash failed").as_bytes()
             } else {
                 [0u8; 32]
             };
@@ -408,7 +408,17 @@ impl DwowNode {
 
         let result = JsonValue::from(std::collections::HashMap::from([
             ("height".to_string(), JsonValue::String(format!("{}", height))),
-            ("total_supply".to_string(), JsonValue::Number(total_supply.get() as f64)),
+            ("total_supply".to_string(), {
+                // §6.3 DISPENSATION: f64 precision loss above 2^53.
+                // SupplyAmount is u64; format as string beyond safe integer range.
+                const MAX_SAFE_F64: u64 = 2u64.pow(53); // 9,007,199,254,740,992
+                let raw = total_supply.get();
+                if raw > MAX_SAFE_F64 {
+                    JsonValue::String(format!("{}", raw))
+                } else {
+                    JsonValue::Number(raw as f64)
+                }
+            }),
             ("cumulative_value_commit".to_string(), JsonValue::String(base64::encode(&commit_bytes))),
             ("cumulative_blind".to_string(), JsonValue::String(base64::encode(&blind_bytes))),
         ]));

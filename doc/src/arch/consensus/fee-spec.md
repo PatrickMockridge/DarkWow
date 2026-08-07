@@ -624,9 +624,47 @@ FeeAmount(u64) — inner u64, validating constructor.
 Constructor: FeeAmount::new(v) SHALL succeed for all v >= 0.
 ```
 
-A bare `u64` fee SHALL NOT cross module boundaries. `FeeParamsV1.fee: u64`
-SHALL be migrated to `FeeAmount`. The Fee_V2 circuit witness uses `FeeAmount`
-internally; the public commitment hides the inner value.
+### 6.1 Critical Boundary — ZK Proof Witnesses
+
+A bare `u64` SHALL NOT enter a ZK proof witness or cryptographic commitment.
+All values entering `pedersen_commitment_u64()`, `poseidon_hash()`, or ZK
+circuit witness construction SHALL pass through a nominal type or validated
+constructor. The Fee_V2 circuit witness uses `FeeAmount` internally; the
+public commitment hides the inner value.
+
+### 6.2 High Boundary — Cross-Crate Consensus Arithmetic
+
+Consensus arithmetic crossing crate boundaries SHALL use nominal types.
+Internal-to-consensus-module arithmetic (same crate, same validation domain)
+is exempt. `BlockReward.get()` and `BlockHeight.get()` at arithmetic sites
+within `src/linear/` and `bin/dwowd/` are audited and accepted.
+
+### 6.3 Medium Boundary — Display, Logging, RPC
+
+Display, logging, and RPC serialization SHOULD use nominal types. Bare
+primitives are acceptable with documented precision considerations.
+`SupplyAmount.get() as f64` at the JSON-RPC boundary SHALL include a
+precision guard: values above 2^53 lose integer precision in IEEE 754.
+
+### 6.4 Domain Transitions — Documented Dispensation
+
+`.get()` at a conversion boundary between distinct domains (e.g.,
+`FeeAmount` → coin value in `FeeCollectV1`, `BlockReward` → `SupplyAmount`)
+is a documented dispensation. The conversion is semantically a domain
+transition, not a type escape. The pattern is `impl From<SourceType> for
+TargetType` where the target type exists; where it does not (e.g., no
+`CoinValue(u64)` type exists yet), `.get()` at the immediate conversion
+site is accepted.
+
+### 6.5 Structural Dispensations
+
+The following are documented exemptions, not violations:
+- **FFI boundaries** — C ABI requires primitive types
+- **Atomic storage** — hardware atomics require primitive integers
+- **Byte encoding** — `BlockVersion.get()` and similar encode methods
+- **Fixed-base constants** — compile-time curve constants verified by tests
+- **Model decode slice conversions** — `.try_into().unwrap()` on slices
+  with length guaranteed by prior checks
 
 ## 7. Two-Tier Mempool
 

@@ -136,7 +136,7 @@ impl DwowNode {
         // Hash the PREVIOUS block with its own stored RandomX key, not the
         // new height's key. RandomX is a keyed hash — wrong key = garbage hash
         // that will be rejected as InvalidPreviousHash on apply.
-        let previous = chain_state.hash_block_with_cached_vm(&latest_block);
+        let previous = chain_state.hash_block_with_cached_vm(&latest_block).expect("hash failed");
         // VM for the NEW block's PoW — keyed to the new height.
         let randomx_key = dwow_chain::Miner::derive_key_from_height(height);
         // Defence-in-depth: create a FRESH VM for mining (never from cache).
@@ -231,7 +231,7 @@ impl DwowNode {
             }
         };
 
-        let block_hash = format!("{}", chain_state.hash_block_with_cached_vm(&mined_block));
+        let block_hash = format!("{}", chain_state.hash_block_with_cached_vm(&mined_block).expect("hash failed"));
 
         // Accept block — single unified path (block_acceptor::accept_block).
         // Uses the mining_vm created above for PoW verification.
@@ -280,7 +280,7 @@ impl DwowNode {
         // broadcast so mining is never blocked by Arweave latency.
         let fc = chain_state.finality_config.clone();
         let block_hash_bytes = {
-            let hash = chain_state.hash_block_with_cached_vm(&mined_block);
+            let hash = chain_state.hash_block_with_cached_vm(&mined_block).expect("hash failed");
             let mut bytes = [0u8; 32];
             bytes.copy_from_slice(hash.as_bytes());
             bytes

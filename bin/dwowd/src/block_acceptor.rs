@@ -92,7 +92,8 @@ pub fn accept_block(
     // validation, before expensive WASM execution. 6 checks enforced:
     // max count, merkle root, PoW, proofs, depth, dedup.
     if !uncles.is_empty() {
-        let (expected_root, proofs) = dwow_chain::build_uncle_merkle(uncles, vm);
+        let (expected_root, proofs) = dwow_chain::build_uncle_merkle(uncles, vm)
+            .map_err(|e| dwow_core::Error::Custom(format!("uncle merkle: {e}")))?;
         if expected_root != block.header.uncle_merkle_root {
             return Err(dwow_core::Error::Custom(format!(
                 "Block {} uncle merkle root mismatch: computed {:?}, header has {:?}",
@@ -158,7 +159,8 @@ pub fn accept_block(
             }
         }
         _ => {
-            let block_hash = block.hash_with_vm(vm.as_ref());
+            let block_hash = block.hash_with_vm(vm.as_ref())
+                .map_err(|e| dwow_core::Error::Custom(format!("hash: {e}")))?;
             let hash_u32 = u32::from_le_bytes(block_hash.as_bytes()[0..4].try_into().unwrap());
             if hash_u32 > target.get() {
                 return Err(dwow_core::Error::Custom(format!(
@@ -342,7 +344,10 @@ pub fn accept_block(
             //    Full pipeline: structural, PoW, WASM execution, commit.
             let flags = randomx::RandomXFlags::get_recommended_flags()
                 & !randomx::RandomXFlags::JIT;
-            let rx_cache = chain_state.get_cache(competing_block.header.randomx_key);
+            let rx_cache = chain_state.get_cache(competing_block.header.randomx_key)
+                .map_err(|e| dwow_core::Error::Custom(format!(
+                    "Reorg: RandomX cache: {}", e
+                )))?;
             let comp_vm = std::sync::Arc::new(
                 randomx::RandomXVM::new(flags, Some(rx_cache), None)
                     .map_err(|e| dwow_core::Error::Custom(format!(

@@ -61,9 +61,15 @@ pub fn hash_to_base(persona: &[u8], vals: &[&[u8]]) -> pallas::Base {
 /// Converts from pallas::Base to pallas::Scalar (aka $x \pmod{r_\mathbb{P}}$).
 ///
 /// This requires no modular reduction because Pallas' base field is smaller than its
-/// scalar field.
-pub fn fp_mod_fv(val: pallas::Base) -> pallas::Scalar {
-    pallas::Scalar::from_repr(val.to_repr()).unwrap()
+/// scalar field. The conversion is mathematically guaranteed to succeed for all valid
+/// `pallas::Base` elements — `from_repr` failure would indicate memory corruption,
+/// not a normal operational condition.
+///
+/// Returns `Err` rather than panicking per type-system.md §2.3.2 (no `unwrap()` on
+/// consensus-critical paths).
+pub fn fp_mod_fv(val: pallas::Base) -> GenericResult<pallas::Scalar> {
+    Ok(Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(val.to_repr()))
+        .ok_or_else(|| ContractError::IoError("Base field element out of scalar range".into()))?)
 }
 
 /// Converts from pallas::Scalar to pallas::Base (aka $x \pmod{r_\mathbb{P}}$).

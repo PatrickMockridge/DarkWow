@@ -153,10 +153,12 @@ impl PoWRewardCallBuilder {
         let sk_base = *self.secret.inner();
         let h_base = pallas::Base::from(self.block_height.get());
         // value_blind: Blind<pallas::Scalar> (ScalarBlind)
-        let value_blind: ScalarBlind = Blind(pallas::Scalar::from_repr(
-            poseidon_hash([sk_base, h_base, pallas::Base::from(DOMAIN_VALUE_BLIND)]).to_repr(),
-        )
-        .unwrap()); // Pallas base field < scalar field — always safe
+        let value_blind: ScalarBlind = Blind(
+            Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(
+                poseidon_hash([sk_base, h_base, pallas::Base::from(DOMAIN_VALUE_BLIND)]).to_repr(),
+            ))
+            .ok_or_else(|| dwow_core::Error::Custom("Invalid scalar value_blind".into()))?,
+        );
         // token_blind: Blind<pallas::Base> (BaseBlind)
         let token_blind: BaseBlind = Blind(poseidon_hash([
             sk_base, h_base, pallas::Base::from(DOMAIN_TOKEN_BLIND),
@@ -253,6 +255,7 @@ impl PoWRewardCallBuilder {
 
     /// Build the PoWReward call with the standard block reward plus fees.
     pub fn build(&self) -> Result<PoWRewardCallDebris> {
+        // DISPENSATION §6.2: internal consensus arithmetic — reward + fees = coinbase value.
         let reward = expected_reward(self.block_height).get() + self.fees;
         self._build(reward)
     }

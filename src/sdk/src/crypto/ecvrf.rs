@@ -64,7 +64,10 @@ impl VrfProof {
         message.extend_from_slice(alpha_string);
         let H = pallas::Point::hash_to_curve(VRF_DOMAIN)(&message);
 
-        let gamma = H * fp_mod_fv(*x.inner());
+        // DISPENSATION: base field < scalar field — conversion guaranteed valid.
+        let scalar = fp_mod_fv(*x.inner())
+            .expect("SecretKey to Scalar: mathematically guaranteed valid");
+        let gamma = H * scalar;
 
         // Generate a determinnistic nonce
         let k = hash_to_scalar(VRF_DOMAIN.as_bytes(), &[&x.inner().to_repr(), &H.to_bytes()]);
@@ -82,7 +85,9 @@ impl VrfProof {
         c_scalar[..blake3::OUT_LEN].copy_from_slice(c.as_bytes());
         let c_scalar = pallas::Scalar::from_uniform_bytes(&c_scalar);
 
-        let s = k + c_scalar * fp_mod_fv(*x.inner());
+        let scalar = fp_mod_fv(*x.inner())
+            .expect("SecretKey to Scalar: mathematically guaranteed valid");
+        let s = k + c_scalar * scalar;
 
         Self { gamma, c, s }
     }

@@ -32,7 +32,7 @@ pub fn mine_test_nonce(block: &dwow_chain::Block, vm: &randomx::RandomXVM, targe
     for nonce in 0u32..1_000_000 {
         let mut b = block.clone();
         b.header.nonce = nonce;
-        let hash = b.hash_with_vm(vm);
+        let hash = b.hash_with_vm(vm).expect("hash failed");
         let hash_u32 = u32::from_le_bytes(hash.as_bytes()[0..4].try_into().unwrap());
         if hash_u32 <= target.get() {
             return Ok(nonce);

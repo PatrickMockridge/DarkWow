@@ -193,6 +193,28 @@ impl GenesisHarness {
     pub fn block_height(&self) -> BlockHeight {
         self.chain_state.get_height()
     }
+
+    /// Query a contract's internal state using the same handle derivation
+    /// as the WASM runtime (cid.hash_state_id(tree_name)).
+    /// Mirrors HeavyweightPipeline::query_contract_state().
+    pub fn query_contract_state(
+        &self,
+        cid: ContractId,
+        tree_name: &str,
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>> {
+        let handle = cid.hash_state_id(tree_name);
+        let handle_str = format!("{:?}", handle);
+        let tree = self.db.open_tree(&handle_str)
+            .map_err(|e| dwow_core::Error::Custom(format!(
+                "query_contract_state: open tree '{}': {}", handle_str, e
+            )))?;
+        tree.get(key)
+            .map_err(|e| dwow_core::Error::Custom(format!(
+                "query_contract_state: sled get: {}", e
+            )))
+            .map(|opt| opt.map(|iv| iv.to_vec()))
+    }
 }
 
 #[cfg(test)]
@@ -277,6 +299,31 @@ mod tests {
             assert_eq!(block1.header.target, BlockTarget::MAX, "AC9: target");
             assert_eq!(block2.header.target, BlockTarget::MAX, "AC9: target");
 
+            // AC-FEE-1/2: fee_commit_accumulator == Identity after genesis.
+            // The zero-fee constructor: genesis has no prior fees, so the
+            // Pedersen accumulator MUST start at the identity point.
+            // Per fee-spec.md §5.6.2 and genesis.md Structural Identity §Fee lifecycle.
+            let acc_data = har1.query_contract_state(
+                *NATIVE_TOKEN_CONTRACT_ID, "info", b"fee_commit_acc",
+            ).expect("AC-FEE-1: sled query must succeed")
+             .expect("AC-FEE-1: fee_commit_accumulator key must exist after genesis");
+            assert_eq!(acc_data.len(), 32,
+                "AC-FEE-1: fee_commit_accumulator must be 32 bytes (pallas::Point)");
+            let acc_point: pallas::Point = Option::from(
+                pallas::Point::from_bytes(&acc_data[..32].try_into().unwrap())
+            ).expect("AC-FEE-1: valid fee_commit_accumulator point");
+            assert_eq!(acc_point, pallas::Point::identity(),
+                "AC-FEE-2: fee_commit_accumulator must be Identity after genesis \
+                 (no prior fees exist). Found non-Identity — init_contract or \
+                 apply_pow_reward may not have seeded the accumulator.");
+
+            // Verify accumulator identical across both harnesses (determinism)
+            let acc_data2 = har2.query_contract_state(
+                *NATIVE_TOKEN_CONTRACT_ID, "info", b"fee_commit_acc",
+            ).expect("sled query").expect("key exists");
+            assert_eq!(acc_data, acc_data2,
+                "AC-FEE-DET: accumulator must be deterministic across genesis instances");
+
             // AC2: cumulative supply at height 1 (MoC gap fill)
             let sc1 = har1.chain_state.supply_chain.get(BlockHeight::new(1))
                 .expect("supply_chain at height 1");
@@ -292,6 +339,18 @@ mod tests {
             for tx in &block1.transactions[1..] {
                 assert!(dwow_chain::execution::is_genesis_deployment_tx(tx),
                     "AC10: txs 1..=9 are genesis deployment txs");
+            }
+
+            // AC-FEE-3: Genesis block SHALL NOT contain FeeCollectV1 (0x06).
+            // Per fee-spec §4.4: FeeCollectV1 SHALL be absent when total_fees == 0.
+            // Genesis has zero prior transactions, so total_fees == 0.
+            // Per genesis.md Structural Identity §Transaction ordering.
+            for (i, tx) in block1.transactions.iter().enumerate() {
+                for call in &tx.contract_calls {
+                    assert_ne!(call.data.first(), Some(&0x06),
+                        "AC-FEE-3: Genesis tx[{}] SHALL NOT contain FeeCollectV1 (0x06) \
+                         — total_fees == 0 at genesis, per fee-spec §4.4", i);
+                }
             }
 
             // AC11: all 9 contracts materialized byte-equal to the payloads
@@ -366,6 +425,19 @@ mod tests {
                 .expect("init_genesis");
             assert_eq!(har.block_height(), BlockHeight::new(1));
 
+            // AC-FEE-1/2: fee_commit_accumulator == Identity after genesis
+            let acc_data = har.query_contract_state(
+                *NATIVE_TOKEN_CONTRACT_ID, "info", b"fee_commit_acc",
+            ).expect("AC-FEE-1: sled query must succeed")
+             .expect("AC-FEE-1: fee_commit_accumulator key must exist after genesis");
+            assert_eq!(acc_data.len(), 32,
+                "AC-FEE-1: fee_commit_accumulator must be 32 bytes (pallas::Point)");
+            let acc_point: pallas::Point = Option::from(
+                pallas::Point::from_bytes(&acc_data[..32].try_into().unwrap())
+            ).expect("AC-FEE-1: valid fee_commit_accumulator point");
+            assert_eq!(acc_point, pallas::Point::identity(),
+                "AC-FEE-2: fee_commit_accumulator must be Identity after genesis");
+
             // AC2: cumulative supply at height 1
             let sc1 = har.chain_state.supply_chain.get(BlockHeight::new(1))
                 .expect("supply_chain at height 1");
@@ -376,7 +448,7 @@ mod tests {
             );
 
             let gen_block = har.chain_state.get_block(BlockHeight::new(1)).expect("block 1");
-            let gen_hash = har.chain_state.hash_block_with_cached_vm(&gen_block);
+            let gen_hash = har.chain_state.hash_block_with_cached_vm(&gen_block).expect("hash failed");
 
             // ---- Height 2: coinbase-only block via accept_block ----
             let height = BlockHeight::new(2);
@@ -457,6 +529,21 @@ mod tests {
             // ---- Assertions ----
             assert_eq!(har.block_height(), BlockHeight::new(2), "height advanced to 2");
 
+            // AC-FEE-4: Stranded-fee canary — accumulator must be Identity
+            // after a zero-fee height-2 block. If the accumulator were
+            // non-Identity here, apply_pow_reward in block 2 silently
+            // discarded stranded fees from genesis. This assertion catches
+            // that regression. Per genesis.md Structural Identity §Fee lifecycle.
+            let acc_h2 = har.query_contract_state(
+                *NATIVE_TOKEN_CONTRACT_ID, "info", b"fee_commit_acc",
+            ).expect("sled query").expect("key exists");
+            let pt_h2: pallas::Point = Option::from(
+                pallas::Point::from_bytes(&acc_h2[..32].try_into().unwrap())
+            ).expect("valid point");
+            assert_eq!(pt_h2, pallas::Point::identity(),
+                "AC-FEE-4: accumulator must be Identity after zero-fee block 2 \
+                 — if non-Identity, apply_pow_reward discarded stranded fees");
+
             let b2 = har.chain_state.get_block(BlockHeight::new(2)).expect("block 2 retrievable");
             assert_eq!(
                 b2.header.previous.as_bytes(),
@@ -518,6 +605,145 @@ mod tests {
         });
     }
 
+    /// Zero-fee block: genesis → height-2 coinbase-only block (zero FeeV2
+    /// calls, zero FeeCollectV1) through accept_block.
+    ///
+    /// Proves the zero-fee path is valid per fee-spec §4.4: FeeCollectV1
+    /// SHALL be absent when total_fees == 0. Verifies the accumulator stays
+    /// Identity across zero-fee blocks. Per genesis.md Structural Identity
+    /// §Transaction ordering and §Fee lifecycle.
+    #[test]
+    fn test_zero_fee_block_accepted() {
+        dwow_native_token_contract::enable_deterministic_zk();
+
+        smol::block_on(async {
+            let har = GenesisHarness::new_without_contracts().expect("GenesisHarness");
+
+            let keys_toml = "[node0]\nwallet_secret = \
+                \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+            let path = std::env::temp_dir()
+                .join(format!("dwow_zf_{}.toml", std::process::id()));
+            std::fs::write(&path, keys_toml).expect("write test keys");
+
+            let mgr = crate::accounts::AccountManager::open(
+                &path,
+                dwow_sdk::crypto::keypair::Network::Testnet,
+                "node0",
+            ).expect("open test AccountManager");
+            let recipient =
+                crate::accounts::MiningRecipient::from_account(&mgr, BlockHeight::new(1))
+                    .expect("MiningRecipient");
+            let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
+
+            // Height 1: Genesis
+            crate::init_genesis(&har.chain_state, recipient.clone(), magic_bytes)
+                .await.expect("init_genesis");
+            assert_eq!(har.block_height(), BlockHeight::new(1));
+
+            // Verify accumulator == Identity after genesis
+            let acc = har.query_contract_state(
+                *NATIVE_TOKEN_CONTRACT_ID, "info", b"fee_commit_acc",
+            ).expect("sled query").expect("key exists");
+            let pt: pallas::Point = Option::from(
+                pallas::Point::from_bytes(&acc[..32].try_into().unwrap())
+            ).expect("valid point");
+            assert_eq!(pt, pallas::Point::identity(),
+                "accumulator must be Identity after genesis (zero-fee block)");
+
+            // Height 2: coinbase-only block (zero FeeV2, zero FeeCollectV1)
+            let height = BlockHeight::new(2);
+            let reward = dwow_sdk::blockchain::expected_reward(height);
+            let linear_zk =
+                crate::registry::model::LinearPowRewardZk::new(har.chain_state.clone())
+                    .await.expect("LinearPowRewardZk");
+            let (_coinbase, _public_inputs, pow_reward_call, _coin_blind) =
+                crate::registry::model::build_linear_coinbase(
+                    recipient, reward, &linear_zk, height,
+                ).await.expect("coinbase for height 2");
+
+            let tx = dwow_chain::Transaction {
+                version: BlockVersion::CURRENT,
+                inputs: vec![],
+                outputs: vec![],
+                contract_calls: vec![pow_reward_call],
+                lock_time: 0,
+                nullifiers: vec![],
+                witness: vec![],
+            };
+            let merkle_root = tx.hash();
+            let gen_block = har.chain_state.get_block(BlockHeight::new(1))
+                .expect("block 1");
+            let gen_hash = har.chain_state.hash_block_with_cached_vm(&gen_block).expect("hash failed");
+
+            let header = dwow_chain::BlockHeader {
+                version: BlockVersion::CURRENT,
+                previous: gen_hash,
+                merkle_root,
+                timestamp: BlockTimestamp::new(120),
+                target: BlockTarget::MAX,
+                nonce: 0,
+                height,
+                uncle_merkle_root: [0u8; 32],
+                total_reward: reward,
+                randomx_key: dwow_chain::Miner::derive_key_from_height(height),
+                coin_merkle_root: [0u8; 32],
+                nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32],
+                anchor_monero_height: MoneroBlockHeight::new(0),
+                anchor_monero_hash: [0u8; 32],
+                finality_flags: 0,
+                pow_source: dwow_chain::PowSource::Native,
+            };
+
+            let block = dwow_chain::Block { header, transactions: vec![tx] };
+
+            let rx_flags = randomx::RandomXFlags::get_recommended_flags()
+                & !randomx::RandomXFlags::JIT;
+            let rx_cache = randomx::RandomXCache::new(
+                rx_flags, &block.header.randomx_key,
+            ).expect("RandomX cache");
+            let vm = std::sync::Arc::new(
+                randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
+                    .expect("RandomX VM"),
+            );
+
+            // Submit through accept_block — must succeed (zero-fee path)
+            crate::block_acceptor::accept_block(
+                &har.chain_state, &block, &[], &vm,
+                BlockHeight::new(1), BlockTarget::MAX, None,
+            ).expect("AC-ZF-1: zero-fee block must be accepted");
+
+            assert_eq!(har.block_height(), BlockHeight::new(2),
+                "AC-ZF-2: height advanced to 2");
+
+            let b2 = har.chain_state.get_block(BlockHeight::new(2))
+                .expect("block 2 retrievable");
+            assert_eq!(b2.transactions.len(), 1,
+                "AC-ZF-3: zero-fee block must have exactly 1 tx (coinbase only)");
+            // Verify no FeeCollectV1 in the zero-fee block
+            for (i, tx) in b2.transactions.iter().enumerate() {
+                for call in &tx.contract_calls {
+                    assert_ne!(call.data.first(), Some(&0x06),
+                        "AC-ZF-4: tx[{}] must not contain FeeCollectV1 (0x06) \
+                         — zero fees", i);
+                }
+            }
+
+            // Accumulator must still be Identity after zero-fee block
+            let acc2 = har.query_contract_state(
+                *NATIVE_TOKEN_CONTRACT_ID, "info", b"fee_commit_acc",
+            ).expect("sled query").expect("key exists");
+            let pt2: pallas::Point = Option::from(
+                pallas::Point::from_bytes(&acc2[..32].try_into().unwrap())
+            ).expect("valid point");
+            assert_eq!(pt2, pallas::Point::identity(),
+                "AC-ZF-5: accumulator must be Identity after zero-fee block");
+
+            drop(mgr);
+            let _ = std::fs::remove_file(&path);
+        });
+    }
+
     /// Build a genesis block on a fresh harness via the production
     /// `init_genesis` path and return (harness, genesis_block, hash).
     async fn build_genesis() -> (GenesisHarness, dwow_chain::Block, blake3::Hash) {
@@ -541,7 +767,7 @@ mod tests {
         crate::init_genesis(&har.chain_state, recipient, magic_bytes)
             .await.expect("init_genesis");
         let block = har.chain_state.get_block(BlockHeight::new(1)).expect("block 1");
-        let hash = har.chain_state.hash_block_with_cached_vm(&block);
+        let hash = har.chain_state.hash_block_with_cached_vm(&block).expect("hash failed");
         (har, block, hash)
     }
 
@@ -632,7 +858,7 @@ mod tests {
                 "synced node: S_1 == INITIAL_REWARD");
 
             // Identical chain identity.
-            let hash_b = har_b.chain_state.hash_block_with_cached_vm(&genesis_block);
+            let hash_b = har_b.chain_state.hash_block_with_cached_vm(&genesis_block).expect("hash failed");
             assert_eq!(hash_a, hash_b, "genesis hash identical on creator and syncer");
         });
     }
@@ -672,7 +898,7 @@ mod tests {
                 dwow_chain::compute_merkle_root(&tampered.transactions);
             let har_ii = GenesisHarness::new_without_contracts().expect("harness ii");
             let hash_tampered =
-                har_ii.chain_state.hash_block_with_cached_vm(&tampered);
+                har_ii.chain_state.hash_block_with_cached_vm(&tampered).expect("hash failed");
             assert_ne!(hash_a, hash_tampered,
                 "(ii) tampered genesis has a different hash — pin rejects it");
 

@@ -37,7 +37,7 @@ mod tests {
         },
         NativeTokenFunction,
     };
-    use dwow_sdk::{blockchain::BlockHeight, crypto::BaseBlind, crypto::Blind, crypto::FuncId, crypto::Keypair, crypto::MerkleNode, crypto::TokenId, pasta::pallas};
+    use dwow_sdk::{blockchain::{BlockHeight, FeeAmount}, crypto::BaseBlind, crypto::Blind, crypto::FuncId, crypto::Keypair, crypto::MerkleNode, crypto::TokenId, pasta::pallas};
     use pasta_curves::group::Group;
 
     // ================================================================
@@ -413,7 +413,7 @@ mod tests {
         // consensus-coinbase.md §3: the "collection plate" — total_fees,
         // output coin for the miner, nullifier capability claim, tx binding.
         let params = FeeCollectParamsV1 {
-            total_fees: 42_000_000,
+            total_fees: FeeAmount::new(42_000_000),
             total_blind: pallas::Scalar::zero(),
             output: create_test_output(),
             nullifier: Nullifier::from_bytes([3u8; 32]).unwrap(),
@@ -421,7 +421,7 @@ mod tests {
             tx_nonce: pallas::Base::zero(),
         };
 
-        assert_eq!(params.total_fees, 42_000_000);
+        assert_eq!(params.total_fees, FeeAmount::new(42_000_000));
         assert!(params.output.coin.inner() != pallas::Base::zero());
     }
 
@@ -443,11 +443,11 @@ mod tests {
         let update = FeeCollectUpdateV1 {
             coin,
             height: BlockHeight::new(7),
-            total_fees: 42_000_000,
+            total_fees: FeeAmount::new(42_000_000),
         };
 
         assert_eq!(update.height, BlockHeight::new(7));
-        assert_eq!(update.total_fees, 42_000_000);
+        assert_eq!(update.total_fees, FeeAmount::new(42_000_000));
     }
 
     #[test]
@@ -466,7 +466,7 @@ mod tests {
         let update = FeeCollectUpdateV1 {
             coin,
             height: BlockHeight::new(3),
-            total_fees: 9,
+            total_fees: FeeAmount::new(9),
         };
         let bytes = dwow_serial::serialize(&update);
         let back: FeeCollectUpdateV1 = dwow_serial::deserialize(&bytes).unwrap();

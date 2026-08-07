@@ -70,7 +70,8 @@ fn parse_scalar(s: &str) -> Result<pallas::Scalar, String> {
     }
     let mut repr = [0u8; 32];
     repr.copy_from_slice(&bytes);
-    Ok(pallas::Scalar::from_repr(repr).unwrap())
+    Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(repr))
+        .ok_or_else(|| "Scalar value out of range".to_string())
 }
 
 /// Parse witness value based on type

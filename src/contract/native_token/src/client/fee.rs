@@ -40,6 +40,7 @@ use dwow_sdk::crypto::{
     BaseBlind, Blind, FuncId, MerkleNode, Nullifier, PublicKey, ScalarBlind, SecretKey, TokenId,
 };
 use dwow_sdk::{
+    blockchain::FeeAmount,
     bridgetree::Hashable,
     error::ContractError,
     pasta::pallas,
@@ -52,6 +53,23 @@ use crate::client::zkbins::{
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN,
 };
 use crate::model::{CoinAttributes, Input, Output};
+
+// ---- Domain-labeled fee wrappers ----
+// Per fee-spec §6.1, bare u64 SHALL NOT enter ZK proof witnesses or
+// Pedersen commitments. These wrappers move `.get()` inside a function
+// whose signature declares the domain transition: FeeAmount → pallas::Point
+// or FeeAmount → pallas::Base.
+
+/// Pedersen-commit to a fee amount. The `FeeAmount` parameter ensures
+/// fee values cannot be confused with other u64 quantities at call sites.
+pub(crate) fn pedersen_commitment_fee(amount: FeeAmount, blind: ScalarBlind) -> pallas::Point {
+    pedersen_commitment_u64(amount.get(), blind)
+}
+
+/// Convert a FeeAmount to a base field element for ZK witness/public input.
+pub(crate) fn fee_to_base(amount: FeeAmount) -> pallas::Base {
+    pallas::Base::from(amount.get())
+}
 
 /// Input parameters for building a FeeV2 call.
 pub struct FeeV2CallInput {
@@ -169,7 +187,7 @@ impl FeeV2CallBuilder {
         let threshold_tx_binding = poseidon_hash([
             DRK_POSEIDON_DOMAIN_TX_BINDING,
             self.input.tx_commitment,
-            pallas::Base::from(self.threshold.get()),
+            fee_to_base(self.threshold),
         ]);
 
         // Build Fee_V2 proof using pre-built proving key
@@ -215,7 +233,7 @@ impl FeeV2CallBuilder {
         )?;
 
         // Compute fee_value_commit and extract coordinates
-        let fee_value_commit = pedersen_commitment_u64(self.fee_amount.get(), fee_value_blind.clone());
+        let fee_value_commit = pedersen_commitment_fee(self.fee_amount, fee_value_blind.clone());
         let coords = fee_value_commit.to_affine().coordinates();
         if coords.is_none().into() {
             return Err(ContractError::IoError("FeeV2: fee_value_commit is identity".into()));
@@ -380,7 +398,7 @@ fn create_fee_proof(
     // Compute commitments
     let input_value_commit = pedersen_commitment_u64(input.value, input_value_blind.clone());
     let output_value_commit = pedersen_commitment_u64(output_value, output_value_blind.clone());
-    let fee_value_commit = pedersen_commitment_u64(fee_amount.get(), fee_value_blind.clone());
+    let fee_value_commit = pedersen_commitment_fee(fee_amount, fee_value_blind.clone());
     let token_commit = poseidon_hash([
         DRK_POSEIDON_DOMAIN_TOKEN_COMMIT, input.token_id, token_blind.inner(),
     ]);
@@ -446,7 +464,7 @@ fn create_fee_proof(
         Witness::Base(Value::known(output.coin_blind)),
         Witness::Base(Value::known(input.token_id)),
         Witness::Base(Value::known(token_blind.inner())),
-        Witness::Base(Value::known(pallas::Base::from(fee_amount.get()))),
+        Witness::Base(Value::known(fee_to_base(fee_amount))),
         Witness::Base(Value::known(tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
         // tx_binding — MUST be the computed value, not zero.
@@ -480,15 +498,15 @@ fn create_fee_threshold_proof(
 
     // FeeThreshold_V1 witnesses (4): fee, threshold, tx_commitment, tx_binding
     let witnesses: Vec<Witness> = vec![
-        Witness::Base(Value::known(pallas::Base::from(fee_amount.get()))),
-        Witness::Base(Value::known(pallas::Base::from(threshold.get()))),
+        Witness::Base(Value::known(fee_to_base(fee_amount))),
+        Witness::Base(Value::known(fee_to_base(threshold))),
         Witness::Base(Value::known(tx_commitment)),
         Witness::Base(Value::known(tx_binding)),
     ];
 
     // Public inputs (2): threshold, tx_binding
     let public_inputs = vec![
-        pallas::Base::from(threshold.get()),
+        fee_to_base(threshold),
         tx_binding,
     ];
 

@@ -95,7 +95,10 @@ impl SchnorrSecret for SecretKey {
         let transcript = &[&commit_bytes, &pubkey_bytes, message];
 
         let challenge = hash_to_scalar(DRK_SCHNORR_CHALLENGE_DOMAIN, transcript);
-        let response = mask + challenge * fp_mod_fv(*self.inner());
+        // DISPENSATION: base field < scalar field — conversion guaranteed valid.
+        let scalar = fp_mod_fv(*self.inner())
+            .expect("SecretKey to Scalar: mathematically guaranteed valid");
+        let response = mask + challenge * scalar;
 
         Signature { commit, response }
     }

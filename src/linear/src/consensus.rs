@@ -334,7 +334,7 @@ impl PoWConsensus {
 
     /// Verify a block's RandomX hash meets the target.
     pub fn verify_proof(&self, block: &Block, vm: &randomx::RandomXVM) -> Result<bool> {
-        let hash = block.hash_with_vm(&vm);
+        let hash = block.hash_with_vm(&vm)?;
         Ok(self.check_pow(&hash))
     }
 
@@ -349,7 +349,7 @@ impl PoWConsensus {
 
     /// Verify an uncle block meets the target.
     pub fn verify_uncle_pow(&self, uncle: &UncleBlock, vm: &randomx::RandomXVM) -> Result<bool> {
-        Ok(self.check_pow(&uncle.hash_with_vm(&vm)))
+        Ok(self.check_pow(&uncle.hash_with_vm(&vm)?))
     }
 
     /// Compute the target that a block at the given height MUST use.
@@ -375,7 +375,10 @@ impl PoWConsensus {
         let cache_key = prev_height.to_le_bytes();
         if let Ok(Some(raw)) = store.block_targets.get(&cache_key) {
             if raw.len() == 4 {
-                let prev_target = BlockTarget::new(u32::from_le_bytes(raw[..4].try_into().unwrap_or([0u8; 4])));
+                let target_bytes: [u8; 4] = raw[..4].try_into().map_err(|_| {
+                    LinearError::StorageError("Corrupt block_targets entry: wrong length".into())
+                })?;
+                let prev_target = BlockTarget::new(u32::from_le_bytes(target_bytes));
                 if prev_target.get() > 0 {
                     let mut target = prev_target;
                     let start_h = if height.get() > TIMESTAMP_WINDOW as u64 {

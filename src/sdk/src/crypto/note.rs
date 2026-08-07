@@ -230,8 +230,9 @@ impl<const N: usize> ElGamalEncryptedNote<N> {
     ) -> Result<Self, ContractError> {
         // Derive shared secret using DH
         let ephem_public = PublicKey::from_secret(ephem_secret.clone());
+        let esk_s = fp_mod_fv(*ephem_secret.inner())?;
         let (ss_x, ss_y) =
-            PublicKey::try_from(public.inner() * fp_mod_fv(*ephem_secret.inner()))?
+            PublicKey::try_from(public.inner() * esk_s)?
                 .xy().ok_or_else(|| ContractError::IoError(
                     "ElGamal encrypt: derived point is identity".to_string()))?;
         let shared_secret = poseidon_hash([ss_x, ss_y]);
@@ -259,8 +260,9 @@ impl<const N: usize> ElGamalEncryptedNote<N> {
     /// on the plaintexts.
     pub fn decrypt_unsafe(&self, secret: &SecretKey) -> Result<[pallas::Base; N], ContractError> {
         // Derive shared secret using DH
+        let esk_s = fp_mod_fv(*secret.inner())?;
         let (ss_x, ss_y) =
-            PublicKey::try_from(self.ephem_public.inner() * fp_mod_fv(*secret.inner()))?
+            PublicKey::try_from(self.ephem_public.inner() * esk_s)?
                 .xy().ok_or_else(|| ContractError::IoError(
                     "ElGamal decrypt: derived point is identity".to_string()))?;
         let shared_secret = poseidon_hash([ss_x, ss_y]);
