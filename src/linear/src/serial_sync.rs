@@ -176,7 +176,6 @@ impl Decodable for BlockHeader {
             uncle_merkle_root, total_reward, randomx_key, coin_merkle_root,
             nullifier_root, anchor_tx_id, anchor_monero_height, anchor_monero_hash,
             finality_flags,
-            #[cfg(feature = "fee-window")]
             fee_window_flags: 0,
             pow_source,
         })

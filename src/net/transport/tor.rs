@@ -23,7 +23,6 @@
 
 use std::{
     fmt::{self, Debug, Formatter},
-    fs::remove_dir_all,
     io::{self, ErrorKind},
     pin::Pin,
     sync::Arc,

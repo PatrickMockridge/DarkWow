@@ -127,7 +127,12 @@ phases are skipped. Cheapest checks run first.
 See [Consensus](consensus/consensus.md) for the full 7-phase validation
 sequence with cheat detection table.
 
-## 2. Coinbase Production — PoWRewardV1 Nullifier Claim
+## 2. Coinbase Production — PoWRewardV1 Nullifier Claim `[domain: mass_balance]`
+
+PoWRewardV1 is the consensus-critical block-opening coinbase, part of the
+Pedersen mass balance proof verified during `accept_block`. Its nominal call
+data type is `MassBalanceCoinbaseV1CallData` per [type-system.md §8.2.2](../type-system.md).
+Full supply audit specification: [consensus.md §Supply Audit](consensus/consensus.md).
 
 ### 2.1 Architecture
 
@@ -251,10 +256,11 @@ The validator MUST reject blocks that:
 Every deviation is detectable at a specific phase. See [Consensus](consensus/consensus.md)
 for the cheat detection table.
 
-## 3. Fee Collection Plate — FeeCollectV1 [IMPLEMENTED]
+## 3. Fee Collection Plate — FeeCollectV1 `[domain: mass_balance]` [IMPLEMENTED]
 
 *Consensus-critical. The final transaction in every block — forwards accumulated
-FeeV1 fees to the miner and closes the coin merkle tree.*
+FeeV2 fees to the miner and closes the coin merkle tree. Nominal call data type:
+`MassBalanceFeeCollectV1CallData` per [type-system.md §8.2.2](../type-system.md).*
 
 > **Status:** Specification audited and implementation verified (2026-07-17).
 > Post-implementation re-audit: claims 1–22 verified against code at file:line;
@@ -1082,8 +1088,8 @@ individual fee amounts. The privacy model is specified in
 ### 9.2 Admission Gate
 
 Every transaction entering the mempool SHALL carry a valid `FeeThreshold_V1`
-proof. The `FeeExtractor::verify_threshold_proof()` method (implemented by
-`NativeTokenFeeExtractor`) verifies the proof against the current thresholds:
+proof. The `FeeSignallingExtractor::verify_threshold_proof()` method (implemented by
+`NativeTokenFeeSignallingExtractor`) verifies the proof against the current thresholds:
 
 ```
 tx_arrives(tx):
@@ -1163,13 +1169,13 @@ xmrig ──submit──► verify PoW, reconstruct block
                 select_for_block(&config) → generate new template, push to all clients
 ```
 
-### 9.6 FeeExtractor Trait
+### 9.6 FeeSignallingExtractor Trait `[domain: fee_signalling]`
 
-The `FeeExtractor` trait (implemented by `NativeTokenFeeExtractor` in
+The `FeeSignallingExtractor` trait (implemented by `NativeTokenFeeSignallingExtractor` in
 `bin/dwowd/src/lib.rs`) bridges the mempool and consensus:
 
 ```rust
-pub trait FeeExtractor: Send + Sync {
+pub trait FeeSignallingExtractor: Send + Sync {
     fn extract_fee(&self, tx: &Transaction) -> u64;              // V1 clear-text
     fn estimate_gas(&self, tx: &Transaction) -> u64;              // gas accounting
     fn extract_fee_commitment(&self, tx: &Transaction) -> Option<FeeCommitment> { None }     // V2 hidden

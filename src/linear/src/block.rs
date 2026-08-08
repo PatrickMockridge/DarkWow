@@ -100,7 +100,6 @@ pub struct BlockHeader {
     pub finality_flags: u8,
     /// Fee window signalling flags bitfield (fee-spec.md §12.6).
     /// 0 = legacy static fees. Excluded from mining blob.
-    #[cfg(feature = "fee-window")]
     #[serde(default)]
     pub fee_window_flags: u16,
     /// Proof of Work source — native RandomX or Monero merge-mined.
@@ -583,7 +582,6 @@ pub fn create_block_with_uncles(
             anchor_monero_height: MoneroBlockHeight::new(0), // No Monero anchor (set by miner after anchoring)
             anchor_monero_hash: [0u8; 32], // No Monero anchor
             finality_flags: 0,
-            #[cfg(feature = "fee-window")]
             fee_window_flags: 0, // Set by miner after anchoring
             pow_source: PowSource::Native,
 
@@ -631,7 +629,6 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            #[cfg(feature = "fee-window")]
             fee_window_flags: 0,
             pow_source: PowSource::Native,
 
@@ -669,7 +666,6 @@ mod tests {
                 anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
-            #[cfg(feature = "fee-window")]
             fee_window_flags: 0,
             pow_source: PowSource::Native,
 
@@ -713,7 +709,6 @@ mod tests {
                 anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
-            #[cfg(feature = "fee-window")]
             fee_window_flags: 0,
                 pow_source: PowSource::Native,
             };
@@ -768,7 +763,6 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            #[cfg(feature = "fee-window")]
             fee_window_flags: 0,
             pow_source: PowSource::Native,
 
@@ -804,7 +798,6 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            #[cfg(feature = "fee-window")]
             fee_window_flags: 0,
             pow_source: PowSource::Native,
 
@@ -937,7 +930,6 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            #[cfg(feature = "fee-window")]
             fee_window_flags: 0,
             pow_source: PowSource::Native,
 
@@ -973,7 +965,6 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            #[cfg(feature = "fee-window")]
             fee_window_flags: 0,
             pow_source: PowSource::Native,
 
@@ -1001,7 +992,6 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            #[cfg(feature = "fee-window")]
             fee_window_flags: 0,
             pow_source: PowSource::Native,
 
@@ -1037,7 +1027,6 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            #[cfg(feature = "fee-window")]
             fee_window_flags: 0,
             pow_source: PowSource::Native,
 
@@ -1089,7 +1078,6 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            #[cfg(feature = "fee-window")]
             fee_window_flags: 0,
             pow_source: PowSource::Native,
 
@@ -1125,7 +1113,6 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(3_500_000),
             anchor_monero_hash: [0xCC; 32],
             finality_flags: 0x02,
-            #[cfg(feature = "fee-window")]
             fee_window_flags: 0, // FINALITY_MONERO
             pow_source: PowSource::Native,
         };
@@ -1171,7 +1158,6 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            #[cfg(feature = "fee-window")]
             fee_window_flags: 0,
             pow_source: PowSource::Native,
         };
@@ -1237,7 +1223,6 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            #[cfg(feature = "fee-window")]
             fee_window_flags: 0,
             pow_source: PowSource::Native,
         };

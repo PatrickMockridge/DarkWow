@@ -7,16 +7,21 @@ this document — not from reverse-engineering production code.*
 
 ## Architecture Overview
 
-The fee system has three ZK proofs spanning two categories:
+The fee system has three ZK proofs spanning two architectural domains. These
+domain terms (`mass_balance`, `fee_signalling`) are used throughout the codebase
+in type names, file names, accessor methods, and variable names to distinguish
+consensus-critical block proof operations from mempool/wallet coordination.
 
-**Defensive (contract crate — verified during `accept_block` via WASM):**
+**`[domain: mass_balance]` — verified during `accept_block` via WASM (consensus-critical):**
 - **Fee_V2** — Pedersen mass balance: `input = output + fee`. Proves no secret
   inflation. ZCash Orchard exploit defense-in-depth. Code lives in
   `src/contract/native_token/src/client/fee.rs`.
 
-**Active consensus payment pathways:**
+**`[domain: fee_signalling]` — mempool/wallet coordination (NOT consensus-critical):**
 - **FeeThreshold_V1** — Proves `fee >= threshold` for mempool admission tier
   selection. Wallet→mempool gate. Code lives in `bin/dww/src/fee_threshold_proof.rs`.
+
+**`[domain: mass_balance]` — verified during `accept_block` via WASM (consensus-critical):**
 - **FeeCollectV1** — Transfers accumulated fee pot to miner, resets accumulator.
   Contract logic. Code lives in `src/contract/native_token/`.
 
@@ -204,7 +209,12 @@ for L in 0..32:
 The circuit constrains that `current == merkle_root` (public input),
 proving the prover knows a valid path from the coin to the claimed root.
 
-## 2. Block Production Model
+## 2. Block Production Model `[domain: mass_balance]`
+
+PoWRewardV1 is not a fee type — it is the consensus-critical block-opening
+coinbase, part of the Pedersen mass balance proof. Its full specification
+is in [consensus.md](consensus.md) "PoWRewardV1 Nullifier Claim." It is
+listed here only for block production ordering context.
 
 ### 2.1 Transaction Ordering
 
@@ -372,7 +382,7 @@ Must be > 0 (else no FeeCollectV1 is needed).
 **Q7: What is the output recipient?**
 Any valid public key. The FeeV1 creates a new coin owned by this key.
 
-## 4. FeeCollectV1 — Fee Collection Entrypoint
+## 4. FeeCollectV1 — Fee Collection Entrypoint `[domain: mass_balance]`
 
 **Function code**: `0x06`. **ZK circuit**: `FeeCollect_V2` (7 public inputs).
 
@@ -416,7 +426,13 @@ FeeCollectV1 SHALL be absent when `total_fees == 0`.
 kills this at exec time. Building it unconditionally would produce
 rejected blocks.
 
-## 5. FeeV2 — Privacy-Preserving Fee Payment (NEW)
+## 5. FeeV2 — Privacy-Preserving Fee Payment `[domain: mass_balance + fee_signalling]`
+
+FeeV2 is dual-domain. Its Fee_V2 circuit performs Pedersen mass balance
+(`↓pay-fee` — consensus-critical, verified during `accept_block`). Its
+FeeThreshold_V1 circuit proves fee meets threshold (`↓threshold-prove` —
+fee_signalling, verified at mempool admission). The `MassBalanceFeeV2CallData`
+type (type-system.md §8.2.3) carries both barbs.
 
 **Function code**: `0x08`. **ZK circuits**: `Fee_V2` (value conservation, 15 public
 inputs) + `FeeThreshold_V1` (threshold proof, 2 public inputs).
@@ -436,8 +452,14 @@ the transaction author.
 
 ### 5.2 Call Data Format
 
-FeeV1 call data: `[0x00][fee: u64 LE 8 bytes][FeeParamsV1 encoded]`
-FeeV2 call data: `[0x08][FeeParamsV2 encoded]` — NO clear-text fee bytes.
+FeeV1 call data: `[0x00][fee: u64 LE 8 bytes][FeeParamsV1 encoded]` (REMOVED)
+FeeV2 call data SHALL use the nominal `MassBalanceFeeV2CallData` type per
+[type-system.md §8.2.3](../type-system.md). Its `encode()` method produces
+`[0x08][FeeParamsV2::encode()]`. Consumers SHALL re-lift via
+`MassBalanceFeeV2CallData::from_bytes(&data)` — the single absorber boundary per
+type-system.md §10.5. No code path SHALL inspect `data[0]` to determine
+the fee function; that determination SHALL come from the `↓gate` barb on
+the `MassBalanceFeeV2CallData` name.
 
 `FeeParamsV2` replaces `fee: u64` with `fee_value_commit: pallas::Point`
 (Pedersen commitment to the fee amount) and adds `threshold_proof: Vec<u8>`
@@ -657,6 +679,80 @@ The contract checks `PedersenCommit(total_fees, total_blind) ==
 fee_commit_accumulator`. The Pedersen binding property guarantees
 the miner cannot over-claim. See §5.6.5.
 
+### 5.8 MassBalanceFeeV2CallData — Nominal Call Data Type `[domain: mass_balance + fee_signalling]`
+
+FeeV2 call data SHALL be represented by the nominal `MassBalanceFeeV2CallData` type,
+declared in [type-system.md §8.2.3](../type-system.md). This type eliminates
+raw-byte dispatch (`data[0] == 0x08`) from the fee system. It is dual-domain:
+the `↓pay-fee` barb carries mass_balance authority (verified during `accept_block`);
+the `↓threshold-prove` barb carries fee_signalling authority (verified at mempool
+admission).
+
+**Rho-calculus type signature:**
+```
+MassBalanceFeeV2CallData ≡ νselector, params. (
+    selector!(0x08)          — MassBalanceFeeV2Selector, zero-sized witness
+    | params!(FeeParamsV2)    — deserialized, validated FeeParamsV2
+    | ↓gate                   — constrains function to FeeV2 (exhibited by selector)
+    | ↓pay-fee       [domain: mass_balance]     — Pedersen value conservation + nullifier
+    | ↓threshold-prove [domain: fee_signalling]  — fee ≥ threshold ZK proof
+)
+```
+
+**Constructor (wallet side):**
+```
+MassBalanceFeeV2CallData::new(params: FeeParamsV2) → MassBalanceFeeV2CallData
+```
+The selector `0x08` is implicit — it is a property of the TYPE. The wallet SHALL
+NOT manually prepend a selector byte. The `MassBalanceFeeV2CallData` carries the `↓gate`,
+`↓pay-fee` [mass_balance], and `↓threshold-prove` [fee_signalling] barbs into the mempool.
+
+**Absorber boundary (mempool/miner/chain side):**
+```
+MassBalanceFeeV2CallData::from_bytes(data: &[u8]) → Option<MassBalanceFeeV2CallData>
+```
+This is the SINGLE site where raw bytes are re-lifted to the nominal type. It
+validates:
+1. `data[0] == 0x08` (selector byte matches)
+2. `FeeParamsV2::decode(&data[1..])` succeeds (params are well-formed)
+
+Returns `None` if either check fails. The `Option` return forces every consumer
+to handle both `Some(mb_fee_v2)` (valid FeeV2, barb-carrying) and `None`
+(not a FeeV2 call). The compiler SHALL enforce this exhaustiveness. Per
+type-system.md §10.5, this is the re-lift validation obligation at the absorber
+boundary.
+
+**Encoder (persistence/wire boundaries only):**
+```
+MassBalanceFeeV2CallData::encode() → Vec<u8>
+```
+Produces `[0x08][FeeParamsV2::encode()]`. Only used at serialization boundaries
+per type-system.md §2.2. The byte sequence is identical to the pre-nominal
+encoding — this change is at the type level, not the wire level.
+
+**Barbs exhibited:**
+| Barb | Domain | Exhibited by | Meaning |
+|------|--------|-------------|---------|
+| `↓gate` | dispatch | `MassBalanceFeeV2Selector` | Constrains function dispatch to FeeV2 specifically — the selector is `0x08` by construction |
+| `↓pay-fee` | mass_balance | `MassBalanceFeeV2CallData` | The call data carries a Fee_V2 proof (Pedersen mass balance) and a nullifier |
+| `↓threshold-prove` | fee_signalling | `MassBalanceFeeV2CallData` | The call data carries a FeeThreshold_V1 proof (fee ≥ threshold) |
+
+**Contrast with raw-byte dispatch.** Before this type existed, the mempool,
+miner, validation, and chain state all inspected `data[0] == 0x08` to route
+transactions. Per the rho-calculus, `quote(data[0])?(b).([b = 0x08]...)` —
+a raw byte with no behavioral constraints gates the entire FeeV2 path. An
+adversary can send `[0x08][arbitrary_garbage]` and the `[b = 0x08]` guard
+fires `true`, routing garbage into the FeeV2 path where `FeeParamsV2::decode`
+eventually fails. The nominal type closes this gap: garbage never constructs
+a `MassBalanceFeeV2CallData`, so it never crosses the admission gate.
+
+**Bisimulation.** For honest senders (who always construct valid `MassBalanceFeeV2CallData`),
+the byte-level and type-level processes are strongly bisimilar (P ∼ Q). For
+adversarial senders, they diverge: the raw-byte process enters `FeeV2Path!`
+before failing at param decode; the nominal-type process returns `None` at
+the absorber boundary and never enters the fee path. The nominal type provides
+strictly better security.
+
 ## 6. FeeAmount — Nominal Domain Type
 
 Per [type-system.md §2.3](type-system.md), consensus numeric domains SHALL be
@@ -730,13 +826,16 @@ GENERAL_THRESHOLD: u64   — minimum fee for general mempool tier
 These are consensus constants, defined at compile time. Changing them
 requires a hard fork.
 
-### 7.2 FeeExtractor Trait
+### 7.2 FeeSignallingExtractor Trait `[domain: fee_signalling]`
 
-The `FeeExtractor` trait (defined in `crates/dwow-mempool/src/lib.rs`) SHALL
-provide these methods for fee extraction and threshold verification:
+The `FeeSignallingExtractor` trait (defined in `crates/dwow-mempool/src/lib.rs`)
+SHALL provide these methods for fee extraction and threshold verification.
+It serves the fee_signalling domain exclusively — its methods extract fee
+commitments and verify threshold proofs at mempool admission, never during
+`accept_block`.
 
 ```
-trait FeeExtractor {
+trait FeeSignallingExtractor {
     fn extract_fee_commitment(&self, tx: &Transaction) -> Option<FeeCommitment>;
     fn verify_threshold_proof(&self, tx: &Transaction, threshold: u64) -> bool;
 }
@@ -753,7 +852,7 @@ See [mempool.md §5](../mempool.md) for the two-tier admission algorithm,
 [mempool.md §6](../mempool.md) for threshold announcement via P2P gossip,
 [mempool.md §7](../mempool.md) for the fee structure (WASM size × ZK
 complexity × state transitions × miner multiplier), and
-[mempool.md §8](../mempool.md) for `FeeExtractor` integration details.
+[mempool.md §8](../mempool.md) for `FeeSignallingExtractor` integration details.
 
 ## 8. Wallet Integration
 
@@ -792,35 +891,39 @@ block-producing miner. All other parties see commitments and threshold proofs.
 Per [type-system.md §1.1](type-system.md), every type SHALL define the barbs
 its processes may exhibit. Fee operations exhibit these barbs:
 
-| Barb | Observable Action | Exhibited By |
-|------|-------------------|--------------|
-| `↓pay-fee` | Exercises FeeV2 — spends a coin via nullifier, splits value into change + fee. Fee commitment accumulated into `fee_commit_accumulator` | FeeV2 |
-| `↓collect-fees` | Exercises FeeCollectV1 — verifies PedersenCommit(total, blind) == accumulator, mints fee coin to miner, resets accumulator and fees_db | FeeCollectV1 |
-| `↓threshold-prove` | Proves hidden fee meets public threshold — gates mempool tier admission | FeeThreshold_V1 |
-| `↓bad-fee-amount` | input.value <= fee — rejected at `FeeV2CallBuilder.build()` | FeeV2 |
-| `↓bad-threshold-proof` | FeeThreshold_V1 verification fails — transaction rejected from mempool | FeeThreshold_V1 |
-| `↓bad-merkle-root` | Merkle root not found in coin_roots_db — rejected at `fee_v2` exec | FeeV2 |
-| `↓double-spend` | Nullifier already in SMT — rejected at `fee_v2` exec | FeeV2 |
-| `↓zero-claim` | FeeCollectV1 `total_fees == 0` — rejected as replay attack | FeeCollectV1 |
-| `↓bad-claim` | FeeCollectV1 `PedersenCommit(total, blind) != fee_commit_accumulator` — claimed amount mismatch against commitment sum | FeeCollectV1 |
+| Barb | Domain | Observable Action | Exhibited By |
+|------|--------|-------------------|--------------|
+| `↓pay-fee` | mass_balance | Exercises FeeV2 — spends a coin via nullifier, splits value into change + fee. Fee commitment accumulated into `fee_commit_accumulator` | FeeV2, MassBalanceFeeV2CallData |
+| `↓collect-fees` | mass_balance | Exercises FeeCollectV1 — verifies PedersenCommit(total, blind) == accumulator, mints fee coin to miner, resets accumulator and fees_db | FeeCollectV1, MassBalanceFeeCollectV1CallData |
+| `↓threshold-prove` | fee_signalling | Proves hidden fee meets public threshold — gates mempool tier admission | FeeThreshold_V1, MassBalanceFeeV2CallData |
+| `↓fee-window-open` | fee_signalling | Window boundary detected — miner emits threshold signal | FeeWindow |
+| `↓fee-window-advertise` | fee_signalling | Mempool advertises current thresholds via P2P | FeeWindow |
+| `↓fee-window-enforce` | fee_signalling | Mempool enforces current window's thresholds at admission | FeeWindow |
+| `↓fee-window-discover` | fee_signalling | Wallet queries mining nodes for threshold values | FeeWindow |
+| `↓bad-fee-amount` | mass_balance | input.value <= fee — rejected at `FeeV2CallBuilder.build()` | FeeV2 |
+| `↓bad-threshold-proof` | fee_signalling | FeeThreshold_V1 verification fails — transaction rejected from mempool | FeeThreshold_V1 |
+| `↓bad-merkle-root` | mass_balance | Merkle root not found in coin_roots_db — rejected at `fee_v2` exec | FeeV2 |
+| `↓double-spend` | mass_balance | Nullifier already in SMT — rejected at `fee_v2` exec | FeeV2 |
+| `↓zero-claim` | mass_balance | FeeCollectV1 `total_fees == 0` — rejected as replay attack | FeeCollectV1, MassBalanceFeeCollectV1CallData |
+| `↓bad-claim` | mass_balance | FeeCollectV1 `PedersenCommit(total, blind) != fee_commit_accumulator` — claimed amount mismatch against commitment sum | FeeCollectV1, MassBalanceFeeCollectV1CallData |
 
 ## 10. Constants
 
-| Symbol | Value | Definition |
-|--------|-------|------------|
-| `PREMIUM_THRESHOLD` | TBD | Minimum fee for premium mempool tier |
-| `GENERAL_THRESHOLD` | TBD | Minimum fee for general mempool tier |
-| `COINBASE_MATURITY` | `100` | Blocks before coinbase coin is spendable |
-| `INITIAL_REWARD` | `1_383_764_049` | Genesis block reward (1.383 DRKW) |
-| `MERKLE_DEPTH` | `32` | Orchard tree depth (2^32 capacity) |
-| `UNCOMMITTED_ORCHARD` | `pallas::Base::from(2)` | Empty leaf value |
-| FeeV1 | `0x00` | REMOVED — returns InvalidFunction |
-| FeeV2 | `0x08` | Function selector (privacy-preserving) |
-| FeeCollectV1 | `0x06` | Function selector |
-| PoWRewardV1 | `0x05` | Function selector |
-| Fee_V2 | k=11, pallas, 24 witnesses, 15 public inputs | Fee value conservation circuit |
-| FeeThreshold_V1 | k=11, pallas, 4 witnesses, 2 public inputs | Threshold proof circuit |
-| `DRKW_TOKEN_ID` | `0` | Native token identifier |
+| Symbol | Domain | Value | Definition |
+|--------|--------|-------|------------|
+| `PREMIUM_THRESHOLD` | fee_signalling | TBD | Minimum fee for premium mempool tier |
+| `GENERAL_THRESHOLD` | fee_signalling | TBD | Minimum fee for general mempool tier |
+| `COINBASE_MATURITY` | mass_balance | `100` | Blocks before coinbase coin is spendable |
+| `INITIAL_REWARD` | mass_balance | `1_383_764_049` | Genesis block reward (1.383 DRKW) |
+| `MERKLE_DEPTH` | mass_balance | `32` | Orchard tree depth (2^32 capacity) |
+| `UNCOMMITTED_ORCHARD` | mass_balance | `pallas::Base::from(2)` | Empty leaf value |
+| FeeV1 | mass_balance | `0x00` | REMOVED — returns InvalidFunction |
+| FeeV2 | mass_balance + fee_signalling | `0x08` | Function selector (privacy-preserving, dual-domain) |
+| FeeCollectV1 | mass_balance | `0x06` | Function selector (fee accumulator reset) |
+| PoWRewardV1 | mass_balance | `0x05` | Function selector (coinbase nullifier claim) |
+| Fee_V2 | mass_balance | k=11, pallas, 24 witnesses, 15 public inputs | Fee value conservation circuit |
+| FeeThreshold_V1 | fee_signalling | k=11, pallas, 4 witnesses, 2 public inputs | Threshold proof circuit |
+| `DRKW_TOKEN_ID` | mass_balance | `0` | Native token identifier |
 
 ## 11. Error Taxonomy
 
@@ -843,7 +946,7 @@ Tests SHALL assert the specific barb, not a generic wrapper.
 | Parse error | ↓bad-params | Custom(2) | FeeParamsV2 decode failure |
 | Value overflow | ↓bad-fee-amount | Custom(5) | u64 overflow in value computation |
 
-## 12. Fee Window Signalling — Adaptive Congestion Control
+## 12. Fee Window Signalling — Adaptive Congestion Control `[domain: fee_signalling]`
 
 *Specification for dynamic fee threshold adjustment across 20-block windows.
 Formalized in rho-calculus with congestion-factor-driven pricing. Modular,

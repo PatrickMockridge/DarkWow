@@ -677,6 +677,7 @@ mod tests {
             let gen_hash = har.chain_state.hash_block_with_cached_vm(&gen_block).expect("hash failed");
 
             let header = dwow_chain::BlockHeader {
+                fee_window_flags: 0,
                 version: BlockVersion::CURRENT,
                 previous: gen_hash,
                 merkle_root,
@@ -945,6 +946,7 @@ mod tests {
             let height = BlockHeight::new(h);
             let block = dwow_chain::Block {
                 header: dwow_chain::BlockHeader {
+                        fee_window_flags: 0,
                     version: BlockVersion::CURRENT,
                     previous: if h == 1 { blake3::hash(b"genesis") } else { blake3::hash(&h.to_le_bytes()) },
                     merkle_root: dwow_chain::compute_merkle_root(&[]),

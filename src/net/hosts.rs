@@ -704,7 +704,7 @@ impl Hosts {
             true
         });
 
-        let pruned = before - registry.len();
+        let _pruned = before - registry.len();
 
         // Capacity-based eviction — prevents unbounded growth from address
         // flooding. Prefers oldest Free entries. Follows the same MAX_LEN

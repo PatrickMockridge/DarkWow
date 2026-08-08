@@ -266,6 +266,7 @@ impl DwowNode {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
+            fee_window_flags: 0,
 
         pow_source: PowSource::Native,
 
@@ -488,6 +489,7 @@ impl DwowNode {
             .unwrap_or_else(|| (blake3::hash(&[]), vec![]));
 
         let header = dwow_chain::BlockHeader {
+            fee_window_flags: 0,
             version: BlockVersion::CURRENT,
             previous: previous_hash,
             merkle_root,
@@ -691,9 +693,10 @@ impl DwowNode {
                                     anchor_monero_height: MoneroBlockHeight::new(0),
                                     anchor_monero_hash: [0u8; 32],
                                     finality_flags: 0,
-                        
+                                    fee_window_flags: 0,
+
                                 pow_source: PowSource::Native,
-                        
+
                                 };
                                 let new_blob_data = new_mining_header.to_mining_blob();
                                 let new_blob = hex::encode(&new_blob_data);

@@ -70,6 +70,14 @@ pub mod crypto;
 pub mod tx;
 pub use tx::{ContractCall, ContractCallImport};
 
+/// Nominal call data types — replaces raw-byte function dispatch
+pub mod mass_balance_call_data;
+pub use mass_balance_call_data::{
+    MassBalanceFeeV2CallData, MassBalanceFeeV2Selector,
+    MassBalanceFeeCollectV1CallData, MassBalanceFeeCollectV1Selector,
+    MassBalanceCoinbaseV1CallData, MassBalanceCoinbaseV1Selector,
+};
+
 /// Convenience utilities
 pub mod util;
 

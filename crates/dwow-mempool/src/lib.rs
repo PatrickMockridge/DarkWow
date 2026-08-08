@@ -39,8 +39,9 @@ use dwow_chain::{Nullifier, Transaction};
 use smol::lock::Mutex;
 
 /// Strategy for extracting fees and estimating gas from transactions.
-/// Implementations encode contract-specific knowledge (e.g., NativeToken FeeV1).
-pub trait FeeExtractor: Send + Sync {
+/// Implementations encode contract-specific knowledge (e.g., NativeToken FeeV2).
+/// `[domain: fee_signalling]` — serves mempool admission, never `accept_block`.
+pub trait FeeSignallingExtractor: Send + Sync {
     fn extract_fee(&self, tx: &Transaction) -> u64;
     fn estimate_gas(&self, tx: &Transaction) -> u64;
 
@@ -182,7 +183,7 @@ pub struct Mempool {
     /// Atomic for lock-free read in add(). Initialized from config.general_threshold.
     general_threshold: AtomicU64,
     /// Fee extraction strategy (contract-specific, injected by caller)
-    fee_extractor: Box<dyn FeeExtractor>,
+    fee_extractor: Box<dyn FeeSignallingExtractor>,
     /// Optional chain state for on-chain nullifier consultation.
     /// When set, add() checks nullifiers against the confirmed set in addition
     /// to the in-pool set. per mempool.md §2.
@@ -193,7 +194,7 @@ impl Mempool {
     // ── Construction ─────────────────────────────────────────────────
 
     /// Create a new mempool with the given config, persistence, and fee extractor.
-    pub fn new(config: MempoolConfig, db: Option<sled::Tree>, fee_extractor: Box<dyn FeeExtractor>,
+    pub fn new(config: MempoolConfig, db: Option<sled::Tree>, fee_extractor: Box<dyn FeeSignallingExtractor>,
                chain_state: Option<Arc<dwow_chain::CChainState>>) -> Self {
         Self {
             txs: Mutex::new(HashMap::new()),
@@ -211,7 +212,7 @@ impl Mempool {
     }
 
     /// Restore mempool state from a sled tree (called on startup).
-    pub fn load(tree: sled::Tree, fee_extractor: Box<dyn FeeExtractor>,
+    pub fn load(tree: sled::Tree, fee_extractor: Box<dyn FeeSignallingExtractor>,
                 chain_state: Option<Arc<dwow_chain::CChainState>>) -> dwow_core::Result<Self> {
         let config = MempoolConfig::default();
         let mut txs = HashMap::new();
@@ -299,8 +300,8 @@ impl Mempool {
         // The chain-level structural validation checks both; the mempool must match.
         // Checking only data[0] == 0x05 allows any contract to bypass the fee minimum.
         let is_coinbase = tx.contract_calls.first()
-            .map_or(false, |c| c.data.first() == Some(&0x05)
-                && c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID);
+            .and_then(|c| c.as_mass_balance_coinbase_v1())
+            .is_some();
         if !is_coinbase && fee < self.config.min_fee {
             return Err(dwow_core::Error::Custom(format!(
                 "Fee too low: {} (minimum: {})", fee, self.config.min_fee
@@ -371,12 +372,14 @@ impl Mempool {
             }
         }
 
-        // Two-tier admission gate per fee-spec.md §7.2.
+        // Two-tier admission gate per fee-spec.md §7.2, §5.8.
         // Check BEFORE insertion to avoid borrow-after-move.
-        let is_fee_v2 = tx.contract_calls.first().map_or(false, |c| {
-            c.data.first() == Some(&0x08)
-                && c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
-        });
+        // Uses nominal MassBalanceFeeV2CallData type — no raw data[0] inspection.
+        // The ↓gate barb on MassBalanceFeeV2CallData determines the fee function,
+        // not a runtime byte comparison.
+        let is_fee_v2 = tx.contract_calls.first()
+            .and_then(|c| c.as_mass_balance_fee_v2())
+            .is_some();
 
         // Insert
         for n in &tx_nullifiers { nulls.insert(*n); }
@@ -656,8 +659,8 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
-// extract_fee and estimate_gas moved to FeeExtractor trait.
-// Implementations live in consumer crates (e.g., NativeTokenFeeExtractor in dwowd).
+// extract_fee and estimate_gas moved to FeeSignallingExtractor trait.
+// Implementations live in consumer crates (e.g., NativeTokenFeeSignallingExtractor in dwowd).
 
 /// Extract pre-computed nullifiers from a transaction.
 /// Extract typed nullifiers from a transaction for mempool indexing.
@@ -676,13 +679,13 @@ fn extract_nullifiers(tx: &Transaction) -> Vec<Nullifier> {
 pub type MempoolPtr = Arc<Mempool>;
 
 /// Create a new Mempool with default config and no persistence.
-pub fn create_mempool(fee_extractor: Box<dyn FeeExtractor>,
+pub fn create_mempool(fee_extractor: Box<dyn FeeSignallingExtractor>,
                       chain_state: Option<Arc<dwow_chain::CChainState>>) -> MempoolPtr {
     Arc::new(Mempool::new(MempoolConfig::default(), None, fee_extractor, chain_state))
 }
 
 /// Create a new Mempool with sled persistence.
-pub fn create_mempool_persistent(tree: sled::Tree, fee_extractor: Box<dyn FeeExtractor>,
+pub fn create_mempool_persistent(tree: sled::Tree, fee_extractor: Box<dyn FeeSignallingExtractor>,
                                  chain_state: Option<Arc<dwow_chain::CChainState>>) -> MempoolPtr {
     Arc::new(Mempool::new(MempoolConfig::default(), Some(tree), fee_extractor, chain_state))
 }
@@ -691,11 +694,12 @@ pub fn create_mempool_persistent(tree: sled::Tree, fee_extractor: Box<dyn FeeExt
 mod tests {
     use super::*;
     use dwow_chain::ContractCall;
+    use dwow_sdk::blockchain::BlockVersion;
     use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
 
     /// Test fee extractor: returns 42_000_000 per call to native token FeeV1.
-    struct TestFeeExtractor;
-    impl FeeExtractor for TestFeeExtractor {
+    struct TestFeeSignallingExtractor;
+    impl FeeSignallingExtractor for TestFeeSignallingExtractor {
         fn extract_fee(&self, tx: &Transaction) -> u64 {
             let mut total: u64 = 0;
             for call in &tx.contract_calls {
@@ -751,13 +755,13 @@ mod tests {
     #[test]
     fn test_fee_extraction() {
         let tx = make_tx(vec![], Some(42_000_000));
-        assert_eq!(TestFeeExtractor.extract_fee(&tx), 42_000_000);
+        assert_eq!(TestFeeSignallingExtractor.extract_fee(&tx), 42_000_000);
     }
 
     #[test]
     fn test_add_and_select() {
         smol::block_on(async {
-            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeExtractor), None);
+            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeSignallingExtractor), None);
             let tx1 = make_tx(vec![make_call(vec![0x01])], Some(50_000_000));
             let tx2 = make_tx(vec![make_call(vec![0x02])], Some(100_000_000));
 
@@ -768,8 +772,8 @@ mod tests {
             // Fee-descending: higher fee first
             let selected = mempool.select_for_block(&MinerConfig { max_gas: u64::MAX, max_txs: 100, ..Default::default() }).await;
             assert_eq!(selected.len(), 2);
-            assert_eq!(TestFeeExtractor.extract_fee(&selected[0]), 100_000_000); // higher fee first
-            assert_eq!(TestFeeExtractor.extract_fee(&selected[1]), 50_000_000);
+            assert_eq!(TestFeeSignallingExtractor.extract_fee(&selected[0]), 100_000_000); // higher fee first
+            assert_eq!(TestFeeSignallingExtractor.extract_fee(&selected[1]), 50_000_000);
 
             // Still in mempool after select
             assert_eq!(mempool.len().await, 2);
@@ -784,7 +788,7 @@ mod tests {
     #[test]
     fn test_fee_too_low_rejected() {
         smol::block_on(async {
-            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeExtractor), None);
+            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeSignallingExtractor), None);
             let tx = make_tx(vec![make_call(vec![0x01])], Some(1_000_000)); // below 42M min
             let result = mempool.add(tx).await;
             assert!(result.is_err());
@@ -795,7 +799,7 @@ mod tests {
     #[test]
     fn test_duplicate_rejected() {
         smol::block_on(async {
-            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeExtractor), None);
+            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeSignallingExtractor), None);
             let tx = make_tx(vec![make_call(vec![0x01])], Some(50_000_000));
             mempool.add(tx.clone()).await.unwrap();
             let result = mempool.add(tx).await;
@@ -807,7 +811,7 @@ mod tests {
     #[test]
     fn test_gas_limit_respected() {
         smol::block_on(async {
-            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeExtractor), None);
+            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeSignallingExtractor), None);
             // Each call = 400M gas. 1 payload call + FeeV1 = 2 calls = 800M per tx.
             // Gas limit = 800M — should only fit one tx.
             let tx1 = make_tx(
@@ -834,16 +838,127 @@ mod tests {
             let db = config.open().unwrap();
             let tree = db.open_tree("mempool").unwrap();
 
-            let mempool = Mempool::new(MempoolConfig::default(), Some(tree), Box::new(TestFeeExtractor), None);
+            let mempool = Mempool::new(MempoolConfig::default(), Some(tree), Box::new(TestFeeSignallingExtractor), None);
             let tx = make_tx(vec![make_call(vec![0x01])], Some(50_000_000));
             let hash = mempool.add(tx).await.unwrap();
             mempool.flush().await.unwrap();
 
             // Reload
             let tree2 = db.open_tree("mempool").unwrap();
-            let mempool2 = Mempool::load(tree2, Box::new(TestFeeExtractor), None).unwrap();
+            let mempool2 = Mempool::load(tree2, Box::new(TestFeeSignallingExtractor), None).unwrap();
             assert_eq!(mempool2.len().await, 1);
             assert!(mempool2.contains(&hash).await);
+        });
+    }
+
+    #[test]
+    fn test_update_thresholds_atomic_visibility() {
+        // Store new thresholds, verify add() sees the new values via Acquire/Release.
+        smol::block_on(async {
+            let config = MempoolConfig {
+                premium_threshold: 200_000_000,
+                general_threshold: 50_000_000,
+                ..Default::default()
+            };
+            let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
+
+            // At config thresholds: fee=100M goes to general (above 50M, below 200M)
+            let tx = make_tx(vec![make_call(vec![0x08])], Some(100_000_000));
+            assert!(mempool.add(tx).await.is_ok(), "fee 100M should be admitted");
+
+            // Lower premium threshold: fee=100M should now go to premium
+            mempool.update_thresholds(90_000_000, 50_000_000);
+            let tx2 = make_tx(vec![make_call(vec![0x08])], Some(100_000_000));
+            assert!(mempool.add(tx2).await.is_ok(), "fee 100M should be admitted after threshold drop");
+
+            // Raise general above fee: fee=100M below new general=150M → reject
+            mempool.update_thresholds(200_000_000, 150_000_000);
+            let tx3 = make_tx(vec![make_call(vec![0x08])], Some(100_000_000));
+            assert!(mempool.add(tx3).await.is_err(), "fee 100M below general 150M should be rejected");
+        });
+    }
+
+    #[test]
+    fn test_fcfs_preservation_across_threshold_change() {
+        // Transactions admitted under old thresholds survive and maintain FCFS order.
+        smol::block_on(async {
+            let config = MempoolConfig {
+                premium_threshold: 200_000_000,
+                general_threshold: 10_000_000,
+                ..Default::default()
+            };
+            let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
+
+            // Admit 3 transactions under window 0 thresholds
+            let tx1 = make_tx(vec![make_call(vec![0x08, 0x01])], Some(50_000_000));
+            let tx2 = make_tx(vec![make_call(vec![0x08, 0x02])], Some(60_000_000));
+            let tx3 = make_tx(vec![make_call(vec![0x08, 0x03])], Some(300_000_000));
+            let h1 = mempool.add(tx1).await.expect("tx1");
+            let h2 = mempool.add(tx2).await.expect("tx2");
+            let _h3 = mempool.add(tx3).await.expect("tx3");
+
+            // Raise thresholds (simulating window boundary)
+            mempool.update_thresholds(400_000_000, 100_000_000);
+
+            // Existing txs survive (I3) and maintain order
+            let selected = mempool.select_for_block(&MinerConfig {
+                max_gas: u64::MAX, max_txs: 100, ..Default::default()
+            }).await;
+            assert_eq!(selected.len(), 3, "all 3 existing txs must survive threshold change");
+            // Premium (tx3) first, then general FCFS (tx1 before tx2)
+            assert_eq!(selected[0].contract_calls[0].data[1], 0x03, "premium tx must be first");
+            assert_eq!(selected[1].contract_calls[0].data[1], 0x01, "general FCFS: tx1 before tx2");
+            assert_eq!(selected[2].contract_calls[0].data[1], 0x02, "general FCFS: tx2 after tx1");
+        });
+    }
+
+    #[test]
+    fn test_premium_queue_len() {
+        smol::block_on(async {
+            let config = MempoolConfig {
+                premium_threshold: 100_000_000,
+                general_threshold: 10_000_000,
+                ..Default::default()
+            };
+            let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
+
+            assert_eq!(mempool.premium_queue_len(), 0);
+            mempool.add(make_tx(vec![make_call(vec![0x08])], Some(200_000_000))).await.unwrap();
+            assert_eq!(mempool.premium_queue_len(), 1);
+            mempool.add(make_tx(vec![make_call(vec![0x08])], Some(300_000_000))).await.unwrap();
+            assert_eq!(mempool.premium_queue_len(), 2);
+        });
+    }
+
+    #[test]
+    fn test_standard_queue_len() {
+        smol::block_on(async {
+            let config = MempoolConfig {
+                premium_threshold: 500_000_000,
+                general_threshold: 10_000_000,
+                ..Default::default()
+            };
+            let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
+
+            assert_eq!(mempool.standard_queue_len(), 0);
+            mempool.add(make_tx(vec![make_call(vec![0x08])], Some(50_000_000))).await.unwrap();
+            assert_eq!(mempool.standard_queue_len(), 1);
+        });
+    }
+
+    #[test]
+    fn test_has_nullifier() {
+        smol::block_on(async {
+            let config = MempoolConfig::default();
+            let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
+
+            let tx = make_tx(vec![make_call(vec![0x08])], Some(50_000_000));
+            let nullifier = tx.nullifiers.first().cloned();
+            mempool.add(tx).await.unwrap();
+
+            if let Some(nf) = nullifier {
+                assert!(mempool.has_nullifier(&nf).await, "nullifier should be tracked");
+            }
         });
     }
 }

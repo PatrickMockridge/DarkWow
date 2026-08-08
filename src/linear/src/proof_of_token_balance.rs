@@ -47,13 +47,13 @@ use dwow_native_token_contract::{
     NativeTokenFunction,
 };
 use dwow_sdk::{
-    blockchain::BlockVersion,
-    crypto::{
-        pasta_prelude::Group,
-        pedersen_commitment_u64, poseidon_hash, ScalarBlind,
-    },
+    crypto::pasta_prelude::Group,
+    crypto::poseidon_hash,
     pasta::pallas,
 };
+#[allow(unused_imports)]
+use dwow_sdk::{blockchain::BlockVersion, crypto::pedersen_commitment_u64, crypto::ScalarBlind};
+#[allow(unused_imports)]
 use dwow_serial::deserialize;
 
 /// Error types for proof-of-token-balance verification.

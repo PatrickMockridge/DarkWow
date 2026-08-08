@@ -96,12 +96,14 @@ fn build_merge_mined_header(
     merkle_root: blake3::Hash,
     pow_data: MoneroPowData,
 ) -> BlockHeader {
+        fee_window_flags: 0,
     let seed_hash_bytes: [u8; 32] = hex::decode(SEED_HASH)
         .expect("SEED_HASH decodes")
         .try_into()
         .expect("SEED_HASH is 32 bytes");
 
     BlockHeader {
+        fee_window_flags: 0,
         version: BlockVersion::CURRENT,
         previous: prev_hash,
         merkle_root,

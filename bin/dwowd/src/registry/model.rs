@@ -354,10 +354,10 @@ pub fn build_fee_collect_tx(
             if c.contract_id != *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID {
                 continue;
             }
-            // FeeV2 (0x08) — privacy-preserving
-            if c.data.first() == Some(&0x08) {
+            // FeeV2 — privacy-preserving
+            if let Some(mb_fee_v2) = c.as_mass_balance_fee_v2() {
                 use dwow_native_token_contract::model::fee::FeeParamsV2;
-                if let Ok(params) = FeeParamsV2::decode(&c.data[1..]) {
+                if let Ok(params) = FeeParamsV2::decode(mb_fee_v2.params_bytes()) {
                     total_blind += params.fee_value_blind;
                     fee_call_count += 1;
                 }
@@ -581,8 +581,7 @@ pub async fn generate_linear_block_template(
         { let zk = linear_zk.as_ref();
             // Count FeeV2 calls and compute total_fees for the test path
             let fc: u64 = txs.iter().flat_map(|t| &t.contract_calls)
-                .filter(|c| c.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
-                    && c.data.first() == Some(&0x08))
+                .filter(|c| c.as_mass_balance_fee_v2().is_some())
                 .count() as u64;
             let tf = FeeAmount::new(fc * 42_000_000);
             if let Some(fee_tx) = build_fee_collect_tx(

@@ -668,15 +668,26 @@ FeeV2 (function code `0x08`) is the privacy-preserving fee payment path.
 It replaces FeeV1 (removed). The construction SHALL adhere to
 [fee-spec.md §8](consensus/fee-spec.md).
 
-**Barb set.** A FeeV2 transaction exhibits `↓pay-fee` (spends a coin via
-nullifier, splits value into change + fee) and `↓threshold-prove` (proves
+**Barb set.** A FeeV2 transaction exhibits `↓pay-fee` [mass_balance] (spends a coin via
+nullifier, splits value into change + fee) and `↓threshold-prove` [fee_signalling] (proves
 hidden fee meets a public threshold). Both barbs SHALL be covered by the
 wallet's capability selection (§6.2).
 
-**Call data format.** FeeV2 call data SHALL be `[0x08][FeeParamsV2 encoded]`.
-The call data SHALL NOT contain clear-text fee bytes. The fee amount is
+**Call data format.** FeeV2 call data SHALL use the nominal `MassBalanceFeeV2CallData`
+type per [type-system.md §8.2.3](../type-system.md). The wallet SHALL construct
+`MassBalanceFeeV2CallData::new(params)` where `params` includes both `fee_value_commit`
+and `threshold_proof`. The selector `0x08` is implicit — it is a property of
+the `MassBalanceFeeV2CallData` TYPE, guaranteed by `MassBalanceFeeV2Selector` (a zero-sized witness
+that hardcodes `0x08`). The wallet SHALL NOT manually prepend a selector byte.
+`MassBalanceFeeV2CallData::encode()` produces `[0x08][FeeParamsV2::encode()]` — the wire
+format is byte-identical to the pre-nominal encoding; the change is at the type
+level. The call data SHALL NOT contain clear-text fee bytes. The fee amount is
 hidden behind a Pedersen commitment (`fee_value_commit: pallas::Point`) and
 a FeeThreshold_V1 ZK proof (`threshold_proof: Vec<u8>`).
+
+The `MassBalanceFeeV2CallData` carries the `↓gate`, `↓pay-fee` [mass_balance], and `↓threshold-prove` [fee_signalling]
+barbs into the mempool. The mempool SHALL NOT inspect `data[0]` to determine
+the fee function — it SHALL observe the barbs on the name.
 
 **Dual-proof construction.** The wallet SHALL produce two ZK proofs for
 every FeeV2 transaction:

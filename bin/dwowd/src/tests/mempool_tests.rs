@@ -8,11 +8,11 @@
 
 use std::sync::Mutex;
 
-use dwow_mempool::{FeeCommitment, FeeExtractor, Mempool, MempoolConfig, MinerConfig};
+use dwow_mempool::{FeeCommitment, FeeSignallingExtractor, Mempool, MempoolConfig, MinerConfig};
 use dwow_sdk::pasta::group::{Group, GroupEncoding};
 
-struct TestFeeExtractor;
-impl FeeExtractor for TestFeeExtractor {
+struct TestFeeSignallingExtractor;
+impl FeeSignallingExtractor for TestFeeSignallingExtractor {
     fn extract_fee(&self, tx: &dwow_chain::Transaction) -> u64 {
         if let Some(call) = tx.contract_calls.first() {
             if call.data.len() >= 9 {
@@ -63,7 +63,7 @@ fn make_fee_v2_tx(fee: u64) -> dwow_chain::Transaction {
 fn test_mempool_queues_initialized() {
     smol::block_on(async {
         let config = MempoolConfig::default();
-        let mempool = Mempool::new(config, None, Box::new(TestFeeExtractor), None);
+        let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
         let selected = mempool.select_for_block(&MinerConfig {
             max_gas: u64::MAX, max_txs: 100, ..Default::default()
@@ -76,7 +76,7 @@ fn test_mempool_queues_initialized() {
 fn test_mempool_add_single_tx() {
     smol::block_on(async {
         let config = MempoolConfig::default();
-        let mempool = Mempool::new(config, None, Box::new(TestFeeExtractor), None);
+        let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
         let tx = make_fee_v2_tx(50_000_000);
         let hash = mempool.add(tx).await.expect("add tx");
@@ -95,7 +95,7 @@ fn test_mempool_accepts_zero_fee() {
     // when min_fee=0 — rejection is policy, not consensus (fee-spec.md §7).
     smol::block_on(async {
         let config = MempoolConfig { min_fee: 0, ..Default::default() };
-        let mempool = Mempool::new(config, None, Box::new(TestFeeExtractor), None);
+        let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
         let tx = make_fee_v2_tx(0);
         let result = mempool.add(tx).await;
@@ -112,7 +112,7 @@ fn test_feev2_premium_admission() {
             general_threshold: 10_000_000,
             ..Default::default()
         };
-        let mempool = Mempool::new(config, None, Box::new(TestFeeExtractor), None);
+        let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
         let tx = make_fee_v2_tx(150_000_000); // above premium
         let result = mempool.add(tx).await;
@@ -129,7 +129,7 @@ fn test_feev2_general_admission() {
             general_threshold: 50_000_000,
             ..Default::default()
         };
-        let mempool = Mempool::new(config, None, Box::new(TestFeeExtractor), None);
+        let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
         let tx = make_fee_v2_tx(100_000_000); // above general, below premium
         let result = mempool.add(tx).await;
@@ -146,7 +146,7 @@ fn test_feev2_reject_below_general() {
             general_threshold: 50_000_000,
             ..Default::default()
         };
-        let mempool = Mempool::new(config, None, Box::new(TestFeeExtractor), None);
+        let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
         let tx = make_fee_v2_tx(10_000_000); // below general
         let result = mempool.add(tx).await;
@@ -163,7 +163,7 @@ fn test_feev2_premium_before_general() {
             general_threshold: 10_000_000,
             ..Default::default()
         };
-        let mempool = Mempool::new(config, None, Box::new(TestFeeExtractor), None);
+        let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
         // Add general-tier tx first, then premium-tier
         let tx_general = make_fee_v2_tx(50_000_000);
@@ -254,7 +254,7 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
             general_threshold: 1_000_000,
             ..Default::default()
         };
-        let mempool = Mempool::new(config, None, Box::new(TestFeeExtractor), None);
+        let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
         // Admission: the tx carries a FeeThreshold_V1 proof for premium threshold
         let tx_hash = mempool.add(chain_tx.clone()).await
@@ -272,7 +272,7 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
 
         // ---- Submit through accept_block using mempool-selected transaction ----
         // The selected tx's call_data is identical to harness call_data. We submit
-        // with harness proofs because the mempool TestFeeExtractor uses raw u64
+        // with harness proofs because the mempool TestFeeSignallingExtractor uses raw u64
         // comparison (not real ZK proof verification) — the real proof verification
         // happens in accept_block via verify_core_tx_with_tables.
         let before = chain.height();

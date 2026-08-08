@@ -25,7 +25,6 @@ use std::collections::HashMap;
 
 pub use dwow_sdk::dark_tree::DarkLeaf;
 use dwow_sdk::{
-    crypto::PublicKey,
     dark_tree::{dark_forest_leaf_vec_integrity_check, DarkForest, DarkTree},
     error::DarkTreeResult,
     pasta::pallas,
@@ -176,7 +175,7 @@ impl Transaction {
             return false;
         }
 
-        self.calls[0].data.is_native_token_pow_reward()
+        self.calls[0].data.is_mass_balance_coinbase_v1()
     }
 
     /// Returns true if the transaction consists of a single call with non-empty data.

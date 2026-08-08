@@ -8,11 +8,14 @@ repository = "https://codeberg.org/darkrenaissance/darkfi"
 license = "AGPL-3.0-only"
 edition = "2021"
 
+[features]
+fee-window = ["dwow_chain/fee-window"]
+
 [dependencies]
 # Darkfi
 dwow-accounts = {path = "../../crates/dwow-accounts"}
 dwow_core = {path = "../../", features = ["async-daemonize", "blockchain", "bs58", "net-node", "rpc", "tx", "wasm-runtime"]}
-dwow_chain = {path = "../../src/linear", features = ["async", "sync-p2p"]}
+dwow_chain = {path = "../../src/linear", features = ["async", "sync-p2p", "fee-window"]}
 dwow_mempool = {path = "../../crates/dwow-mempool"}
 dwow_promissory_note_contract = {path = "../../src/contract/promissory_note", features = ["client", "no-entrypoint"]}
 dwow_native_token_contract = {path = "../../src/contract/native_token", features = ["client"]}

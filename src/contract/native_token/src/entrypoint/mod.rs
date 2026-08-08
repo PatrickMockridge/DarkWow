@@ -55,7 +55,7 @@ use dwow_sdk::{
     pasta::{group::GroupEncoding, pallas},
     wasm,
 };
-use dwow_serial::{deserialize, Encodable, WriteExt};
+use dwow_serial::{Encodable, WriteExt};
 
 use crate::{
     error::NativeTokenError,

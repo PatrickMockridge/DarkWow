@@ -37,7 +37,7 @@
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Mutex;
 
-use dwow_sdk::blockchain::{BlockHeight, FeeWindowId};
+use dwow_sdk::blockchain::BlockHeight;
 
 use crate::error::LinearError;
 
@@ -522,5 +522,67 @@ mod tests {
 
         let down = WindowSignalling::encode_cm(0x02);
         assert_eq!(down.congestion_multiplier(), 0x02);
+    }
+
+    #[test]
+    fn test_save_load_roundtrip() {
+        // Persistence: save FeeWindowState to batch, load into fresh state, verify match.
+        let config = FeeWindowConfig::default();
+        let fw = FeeWindowState::new(config.clone());
+        // First adjustment to move CF above SCALE
+        fw.adjust(100, 1000);
+        // Save
+        let db = sled::Config::new().temporary(true).open().expect("sled temp");
+        let tree = db.open_tree(b"consensus").expect("tree");
+        let mut batch = sled::Batch::default();
+        fw.save_to_batch(&mut batch);
+        tree.apply_batch(batch).expect("apply_batch");
+        // Load into fresh state
+        let fw2 = FeeWindowState::new(config);
+        fw2.load(&tree).expect("load");
+        assert_eq!(fw.premium_threshold(), fw2.premium_threshold(),
+            "premium_threshold persistence mismatch");
+        assert_eq!(fw.general_threshold(), fw2.general_threshold(),
+            "general_threshold persistence mismatch");
+        let cf1 = fw.current_cf();
+        let cf2 = fw2.current_cf();
+        assert_eq!(cf1.premium, cf2.premium, "premium_cf persistence mismatch");
+        assert_eq!(cf1.standard, cf2.standard, "standard_cf persistence mismatch");
+    }
+
+    #[test]
+    fn test_encode_flags_initial_state() {
+        // encode_flags on a FeeWindowState that has never called adjust
+        // should return FEE_WINDOW_ACTIVE (0x01) without congestion multiplier.
+        let fw = FeeWindowState::new(FeeWindowConfig::default());
+        let flags = fw.encode_flags();
+        assert!(flags.is_active(), "initial flags should be active");
+        assert_eq!(flags.congestion_multiplier(), 0x00,
+            "initial flags should have no CM (hold)");
+        assert_eq!(flags.get(), WindowSignalling::FEE_WINDOW_ACTIVE);
+    }
+
+    #[test]
+    fn test_decode_next_premium_exact() {
+        // Exact arithmetic: +10% of 100_000_000 = 110_000_000, -10% = 90_000_000.
+        let base: u64 = 420_000_000;
+        // +10%
+        let up = WindowSignalling::encode_cm(0x01);
+        assert_eq!(up.decode_next_premium(base), (base as u128 * 110 / 100) as u64);
+        // -10%
+        let down = WindowSignalling::encode_cm(0x02);
+        assert_eq!(down.decode_next_premium(base), (base as u128 * 90 / 100) as u64);
+        // hold
+        let hold = WindowSignalling::encode_cm(0x00);
+        assert_eq!(hold.decode_next_premium(base), base);
+        // legacy (inactive)
+        assert_eq!(WindowSignalling::LEGACY.decode_next_premium(base), base);
+    }
+
+    #[test]
+    fn test_congestion_factor_display() {
+        let flags = WindowSignalling::encode_cm(0x01);
+        let s = format!("{}", flags);
+        assert!(s.contains("1"), "Display should show binary with active bit");
     }
 }

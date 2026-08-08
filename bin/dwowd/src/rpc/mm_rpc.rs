@@ -627,6 +627,7 @@ impl DwowNode {
         };
 
         let mut header = dwow_chain::BlockHeader {
+            fee_window_flags: 0,
             version: BlockVersion::CURRENT,
             previous: blake3::Hash::from_bytes(template.previous),
             merkle_root: template.merkle_root,
@@ -860,6 +861,7 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
+            fee_window_flags: 0,
             pow_source: PowSource::Native,
         }
     }

@@ -102,6 +102,25 @@ Pedersen mass balance check with the cumulative supply commitment chain
 (`S_H = S_{H-1} + C_H`) to prove that no hidden darkw minting occurs beyond
 the coinbase reward.
 
+### MassBalance Naming Convention
+
+Per [fee-spec.md §0](consensus/fee-spec.md) and [type-system.md §8.2](../type-system.md),
+types participating in the Pedersen mass balance proof carry the `MassBalance` prefix:
+
+| Type | Selector | Role |
+|------|----------|------|
+| `MassBalanceCoinbaseV1CallData` | `0x05` | Block-opening coinbase nullifier claim |
+| `MassBalanceFeeCollectV1CallData` | `0x06` | Fee accumulator verification + miner mint |
+| `MassBalanceFeeV2CallData` | `0x08` | Dual-domain: `↓pay-fee` [mass_balance] + `↓threshold-prove` [fee_signalling] |
+
+The `MassBalance` prefix is a strong signal: code referencing these types
+participates in the consensus-critical block proof. The supply audit verifies
+every `MassBalanceCoinbaseV1CallData` (coinbase mint) and `MassBalanceFeeCollectV1CallData`
+(fee redistribution) against the Pedersen cumulative commitment chain. A
+`MassBalanceFeeV2CallData` carries both a mass_balance barb (`↓pay-fee`, value
+conservation) and a fee_signalling barb (`↓threshold-prove`, mempool admission) —
+it is the only dual-domain type.
+
 ### Motivation: The Orchard Exploit (May 2026)
 
 In May 2026, a missing circuit constraint was discovered in the Orchard shielded

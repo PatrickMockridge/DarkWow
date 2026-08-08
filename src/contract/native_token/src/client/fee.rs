@@ -27,7 +27,6 @@
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
     zkas::ZkBinary,
-    Result as CoreResult,
 };
 use dwow_sdk::crypto::{
     constants::{
@@ -41,17 +40,13 @@ use dwow_sdk::crypto::{
 };
 use dwow_sdk::{
     blockchain::FeeAmount,
-    bridgetree::Hashable,
     error::ContractError,
     pasta::pallas,
 };
-use rand::{RngCore, SeedableRng};
+use rand::SeedableRng;
 
 use crate::client::NativeToken;
 use crate::model::fee::FeeParamsV2;
-use crate::client::zkbins::{
-    NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN,
-};
 use crate::model::{CoinAttributes, Input, Output};
 
 // ---- Domain-labeled fee wrappers ----

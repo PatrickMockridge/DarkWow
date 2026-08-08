@@ -1394,6 +1394,7 @@ mod tests {
         // ── Build minimal Block with PoWRewardV1 contract call ──────
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
+                fee_window_flags: 0,
                 version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
@@ -2149,6 +2150,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // ── Block with 2 transactions ─────────────────────────────────
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
+                    fee_window_flags: 0,
                 version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
@@ -2252,6 +2254,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
+                fee_window_flags: 0,
                 version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
@@ -2353,6 +2356,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
+                fee_window_flags: 0,
                 version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
@@ -2494,6 +2498,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // ═══════════════════════════════════════════════════════════════
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
+                    fee_window_flags: 0,
                 version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),

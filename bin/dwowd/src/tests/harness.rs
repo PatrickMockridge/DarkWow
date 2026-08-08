@@ -55,6 +55,7 @@ pub fn build_test_header(
     merkle_root: blake3::Hash,
     timestamp: u64,
 ) -> BlockHeader {
+        fee_window_flags: 0,
     let previous_hash = if height <= BlockHeight::GENESIS {
         blake3::Hash::from_bytes([0u8; 32])
     } else {
@@ -69,6 +70,7 @@ pub fn build_test_header(
     };
 
     BlockHeader {
+        fee_window_flags: 0,
         version: BlockVersion::CURRENT,
         previous: previous_hash,
         merkle_root,

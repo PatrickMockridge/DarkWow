@@ -6,7 +6,7 @@ license = "AGPL-3.0-only"
 description = "DarkWow mempool — fee-ordered transaction pool with nullifier dedup"
 
 [dependencies]
-dwow_chain = {path = "../../src/linear"}
+dwow_chain = {path = "../../src/linear", features = ["fee-window"]}
 dwow_core = {path = "../.."}
 dwow-sdk = {path = "../../src/sdk", features = ["json"]}
 blake3 = {version = "1", features = ["serde"]}

@@ -267,6 +267,7 @@ fn test_wallet_integration() {
         ) -> dwow_chain::Block {
             dwow_chain::Block {
                 header: dwow_chain::BlockHeader {
+                    fee_window_flags: 0,
                     version: BlockVersion::CURRENT,
                     previous: blake3::Hash::from_bytes([0u8; 32]),
                     merkle_root: blake3::Hash::from_bytes([0u8; 32]),
@@ -573,6 +574,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
 
         let synthetic_block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
+                fee_window_flags: 0,
                 version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
@@ -767,6 +769,7 @@ required_barbs = ["Spend","Mine"]
 
         let uncovered_block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
+                fee_window_flags: 0,
                 version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
@@ -1025,6 +1028,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
 
         let synthetic_block = Block {
             header: BlockHeader {
+                fee_window_flags: 0,
                 version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
@@ -1132,6 +1136,7 @@ required_barbs = ["Spend","Mine"]
 
         let uncovered_block = Block {
             header: BlockHeader {
+                fee_window_flags: 0,
                 version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
@@ -1295,6 +1300,7 @@ fn test_wallet_coinbase_scan_only() {
         let prev_hash = har.chain_state.hash_block_with_cached_vm(&prev).expect("hash failed");
 
         let header_2 = BlockHeader {
+            fee_window_flags: 0,
             version: BlockVersion::CURRENT,
             previous: prev_hash,
             merkle_root: compute_merkle_root(&[coinbase_tx_2.clone()]),
@@ -1734,6 +1740,7 @@ required_barbs = ["Spend","Mine"]
         // ================================================================
         let synthetic_block = Block {
             header: BlockHeader {
+                fee_window_flags: 0,
                 version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),

@@ -346,21 +346,14 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
             .any(|c| is_native(c) && c.data.first() == Some(&0x06)))
         .map(|(i, _)| i);
 
-    // Count fee calls across the block. FeeV2 (0x08) replaces FeeV1 (0x00, removed).
+    // Count fee calls across the block. FeeV2 replaces FeeV1 (0x00, removed).
     // FeeV2 fees are hidden behind Pedersen commitments — exact amounts are not
     // available in call data. The structural validator checks fee presence, not sum.
-    let mut fee_call_count: u64 = 0;
-    for tx in &block.transactions {
-        for c in &tx.contract_calls {
-            if !is_native(c) {
-                continue;
-            }
-            match c.data.first() {
-                Some(&0x08) => fee_call_count += 1,  // FeeV2
-                _ => {}
-            }
-        }
-    }
+    // Uses typed accessor — no raw data[0] inspection.
+    let fee_call_count: u64 = block.transactions.iter()
+        .flat_map(|tx| &tx.contract_calls)
+        .filter(|c| c.as_mass_balance_fee_v2().is_some())
+        .count() as u64;
 
     match (fee_collect_tx_position, fee_call_count, fee_collect_call_count) {
         // Present with zero fee calls — zero-value claim / 0-fee replay (§3.13)
@@ -419,7 +412,6 @@ mod tests {
                 anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
-            #[cfg(feature = "fee-window")]
             fee_window_flags: 0,
                 pow_source: PowSource::Native,
             },
@@ -758,7 +750,6 @@ mod tests {
                 anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
-            #[cfg(feature = "fee-window")]
             fee_window_flags: 0,
                 pow_source: PowSource::Native,
             },

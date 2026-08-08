@@ -202,6 +202,38 @@ pub struct ContractCall {
     pub data: Vec<u8>,
 }
 
+impl ContractCall {
+    /// Attempt to decode this call as FeeV2 call data.
+    /// `[domain: mass_balance + fee_signalling]`
+    /// Returns `None` if contract_id does not match or selector is not `0x08`.
+    /// This is the SINGLE site where FeeV2 dispatch is determined per
+    /// type-system.md §10.5 (absorber boundary re-lift).
+    pub fn as_mass_balance_fee_v2(&self) -> Option<dwow_sdk::mass_balance_call_data::MassBalanceFeeV2CallData> {
+        if self.contract_id != *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID {
+            return None;
+        }
+        dwow_sdk::mass_balance_call_data::MassBalanceFeeV2CallData::from_bytes(&self.data)
+    }
+
+    /// Attempt to decode this call as PoWRewardV1 call data.
+    /// `[domain: mass_balance]` — block-opening coinbase nullifier claim.
+    pub fn as_mass_balance_coinbase_v1(&self) -> Option<dwow_sdk::mass_balance_call_data::MassBalanceCoinbaseV1CallData> {
+        if self.contract_id != *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID {
+            return None;
+        }
+        dwow_sdk::mass_balance_call_data::MassBalanceCoinbaseV1CallData::from_bytes(&self.data)
+    }
+
+    /// Attempt to decode this call as FeeCollectV1 call data.
+    /// `[domain: mass_balance]` — fee accumulator verification + miner mint.
+    pub fn as_mass_balance_fee_collect_v1(&self) -> Option<dwow_sdk::mass_balance_call_data::MassBalanceFeeCollectV1CallData> {
+        if self.contract_id != *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID {
+            return None;
+        }
+        dwow_sdk::mass_balance_call_data::MassBalanceFeeCollectV1CallData::from_bytes(&self.data)
+    }
+}
+
 /// Privacy-preserving coinbase output.
 /// Contains ZK proof data, coin commitment, nullifier, and encrypted note.
 /// Newtypes enforce the mathematical spec at compile time:

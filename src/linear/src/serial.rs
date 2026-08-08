@@ -198,6 +198,7 @@ impl AsyncDecodable for BlockHeader {
             anchor_monero_hash,
             finality_flags,
             pow_source,
+            fee_window_flags: 0,   // not in wire format — set to legacy default
         })
     }
 }

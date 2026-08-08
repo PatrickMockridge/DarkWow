@@ -265,16 +265,16 @@ else:
 The actual fee paid MAY exceed the threshold — the proof only guarantees
 the lower bound. The wallet MAY offer a higher fee for faster inclusion.
 
-## 8. FeeExtractor Trait
+## 8. FeeSignallingExtractor Trait `[domain: fee_signalling]`
 
 The mempool delegates fee extraction and threshold verification to a
-per-contract extractor. The `FeeExtractor` trait is defined in
+per-contract extractor. The `FeeSignallingExtractor` trait is defined in
 `crates/dwow-mempool/src/lib.rs`.
 
 ### 8.1 Interface
 
 ```
-trait FeeExtractor {
+trait FeeSignallingExtractor {
     /// Extract the Pedersen commitment to the fee from a transaction.
     /// Returns None if the transaction does not carry a fee commitment
     /// (e.g., non-fee calls, coinbase transactions).
@@ -294,7 +294,7 @@ Both methods are MANDATORY. `FeeCommitment` wraps `pallas::Point`.
 - **Admission** (§5.2): `verify_threshold_proof` gates tier assignment.
 - **Block selection** (§5.3): Txs without valid proofs are excluded from
   `select_for_block`.
-- **Daemon** (`bin/dwowd/src/lib.rs`): `NativeTokenFeeExtractor` implements
+- **Daemon** (`bin/dwowd/src/lib.rs`): `NativeTokenFeeSignallingExtractor` implements
   both methods, parsing `FeeParamsV2` from call data.
 
 ### 8.3 Proof Verification

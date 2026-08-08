@@ -81,20 +81,19 @@ use crate::registry::model::{LinearMinerRewardsRecipientConfig, RequiredLinearZk
 pub use dwow_accounts as accounts;
 // fee_estimator → dwow_chain::fee_estimator
 // mempool → dwow_mempool crate
-use dwow_mempool::{create_mempool, FeeExtractor, MempoolPtr, MinerConfig};
+use dwow_mempool::{create_mempool, FeeSignallingExtractor, MempoolPtr, MinerConfig};
 
 /// NativeToken fee extraction — FeeV2 (selector 0x08) uses Pedersen commitments.
 /// FeeV1 (selector 0x00) is REMOVED. For FeeV2, the exact fee is NOT in call data —
 /// verify_threshold_proof() gates mempool admission instead of min-fee check.
 /// extract_fee() returns fee_call_count * DEFAULT_FEE as an estimate.
-struct NativeTokenFeeExtractor;
-impl FeeExtractor for NativeTokenFeeExtractor {
+struct NativeTokenFeeSignallingExtractor;
+impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
     fn extract_fee(&self, tx: &dwow_chain::Transaction) -> u64 {
         const DEFAULT_FEE: u64 = 42_000_000;
         let mut count: u64 = 0;
         for call in &tx.contract_calls {
-            if call.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
-                && call.data.first() == Some(&0x08u8) {
+            if call.as_mass_balance_fee_v2().is_some() {
                 count += 1;
             }
         }
@@ -105,17 +104,15 @@ impl FeeExtractor for NativeTokenFeeExtractor {
         tx.contract_calls.len() as u64 * GAS_PER_CALL
     }
 
-    /// Extract fee commitment from FeeV2 transactions (selector 0x08).
+    /// Extract fee commitment from FeeV2 transactions.
     /// FeeV2 call data: [0x08][FeeParamsV2 encoded]
     /// FeeParamsV2 layout: input(224) + output(var) + fee_value_commit(32) + threshold(8) + proof_len(4) + proof(var) + blinds(128)
     fn extract_fee_commitment(&self, tx: &dwow_chain::Transaction) -> Option<dwow_mempool::FeeCommitment> {
         use dwow_sdk::pasta::group::GroupEncoding;
         use dwow_sdk::pasta::pallas;
         for call in &tx.contract_calls {
-            if call.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
-                && call.data.first() == Some(&0x08u8)
-            {
-                let data = &call.data[1..]; // skip selector byte
+            if let Some(mb_fee_v2) = call.as_mass_balance_fee_v2() {
+                let data = mb_fee_v2.params_bytes();
                 if data.len() < 224 + 130 + 32 {
                     tracing::debug!(target: "dwowd::fee",
                         "FeeV2: call data too short for FeeParamsV2 ({} bytes)", data.len());
@@ -154,11 +151,9 @@ impl FeeExtractor for NativeTokenFeeExtractor {
     /// the ZK proof against the FeeThreshold_V1 circuit.
     fn verify_threshold_proof(&self, tx: &dwow_chain::Transaction, threshold: u64) -> bool {
         for call in &tx.contract_calls {
-            if call.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
-                && call.data.first() == Some(&0x08u8)
-            {
+            if let Some(mb_fee_v2) = call.as_mass_balance_fee_v2() {
                 // Use the validating constructor — not raw byte offsets (F3 fix).
-                let params = match dwow_native_token_contract::model::fee::FeeParamsV2::decode(&call.data[1..]) {
+                let params = match dwow_native_token_contract::model::fee::FeeParamsV2::decode(mb_fee_v2.params_bytes()) {
                     Ok(p) => p,
                     Err(_) => return false,
                 };
@@ -610,6 +605,7 @@ async fn init_genesis(
         anchor_monero_height: MoneroBlockHeight::new(0),
         anchor_monero_hash: [0u8; 32],
         finality_flags: 0,
+        fee_window_flags: 0,
         pow_source: PowSource::Native,
     };
 
@@ -781,7 +777,7 @@ impl Dwowd {
         // Create mempool early — needed by both the P2P handler (for cleanup)
         // and the miner RPC (for transaction submission).
         let mempool = Some(create_mempool(
-            Box::new(NativeTokenFeeExtractor),
+            Box::new(NativeTokenFeeSignallingExtractor),
             Some(chain_state.clone()),
         ));
 
@@ -1199,7 +1195,7 @@ async fn prepare_block(
     // FeeParamsV2 from each FeeV2 (0x08) call and returns the fee estimate.
     // For production, this is DEFAULT_FEE per call until witness extraction
     // is implemented. Spec: fee-spec.md §5.6.4.
-    let fee_extractor = NativeTokenFeeExtractor;
+    let fee_extractor = NativeTokenFeeSignallingExtractor;
     let total_fees: u64 = mempool_txs.iter()
         .map(|tx| fee_extractor.extract_fee(tx))
         .sum();
@@ -1365,7 +1361,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
             }
         };
         #[cfg(not(feature = "fee-window"))]
-        let fee_window_flags: u16 = 0;
+        let _fee_window_flags: u16 = 0;
 
         // Memory diagnostics — log every 5 blocks to catch leaks early.
         // Reads /proc/self/status for VmRSS (no allocator dependency).
@@ -1520,6 +1516,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
             height, target, all_txs.len());
         let miner_consensus = dwow_chain::PoWConsensus::new(120, target, BlockTarget::new(1), BlockTarget::MAX);
         let miner = Miner::new(std::sync::Arc::new(miner_consensus));
+        #[allow(unused_mut)]
         let mut mined_block = match miner.mine(&vm, previous, height, all_txs, target, &uncles) {
             Ok(b) => {
                 info!(target: "dwowd::miner_task",

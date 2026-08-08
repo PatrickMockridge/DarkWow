@@ -94,19 +94,30 @@ impl ContractCall {
         self.matches_contract_call_type(*DEPLOYOOOR_CONTRACT_ID, 0x00)
     }
 
-    /// Returns true if call is a native token fee.
+    /// Returns true if call is a native token FeeV2.
+    /// `[domain: mass_balance + fee_signalling]`
+    /// Uses the nominal `MassBalanceFeeV2CallData` type — no raw `data[0]` inspection.
+    pub fn is_mass_balance_fee_v2(&self) -> bool {
+        self.as_mass_balance_fee_v2().is_some()
+    }
+
+    /// Returns true if call is a native token PoW reward.
+    /// `[domain: mass_balance]` — block-opening coinbase nullifier claim.
+    /// Uses the nominal `MassBalanceCoinbaseV1CallData` type — no raw `data[0]` inspection.
+    pub fn is_mass_balance_coinbase_v1(&self) -> bool {
+        self.as_mass_balance_coinbase_v1().is_some()
+    }
+
+    /// Returns true if call is a legacy native token fee (FeeV1 — removed).
+    /// Selector 0x00. Kept for legacy test compatibility only.
+    #[deprecated(note = "FeeV1 is removed. Use is_mass_balance_fee_v2() which checks FeeV2 (0x08).")]
     pub fn is_native_token_fee(&self) -> bool {
         self.matches_contract_call_type(*NATIVE_TOKEN_CONTRACT_ID, 0x00)
     }
 
-    /// Returns true if call is a native token PoW reward.
-    /// Selector 0x05 = NativeTokenFunction::PoWRewardV1 (was 0x02 = BurnV1 —
-    /// pre-existing bug B1, fixed per red-team audit).
-    pub fn is_native_token_pow_reward(&self) -> bool {
-        self.matches_contract_call_type(*NATIVE_TOKEN_CONTRACT_ID, 0x05)
-    }
-
     /// Returns true if call matches provided contract id and function code.
+    /// Prefer the typed accessors `as_mass_balance_fee_v2()`, `as_mass_balance_coinbase_v1()`,
+    /// `as_mass_balance_fee_collect_v1()` over this raw-byte method.
     pub fn matches_contract_call_type(&self, contract_id: ContractId, func_code: u8) -> bool {
         !self.data.is_empty() && self.contract_id == contract_id && self.data[0] == func_code
     }

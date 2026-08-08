@@ -59,38 +59,42 @@ barb `↓x` if `P` can engage in input or output on channel `x`.
 Every type SHALL define the barbs that processes at that type may exhibit.
 No type SHALL exhibit a barb that its definition does not declare.
 
-| Barb | Observable Action |
-|------|-------------------|
-| `↓spend` | Exercises a capability — consumes a resource and authorizes spawning of new resources. Requires possession of the capability's authorization secret. |
-| `↓view` | Decrypts an encrypted note addressed to the holder, revealing the capability parameters it contains. |
-| `↓nullify` | Publishes evidence that a capability instance has been exercised. Each exercise SHALL produce a unique nullifier. A nullifier appearing on-chain SHALL prevent re-exercise of the same capability instance. |
-| `↓commit` | Publishes the public face of a capability as a Commitment. The commitment cryptographically binds the capability parameters while revealing none of them. |
-| `↓prove` | Generates a zero-knowledge proof that the holder knows a witness satisfying the capability's predicate language, without revealing the witness. |
-| `↓verify` | Verifies a zero-knowledge proof or digital signature. Returns acceptance only if the proof is cryptographically valid against the declared public inputs. |
-| `↓dispatch` | Routes a capability exercise to the contract that recognizes it. The contract is identified by its ContractId. |
-| `↓gate` | Constrains capability exercise to a specific function. The function is identified by the contract's function code as declared in its manifest. |
-| `↓denominate` | Identifies the capability class. Two capabilities with different AssetId values SHALL be distinguishable by verifiers, even if all other parameters are identical. |
-| `↓prove-inclusion` | Proves membership of a commitment in a recognized set. In DarkWow: a Merkle proof from the commitment to a known Merkle root. |
-| `↓encrypt` | Produces ciphertext that only the holder of the corresponding decryption secret can decrypt. Uses Diffie-Hellman key agreement to derive a shared secret. |
-| `↓derive` | Derives a scoped sub-key from an existing secret. The derived key is bound to a specific contract instance and SHALL NOT be usable in other contexts. |
-| `↓discover` | Detects capabilities addressed to the holder. In DarkWow: trial AEAD decryption of encrypted notes in block call data. |
-| `↓mine` | Produces a valid coinbase commitment. The coinbase is the consensus mechanism that creates the native asset (DRKW). Requires possession of a MiningRecipient. |
-| `↓concurrent` | Executes in parallel with sibling processes. Requires no shared mutable state dependency between the processes. |
-| `↓merge` | Deterministically combines concurrent state diffs. Two processes with disjoint key sets SHALL produce mergeable state deltas. |
-| `↓sync-barrier` | Blocks until a synchronization condition is met. Used to coordinate processes across execution waves. |
+| Barb | Domain | Observable Action |
+|------|--------|-------------------|
+| `↓spend` | consensus | Exercises a capability — consumes a resource and authorizes spawning of new resources. Requires possession of the capability's authorization secret. |
+| `↓view` | wallet | Decrypts an encrypted note addressed to the holder, revealing the capability parameters it contains. |
+| `↓nullify` | consensus | Publishes evidence that a capability instance has been exercised. Each exercise SHALL produce a unique nullifier. A nullifier appearing on-chain SHALL prevent re-exercise of the same capability instance. |
+| `↓commit` | consensus | Publishes the public face of a capability as a Commitment. The commitment cryptographically binds the capability parameters while revealing none of them. |
+| `↓prove` | consensus | Generates a zero-knowledge proof that the holder knows a witness satisfying the capability's predicate language, without revealing the witness. |
+| `↓verify` | consensus | Verifies a zero-knowledge proof or digital signature. Returns acceptance only if the proof is cryptographically valid against the declared public inputs. |
+| `↓dispatch` | consensus | Routes a capability exercise to the contract that recognizes it. The contract is identified by its ContractId. |
+| `↓gate` | dispatch | Constrains capability exercise to a specific function. The function is identified by the contract's function code as declared in its manifest. |
+| `↓denominate` | consensus | Identifies the capability class. Two capabilities with different AssetId values SHALL be distinguishable by verifiers, even if all other parameters are identical. |
+| `↓prove-inclusion` | consensus | Proves membership of a commitment in a recognized set. In DarkWow: a Merkle proof from the commitment to a known Merkle root. |
+| `↓encrypt` | wallet | Produces ciphertext that only the holder of the corresponding decryption secret can decrypt. Uses Diffie-Hellman key agreement to derive a shared secret. |
+| `↓derive` | wallet | Derives a scoped sub-key from an existing secret. The derived key is bound to a specific contract instance and SHALL NOT be usable in other contexts. |
+| `↓discover` | wallet | Detects capabilities addressed to the holder. In DarkWow: trial AEAD decryption of encrypted notes in block call data. |
+| `↓mine` | mass_balance | Produces a valid coinbase commitment. The coinbase is the consensus mechanism that creates the native asset (DRKW). Requires possession of a MiningRecipient. |
+| `↓concurrent` | execution | Executes in parallel with sibling processes. Requires no shared mutable state dependency between the processes. |
+| `↓merge` | execution | Deterministically combines concurrent state diffs. Two processes with disjoint key sets SHALL produce mergeable state deltas. |
+| `↓sync-barrier` | execution | Blocks until a synchronization condition is met. Used to coordinate processes across execution waves. |
 | `↓broadcast` | Publishes a message to multiple subscribers simultaneously. The message SHALL be delivered to all active subscribers. |
 | `↓rate-limit` | Constrains output rate for backpressure. The process SHALL NOT exceed its declared rate budget. |
 | `↓gossip-forward` | Relays an inbound message to a subset of outbound peers. Forwarding SHALL exclude the origin peer. |
 | `↓quorum-query` | Queries a threshold of peers and converges on agreement. Agreement requires a supermajority of queried peers. |
 | `↓dag-parent` | References prior events in a partial-order data structure. The reference forms a directed acyclic graph edge. |
-| `↓pay-fee` | Exercises FeeV2 — spends a coin via nullifier, splits value into change + fee. Fee commitment accumulated into `fee_commit_accumulator`. See [fee-spec.md §5.6](consensus/fee-spec.md). |
-| `↓collect-fees` | Exercises FeeCollectV1 — verifies PedersenCommit(total, blind) == fee_commit_accumulator, mints fee coin to miner, resets accumulator and fees_db. See [fee-spec.md §4.2](consensus/fee-spec.md). |
-| `↓threshold-prove` | Proves hidden fee meets public threshold — gates mempool tier admission. Uses FeeThreshold_V1 circuit. See [mempool.md §5](mempool.md). |
-| `↓bad-fee-amount` | input.value <= fee — rejected at FeeV2CallBuilder::build(). |
-| `↓bad-threshold-proof` | FeeThreshold_V1 verification fails — transaction rejected from mempool. See [mempool.md §5.2](mempool.md). |
-| `↓bad-merkle-root` | Merkle root not found in coin_roots_db — rejected at fee_v2 exec. |
-| `↓zero-claim` | FeeCollectV1 total_fees == 0 — rejected as replay attack. |
-| `↓bad-claim` | FeeCollectV1 PedersenCommit(total, blind) != fee_commit_accumulator — claimed amount mismatch against commitment sum. See [fee-spec.md §4.2](consensus/fee-spec.md). |
+| `↓pay-fee` | mass_balance | Exercises FeeV2 — spends a coin via nullifier, splits value into change + fee. Fee commitment accumulated into `fee_commit_accumulator`. See [fee-spec.md §5.6](consensus/fee-spec.md). |
+| `↓collect-fees` | mass_balance | Exercises FeeCollectV1 — verifies PedersenCommit(total, blind) == fee_commit_accumulator, mints fee coin to miner, resets accumulator and fees_db. See [fee-spec.md §4.2](consensus/fee-spec.md). |
+| `↓threshold-prove` | fee_signalling | Proves hidden fee meets public threshold — gates mempool tier admission. Uses FeeThreshold_V1 circuit. See [mempool.md §5](mempool.md). |
+| `↓bad-fee-amount` | mass_balance | input.value <= fee — rejected at FeeV2CallBuilder::build(). |
+| `↓bad-threshold-proof` | fee_signalling | FeeThreshold_V1 verification fails — transaction rejected from mempool. See [mempool.md §5.2](mempool.md). |
+| `↓bad-merkle-root` | mass_balance | Merkle root not found in coin_roots_db — rejected at fee_v2 exec. |
+| `↓zero-claim` | mass_balance | FeeCollectV1 total_fees == 0 — rejected as replay attack. |
+| `↓bad-claim` | mass_balance | FeeCollectV1 PedersenCommit(total, blind) != fee_commit_accumulator — claimed amount mismatch against commitment sum. See [fee-spec.md §4.2](consensus/fee-spec.md). |
+| `↓fee-window-open` | fee_signalling | Window boundary at `height ≡ 0 (mod N)`, height > 0. CF_premium and CF_standard recomputed from mempool queue depths. Fires exactly once per window boundary — the trigger for all subsequent window-transition actions. See [fee-spec.md §12.2](consensus/fee-spec.md). |
+| `↓fee-window-advertise` | fee_signalling | Miner sets `fee_window_flags` in BlockHeader at the final block of a fee window. Encodes CF direction (hold/+10%/-10%) into the 4-bit congestion_multiplier field for wallet threshold discovery. See [fee-spec.md §12.6](consensus/fee-spec.md). |
+| `↓fee-window-enforce` | fee_signalling | Mempool applies window thresholds to new transaction arrivals. Tx admitted to premium/general tier or rejected per fee-spec.md §12.8.1. FCFS within tier. Thresholds read via `AtomicU64::Acquire` on the mempool hot path. See [fee-spec.md §12.8](consensus/fee-spec.md). |
+| `↓fee-window-discover` | fee_signalling | Wallet reads `fee_window_flags` from latest block header, decodes active thresholds via `WindowSignalling::decode_next_premium()`, constructs FeeThreshold_V1 proof against the correct threshold. If the window boundary passes before mining, wallet SHALL re-query and re-prove. See [fee-spec.md §12.9](consensus/fee-spec.md). |
 
 ### 1.2 Bisimulation
 
@@ -688,19 +692,68 @@ not cryptographic secrets.
 
 ### 8.2 Structural Types
 
-| Type | Composition | Barbs |
-|------|------------|-------|
-| `Transaction` | `{ version: u8, inputs: Vec<TxInput>, outputs: Vec<TxOutput>, contract_calls: Vec<ContractCall>, lock_time: u64, nullifiers: Vec<Nullifier>, witness: Vec<u8> }` | `↓process` |
-| `TxInput` | `{ previous_output: blake3::Hash, script: Vec<u8>, sequence: u32 }` | — |
-| `TxOutput` | `{ value: u64, script: Vec<u8> }` | — |
-| `ContractCall` | `{ contract_id: ContractId, data: Vec<u8> }` | `↓invoke` |
-| `CoinbaseTransaction` | `{ proof: Vec<u8>, public_inputs: ZkPublicInputs<9>, coin: CoinCommitment, value_commit_x: PedersenCoordinate, value_commit_y: PedersenCoordinate, token_commit: TokenCommitment, nullifier: Nullifier, new_cumulative_x: PedersenCoordinate, new_cumulative_y: PedersenCoordinate, encrypted_note: Vec<u8> }` | `↓mine` |
-| `CoinCommitment` | `pallas::Base` — `C = poseidon_hash([pk.x, pk.y, value, asset_id, ...])` | `↓commit` |
-| `TokenCommitment` | `pallas::Base` — `poseidon_hash(asset_id, token_blind)` | `↓denominate` |
-| `PedersenCoordinate` | `pallas::Base` — one coordinate of a Pedersen value commitment | — |
-| `ZkPublicInputs<N>` | `[[u8; 32]; N]` — N circuit-specific elements exposed to the verifier | `↓verify` |
-| `BlockHeader` | `{ merkle_root, previous, height, ... }` — all merkle roots SHALL be `blake3::Hash` | `↓validate-pow` |
-| `AeadEncryptedNote` | `{ ciphertext, ephem_public: PublicKey }` | `↓discover` |
+Structural types are organized by architectural domain per [fee-spec.md §0](consensus/fee-spec.md).
+The domain column communicates whether a type participates in the consensus-critical
+Pedersen mass balance proof (verified during `accept_block`) or the fee_signalling
+coordination protocol (verified at mempool admission).
+
+#### 8.2.1 Core Blockchain Types
+
+| Type | Composition | Barbs | Domain |
+|------|------------|-------|--------|
+| `Transaction` | `{ version: u8, inputs: Vec<TxInput>, outputs: Vec<TxOutput>, contract_calls: Vec<ContractCall>, lock_time: u64, nullifiers: Vec<Nullifier>, witness: Vec<u8> }` | `↓process` | consensus |
+| `TxInput` | `{ previous_output: blake3::Hash, script: Vec<u8>, sequence: u32 }` | — | consensus |
+| `TxOutput` | `{ value: u64, script: Vec<u8> }` | — | consensus |
+| `ContractCall` | `{ contract_id: ContractId, data: Vec<u8> }` | `↓invoke` | dispatch |
+| `CoinbaseTransaction` | `{ proof: Vec<u8>, public_inputs: ZkPublicInputs<9>, coin: CoinCommitment, value_commit_x: PedersenCoordinate, value_commit_y: PedersenCoordinate, token_commit: TokenCommitment, nullifier: Nullifier, new_cumulative_x: PedersenCoordinate, new_cumulative_y: PedersenCoordinate, encrypted_note: Vec<u8> }` | `↓mine` | mass_balance |
+| `CoinCommitment` | `pallas::Base` — `C = poseidon_hash([pk.x, pk.y, value, asset_id, ...])` | `↓commit` | consensus |
+| `TokenCommitment` | `pallas::Base` — `poseidon_hash(asset_id, token_blind)` | `↓denominate` | consensus |
+| `PedersenCoordinate` | `pallas::Base` — one coordinate of a Pedersen value commitment | — | mass_balance |
+| `ZkPublicInputs<N>` | `[[u8; 32]; N]` — N circuit-specific elements exposed to the verifier | `↓verify` | consensus |
+| `BlockHeader` | `{ merkle_root, previous, height, ... }` — all merkle roots SHALL be `blake3::Hash` | `↓validate-pow` | consensus |
+| `AeadEncryptedNote` | `{ ciphertext, ephem_public: PublicKey }` | `↓discover` | wallet |
+
+#### 8.2.2 Mass Balance Types (consensus-critical)
+
+These types participate in the Pedersen mass balance proof verified during
+`accept_block`. Their `MassBalance` prefix communicates domain membership:
+editing code that references these types means editing consensus-critical
+block verification.
+
+| Type | Composition | Barbs | Domain |
+|------|------------|-------|--------|
+| `MassBalanceCoinbaseV1CallData` | `MassBalanceCoinbaseV1Selector` (zero-sized) + `PoWRewardParamsV1` | `↓gate`, `↓mine` | mass_balance |
+| `MassBalanceCoinbaseV1Selector` | Zero-sized witness type — hardcodes selector byte `0x05` | `↓gate` | mass_balance |
+| `MassBalanceFeeCollectV1CallData` | `MassBalanceFeeCollectV1Selector` + `FeeCollectParamsV1` | `↓gate`, `↓collect-fees` | mass_balance |
+| `MassBalanceFeeCollectV1Selector` | Zero-sized witness type — hardcodes selector byte `0x06` | `↓gate` | mass_balance |
+
+#### 8.2.3 Dual-Domain Type (mass_balance + fee_signalling)
+
+`MassBalanceFeeV2CallData` is the only dual-domain type. It carries both
+`↓pay-fee` [mass_balance] (Pedersen value conservation, verified during
+`accept_block`) and `↓threshold-prove` [fee_signalling] (fee ≥ threshold,
+verified at mempool admission).
+
+| Type | Composition | Barbs | Domain |
+|------|------------|-------|--------|
+| `MassBalanceFeeV2CallData` | `MassBalanceFeeV2Selector` (zero-sized) + `FeeParamsV2` | `↓gate`, `↓pay-fee`, `↓threshold-prove` | mass_balance + fee_signalling |
+| `MassBalanceFeeV2Selector` | Zero-sized witness type — hardcodes selector byte `0x08` | `↓gate` | dispatch |
+
+The `MassBalanceFeeV2Selector` is a zero-sized witness: it SHALL be constructible only via
+`MassBalanceFeeV2Selector::new()` which hardcodes `0x08`. No `From<u8>` impl exists. Its
+sole purpose is to witness the `↓gate` barb at the type level — the selector byte
+is guaranteed by construction, never recovered from `data[0]` at runtime.
+
+`MassBalanceFeeV2CallData` carries its own barbs (`↓gate`, `↓pay-fee`, `↓threshold-prove`).
+A process receiving a `MassBalanceFeeV2CallData` observes these barbs on the name; it does
+NOT inspect `data[0]` to determine the fee function. The `from_bytes()` constructor
+is the single absorber boundary (§10.5) where raw bytes are re-lifted to the
+nominal type.
+
+`ContractCall` SHALL provide typed accessors that return `Option<MassBalanceFeeV2CallData>`,
+`Option<MassBalanceCoinbaseV1CallData>`, and `Option<MassBalanceFeeCollectV1CallData>`. The `Option`
+return forces the consumer to handle both `Some` (typed, barb-carrying) and
+`None` (opaque bytes) — the compiler SHALL enforce this exhaustiveness.
 
 A `Transaction`'s `witness` carries the ZK proofs and signatures as an opaque,
 dwow_serial-encoded bundle. The witness SHALL be carried end-to-end (broadcast →
@@ -715,7 +768,7 @@ The `nullifiers` field carries pre-extracted nullifiers for the mempool's
 double-spend detection ([mempool.md §2](mempool.md)). When empty, it SHALL be
 omitted from the serialized form to preserve hash determinism across code versions.
 
-### 8.2.1 BlockHash — Nominal Hash on the Wire
+### 8.2.4 BlockHash — Nominal Hash on the Wire
 
 Block hashes crossing the P2P wire SHALL be the nominal type `BlockHash`, never
 bare `String`. The `Tip.hash` field and `Tip.genesis_hash` field SHALL be
@@ -770,6 +823,11 @@ code that treats the left type as the right type.
 | `FuncId` | `pallas::Base` | `↓gate` ≠ no barbs |
 | `AssetId` | `pallas::Base` | `↓denominate` ≠ no barbs |
 | `OwnedSecretKey` | `SecretKey` | `↓spend` requires declaration; `SecretKey` may be random |
+| `FeeV2CallData` | `Vec<u8>` | `↓gate`, `↓pay-fee`, `↓threshold-prove` ≠ no barbs |
+| `FeeV2Selector` | `u8` | `↓gate` ≠ no barbs — `0x08` is NOT interchangeable with any arbitrary byte |
+| `MassBalanceFeeV2CallData` | `Vec<u8>` | `↓gate`, `↓pay-fee` [mass_balance], `↓threshold-prove` [fee_signalling] ≠ no barbs |
+| `MassBalanceCoinbaseV1CallData` | `Vec<u8>` | `↓gate`, `↓mine` [mass_balance] ≠ no barbs |
+| `MassBalanceFeeCollectV1CallData` | `Vec<u8>` | `↓gate`, `↓collect-fees` [mass_balance] ≠ no barbs |
 
 ### 8.5 Shared Derives
 
@@ -1267,6 +1325,7 @@ enforcement mechanisms are:
 |----------|--------------------|--------------------|-------------|--------------|
 | P2P wire (`channel.rs`) | `from_bytes`/`AsyncDecodable` per message | `ban()` → Black; `hosts` quarantine | `MeteringQueue`; per-message `MAX_BYTES`, `MAX_COMMAND_LENGTH` | `src/net/tests.rs` (command-length, message-length, MissingDispatcher bans; `p2p_test` hostlist) |
 | Mempool admission (`zk_verifier.rs`) | `decode_and_reconcile`; nullifier checks; proof-presence structural check | Transaction dropped on admission failure; blacklist-able peer by caller | Gas-limit equivalent per block | `src/linear/src/zk_verifier.rs` tests |
+| **FeeV2 call data absorber** (`fee_v2_data.rs`) | `MassBalanceFeeV2CallData::from_bytes(&data)` — validates `data[0] == 0x08` AND `FeeParamsV2::decode(&data[1..])` succeeds; returns `Option<MassBalanceFeeV2CallData>`, never inspects `data[0]` at call sites | `Option::None` path skips FeeV2 admission — no false routing of garbage bytes to the fee path | None (type-level only) | Unit tests on `MassBalanceFeeV2CallData::from_bytes` (valid, invalid selector, truncated data, malformed params) |
 | Contract entrypoints (`execution.rs`) | `ContractId::from_bytes`; entrypoint data-length gating; auto-validating `deserialize` on typed params | Call failure reverts to checkpoint; canonical failures reject the block | `BLOCK_GAS_LIMIT` | Contract WASM tests (per-contract) |
 | Wallet manifest (`manifest.rs`) | Closed vocabularies for parameter types, barbs, primitives — unknown name = parse error, not passthrough | Typed error barbs returned to caller; no fallback | TOML length / field count caps; circuit witness binding depth | SDK manifest tests; Lean `walletConstruct_sound` |
 | Persistence (`store.rs`/`walletdb.rs`/`supply_chain.rs`) | `from_le_bytes`/`from_bytes` named constructors; sled key width is canonical 8-byte LE (§2.3) | Write failure returns `Result::Err` — no silent truncation | B-tree key ordering; SQLite `INTEGER` domain | `chain_state.rs` persistence round-trip tests |
