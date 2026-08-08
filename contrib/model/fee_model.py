@@ -1,20 +1,74 @@
 """Fee Payment and Collection — Python 1:1 Executable Specification
 ===================================================================
 
-This is the specification for FeeV1, FeeV2, FeeCollectV1, the coin Merkle tree,
-and the two-tier mempool. Per memory rule python-model-is-the-spec, this model
-is the ground truth. The Rust implementation SHALL follow this model exactly.
+This is the specification for FeeV2 (MassBalanceFeeV2CallData), FeeCollectV1
+(MassBalanceFeeCollectV1CallData), CoinbaseV1 (MassBalanceCoinbaseV1CallData),
+the coin Merkle tree, and the two-tier mempool. Per memory rule
+python-model-is-the-spec, this model is the ground truth. The Rust
+implementation SHALL follow this model exactly.
+
+Process Engineering Analogy
+---------------------------
+In Bitcoin, fees are transparent — you can see every amount and every coinbase
+output on the ledger. In a privacy-preserving system with hidden fees (Pedersen
+commitments) and zero-knowledge proofs, you cannot "see inside the pipe." You
+need instrumentation and proofs — exactly as in chemical/process engineering,
+where you can't see inside a distillation column, reactor, or pipeline and must
+rely on flow meters, pressure gauges, and control valves.
+
+This model implements the complete "pipe → valve → meter" system:
+
+  ┌─────────────────────────┐      ┌─────────────────────────────┐
+  │  FEE SIGNALLING          │      │  MASS BALANCE                │
+  │  (control valve)         │      │  (flow meter / totalizer)     │
+  │                          │      │                               │
+  │  TwoTierMempool          │      │  FeeCommitAccumulator         │
+  │  verify_fee_threshold()  │      │  verify_proof_of_token_       │
+  │                          │      │  balance() / _v2()            │
+  │  threshold = choke       │      │                               │
+  │  fee window = PID        │      │  Σout + Σfees + Σburns        │
+  │  controller              │      │  == Σin                       │
+  │                          │      │                               │
+  │  fee_signalling domain   │      │  mass_balance domain          │
+  └─────────────────────────┘      └─────────────────────────────┘
+           │                                 │
+           │  transactions admitted          │  block verified
+           │  (with fee commitments)         │  (Pedersen mass balance)
+           ▼                                 ▼
+     FeeThreshold_V1 proof              accept_block WASM execution
+
+The dual-domain type MassBalanceFeeV2CallData (0x08) carries both signals:
+  ↓pay-fee [mass_balance]      — value conservation for the flow meter
+  ↓threshold-prove [fee_signalling] — threshold proof for the control valve
+
+Every component in this model is annotated with its process engineering role.
+
+Domain architecture (fee-spec.md §0):
+  mass_balance   — consensus-critical block proof (Pedersen value conservation,
+                   coinbase nullifier claims, fee collector accumulator reset)
+  fee_signalling — non-consensus coordination (fee threshold proofs, mempool
+                   admission gates, fee window congestion factors)
 
 Specification reference: doc/src/arch/consensus/fee-spec.md
 
 Covers:
   §1  — Coin Merkle Tree (incremental, UNCOMMITTED_ORCHARD=2, zero guard)
+       [the pipe — contains coins in transit]
   §2  — Block Production Model (sequential overlay, coin tree growth)
-  §3  — FeeV1 (clear-text fee, 14 circuit public inputs)
-  §4  — FeeCollectV1 (claims accumulated fees, closes tree)
-  §5  — FeeV2 (hidden fee, Pedersen commitment, FeeThreshold_V1 proof)
+       [domain: mass_balance — batch process]
+  §3  — FeeV1 (clear-text fee, 14 circuit public inputs) — removed
+  §4  — MassBalanceFeeCollectV1CallData [domain: mass_balance]
+       (claims accumulated fees, closes tree) — the meter-close event
+  §5  — MassBalanceFeeV2CallData [domain: mass_balance + fee_signalling]
+       (hidden fee, Pedersen commitment, FeeThreshold_V1 proof)
+       — the dual-domain instrument (meter pulse + valve check)
+  §5.5 — FeeThreshold_V1 [domain: fee_signalling]
+       (proves fee >= threshold without revealing fee)
+       — the pressure gauge on the control valve
   §6  — FeeAmount nominal type (u64 wrapper, no bare int crossing boundaries)
-  §7  — Two-Tier Mempool (premium/general thresholds, FIFO, REJECT)
+  §7  — Two-Tier Mempool [domain: fee_signalling]
+       (premium/general thresholds, FIFO, REJECT)
+       — the control valve with two-stage choke
 
 Extended from contrib/model/proof_of_token_balance.py — all 9 original tests
 migrated + new FeeV2 and merkle tree tests.
@@ -61,6 +115,20 @@ def _combine(altitude: int, left: int, right: int) -> int:
 
 class CoinTree:
     """Incremental Merkle tree of coin commitments (spec §1.1).
+
+    PROCESS ENGINEERING: The CoinTree is the PIPE — the physical containment
+    vessel that holds coins in transit. Every coin entering the system (coinbase
+    mint, transfer output) is appended to the tree. Every coin leaving (transfer
+    input, fee payment, burn) is proven to exist at a prior merkle root.
+
+    Position 0 is the ZERO_GUARD — the pipe's blank flange. Position 1 onward
+    are real coins. Empty positions are UNCOMMITTED_ORCHARD (value 2), NOT zero —
+    a zero leaf would leak information about which positions are occupied.
+
+    The merkle path for each coin is a cryptographic sight glass: it proves
+    the coin is at a specific position in the pipe without revealing the
+    contents of other positions. The verifier sees only the path, not the
+    tree — exactly as a sight glass shows level without revealing composition.
 
     CoinTree = BridgeTree<MerkleNode, usize, 32>
     MerkleNode = MerkleNode(pallas::Base)  — modeled as int
@@ -263,8 +331,9 @@ def unbalanced_mint(value: int) -> PedersenCommitment:
 
 
 # ============================================================
-# §5 — FeeV2: Hidden Fee with Pedersen Commitment
-# ============================================================
+# §5 — MassBalanceFeeV2: Hidden Fee with Pedersen Commitment
+# [domain: mass_balance + fee_signalling]
+# ===============================================================
 
 def balanced_fee_v2(input_value: int, fee: int,
                      fee_blind: int) -> tuple[PedersenCommitment,
@@ -291,17 +360,28 @@ def balanced_fee_v2(input_value: int, fee: int,
 
 # ============================================================
 # §5.5 — FeeThreshold_V1: Prove fee >= threshold without revealing fee
+# [domain: fee_signalling]
 # ============================================================
 
 def verify_fee_threshold(fee: int, threshold: int) -> tuple[bool, str]:
     """FeeThreshold_V1 circuit model (spec §5.5).
 
+    PROCESS ENGINEERING: This is the PRESSURE GAUGE on the control valve.
+    It measures the pressure differential (fee) across the valve and checks
+    it against the choke setting (threshold). If fee < threshold, the
+    pressure is insufficient to open the valve — the transaction cannot
+    pass through to the mempool.
+
+    The tx_binding field acts as an anti-tamper seal on the gauge: the
+    proof is cryptographically bound to a specific threshold value. A
+    proof constructed for threshold=100 cannot be replayed where
+    threshold=500 is expected — the tx_binding hash would differ and the
+    proof would fail verification. This prevents an attacker from taking
+    a proof for the general tier and reusing it for premium.
+
     Constraint: range_check(64, fee - threshold).
     If fee < threshold, subtraction underflows in pallas::Base,
     producing a value near p - (threshold - fee) which fails range check.
-
-    tx_binding = poseidon(DOMAIN_TX_BINDING, tx_commitment, threshold)
-    — binds proof to a specific threshold to prevent replay.
     """
     diff = fee - threshold
     if diff < 0:
@@ -312,20 +392,36 @@ def verify_fee_threshold(fee: int, threshold: int) -> tuple[bool, str]:
 
 
 # ============================================================
-# §7 — Two-Tier Mempool
+# §7 — Two-Tier Mempool [domain: fee_signalling]
 # ============================================================
 
 class TwoTierMempool:
     """Two-tier mempool with threshold-based admission (spec §7).
 
-    Premium queue: fee >= PREMIUM_THRESHOLD (FIFO)
-    General queue: fee >= GENERAL_THRESHOLD (FIFO)
-    REJECT: fee < GENERAL_THRESHOLD
+    PROCESS ENGINEERING: The TwoTierMempool is the CONTROL VALVE on the
+    transaction pipeline. It regulates flow into the block production process
+    based on fee pressure (pressure differential across the valve).
+
+    - Premium tier: fee >= PREMIUM_THRESHOLD (42M base units)
+      The valve is wide open — low pressure drop needed.
+    - General tier: fee >= GENERAL_THRESHOLD (1M base units)
+      The valve is partially open — moderate pressure drop needed.
+    - REJECT: fee < GENERAL_THRESHOLD
+      The valve is CLOSED — insufficient pressure to pass.
+
+    The valve is two-stage: premium transactions flow through the larger
+    port, general through the smaller. When selecting for block inclusion,
+    premium is drained first (FIFO within tier), then general. This is
+    exactly a priority flow control valve — higher-pressure fluid (higher
+    fee) gets precedence, but within the same pressure band, first-come-first-
+    served.
 
     In the real system, admission is gated by FeeThreshold_V1 proof
-    verification. This model simulates proof verification by checking
-    the fee against thresholds directly (equivalent under honest prover).
-    """
+    verification — the cryptographic pressure gauge. This model simulates
+    proof verification by checking the fee against thresholds directly
+    (equivalent under honest prover). The fee window (not modeled here)
+    acts as the PID controller that adjusts thresholds based on congestion
+    (block fill rate vs capacity)."""
 
     def __init__(self, premium_threshold: int = PREMIUM_THRESHOLD,
                  general_threshold: int = GENERAL_THRESHOLD):
@@ -389,15 +485,39 @@ class TwoTierMempool:
 
 
 # ============================================================
-# §4 — FeeCollectV1: Fee Collection + §5.6 Fee Commitment Accumulation
-# ============================================================
+# §4 — MassBalanceFeeCollectV1: Fee Collection + §5.6 Fee Commitment Accumulation
+# [domain: mass_balance]
+# ========================================================================
 
 class FeeCommitAccumulator:
     """Fee commitment accumulator per fee-spec.md §5.6.2.
 
+    PROCESS ENGINEERING: The FeeCommitAccumulator is the FLOW TOTALIZER —
+    an instrument that integrates discrete flow pulses into a cumulative
+    reading. Each FeeV2 transaction contributes a Pedersen commitment
+    (fee_value_commit) to the accumulator via homomorphic addition:
+
+      accumulator = accumulator + fee_value_commit  (Pedersen add)
+
+    The accumulator starts at Identity (zero) at the beginning of each
+    block — the totalizer is zeroed. As FeeV2 calls execute, the
+    accumulator grows. At the end of the block, FeeCollectV1 reads the
+    totalizer, verifies it matches the claimed fee total, and resets it
+    to Identity for the next block.
+
+    Why Pedersen homomorphism matters: the totalizer can SUM commitments
+    without knowing any individual fee value:
+
+      Commit(f₁, b₁) + Commit(f₂, b₂) = Commit(f₁+f₂, b₁+b₂)
+
+    The verifier sees the sum but NOT the individual terms. This is the
+    cryptographic equivalent of a flow totalizer that integrates all
+    pulses into a single reading — you know the total flow but can't
+    reconstruct individual pulse magnitudes from the display.
+
     Maintains fee_commit_accumulator: pallas::Point as block-scoped state,
     initialized to Identity at the start of each block. Each FeeV2 call
-    adds its fee_value_commit. FeeCollectV1 verifies the Pedersen sum
+    adds its fee_value_commit. MassBalanceFeeCollectV1 verifies the Pedersen sum
     and resets to Identity.
     """
 
@@ -415,12 +535,19 @@ class FeeCommitAccumulator:
                      merkle_root: int) -> tuple[bool, str]:
         """Apply a FeeV2 call to the accumulator (spec §5.4).
 
+        PROCESS ENGINEERING: One PULSE on the flow totalizer. Each FeeV2
+        transaction adds its fee_value_commit to the accumulator via
+        Pedersen homomorphic addition. The nullifier ensures each pulse
+        is counted exactly once (no double-counting). The coin's merkle
+        root proves the input coin exists in the pipe (the sight glass
+        confirms the fluid is real, not imaginary).
+
         Preconditions (P4-P8):
           - P4: Threshold proof verification (caller responsibility — see
-                verify_fee_threshold)
+                verify_fee_threshold) — the pressure gauge check
           - P5: PedersenVerify(fee_value_commit, fee, blind) — defense-in-depth
-          - P6: merkle_root in coin_roots_db
-          - P7: nullifier not already spent
+          - P6: merkle_root in coin_roots_db — sight glass verification
+          - P7: nullifier not already spent — no double-counting
           - P8: output coin not already in coins_db
         """
         if nullifier in self.nullifiers_db:
@@ -431,7 +558,21 @@ class FeeCommitAccumulator:
 
     def apply_fee_collect(self, total_fees: int, total_blind: int,
                           height: int) -> tuple[bool, str]:
-        """Apply FeeCollectV1 (spec §4.2).
+        """Apply MassBalanceFeeCollectV1 — the METER-READING event (spec §4.2).
+
+        PROCESS ENGINEERING: This is the end-of-block meter reading.
+        FeeCollectV1 verifies that the totalizer (fee_commit_accumulator)
+        matches the claimed fee total (total_fees with blinding factor
+        total_blind). If the Pedersen commitment equality holds, the
+        meter is read successfully — the fee pot is transferred to the
+        miner and the totalizer is RESET to Identity (zeroed) for the
+        next block.
+
+        C1 (total_fees > 0) prevents zero-claim replay attacks — you
+        can't zero the meter without actually moving anything through it.
+        C2 (PedersenCommit match) is the actual meter reading — the
+        homomorphic sum of all FeeV2 commitments MUST equal the claimed
+        commitment.
 
         Preconditions:
           C1: total_fees > 0
@@ -461,12 +602,27 @@ class FeeCommitAccumulator:
 
 # ============================================================
 # Block Model — Canonical Ordering, Overlay Visibility (§2)
+# [domain: mass_balance]
 # ============================================================
 
 class BlockBuilder:
     """Models a single block's transaction sequence per fee-spec.md §2.
 
-    Canonical order: coinbase[0], user txs [1..k], FeeCollectV1 [k+1] (iff
+    PROCESS ENGINEERING: A block is a BATCH PROCESS — a fixed sequence of
+    operations that runs to completion within a single processing window
+    (the block). The canonical order is:
+
+      1. MassBalanceCoinbaseV1 (meter OPEN)  — creates coinbase UTXO at position 0
+      2. FeeV2 × N          (meter PULSES)  — each adds fee_commit to totalizer
+      3. MassBalanceFeeCollectV1 (meter CLOSE) — reads totalizer, verifies, resets
+
+    Invariant 1 (Overlay Visibility): each call sees the state writes of all
+    preceding calls within the same block. The FeeV2 at position 3 can see
+    the coinbase root written at position 0. This is sequential batch
+    processing — the pipe flows in one direction, and each instrument
+    reads the state left by the instrument before it.
+
+    Canonical order: coinbase[0], user txs [1..k], MassBalanceFeeCollectV1 [k+1] (iff
     total_fees > 0). Invariant 1 (Overlay Visibility): call i observes state
     writes of calls 0..i-1 within the same block.
     """
@@ -479,17 +635,17 @@ class BlockBuilder:
         self._has_fee_collect = False
 
     def add_coinbase(self) -> None:
-        """Add PoWRewardV1 as transactions[0] (spec §2.1)."""
+        """Add MassBalanceCoinbaseV1 [domain: mass_balance] as transactions[0] (spec §2.1)."""
         assert not self._has_coinbase, "coinbase already added"
         assert len(self.transactions) == 0, "coinbase must be first"
-        self.transactions.append("PoWRewardV1")
+        self.transactions.append("MassBalanceCoinbaseV1")
         self._has_coinbase = True
 
     def add_fee_v2(self, name: str, in_commit, out_commit, fee_commit,
                    nullifier: int, merkle_root: int) -> tuple[bool, str]:
         """Add a FeeV2 call. txs[1..k] come after coinbase."""
         assert self._has_coinbase, "coinbase must be first"
-        assert not self._has_fee_collect, "FeeCollectV1 already added"
+        assert not self._has_fee_collect, "MassBalanceFeeCollectV1 already added"
         ok, msg = self.acc.apply_fee_v2(
             in_commit, out_commit, fee_commit, nullifier, merkle_root)
         if ok:
@@ -497,15 +653,15 @@ class BlockBuilder:
         return ok, msg
 
     def add_fee_collect(self, total_fees: int, total_blind: int) -> tuple[bool, str]:
-        """Add FeeCollectV1 as the FINAL transaction (§2.1, §4.4)."""
-        assert self._has_coinbase, "coinbase must exist before FeeCollectV1"
-        assert not self._has_fee_collect, "FeeCollectV1 already added"
-        # §4.4: FeeCollectV1 SHALL be absent when total_fees == 0
+        """Add MassBalanceFeeCollectV1 [domain: mass_balance] as the FINAL transaction (§2.1, §4.4)."""
+        assert self._has_coinbase, "coinbase must exist before MassBalanceFeeCollectV1"
+        assert not self._has_fee_collect, "MassBalanceFeeCollectV1 already added"
+        # §4.4: MassBalanceFeeCollectV1 SHALL be absent when total_fees == 0
         if total_fees == 0:
-            return False, "↓zero-claim: no FeeCollectV1 when total_fees == 0"
+            return False, "↓zero-claim: no MassBalanceFeeCollectV1 when total_fees == 0"
         ok, msg = self.acc.apply_fee_collect(total_fees, total_blind, self.height)
         if ok:
-            self.transactions.append("FeeCollectV1")
+            self.transactions.append("MassBalanceFeeCollectV1")
             self._has_fee_collect = True
         return ok, msg
 
@@ -527,7 +683,18 @@ def verify_proof_of_token_balance(coinbase_vc: PedersenCommitment,
                                    spend_outputs: list[PedersenCommitment],
                                    mint_outputs: list[PedersenCommitment],
                                    ) -> tuple[bool, str]:
-    """Verify block-level Pedersen mass balance.
+    """Verify block-level Pedersen mass balance (clear-text fees, FeeV1).
+
+    PROCESS ENGINEERING: The MASS BALANCE EQUATION — the fundamental flow
+    meter calculation. For every block:
+
+        Σoutputs + Σburns + Σfees == Σinputs
+
+    Monetary mass is conserved. Nothing enters the system except through the
+    coinbase (verified separately). Nothing leaves except through burns
+    (explicit destruction). The Pedersen homomorphic property allows adding
+    commitments on both sides and comparing the sums — the meter works
+    without seeing individual flow magnitudes.
 
     Equation: outputs + burn_inputs + fee_aggregate == inputs
     Coinbase is excluded from both sides — verified separately.
@@ -591,6 +758,20 @@ def verify_proof_of_token_balance_v2(
     mint_outputs: list[PedersenCommitment],
 ) -> tuple[bool, str]:
     """Verify block-level mass balance with HIDDEN fee commitments (FeeV2).
+
+    PROCESS ENGINEERING: The BLIND FLOW METER. Same mass balance equation
+    as V1, but fees are Pedersen commitments instead of plain integers:
+
+        Σoutputs + Σburns + Σfee_commitments == Σinputs
+
+    The verifier sees commitments, not fee amounts. Individual fee values
+    are hidden — the meter works blind. This is the cryptographic equivalent
+    of a sealed flow totalizer: you can verify the sum matches the expected
+    total without opening the individual instrument readings.
+
+    Why this works: Pedersen commitments are homomorphic.
+      Commit(f₁, b₁) + Commit(f₂, b₂) = Commit(f₁+f₂, b₁+b₂)
+    The meter sums the commitments without ever knowing f₁ or f₂.
 
     Difference from V1: fee_commitments are PedersenCommitment objects,
     not plain integers. The verifier sees commitments, not fee amounts.
@@ -963,11 +1144,11 @@ def test_coin_merkle_tree_empty_leaf_value():
 
 
 # ============================================================
-# Tests — FeeCollectV1 + Fee Commitment Accumulation (NEW)
+# Tests — MassBalanceFeeCollectV1 + Fee Commitment Accumulation (NEW)
 # ============================================================
 
 def test_fee_collect_v1_happy_path():
-    """FeeCollectV1: full lifecycle with N FeeV2 calls (spec §5.6.6)."""
+    """MassBalanceFeeCollectV1: full lifecycle with N FeeV2 calls (spec §5.6.6)."""
     acc = FeeCommitAccumulator()
     # Two FeeV2 calls
     f1_in, f1_out, f1_commit, f1_fee = balanced_fee_v2(5000, 300, 42)
@@ -980,28 +1161,28 @@ def test_fee_collect_v1_happy_path():
     expected_sum = pedersen_add(f1_commit, f2_commit)
     assert pedersen_eq(acc.accumulator, expected_sum), \
         f"accumulator should be sum of commitments: {acc.accumulator.v_part} vs {expected_sum.v_part}"
-    # FeeCollectV1 with correct total and blind sum
+    # MassBalanceFeeCollectV1 with correct total and blind sum
     total_fees = f1_fee + f2_fee
     total_blind = 42 + 99
     ok, msg = acc.apply_fee_collect(total_fees, total_blind, height=1)
-    assert ok, f"FeeCollectV1 should succeed: {msg}"
+    assert ok, f"MassBalanceFeeCollectV1 should succeed: {msg}"
     # Postconditions R3-R4
     assert acc.accumulator.v_part == 0, "R4: accumulator not reset to Identity"
     assert acc.accumulator.r_part == 0, "R4: accumulator blind not reset"
-    print("  PASS: FeeCollectV1 happy path — 2 FeeV2 → FeeCollectV1 → accumulator reset")
+    print("  PASS: MassBalanceFeeCollectV1 happy path — 2 FeeV2 → MassBalanceFeeCollectV1 → accumulator reset")
 
 
 def test_fee_collect_v1_zero_claim_rejected():
-    """FeeCollectV1: total_fees == 0 → ↓zero-claim (C1, §4.2)."""
+    """MassBalanceFeeCollectV1: total_fees == 0 → ↓zero-claim (C1, §4.2)."""
     acc = FeeCommitAccumulator()
     ok, msg = acc.apply_fee_collect(total_fees=0, total_blind=0, height=1)
     assert not ok, "zero-claim must be rejected"
     assert "zero-claim" in msg, f"wrong error: {msg}"
-    print("  REJECTED: FeeCollectV1 zero-claim — replay attack prevented")
+    print("  REJECTED: MassBalanceFeeCollectV1 zero-claim — replay attack prevented")
 
 
 def test_fee_collect_v1_bad_claim_rejected():
-    """FeeCollectV1: PedersenCommit mismatch → ↓bad-claim, Thm2 (§4.2 C2)."""
+    """MassBalanceFeeCollectV1: PedersenCommit mismatch → ↓bad-claim, Thm2 (§4.2 C2)."""
     acc = FeeCommitAccumulator()
     _, _, fee_commit, _ = balanced_fee_v2(5000, 300, 42)
     acc.apply_fee_v2(mk(5000, 99), mk(4700, 57), fee_commit, nullifier=1, merkle_root=0xAAA)
@@ -1013,7 +1194,7 @@ def test_fee_collect_v1_bad_claim_rejected():
     ok2, msg2 = acc.apply_fee_collect(total_fees=300, total_blind=999, height=1)
     assert not ok2, "wrong blind must be rejected"
     assert "bad-claim" in msg2, f"wrong error: {msg2}"
-    print("  REJECTED: FeeCollectV1 bad-claim — Thm2 Pedersen binding enforced")
+    print("  REJECTED: MassBalanceFeeCollectV1 bad-claim — Thm2 Pedersen binding enforced")
 
 
 def test_fee_commit_accumulation_soundness():
@@ -1141,36 +1322,36 @@ def test_feev2_duplicate_coin_rejected():
 
 
 def test_fee_collect_v1_conditional_presence():
-    """FeeCollectV1: present iff total_fees > 0 (§4.4).
+    """MassBalanceFeeCollectV1: present iff total_fees > 0 (§4.4).
 
-    When total_fees == 0, FeeCollectV1 SHALL be absent (zero-value replay attack).
-    When total_fees > 0, FeeCollectV1 SHALL be the final transaction.
+    When total_fees == 0, MassBalanceFeeCollectV1 SHALL be absent (zero-value replay attack).
+    When total_fees > 0, MassBalanceFeeCollectV1 SHALL be the final transaction.
     """
     acc = FeeCommitAccumulator()
     bb = BlockBuilder(height=1, accumulator=acc)
     bb.add_coinbase()
-    # No fees → FeeCollectV1 must be absent
+    # No fees → MassBalanceFeeCollectV1 must be absent
     ok, msg = bb.add_fee_collect(total_fees=0, total_blind=0)
-    assert not ok, f"FeeCollectV1 with zero fees must be rejected: {msg}"
+    assert not ok, f"MassBalanceFeeCollectV1 with zero fees must be rejected: {msg}"
     assert "zero-claim" in msg.lower()
-    # With fees → FeeCollectV1 must succeed
+    # With fees → MassBalanceFeeCollectV1 must succeed
     acc2 = FeeCommitAccumulator()
     bb2 = BlockBuilder(height=2, accumulator=acc2)
     bb2.add_coinbase()
     _, _, fee_commit, _ = balanced_fee_v2(5000, 300, 42)
     bb2.acc.apply_fee_v2(mk(5000, 99), mk(4700, 57), fee_commit, nullifier=3, merkle_root=0xAAA)
     ok2, _ = bb2.add_fee_collect(total_fees=300, total_blind=42)
-    assert ok2, "FeeCollectV1 with non-zero fees must succeed"
-    print("  PASS: FeeCollectV1 conditional presence — absent at 0 fees, present at >0 fees")
+    assert ok2, "MassBalanceFeeCollectV1 with non-zero fees must succeed"
+    print("  PASS: MassBalanceFeeCollectV1 conditional presence — absent at 0 fees, present at >0 fees")
 
 
 def test_block_canonical_ordering():
-    """Block canonical ordering: coinbase[0], user txs[1..k], FeeCollectV1[last] (§2.1)."""
+    """Block canonical ordering: coinbase[0], user txs[1..k], MassBalanceFeeCollectV1[last] (§2.1)."""
     acc = FeeCommitAccumulator()
     bb = BlockBuilder(height=3, accumulator=acc)
     # Step 1: coinbase must be first
     bb.add_coinbase()
-    assert bb.transactions[0] == "PoWRewardV1", "coinbase must be tx[0]"
+    assert bb.transactions[0] == "MassBalanceCoinbaseV1", "coinbase must be tx[0]"
     # Step 2: FeeV2 calls come after coinbase
     f1 = balanced_fee_v2(5000, 300, 42)
     f2 = balanced_fee_v2(3000, 100, 7)
@@ -1178,26 +1359,26 @@ def test_block_canonical_ordering():
     bb.transactions.append("FeeV2_1")
     bb.acc.apply_fee_v2(*f2[:3], nullifier=2, merkle_root=0xBBB)
     bb.transactions.append("FeeV2_2")
-    # Step 3: FeeCollectV1 must be last
+    # Step 3: MassBalanceFeeCollectV1 must be last
     assert not bb._has_fee_collect
     ok, _ = bb.add_fee_collect(total_fees=400, total_blind=49)
-    assert ok, "FeeCollectV1 with correct total must succeed"
-    assert bb.transactions[-1] == "FeeCollectV1", "FeeCollectV1 must be last transaction"
+    assert ok, "MassBalanceFeeCollectV1 with correct total must succeed"
+    assert bb.transactions[-1] == "MassBalanceFeeCollectV1", "MassBalanceFeeCollectV1 must be last transaction"
     # Verify full order
-    assert bb.transactions == ["PoWRewardV1", "FeeV2_1", "FeeV2_2", "FeeCollectV1"]
-    print("  PASS: canonical block ordering — coinbase[0], FeeV2[1..k], FeeCollectV1[last]")
+    assert bb.transactions == ["MassBalanceCoinbaseV1", "FeeV2_1", "FeeV2_2", "MassBalanceFeeCollectV1"]
+    print("  PASS: canonical block ordering — coinbase[0], FeeV2[1..k], MassBalanceFeeCollectV1[last]")
 
 
 def test_overlay_visibility_invariant():
     """Invariant 1 (Overlay Visibility): FeeV2 sees coinbase's merkle root (§2.2).
 
-    Within a single block, PoWRewardV1 inserts a merkle root into coin_roots_db.
+    Within a single block, MassBalanceCoinbaseV1 inserts a merkle root into coin_roots_db.
     A subsequent FeeV2 in the same block MUST be able to find that root.
     """
     acc = FeeCommitAccumulator()
     # Coinbase inserts a root at position N
     coinbase_root = 0xC01BA5E  # simulated coinbase merkle root
-    acc.coin_roots_db[coinbase_root] = 1  # Simulates PoWRewardV1's insert
+    acc.coin_roots_db[coinbase_root] = 1  # Simulates MassBalanceCoinbaseV1's insert
     # FeeV2 in same block can look up that root
     assert coinbase_root in acc.coin_roots_db, \
         "Invariant 1 violated: FeeV2 cannot see coinbase root in same block"
@@ -1205,7 +1386,7 @@ def test_overlay_visibility_invariant():
 
 
 def test_full_lifecycle_with_accumulation():
-    """Full block lifecycle: PoWRewardV1 → FeeV2×2 → FeeCollectV1 (§5.6.6)."""
+    """Full block lifecycle: MassBalanceCoinbaseV1 → FeeV2×2 → MassBalanceFeeCollectV1 (§5.6.6)."""
     acc = FeeCommitAccumulator()
     bb = BlockBuilder(height=5, accumulator=acc)
     # 1. Coinbase
@@ -1224,15 +1405,15 @@ def test_full_lifecycle_with_accumulation():
     # Intermediate: accumulator = Commit(300,42) + Commit(200,99) = Commit(500,141)
     expected_mid = pedersen_add(f1[2], f2[2])
     assert pedersen_eq(acc.accumulator, expected_mid), "intermediate accumulator mismatch"
-    # 3. FeeCollectV1
+    # 3. MassBalanceFeeCollectV1
     ok3, _ = bb.add_fee_collect(total_fees=500, total_blind=141)
     assert ok3
     # 4. Postconditions
     assert acc.accumulator.v_part == 0, "R4: accumulator not reset"
     assert acc.fees_db[5] == 0, "R3: fees_db not zeroed"
     assert 10 in acc.nullifiers_db and 11 in acc.nullifiers_db, "nullifiers not recorded"
-    assert bb.transactions == ["PoWRewardV1", "FeeV2_1", "FeeV2_2", "FeeCollectV1"]
-    print("  PASS: full block lifecycle — PoWRewardV1 → 2×FeeV2 → FeeCollectV1, all postconditions")
+    assert bb.transactions == ["MassBalanceCoinbaseV1", "FeeV2_1", "FeeV2_2", "MassBalanceFeeCollectV1"]
+    print("  PASS: full block lifecycle — MassBalanceCoinbaseV1 → 2×FeeV2 → MassBalanceFeeCollectV1, all postconditions")
 
 
 # ============================================================
@@ -1263,7 +1444,7 @@ def run_all():
         test_coin_merkle_tree_position_enumeration,
         test_coin_merkle_path_verification,
         test_coin_merkle_tree_empty_leaf_value,
-        # FeeCollectV1 + Accumulation + Thm2 (NEW — 4)
+        # MassBalanceFeeCollectV1 + Accumulation + Thm2 (NEW — 4)
         test_fee_collect_v1_happy_path,
         test_fee_collect_v1_zero_claim_rejected,
         test_fee_collect_v1_bad_claim_rejected,

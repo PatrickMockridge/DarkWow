@@ -38,21 +38,46 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use dwow_chain::{Nullifier, Transaction};
 use smol::lock::Mutex;
 
-/// Strategy for extracting fees and estimating gas from transactions.
-/// Implementations encode contract-specific knowledge (e.g., NativeToken FeeV2).
-/// `[domain: fee_signalling]` — serves mempool admission, never `accept_block`.
+/// Fee Signalling Extractor — the control valve on the transaction pipeline.
+///
+/// In process engineering terms, this trait instruments the flow control valve
+/// that regulates transaction admission to the mempool. It provides three
+/// readings from a single instrument tap:
+///
+/// - `extract_fee()`: reads the pressure gauge (fee amount from call data).
+///   For clear-text FeeV1, this is a direct reading. For hidden FeeV2, the
+///   fee is extracted from the Pedersen commitment when the prover reveals it
+///   (or estimated from the commitment's value_part in adversarial scenarios).
+///
+/// - `extract_fee_commitment()`: reads the sealed pressure gauge (Pedersen
+///   commitment when the fee is hidden). The commitment hides the individual
+///   fee value but allows homomorphic summation — the flow meter can verify
+///   the total without knowing individual readings.
+///
+/// - `verify_threshold_proof()`: checks the choke position. Verifies a
+///   FeeThreshold_V1 ZK proof that `fee >= threshold` without revealing the
+///   fee. This is the cryptographic pressure differential check: has the
+///   transaction paid enough to open the valve at its current choke setting?
+///
+/// Domain: `[domain: fee_signalling]` — serves mempool admission, never
+/// `accept_block`. The valve can fail without creating money; it only
+/// affects transaction flow rate, not monetary supply.
+///
+/// See: `doc/src/arch/consensus/fee-spec.md §0.1` for the process engineering
+/// analogy. See: `consensus.md §Supply Audit` for the mass balance flow meter.
 pub trait FeeSignallingExtractor: Send + Sync {
+    /// Read the pressure gauge — extract the fee amount from call data.
     fn extract_fee(&self, tx: &Transaction) -> u64;
+    /// Estimate gas consumption for block packing.
     fn estimate_gas(&self, tx: &Transaction) -> u64;
 
-    /// Extract a Pedersen fee commitment from V2 transactions (hidden fee).
-    /// REQUIRED — no default. Implementors MUST extract the fee commitment
-    /// for FeeV2 transactions.
+    /// Read the sealed pressure gauge — extract the Pedersen fee commitment
+    /// from FeeV2 transactions (hidden fee). Returns None for FeeV1.
     fn extract_fee_commitment(&self, tx: &Transaction) -> Option<FeeCommitment>;
 
-    /// Verify the FeeThreshold_V1 proof against a threshold.
-    /// REQUIRED — no default. Implementors MUST verify the proof.
-    /// Returns true iff the proof is valid for the given threshold.
+    /// Check the choke position — verify the FeeThreshold_V1 proof that
+    /// `fee >= threshold` without revealing the fee. Returns true iff the
+    /// proof is valid for the given threshold setting.
     fn verify_threshold_proof(&self, tx: &Transaction, threshold: u64) -> bool;
 }
 
@@ -267,7 +292,12 @@ impl Mempool {
 
     // ── Insertion ────────────────────────────────────────────────────
 
-    /// Add a transaction to the mempool.
+    /// Flow rate gating — admit a transaction to the mempool through the
+    /// two-stage control valve. Fee is measured (pressure gauge), threshold
+    /// proof is verified (choke check), and the transaction is routed to
+    /// premium or general tier (valve port). Below general threshold: REJECT
+    /// (valve closed — insufficient pressure to pass).
+    ///
     /// Returns the tx hash on success.
     pub async fn add(&self, tx: Transaction) -> dwow_core::Result<blake3::Hash> {
         let tx_hash = tx.hash();

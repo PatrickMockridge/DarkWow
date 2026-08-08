@@ -23,8 +23,24 @@
 
 //! Pure block validation functions.
 //!
+//! # Process Engineering Context — The Flow Meter
+//!
+//! This module is the FLOW METER for the transaction pipeline. It verifies
+//! the Pedersen mass balance — the cryptographic proof that monetary mass is
+//! conserved across every block:
+//!
+//!   Σoutputs + Σfees + Σburns == Σinputs
+//!
+//! The meter reading is consensus-critical: if the mass balance fails, the
+//! block is rejected. Meter fraud IS hidden inflation — a forged meter reading
+//! would allow a miner to mint arbitrary amounts beyond the emission schedule.
+//! This is the defense-in-depth against the ZCash Orchard exploit class.
+//!
 //! Every function in this module is **pure**: it takes data in, returns a
 //! `Result` out. No sled, no locks, no async, no side effects.
+//!
+//! See: `consensus.md §Supply Audit` for the flow metering specification.
+//! See: `fee-spec.md §0.1` for the process engineering analogy (pipe/valve/meter).
 //!
 //! This makes each check independently testable with a standard `#[test]`
 //! — construct minimal inputs, call the function, assert the outcome.

@@ -55,6 +55,127 @@ via WASM during block acceptance. FeeThreshold_V1 lives in the wallet crate
 because it's the wallet→mempool admission gate — an active payment pathway that
 belongs in transaction construction code, not contract logic.
 
+### §0.1 Process Engineering Analogy
+
+In Bitcoin, the fee system is transparent: you can see every transaction amount,
+every fee, and the coinbase output directly on the ledger. The relationship
+between fee payment and block reward is self-evident.
+
+In a privacy-preserving system with hidden fees (Pedersen commitments) and
+zero-knowledge proofs, you cannot "see inside the pipe." You need instrumentation
+and proofs — exactly as in chemical and process engineering, where you can't see
+inside a distillation column, reactor, or pipeline and must rely on flow meters,
+pressure gauges, and control valves.
+
+The DarkWow fee architecture maps directly to these process engineering concepts:
+
+```
+                        ┌─────────────────────────────┐
+     transactions ────▶ │  FEE SIGNALLING              │
+                        │  (flow control valve)         │
+                        │                               │
+                        │  threshold = choke position   │
+                        │  higher fee = more pressure   │
+                        │  drop required to pass        │
+                        │                               │
+                        │  fee window = PID controller  │
+                        │  adapts thresholds to         │
+                        │  observed congestion          │
+                        └──────────────┬────────────────┘
+                                       │
+                                       │  admitted transactions
+                                       │  (with fee commitments)
+                                       ▼
+                        ┌─────────────────────────────┐
+                        │  MASS BALANCE                │
+                        │  (flow meter / totalizer)     │
+                        │                               │
+                        │  Pedersen mass balance        │
+                        │  proves: Σoutputs + Σfees     │
+                        │  + Σburns == Σinputs          │
+                        │                               │
+                        │  nothing created,             │
+                        │  nothing destroyed            │
+                        │                               │
+                        │  fee_commit_accumulator =     │
+                        │  running totalizer reading    │
+                        └─────────────────────────────┘
+```
+
+**Fee Signalling — The Control Valve**
+
+The mempool's fee threshold system is a flow control valve on the transaction
+pipeline. The threshold is the choke position: a higher threshold means more
+pressure drop (fee) is required for a transaction to pass through to the
+mempool.
+
+- **Two-stage valve**: Premium tier (high choke) and general tier (low choke).
+  Transactions must prove `fee >= threshold` via FeeThreshold_V1 to enter
+  either tier. Below general threshold: REJECT (valve closed).
+- **PID controller**: The fee window (`FeeWindowState`) observes congestion
+  (block fill rate vs capacity) and adapts thresholds up or down — exactly as a
+  PID controller adjusts a valve based on process variable vs setpoint.
+- **Anti-tamper seal**: The `tx_binding` field in FeeThreshold_V1 binds the
+  proof to a specific threshold, preventing replay against a different choke
+  setting (see §5.5).
+
+**Mass Balance — The Flow Meter**
+
+The Pedersen mass balance proof is a flow totalizer: it proves that for every
+block, Σoutputs + Σfees + Σburns == Σinputs. Monetary mass is conserved —
+nothing can be created or destroyed except through the explicitly-audited
+coinbase.
+
+- **How the meter works**: Each FeeV2 transaction carries a `fee_value_commit`
+  (Pedersen commitment to the fee amount). These commitments accumulate in
+  `fee_commit_accumulator` across the block — each one is a *pulse* on the
+  totalizer. FeeCollectV1 verifies that the accumulator matches the claimed
+  total, then resets it to Identity (zeroes the meter) for the next block.
+- **Why Pedersen**: You cannot see individual fee amounts inside the pipe.
+  Pedersen commitments are computationally hiding (no information about the fee
+  value leaks). But their homomorphic property allows the verifier to sum them:
+  `Commit(f₁, b₁) + Commit(f₂, b₂) = Commit(f₁+f₂, b₁+b₂)`. The meter works
+  blind — it verifies the sum without knowing any individual term.
+- **Consensus-critical**: The meter reading is verified during `accept_block`.
+  If it fails, the block is rejected. This is the defense-in-depth against
+  hidden inflation (ZCash Orchard exploit class). See `consensus.md` §Supply
+  Audit for the complete mass balance specification.
+
+**Dual-Domain Instrument: FeeV2 (0x08)**
+
+`MassBalanceFeeV2CallData` is the only type that carries both signals from a
+single instrument tap:
+
+| Barb | Domain | Role in Analogy |
+|------|--------|-----------------|
+| `↓pay-fee` | mass_balance | Value conservation — input = output + fee. The meter's flow equation. |
+| `↓threshold-prove` | fee_signalling | Threshold proof for mempool admission. The valve's choke check. |
+
+In process engineering terms: a combined pressure/temperature sensor that feeds
+both the flow computer (mass balance) and the valve controller (fee signalling)
+from a single instrument tap on the pipe.
+
+**Separation of Concerns**
+
+| Concern | Domain | Location | Analogy |
+|----------|--------|----------|---------|
+| Fee threshold proofs | fee_signalling | `FeeSignallingExtractor` trait, `bin/dww/src/fee_threshold_proof.rs` | Control valve + pressure gauge |
+| Mempool admission gating | fee_signalling | `crates/dwow-mempool/src/lib.rs` | Valve actuation (open/close) |
+| Fee window adaptation | fee_signalling | `src/linear/src/fee_window.rs` | PID controller |
+| Pedersen mass balance | mass_balance | `src/linear/src/validation.rs`, `src/contract/native_token/` | Flow meter / totalizer |
+| Fee commitment accumulation | mass_balance | `src/linear/src/chain_state.rs` (`fee_commit_accumulator`) | Totalizer register |
+| Coinbase reward verification | mass_balance | `consensus-coinbase.md` §2 | Meter-opening event |
+| Fee collector accumulator reset | mass_balance | `consensus-coinbase.md` §3 | Meter-close + reading event |
+
+This separation of concerns is why the HAZOP naming convention (Phase 0) renamed
+all types to make domain membership obvious: `mass_balance` operations are
+consensus-critical (meter fraud == hidden inflation); `fee_signalling` operations
+are non-consensus coordination (valve misconfiguration degrades UX but cannot
+create money).
+
+See: `consensus.md` §Supply Audit for the complete mass balance metering specification.
+See: `consensus-coinbase.md` §2-3 for the meter endpoint events.
+
 ## 1. Coin Merkle Tree
 
 ### 1.1 Type Definition

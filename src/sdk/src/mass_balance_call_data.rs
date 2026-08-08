@@ -23,6 +23,25 @@
 
 //! Nominal call data types for native token contract mass balance functions.
 //!
+//! # Process Engineering Context
+//!
+//! These types are the INSTRUMENTS on the transaction pipeline:
+//!
+//! | Type | Selector | Role | Analogy |
+//! |------|----------|------|---------|
+//! | `MassBalanceCoinbaseV1CallData` | `0x05` | Block-opening coinbase | Meter-open event — creates the coinbase UTXO, zeroes the totalizer |
+//! | `MassBalanceFeeCollectV1CallData` | `0x06` | Fee accumulator reset | Meter-close event — reads totalizer, verifies, resets to Identity |
+//! | `MassBalanceFeeV2CallData` | `0x08` | Hidden fee payment | Dual-domain instrument — carries `↓pay-fee` [mass_balance] for the meter AND `↓threshold-prove` [fee_signalling] for the valve |
+//!
+//! Domain annotations (`mass_balance`, `fee_signalling`) denote where these
+//! types are verified. Mass balance types are verified during `accept_block`
+//! (consensus-critical — meter fraud is hidden inflation). Fee signalling
+//! types are verified at mempool admission (non-consensus — valve
+//! misconfiguration degrades UX but cannot create money).
+//!
+//! See: `doc/src/arch/consensus/fee-spec.md §0.1` for the process engineering
+//! analogy. See: `consensus.md §Supply Audit` for the flow meter specification.
+//!
 //! These types replace raw-byte dispatch (`data[0] == 0xNN`) with typed
 //! accessors that carry domain-specific barbs at the type level.
 //!

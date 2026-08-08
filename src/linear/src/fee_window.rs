@@ -23,6 +23,27 @@
 
 //! Fee window signalling — adaptive congestion-driven threshold adjustment.
 //!
+//! # Process Engineering Context — The PID Controller
+//!
+//! The fee window is the PID controller for the mempool control valve. It
+//! observes block fill rate (process variable) vs target capacity (setpoint)
+//! and adjusts fee thresholds up or down:
+//!
+//! - **Proportional term**: Current block fill vs target. Blocks near capacity
+//!   → raise thresholds (constrict the valve).
+//! - **Integral term**: Accumulated error over time. Sustained undershoot
+//!   (empty blocks) → lower thresholds (open the valve).
+//! - **Derivative term**: Rate of change. Rapidly increasing congestion →
+//!   preemptive constriction before the pipe overflows.
+//!
+//! Thresholds are broadcast via `fee_window_flags` in the block header —
+//! the PID output signal that tells every wallet what choke position to
+//! target for the next window.
+//!
+//! Domain: `[domain: fee_signalling]` — valve control, NOT consensus-critical.
+//! See: `fee-spec.md §0.1` for the process engineering analogy.
+//! See: `consensus.md §Supply Audit` for the mass balance flow meter.
+//!
 //! Spec: fee-spec.md §12. Python reference: contrib/model/fee_window_model.py.
 //!
 //! The fee window adjusts premium and general thresholds every 20 blocks

@@ -121,6 +121,74 @@ every `MassBalanceCoinbaseV1CallData` (coinbase mint) and `MassBalanceFeeCollect
 conservation) and a fee_signalling barb (`↓threshold-prove`, mempool admission) —
 it is the only dual-domain type.
 
+### Process Engineering Context — The Flow Meter
+
+The supply audit is best understood through a process engineering analogy.
+In a chemical plant, you cannot see inside a pipeline, reactor, or distillation
+column. You instrument the process: flow meters measure throughput, pressure
+gauges measure driving force, control valves regulate flow rate. The readings
+don't tell you what individual molecules are doing — but they prove that mass
+entering the system equals mass leaving it, and that the flow rate matches the
+valve setting.
+
+The DarkWow fee architecture maps directly to these concepts. The supply audit
+is the **flow meter** — it proves what comes in equals what comes out per
+consensus rules. The fee signalling system (see `fee-spec.md §0.1`) is the
+**control valve** — it regulates transaction flow into the mempool.
+
+**The Meter Chain (per block):**
+
+```
+Coinbase (0x05)         FeeV2 × N (0x08)           FeeCollectV1 (0x06)
+───────────────         ────────────────            ──────────────────
+Opens the meter          Pulses the totalizer        Closes + reads meter
+                         
+Creates coinbase         Each fee_value_commit       Verifies accumulator
+UTXO at position 0       adds to fee_commit_         matches claimed fees
+                         accumulator                 
+                                                    Transfers fee pot
+                         Commitment₁                  to miner
+                         + Commitment₂               
+                         + ... + Commitment_N        Resets accumulator
+                         = totalizer reading         to Identity (zero)
+```
+
+**Why Pedersen commitments for the meter:** In a privacy-preserving system, you
+cannot see individual fee amounts inside the pipe. Pedersen commitments are
+computationally hiding — no information about the fee value leaks. But their
+*homomorphic* property allows the verifier to sum them blind:
+
+```
+Commit(f₁, b₁) + Commit(f₂, b₂) = Commit(f₁+f₂, b₁+b₂)
+```
+
+The meter works without seeing inside the pipe. It verifies the sum of all fee
+commitments equals the claimed total, without knowing any individual fee. This
+is the cryptographic equivalent of a flow totalizer that integrates all pulses
+into a single reading.
+
+**Meter fraud = hidden inflation:** If the mass balance check could be bypassed,
+a miner could mint arbitrary amounts of darkw by forging the coinbase reward
+beyond the emission schedule. This is exactly the ZCash Orchard exploit class
+(see Motivation below). The supply audit is the defense-in-depth: even if the
+ZK circuit has a soundness bug, the Pedersen external audit catches the
+inflation because the forged commitment won't match the expected value.
+
+**Separation of concerns:**
+
+| Function | Domain | Analogy Component | Specification |
+|----------|--------|-------------------|---------------|
+| Fee threshold proof | fee_signalling | Pressure gauge | `fee-spec.md §5.5` |
+| Mempool admission | fee_signalling | Control valve | `fee-spec.md §7` |
+| Fee window adaptation | fee_signalling | PID controller | `fee-spec.md §12` |
+| Per-block mass balance | mass_balance | Flow totalizer | This section |
+| Fee commitment accumulation | mass_balance | Totalizer register | `chain_state.rs` (`fee_commit_accumulator`) |
+| Cumulative supply chain | mass_balance | Meter log (historical record) | `proof_of_token_balance.rs` |
+
+See: `fee-spec.md §0.1` for the process engineering analogy and the fee_signalling
+control valve. See: `consensus-coinbase.md §2-3` for the meter endpoint events
+(coinbase open, FeeCollectV1 close).
+
 ### Motivation: The Orchard Exploit (May 2026)
 
 In May 2026, a missing circuit constraint was discovered in the Orchard shielded

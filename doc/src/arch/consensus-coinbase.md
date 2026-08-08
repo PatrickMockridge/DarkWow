@@ -134,6 +134,14 @@ Pedersen mass balance proof verified during `accept_block`. Its nominal call
 data type is `MassBalanceCoinbaseV1CallData` per [type-system.md §8.2.2](../type-system.md).
 Full supply audit specification: [consensus.md §Supply Audit](consensus/consensus.md).
 
+**Process engineering context:** The coinbase is the **meter-opening event** —
+it creates the coinbase UTXO at position 0 of the coin Merkle tree that carries
+the block reward plus accumulated fees. This UTXO is the only legitimate source
+of new monetary mass in the system. Every FeeV2 transaction within the block
+pulses the fee_commit_accumulator totalizer; the coinbase establishes the
+meter's zero point. See [fee-spec.md §0.1](consensus/fee-spec.md) for the full
+pipe/valve/meter analogy.
+
 ### 2.1 Architecture
 
 The coinbase reward follows the same object-capability (o-cap) pattern as
@@ -261,6 +269,16 @@ for the cheat detection table.
 *Consensus-critical. The final transaction in every block — forwards accumulated
 FeeV2 fees to the miner and closes the coin merkle tree. Nominal call data type:
 `MassBalanceFeeCollectV1CallData` per [type-system.md §8.2.2](../type-system.md).*
+
+**Process engineering context:** FeeCollectV1 is the **meter-close event** —
+it verifies the `fee_commit_accumulator` totalizer matches the claimed fees,
+transfers the fee pot to the miner, and resets the totalizer to Identity (zeroes
+the meter) for the next block. After FeeCollectV1 executes, the accumulator
+MUST be `pallas::Point::identity()`. This is the final meter reading for the
+block — the Pedersen homomorphic sum of all FeeV2 commitments is checked against
+the claimed total. See [fee-spec.md §0.1](consensus/fee-spec.md) for the full
+pipe/valve/meter analogy, and [consensus.md §Supply Audit](consensus/consensus.md)
+for the metering proof specification.
 
 > **Status:** Specification audited and implementation verified (2026-07-17).
 > Post-implementation re-audit: claims 1–22 verified against code at file:line;
