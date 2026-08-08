@@ -9,6 +9,7 @@ license = "AGPL-3.0-only"
 edition = "2021"
 
 [features]
+default = ["fee-window"]
 fee-window = ["dwow_chain/fee-window"]
 
 [dependencies]

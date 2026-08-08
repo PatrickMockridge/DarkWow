@@ -303,3 +303,116 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
         Ok(())
     })
 }
+
+// ============================================================================
+// L1.5-FW-2: Real extractor inside real mempool → accept_block.
+// Uses the REAL NativeTokenFeeSignallingExtractor (FeeParamsV2 decode + threshold
+// check) instead of the TestFeeSignallingExtractor's u64 comparison.
+// Verifies: real FeeV2 tx admitted to premium queue, selected for block,
+// accept_block advances height, accumulator resets to Identity.
+// ============================================================================
+
+#[test]
+fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use dwow_contract_test_harness::harness::NativeTokenHarness;
+    use dwow_sdk::blockchain::BlockHeight;
+    use dwow_sdk::crypto::{MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID, PublicKey, SecretKey};
+    use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
+    use crate::tests::modules::coinbase_coordination;
+    use crate::NativeTokenFeeSignallingExtractor;
+
+    dwow_native_token_contract::enable_deterministic_zk();
+
+    smol::block_on(async {
+        let mut chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
+        chain.log_file = Some(std::sync::Mutex::new(crate::tests::test_output::create_log_file("mempool_real_extractor_15")));
+
+        let native_harness = NativeTokenHarness::spawn();
+        let cid = *NATIVE_TOKEN_CONTRACT_ID;
+
+        let cb2 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+        chain.block()?.submit_with_coinbase(cb2.coinbase_tx).await?;
+
+        let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+
+        let mut tree = MerkleTree::new(1);
+        tree.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        let coin_pos = tree.mark().expect("tree.mark");
+        let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
+        let root = tree.root(0).expect("tree.root");
+
+        let mining_kp = chain.mining_keypair(BlockHeight::new(2));
+        let fee_amount: u64 = 150_000_000; // above premium threshold
+        let fee_result = native_harness.fee_v2(
+            cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
+            cb2.coin_blind, u64::from(coin_pos), path, root,
+            mining_kp.secret.clone(), mining_kp.secret,
+            PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
+            pallas::Base::zero(), pallas::Base::zero(),
+            fee_amount,
+            42_000_000,  // premium threshold
+        ).map_err(|e| dwow_core::Error::Custom(format!(
+            "[L1.5-FW-2] fee_v2 harness: {}", e
+        )))?;
+
+        let chain_tx = dwow_chain::Transaction {
+            version: dwow_sdk::blockchain::BlockVersion::CURRENT,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![dwow_chain::ContractCall {
+                contract_id: cid,
+                data: fee_result.call_data.clone(),
+            }],
+            lock_time: 0,
+            nullifiers: vec![],
+            witness: vec![],
+        };
+
+        // Real extractor — parses FeeParamsV2, checks threshold, extracts commitment.
+        let config = MempoolConfig {
+            premium_threshold: 42_000_000,
+            general_threshold: 1_000_000,
+            ..Default::default()
+        };
+        let mempool = Mempool::new(
+            config, None,
+            Box::new(NativeTokenFeeSignallingExtractor::new()),
+            None,
+        );
+
+        // Admission via real extractor
+        let tx_hash = mempool.add(chain_tx.clone()).await
+            .expect("[L1.5-FW-2] real extractor: FeeV2 tx must be admitted to mempool");
+
+        // Selection
+        let selected = mempool.select_for_block(&MinerConfig {
+            max_gas: u64::MAX, max_txs: 100, ..Default::default()
+        }).await;
+        assert!(!selected.is_empty(),
+            "[L1.5-FW-2] real extractor: FeeV2 tx must be selected for block");
+
+        // Submit through accept_block
+        let before = chain.height();
+        let new_height = chain.block()?
+            .with_call(cid, &native_harness, &selected[0].contract_calls[0].data, fee_result.proofs)?
+            .with_fee_collect()?
+            .submit_with_coinbase(cb3.coinbase_tx).await?;
+        assert!(new_height > before,
+            "[L1.5-FW-2] height must advance (was {}, now {})", before, new_height);
+
+        // Accumulator reset to Identity after FeeCollectV1
+        let acc_data = chain.query_contract_state(cid, "info", b"fee_commit_acc")?
+            .expect("[L1.5-FW-2] accumulator not found");
+        let acc_point: pallas::Point =
+            Option::from(pallas::Point::from_bytes(
+                &acc_data[..32].try_into().unwrap()
+            )).expect("invalid accumulator point");
+        assert_eq!(acc_point, pallas::Point::identity(),
+            "[L1.5-FW-2] accumulator not reset after FeeCollectV1");
+
+        Ok(())
+    })
+}

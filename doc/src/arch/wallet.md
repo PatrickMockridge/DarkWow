@@ -662,71 +662,64 @@ evaluating the witnessed circuit through the existing trace machinery
 same evaluation the verifier's metadata call performs node-side. No
 per-contract Rust computes public inputs on the generic path.
 
-#### 6.4.2 FeeV2 Transaction Construction
+#### 6.4.2 Fee_V2: Fee Payment `[domain: mass_balance]`
 
 FeeV2 (function code `0x08`) is the privacy-preserving fee payment path.
 It replaces FeeV1 (removed). The construction SHALL adhere to
 [fee-spec.md §8](consensus/fee-spec.md).
 
-**Barb set.** A FeeV2 transaction exhibits `↓pay-fee` [mass_balance] (spends a coin via
-nullifier, splits value into change + fee) and `↓threshold-prove` [fee_signalling] (proves
-hidden fee meets a public threshold). Both barbs SHALL be covered by the
-wallet's capability selection (§6.2).
+Fee_V2 performs Pedersen mass balance verification (`input_value = output_value + fee`)
+— consensus-critical, verified during `accept_block` via WASM. This proves no
+secret inflation. It is completely distinct from the threshold proof
+(FeeThreshold_V1, §6.4.3) which gates mempool admission.
+
+**Barb.** A FeeV2 transaction carries `↓pay-fee` [mass_balance] — spends a coin
+via nullifier, splits value into change + fee. The `↓threshold-prove` barb is
+carried by the FeeThreshold_V1 proof (§6.4.3) and is verified at mempool
+admission, not at `accept_block`. Both barbs SHALL be covered by the wallet's
+capability selection (§6.2).
 
 **Call data format.** FeeV2 call data SHALL use the nominal `MassBalanceFeeV2CallData`
 type per [type-system.md §8.2.3](../type-system.md). The wallet SHALL construct
 `MassBalanceFeeV2CallData::new(params)` where `params` includes both `fee_value_commit`
-and `threshold_proof`. The selector `0x08` is implicit — it is a property of
-the `MassBalanceFeeV2CallData` TYPE, guaranteed by `MassBalanceFeeV2Selector` (a zero-sized witness
-that hardcodes `0x08`). The wallet SHALL NOT manually prepend a selector byte.
-`MassBalanceFeeV2CallData::encode()` produces `[0x08][FeeParamsV2::encode()]` — the wire
-format is byte-identical to the pre-nominal encoding; the change is at the type
-level. The call data SHALL NOT contain clear-text fee bytes. The fee amount is
-hidden behind a Pedersen commitment (`fee_value_commit: pallas::Point`) and
-a FeeThreshold_V1 ZK proof (`threshold_proof: Vec<u8>`).
+and `threshold_proof` (the threshold proof bytes, constructed per §6.4.3). The
+selector `0x08` is implicit — it is a property of the `MassBalanceFeeV2CallData`
+TYPE, guaranteed by `MassBalanceFeeV2Selector` (a zero-sized witness that hardcodes
+`0x08`). The wallet SHALL NOT manually prepend a selector byte.
+`MassBalanceFeeV2CallData::encode()` produces `[0x08][FeeParamsV2::encode()]` — the
+wire format is byte-identical to the pre-nominal encoding; the change is at the
+type level. The call data SHALL NOT contain clear-text fee bytes. The fee amount
+is hidden behind a Pedersen commitment (`fee_value_commit: pallas::Point`) and
+a FeeThreshold_V1 ZK proof (`threshold_proof: Vec<u8>`, constructed per §6.4.3).
 
-The `MassBalanceFeeV2CallData` carries the `↓gate`, `↓pay-fee` [mass_balance], and `↓threshold-prove` [fee_signalling]
-barbs into the mempool. The mempool SHALL NOT inspect `data[0]` to determine
-the fee function — it SHALL observe the barbs on the name.
+The `MassBalanceFeeV2CallData` carries the `↓gate`, `↓pay-fee` [mass_balance], and
+`↓threshold-prove` [fee_signalling] barbs into the mempool. The mempool SHALL NOT
+inspect `data[0]` to determine the fee function — it SHALL observe the barbs on
+the name.
 
-**Dual-proof construction.** The wallet SHALL produce two ZK proofs for
-every FeeV2 transaction:
-
-1. Fee_V2 proof — value conservation: `input_value = output_value + fee`,
-   with fee as a private witness and `fee_value_commit` as a public input.
-   Uses the `Fee_V2` namespace circuit (`fee.zk`).
-2. FeeThreshold_V1 proof — proves `fee >= threshold` without revealing fee.
-   Public inputs: `threshold`, `tx_binding`. The `tx_binding` SHALL be
-   computed as `poseidon(DOMAIN_TX_BINDING, tx_commitment, threshold)` to
-   prevent cross-tier replay.
-
-**Threshold selection.** The wallet SHALL select the proof threshold based
-on the user's chosen fee:
-- If `fee >= PREMIUM_THRESHOLD`: use `PREMIUM_THRESHOLD` in the proof
-- Otherwise: use `GENERAL_THRESHOLD` in the proof
-The actual fee may exceed the threshold — the proof only guarantees the
-lower bound.
-
-**Blinding.** All blinds (value blind, coin blind, fee blind) SHALL be
-derived deterministically from `Seed` (§6.1). The fee blind SHALL be
-independent — the commitment `pedersen_commit(fee, fee_blind)` is computed
-with its own blind, not zero. The wallet SHALL ensure Pedersen homomorphic
-balance: `input_blind = output_blind + fee_blind`.
+**Blinding.** All blinds (value blind, coin blind, fee blind) SHALL be derived
+deterministically from `Seed` (§6.1). The fee blind SHALL be independent — the
+commitment `pedersen_commit(fee, fee_blind)` is computed with its own blind, not
+zero. The wallet SHALL ensure Pedersen homomorphic balance:
+`input_blind = output_blind + fee_blind`.
 
 **Integration point.** The wallet's `build_fee_and_finalize_tx()` in
-`bin/dww/src/fee_builder.rs` SHALL use `FeeV2CallBuilder` (the
-NativeToken client builder at `src/contract/native_token/src/client/fee_v2.rs`).
-The builder SHALL receive the selected DRKW capability, its Merkle proof
-(from `capability_proofs`), and resolved secret (from `AccountManager`, §4).
-The builder SHALL NOT construct Merkle proofs manually — proofs SHALL be
-retrieved from the wallet's SQLite store.
+`bin/dww/src/fee_builder.rs` SHALL use `FeeV2CallBuilder` (the NativeToken client
+builder at `src/contract/native_token/src/client/fee_v2.rs`). The builder SHALL
+receive the selected DRKW capability, its Merkle proof (from `capability_proofs`),
+and resolved secret (from `AccountManager`, §4). The builder SHALL NOT construct
+Merkle proofs manually — proofs SHALL be retrieved from the wallet's SQLite store.
+
+The `FeeV2CallBuilder` SHALL also construct the FeeThreshold_V1 proof (§6.4.3)
+during the same transaction construction, embedding the resulting proof bytes in
+`FeeParamsV2.threshold_proof`.
 
 **Nullifier publication.** The fee input's nullifier SHALL be published in
 `Transaction.nullifiers` for mempool double-spend detection.
 
 **Privacy model.** The wallet constructs a FeeV2 transaction that reveals the
 fee amount ONLY to the block-producing miner. All other parties see only the
-Pedersen commitment `fee_value_commit` and the `FeeThreshold_V1` proof:
+Pedersen commitment `fee_value_commit` and the `FeeThreshold_V1` proof (§6.4.3):
 
 | Party | What They See |
 |-------|--------------|
@@ -736,19 +729,140 @@ Pedersen commitment `fee_value_commit` and the `FeeThreshold_V1` proof:
 
 Full specification: [fee-spec.md §5.6.3](consensus/fee-spec.md).
 
-**Threshold discovery.** Before constructing a FeeV2 transaction, the wallet
-SHALL discover the current threshold values. The discovery mechanism is a
-P2P query to connected mining nodes (see [mempool.md §6](mempool.md) for the
-announcement protocol). Response format: `(premium_threshold: u64,
-general_threshold: u64, block_height: u64, miner_signature: [u8; 64])`.
-The wallet selects the tier based on the user's chosen fee and builds the
-corresponding `FeeThreshold_V1` proof bound to the selected threshold.
-
 **Fee estimation.** The wallet MAY query the mempool for a fee estimate for
 a specific transaction (deploy size in kB, ZK circuit complexity, state
 transition count). The estimate is advisory — the miner ultimately determines
-the actual threshold based on current mempool demand. See
-[mempool.md §7](mempool.md) for the fee structure formula.
+the actual threshold based on current mempool demand. See [mempool.md §7](mempool.md)
+for the fee structure formula.
+
+#### 6.4.3 FeeThreshold_V1: Fee Signalling `[domain: fee_signalling]`
+
+FeeThreshold_V1 is the wallet→mempool admission gate. It proves a transaction's
+hidden fee meets or exceeds a public threshold, enabling the mempool to sort
+transactions into premium/general tiers without learning the actual fee amount.
+
+**This is NOT consensus-critical.** FeeThreshold_V1 is verified at mempool
+admission, never at `accept_block`. The consensus-critical fee verification is
+Fee_V2 (§6.4.2, mass_balance domain). Full specification:
+[fee-spec.md §0](consensus/fee-spec.md) for the two-domain architecture,
+[fee-spec.md §5.5](consensus/fee-spec.md) for the circuit definition,
+[mempool.md §6](mempool.md) for verification.
+
+**Barb.** `↓threshold-prove` [fee_signalling] — the FeeThreshold_V1 proof
+asserting fee ≥ threshold. Carried by `MassBalanceFeeV2CallData` alongside
+`↓pay-fee` [mass_balance] (§6.4.2). The mempool observes this barb to
+trigger the verification WASM widget.
+
+**Relationship to Fee_V2.** Every fee-paying transaction produces BOTH proofs:
+Fee_V2 (§6.4.2) proves value conservation; FeeThreshold_V1 (this section) proves
+the hidden fee meets the admission threshold. The two proofs are architecturally
+independent and verified at different stages — Fee_V2 at `accept_block` (WASM
+contract engine), FeeThreshold_V1 at mempool admission (verification WASM
+widget). The threshold proof bytes are embedded in `FeeParamsV2.threshold_proof`
+within the common `MassBalanceFeeV2CallData` payload.
+
+**WASM widget architecture.** FeeThreshold_V1 uses two WASM modules built from
+the SAME zkas circuit (`fee_threshold_v1.zk`):
+
+| | Proving Widget (wallet) | Verification Widget (mempool/miners) |
+|---|---|---|
+| Embeds | `fee_threshold_v1.zk.bin` | `fee_threshold_v1.zk.bin` (same bytes) |
+| `__metadata` | Returns witness map + circuit params | Returns `[(FeeThreshold_V1, [threshold, tx_binding])]` |
+| `__initialize` | Registers zkbin in wallet's zkas store | Registers zkbin in contracts sled tree |
+| Consumer | `create_fee_threshold_proof()` | `verify_threshold_proof()` → `verify_zkp()` |
+
+The zkas circuit is the ground truth — witness count, order, types, and public
+input order are all defined by `fee_threshold_v1.zk` and SHALL NOT be hardcoded
+in Rust. The architecture diagram is at [fee-spec.md §0](consensus/fee-spec.md).
+
+**Proving widget crate.** The proving WASM widget is a minimal cdylib crate at
+`src/contract/native_token/prove_fee_threshold/`. It is NOT a contract — it
+has noop `exec`/`apply` and exists solely to provide the witness map to the
+wallet via `__metadata`.
+
+```
+src/contract/native_token/prove_fee_threshold/
+├── Cargo.toml     # cdylib, depends on dwow-sdk (wasm feature)
+└── src/lib.rs     # define_contract! with noop exec/apply, metadata returns witness map
+```
+
+- Crate type: `cdylib` (compiles to `prove_fee_threshold.wasm`)
+- Embeds `fee_threshold_v1.zk.bin` via `include_bytes!`
+- `__initialize`: registers `.zk.bin` via `wasm::db::zkas_db_set`
+- `__metadata`: returns the witness map (witness names, types, indices in
+  circuit order) and circuit parameters (k=11, field=pallas, 2 public inputs)
+- The wallet embeds or loads this `.wasm`, calls `__metadata`, reads the
+  witness map, then constructs proofs with circuit-grounded binding
+
+**Circuit.** `fee_threshold_v1.zk`:
+- k = 11, field = pallas
+- 4 user witnesses: fee, threshold, tx_commitment, tx_binding
+- + domain separator witness (`witness_base(3)` for DOMAIN_TX_BINDING)
+- 2 public inputs: threshold, tx_binding
+- Constraint: `range_check(64, fee - threshold)` — fee ≥ threshold
+- tx_binding = `poseidon(DOMAIN_TX_BINDING=3, tx_commitment, threshold)`
+
+**ThresholdTxBinding.** The threshold proof is bound to a specific (tx_commitment,
+threshold) pair: `ThresholdTxBinding = poseidon(3, tx_commitment, threshold)`.
+This prevents cross-tier replay — a proof constructed for the GENERAL threshold
+cannot be reused for the PREMIUM tier. Per fee-spec.md §5.5.1, `FeeV2TxBinding`
+and `ThresholdTxBinding` are distinct nominal types — the compiler prevents
+cross-assignment.
+
+**Proof construction.** `create_fee_threshold_proof()` builds the FeeThreshold_V1
+proof. The function lives in `src/contract/native_token/src/client/fee_threshold.rs`
+(co-located with the `.zk.bin` export in `zkbins.rs`, following the same pattern
+as `create_fee_proof` in `fee.rs`).
+
+The wallet SHALL NOT manually construct `Vec<Witness>` with hardcoded order.
+Instead:
+1. Load `ZkBinary` from `zkbins.rs` constant (no cross-crate `include_bytes!`)
+2. Call `empty_witnesses()` → get witnesses in circuit order
+3. Bind witnesses by name from the circuit's witness table — never by index
+4. Call `Proof::create` with Seed-derived randomness (§6.1)
+5. Serialize the proof and embed in `FeeParamsV2.threshold_proof`
+
+Signature:
+```
+pub fn create_fee_threshold_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    fee_amount: FeeAmount,
+    threshold: FeeAmount,
+    tx_commitment: pallas::Base,
+    threshold_tx_binding: ThresholdTxBinding,
+) -> Result<Proof, Error>
+```
+
+The proving WASM widget provides the witness map and circuit parameters. The
+wallet's native ZK stack does the actual `Proof::create` (Halo2 requires rayon,
+not available in WASM). The widget is the specification that tells the wallet
+HOW to wire the proof — witness order, public input order, circuit parameters
+come from the circuit, never from hardcoded Rust.
+
+**Threshold selection.** The wallet selects the proof threshold based on the
+user's chosen fee:
+- If `fee >= PREMIUM_THRESHOLD`: prove against `PREMIUM_THRESHOLD`
+- Otherwise: prove against `GENERAL_THRESHOLD`
+The actual fee may exceed the threshold — the proof only guarantees the lower bound.
+
+**Threshold discovery.** Before constructing a FeeThreshold_V1 proof, the wallet
+SHALL discover the current threshold values via P2P query to connected mining
+nodes (see [mempool.md §6](mempool.md) for the announcement protocol). Response
+format: `(premium_threshold: u64, general_threshold: u64, block_height: u64,
+miner_signature: [u8; 64])`. The wallet selects the tier based on the user's
+chosen fee and builds the corresponding proof bound to the selected threshold.
+
+**Mempool verification.** The mempool SHALL verify the FeeThreshold_V1 proof at
+admission using the verification WASM widget (see [mempool.md §6](mempool.md)).
+The verifier loads the widget, calls `__metadata` to extract public inputs
+`[threshold, tx_binding]`, loads the zkbin from the contracts sled tree, and
+calls `verify_zkp(proof, zkbin, public_inputs)`. Verification failure SHALL
+reject the transaction. Miners also load the same verification WASM widget to
+independently confirm the mempool isn't lying about proof validity.
+
+The mempool SHALL NOT rely on the plain `params.threshold` u64 field — that
+field is user-supplied and must be cryptographically proven, not trusted.
 
 ### 6.5 Provisional State: The In-Between
 

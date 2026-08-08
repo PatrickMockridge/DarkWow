@@ -204,13 +204,13 @@ impl GenesisHarness {
         tree_name: &str,
         key: &[u8],
     ) -> Result<Option<Vec<u8>>> {
+        // WASM execution stores state in the contracts sled tree with
+        // composite keys: hash_state_id(cid, tree_name) || key.
         let handle = cid.hash_state_id(tree_name);
-        let handle_str = format!("{:?}", handle);
-        let tree = self.db.open_tree(&handle_str)
-            .map_err(|e| dwow_core::Error::Custom(format!(
-                "query_contract_state: open tree '{}': {}", handle_str, e
-            )))?;
-        tree.get(key)
+        let mut composite_key = handle.to_vec();
+        composite_key.extend_from_slice(key);
+        self.chain_state.store.contracts_tree()
+            .get(&composite_key)
             .map_err(|e| dwow_core::Error::Custom(format!(
                 "query_contract_state: sled get: {}", e
             )))
@@ -497,6 +497,7 @@ mod tests {
                 anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
+                fee_window_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,
             };
 

@@ -502,6 +502,243 @@ def test_premium_fcfs_before_general():
 
 
 # ============================================================================
+# NEW: Fee Signalling Testing Plan scenarios (P-FW-1 through P-FW-4, P-FW-6)
+# ============================================================================
+
+
+def test_multi_window_pid_loop():
+    """P-FW-1: Multi-window PID stabilization over 5 windows.
+
+    After 5 windows of constant load, thresholds evolve within ±10% per
+    window (I7), CF_premium > CF_standard while congested (I4), and
+    floor/ceiling are never breached.
+
+    Pins Rust: L1-FW-4.
+    """
+    w = FeeWindow()
+    thresholds = []
+
+    # Constant moderate congestion: 50 premium, 500 standard pending
+    for _ in range(5):
+        premium, general = w.adjust(premium_pending=50, standard_pending=500)
+        thresholds.append((premium, general))
+
+    # I7: each step within ±10% of previous
+    for i in range(1, len(thresholds)):
+        prev_p, _ = thresholds[i - 1]
+        curr_p, _ = thresholds[i]
+        ratio = curr_p / prev_p
+        assert 0.89 < ratio < 1.11, (
+            f"P-FW-1 I7 violated at step {i}: "
+            f"prev={prev_p}, curr={curr_p}, ratio={ratio:.3f}"
+        )
+
+    # Floor and ceiling
+    final_p, final_g = thresholds[-1]
+    assert final_p >= MIN_PREMIUM, f"P-FW-1: premium {final_p} below floor {MIN_PREMIUM}"
+    assert final_p <= MAX_PREMIUM, f"P-FW-1: premium {final_p} above ceiling {MAX_PREMIUM}"
+
+    # I4: CF_premium > CF_standard while congested
+    cf = w.current_cf
+    assert cf.premium > cf.standard, (
+        f"P-FW-1 I4 violated: premium_cf={cf.premium}, standard_cf={cf.standard}"
+    )
+
+    # PF convergence: after 5 steps of same load, thresholds stabilize
+    # (last two adjustments should be within tighter bounds)
+    p4, _ = thresholds[3]
+    p5, _ = thresholds[4]
+    ratio_final = max(p4, p5) / min(p4, p5)
+    assert ratio_final < 1.06, (
+        f"P-FW-1 convergence failed: last two premiums diverged: {p4} vs {p5}"
+    )
+
+
+def test_both_cfs_simultaneously_congested():
+    """P-FW-2: Both premium and standard CFs congested simultaneously.
+
+    When premium AND standard queues are deep, both CF > SCALE, ordering
+    I4 holds, and thresholds scale correctly for both tiers.
+
+    Pins Rust: L1-FW-2.
+    """
+    w = FeeWindow()
+
+    # Both queues heavily loaded
+    cf = w.update_congestion(premium_pending=500, standard_pending=5000)
+
+    assert cf.premium > SCALE, (
+        f"P-FW-2: premium CF {cf.premium} should exceed SCALE under congestion"
+    )
+    assert cf.standard > SCALE, (
+        f"P-FW-2: standard CF {cf.standard} should exceed SCALE under congestion"
+    )
+    assert cf.premium > cf.standard, (
+        f"P-FW-2 I4 violated: premium_cf={cf.premium} <= standard_cf={cf.standard}"
+    )
+
+    # Thresholds should both exceed base values
+    premium_t = cf.premium_threshold()
+    general_t = cf.general_threshold()
+    assert premium_t > 420_000_000, (
+        f"P-FW-2: premium threshold {premium_t} not above base 420M"
+    )
+    assert general_t > 42_000_000, (
+        f"P-FW-2: general threshold {general_t} not above base 42M"
+    )
+
+    # Verify log-scaling: different congestion levels produce different CFs
+    cf_light = compute_congestion_factor(10, 100)
+    cf_heavy = compute_congestion_factor(500, 5000)
+    assert cf_heavy.premium > cf_light.premium, (
+        "P-FW-2: heavier congestion should produce higher premium CF"
+    )
+    assert cf_heavy.standard > cf_light.standard, (
+        "P-FW-2: heavier congestion should produce higher standard CF"
+    )
+
+
+def test_malicious_flag_injection():
+    """P-FW-3: Malicious/invalid congestion-multiplier flags rejected.
+
+    decode_flags with cm=0xFF, cm=0x03, cm=0x00 all return hold (no change).
+    encode_flags never emits cm > 2.
+
+    Pins Rust: L1-FW-3.
+    """
+    base_premium = 420_000_000
+
+    # cm=0xFF (invalid, beyond defined range) → hold
+    assert FeeWindow.decode_flags(0xFF | FEE_WINDOW_ACTIVE, base_premium) == base_premium, (
+        "P-FW-3: cm=0xFF should hold (no change)"
+    )
+
+    # cm=0x03 (undefined direction) → hold
+    assert FeeWindow.decode_flags(0x30 | FEE_WINDOW_ACTIVE, base_premium) == base_premium, (
+        "P-FW-3: cm=0x03 should hold (no change)"
+    )
+
+    # cm=0x00 (hold, active) → hold
+    assert FeeWindow.decode_flags(0x00 | FEE_WINDOW_ACTIVE, base_premium) == base_premium, (
+        "P-FW-3: cm=0x00 active should hold"
+    )
+
+    # Legacy (inactive) → hold
+    assert FeeWindow.decode_flags(0x00, base_premium) == base_premium, (
+        "P-FW-3: legacy flags should hold"
+    )
+
+    # decode_flags is pure arithmetic — the floor/ceiling clamping is the
+    # responsibility of adjust() (tested in P-FW-1), not decode_flags.
+    # Verify that decode produces the raw ±10% arithmetic result:
+    floor_premium = MIN_PREMIUM
+    decoded_floor = FeeWindow.decode_flags(0x21, floor_premium)  # 0x02 = -10%
+    assert decoded_floor == int(floor_premium * 0.90), (
+        f"P-FW-3: -10% of {floor_premium} = {int(floor_premium * 0.90)}, got {decoded_floor}"
+    )
+
+    ceiling_premium = MAX_PREMIUM
+    decoded_ceiling = FeeWindow.decode_flags(0x11, ceiling_premium)  # 0x01 = +10%
+    assert decoded_ceiling == int(ceiling_premium * 1.10), (
+        f"P-FW-3: +10% of {ceiling_premium} = {int(ceiling_premium * 1.10)}, got {decoded_ceiling}"
+    )
+
+    # encode_flags: congestion factors at SCALE → hold
+    cf = CongestionFactor(premium=SCALE, standard=SCALE)
+    flags = FeeWindow.encode_flags(cf, previous=CongestionFactor(premium=SCALE, standard=SCALE))
+    assert (flags >> 4) & 0x0F in (0,), (
+        f"P-FW-3: encode_flags at SCALE should emit hold, got cm={(flags >> 4) & 0x0F}"
+    )
+
+
+def test_decode_equivalence():
+    """P-FW-4: Python decode(cm) matches WindowSignalling::decode_next_premium.
+
+    0x01 → ×110/100 (+10%)
+    0x02 → ×90/100 (-10%)
+    else → hold (no change)
+    general = 42M when active, (42M, 1M) when legacy.
+
+    Pins Rust: L1-FW-1.
+    """
+    base_premium = 420_000_000
+
+    # +10% (cm=0x01)
+    up = FeeWindow.decode_flags(0x11, base_premium)
+    assert up == int(base_premium * 1.10), (
+        f"P-FW-4: +10% of {base_premium} = {int(base_premium * 1.10)}, got {up}"
+    )
+
+    # -10% (cm=0x02)
+    down = FeeWindow.decode_flags(0x21, base_premium)
+    assert down == int(base_premium * 0.90), (
+        f"P-FW-4: -10% of {base_premium} = {int(base_premium * 0.90)}, got {down}"
+    )
+
+    # Hold (cm=0x00, active)
+    hold_active = FeeWindow.decode_flags(0x01, base_premium)
+    assert hold_active == base_premium, (
+        f"P-FW-4: hold active should return {base_premium}, got {hold_active}"
+    )
+
+    # Hold (cm=0x00, inactive/legacy)
+    hold_legacy = FeeWindow.decode_flags(0x00, base_premium)
+    assert hold_legacy == base_premium, (
+        f"P-FW-4: legacy should return {base_premium}, got {hold_legacy}"
+    )
+
+    # Verify decode(encode(cf)) roundtrip for +10%
+    w = FeeWindow()
+    w.adjust(100, 1000)  # first adjust — sets CF above SCALE
+    w.adjust(500, 5000)  # second adjust — large jump, capped at +10%
+    flags = FeeWindow.encode_flags(w.current_cf, previous=w.previous_cf)
+    decoded = FeeWindow.decode_flags(flags, w.previous_cf.premium_threshold())
+    assert abs(decoded - w.current_cf.premium_threshold()) <= 1, (
+        f"P-FW-4 roundtrip: decoded {decoded} vs current {w.current_cf.premium_threshold()}"
+    )
+
+
+def test_multi_miner_median_convergence_extended():
+    """P-FW-6: Multi-miner median convergence with divergent mempools.
+
+    Extends test_median_consensus with 3 miners in two rounds:
+    Round 1 — divergent mempools produce divergent flags
+    Round 2 — on-chain median signals converge the network
+
+    Witness for L3-FW-2.
+    """
+    # Round 1: Three miners with divergent local mempool views
+    miner_a = compute_congestion_factor(100, 1000)   # moderate
+    miner_b = compute_congestion_factor(200, 800)    # different mix
+    miner_c = compute_congestion_factor(100000, 1000) # extreme (manipulated)
+
+    # Median should reflect honest majority, not the extreme node
+    median_rd1 = median_congestion_factor([miner_a, miner_b, miner_c])
+    normal_cf = compute_congestion_factor(100, 1000)
+    assert abs(median_rd1.premium - normal_cf.premium) < SCALE // 10, (
+        f"P-FW-6 Round 1: median CF manipulated by extreme node. "
+        f"normal={normal_cf.premium}, median={median_rd1.premium}"
+    )
+
+    # Round 2: After median adoption, all nodes converge to similar CF
+    # (simulate: all nodes adopt the median as their local CF for next window)
+    median_premium_cf = median_rd1
+    node_cf_a = compute_congestion_factor(100, 1000)
+    node_cf_b = compute_congestion_factor(100, 1000)
+    node_cf_c = compute_congestion_factor(100, 1000)  # extreme node now honest
+
+    median_rd2 = median_congestion_factor([node_cf_a, node_cf_b, node_cf_c])
+    # After convergence, all nodes produce identical CF
+    assert node_cf_a.premium == node_cf_b.premium == node_cf_c.premium, (
+        "P-FW-6 Round 2: honest nodes should converge to identical CF"
+    )
+    # Median equals the common value
+    assert median_rd2.premium == node_cf_a.premium, (
+        "P-FW-6 Round 2: median should equal unanimous value"
+    )
+
+
+# ============================================================================
 # Test runner
 # ============================================================================
 
@@ -521,6 +758,12 @@ if __name__ == "__main__":
         test_median_consensus,
         test_wasm_size_multiplier,
         test_premium_fcfs_before_general,
+        # NEW: Fee Signalling Testing Plan scenarios
+        test_multi_window_pid_loop,
+        test_both_cfs_simultaneously_congested,
+        test_malicious_flag_injection,
+        test_decode_equivalence,
+        test_multi_miner_median_convergence_extended,
     ]
 
     passed = 0

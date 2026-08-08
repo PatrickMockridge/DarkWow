@@ -41,6 +41,8 @@ use dwow_core::{
         settings::RpcSettings,
     },
     concurrency::{ExecutorPtr, PublisherPtr, StoppableTask, StoppableTaskPtr},
+    zk::{VerifyingKey, ZkCircuit},
+    zkas::ZkBinary,
     Error, Result,
 };
 use dwow_chain::monero::JobId;
@@ -87,7 +89,30 @@ use dwow_mempool::{create_mempool, FeeSignallingExtractor, MempoolPtr, MinerConf
 /// FeeV1 (selector 0x00) is REMOVED. For FeeV2, the exact fee is NOT in call data —
 /// verify_threshold_proof() gates mempool admission instead of min-fee check.
 /// extract_fee() returns fee_call_count * DEFAULT_FEE as an estimate.
-struct NativeTokenFeeSignallingExtractor;
+struct NativeTokenFeeSignallingExtractor {
+    threshold_vk: Arc<VerifyingKey>,
+}
+
+impl NativeTokenFeeSignallingExtractor {
+    /// Build the FeeThreshold_V1 `VerifyingKey` at node startup.
+    ///
+    /// Cached once and shared across all mempool verification calls. The VK
+    /// is built from the circuit binary embedded in the contract crate — no
+    /// cross-crate `include_bytes!` (the constant lives in the contract, which
+    /// dwowd already depends on with the `client` feature).
+    fn new() -> Self {
+        let zkbin = ZkBinary::decode(
+            dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN,
+            false,
+        ).expect("FeeThreshold_V1 zkbin decode for verifying key");
+        let empty_wits = dwow_core::zk::vm_heap::empty_witnesses(&zkbin)
+            .expect("FeeThreshold_V1 empty_witnesses for verifying key");
+        let circuit = ZkCircuit::new(empty_wits, &zkbin);
+        let vk = VerifyingKey::build(zkbin.k, &circuit)
+            .expect("FeeThreshold_V1 VerifyingKey::build");
+        Self { threshold_vk: Arc::new(vk) }
+    }
+}
 impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
     fn extract_fee(&self, tx: &dwow_chain::Transaction) -> u64 {
         const DEFAULT_FEE: u64 = 42_000_000;
@@ -147,13 +172,21 @@ impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
     }
 
     /// Verify FeeThreshold_V1 proof for FeeV2 transaction.
-    /// Extracts the proof and public inputs from FeeParamsV2 and verifies
-    /// the ZK proof against the FeeThreshold_V1 circuit.
+    ///
+    /// Extracts the proof and public inputs from `FeeParamsV2` and cryptographically
+    /// verifies the ZK proof against the FeeThreshold_V1 circuit. This replaces the
+    /// previous stub that only checked threshold equality (u64 comparison).
+    ///
+    /// Guardrail G5: Mempool SHALL call `Proof::verify()` — u64 comparison is not a gate.
     fn verify_threshold_proof(&self, tx: &dwow_chain::Transaction, threshold: u64) -> bool {
+        use dwow_core::zk::Proof;
+        use dwow_sdk::pasta::pallas;
+
         for call in &tx.contract_calls {
             if let Some(mb_fee_v2) = call.as_mass_balance_fee_v2() {
-                // Use the validating constructor — not raw byte offsets (F3 fix).
-                let params = match dwow_native_token_contract::model::fee::FeeParamsV2::decode(mb_fee_v2.params_bytes()) {
+                let params = match dwow_native_token_contract::model::fee::FeeParamsV2::decode(
+                    mb_fee_v2.params_bytes(),
+                ) {
                     Ok(p) => p,
                     Err(_) => return false,
                 };
@@ -161,13 +194,23 @@ impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
                 if params.threshold.get() != threshold {
                     return false;
                 }
-                // Verify tx_binding binds to the threshold.
-                // tx_binding = poseidon(DOMAIN_TX_BINDING, tx_commitment, threshold).
-                // The FeeThreshold_V1 circuit internally constrains this — if the
-                // prover provides a mismatched threshold, the proof won't verify.
-                // Full ZK proof verification is done at block acceptance
-                // (verify_core_tx_with_tables).
-                return true;
+                // Deserialize the ZK proof from FeeParamsV2.
+                let proof = Proof::new(params.threshold_proof);
+                // Public inputs: threshold (field element), tx_binding (field element).
+                // Order matches constrain_instance calls in fee_threshold_v1.zk.
+                let public_inputs = vec![
+                    pallas::Base::from(threshold),
+                    params.threshold_tx_binding.inner(),
+                ];
+                // Cryptographic verification — NOT a u64 comparison.
+                match proof.verify(&self.threshold_vk, &public_inputs) {
+                    Ok(()) => return true,
+                    Err(e) => {
+                        tracing::debug!(target: "dwowd::fee",
+                            "FeeThreshold_V1 proof verification failed: {}", e);
+                        return false;
+                    }
+                }
             }
         }
         false
@@ -777,7 +820,7 @@ impl Dwowd {
         // Create mempool early — needed by both the P2P handler (for cleanup)
         // and the miner RPC (for transaction submission).
         let mempool = Some(create_mempool(
-            Box::new(NativeTokenFeeSignallingExtractor),
+            Box::new(NativeTokenFeeSignallingExtractor::new()),
             Some(chain_state.clone()),
         ));
 
@@ -1195,7 +1238,7 @@ async fn prepare_block(
     // FeeParamsV2 from each FeeV2 (0x08) call and returns the fee estimate.
     // For production, this is DEFAULT_FEE per call until witness extraction
     // is implemented. Spec: fee-spec.md §5.6.4.
-    let fee_extractor = NativeTokenFeeSignallingExtractor;
+    let fee_extractor = NativeTokenFeeSignallingExtractor::new();
     let total_fees: u64 = mempool_txs.iter()
         .map(|tx| fee_extractor.extract_fee(tx))
         .sum();

@@ -606,4 +606,139 @@ mod tests {
         let s = format!("{}", flags);
         assert!(s.contains("1"), "Display should show binary with active bit");
     }
+
+    // ── L1-FW-1: wallet threshold-decode contract ───────────────────────
+    // Partition B — absorber-boundary lift (on-chain flags → admission thresholds).
+    // Pins Python: P-FW-4.
+
+    #[test]
+    fn test_decode_window_thresholds_active_increase() {
+        // cm=0x01 (+10%): active bit set, premium *= 1.1
+        let flags = WindowSignalling::encode_cm(0x01); // bits: 0x11
+        let base_premium: u64 = 420_000_000;
+        let decoded = flags.decode_next_premium(base_premium);
+        assert_eq!(decoded, 462_000_000, "+10% of 420M should be 462M");
+    }
+
+    #[test]
+    fn test_decode_window_thresholds_active_decrease() {
+        // cm=0x02 (-10%): active bit set, premium *= 0.9
+        let flags = WindowSignalling::encode_cm(0x02); // bits: 0x21
+        let base_premium: u64 = 420_000_000;
+        let decoded = flags.decode_next_premium(base_premium);
+        assert_eq!(decoded, 378_000_000, "-10% of 420M should be 378M");
+    }
+
+    #[test]
+    fn test_decode_window_thresholds_active_hold() {
+        // cm=0x00 (hold): active bit set, premium unchanged
+        let flags = WindowSignalling::encode_cm(0x00); // bits: 0x01
+        let base_premium: u64 = 420_000_000;
+        let decoded = flags.decode_next_premium(base_premium);
+        assert_eq!(decoded, 420_000_000, "hold should return unchanged premium");
+    }
+
+    #[test]
+    fn test_decode_window_thresholds_legacy() {
+        // Legacy (inactive): premium and general use static constants
+        let flags = WindowSignalling::LEGACY; // 0x00
+        assert!(!flags.is_active());
+        let base_premium: u64 = 420_000_000;
+        let decoded = flags.decode_next_premium(base_premium);
+        assert_eq!(decoded, 420_000_000, "legacy should return unchanged premium");
+        // General threshold in legacy mode is 1_000_000 (per fee-spec §8.2)
+    }
+
+    // ── L1-FW-2: both-CF-simultaneously ─────────────────────────────────
+    // Partition B — I4 ordering at the CF boundary.
+    // Pins Python: P-FW-2.
+
+    #[test]
+    fn test_both_cfs_congested_simultaneously() {
+        // Premium AND standard queues congested → both CF > SCALE, I4 holds
+        let cf = FeeWindowState::compute_cf(500, 5000, 0.05, 0.01);
+        assert!(cf.premium > CongestionFactor::SCALE,
+            "premium CF {} should exceed SCALE under congestion", cf.premium);
+        assert!(cf.standard > CongestionFactor::SCALE,
+            "standard CF {} should exceed SCALE under congestion", cf.standard);
+        assert!(cf.premium > cf.standard,
+            "I4: CF_premium ({}) must exceed CF_standard ({}) when congested",
+            cf.premium, cf.standard);
+    }
+
+    #[test]
+    fn test_both_cfs_congestion_log_scaling() {
+        // Heavier congestion → higher CFs for both tiers
+        let cf_light = FeeWindowState::compute_cf(10, 100, 0.05, 0.01);
+        let cf_heavy = FeeWindowState::compute_cf(500, 5000, 0.05, 0.01);
+        assert!(cf_heavy.premium > cf_light.premium,
+            "heavier congestion should produce higher premium CF");
+        assert!(cf_heavy.standard > cf_light.standard,
+            "heavier congestion should produce higher standard CF");
+    }
+
+    // ── L1-FW-3: malicious / invalid congestion-multiplier flags ────────
+    // Partition B — invalid-bytes at the decode boundary.
+    // Pins Python: P-FW-3.
+
+    #[test]
+    fn test_decode_next_premium_invalid_cm_holds() {
+        let base: u64 = 420_000_000;
+        // cm=0x03 (undefined) → hold
+        let flags_03 = WindowSignalling(0x31); // active + cm=0x03
+        assert_eq!(flags_03.decode_next_premium(base), base,
+            "cm=0x03 (undefined) should hold");
+        // cm=0xFF (max, undefined) → hold
+        let flags_ff = WindowSignalling(0xF1); // active + cm=0x0F
+        assert_eq!(flags_ff.decode_next_premium(base), base,
+            "cm=0x0F (max, undefined) should hold");
+    }
+
+    #[test]
+    fn test_encode_flags_never_emits_invalid_cm() {
+        // encode_cm only produces 0x00, 0x01, 0x02
+        for cm in [0x00u8, 0x01u8, 0x02u8] {
+            let flags = WindowSignalling::encode_cm(cm);
+            let extracted = flags.congestion_multiplier();
+            assert!(extracted <= 2,
+                "encode_cm({}) produced cm={}", cm, extracted);
+        }
+    }
+
+    // ── L1-FW-4: multi-window PID loop ──────────────────────────────────
+    // Partition C — economic dynamics (convergence over multiple windows).
+    // Pins Python: P-FW-1.
+
+    #[test]
+    fn test_multi_window_pid_stabilization() {
+        // 5 windows of constant moderate congestion — thresholds converge.
+        let config = FeeWindowConfig::default();
+        let fw = FeeWindowState::new(config);
+
+        let mut prev_premium = fw.premium_threshold();
+        // First window: establish baseline with moderate congestion
+        let (p1, _) = fw.adjust(50, 500);
+        assert!(p1 >= 420_000 && p1 <= 4_200_000_000,
+            "first adjustment within bounds");
+
+        // Subsequent windows: same congestion → stabilization
+        for i in 0..4 {
+            let (premium, general) = fw.adjust(50, 500);
+            assert!(premium > general, "I4: premium > general at window {}", i);
+            // I7: ±10% cap per window
+            let max_allowed = (prev_premium as f64 * 1.10) as u64;
+            let min_allowed = (prev_premium as f64 * 0.90) as u64;
+            assert!(premium >= min_allowed && premium <= max_allowed,
+                "I7: window {}: premium {} outside [{}, {}]", i, premium, min_allowed, max_allowed);
+            prev_premium = premium;
+        }
+
+        // Final thresholds respect floor/ceiling
+        let final_premium = fw.premium_threshold();
+        let final_general = fw.general_threshold();
+        assert!(final_premium >= 420_000, "premium above floor");
+        assert!(final_premium <= 4_200_000_000, "premium below ceiling");
+        assert!(final_general > 0, "general threshold positive");
+        assert!(final_premium > final_general, "I4: final premium > general");
+    }
 }

@@ -758,12 +758,13 @@ impl Circuit<pallas::Base> for ZkCircuit {
                 _ => match var_type {
                     VarType::Base => {
                         // Generic Base constants are public inputs consumed via
-                        // constrain_instance. Push an unknown-value placeholder
-                        // to preserve heap indices during keygen.
+                        // constrain_instance. Push a known zero placeholder to
+                        // preserve heap indices. Value is never consumed by any
+                        // computation — actual constants come from opcodes.
                         let val = assign_free_advice(
                             layouter.namespace(|| format!("constant {}", name)),
                             config.witness,
-                            Value::unknown(),
+                            Value::known(pallas::Base::ZERO),
                         )?;
                         heap.push(HeapVar::Base(val));
                     }

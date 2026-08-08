@@ -55,7 +55,6 @@ pub fn build_test_header(
     merkle_root: blake3::Hash,
     timestamp: u64,
 ) -> BlockHeader {
-        fee_window_flags: 0,
     let previous_hash = if height <= BlockHeight::GENESIS {
         blake3::Hash::from_bytes([0u8; 32])
     } else {
@@ -199,6 +198,7 @@ pub fn build_test_block_with_uncles(
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
+            fee_window_flags: 0,
             pow_source: PowSource::Native,
         },
         transactions: txs,

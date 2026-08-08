@@ -185,6 +185,7 @@ fn test_wallet_integration() {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
+            fee_window_flags: 0,
             pow_source: dwow_chain::PowSource::Native,
         };
 
@@ -2097,6 +2098,7 @@ fn test_canonical_call_failure_rejects_block() {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
+            fee_window_flags: 0,
             pow_source: PowSource::Native,
         };
 

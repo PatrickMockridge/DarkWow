@@ -410,17 +410,15 @@ impl HeavyweightPipeline {
         tree_name: &str,
         key: &[u8],
     ) -> Result<Option<Vec<u8>>> {
+        // WASM execution stores state in the contracts sled tree with
+        // composite keys: hash_state_id(cid, tree_name) || key.
+        // query_contract_state mirrors this: it builds the same composite
+        // key and reads from the contracts tree, NOT from a separate
+        // per-contract sled tree (which would always be empty).
         let handle = cid.hash_state_id(tree_name);
-        let handle_str = format!("{:?}", handle);
-        let tree = self.db.open_tree(&handle_str)
-            .map_err(|e| dwow_core::Error::Custom(format!(
-                "query_contract_state: open tree '{}': {}", handle_str, e
-            )))?;
-        tree.get(key)
-            .map_err(|e| dwow_core::Error::Custom(format!(
-                "query_contract_state: sled get: {}", e
-            )))
-            .map(|opt| opt.map(|iv| iv.to_vec()))
+        let mut composite_key = handle.to_vec();
+        composite_key.extend_from_slice(key);
+        self.query_contracts_tree(&composite_key)
     }
 
     /// Current cumulative supply computed from all block rewards.

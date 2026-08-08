@@ -1956,3 +1956,93 @@ fn test_bridge_fee_lifecycle() -> std::result::Result<(), Box<dyn std::error::Er
         Ok(())
     })
 }
+
+// ============================================================================
+// L2-FW-2: Forged FeeThreshold_V1 proof rejected at accept_block.
+// A tx whose FeeParamsV2 threshold matches the mempool gate (syntactic check)
+// but whose FeeThreshold_V1 ZK proof is corrupted/empty MUST be rejected by
+// accept_block via verify_core_tx_with_tables. Height MUST NOT advance.
+// This is the true enforcement witness — the mempool gate is syntactic.
+// Partition B (consensus boundary).
+// ============================================================================
+#[test]
+fn test_forged_threshold_proof_rejected_at_accept_block() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use dwow_contract_test_harness::harness::NativeTokenHarness;
+    use dwow_sdk::blockchain::BlockHeight;
+    use dwow_sdk::crypto::{MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID, PublicKey, SecretKey};
+    use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
+    use crate::tests::modules::coinbase_coordination;
+
+    dwow_native_token_contract::enable_deterministic_zk();
+
+    smol::block_on(async {
+        let mut chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
+        chain.log_file = Some(std::sync::Mutex::new(crate::tests::test_output::create_log_file("forged_threshold_proof")));
+
+        let native_harness = NativeTokenHarness::spawn();
+        let cid = *NATIVE_TOKEN_CONTRACT_ID;
+
+        let cb2 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+        chain.block()?.submit_with_coinbase(cb2.coinbase_tx).await?;
+
+        let cb3 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+
+        let mut tree = MerkleTree::new(1);
+        tree.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        let coin_pos = tree.mark().expect("tree.mark");
+        let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
+        let root = tree.root(0).expect("tree.root");
+
+        let mining_kp = chain.mining_keypair(BlockHeight::new(2));
+        let fee_amount: u64 = 150_000_000;
+        let fee_result = native_harness.fee_v2(
+            cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
+            cb2.coin_blind, u64::from(coin_pos), path, root,
+            mining_kp.secret.clone(), mining_kp.secret,
+            PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?),
+            pallas::Base::zero(), pallas::Base::zero(),
+            fee_amount,
+            42_000_000,  // threshold
+        ).map_err(|e| dwow_core::Error::Custom(format!(
+            "[L2-FW-2] fee_v2 harness: {}", e
+        )))?;
+
+        // FeeV2CallBuilder::build() returns exactly 1 proof (Fee_V2 mass balance).
+        // The FeeThreshold_V1 proof lives in FeeParamsV2.threshold_proof bytes
+        // inside call_data, not in the proofs vec.
+        assert_eq!(fee_result.proofs.len(), 1,
+            "[L2-FW-2] FeeV2 build returns 1 proof (Fee_V2); threshold proof is embedded in call_data, got {}",
+            fee_result.proofs.len());
+
+        // Corrupt the FeeThreshold_V1 proof embedded in call_data.
+        // The mempool doesn't verify ZK (syntactic threshold check only),
+        // but accept_block → verify_core_tx_with_tables will reject it.
+        //
+        // call_data layout: [0x08][FeeParamsV2 encoded]
+        // FeeParamsV2.threshold_proof is at the end of the encoded params.
+        let mut corrupted_params = fee_result.params.clone();
+        // Replace threshold proof with junk bytes — same length to preserve offsets
+        corrupted_params.threshold_proof = vec![0xFFu8; corrupted_params.threshold_proof.len()];
+        let mut corrupted_call_data = vec![0x08u8];
+        corrupted_call_data.extend_from_slice(&corrupted_params.encode());
+        // Use unchanged Fee_V2 proof (valid) — only the threshold proof in call_data is corrupted
+        let original_proofs = fee_result.proofs.clone();
+
+        let before = chain.height();
+        let result = chain.block()?
+            .with_call(cid, &native_harness, &corrupted_call_data, original_proofs)?
+            .with_fee_collect()?
+            .submit_with_coinbase(cb3.coinbase_tx).await;
+
+        let after = chain.height();
+        assert!(result.is_err(),
+            "[L2-FW-2] forged threshold proof must be rejected, got Ok");
+        assert_eq!(before, after,
+            "[L2-FW-2] height must not advance on forged proof (was {}, now {})", before, after);
+
+        Ok(())
+    })
+}

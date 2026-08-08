@@ -115,9 +115,6 @@ pub mod prover_impl;
 /// Fee builder helper for contract transactions
 pub mod fee_builder;
 
-/// FeeThreshold_V1 proof construction — wallet→mempool admission gate
-pub mod fee_threshold_proof;
-
 /// Wallet functionality related to transactions history
 
 /// Wallet functionality related to scanned blocks

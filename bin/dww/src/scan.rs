@@ -1556,6 +1556,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
+                fee_window_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,
             },
             transactions: vec![tx],
@@ -1648,6 +1649,7 @@ produces = [{ name = "thing" }]
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
+                fee_window_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,
             },
             transactions: vec![tx],
@@ -1728,6 +1730,7 @@ required_barbs = ["Spend","Mine"]
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
+                fee_window_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,
             },
             transactions: vec![tx],
@@ -1847,6 +1850,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
+                fee_window_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,
             },
             transactions: vec![deploy_tx],
@@ -1917,6 +1921,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
+                fee_window_flags: 0,
                 pow_source: dwow_chain::PowSource::Native,
             },
             transactions: vec![call_tx],
@@ -2603,7 +2608,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             description: None,
             public: true,
             deployer_pubkey: bs58::encode([0x11u8; 32]).into_string(),
-            deploy_height: height,
+            deploy_height: height.get(),
             attestations_json: "[]".into(),
             lock_status: "unlocked".into(),
         };
@@ -2615,7 +2620,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // Reopen the same file — must succeed
         let wallet2 = crate::walletdb::WalletDb::new(Some(db_path.clone()), None, false)
             .expect("BW-7 FAIL: WalletDb reopen must succeed");
-        let loaded = wallet2.get_contract_metadata(&record.contract_id).ok().flatten();
+        let loaded = wallet2.get_contract_metadata(&record.contract_id).ok();
         assert!(loaded.is_some(), "BW-7 FAIL: metadata must survive close/reopen");
 
         drop(wallet2);

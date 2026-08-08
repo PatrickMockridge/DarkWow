@@ -991,4 +991,89 @@ mod tests {
             }
         });
     }
+
+    /// L1-FW-6: concurrent update_thresholds() vs add() stress.
+    /// Partition C — concurrency. Writer threads add() while threshold updater
+    /// flips between valid pairs. Verify no panics, no lost admission for
+    /// already-vetted fee ≥ old general, thresholds always consistent.
+    #[test]
+    fn test_concurrent_add_update_thresholds() {
+        use std::sync::{Arc as StdArc, Barrier};
+
+        let config = MempoolConfig {
+            premium_threshold: 200_000_000,
+            general_threshold: 50_000_000,
+            ..Default::default()
+        };
+        let mempool: MempoolPtr = Arc::new(Mempool::new(
+            config, None, Box::new(TestFeeSignallingExtractor), None,
+        ));
+
+        const N_WRITERS: usize = 8;
+        const N_ADDS_PER_WRITER: usize = 50;
+        const N_THRESHOLD_FLIPS: usize = 100;
+
+        let barrier = StdArc::new(Barrier::new(N_WRITERS + 1));
+
+        // Threshold flipper thread — flips between two valid pairs.
+        let mp = Arc::clone(&mempool);
+        let b = StdArc::clone(&barrier);
+        let threshold_thread = std::thread::spawn(move || {
+            smol::block_on(async {
+                b.wait();
+                for i in 0..N_THRESHOLD_FLIPS {
+                    if i % 2 == 0 {
+                        mp.update_thresholds(150_000_000, 40_000_000);
+                    } else {
+                        mp.update_thresholds(200_000_000, 50_000_000);
+                    }
+                    // Brief yield to let add() calls interleave
+                    smol::Timer::after(std::time::Duration::from_micros(1)).await;
+                }
+            });
+        });
+
+        // Writer threads — each adds N_ADDS_PER_WRITER unique txs.
+        let mut writer_threads = vec![];
+        for thread_id in 0..N_WRITERS {
+            let mp = Arc::clone(&mempool);
+            let b = StdArc::clone(&barrier);
+            writer_threads.push(std::thread::spawn(move || {
+                smol::block_on(async {
+                    b.wait();
+                    for j in 0..N_ADDS_PER_WRITER {
+                        let unique = (thread_id * N_ADDS_PER_WRITER + j) as u8;
+                        let tx = make_tx(
+                            vec![make_call(vec![0x08, unique])],
+                            Some(100_000_000), // fee always ≥ general (40M or 50M)
+                        );
+                        let result = mp.add(tx).await;
+                        assert!(
+                            result.is_ok(),
+                            "thread {} tx {} should be admitted, got: {:?}",
+                            thread_id, unique, result.err()
+                        );
+                    }
+                });
+            }));
+        }
+
+        threshold_thread.join().unwrap();
+        for t in writer_threads {
+            t.join().unwrap();
+        }
+
+        // All transactions survive — no lost admission.
+        smol::block_on(async {
+            let count = mempool.len().await;
+            assert_eq!(count, N_WRITERS * N_ADDS_PER_WRITER,
+                "all {} txs should survive", N_WRITERS * N_ADDS_PER_WRITER);
+
+            // Thresholds always a consistent pair after final update.
+            let premium = mempool.premium_threshold();
+            let general = mempool.general_threshold();
+            assert!(premium > general,
+                "premium {} should exceed general {}", premium, general);
+        });
+    }
 }

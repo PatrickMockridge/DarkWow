@@ -10,11 +10,107 @@
 use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine, PrimeField};
 use dwow_sdk::blockchain::FeeAmount;
 use dwow_sdk::crypto::{BaseBlind, Blind, pedersen_commitment_u64};
+use dwow_sdk::crypto::poseidon_hash;
+use dwow_sdk::crypto::constants::DRK_POSEIDON_DOMAIN_TX_BINDING;
 use dwow_sdk::error::ContractError;
 use crate::error::NativeTokenError;
 use dwow_sdk::pasta::{group::GroupEncoding, pallas};
 
 use super::{Input, Output};
+
+// ============================================================
+// §5.5.1 — Nominal tx_binding Types (Type Contract)
+// ============================================================
+
+/// Tx binding for Fee_V2 proof (fee.zk).
+///
+/// Computed as `poseidon(DOMAIN_TX_BINDING=3, tx_commitment, tx_nonce)`.
+/// Prevents Fee_V2 proof replay across different transactions.
+///
+/// Per fee-spec.md §5.5.1: [
+/// domain: mass_balance](https://docs.rs/poseidon/3, tx_commitment, tx_nonce)
+///   purpose: anti-replay — binds Fee_V2 proof to a specific transaction
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FeeV2TxBinding(pallas::Base);
+
+/// Tx binding for FeeThreshold_V1 proof (fee_threshold_v1.zk).
+///
+/// Computed as `poseidon(DOMAIN_TX_BINDING=3, tx_commitment, threshold)`.
+/// Prevents replay of a premium-tier proof against the general threshold
+/// (or vice versa).
+///
+/// Per fee-spec.md §5.5.1: [
+/// domain: fee_signalling](https://docs.rs/poseidon/3, tx_commitment, threshold)
+///   purpose: anti-replay — binds FeeThreshold_V1 proof to a specific threshold tier
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ThresholdTxBinding(pallas::Base);
+
+impl FeeV2TxBinding {
+    /// Compute the Fee_V2 tx binding from tx_commitment and tx_nonce.
+    ///
+    /// `poseidon(DRK_POSEIDON_DOMAIN_TX_BINDING=3, tx_commitment, tx_nonce)`
+    pub fn compute(tx_commitment: pallas::Base, tx_nonce: pallas::Base) -> Self {
+        Self(poseidon_hash([
+            DRK_POSEIDON_DOMAIN_TX_BINDING,
+            tx_commitment,
+            tx_nonce,
+        ]))
+    }
+
+    /// Extract the inner `pallas::Base` value.
+    /// Use this at ZK proof public-input boundaries only.
+    pub fn inner(&self) -> pallas::Base {
+        self.0
+    }
+}
+
+impl ThresholdTxBinding {
+    /// Compute the FeeThreshold_V1 tx binding from tx_commitment and threshold.
+    ///
+    /// `poseidon(DRK_POSEIDON_DOMAIN_TX_BINDING=3, tx_commitment, threshold)`
+    pub fn compute(tx_commitment: pallas::Base, threshold: FeeAmount) -> Self {
+        let threshold_base = pallas::Base::from(threshold.get());
+        Self(poseidon_hash([
+            DRK_POSEIDON_DOMAIN_TX_BINDING,
+            tx_commitment,
+            threshold_base,
+        ]))
+    }
+
+    /// Extract the inner `pallas::Base` value.
+    /// Use this at ZK proof public-input boundaries only.
+    pub fn inner(&self) -> pallas::Base {
+        self.0
+    }
+}
+
+impl dwow_serial::Encodable for FeeV2TxBinding {
+    fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
+        self.0.encode(w)
+    }
+}
+
+impl dwow_serial::Decodable for FeeV2TxBinding {
+    fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> {
+        let inner = pallas::Base::decode(d)?;
+        Ok(Self(inner))
+    }
+}
+
+impl dwow_serial::Encodable for ThresholdTxBinding {
+    fn encode<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
+        self.0.encode(w)
+    }
+}
+
+impl dwow_serial::Decodable for ThresholdTxBinding {
+    fn decode<D: std::io::Read>(d: &mut D) -> std::io::Result<Self> {
+        let inner = pallas::Base::decode(d)?;
+        Ok(Self(inner))
+    }
+}
+
+// ============================================================
 
 /// FeeV2 parameters — replaces FeeParamsV1 for privacy-preserving fees.
 ///
@@ -37,7 +133,14 @@ pub struct FeeParamsV2 {
     pub fee_value_blind: pallas::Scalar,
     /// Fee token blind — typed BaseBlind per spec §8.1.
     pub fee_token_blind: BaseBlind,
-    pub tx_binding: pallas::Base,
+    /// Fee_V2 proof tx_binding — poseidon(3, tx_commitment, tx_nonce).
+    /// Anti-replay for the Fee_V2 proof's public inputs.
+    /// [domain: mass_balance] per fee-spec.md §5.5.1.
+    pub fee_v2_tx_binding: FeeV2TxBinding,
+    /// FeeThreshold_V1 proof tx_binding — poseidon(3, tx_commitment, threshold).
+    /// Anti-replay for the FeeThreshold_V1 proof's public inputs.
+    /// [domain: fee_signalling] per fee-spec.md §5.5.1.
+    pub threshold_tx_binding: ThresholdTxBinding,
     pub tx_nonce: pallas::Base,
 }
 
@@ -62,7 +165,7 @@ impl FeeParamsV2 {
         let input_bytes = self.input.encode();
         let output_bytes = self.output.encode();
         let proof_len = self.threshold_proof.len() as u32;
-        let cap = input_bytes.len() + output_bytes.len() + 72 + 4 + proof_len as usize + 128;
+        let cap = input_bytes.len() + output_bytes.len() + 72 + 4 + proof_len as usize + 160;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&input_bytes);
         buf.extend_from_slice(&output_bytes);
@@ -73,10 +176,11 @@ impl FeeParamsV2 {
         // threshold_proof: length-prefixed bytes
         buf.extend_from_slice(&proof_len.to_le_bytes());
         buf.extend_from_slice(&self.threshold_proof);
-        // blinds + bindings (128 bytes: scalar 32 + blind 32 + binding 32 + nonce 32)
+        // blinds + bindings (160 bytes: scalar 32 + blind 32 + fee_v2_binding 32 + threshold_binding 32 + nonce 32)
         buf.extend_from_slice(&self.fee_value_blind.to_repr());
         buf.extend_from_slice(&self.fee_token_blind.inner().to_repr());
-        buf.extend_from_slice(&self.tx_binding.to_repr());
+        buf.extend_from_slice(&self.fee_v2_tx_binding.inner().to_repr());
+        buf.extend_from_slice(&self.threshold_tx_binding.inner().to_repr());
         buf.extend_from_slice(&self.tx_nonce.to_repr());
         buf
     }
@@ -131,8 +235,8 @@ impl FeeParamsV2 {
         let threshold_proof = data[pos..pos + proof_len].to_vec();
         pos += proof_len;
 
-        // blinds + bindings (128 bytes: scalar 32 + blind 32 + binding 32 + nonce 32)
-        if data.len() < pos + 128 {
+        // blinds + bindings (160 bytes: scalar 32 + blind 32 + fee_v2_binding 32 + threshold_binding 32 + nonce 32)
+        if data.len() < pos + 160 {
             return Err(parse_err("FeeParamsV2: too short for blinds"));
         }
         let fee_value_blind = Option::<pallas::Scalar>::from(pallas::Scalar::from_repr(
@@ -152,18 +256,22 @@ impl FeeParamsV2 {
             data[pos + 32..pos + 64].try_into().unwrap()
         )).ok_or_else(|| parse_err("FeeParamsV2: invalid fee_token_blind".into()))?);
         let fee_token_blind: BaseBlind = fee_token_blind;
-        let tx_binding = Option::<pallas::Base>::from(pallas::Base::from_repr(
+        let fee_v2_tx_binding = FeeV2TxBinding(Option::<pallas::Base>::from(pallas::Base::from_repr(
             data[pos + 64..pos + 96].try_into().unwrap()
-        )).ok_or_else(|| parse_err("FeeParamsV2: invalid tx_binding".into()))?;
-        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(
+        )).ok_or_else(|| parse_err("FeeParamsV2: invalid fee_v2_tx_binding".into()))?);
+        let threshold_tx_binding = ThresholdTxBinding(Option::<pallas::Base>::from(pallas::Base::from_repr(
             data[pos + 96..pos + 128].try_into().unwrap()
+        )).ok_or_else(|| parse_err("FeeParamsV2: invalid threshold_tx_binding".into()))?);
+        let tx_nonce = Option::<pallas::Base>::from(pallas::Base::from_repr(
+            data[pos + 128..pos + 160].try_into().unwrap()
         )).ok_or_else(|| parse_err("FeeParamsV2: invalid tx_nonce".into()))?;
 
         Ok(FeeParamsV2 {
             input, output, fee_value_commit,
             fee_value_commit_x, fee_value_commit_y,
             threshold, threshold_proof,
-            fee_value_blind, fee_token_blind, tx_binding, tx_nonce,
+            fee_value_blind, fee_token_blind,
+            fee_v2_tx_binding, threshold_tx_binding, tx_nonce,
         })
     }
 }

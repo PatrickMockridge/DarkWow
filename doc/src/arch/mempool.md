@@ -308,10 +308,72 @@ Verification SHALL:
    prevents a proof built for the premium tier from being replayed against
    the general tier.
 
+### 8.4 Verification WASM Widget
+
+FeeThreshold_V1 proofs are verified using a **verification WASM widget** — a
+minimal WASM module that wraps the `fee_threshold_v1.zk` circuit. This is NOT
+a contract (no state, no `accept_block`, no `__entrypoint`). It is a portable
+verification module shared by the mempool and miners.
+
+**Architecture.** Two WASM widgets are built from the same zkas circuit — a
+proving widget (wallet-side, wallet.md §6.4.3) and a verification widget
+(mempool/miner-side). The architecture diagram is at fee-spec.md §0.
+
+**Verification widget crate.** The verification WASM widget is a minimal cdylib
+crate at `src/contract/native_token/verify_fee_threshold/`. It is NOT a
+contract — it has noop `exec`/`apply` and exists solely to provide public
+inputs for `verify_zkp()` via `__metadata`.
+
+```
+src/contract/native_token/verify_fee_threshold/
+├── Cargo.toml     # cdylib, depends on dwow-sdk (wasm feature)
+└── src/lib.rs     # define_contract! with noop exec/apply, metadata returns public inputs
+```
+
+- Crate type: `cdylib` (compiles to `verify_fee_threshold.wasm`)
+- Embeds `fee_threshold_v1.zk.bin` via `include_bytes!` (byte-identical to
+  proving widget)
+- `__initialize`: registers `.zk.bin` via `wasm::db::zkas_db_set`
+- `__metadata`: decodes `FeeParamsV2` from call data, returns
+  `[(FeeThreshold_V1, [threshold, tx_binding])]`
+- Deployed at genesis, cached in the contracts sled tree
+- Mempool loads from sled tree; miners load the same module for independent
+  re-verification
+
+**Verification flow:**
+1. Load the verification WASM widget (deployed at genesis, cached in the
+   contracts sled tree).
+2. Call `__metadata` on the widget with the FeeV2 call data → returns
+   `[(FeeThreshold_V1, [threshold, tx_binding])]`.
+3. Load the `fee_threshold_v1.zk.bin` from the contracts sled tree (registered
+   by `__initialize`).
+4. Call `verify_zkp(threshold_proof, zkbin, [threshold, tx_binding])` via the
+   native ZK stack.
+5. Return `true` iff cryptographic verification succeeds.
+
+**The mempool SHALL NOT trust the plain `params.threshold` u64 field.** That
+field is user-supplied. Only cryptographic verification of the ZK proof
+constitutes a gate. The current `NativeTokenFeeSignallingExtractor` stub that
+compares `params.threshold.get() == threshold` without calling `verify_zkp()`
+is NOT a valid gate — it SHALL be replaced with the WASM widget path above.
+
+**Miner re-verification.** Miners SHALL independently load the same
+verification WASM widget and re-verify threshold proofs before including
+transactions in a block. This closes the trust gap — the miner does not
+blindly trust the mempool's word that a proof verified. The miner performs
+the identical 5-step verification flow described above.
+
+### 8.5 References
+
+- The two-widget architecture: [fee-spec.md §0](consensus/fee-spec.md)
+- Proving widget spec: [wallet.md §6.4.3](wallet.md)
+- Circuit definition: [fee-spec.md §5.5](consensus/fee-spec.md)
+- FeeSignallingExtractor trait: [fee-spec.md §7.2](consensus/fee-spec.md)
+
 ## 9. References
 
 - **[Wallet Architecture](wallet.md)** — The write path (§6) and provisional state (§6.5).
-  FeeV2 privacy model and threshold discovery at §6.4.2.
+  FeeV2 fee payment at §6.4.2, FeeThreshold_V1 threshold proof and proving widget at §6.4.3.
 - **[Type System Specification](type-system.md)** — Error barbs (§4), authority (§5), the
   `Transaction` type and metadata ABI (§8.2).
 - **[Fee Payment Specification](consensus/fee-spec.md)** — FeeV2 circuits (§5),

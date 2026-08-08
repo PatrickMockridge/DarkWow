@@ -46,7 +46,7 @@ use dwow_sdk::{
 use rand::SeedableRng;
 
 use crate::client::NativeToken;
-use crate::model::fee::FeeParamsV2;
+use crate::model::fee::{FeeParamsV2, FeeV2TxBinding, ThresholdTxBinding};
 use crate::model::{CoinAttributes, Input, Output};
 
 // ---- Domain-labeled fee wrappers ----
@@ -181,11 +181,19 @@ impl FeeV2CallBuilder {
 
         // Fee_V2 circuit tx_binding: bound to tx_nonce (matches fee.zk).
         // Used for the Fee_V2 proof public inputs and stored in FeeParamsV2.
-        let fee_v2_tx_binding = poseidon_hash([
-            DRK_POSEIDON_DOMAIN_TX_BINDING,
+        // Per fee-spec.md §5.5.1: nominal type, domain mass_balance.
+        let fee_v2_tx_binding = FeeV2TxBinding::compute(
             self.input.tx_commitment,
             self.input.tx_nonce,
-        ]);
+        );
+
+        // FeeThreshold_V1 tx_binding: bound to threshold (matches fee_threshold_v1.zk).
+        // Used for the FeeThreshold_V1 proof public inputs and stored in FeeParamsV2.
+        // Per fee-spec.md §5.5.1: nominal type, domain fee_signalling.
+        let threshold_tx_binding = ThresholdTxBinding::compute(
+            self.input.tx_commitment,
+            self.threshold,
+        );
 
         // Build Fee_V2 proof using pre-built proving key
         let (fee_proof, _revealed) = create_fee_proof(
@@ -234,7 +242,8 @@ impl FeeV2CallBuilder {
             threshold: self.threshold,
             fee_value_blind: fee_value_blind.inner(),
             fee_token_blind: token_blind,
-            tx_binding: fee_v2_tx_binding,
+            fee_v2_tx_binding,
+            threshold_tx_binding,
             tx_nonce: self.input.tx_nonce,
         };
 

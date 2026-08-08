@@ -945,6 +945,81 @@ mod tests {
         assert_eq!(blob1, blob2);
     }
 
+    /// L1-FW-5a: fee_window_flags excluded from mining blob + len invariant.
+    /// Partition B — PoW/wire boundary. Flags are set after mining, must not
+    /// touch the PoW hash. Pattern: test_mining_blob_excludes_anchor.
+    #[test]
+    fn test_mining_blob_excludes_fee_window_flags() {
+        let mut header = BlockHeader {
+            version: BlockVersion::CURRENT,
+            previous: blake3::hash(b"parent"),
+            merkle_root: blake3::hash(b"txs"),
+            timestamp: BlockTimestamp::new(1000),
+            target: BlockTarget::new(0x0000_FFFF),
+            nonce: 42,
+            height: BlockHeight::new(1),
+            uncle_merkle_root: [0u8; 32],
+            total_reward: BlockReward::new(100_000_000),
+            randomx_key: [0u8; 32],
+            coin_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32],
+            anchor_monero_height: MoneroBlockHeight::new(0),
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
+            fee_window_flags: 0,
+            pow_source: PowSource::Native,
+        };
+
+        let blob_zero = header.to_mining_blob();
+        assert_eq!(blob_zero.len(), 228);
+
+        // Setting fee_window_flags must not change the mining blob
+        header.fee_window_flags = 0x11; // active + +10% CM
+        let blob_flagged = header.to_mining_blob();
+        assert_eq!(blob_zero, blob_flagged,
+            "fee_window_flags must not affect mining blob");
+    }
+
+    /// L1-FW-5b: BlockHeader serde roundtrip preserves fee_window_flags.
+    /// Partition B — persistence/wire lift.
+    #[test]
+    fn test_fee_window_flags_serde_roundtrip() {
+        let mut header = BlockHeader {
+            version: BlockVersion::CURRENT,
+            previous: blake3::hash(b"parent"),
+            merkle_root: blake3::hash(b"txs"),
+            timestamp: BlockTimestamp::new(1000),
+            target: BlockTarget::new(0x0000_FFFF),
+            nonce: 0,
+            height: BlockHeight::new(1),
+            uncle_merkle_root: [0u8; 32],
+            total_reward: BlockReward::new(100_000_000),
+            randomx_key: [0u8; 32],
+            coin_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32],
+            anchor_monero_height: MoneroBlockHeight::new(0),
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
+            fee_window_flags: 0x11,
+            pow_source: PowSource::Native,
+        };
+
+        // JSON roundtrip preserves flags
+        let json = serde_json::to_vec(&header).expect("serialize");
+        let restored: BlockHeader = serde_json::from_slice(&json).expect("deserialize");
+        assert_eq!(restored.fee_window_flags, 0x11,
+            "fee_window_flags should survive serde roundtrip");
+
+        // Zero flags also roundtrip correctly
+        header.fee_window_flags = 0;
+        let json2 = serde_json::to_vec(&header).expect("serialize zero");
+        let restored2: BlockHeader = serde_json::from_slice(&json2).expect("deserialize zero");
+        assert_eq!(restored2.fee_window_flags, 0,
+            "zero fee_window_flags should survive serde roundtrip");
+    }
+
     /// Caribina: default anchor_tx_id is zero (no anchor).
     #[test]
     fn test_anchor_tx_id_default_is_zero() {

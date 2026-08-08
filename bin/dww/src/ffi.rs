@@ -1763,7 +1763,7 @@ mod tests {
         // JSON must be caught, not abort.
         let json = CString::new("{}").unwrap();
         let ret = dwow_wallet_scan_block_json(
-            std::ptr::null(), json.as_ptr(),
+            std::ptr::null_mut(), json.as_ptr(),
         );
         assert!(ret < 0, "NULL handle to scan_block_json must return error sentinel, got {ret}");
 

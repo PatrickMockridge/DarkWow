@@ -77,7 +77,7 @@ RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
 
 # Build dwow_wallet only — no WASM contracts, no dwowd, no lilith
 ARG CARGO_PACKAGE=dwow_wallet
-RUN cargo build --locked -p ${CARGO_PACKAGE} --release -j ${CARGO_BUILD_JOBS} && echo "build: $BUILD_COMMIT"
+RUN cargo build --locked -p ${CARGO_PACKAGE} --release --features fee-window -j ${CARGO_BUILD_JOBS} && echo "build: $BUILD_COMMIT"
 
 RUN cp target/release/${CARGO_PACKAGE} /app/dwow_wallet
 

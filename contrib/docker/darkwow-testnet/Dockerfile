@@ -149,7 +149,7 @@ RUN cp target/wasm32-unknown-unknown/release/dwow_deployooor_contract.wasm /app/
     cp target/wasm32-unknown-unknown/release/dwow_tender_contract.wasm /app/src/contract/tender/
 
 # Build dwowd — single RUN layer
-RUN cargo build --locked -p dwowd --release -j ${CARGO_BUILD_JOBS} && \
+RUN cargo build --locked -p dwowd --release --features fee-window -j ${CARGO_BUILD_JOBS} && \
     cp target/release/dwowd /app/dwowd && \
     echo "build: $BUILD_COMMIT"
 

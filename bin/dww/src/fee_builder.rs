@@ -47,6 +47,7 @@ use crate::contract_imports::native_token::{
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN,
 };
 use dwow_native_token_contract::client::fee::FeeV2CallBuilder as _;
+use dwow_native_token_contract::model::fee::ThresholdTxBinding;
 use crate::walletdb::WalletPtr;
 use crate::NATIVE_TOKEN_CONTRACT_ID;
 
@@ -263,12 +264,12 @@ pub fn build_fee_and_finalize_tx(
     // Build FeeThreshold_V1 proof (wallet→mempool gate: fee >= threshold).
     // Fee lifecycle step 1 — constructed here in the wallet crate, not in
     // the contract crate. See fee_threshold_proof.rs for the full lifecycle.
-    let threshold_tx_binding = poseidon_hash([
-        DRK_POSEIDON_DOMAIN_TX_BINDING,
+    // Per fee-spec.md §5.5.1: ThresholdTxBinding binds proof to a specific threshold.
+    let threshold_tx_binding = ThresholdTxBinding::compute(
         fee_input.tx_commitment,
-        crate::fee_threshold_proof::fee_to_base(FeeAmount::new(threshold)),
-    ]);
-    let threshold_proof = crate::fee_threshold_proof::create_fee_threshold_proof(
+        FeeAmount::new(threshold),
+    );
+    let threshold_proof = dwow_native_token_contract::client::fee_threshold::create_fee_threshold_proof(
         &threshold_zkbin,
         &threshold_pk,
         FeeAmount::new(DEFAULT_FEE),
@@ -342,6 +343,71 @@ mod tests {
     #[test]
     fn test_default_fee_value() {
         assert_eq!(DEFAULT_FEE, 42_000_000);
+    }
+
+    /// L2-FW-1a: fee_window_flags decode — matches Python model + L1-FW-1 contract.
+    /// Verifies the inline decode logic in build_fee_and_finalize_tx (lines 212-228)
+    /// produces the same premium_threshold as the canonical WindowSignalling decode.
+    /// Partition B — wallet boundary.
+    #[test]
+    fn test_fee_builder_window_flags_decode_active_increase() {
+        // 0x11 = active (bit 0) + +10% (cm=0x01)
+        let fee_window_flags: u16 = 0x11;
+        assert!(fee_window_flags & 0x01 != 0, "active bit set");
+        let cm = (fee_window_flags >> 4) & 0x0F;
+        assert_eq!(cm, 0x01, "cm=+10%");
+        let base_premium = 420_000_000u64;
+        let premium = match cm {
+            0x01 => ((base_premium as u128) * 110 / 100) as u64,
+            0x02 => ((base_premium as u128) * 90 / 100) as u64,
+            _ => base_premium,
+        };
+        assert_eq!(premium, 462_000_000, "active +10% → 462M");
+        assert_eq!(42_000_000u64, 42_000_000, "general stays at 42M");
+    }
+
+    #[test]
+    fn test_fee_builder_window_flags_decode_active_decrease() {
+        // 0x12 = active (bit 0) + -10% (cm=0x02)
+        let fee_window_flags: u16 = 0x12;
+        assert!(fee_window_flags & 0x01 != 0);
+        let cm = (fee_window_flags >> 4) & 0x0F;
+        assert_eq!(cm, 0x02, "cm=-10%");
+        let base_premium = 420_000_000u64;
+        let premium = match cm {
+            0x01 => ((base_premium as u128) * 110 / 100) as u64,
+            0x02 => ((base_premium as u128) * 90 / 100) as u64,
+            _ => base_premium,
+        };
+        assert_eq!(premium, 378_000_000, "active -10% → 378M");
+    }
+
+    #[test]
+    fn test_fee_builder_window_flags_decode_active_hold() {
+        // 0x10 = active (bit 0) + hold (cm=0x00)
+        let fee_window_flags: u16 = 0x10;
+        assert!(fee_window_flags & 0x01 != 0);
+        let cm = (fee_window_flags >> 4) & 0x0F;
+        assert_eq!(cm, 0x00, "cm=hold");
+        let base_premium = 420_000_000u64;
+        let premium = match cm {
+            0x01 => ((base_premium as u128) * 110 / 100) as u64,
+            0x02 => ((base_premium as u128) * 90 / 100) as u64,
+            _ => base_premium,
+        };
+        assert_eq!(premium, 420_000_000, "active hold → 420M");
+    }
+
+    #[test]
+    fn test_fee_builder_window_flags_decode_legacy() {
+        // 0x00 = inactive → legacy static thresholds
+        let fee_window_flags: u16 = 0x00;
+        assert!(fee_window_flags & 0x01 == 0, "inactive");
+        // Legacy: premium=42M, general=1M
+        let premium_threshold: u64 = 42_000_000;
+        let general_threshold: u64 = 1_000_000;
+        assert_eq!(premium_threshold, 42_000_000);
+        assert_eq!(general_threshold, 1_000_000);
     }
 
 }

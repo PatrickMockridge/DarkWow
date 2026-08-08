@@ -62,7 +62,8 @@ serde = {version = "1.0.228", features = ["derive"]}
 dwow_transport = { path = "../../src/transport", optional = true }
 
 [features]
-default = []
+default = ["fee-window"]
+fee-window = []
 transport = ["dwow_transport"]
 transport-tor = ["dwow_transport/tor"]
 transport-socks5 = ["dwow_transport/socks5"]

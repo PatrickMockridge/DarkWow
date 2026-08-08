@@ -322,7 +322,7 @@ fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contr
             *output_value_coords.y(),               // 11
             fee_params.fee_value_commit_x,          // 12: fee_value_commit x
             fee_params.fee_value_commit_y,          // 13: fee_value_commit y
-            fee_params.tx_binding,                  // 14: tx_binding
+            fee_params.fee_v2_tx_binding.inner(),     // 14: FeeV2TxBinding
             fee_params.tx_nonce,                    // 15: tx_nonce
         ],
     ));
@@ -334,7 +334,7 @@ fn fee_v2_get_metadata(_cid: ContractId, params: &[u8]) -> Result<Vec<u8>, Contr
             // spec dispensation: fee-spec.md §6.2 — FeeAmount→Base for ZK public input.
             // Inlined to avoid feature-gated client dependency.
             pallas::Base::from(fee_params.threshold.get()),   // 1: threshold
-            fee_params.tx_binding,                        // 2: tx_binding
+            fee_params.threshold_tx_binding.inner(),       // 2: ThresholdTxBinding
         ],
     ));
 
