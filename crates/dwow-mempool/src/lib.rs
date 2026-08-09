@@ -35,6 +35,7 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use dwow_chain::fee_window::CongestionFactor;
 use dwow_chain::{Nullifier, Transaction};
 use smol::lock::Mutex;
 
@@ -110,8 +111,8 @@ impl Default for MempoolConfig {
             max_age_secs: 3600,
             max_tx_size: 1024 * 1024,
             min_fee: 0,  // Zero by default — threshold proofs gate admission
-            premium_threshold: 42_000_000,
-            general_threshold: 1_000_000,
+            premium_threshold: CongestionFactor::SCALE as u64,
+            general_threshold: CongestionFactor::SCALE as u64,
             persist: true,
         }
     }
@@ -723,20 +724,36 @@ pub fn create_mempool_persistent(tree: sled::Tree, fee_extractor: Box<dyn FeeSig
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dwow_chain::fee_window::compute_fee;
     use dwow_chain::ContractCall;
     use dwow_sdk::blockchain::BlockVersion;
     use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
 
-    /// Test fee extractor: returns 42_000_000 per call to native token FeeV1.
+    /// Test fee extractor: extracts fee from native token FeeV1/V2 call data.
+    /// FeeV1: data = [0x00][fee: u64 LE]
+    /// FeeV2: data = [0x08][fee: u64 LE][...test payload...]
     struct TestFeeSignallingExtractor;
     impl FeeSignallingExtractor for TestFeeSignallingExtractor {
         fn extract_fee(&self, tx: &Transaction) -> u64 {
             let mut total: u64 = 0;
             for call in &tx.contract_calls {
-                if call.contract_id == *NATIVE_TOKEN_CONTRACT_ID && call.data.first() == Some(&0x00u8) {
-                    if call.data.len() >= 9 {
-                        let fee_bytes: [u8; 8] = call.data[1..9].try_into().unwrap_or([0u8; 8]);
-                        total += u64::from_le_bytes(fee_bytes);
+                if call.contract_id == *NATIVE_TOKEN_CONTRACT_ID {
+                    match call.data.first() {
+                        Some(&0x00u8) => {
+                            // FeeV1: clear-text fee at bytes 1..9
+                            if call.data.len() >= 9 {
+                                let fee_bytes: [u8; 8] = call.data[1..9].try_into().unwrap_or([0u8; 8]);
+                                total += u64::from_le_bytes(fee_bytes);
+                            }
+                        }
+                        Some(&0x08u8) => {
+                            // FeeV2: test-only clear-text fee at bytes 1..9 (in production the fee is ZK-hidden)
+                            if call.data.len() >= 9 {
+                                let fee_bytes: [u8; 8] = call.data[1..9].try_into().unwrap_or([0u8; 8]);
+                                total += u64::from_le_bytes(fee_bytes);
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -748,8 +765,10 @@ mod tests {
         fn extract_fee_commitment(&self, _tx: &Transaction) -> Option<FeeCommitment> {
             None
         }
-        fn verify_threshold_proof(&self, _tx: &Transaction, _threshold: u64) -> bool {
-            false
+        fn verify_threshold_proof(&self, tx: &Transaction, threshold: u64) -> bool {
+            // For test purposes: extract fee and compare directly.
+            // In production this verifies a FeeThreshold_V1 ZK proof.
+            self.extract_fee(tx) >= threshold
         }
     }
 
@@ -779,6 +798,26 @@ mod tests {
         ContractCall {
             contract_id: dwow_sdk::crypto::ContractId::from_bytes([1u8; 32]).unwrap(),
             data,
+        }
+    }
+
+    /// Build a FeeV2 test transaction with the fee embedded after the selector.
+    /// data = [0x08][fee: u64 LE][rest]
+    fn make_fee_v2_tx(fee: u64, rest: &[u8]) -> Transaction {
+        let mut data = vec![0x08u8];
+        data.extend_from_slice(&fee.to_le_bytes());
+        data.extend_from_slice(rest);
+        Transaction {
+            version: BlockVersion::CURRENT,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![ContractCall {
+                contract_id: *NATIVE_TOKEN_CONTRACT_ID,
+                data,
+            }],
+            lock_time: 0,
+            nullifiers: vec![],
+            witness: vec![],
         }
     }
 
@@ -818,8 +857,25 @@ mod tests {
     #[test]
     fn test_fee_too_low_rejected() {
         smol::block_on(async {
-            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeSignallingExtractor), None);
-            let tx = make_tx(vec![make_call(vec![0x01])], Some(1_000_000)); // below 42M min
+            // ── Derive min_fee from the two-component formula ─────────
+            // Reference: average circuit (1000 difficulty), 1 kB WASM, CF=1.0.
+            // min_fee = compute_fee(&[1000], 1, default_cf, default_cf)
+            //   = (1 * BASELINE_STORAGE * SCALE)/SCALE + (1000 * SCALE)/SCALE
+            //   = 1_000_000 + 1_000 = 1_001_000
+            let min_fee = compute_fee(
+                &[1000u64],
+                1u64,
+                CongestionFactor::default(),
+                CongestionFactor::default(),
+            ).get();
+
+            let config = MempoolConfig {
+                min_fee,
+                ..Default::default()
+            };
+            let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
+            // Fee 500_000 < min_fee 1_001_000 → rejected by min_fee gate.
+            let tx = make_tx(vec![make_call(vec![0x01])], Some(500_000));
             let result = mempool.add(tx).await;
             assert!(result.is_err());
             assert!(result.unwrap_err().to_string().contains("Fee too low"));
@@ -885,25 +941,33 @@ mod tests {
     fn test_update_thresholds_atomic_visibility() {
         // Store new thresholds, verify add() sees the new values via Acquire/Release.
         smol::block_on(async {
+            // ── Derive thresholds from CongestionFactor values ────────
+            // premium_threshold = CF.premium (miner sets this as u64).
+            // general_threshold = CF.standard.
+            // At CF 200x: premium = 200 × SCALE, standard = 50 × SCALE.
+            let premium_threshold = CongestionFactor { premium: 200_000_000, standard: 50_000_000 }.premium as u64;
+            let general_threshold = CongestionFactor { premium: 200_000_000, standard: 50_000_000 }.standard as u64;
             let config = MempoolConfig {
-                premium_threshold: 200_000_000,
-                general_threshold: 50_000_000,
+                premium_threshold,
+                general_threshold,
                 ..Default::default()
             };
             let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
             // At config thresholds: fee=100M goes to general (above 50M, below 200M)
-            let tx = make_tx(vec![make_call(vec![0x08])], Some(100_000_000));
+            let tx = make_fee_v2_tx(100_000_000, &[0x01]);
             assert!(mempool.add(tx).await.is_ok(), "fee 100M should be admitted");
 
             // Lower premium threshold: fee=100M should now go to premium
+            // CF premium lowered to 90 × SCALE.
             mempool.update_thresholds(90_000_000, 50_000_000);
-            let tx2 = make_tx(vec![make_call(vec![0x08])], Some(100_000_000));
+            let tx2 = make_fee_v2_tx(100_000_000, &[0x02]);
             assert!(mempool.add(tx2).await.is_ok(), "fee 100M should be admitted after threshold drop");
 
             // Raise general above fee: fee=100M below new general=150M → reject
+            // CF standard raised to 150 × SCALE.
             mempool.update_thresholds(200_000_000, 150_000_000);
-            let tx3 = make_tx(vec![make_call(vec![0x08])], Some(100_000_000));
+            let tx3 = make_fee_v2_tx(100_000_000, &[0x03]);
             assert!(mempool.add(tx3).await.is_err(), "fee 100M below general 150M should be rejected");
         });
     }
@@ -912,22 +976,28 @@ mod tests {
     fn test_fcfs_preservation_across_threshold_change() {
         // Transactions admitted under old thresholds survive and maintain FCFS order.
         smol::block_on(async {
+            // ── Derive thresholds from CongestionFactor values ────────
+            // premium_threshold = CF.premium, general_threshold = CF.standard.
+            let premium_threshold = CongestionFactor { premium: 200_000_000, standard: 10_000_000 }.premium as u64;
+            let general_threshold = CongestionFactor { premium: 200_000_000, standard: 10_000_000 }.standard as u64;
             let config = MempoolConfig {
-                premium_threshold: 200_000_000,
-                general_threshold: 10_000_000,
+                premium_threshold,
+                general_threshold,
                 ..Default::default()
             };
             let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
-            // Admit 3 transactions under window 0 thresholds
-            let tx1 = make_tx(vec![make_call(vec![0x08, 0x01])], Some(50_000_000));
-            let tx2 = make_tx(vec![make_call(vec![0x08, 0x02])], Some(60_000_000));
-            let tx3 = make_tx(vec![make_call(vec![0x08, 0x03])], Some(300_000_000));
-            let h1 = mempool.add(tx1).await.expect("tx1");
-            let h2 = mempool.add(tx2).await.expect("tx2");
+            // Admit 3 transactions under window 0 thresholds.
+            // fee 50M → general (≥10M, <200M); 60M → general; 300M → premium (≥200M)
+            let tx1 = make_fee_v2_tx(50_000_000, &[0x01]);
+            let tx2 = make_fee_v2_tx(60_000_000, &[0x02]);
+            let tx3 = make_fee_v2_tx(300_000_000, &[0x03]);
+            let _h1 = mempool.add(tx1).await.expect("tx1");
+            let _h2 = mempool.add(tx2).await.expect("tx2");
             let _h3 = mempool.add(tx3).await.expect("tx3");
 
-            // Raise thresholds (simulating window boundary)
+            // Raise thresholds (simulating window boundary).
+            // New CF: premium = 400 × SCALE, standard = 100 × SCALE.
             mempool.update_thresholds(400_000_000, 100_000_000);
 
             // Existing txs survive (I3) and maintain order
@@ -936,26 +1006,30 @@ mod tests {
             }).await;
             assert_eq!(selected.len(), 3, "all 3 existing txs must survive threshold change");
             // Premium (tx3) first, then general FCFS (tx1 before tx2)
-            assert_eq!(selected[0].contract_calls[0].data[1], 0x03, "premium tx must be first");
-            assert_eq!(selected[1].contract_calls[0].data[1], 0x01, "general FCFS: tx1 before tx2");
-            assert_eq!(selected[2].contract_calls[0].data[1], 0x02, "general FCFS: tx2 after tx1");
+            assert_eq!(selected[0].contract_calls[0].data[9], 0x03, "premium tx must be first");
+            assert_eq!(selected[1].contract_calls[0].data[9], 0x01, "general FCFS: tx1 before tx2");
+            assert_eq!(selected[2].contract_calls[0].data[9], 0x02, "general FCFS: tx2 after tx1");
         });
     }
 
     #[test]
     fn test_premium_queue_len() {
         smol::block_on(async {
+            // ── Derive thresholds from CongestionFactor values ────────
+            let premium_threshold = CongestionFactor { premium: 100_000_000, standard: 10_000_000 }.premium as u64;
+            let general_threshold = CongestionFactor { premium: 100_000_000, standard: 10_000_000 }.standard as u64;
             let config = MempoolConfig {
-                premium_threshold: 100_000_000,
-                general_threshold: 10_000_000,
+                premium_threshold,
+                general_threshold,
                 ..Default::default()
             };
             let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
             assert_eq!(mempool.premium_queue_len(), 0);
-            mempool.add(make_tx(vec![make_call(vec![0x08])], Some(200_000_000))).await.unwrap();
+            // fee 200M ≥ premium 100M → premium queue
+            mempool.add(make_fee_v2_tx(200_000_000, &[])).await.unwrap();
             assert_eq!(mempool.premium_queue_len(), 1);
-            mempool.add(make_tx(vec![make_call(vec![0x08])], Some(300_000_000))).await.unwrap();
+            mempool.add(make_fee_v2_tx(300_000_000, &[])).await.unwrap();
             assert_eq!(mempool.premium_queue_len(), 2);
         });
     }
@@ -963,15 +1037,19 @@ mod tests {
     #[test]
     fn test_standard_queue_len() {
         smol::block_on(async {
+            // ── Derive thresholds from CongestionFactor values ────────
+            let premium_threshold = CongestionFactor { premium: 500_000_000, standard: 10_000_000 }.premium as u64;
+            let general_threshold = CongestionFactor { premium: 500_000_000, standard: 10_000_000 }.standard as u64;
             let config = MempoolConfig {
-                premium_threshold: 500_000_000,
-                general_threshold: 10_000_000,
+                premium_threshold,
+                general_threshold,
                 ..Default::default()
             };
             let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
             assert_eq!(mempool.standard_queue_len(), 0);
-            mempool.add(make_tx(vec![make_call(vec![0x08])], Some(50_000_000))).await.unwrap();
+            // fee 50M ≥ general 10M but < premium 500M → general queue
+            mempool.add(make_fee_v2_tx(50_000_000, &[])).await.unwrap();
             assert_eq!(mempool.standard_queue_len(), 1);
         });
     }
@@ -982,7 +1060,7 @@ mod tests {
             let config = MempoolConfig::default();
             let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
-            let tx = make_tx(vec![make_call(vec![0x08])], Some(50_000_000));
+            let tx = make_fee_v2_tx(50_000_000, &[]);
             let nullifier = tx.nullifiers.first().cloned();
             mempool.add(tx).await.unwrap();
 
@@ -1000,9 +1078,12 @@ mod tests {
     fn test_concurrent_add_update_thresholds() {
         use std::sync::{Arc as StdArc, Barrier};
 
+        // ── Derive thresholds from CongestionFactor values ────────────
+        let premium_threshold = CongestionFactor { premium: 200_000_000, standard: 50_000_000 }.premium as u64;
+        let general_threshold = CongestionFactor { premium: 200_000_000, standard: 50_000_000 }.standard as u64;
         let config = MempoolConfig {
-            premium_threshold: 200_000_000,
-            general_threshold: 50_000_000,
+            premium_threshold,
+            general_threshold,
             ..Default::default()
         };
         let mempool: MempoolPtr = Arc::new(Mempool::new(
@@ -1016,6 +1097,7 @@ mod tests {
         let barrier = StdArc::new(Barrier::new(N_WRITERS + 1));
 
         // Threshold flipper thread — flips between two valid pairs.
+        // Values are CF.{premium,standard} as u64, as set by the miner.
         let mp = Arc::clone(&mempool);
         let b = StdArc::clone(&barrier);
         let threshold_thread = std::thread::spawn(move || {
@@ -1042,11 +1124,9 @@ mod tests {
                 smol::block_on(async {
                     b.wait();
                     for j in 0..N_ADDS_PER_WRITER {
-                        let unique = (thread_id * N_ADDS_PER_WRITER + j) as u8;
-                        let tx = make_tx(
-                            vec![make_call(vec![0x08, unique])],
-                            Some(100_000_000), // fee always ≥ general (40M or 50M)
-                        );
+                        let unique = (thread_id * N_ADDS_PER_WRITER + j) as u16;
+                        // fee=100M always ≥ general (40M or 50M), below premium (150M/200M)
+                        let tx = make_fee_v2_tx(100_000_000, &unique.to_le_bytes());
                         let result = mp.add(tx).await;
                         assert!(
                             result.is_ok(),
