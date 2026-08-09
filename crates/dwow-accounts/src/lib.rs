@@ -1283,9 +1283,10 @@ impl MiningRecipient {
         &self.address
     }
 
-    /// The per-block derived secret key (for nullifier computation).
+    /// The per-block derived secret key (for nullifier computation + fee decryption).
     /// This is `sk_H = derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, H)`.
-    /// Both miner and wallet compute this deterministically.
+    /// Both miner and wallet compute this deterministically. Each block has a unique
+    /// key, preventing cross-block fee correlation (G2+G6 privacy).
     pub fn secret(&self) -> &OwnedSecretKey {
         &self.secret
     }
