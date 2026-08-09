@@ -361,15 +361,17 @@ pub fn encrypt_fee_for_miner(
     let mut nonce = [0u8; 12];
     nonce.copy_from_slice(&nonce_hash.as_bytes()[..12]);
 
-    // 4. Encrypt fee bytes with ChaCha20-Poly1305
+    // 4. Encrypt fee bytes with ChaCha20-Poly1305.
+    // encrypt_in_place on Vec GROWS the buffer by 16 bytes (the tag).
+    // So we allocate 8 bytes (fee data), result is 8 + 16 = 24 bytes.
     let fee_bytes = fee_amount.get().to_le_bytes();
-    let mut buf = vec![0u8; 24]; // 8 data + 16 tag
-    buf[..8].copy_from_slice(&fee_bytes);
+    let mut buf = vec![0u8; 8];
+    buf.copy_from_slice(&fee_bytes);
     ChaCha20Poly1305::new(key.as_ref().into())
         .encrypt_in_place((&nonce).into(), b"darkfi_fee", &mut buf)
         .map_err(|e| Error::Custom(format!("fee encrypt: {:?}", e)))?;
 
-    // 5. Format output: [ephemeral_public (32)] [nonce (12)] [ciphertext+tag (24)]
+    // 5. Format: [ephemeral_public (32)] [nonce (12)] [ciphertext+tag (24)] = 68 bytes
     let mut out = Vec::with_capacity(68);
     out.extend_from_slice(&ephem_public.to_bytes());
     out.extend_from_slice(&nonce);
@@ -479,7 +481,8 @@ mod tests {
         assert_eq!(decoded, flags);
     }
 
-    /// G6: encrypt_fee_for_miner produces valid AEAD ciphertext (pk + nonce + data + tag).
+    /// G6: encrypt_fee_for_miner produces 68-byte AEAD ciphertext.
+    /// Format: [ephemeral_public (32)] [nonce (12)] [ciphertext+tag (24)] = 68 bytes.
     #[test]
     fn test_encrypt_fee_for_miner_format() {
         let fee = FeeAmount::new(42_000_000);
@@ -487,9 +490,8 @@ mod tests {
         let miner_pk = PublicKey::from_secret(miner_sk);
         let ciphertext = encrypt_fee_for_miner(fee, &miner_pk)
             .expect("encrypt_fee_for_miner must succeed");
-        // Format: [ephemeral_public] [nonce(12)] [ciphertext+tag(24)]
-        assert!(ciphertext.len() >= 44,
-            "AEAD ciphertext must be at least 44 bytes (32 pk + 12 nonce), got {}",
+        assert_eq!(ciphertext.len(), 68,
+            "G6: AEAD ciphertext must be exactly 68 bytes (32 pk + 12 nonce + 24 encrypted), got {}",
             ciphertext.len());
     }
 
