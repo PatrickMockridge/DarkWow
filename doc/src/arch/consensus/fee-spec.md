@@ -1260,6 +1260,41 @@ Between boundaries, thresholds are stable — the mempool enforces the current
 window's values, the wallet constructs proofs against them, and all participants
 observe a consistent fee regime.
 
+#### 12.1.1 Mempool Admission as an Object Capability
+
+The mempool admission gate — `↓fee-window-enforce` — is an object-capability
+boundary per [ocap.md](../../ocap.md). A transaction's `FeeThreshold_V1` proof
+**is** a capability: possession of a valid proof grants the holder the right to
+have their transaction admitted to the mempool at a specific tier.
+
+This capability is not self-authenticating — it is **guaranteed by the mining
+network**. Every miner independently verifies threshold proofs at admission.
+A proof that passes verification at one miner SHALL pass at all miners with
+identical chain state (per I8, Deterministic CF). The mining network's
+collective computation enforces the capability boundary: a transaction without
+a valid threshold proof simply does not cross the admission gate. There is no
+central gatekeeper, no RPC endpoint to petition, and no token-weighted vote
+that can override the cryptographic verification.
+
+This inverts the traditional blockchain security model. In token-weighted
+systems, governance controls who can transact and at what cost — the gate is
+political. In DarkWow, the gate is mechanical: hold the proof, cross the gate.
+The o-cap primitives in genesis (`native_token` for fee commitment,
+`FeeThreshold_V1` circuit for proof verification, `manifest` for cost
+declarations) are necessary and sufficient — no additional authority is
+required.
+
+The capability's economic foundation rests on the trust model described in
+§12.12.6: contract deployers under-write execution risk through attested
+manifests and slashable endowments. The mining network absorbs residual
+execution risk in exchange for coinbase + fees. The capability is
+cryptographically precise — a valid proof means `fee >= threshold` — but the
+threshold itself is economically derived from the congestion control loop
+(§12.7) and the deployer's risk factor (§12.12.3). Together, the cryptographic
+capability and the economic under-writing form a complete access-control
+system: the proof grants entry, the risk model prices it, and the mining
+network guarantees both.
+
 ### 12.2 Barb Semantics
 
 Four new barbs partition the fee window's trajectory space:
