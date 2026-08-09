@@ -31,6 +31,7 @@ dwow_native_token_contract = {path = "../../src/contract/native_token", features
 # Misc
 blake2b_simd = "1.0.3"
 blake3 = "1.8.2"
+chacha20poly1305 = "0.10.1"
 hex = "0.4.3"
 randomx = {git = "https://codeberg.org/darkrenaissance/RandomX", rev = "0e31d5a"}
 serde_json = "1.0"

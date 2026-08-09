@@ -29,6 +29,7 @@ sled-overlay = "0.1.20"
 
 # Misc
 blake3 = "1.8.2"
+chacha20poly1305 = "0.10.1"
 glob = "0.3"
 randomx = {git = "https://codeberg.org/darkrenaissance/RandomX", rev = "0e31d5a"}
 thiserror = "2.0"

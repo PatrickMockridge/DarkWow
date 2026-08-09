@@ -335,19 +335,46 @@ pub fn build_fee_and_finalize_tx(
 /// wallet-private to miner-known ONLY through this encryption. The miner decrypts
 /// in `prepare_block()` to compute the correct `total_fees` for FeeCollectV1.
 ///
-/// Ciphertext format: [ephemeral_public (32B) || nonce (12B) || encrypted_blob || tag (16B)].
-/// Currently returns empty — FIXME: implement ECDH + ChaCha20-Poly1305 encryption.
+/// Ciphertext format: [ephemeral_public (32B) || nonce (12B) || ciphertext+tag (24B)] = 68 bytes.
+/// Key cycling: the miner's key is per-block derived via `derive_instance(NATIVE_TOKEN, height)`,
+/// so encrypted fees cannot be correlated across blocks by public key.
 pub fn encrypt_fee_for_miner(
     fee_amount: FeeAmount,
-    _miner_public_key: &PublicKey,
+    miner_public_key: &PublicKey,
 ) -> Result<Vec<u8>> {
-    // FIXME(G2 Phase 2): Implement ECDH key agreement + ChaCha20-Poly1305.
+    use dwow_sdk::crypto::diffie_hellman::{sapling_ka_agree, kdf_sapling};
+    use dwow_sdk::crypto::SecretKey;
+    use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305, KeyInit};
+    use rand::rngs::OsRng;
+
     // 1. Generate ephemeral keypair
-    // 2. ECDH(ephemeral_secret, miner_public) → shared_secret
-    // 3. ChaCha20-Poly1305 encrypt fee_amount.get().to_le_bytes() with shared_secret
-    // 4. Return [ephemeral_public || nonce || ciphertext || tag]
-    let _ = (fee_amount, _miner_public_key);
-    Ok(vec![])
+    let ephem_secret = SecretKey::random(&mut OsRng);
+    let ephem_public = PublicKey::from_secret(ephem_secret.clone());
+
+    // 2. ECDH key agreement
+    let shared_secret = sapling_ka_agree(&ephem_secret, miner_public_key)
+        .map_err(|_| Error::Custom("fee encrypt: ECDH failed".into()))?;
+    let key = kdf_sapling(&shared_secret, &ephem_public);
+
+    // 3. Derive deterministic nonce from ephemeral public key
+    let nonce_hash = blake3::hash(ephem_public.to_bytes().as_ref());
+    let mut nonce = [0u8; 12];
+    nonce.copy_from_slice(&nonce_hash.as_bytes()[..12]);
+
+    // 4. Encrypt fee bytes with ChaCha20-Poly1305
+    let fee_bytes = fee_amount.get().to_le_bytes();
+    let mut buf = [0u8; 24]; // 8 data + 16 tag
+    buf[..8].copy_from_slice(&fee_bytes);
+    ChaCha20Poly1305::new(key.as_ref().into())
+        .encrypt_in_place((&nonce).into(), b"darkfi_fee", &mut buf)
+        .map_err(|e| Error::Custom(format!("fee encrypt: {:?}", e)))?;
+
+    // 5. Format output: [ephemeral_public (32)] [nonce (12)] [ciphertext+tag (24)]
+    let mut out = Vec::with_capacity(68);
+    out.extend_from_slice(&ephem_public.to_bytes());
+    out.extend_from_slice(&nonce);
+    out.extend_from_slice(&buf);
+    Ok(out)
 }
 
 #[cfg(test)]

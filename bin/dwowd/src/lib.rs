@@ -113,6 +113,40 @@ impl NativeTokenFeeSignallingExtractor {
             .expect("FeeThreshold_V1 VerifyingKey::build");
         Self { threshold_vk: Arc::new(vk) }
     }
+
+    /// Decrypt a fee value encrypted by the wallet to this miner's public key.
+    ///
+    /// Format: [ephemeral_public (32B)] [nonce (12B)] [ciphertext+tag (24B)] = 68 bytes.
+    /// Returns `Some(fee_amount)` on success, `None` on any failure (wrong key,
+    /// corrupted ciphertext, empty/legacy format).
+    ///
+    /// The miner's key is per-block derived via `derive_instance(NATIVE_TOKEN, height)`,
+    /// so encrypted fees cannot be correlated across blocks by public key.
+    pub fn decrypt_fee_for_miner(
+        encrypted_fee_value: &[u8],
+        miner_secret_key: &dwow_sdk::crypto::SecretKey,
+    ) -> Option<u64> {
+        use dwow_sdk::crypto::diffie_hellman::{sapling_ka_agree, kdf_sapling};
+        use dwow_sdk::crypto::PublicKey;
+        use chacha20poly1305::{AeadInPlace, ChaCha20Poly1305, KeyInit};
+
+        if encrypted_fee_value.len() < 68 {
+            return None; // legacy/empty format
+        }
+        let ephem_pk_bytes: [u8; 32] = encrypted_fee_value[0..32].try_into().ok()?;
+        let ephem_public = PublicKey::from_bytes(ephem_pk_bytes).ok()?;
+        let nonce: [u8; 12] = encrypted_fee_value[32..44].try_into().ok()?;
+        let mut ciphertext = encrypted_fee_value[44..68].to_vec();
+
+        let shared_secret = sapling_ka_agree(miner_secret_key, &ephem_public).ok()?;
+        let key = kdf_sapling(&shared_secret, &ephem_public);
+
+        ChaCha20Poly1305::new(key.as_ref().into())
+            .decrypt_in_place((&nonce).into(), b"darkfi_fee", &mut ciphertext)
+            .ok()?;
+        let fee_bytes: [u8; 8] = ciphertext[..8].try_into().ok()?;
+        Some(u64::from_le_bytes(fee_bytes))
+    }
 }
 impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
     fn extract_fee(&self, tx: &dwow_chain::Transaction) -> FeeAmount {
