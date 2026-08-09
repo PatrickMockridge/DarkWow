@@ -339,6 +339,7 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
     use dwow_sdk::blockchain::BlockHeight;
     use dwow_sdk::crypto::{MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
+    use dwow_chain::fee_window::FeeWindowFlags;
     use crate::tests::blockchain::HeavyweightPipeline;
     use crate::tests::modules::coinbase_coordination;
     use crate::NativeTokenFeeSignallingExtractor;
@@ -482,6 +483,7 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
     use dwow_sdk::blockchain::BlockHeight;
     use dwow_sdk::crypto::{MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID, Nullifier, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
+    use dwow_chain::fee_window::FeeWindowFlags;
     use crate::tests::blockchain::HeavyweightPipeline;
     use crate::tests::modules::coinbase_coordination;
     use crate::NativeTokenFeeSignallingExtractor;

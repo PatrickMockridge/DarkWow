@@ -359,3 +359,48 @@ fn test_fee_extractor_real_feev2_success_path() -> std::result::Result<(), Box<d
         Ok(())
     })
 }
+
+// ============================================================================
+// G2: encrypt_fee_for_miner → decrypt_fee_for_miner roundtrip (L1.5).
+// Verifies the full wallet→miner fee encryption channel without needing
+// accept_block. Uses real AEAD (ECDH + ChaCha20-Poly1305).
+// ============================================================================
+
+#[test]
+fn test_g2_encrypt_decrypt_roundtrip() {
+    use dwow_sdk::crypto::{PublicKey, SecretKey};
+    use dwow_wallet::fee_builder::encrypt_fee_for_miner;
+    use rand::rngs::OsRng;
+
+    let miner_sk = SecretKey::random(&mut OsRng);
+    let miner_pk = PublicKey::from_secret(miner_sk.clone());
+
+    let fee = FeeAmount::new(42_000_000);
+    let ciphertext = encrypt_fee_for_miner(fee, &miner_pk)
+        .expect("[G2] encrypt must succeed");
+    eprintln!("[G2 DIAG] ciphertext len = {}", ciphertext.len());
+
+    let decrypted = crate::NativeTokenFeeSignallingExtractor::decrypt_fee_for_miner(
+        &ciphertext, &miner_sk,
+    );
+    eprintln!("[G2 DIAG] decrypted = {:?}", decrypted);
+    assert!(decrypted.is_some(), "[G2] decrypt must succeed");
+    assert_eq!(decrypted.unwrap(), 42_000_000, "[G2] roundtrip match");
+
+    // Wrong key fails
+    let wrong_sk = SecretKey::random(&mut OsRng);
+    let wrong_result = crate::NativeTokenFeeSignallingExtractor::decrypt_fee_for_miner(
+        &ciphertext, &wrong_sk,
+    );
+    assert!(wrong_result.is_none(),
+        "[G2] decrypt with wrong key must return None");
+
+    // Corrupted ciphertext fails
+    let mut corrupted = ciphertext.clone();
+    if corrupted.len() > 44 { corrupted[44] ^= 0xFF; }
+    let corrupt_result = crate::NativeTokenFeeSignallingExtractor::decrypt_fee_for_miner(
+        &corrupted, &miner_sk,
+    );
+    assert!(corrupt_result.is_none(),
+        "[G2] decrypt with corrupted ciphertext must return None");
+}
