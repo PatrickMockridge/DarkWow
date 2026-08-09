@@ -40,6 +40,8 @@ pub struct ContractManifest {
     pub circuits: Vec<ManifestCircuit>,
     #[serde(default)]
     pub parameters: Vec<ManifestParameter>,
+    #[serde(default)]
+    pub cost_profiles: Vec<ManifestCostProfile>,
 }
 
 fn default_version() -> String {
@@ -152,6 +154,33 @@ pub struct ManifestCircuit {
     /// Empty for contracts that pre-date the typed-manifest specification.
     #[serde(default)]
     pub witness_map: Vec<String>,
+    /// Ordered list of ZK opcode names the circuit uses. Combined with the
+    /// circuit's k parameter (embedded in the zkas binary), this enables
+    /// independent verification of `circuit_difficulty` in `[[cost_profiles]]`.
+    /// Verification is the miner's responsibility — economic incentive.
+    #[serde(default)]
+    pub opcodes: Vec<String>,
+}
+
+/// Per-function cost declaration — [1:1] with manifest.md `[[cost_profiles]]`
+/// and the Python `CostProfile` dataclass in `contrib/model/fee_window_model.py`.
+///
+/// The wallet reads `circuit_difficulty` directly for fee construction (trust).
+/// The miner independently computes `Σ OPCODE_DIFFICULTY[op] × 2^(k - K_REF)`
+/// from `[[circuits]].opcodes` and the zkas binary's k parameter, comparing
+/// against the declared value (verify). A mismatch is a black mark.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManifestCostProfile {
+    /// SHALL match a `name` in `[[functions]]`.
+    pub function: String,
+    /// Σ opcode_cost × 2^(k - K_REF) — deterministic baseline from opcode table.
+    pub circuit_difficulty: u64,
+    /// Circuit's Halo2 k parameter (domain size = 2^k rows).
+    pub k_value: u32,
+    /// Expected WASM execution overhead in kB-equivalent.
+    pub wasm_kb: u64,
+    /// Allowed deviation before black mark (±50% = 0.50).
+    pub tolerance: f64,
 }
 
 /// Parameter schema for a function.
@@ -393,6 +422,7 @@ impl ContractManifest {
             trees: vec![],
             parameters: vec![],
             circuits: vec![],
+            cost_profiles: vec![],
         }
     }
 
@@ -633,6 +663,8 @@ struct ContractManifestToml {
     circuits: Vec<ManifestCircuit>,
     #[serde(default)]
     parameters: Vec<ManifestParameter>,
+    #[serde(default)]
+    cost_profiles: Vec<ManifestCostProfile>,
 }
 
 impl ContractManifest {
@@ -661,6 +693,7 @@ impl ContractManifest {
             trees: self.trees.clone(),
             circuits: self.circuits.clone(),
             parameters: self.parameters.clone(),
+            cost_profiles: self.cost_profiles.clone(),
         };
         toml::to_string_pretty(&wrapper).map_err(|e| format!("TOML serialization failed: {e}"))
     }
@@ -722,6 +755,21 @@ impl ContractManifest {
                 return Err(format!(
                     "Parameters reference unknown function: {}",
                     param.function
+                ));
+            }
+        }
+
+        for cp in &self.cost_profiles {
+            if !func_names.contains(&cp.function.as_str()) {
+                return Err(format!(
+                    "cost_profile references unknown function: {}",
+                    cp.function
+                ));
+            }
+            if cp.k_value < 10 || cp.k_value > 16 {
+                return Err(format!(
+                    "cost_profile k_value out of range [10, 16]: {} (function: {})",
+                    cp.k_value, cp.function
                 ));
             }
         }

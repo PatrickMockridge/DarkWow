@@ -61,6 +61,11 @@ impl Dww {
         wasm_bincode: Vec<u8>,
         deploy_ix: Vec<u8>,
     ) -> Result<Transaction> {
+        // Compute WASM storage cost before wasm_bincode is moved into the builder.
+        // fee-spec.md §12: fee = (wasm_kB × BASELINE_STORAGE × WASM_CF) + circuit_part.
+        // Deployooor uses no ZK circuits → circuit costs remain empty.
+        let wasm_kb = std::cmp::max(1, (wasm_bincode.len() as u64 + 1023) / 1024);
+
         // Create deploy call builder
         let builder = DeployCallBuilder {
             deploy_keypair: deploy_keypair.clone(),
@@ -94,7 +99,7 @@ impl Dww {
         rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
         let tx = crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, &self.account_mgr, deploy_leaf, None, None, seed,
-            &[], 0, FeeWindowFlags::default(),
+            &[], wasm_kb, FeeWindowFlags::default(),
         )?;
 
 

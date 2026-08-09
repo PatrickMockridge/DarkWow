@@ -7,8 +7,8 @@
 /// Matches the Python `ManifestResolver` spec in wallet_model.py.
 
 use dwow_sdk::manifest::{
-    ContractManifest, ManifestAction, ManifestCapability, ManifestFunction,
-    ManifestParameter,
+    ContractManifest, ManifestAction, ManifestCapability, ManifestCostProfile,
+    ManifestFunction, ManifestParameter,
 };
 
 /// Resolves contract interface queries from a manifest.
@@ -62,6 +62,19 @@ impl<'a> ManifestResolver<'a> {
             .parameters
             .iter()
             .find(|p| p.function == function)
+    }
+
+    /// Get cost profile for a function. [1:1] manifest.md [[cost_profiles]].
+    ///
+    /// Returns the declared `circuit_difficulty`, `k_value`, `wasm_kb`, and
+    /// `tolerance` for this function. The wallet reads this value for fee
+    /// construction — it trusts the declaration. Verification is the miner's
+    /// responsibility (economic incentive to detect misdeclared costs).
+    pub fn get_cost_profile(&self, function: &str) -> Option<&ManifestCostProfile> {
+        self.manifest
+            .cost_profiles
+            .iter()
+            .find(|cp| cp.function == function)
     }
 
     /// List all function names — for CLI auto-completion.

@@ -572,7 +572,7 @@ For coinbase coins, this is the mining key. For test coins, this is a
 deterministic test key.
 
 **Q6: What fee to pay?**
-Fee is computed via the two-component formula: `(wasm_kB × BASELINE_STORAGE × WASM_CF) + (Σ opcode_difficulty × CIRCUIT_CF)`.
+Fee is computed via the two-component formula: `((wasm_kB × BASELINE_STORAGE × WASM_CF) + (Σ opcode_difficulty × CIRCUIT_CF)) / SCALE`.
 See §12.4.1 for the full specification. Output value = input_value - fee.
 Must be > 0 (else no FeeCollectV1 is needed).
 
@@ -1049,15 +1049,15 @@ specification.
 
 ### 7.1 Consensus Interface
 
-The contract SHALL expose two constants for threshold verification:
+Threshold values are derived from `compute_fee()` at each fee window boundary
+(see §12). The genesis block defines initial values; thereafter the
+PID-controlled CongestionFactor governs adjustments. Miners signal updated
+thresholds via the `fee_window_flags` field of each block header.
 
 ```
 PREMIUM_THRESHOLD: u64   — minimum fee for premium mempool tier
 GENERAL_THRESHOLD: u64   — minimum fee for general mempool tier
 ```
-
-These are consensus constants, defined at compile time. Changing them
-requires a hard fork.
 
 ### 7.2 FeeSignallingExtractor Trait `[domain: fee_signalling]`
 
@@ -1184,6 +1184,17 @@ its processes may exhibit. Fee operations exhibit these barbs:
 | `FeeV2TxBinding` | mass_balance | `poseidon(3, tx_commitment, tx_nonce)` | Fee_V2 proof anti-replay binding |
 | `ThresholdTxBinding` | fee_signalling | `poseidon(3, tx_commitment, threshold)` | FeeThreshold_V1 proof anti-replay binding |
 | `DRKW_TOKEN_ID` | mass_balance | `0` | Native token identifier |
+| `SCALE` | fee_signalling | `1_000_000` | CongestionFactor fixed-point scale (CF at zero congestion) |
+| `ALPHA_PREMIUM` | fee_signalling | `0.05` | Log₂ coefficient for premium CF |
+| `ALPHA_STANDARD` | fee_signalling | `0.01` | Log₂ coefficient for standard CF |
+| `MAX_ADJUSTMENT` | fee_signalling | `0.10` | Maximum ±10% CF change per window (I7) |
+| `FEE_WINDOW_SIZE` | fee_signalling | `20` | Blocks per fee window |
+| `FEE_WINDOW_TRANSITION_DELAY` | fee_signalling | `30` | Seconds after boundary block before new thresholds activate (§12.8.4) |
+| `DEFAULT_PREMIUM` | fee_signalling | `2_000_000` | Initial premium threshold at genesis (2× SCALE) |
+| `DEFAULT_GENERAL` | fee_signalling | `1_000_000` | Initial general threshold at genesis (1× SCALE) |
+| `K_REF` | fee_signalling | `11` | Reference k for circuit difficulty scaling (§12.11.4) |
+| `MAX_K` | fee_signalling | `16` | Maximum allowed k value (`src/zkas/constants.rs`) |
+| `MAX_SCALE` | fee_signalling | `32` | `2^(MAX_K − K_REF)` — maximum circuit difficulty multiplier |
 
 ## 11. Error Taxonomy
 
@@ -1271,9 +1282,13 @@ Three new nominal types follow type-system.md §8.5:
 ```
 FeeWindowId(u64)         — window index, computed as floor((height - 1) / N)
 WindowSignalling(u8)     — bitfield encoding fee window state in block header
-CircuitRate(u16)         — base rate per circuit, stored in manifest [[circuits]].rate
 CongestionFactor(u32)    — fixed-point representation of CF (1.0 = 1_000_000)
 ```
+
+Tier classification is proof-based: a transaction is premium if its
+FeeThreshold_V1 proof verifies against the premium threshold; general if
+it verifies against the general threshold. No static circuit classification
+type is needed — the proof itself determines the tier.
 
 All follow the `#[repr(transparent)]` pattern. `FeeWindowId` implements `succ()`,
 `pred()`, `from_height(height, N)`. `CongestionFactor` implements fixed-point
@@ -1285,7 +1300,7 @@ the congestion-adjusted fee.
 #### 12.4.1 Formula
 
 ```
-fee = (wasm_kB × BASELINE_STORAGE × WASM_CF) + (Σ opcode_difficulty × CIRCUIT_CF)
+fee = ((wasm_kB × BASELINE_STORAGE × WASM_CF) + (Σ opcode_difficulty × CIRCUIT_CF)) / SCALE
 
 where:
     wasm_kB                    = max(1, ceil(wasm_bytes / 1024))
@@ -1502,11 +1517,11 @@ saturation (linear growth) and insufficient responsiveness (constant).
 ±10% of the current value. This prevents fee shock and allows the
 market to adapt gradually.
 
-**I8 — Median Consensus.** The window's congestion factor SHALL be
-the median of all actively mining nodes' proposed CF values. This
-prevents single-miner manipulation. Nodes with empty mempools do
-not drag the median to zero; nodes with inflated mempools are
-capped by the median.
+**I8 — Deterministic CF.** The window's congestion factor is computed
+locally from the miner's mempool queue depth at the window boundary.
+All nodes synced to the same chain tip observe the same mempool state
+and therefore compute identical CF values — no coordination or gossip
+is required. I1 (pure function) guarantees determinism.
 
 ### 12.8 Mempool Integration
 
@@ -1519,19 +1534,20 @@ boundaries.
 ```
 admit(tx, window):
     fee = extract_fee(tx)
-    circuit_rate = extract_circuit_rate(tx)
     wasm_kB = extract_wasm_kB(tx)
 
-    if circuit_rate ≥ 5:                              // premium tier
-        threshold = premium_threshold(window) × wasm_kB
-        if fee ≥ threshold AND verify_threshold_proof(tx, threshold):
-            admit to premium_queue (FIFO)
-            return PREMIUM
-    else:                                             // standard tier
-        threshold = general_threshold(window) × wasm_kB
-        if fee ≥ threshold AND verify_threshold_proof(tx, threshold):
-            admit to general_queue (FIFO)
-            return STANDARD
+    // Proof-based tiering: try premium first, fall back to general.
+    // Tier is determined by which threshold proof verifies, not by a
+    // static circuit classification.
+    premium_threshold = compute_fee(window.premium_cf, wasm_kB)
+    if fee >= premium_threshold AND verify_threshold_proof(tx, premium_threshold):
+        admit to premium_queue (FIFO)
+        return PREMIUM
+
+    general_threshold = compute_fee(window.standard_cf, wasm_kB)
+    if fee >= general_threshold AND verify_threshold_proof(tx, general_threshold):
+        admit to general_queue (FIFO)
+        return STANDARD
 
     reject — fee below applicable threshold
 ```
@@ -1544,7 +1560,6 @@ on_window_boundary(new_window):
     // New thresholds apply to NEW arrivals only
     // Premium queue drains FCFS, then general queue FCFS
     active_window = new_window
-    gossip(new_window.thresholds)  // announce to peers
 ```
 
 #### 12.8.3 Block Selection
@@ -1565,28 +1580,63 @@ select_for_block(limit):
     return txs
 ```
 
+#### 12.8.4 Window Transition Timing
+
+```
+FEE_WINDOW_TRANSITION_DELAY = 30 seconds  (after boundary block timestamp)
+
+After the final block of window N at height H:
+  T_0 = block_timestamp(H)                          // block timestamp
+  T_activate = T_0 + FEE_WINDOW_TRANSITION_DELAY    // 30-second grace period
+
+  During [T_0, T_activate):  GRACE PERIOD
+    - Mempool continues admitting under window N thresholds
+    - Wallets construct FeeThreshold_V1 proofs against window N+1 thresholds
+    - Miners compute CF from local mempool state (deterministic, I1, I8)
+    - New transactions may submit with window-N or window-N+1 proofs
+
+  At T_activate:  THRESHOLD ACTIVATION
+    - Mempool switches to window N+1 thresholds for NEW arrivals
+    - Previously admitted transactions preserved (I3, FCFS)
+    - New arrivals with window-N threshold proofs: REJECTED (stale-threshold-proof)
+    - Window-N+1 proofs: accepted against new thresholds
+
+  After T_activate:  WINDOW N+1 ACTIVE
+    - Full enforcement of N+1 thresholds
+    - Window-N threshold proofs permanently stale for new arrivals
+```
+
+The 30-second window aligns with the block time (120s), miner block assembly
+time (< 5s), and sync poll interval (30s, observer.md). It gives wallets
+adequate time to re-query headers and re-construct proofs after a CF change.
+The FeeThreshold_V1 circuit (k=11, ~5 opcodes, circuit_difficulty=40) proves
+in ~10-50ms — well within the 30-second budget, satisfying the requirement
+that proof production time be an order of magnitude below the acceptance
+window.
+
 ### 12.9 Wallet Integration
 
 The wallet discovers current thresholds by reading the latest block header
 before constructing FeeThreshold_V1 proofs.
 
 ```
-construct_fee(amount, circuit, wasm_bytes, latest_block):
+construct_fee(circuit_costs, wasm_bytes, latest_block):
     flags = latest_block.header.fee_window_flags
     if flags & FEE_WINDOW_ACTIVE:
-        (premium, general) = decode_thresholds(flags)
+        (wasm_cf, circuit_cf) = decode_congestion_factors(flags, chain_state)
     else:
-        (premium, general) = (DEFAULT_PREMIUM, DEFAULT_GENERAL)  // legacy
+        (wasm_cf, circuit_cf) = (DEFAULT_WASM_CF, DEFAULT_CIRCUIT_CF)  // legacy
 
-    rate = circuit.rate or 1
     wasm_kB = max(1, ceil(wasm_bytes.len() / 1024))
 
-    threshold = premium if rate ≥ 5 else general
-    adjusted_threshold = threshold × wasm_kB
+    // Identical formula to mempool compute_fee() (§12.4.1)
+    fee = ((wasm_kB * BASELINE_STORAGE * wasm_cf.premium)
+           + (sum(circuit_costs) * circuit_cf.premium)) / SCALE
 
-    fee = rate × wasm_kB × current_congestion_factor  // actual fee paid
+    // Tier selection: proof determines tier, not static classification
+    threshold = premium_threshold if fee >= premium_threshold else general_threshold
 
-    proof = create_fee_threshold_proof(fee, adjusted_threshold, ...)
+    proof = create_fee_threshold_proof(fee, threshold, ...)
     return (fee, proof)
 ```
 
@@ -1597,24 +1647,268 @@ proof bound to a stale window.
 
 ### 12.10 Miner Integration
 
-The miner signals fee window state at each window boundary block and
-enforces the congestion factor consensus protocol.
+The miner computes CF deterministically from local mempool state at each
+window boundary and encodes the result in the block header.
 
 ```
 prepare_block(height, mempool, chain_state):
     header = build_header(height, ...)
 
     if is_window_boundary(height):
-        local_cf = compute_congestion_factor(local_mempool)
-        peer_cfs = collect_peer_congestion_factors()      // via P2P gossip
-        consensus_cf = median([local_cf] + peer_cfs)       // I8
-        header.fee_window_flags = encode_flags(consensus_cf)
-        mempool.update_thresholds(apply(consensus_cf))
-        gossip_threshold_announcement(consensus_cf)        // mempool.md §6
+        // Deterministic from local mempool state (I1, I8)
+        cf = chain_state.fee_window.compute_cf(
+            mempool.premium_queue_len(),
+            mempool.general_queue_len()
+        )
+        header.fee_window_flags = encode_flags(cf)
+        mempool.update_thresholds(
+            compute_fee(cf.premium),
+            compute_fee(cf.standard)
+        )
 
     return assemble_block(header, mempool.select_for_block())
 ```
 
-The miner includes its local congestion factor in the threshold announcement
-gossip so other nodes can compute the median. The miner trusts the median
-consensus — it does not unilaterally set thresholds.
+The CF is computed locally and deterministically. All nodes with the same
+mempool state arrive at the same CF — no P2P gossip or median consensus is
+needed. The `fee_window_flags` in the block header provide the canonical
+signal for all downstream consumers (wallets, sync clients).
+
+### 12.11 Circuit k-Value Difficulty Scaling
+
+#### 12.11.1 Rationale
+
+The Halo2 PLONK proving system uses a parameter `k` that determines the domain
+size: `2^k` rows in the constraint system polynomial. Proving and verification
+cost (multi-scalar multiplication over `2^k` points) scales with `k`. Two
+circuits with identical opcodes but different `k` values have substantially
+different computational cost:
+
+- A circuit with `k=11` (2,048 rows) is the smallest practical size.
+- A circuit with `k=15` (32,768 rows) costs 16× as much to prove and verify.
+- `MAX_K = 16` (65,536 rows) is the maximum allowed by the ZK circuit decoder.
+
+The per-opcode difficulty table (§12.2) encodes **what** computation happens
+(constraint type, column count, lookup table requirements). The `k` value
+encodes **how much** computational capacity is allocated. Both are required
+for a complete cost model.
+
+#### 12.11.2 Formula
+
+```
+circuit_difficulty(opcodes, k) = base_cost(opcodes) × 2^(k - K_REF)
+```
+
+Where:
+- `base_cost(opcodes)` = `Σ OPCODE_DIFFICULTY[op]` for each opcode in the circuit
+- `K_REF = 11` — reference k value (FeeThreshold_V1's k, the smallest proven k)
+- Scale factor capped at `2^(MAX_K - K_REF) = 32` (k=16 maximum)
+- For `k < K_REF`: scale factor = 1 (no fractional scaling)
+
+#### 12.11.3 Interaction with the Two-Component Formula
+
+The circuit component of the fee formula uses k-scaled difficulty:
+
+```
+circuit_part = Σ circuit_difficulty(opcodes_i, k_i) × CIRCUIT_CF / SCALE
+```
+
+At zero congestion (CIRCUIT_CF = SCALE):
+```
+circuit_part = Σ base_cost(opcodes_i) × 2^(k_i - K_REF)
+```
+
+Each circuit in a transaction contributes its own k-scaled difficulty. A
+transaction with two circuits (e.g., Fee_V2 at k=12 and FeeThreshold_V1 at
+k=11) pays the sum of both.
+
+#### 12.11.4 Constants
+
+| Constant | Value | Source |
+|----------|-------|--------|
+| `K_REF` | 11 | FeeThreshold_V1 circuit k |
+| `MAX_K` | 16 | `src/zkas/constants.rs` |
+| `MAX_SCALE` | 32 | `2^(MAX_K - K_REF)` |
+
+### 12.12 Architectural Principles
+
+#### 12.12.1 Domain Separation: Rate Limiting vs Fee Model
+
+Two independent mechanisms protect the network. They serve different purposes
+and SHALL NOT be conflated:
+
+| | Rate Limiting | Fee Model |
+|---|---|---|
+| **Purpose** | Computational circuit breaker | Economic mechanism |
+| **Origin** | Inherited from upstream (wasmer metering middleware) | DarkWow-native threshold proof system |
+| **Users pay?** | No — pure safety tripwire | Yes — Fee_V2 Pedersen mass balance |
+| **Deterrent?** | No — attacker pays nothing | Yes — fee paid upfront |
+| **Privacy** | N/A | Fee amount anonymized (Pedersen commitment) |
+
+Rate limiting stops runaway execution but does not charge for wasted
+computation. The fee model is the economic deterrent — attackers pay
+proportionally to the resources they consume. Both are necessary; neither
+is sufficient alone.
+
+#### 12.12.2 O-Cap Foundation of Cost Predictability
+
+DarkWow contracts follow the object capability model (see `ocap.md`,
+`type-system.md`, `contract-wasm-type-system.md`). Contracts are composed
+from proven primitives — Box, Purse, Promissory Note — rather than
+arbitrary Turing-complete code.
+
+This architectural choice makes deterministic cost prediction possible:
+
+- **Cost profiles compose**: if box costs 1000 difficulty and purse costs
+  1000, a transfer (box + purse) costs approximately 2000.
+- **Attestation is tractable**: verifying "does this contract correctly
+  compose known primitives?" is auditable. Verifying "does this arbitrary
+  Solidity code do anything dangerous?" is not.
+- **Trust is structural**: the user trusts the primitives and the
+  composition rules, not the contract author.
+
+The mempool and miner see a contract's cost profile as derivable from its
+primitives, not as an opaque claim by an untrusted deployer.
+
+#### 12.12.3 Risk Sharing: The Miner/User Compact
+
+In Ethereum's gas model, the user bears all risk: if a transaction reverts
+mid-execution, the gas is spent and the state change is discarded. The user
+pays for failure.
+
+In DarkWow's threshold proof model, risk is shared:
+
+1. **User pays upfront** — the Fee_V2 proof commits to a fee amount. The
+   FeeThreshold_V1 proof guarantees the fee meets the miner's threshold.
+   Execution is guaranteed — no mid-execution revert from gas exhaustion.
+
+2. **Miner accepts execution risk** — the coinbase reward compensates
+   miners for accepting transactions with unknown computational cost.
+   Miners are incentivized to maximize fee collection within their
+   computational window. A miner who accepts too many expensive transactions
+   and misses the block window loses both fees AND the coinbase reward.
+
+3. **Miners police themselves** through resource awareness. They set
+   thresholds via the fee window PID controller to balance fee revenue
+   against computational cost. They don't offload risk onto users.
+
+4. **Fee privacy protects users** — the fee amount is hidden behind a
+   Pedersen commitment. Only the threshold is public. No traffic analysis
+   of user fee/gas preferences is possible.
+
+**Risk factor assignment** (see [manifest.md §Cost Profiles](../manifest.md)):
+
+| Contract Status | Risk Factor |
+|---|---|
+| Genesis contract | 1.0× |
+| Attested manifest + endowment | 1.0× |
+| Attested manifest, no endowment | 1.25× |
+| Self-declared manifest, no attestation | 1.5× |
+| No manifest (unknown) | 2.0× |
+
+The risk factor is a multiplier on the circuit component of the fee.
+These tiers are the current specification — contracts are classified by
+their manifest and attestation status at admission time. The automated
+feedback loop (observation → reputation → dynamic adjustment) is
+specified in §12.12.5 as future work; the static tier table above is
+the operational baseline.
+
+The endowment is the contract's on-chain stake — it can be slashed if
+costs consistently exceed declared tolerance. This aligns incentives:
+a contract author with 10,000 DRKW in an endowment has 10,000 reasons
+to declare costs accurately. The economic gradient pushes toward attested
+manifests with endowments. Contracts are infrastructure, not experiments.
+
+#### 12.12.4 Contrast with Ethereum and Bitcoin
+
+| | Ethereum | Bitcoin | DarkWow |
+|---|---|---|---|
+| **Execution model** | Turing-complete, arbitrary code | Single-purpose scripts | O-cap composition of proven primitives |
+| **Cost prediction** | Gas guessing — user bears risk | N/A (simple scripts) | Deterministic from opcodes × k |
+| **Fee privacy** | Public gas price + gas limit | Public fee | Anonymized (Pedersen commitment) |
+| **Execution guarantee** | Can revert mid-call (out of gas) | No smart contracts | Threshold proof guarantees execution |
+| **Risk allocation** | All on user (reverted = wasted gas) | All on user (no recourse) | Shared — miner accepts risk as part of coinbase reward |
+| **Attestation model** | None (trust the code or don't) | None (trust no one) | Manifest declarations + third-party attestations |
+
+#### 12.12.5 Feedback Loop (Future)
+
+The per-opcode difficulty table and k-scaling formula provide the deterministic
+baseline. Future layers build on this foundation:
+
+1. **Manifest cost declaration**: contracts self-declare expected
+   `circuit_difficulty`, `k_value`, `wasm_kb`, and tolerance range per
+   state transition.
+2. **Attestation**: third parties validate or challenge manifest accuracy.
+3. **Observation**: the network compares observed computational cost
+   (wasmer instruction count, ZK verification time) against declarations.
+4. **Reputation**: persistent black marks for misdeclared contracts;
+   fee multipliers escalate until declarations are corrected.
+5. **Rate limit calibration**: computational rate limits tighten from
+   arbitrary constants to 5-10× the expected value declared in manifests.
+
+Layer 1 (this specification) provides the objective baseline. Without it,
+the feedback loop has no reference point for "expected" cost.
+
+#### 12.12.6 Risk-Sharing Model: A Genesis Case Study
+
+The fee system is the first major case study from genesis demonstrating why
+DarkWow's entire architecture exists as it does. In token-weighted governance
+systems, whales are structurally incentivized to push more risk onto users —
+they control governance, they set parameters, and they profit from user
+extraction. DarkWow's genesis block contains specific o-cap primitives to
+invert this dynamic. The fee model proves they work.
+
+**The four-layer risk architecture:**
+
+**Layer 1 — Users have bounded, private risk.** A user pays a threshold fee to
+enter the mempool. The fee is Pedersen-committed: no traffic analysis of
+fee/gas patterns is possible. If the state transition fails or consumes more
+resources than the manifest declared, the user does NOT pay more. They cannot
+fat-finger away their native token. In a plaintext gas model, that class of
+risk — paying for failed or resource-exhausting execution — is broadly inherent.
+DarkWow eliminates it.
+
+**Layer 2 — Miners absorb execution risk in exchange for coinbase + fees.**
+When a transaction exceeds its declared costs, the miner still executes it.
+The miner earns the fee but may lose the coinbase opportunity if execution
+overruns the block budget. The miner protects itself by:
+
+- Reading the contract's manifest `[[cost_profiles]]` before block assembly
+- Tracking observed-vs-declared cost accuracy across windows
+- Applying higher risk factors to contracts that systematically under-declare
+- Blacklisting contracts that cause block exhaustion (infinite loops or
+  high-high trips that exhaust the entire block)
+- Setting prohibitively expensive risk factors for blacklisted contracts
+
+**Layer 3 — Deployers bear the burden of proof.** Deploying a new contract
+means accepting responsibility for accurate cost declarations. The deployer
+self-declares costs in `[[cost_profiles]]` — these are cryptographically bound
+to the contract. A contract that lies about its costs gets priced out of the
+mempool over time as miners collectively raise its risk factor. To lower the
+risk factor from 2.0× (unknown) toward 1.0× (genesis), the deployer must:
+
+- Have the contract attested via identity and attestation contracts
+- Underwrite risk via endowment and escrow contracts (slashable stake)
+- Maintain accurate cost declarations over time (reputation)
+
+**Layer 4 — No governance token required.** The adjustment mechanism is
+mechanical: miners observe, risk factors adjust, deployers respond. The o-cap
+primitives in genesis are necessary and sufficient — no token-weighted
+governance is needed to decide who bears risk. The architecture itself enforces
+the risk distribution.
+
+**Why each genesis contract exists for this model:**
+
+| Genesis Contract | Role in Risk Architecture |
+|---|---|
+| `native_token` | Fee payment — Pedersen-committed (private), bounded to threshold |
+| `manifest` | Self-declared cost profiles — deployer stakes reputation on accuracy |
+| `identity` + `attestation` | Vouching — third parties verify contract safety, lower risk factor |
+| `endowment` + `escrow` | Economic underwriting — slashable stake backs cost declarations |
+| `deployooor` | Contract deployment — binds manifest to contract at birth |
+| Fee window system (§12) | Miner feedback loop — observed vs declared costs → risk factor adjustment |
+
+This is the defining differentiator: **decentralized self-governance through
+o-cap primitives, not token voting.** The fee model is the case study that
+proves the architecture works — infrastructure builders and deployers absorb
+execution risk, users don't, and no whale vote can change that.

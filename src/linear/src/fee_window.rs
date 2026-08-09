@@ -244,10 +244,14 @@ impl<'de> serde::Deserialize<'de> for FeeWindowFlags {
 ///
 /// Separate premium and standard values enforce I4: CF_premium > CF_standard
 /// when congestion exists. At zero congestion, both equal SCALE.
+///
+/// Fields are private per type-system.md §12.3 — domain logic flows through
+/// accessor methods, not raw field reads. External code uses [`premium()`],
+/// [`standard()`], [`apply_premium()`], and [`apply_standard()`].
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct CongestionFactor {
-    pub premium: u32,
-    pub standard: u32,
+    premium: u32,
+    standard: u32,
 }
 
 impl CongestionFactor {
@@ -259,6 +263,31 @@ impl CongestionFactor {
 
     pub const fn zero() -> Self {
         Self { premium: Self::SCALE, standard: Self::SCALE }
+    }
+
+    /// Construct a CongestionFactor with explicit premium and standard values.
+    pub const fn new(premium: u32, standard: u32) -> Self {
+        Self { premium, standard }
+    }
+
+    /// Premium congestion factor (fixed-point, SCALE = 1.0).
+    pub const fn premium(self) -> u32 {
+        self.premium
+    }
+
+    /// Standard congestion factor (fixed-point, SCALE = 1.0).
+    pub const fn standard(self) -> u32 {
+        self.standard
+    }
+
+    /// Apply the premium CF to a base value. Returns `base × premium / SCALE`.
+    pub fn apply_premium(self, base: u64) -> u64 {
+        (base * self.premium as u64) / Self::SCALE as u64
+    }
+
+    /// Apply the standard CF to a base value. Returns `base × standard / SCALE`.
+    pub fn apply_standard(self, base: u64) -> u64 {
+        (base * self.standard as u64) / Self::SCALE as u64
     }
 }
 

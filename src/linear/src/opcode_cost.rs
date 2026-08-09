@@ -48,6 +48,18 @@
 
 use dwow_core::zkas::Opcode;
 
+/// Maximum Halo2 k-value (domain size 2^16 = 65536 rows).
+/// [1:1] dwow_core::zkas::constants::MAX_K — hardcoded because the constant is crate-private.
+pub const MAX_K: u32 = 16;
+
+/// Reference Halo2 k-value for circuit difficulty scaling.
+///
+/// K_REF = 11 is the k-value of FeeThreshold_V1, the simplest ZK circuit.
+/// Circuits with k > K_REF pay proportionally more because verification
+/// runs MSMs over 2^k points — each +1 in k doubles the verifier work.
+/// [1:1] Python: contrib/model/fee_window_model.py.
+pub const K_REF: u32 = 11;
+
 /// Per-opcode computational cost from ZK first principles.
 /// Consensus-critical — all miners SHALL agree on these values.
 #[repr(transparent)]
@@ -126,13 +138,36 @@ pub fn opcode_cost(op: Opcode) -> OpcodeCost {
     }
 }
 
-/// Compute a circuit's total difficulty from its opcode list.
+/// Compute a circuit's total difficulty from its opcode list and k-value.
 ///
-/// The circuit IS its opcodes — difficulty is the sum of per-opcode costs.
+/// The circuit IS its opcodes — raw difficulty is the sum of per-opcode costs.
+///
+/// # k-Value Scaling
+///
+/// A circuit's `k` parameter determines the Halo2 domain size (2^k rows).
+/// Verification runs MSMs over 2^k points — each +1 in k doubles the verifier's
+/// work. The k-scaling formula reflects this:
+///
+/// ```text
+/// circuit_difficulty(opcodes, k) = base_cost(opcodes) × 2^(k - K_REF)
+/// ```
+///
+/// Where `K_REF = 11` (FeeThreshold_V1). Circuits with k < K_REF use K_REF
+/// (no fractional scaling). Values above MAX_K (16) are capped.
+///
 /// Takes a slice of opcodes with their heap type annotations (the format
-/// stored in `ZkBinary.opcodes`).
-pub fn circuit_difficulty(opcodes: &[(Opcode, Vec<(dwow_core::zkas::types::HeapType, usize)>)]) -> u64 {
-    opcodes.iter().map(|(op, _)| opcode_cost(*op).0 as u64).sum()
+/// stored in `ZkBinary.opcodes`) and the circuit's `k` parameter.
+/// [1:1] Python: contrib/model/fee_window_model.py.
+pub fn circuit_difficulty(
+    opcodes: &[(Opcode, Vec<(dwow_core::zkas::types::HeapType, usize)>)],
+    k: u32,
+) -> u64 {
+    let base: u64 = opcodes.iter().map(|(op, _)| opcode_cost(*op).0 as u64).sum();
+    // k < K_REF: no fractional scaling (K_REF is the minimum reference)
+    // k > MAX_K: capped at MAX_K
+    let effective_k = k.clamp(K_REF, MAX_K);
+    let scale_shift = effective_k - K_REF;
+    base * (1u64 << scale_shift)
 }
 
 #[cfg(test)]
@@ -194,7 +229,7 @@ mod tests {
             (Opcode::ConstrainInstance, vec![]),
             (Opcode::ConstrainEqualBase, vec![]),
         ];
-        let diff = circuit_difficulty(&ops);
+        let diff = circuit_difficulty(&ops, K_REF);
         // Expected: 5×20 + 4×50 + 1×500 + 1×100 + 1×30 + 1×40 + 2×5 = 20+200+500+100+30+40+10 = 900
         // Close enough to 1000 for the average circuit calibration.
         assert!(diff > 500 && diff < 2000,
@@ -203,7 +238,7 @@ mod tests {
 
     #[test]
     fn test_circuit_difficulty_empty() {
-        assert_eq!(circuit_difficulty(&[]), 0);
+        assert_eq!(circuit_difficulty(&[], K_REF), 0);
     }
 
     #[test]
@@ -227,7 +262,7 @@ mod tests {
             (Opcode::ConstrainEqualBase, vec![]), // 5
             (Opcode::ConstrainInstance, vec![]),  // 5
         ];
-        let diff = circuit_difficulty(&ops);
+        let diff = circuit_difficulty(&ops, K_REF);
         // Expected: ~6600 — a complex circuit ~6.6x average
         assert!(diff > 4000 && diff < 12000,
             "complex circuit difficulty should be 4000-12000, got {}", diff);
@@ -243,9 +278,62 @@ mod tests {
             (Opcode::ConstrainInstance, vec![]),
             (Opcode::ConstrainInstance, vec![]),
         ];
-        let diff = circuit_difficulty(&ops);
+        let diff = circuit_difficulty(&ops, K_REF);
         // Expected: 20 + 5 + 5 + 5 + 5 = 40 — very simple
         assert!(diff < 500,
             "simple circuit difficulty should be <500, got {}", diff);
+    }
+
+    // ── k-scaling tests ──────────────────────────────────────────────
+
+    #[test]
+    fn test_k_scaling_at_reference_is_identity() {
+        // At K_REF, scaling factor = 2^0 = 1 — no change
+        let ops = vec![
+            (Opcode::EcAdd, vec![]),      // 1000
+            (Opcode::BaseMul, vec![]),    // 50
+        ];
+        assert_eq!(circuit_difficulty(&ops, 11), 1050);
+    }
+
+    #[test]
+    fn test_k_scaling_doubles_per_increment() {
+        // k=12: 2^1 = 2x scaling
+        let ops = vec![(Opcode::BaseAdd, vec![])]; // 20
+        assert_eq!(circuit_difficulty(&ops, 11), 20);
+        assert_eq!(circuit_difficulty(&ops, 12), 40);
+        assert_eq!(circuit_difficulty(&ops, 13), 80);
+    }
+
+    #[test]
+    fn test_k_below_reference_no_fractional() {
+        // k < K_REF: clamped to K_REF (no fractional reduction)
+        let ops = vec![(Opcode::BaseAdd, vec![])]; // 20
+        assert_eq!(circuit_difficulty(&ops, 5), 20);
+        assert_eq!(circuit_difficulty(&ops, 10), 20);
+    }
+
+    #[test]
+    fn test_k_above_max_capped() {
+        // k > MAX_K (16): capped at MAX_K
+        let ops = vec![(Opcode::BaseAdd, vec![])]; // 20
+        let at_max = circuit_difficulty(&ops, 16); // 20 * 2^5 = 640
+        assert_eq!(circuit_difficulty(&ops, 17), at_max);
+        assert_eq!(circuit_difficulty(&ops, 20), at_max);
+    }
+
+    #[test]
+    fn test_k_scaling_fee_threshold_v1() {
+        // FeeThreshold_V1: k=11, simple constraints
+        let ops = vec![
+            (Opcode::WitnessBase, vec![]),
+            (Opcode::ConstrainEqualBase, vec![]),
+            (Opcode::ConstrainEqualBase, vec![]),
+            (Opcode::ConstrainInstance, vec![]),
+            (Opcode::ConstrainInstance, vec![]),
+        ];
+        let diff = circuit_difficulty(&ops, 11);
+        // 20 + 5 + 5 + 5 + 5 = 40, k=11 → scale 2^0 = 1 → 40
+        assert_eq!(diff, 40);
     }
 }

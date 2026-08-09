@@ -1397,12 +1397,12 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                     let flags = fw.encode_flags();
                     if let Some(ref mp) = node.mempool {
                         mp.update_thresholds(
-                            circuit_cf.premium as u64, circuit_cf.standard as u64,
+                            circuit_cf.premium() as u64, circuit_cf.standard() as u64,
                         );
                     }
                     info!(target: "dwowd::miner_task",
                         "Fee window boundary at height {}: circuit_premium={}, circuit_standard={}, wasm_premium={}, wasm_standard={}, flags=0x{:04x}",
-                        height, circuit_cf.premium, circuit_cf.standard, wasm_cf.premium, wasm_cf.standard, flags.get());
+                        height, circuit_cf.premium(), circuit_cf.standard(), wasm_cf.premium(), wasm_cf.standard(), flags.get());
                     flags
                 } else {
                     FeeWindowFlags::default()

@@ -42,6 +42,7 @@ use dwow_core::{
     zk::Proof,
 };
 use dwow_chain::fee_window::FeeWindowFlags;
+use dwow_chain::opcode_cost::circuit_difficulty;
 use crate::wallet_error::{Error, Result};
 use crate::wallet_util::expand_path;
 use dwow_sdk::{
@@ -1127,6 +1128,14 @@ impl Dww {
         let spend_hook = pallas::Base::zero();
         let user_data = pallas::Base::zero();
 
+        // Compute circuit costs from the transfer ZK binaries before they're
+        // moved into the builder. fee-spec.md §12.11: fee includes circuit
+        // difficulty scaled by k-value.
+        let transfer_circuit_costs = vec![
+            circuit_difficulty(&burn_zkbin.opcodes, burn_zkbin.k),
+            circuit_difficulty(&mint_zkbin.opcodes, mint_zkbin.k),
+        ];
+
         // Compose input witness from selected cap
         let input_witness = InputWitness {
             value: selected.value,
@@ -1216,7 +1225,8 @@ impl Dww {
         // TransactionBuilder computes the outer tx_commitment; the fee input's
         // nullifier is published by the fee builder.
         let mut tx = crate::fee_builder::build_fee_and_finalize_tx(
-            &self.wallet, &self.account_mgr, leaf, None, Some(&selected.cap_id), seed, &[], 0, FeeWindowFlags::default(),
+            &self.wallet, &self.account_mgr, leaf, None, Some(&selected.cap_id), seed,
+            &transfer_circuit_costs, 0, FeeWindowFlags::default(),
         )?;
 
         // Model step 5 (wallet_model.py:3954): nullifier order is
@@ -1569,8 +1579,20 @@ impl Dww {
                 };
                 let mut seed = [0u8; 32];
                 rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
+                // Read declared circuit_difficulty from the contract's manifest
+                // [[cost_profiles]] for the called function. If the contract has
+                // no manifest or no cost profile, pass empty — pessimistic: fee
+                // only covers the fee circuits themselves (miner may apply 2.0×
+                // execution risk factor).
+                let circuit_costs: Vec<u64> = _manifest_full.as_ref()
+                    .and_then(|m| {
+                        let resolver = crate::manifest_resolver::ManifestResolver::new(m);
+                        resolver.get_cost_profile(function).map(|cp| cp.circuit_difficulty)
+                    })
+                    .map(|d| vec![d])
+                    .unwrap_or_default();
                 let tx = crate::fee_builder::build_fee_and_finalize_tx(
-                    &self.wallet, &self.account_mgr, leaf, None, None, seed, &[], 0, FeeWindowFlags::default())?;
+                    &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, 0, FeeWindowFlags::default())?;
                 // §6.3 step 7 / mempool admission: ONE signature row per call,
                 // in call order — calls[0] = main (signed by the caller-supplied
                 // secrets matching the call's metadata pubkeys, empty row when
@@ -1599,8 +1621,16 @@ impl Dww {
                 };
                 let mut seed = [0u8; 32];
                 rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
+                // Read declared circuit_difficulty from the contract's manifest
+                // [[cost_profiles]] for the called function.
+                let circuit_costs: Vec<u64> = {
+                    let resolver = crate::manifest_resolver::ManifestResolver::new(manifest);
+                    resolver.get_cost_profile(function)
+                        .map(|cp| vec![cp.circuit_difficulty])
+                        .unwrap_or_default()
+                };
                 let tx = crate::fee_builder::build_fee_and_finalize_tx(
-                    &self.wallet, &self.account_mgr, leaf, None, None, seed, &[], 0, FeeWindowFlags::default(),
+                    &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, 0, FeeWindowFlags::default(),
                 )?;
                 // Per-call signature rows (see the Path A exit above).
                 // Schnorr signatures removed per contract-standards.md §3.
@@ -1672,8 +1702,18 @@ impl Dww {
         // Build transaction with fee
         let mut seed = [0u8; 32];
         rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
+        // Read declared circuit_difficulty from the contract's manifest
+        // [[cost_profiles]] for the called function. Fallback path — manifest
+        // may or may not be available.
+        let circuit_costs: Vec<u64> = _manifest_full.as_ref()
+            .and_then(|m| {
+                let resolver = crate::manifest_resolver::ManifestResolver::new(m);
+                resolver.get_cost_profile(function).map(|cp| cp.circuit_difficulty)
+            })
+            .map(|d| vec![d])
+            .unwrap_or_default();
         let tx = crate::fee_builder::build_fee_and_finalize_tx(
-            &self.wallet, &self.account_mgr, leaf, None, None, seed, &[], 0, FeeWindowFlags::default())?;
+            &self.wallet, &self.account_mgr, leaf, None, None, seed, &circuit_costs, 0, FeeWindowFlags::default())?;
         // Per-call signature rows (see the Path A exit above).
 
         Ok(tx)

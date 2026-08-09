@@ -26,6 +26,7 @@
 //! Shared functionality for building fee calls and finalizing transactions.
 
 use dwow_chain::fee_window::{FeeWindowFlags, CongestionFactor, compute_fee};
+use dwow_chain::opcode_cost::circuit_difficulty;
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
     zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses, Proof},
@@ -86,7 +87,23 @@ pub fn build_fee_and_finalize_tx(
     // Compute the minimum admission fee via the two-component formula.
     // fee = (wasm_kB × BASELINE_STORAGE × WASM_CF) + (Σ opcode_difficulty × CIRCUIT_CF)
     // Always uses premium CF — this is the admission threshold.
-    let fee = compute_fee(circuit_costs, wasm_kb, wasm_cf, circuit_cf);
+
+    // Decode fee zkbins early to compute their circuit difficulty for the fee.
+    // fee-spec.md §12.11: circuit_difficulty scales with k-value.
+    let fee_zkbin_cost = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN, false)
+        .map(|zkbin| circuit_difficulty(&zkbin.opcodes, zkbin.k))
+        .unwrap_or(0);
+    let threshold_zkbin_cost = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN, false)
+        .map(|zkbin| circuit_difficulty(&zkbin.opcodes, zkbin.k))
+        .unwrap_or(0);
+
+    // Combine caller-provided main-call circuit costs with fee circuit costs.
+    let all_circuit_costs: Vec<u64> = circuit_costs.iter()
+        .copied()
+        .chain([fee_zkbin_cost, threshold_zkbin_cost])
+        .collect();
+
+    let fee = compute_fee(&all_circuit_costs, wasm_kb, wasm_cf, circuit_cf);
     let fee_value = fee.get();
     let threshold = fee; // FeeThreshold_V1 proves: fee_paid >= this threshold
     // wallet.md §6.1: Seed-derived randomness — no OsRng.
@@ -324,8 +341,8 @@ mod tests {
         );
         let (circuit_cf, wasm_cf) = flags.derive_cfs();
         let expected_premium = ((CongestionFactor::SCALE as u64) * 110 / 100) as u32;
-        assert_eq!(circuit_cf.premium, expected_premium);
-        assert_eq!(circuit_cf.standard, CongestionFactor::SCALE);
+        assert_eq!(circuit_cf.premium(), expected_premium);
+        assert_eq!(circuit_cf.standard(), CongestionFactor::SCALE);
         assert_eq!(wasm_cf, CongestionFactor::default());
     }
 
@@ -338,9 +355,9 @@ mod tests {
         );
         let (circuit_cf, wasm_cf) = flags.derive_cfs();
         let expected_premium = ((CongestionFactor::SCALE as u64) * 90 / 100) as u32;
-        assert_eq!(circuit_cf.premium, expected_premium);
-        assert_eq!(circuit_cf.standard, CongestionFactor::SCALE);
-        assert_eq!(wasm_cf.premium, CongestionFactor::SCALE, "wasm hold = identity");
+        assert_eq!(circuit_cf.premium(), expected_premium);
+        assert_eq!(circuit_cf.standard(), CongestionFactor::SCALE);
+        assert_eq!(wasm_cf.premium(), CongestionFactor::SCALE, "wasm hold = identity");
     }
 
     /// compute_fee() — zero congestion, minimal circuit.
@@ -359,7 +376,7 @@ mod tests {
     #[test]
     fn test_compute_fee_congested() {
         let premium = ((CongestionFactor::SCALE as u64) * 110 / 100) as u32;
-        let cf = CongestionFactor { premium, standard: CongestionFactor::SCALE };
+        let cf = CongestionFactor::new(premium, CongestionFactor::SCALE);
         let fee = compute_fee(&[5000], 1, cf, cf);
         // wasm = 1 * 1_000_000 * 1_100_000 / 1_000_000 = 1_100_000
         // circuit = 5000 * 1_100_000 / 1_000_000 = 5_500

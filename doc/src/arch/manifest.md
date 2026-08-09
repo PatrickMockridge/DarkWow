@@ -168,14 +168,17 @@ description = "DrainProtection configurations — keyed by fund_id"
 [[circuits]]
 name = "init_v1"
 namespace = "dao_escrow"
+opcodes = ["WitnessBase", "PoseidonHash", "BaseAdd", "ConstrainInstance"]
 
 [[circuits]]
 name = "pay_premium_v1"
 namespace = "dao_escrow"
+opcodes = ["WitnessBase", "PoseidonHash", "BaseMul", "BaseAdd", "ConstrainInstance", "ConstrainInstance"]
 
 [[circuits]]
 name = "enable_drain_protection_v1"
 namespace = "dao_escrow"
+opcodes = ["WitnessBase", "BaseAdd", "ConstrainEqualBase", "ConstrainInstance"]
 
 # --- Parameters ---
 # Optional: parameter schemas for function calls. These inform
@@ -198,6 +201,33 @@ fields = [
     { name = "drain_protection_bulla", type = "pallas_base" },
     { name = "amount", type = "u64" },
 ]
+
+# --- Cost Profiles ---
+# Per-function cost declarations for the fee model. Each entry
+# declares the expected computational cost of one function.
+# These are the baseline against which the network observes actual
+# costs — mismatch triggers reputation impact (black marks).
+
+[[cost_profiles]]
+function = "initialize"
+circuit_difficulty = 500     # Σ opcode_cost × 2^(k - K_REF)
+k_value = 11                  # circuit's Halo2 k parameter
+wasm_kb = 2                   # WASM execution overhead in kB-equivalent
+tolerance = 0.50              # ±50% allowed deviation before black mark
+
+[[cost_profiles]]
+function = "pay_premium"
+circuit_difficulty = 1500
+k_value = 12
+wasm_kb = 1
+tolerance = 0.50
+
+[[cost_profiles]]
+function = "enable_drain_protection"
+circuit_difficulty = 800
+k_value = 11
+wasm_kb = 1
+tolerance = 0.50
 ```
 
 ### Capability Expression Types
@@ -233,6 +263,66 @@ requires = { type = "threshold", count = 2, total = 3, capabilities = ["a", "b",
 | `bool` | Boolean | 1 byte (0 or 1) |
 | `string` | UTF-8 string | Length-prefixed varint |
 | `bytes` | Opaque bytes | Length-prefixed varint |
+
+### Cost Profiles
+
+The `[[cost_profiles]]` section declares expected computational cost for each
+function. These declarations are the **baseline** against which the network
+observes actual execution cost — a sustained mismatch triggers reputation
+impact (black marks) and fee multiplier adjustment. This is the bridge
+between the deterministic fee model ([fee-spec.md §12.11](consensus/fee-spec.md))
+and the manifest's trust-but-verify architecture.
+
+**Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `function` | string | SHALL match a `name` in `[[functions]]` |
+| `circuit_difficulty` | u64 | `Σ opcode_cost × 2^(k - K_REF)` — deterministic baseline |
+| `k_value` | u32 | Circuit's Halo2 `k` parameter (domain size = 2^k rows) |
+| `wasm_kb` | u64 | Expected WASM execution overhead in kB-equivalent |
+| `tolerance` | f64 | Allowed deviation (±50% = 0.50) before black mark |
+
+**Reference baseline**: `K_REF = 11` ([fee-spec.md §12.11](consensus/fee-spec.md)).
+The `circuit_difficulty` is computed from the circuit's opcodes (decoded from the
+zkas binary) using the per-opcode cost table, scaled by `2^(k - K_REF)`. A manifest
+that declares values inconsistent with the actual zkas binary is a **Layer 2
+mechanical verification failure** — the wallet or miner computes
+`circuit_difficulty(actual_opcodes, actual_k)` and flags any mismatch.
+
+**Defaulting**: Functions not listed in `[[cost_profiles]]` get a pessimistic
+default of 2.0× the most expensive declared function in the same contract.
+Contracts with no `[[cost_profiles]]` section at all receive a 2.0× baseline
+multiplier (execution risk factor) on all fee calculations — an economic
+incentive to declare costs honestly.
+
+**Interaction with the three-layer trust model**:
+
+- **Layer 1 (Trust Tier)**: Genesis contracts carry hardcoded cost profiles.
+  Attested contracts with endowments pay 1.0× baseline.
+- **Layer 2 (WASM Verification)**: The wallet mechanically compares declared
+  `circuit_difficulty` and `k_value` against the actual zkas binary. A
+  mismatch is flagged to the user.
+- **Layer 3 (Attestation)**: An attester who has profiled the contract's WASM
+  execution can attest that the declared `wasm_kb` and `tolerance` match
+  observed runtime behavior. This is on-chain, reputation-weighted.
+
+**Execution risk factors**: The network applies a multiplier on baseline fees
+based on manifest and attestation status ([fee-spec.md §12.12](consensus/fee-spec.md)):
+
+| Contract Status | Risk Factor |
+|---|---|
+| Genesis contract | 1.0× |
+| Attested manifest + endowment | 1.0× |
+| Attested manifest, no endowment | 1.25× |
+| Self-declared manifest, no attestation | 1.5× |
+| No manifest (unknown) | 2.0× |
+
+The endowment is the contract's on-chain stake — it can be slashed if costs
+consistently exceed declared tolerance. This aligns incentives: a contract
+author with 10,000 DRKW in an endowment has 10,000 reasons to declare costs
+accurately. The economic gradient pushes toward attested manifests with
+endowments. Contracts are infrastructure, not experiments.
 
 ### Typed Capability Fields
 
@@ -327,7 +417,28 @@ witness_map = [
     "tx_commitment",
     "tx_nonce",
 ]
+opcodes = ["WitnessBase", "BaseAdd", "PoseidonHash", "BaseMul", "ConstrainInstance"]
 ```
+### Circuit Opcodes
+
+The `opcodes` field declares the ordered list of ZK opcode names the circuit uses.
+Combined with the circuit's `k` parameter (embedded in the zkas binary), this enables
+independent verification of the declared `circuit_difficulty` in `[[cost_profiles]]`:
+
+```
+Σ OPCODE_DIFFICULTY[op] × 2^(k - K_REF) = claimed circuit_difficulty
+```
+
+This verification is the **miner's responsibility** — the miner has an economic
+incentive to detect misdeclared costs: a contract whose actual opcode cost exceeds
+its declared tolerance receives reputation downgrades (black marks) and higher
+execution risk factors. The miner profits by collecting higher fees from misdeclared
+contracts.
+
+The wallet reads `circuit_difficulty` directly from `[[cost_profiles]]` for fee
+construction — it trusts the declaration. The miner verifies it. This trust-but-verify
+architecture keeps wallet fee construction fast (no zkas binary decode needed) while
+ensuring miners police the network.
 
 The primitive names in `primitives` are drawn from the closed vocabulary
 above. The capability name (`"delegation_right"`) is a human-readable label

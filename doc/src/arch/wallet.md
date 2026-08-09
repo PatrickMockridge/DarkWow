@@ -847,11 +847,12 @@ user's chosen fee:
 The actual fee may exceed the threshold — the proof only guarantees the lower bound.
 
 **Threshold discovery.** Before constructing a FeeThreshold_V1 proof, the wallet
-SHALL discover the current threshold values via P2P query to connected mining
-nodes (see [mempool.md §6](mempool.md) for the announcement protocol). Response
-format: `(premium_threshold: u64, general_threshold: u64, block_height: u64,
-miner_signature: [u8; 64])`. The wallet selects the tier based on the user's
-chosen fee and builds the corresponding proof bound to the selected threshold.
+discovers current thresholds by reading the `fee_window_flags` field from the
+latest synced block header (see [fee-spec.md §12.6](consensus/fee-spec.md)).
+The wallet replays fee window history from genesis (deterministic per I1) to
+maintain the current absolute CF values. The flags encode direction; chain
+replay provides magnitude. No P2P query to mining nodes is required — block
+headers are already validated during chain sync.
 
 **Mempool verification.** The mempool SHALL verify the FeeThreshold_V1 proof at
 admission using the verification WASM widget (see [mempool.md §6](mempool.md)).

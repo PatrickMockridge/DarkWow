@@ -118,12 +118,20 @@ class CostProfile:
     - k_value: circuit's Halo2 k parameter (domain size = 2^k rows)
     - wasm_kb: expected WASM execution overhead in kB-equivalent
     - tolerance: allowed deviation (±50% = 0.50) before black mark
+    - opcodes: ordered list of ZK opcode names the circuit uses.
+      Combined with k_value, allows independent verification of
+      circuit_difficulty (miner's responsibility — economic incentive).
     """
     function: str
     circuit_difficulty: int
     k_value: int = K_REF
     wasm_kb: int = 1
     tolerance: float = 0.50
+    opcodes: list = None
+
+    def __post_init__(self):
+        if self.opcodes is None:
+            self.opcodes = []
 
 
 # Pessimistic default profile for contracts with no [[cost_profiles]] section.
@@ -238,10 +246,7 @@ ALPHA_STANDARD: float = 0.01   # standard congestion sensitivity
 
 # Adjustment caps [1:1] Rust FeeWindowConfig
 MAX_ADJUSTMENT: float = 0.10   # ±10% per window
-MIN_PREMIUM: int = 420_000         # CF floor: 0.42x (below SCALE during extreme low demand)
 MAX_PREMIUM: int = 4_200_000_000    # CF ceiling: 4200x (hard cap on congestion multiplier)
-HIGH_WATER: float = 0.75       # increase CF above this utilization
-LOW_WATER: float = 0.25        # decrease CF below this utilization
 
 # BlockHeader fee_window_flags bit layout [1:1] BlockHeader
 FEE_WINDOW_ACTIVE: int = 0x01  # bit 0
@@ -323,10 +328,8 @@ class FeeWindowConfig:
     alpha_premium: float = ALPHA_PREMIUM
     alpha_standard: float = ALPHA_STANDARD
     max_adjustment: float = MAX_ADJUSTMENT
-    min_premium: int = MIN_PREMIUM
+    min_premium: int = SCALE
     max_premium: int = MAX_PREMIUM
-    high_water: float = HIGH_WATER
-    low_water: float = LOW_WATER
 
 
 class FeeWindow:
@@ -409,7 +412,7 @@ class FeeWindow:
     def _apply_cap(self, raw_cf: CongestionFactor, previous: Optional[CongestionFactor],
                    premium_pending: int, standard_pending: int) -> CongestionFactor:
         """Apply ±10% cap and I4 ordering to a raw CF."""
-        if previous is not None and previous.premium > SCALE:
+        if previous is not None:
             max_p = int(previous.premium * (1 + self.config.max_adjustment))
             min_p = int(previous.premium * (1 - self.config.max_adjustment))
             max_s = int(previous.standard * (1 + self.config.max_adjustment))
@@ -509,15 +512,13 @@ class MempoolWithWindow:
         self.window = window
         self.premium_queue: deque = deque()   # (tx_id, fee) — FCFS
         self.general_queue: deque = deque()   # (tx_id, fee) — FCFS
-        self.fee_index: List[Tuple[str, int]] = []  # (tx_id, fee_rate) — fee-descending
-
     @property
     def premium_count(self) -> int:
         return len(self.premium_queue)
 
     @property
     def standard_count(self) -> int:
-        return len(self.general_queue) + len(self.fee_index)
+        return len(self.general_queue)
 
     def admit(self, tx_id: str, fee: int, circuit_costs: list, wasm_kb: int = 1) -> str:
         """Admit a transaction. Returns 'premium', 'general', or 'reject'.
@@ -558,11 +559,6 @@ class MempoolWithWindow:
         # 2. General FCFS
         while self.general_queue and len(selected) < max_txs:
             tx_id, _ = self.general_queue.popleft()
-            selected.append(tx_id)
-        # 3. Legacy fee-descending
-        self.fee_index.sort(key=lambda x: x[1], reverse=True)
-        while self.fee_index and len(selected) < max_txs:
-            tx_id, _ = self.fee_index.pop(0)
             selected.append(tx_id)
         return selected
 
@@ -798,7 +794,7 @@ def test_multi_window_pid_loop():
 
     # Floor and ceiling
     final_p, final_g = thresholds[-1]
-    assert final_p >= MIN_PREMIUM, f"P-FW-1: premium {final_p} below floor {MIN_PREMIUM}"
+    assert final_p >= SCALE, f"P-FW-1: premium {final_p} below floor {SCALE}"
     assert final_p <= MAX_PREMIUM, f"P-FW-1: premium {final_p} above ceiling {MAX_PREMIUM}"
 
     # I4: CF_premium > CF_standard while congested
@@ -894,7 +890,7 @@ def test_malicious_flag_injection():
     # decode_flags is pure arithmetic — the floor/ceiling clamping is the
     # responsibility of adjust() (tested in P-FW-1), not decode_flags.
     # Verify that decode produces the raw ±10% arithmetic result:
-    floor_premium = MIN_PREMIUM
+    floor_premium = SCALE
     decoded_floor = FeeWindow.decode_flags(0x21, floor_premium)  # 0x02 = -10%
     assert decoded_floor == int(floor_premium * 0.90), (
         f"P-FW-3: -10% of {floor_premium} = {int(floor_premium * 0.90)}, got {decoded_floor}"
@@ -1263,6 +1259,44 @@ def test_compute_total_fee_full_pipeline():
     assert fee2 == 2_000_000 + 6000, f"full pipeline missing: expected {2_000_000 + 6000}, got {fee2}"
 
 
+def test_circuit_difficulty_from_declared_opcodes():
+    """Miner verification: circuit_difficulty(declared_opcodes, declared_k) == declared_circuit_difficulty.
+
+    This is the miner's verification logic — contract authors declare opcodes and
+    circuit_difficulty in the manifest. The miner independently computes the sum
+    from the declared opcode list and checks against the declared value. A mismatch
+    is a black mark (reputation downgrade → higher risk factor → higher fees).
+    """
+    # FeeThreshold_V1: k=11, 5 simple ops → circuit_difficulty = 40
+    ops = ["WitnessBase", "ConstrainEqualBase", "ConstrainEqualBase",
+           "ConstrainInstance", "ConstrainInstance"]
+    computed = circuit_difficulty(ops, k=11)
+    declared = 40  # from CIRCUIT_RATES["FeeThreshold_V1"]
+    assert computed == declared, (
+        f"miner verification: computed {computed} != declared {declared}"
+    )
+
+    # Poseidon-heavy circuit: k=12, 1 PoseidonHash → 500 × 2 = 1000
+    ops2 = ["PoseidonHash"]
+    computed2 = circuit_difficulty(ops2, k=12)
+    declared2 = 1000
+    assert computed2 == declared2, (
+        f"miner verification: computed {computed2} != declared {declared2}"
+    )
+
+    # Mixed circuit at k=14: BaseAdd(20)+BaseMul(50)+PoseidonHash(500) = 570 → ×8 = 4560
+    ops3 = ["BaseAdd", "BaseMul", "PoseidonHash"]
+    computed3 = circuit_difficulty(ops3, k=14)
+    declared3 = 4560
+    assert computed3 == declared3, (
+        f"miner verification: computed {computed3} != declared {declared3}"
+    )
+
+    # Empty circuit → zero difficulty regardless of k
+    computed4 = circuit_difficulty([], k=15)
+    assert computed4 == 0, f"empty circuit: expected 0, got {computed4}"
+
+
 # ============================================================================
 # Test runner
 # ============================================================================
@@ -1314,6 +1348,8 @@ if __name__ == "__main__":
         test_compute_total_fee_risk_multiplier,
         test_compute_total_fee_risk_does_not_affect_wasm,
         test_compute_total_fee_full_pipeline,
+        # Miner verification — manifest [[circuits]].opcodes
+        test_circuit_difficulty_from_declared_opcodes,
     ]
 
     passed = 0

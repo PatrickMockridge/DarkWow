@@ -323,3 +323,12 @@ mod tests {
         assert!(!bridge_safe::<CommitPublisher, EventGraphNode>());
     }
 }
+
+// ── SDK type implementations (feature-gated) ────────────────────────────
+
+#[cfg(feature = "dwow-sdk")]
+impl ExhibitsBarb for dwow_sdk::blockchain::FeeAmount {
+    fn exhibited_barbs() -> &'static [BarbId] {
+        &[BarbId::Denominate]
+    }
+}

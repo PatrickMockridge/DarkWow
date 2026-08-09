@@ -531,6 +531,96 @@ provides the lego bricks. Whether the cathedral stands is up to the builders.
 
 ---
 
+## Why This Risk Model Inverts the Industry
+
+The fee signalling system (see [fee-spec.md §12.12.6](consensus/fee-spec.md))
+is the first major case study from genesis demonstrating why DarkWow's o-cap
+architecture exists. It inverts a structural problem that token-weighted
+governance cannot solve.
+
+### The Problem: Governance Tokens Incentivize Risk Extraction
+
+In token-weighted governance systems, whales control the parameters. They set
+gas costs, fee structures, and execution limits. They are structurally
+incentivized to push risk onto users because they profit from user extraction
+while bearing none of the downside. Users bid gas in plaintext auctions,
+overpay to ensure inclusion, and pay for execution whether it succeeds or
+fails. Fee/gas patterns are visible to everyone, enabling MEV and traffic
+analysis. The governance token is the control surface; the whale is the
+controller; the user is the victim.
+
+### The Inversion: O-Cap Primitives Enforce Risk Distribution
+
+DarkWow's genesis block contains specific o-cap primitives — not because they
+are general-purpose infrastructure, but because they are the necessary and
+sufficient components for decentralized self-governance without token voting.
+Each genesis contract has a specific role in the risk architecture:
+
+- **`native_token`**: Fee payment is Pedersen-committed — private, bounded to
+  threshold. No traffic analysis of fee patterns is possible.
+
+- **`manifest`**: Cost profiles are self-declared by deployers and
+  cryptographically bound to contracts. The deployer stakes reputation on
+  accuracy.
+
+- **`identity` + `attestation`**: Third parties vouch for contract safety,
+  lowering the risk factor applied to that contract's fees.
+
+- **`endowment` + `escrow`**: Deployers underwrite their cost declarations
+  with slashable economic stake. A contract that lies about its costs can
+  lose its endowment.
+
+- **`deployooor`**: Contract deployment binds the manifest to the contract
+  at birth — the cost declaration is inseparable from the contract itself.
+
+- **Fee window system**: Miners track observed-vs-declared cost accuracy
+  across windows. Contracts that systematically under-declare see their risk
+  factor rise until they are priced out of the mempool.
+
+The adjustment is mechanical, not political. Miners observe, risk factors
+adjust, deployers respond. No governance token, no DAO, no whale vote. The
+architecture itself enforces the risk distribution.
+
+### What This Means for Users
+
+Users pay a threshold fee and either get included or they don't. They cannot
+fat-finger away their native token. They cannot be front-run through fee
+analysis — their fee is hidden behind a Pedersen commitment. They do not pay
+for failed or resource-exhausting execution. Infrastructure builders and
+deployers absorb that risk. Users are protected by the architecture, not by
+the goodwill of token holders.
+
+### What This Means for Deployers
+
+Deploying a contract is not free. The deployer must declare costs accurately,
+have the contract attested, and potentially stake capital in endowment/escrow
+contracts to underwrite the risk. A contract with a 2.0× risk factor (unknown,
+unattested) pays twice the base fee — the market prices the risk. A contract
+that causes block exhaustion gets blacklisted. The burden of proof rests on
+the deployer, not the user.
+
+This is caveat emptor applied to infrastructure: the market decides which
+contracts are trustworthy. The protocol provides the lego bricks — manifest
+declarations, attestation pathways, slashing mechanisms — but does not
+guarantee that any particular contract is safe. Builders who prove their
+contracts are safe earn lower risk factors. Builders who don't, pay the price.
+
+### Why Upstream Cannot Do This
+
+Token-weighted governance cannot achieve this inversion because the same
+whales who set gas parameters also profit from user extraction. There is no
+structural separation between the governors and the governed. DarkWow's o-cap
+primitives provide that separation: miners enforce risk mechanically, deployers
+stake reputation and capital, users are protected by the architecture. No
+vote can change it.
+
+The fee model is the case study that proves this architecture works — straight
+from genesis. It is not a future roadmap item. It is the first demonstration
+that decentralized self-governance through o-cap primitives is operational,
+not theoretical.
+
+---
+
 ## References
 
 - George Selgin, *Good Money: Birmingham Button Makers, the Royal Mint, and

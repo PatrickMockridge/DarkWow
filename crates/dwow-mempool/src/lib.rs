@@ -942,11 +942,11 @@ mod tests {
         // Store new thresholds, verify add() sees the new values via Acquire/Release.
         smol::block_on(async {
             // ── Derive thresholds from CongestionFactor values ────────
-            // premium_threshold = CF.premium (miner sets this as u64).
-            // general_threshold = CF.standard.
+            // premium_threshold = CF.premium, general_threshold = CF.standard.
             // At CF 200x: premium = 200 × SCALE, standard = 50 × SCALE.
-            let premium_threshold = CongestionFactor { premium: 200_000_000, standard: 50_000_000 }.premium as u64;
-            let general_threshold = CongestionFactor { premium: 200_000_000, standard: 50_000_000 }.standard as u64;
+            let cf = CongestionFactor::new(200_000_000, 50_000_000);
+            let premium_threshold = cf.premium() as u64;
+            let general_threshold = cf.standard() as u64;
             let config = MempoolConfig {
                 premium_threshold,
                 general_threshold,
@@ -978,8 +978,9 @@ mod tests {
         smol::block_on(async {
             // ── Derive thresholds from CongestionFactor values ────────
             // premium_threshold = CF.premium, general_threshold = CF.standard.
-            let premium_threshold = CongestionFactor { premium: 200_000_000, standard: 10_000_000 }.premium as u64;
-            let general_threshold = CongestionFactor { premium: 200_000_000, standard: 10_000_000 }.standard as u64;
+            let cf = CongestionFactor::new(200_000_000, 10_000_000);
+            let premium_threshold = cf.premium() as u64;
+            let general_threshold = cf.standard() as u64;
             let config = MempoolConfig {
                 premium_threshold,
                 general_threshold,
@@ -1016,8 +1017,9 @@ mod tests {
     fn test_premium_queue_len() {
         smol::block_on(async {
             // ── Derive thresholds from CongestionFactor values ────────
-            let premium_threshold = CongestionFactor { premium: 100_000_000, standard: 10_000_000 }.premium as u64;
-            let general_threshold = CongestionFactor { premium: 100_000_000, standard: 10_000_000 }.standard as u64;
+            let cf = CongestionFactor::new(100_000_000, 10_000_000);
+            let premium_threshold = cf.premium() as u64;
+            let general_threshold = cf.standard() as u64;
             let config = MempoolConfig {
                 premium_threshold,
                 general_threshold,
@@ -1038,8 +1040,9 @@ mod tests {
     fn test_standard_queue_len() {
         smol::block_on(async {
             // ── Derive thresholds from CongestionFactor values ────────
-            let premium_threshold = CongestionFactor { premium: 500_000_000, standard: 10_000_000 }.premium as u64;
-            let general_threshold = CongestionFactor { premium: 500_000_000, standard: 10_000_000 }.standard as u64;
+            let cf = CongestionFactor::new(500_000_000, 10_000_000);
+            let premium_threshold = cf.premium() as u64;
+            let general_threshold = cf.standard() as u64;
             let config = MempoolConfig {
                 premium_threshold,
                 general_threshold,
@@ -1079,8 +1082,9 @@ mod tests {
         use std::sync::{Arc as StdArc, Barrier};
 
         // ── Derive thresholds from CongestionFactor values ────────────
-        let premium_threshold = CongestionFactor { premium: 200_000_000, standard: 50_000_000 }.premium as u64;
-        let general_threshold = CongestionFactor { premium: 200_000_000, standard: 50_000_000 }.standard as u64;
+        let cf = CongestionFactor::new(200_000_000, 50_000_000);
+        let premium_threshold = cf.premium() as u64;
+        let general_threshold = cf.standard() as u64;
         let config = MempoolConfig {
             premium_threshold,
             general_threshold,

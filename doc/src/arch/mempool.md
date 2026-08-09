@@ -48,7 +48,8 @@ Admission checks (all REQUIRED, matching `Mempool::add()` at
 - **Dedup.** The transaction's hash SHALL NOT already be in the pool.
 - **Eviction.** If the pool is at capacity, the lowest fee-rate entry SHALL be evicted
   before inserting a higher fee-rate transaction. Stale entries (older than
-  `max_age_secs`) SHALL be evicted before each insertion.
+  `max_age_secs` = 12,000 (100 blocks at 120s block time, matching
+  [wallet.md §6.5](wallet.md) `MEMPOOL_WINDOW`)) SHALL be evicted before each insertion.
 
 > **Note:** Full ZK proof verification and signature verification occur at the
 > block acceptance layer (`bin/dwowd/src/block_acceptor.rs:116`,
@@ -176,87 +177,81 @@ admit(tx):
 3. Return selected transactions. Selection is non-destructive — call
    `mark_mined` after block acceptance to remove confirmed transactions.
 
-### 5.4 Threshold Constants
+### 5.4 Threshold Values
 
-**Initial deployment**: `PREMIUM_THRESHOLD` and `GENERAL_THRESHOLD` are fixed
-consensus constants, defined at compile time. Changing them requires a hard
-fork. See [fee-spec.md §7.1](consensus/fee-spec.md).
+`PREMIUM_THRESHOLD` and `GENERAL_THRESHOLD` are consensus-critical values
+derived from `compute_fee()` at each fee window boundary (see
+[fee-spec.md §12](consensus/fee-spec.md)). The genesis block defines initial
+values; thereafter the PID-controlled CongestionFactor governs adjustments.
+Miners signal updated thresholds in the `fee_window_flags` field of each
+block header at the final block of the fee window.
 
-**Future**: Dynamic adjustment based on observed block fullness and mempool
-congestion. Miners MAY signal updated thresholds via the announcement
-protocol (§6).
+## 6. Threshold Discovery
 
-## 6. Threshold Announcement
+Current threshold values are published in the `fee_window_flags` field of
+each block header at the final block of the fee window (see
+[fee-spec.md §12.6](consensus/fee-spec.md)). Wallets and other nodes
+discover thresholds by reading the latest block header — no separate P2P
+announcement protocol is required. Block headers are already validated
+during chain sync; `fee_window_flags` are part of the canonical header.
 
-Miners SHALL announce current threshold values to the network so wallets can
-construct valid FeeThreshold_V1 proofs.
+### 6.1 FeeWindowFlags Format
 
-### 6.1 Announcement Format
+`fee_window_flags` is a `u16` encoding CF direction for both circuit and
+WASM dimensions:
 
-```
-ThresholdAnnouncement {
-    premium_threshold: u64,      // minimum fee for premium tier
-    general_threshold: u64,      // minimum fee for general tier
-    block_height: u64,           // height at which these thresholds apply
-    miner_multiplier: f64,       // current fee multiplier (§7.2)
-    miner_signature: [u8; 64],   // Ed25519 signature over all fields above
-}
-```
+| Bits | Field | Values |
+|------|-------|--------|
+| 0:2 | CIRCUIT_CF direction | 0b000=hold, 0b001=+10%, 0b010=−10% |
+| 3:5 | WASM_CF direction | (same encoding) |
+| 6:15 | Reserved | Must be zero |
 
-### 6.2 Propagation
-
-Threshold announcements SHALL be gossiped via the existing P2P protocol.
-Miners broadcast updated announcements when they change thresholds.
-Nodes cache the latest announcement per miner and expose them via a
-query interface for wallets.
-
-### 6.3 Wallet Integration
-
-Before constructing a FeeV2 transaction, the wallet SHALL query connected
-mining nodes for current thresholds. The wallet selects the appropriate tier
-based on the user's chosen fee. See [wallet.md §6.4.2](wallet.md).
+The wallet replays fee window history from genesis (deterministic per I1)
+to maintain the current absolute CF values. The flags provide the direction;
+chain replay provides the magnitude.
 
 ## 7. Fee Structure
 
-Transactions consume resources that miners price. A wallet estimating the fee
-for a transaction SHALL compute:
+The fee model has exactly two components: storage (WASM) and computation
+(ZK circuits). Sled writes are deterministic — they are not priced as a
+separate resource dimension. The two-component formula (see
+[fee-spec.md §12](consensus/fee-spec.md)) is:
 
 ```
-estimated_fee = (WASM_size_kb × wasm_factor
-              + Σ(ZK_opcode_weight_i) × zk_factor
-              + state_transition_count × state_factor)
-              × miner_multiplier
+fee = ((wasm_kB × BASELINE_STORAGE × WASM_CF) + (Σ opcode_difficulty × CIRCUIT_CF)) / SCALE
 ```
 
-### 7.1 Resource Factors
+### 7.1 Components
 
-| Factor | Unit | Description |
-|--------|------|-------------|
-| `wasm_factor` | DRKW / kB | Cost per kB of deployed WASM bytecode |
-| `zk_factor` | DRKW / ZK-opcode | Cost per ZK opcode executed, weighted by circuit complexity |
-| `state_factor` | DRKW / write | Cost per sled tree write (key insert, update, delete) |
+| Component | Meaning | Source |
+|-----------|---------|--------|
+| `wasm_kB` | WASM bytecode size in kB (min 1 for all transactions) | Wallet computes from bytecode |
+| `BASELINE_STORAGE` | Per-kB storage cost constant = 1,000,000 (0.01 DRKW at CF=1.0) | Consensus constant |
+| `WASM_CF` | Congestion factor for WASM storage (premium or standard tier) | Fee window PID controller |
+| `Σ opcode_difficulty` | Sum of k-scaled opcode difficulties for all circuits | Manifest `[[cost_profiles]]` |
+| `CIRCUIT_CF` | Congestion factor for circuit execution (premium or standard tier) | Fee window PID controller |
+| `SCALE` | Fixed-point scale = 1,000,000 | Consensus constant |
 
-These factors are consensus constants, fixed at compile time. Initial values
-are TBD.
+### 7.2 Congestion Factors
 
-### 7.2 Miner Multiplier
+`WASM_CF` and `CIRCUIT_CF` are independent congestion factors, each with
+`premium` and `standard` tier values, governed by a dual PID controller
+(see [fee-spec.md §12.7](consensus/fee-spec.md)). At zero congestion,
+both equal `SCALE` (1,000,000). Congestion increases the factors above
+`SCALE` via a log₂ formula based on mempool queue depth. Each factor is
+constrained to ±10% change per 20-block window.
 
-`miner_multiplier ≥ 1.0` is the dynamic component set by miners based on
-current mempool demand:
-- **Multiplier = 1.0**: Mempool mostly empty. Baseline fees.
-- **Multiplier > 1.0**: Mempool congested. Premium for inclusion.
-- **Maximum**: Bounded by consensus (e.g., 100.0) to prevent gouging.
-
-Miners publish their current multiplier in threshold announcements (§6).
-Wallets SHOULD query multiple miners and use the median multiplier.
+Miners signal CF direction in the `fee_window_flags` field of each
+block header at the final block of the fee window (see
+[fee-spec.md §12.6](consensus/fee-spec.md)).
 
 ### 7.3 Threshold Relationship
 
-The estimated fee determines which tier to target:
+The fee determines which tier to target:
 ```
-if estimated_fee >= premium_threshold:
+if fee >= premium_threshold:
     build FeeThreshold_V1 proof against premium_threshold
-elif estimated_fee >= general_threshold:
+elif fee >= general_threshold:
     build FeeThreshold_V1 proof against general_threshold
 else:
     fee too low — transaction will not be admitted
@@ -264,6 +259,9 @@ else:
 
 The actual fee paid MAY exceed the threshold — the proof only guarantees
 the lower bound. The wallet MAY offer a higher fee for faster inclusion.
+Tier is determined by the proof: a transaction is premium if its
+FeeThreshold_V1 proof verifies against the premium threshold; general if
+it verifies against the general threshold.
 
 ## 8. FeeSignallingExtractor Trait `[domain: fee_signalling]`
 
