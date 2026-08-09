@@ -16,6 +16,8 @@ Invariants tested:
 """
 
 import math
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 from collections import deque
@@ -110,6 +112,52 @@ RISK_FACTOR: dict = {
 
 
 # ============================================================================
+# Pedersen Commitment + FeeCommitAccumulator — fee-spec.md §5.6
+# ============================================================================
+# Uses sim.crypto primitives (pedersen_commit, pedersen_add, pedersen_eq)
+# which are SHA256-based Pedersen commitments with proper homomorphic properties.
+
+from sim.crypto import pedersen_commit, pedersen_add, pedersen_eq, PedersenCommitment
+
+
+class FeeCommitAccumulator:
+    """Homomorphic accumulator for Pedersen fee commitments.
+    [1:1] Rust fee_commit_accumulator in native_token contract.
+
+    Lifecycle per fee-spec.md §5.6.4:
+    - Start of block: Identity (pedersen_commit(0, b'\x00'*32))
+    - Each FeeV2 call: accumulator = accumulator + pedersen_commit(fee_i, blind_i)
+    - FeeCollectV1: verify pedersen_commit(total_fees, total_blind) == accumulator
+    - After FeeCollectV1: reset to Identity
+    """
+
+    def __init__(self):
+        zero_blind = b'\x00' * 32
+        self._acc: PedersenCommitment = pedersen_commit(0, zero_blind)
+
+    def add(self, fee_value: int, fee_blind: bytes) -> PedersenCommitment:
+        """Apply a FeeV2 commitment. Returns the new accumulator value."""
+        commit = pedersen_commit(fee_value, fee_blind)
+        self._acc = pedersen_add(self._acc, commit)
+        return self._acc
+
+    def verify(self, total_fees: int, total_blind: bytes) -> bool:
+        """Verify that PedersenCommit(total_fees, total_blind) == accumulator."""
+        expected = pedersen_commit(total_fees, total_blind)
+        return pedersen_eq(self._acc, expected)
+
+    def reset(self):
+        """Reset to Identity after FeeCollectV1."""
+        zero_blind = b'\x00' * 32
+        self._acc = pedersen_commit(0, zero_blind)
+
+    @property
+    def is_identity(self) -> bool:
+        zero_blind = b'\x00' * 32
+        return pedersen_eq(self._acc, pedersen_commit(0, zero_blind))
+
+
+# ============================================================================
 # [1:1] CostProfile — mirrors manifest.md [[cost_profiles]]
 # ============================================================================
 
@@ -193,6 +241,81 @@ def resolve_cost_profile(
         tolerance=0.50,
     )
     return (pessimistic, risk_factor)
+
+
+# ============================================================================
+# Encrypted Fee Flow — fee-spec.md §5.6.3, G2+G6 reference model
+# ============================================================================
+# Models the wallet→miner fee encryption channel. Production uses AEAD
+# (ECDH + ChaCha20-Poly1305). Python model uses HMAC-then-XOR with a derived
+# key for deterministic wrong-key detection.
+
+
+def _derive_key(secret: int) -> bytes:
+    """Derive a 32-byte encryption key from an integer secret (miner key)."""
+    import hashlib
+    return hashlib.sha256(secret.to_bytes(8, 'little')).digest()
+
+
+def encrypt_fee_for_miner(fee_amount: int, miner_public_key: int) -> bytes:
+    """Encrypt fee for miner. Uses HMAC-then-XOR; wrong key detected via MAC."""
+    key = _derive_key(miner_public_key)
+    import hmac
+    fee_bytes = fee_amount.to_bytes(8, 'little')
+    mac = hmac.digest(key, fee_bytes, 'sha256')[:4]
+    encrypted = bytes(b ^ key[i] for i, b in enumerate(fee_bytes))
+    return encrypted + mac
+
+
+def decrypt_fee_for_miner(ciphertext: bytes, miner_secret_key: int) -> int:
+    """Decrypt fee using miner's secret. Returns fee or None if MAC fails."""
+    if len(ciphertext) != 12:
+        return None
+    encrypted, stored_mac = ciphertext[:8], ciphertext[8:12]
+    key = _derive_key(miner_secret_key)
+    fee_bytes = bytes(b ^ key[i] for i, b in enumerate(encrypted))
+    fee = int.from_bytes(fee_bytes, 'little')
+    import hmac
+    expected_mac = hmac.digest(key, fee_bytes, 'sha256')[:4]
+    if not hmac.compare_digest(expected_mac, stored_mac):
+        return None
+    return fee
+
+
+# ============================================================================
+# FeeCollectV1 Miner Workflow — fee-spec.md §5.6.4, G2+G6 reference model
+# ============================================================================
+
+
+def build_fee_collect_params(mempool_txs: list, miner_secret_key: int,
+                             accumulator: FeeCommitAccumulator) -> tuple:
+    """Miner-side fee collection: decrypt fees, accumulate Pedersen commitments.
+
+    For each FeeV2 transaction, the miner decrypts the encrypted fee value
+    and builds a Pedersen commitment. The commitments are accumulated via
+    pedersen_add to verify against the on-chain accumulator.
+
+    Returns (total_fees, recomputed_commitment, all_decrypted) where
+    all_decrypted indicates all decryptions succeeded. Falls back to
+    ESTIMATED_FEE_PER_FEEV2_CALL on decryption failure.
+    """
+    total_fees = 0
+    zero_blind = b'\x00' * 32
+    recomputed = pedersen_commit(0, zero_blind)
+    all_decrypted = True
+
+    for tx in mempool_txs:
+        for _fee_value, blind_value, encrypted_fee in tx.get('fee_v2_calls', []):
+            decrypted = decrypt_fee_for_miner(encrypted_fee, miner_secret_key)
+            if decrypted is not None:
+                total_fees += decrypted
+                recomputed = pedersen_add(recomputed, pedersen_commit(decrypted, blind_value))
+            else:
+                total_fees += 1_001_000  # fallback estimate
+                recomputed = pedersen_add(recomputed, pedersen_commit(1_001_000, blind_value))
+                all_decrypted = False
+
+    return (total_fees, recomputed, all_decrypted)
 
 
 def compute_total_fee(
@@ -1204,6 +1327,138 @@ def test_compute_total_fee_full_pipeline():
     assert fee2 == 2_000_000 + 6000, f"full pipeline missing: expected {2_000_000 + 6000}, got {fee2}"
 
 
+# ============================================================================
+# Phase 1a: Pedersen Commitment + FeeCommitAccumulator Tests
+# ============================================================================
+
+def _b(v: int) -> bytes:
+    """Make a 32-byte blind from an integer seed (deterministic)."""
+    return v.to_bytes(32, 'little')
+
+
+def test_accumulator_lifecycle():
+    """Full accumulator lifecycle: Identity → add → verify → reset → Identity."""
+    acc = FeeCommitAccumulator()
+    assert acc.is_identity, "accumulator must start at Identity"
+
+    b1, b2 = _b(12345), _b(67890)
+    acc.add(42_000_000, b1)
+    acc.add(15_000_000, b2)
+    assert not acc.is_identity, "accumulator must be non-Identity after adding commitments"
+
+    # Build expected commitment via pedersen_add (correct homomorphic accumulation).
+    # Accumulator starts at pedersen_commit(0, zero) — add that identity term.
+    zero = _b(0)
+    expected = pedersen_add(pedersen_commit(0, zero),
+               pedersen_add(pedersen_commit(42_000_000, b1),
+                            pedersen_commit(15_000_000, b2)))
+    assert pedersen_eq(acc._acc, expected), "FeeCollectV1 must verify via pedersen_eq"
+
+    # Wrong total fails
+    wrong = pedersen_add(pedersen_commit(0, zero),
+            pedersen_add(pedersen_commit(42_000_001, b1),
+                         pedersen_commit(15_000_000, b2)))
+    assert not pedersen_eq(acc._acc, wrong), "wrong total_fees must fail"
+
+    acc.reset()
+    assert acc.is_identity, "accumulator must return to Identity after reset"
+
+
+def test_accumulator_empty_is_identity():
+    """Empty block: no FeeV2 calls → accumulator stays at Identity."""
+    acc = FeeCommitAccumulator()
+    assert acc.is_identity, "empty accumulator is Identity"
+
+# ============================================================================
+# Phase 1b+1c: Encrypted Fee + FeeCollectV1 Tests (G2+G6 reference)
+# ============================================================================
+
+
+def test_encrypt_decrypt_roundtrip():
+    """Wallet encrypts fee → miner decrypts → matches original."""
+    fee = 42_000_000
+    miner_pub = 0x12345
+    miner_sec = 0x12345  # same key (symmetric model)
+    ciphertext = encrypt_fee_for_miner(fee, miner_pub)
+    decrypted = decrypt_fee_for_miner(ciphertext, miner_sec)
+    assert decrypted == fee, f"encrypt/decrypt roundtrip: expected {fee}, got {decrypted}"
+
+
+def test_encrypt_different_values_produce_different_ciphertext():
+    """Different fees produce different ciphertexts."""
+    c1 = encrypt_fee_for_miner(42_000_000, 0x12345)
+    c2 = encrypt_fee_for_miner(15_000_000, 0x12345)
+    assert c1 != c2, "different fees must produce different ciphertexts"
+
+
+def test_decrypt_wrong_key_fails():
+    """Decryption with wrong miner key returns None."""
+    ciphertext = encrypt_fee_for_miner(42_000_000, 0x12345)
+    result = decrypt_fee_for_miner(ciphertext, 0x99999)  # wrong key
+    assert result is None, "wrong key must return None"
+
+
+def test_build_fee_collect_params_sum():
+    """Miner decrypts fees from mempool transactions, sums correctly."""
+    miner_key = 0xABCD
+    b1, b2, b3 = _b(1000), _b(2000), _b(3000)
+    txs = [
+        {'fee_v2_calls': [(42_000_000, b1, encrypt_fee_for_miner(42_000_000, miner_key))]},
+        {'fee_v2_calls': [(15_000_000, b2, encrypt_fee_for_miner(15_000_000, miner_key))]},
+        {'fee_v2_calls': [(1_001_000, b3, encrypt_fee_for_miner(1_001_000, miner_key))]},
+    ]
+    acc = FeeCommitAccumulator()
+    for f, b, _ in [t['fee_v2_calls'][0] for t in txs]:
+        acc.add(f, b)
+    total_fees, recomputed, all_ok = build_fee_collect_params(txs, miner_key, acc)
+    assert all_ok, "all three decryptions must succeed"
+    assert total_fees == 42_000_000 + 15_000_000 + 1_001_000
+    # Compare recomputed commitment against accumulator using pedersen_eq
+    assert pedersen_eq(recomputed, acc._acc), "FeeCollectV1: recomputed must match accumulator"
+
+
+def test_build_fee_collect_params_fallback_on_decrypt_failure():
+    """When decryption fails, miner falls back to estimate."""
+    miner_key = 0xABCD
+    b1, b2 = _b(1000), _b(2000)
+    txs = [
+        {'fee_v2_calls': [(42_000_000, b1, encrypt_fee_for_miner(42_000_000, miner_key))]},
+        {'fee_v2_calls': [(15_000_000, b2, b'\x00' * 12)]},  # bad ciphertext
+    ]
+    acc = FeeCommitAccumulator()
+    acc.add(42_000_000, b1)
+    acc.add(15_000_000, b2)
+    total_fees, recomputed, all_ok = build_fee_collect_params(txs, miner_key, acc)
+    assert not all_ok, "one decryption failed, must report failure"
+    assert total_fees == 42_000_000 + 1_001_000  # second tx fell back to estimate
+    # Even with fallback, the recomputed commitment uses the estimate value
+    # with the same blind, so it should match if the accumulator also used
+    # the estimate. Here the accumulator used the actual fee, so they differ.
+    # This is expected — the fallback value differs from actual.
+
+
+def test_g2_g6_end_to_end():
+    """Full G2+G6 reference: wallet encrypts → miner decrypts → FeeCollectV1 verifies."""
+    miner_key = 0xBEEF
+    fees = [42_000_000, 15_000_000, 1_001_000, 100_000_000, 50_000_000]
+    blinds = [_b(i) for i in range(1000, 5001, 1000)]
+    txs = []
+    acc = FeeCommitAccumulator()
+    for f, b in zip(fees, blinds):
+        ciphertext = encrypt_fee_for_miner(f, miner_key)
+        txs.append({'fee_v2_calls': [(f, b, ciphertext)]})
+        acc.add(f, b)
+
+    total_fees, recomputed, all_ok = build_fee_collect_params(txs, miner_key, acc)
+    assert all_ok, "all decryptions must succeed"
+    assert total_fees == sum(fees), f"expected {sum(fees)}, got {total_fees}"
+    assert pedersen_eq(recomputed, acc._acc), \
+        "FeeCollectV1: recomputed commitment must match on-chain accumulator"
+
+    acc.reset()
+    assert acc.is_identity, "accumulator must be Identity after FeeCollectV1"
+
+
 def test_circuit_difficulty_from_declared_opcodes():
     """Miner verification: circuit_difficulty(declared_opcodes, declared_k) == declared_circuit_difficulty.
 
@@ -1291,6 +1546,16 @@ if __name__ == "__main__":
         test_compute_total_fee_risk_multiplier,
         test_compute_total_fee_risk_does_not_affect_wasm,
         test_compute_total_fee_full_pipeline,
+        # Phase 1a: Pedersen + FeeCommitAccumulator
+        test_accumulator_lifecycle,
+        test_accumulator_empty_is_identity,
+        # Phase 1b+1c: Encrypted fee + FeeCollectV1 (G2+G6 reference)
+        test_encrypt_decrypt_roundtrip,
+        test_encrypt_different_values_produce_different_ciphertext,
+        test_decrypt_wrong_key_fails,
+        test_build_fee_collect_params_sum,
+        test_build_fee_collect_params_fallback_on_decrypt_failure,
+        test_g2_g6_end_to_end,
         # Miner verification — manifest [[circuits]].opcodes
         test_circuit_difficulty_from_declared_opcodes,
     ]
