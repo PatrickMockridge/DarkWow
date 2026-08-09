@@ -281,6 +281,17 @@ pub fn build_fee_and_finalize_tx(
     let fee_v2_result = fee_builder.build()
         .map_err(|e| Error::Custom(format!("Failed to build FeeV2: {:?}", e)))?;
 
+    // G2 Phase 2 (red team): encrypt fee_amount to miner's public key.
+    // FIXME: wire miner_public_key from wallet P2P config. When available:
+    //   let mut params = fee_v2_result.params;
+    //   params.encrypted_fee_value = encrypt_fee_for_miner(
+    //       fee_v2_result.params.fee_amount,
+    //       &miner_public_key,
+    //   )?;
+    //   let fee_call_data = [0x08][params.encode()]
+    // For now, encrypted_fee_value is empty — min_fee check uses threshold proof,
+    // and FeeCollectV1 total_fees falls back to estimate in prepare_block().
+
     // Create FeeV2 call data: [0x08 selector][FeeParamsV2 encoded]
     // NO clear-text fee bytes — spec: fee-spec.md §5.2
     let mut fee_call_data = vec![0x08u8];
@@ -316,6 +327,27 @@ pub fn build_fee_and_finalize_tx(
         .map_err(|e| Error::Custom(format!("Failed to build transaction: {:?}", e)))?;
 
     Ok(tx)
+}
+
+/// Encrypt a fee amount to the miner's public key using AEAD (ECDH + ChaCha20-Poly1305).
+///
+/// Per red-team guardrails G7 and fee-spec.md §5.6.3: the fee value crosses from
+/// wallet-private to miner-known ONLY through this encryption. The miner decrypts
+/// in `prepare_block()` to compute the correct `total_fees` for FeeCollectV1.
+///
+/// Ciphertext format: [ephemeral_public (32B) || nonce (12B) || encrypted_blob || tag (16B)].
+/// Currently returns empty — FIXME: implement ECDH + ChaCha20-Poly1305 encryption.
+pub fn encrypt_fee_for_miner(
+    fee_amount: FeeAmount,
+    _miner_public_key: &PublicKey,
+) -> Result<Vec<u8>, Error> {
+    // FIXME(G2 Phase 2): Implement ECDH key agreement + ChaCha20-Poly1305.
+    // 1. Generate ephemeral keypair
+    // 2. ECDH(ephemeral_secret, miner_public) → shared_secret
+    // 3. ChaCha20-Poly1305 encrypt fee_amount.get().to_le_bytes() with shared_secret
+    // 4. Return [ephemeral_public || nonce || ciphertext || tag]
+    let _ = (fee_amount, _miner_public_key);
+    Ok(vec![])
 }
 
 #[cfg(test)]

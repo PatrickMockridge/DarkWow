@@ -1243,9 +1243,22 @@ async fn prepare_block(
     //    (consensus-coinbase.md §3.12). Fallible but no destructive mutation
     //    yet — competing blocks still safe in chain_state.
     // Sum FeeV2 fees using the mempool fee extractor. The extractor reads
-    // FeeParamsV2 from each FeeV2 (0x08) call and returns the fee estimate.
-    // For production, this is DEFAULT_FEE per call until witness extraction
-    // is implemented. Spec: fee-spec.md §5.6.4.
+    // G2 Phase 3 (red team): decrypt encrypted_fee_value from each FeeV2 tx
+    // using the miner's secret key. Replaces the estimate-based summation below.
+    // FIXME: add miner_secret_key to MiningState or MinerConfig. When available:
+    //   let mut total_fees: u64 = 0;
+    //   for tx in &mempool_txs {
+    //       for call in &tx.contract_calls {
+    //           if let Some(mb_fee_v2) = call.as_mass_balance_fee_v2() {
+    //               let params = FeeParamsV2::decode(mb_fee_v2.params_bytes())?;
+    //               let fee = decrypt_fee_for_miner(&params.encrypted_fee_value, &miner_sk);
+    //               total_fees = total_fees.saturating_add(fee.unwrap_or(ESTIMATE));
+    //           }
+    //       }
+    //   }
+    //   let prod_tf = FeeAmount::new(total_fees);
+    // For now: estimate-based summation. FeeCollectV1 Pedersen check will fail
+    // for blocks with actual FeeV2 transactions until Phase 3 is complete.
     let fee_extractor = NativeTokenFeeSignallingExtractor::new();
     let prod_tf: FeeAmount = mempool_txs.iter()
         .map(|tx| fee_extractor.extract_fee(tx))
