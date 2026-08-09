@@ -2003,3 +2003,36 @@ This is the defining differentiator: **decentralized self-governance through
 o-cap primitives, not token voting.** The fee model is the case study that
 proves the architecture works — infrastructure builders and deployers absorb
 execution risk, users don't, and no whale vote can change that.
+
+#### 12.12.7 Proving Parallelization — A Rho-Calculus Property
+
+The fee model's proof architecture demonstrates a structural ρ-calculus
+property: **proving is embarrassingly parallel across wallets, verification
+is cheap and centralized at the miner.** This follows directly from the
+object-capability model (ocap.md):
+
+- Each wallet holds its own `ν`-bound secret key — a name that no other
+  process possesses. Proving requires this name, so proving cannot be
+  delegated or pooled. The wallet alone can construct the Fee_V2
+  (mass-balance) and FeeThreshold_V1 (range) proofs.
+
+- Verification requires only the public verification key and public inputs
+  (threshold, tx_binding). No secret material. The miner verifies every
+  threshold proof at mempool admission — a single cheap operation (~70ms
+  per transaction, ~18 seconds for a full 250-tx block).
+
+- Proving time per wallet: ~7–20 seconds (Fee_V2 + FeeThreshold_V1). This
+  is entirely local — the wallet generates proofs while offline or during
+  block assembly, with no coordination. A network with 10,000 active
+  wallets has 10,000× the proving throughput of a single wallet.
+
+- The miner's mempool verification is the bottleneck (~250 txs × 70ms =
+  ~18s), not the wallets' proving. This matches the ρ-calculus principle:
+  work stays at the name holder, verification is a public computation.
+
+This is the inverse of token-weighted systems where computation is
+centralized (a single sequencer or validator set) and governance controls
+admission. In DarkWow, every wallet proves independently, every miner
+verifies independently, and the architecture guarantees throughput without
+any coordination layer. The ρ-calculus primitives in genesis are necessary
+and sufficient — no additional infrastructure is required.
