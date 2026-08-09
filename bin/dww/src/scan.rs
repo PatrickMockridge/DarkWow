@@ -97,6 +97,9 @@ pub(crate) enum NativeTokenSource {
     TransferV1,
     SpendV1,
     FeeV1,
+    /// FeeV2 — privacy-preserving fee payment (0x08). Output carries AEAD-encrypted
+    /// change note; discovered by trial decryption like other native token outputs.
+    FeeV2,
     /// FeeCollectV1 — miner fee coin (capability claim for a NEW coin,
     /// not a spend — same exclusion as PoWRewardV1 from nullifier extraction)
     FeeCollectV1,
@@ -109,6 +112,7 @@ impl NativeTokenSource {
             NativeTokenSource::TransferV1 => "TransferV1",
             NativeTokenSource::SpendV1 => "SpendV1",
             NativeTokenSource::FeeV1 => "FeeV1",
+            NativeTokenSource::FeeV2 => "FeeV2",
             NativeTokenSource::FeeCollectV1 => "FeeCollectV1",
         }
     }
@@ -460,6 +464,7 @@ fn discover_native_token_outputs(
         0x04 => NativeTokenSource::SpendV1,
         0x05 => NativeTokenSource::PoWRewardV1,
         0x06 => NativeTokenSource::FeeCollectV1,
+        0x08 => NativeTokenSource::FeeV2,
         _ => NativeTokenSource::TransferV1, // fallback
     };
 
@@ -589,7 +594,7 @@ fn scan_native_token_contract_calls(
         // TransferV1   (0x03): receiver outputs
         // SpendV1      (0x04): change output
         // FeeV1        (0x00): change output
-        if matches!(function_code, 0x00 | 0x03 | 0x04 | 0x05 | 0x06) {
+        if matches!(function_code, 0x00 | 0x03 | 0x04 | 0x05 | 0x06 | 0x08) {
             let (caps, msgs) = match discover_native_token_outputs(
                 account_mgr, tree, &call.data, height, function_code, diagnostics,
             ) {

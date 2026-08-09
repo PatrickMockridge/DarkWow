@@ -340,7 +340,7 @@ pub fn build_fee_and_finalize_tx(
 pub fn encrypt_fee_for_miner(
     fee_amount: FeeAmount,
     _miner_public_key: &PublicKey,
-) -> Result<Vec<u8>, Error> {
+) -> Result<Vec<u8>> {
     // FIXME(G2 Phase 2): Implement ECDH key agreement + ChaCha20-Poly1305.
     // 1. Generate ephemeral keypair
     // 2. ECDH(ephemeral_secret, miner_public) → shared_secret

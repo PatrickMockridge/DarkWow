@@ -45,7 +45,7 @@ use dwow_core::{
     zkas::ZkBinary,
     Error, Result,
 };
-use dwow_chain::fee_window::FeeWindowFlags;
+use dwow_chain::fee_window::{CongestionFactor, FeeWindowFlags, compute_fee};
 use dwow_chain::monero::JobId;
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, BlockCharge, FeeAmount, MoneroBlockHeight};
 use dwow_sdk::crypto::keypair::Network;
@@ -1410,10 +1410,24 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                     let wasm_cf = fw.adjust_wasm(premium_pending, standard_pending);
                     let flags = fw.encode_flags();
                     if let Some(ref mp) = node.mempool {
-                        mp.update_thresholds(
-                            FeeAmount::new(circuit_cf.premium() as u64),
-                            FeeAmount::new(circuit_cf.standard() as u64),
+                        // G4 fix: use compute_fee() with average circuit difficulty
+                        // instead of raw CF values. This matches the wallet's
+                        // two-component formula (wasm storage + circuit execution).
+                        // Average transfer: circuit_costs=[1000], wasm_kb=1.
+                        let premium_fee = compute_fee(
+                            &[1000u64], 1, wasm_cf, circuit_cf,
                         );
+                        // General tier uses standard CF values
+                        let general_wasm_cf = CongestionFactor::new(
+                            wasm_cf.standard(), wasm_cf.standard(),
+                        );
+                        let general_circuit_cf = CongestionFactor::new(
+                            circuit_cf.standard(), circuit_cf.standard(),
+                        );
+                        let general_fee = compute_fee(
+                            &[1000u64], 1, general_wasm_cf, general_circuit_cf,
+                        );
+                        mp.update_thresholds(premium_fee, general_fee);
                     }
                     info!(target: "dwowd::miner_task",
                         "Fee window boundary at height {}: circuit_premium={}, circuit_standard={}, wasm_premium={}, wasm_standard={}, flags=0x{:04x}",
