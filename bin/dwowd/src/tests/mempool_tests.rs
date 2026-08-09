@@ -602,8 +602,13 @@ fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dy
         assert!(err.contains("nullifier"),
             "[NF1-ST5-2] Error must cite 'nullifier'. Got: '{}'. \
              If 'already in mempool': duplicate-hash fired (false positive).", err);
-        assert!(!err.contains("already in mempool"),
-            "[NF1-ST5-3] Error must NOT cite 'already in mempool' (hash dedup, not nullifier).");
+        // The nullifier dedup error is "Double-spend: nullifier already in mempool"
+        // which contains "nullifier" (proof of line 384, not line 375 hash dedup).
+        // "Transaction already in mempool" (without "nullifier") = line 375 false positive.
+        assert!(!err.contains("Transaction already in mempool"),
+            "[NF1-ST5-3] Error must be 'Double-spend: nullifier already in mempool' \
+             (nullifier dedup, line 384), not 'Transaction already in mempool' \
+             (hash dedup, line 375). Got: {}", err);
         assert!(!err.contains("fee below"),
             "[NF1-ST5-4] Error must NOT cite 'fee below' (FeeV2 gate, not nullifier).");
 
