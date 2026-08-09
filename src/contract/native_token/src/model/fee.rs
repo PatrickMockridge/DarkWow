@@ -130,6 +130,11 @@ pub struct FeeParamsV2 {
     pub threshold_proof: Vec<u8>,
     /// Threshold used in the FeeThreshold_V1 proof (needed for metadata).
     pub threshold: FeeAmount,
+    /// Fee amount encrypted to the block-producing miner's public key.
+    /// AEAD ciphertext: [ephemeral_public (32B) || nonce (12B) || encrypted_blob (8B) || tag (16B)].
+    /// Validators and mempool CANNOT decrypt — only the miner with the matching secret key.
+    /// Per red-team guardrail G7: NO plaintext fee on-chain.
+    pub encrypted_fee_value: Vec<u8>,
     pub fee_value_blind: pallas::Scalar,
     /// Fee token blind — typed BaseBlind per spec §8.1.
     pub fee_token_blind: BaseBlind,
@@ -165,7 +170,8 @@ impl FeeParamsV2 {
         let input_bytes = self.input.encode();
         let output_bytes = self.output.encode();
         let proof_len = self.threshold_proof.len() as u32;
-        let cap = input_bytes.len() + output_bytes.len() + 72 + 4 + proof_len as usize + 160;
+        let cap = input_bytes.len() + output_bytes.len() + 72 + 4 + proof_len as usize
+            + 4 + self.encrypted_fee_value.len() + 160;
         let mut buf = Vec::with_capacity(cap);
         buf.extend_from_slice(&input_bytes);
         buf.extend_from_slice(&output_bytes);
@@ -176,6 +182,10 @@ impl FeeParamsV2 {
         // threshold_proof: length-prefixed bytes
         buf.extend_from_slice(&proof_len.to_le_bytes());
         buf.extend_from_slice(&self.threshold_proof);
+        // encrypted_fee_value: length-prefixed AEAD ciphertext (4 + N bytes)
+        let enc_len = self.encrypted_fee_value.len() as u32;
+        buf.extend_from_slice(&enc_len.to_le_bytes());
+        buf.extend_from_slice(&self.encrypted_fee_value);
         // blinds + bindings (160 bytes: scalar 32 + blind 32 + fee_v2_binding 32 + threshold_binding 32 + nonce 32)
         buf.extend_from_slice(&self.fee_value_blind.to_repr());
         buf.extend_from_slice(&self.fee_token_blind.inner().to_repr());
@@ -235,6 +245,18 @@ impl FeeParamsV2 {
         let threshold_proof = data[pos..pos + proof_len].to_vec();
         pos += proof_len;
 
+        // encrypted_fee_value: length-prefixed AEAD ciphertext
+        if data.len() < pos + 4 {
+            return Err(parse_err("FeeParamsV2: too short for encrypted_fee_value length"));
+        }
+        let enc_len = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
+        pos += 4;
+        if data.len() < pos + enc_len {
+            return Err(parse_err("FeeParamsV2: too short for encrypted_fee_value"));
+        }
+        let encrypted_fee_value = data[pos..pos + enc_len].to_vec();
+        pos += enc_len;
+
         // blinds + bindings (160 bytes: scalar 32 + blind 32 + fee_v2_binding 32 + threshold_binding 32 + nonce 32)
         if data.len() < pos + 160 {
             return Err(parse_err("FeeParamsV2: too short for blinds"));
@@ -269,7 +291,7 @@ impl FeeParamsV2 {
         Ok(FeeParamsV2 {
             input, output, fee_value_commit,
             fee_value_commit_x, fee_value_commit_y,
-            threshold, threshold_proof,
+            threshold, encrypted_fee_value, threshold_proof,
             fee_value_blind, fee_token_blind,
             fee_v2_tx_binding, threshold_tx_binding, tx_nonce,
         })

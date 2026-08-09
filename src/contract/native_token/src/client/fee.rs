@@ -232,14 +232,19 @@ impl FeeV2CallBuilder {
         let fee_value_commit_y = *c.y();
 
         // Build FeeParamsV2
+        // TODO(fee-spec §5.6.3, G2 Phase 2): encrypt self.fee_amount to miner's
+        // public key using AEAD. For now, empty — the field is serialized as
+        // length-prefixed (4 zero bytes + 0 data bytes = 4 bytes on wire).
+        let encrypted_fee_value: Vec<u8> = vec![];
         let params = FeeParamsV2 {
             input: params_input,
             output: params_output,
             fee_value_commit,
             fee_value_commit_x,
             fee_value_commit_y,
-            threshold_proof: self.threshold_proof_bytes,
+            threshold_proof: self.threshold_proof_bytes.clone(),
             threshold: self.threshold,
+            encrypted_fee_value,
             fee_value_blind: fee_value_blind.inner(),
             fee_token_blind: token_blind,
             fee_v2_tx_binding,
