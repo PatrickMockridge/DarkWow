@@ -382,41 +382,50 @@ impl<'de> serde::Deserialize<'de> for BlockTarget {
 
 /// Nominal gas type (type-system.md §2.3).
 ///
-/// Distinguished from `BlockReward` so gas arithmetic cannot mix with supply
-/// accounting. `compute_fee(gas)` accepts `GasAmount` — passing a bare `u64`
-/// or `BlockReward` is a type error.
+/// Declarative block capacity charge — potential energy, not measured work.
+///
+/// Unlike thermodynamic gas (which measures actual work performed — WYSIWYG),
+/// `BlockCharge` is a **declarative promise** by the contract deployer of the
+/// block capacity the transaction will consume. Per fee-spec.md §12.4.3:
+///
+/// - Gas is retrospective: actual work learned after execution.
+/// - Charge is prospective: deployer declares before execution; miner prices
+///   deviations through the risk model (§12.12.6).
+///
+/// Distinguished from `BlockReward` and `FeeAmount` per type-system.md §2.3.1 —
+/// charge arithmetic cannot silently mix with supply or fee accounting.
 #[repr(transparent)]
 #[derive(
     Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, SerialEncodable, SerialDecodable,
 )]
-pub struct GasAmount(u64);
+pub struct BlockCharge(u64);
 
-impl GasAmount {
+impl BlockCharge {
     pub const ZERO: Self = Self(0);
     pub const fn new(amount: u64) -> Self { Self(amount) }
     pub const fn get(self) -> u64 { self.0 }
     pub const fn to_le_bytes(self) -> [u8; 8] { self.0.to_le_bytes() }
     pub const fn from_le_bytes(bytes: [u8; 8]) -> Self { Self(u64::from_le_bytes(bytes)) }
 
-    /// Saturating addition. Returns `GasAmount(u64::MAX)` on overflow.
-    pub const fn saturating_add(self, other: GasAmount) -> GasAmount {
-        GasAmount(self.0.saturating_add(other.0))
+    /// Saturating addition. Returns `BlockCharge(u64::MAX)` on overflow.
+    pub const fn saturating_add(self, other: BlockCharge) -> BlockCharge {
+        BlockCharge(self.0.saturating_add(other.0))
     }
 }
 
-impl core::fmt::Display for GasAmount {
+impl core::fmt::Display for BlockCharge {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl serde::Serialize for GasAmount {
+impl serde::Serialize for BlockCharge {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_u64(self.0)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for GasAmount {
+impl<'de> serde::Deserialize<'de> for BlockCharge {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         Ok(Self(u64::deserialize(d)?))
     }
@@ -475,7 +484,7 @@ impl<'de> serde::Deserialize<'de> for SupplyAmount {
 
 /// Nominal fee-amount type (type-system.md §2.3.1).
 ///
-/// Distinguished from `BlockReward` (minted supply) and `GasAmount`
+/// Distinguished from `BlockReward` (minted supply) and `BlockCharge`
 /// (computation measure). `fee = gas * gas_price` is a distinct economic
 /// domain. `compute_fee(gas) -> FeeAmount` makes the domain visible at
 /// every call site.
@@ -958,11 +967,12 @@ mod newtype_tests {
 }
 
 /// Auxiliary function to compute the corresponding fee value
-/// for the provided gas.
+/// for the provided gas units (real WASM-measured work, not declared charge).
 ///
-/// Currently we simply divide the gas value by 100.
-pub fn compute_fee(gas: GasAmount) -> FeeAmount {
-    FeeAmount::new(gas.0 / 100)
+/// Takes raw `u64` — gas is thermodynamic (WYSIWYG), measured by the WASM
+/// runtime in `execution.rs`. Currently divides by 100 to produce a fee.
+pub fn compute_fee(gas_units: u64) -> FeeAmount {
+    FeeAmount::new(gas_units / 100)
 }
 
 use pasta_curves::{

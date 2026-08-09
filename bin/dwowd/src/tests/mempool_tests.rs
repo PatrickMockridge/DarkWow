@@ -9,31 +9,31 @@
 use std::sync::Mutex;
 
 use dwow_mempool::{FeeCommitment, FeeSignallingExtractor, Mempool, MempoolConfig, MinerConfig};
+use dwow_sdk::blockchain::{BlockCharge, FeeAmount};
 use dwow_sdk::pasta::group::{Group, GroupEncoding};
 
 struct TestFeeSignallingExtractor;
 impl FeeSignallingExtractor for TestFeeSignallingExtractor {
-    fn extract_fee(&self, tx: &dwow_chain::Transaction) -> u64 {
+    fn extract_fee(&self, tx: &dwow_chain::Transaction) -> FeeAmount {
         if let Some(call) = tx.contract_calls.first() {
             if call.data.len() >= 9 {
-                // FeeV2: [0x08][fee:8][...] (test data uses same prefix layout)
                 if call.data[0] == 0x08 {
-                    return u64::from_le_bytes(call.data[1..9].try_into().unwrap_or([0; 8]));
+                    return FeeAmount::new(
+                        u64::from_le_bytes(call.data[1..9].try_into().unwrap_or([0; 8]))
+                    );
                 }
             }
         }
-        0
+        FeeAmount::ZERO
     }
-    fn estimate_gas(&self, tx: &dwow_chain::Transaction) -> u64 {
-        tx.contract_calls.len() as u64 * 400_000_000
+    fn declare_charge(&self, tx: &dwow_chain::Transaction) -> BlockCharge {
+        BlockCharge::new(tx.contract_calls.len() as u64 * 400_000_000)
     }
     fn extract_fee_commitment(&self, _tx: &dwow_chain::Transaction) -> Option<FeeCommitment> {
-        // Test extractor: V1-only, no commitments
         None
     }
-    fn verify_threshold_proof(&self, tx: &dwow_chain::Transaction, threshold: u64) -> bool {
-        let fee = self.extract_fee(tx);
-        fee >= threshold
+    fn verify_threshold_proof(&self, tx: &dwow_chain::Transaction, threshold: FeeAmount) -> bool {
+        self.extract_fee(tx) >= threshold
     }
 }
 
@@ -94,7 +94,7 @@ fn test_mempool_accepts_zero_fee() {
     // Consensus accepts any fee level. Mempool may accept zero-fee txs
     // when min_fee=0 — rejection is policy, not consensus (fee-spec.md §7).
     smol::block_on(async {
-        let config = MempoolConfig { min_fee: 0, ..Default::default() };
+        let config = MempoolConfig { min_fee: FeeAmount::ZERO, ..Default::default() };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
         let tx = make_fee_v2_tx(0);
@@ -108,8 +108,8 @@ fn test_feev2_premium_admission() {
     // FeeV2 tx with fee >= premium_threshold goes to premium queue.
     smol::block_on(async {
         let config = MempoolConfig {
-            premium_threshold: 100_000_000,
-            general_threshold: 10_000_000,
+            premium_threshold: FeeAmount::new(100_000_000),
+            general_threshold: FeeAmount::new(10_000_000),
             ..Default::default()
         };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
@@ -125,8 +125,8 @@ fn test_feev2_general_admission() {
     // FeeV2 tx with fee between general and premium goes to general queue.
     smol::block_on(async {
         let config = MempoolConfig {
-            premium_threshold: 200_000_000,
-            general_threshold: 50_000_000,
+            premium_threshold: FeeAmount::new(200_000_000),
+            general_threshold: FeeAmount::new(50_000_000),
             ..Default::default()
         };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
@@ -142,8 +142,8 @@ fn test_feev2_reject_below_general() {
     // FeeV2 tx with fee below general_threshold is REJECTED.
     smol::block_on(async {
         let config = MempoolConfig {
-            premium_threshold: 100_000_000,
-            general_threshold: 50_000_000,
+            premium_threshold: FeeAmount::new(100_000_000),
+            general_threshold: FeeAmount::new(50_000_000),
             ..Default::default()
         };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
@@ -159,8 +159,8 @@ fn test_feev2_premium_before_general() {
     // Premium queue drained before general queue in select_for_block.
     smol::block_on(async {
         let config = MempoolConfig {
-            premium_threshold: 100_000_000,
-            general_threshold: 10_000_000,
+            premium_threshold: FeeAmount::new(100_000_000),
+            general_threshold: FeeAmount::new(10_000_000),
             ..Default::default()
         };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
@@ -250,8 +250,8 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
         };
 
         let config = MempoolConfig {
-            premium_threshold: 42_000_000,
-            general_threshold: 1_000_000,
+            premium_threshold: FeeAmount::new(42_000_000),
+            general_threshold: FeeAmount::new(1_000_000),
             ..Default::default()
         };
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
@@ -293,6 +293,27 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
             )).expect("invalid accumulator point");
         assert_eq!(acc_point, dwow_sdk::pasta::pallas::Point::identity(),
             "TEST-FAIL [mempool_1.5]: accumulator not reset after FeeCollectV1");
+
+        // ---- Fee window flags propagation (Scenario 1) ----
+        // Verify fee_window_flags in the block header are active and well-formed.
+        {
+            let stored = chain.chain_state.store.get_block(new_height)?;
+            let flags = stored.header.fee_window_flags;
+            assert!(flags.is_active(),
+                "L1.5-FW-1: fee_window_flags must be active after fee-bearing block, got 0x{:04x}", flags.get());
+            let circuit_cm = flags.circuit_byte().congestion_multiplier();
+            let wasm_cm = flags.wasm_byte().congestion_multiplier();
+            assert!(circuit_cm <= 2,
+                "L1.5-FW-1: circuit CM ({}) must be valid (0-2)", circuit_cm);
+            assert!(wasm_cm <= 2,
+                "L1.5-FW-1: wasm CM ({}) must be valid (0-2)", wasm_cm);
+            // derive_cfs: wallet-side CF estimation from flags
+            let (circuit_cf, wasm_cf) = flags.derive_cfs();
+            assert!(circuit_cf.premium() >= dwow_chain::fee_window::CongestionFactor::SCALE,
+                "L1.5-FW-1: derived circuit CF ({}) must be >= SCALE", circuit_cf.premium());
+            assert!(wasm_cf.premium() >= dwow_chain::fee_window::CongestionFactor::SCALE,
+                "L1.5-FW-1: derived wasm CF ({}) must be >= SCALE", wasm_cf.premium());
+        }
 
         // ---- Rejection: tx below general_threshold must be rejected ----
         let below_tx = make_fee_v2_tx(500_000); // below general_threshold (1_000_000)
@@ -373,8 +394,8 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
 
         // Real extractor — parses FeeParamsV2, checks threshold, extracts commitment.
         let config = MempoolConfig {
-            premium_threshold: 42_000_000,
-            general_threshold: 1_000_000,
+            premium_threshold: FeeAmount::new(42_000_000),
+            general_threshold: FeeAmount::new(1_000_000),
             ..Default::default()
         };
         let mempool = Mempool::new(
@@ -412,6 +433,25 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
             )).expect("invalid accumulator point");
         assert_eq!(acc_point, pallas::Point::identity(),
             "[L1.5-FW-2] accumulator not reset after FeeCollectV1");
+
+        // ---- Fee window flags propagation (Scenario 1) ----
+        {
+            let stored = chain.chain_state.store.get_block(new_height)?;
+            let flags = stored.header.fee_window_flags;
+            assert!(flags.is_active(),
+                "[L1.5-FW-2] fee_window_flags must be active after fee-bearing block, got 0x{:04x}", flags.get());
+            let circuit_cm = flags.circuit_byte().congestion_multiplier();
+            let wasm_cm = flags.wasm_byte().congestion_multiplier();
+            assert!(circuit_cm <= 2,
+                "[L1.5-FW-2] circuit CM ({}) must be valid (0-2)", circuit_cm);
+            assert!(wasm_cm <= 2,
+                "[L1.5-FW-2] wasm CM ({}) must be valid (0-2)", wasm_cm);
+            let (circuit_cf, wasm_cf) = flags.derive_cfs();
+            assert!(circuit_cf.premium() >= dwow_chain::fee_window::CongestionFactor::SCALE,
+                "[L1.5-FW-2] derived circuit CF ({}) must be >= SCALE", circuit_cf.premium());
+            assert!(wasm_cf.premium() >= dwow_chain::fee_window::CongestionFactor::SCALE,
+                "[L1.5-FW-2] derived wasm CF ({}) must be >= SCALE", wasm_cf.premium());
+        }
 
         Ok(())
     })

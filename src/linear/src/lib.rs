@@ -70,7 +70,7 @@ pub const CHAIN_ID: [u8; 32] = [
     0x0e, 0xf9, 0x1a, 0x82, 0xcc, 0xe5, 0x3b, 0x44,
 ];
 
-pub use dwow_sdk::blockchain::{BlockReward, BlockTarget, GasAmount};
+pub use dwow_sdk::blockchain::{BlockReward, BlockTarget, BlockCharge};
 pub use block::{
     build_uncle_merkle, compute_merkle_root, compute_reward, create_block,
     create_block_with_uncles, create_uncle, verify_uncle_proof, Block, BlockHeader, PowSource,

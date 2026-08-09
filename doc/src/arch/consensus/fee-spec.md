@@ -1457,6 +1457,48 @@ factor. This prevents single-miner manipulation — a miner with an empty
 mempool cannot force CF to 1, nor can a miner with an artificially inflated
 mempool force an extreme CF.
 
+#### 12.4.5 Block Charge — Declarative Capacity Promise
+
+A transaction's **charge** is a **declarative promise** by the contract
+deployer, stated in the manifest `[[cost_profiles]]`, of the block capacity
+the transaction will consume. It is expressed as the nominal type
+`BlockCharge(u64)` per type-system.md §2.3.1.
+
+Unlike gas in thermodynamic systems (which measures actual work performed —
+a WYSIWYG quantity), charge is **potential energy**: a pre-execution
+commitment that the miner uses for block packing headroom. The distinction:
+
+- **Gas is retrospective**: you learn the actual work after execution.
+- **Charge is prospective**: the deployer declares it before execution, and
+  the miner prices it through the risk model (§12.12.6).
+
+A deployer who under-declares charge saves nothing — the miner observes the
+deviation between declared and actual resource consumption, raises the
+contract's risk factor, and the contract pays more over time. A deployer
+who declares accurately converges toward `risk_factor = 1.0×` (genesis or
+attested_endowed). The economic gradient pushes toward honest declaration
+without requiring runtime gas metering.
+
+The trait method `declare_charge(&tx) -> BlockCharge` provides the
+per-transaction declared charge. In `select_for_block`, the miner
+accumulates declared charges via `BlockCharge::saturating_add` to ensure
+the block stays within its capacity budget. Charge does NOT limit execution,
+does NOT determine fees directly, and does NOT appear in consensus
+validation. A transaction whose declared charge is exceeded at runtime
+still executes fully — the miner absorbs the cost and records the deviation.
+
+Constants defined by this specification:
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `CHARGE_PER_CALL` | `400_000_000` | Declared charge per contract call |
+
+This value is calibrated so that a block at `BLOCK_GAS_LIMIT` can
+accommodate approximately 250 average contract calls, matching the
+`MinerConfig.max_txs = 250` default. It is the deployer's responsibility
+to declare a higher charge in `[[cost_profiles]]` for circuits that
+exceed the average ZK complexity.
+
 ### 12.5 Threshold Computation from Congestion Factors
 
 The two congestion factors (WASM_CF and CIRCUIT_CF) are applied via

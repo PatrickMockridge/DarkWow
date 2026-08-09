@@ -263,8 +263,10 @@ Conflating them via `unwrap()` erases the `↓process-death` barb.
   `BlockHeight` so `expected_reward(height)` is a type error.
 - `BlockTarget(u32)` — PoW target. Distinguished from bare `u32` so
   `target < reward` is a type error.
-- `GasAmount(u64)` — WASM gas. Distinguished from `BlockReward` so
-  gas arithmetic cannot mix with supply accounting.
+- `BlockCharge(u64)` — Declarative block capacity charge (potential energy,
+  not measured work). Distinguished from `FeeAmount` and `BlockReward` so
+  charge arithmetic cannot mix with fee or supply accounting. See
+  fee-spec.md §12.4.3.
 
 Each SHALL follow the `BlockHeight` pattern: `#[repr(transparent)]`,
 named constructors, no `From<u64>`, no `Add`/`Sub` operators, manual

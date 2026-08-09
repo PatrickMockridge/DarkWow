@@ -47,7 +47,7 @@ use dwow_core::{
 };
 use dwow_chain::fee_window::FeeWindowFlags;
 use dwow_chain::monero::JobId;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, FeeAmount, GasAmount, MoneroBlockHeight};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, BlockCharge, FeeAmount, MoneroBlockHeight};
 use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
 
@@ -130,9 +130,9 @@ impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
         }
         FeeAmount::new(count * ESTIMATED_FEE_PER_FEEV2_CALL)
     }
-    fn estimate_gas(&self, tx: &dwow_chain::Transaction) -> GasAmount {
-        const GAS_PER_CALL: u64 = 400_000_000;
-        GasAmount::new(tx.contract_calls.len() as u64 * GAS_PER_CALL)
+    fn declare_charge(&self, tx: &dwow_chain::Transaction) -> BlockCharge {
+        const CHARGE_PER_CALL: u64 = 400_000_000;
+        BlockCharge::new(tx.contract_calls.len() as u64 * CHARGE_PER_CALL)
     }
 
     /// Extract fee commitment from FeeV2 transactions.

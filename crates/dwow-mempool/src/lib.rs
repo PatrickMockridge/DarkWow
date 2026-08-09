@@ -37,7 +37,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use dwow_chain::fee_window::CongestionFactor;
 use dwow_chain::{Nullifier, Transaction};
-use dwow_sdk::blockchain::{FeeAmount, GasAmount};
+use dwow_sdk::blockchain::{BlockCharge, FeeAmount};
 use smol::lock::Mutex;
 
 /// Fee Signalling Extractor — the control valve on the transaction pipeline.
@@ -72,10 +72,10 @@ pub trait FeeSignallingExtractor: Send + Sync {
     /// Returns `FeeAmount` per type-system.md §2.3.1 — the domain type prevents
     /// silent mixing with supply, reward, or height arithmetic.
     fn extract_fee(&self, tx: &Transaction) -> FeeAmount;
-    /// Estimate gas consumption for block packing.
-    /// Returns `GasAmount` per type-system.md §2.3.1 — distinguished from `FeeAmount`
+    /// Declare the block capacity charge for block packing.
+    /// Returns `BlockCharge` per type-system.md §2.3.1 — distinguished from `FeeAmount`
     /// so gas arithmetic cannot mix with fee or supply accounting.
-    fn estimate_gas(&self, tx: &Transaction) -> GasAmount;
+    fn declare_charge(&self, tx: &Transaction) -> BlockCharge;
 
     /// Read the sealed pressure gauge — extract the Pedersen fee commitment
     /// from FeeV2 transactions (hidden fee). Returns None for FeeV1.
@@ -142,7 +142,7 @@ pub enum MinerMode {
 #[derive(Clone, Debug)]
 pub struct MinerConfig {
     pub mode: MinerMode,
-    pub max_gas: u64,
+    pub max_charge: u64,
     pub max_txs: usize,
     /// Minimum fee per gas for Medium mode (optional).
     pub min_fee_rate: Option<u64>,
@@ -154,7 +154,7 @@ impl Default for MinerConfig {
     fn default() -> Self {
         Self {
             mode: MinerMode::LowFee,
-            max_gas: 100_000_000_000,  // matches BLOCK_GAS_LIMIT
+            max_charge: 100_000_000_000,  // matches BLOCK_GAS_LIMIT
             max_txs: 250,
             min_fee_rate: None,
             top_n_pct: None,
@@ -170,7 +170,7 @@ struct MempoolEntry {
     tx: Transaction,
     added_at: u64,
     fee: FeeAmount,
-    estimated_gas: GasAmount,
+    declared_charge: BlockCharge,
 }
 
 /// Fee-index entry for BTreeSet ordering.
@@ -266,15 +266,15 @@ impl Mempool {
                 ))?;
             let hash = tx.hash();
             let fee = fee_extractor.extract_fee(&tx);
-            let gas = fee_extractor.estimate_gas(&tx);
+            let gas = fee_extractor.declare_charge(&tx);
             // Rate computation: fee * 1_000_000 / gas produces a dimensionless rate.
-            // .get() on gas is the rate-computation boundary — the result is not a GasAmount.
-            let fee_rate = if gas > GasAmount::ZERO { fee.saturating_mul(1_000_000) / gas.get() } else { 0 };
+            // .get() on gas is the rate-computation boundary — the result is not a BlockCharge.
+            let fee_rate = if gas > BlockCharge::ZERO { fee.saturating_mul(1_000_000) / gas.get() } else { 0 };
             let added_at = now_secs();
 
             fee_index.insert(FeeIndexEntry { fee_rate, tx_hash: hash });
             nullifiers.extend(extract_nullifiers(&tx));
-            txs.insert(hash, MempoolEntry { tx, added_at, fee, estimated_gas: gas });
+            txs.insert(hash, MempoolEntry { tx, added_at, fee, declared_charge: gas });
             // Remove old key format if present (clean migration)
             let _ = tree.remove(key);
         }
@@ -335,8 +335,8 @@ impl Mempool {
         }
 
         let fee = self.fee_extractor.extract_fee(&tx);
-        let gas = self.fee_extractor.estimate_gas(&tx);
-        let fee_rate = if gas > GasAmount::ZERO { fee.saturating_mul(1_000_000) / gas.get() } else { 0 };
+        let gas = self.fee_extractor.declare_charge(&tx);
+        let fee_rate = if gas > BlockCharge::ZERO { fee.saturating_mul(1_000_000) / gas.get() } else { 0 };
         let now = now_secs();
 
         // Fee minimum (non-coinbase txs — coinbase = PoWRewardV1 call, function 0x05).
@@ -437,7 +437,7 @@ impl Mempool {
         // Insert
         for n in &tx_nullifiers { nulls.insert(*n); }
         fee_idx.insert(FeeIndexEntry { fee_rate, tx_hash });
-        txs.insert(tx_hash, MempoolEntry { tx, added_at: now, fee, estimated_gas: gas });
+        txs.insert(tx_hash, MempoolEntry { tx, added_at: now, fee, declared_charge: gas });
 
         if is_fee_v2 {
             // Remove from legacy fee_index — FeeV2 uses queue-based ordering
@@ -494,32 +494,32 @@ impl Mempool {
         let mut general = self.general_queue.lock().await;
 
         let mut selected = Vec::new();
-        let mut cumulative_gas = GasAmount::ZERO;
-        let max_gas = GasAmount::new(config.max_gas);
+        let mut cumulative_charge = BlockCharge::ZERO;
+        let max_charge = BlockCharge::new(config.max_charge);
 
         // Drain premium FIFO queue first (fee-spec.md §7.3)
         while let Some(hash) = premium.pop_front() {
             if let Some(entry) = txs.get(&hash) {
-                let gas = entry.estimated_gas.max(GasAmount::new(1));
-                if cumulative_gas.saturating_add(gas) > max_gas || selected.len() >= config.max_txs {
+                let gas = entry.declared_charge.max(BlockCharge::new(1));
+                if cumulative_charge.saturating_add(gas) > max_charge || selected.len() >= config.max_txs {
                     premium.push_front(hash); // put it back
                     break;
                 }
-                cumulative_gas = cumulative_gas.saturating_add(gas);
+                cumulative_charge = cumulative_charge.saturating_add(gas);
                 selected.push(entry.tx.clone());
             }
         }
 
         // Drain general FIFO queue second
-        if cumulative_gas < max_gas && selected.len() < config.max_txs {
+        if cumulative_charge < max_charge && selected.len() < config.max_txs {
             while let Some(hash) = general.pop_front() {
                 if let Some(entry) = txs.get(&hash) {
-                    let gas = entry.estimated_gas.max(GasAmount::new(1));
-                    if cumulative_gas.saturating_add(gas) > max_gas || selected.len() >= config.max_txs {
+                    let gas = entry.declared_charge.max(BlockCharge::new(1));
+                    if cumulative_charge.saturating_add(gas) > max_charge || selected.len() >= config.max_txs {
                         general.push_front(hash);
                         break;
                     }
-                    cumulative_gas = cumulative_gas.saturating_add(gas);
+                    cumulative_charge = cumulative_charge.saturating_add(gas);
                     selected.push(entry.tx.clone());
                 }
             }
@@ -551,10 +551,10 @@ impl Mempool {
                 }
             }
             if let Some(mp_entry) = txs.get(&entry.tx_hash) {
-                if cumulative_gas.saturating_add(mp_entry.estimated_gas) > max_gas {
+                if cumulative_charge.saturating_add(mp_entry.declared_charge) > max_charge {
                     continue; // skip this tx, try next (smaller) one
                 }
-                cumulative_gas = cumulative_gas.saturating_add(mp_entry.estimated_gas);
+                cumulative_charge = cumulative_charge.saturating_add(mp_entry.declared_charge);
                 selected.push(mp_entry.tx.clone());
             }
         }
@@ -571,7 +571,7 @@ impl Mempool {
         for hash in tx_hashes {
             if let Some(entry) = txs.remove(hash) {
                 fee_idx.remove(&FeeIndexEntry {
-                    fee_rate: if entry.estimated_gas > GasAmount::ZERO { entry.fee.saturating_mul(1_000_000) / entry.estimated_gas.get() } else { 0 },
+                    fee_rate: if entry.declared_charge > BlockCharge::ZERO { entry.fee.saturating_mul(1_000_000) / entry.declared_charge.get() } else { 0 },
                     tx_hash: *hash,
                 });
                 let entry_nulls = extract_nullifiers(&entry.tx);
@@ -611,7 +611,7 @@ impl Mempool {
         for hash in &stale {
             if let Some(entry) = txs.remove(hash) {
                 fee_idx.remove(&FeeIndexEntry {
-                    fee_rate: if entry.estimated_gas > GasAmount::ZERO { entry.fee.saturating_mul(1_000_000) / entry.estimated_gas.get() } else { 0 },
+                    fee_rate: if entry.declared_charge > BlockCharge::ZERO { entry.fee.saturating_mul(1_000_000) / entry.declared_charge.get() } else { 0 },
                     tx_hash: *hash,
                 });
                 let entry_nulls = extract_nullifiers(&entry.tx);
@@ -783,8 +783,8 @@ mod tests {
             }
             FeeAmount::new(total)
         }
-        fn estimate_gas(&self, tx: &Transaction) -> GasAmount {
-            GasAmount::new(tx.contract_calls.len() as u64 * 400_000_000)
+        fn declare_charge(&self, tx: &Transaction) -> BlockCharge {
+            BlockCharge::new(tx.contract_calls.len() as u64 * 400_000_000)
         }
         fn extract_fee_commitment(&self, _tx: &Transaction) -> Option<FeeCommitment> {
             None
@@ -861,7 +861,7 @@ mod tests {
             assert_eq!(mempool.len().await, 2);
 
             // Fee-descending: higher fee first
-            let selected = mempool.select_for_block(&MinerConfig { max_gas: u64::MAX, max_txs: 100, ..Default::default() }).await;
+            let selected = mempool.select_for_block(&MinerConfig { max_charge: u64::MAX, max_txs: 100, ..Default::default() }).await;
             assert_eq!(selected.len(), 2);
             assert_eq!(TestFeeSignallingExtractor.extract_fee(&selected[0]), FeeAmount::new(100_000_000)); // higher fee first
             assert_eq!(TestFeeSignallingExtractor.extract_fee(&selected[1]), FeeAmount::new(50_000_000));
@@ -934,7 +934,7 @@ mod tests {
             mempool.add(tx2).await.unwrap();
 
             // Gas limit 800M — should only fit one tx (2 calls × 400M = 800M)
-            let selected = mempool.select_for_block(&MinerConfig { max_gas: 800_000_000, max_txs: 100, ..Default::default() }).await;
+            let selected = mempool.select_for_block(&MinerConfig { max_charge: 800_000_000, max_txs: 100, ..Default::default() }).await;
             assert_eq!(selected.len(), 1);
         });
     }
@@ -1025,7 +1025,7 @@ mod tests {
 
             // Existing txs survive (I3) and maintain order
             let selected = mempool.select_for_block(&MinerConfig {
-                max_gas: u64::MAX, max_txs: 100, ..Default::default()
+                max_charge: u64::MAX, max_txs: 100, ..Default::default()
             }).await;
             assert_eq!(selected.len(), 3, "all 3 existing txs must survive threshold change");
             // Premium (tx3) first, then general FCFS (tx1 before tx2)

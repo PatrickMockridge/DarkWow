@@ -33,14 +33,14 @@
 //!   when the fee is hidden)
 //! - `verify_threshold_proof()`: checks the choke position (proves fee >=
 //!   threshold without revealing the fee)
-//! - `estimate_gas()`: gas estimation for block space allocation
+//! - `declare_charge()`: declarative block capacity charge for block packing
 //!
 //! Domain: fee_signalling (non-consensus flow control).
 //! See fee-spec.md §0.1 for the process engineering analogy.
 
 use dwow_chain::{ContractCall, Transaction};
 use dwow_mempool::FeeSignallingExtractor;
-use dwow_sdk::blockchain::BlockVersion;
+use dwow_sdk::blockchain::{BlockCharge, BlockVersion, FeeAmount};
 use dwow_sdk::crypto::ContractId;
 use dwow_sdk::pasta::group::{Group, GroupEncoding};
 use dwow_sdk::pasta::pallas;
@@ -130,13 +130,13 @@ fn test_extract_fee_counts_feev2_calls() {
     let extractor = NativeTokenFeeSignallingExtractor::new();
 
     let tx0 = make_tx_with_feev2_calls(0, vec![0u8; 64]);
-    assert_eq!(extractor.extract_fee(&tx0), 0, "zero FeeV2 calls → zero fee");
+    assert_eq!(extractor.extract_fee(&tx0), FeeAmount::ZERO, "zero FeeV2 calls → zero fee");
 
     let tx1 = make_tx_with_feev2_calls(1, vec![0u8; 64]);
-    assert_eq!(extractor.extract_fee(&tx1), 42_000_000, "one FeeV2 call → 42M");
+    assert_eq!(extractor.extract_fee(&tx1), FeeAmount::new(42_000_000), "one FeeV2 call → 42M");
 
     let tx3 = make_tx_with_feev2_calls(3, vec![0u8; 64]);
-    assert_eq!(extractor.extract_fee(&tx3), 126_000_000, "three FeeV2 calls → 126M");
+    assert_eq!(extractor.extract_fee(&tx3), FeeAmount::new(126_000_000), "three FeeV2 calls → 126M");
 }
 
 #[test]
@@ -146,12 +146,12 @@ fn test_extract_fee_ignores_non_feev2() {
 
     // Zero FeeV2 calls — fee is 0
     let tx = make_tx_with_non_feev2_calls(3);
-    assert_eq!(extractor.extract_fee(&tx), 0, "non-FeeV2 calls contribute zero");
+    assert_eq!(extractor.extract_fee(&tx), FeeAmount::ZERO, "non-FeeV2 calls contribute zero");
 
     // Mix: 1 FeeV2 + 2 non-FeeV2 — only FeeV2 counted
     let mut mixed = make_tx_with_feev2_calls(1, vec![0u8; 64]);
     mixed.contract_calls.extend(make_tx_with_non_feev2_calls(2).contract_calls);
-    assert_eq!(extractor.extract_fee(&mixed), 42_000_000,
+    assert_eq!(extractor.extract_fee(&mixed), FeeAmount::new(42_000_000),
         "only FeeV2 calls counted, non-FeeV2 ignored");
 }
 
@@ -223,7 +223,7 @@ fn test_verify_threshold_proof_no_feev2_calls() {
     // Transaction with no FeeV2 calls → false.
     let extractor = NativeTokenFeeSignallingExtractor::new();
     let tx = make_tx_with_non_feev2_calls(3);
-    assert!(!extractor.verify_threshold_proof(&tx, 42_000_000),
+    assert!(!extractor.verify_threshold_proof(&tx, FeeAmount::new(42_000_000)),
         "no FeeV2 calls → false");
 }
 
@@ -234,7 +234,7 @@ fn test_verify_threshold_proof_decode_failure() {
 
     // Short random bytes that won't decode as valid FeeParamsV2
     let tx = make_tx_with_feev2_calls(1, vec![0xFFu8; 100]);
-    assert!(!extractor.verify_threshold_proof(&tx, 42_000_000),
+    assert!(!extractor.verify_threshold_proof(&tx, FeeAmount::new(42_000_000)),
         "malformed FeeParamsV2 → false");
 }
 
@@ -242,14 +242,14 @@ fn test_verify_threshold_proof_decode_failure() {
 fn test_verify_threshold_proof_zero_length_params() {
     let extractor = NativeTokenFeeSignallingExtractor::new();
     let tx = make_tx_with_feev2_calls(1, vec![]);
-    assert!(!extractor.verify_threshold_proof(&tx, 42_000_000),
+    assert!(!extractor.verify_threshold_proof(&tx, FeeAmount::new(42_000_000)),
         "zero-length params → decode failure → false");
 }
 
-// ── estimate_gas ────────────────────────────────────────────────────────
+// ── declare_charge ────────────────────────────────────────────────────────
 
 #[test]
-fn test_estimate_gas_zero_calls() {
+fn test_declare_charge_zero_calls() {
     let extractor = NativeTokenFeeSignallingExtractor::new();
     let tx = Transaction {
         version: BlockVersion::CURRENT,
@@ -260,19 +260,19 @@ fn test_estimate_gas_zero_calls() {
         nullifiers: vec![],
         witness: vec![],
     };
-    assert_eq!(extractor.estimate_gas(&tx), 0, "zero calls → zero gas");
+    assert_eq!(extractor.declare_charge(&tx), BlockCharge::ZERO, "zero calls → zero charge");
 }
 
 #[test]
-fn test_estimate_gas_scales_with_calls() {
+fn test_declare_charge_scales_with_calls() {
     // Pure: n calls × 400_000_000 = estimated gas.
     let extractor = NativeTokenFeeSignallingExtractor::new();
 
     let tx1 = make_tx_with_non_feev2_calls(1);
-    assert_eq!(extractor.estimate_gas(&tx1), 400_000_000);
+    assert_eq!(extractor.declare_charge(&tx1), BlockCharge::new(400_000_000));
 
     let tx5 = make_tx_with_non_feev2_calls(5);
-    assert_eq!(extractor.estimate_gas(&tx5), 2_000_000_000);
+    assert_eq!(extractor.declare_charge(&tx5), BlockCharge::new(2_000_000_000));
 }
 
 // ── L1.5-FW-1: verify_threshold_proof SUCCESS path with real FeeParamsV2 ──
