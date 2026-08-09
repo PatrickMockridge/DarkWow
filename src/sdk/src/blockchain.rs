@@ -397,6 +397,11 @@ impl GasAmount {
     pub const fn get(self) -> u64 { self.0 }
     pub const fn to_le_bytes(self) -> [u8; 8] { self.0.to_le_bytes() }
     pub const fn from_le_bytes(bytes: [u8; 8]) -> Self { Self(u64::from_le_bytes(bytes)) }
+
+    /// Saturating addition. Returns `GasAmount(u64::MAX)` on overflow.
+    pub const fn saturating_add(self, other: GasAmount) -> GasAmount {
+        GasAmount(self.0.saturating_add(other.0))
+    }
 }
 
 impl core::fmt::Display for GasAmount {
@@ -502,6 +507,26 @@ impl FeeAmount {
             Some(v) => Some(FeeAmount(v)),
             None => None,
         }
+    }
+
+    /// Saturating addition. Returns `FeeAmount(u64::MAX)` on overflow.
+    /// Callers use this instead of `.get()` + raw u64 arithmetic + re-wrap.
+    pub const fn saturating_add(self, other: FeeAmount) -> FeeAmount {
+        FeeAmount(self.0.saturating_add(other.0))
+    }
+
+    /// Saturating subtraction. Returns `FeeAmount(0)` on underflow.
+    /// Callers use this instead of `.get()` + raw u64 arithmetic + re-wrap.
+    pub const fn saturating_sub(self, other: FeeAmount) -> FeeAmount {
+        FeeAmount(self.0.saturating_sub(other.0))
+    }
+
+    /// Scale by a dimensionless multiplier, returning raw u64.
+    /// The result is a dimensionless rate, not a FeeAmount — the return type
+    /// documents the domain transition from fee amount to fee-rate numerator.
+    /// Used in fee-rate computation: `fee.saturating_mul(1_000_000) / gas`.
+    pub const fn saturating_mul(self, rhs: u64) -> u64 {
+        self.0.saturating_mul(rhs)
     }
 }
 

@@ -1277,12 +1277,23 @@ subsequent window-transition actions.
 
 ### 12.3 Nominal Types
 
-Three new nominal types follow type-system.md §8.5:
+Three nominal types govern fee window state, following type-system.md §8.5:
 
 ```
 FeeWindowId(u64)         — window index, computed as floor((height - 1) / N)
 WindowSignalling(u8)     — bitfield encoding fee window state in block header
-CongestionFactor(u32)    — fixed-point representation of CF (1.0 = 1_000_000)
+CongestionFactor(u32)    — compound type encapsulating two CfValue(u32) components
+                           (premium and standard), 1.0 = SCALE = 1_000_000
+```
+
+Additional domain types for fee arithmetic per type-system.md §2.3.1:
+
+```
+CfValue(u32)             — congestion factor fixed-point value (1.0 = 1_000_000)
+RiskFactor(u64)          — execution risk multiplier in RISK_FACTOR_SCALE units
+                           (100_000 = 1.0×), applied to circuit component only
+WasmKb(u64)              — WASM deploy size in kilobytes
+ThresholdAmount(u64)     — mempool admission threshold, distinct from FeeAmount
 ```
 
 Tier classification is proof-based: a transaction is premium if its
@@ -1292,8 +1303,11 @@ type is needed — the proof itself determines the tier.
 
 All follow the `#[repr(transparent)]` pattern. `FeeWindowId` implements `succ()`,
 `pred()`, `from_height(height, N)`. `CongestionFactor` implements fixed-point
-arithmetic with `SCALE = 1_000_000`, providing `apply(base_rate)` to compute
-the congestion-adjusted fee.
+arithmetic with `SCALE = 1_000_000`, providing `apply_premium(FeeAmount) -> FeeAmount`
+and `apply_standard(FeeAmount) -> FeeAmount` to compute congestion-adjusted fees.
+The compound type encapsulates two `CfValue(u32)` components; external code
+SHALL use the accessor methods and `apply_*` functions rather than extracting
+raw `u32` values.
 
 ### 12.4 Fee Computation
 

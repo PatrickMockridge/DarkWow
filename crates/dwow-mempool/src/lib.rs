@@ -37,6 +37,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use dwow_chain::fee_window::CongestionFactor;
 use dwow_chain::{Nullifier, Transaction};
+use dwow_sdk::blockchain::{FeeAmount, GasAmount};
 use smol::lock::Mutex;
 
 /// Fee Signalling Extractor — the control valve on the transaction pipeline.
@@ -68,9 +69,13 @@ use smol::lock::Mutex;
 /// analogy. See: `consensus.md §Supply Audit` for the mass balance flow meter.
 pub trait FeeSignallingExtractor: Send + Sync {
     /// Read the pressure gauge — extract the fee amount from call data.
-    fn extract_fee(&self, tx: &Transaction) -> u64;
+    /// Returns `FeeAmount` per type-system.md §2.3.1 — the domain type prevents
+    /// silent mixing with supply, reward, or height arithmetic.
+    fn extract_fee(&self, tx: &Transaction) -> FeeAmount;
     /// Estimate gas consumption for block packing.
-    fn estimate_gas(&self, tx: &Transaction) -> u64;
+    /// Returns `GasAmount` per type-system.md §2.3.1 — distinguished from `FeeAmount`
+    /// so gas arithmetic cannot mix with fee or supply accounting.
+    fn estimate_gas(&self, tx: &Transaction) -> GasAmount;
 
     /// Read the sealed pressure gauge — extract the Pedersen fee commitment
     /// from FeeV2 transactions (hidden fee). Returns None for FeeV1.
@@ -79,7 +84,9 @@ pub trait FeeSignallingExtractor: Send + Sync {
     /// Check the choke position — verify the FeeThreshold_V1 proof that
     /// `fee >= threshold` without revealing the fee. Returns true iff the
     /// proof is valid for the given threshold setting.
-    fn verify_threshold_proof(&self, tx: &Transaction, threshold: u64) -> bool;
+    /// `threshold` is `FeeAmount` per §2.3.1 — the compiler SHALL reject
+    /// `verify_threshold_proof(tx, block_height)`.
+    fn verify_threshold_proof(&self, tx: &Transaction, threshold: FeeAmount) -> bool;
 }
 
 /// Pedersen commitment to a fee amount — used when fees are ZK-private.
@@ -94,14 +101,16 @@ pub struct MempoolConfig {
     pub max_size: usize,
     pub max_age_secs: u64,
     pub max_tx_size: usize,
-    pub min_fee: u64,
+    /// Minimum fee for admission. `FeeAmount` per §2.3.1 — cannot be confused with
+    /// supply or reward amounts.
+    pub min_fee: FeeAmount,
     pub persist: bool,
-    /// Premium tier threshold — FeeV2 txs proving fee >= premium_threshold get FIFO priority.
-    /// Mandatory. Per fee-spec.md §7.2.
-    pub premium_threshold: u64,
+    /// Premium tier threshold — FeeV2 txs proving fee >= premium_threshold get FIFO
+    /// priority. `FeeAmount` per §2.3.1. Mandatory per fee-spec.md §7.2.
+    pub premium_threshold: FeeAmount,
     /// General tier threshold — minimum fee for mempool admission.
     /// Transactions with fee below general_threshold are REJECTED. Per fee-spec.md §7.2.
-    pub general_threshold: u64,
+    pub general_threshold: FeeAmount,
 }
 
 impl Default for MempoolConfig {
@@ -110,9 +119,9 @@ impl Default for MempoolConfig {
             max_size: 10_000,
             max_age_secs: 3600,
             max_tx_size: 1024 * 1024,
-            min_fee: 0,  // Zero by default — threshold proofs gate admission
-            premium_threshold: CongestionFactor::SCALE as u64,
-            general_threshold: CongestionFactor::SCALE as u64,
+            min_fee: FeeAmount::ZERO,
+            premium_threshold: FeeAmount::new(CongestionFactor::SCALE as u64),
+            general_threshold: FeeAmount::new(CongestionFactor::SCALE as u64),
             persist: true,
         }
     }
@@ -160,8 +169,8 @@ impl Default for MinerConfig {
 struct MempoolEntry {
     tx: Transaction,
     added_at: u64,
-    fee: u64,
-    estimated_gas: u64,
+    fee: FeeAmount,
+    estimated_gas: GasAmount,
 }
 
 /// Fee-index entry for BTreeSet ordering.
@@ -203,10 +212,11 @@ pub struct Mempool {
     /// Configuration
     config: MempoolConfig,
     /// Premium tier threshold — runtime-updatable via update_thresholds().
-    /// Atomic for lock-free read in add(). Initialized from config.premium_threshold.
+    /// AtomicU64 for lock-free read in add() per type-system.md §2.3.3 dispensation.
+    /// The raw u64 is wrapped to FeeAmount at the accessor boundary.
     premium_threshold: AtomicU64,
     /// General tier threshold — runtime-updatable via update_thresholds().
-    /// Atomic for lock-free read in add(). Initialized from config.general_threshold.
+    /// AtomicU64 per §2.3.3 dispensation. See premium_threshold.
     general_threshold: AtomicU64,
     /// Fee extraction strategy (contract-specific, injected by caller)
     fee_extractor: Box<dyn FeeSignallingExtractor>,
@@ -229,8 +239,9 @@ impl Mempool {
             general_queue: Mutex::new(VecDeque::new()),
             nullifiers: Mutex::new(BTreeSet::new()),
             db,
-            premium_threshold: AtomicU64::new(config.premium_threshold),
-            general_threshold: AtomicU64::new(config.general_threshold),
+            // §2.3.3: AtomicU64 stores raw u64 — FeeAmount extracted at boundary
+            premium_threshold: AtomicU64::new(config.premium_threshold.get()),
+            general_threshold: AtomicU64::new(config.general_threshold.get()),
             config,
             fee_extractor,
             chain_state,
@@ -256,7 +267,9 @@ impl Mempool {
             let hash = tx.hash();
             let fee = fee_extractor.extract_fee(&tx);
             let gas = fee_extractor.estimate_gas(&tx);
-            let fee_rate = if gas > 0 { fee.saturating_mul(1_000_000) / gas } else { 0 };
+            // Rate computation: fee * 1_000_000 / gas produces a dimensionless rate.
+            // .get() on gas is the rate-computation boundary — the result is not a GasAmount.
+            let fee_rate = if gas > GasAmount::ZERO { fee.saturating_mul(1_000_000) / gas.get() } else { 0 };
             let added_at = now_secs();
 
             fee_index.insert(FeeIndexEntry { fee_rate, tx_hash: hash });
@@ -283,8 +296,9 @@ impl Mempool {
             general_queue: Mutex::new(VecDeque::new()),
             nullifiers: Mutex::new(nullifiers),
             db: Some(clean_tree),
-            premium_threshold: AtomicU64::new(config.premium_threshold),
-            general_threshold: AtomicU64::new(config.general_threshold),
+            // §2.3.3: FeeAmount extracted at boundary
+            premium_threshold: AtomicU64::new(config.premium_threshold.get()),
+            general_threshold: AtomicU64::new(config.general_threshold.get()),
             config,
             fee_extractor,
             chain_state,
@@ -322,7 +336,7 @@ impl Mempool {
 
         let fee = self.fee_extractor.extract_fee(&tx);
         let gas = self.fee_extractor.estimate_gas(&tx);
-        let fee_rate = if gas > 0 { fee.saturating_mul(1_000_000) / gas } else { 0 };
+        let fee_rate = if gas > GasAmount::ZERO { fee.saturating_mul(1_000_000) / gas.get() } else { 0 };
         let now = now_secs();
 
         // Fee minimum (non-coinbase txs — coinbase = PoWRewardV1 call, function 0x05).
@@ -408,6 +422,14 @@ impl Mempool {
         // Uses nominal MassBalanceFeeV2CallData type — no raw data[0] inspection.
         // The ↓gate barb on MassBalanceFeeV2CallData determines the fee function,
         // not a runtime byte comparison.
+        //
+        // TODO(fee-spec §12.8.1): Per-transaction compute_fee() admission.
+        // Currently uses flat premium/general thresholds — a 50 kB deploy and
+        // a simple transfer face the same threshold. The spec requires:
+        //   premium_threshold = compute_fee(&circuit_costs, wasm_kB, wasm_cf, circuit_cf)
+        //   general_threshold = compute_fee(&circuit_costs, wasm_kB, wasm_cf.standard, circuit_cf.standard)
+        // wasm_kB = max(1, ceil(wasm_bytes / 1024)) for DeployV1, 1 otherwise.
+        // circuit_costs from zkas opcode list (FeeV2) or manifest [[cost_profiles]].
         let is_fee_v2 = tx.contract_calls.first()
             .and_then(|c| c.as_mass_balance_fee_v2())
             .is_some();
@@ -420,8 +442,9 @@ impl Mempool {
         if is_fee_v2 {
             // Remove from legacy fee_index — FeeV2 uses queue-based ordering
             fee_idx.remove(&FeeIndexEntry { fee_rate, tx_hash });
-            let premium = self.premium_threshold.load(AtomicOrdering::Acquire);
-            let general = self.general_threshold.load(AtomicOrdering::Acquire);
+            // §2.3.3: AtomicU64 → FeeAmount re-lift at the single boundary point
+            let premium = FeeAmount::new(self.premium_threshold.load(AtomicOrdering::Acquire));
+            let general = FeeAmount::new(self.general_threshold.load(AtomicOrdering::Acquire));
             if self.fee_extractor.verify_threshold_proof(
                 &txs.get(&tx_hash).unwrap().tx, premium,
             ) {
@@ -471,31 +494,32 @@ impl Mempool {
         let mut general = self.general_queue.lock().await;
 
         let mut selected = Vec::new();
-        let mut cumulative_gas: u64 = 0;
+        let mut cumulative_gas = GasAmount::ZERO;
+        let max_gas = GasAmount::new(config.max_gas);
 
         // Drain premium FIFO queue first (fee-spec.md §7.3)
         while let Some(hash) = premium.pop_front() {
             if let Some(entry) = txs.get(&hash) {
-                let gas = entry.estimated_gas.max(1);
-                if cumulative_gas + gas > config.max_gas || selected.len() >= config.max_txs {
+                let gas = entry.estimated_gas.max(GasAmount::new(1));
+                if cumulative_gas.saturating_add(gas) > max_gas || selected.len() >= config.max_txs {
                     premium.push_front(hash); // put it back
                     break;
                 }
-                cumulative_gas += gas;
+                cumulative_gas = cumulative_gas.saturating_add(gas);
                 selected.push(entry.tx.clone());
             }
         }
 
         // Drain general FIFO queue second
-        if cumulative_gas < config.max_gas && selected.len() < config.max_txs {
+        if cumulative_gas < max_gas && selected.len() < config.max_txs {
             while let Some(hash) = general.pop_front() {
                 if let Some(entry) = txs.get(&hash) {
-                    let gas = entry.estimated_gas.max(1);
-                    if cumulative_gas + gas > config.max_gas || selected.len() >= config.max_txs {
+                    let gas = entry.estimated_gas.max(GasAmount::new(1));
+                    if cumulative_gas.saturating_add(gas) > max_gas || selected.len() >= config.max_txs {
                         general.push_front(hash);
                         break;
                     }
-                    cumulative_gas += gas;
+                    cumulative_gas = cumulative_gas.saturating_add(gas);
                     selected.push(entry.tx.clone());
                 }
             }
@@ -527,10 +551,10 @@ impl Mempool {
                 }
             }
             if let Some(mp_entry) = txs.get(&entry.tx_hash) {
-                if cumulative_gas + mp_entry.estimated_gas > config.max_gas {
+                if cumulative_gas.saturating_add(mp_entry.estimated_gas) > max_gas {
                     continue; // skip this tx, try next (smaller) one
                 }
-                cumulative_gas += mp_entry.estimated_gas;
+                cumulative_gas = cumulative_gas.saturating_add(mp_entry.estimated_gas);
                 selected.push(mp_entry.tx.clone());
             }
         }
@@ -547,7 +571,7 @@ impl Mempool {
         for hash in tx_hashes {
             if let Some(entry) = txs.remove(hash) {
                 fee_idx.remove(&FeeIndexEntry {
-                    fee_rate: if entry.estimated_gas > 0 { entry.fee.saturating_mul(1_000_000) / entry.estimated_gas } else { 0 },
+                    fee_rate: if entry.estimated_gas > GasAmount::ZERO { entry.fee.saturating_mul(1_000_000) / entry.estimated_gas.get() } else { 0 },
                     tx_hash: *hash,
                 });
                 let entry_nulls = extract_nullifiers(&entry.tx);
@@ -587,7 +611,7 @@ impl Mempool {
         for hash in &stale {
             if let Some(entry) = txs.remove(hash) {
                 fee_idx.remove(&FeeIndexEntry {
-                    fee_rate: if entry.estimated_gas > 0 { entry.fee.saturating_mul(1_000_000) / entry.estimated_gas } else { 0 },
+                    fee_rate: if entry.estimated_gas > GasAmount::ZERO { entry.fee.saturating_mul(1_000_000) / entry.estimated_gas.get() } else { 0 },
                     tx_hash: *hash,
                 });
                 let entry_nulls = extract_nullifiers(&entry.tx);
@@ -625,21 +649,23 @@ impl Mempool {
     }
 
     /// Update premium and general fee thresholds at runtime.
-    /// Called by the miner at fee window boundaries. Uses AtomicU64 for
-    /// lock-free writes — no &mut self needed, compatible with prepare_block().
-    pub fn update_thresholds(&self, premium: u64, general: u64) {
-        self.premium_threshold.store(premium, AtomicOrdering::Release);
-        self.general_threshold.store(general, AtomicOrdering::Release);
+    /// Called by the miner at fee window boundaries. The `FeeAmount` parameters
+    /// ensure thresholds cannot be confused with supply or reward (type-system.md §2.3.1).
+    /// Uses AtomicU64 internally per §2.3.3 dispensation.
+    pub fn update_thresholds(&self, premium: FeeAmount, general: FeeAmount) {
+        // §2.3.3: FeeAmount → u64 at the single boundary point
+        self.premium_threshold.store(premium.get(), AtomicOrdering::Release);
+        self.general_threshold.store(general.get(), AtomicOrdering::Release);
     }
 
-    /// Current premium threshold (memory-fenced read).
-    pub fn premium_threshold(&self) -> u64 {
-        self.premium_threshold.load(AtomicOrdering::Acquire)
+    /// Current premium threshold, re-lifted to `FeeAmount` per §2.3.3 (memory-fenced read).
+    pub fn premium_threshold(&self) -> FeeAmount {
+        FeeAmount::new(self.premium_threshold.load(AtomicOrdering::Acquire))
     }
 
-    /// Current general threshold (memory-fenced read).
-    pub fn general_threshold(&self) -> u64 {
-        self.general_threshold.load(AtomicOrdering::Acquire)
+    /// Current general threshold, re-lifted to `FeeAmount` per §2.3.3 (memory-fenced read).
+    pub fn general_threshold(&self) -> FeeAmount {
+        FeeAmount::new(self.general_threshold.load(AtomicOrdering::Acquire))
     }
 
     /// Approximate count of transactions in the premium queue.
@@ -734,20 +760,18 @@ mod tests {
     /// FeeV2: data = [0x08][fee: u64 LE][...test payload...]
     struct TestFeeSignallingExtractor;
     impl FeeSignallingExtractor for TestFeeSignallingExtractor {
-        fn extract_fee(&self, tx: &Transaction) -> u64 {
+        fn extract_fee(&self, tx: &Transaction) -> FeeAmount {
             let mut total: u64 = 0;
             for call in &tx.contract_calls {
                 if call.contract_id == *NATIVE_TOKEN_CONTRACT_ID {
                     match call.data.first() {
                         Some(&0x00u8) => {
-                            // FeeV1: clear-text fee at bytes 1..9
                             if call.data.len() >= 9 {
                                 let fee_bytes: [u8; 8] = call.data[1..9].try_into().unwrap_or([0u8; 8]);
                                 total += u64::from_le_bytes(fee_bytes);
                             }
                         }
                         Some(&0x08u8) => {
-                            // FeeV2: test-only clear-text fee at bytes 1..9 (in production the fee is ZK-hidden)
                             if call.data.len() >= 9 {
                                 let fee_bytes: [u8; 8] = call.data[1..9].try_into().unwrap_or([0u8; 8]);
                                 total += u64::from_le_bytes(fee_bytes);
@@ -757,17 +781,15 @@ mod tests {
                     }
                 }
             }
-            total
+            FeeAmount::new(total)
         }
-        fn estimate_gas(&self, tx: &Transaction) -> u64 {
-            tx.contract_calls.len() as u64 * 400_000_000
+        fn estimate_gas(&self, tx: &Transaction) -> GasAmount {
+            GasAmount::new(tx.contract_calls.len() as u64 * 400_000_000)
         }
         fn extract_fee_commitment(&self, _tx: &Transaction) -> Option<FeeCommitment> {
             None
         }
-        fn verify_threshold_proof(&self, tx: &Transaction, threshold: u64) -> bool {
-            // For test purposes: extract fee and compare directly.
-            // In production this verifies a FeeThreshold_V1 ZK proof.
+        fn verify_threshold_proof(&self, tx: &Transaction, threshold: FeeAmount) -> bool {
             self.extract_fee(tx) >= threshold
         }
     }
@@ -824,7 +846,7 @@ mod tests {
     #[test]
     fn test_fee_extraction() {
         let tx = make_tx(vec![], Some(42_000_000));
-        assert_eq!(TestFeeSignallingExtractor.extract_fee(&tx), 42_000_000);
+        assert_eq!(TestFeeSignallingExtractor.extract_fee(&tx), FeeAmount::new(42_000_000));
     }
 
     #[test]
@@ -841,8 +863,8 @@ mod tests {
             // Fee-descending: higher fee first
             let selected = mempool.select_for_block(&MinerConfig { max_gas: u64::MAX, max_txs: 100, ..Default::default() }).await;
             assert_eq!(selected.len(), 2);
-            assert_eq!(TestFeeSignallingExtractor.extract_fee(&selected[0]), 100_000_000); // higher fee first
-            assert_eq!(TestFeeSignallingExtractor.extract_fee(&selected[1]), 50_000_000);
+            assert_eq!(TestFeeSignallingExtractor.extract_fee(&selected[0]), FeeAmount::new(100_000_000)); // higher fee first
+            assert_eq!(TestFeeSignallingExtractor.extract_fee(&selected[1]), FeeAmount::new(50_000_000));
 
             // Still in mempool after select
             assert_eq!(mempool.len().await, 2);
@@ -867,7 +889,7 @@ mod tests {
                 1u64,
                 CongestionFactor::default(),
                 CongestionFactor::default(),
-            ).get();
+            ); // Returns FeeAmount — no .get() needed
 
             let config = MempoolConfig {
                 min_fee,
@@ -945,8 +967,8 @@ mod tests {
             // premium_threshold = CF.premium, general_threshold = CF.standard.
             // At CF 200x: premium = 200 × SCALE, standard = 50 × SCALE.
             let cf = CongestionFactor::new(200_000_000, 50_000_000);
-            let premium_threshold = cf.premium() as u64;
-            let general_threshold = cf.standard() as u64;
+            let premium_threshold = FeeAmount::new(cf.premium() as u64);
+            let general_threshold = FeeAmount::new(cf.standard() as u64);
             let config = MempoolConfig {
                 premium_threshold,
                 general_threshold,
@@ -960,13 +982,13 @@ mod tests {
 
             // Lower premium threshold: fee=100M should now go to premium
             // CF premium lowered to 90 × SCALE.
-            mempool.update_thresholds(90_000_000, 50_000_000);
+            mempool.update_thresholds(FeeAmount::new(90_000_000), FeeAmount::new(50_000_000));
             let tx2 = make_fee_v2_tx(100_000_000, &[0x02]);
             assert!(mempool.add(tx2).await.is_ok(), "fee 100M should be admitted after threshold drop");
 
             // Raise general above fee: fee=100M below new general=150M → reject
             // CF standard raised to 150 × SCALE.
-            mempool.update_thresholds(200_000_000, 150_000_000);
+            mempool.update_thresholds(FeeAmount::new(200_000_000), FeeAmount::new(150_000_000));
             let tx3 = make_fee_v2_tx(100_000_000, &[0x03]);
             assert!(mempool.add(tx3).await.is_err(), "fee 100M below general 150M should be rejected");
         });
@@ -979,8 +1001,8 @@ mod tests {
             // ── Derive thresholds from CongestionFactor values ────────
             // premium_threshold = CF.premium, general_threshold = CF.standard.
             let cf = CongestionFactor::new(200_000_000, 10_000_000);
-            let premium_threshold = cf.premium() as u64;
-            let general_threshold = cf.standard() as u64;
+            let premium_threshold = FeeAmount::new(cf.premium() as u64);
+            let general_threshold = FeeAmount::new(cf.standard() as u64);
             let config = MempoolConfig {
                 premium_threshold,
                 general_threshold,
@@ -999,7 +1021,7 @@ mod tests {
 
             // Raise thresholds (simulating window boundary).
             // New CF: premium = 400 × SCALE, standard = 100 × SCALE.
-            mempool.update_thresholds(400_000_000, 100_000_000);
+            mempool.update_thresholds(FeeAmount::new(400_000_000), FeeAmount::new(100_000_000));
 
             // Existing txs survive (I3) and maintain order
             let selected = mempool.select_for_block(&MinerConfig {
@@ -1018,8 +1040,8 @@ mod tests {
         smol::block_on(async {
             // ── Derive thresholds from CongestionFactor values ────────
             let cf = CongestionFactor::new(100_000_000, 10_000_000);
-            let premium_threshold = cf.premium() as u64;
-            let general_threshold = cf.standard() as u64;
+            let premium_threshold = FeeAmount::new(cf.premium() as u64);
+            let general_threshold = FeeAmount::new(cf.standard() as u64);
             let config = MempoolConfig {
                 premium_threshold,
                 general_threshold,
@@ -1041,8 +1063,8 @@ mod tests {
         smol::block_on(async {
             // ── Derive thresholds from CongestionFactor values ────────
             let cf = CongestionFactor::new(500_000_000, 10_000_000);
-            let premium_threshold = cf.premium() as u64;
-            let general_threshold = cf.standard() as u64;
+            let premium_threshold = FeeAmount::new(cf.premium() as u64);
+            let general_threshold = FeeAmount::new(cf.standard() as u64);
             let config = MempoolConfig {
                 premium_threshold,
                 general_threshold,
@@ -1083,8 +1105,8 @@ mod tests {
 
         // ── Derive thresholds from CongestionFactor values ────────────
         let cf = CongestionFactor::new(200_000_000, 50_000_000);
-        let premium_threshold = cf.premium() as u64;
-        let general_threshold = cf.standard() as u64;
+        let premium_threshold = FeeAmount::new(cf.premium() as u64);
+        let general_threshold = FeeAmount::new(cf.standard() as u64);
         let config = MempoolConfig {
             premium_threshold,
             general_threshold,
@@ -1109,9 +1131,9 @@ mod tests {
                 b.wait();
                 for i in 0..N_THRESHOLD_FLIPS {
                     if i % 2 == 0 {
-                        mp.update_thresholds(150_000_000, 40_000_000);
+                        mp.update_thresholds(FeeAmount::new(150_000_000), FeeAmount::new(40_000_000));
                     } else {
-                        mp.update_thresholds(200_000_000, 50_000_000);
+                        mp.update_thresholds(FeeAmount::new(200_000_000), FeeAmount::new(50_000_000));
                     }
                     // Brief yield to let add() calls interleave
                     smol::Timer::after(std::time::Duration::from_micros(1)).await;

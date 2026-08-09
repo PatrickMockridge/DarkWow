@@ -336,4 +336,52 @@ mod tests {
         // 20 + 5 + 5 + 5 + 5 = 40, k=11 → scale 2^0 = 1 → 40
         assert_eq!(diff, 40);
     }
+
+    // ── k-Scaling consistency tests — [1:1] Python: test_k_scaling_circuit_rates_with_k ──
+
+    #[test]
+    fn test_k_scaling_circuit_rates_consistency() {
+        // Verify that the k-scaling math (base × 2^(k - K_REF)) produces consistent
+        // results for representative circuit types. Not exhaustive — k-values and
+        // base difficulties are defined in the manifest, not hardcoded here.
+        // FeeThreshold_V1: k=11, simple ops = 40 base, scale 1 → 40
+        assert_eq!(circuit_difficulty(&[
+            (Opcode::WitnessBase, vec![]),
+            (Opcode::ConstrainEqualBase, vec![]),
+            (Opcode::ConstrainEqualBase, vec![]),
+            (Opcode::ConstrainInstance, vec![]),
+            (Opcode::ConstrainInstance, vec![]),
+        ], 11), 40);
+        // Same ops at k=12 → 40 × 2 = 80
+        assert_eq!(circuit_difficulty(&[
+            (Opcode::WitnessBase, vec![]),
+            (Opcode::ConstrainEqualBase, vec![]),
+            (Opcode::ConstrainEqualBase, vec![]),
+            (Opcode::ConstrainInstance, vec![]),
+            (Opcode::ConstrainInstance, vec![]),
+        ], 12), 80);
+        // PoseidonHash only: base 500, k=12 → 500 × 2 = 1000
+        assert_eq!(circuit_difficulty(&[
+            (Opcode::PoseidonHash, vec![]),
+        ], 12), 1000);
+    }
+
+    #[test]
+    fn test_k_scaling_composed_transaction() {
+        // Two-circuit transaction: FeeV2 (k=12, PoseidonHash=500) + FeeThreshold_V1 (k=11, 5 ops=40)
+        let fee_v2_cost = circuit_difficulty(&[
+            (Opcode::PoseidonHash, vec![]),
+        ], 12); // 500 * 2 = 1000
+        let threshold_cost = circuit_difficulty(&[
+            (Opcode::WitnessBase, vec![]),
+            (Opcode::ConstrainEqualBase, vec![]),
+            (Opcode::ConstrainEqualBase, vec![]),
+            (Opcode::ConstrainInstance, vec![]),
+            (Opcode::ConstrainInstance, vec![]),
+        ], 11); // 40 * 1 = 40
+        assert_eq!(fee_v2_cost, 1000);
+        assert_eq!(threshold_cost, 40);
+        let total: u64 = fee_v2_cost + threshold_cost;
+        assert_eq!(total, 1040);
+    }
 }

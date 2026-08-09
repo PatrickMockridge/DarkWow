@@ -12,7 +12,7 @@ Invariants tested:
     I5 — Circuit Rate Monotonicity
     I6 — CF Convergence (logarithmic scaling)
     I7 — Smooth Adjustment (±10% per window)
-    I8 — Median Consensus (resistant to single-miner manipulation)
+    I8 — Deterministic CF (local computation, no coordination)
 """
 
 import math
@@ -95,12 +95,17 @@ MAX_K: int = 16            # Maximum k from zkas/constants.rs, scale factor 32
 # Multiplier on baseline circuit fee based on manifest/attestation status.
 # Contracts are infrastructure, not experiments: the economic gradient
 # pushes toward attested manifests with endowments.
+#
+# Represented as fixed-point integers with RISK_FACTOR_SCALE = 100_000:
+#   risk_factor / RISK_FACTOR_SCALE = the effective multiplier.
+# Integer representation guarantees numerical determinism across platforms.
+RISK_FACTOR_SCALE: int = 100_000          # baseline: 1.0 = 100_000
 RISK_FACTOR: dict = {
-    "genesis": 1.0,                 # Hardcoded, cryptographically foundational
-    "attested_endowed": 1.0,        # Vouched by trusted issuer, skin in the game
-    "attested_no_endowment": 1.25,  # Vouched but no stake — moderate risk
-    "self_declared": 1.5,           # Deployer claims costs — unverified
-    "unknown": 2.0,                 # Pessimistic default — no cost declaration
+    "genesis": 100_000,                  # 1.0 — cryptographically foundational
+    "attested_endowed": 100_000,         # 1.0 — vouched, skin in the game
+    "attested_no_endowment": 125_000,    # 1.25 — vouched but no stake
+    "self_declared": 150_000,            # 1.5 — deployer claims, unverified
+    "unknown": 200_000,                  # 2.0 — pessimistic default
 }
 
 
@@ -192,27 +197,32 @@ def resolve_cost_profile(
 
 def compute_total_fee(
     profile: CostProfile,
-    risk_factor: float,
+    risk_factor: int,
     wasm_cf: 'CongestionFactor',
     circuit_cf: 'CongestionFactor',
 ) -> int:
     """Combined fee with execution risk factor. [1:1] fee-spec.md §12.12.
 
     fee = (wasm_kB × BASELINE_STORAGE × WASM_CF.premium) / SCALE
-        + (circuit_difficulty × CIRCUIT_CF.premium × risk_factor) / SCALE
+        + (circuit_difficulty × CIRCUIT_CF.premium × risk_factor) / (SCALE × RISK_FACTOR_SCALE)
 
     The risk_factor multiplies only the circuit component — execution risk
     is about ZK verification cost, not storage. The wasm_kB term covers
     on-chain storage and is independent of trust status.
+
+    Both risk_factor and RISK_FACTOR_SCALE are integers — fixed-point
+    representation for deterministic cross-platform arithmetic.
+    risk_factor / RISK_FACTOR_SCALE = the effective multiplier
+    (e.g., 150_000 / 100_000 = 1.5× for self_declared).
 
     This is distinct from compute_fee() which takes raw circuit_costs —
     compute_total_fee() takes a resolved CostProfile and risk_factor,
     wiring manifest cost declarations into the two-component formula.
     """
     wasm_part = (profile.wasm_kb * BASELINE_STORAGE * wasm_cf.premium) // SCALE
-    circuit_part = int(
-        (profile.circuit_difficulty * circuit_cf.premium * risk_factor) // SCALE
-    )
+    circuit_part = (
+        profile.circuit_difficulty * circuit_cf.premium * risk_factor
+    ) // (SCALE * RISK_FACTOR_SCALE)
     return wasm_part + circuit_part
 
 
@@ -245,8 +255,9 @@ ALPHA_PREMIUM: float = 0.05    # premium congestion sensitivity
 ALPHA_STANDARD: float = 0.01   # standard congestion sensitivity
 
 # Adjustment caps [1:1] Rust FeeWindowConfig
-MAX_ADJUSTMENT: float = 0.10   # ±10% per window
-MAX_PREMIUM: int = 4_200_000_000    # CF ceiling: 4200x (hard cap on congestion multiplier)
+MAX_ADJUSTMENT: float = 0.10          # ±10% per window
+MAX_SCALE: int = 1 << (MAX_K - K_REF)  # 32 — fee-spec.md §10
+MAX_PREMIUM: int = MAX_SCALE * SCALE   # 32_000_000 (hard cap on congestion multiplier)
 
 # BlockHeader fee_window_flags bit layout [1:1] BlockHeader
 FEE_WINDOW_ACTIVE: int = 0x01  # bit 0
@@ -293,8 +304,8 @@ class CongestionFactor:
 
 def compute_congestion_factor(premium_count: int, standard_count: int) -> CongestionFactor:
     """Compute congestion factors from mempool queue depths. [1:1] Rust."""
-    cf_premium = SCALE + int(ALPHA_PREMIUM * SCALE * math.log2(premium_count + 1))
-    cf_standard = SCALE + int(ALPHA_STANDARD * SCALE * math.log2(standard_count + 1))
+    cf_premium = SCALE + int(ALPHA_PREMIUM * SCALE * int(math.log2(premium_count + 1)))
+    cf_standard = SCALE + int(ALPHA_STANDARD * SCALE * int(math.log2(standard_count + 1)))
 
     # I4: CF_premium > CF_standard when there is congestion.
     # At zero congestion (both = SCALE), equality is acceptable.
@@ -303,18 +314,6 @@ def compute_congestion_factor(premium_count: int, standard_count: int) -> Conges
 
     return CongestionFactor(premium=cf_premium, standard=cf_standard)
 
-
-def median_congestion_factor(factors: List[CongestionFactor]) -> CongestionFactor:
-    """Median consensus across mining nodes. [1:1] Rust I8."""
-    if not factors:
-        return CongestionFactor()
-    premiums = sorted(f.premium for f in factors)
-    standards = sorted(f.standard for f in factors)
-    mid = len(factors) // 2
-    return CongestionFactor(
-        premium=premiums[mid],
-        standard=standards[mid],
-    )
 
 
 # ============================================================================
@@ -563,7 +562,11 @@ class MempoolWithWindow:
         return selected
 
     def on_window_boundary(self, new_window: FeeWindow):
-        """I3: Preserve existing queues. New thresholds apply to new arrivals only."""
+        """I3: Preserve existing queues. New thresholds apply to new arrivals only.
+
+        TODO(fee-spec §12.8.4): 30s transition delay not yet implemented.
+        The spec defines a grace period after the boundary block before new
+        thresholds activate. Currently the transition is instantaneous."""
         self.window = new_window
         # Existing txs stay in their queues — no eviction
 
@@ -700,24 +703,6 @@ def test_circuit_rate_monotonicity():
     fee_standard = cf.general_threshold()
     assert fee_premium > fee_standard, (
         f"I5 violated: premium={fee_premium}, standard={fee_standard}"
-    )
-
-
-def test_median_consensus():
-    """I8: median CF resists single-miner manipulation."""
-    nodes = [
-        compute_congestion_factor(100, 1000),   # normal
-        compute_congestion_factor(100, 1000),   # normal
-        compute_congestion_factor(100000, 1000), # extreme (manipulated)
-        compute_congestion_factor(0, 0),         # empty mempool
-        compute_congestion_factor(100, 1000),   # normal
-    ]
-    median_cf = median_congestion_factor(nodes)
-    # Median should reflect normal nodes, not the extreme one
-    normal_cf = compute_congestion_factor(100, 1000)
-    assert abs(median_cf.premium - normal_cf.premium) < SCALE // 10, (
-        f"I8 violated: median CF manipulated by extreme node. "
-        f"normal={normal_cf.premium}, median={median_cf.premium}"
     )
 
 
@@ -957,46 +942,6 @@ def test_decode_equivalence():
     )
 
 
-def test_multi_miner_median_convergence_extended():
-    """P-FW-6: Multi-miner median convergence with divergent mempools.
-
-    Extends test_median_consensus with 3 miners in two rounds:
-    Round 1 — divergent mempools produce divergent flags
-    Round 2 — on-chain median signals converge the network
-
-    Witness for L3-FW-2.
-    """
-    # Round 1: Three miners with divergent local mempool views
-    miner_a = compute_congestion_factor(100, 1000)   # moderate
-    miner_b = compute_congestion_factor(200, 800)    # different mix
-    miner_c = compute_congestion_factor(100000, 1000) # extreme (manipulated)
-
-    # Median should reflect honest majority, not the extreme node
-    median_rd1 = median_congestion_factor([miner_a, miner_b, miner_c])
-    normal_cf = compute_congestion_factor(100, 1000)
-    assert abs(median_rd1.premium - normal_cf.premium) < SCALE // 10, (
-        f"P-FW-6 Round 1: median CF manipulated by extreme node. "
-        f"normal={normal_cf.premium}, median={median_rd1.premium}"
-    )
-
-    # Round 2: After median adoption, all nodes converge to similar CF
-    # (simulate: all nodes adopt the median as their local CF for next window)
-    median_premium_cf = median_rd1
-    node_cf_a = compute_congestion_factor(100, 1000)
-    node_cf_b = compute_congestion_factor(100, 1000)
-    node_cf_c = compute_congestion_factor(100, 1000)  # extreme node now honest
-
-    median_rd2 = median_congestion_factor([node_cf_a, node_cf_b, node_cf_c])
-    # After convergence, all nodes produce identical CF
-    assert node_cf_a.premium == node_cf_b.premium == node_cf_c.premium, (
-        "P-FW-6 Round 2: honest nodes should converge to identical CF"
-    )
-    # Median equals the common value
-    assert median_rd2.premium == node_cf_a.premium, (
-        "P-FW-6 Round 2: median should equal unanimous value"
-    )
-
-
 # ============================================================================
 # K-Scaling Tests — fee-spec.md §12.11
 # ============================================================================
@@ -1087,11 +1032,11 @@ def test_k_scaling_composed_transaction():
 
 def test_risk_factor_known_statuses():
     """All 5 contract statuses map to correct risk multipliers."""
-    assert RISK_FACTOR["genesis"] == 1.0
-    assert RISK_FACTOR["attested_endowed"] == 1.0
-    assert RISK_FACTOR["attested_no_endowment"] == 1.25
-    assert RISK_FACTOR["self_declared"] == 1.5
-    assert RISK_FACTOR["unknown"] == 2.0
+    assert RISK_FACTOR["genesis"] == 100_000
+    assert RISK_FACTOR["attested_endowed"] == 100_000
+    assert RISK_FACTOR["attested_no_endowment"] == 125_000
+    assert RISK_FACTOR["self_declared"] == 150_000
+    assert RISK_FACTOR["unknown"] == 200_000
 
 
 def test_risk_factor_ordering():
@@ -1136,7 +1081,7 @@ def test_resolve_cost_profile_found():
     profile, risk = resolve_cost_profile("attested_endowed", "TransferV2", profiles)
     assert profile.function == "TransferV2"
     assert profile.circuit_difficulty == 1000
-    assert risk == 1.0
+    assert risk == 100_000
 
 
 def test_resolve_cost_profile_missing_function():
@@ -1150,7 +1095,7 @@ def test_resolve_cost_profile_missing_function():
     assert profile.circuit_difficulty == 2000, (
         f"expected 2.0× max declared (2000), got {profile.circuit_difficulty}"
     )
-    assert risk == 1.5, f"expected self_declared risk 1.5, got {risk}"
+    assert risk == 150_000, f"expected self_declared risk 1.5 (150k), got {risk}"
     # k_value should be max of declared
     assert profile.k_value == 12
     assert profile.wasm_kb == 1
@@ -1165,37 +1110,37 @@ def test_resolve_cost_profile_no_profiles():
     )
     assert profile.k_value == MAX_K, f"expected worst-case k={MAX_K}, got {profile.k_value}"
     # Even though attested_endowed normally gives 1.0, no profiles → 2.0
-    assert risk == 2.0, f"no profiles must use 2.0 risk regardless of status, got {risk}"
+    assert risk == 200_000, f"no profiles must use 2.0 risk regardless of status, got {risk}"
 
 
 def test_resolve_cost_profile_genesis():
     """Genesis status → 1.0× risk factor."""
     profiles = [CostProfile("TransferV2", 1000, 12)]
     _, risk = resolve_cost_profile("genesis", "TransferV2", profiles)
-    assert risk == 1.0
+    assert risk == 100_000
 
 
 def test_resolve_cost_profile_attested_endowed():
     """Attested + endowment → 1.0× risk factor."""
     profiles = [CostProfile("TransferV2", 1000, 12)]
     _, risk = resolve_cost_profile("attested_endowed", "TransferV2", profiles)
-    assert risk == 1.0
+    assert risk == 100_000
 
 
 def test_resolve_cost_profile_unknown():
     """Unknown contract → 2.0× risk factor."""
     profiles = [CostProfile("TransferV2", 1000, 12)]
     _, risk = resolve_cost_profile("unknown", "TransferV2", profiles)
-    assert risk == 2.0
+    assert risk == 200_000
 
 
 def test_compute_total_fee_zero_congestion():
     """At CF=1.0, risk=1.0: fee = wasm_kB × BASELINE_STORAGE + circuit_difficulty."""
     profile = CostProfile("TransferV2", 1000, 12, wasm_kb=1)
     cf = CongestionFactor()  # SCALE = 1.0
-    fee = compute_total_fee(profile, risk_factor=1.0, wasm_cf=cf, circuit_cf=cf)
+    fee = compute_total_fee(profile, risk_factor=100_000, wasm_cf=cf, circuit_cf=cf)
     # wasm = 1 * 1_000_000 * 1_000_000 / 1_000_000 = 1_000_000
-    # circuit = 1000 * 1_000_000 * 1.0 / 1_000_000 = 1000
+    # circuit = 1000 * 1_000_000 * 100_000 / (1_000_000 * 100_000) = 1000
     expected = BASELINE_STORAGE + 1000
     assert fee == expected, f"expected {expected}, got {fee}"
 
@@ -1204,8 +1149,8 @@ def test_compute_total_fee_risk_multiplier():
     """Risk=2.0 doubles only the circuit component, not WASM storage."""
     profile = CostProfile("TransferV2", 1000, 12, wasm_kb=1)
     cf = CongestionFactor()
-    fee_normal = compute_total_fee(profile, risk_factor=1.0, wasm_cf=cf, circuit_cf=cf)
-    fee_risky = compute_total_fee(profile, risk_factor=2.0, wasm_cf=cf, circuit_cf=cf)
+    fee_normal = compute_total_fee(profile, risk_factor=100_000, wasm_cf=cf, circuit_cf=cf)
+    fee_risky = compute_total_fee(profile, risk_factor=200_000, wasm_cf=cf, circuit_cf=cf)
     # wasm part unchanged: 1_000_000
     # circuit part: 1000 → 2000
     delta = fee_risky - fee_normal
@@ -1218,8 +1163,8 @@ def test_compute_total_fee_risk_does_not_affect_wasm():
     """Risk factor only multiplies circuit component. WASM storage is independent of trust."""
     profile = CostProfile("DeployV1", 2000, 14, wasm_kb=50)
     cf = CongestionFactor()
-    fee_1x = compute_total_fee(profile, risk_factor=1.0, wasm_cf=cf, circuit_cf=cf)
-    fee_2x = compute_total_fee(profile, risk_factor=2.0, wasm_cf=cf, circuit_cf=cf)
+    fee_1x = compute_total_fee(profile, risk_factor=100_000, wasm_cf=cf, circuit_cf=cf)
+    fee_2x = compute_total_fee(profile, risk_factor=200_000, wasm_cf=cf, circuit_cf=cf)
     # wasm_part = 50 * 1_000_000 = 50_000_000 (same in both)
     # circuit_part_1x = 2000
     # circuit_part_2x = 4000
@@ -1239,7 +1184,7 @@ def test_compute_total_fee_full_pipeline():
     # Step 1: resolve cost profile for a known function
     profile, risk = resolve_cost_profile("attested_endowed", "ExecuteSwapV2", profiles)
     assert profile.function == "ExecuteSwapV2"
-    assert risk == 1.0
+    assert risk == 100_000
 
     # Step 2: compute fee at zero congestion
     cf = CongestionFactor()
@@ -1252,10 +1197,10 @@ def test_compute_total_fee_full_pipeline():
     assert profile2.circuit_difficulty == 4000  # 2 * max(1000, 2000)
     assert profile2.k_value == 14  # max(12, 14) from declared
     assert profile2.wasm_kb == 2  # max(1, 2) from declared
-    assert risk2 == 1.5
+    assert risk2 == 150_000
     fee2 = compute_total_fee(profile2, risk2, wasm_cf=cf, circuit_cf=cf)
     # wasm = 2 * 1_000_000 = 2_000_000 (max wasm_kb=2 from declared)
-    # circuit = 4000 * 1.5 = 6000
+    # circuit = 4000 * 1_000_000 * 150_000 / (1_000_000 * 100_000) = 4000 * 1.5 = 6000
     assert fee2 == 2_000_000 + 6000, f"full pipeline missing: expected {2_000_000 + 6000}, got {fee2}"
 
 
@@ -1314,7 +1259,6 @@ if __name__ == "__main__":
         test_legacy_flags_no_change,
         test_fcfs_preservation,
         test_circuit_rate_monotonicity,
-        test_median_consensus,
         test_wasm_size_multiplier,
         test_premium_fcfs_before_general,
         # NEW: Fee Signalling Testing Plan scenarios
@@ -1322,7 +1266,6 @@ if __name__ == "__main__":
         test_both_cfs_simultaneously_congested,
         test_malicious_flag_injection,
         test_decode_equivalence,
-        test_multi_miner_median_convergence_extended,
         # K-Scaling tests — fee-spec.md §12.11
         test_k_scaling_reference,
         test_k_scaling_doubles_per_increment,

@@ -71,9 +71,14 @@ use crate::error::LinearError;
 ///   bit[0]    = FEE_WINDOW_ACTIVE (0 = legacy static fees, 1 = window active)
 ///   bit[1:4]  = reserved (must be 0)
 ///   bit[4:8]  = congestion_multiplier (4-bit compact CF direction encoding)
+///
+/// The inner `u8` is private per type-system.md §2.2 — external code SHALL
+/// construct via `encode_cm()` or `new()`, and extract via `get()` or
+/// `congestion_multiplier()`. Direct construction from arbitrary `u8` with
+/// reserved bits set is prevented at compile time.
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
-pub struct WindowSignalling(pub u8);
+pub struct WindowSignalling(u8);
 
 impl WindowSignalling {
     /// Legacy blocks — no fee window signalling.
@@ -185,6 +190,20 @@ impl FeeWindowFlags {
         Self(u16::from_le_bytes(bytes))
     }
 
+    /// Decode both CF directions into (circuit_cm, wasm_cm) values.
+    /// Each in [0, 2]: 0 = hold, 1 = +10%, 2 = -10%.
+    /// Invalid CM values (0x03–0x0F) are treated as hold (0), matching
+    /// `WindowSignalling::decode_next_premium` for consistency (A10/H11 fix).
+    /// [1:1] Python: `FeeWindow.decode_flags_dual()` in fee_window_model.py.
+    pub fn decode_flags_dual(self) -> (u8, u8) {
+        let clamp_cm = |cm: u8| -> u8 {
+            if cm <= 2 { cm } else { 0 } // invalid → hold
+        };
+        let circuit = clamp_cm(self.circuit_byte().congestion_multiplier());
+        let wasm = clamp_cm(self.wasm_byte().congestion_multiplier());
+        (circuit, wasm)
+    }
+
     /// Derive estimated congestion factors from the flags.
     ///
     /// Wallets don't maintain a full `FeeWindowState` — they observe the
@@ -266,7 +285,11 @@ impl CongestionFactor {
     }
 
     /// Construct a CongestionFactor with explicit premium and standard values.
-    pub const fn new(premium: u32, standard: u32) -> Self {
+    /// In debug builds, asserts I4: `premium >= standard` (F4/H10 fix).
+    pub fn new(premium: u32, standard: u32) -> Self {
+        debug_assert!(premium >= standard,
+            "I4 violation: CongestionFactor premium ({}) must be >= standard ({})",
+            premium, standard);
         Self { premium, standard }
     }
 
@@ -281,13 +304,15 @@ impl CongestionFactor {
     }
 
     /// Apply the premium CF to a base value. Returns `base × premium / SCALE`.
+    /// Uses saturating multiplication to prevent silent overflow (A7/H2 fix).
     pub fn apply_premium(self, base: u64) -> u64 {
-        (base * self.premium as u64) / Self::SCALE as u64
+        base.saturating_mul(self.premium as u64) / Self::SCALE as u64
     }
 
     /// Apply the standard CF to a base value. Returns `base × standard / SCALE`.
+    /// Uses saturating multiplication to prevent silent overflow (A7/H2 fix).
     pub fn apply_standard(self, base: u64) -> u64 {
-        (base * self.standard as u64) / Self::SCALE as u64
+        base.saturating_mul(self.standard as u64) / Self::SCALE as u64
     }
 }
 
@@ -405,6 +430,13 @@ impl FeeWindowState {
     // ── Queries (lock-free, suitable for hot path) ─────────────────
 
     /// Current circuit execution CF (memory-fenced read).
+    ///
+    /// Note on torn reads (A11/H3): premium and standard are loaded in two
+    /// separate `Acquire` operations. At a window boundary, a concurrent
+    /// `adjust_circuit` may interleave, producing a `CongestionFactor` whose
+    /// fields come from different windows. This is accepted: window boundaries
+    /// are infrequent (~40 min at 120s blocks) and the torn-read window is
+    /// nanoseconds. The brief inconsistency is tolerable for advisory signalling.
     pub fn circuit_cf(&self) -> CongestionFactor {
         CongestionFactor {
             premium: self.circuit_premium_cf.load(Ordering::Acquire),
@@ -441,7 +473,8 @@ impl FeeWindowState {
     ) -> CongestionFactor {
         let log2 = |x: u64| -> u32 {
             if x == 0 { return 0; }
-            (x + 1).ilog2()
+            // saturating_add: x==u64::MAX → u64::MAX (no wrap), ilog2(u64::MAX)=63
+            (x.saturating_add(1)).ilog2()
         };
         let scale = CongestionFactor::SCALE as f64;
         let cf_premium = CongestionFactor::SCALE.saturating_add(
@@ -513,14 +546,22 @@ impl FeeWindowState {
         let prev_p = *prev_premium.lock().unwrap_or_else(|e| e.into_inner());
         let prev_s = *prev_standard.lock().unwrap_or_else(|e| e.into_inner());
 
-        let (capped_premium, capped_standard) = if prev_p > CongestionFactor::SCALE {
+        // Independent per-tier guards (A4/C5 fix): cap premium if prev_p > 0,
+        // cap standard if prev_s > 0. Both initialized to SCALE at construction.
+        // Separate guards prevent a corrupted prev_s==0 from zeroing standard tier.
+        let capped_premium = if prev_p > 0 {
             let max_p = (prev_p as f64 * (1.0 + max_adj)) as u32;
             let min_p = (prev_p as f64 * (1.0 - max_adj)) as u32;
+            raw_cf.premium.clamp(min_p, max_p)
+        } else {
+            raw_cf.premium
+        };
+        let capped_standard = if prev_s > 0 {
             let max_s = (prev_s as f64 * (1.0 + max_adj)) as u32;
             let min_s = (prev_s as f64 * (1.0 - max_adj)) as u32;
-            (raw_cf.premium.clamp(min_p, max_p), raw_cf.standard.clamp(min_s, max_s))
+            raw_cf.standard.clamp(min_s, max_s)
         } else {
-            (raw_cf.premium, raw_cf.standard)
+            raw_cf.standard
         };
 
         // I4: CF_premium > CF_standard when congested
@@ -604,8 +645,9 @@ impl FeeWindowState {
         );
     }
 
-    /// Load fee window state from a sled tree. Missing keys are silently
-    /// skipped (fresh store, pre-activation blocks).
+    /// Load fee window state from a sled tree. Returns `Err` if only some of the
+    /// 8 expected keys are present (partial persistence after crash — A9/H5 fix).
+    /// Missing all keys is accepted (fresh store). Missing some is rejected.
     pub fn load(&self, tree: &sled::Tree) -> Result<(), LinearError> {
         let load_u32 = |key: &[u8]| -> Option<u32> {
             tree.get(key).ok().flatten().and_then(|b| {
@@ -616,29 +658,45 @@ impl FeeWindowState {
                 } else { None }
             })
         };
+        let mut loaded: usize = 0;
         if let Some(v) = load_u32(b"fee_window_circuit_premium_cf") {
             self.circuit_premium_cf.store(v, Ordering::Release);
+            loaded += 1;
         }
         if let Some(v) = load_u32(b"fee_window_circuit_standard_cf") {
             self.circuit_standard_cf.store(v, Ordering::Release);
+            loaded += 1;
         }
         if let Some(v) = load_u32(b"fee_window_wasm_premium_cf") {
             self.wasm_premium_cf.store(v, Ordering::Release);
+            loaded += 1;
         }
         if let Some(v) = load_u32(b"fee_window_wasm_standard_cf") {
             self.wasm_standard_cf.store(v, Ordering::Release);
+            loaded += 1;
         }
         if let Some(v) = load_u32(b"fee_window_circuit_prev_premium_cf") {
             *self.circuit_prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner()) = v;
+            loaded += 1;
         }
         if let Some(v) = load_u32(b"fee_window_circuit_prev_standard_cf") {
             *self.circuit_prev_standard_cf.lock().unwrap_or_else(|e| e.into_inner()) = v;
+            loaded += 1;
         }
         if let Some(v) = load_u32(b"fee_window_wasm_prev_premium_cf") {
             *self.wasm_prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner()) = v;
+            loaded += 1;
         }
         if let Some(v) = load_u32(b"fee_window_wasm_prev_standard_cf") {
             *self.wasm_prev_standard_cf.lock().unwrap_or_else(|e| e.into_inner()) = v;
+            loaded += 1;
+        }
+        // Reject partial persistence: 1-7 keys means crash during save.
+        // 0 keys is acceptable (fresh store, pre-activation blocks).
+        if loaded > 0 && loaded < 8 {
+            return Err(LinearError::StorageError(format!(
+                "fee_window: partial persistence — {}/8 keys loaded", loaded
+            )));
         }
         Ok(())
     }

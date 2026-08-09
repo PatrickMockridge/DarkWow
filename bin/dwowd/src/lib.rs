@@ -47,7 +47,7 @@ use dwow_core::{
 };
 use dwow_chain::fee_window::FeeWindowFlags;
 use dwow_chain::monero::JobId;
-use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, MoneroBlockHeight};
+use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, FeeAmount, GasAmount, MoneroBlockHeight};
 use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
 
@@ -115,7 +115,7 @@ impl NativeTokenFeeSignallingExtractor {
     }
 }
 impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
-    fn extract_fee(&self, tx: &dwow_chain::Transaction) -> u64 {
+    fn extract_fee(&self, tx: &dwow_chain::Transaction) -> FeeAmount {
         // Fee estimate per FeeV2 call at zero congestion for a reference
         // transaction (average circuit ~1000 difficulty, 1 kB WASM).
         // compute_fee(&[1000], 1, default_cf, default_cf) = 1_001_000.
@@ -128,11 +128,11 @@ impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
                 count += 1;
             }
         }
-        count * ESTIMATED_FEE_PER_FEEV2_CALL
+        FeeAmount::new(count * ESTIMATED_FEE_PER_FEEV2_CALL)
     }
-    fn estimate_gas(&self, tx: &dwow_chain::Transaction) -> u64 {
+    fn estimate_gas(&self, tx: &dwow_chain::Transaction) -> GasAmount {
         const GAS_PER_CALL: u64 = 400_000_000;
-        tx.contract_calls.len() as u64 * GAS_PER_CALL
+        GasAmount::new(tx.contract_calls.len() as u64 * GAS_PER_CALL)
     }
 
     /// Extract fee commitment from FeeV2 transactions.
@@ -184,7 +184,7 @@ impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
     /// previous stub that only checked threshold equality (u64 comparison).
     ///
     /// Guardrail G5: Mempool SHALL call `Proof::verify()` — u64 comparison is not a gate.
-    fn verify_threshold_proof(&self, tx: &dwow_chain::Transaction, threshold: u64) -> bool {
+    fn verify_threshold_proof(&self, tx: &dwow_chain::Transaction, threshold: FeeAmount) -> bool {
         use dwow_core::zk::Proof;
         use dwow_sdk::pasta::pallas;
 
@@ -197,15 +197,17 @@ impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
                     Err(_) => return false,
                 };
                 // Verify the threshold in the params matches the one we're checking.
-                if params.threshold.get() != threshold {
+                // FeeAmount: PartialEq — direct comparison, no .get() needed.
+                if params.threshold != threshold {
                     return false;
                 }
                 // Deserialize the ZK proof from FeeParamsV2.
                 let proof = Proof::new(params.threshold_proof);
                 // Public inputs: threshold (field element), tx_binding (field element).
                 // Order matches constrain_instance calls in fee_threshold_v1.zk.
+                // .get() is a crypto boundary: pallas::Base::from requires raw u64.
                 let public_inputs = vec![
-                    pallas::Base::from(threshold),
+                    pallas::Base::from(threshold.get()),
                     params.threshold_tx_binding.inner(),
                 ];
                 // Cryptographic verification — NOT a u64 comparison.
@@ -1245,10 +1247,9 @@ async fn prepare_block(
     // For production, this is DEFAULT_FEE per call until witness extraction
     // is implemented. Spec: fee-spec.md §5.6.4.
     let fee_extractor = NativeTokenFeeSignallingExtractor::new();
-    let total_fees: u64 = mempool_txs.iter()
+    let prod_tf: FeeAmount = mempool_txs.iter()
         .map(|tx| fee_extractor.extract_fee(tx))
-        .sum();
-    let prod_tf = FeeAmount::new(total_fees);
+        .fold(FeeAmount::ZERO, |a, b| a.saturating_add(b));
     let fee_collect_tx = crate::registry::model::build_fee_collect_tx(
         &recipient,
         &mempool_txs,
@@ -1397,7 +1398,8 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                     let flags = fw.encode_flags();
                     if let Some(ref mp) = node.mempool {
                         mp.update_thresholds(
-                            circuit_cf.premium() as u64, circuit_cf.standard() as u64,
+                            FeeAmount::new(circuit_cf.premium() as u64),
+                            FeeAmount::new(circuit_cf.standard() as u64),
                         );
                     }
                     info!(target: "dwowd::miner_task",

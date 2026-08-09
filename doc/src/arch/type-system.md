@@ -307,12 +307,68 @@ independently. The `BlockHeader.anchor_monero_height` field gates
 merge-mining finality — confusing our height for the Monero anchor
 height silently breaks the finality guarantee.
 
+**CfValue(u32)** — congestion factor fixed-point value with SCALE = 1_000_000.
+Distinguished from `BlockTarget(u32)` (PoW difficulty) because a CF multiplier
+applies to fee admission thresholds, not to proof-of-work verification. The
+`CongestionFactor` compound type encapsulates two `CfValue` components
+(premium and standard). Direct `CfValue` extraction SHALL use `.premium()`
+and `.standard()` accessors; fee arithmetic SHALL route through
+`apply_premium(FeeAmount) -> FeeAmount` and `apply_standard(FeeAmount) -> FeeAmount`.
+
+**RiskFactor(u64)** — execution risk multiplier in `RISK_FACTOR_SCALE` units
+(100_000 = 1.0×). Distinguished from `FeeAmount(u64)` because a risk factor
+is a dimensionless multiplier applied to circuit difficulty, not a payment
+amount. Multiplying a risk factor by a fee SHALL produce a `FeeAmount`, not
+a bare `u64`.
+
+**WasmKb(u64)** — WASM deploy size in kilobytes. Distinguished from
+`FeeAmount(u64)` because storage size and payment amount inhabit distinct
+economic domains. The `compute_fee(WasmKb, CircuitDifficulty, ...)` function
+takes these as distinct typed parameters; `compute_fee(fee_amount, fee_amount, ...)`
+SHALL NOT compile.
+
+**ThresholdAmount(u64)** — mempool admission threshold. Distinguished from
+`FeeAmount(u64)` because a threshold gates admission (a policy parameter)
+while a fee is paid (an economic value transfer). The mempool's
+`verify_threshold_proof(tx, ThresholdAmount)` SHALL NOT accept a `FeeAmount`
+without explicit conversion.
+
 Each SHALL derive `Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd,
 SerialEncodable, SerialDecodable`. Each SHALL implement manual serde as a
 plain JSON number (byte-identical wire format). None SHALL implement
 `From<u64>`, `Default`, `Hash`, or `Add`/`Sub` operators. Construction
 is `new(u64)` at domain entry points; extraction is `.get() -> u64` at
 display/persistence boundaries only (§8.5).
+
+### 2.3.3 AtomicU64 Dispensation for Lock-Free Hot-Path Thresholds
+
+Consensus thresholds stored in `AtomicU64` for lock-free mempool admission
+SHALL use the underlying `u64` at the storage layer. This is a Rust language
+limitation — `AtomicU64` wraps a primitive integer and cannot wrap a
+`#[repr(transparent)]` newtype. The following compensating controls SHALL apply:
+
+1. **Single conversion boundary.** The conversion to/from the nominal type
+   (`FeeAmount` or `ThresholdAmount`) SHALL occur at exactly one code location:
+   the `update_thresholds` method (write) and the threshold accessor method
+   (read). No other code path SHALL extract the raw `u64` from the `AtomicU64`.
+
+2. **Private storage.** The `AtomicU64` field SHALL be private to the struct
+   that owns it. External code SHALL interact with it exclusively through
+   the typed accessor methods.
+
+3. **No arithmetic on the raw value.** The extracted `u64` SHALL be immediately
+   wrapped in the nominal type before any arithmetic or comparison. Threshold
+   comparison logic (`fee >= threshold`) SHALL operate on `FeeAmount` values,
+   not on bare `u64`.
+
+4. **Documented dispensation.** Every `AtomicU64` field storing a consensus
+   threshold SHALL carry a doc comment citing this section (§2.3.3) and
+   explaining why `AtomicU64` is used (lock-free hot-path reads).
+
+This dispensation applies to mempool admission thresholds, congestion factor
+storage, and any future consensus domain requiring lock-free atomic access.
+It does NOT apply to persistence (sled), wire format, or configuration —
+those paths SHALL use the nominal type directly.
 
 ## 3. Generic Types and Capabilities
 
