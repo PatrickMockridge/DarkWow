@@ -60,6 +60,7 @@ use std::sync::Mutex;
 
 use dwow_core::barb::{BarbId, ExhibitsBarb};
 use dwow_sdk::blockchain::{BlockHeight, FeeAmount};
+use dwow_sdk::manifest::ManifestCostProfile;
 
 use crate::error::LinearError;
 
@@ -350,6 +351,45 @@ pub fn compute_fee(
         (wasm_kb * BASELINE_STORAGE * wasm_cf.premium as u64) / CongestionFactor::SCALE as u64;
     let circuit_part =
         (total_opcode_cost * circuit_cf.premium as u64) / CongestionFactor::SCALE as u64;
+    FeeAmount::new(wasm_part.saturating_add(circuit_part))
+}
+
+/// Compute the admission fee with execution risk factor applied.
+///
+/// The risk_factor multiplies only the circuit component — execution risk
+/// is about ZK verification cost, not storage. The wasm_kB term covers
+/// on-chain storage and is independent of trust status.
+///
+/// fee = (wasm_kB × BASELINE_STORAGE × WASM_CF.premium) / SCALE
+///     + (circuit_difficulty × CIRCUIT_CF.premium × risk_factor) / (SCALE × RISK_FACTOR_SCALE)
+///
+/// Both risk_factor and RISK_FACTOR_SCALE are integers — fixed-point
+/// representation for deterministic cross-platform arithmetic.
+/// risk_factor / RISK_FACTOR_SCALE = the effective multiplier
+/// (e.g., 150_000 / 100_000 = 1.5× for self_declared).
+///
+/// This is distinct from [`compute_fee()`] which takes raw `circuit_costs` —
+/// `compute_total_fee()` takes a resolved [`ManifestCostProfile`] and risk_factor,
+/// wiring manifest cost declarations into the two-component formula.
+///
+/// [1:1] Python model: `compute_total_fee()` in fee_window_model.py.
+/// Spec: fee-spec.md §12.12.3.
+pub fn compute_total_fee(
+    profile: &ManifestCostProfile,
+    risk_factor: u64,
+    wasm_cf: CongestionFactor,
+    circuit_cf: CongestionFactor,
+) -> FeeAmount {
+    let wasm_part = (profile.wasm_kb as u128 * BASELINE_STORAGE as u128
+        * wasm_cf.premium() as u128 / CongestionFactor::SCALE as u128) as u64;
+    // Fixed-point arithmetic matching Python: risk_factor / RISK_FACTOR_SCALE
+    let circuit_part = {
+        let num = profile.circuit_difficulty as u128
+            * circuit_cf.premium() as u128
+            * risk_factor as u128;
+        let den = CongestionFactor::SCALE as u128 * dwow_sdk::manifest::RISK_FACTOR_SCALE as u128;
+        (num / den) as u64
+    };
     FeeAmount::new(wasm_part.saturating_add(circuit_part))
 }
 
@@ -1006,5 +1046,79 @@ mod tests {
         assert!(final_cf.premium >= CongestionFactor::SCALE, "premium at or above SCALE");
         assert!(final_cf.standard >= CongestionFactor::SCALE, "standard at or above SCALE");
         assert!(final_cf.premium > final_cf.standard, "I4: final premium > standard");
+    }
+
+    // ── compute_total_fee tests — [1:1] Python: test_compute_total_fee_* ──
+
+    #[test]
+    fn test_compute_total_fee_zero_congestion() {
+        use dwow_sdk::manifest::RISK_FACTOR_SCALE;
+        let profile = ManifestCostProfile {
+            function: "TransferV2".into(), circuit_difficulty: 1000,
+            k_value: 12, wasm_kb: 1, tolerance: 0.50,
+        };
+        let cf = CongestionFactor::zero();
+        let fee = compute_total_fee(&profile, RISK_FACTOR_SCALE, cf, cf);
+        // wasm = 1 * 1M * 1M / 1M = 1_000_000, circuit = 1000 * 1M * 100k / (1M * 100k) = 1000
+        assert_eq!(fee, FeeAmount::new(1_001_000));
+    }
+
+    #[test]
+    fn test_compute_total_fee_risk_multiplier() {
+        use dwow_sdk::manifest::RISK_FACTOR_SCALE;
+        let profile = ManifestCostProfile {
+            function: "TransferV2".into(), circuit_difficulty: 1000,
+            k_value: 12, wasm_kb: 1, tolerance: 0.50,
+        };
+        let cf = CongestionFactor::zero();
+        let fee_normal = compute_total_fee(&profile, RISK_FACTOR_SCALE, cf, cf);
+        let fee_risky = compute_total_fee(&profile, 200_000, cf, cf); // 2.0×
+        // Risk=2.0 doubles only the circuit component: 1000 → 2000
+        assert_eq!(fee_risky.get() - fee_normal.get(), 1000,
+            "risk=2.0 should add exactly circuit_difficulty (1000)");
+    }
+
+    #[test]
+    fn test_compute_total_fee_risk_does_not_affect_wasm() {
+        use dwow_sdk::manifest::RISK_FACTOR_SCALE;
+        let profile = ManifestCostProfile {
+            function: "DeployV1".into(), circuit_difficulty: 2000,
+            k_value: 14, wasm_kb: 50, tolerance: 0.50,
+        };
+        let cf = CongestionFactor::zero();
+        let fee_1x = compute_total_fee(&profile, RISK_FACTOR_SCALE, cf, cf);
+        let fee_2x = compute_total_fee(&profile, 200_000, cf, cf);
+        let wasm_part = 50 * BASELINE_STORAGE;
+        assert_eq!(fee_1x.get(), wasm_part + 2000);
+        assert_eq!(fee_2x.get(), wasm_part + 4000);
+        // WASM component unchanged by risk
+        assert_eq!(fee_2x.get() - fee_1x.get(), 2000);
+    }
+
+    #[test]
+    fn test_compute_total_fee_full_pipeline() {
+        use dwow_sdk::manifest::{resolve_cost_profile, RISK_FACTOR_SCALE};
+        let profiles = vec![
+            ManifestCostProfile {
+                function: "TransferV2".into(), circuit_difficulty: 1000,
+                k_value: 12, wasm_kb: 1, tolerance: 0.50,
+            },
+            ManifestCostProfile {
+                function: "ExecuteSwapV2".into(), circuit_difficulty: 2000,
+                k_value: 14, wasm_kb: 2, tolerance: 0.50,
+            },
+        ];
+        let cf = CongestionFactor::zero();
+        // Known function
+        let (profile, risk) = resolve_cost_profile("attested_endowed", "ExecuteSwapV2", &profiles);
+        assert_eq!(risk, RISK_FACTOR_SCALE); // 1.0×
+        let fee = compute_total_fee(&profile, risk, cf, cf);
+        assert_eq!(fee.get(), 2 * BASELINE_STORAGE + 2000); // wasm_kb=2
+        // Unknown function → pessimistic + risk from status
+        let (profile2, risk2) = resolve_cost_profile("self_declared", "missing_func", &profiles);
+        assert_eq!(profile2.circuit_difficulty, 4000); // 2 × max(1000, 2000)
+        assert_eq!(risk2, 150_000);
+        let fee2 = compute_total_fee(&profile2, risk2, cf, cf);
+        assert_eq!(fee2.get(), 2_000_000 + 6000); // wasm=2M + circuit=4000*1.5
     }
 }

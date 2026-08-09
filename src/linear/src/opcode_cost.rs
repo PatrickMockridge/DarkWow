@@ -298,11 +298,13 @@ mod tests {
 
     #[test]
     fn test_k_scaling_doubles_per_increment() {
-        // k=12: 2^1 = 2x scaling
+        // [1:1] Python: test_k_scaling_doubles_per_increment
         let ops = vec![(Opcode::BaseAdd, vec![])]; // 20
-        assert_eq!(circuit_difficulty(&ops, 11), 20);
-        assert_eq!(circuit_difficulty(&ops, 12), 40);
-        assert_eq!(circuit_difficulty(&ops, 13), 80);
+        assert_eq!(circuit_difficulty(&ops, 11), 20);   // 2^0 = 1×
+        assert_eq!(circuit_difficulty(&ops, 12), 40);   // 2^1 = 2×
+        assert_eq!(circuit_difficulty(&ops, 13), 80);   // 2^2 = 4×
+        assert_eq!(circuit_difficulty(&ops, 14), 160);  // 2^3 = 8×
+        assert_eq!(circuit_difficulty(&ops, 15), 320);  // 2^4 = 16×
     }
 
     #[test]
