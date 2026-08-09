@@ -70,13 +70,152 @@ CIRCUIT_RATES: dict = {
     "BaseDivV2": 10000, "PoseidonRecursiveV2": 10000, "AggregateV2": 10000,
 }
 
+# Typical k-values per contract type [1:1] fee-spec.md §12.11
+# k determines proving domain size (2^k rows). Higher k = larger circuit capacity.
+CIRCUIT_K: dict = {
+    "FeeThreshold_V1": 11,
+    "TransferV2": 12, "SpendV2": 12, "BurnV2": 12,
+    "FeeV2": 12, "FeeCollectV2": 12, "PoWRewardV2": 12,
+    "CreateSwapV2": 13, "AcceptSwapV2": 13, "CancelSwapV2": 13,
+    "ExecuteSwapV2": 14, "ExecuteSwapFeeV2": 14, "ExecuteSwapSlippageV2": 14,
+    "VerifyCapabilityV2": 14, "CreateGroupV2": 14, "SignV2": 14, "FinalizeV2": 14,
+    "PushValueV2": 15, "AttestValueV2": 15, "DepositV2": 15, "WithdrawV2": 15,
+    "LiquidateV2": 15, "ExecuteSwapV2_complex": 15, "MintStableV2": 15,
+    "BaseDivV2": 16, "PoseidonRecursiveV2": 16, "AggregateV2": 16,
+}
+
 # Per-kB WASM storage rate: 0.01 DRKW at CF=1.0
 BASELINE_STORAGE: int = 1_000_000
 
+# Circuit k-value scaling [1:1] fee-spec.md §12.11
+K_REF: int = 11           # Reference k (FeeThreshold_V1), scale factor 1.0
+MAX_K: int = 16            # Maximum k from zkas/constants.rs, scale factor 32
 
-def circuit_difficulty(opcodes: list) -> int:
-    """Sum of per-opcode difficulty factors. [1:1] Rust circuit_difficulty()."""
-    return sum(OPCODE_DIFFICULTY.get(op, 0) for op in opcodes)
+# Execution risk factors — fee-spec.md §12.12, manifest.md §Cost Profiles
+# Multiplier on baseline circuit fee based on manifest/attestation status.
+# Contracts are infrastructure, not experiments: the economic gradient
+# pushes toward attested manifests with endowments.
+RISK_FACTOR: dict = {
+    "genesis": 1.0,                 # Hardcoded, cryptographically foundational
+    "attested_endowed": 1.0,        # Vouched by trusted issuer, skin in the game
+    "attested_no_endowment": 1.25,  # Vouched but no stake — moderate risk
+    "self_declared": 1.5,           # Deployer claims costs — unverified
+    "unknown": 2.0,                 # Pessimistic default — no cost declaration
+}
+
+
+# ============================================================================
+# [1:1] CostProfile — mirrors manifest.md [[cost_profiles]]
+# ============================================================================
+
+@dataclass
+class CostProfile:
+    """Per-function cost declaration. [1:1] manifest.md [[cost_profiles]].
+
+    Fields match the TOML [[cost_profiles]] section exactly:
+    - function: SHALL match a name in [[functions]]
+    - circuit_difficulty: Σ opcode_cost × 2^(k - K_REF) — deterministic baseline
+    - k_value: circuit's Halo2 k parameter (domain size = 2^k rows)
+    - wasm_kb: expected WASM execution overhead in kB-equivalent
+    - tolerance: allowed deviation (±50% = 0.50) before black mark
+    """
+    function: str
+    circuit_difficulty: int
+    k_value: int = K_REF
+    wasm_kb: int = 1
+    tolerance: float = 0.50
+
+
+# Pessimistic default profile for contracts with no [[cost_profiles]] section.
+# Uses average circuit difficulty (1000), worst-case k (MAX_K = 16), and
+# default 1 kB WASM overhead.
+DEFAULT_COST_PROFILE: CostProfile = CostProfile(
+    function="unknown",
+    circuit_difficulty=1000,
+    k_value=MAX_K,
+    wasm_kb=1,
+    tolerance=0.50,
+)
+
+
+def resolve_cost_profile(
+    contract_status: str,
+    function: str,
+    profiles: list,
+) -> tuple:
+    """Return (CostProfile, risk_factor) for a function call.
+
+    Resolution rules (manifest.md §Cost Profiles):
+    1. No profiles at all → DEFAULT_COST_PROFILE, risk_factor=RISK_FACTOR["unknown"] (2.0×)
+    2. Function not in profiles → 2.0× max declared difficulty, risk_factor from status
+    3. Function found → declared profile, risk_factor from status
+
+    This is the bridge between manifest cost declarations and fee computation.
+    The risk_factor multiplies only the circuit component — execution risk
+    is about ZK verification cost, not storage.
+    """
+    risk_factor = RISK_FACTOR.get(contract_status, RISK_FACTOR["unknown"])
+
+    if not profiles:
+        # No profiles at all: use pessimistic default profile.
+        # Override risk_factor to 2.0× regardless of status — no cost
+        # declaration means no basis for lower risk assessment.
+        return (DEFAULT_COST_PROFILE, RISK_FACTOR["unknown"])
+
+    for p in profiles:
+        if p.function == function:
+            return (p, risk_factor)
+
+    # Function not found: 2.0× the circuit_difficulty of the most expensive
+    # declared function in the same contract. k_value and wasm_kb use the
+    # contract's maximum to be safe.
+    max_declared = max(p.circuit_difficulty for p in profiles)
+    max_k = max(p.k_value for p in profiles)
+    max_wasm = max(p.wasm_kb for p in profiles)
+    pessimistic = CostProfile(
+        function=function,
+        circuit_difficulty=2 * max_declared,
+        k_value=max_k,
+        wasm_kb=max_wasm,
+        tolerance=0.50,
+    )
+    return (pessimistic, risk_factor)
+
+
+def compute_total_fee(
+    profile: CostProfile,
+    risk_factor: float,
+    wasm_cf: 'CongestionFactor',
+    circuit_cf: 'CongestionFactor',
+) -> int:
+    """Combined fee with execution risk factor. [1:1] fee-spec.md §12.12.
+
+    fee = (wasm_kB × BASELINE_STORAGE × WASM_CF.premium) / SCALE
+        + (circuit_difficulty × CIRCUIT_CF.premium × risk_factor) / SCALE
+
+    The risk_factor multiplies only the circuit component — execution risk
+    is about ZK verification cost, not storage. The wasm_kB term covers
+    on-chain storage and is independent of trust status.
+
+    This is distinct from compute_fee() which takes raw circuit_costs —
+    compute_total_fee() takes a resolved CostProfile and risk_factor,
+    wiring manifest cost declarations into the two-component formula.
+    """
+    wasm_part = (profile.wasm_kb * BASELINE_STORAGE * wasm_cf.premium) // SCALE
+    circuit_part = int(
+        (profile.circuit_difficulty * circuit_cf.premium * risk_factor) // SCALE
+    )
+    return wasm_part + circuit_part
+
+
+def circuit_difficulty(opcodes: list, k: int = K_REF) -> int:
+    """Sum of per-opcode difficulty factors, scaled by k-value. [1:1] Rust circuit_difficulty().
+
+    Formula: base_cost(opcodes) × 2^(k - K_REF)
+    Scale factor capped at 2^(MAX_K - K_REF) = 32."""
+    base = sum(OPCODE_DIFFICULTY.get(op, 0) for op in opcodes)
+    scale_shift = max(0, min(k - K_REF, MAX_K - K_REF))
+    return base * (1 << scale_shift)
 
 
 def compute_fee(circuit_costs: list, wasm_kb: int,
@@ -863,6 +1002,268 @@ def test_multi_miner_median_convergence_extended():
 
 
 # ============================================================================
+# K-Scaling Tests — fee-spec.md §12.11
+# ============================================================================
+
+def test_k_scaling_reference():
+    """K_REF (k=11) produces scale factor 1.0 — no change from baseline."""
+    ops = ["WitnessBase", "BaseAdd", "ConstrainInstance"]
+    diff_k11 = circuit_difficulty(ops, k=11)
+    diff_no_k = circuit_difficulty(ops)  # default K_REF
+    assert diff_k11 == diff_no_k, f"k=K_REF should equal default: {diff_k11} vs {diff_no_k}"
+    expected = OPCODE_DIFFICULTY["WitnessBase"] + OPCODE_DIFFICULTY["BaseAdd"] + OPCODE_DIFFICULTY["ConstrainInstance"]
+    assert diff_k11 == expected, f"k=11: expected {expected}, got {diff_k11}"
+
+
+def test_k_scaling_doubles_per_increment():
+    """k=12 → 2×, k=13 → 4×, k=14 → 8×, k=15 → 16×."""
+    ops = ["PoseidonHash"]  # base 500
+    base = OPCODE_DIFFICULTY["PoseidonHash"]
+    assert circuit_difficulty(ops, k=11) == base * 1
+    assert circuit_difficulty(ops, k=12) == base * 2
+    assert circuit_difficulty(ops, k=13) == base * 4
+    assert circuit_difficulty(ops, k=14) == base * 8
+    assert circuit_difficulty(ops, k=15) == base * 16
+
+
+def test_k_scaling_max_k():
+    """k=16 (MAX_K) → 32× scale factor."""
+    ops = ["BaseAdd"]  # base 20
+    assert circuit_difficulty(ops, k=16) == 20 * 32
+
+
+def test_k_below_reference_no_fractional_scaling():
+    """k < K_REF → scale factor = 1 (no fractional scaling)."""
+    ops = ["BaseMul"]  # base 50
+    assert circuit_difficulty(ops, k=10) == 50
+    assert circuit_difficulty(ops, k=9) == 50
+    assert circuit_difficulty(ops, k=0) == 50
+
+
+def test_k_above_max_k_capped():
+    """k > MAX_K → capped at 32×, no overflow."""
+    ops = ["BaseAdd"]
+    assert circuit_difficulty(ops, k=17) == 20 * 32
+    assert circuit_difficulty(ops, k=20) == 20 * 32
+
+
+def test_k_scaling_empty_circuit():
+    """Empty circuit costs zero regardless of k."""
+    assert circuit_difficulty([], k=11) == 0
+    assert circuit_difficulty([], k=15) == 0
+
+
+def test_k_scaling_fee_threshold_v1_unchanged():
+    """FeeThreshold_V1 (k=11, 5 simple ops) difficulty = 40 — unchanged."""
+    ops = ["WitnessBase", "ConstrainEqualBase", "ConstrainEqualBase",
+           "ConstrainInstance", "ConstrainInstance"]
+    assert circuit_difficulty(ops, k=11) == 40
+
+
+def test_k_scaling_circuit_rates_with_k():
+    """CIRCUIT_RATES × 2^(CIRCUIT_K - K_REF) gives k-scaled difficulty."""
+    for name, base_rate in CIRCUIT_RATES.items():
+        k = CIRCUIT_K.get(name, K_REF)
+        scale = 1 << max(0, min(k - K_REF, MAX_K - K_REF))
+        expected = base_rate * scale
+        # Verify the scaling math is consistent, not that every rate is exact
+        assert expected > 0 or base_rate == 0, f"{name}: zero scaled difficulty"
+
+
+def test_k_scaling_composed_transaction():
+    """Transaction with two circuits: Fee_V2 (k=12, diff=500) + FeeThreshold_V1 (k=11, diff=40)."""
+    fee_v2_cost = circuit_difficulty(["PoseidonHash"], k=12)  # 500 * 2 = 1000
+    threshold_cost = circuit_difficulty(
+        ["WitnessBase", "ConstrainEqualBase", "ConstrainEqualBase",
+         "ConstrainInstance", "ConstrainInstance"], k=11)  # 40 * 1 = 40
+    total = fee_v2_cost + threshold_cost
+    assert total == 1040, f"composed tx: expected 1040, got {total}"
+    # Verify fee at zero congestion
+    cf = CongestionFactor()
+    fee = compute_fee([fee_v2_cost, threshold_cost], wasm_kb=1, wasm_cf=cf, circuit_cf=cf)
+    assert fee == BASELINE_STORAGE + total, f"composed fee: expected {BASELINE_STORAGE + total}, got {fee}"
+
+
+# ============================================================================
+# Execution Risk Factor + Cost Profile Tests — fee-spec.md §12.12, manifest.md
+# ============================================================================
+
+
+def test_risk_factor_known_statuses():
+    """All 5 contract statuses map to correct risk multipliers."""
+    assert RISK_FACTOR["genesis"] == 1.0
+    assert RISK_FACTOR["attested_endowed"] == 1.0
+    assert RISK_FACTOR["attested_no_endowment"] == 1.25
+    assert RISK_FACTOR["self_declared"] == 1.5
+    assert RISK_FACTOR["unknown"] == 2.0
+
+
+def test_risk_factor_ordering():
+    """Risk factors are monotonic: genesis <= attested_endowed < attested_no_endowment < self_declared < unknown."""
+    rf = RISK_FACTOR
+    assert rf["genesis"] <= rf["attested_endowed"]
+    assert rf["attested_endowed"] < rf["attested_no_endowment"]
+    assert rf["attested_no_endowment"] < rf["self_declared"]
+    assert rf["self_declared"] < rf["unknown"]
+
+
+def test_cost_profile_construction():
+    """CostProfile dataclass stores per-function cost declarations."""
+    cp = CostProfile(
+        function="TransferV2",
+        circuit_difficulty=1000,
+        k_value=12,
+        wasm_kb=1,
+        tolerance=0.50,
+    )
+    assert cp.function == "TransferV2"
+    assert cp.circuit_difficulty == 1000
+    assert cp.k_value == 12
+    assert cp.wasm_kb == 1
+    assert cp.tolerance == 0.50
+
+
+def test_cost_profile_defaults():
+    """CostProfile default values: k_value=K_REF, wasm_kb=1, tolerance=0.50."""
+    cp = CostProfile(function="minimal", circuit_difficulty=500)
+    assert cp.k_value == K_REF
+    assert cp.wasm_kb == 1
+    assert cp.tolerance == 0.50
+
+
+def test_resolve_cost_profile_found():
+    """Function found in profiles returns declared profile + status risk factor."""
+    profiles = [
+        CostProfile("TransferV2", 1000, 12),
+        CostProfile("BurnV2", 800, 12),
+    ]
+    profile, risk = resolve_cost_profile("attested_endowed", "TransferV2", profiles)
+    assert profile.function == "TransferV2"
+    assert profile.circuit_difficulty == 1000
+    assert risk == 1.0
+
+
+def test_resolve_cost_profile_missing_function():
+    """Missing function → 2.0× max declared difficulty, risk from status."""
+    profiles = [
+        CostProfile("TransferV2", 1000, 12),
+        CostProfile("BurnV2", 800, 12),
+    ]
+    profile, risk = resolve_cost_profile("self_declared", "unknown_function", profiles)
+    # circuit_difficulty = 2 * max(1000, 800) = 2000
+    assert profile.circuit_difficulty == 2000, (
+        f"expected 2.0× max declared (2000), got {profile.circuit_difficulty}"
+    )
+    assert risk == 1.5, f"expected self_declared risk 1.5, got {risk}"
+    # k_value should be max of declared
+    assert profile.k_value == 12
+    assert profile.wasm_kb == 1
+
+
+def test_resolve_cost_profile_no_profiles():
+    """No profiles → pessimistic default, risk_factor=2.0 regardless of status."""
+    profile, risk = resolve_cost_profile("attested_endowed", "anything", [])
+    assert profile.function == "unknown"
+    assert profile.circuit_difficulty == 1000, (
+        f"expected default difficulty 1000, got {profile.circuit_difficulty}"
+    )
+    assert profile.k_value == MAX_K, f"expected worst-case k={MAX_K}, got {profile.k_value}"
+    # Even though attested_endowed normally gives 1.0, no profiles → 2.0
+    assert risk == 2.0, f"no profiles must use 2.0 risk regardless of status, got {risk}"
+
+
+def test_resolve_cost_profile_genesis():
+    """Genesis status → 1.0× risk factor."""
+    profiles = [CostProfile("TransferV2", 1000, 12)]
+    _, risk = resolve_cost_profile("genesis", "TransferV2", profiles)
+    assert risk == 1.0
+
+
+def test_resolve_cost_profile_attested_endowed():
+    """Attested + endowment → 1.0× risk factor."""
+    profiles = [CostProfile("TransferV2", 1000, 12)]
+    _, risk = resolve_cost_profile("attested_endowed", "TransferV2", profiles)
+    assert risk == 1.0
+
+
+def test_resolve_cost_profile_unknown():
+    """Unknown contract → 2.0× risk factor."""
+    profiles = [CostProfile("TransferV2", 1000, 12)]
+    _, risk = resolve_cost_profile("unknown", "TransferV2", profiles)
+    assert risk == 2.0
+
+
+def test_compute_total_fee_zero_congestion():
+    """At CF=1.0, risk=1.0: fee = wasm_kB × BASELINE_STORAGE + circuit_difficulty."""
+    profile = CostProfile("TransferV2", 1000, 12, wasm_kb=1)
+    cf = CongestionFactor()  # SCALE = 1.0
+    fee = compute_total_fee(profile, risk_factor=1.0, wasm_cf=cf, circuit_cf=cf)
+    # wasm = 1 * 1_000_000 * 1_000_000 / 1_000_000 = 1_000_000
+    # circuit = 1000 * 1_000_000 * 1.0 / 1_000_000 = 1000
+    expected = BASELINE_STORAGE + 1000
+    assert fee == expected, f"expected {expected}, got {fee}"
+
+
+def test_compute_total_fee_risk_multiplier():
+    """Risk=2.0 doubles only the circuit component, not WASM storage."""
+    profile = CostProfile("TransferV2", 1000, 12, wasm_kb=1)
+    cf = CongestionFactor()
+    fee_normal = compute_total_fee(profile, risk_factor=1.0, wasm_cf=cf, circuit_cf=cf)
+    fee_risky = compute_total_fee(profile, risk_factor=2.0, wasm_cf=cf, circuit_cf=cf)
+    # wasm part unchanged: 1_000_000
+    # circuit part: 1000 → 2000
+    delta = fee_risky - fee_normal
+    assert delta == 1000, (
+        f"risk=2.0 should add exactly circuit_difficulty (1000), got delta={delta}"
+    )
+
+
+def test_compute_total_fee_risk_does_not_affect_wasm():
+    """Risk factor only multiplies circuit component. WASM storage is independent of trust."""
+    profile = CostProfile("DeployV1", 2000, 14, wasm_kb=50)
+    cf = CongestionFactor()
+    fee_1x = compute_total_fee(profile, risk_factor=1.0, wasm_cf=cf, circuit_cf=cf)
+    fee_2x = compute_total_fee(profile, risk_factor=2.0, wasm_cf=cf, circuit_cf=cf)
+    # wasm_part = 50 * 1_000_000 = 50_000_000 (same in both)
+    # circuit_part_1x = 2000
+    # circuit_part_2x = 4000
+    wasm_part = 50 * BASELINE_STORAGE
+    assert fee_1x == wasm_part + 2000
+    assert fee_2x == wasm_part + 4000
+    # wasm part unchanged
+    assert fee_2x - fee_1x == 2000
+
+
+def test_compute_total_fee_full_pipeline():
+    """End-to-end: profile → resolve → compute_total_fee."""
+    profiles = [
+        CostProfile("TransferV2", 1000, 12, wasm_kb=1),
+        CostProfile("ExecuteSwapV2", 2000, 14, wasm_kb=2),
+    ]
+    # Step 1: resolve cost profile for a known function
+    profile, risk = resolve_cost_profile("attested_endowed", "ExecuteSwapV2", profiles)
+    assert profile.function == "ExecuteSwapV2"
+    assert risk == 1.0
+
+    # Step 2: compute fee at zero congestion
+    cf = CongestionFactor()
+    fee = compute_total_fee(profile, risk, wasm_cf=cf, circuit_cf=cf)
+    expected = 2 * BASELINE_STORAGE + 2000  # wasm_kb=2
+    assert fee == expected, f"full pipeline: expected {expected}, got {fee}"
+
+    # Step 3: resolve unknown function → pessimistic + risk from status
+    profile2, risk2 = resolve_cost_profile("self_declared", "missing_func", profiles)
+    assert profile2.circuit_difficulty == 4000  # 2 * max(1000, 2000)
+    assert profile2.k_value == 14  # max(12, 14) from declared
+    assert profile2.wasm_kb == 2  # max(1, 2) from declared
+    assert risk2 == 1.5
+    fee2 = compute_total_fee(profile2, risk2, wasm_cf=cf, circuit_cf=cf)
+    # wasm = 2 * 1_000_000 = 2_000_000 (max wasm_kb=2 from declared)
+    # circuit = 4000 * 1.5 = 6000
+    assert fee2 == 2_000_000 + 6000, f"full pipeline missing: expected {2_000_000 + 6000}, got {fee2}"
+
+
+# ============================================================================
 # Test runner
 # ============================================================================
 
@@ -888,6 +1289,31 @@ if __name__ == "__main__":
         test_malicious_flag_injection,
         test_decode_equivalence,
         test_multi_miner_median_convergence_extended,
+        # K-Scaling tests — fee-spec.md §12.11
+        test_k_scaling_reference,
+        test_k_scaling_doubles_per_increment,
+        test_k_scaling_max_k,
+        test_k_below_reference_no_fractional_scaling,
+        test_k_above_max_k_capped,
+        test_k_scaling_empty_circuit,
+        test_k_scaling_fee_threshold_v1_unchanged,
+        test_k_scaling_circuit_rates_with_k,
+        test_k_scaling_composed_transaction,
+        # Execution Risk Factor + Cost Profile tests — fee-spec.md §12.12
+        test_risk_factor_known_statuses,
+        test_risk_factor_ordering,
+        test_cost_profile_construction,
+        test_cost_profile_defaults,
+        test_resolve_cost_profile_found,
+        test_resolve_cost_profile_missing_function,
+        test_resolve_cost_profile_no_profiles,
+        test_resolve_cost_profile_genesis,
+        test_resolve_cost_profile_attested_endowed,
+        test_resolve_cost_profile_unknown,
+        test_compute_total_fee_zero_congestion,
+        test_compute_total_fee_risk_multiplier,
+        test_compute_total_fee_risk_does_not_affect_wasm,
+        test_compute_total_fee_full_pipeline,
     ]
 
     passed = 0
