@@ -1328,6 +1328,153 @@ def test_compute_total_fee_full_pipeline():
 
 
 # ============================================================================
+# Phase 2a: Nullifier Replay + Wallet + BlockCharge
+
+
+class NullifierMempoolMixin:
+    """Adds nullifier dedup to MempoolWithWindow. [1:1] Rust extract_nullifiers."""
+
+    def __init__(self):
+        self._nullifiers: set = set()
+
+    def has_nullifier(self, nf) -> bool:
+        return nf in self._nullifiers
+
+    def insert_nullifier(self, nf):
+        self._nullifiers.add(nf)
+
+    def remove_nullifier(self, nf):
+        self._nullifiers.discard(nf)
+
+
+class MempoolWithWindowAndNullifiers(MempoolWithWindow, NullifierMempoolMixin):
+    """Mempool with window integration AND nullifier replay detection."""
+
+    def __init__(self, window: 'FeeWindow'):
+        MempoolWithWindow.__init__(self, window)
+        NullifierMempoolMixin.__init__(self)
+
+    def admit(self, tx_id: str, fee: int, circuit_costs: list,
+              wasm_kb: int = 1, nullifier=None) -> str:
+        """Admit with nullifier dedup."""
+        if nullifier is not None:
+            if self.has_nullifier(nullifier):
+                return "reject"
+            self.insert_nullifier(nullifier)
+        return super().admit(tx_id, fee, circuit_costs, wasm_kb)
+
+
+def wallet_read_flags(flags_int: int) -> tuple:
+    """Wallet reads fee_window_flags from block header, derives CFs."""
+    active = flags_int & FEE_WINDOW_ACTIVE
+    if not active:
+        return (CongestionFactor(), CongestionFactor())
+    circuit_cm = (flags_int >> 4) & 0x0F
+    wasm_cm = (flags_int >> 12) & 0x0F
+
+    def apply_cm(base: int, cm: int) -> int:
+        if cm == 0x01:
+            return (base * 110) // 100
+        elif cm == 0x02:
+            return (base * 90) // 100
+        return base
+
+    circuit_cf = CongestionFactor(
+        premium=apply_cm(SCALE, circuit_cm),
+        standard=apply_cm(SCALE, circuit_cm),
+    )
+    wasm_cf = CongestionFactor(
+        premium=apply_cm(SCALE, wasm_cm),
+        standard=apply_cm(SCALE, wasm_cm),
+    )
+    return (circuit_cf, wasm_cf)
+
+
+def wallet_construct_fee(circuit_costs: list, wasm_kb: int,
+                          block_header_flags: int) -> int:
+    """Wallet constructs fee from block header flags."""
+    circuit_cf, wasm_cf = wallet_read_flags(block_header_flags)
+    return compute_fee(circuit_costs, wasm_kb, wasm_cf, circuit_cf)
+
+
+CHARGE_PER_CALL: int = 400_000_000
+
+
+class BlockCharge:
+    """Declarative block capacity charge. [1:1] Rust BlockCharge(u64)."""
+    def __init__(self, amount: int):
+        self._value = amount
+
+    def get(self) -> int:
+        return self._value
+
+    @staticmethod
+    def declare_charge(num_calls: int) -> 'BlockCharge':
+        return BlockCharge(num_calls * CHARGE_PER_CALL)
+
+
+# ============================================================================
+# Phase 3: Dynamic Feedback Loop — fee-spec.md §12.12.5
+# ============================================================================
+
+
+@dataclass
+class CostDeviation:
+    """Recorded deviation between declared and observed cost for one window."""
+    contract_id: str
+    function: str
+    declared_cost: int
+    observed_cost: int
+    window_id: int
+
+    @property
+    def deviation_ratio(self) -> float:
+        return self.observed_cost / self.declared_cost if self.declared_cost > 0 else 1.0
+
+    def within_tolerance(self, tolerance: float = 0.50) -> bool:
+        return abs(self.deviation_ratio - 1.0) <= tolerance
+
+
+class ContractRiskTracker:
+    """Tracks observed-vs-declared cost deviations and adjusts risk factors.
+
+    Per fee-spec.md §12.12.5: miners observe actual execution costs, compare
+    against declared costs in [[cost_profiles]], and escalate risk factors
+    for contracts that systematically under-declare.
+    """
+
+    def __init__(self):
+        self._deviations: dict = {}  # contract_id -> list[CostDeviation]
+        self._black_marks: dict = {}  # contract_id -> int (count)
+
+    def record(self, contract_id: str, function: str, declared: int,
+               observed: int, window_id: int) -> CostDeviation:
+        """Record a cost deviation for a contract in a given window."""
+        dev = CostDeviation(contract_id, function, declared, observed, window_id)
+        if contract_id not in self._deviations:
+            self._deviations[contract_id] = []
+        self._deviations[contract_id].append(dev)
+        return dev
+
+    def evaluate_window(self, contract_id: str) -> int:
+        """Evaluate a contract's deviations for the current window.
+        Returns the effective risk factor (in RISK_FACTOR_SCALE units).
+        Escalation: 1 window → +0.25×, 2 windows → +0.5×, 3+ → 2.0× (capped)."""
+        devs = self._deviations.get(contract_id, [])
+        if not devs:
+            return 100_000  # baseline 1.0×
+
+        above_tolerance = sum(1 for d in devs if not d.within_tolerance(0.50))
+        if above_tolerance == 0:
+            return 100_000
+        elif above_tolerance == 1:
+            return 125_000  # 1.25×
+        elif above_tolerance == 2:
+            return 150_000  # 1.5×
+        else:
+            return 200_000  # 2.0× capped (unknown baseline)
+
+
 # Phase 1a: Pedersen Commitment + FeeCommitAccumulator Tests
 # ============================================================================
 
@@ -1459,6 +1606,160 @@ def test_g2_g6_end_to_end():
     assert acc.is_identity, "accumulator must be Identity after FeeCollectV1"
 
 
+# ============================================================================
+# Phase 2a: Nullifier Replay Tests
+# ============================================================================
+
+
+def test_nullifier_replay_rejected():
+    """Two txs, same nullifier → second rejected."""
+    w = FeeWindow()
+    mp = MempoolWithWindowAndNullifiers(w)
+    assert mp.admit("tx1", 5_000_000, [1000], nullifier="nf_1") == "premium"
+    assert mp.admit("tx2", 5_000_000, [1000], nullifier="nf_1") == "reject"
+    assert mp.premium_count == 1, "only first tx should be admitted"
+
+
+def test_nullifier_different_allowed():
+    """Different nullifiers → both admitted."""
+    w = FeeWindow()
+    mp = MempoolWithWindowAndNullifiers(w)
+    assert mp.admit("tx1", 5_000_000, [1000], nullifier="nf_a") == "premium"
+    assert mp.admit("tx2", 5_000_000, [1000], nullifier="nf_b") == "premium"
+    assert mp.premium_count == 2
+
+
+def test_nullifier_replay_preserves_fcfs():
+    """I3 + nullifier: admitted txs stay, replays rejected, FCFS preserved."""
+    w = FeeWindow()
+    mp = MempoolWithWindowAndNullifiers(w)
+    mp.admit("p1", 5_000_000, [5000], nullifier="nf_p1")
+    mp.admit("g1", 1_300_000, [100], nullifier="nf_g1")
+    assert mp.admit("p1_dup", 5_000_000, [5000], nullifier="nf_p1") == "reject"
+    selected = mp.select_for_block(10)
+    assert selected[0] == "p1" and selected[1] == "g1", "FCFS preserved"
+
+
+# ============================================================================
+# Phase 2b: Wallet construct_fee / derive_cfs Tests
+# ============================================================================
+
+
+def test_wallet_read_flags_hold():
+    """cm=0x00 (hold) → identity CFs."""
+    flags = FEE_WINDOW_ACTIVE | (0x00 << 4) | (0x00 << 12)
+    cf, wf = wallet_read_flags(flags)
+    assert cf.premium == SCALE and wf.premium == SCALE
+
+
+def test_wallet_read_flags_increase():
+    """cm=0x01 (+10%) → CF above SCALE."""
+    flags = FEE_WINDOW_ACTIVE | (0x01 << 4) | (0x00 << 12)
+    cf, wf = wallet_read_flags(flags)
+    assert cf.premium == int(SCALE * 1.10), f"expected +10%, got {cf.premium}"
+    assert wf.premium == SCALE, "WASM must be hold"
+
+
+def test_wallet_read_flags_decrease():
+    """cm=0x02 (-10%) → CF below SCALE."""
+    flags = FEE_WINDOW_ACTIVE | (0x02 << 4) | (0x00 << 12)
+    cf, wf = wallet_read_flags(flags)
+    assert cf.premium == int(SCALE * 0.90), f"expected -10%, got {cf.premium}"
+
+
+def test_wallet_read_flags_legacy():
+    """Inactive flags → identity CFs (I2 backward compat)."""
+    cf, wf = wallet_read_flags(0x00)
+    assert cf.premium == SCALE and wf.premium == SCALE
+
+
+def test_wallet_construct_fee_from_flags():
+    """Full wallet pipeline: flags → derive_cfs → compute_fee."""
+    # +10% circuit, hold WASM
+    flags = FEE_WINDOW_ACTIVE | (0x01 << 4) | (0x00 << 12)
+    fee = wallet_construct_fee([1000], 1, flags)
+    expected = (1 * BASELINE_STORAGE * SCALE) // SCALE + (1000 * int(SCALE * 1.10)) // SCALE
+    assert fee == expected, f"wallet fee mismatch: {fee} vs {expected}"
+
+
+# ============================================================================
+# Phase 2c: BlockCharge Tests
+# ============================================================================
+
+
+def test_block_charge_baseline():
+    """Single call → CHARGE_PER_CALL."""
+    c = BlockCharge.declare_charge(1)
+    assert c.get() == 400_000_000
+
+
+def test_block_charge_scales():
+    """5 calls → 5 × CHARGE_PER_CALL."""
+    c = BlockCharge.declare_charge(5)
+    assert c.get() == 2_000_000_000
+
+
+def test_block_charge_accumulation():
+    """Accumulate declared charges in select_for_block pattern."""
+    charges = [BlockCharge.declare_charge(n) for n in [1, 3, 2]]
+    total = sum(c.get() for c in charges)
+    assert total == 6 * CHARGE_PER_CALL
+
+
+# ============================================================================
+# Phase 3: Dynamic Feedback Loop Tests
+# ============================================================================
+
+
+def test_deviation_within_tolerance():
+    """Deviation within 50% tolerance → within_tolerance is True."""
+    d = CostDeviation("c1", "f1", 1000, 1400, 0)
+    assert d.within_tolerance(0.50), "40% above declared must be within 50% tolerance"
+
+
+def test_deviation_above_tolerance():
+    """Deviation above 50% tolerance → within_tolerance is False."""
+    d = CostDeviation("c1", "f1", 1000, 1600, 0)
+    assert not d.within_tolerance(0.50), "60% above declared must exceed 50% tolerance"
+
+
+def test_risk_escalation_one_window():
+    """One window above tolerance → risk factor rises to 1.25×."""
+    t = ContractRiskTracker()
+    t.record("c1", "f1", 1000, 2000, 0)  # 100% above → above tolerance
+    assert t.evaluate_window("c1") == 125_000  # 1.25×
+
+
+def test_risk_escalation_two_windows():
+    """Two windows above tolerance → risk factor rises to 1.5×."""
+    t = ContractRiskTracker()
+    t.record("c1", "f1", 1000, 2000, 0)  # window 0: above tolerance
+    t.record("c1", "f1", 1000, 2000, 1)  # window 1: above tolerance
+    assert t.evaluate_window("c1") == 150_000  # 1.5×
+
+
+def test_risk_escalation_capped():
+    """Risk factor capped at 2.0× (unknown)."""
+    t = ContractRiskTracker()
+    for w in range(5):
+        t.record("c1", "f1", 1000, 2000, w)
+    assert t.evaluate_window("c1") == 200_000  # capped at 2.0×
+
+
+def test_feedback_loop_end_to_end():
+    """Full feedback loop: accurate declaration stays at 1.0×,
+    persistent under-declaration escalates to 2.0×."""
+    t = ContractRiskTracker()
+    # Contract A: always accurate → stays at baseline
+    for w in range(4):
+        t.record("accurate", "f", 1000, 1100, w)  # 10% above, within 50% tolerance
+    assert t.evaluate_window("accurate") == 100_000
+    # Contract B: persistent under-declaration → escalates
+    for w in range(4):
+        t.record("under", "f", 1000, 2000, w)  # 100% above, exceeds tolerance
+    assert t.evaluate_window("under") == 200_000  # capped at 2.0×
+
+
 def test_circuit_difficulty_from_declared_opcodes():
     """Miner verification: circuit_difficulty(declared_opcodes, declared_k) == declared_circuit_difficulty.
 
@@ -1556,6 +1857,27 @@ if __name__ == "__main__":
         test_build_fee_collect_params_sum,
         test_build_fee_collect_params_fallback_on_decrypt_failure,
         test_g2_g6_end_to_end,
+        # Phase 2a: Nullifier replay
+        test_nullifier_replay_rejected,
+        test_nullifier_different_allowed,
+        test_nullifier_replay_preserves_fcfs,
+        # Phase 2b: Wallet construct_fee / derive_cfs
+        test_wallet_read_flags_hold,
+        test_wallet_read_flags_increase,
+        test_wallet_read_flags_decrease,
+        test_wallet_read_flags_legacy,
+        test_wallet_construct_fee_from_flags,
+        # Phase 2c: BlockCharge
+        test_block_charge_baseline,
+        test_block_charge_scales,
+        test_block_charge_accumulation,
+        # Phase 3: Dynamic Feedback Loop
+        test_deviation_within_tolerance,
+        test_deviation_above_tolerance,
+        test_risk_escalation_one_window,
+        test_risk_escalation_two_windows,
+        test_risk_escalation_capped,
+        test_feedback_loop_end_to_end,
         # Miner verification — manifest [[circuits]].opcodes
         test_circuit_difficulty_from_declared_opcodes,
     ]
