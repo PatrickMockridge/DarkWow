@@ -405,6 +405,7 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fee_window::FeeWindowFlags;
     use dwow_sdk::blockchain::{BlockReward, BlockTarget, BlockVersion, MoneroBlockHeight};
 
     /// A block with correct defaults for empty transactions.
@@ -428,7 +429,7 @@ mod tests {
                 anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
                 pow_source: PowSource::Native,
             },
             transactions: vec![],
@@ -766,7 +767,7 @@ mod tests {
                 anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
                 pow_source: PowSource::Native,
             },
         }

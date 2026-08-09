@@ -49,7 +49,6 @@ use std::sync::{Arc, Mutex,
 };
 
 use dwow_chain::{CChainState, FinalityConfig, PoWConfig};
-use dwow_serial::Encodable;
 use dwow_core::zk::Proof;
 use dwow_core::Result;
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, FeeAmount};

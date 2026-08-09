@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Barb vocabulary — the 22 observable actions (type-system.md §1.1).
+//! Barb vocabulary — the 24 observable actions (type-system.md §1.1).
 //!
 //! This module is unconditionally compiled: barbs are type-system interior
 //! vocabulary (a 1:1 mirror of the Lean4 `Barb` inductive), not networking
@@ -51,6 +51,9 @@ pub enum BarbId {
     Derive,
     Discover,
     Mine,
+    // Fee signalling barbs (type-system.md §1.1 rows 23-24)
+    FeeWindowAdvertise,
+    FeeWindowDiscover,
     // Concurrency barbs (§1.1 rows 15-22)
     Concurrent,
     Merge,

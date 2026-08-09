@@ -32,6 +32,7 @@ use std::sync::Arc;
 
 use std::str::FromStr;
 
+use dwow_chain::fee_window::FeeWindowFlags;
 use dwow_chain::{
     monero::{
         fixed_array::FixedByteArray, monero_block_deserialize, utils::create_merkle_proof,
@@ -102,7 +103,7 @@ fn build_merge_mined_header(
         .expect("SEED_HASH is 32 bytes");
 
     BlockHeader {
-        fee_window_flags: 0,
+        fee_window_flags: FeeWindowFlags::default(),
         version: BlockVersion::CURRENT,
         previous: prev_hash,
         merkle_root,
@@ -120,72 +121,6 @@ fn build_merge_mined_header(
         anchor_monero_hash: [0u8; 32],
         finality_flags: 0,
         pow_source: PowSource::Monero(pow_data),
-    }
-}
-
-/// Build a synthetic coinbase transaction (PoWRewardV1 call data without ZK
-/// proofs — matches the pattern in `fee_collect_pipeline::mine_block`).
-#[deprecated = "use build_linear_coinbase + accept_block for production-path testing. \
-    This function uses fake AEAD notes (ciphertext: vec![0u8; 32]), fake value \
-    commitments (Point::identity()), and fake nullifiers ([1u8; 32])."]
-fn build_coinbase_tx(
-    recipient: &crate::accounts::MiningRecipient,
-    reward: u64,
-) -> Transaction {
-    Transaction {
-        version: BlockVersion::CURRENT,
-        inputs: vec![],
-        outputs: vec![],
-        contract_calls: vec![ContractCall {
-            contract_id: *NATIVE_TOKEN_CONTRACT_ID,
-            data: {
-                let mut d = vec![0x05u8]; // PoWRewardV1 selector
-                let params = dwow_native_token_contract::model::PoWRewardParamsV1 {
-                    input: dwow_native_token_contract::model::ClearInput {
-                        value: reward,
-                        token_id: pallas::Base::zero(),
-                        value_blind: dwow_sdk::crypto::Blind(pallas::Scalar::zero()),
-                        token_blind: dwow_sdk::crypto::BaseBlind::ZERO,
-                        signature_public: recipient.public(),
-                    },
-                    output: dwow_native_token_contract::model::Output {
-                        value_commit: pallas::Point::identity(),
-                        token_commit: pallas::Base::zero(),
-                        coin: dwow_native_token_contract::model::Coin::from_attributes(
-                            &recipient.public(),
-                            reward,
-                            dwow_native_token_contract::model::DRKW_TOKEN_ID,
-                            dwow_sdk::crypto::FuncId::none(),
-                            pallas::Base::zero(),
-                            dwow_sdk::crypto::Blind(pallas::Base::zero()),
-                        ),
-                        nullifier: dwow_native_token_contract::model::Nullifier::from_bytes(
-                            [1u8; 32],
-                        )
-                        .unwrap(),
-                        note: dwow_sdk::crypto::note::AeadEncryptedNote {
-                            ciphertext: vec![0u8; 32],
-                            ephem_public: recipient.public(),
-                        },
-                    },
-                    nullifier: dwow_native_token_contract::model::Nullifier::from_bytes(
-                        [1u8; 32],
-                    )
-                    .unwrap(),
-                    expected_cumulative_supply: 0,
-                    old_cumulative_commit: pallas::Point::identity(),
-                    old_cumulative_blind: pallas::Scalar::zero(),
-                    new_cumulative_commit: pallas::Point::identity(),
-                    tx_binding: pallas::Base::zero(),
-                    tx_nonce: pallas::Base::zero(),
-                };
-                d.extend(dwow_serial::serialize(&params));
-                d
-            },
-        }],
-        lock_time: 0,
-        nullifiers: vec![],
-        witness: vec![],
     }
 }
 

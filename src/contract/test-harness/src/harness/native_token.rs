@@ -25,25 +25,21 @@
 //!
 //! Provides isolated testing for NativeToken contract (consensus token).
 
-use rand::SeedableRng;
-
 use dwow_core::{
-    zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
+    zk::{ProvingKey, ZkCircuit},
     zkas::ZkBinary,
 };
 use dwow_sdk::{
     blockchain::FeeAmount,
-    crypto::{MerkleNode, PublicKey, SecretKey, constants::DRK_POSEIDON_DOMAIN_TX_BINDING, poseidon_hash},
+    crypto::{MerkleNode, PublicKey, SecretKey, poseidon_hash},
     crypto::pasta_prelude::Group,
     pasta::pallas,
 };
-use dwow_serial::Encodable;
-
 use dwow_native_token_contract::{
     client::{
         pow_reward::PoWRewardCallBuilder,
         burn::BurnCallBuilder,
-        fee::{FeeV2CallBuilder, FeeV2CallInput, FeeV2CallOutput, fee_to_base},
+        fee::{FeeV2CallBuilder, FeeV2CallInput, FeeV2CallOutput},
         fee_threshold::create_fee_threshold_proof,
     },
     model::{FeeParamsV2, Output, fee::ThresholdTxBinding},
@@ -324,7 +320,7 @@ impl NativeTokenHarness {
     ) -> Result<SpendResult, Box<dyn std::error::Error>> {
         use dwow_native_token_contract::client::transfer::TransferCallBuilder;
         use dwow_native_token_contract::model::{CoinAttributes, InputWitness, SpendParamsV1};
-        use dwow_sdk::crypto::{Blind, TokenId, FuncId, MerkleNode};
+        use dwow_sdk::crypto::{TokenId, FuncId, MerkleNode};
         use rand::rngs::OsRng;
 
         let cb = dwow_sdk::crypto::Blind(coin_blind);

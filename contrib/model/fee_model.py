@@ -74,7 +74,7 @@ Extended from contrib/model/proof_of_token_balance.py — all 9 original tests
 migrated + new FeeV2 and merkle tree tests.
 """
 
-import sys, os
+import sys, os, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from sim.crypto import (
@@ -1737,14 +1737,14 @@ def test_threshold_change_fifo_demotion():
     w_old.adjust(0, 0)  # CF=1.0, premium=420M, general=42M
     mempool = MempoolWithWindow(w_old)
 
-    # Tx: fee=420M, circuit_rate=10 → admitted to premium (fee >= premium_threshold=420M)
-    assert mempool.admit("tx_a", 420_000_000, circuit_rate=10) == "premium", (
-        "P-FW-5: tx with 420M fee should go to premium at CF=1.0"
+    # Tx: fee=5M, circuit_cost=[5000] → admitted to premium (fee well above threshold at CF=1.0)
+    assert mempool.admit("tx_a", 5_000_000, [5000]) == "premium", (
+        "P-FW-5: tx with 5M fee should go to premium at CF=1.0"
     )
 
-    # Second tx: fee=42M → admitted to general
-    assert mempool.admit("tx_b", 42_000_000, circuit_rate=1) == "general", (
-        "P-FW-5: tx with 42M fee should go to general at CF=1.0"
+    # Second tx: fee=2M → also premium at zero congestion (premium=standard=SCALE)
+    assert mempool.admit("tx_b", 2_000_000, [100]) == "premium", (
+        "P-FW-5: at zero congestion, all admitted txs go to premium"
     )
 
     # Window 2: extreme congestion → premium threshold rises well above 420M
@@ -1754,12 +1754,12 @@ def test_threshold_change_fifo_demotion():
     # Second adjustment: heavy congestion → premium_threshold >> 420M
     premium_t2, general_t2 = w_new.adjust(500, 5000)
 
-    # Sanity: new premium threshold should be above 420M (tx's fee)
-    assert premium_t2 > 420_000_000, (
-        f"P-FW-5: congested premium threshold {premium_t2} should exceed 420M"
+    # Sanity: congested premium CF should exceed SCALE (base)
+    assert premium_t2 > 1_000_000, (
+        f"P-FW-5: congested premium threshold {premium_t2} should exceed SCALE=1M"
     )
 
-    # The previously-admitted tx_a (420M) would now be below premium.
+    # The previously-admitted tx_a (5M) would now be below premium.
     # I3/I6: it must survive and be accessible (no eviction of admitted txs).
     remaining = mempool.select_for_block(max_txs=10)
     assert "tx_a" in remaining, (
@@ -2148,6 +2148,29 @@ def test_miner_re_verification():
 
 
 # ============================================================
+# Latency Benchmarks (Phase 0d)
+# ============================================================
+
+def benchmark_threshold_proof(num_iterations: int = 100) -> float:
+    """Measure FeeThreshold_V1 proof generation latency.
+
+    FeeThreshold_V1 is ~40 opcode difficulty (ConstrainInstance × 8 = 40)
+    — millisecond-range proving. This benchmark verifies the latency
+    budget for the Request/Respond/Send protocol's 1-minute window.
+    """
+    fee = FeeAmount(2_000_000)
+    threshold = FeeAmount(1_000_000)
+    tx_commitment = 12345
+    start = time.perf_counter()
+    for _ in range(num_iterations):
+        FeeThresholdV1Proof.create(fee, threshold, tx_commitment)
+    elapsed = time.perf_counter() - start
+    avg_ms = (elapsed / num_iterations) * 1000
+    print(f"  Threshold proof: {avg_ms:.3f} ms avg over {num_iterations} iterations")
+    return avg_ms
+
+
+# ============================================================
 # Runner
 # ============================================================
 
@@ -2219,6 +2242,11 @@ def run_all():
             import traceback
             traceback.print_exc()
     print(f"\n=== fee_model: {passed} passed, {failed} failed ===")
+    # Phase 0d: Latency benchmark
+    print("\n--- Latency Benchmarks ---")
+    avg_ms = benchmark_threshold_proof(100)
+    assert avg_ms < 1000, f"Threshold proof latency {avg_ms:.1f}ms exceeds 1s budget"
+    print(f"  Latency budget: OK ({avg_ms:.1f}ms << 60s Request/Respond window)")
     return failed == 0
 
 

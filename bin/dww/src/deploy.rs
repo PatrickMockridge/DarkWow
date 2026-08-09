@@ -25,6 +25,7 @@
 //!
 //! This module handles smart contract deployment using the Deployooor contract.
 
+use dwow_chain::fee_window::FeeWindowFlags;
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction},
 };
@@ -39,10 +40,6 @@ use rand::rngs::OsRng;
 use crate::{scan::ScanCache, Dww};
 use crate::contract_imports::deployooor::DeployCallBuilder;
 use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
-
-/// Default network fee in DRKW
-#[allow(dead_code)]
-const DEFAULT_FEE: u64 = 42_000_000;
 
 impl Dww {
     /// Create a contract deployment transaction using Deployooor.
@@ -97,7 +94,7 @@ impl Dww {
         rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
         let tx = crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, &self.account_mgr, deploy_leaf, None, None, seed,
-            0, /* fee_window_flags */
+            &[], 0, FeeWindowFlags::default(),
         )?;
 
 

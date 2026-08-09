@@ -28,6 +28,7 @@ use dwow_core::{
     blockchain::HeaderHash,
 };
 use crate::wallet_error::Result;
+use dwow_chain::fee_window::FeeWindowFlags;
 use dwow_chain::CoinCommitment;
 use std::collections::BTreeMap;
 
@@ -1394,7 +1395,7 @@ mod tests {
         // ── Build minimal Block with PoWRewardV1 contract call ──────
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
-                fee_window_flags: 0,
+                fee_window_flags: FeeWindowFlags::default(),
                 version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
@@ -1556,7 +1557,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
-                fee_window_flags: 0,
+                fee_window_flags: FeeWindowFlags::default(),
                 pow_source: dwow_chain::PowSource::Native,
             },
             transactions: vec![tx],
@@ -1649,7 +1650,7 @@ produces = [{ name = "thing" }]
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
-                fee_window_flags: 0,
+                fee_window_flags: FeeWindowFlags::default(),
                 pow_source: dwow_chain::PowSource::Native,
             },
             transactions: vec![tx],
@@ -1730,7 +1731,7 @@ required_barbs = ["Spend","Mine"]
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
-                fee_window_flags: 0,
+                fee_window_flags: FeeWindowFlags::default(),
                 pow_source: dwow_chain::PowSource::Native,
             },
             transactions: vec![tx],
@@ -1850,7 +1851,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
-                fee_window_flags: 0,
+                fee_window_flags: FeeWindowFlags::default(),
                 pow_source: dwow_chain::PowSource::Native,
             },
             transactions: vec![deploy_tx],
@@ -1921,7 +1922,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0,
-                fee_window_flags: 0,
+                fee_window_flags: FeeWindowFlags::default(),
                 pow_source: dwow_chain::PowSource::Native,
             },
             transactions: vec![call_tx],
@@ -2155,7 +2156,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // ── Block with 2 transactions ─────────────────────────────────
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
-                    fee_window_flags: 0,
+                    fee_window_flags: FeeWindowFlags::default(),
                 version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
@@ -2259,7 +2260,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
-                fee_window_flags: 0,
+                fee_window_flags: FeeWindowFlags::default(),
                 version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
@@ -2361,7 +2362,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
-                fee_window_flags: 0,
+                fee_window_flags: FeeWindowFlags::default(),
                 version: BlockVersion::CURRENT, previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
                 timestamp: BlockTimestamp::new(0), target: dwow_sdk::blockchain::BlockTarget::MAX, nonce: 0,
@@ -2503,7 +2504,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         // ═══════════════════════════════════════════════════════════════
         let block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
-                    fee_window_flags: 0,
+                    fee_window_flags: FeeWindowFlags::default(),
                 version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),

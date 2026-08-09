@@ -47,6 +47,7 @@
 
 use std::sync::Arc;
 
+use dwow_chain::fee_window::FeeWindowFlags;
 use dwow_chain::{ContractCall, Transaction};
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, FeeAmount, MoneroBlockHeight, SupplyAmount};
 use dwow_sdk::crypto::{
@@ -185,7 +186,7 @@ fn test_wallet_integration() {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             pow_source: dwow_chain::PowSource::Native,
         };
 
@@ -268,7 +269,7 @@ fn test_wallet_integration() {
         ) -> dwow_chain::Block {
             dwow_chain::Block {
                 header: dwow_chain::BlockHeader {
-                    fee_window_flags: 0,
+                    fee_window_flags: FeeWindowFlags::default(),
                     version: BlockVersion::CURRENT,
                     previous: blake3::Hash::from_bytes([0u8; 32]),
                     merkle_root: blake3::Hash::from_bytes([0u8; 32]),
@@ -575,7 +576,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
 
         let synthetic_block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
-                fee_window_flags: 0,
+                fee_window_flags: FeeWindowFlags::default(),
                 version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
@@ -770,7 +771,7 @@ required_barbs = ["Spend","Mine"]
 
         let uncovered_block = dwow_chain::Block {
             header: dwow_chain::BlockHeader {
-                fee_window_flags: 0,
+                fee_window_flags: FeeWindowFlags::default(),
                 version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
@@ -1029,7 +1030,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate","Pro
 
         let synthetic_block = Block {
             header: BlockHeader {
-                fee_window_flags: 0,
+                fee_window_flags: FeeWindowFlags::default(),
                 version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
@@ -1137,7 +1138,7 @@ required_barbs = ["Spend","Mine"]
 
         let uncovered_block = Block {
             header: BlockHeader {
-                fee_window_flags: 0,
+                fee_window_flags: FeeWindowFlags::default(),
                 version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
@@ -1301,7 +1302,7 @@ fn test_wallet_coinbase_scan_only() {
         let prev_hash = har.chain_state.hash_block_with_cached_vm(&prev).expect("hash failed");
 
         let header_2 = BlockHeader {
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             version: BlockVersion::CURRENT,
             previous: prev_hash,
             merkle_root: compute_merkle_root(&[coinbase_tx_2.clone()]),
@@ -1741,7 +1742,7 @@ required_barbs = ["Spend","Mine"]
         // ================================================================
         let synthetic_block = Block {
             header: BlockHeader {
-                fee_window_flags: 0,
+                fee_window_flags: FeeWindowFlags::default(),
                 version: BlockVersion::CURRENT,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
                 merkle_root: blake3::Hash::from_bytes([0u8; 32]),
@@ -2098,7 +2099,7 @@ fn test_canonical_call_failure_rejects_block() {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
         };
 

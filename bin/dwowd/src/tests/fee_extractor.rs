@@ -294,7 +294,7 @@ fn test_fee_extractor_real_feev2_success_path() -> std::result::Result<(), Box<d
     dwow_native_token_contract::enable_deterministic_zk();
 
     smol::block_on(async {
-        let mut chain = HeavyweightPipeline::new().await?;
+        let chain = HeavyweightPipeline::new().await?;
         chain.init_genesis().await?;
 
         let native_harness = NativeTokenHarness::spawn();

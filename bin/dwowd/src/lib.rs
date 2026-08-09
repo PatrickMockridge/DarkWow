@@ -45,6 +45,7 @@ use dwow_core::{
     zkas::ZkBinary,
     Error, Result,
 };
+use dwow_chain::fee_window::FeeWindowFlags;
 use dwow_chain::monero::JobId;
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, MoneroBlockHeight};
 use dwow_sdk::crypto::keypair::Network;
@@ -648,7 +649,7 @@ async fn init_genesis(
         anchor_monero_height: MoneroBlockHeight::new(0),
         anchor_monero_hash: [0u8; 32],
         finality_flags: 0,
-        fee_window_flags: 0,
+        fee_window_flags: FeeWindowFlags::default(),
         pow_source: PowSource::Native,
     };
 
@@ -1376,7 +1377,7 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
         // At height ≡ 0 (mod 20), adjust thresholds based on mempool congestion
         // and encode the signal in the block header (fee-spec.md §12.10).
         #[cfg(feature = "fee-window")]
-        let fee_window_flags: u16 = {
+        let fee_window_flags: FeeWindowFlags = {
             use dwow_sdk::blockchain::FeeWindowId;
             if FeeWindowId::is_window_boundary(height) {
                 let premium_pending = node.mempool.as_ref()
@@ -1386,25 +1387,27 @@ async fn miner_task(node: DwowNodePtr, _db_path: std::path::PathBuf) -> Result<(
                     .map(|mp| mp.standard_queue_len())
                     .unwrap_or(0) as u64;
                 if let Some(ref fw) = chain_state.fee_window {
-                    let (new_premium, new_general) =
-                        fw.adjust(premium_pending, standard_pending);
+                    let circuit_cf = fw.adjust_circuit(premium_pending, standard_pending);
+                    let wasm_cf = fw.adjust_wasm(premium_pending, standard_pending);
                     let flags = fw.encode_flags();
                     if let Some(ref mp) = node.mempool {
-                        mp.update_thresholds(new_premium, new_general);
+                        mp.update_thresholds(
+                            circuit_cf.premium as u64, circuit_cf.standard as u64,
+                        );
                     }
                     info!(target: "dwowd::miner_task",
-                        "Fee window boundary at height {}: premium={}, general={}, flags=0x{:02x}",
-                        height, new_premium, new_general, flags.get());
-                    flags.get() as u16
+                        "Fee window boundary at height {}: circuit_premium={}, circuit_standard={}, wasm_premium={}, wasm_standard={}, flags=0x{:04x}",
+                        height, circuit_cf.premium, circuit_cf.standard, wasm_cf.premium, wasm_cf.standard, flags.get());
+                    flags
                 } else {
-                    0
+                    FeeWindowFlags::default()
                 }
             } else {
-                0
+                FeeWindowFlags::default()
             }
         };
         #[cfg(not(feature = "fee-window"))]
-        let _fee_window_flags: u16 = 0;
+        let _fee_window_flags: FeeWindowFlags = FeeWindowFlags::default();
 
         // Memory diagnostics — log every 5 blocks to catch leaks early.
         // Reads /proc/self/status for VmRSS (no allocator dependency).

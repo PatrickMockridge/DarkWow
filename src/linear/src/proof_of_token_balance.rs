@@ -302,6 +302,7 @@ mod tests {
     use super::*;
     use dwow_sdk::blockchain::{BlockReward, BlockTarget, MoneroBlockHeight};
     use crate::{CoinCommitment, CoinbaseTransaction, Nullifier, PedersenCoordinate, TokenCommitment, Transaction, ZkPublicInputs};
+    use crate::fee_window::FeeWindowFlags;
 
     fn make_header(height: u64) -> crate::BlockHeader {
         crate::BlockHeader {
@@ -321,8 +322,7 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            #[cfg(feature = "fee-window")]
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             pow_source: crate::PowSource::Native,
         }
     }

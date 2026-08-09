@@ -27,28 +27,71 @@ from collections import deque
 
 SCALE: int = 1_000_000          # fixed-point scale for congestion factors
 WINDOW_SIZE: int = 20           # blocks per fee window
-BASE_UNIT: int = 42_000_000     # base fee unit in native token base units
 
-# Circuit rate table [1:1] manifest [[circuits]].rate
-CIRCUIT_RATES: dict = {
-    # Standard circuits (rate 1)
-    "TransferV2": 1, "SpendV2": 1, "BurnV2": 1, "FeeV2": 1,
-    "FeeCollectV2": 1, "PoWRewardV2": 1,
-    "CreateSwapV2": 1, "AcceptSwapV2": 1, "CancelSwapV2": 1,
-    "ExecuteSwapV2": 1, "ExecuteSwapFeeV2": 1, "ExecuteSwapSlippageV2": 1,
-
-    # Multi-party circuits (rate 2)
-    "VerifyCapabilityV2": 2, "CreateGroupV2": 2, "SignV2": 2, "FinalizeV2": 2,
-
-    # Oracle/Bridge circuits (rate 3)
-    "PushValueV2": 3, "AttestValueV2": 3, "DepositV2": 3, "WithdrawV2": 3,
-
-    # Heavy proof circuits (rate 5)
-    "LiquidateV2": 5, "ExecuteSwapV2_complex": 5, "MintStableV2": 5,
-
-    # Premium compute circuits (rate 10)
-    "BaseDivV2": 10, "PoseidonRecursiveV2": 10, "AggregateV2": 10,
+# Per-opcode difficulty factors — consensus constants [1:1] Rust opcode_cost.rs
+# Each opcode difficulty is proportional to its ZK constraint system complexity
+# (gate_count × column_count). An average circuit (~20 mixed ops) sums to ~1000.
+OPCODE_DIFFICULTY: dict = {
+    # ECC ops (10 advice columns, complete addition formula)
+    "EcAdd": 1000, "EcMul": 1000, "EcMulBase": 1000, "EcMulShort": 1000,
+    "EcMulVarBase": 1000, "EcGetX": 1000, "EcGetY": 1000,
+    # Sinsemilla/Merkle (generator table + 5 advice columns)
+    "MerkleRoot": 800, "SparseMerkleRoot": 800, "SetMembership": 800,
+    # Poseidon (~12 partial + ~5 full rounds)
+    "PoseidonHash": 500,
+    # Heavy arithmetic (BaseDiv: ~255 gates for Fermat inversion)
+    "BaseDiv": 250,
+    "RangeCheck": 100, "LessThanStrict": 100, "LessThanLoose": 100,
+    "LessThanOrEqual": 100, "BaseLtStrict": 100,
+    # Light arithmetic
+    "BaseMul": 50,
+    "BaseAdd": 20, "BaseSub": 20, "WitnessBase": 20,
+    # Selection
+    "CondSelect": 40, "ZeroCondSelect": 40,
+    # Comparison
+    "IsEqualBase": 30, "IsNotEqualBase": 30, "BoolCheck": 30, "NotBase": 30,
+    # Constrain (1 gate, 1 column)
+    "ConstrainEqualBase": 5, "ConstrainEqualPoint": 5, "ConstrainInstance": 5,
+    # Zero cost
+    "Noop": 0, "DebugPrint": 0,
 }
+
+# Approximate circuit difficulties from opcode composition [1:1] Rust circuit_difficulty()
+# Calibrated: average circuit ~1000, complex ~10000, simple ~40
+CIRCUIT_RATES: dict = {
+    "TransferV2": 1000, "SpendV2": 1000, "BurnV2": 1000, "FeeV2": 500,
+    "FeeCollectV2": 500, "PoWRewardV2": 500,
+    "FeeThreshold_V1": 40,
+    "CreateSwapV2": 1000, "AcceptSwapV2": 1000, "CancelSwapV2": 500,
+    "ExecuteSwapV2": 2000, "ExecuteSwapFeeV2": 500, "ExecuteSwapSlippageV2": 500,
+    "VerifyCapabilityV2": 2000, "CreateGroupV2": 2000, "SignV2": 2000, "FinalizeV2": 2000,
+    "PushValueV2": 3000, "AttestValueV2": 3000, "DepositV2": 3000, "WithdrawV2": 3000,
+    "LiquidateV2": 5000, "ExecuteSwapV2_complex": 5000, "MintStableV2": 5000,
+    "BaseDivV2": 10000, "PoseidonRecursiveV2": 10000, "AggregateV2": 10000,
+}
+
+# Per-kB WASM storage rate: 0.01 DRKW at CF=1.0
+BASELINE_STORAGE: int = 1_000_000
+
+
+def circuit_difficulty(opcodes: list) -> int:
+    """Sum of per-opcode difficulty factors. [1:1] Rust circuit_difficulty()."""
+    return sum(OPCODE_DIFFICULTY.get(op, 0) for op in opcodes)
+
+
+def compute_fee(circuit_costs: list, wasm_kb: int,
+                wasm_cf: 'CongestionFactor', circuit_cf: 'CongestionFactor') -> int:
+    """Two-component sum formula. [1:1] Rust compute_fee().
+
+    fee = (wasm_kB × BASELINE_STORAGE × WASM_CF) + (Σ opcode_difficulty × CIRCUIT_CF)
+
+    Always uses premium CF multipliers — this is the admission threshold.
+    Tier classification (premium vs general) is the caller's responsibility.
+    """
+    total_opcode_cost = sum(circuit_costs)
+    wasm_part = (wasm_kb * BASELINE_STORAGE * wasm_cf.premium) // SCALE
+    circuit_part = (total_opcode_cost * circuit_cf.premium) // SCALE
+    return wasm_part + circuit_part
 
 # Congestion sensitivity coefficients [1:1] Rust FeeWindowConfig
 ALPHA_PREMIUM: float = 0.05    # premium congestion sensitivity
@@ -56,8 +99,8 @@ ALPHA_STANDARD: float = 0.01   # standard congestion sensitivity
 
 # Adjustment caps [1:1] Rust FeeWindowConfig
 MAX_ADJUSTMENT: float = 0.10   # ±10% per window
-MIN_PREMIUM: int = 420_000     # floor: 0.0042 DRKW
-MAX_PREMIUM: int = 4_200_000_000  # ceiling: 42 DRKW
+MIN_PREMIUM: int = 420_000         # CF floor: 0.42x (below SCALE during extreme low demand)
+MAX_PREMIUM: int = 4_200_000_000    # CF ceiling: 4200x (hard cap on congestion multiplier)
 HIGH_WATER: float = 0.75       # increase CF above this utilization
 LOW_WATER: float = 0.25        # decrease CF below this utilization
 
@@ -96,12 +139,12 @@ class CongestionFactor:
         return self.standard / SCALE
 
     def premium_threshold(self) -> int:
-        """Premium threshold in native token base units for a rate-10 circuit."""
-        return (self.premium * 10 * BASE_UNIT) // SCALE
+        """Premium CF value. Used by adjust() return for backward compat."""
+        return self.premium
 
     def general_threshold(self) -> int:
-        """General threshold in native token base units for a rate-1 circuit."""
-        return (self.standard * 1 * BASE_UNIT) // SCALE
+        """Standard CF value. Used by adjust() return for backward compat."""
+        return self.standard
 
 
 def compute_congestion_factor(premium_count: int, standard_count: int) -> CongestionFactor:
@@ -148,14 +191,38 @@ class FeeWindowConfig:
 
 
 class FeeWindow:
-    """Per-node fee window state. Tracks congestion and computes thresholds."""
+    """Per-node fee window state. Tracks two independent congestion factors:
+    CIRCUIT_CF (ZK execution) and WASM_CF (WASM deploy)."""
 
     def __init__(self, config: Optional[FeeWindowConfig] = None):
         self.config = config or FeeWindowConfig()
-        self._current_cf = CongestionFactor()
+        # ── CIRCUIT CF ──
+        self._circuit_cf = CongestionFactor()
+        self._prev_circuit_cf: Optional[CongestionFactor] = None
+        # ── WASM CF ──
+        self._wasm_cf = CongestionFactor()
+        self._prev_wasm_cf: Optional[CongestionFactor] = None
+        # Window bookkeeping
         self._window_gas_used: List[int] = []
         self._window_gas_limit: List[int] = []
-        self._previous_cf: Optional[CongestionFactor] = None
+
+    # -- Backward-compat aliases (existing tests use these) --
+
+    @property
+    def _current_cf(self) -> CongestionFactor:
+        return self._circuit_cf
+
+    @_current_cf.setter
+    def _current_cf(self, value: CongestionFactor) -> None:
+        self._circuit_cf = value
+
+    @property
+    def _previous_cf(self) -> Optional[CongestionFactor]:
+        return self._prev_circuit_cf
+
+    @_previous_cf.setter
+    def _previous_cf(self, value: Optional[CongestionFactor]) -> None:
+        self._prev_circuit_cf = value
 
     # -- Window bookkeeping --
 
@@ -174,11 +241,23 @@ class FeeWindow:
 
     @property
     def current_cf(self) -> CongestionFactor:
-        return self._current_cf
+        """Backward compat — circuit CF."""
+        return self._circuit_cf
 
     @property
     def previous_cf(self) -> Optional[CongestionFactor]:
-        return self._previous_cf
+        """Backward compat — previous circuit CF."""
+        return self._prev_circuit_cf
+
+    @property
+    def circuit_cf(self) -> CongestionFactor:
+        """Current circuit execution CF."""
+        return self._circuit_cf
+
+    @property
+    def wasm_cf(self) -> CongestionFactor:
+        """Current WASM deploy CF."""
+        return self._wasm_cf
 
     # -- Congestion factor computation --
 
@@ -188,48 +267,55 @@ class FeeWindow:
 
     # -- Window boundary adjustment --
 
-    def adjust(self, premium_pending: int, standard_pending: int) -> Tuple[int, int]:
-        """Compute new thresholds at window boundary. Returns (premium, general).
-        Applies caps per I3 (FCFS preservation not modelled here — mempool concern)
-        and I7 (±10% per window)."""
-        raw_cf = self.update_congestion(premium_pending, standard_pending)
-
-        # Apply ±10% cap (I7) relative to previous CF
-        if self._previous_cf is not None:
-            prev_premium = self._previous_cf.premium
-            prev_standard = self._previous_cf.standard
-
-            max_premium = int(prev_premium * (1 + self.config.max_adjustment))
-            min_premium = int(prev_premium * (1 - self.config.max_adjustment))
-            max_standard = int(prev_standard * (1 + self.config.max_adjustment))
-            min_standard = int(prev_standard * (1 - self.config.max_adjustment))
-
-            capped_premium = max(min_premium, min(raw_cf.premium, max_premium))
-            capped_standard = max(min_standard, min(raw_cf.standard, max_standard))
+    def _apply_cap(self, raw_cf: CongestionFactor, previous: Optional[CongestionFactor],
+                   premium_pending: int, standard_pending: int) -> CongestionFactor:
+        """Apply ±10% cap and I4 ordering to a raw CF."""
+        if previous is not None and previous.premium > SCALE:
+            max_p = int(previous.premium * (1 + self.config.max_adjustment))
+            min_p = int(previous.premium * (1 - self.config.max_adjustment))
+            max_s = int(previous.standard * (1 + self.config.max_adjustment))
+            min_s = int(previous.standard * (1 - self.config.max_adjustment))
+            capped_premium = max(min_p, min(raw_cf.premium, max_p))
+            capped_standard = max(min_s, min(raw_cf.standard, max_s))
         else:
-            # No previous CF — first adjustment, no cap
             capped_premium = raw_cf.premium
             capped_standard = raw_cf.standard
 
-        # I4: CF_premium > CF_standard when congested
         if capped_premium <= capped_standard and (premium_pending > 0 or standard_pending > 0):
             capped_premium = capped_standard + 1
 
-        # Store for next adjustment — previous CF is the one just computed
-        self._current_cf = CongestionFactor(premium=capped_premium, standard=capped_standard)
-        self._previous_cf = self._current_cf
+        return CongestionFactor(premium=capped_premium, standard=capped_standard)
 
-        # Reset window counters
+    def adjust(self, premium_pending: int, standard_pending: int) -> Tuple[int, int]:
+        """Backward compat — adjust circuit CF at window boundary."""
+        return self.adjust_circuit(premium_pending, standard_pending)
+
+    def adjust_circuit(self, premium_pending: int, standard_pending: int) -> Tuple[int, int]:
+        """Adjust circuit CF at window boundary. Returns (premium, general)."""
+        raw_cf = self.update_congestion(premium_pending, standard_pending)
+        self._circuit_cf = self._apply_cap(raw_cf, self._prev_circuit_cf,
+                                           premium_pending, standard_pending)
+        self._prev_circuit_cf = self._circuit_cf
         self._window_gas_used = []
         self._window_gas_limit = []
+        return (self._circuit_cf.premium_threshold(), self._circuit_cf.general_threshold())
 
-        return (self._current_cf.premium_threshold(), self._current_cf.general_threshold())
+    def adjust_wasm(self, premium_pending: int, standard_pending: int) -> Tuple[int, int]:
+        """Adjust WASM CF at window boundary. Returns (wasm_premium, wasm_general)."""
+        raw_cf = self.update_congestion(premium_pending, standard_pending)
+        self._wasm_cf = self._apply_cap(raw_cf, self._prev_wasm_cf,
+                                         premium_pending, standard_pending)
+        self._prev_wasm_cf = self._wasm_cf
+        return (
+            (self._wasm_cf.premium * BASELINE_STORAGE) // SCALE,
+            (self._wasm_cf.standard * BASELINE_STORAGE) // SCALE,
+        )
 
     # -- BlockHeader signalling [1:1] fee_window_flags --
 
     @staticmethod
     def encode_flags(cf: CongestionFactor, previous: Optional[CongestionFactor] = None) -> int:
-        """Encode CF into fee_window_flags byte."""
+        """Encode CF into fee_window_flags byte (single CF, backward compat)."""
         flags = FEE_WINDOW_ACTIVE
         if previous is not None and previous.premium > 0:
             ratio = cf.premium / previous.premium
@@ -239,6 +325,15 @@ class FeeWindow:
                 flags |= 0x20  # -10%
             # else: hold (0x00 in bits 4:8)
         return flags
+
+    @staticmethod
+    def encode_flags_dual(circuit_cf: CongestionFactor, wasm_cf: CongestionFactor,
+                          prev_circuit: Optional[CongestionFactor] = None,
+                          prev_wasm: Optional[CongestionFactor] = None) -> int:
+        """Encode both CFs into u16. Byte 0 = circuit, Byte 1 = WASM."""
+        circuit_byte = FeeWindow.encode_flags(circuit_cf, prev_circuit)
+        wasm_byte = FeeWindow.encode_flags(wasm_cf, prev_wasm)
+        return (circuit_byte & 0xFF) | ((wasm_byte & 0xFF) << 8)
 
     @staticmethod
     def decode_flags(flags: int, current_premium: int) -> int:
@@ -251,6 +346,17 @@ class FeeWindow:
         elif multiplier_bits == 0x02:
             return int(current_premium * 0.90)
         return current_premium  # hold
+
+    @staticmethod
+    def decode_flags_dual(flags: int) -> Tuple[int, int]:
+        """Decode u16 into (circuit_cm, wasm_cm)."""
+        circuit_cm = (flags & 0xF0) >> 4
+        if circuit_cm > 2:
+            circuit_cm = 0
+        wasm_cm = (flags >> 12) & 0x0F
+        if wasm_cm > 2:
+            wasm_cm = 0
+        return (circuit_cm, wasm_cm)
 
 
 # ============================================================================
@@ -274,20 +380,33 @@ class MempoolWithWindow:
     def standard_count(self) -> int:
         return len(self.general_queue) + len(self.fee_index)
 
-    def admit(self, tx_id: str, fee: int, circuit_rate: int, wasm_kb: int = 1) -> str:
-        """Admit a transaction to the appropriate tier. Returns 'premium', 'general', or 'reject'."""
-        premium_threshold = self.window.current_cf.premium_threshold() * wasm_kb
-        general_threshold = self.window.current_cf.general_threshold() * wasm_kb
+    def admit(self, tx_id: str, fee: int, circuit_costs: list, wasm_kb: int = 1) -> str:
+        """Admit a transaction. Returns 'premium', 'general', or 'reject'.
 
-        if circuit_rate >= 5:
-            if fee >= premium_threshold:
-                self.premium_queue.append((tx_id, fee))
-                return "premium"
-        else:
-            if fee >= general_threshold:
-                self.general_queue.append((tx_id, fee))
-                return "general"
+        Uses two-component formula: fee must cover both WASM storage and circuit execution.
+        Premium tier: fee >= premium CF threshold.
+        General tier: fee >= standard CF threshold.
+        At zero congestion (premium=standard=SCALE), all admitted txs go to premium.
+        """
+        wasm_cf = self.window.wasm_cf
+        circuit_cf = self.window.circuit_cf
 
+        # Premium minimum: uses .premium for both CFs (plan §1.1)
+        premium_min = compute_fee(circuit_costs, wasm_kb, wasm_cf, circuit_cf)
+
+        # Standard minimum: uses .standard for both CFs
+        total_opcode_cost = sum(circuit_costs)
+        standard_min = (
+            (wasm_kb * BASELINE_STORAGE * wasm_cf.standard) // SCALE
+            + (total_opcode_cost * circuit_cf.standard) // SCALE
+        )
+
+        if fee >= premium_min:
+            self.premium_queue.append((tx_id, fee))
+            return "premium"
+        elif fee >= standard_min:
+            self.general_queue.append((tx_id, fee))
+            return "general"
         return "reject"
 
     def select_for_block(self, max_txs: int) -> List[str]:
@@ -322,8 +441,8 @@ def test_initial_window_uses_defaults():
     """Initial window uses SCALE=1.0 CF (no congestion)."""
     w = FeeWindow()
     premium, general = w.adjust(0, 0)
-    assert premium == 420_000_000, f"expected 420_000_000, got {premium}"
-    assert general == 42_000_000, f"expected 42_000_000, got {general}"
+    assert premium == SCALE, f"expected {SCALE} (CF=1.0), got {premium}"
+    assert general == SCALE, f"expected {SCALE} (CF=1.0), got {general}"
 
 
 def test_window_index():
@@ -406,9 +525,9 @@ def test_flags_roundtrip():
 
 
 def test_legacy_flags_no_change():
-    """I2: flags=0 means legacy static fees."""
-    assert FeeWindow.decode_flags(0, 42_000_000) == 42_000_000
-    assert FeeWindow.decode_flags(0, 420_000_000) == 420_000_000
+    """I2: flags=0 means no change (legacy — hold current value)."""
+    assert FeeWindow.decode_flags(0, SCALE) == SCALE
+    assert FeeWindow.decode_flags(0, SCALE * 2) == SCALE * 2
 
 
 def test_fcfs_preservation():
@@ -416,32 +535,33 @@ def test_fcfs_preservation():
     w = FeeWindow()
     mempool = MempoolWithWindow(w)
 
-    # Admit under window 0
-    assert mempool.admit("tx1", 420_000_000, 10) == "premium"
-    assert mempool.admit("tx2", 42_000_000, 1) == "general"
-    assert mempool.premium_count == 1
-    assert mempool.standard_count == 1
+    # Admit under window 0 (CF=1.0, zero congestion → premium=standard)
+    # premium_min for [5000] at CF=1.0: 1_000_000 + 5000 = 1_005_000
+    # premium_min for [100] at CF=1.0: 1_000_000 + 100 = 1_000_100
+    assert mempool.admit("tx1", 5_000_000, [5000]) == "premium"
+    assert mempool.admit("tx2", 2_000_000, [100]) == "premium"
+    assert mempool.premium_count == 2
+    assert mempool.standard_count == 0
 
-    # Window boundary — new window with higher thresholds
+    # Window boundary — congest both CFs to create distinct tiers
     w2 = FeeWindow()
-    w2.adjust(1000, 5000)  # congestion increases thresholds
+    w2.adjust_circuit(1000, 5000)  # circuit CF congested
+    w2.adjust_wasm(1000, 5000)     # WASM CF congested
     mempool.on_window_boundary(w2)
 
     # I3: existing txs preserved (not evicted)
-    assert mempool.premium_count == 1, "I3 violated: premium tx evicted"
-    assert mempool.standard_count == 1, "I3 violated: general tx evicted"
+    assert mempool.premium_count == 2, "I3 violated: premium txs evicted"
 
-    # New arrival at old fee level — rejected under new higher threshold
-    result = mempool.admit("tx3", 42_000_000, 1)
-    assert result == "reject", f"tx below new threshold should be rejected, got {result}"
+    # New arrival: fee between standard_min and premium_min → general tier
+    result = mempool.admit("tx3", 1_300_000, [100])
+    assert result == "general", f"tx below premium threshold should go to general, got {result}"
 
 
 def test_circuit_rate_monotonicity():
-    """I5: higher rate circuits pay higher fees."""
+    """I5: higher circuit difficulty pays higher fees."""
     cf = CongestionFactor(premium=int(SCALE * 1.5), standard=SCALE)
-    # Rate-10 circuit pays premium
+    # Premium CF > standard CF → premium threshold > general threshold
     fee_premium = cf.premium_threshold()
-    # Rate-1 circuit pays general
     fee_standard = cf.general_threshold()
     assert fee_premium > fee_standard, (
         f"I5 violated: premium={fee_premium}, standard={fee_standard}"
@@ -472,25 +592,29 @@ def test_wasm_size_multiplier():
     w.adjust(0, 0)  # CF = 1.0
     mempool = MempoolWithWindow(w)
 
-    # 10 kB WASM deployment with rate-1 circuit
-    # Threshold should be 10x general_threshold
-    general = w.current_cf.general_threshold()
-    assert mempool.admit("deploy1", general * 5, 1, wasm_kb=5) == "general"
-    assert mempool.admit("deploy2", general, 1, wasm_kb=10) == "reject", (
-        "10 kB deploy at base rate should be rejected (need 10x)"
+    # At CF=1.0: wasm_kb × 1_000_000 per kB
+    # 5 kB deploy with circuit_cost=[1000]: premium_min = 5_000_000 + 1000 = 5_001_000
+    assert mempool.admit("deploy1", 5_001_000, [1000], wasm_kb=5) == "premium"
+    # 10 kB deploy: premium_min = 10_000_000 + 1000 = 10_001_000
+    # 5_001_000 < 10_001_000 → reject
+    assert mempool.admit("deploy2", 5_001_000, [1000], wasm_kb=10) == "reject", (
+        "10 kB deploy needs higher fee (wasm_kb multiplier)"
     )
 
 
 def test_premium_fcfs_before_general():
     """Premium queue drains FCFS before general queue."""
     w = FeeWindow()
+    # Congest both CFs so premium > standard, creating distinct tiers
+    w.adjust_circuit(500, 5000)  # circuit CF congested
+    w.adjust_wasm(500, 5000)     # WASM CF congested
     mempool = MempoolWithWindow(w)
 
-    # Admit interleaved
-    mempool.admit("p1", 420_000_000, 10)
-    mempool.admit("g1", 42_000_000, 1)
-    mempool.admit("p2", 420_000_000, 10)
-    mempool.admit("g2", 42_000_000, 1)
+    # Admit interleaved: premiums with high fee, generals with moderate fee
+    mempool.admit("p1", 5_000_000, [5000])      # well above premium_min → premium
+    mempool.admit("g1", 1_300_000, [100])       # between std_min and prem_min → general
+    mempool.admit("p2", 5_000_000, [5000])      # premium
+    mempool.admit("g2", 1_300_000, [100])       # general
 
     selected = mempool.select_for_block(10)
     # Premium FCFS first
@@ -577,14 +701,14 @@ def test_both_cfs_simultaneously_congested():
         f"P-FW-2 I4 violated: premium_cf={cf.premium} <= standard_cf={cf.standard}"
     )
 
-    # Thresholds should both exceed base values
+    # Thresholds (CF values) should both exceed SCALE (base)
     premium_t = cf.premium_threshold()
     general_t = cf.general_threshold()
-    assert premium_t > 420_000_000, (
-        f"P-FW-2: premium threshold {premium_t} not above base 420M"
+    assert premium_t > SCALE, (
+        f"P-FW-2: premium threshold {premium_t} not above SCALE={SCALE}"
     )
-    assert general_t > 42_000_000, (
-        f"P-FW-2: general threshold {general_t} not above base 42M"
+    assert general_t > SCALE, (
+        f"P-FW-2: general threshold {general_t} not above SCALE={SCALE}"
     )
 
     # Verify log-scaling: different congestion levels produce different CFs
@@ -606,7 +730,7 @@ def test_malicious_flag_injection():
 
     Pins Rust: L1-FW-3.
     """
-    base_premium = 420_000_000
+    base_premium = SCALE
 
     # cm=0xFF (invalid, beyond defined range) → hold
     assert FeeWindow.decode_flags(0xFF | FEE_WINDOW_ACTIVE, base_premium) == base_premium, (
@@ -661,7 +785,7 @@ def test_decode_equivalence():
 
     Pins Rust: L1-FW-1.
     """
-    base_premium = 420_000_000
+    base_premium = SCALE
 
     # +10% (cm=0x01)
     up = FeeWindow.decode_flags(0x11, base_premium)

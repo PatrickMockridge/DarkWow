@@ -41,6 +41,7 @@ use dwow_core::{
     concurrency::{Publisher, StoppableTaskPtr},
 };
 
+use dwow_chain::fee_window::FeeWindowFlags;
 use dwow_chain::PowSource;
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTimestamp, BlockVersion, MoneroBlockHeight};
 
@@ -266,7 +267,7 @@ impl DwowNode {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
 
         pow_source: PowSource::Native,
 
@@ -489,7 +490,7 @@ impl DwowNode {
             .unwrap_or_else(|| (blake3::hash(&[]), vec![]));
 
         let header = dwow_chain::BlockHeader {
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             version: BlockVersion::CURRENT,
             previous: previous_hash,
             merkle_root,
@@ -693,7 +694,7 @@ impl DwowNode {
                                     anchor_monero_height: MoneroBlockHeight::new(0),
                                     anchor_monero_hash: [0u8; 32],
                                     finality_flags: 0,
-                                    fee_window_flags: 0,
+                                    fee_window_flags: FeeWindowFlags::default(),
 
                                 pow_source: PowSource::Native,
 

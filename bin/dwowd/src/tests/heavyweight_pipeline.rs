@@ -60,8 +60,7 @@ use std::sync::atomic::AtomicU64;
 
 use dwow_core::zk::Proof;
 use dwow_sdk::blockchain::{BlockReward, BlockTarget};
-use dwow_sdk::crypto::{ContractId, NATIVE_TOKEN_CONTRACT_ID, poseidon_hash};
-use dwow_sdk::crypto::pasta_prelude::PrimeField;
+use dwow_sdk::crypto::{ContractId, NATIVE_TOKEN_CONTRACT_ID};
 use dwow_sdk::pasta::group::{Group, GroupEncoding};
 use dwow_contract_test_harness::harness::ContractHarness;
 

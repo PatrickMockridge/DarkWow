@@ -25,6 +25,7 @@
 //!
 //! Shared functionality for building fee calls and finalizing transactions.
 
+use dwow_chain::fee_window::{FeeWindowFlags, CongestionFactor, compute_fee};
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
     zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses, Proof},
@@ -33,11 +34,10 @@ use dwow_core::{
 use crate::wallet_error::{Error, Result};
 use dwow_sdk::{
     blockchain::FeeAmount,
-    crypto::{BaseBlind, PublicKey, SecretKey, MerkleNode, constants::DRK_POSEIDON_DOMAIN_TX_BINDING, poseidon_hash},
+    crypto::{BaseBlind, PublicKey, SecretKey, MerkleNode},
     pasta::pallas,
     tx::ContractCall,
 };
-use dwow_serial::Encodable;
 use rand::{rngs::StdRng, SeedableRng};
 
 use crate::contract_imports::native_token::{
@@ -46,32 +46,9 @@ use crate::contract_imports::native_token::{
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V2_BIN,
     NATIVE_TOKEN_CONTRACT_ZKAS_FEE_THRESHOLD_V1_BIN,
 };
-use dwow_native_token_contract::client::fee::FeeV2CallBuilder as _;
 use dwow_native_token_contract::model::fee::ThresholdTxBinding;
 use crate::walletdb::WalletPtr;
 use crate::NATIVE_TOKEN_CONTRACT_ID;
-
-/// Default network fee in DRKW (base units). Also the minimum fee per call.
-pub const DEFAULT_FEE: u64 = 42_000_000;
-
-/// Estimated fee per additional input beyond the first.
-/// Each input adds a Merkle proof verification to the ZK circuit.
-pub const FEE_PER_ADDITIONAL_INPUT: u64 = 10_000_000;
-
-/// Estimate the transaction fee based on complexity.
-///
-/// Base fee (DEFAULT_FEE) + per-additional-input fees.
-/// Additional outputs (change) do not increase the fee.
-///
-/// Returns the estimated fee, which is always >= DEFAULT_FEE.
-///
-/// TODO: query node's FeeEstimator (RPC: tx.calculate_fee) for dynamic
-/// fee based on recent block gas utilization. Fall back to static formula
-/// if node unreachable.
-pub fn estimate_fee(num_inputs: usize, _num_outputs: usize) -> u64 {
-    let extra_inputs = num_inputs.saturating_sub(1);
-    DEFAULT_FEE + (extra_inputs as u64 * FEE_PER_ADDITIONAL_INPUT)
-}
 
 /// Build fee call and finalize transaction.
 ///
@@ -84,6 +61,12 @@ pub fn estimate_fee(num_inputs: usize, _num_outputs: usize) -> u64 {
 /// (which is the master key, unable to witness per-block-derived coinbase caps).
 /// `fee_proofs` is optional for callers that merge fee ZK proofs into the main
 /// proof bundle.
+///
+/// `circuit_costs`: per-opcode difficulty values for this transaction's circuits.
+/// `wasm_kb`: deployed WASM size in kB (0 for non-deploy transactions).
+/// `fee_window_flags`: from the latest block header, used to derive congestion
+/// factors for the two-component fee formula.
+///
 /// Schnorr signatures removed per contract-standards.md §3.
 pub fn build_fee_and_finalize_tx(
     wallet: &WalletPtr,
@@ -92,11 +75,20 @@ pub fn build_fee_and_finalize_tx(
     fee_proofs: Option<Vec<Proof>>,
     exclude_cap_id: Option<&str>,
     seed: [u8; 32],
-    // Fee window flags from latest block header (fee-spec.md §12.6).
-    // 0 = legacy static fees. Feature-gated — ignored without feature.
-    #[allow(unused_variables)]
-    fee_window_flags: u16,
+    circuit_costs: &[u64],
+    wasm_kb: u64,
+    fee_window_flags: FeeWindowFlags,
 ) -> Result<Transaction> {
+    // Derive congestion factors from the latest block header flags.
+    // wallet.md §6.4.2 / fee-spec.md §8.2.
+    let (circuit_cf, wasm_cf) = fee_window_flags.derive_cfs();
+
+    // Compute the minimum admission fee via the two-component formula.
+    // fee = (wasm_kB × BASELINE_STORAGE × WASM_CF) + (Σ opcode_difficulty × CIRCUIT_CF)
+    // Always uses premium CF — this is the admission threshold.
+    let fee = compute_fee(circuit_costs, wasm_kb, wasm_cf, circuit_cf);
+    let fee_value = fee.get();
+    let threshold = fee; // FeeThreshold_V1 proves: fee_paid >= this threshold
     // wallet.md §6.1: Seed-derived randomness — no OsRng.
     let mut rng = StdRng::from_seed(seed);
     // Get DRKW cap for fee
@@ -124,13 +116,13 @@ pub fn build_fee_and_finalize_tx(
     };
 
     // Pre-validate: the selected cap must have enough value to pay the fee.
-    // saturating_sub handles underflow safely, but a cap with value < DEFAULT_FEE
+    // saturating_sub handles underflow safely, but a cap with value < fee
     // produces a zero-value change output — the transaction would be rejected.
-    if fee_cap.value < DEFAULT_FEE {
+    if fee_cap.value < fee_value {
         return Err(Error::Custom(format!(
             "Selected DRKW cap has insufficient value for fee ({} < {}). \
              The wallet needs DRKW tokens with at least the fee amount.",
-            fee_cap.value, DEFAULT_FEE
+            fee_cap.value, fee_value
         )));
     }
 
@@ -207,36 +199,9 @@ pub fn build_fee_and_finalize_tx(
     let threshold_pk = ProvingKey::build(threshold_zkbin.k, &threshold_circuit)
         .map_err(|e| Error::Custom(format!("ProvingKey::build threshold: {:?}", e)))?;
 
-    // Threshold selection per wallet.md §6.4.2 / fee-spec.md §8.2.
-    // When fee window is active, thresholds are decoded from the latest
-    // block header's fee_window_flags. Otherwise, legacy static constants.
-    #[cfg(feature = "fee-window")]
-    let (premium_threshold, general_threshold) = {
-        if fee_window_flags & 0x01 != 0 {
-            // Fee window active — decode congestion_multiplier from bits [4:8]
-            let cm = (fee_window_flags >> 4) & 0x0F;
-            let base_premium = 420_000_000u64; // CF=1.0, rate=10
-            let base_general = 42_000_000u64;  // CF=1.0, rate=1
-            let premium = match cm {
-                0x01 => ((base_premium as u128) * 110 / 100) as u64, // +10%
-                0x02 => ((base_premium as u128) * 90 / 100) as u64,  // -10%
-                _ => base_premium, // hold or legacy
-            };
-            (premium, base_general)
-        } else {
-            (42_000_000u64, 1_000_000u64) // legacy static
-        }
-    };
-    #[cfg(not(feature = "fee-window"))]
-    let premium_threshold: u64 = 42_000_000;
-    #[cfg(not(feature = "fee-window"))]
-    let general_threshold: u64 = 1_000_000;
-
-    let threshold = if DEFAULT_FEE >= premium_threshold {
-        premium_threshold
-    } else {
-        general_threshold
-    };
+    // Threshold is the computed fee — the FeeThreshold_V1 proof shows
+    // fee_paid >= threshold. Threshold selection uses the two-component
+    // formula with premium CFs (already computed above as `fee`).
 
     let fee_input = FeeV2CallInput {
         value: fee_cap.value,
@@ -255,25 +220,25 @@ pub fn build_fee_and_finalize_tx(
 
     let fee_output = FeeV2CallOutput {
         recipient: dark_public_key,
-        value: fee_cap.value.saturating_sub(DEFAULT_FEE),
+        value: fee_cap.value.saturating_sub(fee_value),
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
         coin_blind: change_blind.inner(),
     };
 
     // Build FeeThreshold_V1 proof (wallet→mempool gate: fee >= threshold).
-    // Fee lifecycle step 1 — constructed here in the wallet crate, not in
-    // the contract crate. See fee_threshold_proof.rs for the full lifecycle.
+    // Fee lifecycle step 1 — delegated to contract crate client
+    // (client/fee_threshold.rs, single source of truth per G7).
     // Per fee-spec.md §5.5.1: ThresholdTxBinding binds proof to a specific threshold.
     let threshold_tx_binding = ThresholdTxBinding::compute(
         fee_input.tx_commitment,
-        FeeAmount::new(threshold),
+        threshold,
     );
     let threshold_proof = dwow_native_token_contract::client::fee_threshold::create_fee_threshold_proof(
         &threshold_zkbin,
         &threshold_pk,
-        FeeAmount::new(DEFAULT_FEE),
-        FeeAmount::new(threshold),
+        fee,
+        threshold,
         fee_input.tx_commitment,
         threshold_tx_binding,
     ).map_err(|e| Error::Custom(format!("FeeThreshold_V1 proof: {}", e)))?;
@@ -289,8 +254,8 @@ pub fn build_fee_and_finalize_tx(
     let fee_builder = FeeV2CallBuilder {
         input: fee_input,
         output: fee_output,
-        fee_amount: FeeAmount::new(DEFAULT_FEE),
-        threshold: FeeAmount::new(threshold),
+        fee_amount: fee,
+        threshold,
         fee_zkbin: fee_zkbin.clone(),
         fee_pk,
         threshold_proof_bytes,
@@ -339,75 +304,101 @@ pub fn build_fee_and_finalize_tx(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dwow_chain::fee_window::{WindowSignalling, CongestionFactor, compute_fee, BASELINE_STORAGE};
 
+    /// FeeWindowFlags.derive_cfs() — default (inactive) flags yield identity CFs.
     #[test]
-    fn test_default_fee_value() {
-        assert_eq!(DEFAULT_FEE, 42_000_000);
+    fn test_derive_cfs_default() {
+        let flags = FeeWindowFlags::default();
+        let (circuit_cf, wasm_cf) = flags.derive_cfs();
+        assert_eq!(circuit_cf, CongestionFactor::default());
+        assert_eq!(wasm_cf, CongestionFactor::default());
     }
 
-    /// L2-FW-1a: fee_window_flags decode — matches Python model + L1-FW-1 contract.
-    /// Verifies the inline decode logic in build_fee_and_finalize_tx (lines 212-228)
-    /// produces the same premium_threshold as the canonical WindowSignalling decode.
-    /// Partition B — wallet boundary.
+    /// FeeWindowFlags.derive_cfs() — circuit active +10%, wasm inactive.
     #[test]
-    fn test_fee_builder_window_flags_decode_active_increase() {
-        // 0x11 = active (bit 0) + +10% (cm=0x01)
-        let fee_window_flags: u16 = 0x11;
-        assert!(fee_window_flags & 0x01 != 0, "active bit set");
-        let cm = (fee_window_flags >> 4) & 0x0F;
-        assert_eq!(cm, 0x01, "cm=+10%");
-        let base_premium = 420_000_000u64;
-        let premium = match cm {
-            0x01 => ((base_premium as u128) * 110 / 100) as u64,
-            0x02 => ((base_premium as u128) * 90 / 100) as u64,
-            _ => base_premium,
-        };
-        assert_eq!(premium, 462_000_000, "active +10% → 462M");
-        assert_eq!(42_000_000u64, 42_000_000, "general stays at 42M");
+    fn test_derive_cfs_circuit_increase() {
+        let flags = FeeWindowFlags::pack(
+            WindowSignalling::encode_cm(0x01), // circuit: +10%
+            WindowSignalling::LEGACY,           // wasm: inactive
+        );
+        let (circuit_cf, wasm_cf) = flags.derive_cfs();
+        let expected_premium = ((CongestionFactor::SCALE as u64) * 110 / 100) as u32;
+        assert_eq!(circuit_cf.premium, expected_premium);
+        assert_eq!(circuit_cf.standard, CongestionFactor::SCALE);
+        assert_eq!(wasm_cf, CongestionFactor::default());
     }
 
+    /// FeeWindowFlags.derive_cfs() — circuit active -10%, wasm active hold.
     #[test]
-    fn test_fee_builder_window_flags_decode_active_decrease() {
-        // 0x12 = active (bit 0) + -10% (cm=0x02)
-        let fee_window_flags: u16 = 0x12;
-        assert!(fee_window_flags & 0x01 != 0);
-        let cm = (fee_window_flags >> 4) & 0x0F;
-        assert_eq!(cm, 0x02, "cm=-10%");
-        let base_premium = 420_000_000u64;
-        let premium = match cm {
-            0x01 => ((base_premium as u128) * 110 / 100) as u64,
-            0x02 => ((base_premium as u128) * 90 / 100) as u64,
-            _ => base_premium,
-        };
-        assert_eq!(premium, 378_000_000, "active -10% → 378M");
+    fn test_derive_cfs_circuit_decrease_wasm_hold() {
+        let flags = FeeWindowFlags::pack(
+            WindowSignalling::encode_cm(0x02), // circuit: -10%
+            WindowSignalling::encode_cm(0x00), // wasm: hold
+        );
+        let (circuit_cf, wasm_cf) = flags.derive_cfs();
+        let expected_premium = ((CongestionFactor::SCALE as u64) * 90 / 100) as u32;
+        assert_eq!(circuit_cf.premium, expected_premium);
+        assert_eq!(circuit_cf.standard, CongestionFactor::SCALE);
+        assert_eq!(wasm_cf.premium, CongestionFactor::SCALE, "wasm hold = identity");
     }
 
+    /// compute_fee() — zero congestion, minimal circuit.
     #[test]
-    fn test_fee_builder_window_flags_decode_active_hold() {
-        // 0x10 = active (bit 0) + hold (cm=0x00)
-        let fee_window_flags: u16 = 0x10;
-        assert!(fee_window_flags & 0x01 != 0);
-        let cm = (fee_window_flags >> 4) & 0x0F;
-        assert_eq!(cm, 0x00, "cm=hold");
-        let base_premium = 420_000_000u64;
-        let premium = match cm {
-            0x01 => ((base_premium as u128) * 110 / 100) as u64,
-            0x02 => ((base_premium as u128) * 90 / 100) as u64,
-            _ => base_premium,
-        };
-        assert_eq!(premium, 420_000_000, "active hold → 420M");
+    fn test_compute_fee_zero_congestion() {
+        let cf = CongestionFactor::default();
+        // Single opcode with difficulty 1000 (average circuit), 1 kB WASM.
+        let fee = compute_fee(&[1000], 1, cf, cf);
+        // wasm = 1 * 1_000_000 * 1_000_000 / 1_000_000 = 1_000_000
+        // circuit = 1000 * 1_000_000 / 1_000_000 = 1000
+        // total = 1_001_000
+        assert_eq!(fee.get(), 1_001_000);
     }
 
+    /// compute_fee() — CF at +10%, circuit-heavy.
     #[test]
-    fn test_fee_builder_window_flags_decode_legacy() {
-        // 0x00 = inactive → legacy static thresholds
-        let fee_window_flags: u16 = 0x00;
-        assert!(fee_window_flags & 0x01 == 0, "inactive");
-        // Legacy: premium=42M, general=1M
-        let premium_threshold: u64 = 42_000_000;
-        let general_threshold: u64 = 1_000_000;
-        assert_eq!(premium_threshold, 42_000_000);
-        assert_eq!(general_threshold, 1_000_000);
+    fn test_compute_fee_congested() {
+        let premium = ((CongestionFactor::SCALE as u64) * 110 / 100) as u32;
+        let cf = CongestionFactor { premium, standard: CongestionFactor::SCALE };
+        let fee = compute_fee(&[5000], 1, cf, cf);
+        // wasm = 1 * 1_000_000 * 1_100_000 / 1_000_000 = 1_100_000
+        // circuit = 5000 * 1_100_000 / 1_000_000 = 5_500
+        // total = 1_105_500
+        assert_eq!(fee.get(), 1_105_500);
     }
 
+    /// compute_fee() — WASM-heavy deploy (50 kB).
+    #[test]
+    fn test_compute_fee_wasm_heavy() {
+        let cf = CongestionFactor::default();
+        let fee = compute_fee(&[1000], 50, cf, cf);
+        // wasm = 50 * 1_000_000 * 1_000_000 / 1_000_000 = 50_000_000
+        // circuit = 1000 * 1_000_000 / 1_000_000 = 1000
+        // total = 50_001_000
+        assert_eq!(fee.get(), 50_001_000);
+    }
+
+    /// compute_fee() — empty circuit costs, no WASM.
+    #[test]
+    fn test_compute_fee_minimal() {
+        let cf = CongestionFactor::default();
+        let fee = compute_fee(&[], 0, cf, cf);
+        assert_eq!(fee.get(), 0);
+    }
+
+    /// FeeWindowFlags flags roundtrip through typed API.
+    #[test]
+    fn test_flags_roundtrip() {
+        let flags = FeeWindowFlags::pack(
+            WindowSignalling::encode_cm(0x01), // circuit +10%
+            WindowSignalling::encode_cm(0x02), // wasm -10%
+        );
+        assert!(flags.is_active());
+        assert_eq!(flags.circuit_byte().congestion_multiplier(), 0x01);
+        assert_eq!(flags.wasm_byte().congestion_multiplier(), 0x02);
+
+        let bytes = flags.to_le_bytes();
+        let decoded = FeeWindowFlags::from_le_bytes(bytes);
+        assert_eq!(decoded, flags);
+    }
 }

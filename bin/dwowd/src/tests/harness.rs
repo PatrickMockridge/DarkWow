@@ -33,6 +33,7 @@
 //! Adapted for CChainState (commit 597691582 refactor).
 
 
+use dwow_chain::fee_window::FeeWindowFlags;
 use dwow_chain::{
     Block, BlockHeader, CChainState, ContractCall, Miner, PowSource, Transaction, UncleBlock,
     build_uncle_merkle, create_uncle,
@@ -69,7 +70,7 @@ pub fn build_test_header(
     };
 
     BlockHeader {
-        fee_window_flags: 0,
+        fee_window_flags: FeeWindowFlags::default(),
         version: BlockVersion::CURRENT,
         previous: previous_hash,
         merkle_root,
@@ -198,7 +199,7 @@ pub fn build_test_block_with_uncles(
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
         },
         transactions: txs,

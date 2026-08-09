@@ -27,6 +27,7 @@ use dwow_serial::{async_trait, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncW
 use std::io::Result;
 
 use super::{Block, BlockHeader, ContractCall, PowSource, Transaction, TxInput, TxOutput, UncleBlock, UncleProof};
+use crate::fee_window::FeeWindowFlags;
 
 #[async_trait]
 impl AsyncEncodable for TxInput {
@@ -198,7 +199,7 @@ impl AsyncDecodable for BlockHeader {
             anchor_monero_hash,
             finality_flags,
             pow_source,
-            fee_window_flags: 0,   // not in wire format — set to legacy default
+            fee_window_flags: FeeWindowFlags::default(),   // not in wire format — set to legacy default
         })
     }
 }

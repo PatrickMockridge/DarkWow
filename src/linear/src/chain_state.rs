@@ -1593,6 +1593,7 @@ impl CChainState {
 mod tests {
     use super::*;
     use crate::{BlockHeader, PowSource, Miner, compute_merkle_root, CumulativeSupplyEntry};
+    use crate::fee_window::FeeWindowFlags;
     use dwow_sdk::crypto::pasta_prelude::Group;
     use dwow_sdk::pasta::pallas;
     use dwow_sdk::blockchain::{BlockReward, BlockTarget, BlockTimestamp, MoneroBlockHeight, SupplyAmount, BlockVersion};
@@ -1618,8 +1619,7 @@ mod tests {
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
-            #[cfg(feature = "fee-window")]
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             },
             transactions: vec![],
         };
@@ -1674,8 +1674,7 @@ mod tests {
                     coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                     anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                     anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
-            #[cfg(feature = "fee-window")]
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
                 },
                 transactions: vec![],
             };
@@ -1761,8 +1760,7 @@ mod tests {
                 anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
-            #[cfg(feature = "fee-window")]
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
                 pow_source: crate::PowSource::Native,
             },
             transactions: vec![],
@@ -1803,8 +1801,7 @@ mod tests {
                     coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                     anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                     anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
-            #[cfg(feature = "fee-window")]
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
                 },
                 transactions: vec![],
             };
@@ -1855,8 +1852,7 @@ mod tests {
                 coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32], anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32], finality_flags: 0, pow_source: PowSource::Native,
-            #[cfg(feature = "fee-window")]
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             },
             transactions: vec![],
             depth: 1, pin_offered: true, pin_accepted: false,

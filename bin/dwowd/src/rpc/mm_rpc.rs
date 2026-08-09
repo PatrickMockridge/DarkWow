@@ -45,6 +45,7 @@ use dwow_core::{
     },
     concurrency::StoppableTaskPtr,
 };
+use dwow_chain::fee_window::FeeWindowFlags;
 use dwow_chain::{
     monero::{
         fixed_array::FixedByteArray,
@@ -627,7 +628,7 @@ impl DwowNode {
         };
 
         let mut header = dwow_chain::BlockHeader {
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             version: BlockVersion::CURRENT,
             previous: blake3::Hash::from_bytes(template.previous),
             merkle_root: template.merkle_root,
@@ -861,7 +862,7 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
         }
     }

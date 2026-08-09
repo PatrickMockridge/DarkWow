@@ -572,7 +572,8 @@ For coinbase coins, this is the mining key. For test coins, this is a
 deterministic test key.
 
 **Q6: What fee to pay?**
-Must be ≥ `MIN_FEE_PER_CALL` (42,000,000). Output value = input_value - fee.
+Fee is computed via the two-component formula: `(wasm_kB × BASELINE_STORAGE × WASM_CF) + (Σ opcode_difficulty × CIRCUIT_CF)`.
+See §12.4.1 for the full specification. Output value = input_value - fee.
 Must be > 0 (else no FeeCollectV1 is needed).
 
 **Q7: What is the output recipient?**
@@ -1166,8 +1167,10 @@ its processes may exhibit. Fee operations exhibit these barbs:
 
 | Symbol | Domain | Value | Definition |
 |--------|--------|-------|------------|
-| `PREMIUM_THRESHOLD` | fee_signalling | TBD | Minimum fee for premium mempool tier |
-| `GENERAL_THRESHOLD` | fee_signalling | TBD | Minimum fee for general mempool tier |
+| `BASELINE_STORAGE` | fee_signalling | `1_000_000` | Per-kB WASM storage cost (0.01 DRKW at CF=1.0) |
+| `OPCODE_DIFFICULTY` | fee_signalling | §12.4.2 table | Per-opcode ZK complexity factors (consensus-critical) |
+| `WASM_CF` | fee_signalling | `CongestionFactor` | WASM deploy congestion multiplier (premium + standard) |
+| `CIRCUIT_CF` | fee_signalling | `CongestionFactor` | Circuit execution congestion multiplier (premium + standard) |
 | `COINBASE_MATURITY` | mass_balance | `100` | Blocks before coinbase coin is spendable |
 | `INITIAL_REWARD` | mass_balance | `1_383_764_049` | Genesis block reward (1.383 DRKW) |
 | `MERKLE_DEPTH` | mass_balance | `32` | Orchard tree depth (2^32 capacity) |
@@ -1282,43 +1285,57 @@ the congestion-adjusted fee.
 #### 12.4.1 Formula
 
 ```
-fee = circuit_base_rate × wasm_kB_size × congestion_factor
+fee = (wasm_kB × BASELINE_STORAGE × WASM_CF) + (Σ opcode_difficulty × CIRCUIT_CF)
 
 where:
-    circuit_base_rate ∈ N    — per-circuit computational intensity rating
-    wasm_kB_size ∈ N         — ceil(wasm_bytes / 1024), 1 for non-deploy txs
-    congestion_factor ∈ ℝ⁺   — log-scale function of mempool queue depth
+    wasm_kB                    = max(1, ceil(wasm_bytes / 1024))
+    BASELINE_STORAGE           = 1_000_000  (0.01 DRKW/kB at CF=1.0)
+    WASM_CF                    = congestion factor for WASM deploy (premium tier)
+    Σ opcode_difficulty        = sum of per-opcode ZK difficulty factors (§12.4.2)
+    CIRCUIT_CF                 = congestion factor for circuit execution (premium tier)
 ```
 
-This is a product of three independent dimensions: computational cost
-(circuit rate), storage cost (WASM size), and market demand (congestion factor).
-Each dimension is independently observable and verifiable by all network
-participants.
+This is a sum of two independent components: storage cost (WASM deploy size)
+and computation cost (sum of per-opcode ZK difficulties). Each component has
+its own congestion factor — WASM_CF for storage and CIRCUIT_CF for execution —
+allowing miners to price storage and computation independently based on demand.
 
-#### 12.4.2 Circuit Rate Table
+The formula always uses CF premium multipliers to determine the admission
+threshold. Tier classification (premium vs general) compares the offered fee
+against premium and standard CF thresholds separately.
 
-Each ZK circuit carries a consensus-critical base rate. The rate is declared
-in the circuit's manifest entry as an optional `rate` field, defaulting to 1.
+#### 12.4.2 Per-Opcode Difficulty Table
 
-| Rate | Category | Example Circuits | Rationale |
-|------|----------|-----------------|-----------|
-| 1 | Standard | TransferV1, SpendV1, BurnV1, FeeV2, FeeCollectV1, CreateSwapV1, CancelSwapV1 | Standard o-cap lifecycle operations, constant-time verification |
-| 2 | Multi-party | VerifyCapabilityV2, CreateGroupV2, SignV2 | Multi-party ZK verification with additional rounds |
-| 3 | Oracle/Bridge | PushValueV2, AttestValueV2, DepositV2 | External data bridging, cross-chain commitment verification |
-| 5 | Heavy proof | ExecuteSwapV1, liquidate, merkle paths depth > 16 | Complex conditional swaps, deep Merkle verification |
-| 10 | Premium compute | BaseDiv, poseidon-recursive, aggregate proofs | Compute-intensive ZK primitives, recursion |
+Each ZK opcode carries a consensus-critical difficulty factor proportional to
+its constraint system complexity (gate_count × column_count). The fee for a
+transaction is the sum of its constituent opcode difficulties multiplied by
+the circuit congestion factor.
 
-Manifest declaration:
-```toml
-[[circuits]]
-name = "BaseDivV2"
-namespace = "math"
-rate = 10
+| Category | Opcodes | Difficulty |
+|----------|---------|------------|
+| ECC | EcAdd, EcMul, EcMulBase, EcMulShort, EcMulVarBase, EcGetX, EcGetY | 1000 |
+| Sinsemilla/Merkle | MerkleRoot, SparseMerkleRoot, SetMembership | 800 |
+| Poseidon | PoseidonHash | 500 |
+| BaseDiv | BaseDiv | 250 |
+| Range/LessThan | RangeCheck, LessThanStrict, LessThanLoose, LessThanOrEqual, BaseLtStrict | 100 |
+| BaseMul | BaseMul | 50 |
+| Selection | CondSelect, ZeroCondSelect | 40 |
+| Comparison | IsEqualBase, IsNotEqualBase, BoolCheck, NotBase | 30 |
+| BaseAdd/Sub/Witness | BaseAdd, BaseSub, WitnessBase | 20 |
+| Constrain | ConstrainEqualBase, ConstrainEqualPoint, ConstrainInstance | 5 |
+| Noop/Debug | Noop, DebugPrint | 0 |
+
+```
+circuit_difficulty(ops) = Σ opcode_difficulty(op)
 ```
 
-The rate table is consensus-critical — all miners SHALL enforce the same
-rates. Changing a circuit's rate requires a network upgrade coordinated
-through the fee window signalling mechanism.
+An average circuit (~20 mixed opcodes) sums to approximately 1000 difficulty
+units. At CF=1.0 this yields a circuit execution cost of ~0.01 DRKW.
+
+The difficulty table is consensus-critical — all wallet, mempool, and miner
+implementations SHALL use identical values. The table is hardcoded rather than
+derived from manifests to prevent manifest parsing from becoming a consensus
+dependency.
 
 #### 12.4.3 WASM Deployment Size
 
@@ -1378,41 +1395,44 @@ mempool force an extreme CF.
 
 ### 12.5 Threshold Computation from Congestion Factors
 
-The congestion factors are applied to derive the concrete premium and
-general thresholds for each window:
+The two congestion factors (WASM_CF and CIRCUIT_CF) are applied via
+`compute_fee()` to derive the minimum admission fee for a transaction:
 
 ```
-premium_threshold(w)  = CF_premium(w)  × BASE_PREMIUM_RATE  × BASE_UNIT / SCALE
-general_threshold(w)  = CF_standard(w) × BASE_STANDARD_RATE × BASE_UNIT / SCALE
-
-where:
-    BASE_PREMIUM_RATE    = 10     (rate of a premium circuit per §12.4.2)
-    BASE_STANDARD_RATE   = 1      (rate of a standard circuit per §12.4.2)
-    BASE_UNIT            = 42_000_000  (base fee unit in native token base units)
+compute_fee(circuit_costs, wasm_kB, wasm_cf, circuit_cf):
+    total_opcode_cost = Σ circuit_costs
+    wasm_part    = (wasm_kB × BASELINE_STORAGE × wasm_cf.premium) / SCALE
+    circuit_part = (total_opcode_cost × circuit_cf.premium) / SCALE
+    return wasm_part + circuit_part
 ```
 
-At zero congestion (CF = SCALE = 1_000_000), thresholds revert to:
+At zero congestion (WASM_CF = CIRCUIT_CF = SCALE = 1_000_000):
 
 ```
-premium_threshold  = 10 × 42_000_000 = 420_000_000  (4.2 DRKW)
-general_threshold  = 1  × 42_000_000 = 42_000_000   (0.42 DRKW)
+min_fee = wasm_kB × 1_000_000 + Σ circuit_costs
 ```
 
-These match the current static constants while providing the dynamic range
-to scale with network demand.
+For a non-deploy transaction (wasm_kB = 1) with average circuit difficulty
+(~1000): min_fee ≈ 1_001_000 (0.01 DRKW).
+
+For tier classification, the standard-tier minimum is computed identically
+but using CF.standard multipliers in place of CF.premium. At zero congestion
+(premium = standard = SCALE), all admitted transactions enter the premium tier.
 
 ### 12.6 BlockHeader Signalling
 
 The final block of each fee window sets `fee_window_flags` in its header:
 
 ```
-BlockHeader.fee_window_flags: u8   (new field, #[cfg(feature = "fee-window")])
+BlockHeader.fee_window_flags: u16  (new field, #[cfg(feature = "fee-window")])
                                     (serde default = 0 for backward compatibility)
 
-Bit layout:
-    bits[0]    = FEE_WINDOW_ACTIVE    (0 = legacy static fees, 1 = window active)
-    bits[1:4]  = reserved             (must be 0)
-    bits[4:8]  = congestion_multiplier (4-bit compact encoding of CF adjustment)
+Bit layout — two independent WindowSignalling bytes:
+    Byte 0 (bits 0:7):   CIRCUIT_CF direction
+        bit[0]    = FEE_WINDOW_ACTIVE
+        bit[1:3]  = reserved
+        bit[4:7]  = congestion_multiplier (cm)
+    Byte 1 (bits 8:15):  WASM_CF direction (identical layout)
 ```
 
 The 4-bit `congestion_multiplier` encodes the direction and magnitude of
@@ -1425,12 +1445,22 @@ the CF change from the current window to the next:
 0b0011..0b1111 = reserved for future granularity
 ```
 
-A wallet reading the flags can compute the next window's premium threshold
-without replaying the full adjustment logic:
+Dual encode/decode:
 
 ```
-next_premium = decode_multiplier(flags) × current_premium
+encode_flags_dual(circuit_cf, wasm_cf, prev_circuit, prev_wasm) -> u16:
+    circuit_byte = encode_flags(circuit_cf, prev_circuit)
+    wasm_byte    = encode_flags(wasm_cf, prev_wasm)
+    return (circuit_byte & 0xFF) | ((wasm_byte & 0xFF) << 8)
+
+decode_flags_dual(flags: u16) -> (circuit_cm, wasm_cm):
+    circuit_cm = (flags & 0xF0) >> 4
+    wasm_cm    = (flags >> 12) & 0x0F
+    return (circuit_cm.clamp(0, 2), wasm_cm.clamp(0, 2))
 ```
+
+A wallet reading the flags can compute the next window's thresholds
+without replaying the full adjustment logic for both CF dimensions.
 
 ### 12.7 Formal Invariants
 
@@ -1440,8 +1470,10 @@ The adjustment is a pure function: `(CF_premium, CF_standard) = f(mempool_state_
 
 **I2 — Backward Compatibility.** Blocks without `fee_window_flags`
 (pre-activation, `fee_window_flags == 0`) SHALL be treated as having
-the static thresholds `PREMIUM_THRESHOLD = 42_000_000`, `GENERAL_THRESHOLD = 1_000_000`.
-`#[serde(default)]` ensures old blocks deserialize correctly.
+zero congestion: WASM_CF = CIRCUIT_CF = SCALE (both premium and standard).
+At zero congestion, `compute_fee()` at average circuit difficulty (~1000)
+yields approximately 1_001_000 (0.01 DRKW). `#[serde(default)]` ensures
+old blocks deserialize correctly.
 
 **I3 — FCFS Preservation.** Transactions admitted under window N's
 thresholds SHALL NOT be evicted when window N+1's thresholds activate.
@@ -1455,9 +1487,11 @@ times. Premium-tier circuits (rate ≥ 5) always pay a strictly higher
 congestion multiplier than standard circuits (rate 1–3). This prevents
 premium transactions from being cheaper under any congestion regime.
 
-**I5 — Circuit Rate Monotonicity.** A circuit with a higher base rate
-SHALL never pay a lower total fee than a circuit with a lower base rate,
-for identical WASM size and congestion regime.
+**I5 — Opcode Difficulty Monotonicity.** A transaction with a higher
+total opcode difficulty SHALL never pay a lower total fee than a
+transaction with a lower total opcode difficulty, for identical WASM
+size and congestion regime. The per-opcode difficulty table (§12.4.2)
+is the sole determinant of circuit execution cost ordering.
 
 **I6 — CF Convergence.** As mempool queue depth → 0, CF → 1 for both
 tiers. As queue depth grows, CF grows logarithmically — doubling the

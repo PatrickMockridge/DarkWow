@@ -31,6 +31,7 @@ use dwow_serial::{Decodable, Encodable};
 use std::io::Result;
 
 use super::{Block, BlockHeader, ContractCall, PowSource, Transaction, TxInput, TxOutput, UncleBlock};
+use crate::fee_window::FeeWindowFlags;
 
 impl Encodable for TxInput {
     fn encode<W: std::io::Write>(&self, s: &mut W) -> Result<usize> {
@@ -176,7 +177,7 @@ impl Decodable for BlockHeader {
             uncle_merkle_root, total_reward, randomx_key, coin_merkle_root,
             nullifier_root, anchor_tx_id, anchor_monero_height, anchor_monero_hash,
             finality_flags,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             pow_source,
         })
     }

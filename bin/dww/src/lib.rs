@@ -41,6 +41,7 @@ use dwow_core::{
     tx::{ContractCallLeaf, Transaction},
     zk::Proof,
 };
+use dwow_chain::fee_window::FeeWindowFlags;
 use crate::wallet_error::{Error, Result};
 use crate::wallet_util::expand_path;
 use dwow_sdk::{
@@ -1053,7 +1054,6 @@ impl Dww {
             keypair::Address, BaseBlind, Blind, FuncId, MerkleNode,
         };
         use dwow_sdk::pasta::pallas;
-        use dwow_serial::Encodable;
         use rand::{rngs::StdRng, SeedableRng};
 
         // wallet.md §6.2 / model step 1: select the input capability covering
@@ -1216,7 +1216,7 @@ impl Dww {
         // TransactionBuilder computes the outer tx_commitment; the fee input's
         // nullifier is published by the fee builder.
         let mut tx = crate::fee_builder::build_fee_and_finalize_tx(
-            &self.wallet, &self.account_mgr, leaf, None, Some(&selected.cap_id), seed, 0,
+            &self.wallet, &self.account_mgr, leaf, None, Some(&selected.cap_id), seed, &[], 0, FeeWindowFlags::default(),
         )?;
 
         // Model step 5 (wallet_model.py:3954): nullifier order is
@@ -1570,7 +1570,7 @@ impl Dww {
                 let mut seed = [0u8; 32];
                 rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
                 let tx = crate::fee_builder::build_fee_and_finalize_tx(
-                    &self.wallet, &self.account_mgr, leaf, None, None, seed, 0)?;
+                    &self.wallet, &self.account_mgr, leaf, None, None, seed, &[], 0, FeeWindowFlags::default())?;
                 // §6.3 step 7 / mempool admission: ONE signature row per call,
                 // in call order — calls[0] = main (signed by the caller-supplied
                 // secrets matching the call's metadata pubkeys, empty row when
@@ -1600,7 +1600,7 @@ impl Dww {
                 let mut seed = [0u8; 32];
                 rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
                 let tx = crate::fee_builder::build_fee_and_finalize_tx(
-                    &self.wallet, &self.account_mgr, leaf, None, None, seed, 0,
+                    &self.wallet, &self.account_mgr, leaf, None, None, seed, &[], 0, FeeWindowFlags::default(),
                 )?;
                 // Per-call signature rows (see the Path A exit above).
                 // Schnorr signatures removed per contract-standards.md §3.
@@ -1673,7 +1673,7 @@ impl Dww {
         let mut seed = [0u8; 32];
         rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
         let tx = crate::fee_builder::build_fee_and_finalize_tx(
-            &self.wallet, &self.account_mgr, leaf, None, None, seed, 0)?;
+            &self.wallet, &self.account_mgr, leaf, None, None, seed, &[], 0, FeeWindowFlags::default())?;
         // Per-call signature rows (see the Path A exit above).
 
         Ok(tx)

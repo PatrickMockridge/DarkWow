@@ -55,10 +55,11 @@
 //! This module follows the `PoWConsensus` pattern (consensus.rs): AtomicU64
 //! for the hot path, Mutex-guarded window state, sled persistence.
 
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
-use dwow_sdk::blockchain::BlockHeight;
+use dwow_core::barb::{BarbId, ExhibitsBarb};
+use dwow_sdk::blockchain::{BlockHeight, FeeAmount};
 
 use crate::error::LinearError;
 
@@ -124,6 +125,119 @@ impl core::fmt::Display for WindowSignalling {
     }
 }
 
+// ── FeeWindowFlags ───────────────────────────────────────────────────────
+
+/// Dual-CF fee window flags — nominal u16 following the §2.3/§8.5 pattern.
+///
+/// Packs two `WindowSignalling` bytes into the block header's
+/// `fee_window_flags` field. Byte 0 = CIRCUIT_CF direction, Byte 1 = WASM_CF
+/// direction.
+///
+/// This is a nominal type because raw `u16` carries no behavioral constraints
+/// (type-system.md §2.2). `FeeWindowFlags` carries `↓fee-window-advertise`
+/// (miner sets flags in block header) and `↓fee-window-discover` (wallet reads
+/// flags for threshold discovery).
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
+pub struct FeeWindowFlags(u16);
+
+impl ExhibitsBarb for FeeWindowFlags {
+    fn exhibited_barbs() -> &'static [BarbId] {
+        &[BarbId::FeeWindowAdvertise, BarbId::FeeWindowDiscover]
+    }
+}
+
+impl FeeWindowFlags {
+    /// Pack two WindowSignalling bytes into a u16 flags value.
+    pub fn pack(circuit_byte: WindowSignalling, wasm_byte: WindowSignalling) -> Self {
+        Self((circuit_byte.get() as u16) | ((wasm_byte.get() as u16) << 8))
+    }
+
+    /// Extract the circuit CF direction byte.
+    pub fn circuit_byte(self) -> WindowSignalling {
+        WindowSignalling((self.0 & 0xFF) as u8)
+    }
+
+    /// Extract the WASM CF direction byte.
+    pub fn wasm_byte(self) -> WindowSignalling {
+        WindowSignalling(((self.0 >> 8) & 0xFF) as u8)
+    }
+
+    /// True if either byte has the FEE_WINDOW_ACTIVE bit set.
+    pub fn is_active(self) -> bool {
+        self.circuit_byte().is_active() || self.wasm_byte().is_active()
+    }
+
+    /// Raw u16 accessor — for block header serialization (persistence boundary only, §2.2).
+    pub fn get(self) -> u16 {
+        self.0
+    }
+
+    /// Wire-format: serialize to 2 LE bytes for the block header.
+    /// Permitted ONLY at the persistence/serialization boundary (§2.2).
+    pub fn to_le_bytes(self) -> [u8; 2] {
+        self.0.to_le_bytes()
+    }
+
+    /// Wire-format: deserialize from block header bytes.
+    /// Permitted ONLY at the persistence/serialization boundary (§2.2).
+    pub fn from_le_bytes(bytes: [u8; 2]) -> Self {
+        Self(u16::from_le_bytes(bytes))
+    }
+
+    /// Derive estimated congestion factors from the flags.
+    ///
+    /// Wallets don't maintain a full `FeeWindowState` — they observe the
+    /// miner's flags in each block header and apply the signalled direction
+    /// to the identity CF (SCALE = 1.0). This gives the wallet a CF estimate
+    /// for `compute_fee()` without tracking multi-window PID state.
+    ///
+    /// Returns `(circuit_cf, wasm_cf)`.
+    pub fn derive_cfs(self) -> (CongestionFactor, CongestionFactor) {
+        let circuit_byte = self.circuit_byte();
+        let wasm_byte = self.wasm_byte();
+
+        let circuit_cf = if circuit_byte.is_active() {
+            let premium = match circuit_byte.congestion_multiplier() {
+                0x01 => ((CongestionFactor::SCALE as u64) * 110 / 100) as u32,
+                0x02 => ((CongestionFactor::SCALE as u64) * 90 / 100) as u32,
+                _ => CongestionFactor::SCALE,
+            };
+            CongestionFactor { premium, standard: CongestionFactor::SCALE }
+        } else {
+            CongestionFactor::default()
+        };
+
+        let wasm_cf = if wasm_byte.is_active() {
+            let premium = match wasm_byte.congestion_multiplier() {
+                0x01 => ((CongestionFactor::SCALE as u64) * 110 / 100) as u32,
+                0x02 => ((CongestionFactor::SCALE as u64) * 90 / 100) as u32,
+                _ => CongestionFactor::SCALE,
+            };
+            CongestionFactor { premium, standard: CongestionFactor::SCALE }
+        } else {
+            CongestionFactor::default()
+        };
+
+        (circuit_cf, wasm_cf)
+    }
+}
+
+// Manual serde as plain u16 — byte-identical wire format, no type erasure
+// (the constructor path is from_le_bytes → FeeWindowFlags, never raw u16).
+impl serde::Serialize for FeeWindowFlags {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u16(self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for FeeWindowFlags {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = u16::deserialize(d)?;
+        Ok(Self(v))
+    }
+}
+
 // ── CongestionFactor ────────────────────────────────────────────────────
 
 /// Fixed-point congestion factor. 1.0 = SCALE (1_000_000).
@@ -140,35 +254,49 @@ impl CongestionFactor {
     /// Fixed-point scale: 1.0 = 1_000_000.
     pub const SCALE: u32 = 1_000_000;
 
-    /// Base premium circuit rate (rate 10 per fee-spec.md §12.4.2).
-    pub const BASE_PREMIUM_RATE: u16 = 10;
-    /// Base standard circuit rate (rate 1).
-    pub const BASE_STANDARD_RATE: u16 = 1;
-    /// Base fee unit in native token base units (0.42 DRKW).
-    pub const BASE_UNIT: u64 = 42_000_000;
-
     /// Identity CF — zero congestion, both tiers at 1.0.
     pub const IDENTITY: Self = Self::zero();
 
     pub const fn zero() -> Self {
         Self { premium: Self::SCALE, standard: Self::SCALE }
     }
-
-    /// Premium threshold in native token base units for a rate-10 circuit.
-    pub fn premium_threshold(self) -> u64 {
-        (self.premium as u64 * Self::BASE_PREMIUM_RATE as u64 * Self::BASE_UNIT)
-            / Self::SCALE as u64
-    }
-
-    /// General threshold in native token base units for a rate-1 circuit.
-    pub fn general_threshold(self) -> u64 {
-        (self.standard as u64 * Self::BASE_STANDARD_RATE as u64 * Self::BASE_UNIT)
-            / Self::SCALE as u64
-    }
 }
 
 impl Default for CongestionFactor {
     fn default() -> Self { Self::zero() }
+}
+
+// ── Fee Computation ─────────────────────────────────────────────────────
+
+/// Per-kB WASM storage cost in native token base units.
+/// At CF=1.0 (zero congestion), 1 kB of WASM deploy costs 0.01 DRKW.
+pub const BASELINE_STORAGE: u64 = 1_000_000;
+
+/// Compute the minimum admission fee from the two-component formula.
+///
+/// fee = (wasm_kB × BASELINE_STORAGE × WASM_CF) + (Σ opcode_difficulty × CIRCUIT_CF)
+///
+/// Always uses premium CF multipliers — this is the admission threshold.
+/// Tier classification (premium vs general) compares against premium and
+/// standard thresholds separately.
+///
+/// Returns `FeeAmount` (not `u64`) per type-system.md §2.3.1 — the domain
+/// is visible at every call site and cannot be silently mixed with supply
+/// or reward arithmetic.
+///
+/// [1:1] Python model: `compute_fee()` in fee_window_model.py.
+pub fn compute_fee(
+    circuit_costs: &[u64],
+    wasm_kb: u64,
+    wasm_cf: CongestionFactor,
+    circuit_cf: CongestionFactor,
+) -> FeeAmount {
+    let total_opcode_cost: u64 = circuit_costs.iter().sum();
+    let wasm_part =
+        (wasm_kb * BASELINE_STORAGE * wasm_cf.premium as u64) / CongestionFactor::SCALE as u64;
+    let circuit_part =
+        (total_opcode_cost * circuit_cf.premium as u64) / CongestionFactor::SCALE as u64;
+    FeeAmount::new(wasm_part.saturating_add(circuit_part))
 }
 
 // ── FeeWindowConfig ─────────────────────────────────────────────────────
@@ -184,10 +312,6 @@ pub struct FeeWindowConfig {
     pub alpha_standard: f64,
     /// Maximum adjustment per window as a fraction (±10%).
     pub max_adjustment: f64,
-    /// Premium threshold floor (0.0042 DRKW).
-    pub min_premium: u64,
-    /// Premium threshold ceiling (42 DRKW).
-    pub max_premium: u64,
     /// Utilization above this triggers CF increase.
     pub high_water: f64,
     /// Utilization below this triggers CF decrease.
@@ -201,8 +325,6 @@ impl Default for FeeWindowConfig {
             alpha_premium: 0.05,
             alpha_standard: 0.01,
             max_adjustment: 0.10,
-            min_premium: 420_000,
-            max_premium: 4_200_000_000,
             high_water: 0.75,
             low_water: 0.25,
         }
@@ -213,59 +335,65 @@ impl Default for FeeWindowConfig {
 
 /// Fee window consensus state — adaptive congestion-driven threshold adjustment.
 ///
+/// Holds two independent CongestionFactor instances: CIRCUIT_CF (ZK execution)
+/// and WASM_CF (WASM deploy). Each has its own premium/standard tiers and
+/// independent adjustment.
+///
 /// Follows the `PoWConsensus` pattern: AtomicU64 for lock-free hot-path reads,
 /// Mutex for infrequently-updated window state, sled persistence via
 /// `save_to_batch()` / `load()`.
 pub struct FeeWindowState {
     config: FeeWindowConfig,
-    /// Current premium threshold (AtomicU64 — lock-free read on mempool hot path).
-    premium_threshold: AtomicU64,
-    /// Current general threshold.
-    general_threshold: AtomicU64,
-    /// Current premium congestion factor (u32 fixed-point, SCALE = 1_000_000).
-    premium_cf: AtomicU32,
-    /// Current standard congestion factor.
-    standard_cf: AtomicU32,
-    /// Previous premium CF (for ±10% cap on next adjustment).
-    prev_premium_cf: Mutex<u32>,
-    /// Previous standard CF.
-    prev_standard_cf: Mutex<u32>,
+    // ── CIRCUIT CF ──
+    circuit_premium_cf: AtomicU32,
+    circuit_standard_cf: AtomicU32,
+    circuit_prev_premium_cf: Mutex<u32>,
+    circuit_prev_standard_cf: Mutex<u32>,
+    // ── WASM CF ──
+    wasm_premium_cf: AtomicU32,
+    wasm_standard_cf: AtomicU32,
+    wasm_prev_premium_cf: Mutex<u32>,
+    wasm_prev_standard_cf: Mutex<u32>,
 }
 
 impl FeeWindowState {
     /// Create a new fee window state with the given config.
-    /// Initializes thresholds to the zero-congestion values.
+    /// Initializes all CFs to SCALE (zero congestion).
     pub fn new(config: FeeWindowConfig) -> Self {
-        let initial = CongestionFactor::zero();
         Self {
-            premium_threshold: AtomicU64::new(initial.premium_threshold()),
-            general_threshold: AtomicU64::new(initial.general_threshold()),
-            premium_cf: AtomicU32::new(CongestionFactor::SCALE),
-            standard_cf: AtomicU32::new(CongestionFactor::SCALE),
-            prev_premium_cf: Mutex::new(CongestionFactor::SCALE),
-            prev_standard_cf: Mutex::new(CongestionFactor::SCALE),
+            circuit_premium_cf: AtomicU32::new(CongestionFactor::SCALE),
+            circuit_standard_cf: AtomicU32::new(CongestionFactor::SCALE),
+            circuit_prev_premium_cf: Mutex::new(CongestionFactor::SCALE),
+            circuit_prev_standard_cf: Mutex::new(CongestionFactor::SCALE),
+            wasm_premium_cf: AtomicU32::new(CongestionFactor::SCALE),
+            wasm_standard_cf: AtomicU32::new(CongestionFactor::SCALE),
+            wasm_prev_premium_cf: Mutex::new(CongestionFactor::SCALE),
+            wasm_prev_standard_cf: Mutex::new(CongestionFactor::SCALE),
             config,
         }
     }
 
     // ── Queries (lock-free, suitable for hot path) ─────────────────
 
-    /// Current premium threshold (memory-fenced read).
-    pub fn premium_threshold(&self) -> u64 {
-        self.premium_threshold.load(Ordering::Acquire)
-    }
-
-    /// Current general threshold (memory-fenced read).
-    pub fn general_threshold(&self) -> u64 {
-        self.general_threshold.load(Ordering::Acquire)
-    }
-
-    /// Current congestion factors (memory-fenced read).
-    pub fn current_cf(&self) -> CongestionFactor {
+    /// Current circuit execution CF (memory-fenced read).
+    pub fn circuit_cf(&self) -> CongestionFactor {
         CongestionFactor {
-            premium: self.premium_cf.load(Ordering::Acquire),
-            standard: self.standard_cf.load(Ordering::Acquire),
+            premium: self.circuit_premium_cf.load(Ordering::Acquire),
+            standard: self.circuit_standard_cf.load(Ordering::Acquire),
         }
+    }
+
+    /// Current WASM deploy CF (memory-fenced read).
+    pub fn wasm_cf(&self) -> CongestionFactor {
+        CongestionFactor {
+            premium: self.wasm_premium_cf.load(Ordering::Acquire),
+            standard: self.wasm_standard_cf.load(Ordering::Acquire),
+        }
+    }
+
+    /// Current congestion factors (backward compat — returns circuit CF).
+    pub fn current_cf(&self) -> CongestionFactor {
+        self.circuit_cf()
     }
 
     pub fn config(&self) -> &FeeWindowConfig {
@@ -276,9 +404,6 @@ impl FeeWindowState {
 
     /// Compute raw congestion factors from mempool queue depths.
     /// [1:1] Python model: `compute_congestion_factor()`.
-    ///
-    /// Formula (fee-spec.md §12.4.4):
-    ///   CF = SCALE + floor(α × SCALE × log₂(P + 1))
     pub fn compute_cf(
         premium_pending: u64,
         standard_pending: u64,
@@ -309,35 +434,63 @@ impl FeeWindowState {
 
     // ── Window boundary adjustment ─────────────────────────────────
 
-    /// Adjust thresholds at a fee window boundary.
-    /// Called by the miner when `height % 20 == 0`.
-    ///
-    /// Returns (premium_threshold, general_threshold) for the new window.
-    /// Applies ±10% cap (I7), CF ordering (I4), and floor/ceiling bounds.
-    pub fn adjust(&self, premium_pending: u64, standard_pending: u64) -> (u64, u64) {
+    /// Adjust circuit CF at a fee window boundary.
+    /// Returns the new circuit CF values (premium, standard).
+    pub fn adjust_circuit(&self, premium_pending: u64, standard_pending: u64) -> CongestionFactor {
         let raw_cf = Self::compute_cf(
             premium_pending, standard_pending,
             self.config.alpha_premium, self.config.alpha_standard,
         );
+        let cf = Self::apply_cap(raw_cf, &self.circuit_prev_premium_cf,
+                                  &self.circuit_prev_standard_cf,
+                                  self.config.max_adjustment,
+                                  premium_pending, standard_pending);
 
-        // Apply ±10% cap relative to previous CF (I7)
-        let prev_premium = self.prev_premium_cf.lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let prev_standard = self.prev_standard_cf.lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let max_adj = self.config.max_adjustment;
+        self.circuit_premium_cf.store(cf.premium, Ordering::Release);
+        self.circuit_standard_cf.store(cf.standard, Ordering::Release);
+        *self.circuit_prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner()) = cf.premium;
+        *self.circuit_prev_standard_cf.lock().unwrap_or_else(|e| e.into_inner()) = cf.standard;
+        cf
+    }
 
-        let (capped_premium, capped_standard) = if *prev_premium > CongestionFactor::SCALE {
-            let max_p = (*prev_premium as f64 * (1.0 + max_adj)) as u32;
-            let min_p = (*prev_premium as f64 * (1.0 - max_adj)) as u32;
-            let max_s = (*prev_standard as f64 * (1.0 + max_adj)) as u32;
-            let min_s = (*prev_standard as f64 * (1.0 - max_adj)) as u32;
-            (
-                raw_cf.premium.clamp(min_p, max_p),
-                raw_cf.standard.clamp(min_s, max_s),
-            )
+    /// Adjust WASM CF at a fee window boundary.
+    /// Returns the new WASM CF values (premium, standard).
+    pub fn adjust_wasm(&self, premium_pending: u64, standard_pending: u64) -> CongestionFactor {
+        let raw_cf = Self::compute_cf(
+            premium_pending, standard_pending,
+            self.config.alpha_premium, self.config.alpha_standard,
+        );
+        let cf = Self::apply_cap(raw_cf, &self.wasm_prev_premium_cf,
+                                  &self.wasm_prev_standard_cf,
+                                  self.config.max_adjustment,
+                                  premium_pending, standard_pending);
+
+        self.wasm_premium_cf.store(cf.premium, Ordering::Release);
+        self.wasm_standard_cf.store(cf.standard, Ordering::Release);
+        *self.wasm_prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner()) = cf.premium;
+        *self.wasm_prev_standard_cf.lock().unwrap_or_else(|e| e.into_inner()) = cf.standard;
+        cf
+    }
+
+    /// Apply ±10% cap (I7) and CF ordering (I4) to a raw CF.
+    fn apply_cap(
+        raw_cf: CongestionFactor,
+        prev_premium: &Mutex<u32>,
+        prev_standard: &Mutex<u32>,
+        max_adj: f64,
+        premium_pending: u64,
+        standard_pending: u64,
+    ) -> CongestionFactor {
+        let prev_p = *prev_premium.lock().unwrap_or_else(|e| e.into_inner());
+        let prev_s = *prev_standard.lock().unwrap_or_else(|e| e.into_inner());
+
+        let (capped_premium, capped_standard) = if prev_p > CongestionFactor::SCALE {
+            let max_p = (prev_p as f64 * (1.0 + max_adj)) as u32;
+            let min_p = (prev_p as f64 * (1.0 - max_adj)) as u32;
+            let max_s = (prev_s as f64 * (1.0 + max_adj)) as u32;
+            let min_s = (prev_s as f64 * (1.0 - max_adj)) as u32;
+            (raw_cf.premium.clamp(min_p, max_p), raw_cf.standard.clamp(min_s, max_s))
         } else {
-            // First adjustment after genesis — no cap
             (raw_cf.premium, raw_cf.standard)
         };
 
@@ -350,42 +503,38 @@ impl FeeWindowState {
             (capped_premium, capped_standard)
         };
 
-        let cf = CongestionFactor { premium: final_premium, standard: final_standard };
-        let premium_thresh = cf.premium_threshold().clamp(self.config.min_premium, self.config.max_premium);
-        let general_thresh = cf.general_threshold();
-
-        // Publish atomically
-        self.premium_cf.store(final_premium, Ordering::Release);
-        self.standard_cf.store(final_standard, Ordering::Release);
-        self.premium_threshold.store(premium_thresh, Ordering::Release);
-        self.general_threshold.store(general_thresh, Ordering::Release);
-
-        // Store previous for next window's cap
-        *self.prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner()) = final_premium;
-        *self.prev_standard_cf.lock().unwrap_or_else(|e| e.into_inner()) = final_standard;
-
-        (premium_thresh, general_thresh)
+        CongestionFactor { premium: final_premium, standard: final_standard }
     }
 
     // ── BlockHeader signalling ─────────────────────────────────────
 
-    /// Encode the current congestion factors into a `WindowSignalling` byte
-    /// for the block header. Compares CF against previous to determine
-    /// direction (hold, +10%, -10%).
-    pub fn encode_flags(&self) -> WindowSignalling {
-        let cf = self.current_cf();
-        let prev = *self.prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner());
-        if prev == 0 || prev == CongestionFactor::SCALE {
-            return WindowSignalling(WindowSignalling::FEE_WINDOW_ACTIVE);
-        }
-        let ratio = cf.premium as f64 / prev as f64;
-        if ratio > 1.05 {
-            WindowSignalling::encode_cm(0x01) // +10%
-        } else if ratio < 0.95 {
-            WindowSignalling::encode_cm(0x02) // -10%
-        } else {
-            WindowSignalling::encode_cm(0x00) // hold
-        }
+    /// Encode the current congestion factors into `FeeWindowFlags` for the block header.
+    /// Byte 0 = CIRCUIT_CF direction, Byte 1 = WASM_CF direction.
+    pub fn encode_flags(&self) -> FeeWindowFlags {
+        let circuit_cf = self.circuit_cf();
+        let wasm_cf = self.wasm_cf();
+        let prev_circuit = *self.circuit_prev_premium_cf.lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let prev_wasm = *self.wasm_prev_premium_cf.lock()
+            .unwrap_or_else(|e| e.into_inner());
+
+        let encode_byte = |cf: CongestionFactor, prev: u32| -> WindowSignalling {
+            if prev == 0 || prev == CongestionFactor::SCALE {
+                return WindowSignalling::encode_cm(0x00);
+            }
+            let ratio = cf.premium as f64 / prev as f64;
+            if ratio > 1.05 {
+                WindowSignalling::encode_cm(0x01)
+            } else if ratio < 0.95 {
+                WindowSignalling::encode_cm(0x02)
+            } else {
+                WindowSignalling::encode_cm(0x00)
+            }
+        };
+
+        let circuit_byte = encode_byte(circuit_cf, prev_circuit);
+        let wasm_byte = encode_byte(wasm_cf, prev_wasm);
+        FeeWindowFlags::pack(circuit_byte, wasm_byte)
     }
 
     // ── Persistence (follows PoWConsensus::save_to_batch / load) ────
@@ -393,43 +542,42 @@ impl FeeWindowState {
     /// Persist fee window state to a sled batch.
     pub fn save_to_batch(&self, batch: &mut sled::Batch) {
         batch.insert(
-            b"fee_window_premium_threshold",
-            &self.premium_threshold.load(Ordering::Acquire).to_le_bytes(),
+            b"fee_window_circuit_premium_cf",
+            &self.circuit_premium_cf.load(Ordering::Acquire).to_le_bytes(),
         );
         batch.insert(
-            b"fee_window_general_threshold",
-            &self.general_threshold.load(Ordering::Acquire).to_le_bytes(),
+            b"fee_window_circuit_standard_cf",
+            &self.circuit_standard_cf.load(Ordering::Acquire).to_le_bytes(),
         );
         batch.insert(
-            b"fee_window_premium_cf",
-            &self.premium_cf.load(Ordering::Acquire).to_le_bytes(),
+            b"fee_window_wasm_premium_cf",
+            &self.wasm_premium_cf.load(Ordering::Acquire).to_le_bytes(),
         );
         batch.insert(
-            b"fee_window_standard_cf",
-            &self.standard_cf.load(Ordering::Acquire).to_le_bytes(),
+            b"fee_window_wasm_standard_cf",
+            &self.wasm_standard_cf.load(Ordering::Acquire).to_le_bytes(),
         );
         batch.insert(
-            b"fee_window_prev_premium_cf",
-            &self.prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner()).to_le_bytes(),
+            &b"fee_window_circuit_prev_premium_cf"[..],
+            &self.circuit_prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner()).to_le_bytes(),
         );
         batch.insert(
-            b"fee_window_prev_standard_cf",
-            &self.prev_standard_cf.lock().unwrap_or_else(|e| e.into_inner()).to_le_bytes(),
+            &b"fee_window_circuit_prev_standard_cf"[..],
+            &self.circuit_prev_standard_cf.lock().unwrap_or_else(|e| e.into_inner()).to_le_bytes(),
+        );
+        batch.insert(
+            b"fee_window_wasm_prev_premium_cf",
+            &self.wasm_prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner()).to_le_bytes(),
+        );
+        batch.insert(
+            b"fee_window_wasm_prev_standard_cf",
+            &self.wasm_prev_standard_cf.lock().unwrap_or_else(|e| e.into_inner()).to_le_bytes(),
         );
     }
 
     /// Load fee window state from a sled tree. Missing keys are silently
     /// skipped (fresh store, pre-activation blocks).
     pub fn load(&self, tree: &sled::Tree) -> Result<(), LinearError> {
-        let load_u64 = |key: &[u8]| -> Option<u64> {
-            tree.get(key).ok().flatten().and_then(|b| {
-                if b.len() == 8 {
-                    let mut arr = [0u8; 8];
-                    arr.copy_from_slice(&b);
-                    Some(u64::from_le_bytes(arr))
-                } else { None }
-            })
-        };
         let load_u32 = |key: &[u8]| -> Option<u32> {
             tree.get(key).ok().flatten().and_then(|b| {
                 if b.len() == 4 {
@@ -439,23 +587,29 @@ impl FeeWindowState {
                 } else { None }
             })
         };
-        if let Some(v) = load_u64(b"fee_window_premium_threshold") {
-            self.premium_threshold.store(v, Ordering::Release);
+        if let Some(v) = load_u32(b"fee_window_circuit_premium_cf") {
+            self.circuit_premium_cf.store(v, Ordering::Release);
         }
-        if let Some(v) = load_u64(b"fee_window_general_threshold") {
-            self.general_threshold.store(v, Ordering::Release);
+        if let Some(v) = load_u32(b"fee_window_circuit_standard_cf") {
+            self.circuit_standard_cf.store(v, Ordering::Release);
         }
-        if let Some(v) = load_u32(b"fee_window_premium_cf") {
-            self.premium_cf.store(v, Ordering::Release);
+        if let Some(v) = load_u32(b"fee_window_wasm_premium_cf") {
+            self.wasm_premium_cf.store(v, Ordering::Release);
         }
-        if let Some(v) = load_u32(b"fee_window_standard_cf") {
-            self.standard_cf.store(v, Ordering::Release);
+        if let Some(v) = load_u32(b"fee_window_wasm_standard_cf") {
+            self.wasm_standard_cf.store(v, Ordering::Release);
         }
-        if let Some(v) = load_u32(b"fee_window_prev_premium_cf") {
-            *self.prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner()) = v;
+        if let Some(v) = load_u32(b"fee_window_circuit_prev_premium_cf") {
+            *self.circuit_prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner()) = v;
         }
-        if let Some(v) = load_u32(b"fee_window_prev_standard_cf") {
-            *self.prev_standard_cf.lock().unwrap_or_else(|e| e.into_inner()) = v;
+        if let Some(v) = load_u32(b"fee_window_circuit_prev_standard_cf") {
+            *self.circuit_prev_standard_cf.lock().unwrap_or_else(|e| e.into_inner()) = v;
+        }
+        if let Some(v) = load_u32(b"fee_window_wasm_prev_premium_cf") {
+            *self.wasm_prev_premium_cf.lock().unwrap_or_else(|e| e.into_inner()) = v;
+        }
+        if let Some(v) = load_u32(b"fee_window_wasm_prev_standard_cf") {
+            *self.wasm_prev_standard_cf.lock().unwrap_or_else(|e| e.into_inner()) = v;
         }
         Ok(())
     }
@@ -486,51 +640,131 @@ mod tests {
     }
 
     #[test]
-    fn test_initial_thresholds() {
+    fn test_initial_cfs_are_scale() {
         let fw = FeeWindowState::new(FeeWindowConfig::default());
-        assert_eq!(fw.premium_threshold(), 420_000_000);
-        assert_eq!(fw.general_threshold(), 42_000_000);
+        let c = fw.circuit_cf();
+        let w = fw.wasm_cf();
+        assert_eq!(c.premium, CongestionFactor::SCALE);
+        assert_eq!(c.standard, CongestionFactor::SCALE);
+        assert_eq!(w.premium, CongestionFactor::SCALE);
+        assert_eq!(w.standard, CongestionFactor::SCALE);
     }
 
     #[test]
-    fn test_adjust_respects_cap() {
-        let fw = FeeWindowState::new(FeeWindowConfig::default());
-        let (p1, _) = fw.adjust(100, 1000);
-        let (p2, _) = fw.adjust(100000, 1000000); // extreme congestion spike
-        let max_p2 = (p1 as f64 * 1.10) as u64;
-        let min_p2 = (p1 as f64 * 0.90) as u64;
-        assert!(p2 >= min_p2 && p2 <= max_p2,
-            "I7: ±10% cap violated: p1={}, p2={}, range=[{}, {}]", p1, p2, min_p2, max_p2);
+    fn test_compute_fee_zero_congestion() {
+        let cf = CongestionFactor::zero();
+        // Non-deploy tx with average circuit difficulty (~1000)
+        let fee = compute_fee(&[1000], 1, cf, cf);
+        assert_eq!(fee, FeeAmount::new(1_001_000)); // wasm(1M) + circuit(1000)
     }
 
     #[test]
-    fn test_adjust_respects_bounds() {
+    fn test_compute_fee_wasm_multiplier() {
+        let cf = CongestionFactor::zero();
+        // 5 kB deploy with same circuit cost
+        let fee = compute_fee(&[1000], 5, cf, cf);
+        assert_eq!(fee, FeeAmount::new(5_001_000)); // wasm(5M) + circuit(1000)
+    }
+
+    #[test]
+    fn test_adjust_circuit_respects_cap() {
         let fw = FeeWindowState::new(FeeWindowConfig::default());
-        let (p, _) = fw.adjust(0, 0);
-        assert!(p >= 420_000, "below min_premium: {}", p);
-        assert!(p <= 4_200_000_000, "above max_premium: {}", p);
+        let cf1 = fw.adjust_circuit(100, 1000);
+        let cf2 = fw.adjust_circuit(100000, 1000000); // extreme congestion spike
+        let max_p = (cf1.premium as f64 * 1.10) as u32;
+        let min_p = (cf1.premium as f64 * 0.90) as u32;
+        assert!(cf2.premium >= min_p && cf2.premium <= max_p,
+            "I7: ±10% cap violated: p1={}, p2={}, range=[{}, {}]", cf1.premium, cf2.premium, min_p, max_p);
+    }
+
+    #[test]
+    fn test_adjust_wasm_independent() {
+        let fw = FeeWindowState::new(FeeWindowConfig::default());
+        let circuit_cf = fw.adjust_circuit(1000, 10000); // congest circuit
+        let wasm_cf = fw.adjust_wasm(0, 0);               // empty WASM queue
+        assert!(circuit_cf.premium > CongestionFactor::SCALE, "circuit CF should be congested");
+        assert_eq!(wasm_cf.premium, CongestionFactor::SCALE, "wasm CF should stay at SCALE");
     }
 
     #[test]
     fn test_flags_roundtrip() {
         let fw = FeeWindowState::new(FeeWindowConfig::default());
-        fw.adjust(100, 1000); // first adjustment — sets CF above SCALE
-        fw.adjust(100000, 1000000); // second adjustment — encodes direction
+        fw.adjust_circuit(100, 1000); // first adjustment — sets CF above SCALE
+        fw.adjust_circuit(100000, 1000000); // second adjustment — encodes direction
+        fw.adjust_wasm(50, 500);
+        fw.adjust_wasm(50000, 500000);
         let flags = fw.encode_flags();
         assert!(flags.is_active(), "flags should be active");
-        let decoded = flags.decode_next_premium(fw.premium_threshold());
-        // Decoded should be within ±10% of current
-        let current = fw.premium_threshold();
-        let ratio = decoded as f64 / current as f64;
-        assert!(ratio > 0.89 && ratio < 1.11,
-            "flags roundtrip drift: decoded={}, current={}, ratio={:.3}", decoded, current, ratio);
+        // Both bytes should have valid congestion multipliers
+        let circuit_cm = flags.circuit_byte().congestion_multiplier();
+        let wasm_cm = flags.wasm_byte().congestion_multiplier();
+        assert!(circuit_cm <= 2, "circuit cm valid: {}", circuit_cm);
+        assert!(wasm_cm <= 2, "wasm cm valid: {}", wasm_cm);
     }
 
     #[test]
-    fn test_legacy_flags() {
-        assert!(!WindowSignalling::LEGACY.is_active());
-        assert_eq!(WindowSignalling::LEGACY.decode_next_premium(42_000_000), 42_000_000);
+    fn test_encode_flags_initial_state() {
+        // encode_flags on a FeeWindowState that has never called adjust
+        // should return active flags with cm=0x00 (hold) for both bytes.
+        let fw = FeeWindowState::new(FeeWindowConfig::default());
+        let flags = fw.encode_flags();
+        assert!(flags.is_active(), "initial flags should be active");
+        assert_eq!(flags.circuit_byte().congestion_multiplier(), 0x00,
+            "initial circuit cm should be hold");
+        assert_eq!(flags.wasm_byte().congestion_multiplier(), 0x00,
+            "initial wasm cm should be hold");
     }
+
+    #[test]
+    fn test_fee_window_flags_pack_roundtrip() {
+        let circuit = WindowSignalling::encode_cm(0x01); // +10%
+        let wasm = WindowSignalling::encode_cm(0x02);     // -10%
+        let flags = FeeWindowFlags::pack(circuit, wasm);
+        assert!(flags.is_active());
+        assert_eq!(flags.circuit_byte().congestion_multiplier(), 0x01);
+        assert_eq!(flags.wasm_byte().congestion_multiplier(), 0x02);
+    }
+
+    #[test]
+    fn test_fee_window_flags_to_from_le_bytes() {
+        let circuit = WindowSignalling::encode_cm(0x01);
+        let wasm = WindowSignalling::encode_cm(0x00);
+        let flags = FeeWindowFlags::pack(circuit, wasm);
+        let bytes = flags.to_le_bytes();
+        let decoded = FeeWindowFlags::from_le_bytes(bytes);
+        assert_eq!(decoded.get(), flags.get());
+        assert_eq!(decoded.circuit_byte().congestion_multiplier(), 0x01);
+        assert_eq!(decoded.wasm_byte().congestion_multiplier(), 0x00);
+    }
+
+    #[test]
+    fn test_save_load_roundtrip() {
+        // Persistence: save FeeWindowState to batch, load into fresh state, verify match.
+        let config = FeeWindowConfig::default();
+        let fw = FeeWindowState::new(config.clone());
+        // First adjustment to move CF above SCALE
+        fw.adjust_circuit(100, 1000);
+        fw.adjust_wasm(50, 500);
+        // Save
+        let db = sled::Config::new().temporary(true).open().expect("sled temp");
+        let tree = db.open_tree(b"consensus").expect("tree");
+        let mut batch = sled::Batch::default();
+        fw.save_to_batch(&mut batch);
+        tree.apply_batch(batch).expect("apply_batch");
+        // Load into fresh state
+        let fw2 = FeeWindowState::new(config);
+        fw2.load(&tree).expect("load");
+        let cf1 = fw.circuit_cf();
+        let cf2 = fw2.circuit_cf();
+        assert_eq!(cf1.premium, cf2.premium, "circuit premium_cf persistence mismatch");
+        assert_eq!(cf1.standard, cf2.standard, "circuit standard_cf persistence mismatch");
+        let wf1 = fw.wasm_cf();
+        let wf2 = fw2.wasm_cf();
+        assert_eq!(wf1.premium, wf2.premium, "wasm premium_cf persistence mismatch");
+        assert_eq!(wf1.standard, wf2.standard, "wasm standard_cf persistence mismatch");
+    }
+
+    // ── WindowSignalling unit tests ───────────────────────────────────
 
     #[test]
     fn test_window_signalling_encode() {
@@ -546,47 +780,22 @@ mod tests {
     }
 
     #[test]
-    fn test_save_load_roundtrip() {
-        // Persistence: save FeeWindowState to batch, load into fresh state, verify match.
-        let config = FeeWindowConfig::default();
-        let fw = FeeWindowState::new(config.clone());
-        // First adjustment to move CF above SCALE
-        fw.adjust(100, 1000);
-        // Save
-        let db = sled::Config::new().temporary(true).open().expect("sled temp");
-        let tree = db.open_tree(b"consensus").expect("tree");
-        let mut batch = sled::Batch::default();
-        fw.save_to_batch(&mut batch);
-        tree.apply_batch(batch).expect("apply_batch");
-        // Load into fresh state
-        let fw2 = FeeWindowState::new(config);
-        fw2.load(&tree).expect("load");
-        assert_eq!(fw.premium_threshold(), fw2.premium_threshold(),
-            "premium_threshold persistence mismatch");
-        assert_eq!(fw.general_threshold(), fw2.general_threshold(),
-            "general_threshold persistence mismatch");
-        let cf1 = fw.current_cf();
-        let cf2 = fw2.current_cf();
-        assert_eq!(cf1.premium, cf2.premium, "premium_cf persistence mismatch");
-        assert_eq!(cf1.standard, cf2.standard, "standard_cf persistence mismatch");
+    fn test_legacy_flags() {
+        assert!(!WindowSignalling::LEGACY.is_active());
+        assert_eq!(WindowSignalling::LEGACY.decode_next_premium(1_000_000), 1_000_000);
     }
 
     #[test]
-    fn test_encode_flags_initial_state() {
-        // encode_flags on a FeeWindowState that has never called adjust
-        // should return FEE_WINDOW_ACTIVE (0x01) without congestion multiplier.
-        let fw = FeeWindowState::new(FeeWindowConfig::default());
-        let flags = fw.encode_flags();
-        assert!(flags.is_active(), "initial flags should be active");
-        assert_eq!(flags.congestion_multiplier(), 0x00,
-            "initial flags should have no CM (hold)");
-        assert_eq!(flags.get(), WindowSignalling::FEE_WINDOW_ACTIVE);
+    fn test_congestion_factor_display() {
+        let flags = WindowSignalling::encode_cm(0x01);
+        let s = format!("{}", flags);
+        assert!(s.contains("1"), "Display should show binary with active bit");
     }
 
     #[test]
     fn test_decode_next_premium_exact() {
-        // Exact arithmetic: +10% of 100_000_000 = 110_000_000, -10% = 90_000_000.
-        let base: u64 = 420_000_000;
+        // Exact arithmetic: +10% of 1_000_000 = 1_100_000, -10% = 900_000.
+        let base: u64 = 1_000_000;
         // +10%
         let up = WindowSignalling::encode_cm(0x01);
         assert_eq!(up.decode_next_premium(base), (base as u128 * 110 / 100) as u64);
@@ -601,94 +810,46 @@ mod tests {
     }
 
     #[test]
-    fn test_congestion_factor_display() {
-        let flags = WindowSignalling::encode_cm(0x01);
-        let s = format!("{}", flags);
-        assert!(s.contains("1"), "Display should show binary with active bit");
-    }
-
-    // ── L1-FW-1: wallet threshold-decode contract ───────────────────────
-    // Partition B — absorber-boundary lift (on-chain flags → admission thresholds).
-    // Pins Python: P-FW-4.
-
-    #[test]
     fn test_decode_window_thresholds_active_increase() {
-        // cm=0x01 (+10%): active bit set, premium *= 1.1
         let flags = WindowSignalling::encode_cm(0x01); // bits: 0x11
-        let base_premium: u64 = 420_000_000;
+        let base_premium: u64 = 1_000_000;
         let decoded = flags.decode_next_premium(base_premium);
-        assert_eq!(decoded, 462_000_000, "+10% of 420M should be 462M");
+        assert_eq!(decoded, 1_100_000, "+10% of 1_000_000 should be 1_100_000");
     }
 
     #[test]
     fn test_decode_window_thresholds_active_decrease() {
-        // cm=0x02 (-10%): active bit set, premium *= 0.9
         let flags = WindowSignalling::encode_cm(0x02); // bits: 0x21
-        let base_premium: u64 = 420_000_000;
+        let base_premium: u64 = 1_000_000;
         let decoded = flags.decode_next_premium(base_premium);
-        assert_eq!(decoded, 378_000_000, "-10% of 420M should be 378M");
+        assert_eq!(decoded, 900_000, "-10% of 1_000_000 should be 900_000");
     }
 
     #[test]
     fn test_decode_window_thresholds_active_hold() {
-        // cm=0x00 (hold): active bit set, premium unchanged
         let flags = WindowSignalling::encode_cm(0x00); // bits: 0x01
-        let base_premium: u64 = 420_000_000;
+        let base_premium: u64 = 1_000_000;
         let decoded = flags.decode_next_premium(base_premium);
-        assert_eq!(decoded, 420_000_000, "hold should return unchanged premium");
+        assert_eq!(decoded, 1_000_000, "hold should return unchanged premium");
     }
 
     #[test]
     fn test_decode_window_thresholds_legacy() {
-        // Legacy (inactive): premium and general use static constants
         let flags = WindowSignalling::LEGACY; // 0x00
         assert!(!flags.is_active());
-        let base_premium: u64 = 420_000_000;
+        let base_premium: u64 = 1_000_000;
         let decoded = flags.decode_next_premium(base_premium);
-        assert_eq!(decoded, 420_000_000, "legacy should return unchanged premium");
-        // General threshold in legacy mode is 1_000_000 (per fee-spec §8.2)
+        assert_eq!(decoded, 1_000_000, "legacy should return unchanged premium");
     }
-
-    // ── L1-FW-2: both-CF-simultaneously ─────────────────────────────────
-    // Partition B — I4 ordering at the CF boundary.
-    // Pins Python: P-FW-2.
-
-    #[test]
-    fn test_both_cfs_congested_simultaneously() {
-        // Premium AND standard queues congested → both CF > SCALE, I4 holds
-        let cf = FeeWindowState::compute_cf(500, 5000, 0.05, 0.01);
-        assert!(cf.premium > CongestionFactor::SCALE,
-            "premium CF {} should exceed SCALE under congestion", cf.premium);
-        assert!(cf.standard > CongestionFactor::SCALE,
-            "standard CF {} should exceed SCALE under congestion", cf.standard);
-        assert!(cf.premium > cf.standard,
-            "I4: CF_premium ({}) must exceed CF_standard ({}) when congested",
-            cf.premium, cf.standard);
-    }
-
-    #[test]
-    fn test_both_cfs_congestion_log_scaling() {
-        // Heavier congestion → higher CFs for both tiers
-        let cf_light = FeeWindowState::compute_cf(10, 100, 0.05, 0.01);
-        let cf_heavy = FeeWindowState::compute_cf(500, 5000, 0.05, 0.01);
-        assert!(cf_heavy.premium > cf_light.premium,
-            "heavier congestion should produce higher premium CF");
-        assert!(cf_heavy.standard > cf_light.standard,
-            "heavier congestion should produce higher standard CF");
-    }
-
-    // ── L1-FW-3: malicious / invalid congestion-multiplier flags ────────
-    // Partition B — invalid-bytes at the decode boundary.
-    // Pins Python: P-FW-3.
 
     #[test]
     fn test_decode_next_premium_invalid_cm_holds() {
-        let base: u64 = 420_000_000;
+        let base: u64 = 1_000_000;
         // cm=0x03 (undefined) → hold
         let flags_03 = WindowSignalling(0x31); // active + cm=0x03
         assert_eq!(flags_03.decode_next_premium(base), base,
             "cm=0x03 (undefined) should hold");
-        // cm=0xFF (max, undefined) → hold
+        // cm=0x0F (max, undefined) → hold
         let flags_ff = WindowSignalling(0xF1); // active + cm=0x0F
         assert_eq!(flags_ff.decode_next_premium(base), base,
             "cm=0x0F (max, undefined) should hold");
@@ -705,40 +866,58 @@ mod tests {
         }
     }
 
-    // ── L1-FW-4: multi-window PID loop ──────────────────────────────────
-    // Partition C — economic dynamics (convergence over multiple windows).
-    // Pins Python: P-FW-1.
+    // ── Dual CF integration tests ────────────────────────────────────
+
+    #[test]
+    fn test_both_cfs_congested_simultaneously() {
+        let cf = FeeWindowState::compute_cf(500, 5000, 0.05, 0.01);
+        assert!(cf.premium > CongestionFactor::SCALE,
+            "premium CF {} should exceed SCALE under congestion", cf.premium);
+        assert!(cf.standard > CongestionFactor::SCALE,
+            "standard CF {} should exceed SCALE under congestion", cf.standard);
+        assert!(cf.premium > cf.standard,
+            "I4: CF_premium ({}) must exceed CF_standard ({}) when congested",
+            cf.premium, cf.standard);
+    }
+
+    #[test]
+    fn test_both_cfs_congestion_log_scaling() {
+        let cf_light = FeeWindowState::compute_cf(10, 100, 0.05, 0.01);
+        let cf_heavy = FeeWindowState::compute_cf(500, 5000, 0.05, 0.01);
+        assert!(cf_heavy.premium > cf_light.premium,
+            "heavier congestion should produce higher premium CF");
+        assert!(cf_heavy.standard > cf_light.standard,
+            "heavier congestion should produce higher standard CF");
+    }
 
     #[test]
     fn test_multi_window_pid_stabilization() {
-        // 5 windows of constant moderate congestion — thresholds converge.
+        // 5 windows of constant moderate congestion — CFs converge.
         let config = FeeWindowConfig::default();
         let fw = FeeWindowState::new(config);
 
-        let mut prev_premium = fw.premium_threshold();
         // First window: establish baseline with moderate congestion
-        let (p1, _) = fw.adjust(50, 500);
-        assert!(p1 >= 420_000 && p1 <= 4_200_000_000,
-            "first adjustment within bounds");
+        let cf1 = fw.adjust_circuit(50, 500);
+        assert!(cf1.premium >= CongestionFactor::SCALE,
+            "first adjustment should be at or above SCALE");
 
         // Subsequent windows: same congestion → stabilization
+        let mut prev_premium = cf1.premium;
         for i in 0..4 {
-            let (premium, general) = fw.adjust(50, 500);
-            assert!(premium > general, "I4: premium > general at window {}", i);
+            let cf = fw.adjust_circuit(50, 500);
+            assert!(cf.premium > cf.standard, "I4: premium > standard at window {}", i);
             // I7: ±10% cap per window
-            let max_allowed = (prev_premium as f64 * 1.10) as u64;
-            let min_allowed = (prev_premium as f64 * 0.90) as u64;
-            assert!(premium >= min_allowed && premium <= max_allowed,
-                "I7: window {}: premium {} outside [{}, {}]", i, premium, min_allowed, max_allowed);
-            prev_premium = premium;
+            let max_allowed = (prev_premium as f64 * 1.10) as u32;
+            let min_allowed = (prev_premium as f64 * 0.90) as u32;
+            assert!(cf.premium >= min_allowed && cf.premium <= max_allowed,
+                "I7: window {}: premium {} outside [{}, {}]", i, cf.premium, min_allowed, max_allowed);
+            prev_premium = cf.premium;
         }
 
-        // Final thresholds respect floor/ceiling
-        let final_premium = fw.premium_threshold();
-        let final_general = fw.general_threshold();
-        assert!(final_premium >= 420_000, "premium above floor");
-        assert!(final_premium <= 4_200_000_000, "premium below ceiling");
-        assert!(final_general > 0, "general threshold positive");
-        assert!(final_premium > final_general, "I4: final premium > general");
+        // Final CFs should be at or above SCALE
+        let final_cf = fw.circuit_cf();
+        assert!(final_cf.premium >= CongestionFactor::SCALE, "premium at or above SCALE");
+        assert!(final_cf.standard >= CongestionFactor::SCALE, "standard at or above SCALE");
+        assert!(final_cf.premium > final_cf.standard, "I4: final premium > standard");
     }
 }

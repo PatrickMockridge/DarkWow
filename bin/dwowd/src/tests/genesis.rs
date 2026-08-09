@@ -34,6 +34,7 @@ use std::sync::{
     Arc,
 };
 
+use dwow_chain::fee_window::FeeWindowFlags;
 use dwow_chain::{CChainState, FinalityConfig, PoWConfig};
 use dwow_core::Result;
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, MoneroBlockHeight, SupplyAmount};
@@ -48,8 +49,6 @@ use dwow_sdk::crypto::{
 
 /// Reusable baseline chain with all 9 genesis contracts pre-deployed.
 pub struct GenesisHarness {
-    /// Temp sled database
-    pub db: Arc<sled::Db>,
     /// Single authoritative chain state (replaces LinearBlockchain)
     pub chain_state: Arc<CChainState>,
 }
@@ -87,7 +86,7 @@ impl GenesisHarness {
         .map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
         // CChainState::new() already returns Arc<CChainState>.
 
-        Ok(Self { db, chain_state })
+        Ok(Self { chain_state })
     }
 
     /// Harness with a completely EMPTY contracts tree — the production
@@ -182,12 +181,6 @@ impl GenesisHarness {
         ).map_err(|e| dwow_core::Error::Custom(format!("Failed to store multisig WASM: {}", e)))?;
 
         Ok(harness)
-    }
-
-    /// Store a WASM contract in the chain state so it can be looked up.
-    pub fn deploy_contract(&self, wasm: &[u8], contract_id: ContractId) -> Result<()> {
-        self.chain_state.store.set_contract_data(&contract_id.to_bytes(), wasm)
-            .map_err(|e| dwow_core::Error::Custom(format!("Failed to store contract WASM: {}", e)))
     }
 
     /// Get current block height.
@@ -497,7 +490,7 @@ mod tests {
                 anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
-                fee_window_flags: 0,
+                fee_window_flags: FeeWindowFlags::default(),
                 pow_source: dwow_chain::PowSource::Native,
             };
 
@@ -678,7 +671,7 @@ mod tests {
             let gen_hash = har.chain_state.hash_block_with_cached_vm(&gen_block).expect("hash failed");
 
             let header = dwow_chain::BlockHeader {
-                fee_window_flags: 0,
+                fee_window_flags: FeeWindowFlags::default(),
                 version: BlockVersion::CURRENT,
                 previous: gen_hash,
                 merkle_root,
@@ -947,7 +940,7 @@ mod tests {
             let height = BlockHeight::new(h);
             let block = dwow_chain::Block {
                 header: dwow_chain::BlockHeader {
-                        fee_window_flags: 0,
+                        fee_window_flags: FeeWindowFlags::default(),
                     version: BlockVersion::CURRENT,
                     previous: if h == 1 { blake3::hash(b"genesis") } else { blake3::hash(&h.to_le_bytes()) },
                     merkle_root: dwow_chain::compute_merkle_root(&[]),

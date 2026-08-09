@@ -1475,7 +1475,7 @@ committed root.
 | 2 | Deserialize FeeParamsV1 | `FeeParamsV1::decode(&params[8..])` | `ParseError` | ↓bad-fee-params | Primary |
 | 3 | Input token is DRKW | `input.token_commit == poseidon(DOMAIN_TOKEN_COMMIT, 0, 0)` | `InsufficientBalance` | ↓bad-token | Primary |
 | 4 | Output token is DRKW | `output.token_commit == poseidon(DOMAIN_TOKEN_COMMIT, 0, 0)` | `InsufficientBalance` | ↓bad-token | Primary |
-| 5 | Minimum fee | `fee >= MIN_FEE_PER_CALL` (42,000,000) | `InsufficientBalance` | ↓bad-fee-amount | Primary |
+| 5 | Minimum fee | fee ≥ two-component formula (§12.4.1): `(wasm_kB × BASELINE_STORAGE × WASM_CF) + (Σ opcode_difficulty × CIRCUIT_CF)` | `InsufficientBalance` | ↓bad-fee-amount | Primary |
 | 6 | Merkle root exists | `db_contains_key(coin_roots_db, &input.merkle_root)` | `TransferMerkleRootNotFound` | ↓bad-merkle-root | Primary |
 | 7 | Nullifier not spent | `SMT.get_leaf(input.nullifier) == ZERO` | `InsufficientBalance` | ↓double-spend | Primary |
 | 8 | Output coin not duplicate | `!db_contains_key(coins_db, &output.coin)` | `InsufficientBalance` | ↓duplicate-coin | Defense-in-depth |
@@ -1677,7 +1677,7 @@ pruned from the in-memory cache (they remain in sled for historical queries).
 
 | Constant | Value | Location |
 |----------|-------|----------|
-| `MIN_FEE_PER_CALL` | `42_000_000` (0.042 DRKW) | `src/contract/native_token/src/lib.rs:126` |
+| `BASELINE_STORAGE` | `1_000_000` (0.01 DRKW/kB at CF=1.0) | `src/linear/src/fee_window.rs` |
 | `COINBASE_MATURITY` | `100` blocks | `src/linear/src/lib.rs:56` |
 | `INITIAL_REWARD` | `1_383_764_049` (1.383 DRKW) | `src/sdk/src/blockchain.rs:606` |
 | `FeeV1` selector | `0x00` | `src/contract/native_token/src/lib.rs:60` |
@@ -1692,7 +1692,7 @@ specific barb, not generic "canonical call failed at exec."
 
 | Entrypoint | Failure Variant | Consensus Barb | Rejection Level |
 |-----------|----------------|----------------|-----------------|
-| FeeV1 | `InsufficientBalance` (fee < MIN_FEE_PER_CALL) | ↓bad-fee-amount | Block rejected |
+| FeeV1 | `InsufficientBalance` (fee below two-component threshold) | ↓bad-fee-amount | Block rejected |
 | FeeV1 | `InsufficientBalance` (input <= fee) | ↓bad-fee-amount | Block rejected |
 | FeeV1 | `TransferMerkleRootNotFound` | ↓bad-merkle-root | Block rejected |
 | FeeV1 | `InsufficientBalance` (nullifier spent) | ↓double-spend | Block rejected |

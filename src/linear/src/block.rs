@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use dwow_sdk::blockchain::{BlockHeight, BlockReward, BlockTarget, BlockTimestamp, BlockVersion, MoneroBlockHeight};
 
 use super::{Transaction, LinearError, Result};
+use crate::fee_window::FeeWindowFlags;
 use crate::monero::MoneroPowData;
 
 /// Source of Proof of Work — either native RandomX or Monero merge mining.
@@ -98,10 +99,11 @@ pub struct BlockHeader {
     ///   0x01 = FINALITY_CARIBNIA, 0x02 = FINALITY_MONERO, 0x04 = FINALITY_SIGNALED
     #[serde(default)]
     pub finality_flags: u8,
-    /// Fee window signalling flags bitfield (fee-spec.md §12.6).
-    /// 0 = legacy static fees. Excluded from mining blob.
+    /// Fee window signalling flags (fee-spec.md §12.6).
+    /// Byte 0 = CIRCUIT_CF direction, Byte 1 = WASM_CF direction.
+    /// Excluded from mining blob.
     #[serde(default)]
-    pub fee_window_flags: u16,
+    pub fee_window_flags: FeeWindowFlags,
     /// Proof of Work source — native RandomX or Monero merge-mined.
     /// `MoneroPowData` contains cryptographic proof that the Monero
     /// block was mined with our merge mining tag embedded.
@@ -582,7 +584,7 @@ pub fn create_block_with_uncles(
             anchor_monero_height: MoneroBlockHeight::new(0), // No Monero anchor (set by miner after anchoring)
             anchor_monero_hash: [0u8; 32], // No Monero anchor
             finality_flags: 0,
-            fee_window_flags: 0, // Set by miner after anchoring
+            fee_window_flags: FeeWindowFlags::default(), // Set by miner after anchoring
             pow_source: PowSource::Native,
 
         },
@@ -593,6 +595,7 @@ pub fn create_block_with_uncles(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fee_window::WindowSignalling;
 
     fn create_test_vm() -> randomx::RandomXVM {
         let key = [0u8; 32];
@@ -629,7 +632,7 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
 
         };
@@ -666,7 +669,7 @@ mod tests {
                 anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
 
             };
@@ -709,7 +712,7 @@ mod tests {
                 anchor_monero_height: MoneroBlockHeight::new(0),
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
                 pow_source: PowSource::Native,
             };
             uncles.push(UncleBlock {
@@ -763,7 +766,7 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
 
         };
@@ -798,7 +801,7 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
 
         };
@@ -930,7 +933,7 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
 
         };
@@ -967,7 +970,7 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
         };
 
@@ -975,7 +978,10 @@ mod tests {
         assert_eq!(blob_zero.len(), 228);
 
         // Setting fee_window_flags must not change the mining blob
-        header.fee_window_flags = 0x11; // active + +10% CM
+        header.fee_window_flags = FeeWindowFlags::pack(
+            WindowSignalling::encode_cm(0x01),  // circuit: +10%
+            WindowSignalling::encode_cm(0x00),  // wasm: hold
+        );
         let blob_flagged = header.to_mining_blob();
         assert_eq!(blob_zero, blob_flagged,
             "fee_window_flags must not affect mining blob");
@@ -1002,21 +1008,27 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            fee_window_flags: 0x11,
+            fee_window_flags: FeeWindowFlags::pack(
+                WindowSignalling::encode_cm(0x01),
+                WindowSignalling::encode_cm(0x00),
+            ),
             pow_source: PowSource::Native,
         };
 
         // JSON roundtrip preserves flags
         let json = serde_json::to_vec(&header).expect("serialize");
         let restored: BlockHeader = serde_json::from_slice(&json).expect("deserialize");
-        assert_eq!(restored.fee_window_flags, 0x11,
+        assert_eq!(restored.fee_window_flags, FeeWindowFlags::pack(
+            WindowSignalling::encode_cm(0x01),
+            WindowSignalling::encode_cm(0x00),
+        ),
             "fee_window_flags should survive serde roundtrip");
 
         // Zero flags also roundtrip correctly
-        header.fee_window_flags = 0;
+        header.fee_window_flags = FeeWindowFlags::default();
         let json2 = serde_json::to_vec(&header).expect("serialize zero");
         let restored2: BlockHeader = serde_json::from_slice(&json2).expect("deserialize zero");
-        assert_eq!(restored2.fee_window_flags, 0,
+        assert_eq!(restored2.fee_window_flags, FeeWindowFlags::default(),
             "zero fee_window_flags should survive serde roundtrip");
     }
 
@@ -1040,7 +1052,7 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
 
         };
@@ -1067,7 +1079,7 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
 
         };
@@ -1102,7 +1114,7 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
 
         };
@@ -1153,7 +1165,7 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
 
         };
@@ -1188,7 +1200,7 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(3_500_000),
             anchor_monero_hash: [0xCC; 32],
             finality_flags: 0x02,
-            fee_window_flags: 0, // FINALITY_MONERO
+            fee_window_flags: FeeWindowFlags::default(), // FINALITY_MONERO
             pow_source: PowSource::Native,
         };
 
@@ -1233,7 +1245,7 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
         };
 
@@ -1298,7 +1310,7 @@ mod tests {
             anchor_monero_height: MoneroBlockHeight::new(0),
             anchor_monero_hash: [0u8; 32],
             finality_flags: 0,
-            fee_window_flags: 0,
+            fee_window_flags: FeeWindowFlags::default(),
             pow_source: PowSource::Native,
         };
 
