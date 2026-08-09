@@ -237,10 +237,10 @@ impl NativeTokenHarness {
                     tx_commitment,
                     threshold_tx_binding,
                 ).expect("FeeThreshold_V1 proof");
-                let mut proof_bytes = vec![];
-                dwow_serial::Encodable::encode(&proof, &mut proof_bytes)
-                    .expect("threshold proof encode failed");
-                proof_bytes
+                // Store raw halo2 proof bytes — FeeParamsV2 already has its own
+                // u32 LE length prefix. Using Encodable::encode adds a redundant
+                // VarInt prefix that Proof::verify() cannot parse (see plan §Proof Encoding Bug).
+                proof.as_ref().to_vec()
             },
         };
 

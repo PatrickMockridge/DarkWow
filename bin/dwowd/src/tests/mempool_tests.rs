@@ -66,7 +66,7 @@ fn test_mempool_queues_initialized() {
         let mempool = Mempool::new(config, None, Box::new(TestFeeSignallingExtractor), None);
 
         let selected = mempool.select_for_block(&MinerConfig {
-            max_gas: u64::MAX, max_txs: 100, ..Default::default()
+            max_charge: u64::MAX, max_txs: 100, ..Default::default()
         }).await;
         assert!(selected.is_empty(), "empty mempool must return empty selection");
     })
@@ -83,7 +83,7 @@ fn test_mempool_add_single_tx() {
         assert!(!hash.as_bytes().iter().all(|b| *b == 0), "tx hash must be non-zero");
 
         let selected = mempool.select_for_block(&MinerConfig {
-            max_gas: u64::MAX, max_txs: 100, ..Default::default()
+            max_charge: u64::MAX, max_txs: 100, ..Default::default()
         }).await;
         assert_eq!(selected.len(), 1, "single tx must be selected");
     })
@@ -172,7 +172,7 @@ fn test_feev2_premium_before_general() {
         mempool.add(tx_premium).await.expect("add premium");
 
         let selected = mempool.select_for_block(&MinerConfig {
-            max_gas: u64::MAX, max_txs: 100, ..Default::default()
+            max_charge: u64::MAX, max_txs: 100, ..Default::default()
         }).await;
         assert_eq!(selected.len(), 2, "both txs must be selected");
         // Premium tx must be first regardless of insertion order
@@ -262,7 +262,7 @@ fn test_mempool_feev2_through_accept_block() -> std::result::Result<(), Box<dyn 
 
         // Selection: tx must be selected for block inclusion
         let selected = mempool.select_for_block(&MinerConfig {
-            max_gas: u64::MAX, max_txs: 100, ..Default::default()
+            max_charge: u64::MAX, max_txs: 100, ..Default::default()
         }).await;
         assert!(!selected.is_empty(),
             "TEST-FAIL [mempool_1.5]: FeeV2 tx must be selected for block");
@@ -410,7 +410,7 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
 
         // Selection
         let selected = mempool.select_for_block(&MinerConfig {
-            max_gas: u64::MAX, max_txs: 100, ..Default::default()
+            max_charge: u64::MAX, max_txs: 100, ..Default::default()
         }).await;
         assert!(!selected.is_empty(),
             "[L1.5-FW-2] real extractor: FeeV2 tx must be selected for block");
@@ -453,6 +453,161 @@ fn test_real_extractor_mempool_accept_block() -> std::result::Result<(), Box<dyn
                 "[L1.5-FW-2] derived wasm CF ({}) must be >= SCALE", wasm_cf.premium());
         }
 
+        Ok(())
+    })
+}
+
+// ============================================================================
+// NF-1 WYSIWYG: Nullifier replay rejected at mempool admission (L1.5-FW-3).
+//
+// Two DIFFERENT FeeV2 transactions (different hashes) spending the SAME coin
+// produce the SAME nullifier. First tx admitted. Second tx REJECTED with an
+// error specifically citing "nullifier" — proving the in-mempool nullifier
+// dedup barrier (B2, line 383) is exercised, NOT the duplicate-hash check
+// or fee-below-threshold gate.
+//
+// WYSIWYG: Every assertion has a unique tag. State is logged before each check.
+// ============================================================================
+
+#[test]
+fn test_nullifier_replay_rejected_at_mempool() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use dwow_contract_test_harness::harness::NativeTokenHarness;
+    use dwow_sdk::blockchain::BlockHeight;
+    use dwow_sdk::crypto::{MerkleNode, MerkleTree, NATIVE_TOKEN_CONTRACT_ID, Nullifier, PublicKey, SecretKey};
+    use dwow_sdk::pasta::pallas;
+    use crate::tests::blockchain::HeavyweightPipeline;
+    use crate::tests::modules::coinbase_coordination;
+    use crate::NativeTokenFeeSignallingExtractor;
+
+    dwow_native_token_contract::enable_deterministic_zk();
+
+    smol::block_on(async {
+        let mut chain = HeavyweightPipeline::new().await?;
+        chain.init_genesis().await?;
+        chain.log_file = Some(std::sync::Mutex::new(
+            crate::tests::test_output::create_log_file("wysiwyg_nf1")
+        ));
+        let log = |msg: &str| chain.log(msg);
+
+        let native_harness = NativeTokenHarness::spawn();
+        let cid = *NATIVE_TOKEN_CONTRACT_ID;
+
+        // ── STEP 0: Prerequisites ──────────────────────────────────────
+        log("[NF1-ST0] Verifying prerequisites");
+        let h = chain.height();
+        assert_eq!(h, BlockHeight::new(1),
+            "[NF1-ST0-1] Chain must be at genesis height 1, was {}", h);
+
+        // ── STEP 1: Produce a spendable coin at height 2 ───────────────
+        log("[NF1-ST1] Mining coinbase at height 2");
+        let cb2 = coinbase_coordination::prefetch_coinbase_params(&chain).await?;
+        chain.block()?.submit_with_coinbase(cb2.coinbase_tx).await?;
+        log(&format!("[NF1-ST1-1] Height 2 mined, coin_value={}", cb2.coin_value));
+
+        let mut tree = MerkleTree::new(1);
+        tree.append(MerkleNode::from_base(pallas::Base::zero()));
+        tree.append(MerkleNode::from_base(cb2.coin_commitment.inner()));
+        let coin_pos = tree.mark().expect("tree.mark");
+        let path: Vec<MerkleNode> = tree.witness(coin_pos, 0).expect("tree.witness");
+        let root = tree.root(0).expect("tree.root");
+
+        // ── STEP 2: Build two txs with same coin → same nullifier ──────
+        log("[NF1-ST2] Building two FeeV2 transactions from same coin");
+        let mining_kp = chain.mining_keypair(BlockHeight::new(2));
+        let nf = Nullifier::new(mining_kp.secret.clone(), cb2.coin_commitment.inner());
+        assert!(!nf.is_zero(), "[NF1-ST2-1] Nullifier must be non-zero");
+        log(&format!("[NF1-ST2-1] Nullifier computed (non-zero)"));
+        let fee_dest = PublicKey::from_secret(SecretKey::from_bytes([5u8; 32])?);
+        let threshold: u64 = 42_000_000;
+        let general: u64 = 1_000_000;
+
+        // Tx1: fee=150M
+        let fr1 = native_harness.fee_v2(
+            cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
+            cb2.coin_blind, u64::from(coin_pos), path.clone(), root,
+            mining_kp.secret.clone(), mining_kp.secret.clone(),
+            fee_dest, pallas::Base::zero(), pallas::Base::zero(),
+            150_000_000, threshold,
+        ).map_err(|e| dwow_core::Error::Custom(format!("[NF1-ST2] fee_v2 tx1: {}", e)))?;
+
+        // Tx2: fee=200M, SAME coin → SAME nullifier
+        let fr2 = native_harness.fee_v2(
+            cb2.coin_value, pallas::Base::zero(), pallas::Base::zero(), pallas::Base::zero(),
+            cb2.coin_blind, u64::from(coin_pos), path, root,
+            mining_kp.secret.clone(), mining_kp.secret,
+            fee_dest, pallas::Base::zero(), pallas::Base::zero(),
+            200_000_000, threshold,
+        ).map_err(|e| dwow_core::Error::Custom(format!("[NF1-ST2] fee_v2 tx2: {}", e)))?;
+
+        let tx1 = dwow_chain::Transaction {
+            version: dwow_sdk::blockchain::BlockVersion::CURRENT,
+            inputs: vec![], outputs: vec![],
+            contract_calls: vec![dwow_chain::ContractCall {
+                contract_id: cid, data: fr1.call_data.clone(),
+            }],
+            lock_time: 0, nullifiers: vec![nf], witness: vec![],
+        };
+        let tx2 = dwow_chain::Transaction {
+            version: dwow_sdk::blockchain::BlockVersion::CURRENT,
+            inputs: vec![], outputs: vec![],
+            contract_calls: vec![dwow_chain::ContractCall {
+                contract_id: cid, data: fr2.call_data.clone(),
+            }],
+            lock_time: 0, nullifiers: vec![nf], witness: vec![],
+        };
+
+        // Critical: hashes MUST differ, nullifiers MUST be identical
+        assert_ne!(tx1.hash(), tx2.hash(),
+            "[NF1-ST2-2] Tx hashes must differ (fee 150M vs 200M). Same hash = false positive.");
+        assert_eq!(tx1.nullifiers, tx2.nullifiers,
+            "[NF1-ST2-3] Both txs must have identical nullifiers (they spend same coin)");
+        log("[NF1-ST2] Two txs built: different hashes, same nullifier");
+
+        // ── STEP 3: Admit first tx ─────────────────────────────────────
+        log("[NF1-ST3] Configuring mempool and admitting first tx");
+        let mempool = Mempool::new(
+            MempoolConfig {
+                premium_threshold: FeeAmount::new(threshold),
+                general_threshold: FeeAmount::new(general),
+                ..Default::default()
+            }, None,
+            Box::new(NativeTokenFeeSignallingExtractor::new()),
+            None,
+        );
+
+        mempool.add(tx1).await
+            .map_err(|e| {
+                log(&format!("[NF1-ST3-1] FAILED to admit first tx: {:?} (fee=150M, premium={}, general={})",
+                    e, threshold, general));
+                e
+            })
+            .expect("[NF1-ST3-1] First tx (150M fee) must be admitted to mempool");
+        log("[NF1-ST3] First tx admitted");
+
+        // ── STEP 4: Verify mempool state ───────────────────────────────
+        log("[NF1-ST4] Verifying mempool state");
+        assert_eq!(mempool.premium_queue_len(), 1,
+            "[NF1-ST4-1] Premium queue must have 1 tx (fee 150M >= premium 42M)");
+        assert_eq!(mempool.standard_queue_len(), 0,
+            "[NF1-ST4-2] Standard queue must be empty (tx went to premium, not general)");
+
+        // ── STEP 5: Nullifier replay rejection ─────────────────────────
+        log("[NF1-ST5] Attempting nullifier replay with second tx");
+        let r2 = mempool.add(tx2).await;
+        assert!(r2.is_err(),
+            "[NF1-ST5-1] Nullifier replay MUST be rejected. Second tx was admitted \
+             despite sharing nullifier with first tx. Barrier B2 (line 383) has failed.");
+        let err = format!("{:?}", r2.err());
+        log(&format!("[NF1-ST5-2] Rejection: {}", err));
+        assert!(err.contains("nullifier"),
+            "[NF1-ST5-2] Error must cite 'nullifier'. Got: '{}'. \
+             If 'already in mempool': duplicate-hash fired (false positive).", err);
+        assert!(!err.contains("already in mempool"),
+            "[NF1-ST5-3] Error must NOT cite 'already in mempool' (hash dedup, not nullifier).");
+        assert!(!err.contains("fee below"),
+            "[NF1-ST5-4] Error must NOT cite 'fee below' (FeeV2 gate, not nullifier).");
+
+        log("[NF1] PASSED: nullifier replay correctly rejected");
         Ok(())
     })
 }

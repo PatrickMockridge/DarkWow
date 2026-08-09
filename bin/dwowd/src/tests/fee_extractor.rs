@@ -340,16 +340,16 @@ fn test_fee_extractor_real_feev2_success_path() -> std::result::Result<(), Box<d
         let extractor = NativeTokenFeeSignallingExtractor::new();
 
         // (a) verify_threshold_proof with matching threshold → true
-        assert!(extractor.verify_threshold_proof(&chain_tx, 42_000_000),
+        assert!(extractor.verify_threshold_proof(&chain_tx, FeeAmount::new(42_000_000)),
             "[L1.5-FW-1] verify_threshold_proof should succeed for matching threshold 42M");
 
         // (b) verify_threshold_proof with mismatched threshold → false
-        assert!(!extractor.verify_threshold_proof(&chain_tx, 1_000_000),
+        assert!(!extractor.verify_threshold_proof(&chain_tx, FeeAmount::new(1_000_000)),
             "[L1.5-FW-1] verify_threshold_proof should fail for mismatched threshold 1M");
 
-        // (c) extract_fee returns DEFAULT_FEE per FeeV2 call
-        assert_eq!(extractor.extract_fee(&chain_tx), 42_000_000,
-            "[L1.5-FW-1] extract_fee should return 42M (1 FeeV2 call × DEFAULT_FEE)");
+        // extract_fee returns count × ESTIMATED_FEE_PER_FEEV2_CALL = 1 × 1_001_000
+        assert_eq!(extractor.extract_fee(&chain_tx), FeeAmount::new(1_001_000),
+            "[L1.5-FW-1] extract_fee must return 1_001_000 (1 FeeV2 call × ESTIMATED_FEE_PER_FEEV2_CALL)");
 
         // (d) extract_fee_commitment returns the real Pedersen point
         let commitment = extractor.extract_fee_commitment(&chain_tx);
