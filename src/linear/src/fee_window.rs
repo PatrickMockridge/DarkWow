@@ -1121,4 +1121,29 @@ mod tests {
         let fee2 = compute_total_fee(&profile2, risk2, cf, cf);
         assert_eq!(fee2.get(), 2_000_000 + 6000); // wasm=2M + circuit=4000*1.5
     }
+
+    /// G5: fee_window_flags are advisory signalling, not consensus-validated.
+    /// accept_block does NOT reject blocks with invalid/reserved flag bits.
+    /// This is intentional — flags are a market signal, not a consensus rule.
+    /// A miner setting wrong flags harms only themselves (wallets may skip their
+    /// blocks if fee estimates are wrong). The field is excluded from the block
+    /// hash (verified by test_mining_blob_excludes_fee_window_flags in block.rs).
+    /// This test documents the decision.
+    #[test]
+    fn test_g5_fee_window_flags_advisory_not_consensus() {
+        // Byte 0 = 0x01 (active, cm=0x00=hold), Byte 1 = 0xF0 (inactive, cm=0x0F=undefined)
+        let flags = FeeWindowFlags(0xF001);
+        assert!(flags.is_active(),
+            "G5: flags with active bit set must be treated as active");
+        // circuit byte: active+hold → cm=0
+        let c_cm = flags.circuit_byte().congestion_multiplier();
+        assert_eq!(c_cm, 0, "G5: circuit cm=0x00 is hold");
+        // wasm byte: inactive (bit 0 clear), cm=0x0F undefined → inactive
+        assert!(!flags.wasm_byte().is_active(),
+            "G5: wasm byte with active bit clear is inactive regardless of CM");
+        // decode_flags_dual clamps undefined CM (0x0F) to hold (0)
+        let (dc_cm, dw_cm) = flags.decode_flags_dual();
+        assert_eq!(dc_cm, 0, "G5: circuit decode_flags_dual returns hold");
+        assert_eq!(dw_cm, 0, "G5: wasm decode_flags_dual clamps 0x0F to hold");
+    }
 }
