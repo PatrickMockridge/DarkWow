@@ -363,7 +363,7 @@ pub fn encrypt_fee_for_miner(
 
     // 4. Encrypt fee bytes with ChaCha20-Poly1305
     let fee_bytes = fee_amount.get().to_le_bytes();
-    let mut buf = [0u8; 24]; // 8 data + 16 tag
+    let mut buf = vec![0u8; 24]; // 8 data + 16 tag
     buf[..8].copy_from_slice(&fee_bytes);
     ChaCha20Poly1305::new(key.as_ref().into())
         .encrypt_in_place((&nonce).into(), b"darkfi_fee", &mut buf)
@@ -381,6 +381,7 @@ pub fn encrypt_fee_for_miner(
 mod tests {
     use super::*;
     use dwow_chain::fee_window::{WindowSignalling, CongestionFactor, compute_fee, BASELINE_STORAGE};
+    use dwow_sdk::crypto::{PublicKey, SecretKey};
 
     /// FeeWindowFlags.derive_cfs() — default (inactive) flags yield identity CFs.
     #[test]
@@ -476,5 +477,29 @@ mod tests {
         let bytes = flags.to_le_bytes();
         let decoded = FeeWindowFlags::from_le_bytes(bytes);
         assert_eq!(decoded, flags);
+    }
+
+    /// G6: encrypt_fee_for_miner produces valid AEAD ciphertext (pk + nonce + data + tag).
+    #[test]
+    fn test_encrypt_fee_for_miner_format() {
+        let fee = FeeAmount::new(42_000_000);
+        let miner_sk = SecretKey::random(&mut rand::rngs::OsRng);
+        let miner_pk = PublicKey::from_secret(miner_sk);
+        let ciphertext = encrypt_fee_for_miner(fee, &miner_pk)
+            .expect("encrypt_fee_for_miner must succeed");
+        // Format: [ephemeral_public] [nonce(12)] [ciphertext+tag(24)]
+        assert!(ciphertext.len() >= 44,
+            "AEAD ciphertext must be at least 44 bytes (32 pk + 12 nonce), got {}",
+            ciphertext.len());
+    }
+
+    /// G6: Different fees produce different ciphertexts.
+    #[test]
+    fn test_encrypt_fee_different_ciphertext() {
+        let miner_sk = SecretKey::random(&mut rand::rngs::OsRng);
+        let miner_pk = PublicKey::from_secret(miner_sk);
+        let c1 = encrypt_fee_for_miner(FeeAmount::new(42_000_000), &miner_pk).unwrap();
+        let c2 = encrypt_fee_for_miner(FeeAmount::new(15_000_000), &miner_pk).unwrap();
+        assert_ne!(c1, c2, "different fees must produce different ciphertexts");
     }
 }
