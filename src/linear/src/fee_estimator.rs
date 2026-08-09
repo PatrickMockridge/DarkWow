@@ -27,8 +27,14 @@
 use std::collections::VecDeque;
 use smol::lock::Mutex;
 
-/// Minimum fee per call — never goes below this.
-pub const MIN_FEE: u64 = 42_000_000;
+use crate::fee_window::compute_fee;
+
+/// Base fee estimate at zero congestion for a reference transaction.
+/// Derived from the two-component formula:
+///   compute_fee(&[1000], 1, CongestionFactor::default(), CongestionFactor::default())
+///   = (1 × BASELINE_STORAGE × SCALE)/SCALE + (1000 × SCALE)/SCALE
+///   = 1_000_000 + 1_000 = 1_001_000
+pub const MIN_FEE: u64 = 1_001_000;
 
 /// Block gas limit — re-exported from `src/linear/src/execution.rs`.
 pub use crate::execution::BLOCK_GAS_LIMIT;

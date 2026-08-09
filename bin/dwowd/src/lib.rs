@@ -116,14 +116,19 @@ impl NativeTokenFeeSignallingExtractor {
 }
 impl FeeSignallingExtractor for NativeTokenFeeSignallingExtractor {
     fn extract_fee(&self, tx: &dwow_chain::Transaction) -> u64 {
-        const DEFAULT_FEE: u64 = 42_000_000;
+        // Fee estimate per FeeV2 call at zero congestion for a reference
+        // transaction (average circuit ~1000 difficulty, 1 kB WASM).
+        // compute_fee(&[1000], 1, default_cf, default_cf) = 1_001_000.
+        // In production the exact fee is verified via threshold proof;
+        // this estimate is the fee_index fallback for legacy ordering.
+        const ESTIMATED_FEE_PER_FEEV2_CALL: u64 = 1_001_000;
         let mut count: u64 = 0;
         for call in &tx.contract_calls {
             if call.as_mass_balance_fee_v2().is_some() {
                 count += 1;
             }
         }
-        count * DEFAULT_FEE
+        count * ESTIMATED_FEE_PER_FEEV2_CALL
     }
     fn estimate_gas(&self, tx: &dwow_chain::Transaction) -> u64 {
         const GAS_PER_CALL: u64 = 400_000_000;

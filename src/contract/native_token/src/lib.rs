@@ -121,14 +121,6 @@ pub const NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE: &str = "nullifier_roots";
 /// Stores accumulated fees per block height
 pub const NATIVE_TOKEN_CONTRACT_FEES_TREE: &str = "fees";
 
-/// Premium mempool tier threshold — fee must be >= this for priority inclusion.
-/// Spec: mempool.md §5.1.
-pub const PREMIUM_THRESHOLD: u64 = 42_000_000;
-
-/// General mempool tier threshold — minimum fee for mempool admission.
-/// Spec: mempool.md §5.1.
-pub const GENERAL_THRESHOLD: u64 = 1_000_000;
-
 /// Fee commitment accumulator — Pedersen homomorphic sum of FeeV2 fee_value_commit
 /// for the current block. Initialized to Identity at block start, accumulated by
 /// apply_fee, verified by fee_collect_v1, reset by apply_fee_collect.
